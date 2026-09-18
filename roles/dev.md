@@ -15,7 +15,15 @@ Your marker is `<!-- a-team:dev -->`.
 
 ## Each run, in this order
 
-### 1. Tend PRs in review
+### 1. Clean up merged work
+
+List the repo's worktrees (`git worktree list`). A worktree is yours if its branch's PR carries
+your marker. For each of yours whose PR GitHub reports as `MERGED`, `cd` into it and run the
+reviewer's `wrap-up` skill. Only run it on merged PRs: on anything else it watches CI, which you
+mustn't do here. Leave the worktrees of PRs closed without merging, and list them in your
+summary.
+
+### 2. Tend PRs in review
 
 For each item in `board.sh mine dev "In review"`, find its PR with `board.sh pr <n>`, then:
 
@@ -27,13 +35,13 @@ For each item in `board.sh mine dev "In review"`, find its PR with `board.sh pr 
   If you disagree with a point, say why in the reply instead of changing the code.
 - Leave the item in In review. The reviewer merges.
 
-### 2. Resume anything In progress
+### 3. Resume anything In progress
 
 An item in `board.sh mine dev "In progress"` was left by a run that didn't finish. Pick it
 up from its worktree and branch if they exist. If it can't be finished, comment why and
 `board.sh move dev <n> Ready`.
 
-### 3. Take new work
+### 4. Take new work
 
 Only if the `dev` count for **In review** in `board.sh wip` is below `wip.inReview`:
 
@@ -50,11 +58,7 @@ Only if the `dev` count for **In review** in `board.sh wip` is below `wip.inRevi
 6. Push and open a **draft** PR. Body: a short summary, `Closes #<n>`, anything the reviewer
    should look at closely, and your marker. No test-plan section.
 7. `board.sh move dev <n> "In review"`.
-8. Check `board.sh checks <pr>` every 2 minutes, for up to 20 minutes. Fix failures as in step 1. If it's still
-   pending after that, leave it for the next run.
+8. Check `board.sh checks <pr>` every 2 minutes, for up to 20 minutes. Fix failures as in
+   step 2. If it's still pending after that, leave it for the next run.
 
 Take at most one new task per run.
-
-### 4. Clean up
-
-Remove the worktree and local branch of every PR of yours that has merged or closed since.
