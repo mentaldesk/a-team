@@ -120,6 +120,25 @@ set_status() {
                                             value: {singleSelectOptionId: $option}}) { clientMutationId } }' >/dev/null
 }
 
+# Reads a JSON array of items on stdin; adds .priority and sorts highest first, unset last.
+by_priority() {
+  local list ranks values
+  list=$(cat)
+  if [ "$(jq length <<<"$list")" -eq 0 ]; then echo '[]'; return; fi
+  ranks=$(gh api graphql -F owner="$OWNER" -f query='query($owner: String!) {
+      organization(login: $owner) { issueFields(first: 50) { nodes {
+        ... on IssueFieldSingleSelect { name options { name } } } } } }' |
+    jq --arg f "$PRIORITY" '[.data.organization.issueFields.nodes[] | select(.name == $f) | .options[].name]')
+  values=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="query(\$owner: String!, \$name: String!) {
+      repository(owner: \$owner, name: \$name) {
+        $(jq -r '.[] | "i\(.number): issue(number: \(.number)) { issueFieldValues(first: 20) { nodes {
+          ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldSingleSelect { name } } } } } }"' <<<"$list")
+      } }" | jq --arg f "$PRIORITY" '.data.repository | with_entries(
+        .key |= ltrimstr("i") | .value = ([.value.issueFieldValues.nodes[] | select(.field.name == $f) | .name] | first))')
+  jq --argjson ranks "$ranks" --argjson values "$values" '
+    map(.priority = $values[.number | tostring]) | sort_by(.priority as $p | $ranks | index($p) // length)' <<<"$list"
+}
+
 comments() {
   local n=$1 issue
   issue=$(gh api "repos/$REPO/issues/$n")
@@ -166,25 +185,37 @@ case "$CMD" in
     ;;
 
   next)
-    ready=$(items | jq 'map(select(.status == "Ready" and .type == "Issue"
-                                   and (.labels | index("pitch") | not)
-                                   and (.labels | index("blocked") | not)))')
-    if [ "$(jq length <<<"$ready")" -eq 0 ]; then echo null; exit 0; fi
-    ranks=$(gh api graphql -F owner="$OWNER" -f query='query($owner: String!) {
-        organization(login: $owner) { issueFields(first: 50) { nodes {
-          ... on IssueFieldSingleSelect { name options { name } } } } } }' 2>/dev/null |
-      jq --arg f "$PRIORITY" '[.data.organization.issueFields.nodes[] | select(.name == $f) | .options[].name]' ||
-      echo '[]')
-    values=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="query(\$owner: String!, \$name: String!) {
-        repository(owner: \$owner, name: \$name) {
-          $(jq -r '.[] | "i\(.number): issue(number: \(.number)) { issueFieldValues(first: 20) { nodes {
-            ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldSingleSelect { name } } } } } }"' <<<"$ready")
-        } }" | jq --arg f "$PRIORITY" '.data.repository | with_entries(
-          .key |= ltrimstr("i") | .value = ([.value.issueFieldValues.nodes[] | select(.field.name == $f) | .name] | first))')
-    jq --argjson ranks "$ranks" --argjson values "$values" '
-      map(.priority = $values[.number | tostring])
-      | sort_by(.priority as $p | $ranks | index($p) // length)
-      | first' <<<"$ready"
+    items | jq 'map(select(.status == "Ready" and .type == "Issue"
+                           and (.labels | index("pitch") | not)
+                           and (.labels | index("blocked") | not)))' | by_priority | jq first
+    ;;
+
+  lead-next)
+    state="${XDG_STATE_HOME:-$HOME/.local/state}/a-team/$TEAM/lead-turn"
+    all=$(items)
+    pitching=$(jq '[.[] | select((.labels | index("pitch")) and (.status == "Exploring" or .status == "Pitched"))] | length' <<<"$all")
+    found=$(jq '[.[] | select((.labels | index("a-team:idea")) and .status == "Idea")] | length' <<<"$all")
+    idea=$(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$all" | by_priority |
+      jq 'map(select((.labels | index("a-team:idea") | not) or .priority != null)) | first')
+    can_pitch=false can_discover=false
+    [ "$pitching" -lt "$(cfg '.wip.pitched')" ] && [ "$idea" != null ] && can_pitch=true
+    [ "$found" -lt "$(cfg '.wip.ideas')" ] && can_discover=true
+    last=$(cat "$state" 2>/dev/null || echo discover)
+    if $can_pitch && { [ "$last" = discover ] || ! $can_discover; }; then
+      turn=pitch
+    elif $can_discover; then
+      turn=discover
+    else
+      jq -n --argjson p "$pitching" --argjson f "$found" \
+        '{turn: "none", reason: "\($p) pitches in Exploring/Pitched and \($f) unreviewed discoveries in Idea"}'
+      exit 0
+    fi
+    mkdir -p "$(dirname "$state")" && echo "$turn" >"$state"
+    if [ "$turn" = pitch ]; then
+      jq -n --argjson item "$idea" '{turn: "pitch", item: $item}'
+    else
+      jq -n --argjson room "$(($(cfg '.wip.ideas') - found))" '{turn: "discover", room: $room}'
+    fi
     ;;
 
   move)
@@ -219,8 +250,11 @@ case "$CMD" in
     [ -z "$(item "$n")" ] || die "#$n is already on the board (use move)"
     allowed "$role" None "$to" || die "$role may not add items as '$to'"
     content=$(gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pulls" else "issues" end')
-    if [ "$role" = lead ] && [ "$to" != Ready ]; then
-      gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null
+    if [ "$role" = lead ]; then
+      case "$to" in
+        Idea) gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:idea' >/dev/null ;;
+        Exploring | Pitched) gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
+      esac
     fi
     id=$(gh api graphql -F project="$(project_meta | jq -r .id)" \
       -F content="$(gh api "repos/$REPO/$content/$n" --jq .node_id)" -f query='
@@ -352,6 +386,7 @@ case "$CMD" in
       fi
     done <<<"pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it
 a-team:dev|0e8a16|Claimed by the a-team Dev
+a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched
 blocked|fbca04|Waiting on another issue"
     ;;
 

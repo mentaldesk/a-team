@@ -51,6 +51,7 @@ board.sh <team> mine <role> [STATUS...]   # items your role owns
 board.sh <team> wip                       # counts per status: pitches, dev, reviewer
 board.sh <team> next                      # the next task Dev should take (or null):
                                           # highest issue Priority first, unset last
+board.sh <team> lead-next                 # Lead only: pitch or discover this run (call once)
 board.sh <team> move <role> <n> <STATUS>
 board.sh <team> add <role> <n> <STATUS>   # put an existing issue or PR on the board
 board.sh <team> comment <role> <n> <file> # post a comment, marked as yours

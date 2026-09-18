@@ -57,30 +57,46 @@ run `children`:
   - comment a short validation report (what you tried, what you saw, anything the reviewer
     should try themselves) and `board.sh move lead <pitch> "In review"`.
 
-### 4. Pitch
+### 4. Finish what you're exploring
 
-Only if **Pitched + Exploring** is below `wip.pitched`:
+Finish any pitch of yours still in **Exploring** (see *Writing a pitch*), then
+`board.sh move lead <n> Pitched`.
 
-1. Finish anything already in **Exploring** first.
-2. Otherwise take the most promising item in **Idea** (the reviewer's seeds come first) with
-   `board.sh move lead <n> Exploring`, which labels it `pitch`. Or research a new opportunity
-   (user pain in issues and discussions, what comparable tools do, gaps against the vision),
-   create it as an issue with the `pitch` label, and `board.sh add lead <n> Exploring`.
-   For a reviewer's seed, keep their original text at the bottom of the body under **Original
-   idea** when you write the pitch.
-3. Write the pitch in the issue body:
-   - **Problem**: who hits it and when, with evidence (links).
-   - **Proposal**: what changes for the user.
-   - **Mockup**: ASCII or a short sketch showing the experience. For a terminal app, ASCII is
-     the real thing; draw it.
-   - **Scope**: in / out.
-   - **Rough breakdown**: the tasks you'd expect, so the reviewer can judge size.
-   - **Open questions**: what you'd like the reviewer to decide.
-   - Your marker.
-4. `board.sh move lead <n> Pitched`.
+### 5. Pitch or discover
 
-One good pitch beats three thin ones. If an idea doesn't hold up against the vision, say so in
-a comment and move it back to Idea rather than pitching it.
+Run `board.sh lead-next` once. It alternates between the two so the reviewer gets a blend of
+their own ideas refined and new ones found, and it respects the WIP limits.
+
+- `{"turn": "pitch", "item": ...}`: `board.sh move lead <n> Exploring` (this labels it
+  `pitch`), write the pitch, and `board.sh move lead <n> Pitched`. It's the highest-priority
+  Idea, so the reviewer wants it. Keep the reviewer's original text at the bottom of the
+  body under **Original idea**.
+- `{"turn": "discover", "room": n}`: research new opportunities and file up to `room` of the
+  best, but no more than 2. Look at user pain in the repo's issues and discussions, what
+  comparable tools do, what the product's dependencies now make possible, and gaps against
+  the vision. File each as an issue with a short body (the **Problem**, the **Evidence** with
+  links, **Why it fits** the vision, and your marker), then `board.sh add lead <n> Idea`. The
+  reviewer gives it a priority if they want it pitched and closes it if not. Don't pitch it
+  yourself.
+- `{"turn": "none"}`: nothing to do. Stop.
+
+If an Idea doesn't hold up against the vision once you dig in, say so in a comment and move it
+back to Idea instead of pitching it.
+
+## Writing a pitch
+
+The pitch lives in the issue body:
+
+- **Problem**: who hits it and when, with evidence (links).
+- **Proposal**: what changes for the user.
+- **Mockup**: ASCII or a short sketch showing the experience. For a terminal app, ASCII is the
+  real thing; draw it.
+- **Scope**: in / out.
+- **Rough breakdown**: the tasks you'd expect, so the reviewer can judge size.
+- **Open questions**: what you'd like the reviewer to decide.
+- Your marker.
+
+One good pitch beats three thin ones.
 
 ## Vision
 
@@ -89,5 +105,5 @@ the README, the open issues and the code: who it's for, what it's trying to be, 
 deliberately isn't, and the next few themes. Open it as a draft PR from `a-team/vision` with
 your marker in the body, then `board.sh add lead <pr> Pitched`. Don't wait for CI.
 
-Until the reviewer merges it, only do steps 1 to 3. If the PR is open, answer the reviewer's
+Until the reviewer merges it, only do steps 1 to 4. If the PR is open, answer the reviewer's
 feedback on it (`board.sh feedback lead <pr>`) by pushing to the branch and replying.
