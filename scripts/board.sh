@@ -52,22 +52,42 @@ own_label() {
   case "$1" in lead) echo pitch ;; dev) echo a-team:dev ;; esac
 }
 
+KIND=$(cfg .project.ownerType)
+KIND=${KIND:-organization}
+
+gql() {
+  local query=$1
+  shift
+  gh api graphql -F owner="$OWNER" -F number="$NUMBER" "$@" -f query="$query"
+}
+
 items() {
-  gh project item-list "$NUMBER" --owner "$OWNER" --limit 1000 --format json |
-    jq --arg field "$(printf %s "$FIELD" | tr '[:upper:]' '[:lower:]')" --arg repo "$REPO" \
+  gql "query(\$owner: String!, \$number: Int!, \$field: String!, \$endCursor: String) {
+      $KIND(login: \$owner) { projectV2(number: \$number) {
+        items(first: 100, after: \$endCursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id
+            fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+            content {
+              __typename
+              ... on Issue { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
+              ... on PullRequest { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
+            } } } } } }" -F field="$FIELD" --paginate |
+    jq -s --arg kind "$KIND" --arg repo "$REPO" \
       --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" \
       --slurpfile cfg "$CONFIG" '
       ($cfg[0].project.statusMap // {} | to_entries | map({key: .value, value: .key}) | from_entries) as $rev
-      | [.items[]
-         | select((.content.repository // .repository) == $repo and .content.number != null)
-         | (.[$field] // null) as $raw
+      | [.[].data[$kind].projectV2.items.nodes[]
+         | select(.content.repository.nameWithOwner == $repo)
+         | .fieldValueByName.name as $raw
          | {
              id,
              number: .content.number,
-             type: .content.type,
+             type: .content.__typename,
              title: .content.title,
              url: .content.url,
-             labels: (.labels // []),
+             labels: [.content.labels.nodes[].name],
              status: (if $raw == null then "None"
                       elif $rev[$raw] then $rev[$raw]
                       elif ($states | index($raw)) then $raw
@@ -79,21 +99,25 @@ item() {
   items | jq --argjson n "$1" 'map(select(.number == $n)) | first // empty'
 }
 
-field_json() {
-  gh project field-list "$NUMBER" --owner "$OWNER" --format json |
-    jq --arg f "$FIELD" '.fields[] | select(.name == $f)'
+project_meta() {
+  gql "query(\$owner: String!, \$number: Int!, \$field: String!) {
+      $KIND(login: \$owner) { projectV2(number: \$number) { id
+        field(name: \$field) { ... on ProjectV2SingleSelectField { id options { id name color description } } } } } }" \
+    -F field="$FIELD" --jq ".data.$KIND.projectV2"
 }
 
 set_status() {
-  local item_id=$1 state=$2 option project_id field option_id
+  local item_id=$1 state=$2 option meta option_id
   option=$(jq -r --arg s "$state" '.project.statusMap[$s] // $s' "$CONFIG")
-  project_id=$(gh project view "$NUMBER" --owner "$OWNER" --format json | jq -r .id)
-  field=$(field_json)
-  [ -n "$field" ] || die "no field named '$FIELD' on project $OWNER/$NUMBER"
-  option_id=$(jq -r --arg o "$option" '.options[] | select(.name == $o) | .id' <<<"$field")
+  meta=$(project_meta)
+  jq -e '.field.id' <<<"$meta" >/dev/null || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
+  option_id=$(jq -r --arg o "$option" '.field.options[] | select(.name == $o) | .id' <<<"$meta")
   [ -n "$option_id" ] || die "field '$FIELD' has no option '$option' (run: board.sh $TEAM check)"
-  gh project item-edit --id "$item_id" --project-id "$project_id" \
-    --field-id "$(jq -r .id <<<"$field")" --single-select-option-id "$option_id" >/dev/null
+  gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$item_id" \
+    -F field="$(jq -r .field.id <<<"$meta")" -F option="$option_id" -f query='
+    mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+      updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field,
+                                            value: {singleSelectOptionId: $option}}) { clientMutationId } }' >/dev/null
 }
 
 comments() {
@@ -194,8 +218,11 @@ case "$CMD" in
     is_state "$to" || die "unknown status '$to'"
     [ -z "$(item "$n")" ] || die "#$n is already on the board (use move)"
     allowed "$role" None "$to" || die "$role may not add items as '$to'"
-    id=$(gh project item-add "$NUMBER" --owner "$OWNER" \
-      --url "https://github.com/$REPO/issues/$n" --format json | jq -r .id)
+    id=$(gh api graphql -F project="$(project_meta | jq -r .id)" \
+      -F content="$(gh api "repos/$REPO/issues/$n" --jq .node_id)" -f query='
+      mutation($project: ID!, $content: ID!) {
+        addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } } }' \
+      --jq .data.addProjectV2ItemById.item.id)
     set_status "$id" "$to"
     echo "#$n: added as $to"
     ;;
@@ -247,20 +274,23 @@ case "$CMD" in
 
   checks)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM checks <pr>"
-    out=$(gh pr checks "$1" -R "$REPO" --json name,bucket,link 2>/dev/null) || true
-    jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 || die "could not read checks for PR #$1"
-    jq '{
-          verdict: (if any(.[]; .bucket == "fail" or .bucket == "cancel") then "fail"
-                    elif length == 0 or any(.[]; .bucket == "pending") then "pending"
+    sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
+    gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]' |
+      jq -s '
+        def failed: .conclusion as $c
+          | ["failure", "timed_out", "cancelled", "action_required", "startup_failure"] | index($c);
+        {
+          verdict: (if any(.[]; failed) then "fail"
+                    elif length == 0 or any(.[]; .status != "completed") then "pending"
                     else "pass" end),
-          failing: map(select(.bucket == "fail" or .bucket == "cancel") | {name, link}),
-          pending: map(select(.bucket == "pending") | .name)
-        }' <<<"$out"
+          failing: map(select(failed) | {name, link: .html_url}),
+          pending: map(select(.status != "completed") | .name)
+        }'
     ;;
 
   check)
-    field=$(field_json)
-    [ -n "$field" ] || die "no field named '$FIELD' on project $OWNER/$NUMBER"
+    field=$(project_meta | jq '.field // empty')
+    jq -e '.id' <<<"$field" >/dev/null 2>&1 || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
     missing=()
     for s in "${STATES[@]}"; do
       option=$(jq -r --arg s "$s" '.project.statusMap[$s] // $s' "$CONFIG")
@@ -280,15 +310,7 @@ case "$CMD" in
   setup)
     dry_run=false
     [ "${1:-}" = --dry-run ] && dry_run=true
-    lookup='query($owner: String!, $number: Int!, $field: String!) {
-      %s(login: $owner) { projectV2(number: $number) { field(name: $field) {
-        ... on ProjectV2SingleSelectField { id options { id name color description } } } } } }'
-    field=""
-    for kind in organization user; do
-      # shellcheck disable=SC2059
-      field=$(gh api graphql -F owner="$OWNER" -F number="$NUMBER" -F field="$FIELD" \
-        -f query="$(printf "$lookup" "$kind")" --jq ".data.$kind.projectV2.field" 2>/dev/null) && break
-    done
+    field=$(project_meta | jq '.field // empty')
     jq -e '.id' <<<"$field" >/dev/null 2>&1 || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
     input=$(jq -n --argjson field "$field" --slurpfile cfg "$CONFIG" '
       [ ["Idea", "GRAY", "A seed worth a look"],

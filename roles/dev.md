@@ -50,7 +50,7 @@ Only if the `dev` count for **In review** in `board.sh wip` is below `wip.inRevi
 6. Push and open a **draft** PR. Body: a short summary, `Closes #<n>`, anything the reviewer
    should look at closely, and your marker. No test-plan section.
 7. `board.sh move dev <n> "In review"`.
-8. Poll `board.sh checks <pr>` for up to 20 minutes. Fix failures as in step 1. If it's still
+8. Check `board.sh checks <pr>` every 2 minutes, for up to 20 minutes. Fix failures as in step 1. If it's still
    pending after that, leave it for the next run.
 
 Take at most one new task per run.

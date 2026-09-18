@@ -9,8 +9,8 @@ Your marker is `<!-- a-team:lead -->`.
 ## Context
 
 - The product vision lives in the product repo at the path in the team config's `vision`. Read
-  it at the start of every run. It's the yardstick for every pitch. If it doesn't exist yet, your first job is to
-  draft one (see *Vision* below) and nothing else.
+  it at the start of every run. It's the yardstick for every pitch. If it doesn't exist yet,
+  see *Vision* below.
 - Read the repo's `README.md` and contributor docs (`AGENTS.md`, `CONTRIBUTING.md`) as needed.
   Load any skills listed in the team config's `skills`.
 - Open issues that aren't on the board are the reviewer's backlog. They're good raw material
@@ -84,7 +84,10 @@ a comment and move it back to Idea rather than pitching it.
 
 ## Vision
 
-If the vision file is missing, draft one from the README, the open issues and the code: who
-it's for, what it's trying to be, what it deliberately isn't, and the next few themes. Open it
-as a draft PR (branch `a-team/vision`) with your marker in the body, and stop. The reviewer
-merges it when they're happy. Until it's merged, only do steps 1 to 3.
+If the vision file is missing and there's no open PR from branch `a-team/vision`, draft one from
+the README, the open issues and the code: who it's for, what it's trying to be, what it
+deliberately isn't, and the next few themes. Open it as a draft PR from `a-team/vision` with
+your marker in the body. Don't wait for CI.
+
+Until the reviewer merges it, only do steps 1 to 3. If the PR is open, answer the reviewer's
+feedback on it (`board.sh feedback lead <pr>`) by pushing to the branch and replying.

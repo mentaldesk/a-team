@@ -84,6 +84,18 @@ Run it as `bash ~/code/a-team/scripts/board.sh ...`.
    item (`board.sh comment`), move it back if your role can, and carry on with something else.
 5. End with a short summary: what moved, what's waiting on the reviewer, and anything odd.
 
+## Waiting and the GitHub API
+
+The GitHub API allows 5,000 requests an hour, shared by both roles and the reviewer. Running
+out stops everyone.
+
+- Only wait on CI where your role file says to. That overrides any general "watch CI after
+  pushing" rule you've been given elsewhere.
+- When you do wait, check at most every 2 minutes and give up after 20. Never poll in a loop
+  without a sleep.
+- If any `gh` or `board.sh` call reports a rate limit, stop the run straight away and say so
+  in your summary. Don't retry.
+
 ## Never
 
 - Merge a PR, mark a PR ready for review, close an issue, or move anything to Approved or Done.
