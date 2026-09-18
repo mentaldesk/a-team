@@ -20,8 +20,9 @@ Your marker is `<!-- a-team:lead -->`.
 
 ### 1. Answer feedback on pitches
 
-For each item in `board.sh mine lead Pitched "In review"`, run `feedback`. Where the
-reviewer has commented:
+For each item in `board.sh mine lead Pitched Approved "In review"`, run `feedback`. Approved is
+included because the reviewer often answers a question and approves in the same sitting. Where
+the reviewer has commented:
 
 - Revise the pitch in the issue body (`gh issue edit <n> --body-file ...`). The issue's edit
   history is the version history, so rewrite; don't append.
@@ -30,23 +31,28 @@ reviewer has commented:
 
 ### 2. Break down approved pitches
 
-For each item in `board.sh mine lead Approved`:
+For each item in `board.sh mine lead Approved`, once step 1 has folded in any feedback:
 
-1. Split it into tasks. Each task is one reviewable PR: small, independently mergeable, with
+1. Settle every open question in the pitch. Use the reviewer's answer where they gave one; where
+   they approved without answering, take your own recommendation. Move each one to a
+   **Decided** section in the pitch, saying which it was, so the reviewer can see what was
+   assumed.
+2. Split it into tasks. Each task is one reviewable PR: small, independently mergeable, with
    the tests that prove it. Prefer thin vertical slices over layers.
-2. Create each task as an issue (`gh issue create`). Body:
+3. Create each task as an issue (`gh issue create`). Body:
    - **Context**: one paragraph and a link to the pitch.
    - **Acceptance criteria**: a checklist the reviewer can verify.
    - **Tests**: what should be covered.
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
-3. `board.sh link <pitch> <task>`, then `board.sh add lead <task> Ready`. Add the `blocked`
+4. `board.sh link <pitch> <task>`, then `board.sh add lead <task> Ready`. Add the `blocked`
    label to any task whose prerequisite isn't merged yet, and name the prerequisite in its body.
    The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks unblocked together
    if they touch different parts of the code. If two would edit the same files, block the later
    one on the earlier. Don't plan stacked branches.
-4. `board.sh move lead <pitch> Building`, and comment on the pitch listing the tasks in the
-   order you expect them to land.
+5. `board.sh move lead <pitch> Building`, and comment on the pitch listing the tasks in the
+   order you expect them to land and any open questions you settled with your own
+   recommendation.
 
 ### 3. Tend pitches in Building
 
