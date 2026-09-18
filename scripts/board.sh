@@ -309,14 +309,25 @@ case "$CMD" in
     role=$1 n=$2 to=$3
     check_role "$role"
     is_state "$to" || die "unknown status '$to'"
-    [ -z "$(item "$n")" ] || die "#$n is already on the board (use move)"
     allowed "$role" None "$to" || die "$role may not add items as '$to'"
+    existing=$(item "$n")
+    if [ -n "$existing" ]; then
+      # The project's auto-add workflow may already have put a new issue on the board.
+      case "$(jq -r .status <<<"$existing")" in None | Idea) ;; *) die "#$n is already on the board (use move)" ;; esac
+      gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:$role -->" ||
+        die "#$n is already on the board and isn't $role's (use move)"
+    fi
     content=$(gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pulls" else "issues" end')
     if [ "$role" = lead ]; then
       case "$to" in
         Idea) gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:idea' >/dev/null ;;
         Exploring | Pitched) gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
       esac
+    fi
+    if [ -n "$existing" ]; then
+      set_status "$(jq -r .id <<<"$existing")" "$to"
+      echo "#$n: added as $to"
+      exit 0
     fi
     id=$(gh api graphql -F project="$(project_meta | jq -r .id)" \
       -F content="$(gh api "repos/$REPO/$content/$n" --jq .node_id)" -f query='

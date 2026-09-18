@@ -32,7 +32,6 @@
       "Bash(gh pr close *)",
       "Bash(gh issue close *)",
       "Bash(gh issue delete *)",
-      "Bash(gh repo *)",
       "Bash(gh api *merge*)",
       "Bash(gh api -X DELETE *)",
       "Bash(gh api --method DELETE *)",
@@ -44,7 +43,11 @@
       "Bash(git push * main:*)",
       "Bash(git push * HEAD:main*)",
       "Edit(~/code/a-team/**)",
-      "Write(~/code/a-team/**)"
+      "Write(~/code/a-team/**)",
+      "Bash(gh repo delete *)",
+      "Bash(gh repo edit *)",
+      "Bash(gh repo rename *)",
+      "Bash(gh repo archive *)"
     ]
   }
 }
