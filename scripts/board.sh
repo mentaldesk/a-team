@@ -22,6 +22,8 @@ OWNER=$(cfg .project.owner)
 NUMBER=$(cfg .project.number)
 FIELD=$(cfg .project.statusField)
 FIELD=${FIELD:-Status}
+PRIORITY=$(cfg .priorityField)
+PRIORITY=${PRIORITY:-Priority}
 REVIEWER=$(cfg .reviewer)
 [ -n "$NUMBER" ] || die "project.number is not set in $CONFIG"
 
@@ -140,9 +142,25 @@ case "$CMD" in
     ;;
 
   next)
-    items | jq 'map(select(.status == "Ready" and .type == "Issue"
-                           and (.labels | index("pitch") | not)
-                           and (.labels | index("blocked") | not))) | first'
+    ready=$(items | jq 'map(select(.status == "Ready" and .type == "Issue"
+                                   and (.labels | index("pitch") | not)
+                                   and (.labels | index("blocked") | not)))')
+    if [ "$(jq length <<<"$ready")" -eq 0 ]; then echo null; exit 0; fi
+    ranks=$(gh api graphql -F owner="$OWNER" -f query='query($owner: String!) {
+        organization(login: $owner) { issueFields(first: 50) { nodes {
+          ... on IssueFieldSingleSelect { name options { name } } } } } }' 2>/dev/null |
+      jq --arg f "$PRIORITY" '[.data.organization.issueFields.nodes[] | select(.name == $f) | .options[].name]' ||
+      echo '[]')
+    values=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="query(\$owner: String!, \$name: String!) {
+        repository(owner: \$owner, name: \$name) {
+          $(jq -r '.[] | "i\(.number): issue(number: \(.number)) { issueFieldValues(first: 20) { nodes {
+            ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldSingleSelect { name } } } } } }"' <<<"$ready")
+        } }" | jq --arg f "$PRIORITY" '.data.repository | with_entries(
+          .key |= ltrimstr("i") | .value = ([.value.issueFieldValues.nodes[] | select(.field.name == $f) | .name] | first))')
+    jq --argjson ranks "$ranks" --argjson values "$values" '
+      map(.priority = $values[.number | tostring])
+      | sort_by(.priority as $p | $ranks | index($p) // length)
+      | first' <<<"$ready"
     ;;
 
   move)
