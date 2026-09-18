@@ -4,12 +4,16 @@
   "reviewer": "jamescrosswell",
   "project": {
     "owner": "mentaldesk",
-    "number": null,
+    "number": 2,
     "statusField": "Status",
-    "statusMap": {}
+    "statusMap": {
+      "Idea": "Backlog"
+    }
   },
   "vision": "docs/vision.md",
-  "skills": ["tuicode"],
+  "skills": [
+    "tuicode"
+  ],
   "wip": {
     "pitched": 2,
     "inReview": 3

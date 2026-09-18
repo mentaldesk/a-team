@@ -32,6 +32,10 @@ Two kinds of item share the board:
   A task that can't start yet (its prerequisite isn't merged) sits in Ready with the `blocked`
   label.
 
+The reviewer uses the same board for their own work. Pitches carry the `pitch` label and tasks
+the Dev has claimed carry `a-team:dev`; anything else past Ready belongs to the reviewer.
+**Leave the reviewer's items alone**, even if they look stalled. `board.sh` refuses to move them.
+
 ## The board script
 
 `board.sh` is the only way to read or change Status. Never use `gh project` directly. The
@@ -40,7 +44,8 @@ answer. Don't work around it.
 
 ```
 board.sh <team> list [STATUS...]          # items, as JSON
-board.sh <team> wip                       # item counts per status
+board.sh <team> mine <role> [STATUS...]   # items your role owns
+board.sh <team> wip                       # counts per status: pitches, dev, reviewer
 board.sh <team> next                      # the next task Dev should take (or null)
 board.sh <team> move <role> <n> <STATUS>
 board.sh <team> add <role> <n> <STATUS>   # put an existing issue on the board
@@ -51,6 +56,8 @@ board.sh <team> children <n>              # sub-issues and whether they're close
 board.sh <team> pr <n>                    # the open PR that closes issue <n>
 board.sh <team> checks <pr>               # CI verdict: pass | fail | pending
 ```
+
+`setup` and `check` are for the reviewer when starting a team. Don't run them.
 
 Run it as `bash ~/code/a-team/scripts/board.sh ...`.
 

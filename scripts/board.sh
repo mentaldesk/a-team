@@ -46,6 +46,10 @@ check_role() {
   case "$1" in lead | dev) ;; *) die "unknown role '$1' (lead | dev)" ;; esac
 }
 
+own_label() {
+  case "$1" in lead) echo pitch ;; dev) echo a-team:dev ;; esac
+}
+
 items() {
   gh project item-list "$NUMBER" --owner "$OWNER" --limit 1000 --format json |
     jq --arg field "$(printf %s "$FIELD" | tr '[:upper:]' '[:lower:]')" --arg repo "$REPO" \
@@ -117,11 +121,22 @@ case "$CMD" in
     fi
     ;;
 
+  mine)
+    [ $# -ge 1 ] || die "usage: board.sh $TEAM mine <role> [STATUS...]"
+    role=$1
+    shift
+    check_role "$role"
+    items | jq --arg label "$(own_label "$role")" \
+      --argjson want "$(if [ $# -gt 0 ]; then printf '%s\n' "$@" | jq -R . | jq -s .; else echo null; fi)" '
+      map(select((.labels | index($label)) and ($want == null or (.status as $s | $want | index($s)))))'
+    ;;
+
   wip)
     items | jq '
       def counts: group_by(.status) | map({key: .[0].status, value: length}) | from_entries;
       {pitches: map(select(.labels | index("pitch"))) | counts,
-       tasks: map(select(.labels | index("pitch") | not)) | counts}'
+       dev: map(select(.labels | index("a-team:dev"))) | counts,
+       reviewer: map(select((.labels | index("pitch") or index("a-team:dev")) | not)) | counts}'
     ;;
 
   next)
@@ -138,10 +153,18 @@ case "$CMD" in
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board (use add)"
     from=$(jq -r .status <<<"$it")
+    label=$(own_label "$role")
+    allowed "$role" "$from" "$to" || die "$role may not move #$n from '$from' to '$to'"
     if [ "$role" = dev ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       die "dev does not move pitches"
     fi
-    allowed "$role" "$from" "$to" || die "$role may not move #$n from '$from' to '$to'"
+    case "$role:$from" in
+      "dev:Ready" | "lead:Idea")
+        gh issue edit "$n" -R "$REPO" --add-label "$label" >/dev/null ;;
+      *)
+        jq -e --arg l "$label" '.labels | index($l)' <<<"$it" >/dev/null ||
+          die "#$n isn't $role's (no '$label' label); leave it to the reviewer" ;;
+    esac
     set_status "$(jq -r .id <<<"$it")" "$to"
     echo "#$n: $from -> $to"
     ;;
@@ -234,6 +257,58 @@ case "$CMD" in
     unmapped=$(items | jq -r 'map(select(.status | startswith("?"))) | .[] | "  #\(.number) \(.status)"')
     [ -z "$unmapped" ] || { echo "items with a status outside the team's states:" >&2; echo "$unmapped" >&2; exit 1; }
     echo "ok: $OWNER project $NUMBER, field '$FIELD'"
+    ;;
+
+  setup)
+    dry_run=false
+    [ "${1:-}" = --dry-run ] && dry_run=true
+    lookup='query($owner: String!, $number: Int!, $field: String!) {
+      %s(login: $owner) { projectV2(number: $number) { field(name: $field) {
+        ... on ProjectV2SingleSelectField { id options { id name color description } } } } } }'
+    field=""
+    for kind in organization user; do
+      # shellcheck disable=SC2059
+      field=$(gh api graphql -F owner="$OWNER" -F number="$NUMBER" -F field="$FIELD" \
+        -f query="$(printf "$lookup" "$kind")" --jq ".data.$kind.projectV2.field" 2>/dev/null) && break
+    done
+    jq -e '.id' <<<"$field" >/dev/null 2>&1 || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
+    input=$(jq -n --argjson field "$field" --slurpfile cfg "$CONFIG" '
+      [ ["Idea", "GRAY", "A seed worth a look"],
+        ["Exploring", "PURPLE", "Lead is researching and writing a pitch"],
+        ["Pitched", "PINK", "Waiting on the reviewer: approve or comment"],
+        ["Approved", "GREEN", "Reviewer approved; Lead to break it down"],
+        ["Building", "BLUE", "Broken into tasks; tasks in flight"],
+        ["Ready", "BLUE", "A task Dev can pick up"],
+        ["In progress", "YELLOW", "Dev is working on it"],
+        ["In review", "ORANGE", "Waiting on the reviewer: merge, accept or comment"],
+        ["Done", "GREEN", "Merged or accepted"] ] as $states
+      | ($cfg[0].project.statusMap // {}) as $map
+      | ($states | map(($map[.[0]] // .[0]) as $name
+          | ($field.options | map(select(.name == $name)) | first) as $existing
+          | if $existing then $existing
+            else {name: $name, color: .[1], description: .[2]} end)) as $wanted
+      | ($field.options | map(select(.name as $n | $wanted | map(.name) | index($n) | not))) as $extra
+      | {fieldId: $field.id, singleSelectOptions: ($wanted + $extra)}')
+    if $dry_run; then
+      jq -r '.singleSelectOptions[] | "  \(if .id then "keep" else "add " end)  \(.name)"' <<<"$input"
+    else
+      jq -n --argjson input "$input" '{variables: {input: $input}, query:
+        "mutation($input: UpdateProjectV2FieldInput!) { updateProjectV2Field(input: $input) { clientMutationId } }"}' |
+        gh api graphql --input - >/dev/null
+      echo "Status options set on $OWNER project $NUMBER"
+    fi
+    existing=$(gh label list -R "$REPO" --limit 500 --json name --jq '.[].name')
+    while IFS='|' read -r name color description; do
+      if grep -qxF "$name" <<<"$existing"; then continue; fi
+      if $dry_run; then
+        echo "  add label $name"
+      else
+        gh label create "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null
+        echo "created label $name"
+      fi
+    done <<<"pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it
+a-team:dev|0e8a16|Claimed by the a-team Dev
+blocked|fbca04|Waiting on another issue"
     ;;
 
   *)

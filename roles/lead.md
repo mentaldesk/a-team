@@ -20,7 +20,7 @@ Your marker is `<!-- a-team:lead -->`.
 
 ### 1. Answer feedback on pitches
 
-For each item in **Pitched** and **In review** with the `pitch` label, run `feedback`. Where the
+For each item in `board.sh mine lead Pitched "In review"`, run `feedback`. Where the
 reviewer has commented:
 
 - Revise the pitch in the issue body (`gh issue edit <n> --body-file ...`). The issue's edit
@@ -30,7 +30,7 @@ reviewer has commented:
 
 ### 2. Break down approved pitches
 
-For each item in **Approved**:
+For each item in `board.sh mine lead Approved`:
 
 1. Split it into tasks. Each task is one reviewable PR: small, independently mergeable, with
    the tests that prove it. Prefer thin vertical slices over layers.
@@ -47,7 +47,7 @@ For each item in **Approved**:
 
 ### 3. Tend pitches in Building
 
-For each item in **Building**, run `children`:
+For each item in `board.sh mine lead Building`, run `children`:
 
 - Remove `blocked` from any task whose prerequisite has now closed.
 - When every task is closed, validate the whole: fetch `origin/main`, build it, try the feature
@@ -61,9 +61,12 @@ For each item in **Building**, run `children`:
 Only if **Pitched + Exploring** is below `wip.pitched`:
 
 1. Finish anything already in **Exploring** first.
-2. Otherwise take the top item in **Idea** (the reviewer's seeds come first), or research a new
-   opportunity: user pain in issues and discussions, what comparable tools do, gaps against the
-   vision. Create it as an issue with the `pitch` label and `board.sh add lead <n> Exploring`.
+2. Otherwise take the most promising item in **Idea** (the reviewer's seeds come first) with
+   `board.sh move lead <n> Exploring`, which labels it `pitch`. Or research a new opportunity
+   (user pain in issues and discussions, what comparable tools do, gaps against the vision),
+   create it as an issue with the `pitch` label, and `board.sh add lead <n> Exploring`.
+   For a reviewer's seed, keep their original text at the bottom of the body under **Original
+   idea** when you write the pitch.
 3. Write the pitch in the issue body:
    - **Problem**: who hits it and when, with evidence (links).
    - **Proposal**: what changes for the user.

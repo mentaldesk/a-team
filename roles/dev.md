@@ -17,8 +17,7 @@ Your marker is `<!-- a-team:dev -->`.
 
 ### 1. Tend PRs in review
 
-For each item in **In review** without the `pitch` label, find its PR with `board.sh pr <n>`,
-then:
+For each item in `board.sh mine dev "In review"`, find its PR with `board.sh pr <n>`, then:
 
 - `board.sh checks <pr>`. If it's `fail`, read the failing job's log
   (`gh run view <run-id> --log-failed`), fix the root cause in that PR's worktree, and push. A
@@ -30,16 +29,17 @@ then:
 
 ### 2. Resume anything In progress
 
-An item in **In progress** at the start of a run was left by a run that didn't finish. Pick it
+An item in `board.sh mine dev "In progress"` was left by a run that didn't finish. Pick it
 up from its worktree and branch if they exist. If it can't be finished, comment why and
 `board.sh move dev <n> Ready`.
 
 ### 3. Take new work
 
-Only if **In review** (tasks only, not pitches) is below `wip.inReview`:
+Only if the `dev` count for **In review** in `board.sh wip` is below `wip.inReview`:
 
 1. `board.sh next`. If it returns `null`, stop.
-2. `board.sh move dev <n> "In progress"`.
+2. `board.sh move dev <n> "In progress"`. This labels it `a-team:dev`, which is what makes it
+   yours.
 3. Read the issue and the pitch it belongs to. If the acceptance criteria are ambiguous or
    contradict the code, comment with the specific question, move it back to Ready with the
    `blocked` label, and go back to 1.
