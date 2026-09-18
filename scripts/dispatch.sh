@@ -89,3 +89,4 @@ for config in "$ROOT"/teams/*/team.json; do
     dispatch "$team" "$role" "$config"
   done
 done
+exit 0
