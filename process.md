@@ -64,7 +64,9 @@ board.sh <team> checks <pr>               # CI verdict: pass | fail | pending
 
 `setup` and `check` are for the reviewer when starting a team. Don't run them.
 
-Run it as `bash ~/code/a-team/scripts/board.sh ...`.
+Run it exactly as `bash ~/code/a-team/scripts/board.sh <team> ...`, one command per call. Don't
+put it in a shell variable or chain it with other commands: the permission check approves
+what it can read, and it can't tell what `bash $B` will run.
 
 ## Talking to the reviewer
 

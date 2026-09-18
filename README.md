@@ -47,17 +47,16 @@ instructions from this repo, so a change to how the team works is a commit here.
    `process.md`, or a `statusMap` in the team config from those names to the ones it has.
 3. Add `teams/<name>/team.json` (copy `teams/tuicode`) and check it with
    `bash scripts/board.sh <name> check`.
-4. Create two scheduled tasks in Claude Desktop, `a-team-<name>-lead` and `a-team-<name>-dev`,
-   each with this prompt (changing the team and role):
+4. Add a `workdir` to the team config (where the product repo's checkout and worktrees live),
+   then create two scheduled tasks in Claude Desktop, `a-team-<name>-lead` and
+   `a-team-<name>-dev`, each with the prompt printed by:
 
    ```
-   Run one a-team shift.
-
-   1. Run exactly this command, with nothing added or changed:
-      bash ~/code/a-team/scripts/run.sh <name> <role>
-   2. If it exits non-zero, report its output and stop.
-   3. Otherwise its output is your brief. Follow it.
+   bash scripts/task-prompt.sh <name> lead
+   bash scripts/task-prompt.sh <name> dev
    ```
 
-   Give them a permission mode that never stops to ask. A run that stalls on a prompt blocks
-   every later run of that task.
+   The prompt spells out what you authorise the role to do. Auto mode trusts the task prompt
+   as your intent, but treats the brief `run.sh` prints as command output, so without that
+   list it blocks ordinary work like claiming an issue. Set each task's permission mode to
+   Auto. A run that stalls on a prompt blocks every later run of that task.
