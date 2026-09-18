@@ -102,7 +102,8 @@ out stops everyone.
 
 ## Never
 
-- Merge a PR, mark a PR ready for review, close an issue, or move anything to Approved or Done.
+- Merge a PR, close an issue, or move anything to Approved or Done.
+- Mark a PR ready for review, except the Dev's own green PRs, as its role describes.
 - Push to the default branch, or force-push anything.
 - Edit this repository (`a-team`). If the process itself is getting in the way, or the reviewer
   has corrected the same thing twice, open an issue on `mentaldesk/a-team` describing the

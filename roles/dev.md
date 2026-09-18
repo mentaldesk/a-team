@@ -35,13 +35,14 @@ For each item in `board.sh mine dev "In review"`, find its PR with `board.sh pr 
   either the PR or the issue. Address each point, push, and reply with `board.sh comment` where
   the comment was made. If you disagree with a point, say why in the reply instead of changing
   the code.
+- If the PR is still a draft and `checks` says `pass`, mark it ready with `gh pr ready <pr>`.
 - Leave the item in In review. The reviewer merges.
 
 ### 3. Resume anything In progress
 
 An item in `board.sh mine dev "In progress"` was left by a run that didn't finish. Pick it
-up from its worktree and branch if they exist. If it can't be finished, comment why and
-`board.sh move dev <n> Ready`.
+up from its worktree and branch if they exist. If its draft PR is already up, carry on from
+step 4.8. If it can't be finished, comment why and `board.sh move dev <n> Ready`.
 
 ### 4. Take new work
 
@@ -59,9 +60,12 @@ Only if the `dev` count for **In review** in `board.sh wip` is below `wip.inRevi
 5. Build and run the tests locally until they pass.
 6. Push and open a **draft** PR. Body: a short summary, `Closes #<n>`, anything the reviewer
    should look at closely, and your marker. No test-plan section.
-7. `board.sh comment dev <n>` on the issue, one line: "Draft PR #<pr> is up." Then
-   `board.sh move dev <n> "In review"`.
+7. `board.sh comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
 8. Check `board.sh checks <pr>` every 2 minutes, for up to 20 minutes. Fix failures as in
-   step 2. If it's still pending after that, leave it for the next run.
+   step 2. If it's still pending after that, leave the item In progress for the next run.
+9. Once `checks` says `pass`, mark the PR ready (`gh pr ready <pr>`) and
+   `board.sh move dev <n> "In review"`. A PR is ready for the reviewer only when it's green:
+   never mark a failing or pending PR ready. This is the one exception to the reviewer's
+   general rule that PRs stay in draft.
 
 Take at most one new task per run.
