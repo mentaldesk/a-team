@@ -83,6 +83,8 @@ what it can read, and it can't tell what `bash $B` will run.
 ## Every run
 
 1. Start with the brief `run.sh` printed. It includes this file, your role and the team config.
+   The dispatcher starts you when there's something for your role to do, and your prompt says
+   what. Deal with that first, then go through your role's steps as usual.
 2. Check the board before doing anything else. If there is nothing for your role to do, say so
    in one line and stop. An empty run should cost almost nothing.
 3. Finish existing work before starting new work. Respect the WIP limits in the team config:

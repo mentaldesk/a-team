@@ -139,6 +139,60 @@ by_priority() {
     map(.priority = $values[.number | tostring]) | sort_by(.priority as $p | $ranks | index($p) // length)' <<<"$list"
 }
 
+pr_for() {
+  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
+    query($owner: String!, $name: String!, $n: Int!) {
+      repository(owner: $owner, name: $name) {
+        issue(number: $n) {
+          closedByPullRequestsReferences(first: 10, includeClosedPrs: false) {
+            nodes { number url isDraft headRefName }
+          }
+        }
+      }
+    }' --jq '.data.repository.issue.closedByPullRequestsReferences.nodes | first'
+}
+
+ci() {
+  local sha
+  sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
+  gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]' |
+    jq -s '
+      def failed: .conclusion as $c
+        | ["failure", "timed_out", "cancelled", "action_required", "startup_failure"] | index($c);
+      {
+        verdict: (if any(.[]; failed) then "fail"
+                  elif length == 0 or any(.[]; .status != "completed") then "pending"
+                  else "pass" end),
+        failing: map(select(failed) | {name, link: .html_url}),
+        pending: map(select(.status != "completed") | .name)
+      }'
+}
+
+# Conversation and line comments across the whole repo from the last day, as {n, author, at, body}.
+recent_comments() {
+  local since
+  since=$(jq -rn 'now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ")')
+  {
+    gh api --paginate "repos/$REPO/issues/comments?since=$since&per_page=100" \
+      --jq '.[] | {n: (.issue_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // "")}'
+    gh api --paginate "repos/$REPO/pulls/comments?since=$since&per_page=100" \
+      --jq '.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // "")}'
+  } | jq -s .
+}
+
+pr_reviews() {
+  gh api --paginate "repos/$REPO/pulls/$1/reviews" \
+    --jq '.[] | select(.body != "" or .state == "CHANGES_REQUESTED")
+          | {n: '"$1"', author: .user.login, at: .submitted_at, body: (.body // "")}' | jq -s .
+}
+
+# awaiting <comments> <role> <n>: true if the reviewer commented on #n after the role last did.
+awaiting() {
+  jq --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" '
+    map(select(.n == $n)) | (map(select(.body | contains($marker)) | .at) | max // "") as $since
+    | any(.[]; .author == $reviewer and (.body | contains("<!-- a-team:") | not) and .at > $since)' <<<"$1"
+}
+
 comments() {
   local n=$1 issue
   issue=$(gh api "repos/$REPO/issues/$n")
@@ -307,32 +361,85 @@ case "$CMD" in
 
   pr)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM pr <n>"
-    gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
-      query($owner: String!, $name: String!, $n: Int!) {
-        repository(owner: $owner, name: $name) {
-          issue(number: $n) {
-            closedByPullRequestsReferences(first: 10, includeClosedPrs: false) {
-              nodes { number url isDraft headRefName }
-            }
-          }
-        }
-      }' --jq '.data.repository.issue.closedByPullRequestsReferences.nodes | first'
+    pr_for "$1"
     ;;
 
   checks)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM checks <pr>"
-    sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
-    gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]' |
-      jq -s '
-        def failed: .conclusion as $c
-          | ["failure", "timed_out", "cancelled", "action_required", "startup_failure"] | index($c);
-        {
-          verdict: (if any(.[]; failed) then "fail"
-                    elif length == 0 or any(.[]; .status != "completed") then "pending"
-                    else "pass" end),
-          failing: map(select(failed) | {name, link: .html_url}),
-          pending: map(select(.status != "completed") | .name)
-        }'
+    ci "$1"
+    ;;
+
+  triggers)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM triggers <role>"
+    role=$1
+    check_role "$role"
+    all=$(items)
+    reasons=()
+    recent=$(recent_comments)
+    if [ "$role" = dev ]; then
+      while IFS= read -r row; do
+        n=$(jq -r .number <<<"$row")
+        status=$(jq -r .status <<<"$row")
+        pr=$(pr_for "$n")
+        numbers=("$n")
+        if [ "$pr" != null ]; then
+          p=$(jq -r .number <<<"$pr")
+          numbers+=("$p")
+          recent=$(jq -s 'add' <(echo "$recent") <(pr_reviews "$p"))
+          verdict=$(ci "$p" | jq -r .verdict)
+          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p")
+          [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ] &&
+            reasons+=("PR #$p is green but still a draft")
+        elif [ "$status" = "In progress" ]; then
+          reasons+=("#$n is In progress but has no PR: an earlier run didn't finish")
+        fi
+        for x in "${numbers[@]}"; do
+          [ "$(awaiting "$recent" dev "$x")" = true ] && reasons+=("reviewer feedback on #$x")
+        done
+      done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
+
+      checkout=$(cfg .checkout)
+      checkout=${checkout/#\~/$HOME}
+      if [ -d "$checkout" ]; then
+        while IFS= read -r branch; do
+          merged=$(gh api "repos/$REPO/pulls?head=${REPO%/*}:$branch&state=closed&per_page=5" \
+            --jq '[.[] | select(.merged_at != null and ((.body // "") | contains("<!-- a-team:dev -->")))][0].number // empty')
+          [ -n "$merged" ] && reasons+=("PR #$merged has merged: clean up its worktree")
+        done < <(git -C "$checkout" worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
+      fi
+
+      used=$(jq '[.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))] | length' <<<"$all")
+      if [ "$used" -lt "$(cfg .wip.worktrees)" ]; then
+        ready=$(jq -r '[.[] | select(.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)
+                                     and (.labels | index("blocked") | not))][0].number // empty' <<<"$all")
+        [ -n "$ready" ] && reasons+=("Ready task available (e.g. #$ready) and a free worktree")
+      fi
+      creative=false
+    else
+      while IFS= read -r row; do
+        n=$(jq -r .number <<<"$row")
+        status=$(jq -r .status <<<"$row")
+        [ "$(awaiting "$recent" lead "$n")" = true ] && reasons+=("reviewer feedback on #$n")
+        [ "$status" = Approved ] && reasons+=("#$n was approved: break it down")
+        if [ "$status" = Building ]; then
+          open=$(gh api "repos/$REPO/issues/$n/sub_issues" --jq '[length, (map(select(.state == "open")) | length)] | @tsv')
+          [ "${open%%$'\t'*}" -gt 0 ] && [ "${open##*$'\t'}" -eq 0 ] &&
+            reasons+=("all of #$n's tasks are closed: validate it")
+        fi
+      done < <(jq -c '.[] | select((.labels | index("pitch")) and .status != "Idea" and .status != "Done")' <<<"$all")
+
+      pitched=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Pitched")] | length' <<<"$all")
+      exploring=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")] | length' <<<"$all")
+      found=$(jq '[.[] | select((.labels | index("a-team:idea")) and .status == "Idea")] | length' <<<"$all")
+      ideas=$(jq '[.[] | select(.status == "Idea" and .type == "Issue")] | length' <<<"$all")
+      [ "$pitched" -lt "$(cfg .wip.pitched)" ] && [ "$exploring" -gt 0 ] &&
+        reasons+=("room in Pitched for a drafted pitch")
+      creative=false
+      { [ "$exploring" -lt "$(cfg .wip.exploring)" ] && [ "$ideas" -gt 0 ]; } ||
+        [ "$found" -lt "$(cfg .wip.ideas)" ] && creative=true
+    fi
+    jq -n --argjson creative "$creative" '{reasons: $ARGS.positional, creative: $creative}' \
+      --args "${reasons[@]+"${reasons[@]}"}"
     ;;
 
   check)

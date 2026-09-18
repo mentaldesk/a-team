@@ -14,8 +14,11 @@ Idea → Exploring → Pitched ⛔ → Approved → Building ──────�
                                               └─ tasks: Ready → In progress → In review ⛔ → Done
 ```
 
-Each role runs as a Claude Desktop scheduled task on this machine. Both roles read the same
-instructions from this repo, so a change to how the team works is a commit here.
+A dispatcher checks every 2 minutes whether a role has something to do: your feedback, an
+approved pitch, a merged PR, failing CI, a free slot. When it does, it starts a headless Claude
+Code session for that role. Checking is a plain script, so an idle team costs nothing. Both
+roles read their instructions from this repo, so a change to how the team works is a commit
+here.
 
 ## Layout
 
@@ -25,6 +28,10 @@ instructions from this repo, so a change to how the team works is a commit here.
 | `roles/lead.md`, `roles/dev.md` | What each role does on a run |
 | `scripts/board.sh` | The only way agents touch the board; enforces who may move what |
 | `scripts/run.sh` | Prints the brief a run starts from |
+| `scripts/dispatch.sh` | Starts a role's session when it has work (installed by `install.sh`) |
+| `scripts/status.sh` | What each role is doing and how its last run went |
+| `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
+| `settings/agents.json` | Permission rules for every run |
 | `teams/<name>/team.json` | One team: its repo, board, reviewer, skills and WIP limits |
 
 ## Working with the team
@@ -47,16 +54,30 @@ instructions from this repo, so a change to how the team works is a commit here.
    `process.md`, or a `statusMap` in the team config from those names to the ones it has.
 3. Add `teams/<name>/team.json` (copy `teams/tuicode`) and check it with
    `bash scripts/board.sh <name> check`.
-4. Add a `workdir` to the team config (where the product repo's checkout and worktrees live),
-   then create two scheduled tasks in Claude Desktop, `a-team-<name>-lead` and
-   `a-team-<name>-dev`, each with the prompt printed by:
+4. Set `workdir` (where the product repo's worktrees live), `checkout` (its main checkout) and
+   `dispatch.enabled` in the team config.
+5. Install the dispatcher, first in dry-run mode, which only logs what it would start:
 
    ```
-   bash scripts/task-prompt.sh <name> lead
-   bash scripts/task-prompt.sh <name> dev
+   bash scripts/install.sh --dry-run
+   bash scripts/status.sh
    ```
 
-   The prompt spells out what you authorise the role to do. Auto mode trusts the task prompt
-   as your intent, but treats the brief `run.sh` prints as command output, so without that
-   list it blocks ordinary work like claiming an issue. Set each task's permission mode to
-   Auto. A run that stalls on a prompt blocks every later run of that task.
+   When its decisions look right, `bash scripts/install.sh` runs it for real, and
+   `bash scripts/install.sh --uninstall` removes it.
+
+## How runs are started
+
+- **Triggers** (`board.sh <team> triggers <role>`) list what a role has to react to. Reactive work
+  starts within a couple of minutes. Pitching and discovering happen at most every
+  `dispatch.creativeEvery` minutes.
+- **One run per role at a time.** A run that's still going after `dispatch.maxRuntime` minutes
+  is stopped. If the same triggers are still there after a run, the dispatcher waits
+  `dispatch.retryAfter` minutes before trying again, so a problem the role can't fix doesn't
+  start a run every 2 minutes.
+- **Permissions** come from `settings/agents.json` and the task prompt in `tasks/`. Runs use
+  auto mode, and anything that would ask for permission is refused rather than waiting for
+  someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
+  editing this repo) hold even if the model tries.
+- **Logs** are under `~/.local/state/a-team/`. `scripts/status.sh` shows what each role is
+  doing and how its last run went.

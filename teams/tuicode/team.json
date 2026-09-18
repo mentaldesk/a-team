@@ -19,5 +19,12 @@
     "ideas": 6,
     "readyFloor": 3
   },
-  "workdir": "~/code/TuiCode"
+  "workdir": "~/code/TuiCode",
+  "checkout": "~/code/TuiCode/main",
+  "dispatch": {
+    "enabled": true,
+    "creativeEvery": 180,
+    "retryAfter": 60,
+    "maxRuntime": 120
+  }
 }
