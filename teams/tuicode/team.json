@@ -6,9 +6,7 @@
     "owner": "mentaldesk",
     "number": 2,
     "statusField": "Status",
-    "statusMap": {
-      "Idea": "Backlog"
-    }
+    "statusMap": {}
   },
   "vision": "docs/vision.md",
   "skills": [

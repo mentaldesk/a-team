@@ -47,9 +47,10 @@ For each item in `board.sh mine lead Approved`:
 
 ### 3. Tend pitches in Building
 
-For each item in `board.sh mine lead Building`, run `children`:
+For every item in `board.sh list Ready` with the `blocked` label, remove the label once the
+prerequisite its body names has closed. Then, for each item in `board.sh mine lead Building`,
+run `children`:
 
-- Remove `blocked` from any task whose prerequisite has now closed.
 - When every task is closed, validate the whole: fetch `origin/main`, build it, try the feature
   the way a user would, and compare it with the pitch's acceptance criteria. Then either
   - file follow-up tasks (as in step 2) if something's missing, or
