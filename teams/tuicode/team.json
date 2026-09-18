@@ -1,0 +1,17 @@
+{
+  "name": "tuicode",
+  "repo": "mentaldesk/TuiCode",
+  "reviewer": "jamescrosswell",
+  "project": {
+    "owner": "mentaldesk",
+    "number": null,
+    "statusField": "Status",
+    "statusMap": {}
+  },
+  "vision": "docs/vision.md",
+  "skills": ["tuicode"],
+  "wip": {
+    "pitched": 2,
+    "inReview": 3
+  }
+}
