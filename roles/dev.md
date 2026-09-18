@@ -31,8 +31,10 @@ For each item in `board.sh mine dev "In review"`, find its PR with `board.sh pr 
   (`gh run view <run-id> --log-failed`), fix the root cause in that PR's worktree, and push. A
   failure that's clearly transient (network, runner) is re-run with `gh run rerun <run-id>
   --failed` once the run has finished, not fixed.
-- `board.sh feedback dev <pr>`. Address each point, push, and reply with `board.sh comment`.
-  If you disagree with a point, say why in the reply instead of changing the code.
+- `board.sh feedback dev <pr>` and `board.sh feedback dev <n>`: the reviewer may comment on
+  either the PR or the issue. Address each point, push, and reply with `board.sh comment` where
+  the comment was made. If you disagree with a point, say why in the reply instead of changing
+  the code.
 - Leave the item in In review. The reviewer merges.
 
 ### 3. Resume anything In progress
@@ -57,7 +59,8 @@ Only if the `dev` count for **In review** in `board.sh wip` is below `wip.inRevi
 5. Build and run the tests locally until they pass.
 6. Push and open a **draft** PR. Body: a short summary, `Closes #<n>`, anything the reviewer
    should look at closely, and your marker. No test-plan section.
-7. `board.sh move dev <n> "In review"`.
+7. `board.sh comment dev <n>` on the issue, one line: "Draft PR #<pr> is up." Then
+   `board.sh move dev <n> "In review"`.
 8. Check `board.sh checks <pr>` every 2 minutes, for up to 20 minutes. Fix failures as in
    step 2. If it's still pending after that, leave it for the next run.
 

@@ -280,7 +280,8 @@ case "$CMD" in
     check_role "$role"
     comments "$n" | jq --arg marker "<!-- a-team:$role -->" --arg reviewer "$REVIEWER" '
       (map(select(.body | contains($marker)) | .at) | max // "") as $since
-      | map(select(.author == $reviewer and (.body | contains("<!-- a-team:") | not) and .at > $since))'
+      | map(select(.kind != "body" and .author == $reviewer
+                   and (.body | contains("<!-- a-team:") | not) and .at > $since))'
     ;;
 
   link)
