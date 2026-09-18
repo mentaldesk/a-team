@@ -13,8 +13,8 @@ Every item's Status is one of:
 | Status | Meaning | Who moves it here |
 |---|---|---|
 | Idea | A seed: a problem or opportunity worth a look | Reviewer or Lead |
-| Exploring | Lead is researching it and writing a pitch | Lead |
-| Pitched ⛔ | Pitch is ready; waiting on the reviewer | Lead |
+| Exploring | Lead has drafted the pitch; it waits here for room in Pitched | Lead |
+| Pitched ⛔ | Pitch is in front of the reviewer, a few at a time | Lead |
 | Approved | Reviewer agreed; Lead to break it down | **Reviewer only** |
 | Building | Broken into tasks; tasks are in flight | Lead |
 | Ready | A task Dev can pick up | Lead (or reviewer) |
@@ -83,7 +83,13 @@ Run it as `bash ~/code/a-team/scripts/board.sh ...`.
 1. Start with the brief `run.sh` printed. It includes this file, your role and the team config.
 2. Check the board before doing anything else. If there is nothing for your role to do, say so
    in one line and stop. An empty run should cost almost nothing.
-3. Finish existing work before starting new work. Respect the WIP limits in the team config.
+3. Finish existing work before starting new work. Respect the WIP limits in the team config:
+   - `worktrees`: the Dev's tasks In progress + In review, one worktree each
+   - `pitched`: pitches in front of the reviewer
+   - `exploring`: drafted pitches waiting for room in Pitched
+   - `ideas`: the Lead's discoveries waiting for the reviewer to prioritise or close them
+   - `readyFloor`: below this many unblocked Ready tasks, the Lead warns that the Dev is
+     running out of work
 4. Never wait for input. Nobody is watching the run. If you're stuck, write down why on the
    item (`board.sh comment`), move it back if your role can, and carry on with something else.
 5. End with a short summary: what moved, what's waiting on the reviewer, and anything odd.

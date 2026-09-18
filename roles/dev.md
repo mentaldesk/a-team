@@ -46,7 +46,8 @@ step 4.8. If it can't be finished, comment why and `board.sh move dev <n> Ready`
 
 ### 4. Take new work
 
-Only if the `dev` count for **In review** in `board.sh wip` is below `wip.inReview`:
+Only if your **In progress** plus **In review** count in `board.sh wip` (under `dev`) is
+below `wip.worktrees`:
 
 1. `board.sh next`. If it returns `null`, stop.
 2. `board.sh move dev <n> "In progress"`. This labels it `a-team:dev`, which is what makes it

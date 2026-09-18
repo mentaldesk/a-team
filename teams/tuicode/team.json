@@ -13,8 +13,10 @@
     "tuicode"
   ],
   "wip": {
-    "pitched": 2,
-    "inReview": 3,
-    "ideas": 5
+    "worktrees": 3,
+    "pitched": 3,
+    "exploring": 6,
+    "ideas": 6,
+    "readyFloor": 3
   }
 }

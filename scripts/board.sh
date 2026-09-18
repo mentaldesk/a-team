@@ -193,12 +193,19 @@ case "$CMD" in
   lead-next)
     state="${XDG_STATE_HOME:-$HOME/.local/state}/a-team/$TEAM/lead-turn"
     all=$(items)
-    pitching=$(jq '[.[] | select((.labels | index("pitch")) and (.status == "Exploring" or .status == "Pitched"))] | length' <<<"$all")
-    found=$(jq '[.[] | select((.labels | index("a-team:idea")) and .status == "Idea")] | length' <<<"$all")
+    count() { jq "[.[] | select($1)] | length" <<<"$all"; }
+    pitched=$(count '(.labels | index("pitch")) and .status == "Pitched"')
+    exploring=$(count '(.labels | index("pitch")) and .status == "Exploring"')
+    found=$(count '(.labels | index("a-team:idea")) and .status == "Idea"')
+    ready=$(count '.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not) and (.labels | index("blocked") | not)')
+    room=$(($(cfg '.wip.pitched') - pitched))
+    promote=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")]' <<<"$all" | by_priority |
+      jq --argjson room "$((room > 0 ? room : 0))" '.[:$room]')
+    exploring=$((exploring - $(jq length <<<"$promote")))
     idea=$(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$all" | by_priority |
       jq 'map(select((.labels | index("a-team:idea") | not) or .priority != null)) | first')
     can_pitch=false can_discover=false
-    [ "$pitching" -lt "$(cfg '.wip.pitched')" ] && [ "$idea" != null ] && can_pitch=true
+    [ "$exploring" -lt "$(cfg '.wip.exploring')" ] && [ "$idea" != null ] && can_pitch=true
     [ "$found" -lt "$(cfg '.wip.ideas')" ] && can_discover=true
     last=$(cat "$state" 2>/dev/null || echo discover)
     if $can_pitch && { [ "$last" = discover ] || ! $can_discover; }; then
@@ -206,16 +213,17 @@ case "$CMD" in
     elif $can_discover; then
       turn=discover
     else
-      jq -n --argjson p "$pitching" --argjson f "$found" \
-        '{turn: "none", reason: "\($p) pitches in Exploring/Pitched and \($f) unreviewed discoveries in Idea"}'
-      exit 0
+      turn=none
     fi
-    mkdir -p "$(dirname "$state")" && echo "$turn" >"$state"
-    if [ "$turn" = pitch ]; then
-      jq -n --argjson item "$idea" '{turn: "pitch", item: $item}'
-    else
-      jq -n --argjson room "$(($(cfg '.wip.ideas') - found))" '{turn: "discover", room: $room}'
-    fi
+    if [ "$turn" != none ]; then mkdir -p "$(dirname "$state")" && echo "$turn" >"$state"; fi
+    jq -n --argjson promote "$promote" --arg turn "$turn" --argjson item "$idea" \
+      --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" \
+      --argjson floor "$(cfg '.wip.readyFloor // 0')" '
+      {promote: $promote, turn: $turn}
+      + (if $turn == "pitch" then {item: $item}
+         elif $turn == "discover" then {room: $room}
+         else {reason: "Exploring and the discovery queue are both full, or there is no Idea to pitch"} end)
+      + {ready: $ready, readyLow: ($ready < $floor)}'
     ;;
 
   move)
