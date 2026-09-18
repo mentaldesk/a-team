@@ -28,6 +28,9 @@ Two kinds of item share the board:
 
 - A **pitch** carries the `pitch` label and travels Idea → Exploring → Pitched → Approved →
   Building → In review → Done. Its tasks are GitHub sub-issues of it.
+- A **document pitch** is a proposal that is itself a document, like the product vision. It's a
+  draft PR with the `pitch` label that goes straight to Pitched. The reviewer approves it by
+  merging, which moves it to Done.
 - A **task** is a single PR's worth of work and travels Ready → In progress → In review → Done.
   A task that can't start yet (its prerequisite isn't merged) sits in Ready with the `blocked`
   label.
@@ -49,7 +52,7 @@ board.sh <team> wip                       # counts per status: pitches, dev, rev
 board.sh <team> next                      # the next task Dev should take (or null):
                                           # highest issue Priority first, unset last
 board.sh <team> move <role> <n> <STATUS>
-board.sh <team> add <role> <n> <STATUS>   # put an existing issue on the board
+board.sh <team> add <role> <n> <STATUS>   # put an existing issue or PR on the board
 board.sh <team> comment <role> <n> <file> # post a comment, marked as yours
 board.sh <team> feedback <role> <n>       # reviewer comments you haven't answered yet
 board.sh <team> link <parent> <child>     # make <child> a sub-issue of <parent>

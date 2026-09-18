@@ -37,7 +37,7 @@ allowed() {
   case "$1:$2>$3" in
     "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
     "lead:Approved>Building" | "lead:Building>In review" | \
-    "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Ready" | \
+    "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready")
       return 0 ;;
   esac
@@ -218,8 +218,12 @@ case "$CMD" in
     is_state "$to" || die "unknown status '$to'"
     [ -z "$(item "$n")" ] || die "#$n is already on the board (use move)"
     allowed "$role" None "$to" || die "$role may not add items as '$to'"
+    content=$(gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pulls" else "issues" end')
+    if [ "$role" = lead ] && [ "$to" != Ready ]; then
+      gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null
+    fi
     id=$(gh api graphql -F project="$(project_meta | jq -r .id)" \
-      -F content="$(gh api "repos/$REPO/issues/$n" --jq .node_id)" -f query='
+      -F content="$(gh api "repos/$REPO/$content/$n" --jq .node_id)" -f query='
       mutation($project: ID!, $content: ID!) {
         addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } } }' \
       --jq .data.addProjectV2ItemById.item.id)

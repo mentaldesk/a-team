@@ -87,7 +87,7 @@ a comment and move it back to Idea rather than pitching it.
 If the vision file is missing and there's no open PR from branch `a-team/vision`, draft one from
 the README, the open issues and the code: who it's for, what it's trying to be, what it
 deliberately isn't, and the next few themes. Open it as a draft PR from `a-team/vision` with
-your marker in the body. Don't wait for CI.
+your marker in the body, then `board.sh add lead <pr> Pitched`. Don't wait for CI.
 
 Until the reviewer merges it, only do steps 1 to 3. If the PR is open, answer the reviewer's
 feedback on it (`board.sh feedback lead <pr>`) by pushing to the branch and replying.
