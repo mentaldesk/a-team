@@ -273,7 +273,7 @@ case "$CMD" in
     ;;
 
   lead-next)
-    state="${XDG_STATE_HOME:-$HOME/.local/state}/a-team/$TEAM/lead-turn"
+    state="${A_TEAM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/a-team}/$TEAM/lead-turn"
     all=$(items)
     count() { jq "[.[] | select($1)] | length" <<<"$all"; }
     pitched=$(count '(.labels | index("pitch")) and .status == "Pitched"')

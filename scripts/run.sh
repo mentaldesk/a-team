@@ -15,7 +15,7 @@ CONFIG="$ROOT/teams/$TEAM/team.json"
 command -v jq >/dev/null || { echo "run.sh: jq is not installed" >&2; exit 3; }
 gh auth status >/dev/null 2>&1 || { echo "run.sh: gh is not authenticated" >&2; exit 3; }
 
-if ! health=$(bash "$ROOT/scripts/board.sh" "$TEAM" check 2>&1); then
+if ! health=$("$ROOT/bin/a-team" board "$TEAM" check 2>&1); then
   printf 'run.sh: the board is not usable, so this run must stop and report:\n%s\n' "$health" >&2
   exit 3
 fi
@@ -23,7 +23,7 @@ fi
 cat <<EOF
 # a-team run: $ROLE for team '$TEAM'
 
-Board script: bash $ROOT/scripts/board.sh $TEAM <command> ...
+Board: a-team board $TEAM <command> ...
 Revision: $(git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || echo unknown)
 
 ## Team config
@@ -35,10 +35,10 @@ $(cat "$CONFIG")
 ## Board right now
 
 \`\`\`json
-$(bash "$ROOT/scripts/board.sh" "$TEAM" wip)
+$("$ROOT/bin/a-team" board "$TEAM" wip)
 \`\`\`
 
 EOF
-cat "$ROOT/process.md"
+sed "s/{{team}}/$TEAM/g" "$ROOT/process.md"
 echo
-cat "$ROOT/roles/$ROLE.md"
+sed "s/{{team}}/$TEAM/g" "$ROOT/roles/$ROLE.md"

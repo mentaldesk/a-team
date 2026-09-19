@@ -5,7 +5,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/a-team"
+STATE="${A_TEAM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/a-team}"
 
 ago() { local s=$(($(date +%s) - $1)); printf '%dh%02dm ago' $((s / 3600)) $((s % 3600 / 60)); }
 

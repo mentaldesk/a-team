@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#
+# a-team — the one command for running and working with the teams. Everything it runs is found
+# relative to this file, so any clone or worktree can be tried out with its own ./bin/a-team.
+#
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+
+usage() {
+  cat <<USAGE
+usage: a-team <command> [args...]
+
+  board [--dry-run] <team> <command> ...  read or change a team's board (see process.md)
+  dispatch [--dry-run]                    start any agent that has work (launchd runs this)
+  install [--dry-run | --uninstall]       run the dispatcher every 2 minutes on this Mac
+  status                                  what each agent is doing, and its last run
+  dashboard [team...]                     terminal dashboard of the teams
+  run <team> <role>                       print the brief a run starts from
+  task-prompt <team> <role>               print a role's scheduled prompt
+
+State lives in \${A_TEAM_STATE:-~/.local/state/a-team}. Set A_TEAM_STATE to try a clone
+without touching the real teams' state.
+USAGE
+}
+
+[ $# -ge 1 ] || { usage >&2; exit 2; }
+command=$1
+shift
+case "$command" in
+  board | dispatch | install | status | dashboard | run | task-prompt)
+    exec bash "$ROOT/scripts/$command.sh" "$@" ;;
+  help | -h | --help)
+    usage ;;
+  *)
+    echo "a-team: unknown command '$command'" >&2
+    usage >&2
+    exit 2 ;;
+esac

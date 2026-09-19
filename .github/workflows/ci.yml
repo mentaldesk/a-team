@@ -12,10 +12,10 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Syntax
-        run: for f in scripts/*.sh; do bash -n "$f"; done
+        run: for f in scripts/*.sh bin/a-team; do bash -n "$f"; done
 
       - name: ShellCheck
-        run: shellcheck --severity=warning scripts/*.sh
+        run: shellcheck --severity=warning scripts/*.sh bin/a-team
 
       - name: JSON config
         run: jq -e . settings/*.json teams/*/team.json >/dev/null

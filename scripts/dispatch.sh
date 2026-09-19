@@ -7,11 +7,11 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/a-team"
+STATE="${A_TEAM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/a-team}"
 DRY_RUN=false
 [ "${1:-}" = --dry-run ] && DRY_RUN=true
 mkdir -p "$STATE"
-echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$STATE/next-pass"
+$DRY_RUN || echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$STATE/next-pass"
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
 
@@ -32,7 +32,7 @@ dispatch() {
     return
   fi
 
-  if ! triggers=$(bash "$ROOT/scripts/board.sh" "$team" triggers "$role" 2>&1); then
+  if ! triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" 2>&1); then
     log "$team $role: triggers failed: $(tr '\n' ' ' <<<"$triggers")"
     return
   fi
@@ -61,20 +61,22 @@ dispatch() {
     return
   fi
 
-  local workdir logfile prompt
+  local workdir logfile prompt settings
   workdir=$(cfg .workdir)
   workdir=${workdir/#\~/$HOME}
   logfile="$dir/logs/$(date -u +%Y%m%dT%H%M%SZ).jsonl"
-  prompt="$(bash "$ROOT/scripts/task-prompt.sh" "$team" "$role")
+  settings="$dir/settings.json"
+  sed "s|{{root}}|/$ROOT|g" "$ROOT/settings/agents.json" >"$settings"
+  prompt="$("$ROOT/bin/a-team" task-prompt "$team" "$role")
 
 This run was started because:
 $(sed 's/^/- /' <<<"$reasons")"
 
   (
     cd "$workdir" || exit 1
-    nohup claude -p "$prompt" \
+    PATH="$ROOT/bin:$PATH" nohup claude -p "$prompt" \
       --permission-mode auto --permission-prompts none \
-      --settings "$ROOT/settings/agents.json" \
+      --settings "$settings" \
       --name "a-team · $team · $role" \
       --output-format stream-json --verbose \
       >"$logfile" 2>&1 &
