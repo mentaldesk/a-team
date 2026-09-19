@@ -1,7 +1,19 @@
 # Contributing to a-team
 
 Changing this repo changes how every team behaves on its next run. There's no build step and
-no copy to refresh: `run.sh` reads the role files from this checkout each time.
+no copy to refresh: `run.sh` reads the role files from the live checkout (`~/code/a-team`) each
+time.
+
+- **Every change goes through a pull request. Nobody pushes to `main`**: people and agents alike.
+  Work in a worktree outside the live checkout, branched from a fresh `origin/main`:
+
+  ```
+  git -C ~/code/a-team fetch origin
+  git -C ~/code/a-team worktree add ~/code/a-team.worktrees/<slug> -b <branch> origin/main
+  ```
+
+  Never edit the live checkout directly. It only changes by pulling merged work, and pulling is
+  what puts a change live for every team, so do it deliberately.
 
 - **Rules live in one place.** Anything both roles follow goes in `process.md`; anything one
   role does goes in its role file. Team-specific facts go in `teams/<name>/team.json` or in
