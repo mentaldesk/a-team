@@ -22,7 +22,9 @@ Every item's Status is one of:
 | In review ⛔ | A PR (task) or a finished pitch (validation) is waiting on the reviewer | Dev or Lead |
 | Done | Merged / accepted | **Reviewer only** (closing the issue) |
 
-⛔ marks a gate. Agents move work *into* a gate and stop. Only the reviewer moves it out.
+⛔ marks a gate. Agents move work *into* a gate and stop. Only the reviewer moves it out. The one
+exception: when the reviewer answers a Pitched pitch by asking to shelve or defer it, the Lead
+moves it back to Idea. `a-team board` allows that only while that comment is unanswered.
 
 Two kinds of item share the board:
 

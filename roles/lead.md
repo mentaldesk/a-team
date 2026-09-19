@@ -26,10 +26,15 @@ For each item in `a-team board {{team}} mine lead Pitched Approved Building "In 
 Approved is included because the reviewer often answers a question and approves in the same
 sitting. Where the reviewer has commented:
 
+- If the reviewer asks to shelve or defer a pitch in **Pitched**, run
+  `a-team board {{team}} move lead <n> Idea` **before** replying: the reply answers the feedback, and
+  after that the move is refused. Say in the reply that it went back to Idea and keeps its
+  priority, so you'll pitch it again once higher-priority ideas have had their turn, unless the
+  reviewer clears the priority.
 - Revise the pitch in the issue body (`gh issue edit <n> --body-file ...`). The issue's edit
   history is the version history, so rewrite; don't append.
 - Reply with `a-team board {{team}} comment` summarising what changed. Answer any direct questions.
-- Leave it where it is. The reviewer moves it on.
+- Otherwise leave it where it is. The reviewer moves it on.
 - On a pitch in **Building**, feedback is usually about its tasks. Rewrite tasks still in Ready
   that the Dev hasn't claimed, and add new ones, as in step 2. List any task that's now redundant
   for the reviewer to close. Tasks the Dev has already started are the Dev's: say in your reply
