@@ -6,7 +6,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/a-team"
+STATE="${A_TEAM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/a-team}"
 LABEL=com.a-team.dispatch
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
@@ -22,10 +22,10 @@ fi
 for tool in claude gh jq git; do
   command -v "$tool" >/dev/null || { echo "install.sh: $tool is not on PATH" >&2; exit 1; }
 done
-path=$(for tool in claude gh jq git dotnet; do command -v "$tool" 2>/dev/null | xargs -I{} dirname {}; done |
+path=$ROOT/bin:$(for tool in claude gh jq git dotnet; do command -v "$tool" 2>/dev/null | xargs -I{} dirname {}; done |
   awk '!seen[$0]++' | paste -sd: -):/usr/bin:/bin:/usr/sbin:/sbin
 
-args="<string>/bin/bash</string><string>$ROOT/scripts/dispatch.sh</string>"
+args="<string>$ROOT/bin/a-team</string><string>dispatch</string>"
 [ "${1:-}" = --dry-run ] && args="$args<string>--dry-run</string>"
 mkdir -p "$STATE" "$(dirname "$PLIST")"
 

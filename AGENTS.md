@@ -1,15 +1,15 @@
 # Contributing to a-team
 
 Changing this repo changes how every team behaves on its next run. There's no build step and
-no copy to refresh: `run.sh` reads the role files from the live checkout (`~/code/a-team`) each
-time.
+no copy to refresh: `run.sh` reads the role files from the live checkout (the clone the
+dispatcher was installed from) each time.
 
 - **Every change goes through a pull request. Nobody pushes to `main`**: people and agents alike.
   Work in a worktree outside the live checkout, branched from a fresh `origin/main`:
 
   ```
-  git -C ~/code/a-team fetch origin
-  git -C ~/code/a-team worktree add ~/code/a-team.worktrees/<slug> -b <branch> origin/main
+  git -C <live checkout> fetch origin
+  git -C <live checkout> worktree add <live checkout>.worktrees/<slug> -b <branch> origin/main
   ```
 
   Never edit the live checkout directly. It only changes by pulling merged work, and pulling is
@@ -25,10 +25,10 @@ time.
   treats the prompt as the reviewer's intent and the brief `run.sh` prints as command output,
   so authorisation that only lives in a role file doesn't count.
 - **Hard limits go in `settings/agents.json` as deny rules**, not only in prose.
-- **Keep triggers cheap and deterministic.** `board.sh triggers` runs every 2 minutes per role:
+- **Keep triggers cheap and deterministic.** `a-team board <team> triggers` runs every 2 minutes per role:
   no per-item API calls where one call for the whole repo will do.
 - **Try board changes against a real board, without changing it.** `list`, `wip`, `triggers`
-  and `check` only read. For commands that write, `board.sh --dry-run <team> ...` (or
+  and `check` only read. For commands that write, `a-team board --dry-run <team> ...` (or
   `A_TEAM_DRY_RUN=1`) does every read and every permission check for real, and prints each
   change it would have made instead of making it. New writes to GitHub go through `write` so
   dry-run covers them.

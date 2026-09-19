@@ -22,13 +22,13 @@ Your marker is `<!-- a-team:lead -->`.
 
 ### 1. Answer feedback on pitches
 
-For each item in `board.sh mine lead Pitched Approved Building "In review"`, run `feedback`.
+For each item in `a-team board {{team}} mine lead Pitched Approved Building "In review"`, run `feedback`.
 Approved is included because the reviewer often answers a question and approves in the same
 sitting. Where the reviewer has commented:
 
 - Revise the pitch in the issue body (`gh issue edit <n> --body-file ...`). The issue's edit
   history is the version history, so rewrite; don't append.
-- Reply with `board.sh comment` summarising what changed. Answer any direct questions.
+- Reply with `a-team board {{team}} comment` summarising what changed. Answer any direct questions.
 - Leave it where it is. The reviewer moves it on.
 - On a pitch in **Building**, feedback is usually about its tasks. Rewrite tasks still in Ready
   that the Dev hasn't claimed, and add new ones, as in step 2. List any task that's now redundant
@@ -37,7 +37,7 @@ sitting. Where the reviewer has commented:
 
 ### 2. Break down approved pitches
 
-For each item in `board.sh mine lead Approved`, once step 1 has folded in any feedback:
+For each item in `a-team board {{team}} mine lead Approved`, once step 1 has folded in any feedback:
 
 1. Settle every open question in the pitch. Use the reviewer's answer where they gave one; where
    they approved without answering, take your own recommendation. Move each one to a
@@ -61,40 +61,40 @@ For each item in `board.sh mine lead Approved`, once step 1 has folded in any fe
    - **Tests**: what should be covered.
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
-4. `board.sh link <pitch> <task>`, then `board.sh add lead <task> Ready`. For a task that
-   needs another merged first, `board.sh depends <task> <prerequisite>` and name the
+4. `a-team board {{team}} link <pitch> <task>`, then `a-team board {{team}} add lead <task> Ready`. For a task that
+   needs another merged first, `a-team board {{team}} depends <task> <prerequisite>` and name the
    prerequisite in its body. It becomes available to the Dev by itself when the prerequisite
    closes. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
    independent of each other if they touch different parts of the code. If two would edit the
    same files, make the later one depend on the earlier. Don't plan stacked branches.
-5. `board.sh move lead <pitch> Building`, and comment on the pitch listing the tasks in the
+5. `a-team board {{team}} move lead <pitch> Building`, and comment on the pitch listing the tasks in the
    order you expect them to land and any open questions you settled with your own
    recommendation.
 
 ### 3. Tend pitches in Building
 
-For each item in `board.sh mine lead Building`, run `children`:
+For each item in `a-team board {{team}} mine lead Building`, run `children`:
 
 - When every task is closed, validate the whole: fetch `origin/main`, build it, try the feature
   the way a user would, and compare it with the pitch's acceptance criteria. Then either
   - file follow-up tasks (as in step 2) if something's missing, or
   - comment a short validation report (what you tried, what you saw, anything the reviewer
-    should try themselves) and `board.sh move lead <pitch> "In review"`.
+    should try themselves) and `a-team board {{team}} move lead <pitch> "In review"`.
 
 ### 4. Promote, then pitch or discover
 
-Run `board.sh lead-next` once. It returns the pitches to show the reviewer now, and whether
+Run `a-team board {{team}} lead-next` once. It returns the pitches to show the reviewer now, and whether
 this run's new work is a pitch or a discovery. It alternates between the two so the reviewer
 gets a blend of their own ideas refined and new ones found, and it respects the WIP limits.
 
 **`promote`**: drafted pitches to move from Exploring to Pitched, highest priority first. A
 draft may have sat a while, so check each one against the current vision, the code, and
 anything the reviewer has said on other pitches since, and update it if needed. Then
-`board.sh move lead <n> Pitched`.
+`a-team board {{team}} move lead <n> Pitched`.
 
 **`turn`**:
 
-- `"pitch"`: `board.sh move lead <item> Exploring` (this labels it `pitch`) and write the pitch
+- `"pitch"`: `a-team board {{team}} move lead <item> Exploring` (this labels it `pitch`) and write the pitch
   (see *Writing a pitch*). Leave it in Exploring; a later run promotes it. It's the
   highest-priority Idea, so the reviewer wants it. Keep the reviewer's original text at the
   bottom of the body under **Original idea**. If the seed names a solution ("add X"), work out
@@ -106,7 +106,7 @@ anything the reviewer has said on other pitches since, and update it if needed. 
   an opportunity, not a solution: a need, pain point or desire, described from the user's side
   ("I lose my place when I switch between files", not "add a recent files list"). Title it that
   way too. Body: the **Opportunity**, the **Evidence** with links, **Why it fits** the vision,
-  and your marker. Then `board.sh add lead <n> Idea`. The reviewer gives it a priority if they
+  and your marker. Then `a-team board {{team}} add lead <n> Idea`. The reviewer gives it a priority if they
   want it pitched and closes it if not. Don't pitch it yourself.
 - `"none"`: nothing new to start.
 
@@ -145,7 +145,7 @@ One good pitch beats three thin ones.
 If the vision file is missing and there's no open PR from branch `a-team/vision`, draft one from
 the README, the open issues and the code: who it's for, what it's trying to be, what it
 deliberately isn't, and the next few themes. Open it as a draft PR from `a-team/vision` with
-your marker in the body, then `board.sh add lead <pr> Pitched`. Don't wait for CI.
+your marker in the body, then `a-team board {{team}} add lead <pr> Pitched`. Don't wait for CI.
 
 Until the reviewer merges it, only do steps 1 to 3. If the PR is open, answer the reviewer's
-feedback on it (`board.sh feedback lead <pr>`) by pushing to the branch and replying.
+feedback on it (`a-team board {{team}} feedback lead <pr>`) by pushing to the branch and replying.

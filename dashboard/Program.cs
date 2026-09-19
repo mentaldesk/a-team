@@ -8,11 +8,13 @@ if (root is null)
     return 1;
 }
 
-var stateRoot = Path.Combine(
-    Environment.GetEnvironmentVariable("XDG_STATE_HOME") is { Length: > 0 } xdg
-        ? xdg
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "state"),
-    "a-team");
+var stateRoot = Environment.GetEnvironmentVariable("A_TEAM_STATE") is { Length: > 0 } explicitState
+    ? explicitState
+    : Path.Combine(
+        Environment.GetEnvironmentVariable("XDG_STATE_HOME") is { Length: > 0 } xdg
+            ? xdg
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "state"),
+        "a-team");
 
 var teams = args.Length > 0 ? args : EnabledTeams(root);
 if (teams.Length == 0)

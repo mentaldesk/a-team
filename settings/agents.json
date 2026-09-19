@@ -1,8 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bash ~/code/a-team/scripts/board.sh *)",
-      "Bash(bash ~/code/a-team/scripts/run.sh *)",
+      "Bash(a-team board *)",
+      "Bash(a-team run *)",
       "Bash(git status *)",
       "Bash(git diff *)",
       "Bash(git log *)",
@@ -42,12 +42,14 @@
       "Bash(git push * main)",
       "Bash(git push * main:*)",
       "Bash(git push * HEAD:main*)",
-      "Edit(~/code/a-team/**)",
-      "Write(~/code/a-team/**)",
+      "Edit({{root}}/**)",
+      "Write({{root}}/**)",
       "Bash(gh repo delete *)",
       "Bash(gh repo edit *)",
       "Bash(gh repo rename *)",
-      "Bash(gh repo archive *)"
+      "Bash(gh repo archive *)",
+      "Bash(a-team dispatch*)",
+      "Bash(a-team install*)"
     ]
   }
 }

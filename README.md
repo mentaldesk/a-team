@@ -26,11 +26,12 @@ here.
 |---|---|
 | `process.md` | The shared rules: board states, gates, markers, what agents never do |
 | `roles/lead.md`, `roles/dev.md` | What each role does on a run |
-| `scripts/board.sh` | The only way agents touch the board; enforces who may move what |
-| `scripts/run.sh` | Prints the brief a run starts from |
-| `scripts/dispatch.sh` | Starts a role's session when it has work (installed by `install.sh`) |
-| `scripts/status.sh` | What each role is doing and how its last run went |
-| `dashboard/` | A terminal dashboard of the team (`scripts/dashboard.sh`) |
+| `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `dashboard`, `run` |
+| `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
+| `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
+| `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
+| `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
+| `dashboard/` | `a-team dashboard`: a terminal dashboard of the teams |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
 | `teams/<name>/team.json` | One team: its repo, board, reviewer, skills and WIP limits |
@@ -55,22 +56,23 @@ here.
 2. Create or pick a Project for the repo. Its Status field needs the nine options in
    `process.md`, or a `statusMap` in the team config from those names to the ones it has.
 3. Add `teams/<name>/team.json` (copy `teams/tuicode`) and check it with
-   `bash scripts/board.sh <name> check`.
+   `./bin/a-team board <name> check`.
 4. Set `workdir` (where the product repo's worktrees live), `checkout` (its main checkout) and
    `dispatch.enabled` in the team config.
 5. Install the dispatcher, first in dry-run mode, which only logs what it would start:
 
    ```
-   bash scripts/install.sh --dry-run
-   bash scripts/status.sh
+   ./bin/a-team install --dry-run
+   ./bin/a-team status
    ```
 
-   When its decisions look right, `bash scripts/install.sh` runs it for real, and
-   `bash scripts/install.sh --uninstall` removes it.
+   When its decisions look right, `./bin/a-team install` runs it for real, and
+   `./bin/a-team install --uninstall` removes it. The dispatcher runs from the clone you
+   installed it from.
 
 ## How runs are started
 
-- **Triggers** (`board.sh <team> triggers <role>`) list what a role has to react to. Reactive work
+- **Triggers** (`a-team board <team> triggers <role>`) list what a role has to react to. Reactive work
   starts within a couple of minutes. Pitching and discovering happen at most every
   `dispatch.creativeEvery` minutes.
 - **One run per role at a time.** A run that's still going after `dispatch.maxRuntime` minutes
@@ -81,13 +83,13 @@ here.
   auto mode, and anything that would ask for permission is refused rather than waiting for
   someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
   editing this repo) hold even if the model tries.
-- **Logs** are under `~/.local/state/a-team/`. `scripts/status.sh` shows what each role is
+- **Logs** are under `~/.local/state/a-team/` (or `$A_TEAM_STATE`). `a-team status` shows what each role is
   doing and how its last run went.
 
 ## Watching the team
 
 ```
-bash scripts/dashboard.sh [team...]
+./bin/a-team dashboard [team...]
 ```
 
 One pane per agent. The title shows whether it's running (●) or idle (○). Under it: how long
@@ -100,3 +102,18 @@ Tab or the arrow keys select an agent (▶). PgUp/PgDn/Home/End scroll its sessi
 stops it following new output until you press End. Esc quits.
 
 It needs the .NET 10 SDK.
+
+## Trying out a clone or worktree
+
+`bin/a-team` runs the code next to it, so any clone or worktree can be tried out while the
+installed dispatcher keeps running the teams:
+
+```
+./bin/a-team dashboard
+./bin/a-team board tuicode --dry-run move dev 160 "In progress"
+A_TEAM_STATE=/tmp/a-team-test ./bin/a-team dispatch --dry-run
+```
+
+Give a clone's dispatcher its own `A_TEAM_STATE`, or it shares state with the real one. When a
+dispatcher starts an agent, it puts its own `bin` first on the agent's `PATH` and fills in the
+permission rules from its own location, so the agent uses that same copy of a-team.
