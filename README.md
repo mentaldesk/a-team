@@ -79,7 +79,7 @@ here.
 - **Permissions** come from `settings/agents.json` and the task prompt in `tasks/`. Runs use
   auto mode, and anything that would ask for permission is refused rather than waiting for
   someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
-  editing this repo) hold even if the model tries.
+  editing or updating the live checkout at `~/code/a-team`) hold even if the model tries.
 - **Logs** are under `~/.local/state/a-team/`. `scripts/status.sh` shows what each role is
   doing and how its last run went.
 

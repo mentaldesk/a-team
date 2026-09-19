@@ -47,7 +47,18 @@
       "Bash(gh repo delete *)",
       "Bash(gh repo edit *)",
       "Bash(gh repo rename *)",
-      "Bash(gh repo archive *)"
+      "Bash(gh repo archive *)",
+      "Bash(git -C ~/code/a-team pull*)",
+      "Bash(git -C ~/code/a-team checkout*)",
+      "Bash(git -C ~/code/a-team switch*)",
+      "Bash(git -C ~/code/a-team reset*)",
+      "Bash(git -C ~/code/a-team merge*)",
+      "Bash(git -C ~/code/a-team rebase*)",
+      "Bash(git -C ~/code/a-team commit*)",
+      "Bash(git -C ~/code/a-team stash*)",
+      "Bash(git -C ~/code/a-team restore*)",
+      "Bash(cd ~/code/a-team && git *)",
+      "Bash(cd ~/code/a-team; git *)"
     ]
   }
 }
