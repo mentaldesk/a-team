@@ -6,13 +6,16 @@ installed copy is read afresh on every run, so an upgrade takes effect on the ne
 nothing to restart.
 
 - **Every change goes through a pull request. Nobody pushes to `main`**: people and agents alike.
-  Work in a worktree branched from a fresh `origin/main`, and try it out with that worktree's own
-  `./bin/a-team` (README, *Trying out a clone or worktree*):
+  Keep the main checkout at `a-team/main` (read-only, never committed to) and give each branch
+  its own worktree as a sibling, named after the branch, branched from a fresh `origin/main`:
 
   ```
-  git -C <your clone> fetch origin
-  git -C <your clone> worktree add <your clone>.worktrees/<slug> -b <branch> origin/main
+  git -C a-team/main fetch origin
+  git -C a-team/main worktree add ../<slug> -b <branch> origin/main
   ```
+
+  Try a change out with that worktree's own `./bin/a-team` (README, *Trying out a clone or
+  worktree*).
 
 - **Rules live in one place.** Anything both roles follow goes in `process.md`; anything one
   role does goes in its role file. Team-specific facts go in the team's config (see `examples/team.json`) or in
