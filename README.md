@@ -70,18 +70,17 @@ release.
    your GitHub login as `reviewer`, the Project, and where the product is checked out on this
    machine (`workdir` for its worktrees, `checkout` for its main clone). `a-team teams` lists
    the teams it finds. Check the board with
-   `./bin/a-team board <name> check`.
+   `a-team board <name> check`.
 4. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
 5. Install the dispatcher, first in dry-run mode, which only logs what it would start:
 
    ```
-   ./bin/a-team install --dry-run
-   ./bin/a-team status
+   a-team install --dry-run
+   a-team status
    ```
 
-   When its decisions look right, `./bin/a-team install` runs it for real, and
-   `./bin/a-team install --uninstall` removes it. The dispatcher runs from the clone you
-   installed it from.
+   When its decisions look right, `a-team install` runs it for real, and
+   `a-team install --uninstall` removes it.
 
 Team configs are yours, not part of a-team: they live in `~/.config/a-team/teams/`
 (`$A_TEAM_CONFIG/teams/` to use another folder). To version them or share them across machines,
@@ -106,7 +105,7 @@ keep that folder in a repo of your own and link it into place.
 ## Watching the team
 
 ```
-./bin/a-team dashboard [team...]
+a-team dashboard [team...]
 ```
 
 One pane per agent. The title shows whether it's running (●) or idle (○). Under it: how long

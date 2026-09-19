@@ -118,6 +118,8 @@ out stops everyone.
 - Merge a PR, close an issue, or move anything to Approved or Done.
 - Mark a PR ready for review, except the Dev's own green PRs, as its role describes.
 - Push to the default branch, or force-push anything.
-- Edit this repository (`a-team`). If the process itself is getting in the way, or the reviewer
-  has corrected the same thing twice, open an issue on `mentaldesk/a-team` describing the
-  problem and the change you'd suggest.
+- Change the a-team you run from, or how your team works, on your own initiative. If the process
+  itself is getting in the way, or the reviewer has corrected the same thing twice, open an issue
+  on `mentaldesk/a-team` describing the problem and the change you'd suggest. If your team works
+  on a-team itself, that issue is an Idea on your own board like any other, and the change
+  reaches the running teams only when the reviewer releases it.

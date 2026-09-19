@@ -89,7 +89,7 @@ jobs:
       - name: Publish dashboard
         run: >
           dotnet publish dashboard/Dashboard.csproj -c Release -r ${{ matrix.rid }}
-          -p:Version=${{ needs.version.outputs.version }} -o publish
+          -p:MinVerVersionOverride=${{ needs.version.outputs.version }} -o publish
 
       - name: Package
         env:
