@@ -166,6 +166,21 @@ agent_written() {
   gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev) -->'
 }
 
+# The Idea the Lead should pitch next: the reviewer's own, or any the reviewer has prioritised.
+pitchable_idea() {
+  local candidate
+  while IFS= read -r candidate; do
+    if [ "$(jq -r .priority <<<"$candidate")" = null ] &&
+      { jq -e '.labels | index("a-team:idea")' <<<"$candidate" >/dev/null ||
+        agent_written "$(jq -r .number <<<"$candidate")"; }; then
+      continue
+    fi
+    echo "$candidate"
+    return
+  done < <(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$1" | by_priority | jq -c '.[]')
+  echo null
+}
+
 pr_for() {
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
     query($owner: String!, $name: String!, $n: Int!) {
@@ -284,22 +299,15 @@ case "$CMD" in
     room=$(($(cfg '.wip.pitched') - pitched))
     promote=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")]' <<<"$all" | by_priority |
       jq --argjson room "$((room > 0 ? room : 0))" '.[:$room]')
+    idle=false
+    [ $((pitched + exploring)) -eq 0 ] && idle=true
     exploring=$((exploring - $(jq length <<<"$promote")))
-    idea=null
-    while IFS= read -r candidate; do
-      if [ "$(jq -r .priority <<<"$candidate")" = null ] &&
-        { jq -e '.labels | index("a-team:idea")' <<<"$candidate" >/dev/null ||
-          agent_written "$(jq -r .number <<<"$candidate")"; }; then
-        continue
-      fi
-      idea=$candidate
-      break
-    done < <(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$all" | by_priority | jq -c '.[]')
+    idea=$(pitchable_idea "$all")
     can_pitch=false can_discover=false
     [ "$exploring" -lt "$(cfg '.wip.exploring')" ] && [ "$idea" != null ] && can_pitch=true
     [ "$found" -lt "$(cfg '.wip.ideas')" ] && can_discover=true
     last=$(cat "$state" 2>/dev/null || echo discover)
-    if $can_pitch && { [ "$last" = discover ] || ! $can_discover; }; then
+    if $can_pitch && { [ "$last" = discover ] || ! $can_discover || $idle; }; then
       turn=pitch
     elif $can_discover; then
       turn=discover
@@ -492,6 +500,10 @@ case "$CMD" in
       ideas=$(jq '[.[] | select(.status == "Idea" and .type == "Issue")] | length' <<<"$all")
       [ "$pitched" -lt "$(cfg .wip.pitched)" ] && [ "$exploring" -gt 0 ] &&
         reasons+=("room in Pitched for a drafted pitch")
+      if [ "$pitched" -eq 0 ] && [ "$exploring" -eq 0 ]; then
+        idea=$(pitchable_idea "$all" | jq -r '.number // empty')
+        [ -n "$idea" ] && reasons+=("nothing pitched or being drafted: pitch an Idea (e.g. #$idea)")
+      fi
       creative=false
       { [ "$exploring" -lt "$(cfg .wip.exploring)" ] && [ "$ideas" -gt 0 ]; } ||
         [ "$found" -lt "$(cfg .wip.ideas)" ] && creative=true

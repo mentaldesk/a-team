@@ -90,7 +90,8 @@ keep that folder in a repo of your own and link it into place.
 
 - **Triggers** (`a-team board <team> triggers <role>`) list what a role has to react to. Reactive work
   starts within a couple of minutes. Pitching and discovering happen at most every
-  `dispatch.creativeEvery` minutes.
+  `dispatch.creativeEvery` minutes, except that the Lead pitches straight away when nothing is
+  Pitched or Exploring, so the reviewer always has a pitch to decide on.
 - **One run per role at a time.** A run that's still going after `dispatch.maxRuntime` minutes
   is stopped. If the same triggers are still there after a run, the dispatcher waits
   `dispatch.retryAfter` minutes before trying again, so a problem the role can't fix doesn't
