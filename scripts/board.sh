@@ -54,8 +54,10 @@ is_state() {
 }
 
 allowed() {
+  # lead:Pitched>Idea is gated again in `move`: only with unanswered reviewer feedback.
   case "$1:$2>$3" in
     "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
+    "lead:Pitched>Idea" | \
     "lead:Approved>Building" | "lead:Building>In review" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready")
@@ -254,6 +256,14 @@ comments() {
   } | jq -s 'sort_by(.at)'
 }
 
+# The reviewer's comments on #<n> since <role> last answered. What `feedback` returns.
+unanswered_feedback() {
+  comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --arg reviewer "$REVIEWER" '
+    (map(select(.body | contains($marker)) | .at) | max // "") as $since
+    | map(select(.kind != "body" and .author == $reviewer
+                 and (.body | contains("<!-- a-team:") | not) and .at > $since))'
+}
+
 case "$CMD" in
   list)
     if [ $# -eq 0 ]; then
@@ -338,6 +348,10 @@ case "$CMD" in
     if [ "$role" = dev ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       die "dev does not move pitches"
     fi
+    if [ "$role:$from>$to" = "lead:Pitched>Idea" ] &&
+      [ "$(unanswered_feedback lead "$n" | jq length)" -eq 0 ]; then
+      die "lead may move #$n out of Pitched only when the reviewer has asked (no unanswered reviewer feedback on #$n)"
+    fi
     case "$role:$from" in
       "dev:Ready" | "lead:Idea")
         write "label #$n $label" gh issue edit "$n" -R "$REPO" --add-label "$label" >/dev/null ;;
@@ -397,10 +411,7 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM feedback <role> <n>"
     role=$1 n=$2
     check_role "$role"
-    comments "$n" | jq --arg marker "<!-- a-team:$role -->" --arg reviewer "$REVIEWER" '
-      (map(select(.body | contains($marker)) | .at) | max // "") as $since
-      | map(select(.kind != "body" and .author == $reviewer
-                   and (.body | contains("<!-- a-team:") | not) and .at > $since))'
+    unanswered_feedback "$role" "$n"
     ;;
 
   link)
