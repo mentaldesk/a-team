@@ -19,3 +19,16 @@ no copy to refresh: `run.sh` reads the role files from this checkout each time.
   `check` tells you whether a board has every status the team needs.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
+
+## Dashboard UI
+
+`dashboard/` is a Terminal.Gui 2.1 app, the same stack as TuiCode.
+
+- Build UI from Terminal.Gui's [built-in views](https://tui-cs.github.io/Terminal.Gui/docs/views) before writing a
+  custom one. `LogView` is custom only because `TextView` can't scroll without moving its cursor.
+- Pick the control that shows what a value can be: `CheckBox` for on/off, `OptionSelector<T>` for 2 to 4 choices,
+  `FlagSelector<T>` for several on/off flags, `NumericUpDown<T>` (with a minimum and maximum) for a number,
+  `DropDownList<T>` or `ListView` for longer lists, `TextField` for free text. Never make a plain label cycle through
+  values on Space: nothing tells the user it can change.
+- When describing UI in an issue or PR, name the control for each element and sketch it in the mockup, e.g.
+  `[x] Follow output`, `(•) All ( ) Running`, `Refresh: [ 2 ▲▼]s`.
