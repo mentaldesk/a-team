@@ -99,7 +99,7 @@ jobs:
           stage="stage/a-team"
           mkdir -p "$stage/libexec" dist
           cp -R bin scripts roles tasks settings examples process.md README.md "$stage/"
-          [ ! -f LICENSE ] || cp LICENSE "$stage/"
+          cp LICENSE "$stage/"
           cp publish/a-team-dashboard "$stage/libexec/"
           echo "$VERSION" > "$stage/VERSION"
           archive="a-team-$VERSION-$RID.tar.gz"
@@ -158,17 +158,30 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
 
-      - name: Update formula
+      - name: Open tap PR
         if: steps.tap.outputs.ok == 'true'
         env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.version.outputs.tag }}
         run: |
           mkdir -p tap/Formula
           cp a-team.rb tap/Formula/a-team.rb
           cd tap
+          if git diff --quiet -- Formula/a-team.rb && git ls-files --error-unmatch Formula/a-team.rb >/dev/null 2>&1; then
+            echo "Formula already at $VERSION"
+            exit 0
+          fi
+          branch="a-team-$VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
           git add Formula/a-team.rb
-          git diff --cached --quiet && { echo "Formula already at $VERSION"; exit 0; }
           git commit -m "a-team $VERSION"
-          git push
+          git push --force-with-lease -u origin "$branch"
+          body="Updates \`a-team\` to $VERSION. Release: $RELEASE_URL"
+          gh pr view "$branch" >/dev/null 2>&1 || gh pr create --base main --head "$branch" --title "a-team $VERSION" --body "$body"
+          # The tap's own CI (brew audit, install and test on every platform) gates the merge.
+          if ! gh pr merge "$branch" --auto --squash --delete-branch; then
+            echo "::warning::Auto-merge isn't available on the tap, so the formula PR needs merging by hand once its checks pass: $(gh pr view "$branch" --json url --jq .url)"
+          fi

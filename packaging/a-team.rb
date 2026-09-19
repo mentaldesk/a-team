@@ -1,6 +1,7 @@
 class ATeam < Formula
   desc "Lead and Dev team of Claude agents that works a repo through its GitHub Project"
   homepage "https://github.com/mentaldesk/a-team"
+  license "MIT"
 
   depends_on "gh"
   depends_on "jq"
