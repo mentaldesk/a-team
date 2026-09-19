@@ -26,9 +26,8 @@ no copy to refresh: `run.sh` reads the role files from this checkout each time.
 
 - Build UI from Terminal.Gui's [built-in views](https://tui-cs.github.io/Terminal.Gui/docs/views) before writing a
   custom one. `LogView` is custom only because `TextView` can't scroll without moving its cursor.
-- Pick the control that shows what a value can be: `CheckBox` for on/off, `OptionSelector<T>` for 2 to 4 choices,
-  `FlagSelector<T>` for several on/off flags, `NumericUpDown<T>` (with a minimum and maximum) for a number,
-  `DropDownList<T>` or `ListView` for longer lists, `TextField` for free text. Never make a plain label cycle through
-  values on Space: nothing tells the user it can change.
+- Pick an appropriate control for the input (e.g. `CheckBox` for on/off, `OptionSelector<T>` for a limited number of choices,
+  `FlagSelector<T>` for several on/off flags, `NumericUpDown<T>` (with a minimum and maximum) for a numbers,
+  `DropDownList<T>` or `ListView` for longer lists, `TextField` for free text).
 - When describing UI in an issue or PR, name the control for each element and sketch it in the mockup, e.g.
   `[x] Follow output`, `(•) All ( ) Running`, `Refresh: [ 2 ▲▼]s`.
