@@ -47,7 +47,8 @@ dispatch() {
 
   fingerprint=$(shasum <<<"$reasons" | cut -c1-12)
   if [ "$fingerprint" = "$(cat "$dir/${prefix}fingerprint" 2>/dev/null)" ] &&
-    [ $((now - last)) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ]; then
+    [ $((now - last)) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] &&
+    { $DRY_RUN || grep -q '"type":"result"' "$dir/latest.jsonl" 2>/dev/null; }; then
     return
   fi
   echo "$now" >"$dir/${prefix}last-start"

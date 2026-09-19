@@ -37,6 +37,7 @@ cat >"$PLIST" <<PLIST
   <key>ProgramArguments</key><array>$args</array>
   <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><true/>
+  <key>AbandonProcessGroup</key><true/>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>$path</string>
