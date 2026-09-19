@@ -97,8 +97,8 @@ tell what `$B` will run.
    - `pitched`: pitches in front of the reviewer
    - `exploring`: drafted pitches waiting for room in Pitched
    - `ideas`: the Lead's discoveries waiting for the reviewer to prioritise or close them
-   - `readyFloor`: below this many unblocked Ready tasks, the Lead warns that the Dev is
-     running out of work
+   - `readyFloor`: below this many Ready tasks the Dev can start now, the Lead warns that the
+     Dev is running out of work
 4. Never wait for input. Nobody is watching the run. If you're stuck, write down why on the
    item (`a-team board {{team}} comment`), move it back if your role can, and carry on with something else.
 5. End with a short summary: what moved, what's waiting on the reviewer, and anything odd.

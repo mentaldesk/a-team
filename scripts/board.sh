@@ -264,6 +264,11 @@ unanswered_feedback() {
                  and (.body | contains("<!-- a-team:") | not) and .at > $since))'
 }
 
+# Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
+READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
+STARTABLE="$READY_TASK"' and (.labels | index("blocked") | not) and .blockedBy == 0'
+UNSTARTABLE="$READY_TASK"' and ((.labels | index("blocked")) or .blockedBy > 0)'
+
 case "$CMD" in
   list)
     if [ $# -eq 0 ]; then
@@ -293,9 +298,7 @@ case "$CMD" in
     ;;
 
   next)
-    items | jq 'map(select(.status == "Ready" and .type == "Issue"
-                           and (.labels | index("pitch") | not)
-                           and (.labels | index("blocked") | not) and .blockedBy == 0))' | by_priority | jq first
+    items | jq "map(select($STARTABLE))" | by_priority | jq first
     ;;
 
   lead-next)
@@ -305,7 +308,8 @@ case "$CMD" in
     pitched=$(count '(.labels | index("pitch")) and .status == "Pitched"')
     exploring=$(count '(.labels | index("pitch")) and .status == "Exploring"')
     found=$(count '(.labels | index("a-team:idea")) and .status == "Idea"')
-    ready=$(count '.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not) and (.labels | index("blocked") | not)')
+    ready=$(count "$STARTABLE")
+    blocked=$(count "$UNSTARTABLE")
     room=$(($(cfg '.wip.pitched') - pitched))
     promote=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")]' <<<"$all" | by_priority |
       jq --argjson room "$((room > 0 ? room : 0))" '.[:$room]')
@@ -326,13 +330,13 @@ case "$CMD" in
     fi
     if [ "$turn" != none ]; then mkdir -p "$(dirname "$state")" && echo "$turn" >"$state"; fi
     jq -n --argjson promote "$promote" --arg turn "$turn" --argjson item "$idea" \
-      --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" \
+      --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" --argjson blocked "$blocked" \
       --argjson floor "$(cfg '.wip.readyFloor // 0')" '
       {promote: $promote, turn: $turn}
       + (if $turn == "pitch" then {item: $item}
          elif $turn == "discover" then {room: $room}
          else {reason: "Exploring and the discovery queue are both full, or there is no Idea to pitch"} end)
-      + {ready: $ready, readyLow: ($ready < $floor)}'
+      + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor)}'
     ;;
 
   move)
