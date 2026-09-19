@@ -7,7 +7,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE="${A_TEAM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/a-team}"
+source "$ROOT/scripts/common.sh"
 DRY_RUN=false
 [ "${1:-}" = --dry-run ] && DRY_RUN=true
 mkdir -p "$STATE"
@@ -86,9 +86,9 @@ $(sed 's/^/- /' <<<"$reasons")"
   log "$team $role: started $(cat "$dir/pid"): $(paste -sd ';' - <<<"$reasons")"
 }
 
-for config in "$ROOT"/teams/*/team.json; do
+for team in $(team_names); do
+  config=$(team_config "$team")
   jq -e '.dispatch.enabled == true' "$config" >/dev/null 2>&1 || continue
-  team=$(basename "$(dirname "$config")")
   for role in lead dev; do
     dispatch "$team" "$role" "$config"
   done

@@ -5,12 +5,11 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE="${A_TEAM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/a-team}"
+source "$ROOT/scripts/common.sh"
 
 ago() { local s=$(($(date +%s) - $1)); printf '%dh%02dm ago' $((s / 3600)) $((s % 3600 / 60)); }
 
-for config in "$ROOT"/teams/*/team.json; do
-  team=$(basename "$(dirname "$config")")
+for team in $(team_names); do
   for role in lead dev; do
     dir="$STATE/$team/$role"
     printf '\n%s %s: ' "$team" "$role"

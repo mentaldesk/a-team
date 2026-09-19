@@ -32,8 +32,9 @@ say() { echo "${DRY_RUN:+(dry run) }$*"; }
 [ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
 TEAM=$1 CMD=$2
 shift 2
-CONFIG="$ROOT/teams/$TEAM/team.json"
-[ -f "$CONFIG" ] || die "no team config at $CONFIG"
+source "$ROOT/scripts/common.sh"
+CONFIG=$(team_config "$TEAM")
+[ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG (start from examples/team.json)"
 
 cfg() { jq -r "$1 // empty" "$CONFIG"; }
 REPO=$(cfg .repo)
@@ -273,7 +274,7 @@ case "$CMD" in
     ;;
 
   lead-next)
-    state="${A_TEAM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/a-team}/$TEAM/lead-turn"
+    state="$STATE/$TEAM/lead-turn"
     all=$(items)
     count() { jq "[.[] | select($1)] | length" <<<"$all"; }
     pitched=$(count '(.labels | index("pitch")) and .status == "Pitched"')

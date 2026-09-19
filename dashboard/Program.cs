@@ -4,22 +4,31 @@ using ATeam.Dashboard;
 var root = FindRepoRoot(AppContext.BaseDirectory) ?? FindRepoRoot(Environment.CurrentDirectory);
 if (root is null)
 {
-    Console.Error.WriteLine("a-team-dashboard: can't find the a-team repo (a folder with teams/ and scripts/dispatch.sh).");
+    Console.Error.WriteLine("a-team-dashboard: can't find the a-team repo (a folder with bin/a-team and scripts/dispatch.sh).");
     return 1;
 }
 
+var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 var stateRoot = Environment.GetEnvironmentVariable("A_TEAM_STATE") is { Length: > 0 } explicitState
     ? explicitState
     : Path.Combine(
         Environment.GetEnvironmentVariable("XDG_STATE_HOME") is { Length: > 0 } xdg
             ? xdg
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "state"),
+            : Path.Combine(home, ".local", "state"),
         "a-team");
 
-var teams = args.Length > 0 ? args : EnabledTeams(root);
+var configRoot = Environment.GetEnvironmentVariable("A_TEAM_CONFIG") is { Length: > 0 } explicitConfig
+    ? explicitConfig
+    : Path.Combine(
+        Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } xdgConfig
+            ? xdgConfig
+            : Path.Combine(home, ".config"),
+        "a-team");
+
+var teams = args.Length > 0 ? args : EnabledTeams(Path.Combine(configRoot, "teams"));
 if (teams.Length == 0)
 {
-    Console.Error.WriteLine("a-team-dashboard: no team has dispatch.enabled; pass a team name.");
+    Console.Error.WriteLine($"a-team-dashboard: no team in {configRoot}/teams has dispatch.enabled; pass a team name.");
     return 1;
 }
 var agents = teams.SelectMany(team => new[] { (team, "lead"), (team, "dev") }).ToList();
@@ -40,20 +49,22 @@ static string? FindRepoRoot(string start)
 {
     for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
     {
-        if (Directory.Exists(Path.Combine(dir.FullName, "teams")) &&
+        if (File.Exists(Path.Combine(dir.FullName, "bin", "a-team")) &&
             File.Exists(Path.Combine(dir.FullName, "scripts", "dispatch.sh")))
             return dir.FullName;
     }
     return null;
 }
 
-static string[] EnabledTeams(string root) =>
-    Directory.GetDirectories(Path.Combine(root, "teams"))
-        .Where(dir => IsEnabled(Path.Combine(dir, "team.json")))
-        .Select(Path.GetFileName)
-        .OfType<string>()
-        .Order()
-        .ToArray();
+static string[] EnabledTeams(string teamsDir) =>
+    Directory.Exists(teamsDir)
+        ? Directory.GetFiles(teamsDir, "*.json")
+            .Where(IsEnabled)
+            .Select(Path.GetFileNameWithoutExtension)
+            .OfType<string>()
+            .Order()
+            .ToArray()
+        : [];
 
 static bool IsEnabled(string configPath)
 {
