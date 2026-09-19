@@ -10,7 +10,26 @@ STATES=("Idea" "Exploring" "Pitched" "Approved" "Building" "Ready" "In progress"
 
 die() { echo "board.sh: $*" >&2; exit 1; }
 
-[ $# -ge 2 ] || die "usage: board.sh <team> <command> [args...] (see process.md)"
+DRY_RUN=${A_TEAM_DRY_RUN:-}
+if [ "${1:-}" = --dry-run ]; then
+  DRY_RUN=1
+  shift
+fi
+
+# write <what> <command...>: every change to GitHub goes through here, so --dry-run can skip it.
+write() {
+  local what=$1
+  shift
+  if [ -n "$DRY_RUN" ]; then
+    echo "dry-run: would $what" >&2
+    return 0
+  fi
+  "$@"
+}
+
+say() { echo "${DRY_RUN:+(dry run) }$*"; }
+
+[ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
 TEAM=$1 CMD=$2
 shift 2
 CONFIG="$ROOT/teams/$TEAM/team.json"
@@ -115,7 +134,7 @@ set_status() {
   jq -e '.field.id' <<<"$meta" >/dev/null || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
   option_id=$(jq -r --arg o "$option" '.field.options[] | select(.name == $o) | .id' <<<"$meta")
   [ -n "$option_id" ] || die "field '$FIELD' has no option '$option' (run: board.sh $TEAM check)"
-  gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$item_id" \
+  write "set item $item_id to '$option'" gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$item_id" \
     -F field="$(jq -r .field.id <<<"$meta")" -F option="$option_id" -f query='
     mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
       updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field,
@@ -299,13 +318,13 @@ case "$CMD" in
     fi
     case "$role:$from" in
       "dev:Ready" | "lead:Idea")
-        gh issue edit "$n" -R "$REPO" --add-label "$label" >/dev/null ;;
+        write "label #$n $label" gh issue edit "$n" -R "$REPO" --add-label "$label" >/dev/null ;;
       *)
         jq -e --arg l "$label" '.labels | index($l)' <<<"$it" >/dev/null ||
           die "#$n isn't $role's (no '$label' label); leave it to the reviewer" ;;
     esac
     set_status "$(jq -r .id <<<"$it")" "$to"
-    echo "#$n: $from -> $to"
+    say "#$n: $from -> $to"
     ;;
 
   add)
@@ -324,22 +343,22 @@ case "$CMD" in
     content=$(gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pulls" else "issues" end')
     if [ "$role" = lead ]; then
       case "$to" in
-        Idea) gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:idea' >/dev/null ;;
-        Exploring | Pitched) gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
+        Idea) write "label #$n a-team:idea" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:idea' >/dev/null ;;
+        Exploring | Pitched) write "label #$n pitch" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
       esac
     fi
     if [ -n "$existing" ]; then
       set_status "$(jq -r .id <<<"$existing")" "$to"
-      echo "#$n: added as $to"
+      say "#$n: added as $to"
       exit 0
     fi
-    id=$(gh api graphql -F project="$(project_meta | jq -r .id)" \
+    id=$(write "add #$n to the board" gh api graphql -F project="$(project_meta | jq -r .id)" \
       -F content="$(gh api "repos/$REPO/$content/$n" --jq .node_id)" -f query='
       mutation($project: ID!, $content: ID!) {
         addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } } }' \
       --jq .data.addProjectV2ItemById.item.id)
-    set_status "$id" "$to"
-    echo "#$n: added as $to"
+    set_status "${id:-new-item}" "$to"
+    say "#$n: added as $to"
     ;;
 
   comment)
@@ -347,8 +366,9 @@ case "$CMD" in
     role=$1 n=$2 file=$3
     check_role "$role"
     [ -f "$file" ] || die "no such file: $file"
-    { cat "$file"; printf '\n\n<!-- a-team:%s -->\n' "$role"; } |
-      gh issue comment "$n" -R "$REPO" --body-file -
+    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     ;;
 
   feedback)
@@ -364,15 +384,15 @@ case "$CMD" in
   link)
     [ $# -eq 2 ] || die "usage: board.sh $TEAM link <parent> <child>"
     child_id=$(gh api "repos/$REPO/issues/$2" --jq .id)
-    gh api -X POST "repos/$REPO/issues/$1/sub_issues" -F "sub_issue_id=$child_id" >/dev/null
-    echo "#$2 is now a sub-issue of #$1"
+    write "make #$2 a sub-issue of #$1" gh api -X POST "repos/$REPO/issues/$1/sub_issues" -F "sub_issue_id=$child_id" >/dev/null
+    say "#$2 is now a sub-issue of #$1"
     ;;
 
   depends)
     [ $# -eq 2 ] || die "usage: board.sh $TEAM depends <task> <prerequisite>"
-    gh api -X POST "repos/$REPO/issues/$1/dependencies/blocked_by" \
+    write "block #$1 on #$2" gh api -X POST "repos/$REPO/issues/$1/dependencies/blocked_by" \
       -F "issue_id=$(gh api "repos/$REPO/issues/$2" --jq .id)" >/dev/null
-    echo "#$1 is now blocked by #$2"
+    say "#$1 is now blocked by #$2"
     ;;
 
   children)
@@ -487,7 +507,7 @@ case "$CMD" in
 
   setup)
     dry_run=false
-    [ "${1:-}" = --dry-run ] && dry_run=true
+    { [ "${1:-}" = --dry-run ] || [ -n "$DRY_RUN" ]; } && dry_run=true
     field=$(project_meta | jq '.field // empty')
     jq -e '.id' <<<"$field" >/dev/null 2>&1 || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
     input=$(jq -n --argjson field "$field" --slurpfile cfg "$CONFIG" '
