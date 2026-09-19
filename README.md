@@ -40,8 +40,9 @@ here.
 - **Seed an idea:** open an issue in the product repo and put it on the board in *Idea*.
 - **Steer the Lead:** give the Ideas you care about a Priority. The Lead alternates between
   pitching the highest-priority Idea and discovering new ones. It files its discoveries in
-  *Idea* with the `a-team:idea` label, and only pitches one once you've given it a priority.
-  Close the ones you don't want.
+  *Idea* with the `a-team:idea` label. Ideas written by any agent (its own discoveries, or
+  suggestions another team's agents opened on this repo) are only pitched once you've given
+  them a priority. Close the ones you don't want.
 - **Give feedback:** comment on the pitch or PR. The agents pick up your comments on their next
   run and reply.
 - **Approve a pitch:** move it to *Approved*.
