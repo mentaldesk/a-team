@@ -30,6 +30,7 @@ here.
 | `scripts/run.sh` | Prints the brief a run starts from |
 | `scripts/dispatch.sh` | Starts a role's session when it has work (installed by `install.sh`) |
 | `scripts/status.sh` | What each role is doing and how its last run went |
+| `dashboard/` | A terminal dashboard of the team (`scripts/dashboard.sh`) |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
 | `teams/<name>/team.json` | One team: its repo, board, reviewer, skills and WIP limits |
@@ -81,3 +82,15 @@ here.
   editing this repo) hold even if the model tries.
 - **Logs** are under `~/.local/state/a-team/`. `scripts/status.sh` shows what each role is
   doing and how its last run went.
+
+## Watching the team
+
+```
+bash scripts/dashboard.sh [team...]
+```
+
+One pane per agent. The title shows whether it's running (●) or idle (○) and when it last
+ran, the first line says why it was started, and the rest follows its latest session: what it
+said, the tools it called, any errors and how the run finished. The strip along the bottom is
+the dispatcher's recent decisions. With no arguments it shows every team with dispatch enabled.
+It needs the .NET 10 SDK.
