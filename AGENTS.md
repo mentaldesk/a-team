@@ -46,3 +46,19 @@ dispatcher was installed from) each time.
   `DropDownList<T>` or `ListView` for longer lists, `TextField` for free text).
 - When describing UI in an issue or PR, name the control for each element and sketch it in the mockup, e.g.
   `[x] Follow output`, `(•) All ( ) Running`, `Refresh: [ 2 ▲▼]s`.
+
+## Releasing
+
+Run the **Release** workflow from the Actions tab. Leave *bump* on `auto` to pick the version from
+the labels of PRs merged since the last release (`breaking` for major, `enhancement` for minor,
+otherwise patch), or choose one. It builds the dashboard for each platform, publishes the GitHub
+release with generated notes, and opens a PR updating the formula in `mentaldesk/homebrew-tap`,
+set to merge by itself once the tap's CI has installed and tested it on every platform. The tag is the version: nothing in the repo holds a
+version number. PRs that touch the dashboard, packaging or the workflow run the build part to
+check packaging.
+
+`HOMEBREW_TAP_TOKEN` is a fine-grained personal access token with access to
+`mentaldesk/homebrew-tap` only (Contents and Pull requests: read and write), stored as a secret on
+this repo and on TuiCode. When it expires, releases still publish but the formula step fails:
+regenerate it under your GitHub settings → Developer settings → Fine-grained tokens, and update
+the secret in both repos.

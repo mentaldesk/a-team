@@ -1,0 +1,187 @@
+name: Release
+
+# Run it from the Actions tab: it picks the next version, builds every platform, publishes the
+# GitHub release and updates the Homebrew formula. On a PR it only builds, to check packaging.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Part of the version to bump. "auto" reads the labels of PRs merged since the last release (breaking = major, enhancement = minor, otherwise patch).
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - dashboard/**
+      - packaging/**
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Next version
+        id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMP: ${{ inputs.bump }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$PR" ]; then
+            echo "version=0.0.0-pr$PR" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+          if [ "$BUMP" = auto ]; then
+            since=$([ -n "$last" ] && git log -1 --format=%cI "$last" || echo 1970-01-01T00:00:00Z)
+            labels=$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --base main --limit 500 \
+              --json mergedAt,labels | jq -r --arg since "$since" '.[] | select(.mergedAt > $since) | .labels[].name')
+            if grep -qx breaking <<<"$labels"; then BUMP=major
+            elif grep -qx enhancement <<<"$labels"; then BUMP=minor
+            else BUMP=patch; fi
+          fi
+          IFS=. read -r major minor patch <<<"${last#v}"
+          major=${major:-0} minor=${minor:-0} patch=${patch:-0}
+          case "$BUMP" in
+            major) major=$((major + 1)) minor=0 patch=0 ;;
+            minor) minor=$((minor + 1)) patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          version="$major.$minor.$patch"
+          echo "Last release: ${last:-none}. Bump: $BUMP. Next: v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.rid }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - rid: osx-arm64
+            runner: macos-14
+          - rid: linux-x64
+            runner: ubuntu-latest
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish dashboard
+        run: >
+          dotnet publish dashboard/Dashboard.csproj -c Release -r ${{ matrix.rid }}
+          -p:Version=${{ needs.version.outputs.version }} -o publish
+
+      - name: Package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          stage="stage/a-team"
+          mkdir -p "$stage/libexec" dist
+          cp -R bin scripts roles tasks settings examples process.md README.md "$stage/"
+          cp LICENSE "$stage/"
+          cp publish/a-team-dashboard "$stage/libexec/"
+          echo "$VERSION" > "$stage/VERSION"
+          archive="a-team-$VERSION-$RID.tar.gz"
+          tar -czf "dist/$archive" -C stage a-team
+          (cd dist && shasum -a 256 "$archive" > "$archive.sha256")
+          "$stage/bin/a-team" version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a-team-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+
+      - name: Render formula
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          sha() { cut -d' ' -f1 "dist/a-team-$VERSION-$1.tar.gz.sha256"; }
+          sed -e "s/{{version}}/$VERSION/g" \
+            -e "s/{{sha_osx_arm64}}/$(sha osx-arm64)/" \
+            -e "s/{{sha_linux_x64}}/$(sha linux-x64)/" \
+            -e "s/{{sha_linux_arm64}}/$(sha linux-arm64)/" \
+            packaging/a-team.rb > a-team.rb
+          cat a-team.rb
+
+      - name: Check for the tap token
+        id: tap
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::HOMEBREW_TAP_TOKEN isn't set, so the formula wasn't updated. Add the secret, then re-run this job."; fi
+
+      - uses: actions/checkout@v5
+        if: steps.tap.outputs.ok == 'true'
+        with:
+          repository: mentaldesk/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Open tap PR
+        if: steps.tap.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.version.outputs.tag }}
+        run: |
+          mkdir -p tap/Formula
+          cp a-team.rb tap/Formula/a-team.rb
+          cd tap
+          if git diff --quiet -- Formula/a-team.rb && git ls-files --error-unmatch Formula/a-team.rb >/dev/null 2>&1; then
+            echo "Formula already at $VERSION"
+            exit 0
+          fi
+          branch="a-team-$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add Formula/a-team.rb
+          git commit -m "a-team $VERSION"
+          git push --force-with-lease -u origin "$branch"
+          body="Updates \`a-team\` to $VERSION. Release: $RELEASE_URL"
+          gh pr view "$branch" >/dev/null 2>&1 || gh pr create --base main --head "$branch" --title "a-team $VERSION" --body "$body"
+          # The tap's own CI (brew audit, install and test on every platform) gates the merge.
+          if ! gh pr merge "$branch" --auto --squash --delete-branch; then
+            echo "::warning::Auto-merge isn't available on the tap, so the formula PR needs merging by hand once its checks pass: $(gh pr view "$branch" --json url --jq .url)"
+          fi

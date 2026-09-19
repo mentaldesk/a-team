@@ -6,6 +6,10 @@
 #
 set -uo pipefail
 
+# Everything is inside one { } block, so bash reads the whole file before running any of it and
+# a release that replaces this file mid-pass can't mix old and new lines.
+{
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/common.sh"
 DRY_RUN=false
@@ -94,3 +98,4 @@ for team in $(team_names); do
   done
 done
 exit 0
+}
