@@ -12,8 +12,9 @@ time.
   git -C ~/code/a-team worktree add ~/code/a-team.worktrees/<slug> -b <branch> origin/main
   ```
 
-  Never edit the live checkout directly. It only changes by pulling merged work, and pulling is
-  what puts a change live for every team, so do it deliberately.
+  Never edit the live checkout directly. It only changes by releasing merged work with
+  `bash ~/code/a-team/scripts/update.sh`, which puts it live for every team at once, so it's
+  the reviewer's call.
 
 - **Rules live in one place.** Anything both roles follow goes in `process.md`; anything one
   role does goes in its role file. Team-specific facts go in `teams/<name>/team.json` or in

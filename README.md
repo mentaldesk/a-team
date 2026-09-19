@@ -30,6 +30,7 @@ here.
 | `scripts/run.sh` | Prints the brief a run starts from |
 | `scripts/dispatch.sh` | Starts a role's session when it has work (installed by `install.sh`) |
 | `scripts/status.sh` | What each role is doing and how its last run went |
+| `scripts/update.sh` | Releases merged changes to every team (fast-forwards the live checkout) |
 | `dashboard/` | A terminal dashboard of the team (`scripts/dashboard.sh`) |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
@@ -82,6 +83,19 @@ here.
   editing this repo) hold even if the model tries.
 - **Logs** are under `~/.local/state/a-team/`. `scripts/status.sh` shows what each role is
   doing and how its last run went.
+
+## Releasing changes
+
+Teams run from the live checkout at `~/code/a-team`. Merging a PR doesn't change what they run;
+releasing it does:
+
+```
+bash ~/code/a-team/scripts/update.sh
+```
+
+It shows the merged commits that aren't live yet and asks before fast-forwarding. It refuses if
+the checkout isn't a clean `main`, and says if an agent is mid-run (that run finishes on the old
+version). Agents are denied running it.
 
 ## Watching the team
 

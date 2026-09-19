@@ -47,7 +47,9 @@
       "Bash(gh repo delete *)",
       "Bash(gh repo edit *)",
       "Bash(gh repo rename *)",
-      "Bash(gh repo archive *)"
+      "Bash(gh repo archive *)",
+      "Bash(bash ~/code/a-team/scripts/update.sh*)",
+      "Bash(~/code/a-team/scripts/update.sh*)"
     ]
   }
 }
