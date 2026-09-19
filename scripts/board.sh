@@ -188,11 +188,13 @@ pr_reviews() {
           | {n: '"$1"', author: .user.login, at: .submitted_at, body: (.body // "")}' | jq -s .
 }
 
-# awaiting <comments> <role> <n>: true if the reviewer commented on #n after the role last did.
+# awaiting <comments> <role> <n>: the time of the reviewer's newest comment on #n since the role
+# last commented, or nothing. It goes into the trigger so new feedback never looks like a retry.
 awaiting() {
-  jq --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" '
+  jq -r --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" '
     map(select(.n == $n)) | (map(select(.body | contains($marker)) | .at) | max // "") as $since
-    | any(.[]; .author == $reviewer and (.body | contains("<!-- a-team:") | not) and .at > $since)' <<<"$1"
+    | map(select(.author == $reviewer and (.body | contains("<!-- a-team:") | not) and .at > $since) | .at)
+    | max // empty' <<<"$1"
 }
 
 comments() {
@@ -407,14 +409,15 @@ case "$CMD" in
           numbers+=("$p")
           recent=$(jq -s 'add' <(echo "$recent") <(pr_reviews "$p"))
           verdict=$(ci "$p" | jq -r .verdict)
-          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p")
+          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')")
           [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ] &&
             reasons+=("PR #$p is green but still a draft")
         elif [ "$status" = "In progress" ]; then
           reasons+=("#$n is In progress but has no PR: an earlier run didn't finish")
         fi
         for x in "${numbers[@]}"; do
-          [ "$(awaiting "$recent" dev "$x")" = true ] && reasons+=("reviewer feedback on #$x")
+          at=$(awaiting "$recent" dev "$x")
+          [ -n "$at" ] && reasons+=("reviewer feedback on #$x ($at)")
         done
       done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
 
@@ -439,7 +442,8 @@ case "$CMD" in
       while IFS= read -r row; do
         n=$(jq -r .number <<<"$row")
         status=$(jq -r .status <<<"$row")
-        [ "$(awaiting "$recent" lead "$n")" = true ] && reasons+=("reviewer feedback on #$n")
+        at=$(awaiting "$recent" lead "$n")
+        [ -n "$at" ] && reasons+=("reviewer feedback on #$n ($at)")
         [ "$status" = Approved ] && reasons+=("#$n was approved: break it down")
         if [ "$status" = Building ]; then
           open=$(gh api "repos/$REPO/issues/$n/sub_issues" --jq '[length, (map(select(.state == "open")) | length)] | @tsv')
