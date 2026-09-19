@@ -18,7 +18,7 @@ jobs:
         run: shellcheck --severity=warning scripts/*.sh bin/a-team
 
       - name: JSON config
-        run: jq -e . settings/*.json teams/*/team.json >/dev/null
+        run: jq -e . settings/*.json examples/*.json >/dev/null
 
   dashboard:
     runs-on: ubuntu-latest

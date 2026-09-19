@@ -8,7 +8,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEAM=${1:?usage: run.sh <team> <role>}
 ROLE=${2:?usage: run.sh <team> <role>}
-CONFIG="$ROOT/teams/$TEAM/team.json"
+source "$ROOT/scripts/common.sh"
+CONFIG=$(team_config "$TEAM")
 
 [ -f "$CONFIG" ] || { echo "run.sh: no team config at $CONFIG" >&2; exit 3; }
 [ -f "$ROOT/roles/$ROLE.md" ] || { echo "run.sh: no role '$ROLE'" >&2; exit 3; }

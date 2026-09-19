@@ -18,9 +18,11 @@ usage: a-team <command> [args...]
   dashboard [team...]                     terminal dashboard of the teams
   run <team> <role>                       print the brief a run starts from
   task-prompt <team> <role>               print a role's scheduled prompt
+  teams                                   the configured teams, and where their config lives
 
-State lives in \${A_TEAM_STATE:-~/.local/state/a-team}. Set A_TEAM_STATE to try a clone
-without touching the real teams' state.
+Team configs live in \${A_TEAM_CONFIG:-~/.config/a-team}/teams/<team>.json (start from
+examples/team.json). State lives in \${A_TEAM_STATE:-~/.local/state/a-team}. Set A_TEAM_STATE
+to try a clone without touching the real teams' state.
 USAGE
 }
 
@@ -30,6 +32,15 @@ shift
 case "$command" in
   board | dispatch | install | status | dashboard | run | task-prompt)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
+  teams)
+    source "$ROOT/scripts/common.sh"
+    for team in $(team_names); do
+      config=$(team_config "$team")
+      printf '%-12s %-24s %s  %s\n' "$team" "$(jq -r .repo "$config")" \
+        "$(jq -r 'if .dispatch.enabled then "dispatch on " else "dispatch off" end' "$config")" "$config"
+    done
+    [ -n "$(team_names)" ] || echo "No teams in $CONFIG_DIR/teams. Start from $ROOT/examples/team.json."
+    ;;
   help | -h | --help)
     usage ;;
   *)

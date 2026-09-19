@@ -16,7 +16,7 @@ dispatcher was installed from) each time.
   what puts a change live for every team, so do it deliberately.
 
 - **Rules live in one place.** Anything both roles follow goes in `process.md`; anything one
-  role does goes in its role file. Team-specific facts go in `teams/<name>/team.json` or in
+  role does goes in its role file. Team-specific facts go in the team's config (see `examples/team.json`) or in
   the product repo's own docs and skills, never in a role file.
 - **Decisions that gate anything go in `board.sh`, not in prose.** Who may move an item where
   is the `allowed` table. An agent can talk itself out of a sentence, but not out of a

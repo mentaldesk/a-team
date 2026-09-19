@@ -34,7 +34,7 @@ here.
 | `dashboard/` | `a-team dashboard`: a terminal dashboard of the teams |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
-| `teams/<name>/team.json` | One team: its repo, board, reviewer, skills and WIP limits |
+| `examples/team.json` | A starting point for a team's config (see *Starting a team*) |
 
 ## Working with the team
 
@@ -55,10 +55,12 @@ here.
 1. Make sure `gh` can manage projects: `gh auth refresh -s project`.
 2. Create or pick a Project for the repo. Its Status field needs the nine options in
    `process.md`, or a `statusMap` in the team config from those names to the ones it has.
-3. Add `teams/<name>/team.json` (copy `teams/tuicode`) and check it with
+3. Copy `examples/team.json` to `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
+   your GitHub login as `reviewer`, the Project, and where the product is checked out on this
+   machine (`workdir` for its worktrees, `checkout` for its main clone). `a-team teams` lists
+   the teams it finds. Check the board with
    `./bin/a-team board <name> check`.
-4. Set `workdir` (where the product repo's worktrees live), `checkout` (its main checkout) and
-   `dispatch.enabled` in the team config.
+4. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
 5. Install the dispatcher, first in dry-run mode, which only logs what it would start:
 
    ```
@@ -69,6 +71,10 @@ here.
    When its decisions look right, `./bin/a-team install` runs it for real, and
    `./bin/a-team install --uninstall` removes it. The dispatcher runs from the clone you
    installed it from.
+
+Team configs are yours, not part of a-team: they live in `~/.config/a-team/teams/`
+(`$A_TEAM_CONFIG/teams/` to use another folder). To version them or share them across machines,
+keep that folder in a repo of your own and link it into place.
 
 ## How runs are started
 

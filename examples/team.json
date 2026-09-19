@@ -1,17 +1,14 @@
 {
-  "name": "tuicode",
-  "repo": "mentaldesk/TuiCode",
-  "reviewer": "jamescrosswell",
+  "repo": "owner/repo",
+  "reviewer": "your-github-login",
   "project": {
-    "owner": "mentaldesk",
-    "number": 2,
+    "owner": "owner",
+    "number": 1,
     "statusField": "Status",
     "statusMap": {}
   },
   "vision": "docs/vision.md",
-  "skills": [
-    "tuicode"
-  ],
+  "skills": [],
   "wip": {
     "worktrees": 3,
     "pitched": 3,
@@ -19,10 +16,10 @@
     "ideas": 6,
     "readyFloor": 3
   },
-  "workdir": "~/code/TuiCode",
-  "checkout": "~/code/TuiCode/main",
+  "workdir": "~/code/repo",
+  "checkout": "~/code/repo/main",
   "dispatch": {
-    "enabled": true,
+    "enabled": false,
     "creativeEvery": 180,
     "retryAfter": 60,
     "maxRuntime": 120
