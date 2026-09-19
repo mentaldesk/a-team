@@ -1,54 +1,91 @@
 namespace ATeam.Dashboard;
 
-/// <summary>One agent: its state in the title, and a tail of its latest session below.</summary>
+/// <summary>One agent: running or idle and its timing, why it last started, and a tail of its latest session.</summary>
 public sealed class AgentPane : FrameView
 {
     private readonly string _stateDir;
     private readonly string _name;
     private readonly SessionLog _log = new();
+    private readonly Label _status;
     private readonly Label _why;
-    private readonly TextView _body;
+    private readonly LogView _body;
+    private bool _running;
+    private string _timing = "";
 
     public AgentPane(string team, string role, string stateDir)
     {
         _name = $"{team} · {role}";
         _stateDir = stateDir;
-        Title = _name;
         CanFocus = true;
-        _why = new Label { X = 0, Y = 0, Width = Dim.Fill() };
-        _body = new TextView
-        {
-            X = 0,
-            Y = 1,
-            Width = Dim.Fill(),
-            Height = Dim.Fill(),
-            ReadOnly = true,
-            WordWrap = true,
-        };
-        Add(_why, _body);
+        _status = new Label { X = 0, Y = 0, Width = Dim.Fill() };
+        _why = new Label { X = 0, Y = 1, Width = Dim.Fill() };
+        _body = new LogView { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill() };
+        Add(_status, _why, _body);
+        HasFocusChanged += (_, _) => UpdateHeader();
+        UpdateHeader();
     }
 
-    public void Refresh(DateTimeOffset now)
+    public void Page(int direction)
+    {
+        _body.Page(direction);
+        UpdateHeader();
+    }
+
+    public void Home()
+    {
+        _body.Home();
+        UpdateHeader();
+    }
+
+    public void End()
+    {
+        _body.End();
+        UpdateHeader();
+    }
+
+    public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck)
     {
         var state = AgentState.Read(_stateDir);
-        Title = $"{(state.Running ? "●" : "○")} {_name} · {Describe(state, now)}";
+        _running = state.Running;
+        _timing = Describe(state, now, nextCheck);
+        UpdateHeader();
+
         var why = state.Reasons.Count == 0 ? "" : "why: " + string.Join("; ", state.Reasons);
         if (_why.Text != why)
             _why.Text = why;
 
-        if (!_log.Refresh(state.LogPath))
-            return;
-        _body.Text = _log.Lines.Count == 0 ? "(no session yet)" : string.Join('\n', _log.Lines);
-        _body.MoveEnd();
+        if (_log.Refresh(state.LogPath))
+            _body.Lines = _log.Lines.Count == 0 ? ["(no session yet)"] : [.. _log.Lines];
     }
 
-    private static string Describe(AgentState state, DateTimeOffset now)
+    private void UpdateHeader()
     {
-        if (state.LastStart is not { } start)
-            return "never run";
-        var ago = Ago(now - start);
-        return state.Running ? $"running {ago}" : $"idle, ran {ago} ago";
+        var title = $"{(HasFocus ? "▶ " : "")}{(_running ? "●" : "○")} {_name}{(_body.Following ? "" : " [scrolled]")}";
+        if (Title != title)
+            Title = title;
+        if (_status.Text != _timing)
+            _status.Text = _timing;
     }
+
+    private static string Describe(AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck)
+    {
+        if (state.Running)
+            return state.LastStart is { } started ? $"running {Clock(now - started)}" : "running";
+        var ran = state.LastStart is { } last ? $"ran {Ago(now - last)} ago" : "never run";
+        return $"{ran} · {NextCheck(now, nextCheck)}";
+    }
+
+    private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck) => nextCheck switch
+    {
+        null => "dispatcher hasn't run",
+        { } next when next - now >= TimeSpan.Zero => $"next check {Clock(next - now)}",
+        { } next when now - next < TimeSpan.FromMinutes(1) => "checking now",
+        _ => "dispatcher not running",
+    };
+
+    private static string Clock(TimeSpan span) => span.TotalHours >= 1
+        ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
+        : $"{span.Minutes}:{span.Seconds:00}";
 
     private static string Ago(TimeSpan span) => span.TotalMinutes < 1
         ? "<1m"

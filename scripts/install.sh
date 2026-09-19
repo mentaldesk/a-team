@@ -10,6 +10,7 @@ STATE="${XDG_STATE_HOME:-$HOME/.local/state}/a-team"
 LABEL=com.a-team.dispatch
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
+INTERVAL=120
 
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 if [ "${1:-}" = --uninstall ]; then
@@ -35,13 +36,14 @@ cat >"$PLIST" <<PLIST
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key><array>$args</array>
-  <key>StartInterval</key><integer>120</integer>
+  <key>StartInterval</key><integer>$INTERVAL</integer>
   <key>RunAtLoad</key><true/>
   <key>AbandonProcessGroup</key><true/>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>$path</string>
     <key>HOME</key><string>$HOME</string>
+    <key>A_TEAM_INTERVAL</key><string>$INTERVAL</string>
     ${DOTNET_ROOT:+<key>DOTNET_ROOT</key><string>$DOTNET_ROOT</string>}
   </dict>
   <key>StandardOutPath</key><string>$STATE/launchd.log</string>
@@ -51,4 +53,4 @@ cat >"$PLIST" <<PLIST
 PLIST
 
 launchctl bootstrap "$DOMAIN" "$PLIST"
-echo "Installed $LABEL${1:+ ($1)}: runs every 2 minutes. Watch it with: bash $ROOT/scripts/status.sh"
+echo "Installed $LABEL${1:+ ($1)}: runs every $((INTERVAL / 60)) minutes. Watch it with: bash $ROOT/scripts/status.sh"

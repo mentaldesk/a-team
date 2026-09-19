@@ -11,6 +11,7 @@ STATE="${XDG_STATE_HOME:-$HOME/.local/state}/a-team"
 DRY_RUN=false
 [ "${1:-}" = --dry-run ] && DRY_RUN=true
 mkdir -p "$STATE"
+echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$STATE/next-pass"
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
 

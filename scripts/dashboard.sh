@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# dashboard.sh [team...] — a terminal dashboard of what each agent is doing. Esc quits.
+# dashboard.sh [team...] — a terminal dashboard of what each agent is doing.
 #
 set -euo pipefail
 

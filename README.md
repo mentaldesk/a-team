@@ -89,8 +89,13 @@ here.
 bash scripts/dashboard.sh [team...]
 ```
 
-One pane per agent. The title shows whether it's running (●) or idle (○) and when it last
-ran, the first line says why it was started, and the rest follows its latest session: what it
-said, the tools it called, any errors and how the run finished. The strip along the bottom is
-the dispatcher's recent decisions. With no arguments it shows every team with dispatch enabled.
+One pane per agent. The title shows whether it's running (●) or idle (○). Under it: how long
+the current run has been going, or when it last ran and the countdown to the dispatcher's next
+check; then why it was last started; then its latest session as it happens (what it said, the
+tools it called, any errors and how the run finished). The strip along the bottom is the
+dispatcher's recent decisions. With no arguments it shows every team with dispatch enabled.
+
+Tab or the arrow keys select an agent (▶). PgUp/PgDn/Home/End scroll its session; scrolling up
+stops it following new output until you press End. Esc quits.
+
 It needs the .NET 10 SDK.
