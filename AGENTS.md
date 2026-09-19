@@ -27,8 +27,11 @@ time.
 - **Hard limits go in `settings/agents.json` as deny rules**, not only in prose.
 - **Keep triggers cheap and deterministic.** `board.sh triggers` runs every 2 minutes per role:
   no per-item API calls where one call for the whole repo will do.
-- **Try board changes against a real board.** `board.sh <team> list` and `wip` are read-only.
-  `check` tells you whether a board has every status the team needs.
+- **Try board changes against a real board, without changing it.** `list`, `wip`, `triggers`
+  and `check` only read. For commands that write, `board.sh --dry-run <team> ...` (or
+  `A_TEAM_DRY_RUN=1`) does every read and every permission check for real, and prints each
+  change it would have made instead of making it. New writes to GitHub go through `write` so
+  dry-run covers them.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
 
