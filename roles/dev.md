@@ -12,6 +12,9 @@ Your marker is `<!-- a-team:dev -->`.
   repo's build, test, branch and worktree conventions, and they win over anything here.
 - The repo's own contributor docs (`AGENTS.md` / `CLAUDE.md`, `CONTRIBUTING.md`) are the
   authority on code conventions.
+- For UI, follow the contributor docs' UI conventions and use the toolkit's built-in controls.
+  If a task doesn't say which control an element is, pick the one those conventions call for.
+  If none fits, ask on the issue rather than inventing one.
 
 ## Each run, in this order
 

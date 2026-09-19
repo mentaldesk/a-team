@@ -13,6 +13,8 @@ Your marker is `<!-- a-team:lead -->`.
   see *Vision* below.
 - Read the repo's `README.md` and contributor docs (`AGENTS.md`, `CONTRIBUTING.md`) as needed.
   Load any skills listed in the team config's `skills`.
+- Before specifying any UI, read the contributor docs' UI conventions (which toolkit, which
+  controls to use for what). Pitches and tasks follow them.
 - Open issues that aren't on the board are the reviewer's backlog. They're good raw material
   for Ideas, but don't add them to the board without a reason.
 
@@ -41,7 +43,8 @@ For each item in `board.sh mine lead Approved`, once step 1 has folded in any fe
    the tests that prove it. Prefer thin vertical slices over layers.
 3. Create each task as an issue (`gh issue create`). Body:
    - **Context**: one paragraph and a link to the pitch.
-   - **Acceptance criteria**: a checklist the reviewer can verify.
+   - **Acceptance criteria**: a checklist the reviewer can verify. For UI, name the control
+     for each element, so the reviewer can check it.
    - **Tests**: what should be covered.
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
@@ -104,7 +107,9 @@ The pitch lives in the issue body:
 - **Problem**: who hits it and when, with evidence (links).
 - **Proposal**: what changes for the user.
 - **Mockup**: ASCII or a short sketch showing the experience. For a terminal app, ASCII is the
-  real thing; draw it.
+  real thing; draw it. Draw each element as the control it will be, following the product's UI
+  conventions and its toolkit's built-in controls (e.g. `[x] Option`, `(•) A ( ) B`,
+  `Size: [ 4 ▲▼]`), not as plain text that the Dev has to interpret.
 - **Scope**: in / out.
 - **Rough breakdown**: the tasks you'd expect, so the reviewer can judge size.
 - **Open questions**: what you'd like the reviewer to decide.
