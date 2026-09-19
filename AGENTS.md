@@ -1,19 +1,18 @@
 # Contributing to a-team
 
-Changing this repo changes how every team behaves on its next run. There's no build step and
-no copy to refresh: `run.sh` reads the role files from the live checkout (the clone the
-dispatcher was installed from) each time.
+Teams run an installed release (`brew install mentaldesk/tap/a-team`), so merged changes reach
+them only once they're released (see *Releasing*) and upgraded with `brew upgrade a-team`. The
+installed copy is read afresh on every run, so an upgrade takes effect on the next run with
+nothing to restart.
 
 - **Every change goes through a pull request. Nobody pushes to `main`**: people and agents alike.
-  Work in a worktree outside the live checkout, branched from a fresh `origin/main`:
+  Work in a worktree branched from a fresh `origin/main`, and try it out with that worktree's own
+  `./bin/a-team` (README, *Trying out a clone or worktree*):
 
   ```
-  git -C <live checkout> fetch origin
-  git -C <live checkout> worktree add <live checkout>.worktrees/<slug> -b <branch> origin/main
+  git -C <your clone> fetch origin
+  git -C <your clone> worktree add <your clone>.worktrees/<slug> -b <branch> origin/main
   ```
-
-  Never edit the live checkout directly. It only changes by pulling merged work, and pulling is
-  what puts a change live for every team, so do it deliberately.
 
 - **Rules live in one place.** Anything both roles follow goes in `process.md`; anything one
   role does goes in its role file. Team-specific facts go in the team's config (see `examples/team.json`) or in

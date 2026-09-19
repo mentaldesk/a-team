@@ -1,3 +1,4 @@
+using System.Reflection;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -12,7 +13,7 @@ public sealed class DashboardWindow : Window
 
     public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot)
     {
-        Title = "a-team · Tab/arrows: select agent · PgUp/PgDn/Home/End: scroll · Esc: quit";
+        Title = $"a-team {Version()} · Tab/arrows: select agent · PgUp/PgDn/Home/End: scroll · Esc: quit";
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
@@ -91,6 +92,10 @@ public sealed class DashboardWindow : Window
     }
 
     private AgentPane? Selected() => _panes.FirstOrDefault(pane => pane.HasFocus);
+
+    private static string Version() =>
+        typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion.Split('+')[0] ?? "";
 
     private static string? ReadText(string path)
     {

@@ -11,7 +11,12 @@
     <PublishAot>true</PublishAot>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+  </PropertyGroup>
+
   <ItemGroup>
+    <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All" />
     <PackageReference Include="Terminal.Gui" Version="2.1.0" />
   </ItemGroup>
 

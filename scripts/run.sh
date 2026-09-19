@@ -25,7 +25,7 @@ cat <<EOF
 # a-team run: $ROLE for team '$TEAM'
 
 Board: a-team board $TEAM <command> ...
-Revision: $(git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || echo unknown)
+Version: $("$ROOT/bin/a-team" version)
 
 ## Team config
 
