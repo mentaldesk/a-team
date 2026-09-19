@@ -7,12 +7,12 @@ namespace ATeam.Dashboard;
 public sealed class SessionLog
 {
     private const int MaxLines = 500;
-    private readonly List<string> _lines = [];
+    private readonly List<LogLine> _lines = [];
     private string? _path;
     private long _offset;
     private string _partial = "";
 
-    public IReadOnlyList<string> Lines => _lines;
+    public IReadOnlyList<LogLine> Lines => _lines;
 
     /// <summary>Reads anything new. Returns true if the lines changed.</summary>
     public bool Refresh(string? path)
@@ -55,18 +55,19 @@ public sealed class SessionLog
         return true;
     }
 
-    internal static IEnumerable<string> Render(string json)
+    internal static IEnumerable<LogLine> Render(string json)
     {
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
-        catch (JsonException) { return [json]; }
+        catch (JsonException) { return [new LogLine(json, LogLineKind.Prose)]; }
 
         using (doc)
         {
             var root = doc.RootElement;
             return Str(root, "type") switch
             {
-                "system" when Str(root, "subtype") == "init" => [$"── session started ({Str(root, "model")}) ──"],
+                "system" when Str(root, "subtype") == "init" =>
+                    [new LogLine($"── session started ({Str(root, "model")}) ──", LogLineKind.SessionBoundary)],
                 "assistant" => Assistant(root),
                 "user" => ToolErrors(root).ToList(),
                 "result" => [Result(root)],
@@ -75,26 +76,27 @@ public sealed class SessionLog
         }
     }
 
-    private static List<string> Assistant(JsonElement root)
+    private static List<LogLine> Assistant(JsonElement root)
     {
-        var lines = new List<string>();
+        var lines = new List<LogLine>();
         foreach (var part in Content(root))
         {
             switch (Str(part, "type"))
             {
                 case "text":
-                    lines.AddRange(Str(part, "text").Trim().Split('\n'));
-                    lines.Add("");
+                    lines.AddRange(Str(part, "text").Trim().Split('\n')
+                        .Select(text => new LogLine(text, LogLineKind.Prose)));
+                    lines.Add(new LogLine("", LogLineKind.Prose));
                     break;
                 case "tool_use":
-                    lines.Add($"▸ {Str(part, "name")} {ToolSummary(part)}".TrimEnd());
+                    lines.Add(new LogLine($"▸ {Str(part, "name")} {ToolSummary(part)}".TrimEnd(), LogLineKind.ToolCall));
                     break;
             }
         }
         return lines;
     }
 
-    private static IEnumerable<string> ToolErrors(JsonElement root)
+    private static IEnumerable<LogLine> ToolErrors(JsonElement root)
     {
         foreach (var part in Content(root))
         {
@@ -105,16 +107,17 @@ public sealed class SessionLog
             var text = content.ValueKind == JsonValueKind.String
                 ? content.GetString() ?? ""
                 : string.Join(" ", content.EnumerateArray().Select(c => Str(c, "text")));
-            yield return $"  ✗ {Clip(FirstLine(text), 200)}";
+            yield return new LogLine($"  ✗ {Clip(FirstLine(text), 200)}", LogLineKind.ToolError);
         }
     }
 
-    private static string Result(JsonElement root)
+    private static LogLine Result(JsonElement root)
     {
-        var outcome = root.TryGetProperty("is_error", out var e) && e.ValueKind == JsonValueKind.True ? "error" : "ok";
+        var failed = root.TryGetProperty("is_error", out var e) && e.ValueKind == JsonValueKind.True;
         var turns = root.TryGetProperty("num_turns", out var t) ? t.GetInt32() : 0;
         var cost = root.TryGetProperty("total_cost_usd", out var c) ? c.GetDouble() : 0;
-        return $"■ finished: {outcome}, {turns} turns, ${cost.ToString("0.00", CultureInfo.InvariantCulture)}";
+        var text = $"■ finished: {(failed ? "error" : "ok")}, {turns} turns, ${cost.ToString("0.00", CultureInfo.InvariantCulture)}";
+        return new LogLine(text, failed ? LogLineKind.ResultError : LogLineKind.ResultOk);
     }
 
     private static string ToolSummary(JsonElement tool)

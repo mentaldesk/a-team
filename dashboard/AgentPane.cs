@@ -55,7 +55,9 @@ public sealed class AgentPane : FrameView
             _why.Text = why;
 
         if (_log.Refresh(state.LogPath))
-            _body.Lines = _log.Lines.Count == 0 ? ["(no session yet)"] : [.. _log.Lines];
+            _body.Lines = _log.Lines.Count == 0
+                ? [new LogLine("(no session yet)", LogLineKind.Prose)]
+                : [.. _log.Lines];
     }
 
     private void UpdateHeader()

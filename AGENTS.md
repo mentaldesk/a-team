@@ -43,6 +43,9 @@ nothing to restart.
 - Pick an appropriate control for the input (e.g. `CheckBox` for on/off, `OptionSelector<T>` for a limited number of choices,
   `FlagSelector<T>` for several on/off flags, `NumericUpDown<T>` (with a minimum and maximum) for a numbers,
   `DropDownList<T>` or `ListView` for longer lists, `TextField` for free text).
+- Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj`),
+  outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's
+  draw loop, so cover the logic behind the views instead.
 - When describing UI in an issue or PR, name the control for each element and sketch it in the mockup, e.g.
   `[x] Follow output`, `(•) All ( ) Running`, `Refresh: [ 2 ▲▼]s`.
 
