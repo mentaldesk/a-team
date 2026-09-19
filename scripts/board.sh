@@ -141,6 +141,11 @@ by_priority() {
     map(.priority = $values[.number | tostring]) | sort_by(.priority as $p | $ranks | index($p) // length)' <<<"$list"
 }
 
+# An issue an agent wrote, from any team, carries its marker in the body.
+agent_written() {
+  gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev) -->'
+}
+
 pr_for() {
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
     query($owner: String!, $name: String!, $n: Int!) {
@@ -260,8 +265,16 @@ case "$CMD" in
     promote=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")]' <<<"$all" | by_priority |
       jq --argjson room "$((room > 0 ? room : 0))" '.[:$room]')
     exploring=$((exploring - $(jq length <<<"$promote")))
-    idea=$(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$all" | by_priority |
-      jq 'map(select((.labels | index("a-team:idea") | not) or .priority != null)) | first')
+    idea=null
+    while IFS= read -r candidate; do
+      if [ "$(jq -r .priority <<<"$candidate")" = null ] &&
+        { jq -e '.labels | index("a-team:idea")' <<<"$candidate" >/dev/null ||
+          agent_written "$(jq -r .number <<<"$candidate")"; }; then
+        continue
+      fi
+      idea=$candidate
+      break
+    done < <(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$all" | by_priority | jq -c '.[]')
     can_pitch=false can_discover=false
     [ "$exploring" -lt "$(cfg '.wip.exploring')" ] && [ "$idea" != null ] && can_pitch=true
     [ "$found" -lt "$(cfg '.wip.ideas')" ] && can_discover=true
