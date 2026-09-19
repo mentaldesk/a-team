@@ -20,6 +20,17 @@ Code session for that role. Checking is a plain script, so an idle team costs no
 roles read their instructions from this repo, so a change to how the team works is a commit
 here.
 
+## Install
+
+```
+brew install mentaldesk/tap/a-team
+```
+
+Claude Code must be installed and logged in, and `gh` needs the `project` scope
+(`gh auth refresh -s project`). Then add a team (see *Starting a team*) and run
+`a-team install` to start the dispatcher. `brew upgrade a-team` moves every team to the latest
+release.
+
 ## Layout
 
 | Path | What it is |
@@ -107,7 +118,8 @@ dispatcher's recent decisions. With no arguments it shows every team with dispat
 Tab or the arrow keys select an agent (▶). PgUp/PgDn/Home/End scroll its session; scrolling up
 stops it following new output until you press End. Esc quits.
 
-It needs the .NET 10 SDK.
+Releases include a native build. Run from a clone, it's built from source and needs the
+.NET 10 SDK.
 
 ## Trying out a clone or worktree
 
@@ -120,6 +132,8 @@ installed dispatcher keeps running the teams:
 A_TEAM_STATE=/tmp/a-team-test ./bin/a-team dispatch --dry-run
 ```
 
-Give a clone's dispatcher its own `A_TEAM_STATE`, or it shares state with the real one. When a
+Give a clone's dispatcher its own `A_TEAM_STATE`, or it shares state with the real one.
+`a-team install` asks before replacing a dispatcher installed from somewhere else, so trying a
+clone can't take over the real one by accident. When a
 dispatcher starts an agent, it puts its own `bin` first on the agent's `PATH` and fills in the
 permission rules from its own location, so the agent uses that same copy of a-team.
