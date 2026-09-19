@@ -97,13 +97,17 @@ anything the reviewer has said on other pitches since, and update it if needed. 
 - `"pitch"`: `board.sh move lead <item> Exploring` (this labels it `pitch`) and write the pitch
   (see *Writing a pitch*). Leave it in Exploring; a later run promotes it. It's the
   highest-priority Idea, so the reviewer wants it. Keep the reviewer's original text at the
-  bottom of the body under **Original idea**.
+  bottom of the body under **Original idea**. If the seed names a solution ("add X"), work out
+  the opportunity behind it first: the need or pain that makes X worth having. Then treat X as
+  one of the options, not the answer.
 - `"discover"`: research new opportunities and file up to `room` of the best, but no more
   than 2. Look at user pain in the repo's issues and discussions, what comparable tools do,
   what the product's dependencies now make possible, and gaps against the vision. File each as
-  an issue with a short body (the **Problem**, the **Evidence** with links, **Why it fits** the
-  vision, and your marker), then `board.sh add lead <n> Idea`. The reviewer gives it a
-  priority if they want it pitched and closes it if not. Don't pitch it yourself.
+  an opportunity, not a solution: a need, pain point or desire, described from the user's side
+  ("I lose my place when I switch between files", not "add a recent files list"). Title it that
+  way too. Body: the **Opportunity**, the **Evidence** with links, **Why it fits** the vision,
+  and your marker. Then `board.sh add lead <n> Idea`. The reviewer gives it a priority if they
+  want it pitched and closes it if not. Don't pitch it yourself.
 - `"none"`: nothing new to start.
 
 **`readyLow`**: if true, the Dev is about to run out of work. Say so at the top of your summary,
@@ -117,8 +121,13 @@ direction, revise any drafts in Exploring that it affects.
 
 The pitch lives in the issue body:
 
-- **Problem**: who hits it and when, with evidence (links).
-- **Proposal**: what changes for the user.
+- **Opportunity**: the user's need or pain, who has it and when, with evidence (links). No
+  solution in this section.
+- **Options considered**: at least three genuinely different ways to address the opportunity,
+  a line or two each on what's good and bad about it, and why you chose the one you're
+  proposing. Different means different approaches, not variations on one design. Doing
+  nothing, or changing something that already exists, count as options.
+- **Proposal**: the chosen option: what changes for the user.
 - **Mockup**: ASCII or a short sketch showing the experience. For a terminal app, ASCII is the
   real thing; draw it. Draw each element as the control it will be, following the product's UI
   conventions and its toolkit's built-in controls (e.g. `[x] Option`, `(•) A ( ) B`,
