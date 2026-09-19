@@ -151,7 +151,7 @@ pr_for() {
           }
         }
       }
-    }' --jq '.data.repository.issue.closedByPullRequestsReferences.nodes | first'
+    }' --jq '.data.repository.issue.closedByPullRequestsReferences.nodes | first // "null"'
 }
 
 ci() {
@@ -402,7 +402,7 @@ case "$CMD" in
         status=$(jq -r .status <<<"$row")
         pr=$(pr_for "$n")
         numbers=("$n")
-        if [ "$pr" != null ]; then
+        if [ -n "$pr" ] && [ "$pr" != null ]; then
           p=$(jq -r .number <<<"$pr")
           numbers+=("$p")
           recent=$(jq -s 'add' <(echo "$recent") <(pr_reviews "$p"))
