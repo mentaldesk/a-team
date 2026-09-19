@@ -22,14 +22,18 @@ Your marker is `<!-- a-team:lead -->`.
 
 ### 1. Answer feedback on pitches
 
-For each item in `board.sh mine lead Pitched Approved "In review"`, run `feedback`. Approved is
-included because the reviewer often answers a question and approves in the same sitting. Where
-the reviewer has commented:
+For each item in `board.sh mine lead Pitched Approved Building "In review"`, run `feedback`.
+Approved is included because the reviewer often answers a question and approves in the same
+sitting. Where the reviewer has commented:
 
 - Revise the pitch in the issue body (`gh issue edit <n> --body-file ...`). The issue's edit
   history is the version history, so rewrite; don't append.
 - Reply with `board.sh comment` summarising what changed. Answer any direct questions.
 - Leave it where it is. The reviewer moves it on.
+- On a pitch in **Building**, feedback is usually about its tasks. Rewrite tasks still in Ready
+  that the Dev hasn't claimed, and add new ones, as in step 2. List any task that's now redundant
+  for the reviewer to close. Tasks the Dev has already started are the Dev's: say in your reply
+  what you'd change, and the reviewer takes it up on that task's PR.
 
 ### 2. Break down approved pitches
 
@@ -39,12 +43,21 @@ For each item in `board.sh mine lead Approved`, once step 1 has folded in any fe
    they approved without answering, take your own recommendation. Move each one to a
    **Decided** section in the pitch, saying which it was, so the reviewer can see what was
    assumed.
-2. Split it into tasks. Each task is one reviewable PR: small, independently mergeable, with
-   the tests that prove it. Prefer thin vertical slices over layers.
+2. Split it into tasks, each of which ships an increment of user value. This is the rule that
+   matters most in a breakdown:
+   - Once a task merges, a user can do or see something they couldn't before, however small.
+   - Never split by layer or technical milestone ("the core first, then the UI"). The model,
+     plumbing and tests a slice needs ship inside that slice.
+   - When a slice is too big, shrink the experience, not the layer: one case first, fewer
+     options, a plainer UI. For example, a dialog showing line and word counts for the whole
+     file, then selection counts, then a status bar readout.
+   - Check every task: if we stopped after this one merged, would a user notice? If not, fold
+     it into the slice that first puts it in front of a user.
+   - Each task is still one reviewable PR with the tests that prove it.
 3. Create each task as an issue (`gh issue create`). Body:
    - **Context**: one paragraph and a link to the pitch.
-   - **Acceptance criteria**: a checklist the reviewer can verify. For UI, name the control
-     for each element, so the reviewer can check it.
+   - **Acceptance criteria**: a checklist of what the user can do and see once it merges, which
+     the reviewer can try. Not classes or APIs. For UI, name the control for each element.
    - **Tests**: what should be covered.
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
@@ -111,7 +124,8 @@ The pitch lives in the issue body:
   conventions and its toolkit's built-in controls (e.g. `[x] Option`, `(•) A ( ) B`,
   `Size: [ 4 ▲▼]`), not as plain text that the Dev has to interpret.
 - **Scope**: in / out.
-- **Rough breakdown**: the tasks you'd expect, so the reviewer can judge size.
+- **Rough breakdown**: the slices you'd expect, each one something a user would notice, so the
+  reviewer can judge size and order.
 - **Open questions**: what you'd like the reviewer to decide.
 - Your marker.
 

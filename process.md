@@ -31,7 +31,8 @@ Two kinds of item share the board:
 - A **document pitch** is a proposal that is itself a document, like the product vision. It's a
   draft PR with the `pitch` label that goes straight to Pitched. The reviewer approves it by
   merging, which moves it to Done.
-- A **task** is a single PR's worth of work and travels Ready → In progress → In review → Done.
+- A **task** is a single PR that ships something a user can notice (never a layer or a
+  technical milestone on its own), and travels Ready → In progress → In review → Done.
   A task that needs another merged first is recorded as blocked by it, a GitHub issue
   dependency, and becomes available by itself when that one closes. The `blocked` label is
   for a task waiting on an answer from the reviewer.
