@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Syntax
+        run: for f in scripts/*.sh; do bash -n "$f"; done
+
+      - name: ShellCheck
+        run: shellcheck --severity=warning scripts/*.sh
+
+      - name: JSON config
+        run: jq -e . settings/*.json teams/*/team.json >/dev/null
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build dashboard/Dashboard.csproj -warnaserror
