@@ -32,8 +32,9 @@ Two kinds of item share the board:
   draft PR with the `pitch` label that goes straight to Pitched. The reviewer approves it by
   merging, which moves it to Done.
 - A **task** is a single PR's worth of work and travels Ready → In progress → In review → Done.
-  A task that can't start yet (its prerequisite isn't merged) sits in Ready with the `blocked`
-  label.
+  A task that needs another merged first is recorded as blocked by it, a GitHub issue
+  dependency, and becomes available by itself when that one closes. The `blocked` label is
+  for a task waiting on an answer from the reviewer.
 
 The reviewer uses the same board for their own work. Pitches carry the `pitch` label and tasks
 the Dev has claimed carry `a-team:dev`; anything else past Ready belongs to the reviewer.
@@ -57,6 +58,7 @@ board.sh <team> add <role> <n> <STATUS>   # put an existing issue or PR on the b
 board.sh <team> comment <role> <n> <file> # post a comment, marked as yours
 board.sh <team> feedback <role> <n>       # reviewer comments you haven't answered yet
 board.sh <team> link <parent> <child>     # make <child> a sub-issue of <parent>
+board.sh <team> depends <task> <prereq>   # <task> can't start until <prereq> closes
 board.sh <team> children <n>              # sub-issues and whether they're closed
 board.sh <team> pr <n>                    # the open PR that closes issue <n>
 board.sh <team> checks <pr>               # CI verdict: pass | fail | pending

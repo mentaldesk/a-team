@@ -45,20 +45,19 @@ For each item in `board.sh mine lead Approved`, once step 1 has folded in any fe
    - **Tests**: what should be covered.
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
-4. `board.sh link <pitch> <task>`, then `board.sh add lead <task> Ready`. Add the `blocked`
-   label to any task whose prerequisite isn't merged yet, and name the prerequisite in its body.
-   The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks unblocked together
-   if they touch different parts of the code. If two would edit the same files, block the later
-   one on the earlier. Don't plan stacked branches.
+4. `board.sh link <pitch> <task>`, then `board.sh add lead <task> Ready`. For a task that
+   needs another merged first, `board.sh depends <task> <prerequisite>` and name the
+   prerequisite in its body. It becomes available to the Dev by itself when the prerequisite
+   closes. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
+   independent of each other if they touch different parts of the code. If two would edit the
+   same files, make the later one depend on the earlier. Don't plan stacked branches.
 5. `board.sh move lead <pitch> Building`, and comment on the pitch listing the tasks in the
    order you expect them to land and any open questions you settled with your own
    recommendation.
 
 ### 3. Tend pitches in Building
 
-For every item in `board.sh list Ready` with the `blocked` label, remove the label once the
-prerequisite its body names has closed. Then, for each item in `board.sh mine lead Building`,
-run `children`:
+For each item in `board.sh mine lead Building`, run `children`:
 
 - When every task is closed, validate the whole: fetch `origin/main`, build it, try the feature
   the way a user would, and compare it with the pitch's acceptance criteria. Then either

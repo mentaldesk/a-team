@@ -71,7 +71,8 @@ items() {
             fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
             content {
               __typename
-              ... on Issue { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
+              ... on Issue { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } }
+                             issueDependenciesSummary { blockedBy } }
               ... on PullRequest { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
             } } } } } }" -F field="$FIELD" --paginate |
     jq -s --arg kind "$KIND" --arg repo "$REPO" \
@@ -88,6 +89,7 @@ items() {
              title: .content.title,
              url: .content.url,
              labels: [.content.labels.nodes[].name],
+             blockedBy: (.content.issueDependenciesSummary.blockedBy // 0),
              status: (if $raw == null then "None"
                       elif $rev[$raw] then $rev[$raw]
                       elif ($states | index($raw)) then $raw
@@ -241,7 +243,7 @@ case "$CMD" in
   next)
     items | jq 'map(select(.status == "Ready" and .type == "Issue"
                            and (.labels | index("pitch") | not)
-                           and (.labels | index("blocked") | not)))' | by_priority | jq first
+                           and (.labels | index("blocked") | not) and .blockedBy == 0))' | by_priority | jq first
     ;;
 
   lead-next)
@@ -364,6 +366,13 @@ case "$CMD" in
     echo "#$2 is now a sub-issue of #$1"
     ;;
 
+  depends)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM depends <task> <prerequisite>"
+    gh api -X POST "repos/$REPO/issues/$1/dependencies/blocked_by" \
+      -F "issue_id=$(gh api "repos/$REPO/issues/$2" --jq .id)" >/dev/null
+    echo "#$1 is now blocked by #$2"
+    ;;
+
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
@@ -422,7 +431,7 @@ case "$CMD" in
       used=$(jq '[.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))] | length' <<<"$all")
       if [ "$used" -lt "$(cfg .wip.worktrees)" ]; then
         ready=$(jq -r '[.[] | select(.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)
-                                     and (.labels | index("blocked") | not))][0].number // empty' <<<"$all")
+                                     and (.labels | index("blocked") | not) and .blockedBy == 0)][0].number // empty' <<<"$all")
         [ -n "$ready" ] && reasons+=("Ready task available (e.g. #$ready) and a free worktree")
       fi
       creative=false
