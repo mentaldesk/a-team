@@ -18,13 +18,13 @@ public static class BundledThemes
 
     public static string Current => ThemeManager.Theme;
 
-    /// <summary>Registers the bundled themes and applies the default. Call before the application starts.</summary>
-    public static void Load()
+    /// <summary>Registers the bundled themes and applies <paramref name="theme"/>. Call before the application starts.</summary>
+    public static void Load(string theme = Default)
     {
         ConfigurationManager.RuntimeConfig = Config;
         // a-team keeps its own config, so ~/.tui and TUI_CONFIG are left out.
         ConfigurationManager.Enable(ConfigLocations.HardCoded | ConfigLocations.LibraryResources | ConfigLocations.Runtime);
-        Apply(Default);
+        Apply(theme);
     }
 
     /// <summary>Switches to <paramref name="theme"/>, or to the default if it isn't one we ship.</summary>

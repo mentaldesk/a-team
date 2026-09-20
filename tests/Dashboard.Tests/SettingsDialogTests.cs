@@ -50,7 +50,7 @@ public class SettingsDialogTests
 
     private static SettingsDialog Open(out ThemeSetting theme)
     {
-        theme = new ThemeSetting(BundledThemes.Midnight, _ => { });
+        theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, _ => { });
         var dialog = new SettingsDialog(theme, () => { });
         dialog.SetFocus();
         return dialog;

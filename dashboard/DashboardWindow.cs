@@ -11,9 +11,11 @@ public sealed class DashboardWindow : Window
     private readonly TextView _dispatch;
     private readonly string _dispatchLog;
     private readonly string _nextPass;
+    private readonly DashboardSettings _settings;
 
-    public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot)
+    public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot, DashboardSettings settings)
     {
+        _settings = settings;
         Title = $"a-team {Version()} · Tab/arrows: select agent · PgUp/PgDn/Home/End: scroll · Ctrl+,: settings · Esc: quit";
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
@@ -89,7 +91,7 @@ public sealed class DashboardWindow : Window
     {
         if (App is null)
             return false;
-        SettingsDialog.Show(App, ThemeSetting.Live());
+        SettingsDialog.Show(App, ThemeSetting.Live(_settings));
         return true;
     }
 
