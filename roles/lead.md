@@ -116,8 +116,11 @@ anything the reviewer has said on other pitches since, and update it if needed. 
   want it pitched and closes it if not. Don't pitch it yourself.
 - `"none"`: nothing new to start.
 
-**`readyLow`**: if true, the Dev is about to run out of work. Say so at the top of your summary,
-with the number of pitches waiting on the reviewer.
+**`ready`, `blocked`, `readyLow`**: `ready` is the tasks the Dev can start now, `blocked` the
+Ready ones waiting on a dependency or on the reviewer. If `readyLow` is true, the Dev is about to
+run out of work: open your summary with how many it can start, how many are Ready but waiting,
+and how many pitches are waiting on the reviewer. If `ready` is 0, name what would unblock the
+most work — the prerequisite whose merge frees the most tasks, or the pitch to approve.
 
 If an Idea doesn't hold up against the vision once you dig in, say so in a comment and move it
 back to Idea instead of pitching it. When the reviewer's feedback on one pitch changes
