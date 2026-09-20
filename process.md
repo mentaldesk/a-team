@@ -97,7 +97,8 @@ tell what `$B` will run.
 2. Check the board before doing anything else. If there is nothing for your role to do, say so
    in one line and stop. An empty run should cost almost nothing.
 3. Finish existing work before starting new work. Respect the WIP limits in the team config:
-   - `worktrees`: the Dev's tasks In progress + In review, one worktree each
+   - `worktrees`: the Dev's tasks In progress + In review, one worktree each. While an unblocked
+     Ready task is Urgent, one extra worktree is allowed, until that task lands.
    - `pitched`: pitches in front of the reviewer
    - `exploring`: drafted pitches waiting for room in Pitched
    - `ideas`: the Lead's discoveries waiting for the reviewer to prioritise or close them
