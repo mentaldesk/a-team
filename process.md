@@ -62,6 +62,7 @@ a-team board {{team}} comment <role> <n> <file> # post a comment, marked as your
 a-team board {{team}} feedback <role> <n>       # reviewer comments you haven't answered yet
 a-team board {{team}} link <parent> <child>     # make <child> a sub-issue of <parent>
 a-team board {{team}} depends <task> <prereq>   # <task> can't start until <prereq> closes
+a-team board {{team}} undepend <role> <task> <prereq>  # Lead only: drop that dependency again
 a-team board {{team}} children <n>              # sub-issues and whether they're closed
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending

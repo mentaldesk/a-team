@@ -168,6 +168,11 @@ agent_written() {
   gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev) -->'
 }
 
+# The number of the issue #1 is a sub-issue of, or nothing.
+parent_of() {
+  gh api "repos/$REPO/issues/$1" --jq '.parent_issue_url // empty | split("/") | last'
+}
+
 # The Idea the Lead should pitch next: the reviewer's own, or any the reviewer has prioritised.
 pitchable_idea() {
   local candidate
@@ -430,6 +435,30 @@ case "$CMD" in
     write "block #$1 on #$2" gh api -X POST "repos/$REPO/issues/$1/dependencies/blocked_by" \
       -F "issue_id=$(gh api "repos/$REPO/issues/$2" --jq .id)" >/dev/null
     say "#$1 is now blocked by #$2"
+    ;;
+
+  undepend)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM undepend <role> <task> <prerequisite>"
+    role=$1 task=$2 prereq=$3
+    check_role "$role"
+    [ "$role" = lead ] || die "$role may not remove a dependency; only lead draws breakdowns"
+    all=$(items)
+    board_status() { jq -r --argjson n "$1" 'map(select(.number == $n)) | first | .status // empty' <<<"$all"; }
+    from=$(board_status "$task")
+    [ -n "$from" ] || die "#$task is not on the board"
+    [ "$from" = Ready ] || die "$role may only remove a dependency on a Ready task (#$task is '$from')"
+    pitch=$(parent_of "$task")
+    [ -n "$pitch" ] && [ "$pitch" = "$(parent_of "$prereq")" ] ||
+      die "$role may only remove a dependency between tasks of one pitch in Building (#$task and #$prereq are not sub-issues of the same pitch)"
+    pitch_status=$(board_status "$pitch")
+    [ "$pitch_status" = Building ] ||
+      die "$role may only remove a dependency between tasks of one pitch in Building (#$pitch is '${pitch_status:-not on the board}')"
+    prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
+      jq -r --argjson n "$prereq" '[.[] | select(.number == $n) | .id] | first // empty')
+    [ -n "$prereq_id" ] || die "#$task is not blocked by #$prereq"
+    write "unblock #$task from #$prereq" \
+      gh api -X DELETE "repos/$REPO/issues/$task/dependencies/blocked_by/$prereq_id" >/dev/null
+    say "#$task is no longer blocked by #$prereq"
     ;;
 
   children)
