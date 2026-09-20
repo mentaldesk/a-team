@@ -37,8 +37,10 @@ sitting. Where the reviewer has commented:
 - Otherwise leave it where it is. The reviewer moves it on.
 - On a pitch in **Building**, feedback is usually about its tasks. Rewrite tasks still in Ready
   that the Dev hasn't claimed, and add new ones, as in step 2. List any task that's now redundant
-  for the reviewer to close. Tasks the Dev has already started are the Dev's: say in your reply
-  what you'd change, and the reviewer takes it up on that task's PR.
+  for the reviewer to close. Drop the dependencies the new plan no longer needs with
+  `a-team board {{team}} undepend lead <task> <prereq>`, and name each dropped edge in the same reply.
+  Tasks the Dev has already started are the Dev's: say in your reply what you'd change, and the
+  reviewer takes it up on that task's PR.
 
 ### 2. Break down approved pitches
 
