@@ -21,10 +21,11 @@ public sealed class DashboardWindow : Window
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
+        var expandToolCalls = settings.ReadExpandToolCalls();
         for (var i = 0; i < agents.Count; i++)
         {
             var (team, role) = agents[i];
-            var pane = new AgentPane(team, role, Path.Combine(stateRoot, team, role))
+            var pane = new AgentPane(team, role, Path.Combine(stateRoot, team, role), expandToolCalls)
             {
                 X = i == 0 ? 0 : Pos.Right(_panes[i - 1]),
                 Y = 0,
@@ -96,7 +97,7 @@ public sealed class DashboardWindow : Window
     {
         if (App is null)
             return false;
-        SettingsDialog.Show(App, ThemeSetting.Live(_settings));
+        SettingsDialog.Show(App, _settings);
         return true;
     }
 

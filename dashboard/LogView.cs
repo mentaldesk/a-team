@@ -27,7 +27,11 @@ public sealed class LogView : View
 
     public bool Following => _following;
 
-    public bool Expanded => _expanded;
+    public bool Expanded
+    {
+        get => _expanded;
+        init => _expanded = value;
+    }
 
     /// <summary>Shows every tool call again, or folds the runs back up, keeping the line you were reading.</summary>
     public void ToggleToolCalls()

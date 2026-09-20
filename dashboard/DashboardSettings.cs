@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The dashboard's settings, in a-team's own config directory beside <c>teams/</c>. Only the theme so far.</summary>
+/// <summary>The dashboard's settings, in a-team's own config directory beside <c>teams/</c>.</summary>
 public sealed class DashboardSettings
 {
     private readonly string _path;
@@ -23,26 +23,49 @@ public sealed class DashboardSettings
     public string ReadTheme()
     {
         using var file = Parse();
-        return file?.RootElement is { ValueKind: JsonValueKind.Object } root &&
-               root.TryGetProperty("theme", out var theme) &&
-               theme.ValueKind == JsonValueKind.String &&
+        return Setting(file, "theme") is { ValueKind: JsonValueKind.String } theme &&
                theme.GetString() is { } name &&
                BundledThemes.Names.Contains(name)
             ? name
             : BundledThemes.Default;
     }
 
-    public void WriteTheme(string theme)
+    public void WriteTheme(string theme) => Write("theme", writer => writer.WriteStringValue(theme));
+
+    /// <summary>Whether panes start with every tool call showing. Off unless the file says otherwise.</summary>
+    public bool ReadExpandToolCalls()
     {
+        using var file = Parse();
+        return Setting(file, "expandToolCalls") is { ValueKind: JsonValueKind.True };
+    }
+
+    public void WriteExpandToolCalls(bool expand) => Write("expandToolCalls", writer => writer.WriteBooleanValue(expand));
+
+    /// <summary>Writes one setting, carrying over every other one the file already holds.</summary>
+    private void Write(string name, Action<Utf8JsonWriter> value)
+    {
+        using var existing = Parse();
+        List<JsonProperty> others = existing?.RootElement is { ValueKind: JsonValueKind.Object } root
+            ? [.. root.EnumerateObject().Where(property => property.Name != name)]
+            : [];
+
         if (Path.GetDirectoryName(_path) is { Length: > 0 } dir)
             Directory.CreateDirectory(dir);
 
         using var stream = File.Create(_path);
         using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
         writer.WriteStartObject();
-        writer.WriteString("theme", theme);
+        foreach (var other in others)
+            other.WriteTo(writer);
+        writer.WritePropertyName(name);
+        value(writer);
         writer.WriteEndObject();
     }
+
+    private static JsonElement? Setting(JsonDocument? file, string name) =>
+        file?.RootElement is { ValueKind: JsonValueKind.Object } root && root.TryGetProperty(name, out var setting)
+            ? setting
+            : null;
 
     private JsonDocument? Parse()
     {

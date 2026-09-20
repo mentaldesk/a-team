@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace ATeam.Dashboard.Tests;
 
 public class DashboardSettingsTests : IDisposable
@@ -73,6 +75,84 @@ public class DashboardSettingsTests : IDisposable
         new DashboardSettings(_configRoot).ReadTheme();
 
         Assert.Equal("{ oops", File.ReadAllText(path));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Showing_tool_calls_in_full_is_what_the_next_run_starts_panes_as(bool expand)
+    {
+        new DashboardSettings(_configRoot).WriteExpandToolCalls(expand);
+
+        Assert.Equal(expand, new DashboardSettings(_configRoot).ReadExpandToolCalls());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("{")]
+    [InlineData("not json at all")]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("{\"expandToolCalls\": \"yes\"}")]
+    [InlineData("{\"expandToolCalls\": 1}")]
+    [InlineData("{\"expandToolCalls\": null}")]
+    public void Anything_we_cannot_read_as_a_yes_or_no_leaves_tool_calls_folded_up(string? contents)
+    {
+        if (contents is not null)
+            Write(contents);
+
+        Assert.False(new DashboardSettings(_configRoot).ReadExpandToolCalls());
+    }
+
+    [Fact]
+    public void Writing_the_tool_calls_setting_keeps_the_theme_that_was_already_there()
+    {
+        var settings = new DashboardSettings(_configRoot);
+        settings.WriteTheme(BundledThemes.Daylight);
+
+        settings.WriteExpandToolCalls(true);
+
+        Assert.Equal(BundledThemes.Daylight, settings.ReadTheme());
+        Assert.True(settings.ReadExpandToolCalls());
+    }
+
+    [Fact]
+    public void Writing_the_theme_keeps_the_tool_calls_setting_that_was_already_there()
+    {
+        var settings = new DashboardSettings(_configRoot);
+        settings.WriteExpandToolCalls(true);
+
+        settings.WriteTheme(BundledThemes.TurboPascal);
+
+        Assert.True(settings.ReadExpandToolCalls());
+        Assert.Equal(BundledThemes.TurboPascal, settings.ReadTheme());
+    }
+
+    [Fact]
+    public void A_file_from_before_this_setting_existed_reads_and_keeps_its_theme()
+    {
+        Write($"{{ \"theme\": \"{BundledThemes.ModernBorland}\" }}");
+        var settings = new DashboardSettings(_configRoot);
+        Assert.False(settings.ReadExpandToolCalls());
+
+        settings.WriteExpandToolCalls(true);
+
+        Assert.Equal(BundledThemes.ModernBorland, settings.ReadTheme());
+        Assert.True(settings.ReadExpandToolCalls());
+    }
+
+    [Fact]
+    public void A_setting_written_twice_is_not_written_twice_over()
+    {
+        var settings = new DashboardSettings(_configRoot);
+        settings.WriteExpandToolCalls(true);
+
+        settings.WriteExpandToolCalls(false);
+
+        Assert.False(settings.ReadExpandToolCalls());
+        Assert.Single(JsonDocument.Parse(File.ReadAllText(Path.Combine(_configRoot, "dashboard.json")))
+            .RootElement.EnumerateObject());
     }
 
     private string Write(string contents)
