@@ -190,8 +190,9 @@ pitchable_idea() {
 }
 
 # One swap set for Pitched, from all board items: `promote` are the Exploring pitches that
-# belong in Pitched, `demote` the Pitched ones they displace. Sorting Pitched first makes
-# `by_priority`'s stable sort displace only on a strictly higher priority.
+# belong in Pitched, `demote` the Pitched ones they displace, paired in order. Sorting Pitched
+# first makes `by_priority`'s stable sort displace only on a strictly higher priority, and
+# `demote` never outruns `promote`, so nothing leaves Pitched without a draft taking its slot.
 pitch_swap() {
   jq -c '[.[] | select((.labels | index("pitch")) and (.status == "Pitched" or .status == "Exploring"))]
          | sort_by(.status != "Pitched")' <<<"$1" | by_priority |
@@ -199,8 +200,10 @@ pitch_swap() {
       ([.[] | select(.status == "Pitched")] | length) as $pitched
       | if $pitched < $limit
         then {promote: [.[] | select(.status == "Exploring")][:$limit - $pitched], demote: []}
-        else {promote: [.[:$limit][] | select(.status == "Exploring")],
-              demote: [.[$limit:][] | select(.status == "Pitched")]}
+        else [.[:$limit][] | select(.status == "Exploring")] as $promote
+          | [.[$limit:][] | select(.status == "Pitched")] as $displaced
+          | {promote: $promote,
+             demote: $displaced[($displaced | length) - ($promote | length):]}
         end'
 }
 

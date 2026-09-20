@@ -96,15 +96,17 @@ this run's new work is a pitch or a discovery. It alternates between the two so 
 gets a blend of their own ideas refined and new ones found, and it respects the WIP limits.
 When nothing is Pitched or Exploring, it always pitches.
 
-**`demote`**: pitches a higher-priority draft displaces. Do these **before** `promote`, so
-Pitched never holds more than `wip.pitched`. For each, `a-team board {{team}} move lead <n> Exploring` and
-comment saying which pitch displaced it and that it keeps its priority, so it comes back by
-itself once a slot frees.
+**`demote`** and **`promote`** are one swap, paired in order: each demoted pitch is displaced by
+the draft beside it. **Alternate** them — demote the first, promote the first, demote the second,
+promote the second — so Pitched never holds more than `wip.pitched` and every move is still one
+the board allows when it re-checks.
 
-**`promote`**: drafted pitches to move from Exploring to Pitched, highest priority first. A
-draft may have sat a while, so check each one against the current vision, the code, and
-anything the reviewer has said on other pitches since, and update it if needed. Then
-`a-team board {{team}} move lead <n> Pitched`.
+For a demote, `a-team board {{team}} move lead <n> Exploring` and comment saying which pitch displaced
+it and that it keeps its priority, so it comes back by itself once a slot frees.
+
+For a promote, `a-team board {{team}} move lead <n> Pitched`. A draft may have sat a while, so check it
+against the current vision, the code, and anything the reviewer has said on other pitches since,
+and update it if needed.
 
 **`turn`**:
 
