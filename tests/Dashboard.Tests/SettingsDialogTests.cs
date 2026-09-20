@@ -26,11 +26,26 @@ public class SettingsDialogTests
     public void Enter_is_left_free_and_does_not_close_the_dialog()
     {
         using var dialog = Open(out _);
+        var asked = false;
+        dialog.Accepting += (_, _) => asked = true;
 
-        dialog.NewKeyDownEvent(Key.Enter);
+        dialog.MostFocused!.NewKeyDownEvent(Key.Enter);
 
+        Assert.False(asked);
         Assert.Null(dialog.Result);
         Assert.False(dialog.Confirmed);
+    }
+
+    [Fact]
+    public void The_OK_button_keeps_the_theme_and_Cancel_does_not()
+    {
+        using var ok = Open(out _);
+        ok.Buttons.Single(b => b.Text == "OK").InvokeCommand(Command.Accept);
+        Assert.True(ok.Confirmed);
+
+        using var cancel = Open(out _);
+        cancel.Buttons.Single(b => b.Text == "Cancel").InvokeCommand(Command.Accept);
+        Assert.False(cancel.Confirmed);
     }
 
     private static SettingsDialog Open(out ThemeSetting theme)

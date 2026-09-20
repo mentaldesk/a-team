@@ -40,13 +40,17 @@ public sealed class SettingsDialog : Dialog
         cancel.Accepting += (_, _) => Close(confirmed: false);
         AddButton(ok);
         AddButton(cancel);
-        // AddButton makes the last button the default, which would close the dialog on Enter; Enter is reserved.
+        // AddButton makes the last button added the default; neither is, so neither answers Enter.
         ok.IsDefault = false;
         cancel.IsDefault = false;
         DefaultAcceptView = null;
     }
 
     internal bool Confirmed { get; private set; }
+
+    /// <summary>Terminal.Gui closes a Dialog when a subview's Accept reaches it unhandled, and Enter raises Accept
+    /// on the theme list. The buttons close the dialog from their own Accepting, so nothing here needs it.</summary>
+    protected override bool OnAccepting(CommandEventArgs args) => true;
 
     protected override bool OnKeyDown(Key key)
     {
