@@ -43,7 +43,7 @@ public sealed class LogView : View
     {
         var width = Math.Max(1, Viewport.Width);
         var height = Viewport.Height;
-        var rows = Wrap(_lines, width);
+        var rows = Wrap(Collapse(_lines, width), width);
         _maxTop = Math.Max(0, rows.Count - height);
         _top = _following ? _maxTop : Math.Min(_top, _maxTop);
         for (var row = 0; row < height; row++)
@@ -64,6 +64,34 @@ public sealed class LogView : View
             ? scheme.GetAttributeForRole(style.Role)
             : GetAttributeForRole(VisualRole.Normal);
     }
+
+    /// <summary>Folds each run of consecutive tool calls into one clipped row, showing the latest call.</summary>
+    internal static List<LogLine> Collapse(IReadOnlyList<LogLine> lines, int width)
+    {
+        var rows = new List<LogLine>(lines.Count);
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (lines[i].Kind != LogLineKind.ToolCall)
+            {
+                rows.Add(lines[i]);
+                continue;
+            }
+            var first = i;
+            while (i + 1 < lines.Count && lines[i + 1].Kind == LogLineKind.ToolCall)
+                i++;
+            rows.Add(lines[i] with { Text = Fold(lines[i].Text, i - first, width) });
+        }
+        return rows;
+    }
+
+    private static string Fold(string text, int folded, int width)
+    {
+        var suffix = folded > 0 ? $" (+{folded})" : "";
+        var room = width - suffix.Length;
+        return room < 1 ? Clip(suffix.TrimStart(), width) : Clip(text, room) + suffix;
+    }
+
+    private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
 
     internal static List<LogLine> Wrap(IReadOnlyList<LogLine> lines, int width)
     {
