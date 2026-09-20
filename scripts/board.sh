@@ -461,6 +461,27 @@ case "$CMD" in
     say "#$task is no longer blocked by #$prereq"
     ;;
 
+  unlink)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM unlink <role> <parent> <child>"
+    role=$1 parent=$2 child=$3
+    check_role "$role"
+    [ "$role" = lead ] || die "$role may not take a task off a pitch; only lead draws breakdowns"
+    all=$(items)
+    board_status() { jq -r --argjson n "$1" 'map(select(.number == $n)) | first | .status // empty' <<<"$all"; }
+    from=$(board_status "$child")
+    [ -n "$from" ] || die "#$child is not on the board"
+    [ "$from" = Ready ] || die "$role may only take a Ready task off a pitch (#$child is '$from')"
+    jq -e --argjson n "$parent" 'map(select(.number == $n)) | first | (.labels // []) | index("pitch")' <<<"$all" >/dev/null ||
+      die "$role may only take a task off a pitch (#$parent is not one)"
+    pitch_status=$(board_status "$parent")
+    [ "$pitch_status" = Building ] ||
+      die "$role may only take a task off a pitch in Building (#$parent is '$pitch_status')"
+    [ "$(parent_of "$child")" = "$parent" ] || die "#$child is not a sub-issue of #$parent"
+    write "take #$child off #$parent" gh api -X DELETE "repos/$REPO/issues/$parent/sub_issue" \
+      -F "sub_issue_id=$(gh api "repos/$REPO/issues/$child" --jq .id)" >/dev/null
+    say "#$child is no longer a sub-issue of #$parent"
+    ;;
+
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
