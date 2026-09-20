@@ -80,19 +80,24 @@ the artifacts it uploaded.
 | Secrets | None. Uses the caller's `GITHUB_TOKEN`. |
 | Permissions the caller must grant | `contents: read`, `pull-requests: read` (`auto` reads merged PR labels). |
 
-**`release-publish.yml`** — the tag, the release and the tap PR.
+**`release-publish.yml`** — the tag, the release, the tap PR and, optionally, the Scoop manifest.
 
 | | |
 |---|---|
-| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `artifacts` (artifact name pattern, default `*`). |
+| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `scoop` (Scoop manifest template path in the caller; omitted, no Scoop step runs), `bucket` (default `mentaldesk/scoop-bucket`), `artifacts` (artifact name pattern, default `*`). |
 | Outputs | None. |
-| Secrets | `packages-token` (optional): write access to `tap`. Without it the release still publishes and the formula step warns. |
+| Secrets | `packages-token` (optional): write access to `tap` and `bucket`. Without it the release still publishes and the packaging steps warn. |
 | Permissions the caller must grant | `contents: write`. Permissions are not inherited, so the calling job declares them. |
 
-The formula template is rendered from the artifacts, not from a list of platforms: `{{version}}`,
+Both templates are rendered from the artifacts, not from a list of platforms: `{{version}}`,
 and `{{sha_<rid>}}` for every `<name>-<version>-<rid>.tar.gz` or `.zip` found, with the RID's
 hyphens as underscores (`{{sha_osx_arm64}}`, `{{sha_win_x64}}`). A placeholder no artifact matched
 fails the job. The template decides which platforms it mentions.
+
+A caller that ships `.zip` platforms passes `scoop` as well, and gets `bucket/<name>.json` in the
+bucket updated in the same run. That one is **committed straight to the bucket's default branch,
+not opened as a PR**: the bucket has no CI to gate one. a-team passes no `scoop`, so none of it
+runs for a-team's own release.
 
 ```yaml
 jobs:
@@ -112,6 +117,7 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       tag: ${{ needs.version.outputs.tag }}
       formula: packaging/tuicode.rb
+      scoop: packaging/tuicode.json            # omit it and no Scoop step runs
     secrets:
       packages-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 ```

@@ -1,7 +1,8 @@
 name: Release publish
 
-# Reusable: tags the commit, publishes the GitHub release from the caller's build artifacts, and
-# opens a Homebrew tap PR with the rendered formula. See AGENTS.md, "Releasing".
+# Reusable: tags the commit, publishes the GitHub release from the caller's build artifacts, opens
+# a Homebrew tap PR with the rendered formula, and, for a caller that passes a Scoop manifest
+# template, commits that to its bucket in the same run. See AGENTS.md, "Releasing".
 on:
   workflow_call:
     inputs:
@@ -25,13 +26,21 @@ on:
         description: Homebrew tap repository the formula PR is opened against.
         type: string
         default: mentaldesk/homebrew-tap
+      scoop:
+        description: Scoop manifest template in the calling repo, e.g. packaging/tuicode.json. Omit it and no Scoop step runs.
+        type: string
+        default: ''
+      bucket:
+        description: Scoop bucket repository the manifest is committed to.
+        type: string
+        default: mentaldesk/scoop-bucket
       artifacts:
         description: Pattern matching the caller's uploaded build artifacts.
         type: string
         default: '*'
     secrets:
       packages-token:
-        description: Token with contents and pull-requests write on the tap. Without it the release still publishes and the formula step warns.
+        description: Token with contents and pull-requests write on the tap, and contents write on the bucket. Without it the release still publishes and the packaging steps warn.
         required: false
 
 jobs:
@@ -54,11 +63,12 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
 
-      - name: Render formula
+      - name: Render templates
         env:
           NAME: ${{ inputs.name }}
           VERSION: ${{ inputs.version }}
-          TEMPLATE: ${{ inputs.formula }}
+          FORMULA: ${{ inputs.formula }}
+          SCOOP: ${{ inputs.scoop }}
         run: |
           shopt -s nullglob
           script="s/{{version}}/$VERSION/g"
@@ -71,21 +81,28 @@ jobs:
             script="$script;s/{{sha_${rid//-/_}}}/$sha/g"
             echo "$rid $sha"
           done
-          sed -e "$script" "$TEMPLATE" > formula.rb
-          cat formula.rb
-          left=$(grep -o '{{[^}]*}}' formula.rb | sort -u | tr '\n' ' ') || true
-          if [ -n "$left" ]; then
-            echo "::error::$TEMPLATE still has unfilled placeholders: $left. No artifact matched them."
-            exit 1
-          fi
+          render() {
+            sed -e "$script" "$1" > "$2"
+            cat "$2"
+            left=$(grep -o '{{[^}]*}}' "$2" | sort -u | tr '\n' ' ') || true
+            if [ -n "$left" ]; then
+              echo "::error::$1 still has unfilled placeholders: $left. No artifact matched them."
+              exit 1
+            fi
+          }
+          render "$FORMULA" formula.rb
+          if [ -n "$SCOOP" ]; then render "$SCOOP" scoop.json; fi
 
       - name: Check for the packages token
         id: tap
         env:
           TOKEN: ${{ secrets.packages-token }}
+          SCOOP: ${{ inputs.scoop }}
         run: |
+          what="the formula wasn't"
+          if [ -n "$SCOOP" ]; then what="the formula and the Scoop manifest weren't"; fi
           if [ -n "$TOKEN" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
-          else echo "::warning::No packages-token was passed, so the formula wasn't updated. Set the secret your release workflow passes as packages-token, then re-run this job."; fi
+          else echo "::warning::No packages-token was passed, so $what updated. Set the secret your release workflow passes as packages-token, then re-run this job."; fi
 
       - uses: actions/checkout@v5
         if: steps.tap.outputs.ok == 'true'
@@ -123,3 +140,31 @@ jobs:
           if ! gh pr merge "$branch" --auto --squash --delete-branch; then
             echo "::warning::Auto-merge isn't available on the tap, so the formula PR needs merging by hand once its checks pass: $(gh pr view "$branch" --json url --jq .url)"
           fi
+
+      - uses: actions/checkout@v5
+        if: inputs.scoop != '' && steps.tap.outputs.ok == 'true'
+        with:
+          repository: ${{ inputs.bucket }}
+          token: ${{ secrets.packages-token }}
+          path: scoop-bucket
+
+      - name: Commit Scoop manifest
+        if: inputs.scoop != '' && steps.tap.outputs.ok == 'true'
+        env:
+          NAME: ${{ inputs.name }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          manifest="bucket/$NAME.json"
+          mkdir -p scoop-bucket/bucket
+          cp scoop.json "scoop-bucket/$manifest"
+          cd scoop-bucket
+          if git diff --quiet -- "$manifest" && git ls-files --error-unmatch "$manifest" >/dev/null 2>&1; then
+            echo "Manifest already at $VERSION"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$manifest"
+          git commit -m "$NAME $VERSION"
+          # The bucket has no CI to gate a PR, so this is a commit on its default branch.
+          git push
