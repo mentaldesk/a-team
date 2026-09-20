@@ -64,3 +64,7 @@ check packaging.
 this repo and on TuiCode. When it expires, releases still publish but the formula step fails:
 regenerate it under your GitHub settings → Developer settings → Fine-grained tokens, and update
 the secret in both repos.
+
+### Scratch
+
+Throwaway line to conflict with main, for #63.
