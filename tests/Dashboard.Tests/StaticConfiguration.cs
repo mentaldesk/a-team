@@ -14,7 +14,8 @@ public abstract class StaticConfigurationTest : IDisposable
     public void Dispose()
     {
         ThemeManager.Theme = _theme;
-        ConfigurationManager.Apply();
+        if (ConfigurationManager.IsEnabled)
+            ConfigurationManager.Apply();
         GC.SuppressFinalize(this);
     }
 }
