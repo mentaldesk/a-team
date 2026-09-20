@@ -116,7 +116,9 @@ tools it called, any errors and how the run finished). The strip along the botto
 dispatcher's recent decisions. With no arguments it shows every team with dispatch enabled.
 
 Tab or the arrow keys select an agent (▶). PgUp/PgDn/Home/End scroll its session; scrolling up
-stops it following new output until you press End. Ctrl+, opens Settings, where the theme —
+stops it following new output until you press End. A run of tool calls draws as one row so the
+agent's narration isn't pushed off the top; t shows every call in the selected pane again (the
+title says [tool calls]) and t again folds them back up. Ctrl+, opens Settings, where the theme —
 Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode — can be changed:
 Ctrl+Enter keeps the theme picked there, Esc discards it. A theme you keep is written to
 `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is what the dashboard

@@ -7,6 +7,7 @@ public sealed class DashboardWindow : Window
 {
     private const int DispatchLines = 4;
     private static readonly Key Settings = new Key(',').WithCtrl;
+    private static readonly Key ToolCalls = new('t');
     private readonly List<AgentPane> _panes = [];
     private readonly TextView _dispatch;
     private readonly string _dispatchLog;
@@ -16,7 +17,7 @@ public sealed class DashboardWindow : Window
     public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot, DashboardSettings settings)
     {
         _settings = settings;
-        Title = $"a-team {Version()} · Tab/arrows: select agent · PgUp/PgDn/Home/End: scroll · Ctrl+,: settings · Esc: quit";
+        Title = $"a-team {Version()} · Tab/arrows: select agent · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: quit";
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
@@ -47,6 +48,8 @@ public sealed class DashboardWindow : Window
         dispatchFrame.Add(_dispatch);
         Add(dispatchFrame);
     }
+
+    internal IReadOnlyList<AgentPane> Panes => _panes;
 
     public void Refresh()
     {
@@ -82,6 +85,8 @@ public sealed class DashboardWindow : Window
             pane.Home();
         else if (key == Key.End)
             pane.End();
+        else if (key == ToolCalls)
+            pane.ToggleToolCalls();
         else
             return base.OnKeyDown(key);
         return true;

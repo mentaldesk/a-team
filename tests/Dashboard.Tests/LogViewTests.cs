@@ -114,13 +114,88 @@ public class LogViewTests
     [Fact]
     public void Collapsing_a_real_pane_more_than_halves_its_rows()
     {
-        var lines = File.ReadLines(Path.Combine(AppContext.BaseDirectory, "fixtures", "pane.jsonl"))
-            .SelectMany(SessionLog.Render)
-            .ToList();
+        var lines = Fixture();
 
         var expanded = LogView.Wrap(lines, 38).Count;
         var collapsed = LogView.Wrap(LogView.Collapse(lines, 38), 38).Count;
 
         Assert.True(collapsed * 2 < expanded, $"{collapsed} collapsed rows vs {expanded} expanded");
     }
+
+    [Fact]
+    public void Expanding_a_pane_shows_every_tool_call_again()
+    {
+        var view = new LogView { Lines = Fixture() };
+
+        var collapsed = view.Rows(38);
+        view.ToggleToolCalls();
+        var expanded = view.Rows(38);
+        view.ToggleToolCalls();
+
+        Assert.Equal(LogView.Wrap(Fixture(), 38), expanded);
+        Assert.True(expanded.Count > collapsed.Count);
+        Assert.Equal(collapsed, view.Rows(38));
+    }
+
+    [Fact]
+    public void Toggling_one_pane_leaves_the_other_alone()
+    {
+        var toggled = new LogView { Lines = Fixture() };
+        var other = new LogView { Lines = Fixture() };
+        var before = other.Rows(38);
+
+        toggled.ToggleToolCalls();
+
+        Assert.True(toggled.Expanded);
+        Assert.False(other.Expanded);
+        Assert.Equal(before, other.Rows(38));
+    }
+
+    [Fact]
+    public void A_pane_that_was_following_still_follows_after_a_toggle()
+    {
+        var view = new LogView { Lines = Fixture() };
+
+        view.ToggleToolCalls();
+
+        Assert.True(view.Following);
+    }
+
+    [Fact]
+    public void A_scrolled_pane_lands_on_the_line_it_was_reading()
+    {
+        LogLine[] lines =
+        [
+            new("first", LogLineKind.Prose),
+            .. Enumerable.Range(1, 6).Select(n => new LogLine($"▸ Bash step {n}", LogLineKind.ToolCall)),
+            new("second", LogLineKind.Prose),
+            new("third", LogLineKind.Prose),
+        ];
+        var collapsed = LogView.Wrap(LogView.Collapse(lines, 38), 38);
+        var expanded = LogView.Wrap(lines, 38);
+
+        Assert.Equal("second", expanded[LogView.Anchor(collapsed, expanded, 2)].Text);
+        Assert.Equal(2, LogView.Anchor(expanded, collapsed, 7));
+    }
+
+    [Fact]
+    public void A_scrolled_pane_reading_tool_calls_lands_on_that_run()
+    {
+        LogLine[] lines =
+        [
+            new("first", LogLineKind.Prose),
+            .. Enumerable.Range(1, 6).Select(n => new LogLine($"▸ Bash step {n}", LogLineKind.ToolCall)),
+            new("second", LogLineKind.Prose),
+        ];
+        var collapsed = LogView.Wrap(LogView.Collapse(lines, 38), 38);
+        var expanded = LogView.Wrap(lines, 38);
+
+        Assert.Equal(1, LogView.Anchor(collapsed, expanded, 1));
+        Assert.Equal(1, LogView.Anchor(expanded, collapsed, 4));
+    }
+
+    private static List<LogLine> Fixture() =>
+        File.ReadLines(Path.Combine(AppContext.BaseDirectory, "fixtures", "pane.jsonl"))
+            .SelectMany(SessionLog.Render)
+            .ToList();
 }

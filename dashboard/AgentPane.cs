@@ -43,6 +43,14 @@ public sealed class AgentPane : FrameView
         UpdateHeader();
     }
 
+    public void ToggleToolCalls()
+    {
+        _body.ToggleToolCalls();
+        UpdateHeader();
+    }
+
+    internal bool Expanded => _body.Expanded;
+
     public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck)
     {
         var state = AgentState.Read(_stateDir);
@@ -62,12 +70,15 @@ public sealed class AgentPane : FrameView
 
     private void UpdateHeader()
     {
-        var title = $"{(HasFocus ? "▶ " : "")}{(_running ? "●" : "○")} {_name}{(_body.Following ? "" : " [scrolled]")}";
+        var title = Header(_name, HasFocus, _running, _body.Following, _body.Expanded);
         if (Title != title)
             Title = title;
         if (_status.Text != _timing)
             _status.Text = _timing;
     }
+
+    internal static string Header(string name, bool selected, bool running, bool following, bool expanded) =>
+        $"{(selected ? "▶ " : "")}{(running ? "●" : "○")} {name}{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}";
 
     private static string Describe(AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck)
     {
