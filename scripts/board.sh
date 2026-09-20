@@ -11,6 +11,7 @@ STATES=("Idea" "Exploring" "Pitched" "Approved" "Building" "Ready" "In progress"
 die() { echo "board.sh: $*" >&2; exit 1; }
 
 DRY_RUN=${A_TEAM_DRY_RUN:-}
+SWEEP=
 if [ "${1:-}" = --dry-run ]; then
   DRY_RUN=1
   shift
@@ -288,6 +289,15 @@ unanswered_feedback() {
                  and (.body | contains("<!-- a-team:") | not) and .at > $since))'
 }
 
+# feedback_at <recent> <role> <n>: when the reviewer last asked <role> something on #n and got no
+# answer. The day window keeps that cheap; a sweep falls back to #n's whole history, however old.
+feedback_at() {
+  local at
+  at=$(awaiting "$1" "$2" "$3")
+  [ -n "$at" ] || [ -z "$SWEEP" ] || at=$(unanswered_feedback "$2" "$3" | jq -r 'max_by(.at).at // empty')
+  printf '%s' "$at"
+}
+
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
 STARTABLE="$READY_TASK"' and (.labels | index("blocked") | not) and .blockedBy == 0'
@@ -522,8 +532,15 @@ case "$CMD" in
     ;;
 
   triggers)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM triggers <role>"
-    role=$1
+    role=
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --sweep) SWEEP=1 ;;
+        *) [ -z "$role" ] || die "usage: board.sh $TEAM triggers <role> [--sweep]"; role=$1 ;;
+      esac
+      shift
+    done
+    [ -n "$role" ] || die "usage: board.sh $TEAM triggers <role> [--sweep]"
     check_role "$role"
     all=$(items)
     reasons=()
@@ -549,7 +566,7 @@ case "$CMD" in
           reasons+=("#$n is In progress but has no PR: an earlier run didn't finish")
         fi
         for x in "${numbers[@]}"; do
-          at=$(awaiting "$recent" dev "$x")
+          at=$(feedback_at "$recent" dev "$x")
           [ -n "$at" ] && reasons+=("reviewer feedback on #$x ($at)")
         done
       done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
@@ -581,7 +598,7 @@ case "$CMD" in
       while IFS= read -r row; do
         n=$(jq -r .number <<<"$row")
         status=$(jq -r .status <<<"$row")
-        at=$(awaiting "$recent" lead "$n")
+        at=$(feedback_at "$recent" lead "$n")
         [ -n "$at" ] && reasons+=("reviewer feedback on #$n ($at)")
         [ "$status" = Approved ] && reasons+=("#$n was approved: break it down")
         if [ "$status" = Building ]; then
