@@ -61,6 +61,7 @@ a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours
 a-team board {{team}} feedback <role> <n>       # reviewer comments you haven't answered yet
 a-team board {{team}} link <parent> <child>     # make <child> a sub-issue of <parent>
+a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again
 a-team board {{team}} depends <task> <prereq>   # <task> can't start until <prereq> closes
 a-team board {{team}} undepend <role> <task> <prereq>  # Lead only: drop that dependency again
 a-team board {{team}} children <n>              # sub-issues and whether they're closed
