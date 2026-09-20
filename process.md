@@ -13,7 +13,7 @@ Every item's Status is one of:
 | Status | Meaning | Who moves it here |
 |---|---|---|
 | Idea | A seed: a problem or opportunity worth a look | Reviewer or Lead |
-| Exploring | Lead has drafted the pitch; it waits here for room in Pitched | Lead |
+| Exploring | Lead has drafted the pitch, or a higher-priority one displaced it; it waits here for room in Pitched | Lead |
 | Pitched ⛔ | Pitch is in front of the reviewer, a few at a time | Lead |
 | Approved | Reviewer agreed; Lead to break it down | **Reviewer only** |
 | Building | Broken into tasks; tasks are in flight | Lead |
@@ -22,9 +22,11 @@ Every item's Status is one of:
 | In review ⛔ | A PR (task) or a finished pitch (validation) is waiting on the reviewer | Dev or Lead |
 | Done | Merged / accepted | **Reviewer only** (closing the issue) |
 
-⛔ marks a gate. Agents move work *into* a gate and stop. Only the reviewer moves it out. The one
-exception: when the reviewer answers a Pitched pitch by asking to shelve or defer it, the Lead
-moves it back to Idea. `a-team board` allows that only while that comment is unanswered.
+⛔ marks a gate. Agents move work *into* a gate and stop. Only the reviewer moves it out. Pitched
+has two exceptions and no others: the Lead moves a pitch back to **Idea** when the reviewer
+answers it by asking to shelve or defer it, and back to **Exploring** when a higher-priority
+draft displaces it. `a-team board` allows the first only while that comment is unanswered, and
+the second only for a pitch `lead-next` names in `demote`.
 
 Two kinds of item share the board:
 

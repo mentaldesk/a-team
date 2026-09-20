@@ -89,12 +89,17 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
   - comment a short validation report (what you tried, what you saw, anything the reviewer
     should try themselves) and `a-team board {{team}} move lead <pitch> "In review"`.
 
-### 4. Promote, then pitch or discover
+### 4. Swap Pitched, then pitch or discover
 
 Run `a-team board {{team}} lead-next` once. It returns the pitches to show the reviewer now, and whether
 this run's new work is a pitch or a discovery. It alternates between the two so the reviewer
 gets a blend of their own ideas refined and new ones found, and it respects the WIP limits.
 When nothing is Pitched or Exploring, it always pitches.
+
+**`demote`**: pitches a higher-priority draft displaces. Do these **before** `promote`, so
+Pitched never holds more than `wip.pitched`. For each, `a-team board {{team}} move lead <n> Exploring` and
+comment saying which pitch displaced it and that it keeps its priority, so it comes back by
+itself once a slot frees.
 
 **`promote`**: drafted pitches to move from Exploring to Pitched, highest priority first. A
 draft may have sat a while, so check each one against the current vision, the code, and
