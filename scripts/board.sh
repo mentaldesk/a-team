@@ -565,10 +565,16 @@ case "$CMD" in
       fi
 
       used=$(jq '[.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))] | length' <<<"$all")
-      if [ "$used" -lt "$(cfg .wip.worktrees)" ]; then
-        ready=$(jq -r '[.[] | select(.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)
-                                     and (.labels | index("blocked") | not) and .blockedBy == 0)][0].number // empty' <<<"$all")
-        [ -n "$ready" ] && reasons+=("Ready task available (e.g. #$ready) and a free worktree")
+      limit=$(cfg .wip.worktrees)
+      startable=$(jq "[.[] | select($STARTABLE)]" <<<"$all")
+      ready=$(jq -r '.[0].number // empty' <<<"$startable")
+      if [ -n "$ready" ]; then
+        if [ "$used" -lt "$limit" ]; then
+          reasons+=("Ready task available (e.g. #$ready) and a free worktree")
+        elif [ "$used" -lt $((limit + 1)) ]; then
+          urgent=$(by_priority <<<"$startable" | jq -r '[.[] | select(.priority == "Urgent")][0].number // empty')
+          [ -n "$urgent" ] && reasons+=("Ready task available (e.g. #$urgent, Urgent) and a fast-track worktree ($used in use, $((limit + 1)) allowed while an Urgent task is Ready)")
+        fi
       fi
       creative=false
     else

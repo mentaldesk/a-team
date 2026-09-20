@@ -53,7 +53,7 @@ step 4.8. If it can't be finished, comment why and `a-team board {{team}} move d
 ### 4. Take new work
 
 Only if your **In progress** plus **In review** count in `a-team board {{team}} wip` (under `dev`) is
-below `wip.worktrees`:
+below `wip.worktrees` — or, while an unblocked Ready task is Urgent, below `wip.worktrees + 1`:
 
 1. `a-team board {{team}} next`. If it returns `null`, stop.
 2. `a-team board {{team}} move dev <n> "In progress"`. This labels it `a-team:dev`, which is what makes it
