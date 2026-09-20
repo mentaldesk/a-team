@@ -1,0 +1,68 @@
+name: Release version
+
+# Reusable: works out the next version from the last v* tag. Call it from a repo's own release
+# workflow; see AGENTS.md, "Releasing".
+on:
+  workflow_call:
+    inputs:
+      bump:
+        description: 'Part of the version to bump: auto, patch, minor or major. "auto" reads the labels of PRs merged since the last release (breaking = major, enhancement = minor, otherwise patch).'
+        type: string
+        default: auto
+    outputs:
+      version:
+        description: The next version, without a leading "v". On a pull request, 0.0.0-pr<n>.
+        value: ${{ jobs.version.outputs.version }}
+      tag:
+        description: The tag to create, e.g. v1.2.3. Empty on a pull request.
+        value: ${{ jobs.version.outputs.tag }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Next version
+        id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMP: ${{ inputs.bump }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ -n "$PR" ]; then
+            echo "version=0.0.0-pr$PR" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BUMP=${BUMP:-auto}
+          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+          if [ "$BUMP" = auto ]; then
+            since=$([ -n "$last" ] && git log -1 --format=%cI "$last" || echo 1970-01-01T00:00:00Z)
+            labels=$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --base "${BASE:-main}" --limit 500 \
+              --json mergedAt,labels | jq -r --arg since "$since" '.[] | select(.mergedAt > $since) | .labels[].name')
+            if grep -qx breaking <<<"$labels"; then BUMP="major"
+            elif grep -qx enhancement <<<"$labels"; then BUMP="minor"
+            else BUMP="patch"; fi
+          fi
+          IFS=. read -r major minor patch <<<"${last#v}"
+          major=${major:-0} minor=${minor:-0} patch=${patch:-0}
+          case "$BUMP" in
+            major) major=$((major + 1)) minor=0 patch=0 ;;
+            minor) minor=$((minor + 1)) patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            *) echo "::error::bump must be auto, patch, minor or major, not '$BUMP'."; exit 1 ;;
+          esac
+          version="$major.$minor.$patch"
+          echo "Last release: ${last:-none}. Bump: $BUMP. Next: v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
