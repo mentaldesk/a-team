@@ -63,12 +63,31 @@ public class DashboardWindowTests : IDisposable
         Assert.All(window.Panes, pane => Assert.False(pane.Expanded));
     }
 
-    private DashboardWindow Open()
+    [Fact]
+    public void Panes_start_expanded_when_that_is_what_the_settings_file_says()
+    {
+        using var window = Open(expandToolCalls: true);
+
+        Assert.All(window.Panes, pane => Assert.True(pane.Expanded));
+    }
+
+    [Fact]
+    public void A_pane_that_started_expanded_still_folds_up_on_t()
+    {
+        using var window = Open(expandToolCalls: true);
+        window.NewKeyDownEvent(Key.Tab);
+
+        window.NewKeyDownEvent(new Key('t'));
+
+        Assert.Equal([false, true], window.Panes.Select(pane => pane.Expanded));
+    }
+
+    private DashboardWindow Open(bool expandToolCalls = false)
     {
         Directory.CreateDirectory(_root);
-        return new DashboardWindow(
-            [("a-team", "lead"), ("a-team", "dev")],
-            _root,
-            new DashboardSettings(Path.Combine(_root, "config")));
+        var settings = new DashboardSettings(Path.Combine(_root, "config"));
+        if (expandToolCalls)
+            settings.WriteExpandToolCalls(true);
+        return new DashboardWindow([("a-team", "lead"), ("a-team", "dev")], _root, settings);
     }
 }

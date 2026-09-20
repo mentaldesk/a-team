@@ -3,16 +3,17 @@ using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The dashboard's settings, one row per setting under its label. Today there is only the theme.</summary>
+/// <summary>The dashboard's settings, one row per setting under its label.</summary>
 public sealed class SettingsDialog : Dialog
 {
     private static readonly Key Apply = Key.Enter.WithCtrl;
+    private readonly CheckBox _toolCalls;
 
-    public SettingsDialog(ThemeSetting theme, Action redraw)
+    public SettingsDialog(ThemeSetting theme, bool expandToolCalls, Action redraw)
     {
         Title = "Settings";
         Width = 36;
-        Height = 13;
+        Height = 16;
 
         var label = new Label { X = 1, Y = 0, Text = "Theme:" };
         var themes = new OptionSelector
@@ -31,8 +32,16 @@ public sealed class SettingsDialog : Dialog
                 redraw();
             }
         };
-        var keys = new Label { X = 1, Y = Pos.Bottom(themes) + 1, Text = $"{Apply}: OK   {Key.Esc}: Cancel" };
-        Add(label, themes, keys);
+        var toolCallsLabel = new Label { X = 1, Y = Pos.Bottom(themes) + 1, Text = "Tool calls:" };
+        _toolCalls = new CheckBox
+        {
+            X = 3,
+            Y = Pos.Bottom(toolCallsLabel),
+            Text = "Show tool calls in full",
+            Value = expandToolCalls ? CheckState.Checked : CheckState.UnChecked,
+        };
+        var keys = new Label { X = 1, Y = Pos.Bottom(_toolCalls) + 1, Text = $"{Apply}: OK   {Key.Esc}: Cancel" };
+        Add(label, themes, toolCallsLabel, _toolCalls, keys);
 
         var ok = new Button { Text = "OK" };
         ok.Accepting += (_, _) => Close(confirmed: true);
@@ -47,6 +56,8 @@ public sealed class SettingsDialog : Dialog
     }
 
     internal bool Confirmed { get; private set; }
+
+    internal bool ExpandToolCalls => _toolCalls.Value == CheckState.Checked;
 
     /// <summary>Terminal.Gui closes a Dialog when a subview's Accept reaches it unhandled, and Enter raises Accept
     /// on the theme list. The buttons close the dialog from their own Accepting, so nothing here needs it.</summary>
@@ -68,14 +79,24 @@ public sealed class SettingsDialog : Dialog
         return true;
     }
 
-    /// <summary>Runs the dialog, keeping the theme picked in it only if it was accepted.</summary>
-    public static void Show(IApplication app, ThemeSetting theme)
+    /// <summary>Runs the dialog, keeping what was picked in it only if it was accepted.</summary>
+    public static void Show(IApplication app, DashboardSettings settings)
     {
-        using var dialog = new SettingsDialog(theme, () => app.LayoutAndDraw(true));
+        var theme = ThemeSetting.Live(settings);
+        using var dialog = new SettingsDialog(theme, settings.ReadExpandToolCalls(), () => app.LayoutAndDraw(true));
         app.Run(dialog);
-        if (dialog.Confirmed)
-            theme.Keep();
-        else
+        dialog.Store(theme, settings);
+    }
+
+    /// <summary>Keeps what the dialog was left holding, or puts back what was in effect before it opened.</summary>
+    internal void Store(ThemeSetting theme, DashboardSettings settings)
+    {
+        if (!Confirmed)
+        {
             theme.Cancel();
+            return;
+        }
+        theme.Keep();
+        settings.WriteExpandToolCalls(ExpandToolCalls);
     }
 }

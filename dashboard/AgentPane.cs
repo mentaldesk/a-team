@@ -12,14 +12,14 @@ public sealed class AgentPane : FrameView
     private bool _running;
     private string _timing = "";
 
-    public AgentPane(string team, string role, string stateDir)
+    public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
     {
         _name = $"{team} · {role}";
         _stateDir = stateDir;
         CanFocus = true;
         _status = new Label { X = 0, Y = 0, Width = Dim.Fill() };
         _why = new Label { X = 0, Y = 1, Width = Dim.Fill() };
-        _body = new LogView { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill() };
+        _body = new LogView { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(), Expanded = expandToolCalls };
         Add(_status, _why, _body);
         HasFocusChanged += (_, _) => UpdateHeader();
         UpdateHeader();
