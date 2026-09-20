@@ -1,0 +1,125 @@
+name: Release publish
+
+# Reusable: tags the commit, publishes the GitHub release from the caller's build artifacts, and
+# opens a Homebrew tap PR with the rendered formula. See AGENTS.md, "Releasing".
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: Package name. Archives are named <name>-<version>-<rid>.tar.gz or .zip.
+        type: string
+        required: true
+      version:
+        description: Version to release, without a leading "v".
+        type: string
+        required: true
+      tag:
+        description: Tag to create, e.g. v1.2.3.
+        type: string
+        required: true
+      formula:
+        description: Homebrew formula template in the calling repo, e.g. packaging/a-team.rb.
+        type: string
+        required: true
+      tap:
+        description: Homebrew tap repository the formula PR is opened against.
+        type: string
+        default: mentaldesk/homebrew-tap
+      artifacts:
+        description: Pattern matching the caller's uploaded build artifacts.
+        type: string
+        default: '*'
+    secrets:
+      packages-token:
+        description: Token with contents and pull-requests write on the tap. Without it the release still publishes and the formula step warns.
+        required: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: ${{ inputs.artifacts }}
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+
+      - name: Render formula
+        env:
+          NAME: ${{ inputs.name }}
+          VERSION: ${{ inputs.version }}
+          TEMPLATE: ${{ inputs.formula }}
+        run: |
+          shopt -s nullglob
+          script="s/{{version}}/$VERSION/g"
+          for archive in "dist/$NAME-$VERSION-"*.tar.gz "dist/$NAME-$VERSION-"*.zip; do
+            rid=${archive##*/}
+            rid=${rid#"$NAME-$VERSION-"}
+            rid=${rid%.tar.gz}
+            rid=${rid%.zip}
+            sha=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+            script="$script;s/{{sha_${rid//-/_}}}/$sha/g"
+            echo "$rid $sha"
+          done
+          sed -e "$script" "$TEMPLATE" > formula.rb
+          cat formula.rb
+          left=$(grep -o '{{[^}]*}}' formula.rb | sort -u | tr '\n' ' ') || true
+          if [ -n "$left" ]; then
+            echo "::error::$TEMPLATE still has unfilled placeholders: $left. No artifact matched them."
+            exit 1
+          fi
+
+      - name: Check for the packages token
+        id: tap
+        env:
+          TOKEN: ${{ secrets.packages-token }}
+        run: |
+          if [ -n "$TOKEN" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::No packages-token was passed, so the formula wasn't updated. Set the secret your release workflow passes as packages-token, then re-run this job."; fi
+
+      - uses: actions/checkout@v5
+        if: steps.tap.outputs.ok == 'true'
+        with:
+          repository: ${{ inputs.tap }}
+          token: ${{ secrets.packages-token }}
+          path: tap
+
+      - name: Open tap PR
+        if: steps.tap.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.packages-token }}
+          NAME: ${{ inputs.name }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.tag }}
+        run: |
+          mkdir -p tap/Formula
+          cp formula.rb "tap/Formula/$NAME.rb"
+          cd tap
+          base=$(git rev-parse --abbrev-ref HEAD)
+          if git diff --quiet -- "Formula/$NAME.rb" && git ls-files --error-unmatch "Formula/$NAME.rb" >/dev/null 2>&1; then
+            echo "Formula already at $VERSION"
+            exit 0
+          fi
+          branch="$NAME-$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add "Formula/$NAME.rb"
+          git commit -m "$NAME $VERSION"
+          git push --force-with-lease -u origin "$branch"
+          body="Updates \`$NAME\` to $VERSION. Release: $RELEASE_URL"
+          gh pr view "$branch" >/dev/null 2>&1 || gh pr create --base "$base" --head "$branch" --title "$NAME $VERSION" --body "$body"
+          # The tap's own CI (brew audit, install and test on every platform) gates the merge.
+          if ! gh pr merge "$branch" --auto --squash --delete-branch; then
+            echo "::warning::Auto-merge isn't available on the tap, so the formula PR needs merging by hand once its checks pass: $(gh pr view "$branch" --json url --jq .url)"
+          fi

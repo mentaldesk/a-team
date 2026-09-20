@@ -64,3 +64,65 @@ check packaging.
 this repo and on TuiCode. When it expires, releases still publish but the formula step fails:
 regenerate it under your GitHub settings → Developer settings → Fine-grained tokens, and update
 the secret in both repos.
+
+### The shared workflows
+
+`release.yml` owns only the build matrix; the rest is two `workflow_call` workflows any repo can
+call, and this repo's release is their first caller. A caller keeps its own build jobs and passes
+the artifacts it uploaded.
+
+**`release-version.yml`** — the next version.
+
+| | |
+|---|---|
+| Inputs | `bump` (string, default `auto`): `auto`, `patch`, `minor` or `major`. |
+| Outputs | `version` (no leading `v`; `0.0.0-pr<n>` on a pull request), `tag` (empty on a pull request). |
+| Secrets | None. Uses the caller's `GITHUB_TOKEN`. |
+| Permissions the caller must grant | `contents: read`, `pull-requests: read` (`auto` reads merged PR labels). |
+
+**`release-publish.yml`** — the tag, the release and the tap PR.
+
+| | |
+|---|---|
+| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `artifacts` (artifact name pattern, default `*`). |
+| Outputs | None. |
+| Secrets | `packages-token` (optional): write access to `tap`. Without it the release still publishes and the formula step warns. |
+| Permissions the caller must grant | `contents: write`. Permissions are not inherited, so the calling job declares them. |
+
+The formula template is rendered from the artifacts, not from a list of platforms: `{{version}}`,
+and `{{sha_<rid>}}` for every `<name>-<version>-<rid>.tar.gz` or `.zip` found, with the RID's
+hyphens as underscores (`{{sha_osx_arm64}}`, `{{sha_win_x64}}`). A placeholder no artifact matched
+fails the job. The template decides which platforms it mentions.
+
+```yaml
+jobs:
+  version:
+    uses: mentaldesk/a-team/.github/workflows/release-version.yml@v0.0.4
+    permissions: { contents: read, pull-requests: read }
+    with: { bump: "${{ inputs.bump || 'auto' }}" }
+
+  build: ...                                   # the caller's own: platforms, signing, packaging
+
+  publish:
+    needs: [version, build]
+    uses: mentaldesk/a-team/.github/workflows/release-publish.yml@v0.0.4
+    permissions: { contents: write }
+    with:
+      name: tuicode
+      version: ${{ needs.version.outputs.version }}
+      tag: ${{ needs.version.outputs.tag }}
+      formula: packaging/tuicode.rb
+    secrets:
+      packages-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+```
+
+### What callers can rely on
+
+**Before v1.0.0 there is no compatibility guarantee.** Inputs, outputs and secrets may change in
+any release while the only callers are ones we control; a caller that breaks is fixed in its own
+repo.
+
+**From v1.0.0 the workflow contract is semver.** A change that would break a caller — renaming or
+removing an input, output or secret, making an optional input required, or changing what a caller
+must grant — bumps major. Anything a caller can ignore bumps minor or patch. So a caller may pin a
+major and take any minor. Weigh every later change to these two files against that.
