@@ -9,7 +9,7 @@ jobs:
   scripts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Syntax
         run: for f in scripts/*.sh bin/a-team; do bash -n "$f"; done
@@ -28,7 +28,7 @@ jobs:
   dashboard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

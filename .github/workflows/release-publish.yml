@@ -49,9 +49,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: ${{ inputs.artifacts }}
@@ -104,7 +104,7 @@ jobs:
           if [ -n "$TOKEN" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
           else echo "::warning::No packages-token was passed, so $what updated. Set the secret your release workflow passes as packages-token, then re-run this job."; fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: steps.tap.outputs.ok == 'true'
         with:
           repository: ${{ inputs.tap }}
@@ -141,7 +141,7 @@ jobs:
             echo "::warning::Auto-merge isn't available on the tap, so the formula PR needs merging by hand once its checks pass: $(gh pr view "$branch" --json url --jq .url)"
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: inputs.scoop != '' && steps.tap.outputs.ok == 'true'
         with:
           repository: ${{ inputs.bucket }}

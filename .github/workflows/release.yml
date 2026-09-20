@@ -45,7 +45,7 @@ jobs:
           - rid: linux-arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v5
         with:
@@ -72,7 +72,7 @@ jobs:
           (cd dist && shasum -a 256 "$archive" > "$archive.sha256")
           "$stage/bin/a-team" version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: a-team-${{ matrix.rid }}
           path: dist/*

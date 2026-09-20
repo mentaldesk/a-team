@@ -132,3 +132,11 @@ repo.
 removing an input, output or secret, making an optional input required, or changing what a caller
 must grant — bumps major. Anything a caller can ignore bumps minor or patch. So a caller may pin a
 major and take any minor. Weigh every later change to these two files against that.
+
+**The actions these workflows pin are ours to keep current.** A caller picks its own
+`actions/upload-artifact`; it has no say in the `actions/checkout` and `actions/download-artifact`
+that `release-version.yml` and `release-publish.yml` pin, so a deprecation warning or a behaviour
+change from them is this repo's to fix, not the caller's. Bump them here when they drift, check
+the new version's notes against what the publish job relies on (`pattern`, `merge-multiple`, and
+the `dist/` layout the render step globs), and say in the PR that the download step is first
+exercised for real by the next release.
