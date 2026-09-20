@@ -65,7 +65,7 @@ a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child>
 a-team board {{team}} depends <task> <prereq>   # <task> can't start until <prereq> closes
 a-team board {{team}} undepend <role> <task> <prereq>  # Lead only: drop that dependency again
 a-team board {{team}} children <n>              # sub-issues and whether they're closed
-a-team board {{team}} pr <n>                    # the open PR that closes issue <n>
+a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
 ```
 

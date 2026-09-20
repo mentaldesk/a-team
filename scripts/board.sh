@@ -194,7 +194,7 @@ pr_for() {
       repository(owner: $owner, name: $name) {
         issue(number: $n) {
           closedByPullRequestsReferences(first: 10, includeClosedPrs: false) {
-            nodes { number url isDraft headRefName }
+            nodes { number url isDraft headRefName mergeable }
           }
         }
       }
@@ -519,6 +519,9 @@ case "$CMD" in
           [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')")
           [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ] &&
             reasons+=("PR #$p is green but still a draft")
+          # UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING fires.
+          [ "$(jq -r .mergeable <<<"$pr")" = CONFLICTING ] &&
+            reasons+=("PR #$p conflicts with its base: merge the base branch into it and resolve")
         elif [ "$status" = "In progress" ]; then
           reasons+=("#$n is In progress but has no PR: an earlier run didn't finish")
         fi
