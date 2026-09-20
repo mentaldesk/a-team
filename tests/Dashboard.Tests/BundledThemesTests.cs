@@ -1,0 +1,61 @@
+using Terminal.Gui.Configuration;
+using Terminal.Gui.Drawing;
+
+namespace ATeam.Dashboard.Tests;
+
+public class BundledThemesTests : StaticConfigurationTest
+{
+    [Fact]
+    public void Every_theme_we_offer_is_registered_at_start_up()
+    {
+        BundledThemes.Load();
+
+        Assert.All(BundledThemes.Names, name => Assert.True(ThemeManager.Themes?.ContainsKey(name), name));
+    }
+
+    [Fact]
+    public void Every_theme_defines_the_schemes_the_dashboard_draws_with()
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            foreach (var scheme in new[] { "Base", "Accent", "Dialog", "Error" })
+                Assert.True(SchemeManager.TryGetScheme(scheme, out _), $"{theme} has no {scheme} scheme");
+        }
+    }
+
+    [Fact]
+    public void A_theme_we_do_not_ship_falls_back_to_the_default()
+    {
+        BundledThemes.Load();
+
+        BundledThemes.Apply("Solarized");
+
+        Assert.Equal(BundledThemes.Default, BundledThemes.Current);
+    }
+
+    [Fact]
+    public void A_fresh_run_starts_on_midnight()
+    {
+        BundledThemes.Load();
+
+        Assert.Equal(BundledThemes.Midnight, BundledThemes.Current);
+    }
+
+    [Fact]
+    public void The_success_scheme_is_re_derived_from_the_theme_it_switched_to()
+    {
+        BundledThemes.Load();
+        var before = SchemeManager.GetScheme(Schemes.Base).Normal.Background;
+
+        BundledThemes.Apply(BundledThemes.Daylight);
+
+        var baseScheme = SchemeManager.GetScheme(Schemes.Base);
+        var success = SchemeManager.GetScheme(LogSchemes.Success);
+        Assert.NotEqual(before, baseScheme.Normal.Background);
+        Assert.Equal(baseScheme.Normal.Background, success.Normal.Background);
+        Assert.NotEqual(baseScheme.Normal.Foreground, success.Normal.Foreground);
+    }
+}

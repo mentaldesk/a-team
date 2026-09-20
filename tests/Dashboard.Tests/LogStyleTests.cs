@@ -3,7 +3,7 @@ using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard.Tests;
 
-public class LogStyleTests
+public class LogStyleTests : StaticConfigurationTest
 {
     public static TheoryData<LogLineKind, string?, VisualRole> Styles => new()
     {
