@@ -38,6 +38,9 @@ For each item in `a-team board {{team}} mine dev "In review"`, find its PR with 
   either the PR or the issue. Address each point, push, and reply with `a-team board {{team}} comment` where
   the comment was made. If you disagree with a point, say why in the reply instead of changing
   the code.
+- If `pr` reports `"mergeable": "CONFLICTING"`, the PR conflicts with its base. In its worktree,
+  merge the base branch into the PR branch, resolve, and push. Merge, never rebase: a PR branch is
+  never force-pushed. `checks` reports CI only, so a conflicting PR can still be green.
 - If the PR is still a draft and `checks` says `pass`, mark it ready with `gh pr ready <pr>`.
 - Leave the item in In review. The reviewer merges.
 
