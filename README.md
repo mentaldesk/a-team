@@ -117,9 +117,10 @@ dispatcher's recent decisions. With no arguments it shows every team with dispat
 
 Tab or the arrow keys select an agent (▶). PgUp/PgDn/Home/End scroll its session; scrolling up
 stops it following new output until you press End. Ctrl+, opens Settings, where the theme —
-Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode — can be changed
-for the rest of the session: Ctrl+Enter keeps the theme picked there, Esc discards it. Esc
-quits the dashboard.
+Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode — can be changed:
+Ctrl+Enter keeps the theme picked there, Esc discards it. A theme you keep is written to
+`~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is what the dashboard
+comes up in next time. Esc quits the dashboard.
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.

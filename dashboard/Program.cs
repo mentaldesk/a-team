@@ -17,13 +17,7 @@ var stateRoot = Environment.GetEnvironmentVariable("A_TEAM_STATE") is { Length: 
             : Path.Combine(home, ".local", "state"),
         "a-team");
 
-var configRoot = Environment.GetEnvironmentVariable("A_TEAM_CONFIG") is { Length: > 0 } explicitConfig
-    ? explicitConfig
-    : Path.Combine(
-        Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } xdgConfig
-            ? xdgConfig
-            : Path.Combine(home, ".config"),
-        "a-team");
+var configRoot = DashboardSettings.ConfigRoot();
 
 var teams = args.Length > 0 ? args : EnabledTeams(Path.Combine(configRoot, "teams"));
 if (teams.Length == 0)
@@ -33,11 +27,12 @@ if (teams.Length == 0)
 }
 var agents = teams.SelectMany(team => new[] { (team, "lead"), (team, "dev") }).ToList();
 
-BundledThemes.Load();
+var settings = new DashboardSettings(configRoot);
+BundledThemes.Load(settings.ReadTheme());
 using var app = Application.Create();
 app.Init();
 LogSchemes.Register();
-using var window = new DashboardWindow(agents, stateRoot);
+using var window = new DashboardWindow(agents, stateRoot, settings);
 window.Refresh();
 app.AddTimeout(TimeSpan.FromSeconds(1), () =>
 {

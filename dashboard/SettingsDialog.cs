@@ -73,7 +73,9 @@ public sealed class SettingsDialog : Dialog
     {
         using var dialog = new SettingsDialog(theme, () => app.LayoutAndDraw(true));
         app.Run(dialog);
-        if (!dialog.Confirmed)
+        if (dialog.Confirmed)
+            theme.Keep();
+        else
             theme.Cancel();
     }
 }

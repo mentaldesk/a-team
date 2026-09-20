@@ -45,6 +45,14 @@ public class BundledThemesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void A_run_starts_in_the_theme_it_was_loaded_with()
+    {
+        BundledThemes.Load(BundledThemes.Daylight);
+
+        Assert.Equal(BundledThemes.Daylight, BundledThemes.Current);
+    }
+
+    [Fact]
     public void The_success_scheme_is_re_derived_from_the_theme_it_switched_to()
     {
         BundledThemes.Load();
