@@ -54,10 +54,11 @@ is_state() {
 }
 
 allowed() {
-  # lead:Pitched>Idea is gated again in `move`: only with unanswered reviewer feedback.
+  # Both moves out of Pitched are gated again in `move`: Idea only with unanswered reviewer
+  # feedback, Exploring only for a pitch `lead-next` names in `demote`.
   case "$1:$2>$3" in
     "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
-    "lead:Pitched>Idea" | \
+    "lead:Pitched>Idea" | "lead:Pitched>Exploring" | \
     "lead:Approved>Building" | "lead:Building>In review" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready")
@@ -188,6 +189,24 @@ pitchable_idea() {
   echo null
 }
 
+# One swap set for Pitched, from all board items: `promote` are the Exploring pitches that
+# belong in Pitched, `demote` the Pitched ones they displace, paired in order. Sorting Pitched
+# first makes `by_priority`'s stable sort displace only on a strictly higher priority, and
+# `demote` never outruns `promote`, so nothing leaves Pitched without a draft taking its slot.
+pitch_swap() {
+  jq -c '[.[] | select((.labels | index("pitch")) and (.status == "Pitched" or .status == "Exploring"))]
+         | sort_by(.status != "Pitched")' <<<"$1" | by_priority |
+    jq --argjson limit "$(cfg '.wip.pitched')" '
+      ([.[] | select(.status == "Pitched")] | length) as $pitched
+      | if $pitched < $limit
+        then {promote: [.[] | select(.status == "Exploring")][:$limit - $pitched], demote: []}
+        else [.[:$limit][] | select(.status == "Exploring")] as $promote
+          | [.[$limit:][] | select(.status == "Pitched")] as $displaced
+          | {promote: $promote,
+             demote: $displaced[($displaced | length) - ($promote | length):]}
+        end'
+}
+
 pr_for() {
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
     query($owner: String!, $name: String!, $n: Int!) {
@@ -315,12 +334,12 @@ case "$CMD" in
     found=$(count '(.labels | index("a-team:idea")) and .status == "Idea"')
     ready=$(count "$STARTABLE")
     blocked=$(count "$UNSTARTABLE")
-    room=$(($(cfg '.wip.pitched') - pitched))
-    promote=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")]' <<<"$all" | by_priority |
-      jq --argjson room "$((room > 0 ? room : 0))" '.[:$room]')
+    swap=$(pitch_swap "$all")
+    promote=$(jq .promote <<<"$swap")
+    demote=$(jq .demote <<<"$swap")
     idle=false
     [ $((pitched + exploring)) -eq 0 ] && idle=true
-    exploring=$((exploring - $(jq length <<<"$promote")))
+    exploring=$((exploring - $(jq length <<<"$promote") + $(jq length <<<"$demote")))
     idea=$(pitchable_idea "$all")
     can_pitch=false can_discover=false
     [ "$exploring" -lt "$(cfg '.wip.exploring')" ] && [ "$idea" != null ] && can_pitch=true
@@ -334,10 +353,10 @@ case "$CMD" in
       turn=none
     fi
     if [ "$turn" != none ]; then mkdir -p "$(dirname "$state")" && echo "$turn" >"$state"; fi
-    jq -n --argjson promote "$promote" --arg turn "$turn" --argjson item "$idea" \
+    jq -n --argjson promote "$promote" --argjson demote "$demote" --arg turn "$turn" --argjson item "$idea" \
       --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" --argjson blocked "$blocked" \
       --argjson floor "$(cfg '.wip.readyFloor // 0')" '
-      {promote: $promote, turn: $turn}
+      {promote: $promote, demote: $demote, turn: $turn}
       + (if $turn == "pitch" then {item: $item}
          elif $turn == "discover" then {room: $room}
          else {reason: "Exploring and the discovery queue are both full, or there is no Idea to pitch"} end)
@@ -360,6 +379,10 @@ case "$CMD" in
     if [ "$role:$from>$to" = "lead:Pitched>Idea" ] &&
       [ "$(unanswered_feedback lead "$n" | jq length)" -eq 0 ]; then
       die "lead may move #$n out of Pitched only when the reviewer has asked (no unanswered reviewer feedback on #$n)"
+    fi
+    if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
+      ! pitch_swap "$(items)" | jq -e --argjson n "$n" 'any(.demote[]; .number == $n)' >/dev/null; then
+      die "lead may move #$n out of Pitched only when a higher-priority draft displaces it (nothing in Exploring out-ranks #$n)"
     fi
     case "$role:$from" in
       "dev:Ready" | "lead:Idea")
@@ -566,8 +589,13 @@ case "$CMD" in
       exploring=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")] | length' <<<"$all")
       found=$(jq '[.[] | select((.labels | index("a-team:idea")) and .status == "Idea")] | length' <<<"$all")
       ideas=$(jq '[.[] | select(.status == "Idea" and .type == "Issue")] | length' <<<"$all")
-      [ "$pitched" -lt "$(cfg .wip.pitched)" ] && [ "$exploring" -gt 0 ] &&
-        reasons+=("room in Pitched for a drafted pitch")
+      if [ "$exploring" -gt 0 ]; then
+        if [ "$pitched" -lt "$(cfg .wip.pitched)" ]; then
+          reasons+=("room in Pitched for a drafted pitch")
+        elif [ "$(pitch_swap "$all" | jq '.demote | length')" -gt 0 ]; then
+          reasons+=("a drafted pitch out-ranks one in Pitched: swap them")
+        fi
+      fi
       if [ "$pitched" -eq 0 ] && [ "$exploring" -eq 0 ]; then
         idea=$(pitchable_idea "$all" | jq -r '.number // empty')
         [ -n "$idea" ] && reasons+=("nothing pitched or being drafted: pitch an Idea (e.g. #$idea)")
