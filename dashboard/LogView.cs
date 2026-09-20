@@ -11,6 +11,7 @@ public sealed class LogView : View
     private int _top;
     private int _maxTop;
     private bool _following = true;
+    private bool _expanded;
 
     public LogView() => CanFocus = false;
 
@@ -25,6 +26,22 @@ public sealed class LogView : View
     }
 
     public bool Following => _following;
+
+    public bool Expanded => _expanded;
+
+    /// <summary>Shows every tool call again, or folds the runs back up, keeping the line you were reading.</summary>
+    public void ToggleToolCalls()
+    {
+        var width = Math.Max(1, Viewport.Width);
+        var before = Rows(width);
+        _expanded = !_expanded;
+        var after = Rows(width);
+        _maxTop = Math.Max(0, after.Count - Viewport.Height);
+        if (_following)
+            SetNeedsDraw();
+        else
+            ScrollTo(Anchor(before, after, _top));
+    }
 
     public void Page(int direction) => ScrollTo(_top + direction * Math.Max(1, Viewport.Height - 1));
 
@@ -43,7 +60,7 @@ public sealed class LogView : View
     {
         var width = Math.Max(1, Viewport.Width);
         var height = Viewport.Height;
-        var rows = Wrap(Collapse(_lines, width), width);
+        var rows = Rows(width);
         _maxTop = Math.Max(0, rows.Count - height);
         _top = _following ? _maxTop : Math.Min(_top, _maxTop);
         for (var row = 0; row < height; row++)
@@ -63,6 +80,28 @@ public sealed class LogView : View
         return SchemeManager.TryGetScheme(style.Scheme, out var scheme)
             ? scheme.GetAttributeForRole(style.Role)
             : GetAttributeForRole(VisualRole.Normal);
+    }
+
+    internal List<LogLine> Rows(int width) => Wrap(_expanded ? _lines : Collapse(_lines, width), width);
+
+    /// <summary>The row in <paramref name="after"/> holding what row <paramref name="top"/> of <paramref name="before"/> held.</summary>
+    internal static int Anchor(IReadOnlyList<LogLine> before, IReadOnlyList<LogLine> after, int top)
+    {
+        top = Math.Clamp(top, 0, before.Count);
+        var prose = 0;
+        for (var row = 0; row < top; row++)
+            if (before[row].Kind != LogLineKind.ToolCall)
+                prose++;
+        var inRun = top < before.Count && before[top].Kind == LogLineKind.ToolCall;
+        var seen = 0;
+        for (var row = 0; row < after.Count; row++)
+        {
+            if (seen == prose && (inRun || after[row].Kind != LogLineKind.ToolCall))
+                return row;
+            if (after[row].Kind != LogLineKind.ToolCall)
+                seen++;
+        }
+        return after.Count;
     }
 
     /// <summary>Folds each run of consecutive tool calls into one clipped row, showing the latest call.</summary>
