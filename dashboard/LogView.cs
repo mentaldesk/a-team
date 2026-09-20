@@ -46,23 +46,23 @@ public sealed class LogView : View
         var rows = Wrap(_lines, width);
         _maxTop = Math.Max(0, rows.Count - height);
         _top = _following ? _maxTop : Math.Min(_top, _maxTop);
-        var normal = GetAttributeForRole(VisualRole.Normal);
-        var error = SchemeManager.GetScheme(Schemes.Error).GetAttributeForRole(VisualRole.Normal);
-        var success = SchemeManager.TryGetScheme(LogSchemes.Success, out var scheme)
-            ? scheme.GetAttributeForRole(VisualRole.Normal)
-            : normal;
         for (var row = 0; row < height; row++)
         {
             var line = _top + row < rows.Count ? rows[_top + row] : new LogLine("", LogLineKind.Prose);
-            SetAttribute(line.Kind switch
-            {
-                LogLineKind.ToolError or LogLineKind.ResultError => error,
-                LogLineKind.ResultOk => success,
-                _ => normal,
-            });
+            SetAttribute(AttributeFor(line.Kind));
             AddStr(0, row, line.Text.PadRight(width));
         }
         return true;
+    }
+
+    private Attribute AttributeFor(LogLineKind kind)
+    {
+        var style = LogStyle.For(kind);
+        if (style.Scheme is null)
+            return GetAttributeForRole(style.Role);
+        return SchemeManager.TryGetScheme(style.Scheme, out var scheme)
+            ? scheme.GetAttributeForRole(style.Role)
+            : GetAttributeForRole(VisualRole.Normal);
     }
 
     internal static List<LogLine> Wrap(IReadOnlyList<LogLine> lines, int width)
