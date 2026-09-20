@@ -97,7 +97,7 @@ fails the job. The template decides which platforms it mentions.
 ```yaml
 jobs:
   version:
-    uses: mentaldesk/a-team/.github/workflows/release-version.yml@v0.0.3
+    uses: mentaldesk/a-team/.github/workflows/release-version.yml@v0.0.4
     permissions: { contents: read, pull-requests: read }
     with: { bump: "${{ inputs.bump || 'auto' }}" }
 
@@ -105,7 +105,7 @@ jobs:
 
   publish:
     needs: [version, build]
-    uses: mentaldesk/a-team/.github/workflows/release-publish.yml@v0.0.3
+    uses: mentaldesk/a-team/.github/workflows/release-publish.yml@v0.0.4
     permissions: { contents: write }
     with:
       name: tuicode
