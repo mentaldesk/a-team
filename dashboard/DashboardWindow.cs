@@ -6,6 +6,7 @@ namespace ATeam.Dashboard;
 public sealed class DashboardWindow : Window
 {
     private const int DispatchLines = 4;
+    private static readonly Key Settings = new Key(',').WithCtrl;
     private readonly List<AgentPane> _panes = [];
     private readonly TextView _dispatch;
     private readonly string _dispatchLog;
@@ -13,7 +14,7 @@ public sealed class DashboardWindow : Window
 
     public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot)
     {
-        Title = $"a-team {Version()} · Tab/arrows: select agent · PgUp/PgDn/Home/End: scroll · Esc: quit";
+        Title = $"a-team {Version()} · Tab/arrows: select agent · PgUp/PgDn/Home/End: scroll · Ctrl+,: settings · Esc: quit";
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
@@ -61,6 +62,8 @@ public sealed class DashboardWindow : Window
 
     protected override bool OnKeyDown(Key key)
     {
+        if (key == Settings)
+            return OpenSettings();
         if (key == Key.Tab || key == Key.CursorRight || key == Key.CursorDown)
             return Select(+1);
         if (key == Key.Tab.WithShift || key == Key.CursorLeft || key == Key.CursorUp)
@@ -79,6 +82,14 @@ public sealed class DashboardWindow : Window
             pane.End();
         else
             return base.OnKeyDown(key);
+        return true;
+    }
+
+    private bool OpenSettings()
+    {
+        if (App is null)
+            return false;
+        SettingsDialog.Show(App, ThemeSetting.Live());
         return true;
     }
 

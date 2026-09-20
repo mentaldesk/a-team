@@ -116,7 +116,9 @@ tools it called, any errors and how the run finished). The strip along the botto
 dispatcher's recent decisions. With no arguments it shows every team with dispatch enabled.
 
 Tab or the arrow keys select an agent (▶). PgUp/PgDn/Home/End scroll its session; scrolling up
-stops it following new output until you press End. Esc quits.
+stops it following new output until you press End. Ctrl+, opens Settings, where the theme —
+Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode — can be changed
+for the rest of the session. Esc quits.
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.

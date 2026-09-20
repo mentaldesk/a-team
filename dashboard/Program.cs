@@ -33,6 +33,7 @@ if (teams.Length == 0)
 }
 var agents = teams.SelectMany(team => new[] { (team, "lead"), (team, "dev") }).ToList();
 
+BundledThemes.Load();
 using var app = Application.Create();
 app.Init();
 LogSchemes.Register();
