@@ -84,7 +84,7 @@ the artifacts it uploaded.
 
 | | |
 |---|---|
-| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `scoop` (Scoop manifest template path in the caller; omitted, no Scoop step runs), `bucket` (default `mentaldesk/scoop-bucket`), `artifacts` (artifact name pattern, default `*`). |
+| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `artifacts` (artifact name pattern, default `*`), and — added after `v0.0.4` — `scoop` (Scoop manifest template path in the caller; omitted, no Scoop step runs) and `bucket` (default `mentaldesk/scoop-bucket`). |
 | Outputs | None. |
 | Secrets | `packages-token` (optional): write access to `tap` and `bucket`. Without it the release still publishes and the packaging steps warn. |
 | Permissions the caller must grant | `contents: write`. Permissions are not inherited, so the calling job declares them. |
@@ -98,6 +98,18 @@ A caller that ships `.zip` platforms passes `scoop` as well, and gets `bucket/<n
 bucket updated in the same run. That one is **committed straight to the bucket's default branch,
 not opened as a PR**: the bucket has no CI to gate one. a-team passes no `scoop`, so none of it
 runs for a-team's own release.
+
+**Which release to pin.** Pin an exact release, never a branch or a moving tag: before v1.0.0
+nothing here is promised across releases (*What callers can rely on*). The tables above describe
+the newest release, so that's the one to take from
+[Releases](https://github.com/mentaldesk/a-team/releases) for a new caller.
+
+The example pins `v0.0.4` because that's its **floor**: the oldest release that declares every
+input it passes. A later release adding an input raises the floor only for a caller that passes
+it, so the example runs as copied and stays right without being bumped each release. Pin newer
+freely; pin older only against that release's own copy of the file, e.g.
+`git show v0.0.4:.github/workflows/release-publish.yml`. Two inputs sit above the example's
+floor: `scoop` and `bucket`, added after `v0.0.4` and first carried by the next release after it.
 
 ```yaml
 jobs:
@@ -117,7 +129,7 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       tag: ${{ needs.version.outputs.tag }}
       formula: packaging/tuicode.rb
-      scoop: packaging/tuicode.json            # omit it and no Scoop step runs
+      # scoop: packaging/tuicode.json          # needs a newer pin than v0.0.4; omit it, no Scoop step runs
     secrets:
       packages-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 ```
