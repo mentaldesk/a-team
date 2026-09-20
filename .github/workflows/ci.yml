@@ -33,3 +33,6 @@ jobs:
 
       - name: Build
         run: dotnet build dashboard/Dashboard.csproj -warnaserror
+
+      - name: Test
+        run: dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj -warnaserror

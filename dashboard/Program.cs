@@ -35,6 +35,7 @@ var agents = teams.SelectMany(team => new[] { (team, "lead"), (team, "dev") }).T
 
 using var app = Application.Create();
 app.Init();
+LogSchemes.Register();
 using var window = new DashboardWindow(agents, stateRoot);
 window.Refresh();
 app.AddTimeout(TimeSpan.FromSeconds(1), () =>
