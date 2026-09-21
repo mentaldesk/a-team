@@ -126,15 +126,17 @@ and update it if needed.
   want it pitched and closes it if not. Don't pitch it yourself.
 - `"none"`: nothing new to start.
 
-**`ready`, `blocked`, `readyLow`**: `ready` is the tasks the Dev can start now, `blocked` the
-Ready ones waiting on a dependency or on the reviewer. If `readyLow` is true, the Dev is about to
+**`ready`, `blocked`, `readyLow`, `skipped`**: `ready` is the tasks the Dev can start now, `blocked`
+the Ready ones waiting on a dependency or on the reviewer, `skipped` the Ideas you've set aside —
+say that number in your summary whenever it isn't 0. If `readyLow` is true, the Dev is about to
 run out of work: open your summary with how many it can start, how many are Ready but waiting,
 and how many pitches are waiting on the reviewer. If `ready` is 0, name what would unblock the
 most work — the prerequisite whose merge frees the most tasks, or the pitch to approve.
 
 If an Idea doesn't hold up once you dig in (already built, obsolete or off-vision), run
 `a-team board {{team}} skip lead <n> <file>` with your reasons, then `lead-next` once more for the
-next one. When the reviewer's feedback on one pitch changes direction, revise any drafts in
+next one. A reviewer comment on a skipped Idea puts it back in the running: answer it like any
+other feedback. When the reviewer's feedback on one pitch changes direction, revise any drafts in
 Exploring that it affects.
 
 ## Writing a pitch
