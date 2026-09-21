@@ -321,12 +321,53 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void The_title_offers_Enter_to_expand_and_Esc_to_go_back_from_there()
     {
+        using var window = Open(agents: Agents(4));
+
         Assert.Equal(
-            "a-team 1.2.3 · Tab/arrows: select agent · Enter: expand · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: quit",
-            DashboardWindow.Hints("1.2.3", expanded: false));
+            "a-team 1.2.3 · arrows: select · Enter: expand · Ctrl+E: commands · Esc: quit",
+            DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · Tab: next agent · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: back",
-            DashboardWindow.Hints("1.2.3", expanded: true));
+            "a-team 1.2.3 · PgUp/PgDn: scroll · Ctrl+E: commands · Esc: back",
+            DashboardWindow.Hints("1.2.3", expanded: true, window.Commands));
+    }
+
+    [Fact]
+    public void Both_titles_fit_the_76_columns_an_80_column_window_gives_them()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.All(
+            new[] { false, true },
+            expanded => Assert.InRange(DashboardWindow.Hints("1.2.3", expanded, window.Commands).Length, 1, 76));
+    }
+
+    [Fact]
+    public void Every_action_the_dashboard_has_is_a_command_you_can_run_by_name()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.Equal(
+            [
+                "Select the next agent", "Select the previous agent", "Select the agent to the right",
+                "Select the agent to the left", "Select the agent below", "Select the agent above",
+                "Expand the selected agent", "Scroll the log up", "Scroll the log down",
+                "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
+                "Commands", "Settings", "Back to the agent grid", "Quit",
+            ],
+            window.Commands.Registered.Select(command => command.Label));
+    }
+
+    [Fact]
+    public void Settings_opens_with_s_and_Ctrl_comma_is_gone()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.Equal(new Key('s'), window.Commands.Registered.Single(c => c.Id == "settings").Key);
+        Assert.DoesNotContain(window.Commands.Registered, c => c.Key == new Key(',').WithCtrl);
+        Assert.False(window.NewKeyDownEvent(new Key(',').WithCtrl));
+        Assert.All(
+            new[] { false, true },
+            expanded => Assert.DoesNotContain("Ctrl+,", DashboardWindow.Hints("1.2.3", expanded, window.Commands)));
     }
 
     [Fact]

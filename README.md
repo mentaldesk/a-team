@@ -125,13 +125,17 @@ enough to read a session without scrolling, and there Tab and Shift+Tab read the
 agent without leaving the expanded view; the dispatcher strip stays put. PgUp/PgDn/Home/End scroll
 the selected session in either view; scrolling up stops it following new output until you press End. A run of tool calls draws as one row so the
 agent's narration isn't pushed off the top; t shows every call in the selected pane again (the
-title says [tool calls]) and t again folds them back up. Ctrl+, opens Settings: the theme —
+title says [tool calls]) and t again folds them back up. s opens Settings: the theme —
 Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode — and whether panes
 start with every tool call showing. Ctrl+Enter keeps what's picked there, Esc discards it. What
 you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
 what the dashboard comes up in next time, with t still folding and unfolding a pane for the
 session. Esc goes back to the grid from an expanded agent, and quits the dashboard when there
 isn't one.
+
+Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it. Type to narrow
+the list, Up/Down to pick, Enter to run it, Esc to close. Every key above is one of those commands,
+so anything you can press you can also run by name.
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.
