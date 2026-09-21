@@ -63,7 +63,8 @@ Anyone with ideas and no team to build them. The first user is a solo developer 
 product ideas at once. The customer we're building towards may never have written code.
 
 **How do I use it?**
-Through a web portal, or a CLI in your terminal.
+Through the a-team dashboard, and in time a web portal. The CLI installs a-team and is what the
+agents themselves run; you shouldn't need it.
 
 **Do I need to know how to code?**
 No. You judge the product by using it, not by reading its code.
@@ -137,13 +138,39 @@ reviewed through GitHub. Still to build:
 - Deployment chosen and carried out by the team
 - Logging stakeholder time and accepted changes
 
+## Where features land
+
+The tenet says what every feature has to do. This says where it goes.
+
+**Everything the stakeholder does lives in one place, reached from a command palette.** Today
+that place is the dashboard. Anything that needs the stakeholder — answering a gate, starting a
+team, pausing one, changing a setting, seeing what a team is waiting on — is a command in it.
+Nothing that needs them is somewhere else.
+
+**The CLI has three jobs, and stakeholder work isn't one of them:** getting a-team onto a
+machine (`install`), the agents' own API (`board`), and debugging (`run`, `task-prompt`). It
+isn't going away, and a command may well have both a dashboard and a CLI form; what it can't
+have is only the CLI one.
+
+**A capability is a command before it's a key.** Every action is registered with an id and a
+label, so it shows up in the palette, can be rebound, and can be driven from somewhere else
+later. That is what makes the web portal a second front-end rather than a second product, so
+building it this way costs nothing now and saves the portal.
+
+Two things this deliberately doesn't say. It doesn't say every interaction has to be a dialog:
+a conversation is better as a session in the terminal than as a wizard, and the rule is
+satisfied when the palette is what starts it. And it doesn't make the dashboard the only
+front-end for ever — the portal is coming — only the one home there is at a time.
+
 ## Next themes
 
 Roughly in order. Each is a direction, not a commitment; pitches turn them into work.
 
 1. **Run the teams from the dashboard.** It's where the stakeholder already spends their day.
    Fit more than one team (#12), browse earlier sessions (#2), logs you can scan at a glance
-   (#9), and then act on every gate from it: approve a pitch, give feedback, accept work.
+   (#9); then a command palette and a registry to hang commands off (#86, #49), which is what
+   every action after it is reached by; and then act on every gate from it: approve a pitch,
+   give feedback, accept work.
 2. **Trust the loop.** Feedback is never lost and the team never spins, so the stakeholder
    never has to repeat themselves or chase a stuck item: comments mid-run or older than a day
    (#3, #5), stuck triggers (#4), readyLow counting blocked tasks (#23), shelving a pitch on
@@ -160,5 +187,6 @@ Roughly in order. Each is a direction, not a commitment; pitches turn them into 
 - Does it keep both gates in the stakeholder's hands, enforced by a script rather than a
   sentence?
 - Does it move a-team towards the press release, or only polish today's version?
+- Does it land where the stakeholder already is, or does it add somewhere else to go?
 - Does it keep an idle team free and a busy one bounded?
 - Is it the smallest version that's actually useful?
