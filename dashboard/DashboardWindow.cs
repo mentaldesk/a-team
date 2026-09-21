@@ -7,17 +7,20 @@ namespace ATeam.Dashboard;
 public sealed class DashboardWindow : Window
 {
     private const int DispatchLines = 4;
+    private const int MinCellHeight = 5;
     private static readonly Key Settings = new Key(',').WithCtrl;
     private static readonly Key ToolCalls = new('t');
     private readonly List<AgentPane> _panes = [];
     private readonly int _columns;
     private readonly string _version = Version();
+    private readonly View _agents;
     private readonly FrameView _dispatchFrame;
     private readonly TextView _dispatch;
     private readonly string _dispatchLog;
     private readonly string _nextPass;
     private readonly DashboardSettings _settings;
     private int? _expanded;
+    private Size _laidOutOver;
 
     public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot, DashboardSettings settings)
     {
@@ -27,23 +30,32 @@ public sealed class DashboardWindow : Window
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
         _columns = AgentGrid.Columns(agents);
+        _agents = new View
+        {
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(DispatchLines + 2),
+            CanFocus = true,
+        };
+        _agents.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+        _agents.SubViewLayout += (_, _) => FitGrid();
+        Add(_agents);
+
         var expandToolCalls = settings.ReadExpandToolCalls();
         for (var i = 0; i < agents.Count; i++)
         {
             var (team, role) = agents[i];
             var index = i;
-            Rectangle Cell() => _expanded is { } only
-                ? only == index ? new Rectangle(Point.Empty, AgentArea()) : Rectangle.Empty
-                : AgentGrid.Cell(index, agents.Count, _columns, AgentArea());
             var pane = new AgentPane(team, role, Path.Combine(stateRoot, team, role), expandToolCalls)
             {
-                X = Pos.Func(_ => Cell().X, this),
-                Y = Pos.Func(_ => Cell().Y, this),
-                Width = Dim.Func(_ => Cell().Width, this),
-                Height = Dim.Func(_ => Cell().Height, this),
+                X = Pos.Func(_ => Cell(index).X, this),
+                Y = Pos.Func(_ => Cell(index).Y, this),
+                Width = Dim.Func(_ => Cell(index).Width, this),
+                Height = Dim.Func(_ => Cell(index).Height, this),
             };
             _panes.Add(pane);
-            Add(pane);
+            _agents.Add(pane);
         }
 
         _dispatchFrame = new FrameView
@@ -63,6 +75,8 @@ public sealed class DashboardWindow : Window
     internal IReadOnlyList<AgentPane> Panes => _panes;
 
     internal View Dispatcher => _dispatchFrame;
+
+    internal View Agents => _agents;
 
     internal int? ExpandedAgent => _expanded;
 
@@ -155,6 +169,11 @@ public sealed class DashboardWindow : Window
         for (var i = 0; i < _panes.Count; i++)
             _panes[i].Visible = index is null || index == i;
         Title = Hints(_version, index is not null);
+        var selected = SelectedIndex();
+        if (index is not null)
+            ScrollTo(0);
+        else if (selected >= 0)
+            ScrollIntoView(selected);
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -174,7 +193,56 @@ public sealed class DashboardWindow : Window
     {
         if (_expanded is not null)
             SetExpanded(index);
+        else
+            ScrollIntoView(index);
         _panes[index].SetFocus();
+    }
+
+    private Rectangle Cell(int index) => _expanded is { } only
+        ? only == index ? new Rectangle(Point.Empty, _agents.Viewport.Size) : Rectangle.Empty
+        : AgentGrid.Cell(index, _panes.Count, _columns, GridContent());
+
+    /// <summary>The grid tiles a content area tall enough for every cell's floor; the agent area scrolls over it.</summary>
+    private Size GridContent()
+    {
+        var area = _agents.Viewport.Size;
+        if (_expanded is not null)
+            return area;
+        var rows = (_panes.Count + _columns - 1) / _columns;
+        return area with { Height = Math.Max(area.Height, rows * MinCellHeight) };
+    }
+
+    private void FitGrid()
+    {
+        // A second pass: the scroll bar takes a column off the area the first one measured.
+        for (var pass = 0; pass < 2 && _agents.GetContentSize() != GridContent(); pass++)
+            _agents.SetContentSize(GridContent());
+        ScrollTo(_agents.Viewport.Y);
+        if (_laidOutOver == _agents.Viewport.Size)
+            return;
+        _laidOutOver = _agents.Viewport.Size;
+        var selected = SelectedIndex();
+        if (selected >= 0)
+            ScrollIntoView(selected);
+    }
+
+    private void ScrollIntoView(int index)
+    {
+        var cell = Cell(index);
+        var top = _agents.Viewport.Y;
+        var height = _agents.Viewport.Height;
+        if (cell.Top < top)
+            ScrollTo(cell.Top);
+        else if (cell.Bottom > top + height)
+            ScrollTo(Math.Min(cell.Top, cell.Bottom - height));
+    }
+
+    private void ScrollTo(int top)
+    {
+        var limit = Math.Max(0, GridContent().Height - _agents.Viewport.Height);
+        top = Math.Clamp(top, 0, limit);
+        if (_agents.Viewport.Y != top)
+            _agents.Viewport = _agents.Viewport with { Y = top };
     }
 
     private bool MoveSelection(int rowStep, int columnStep)
@@ -199,8 +267,6 @@ public sealed class DashboardWindow : Window
     private int SelectedIndex() => Selected() is { } pane ? _panes.IndexOf(pane) : -1;
 
     private AgentPane? Selected() => _panes.FirstOrDefault(pane => pane.HasFocus);
-
-    private Size AgentArea() => new(Viewport.Width, Math.Max(0, Viewport.Height - (DispatchLines + 2)));
 
     private static string Version() =>
         typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
