@@ -36,7 +36,7 @@ dispatch() {
     return
   fi
 
-  # A missing last-sweep reads as never, so the first pass after an install or a reboot sweeps.
+  # A missing last-sweep reads as never, so a fresh install sweeps on its first pass.
   [ $((now - $(cat "$dir/${prefix}last-sweep" 2>/dev/null || echo 0))) \
     -ge $(($(cfg '.dispatch.sweepEvery // 30') * 60)) ] && sweep=--sweep
 
