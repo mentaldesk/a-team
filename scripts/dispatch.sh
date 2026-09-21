@@ -22,7 +22,7 @@ log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
 dispatch() {
   local team=$1 role=$2 config=$3
   local dir="$STATE/$team/$role" now pid started triggers reasons creative last fingerprint
-  local prefix=""
+  local sweep='' prefix=''
   $DRY_RUN && prefix="dry-"
   mkdir -p "$dir/logs"
   now=$(date +%s)
@@ -36,10 +36,15 @@ dispatch() {
     return
   fi
 
-  if ! triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" 2>&1); then
+  # A missing last-sweep reads as never, so a fresh install sweeps on its first pass.
+  [ $((now - $(cat "$dir/${prefix}last-sweep" 2>/dev/null || echo 0))) \
+    -ge $(($(cfg '.dispatch.sweepEvery // 30') * 60)) ] && sweep=--sweep
+
+  if ! triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" ${sweep:+"$sweep"} 2>&1); then
     log "$team $role: triggers failed: $(tr '\n' ' ' <<<"$triggers")"
     return
   fi
+  [ -z "$sweep" ] || echo "$now" >"$dir/${prefix}last-sweep"
   reasons=$(jq -r '.reasons[]' <<<"$triggers")
   creative=$(jq -r .creative <<<"$triggers")
   last=$(cat "$dir/${prefix}last-start" 2>/dev/null || echo 0)

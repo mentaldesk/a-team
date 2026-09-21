@@ -21,6 +21,7 @@
   "dispatch": {
     "enabled": false,
     "creativeEvery": 180,
+    "sweepEvery": 30,
     "retryAfter": 60,
     "maxRuntime": 120
   }

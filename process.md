@@ -69,6 +69,8 @@ a-team board {{team}} undepend <role> <task> <prereq>  # Lead only: drop that de
 a-team board {{team}} children <n>              # sub-issues and whether they're closed
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
+a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a run for;
+                                                # --sweep also reads old feedback on your items
 ```
 
 `setup` and `check` are for the reviewer when starting a team. Don't run them.
