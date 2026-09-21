@@ -219,6 +219,129 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(2, Selected(window));
     }
 
+    [Fact]
+    public void Enter_expands_the_selected_agent_over_the_whole_agent_area()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Tab);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        var cells = LayOut(window, 120, 30);
+
+        Assert.Equal(1, window.ExpandedAgent);
+        Assert.Equal(AgentArea(window), cells[1]);
+    }
+
+    [Fact]
+    public void Esc_puts_the_grid_back_the_way_it_was()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+        var grid = LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        LayOut(window, 120, 30);
+        Assert.True(window.NewKeyDownEvent(Key.Esc));
+        var back = LayOut(window, 120, 30);
+
+        Assert.Null(window.ExpandedAgent);
+        Assert.Equal(grid, back);
+    }
+
+    [Fact]
+    public void Esc_with_nothing_expanded_is_left_alone_so_it_still_quits()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+
+        Assert.False(window.NewKeyDownEvent(Key.Esc));
+    }
+
+    [Fact]
+    public void Tab_and_Shift_Tab_read_the_next_agent_without_leaving_the_expanded_view()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+
+        window.NewKeyDownEvent(Key.Tab);
+        Assert.Equal(1, window.ExpandedAgent);
+        Assert.Equal(1, Selected(window));
+
+        window.NewKeyDownEvent(Key.Tab.WithShift);
+        Assert.Equal(0, window.ExpandedAgent);
+        Assert.Equal(0, Selected(window));
+    }
+
+    [Fact]
+    public void The_arrows_do_nothing_while_expanded()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+
+        foreach (var arrow in new[] { Key.CursorDown, Key.CursorRight, Key.CursorUp, Key.CursorLeft })
+            Assert.True(window.NewKeyDownEvent(arrow));
+
+        Assert.Equal(0, window.ExpandedAgent);
+        Assert.Equal(0, Selected(window));
+    }
+
+    [Fact]
+    public void Scrolling_and_t_still_reach_the_expanded_agent()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.True(window.NewKeyDownEvent(Key.PageUp));
+        Assert.True(window.NewKeyDownEvent(Key.PageDown));
+        Assert.True(window.NewKeyDownEvent(Key.Home));
+        Assert.True(window.NewKeyDownEvent(Key.End));
+        Assert.True(window.NewKeyDownEvent(new Key('t')));
+
+        Assert.Equal([true, false, false, false], window.Panes.Select(pane => pane.Expanded));
+    }
+
+    [Fact]
+    public void The_dispatcher_strip_keeps_its_place_while_an_agent_is_expanded()
+    {
+        using var window = Open(agents: Agents(4));
+        LayOut(window, 120, 30);
+        var grid = window.Dispatcher.Frame;
+
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+        LayOut(window, 120, 30);
+
+        Assert.Equal(grid, window.Dispatcher.Frame);
+    }
+
+    [Fact]
+    public void The_title_offers_Enter_to_expand_and_Esc_to_go_back_from_there()
+    {
+        Assert.Equal(
+            "a-team 1.2.3 · Tab/arrows: select agent · Enter: expand · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: quit",
+            DashboardWindow.Hints("1.2.3", expanded: false));
+        Assert.Equal(
+            "a-team 1.2.3 · Tab: next agent · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: back",
+            DashboardWindow.Hints("1.2.3", expanded: true));
+    }
+
+    [Fact]
+    public void The_window_title_follows_the_view_it_is_showing()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+
+        window.NewKeyDownEvent(Key.Enter);
+        Assert.EndsWith("Esc: back", window.Title);
+
+        window.NewKeyDownEvent(Key.Esc);
+        Assert.EndsWith("Esc: quit", window.Title);
+    }
+
     private static (string, string)[] Agents(int count) =>
         [.. Enumerable.Range(0, count).Select(i => ($"team{i / 2}", i % 2 == 0 ? "lead" : "dev"))];
 

@@ -115,15 +115,18 @@ check; then why it was last started; then its latest session as it happens (what
 tools it called, any errors and how the run finished). The strip along the bottom is the
 dispatcher's recent decisions. With no arguments it shows every team with dispatch enabled.
 
-Tab or the arrow keys select an agent (▶). PgUp/PgDn/Home/End scroll its session; scrolling up
-stops it following new output until you press End. A run of tool calls draws as one row so the
+Tab or the arrow keys select an agent (▶). Enter expands it over the whole agent area, wide
+enough to read a session without scrolling, and there Tab and Shift+Tab read the next and previous
+agent without leaving the expanded view; the dispatcher strip stays put. PgUp/PgDn/Home/End scroll
+the selected session in either view; scrolling up stops it following new output until you press End. A run of tool calls draws as one row so the
 agent's narration isn't pushed off the top; t shows every call in the selected pane again (the
 title says [tool calls]) and t again folds them back up. Ctrl+, opens Settings: the theme —
 Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode — and whether panes
 start with every tool call showing. Ctrl+Enter keeps what's picked there, Esc discards it. What
 you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
 what the dashboard comes up in next time, with t still folding and unfolding a pane for the
-session. Esc quits the dashboard.
+session. Esc goes back to the grid from an expanded agent, and quits the dashboard when there
+isn't one.
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.

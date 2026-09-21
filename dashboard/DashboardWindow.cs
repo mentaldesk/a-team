@@ -11,16 +11,18 @@ public sealed class DashboardWindow : Window
     private static readonly Key ToolCalls = new('t');
     private readonly List<AgentPane> _panes = [];
     private readonly int _columns;
+    private readonly string _version = Version();
     private readonly FrameView _dispatchFrame;
     private readonly TextView _dispatch;
     private readonly string _dispatchLog;
     private readonly string _nextPass;
     private readonly DashboardSettings _settings;
+    private int? _expanded;
 
     public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot, DashboardSettings settings)
     {
         _settings = settings;
-        Title = $"a-team {Version()} · Tab/arrows: select agent · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: quit";
+        Title = Hints(_version, expanded: false);
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
@@ -30,7 +32,9 @@ public sealed class DashboardWindow : Window
         {
             var (team, role) = agents[i];
             var index = i;
-            Rectangle Cell() => AgentGrid.Cell(index, agents.Count, _columns, AgentArea());
+            Rectangle Cell() => _expanded is { } only
+                ? only == index ? new Rectangle(Point.Empty, AgentArea()) : Rectangle.Empty
+                : AgentGrid.Cell(index, agents.Count, _columns, AgentArea());
             var pane = new AgentPane(team, role, Path.Combine(stateRoot, team, role), expandToolCalls)
             {
                 X = Pos.Func(_ => Cell().X, this),
@@ -60,6 +64,12 @@ public sealed class DashboardWindow : Window
 
     internal View Dispatcher => _dispatchFrame;
 
+    internal int? ExpandedAgent => _expanded;
+
+    internal static string Hints(string version, bool expanded) => expanded
+        ? $"a-team {version} · Tab: next agent · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: back"
+        : $"a-team {version} · Tab/arrows: select agent · Enter: expand · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: quit";
+
     public void Refresh()
     {
         var now = DateTimeOffset.UtcNow;
@@ -78,6 +88,10 @@ public sealed class DashboardWindow : Window
     {
         if (key == Settings)
             return OpenSettings();
+        if (key == Key.Enter)
+            return Expand();
+        if (key == Key.Esc)
+            return Collapse();
         if (key == Key.Tab)
             return Step(+1);
         if (key == Key.Tab.WithShift)
@@ -117,22 +131,58 @@ public sealed class DashboardWindow : Window
         return true;
     }
 
+    private bool Expand()
+    {
+        var index = SelectedIndex();
+        if (index < 0)
+            return false;
+        if (_expanded is null)
+            SetExpanded(index);
+        return true;
+    }
+
+    private bool Collapse()
+    {
+        if (_expanded is null)
+            return false;
+        SetExpanded(null);
+        return true;
+    }
+
+    private void SetExpanded(int? index)
+    {
+        _expanded = index;
+        for (var i = 0; i < _panes.Count; i++)
+            _panes[i].Visible = index is null || index == i;
+        Title = Hints(_version, index is not null);
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
     private bool Step(int step)
     {
         if (_panes.Count == 0)
             return false;
         var current = SelectedIndex();
-        if (current < 0)
-            _panes[step > 0 ? 0 : _panes.Count - 1].SetFocus();
-        else
-            _panes[(current + step + _panes.Count) % _panes.Count].SetFocus();
+        Select(current < 0
+            ? step > 0 ? 0 : _panes.Count - 1
+            : (current + step + _panes.Count) % _panes.Count);
         return true;
+    }
+
+    private void Select(int index)
+    {
+        if (_expanded is not null)
+            SetExpanded(index);
+        _panes[index].SetFocus();
     }
 
     private bool MoveSelection(int rowStep, int columnStep)
     {
         if (_panes.Count == 0)
             return false;
+        if (_expanded is not null)
+            return true;
         var current = SelectedIndex();
         if (current < 0)
         {
@@ -142,7 +192,7 @@ public sealed class DashboardWindow : Window
         var rows = (_panes.Count + _columns - 1) / _columns;
         var row = Math.Clamp(current / _columns + rowStep, 0, rows - 1);
         var column = Math.Clamp(current % _columns + columnStep, 0, _columns - 1);
-        _panes[Math.Min(row * _columns + column, _panes.Count - 1)].SetFocus();
+        Select(Math.Min(row * _columns + column, _panes.Count - 1));
         return true;
     }
 
