@@ -24,9 +24,12 @@ public sealed class CommandsDialog : Dialog
 
         _filter = new TextField { X = 0, Y = 0, Width = Dim.Fill() };
         _filter.ValueChanged += (_, _) => Narrow();
+        // The filter binds Home/End to its own cursor, so the list would never see them.
+        _filter.KeyBindings.Remove(Key.Home);
+        _filter.KeyBindings.Remove(Key.End);
         _list = new ListView { X = 0, Y = Pos.Bottom(_filter), Width = Dim.Fill(), Height = Dim.Fill(1) };
         var hints = new StatusBar([
-            Shortcut("Up/Down", "select", () => Move(+1)),
+            Shortcut("Up/Down/PgUp/PgDn/Home/End", "select", () => Move(+1)),
             Shortcut("Enter", "run", () => Run()),
             Shortcut("Esc", "cancel", () => Cancel()),
         ]);
@@ -55,6 +58,14 @@ public sealed class CommandsDialog : Dialog
             return Move(-1);
         if (key == Key.CursorDown)
             return Move(+1);
+        if (key == Key.PageUp)
+            return Move(-Page);
+        if (key == Key.PageDown)
+            return Move(+Page);
+        if (key == Key.Home)
+            return MoveTo(0);
+        if (key == Key.End)
+            return MoveTo(_matches.Count - 1);
         if (key == Key.Tab)
             return MoveFocus();
         return base.OnKeyDown(key);
@@ -73,11 +84,15 @@ public sealed class CommandsDialog : Dialog
     private string Row(CommandDescriptor command) =>
         $"{command.Label.PadRight(_labelWidth)}  {(command.Key == Key.Empty ? "" : command.Key.ToString())}";
 
-    private bool Move(int step)
+    private int Page => Math.Max(1, _list.Viewport.Height);
+
+    private bool Move(int step) => MoveTo((_list.Value ?? 0) + step);
+
+    private bool MoveTo(int index)
     {
         if (_matches.Count > 0)
         {
-            _list.Value = Math.Clamp((_list.Value ?? 0) + step, 0, _matches.Count - 1);
+            _list.Value = Math.Clamp(index, 0, _matches.Count - 1);
             _list.EnsureSelectedItemVisible();
         }
         return true;

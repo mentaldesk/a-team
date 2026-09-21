@@ -134,8 +134,8 @@ session. Esc goes back to the grid from an expanded agent, and quits the dashboa
 isn't one.
 
 Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it. Type to narrow
-the list, Up/Down to pick, Enter to run it, Esc to close. Every key above is one of those commands,
-so anything you can press you can also run by name.
+the list, Up/Down (or PgUp/PgDn and Home/End) to pick, Enter to run it, Esc to close. Every key
+above is one of those commands, so anything you can press you can also run by name.
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.

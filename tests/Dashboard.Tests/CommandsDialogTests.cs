@@ -106,6 +106,64 @@ public class CommandsDialogTests
     }
 
     [Fact]
+    public void Home_and_End_jump_to_the_ends_of_the_list()
+    {
+        using var dialog = Open(out _);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.End));
+        Assert.Equal(2, dialog.List.Value);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Home));
+        Assert.Equal(0, dialog.List.Value);
+    }
+
+    [Fact]
+    public void PageDown_and_PageUp_move_the_selection_a_screenful_at_a_time()
+    {
+        using var host = new View { Width = 40, Height = 20 };
+        using var dialog = new CommandsDialog(Many(20));
+        host.Add(dialog);
+        host.Layout(new Size(40, 20));
+
+        var page = dialog.List.Viewport.Height;
+        Assert.InRange(page, 2, 19);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.PageDown));
+        Assert.Equal(page, dialog.List.Value);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.PageUp));
+        Assert.Equal(0, dialog.List.Value);
+    }
+
+    [Fact]
+    public void Paging_stops_at_both_ends_of_the_list()
+    {
+        using var host = new View { Width = 40, Height = 20 };
+        using var dialog = new CommandsDialog(Many(20));
+        host.Add(dialog);
+        host.Layout(new Size(40, 20));
+
+        Assert.True(dialog.NewKeyDownEvent(Key.PageUp));
+        Assert.Equal(0, dialog.List.Value);
+
+        for (var i = 0; i < 20; i++)
+            dialog.NewKeyDownEvent(Key.PageDown);
+        Assert.Equal(19, dialog.List.Value);
+    }
+
+    [Fact]
+    public void Paging_a_list_nothing_matches_leaves_nothing_selected()
+    {
+        using var dialog = Open(out _);
+        Type(dialog, "zzz");
+
+        Assert.True(dialog.NewKeyDownEvent(Key.PageDown));
+        Assert.True(dialog.NewKeyDownEvent(Key.End));
+
+        Assert.Null(dialog.List.Value);
+    }
+
+    [Fact]
     public void Enter_runs_whatever_the_arrows_left_highlighted()
     {
         using var dialog = Open(out var commands);
@@ -149,6 +207,14 @@ public class CommandsDialogTests
         .Register("quit", "Quit", () => Ran.Add("quit"));
 
     private CommandsDialog Open(out CommandRegistry commands) => new(Registry(out commands).Registered);
+
+    private static IReadOnlyList<CommandDescriptor> Many(int count)
+    {
+        var registry = new CommandRegistry();
+        for (var i = 0; i < count; i++)
+            registry.Register($"command{i}", $"Command {i}", () => { });
+        return registry.Registered;
+    }
 
     private static IEnumerable<string> Rows(CommandsDialog dialog) =>
         dialog.List.Source!.ToList().Cast<string>().Select(row => row.TrimEnd());
