@@ -352,7 +352,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the agent to the left", "Select the agent below", "Select the agent above",
                 "Expand the selected agent", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
-                "Commands", "Settings", "Back to the agent grid", "Quit",
+                "Pause team0", "Commands", "Settings", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -501,6 +501,138 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(strip, window.Dispatcher.Frame);
     }
 
+    [Fact]
+    public void The_message_block_takes_no_rows_until_there_is_something_to_say()
+    {
+        using var window = Open(agents: Agents(4));
+
+        LayOut(window, 120, 30);
+
+        Assert.Equal(0, window.Message.Lines);
+        Assert.Equal(0, window.Message.Frame.Height);
+        Assert.Equal(window.Viewport.Height - 6, window.Dispatcher.Frame.Y);
+    }
+
+    [Fact]
+    public void A_message_shrinks_the_grid_above_it_instead_of_covering_anything()
+    {
+        using var window = Open(agents: Agents(4), run: (_, _) => new TaskCompletionSource<string?>().Task);
+        var before = LayOut(window, 120, 30);
+
+        window.Commands.Execute("team.pause");
+        var after = LayOut(window, 120, 30);
+
+        Assert.Equal("Pausing…", window.Message.Text);
+        Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
+        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
+        Assert.Equal(before.Sum(cell => cell.Height) - 2, after.Sum(cell => cell.Height));
+        AssertTiles(AgentArea(window), after);
+    }
+
+    [Fact]
+    public void Pausing_runs_a_team_pause_for_the_selected_agents_team_and_says_so_while_it_runs()
+    {
+        var calls = new List<(string Verb, string Team)>();
+        var finish = new TaskCompletionSource<string?>();
+        using var window = Open(agents: Agents(4), run: (verb, team) =>
+        {
+            calls.Add((verb, team));
+            return finish.Task;
+        });
+        SelectAgent(window, 2);
+
+        window.Commands.Execute("team.pause");
+
+        Assert.Equal([("pause", "team1")], calls);
+        Assert.Equal("Pausing…", window.Message.Text);
+    }
+
+    [Fact]
+    public void A_second_go_is_refused_until_the_first_one_resolves()
+    {
+        var calls = 0;
+        var finish = new TaskCompletionSource<string?>();
+        using var window = Open(agents: Agents(4), run: (_, _) =>
+        {
+            calls++;
+            return finish.Task;
+        });
+
+        window.Commands.Execute("team.pause");
+        window.Commands.Execute("team.pause");
+        Assert.Equal(1, calls);
+
+        finish.SetResult(null);
+        window.Refresh();
+        window.Commands.Execute("team.pause");
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public void A_command_that_worked_leaves_the_message_block_empty_again()
+    {
+        using var window = Open(agents: Agents(4));
+
+        window.Commands.Execute("team.pause");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(0, window.Message.Lines);
+        Assert.Equal(window.Viewport.Height - 6, window.Dispatcher.Frame.Y);
+    }
+
+    [Fact]
+    public void A_command_that_failed_shows_one_line_and_leaves_the_dashboard_usable()
+    {
+        using var window = Open(
+            agents: Agents(4),
+            run: (_, _) => Task.FromResult<string?>("a-team pause: can't write /nope/team0.json\nstack\ntrace"));
+
+        window.Commands.Execute("team.pause");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal("a-team pause: can't write /nope/team0.json", window.Message.Text);
+        Assert.Equal(1, window.Message.Lines);
+        Assert.True(window.NewKeyDownEvent(Key.Tab));
+        Assert.Equal(0, Selected(window));
+    }
+
+    [Fact]
+    public void A_paused_team_is_offered_Resume_instead()
+    {
+        WriteTeam("team0", enabled: false);
+        WriteTeam("team1", enabled: true);
+        using var window = Open(agents: Agents(4));
+        window.Refresh();
+
+        Assert.Equal("Resume team0", Label(window, "team.pause"));
+        SelectAgent(window, 2);
+        Assert.Equal("Pause team1", Label(window, "team.pause"));
+    }
+
+    [Fact]
+    public void Pausing_a_team_reaches_its_panes_on_the_next_refresh()
+    {
+        WriteTeam("team0", enabled: true);
+        using var window = Open(agents: Agents(2), run: (_, team) =>
+        {
+            WriteTeam(team, enabled: false);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        Assert.All(window.Panes, pane => Assert.False(pane.Paused));
+
+        window.Commands.Execute("team.pause");
+        window.Refresh();
+
+        Assert.All(window.Panes, pane => Assert.True(pane.Paused));
+        Assert.Equal("Resume team0", Label(window, "team.pause"));
+    }
+
+    private static string Label(DashboardWindow window, string id) =>
+        window.Commands.Registered.Single(command => command.Id == id).Label;
+
     private static void SelectAgent(DashboardWindow window, int index)
     {
         for (var i = 0; i <= index; i++)
@@ -544,12 +676,31 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(area.Width * area.Height, covered.Count);
     }
 
-    private DashboardWindow Open(bool expandToolCalls = false, IReadOnlyList<(string, string)>? agents = null)
+    private DashboardWindow Open(
+        bool expandToolCalls = false,
+        IReadOnlyList<(string, string)>? agents = null,
+        Func<string, string, Task<string?>>? run = null)
     {
         Directory.CreateDirectory(_root);
-        var settings = new DashboardSettings(Path.Combine(_root, "config"));
+        var settings = new DashboardSettings(Config);
         if (expandToolCalls)
             settings.WriteExpandToolCalls(true);
-        return new DashboardWindow(agents ?? [("a-team", "lead"), ("a-team", "dev")], _root, settings);
+        return new DashboardWindow(
+            agents ?? [("a-team", "lead"), ("a-team", "dev")],
+            _root,
+            settings,
+            new TeamConfigs(Config),
+            run ?? ((_, _) => Task.FromResult<string?>(null)));
+    }
+
+    private string Config => Path.Combine(_root, "config");
+
+    private void WriteTeam(string team, bool enabled)
+    {
+        var teams = Path.Combine(Config, "teams");
+        Directory.CreateDirectory(teams);
+        File.WriteAllText(
+            Path.Combine(teams, team + ".json"),
+            "{\"dispatch\": {\"enabled\": " + (enabled ? "true" : "false") + "}}");
     }
 }

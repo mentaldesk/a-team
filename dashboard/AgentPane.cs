@@ -14,6 +14,7 @@ public sealed class AgentPane : FrameView
 
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
     {
+        Team = team;
         _name = $"{team} · {role}";
         _stateDir = stateDir;
         CanFocus = true;
@@ -51,11 +52,16 @@ public sealed class AgentPane : FrameView
 
     internal bool Expanded => _body.Expanded;
 
-    public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck)
+    internal string Team { get; }
+
+    internal bool Paused { get; private set; }
+
+    public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck, bool paused)
     {
         var state = AgentState.Read(_stateDir);
         _running = state.Running;
-        _timing = Describe(state, now, nextCheck);
+        Paused = paused;
+        _timing = Describe(state, now, nextCheck, paused);
         UpdateHeader();
 
         var why = state.Reasons.Count == 0 ? "" : "why: " + string.Join("; ", state.Reasons);
@@ -70,22 +76,24 @@ public sealed class AgentPane : FrameView
 
     private void UpdateHeader()
     {
-        var title = Header(_name, HasFocus, _running, _body.Following, _body.Expanded);
+        var title = Header(_name, HasFocus, _running, Paused, _body.Following, _body.Expanded);
         if (Title != title)
             Title = title;
         if (_status.Text != _timing)
             _status.Text = _timing;
     }
 
-    internal static string Header(string name, bool selected, bool running, bool following, bool expanded) =>
-        $"{(selected ? "▶ " : "")}{(running ? "●" : "○")} {name}{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}";
+    internal static string Header(string name, bool selected, bool running, bool paused, bool following, bool expanded) =>
+        $"{(selected ? "▶ " : "")}{Glyph(running, paused)} {name}{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}";
 
-    private static string Describe(AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck)
+    private static string Glyph(bool running, bool paused) => paused ? "⏸" : running ? "●" : "○";
+
+    internal static string Describe(AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck, bool paused)
     {
         if (state.Running)
             return state.LastStart is { } started ? $"running {Clock(now - started)}" : "running";
         var ran = state.LastStart is { } last ? $"ran {Ago(now - last)} ago" : "never run";
-        return $"{ran} · {NextCheck(now, nextCheck)}";
+        return $"{ran} · {(paused ? "paused" : NextCheck(now, nextCheck))}";
     }
 
     private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck) => nextCheck switch
