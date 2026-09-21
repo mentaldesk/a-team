@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Reflection;
 using Terminal.Gui.Input;
 
@@ -9,6 +10,8 @@ public sealed class DashboardWindow : Window
     private static readonly Key Settings = new Key(',').WithCtrl;
     private static readonly Key ToolCalls = new('t');
     private readonly List<AgentPane> _panes = [];
+    private readonly int _columns;
+    private readonly FrameView _dispatchFrame;
     private readonly TextView _dispatch;
     private readonly string _dispatchLog;
     private readonly string _nextPass;
@@ -21,22 +24,25 @@ public sealed class DashboardWindow : Window
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
+        _columns = AgentGrid.Columns(agents);
         var expandToolCalls = settings.ReadExpandToolCalls();
         for (var i = 0; i < agents.Count; i++)
         {
             var (team, role) = agents[i];
+            var index = i;
+            Rectangle Cell() => AgentGrid.Cell(index, agents.Count, _columns, AgentArea());
             var pane = new AgentPane(team, role, Path.Combine(stateRoot, team, role), expandToolCalls)
             {
-                X = i == 0 ? 0 : Pos.Right(_panes[i - 1]),
-                Y = 0,
-                Width = i == agents.Count - 1 ? Dim.Fill() : Dim.Percent(100 / agents.Count),
-                Height = Dim.Fill(DispatchLines + 2),
+                X = Pos.Func(_ => Cell().X, this),
+                Y = Pos.Func(_ => Cell().Y, this),
+                Width = Dim.Func(_ => Cell().Width, this),
+                Height = Dim.Func(_ => Cell().Height, this),
             };
             _panes.Add(pane);
             Add(pane);
         }
 
-        var dispatchFrame = new FrameView
+        _dispatchFrame = new FrameView
         {
             Title = "dispatcher",
             X = 0,
@@ -46,11 +52,13 @@ public sealed class DashboardWindow : Window
             CanFocus = false,
         };
         _dispatch = new TextView { Width = Dim.Fill(), Height = Dim.Fill(), ReadOnly = true, CanFocus = false };
-        dispatchFrame.Add(_dispatch);
-        Add(dispatchFrame);
+        _dispatchFrame.Add(_dispatch);
+        Add(_dispatchFrame);
     }
 
     internal IReadOnlyList<AgentPane> Panes => _panes;
+
+    internal View Dispatcher => _dispatchFrame;
 
     public void Refresh()
     {
@@ -70,10 +78,18 @@ public sealed class DashboardWindow : Window
     {
         if (key == Settings)
             return OpenSettings();
-        if (key == Key.Tab || key == Key.CursorRight || key == Key.CursorDown)
-            return Select(+1);
-        if (key == Key.Tab.WithShift || key == Key.CursorLeft || key == Key.CursorUp)
-            return Select(-1);
+        if (key == Key.Tab)
+            return Step(+1);
+        if (key == Key.Tab.WithShift)
+            return Step(-1);
+        if (key == Key.CursorRight)
+            return MoveSelection(0, +1);
+        if (key == Key.CursorLeft)
+            return MoveSelection(0, -1);
+        if (key == Key.CursorDown)
+            return MoveSelection(+1, 0);
+        if (key == Key.CursorUp)
+            return MoveSelection(-1, 0);
 
         var pane = Selected();
         if (pane is null)
@@ -101,16 +117,40 @@ public sealed class DashboardWindow : Window
         return true;
     }
 
-    private bool Select(int step)
+    private bool Step(int step)
     {
         if (_panes.Count == 0)
             return false;
-        var current = Selected() is { } pane ? _panes.IndexOf(pane) : -1;
-        _panes[(current + step + _panes.Count) % _panes.Count].SetFocus();
+        var current = SelectedIndex();
+        if (current < 0)
+            _panes[step > 0 ? 0 : _panes.Count - 1].SetFocus();
+        else
+            _panes[(current + step + _panes.Count) % _panes.Count].SetFocus();
         return true;
     }
 
+    private bool MoveSelection(int rowStep, int columnStep)
+    {
+        if (_panes.Count == 0)
+            return false;
+        var current = SelectedIndex();
+        if (current < 0)
+        {
+            _panes[0].SetFocus();
+            return true;
+        }
+        var rows = (_panes.Count + _columns - 1) / _columns;
+        var row = Math.Clamp(current / _columns + rowStep, 0, rows - 1);
+        var column = Math.Clamp(current % _columns + columnStep, 0, _columns - 1);
+        _panes[Math.Min(row * _columns + column, _panes.Count - 1)].SetFocus();
+        return true;
+    }
+
+    private int SelectedIndex() => Selected() is { } pane ? _panes.IndexOf(pane) : -1;
+
     private AgentPane? Selected() => _panes.FirstOrDefault(pane => pane.HasFocus);
+
+    private Size AgentArea() => new(Viewport.Width, Math.Max(0, Viewport.Height - (DispatchLines + 2)));
 
     private static string Version() =>
         typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
