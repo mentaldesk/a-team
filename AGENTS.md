@@ -38,16 +38,16 @@ nothing to restart.
 
 `dashboard/` is a Terminal.Gui 2.1 app, the same stack as TuiCode.
 
-- Build UI from Terminal.Gui's [built-in views](https://tui-cs.github.io/Terminal.Gui/docs/views) before writing a
-  custom one. `LogView` is custom only because `TextView` can't scroll without moving its cursor.
-- Pick an appropriate control for the input (e.g. `CheckBox` for on/off, `OptionSelector<T>` for a limited number of choices,
-  `FlagSelector<T>` for several on/off flags, `NumericUpDown<T>` (with a minimum and maximum) for a numbers,
-  `DropDownList<T>` or `ListView` for longer lists, `TextField` for free text).
-- Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj`),
-  outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's
-  draw loop, so cover the logic behind the views instead.
-- When describing UI in an issue or PR, name the control for each element and sketch it in the mockup, e.g.
-  `[x] Follow output`, `(•) All ( ) Running`, `Refresh: [ 2 ▲▼]s`.
+UI design rules — which control to use, hint bars, how errors are shown, icons, and what a UI
+requirement has to say — live in the [MentalDesk TUI style guide](https://github.com/mentaldesk/tui-style-guide).
+Read it before describing UI in an issue or PR, and before building one. It's shared with TuiCode,
+so rules that keep coming back in review go there, not here.
+
+`LogView` is the dashboard's one custom view: `TextView` can't scroll without moving its cursor.
+
+Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj`),
+outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's
+draw loop, so cover the logic behind the views instead.
 
 ## Releasing
 
