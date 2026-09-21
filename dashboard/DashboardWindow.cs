@@ -8,9 +8,8 @@ public sealed class DashboardWindow : Window
 {
     private const int DispatchLines = 4;
     private const int MinCellHeight = 5;
-    private static readonly Key Settings = new Key(',').WithCtrl;
-    private static readonly Key ToolCalls = new('t');
     private readonly List<AgentPane> _panes = [];
+    private readonly CommandRegistry _commands = new();
     private readonly int _columns;
     private readonly string _version = Version();
     private readonly View _agents;
@@ -25,7 +24,6 @@ public sealed class DashboardWindow : Window
     public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot, DashboardSettings settings)
     {
         _settings = settings;
-        Title = Hints(_version, expanded: false);
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
@@ -70,6 +68,9 @@ public sealed class DashboardWindow : Window
         _dispatch = new TextView { Width = Dim.Fill(), Height = Dim.Fill(), ReadOnly = true, CanFocus = false };
         _dispatchFrame.Add(_dispatch);
         Add(_dispatchFrame);
+
+        RegisterCommands();
+        Title = Hints(_version, expanded: false, _commands);
     }
 
     internal IReadOnlyList<AgentPane> Panes => _panes;
@@ -80,9 +81,10 @@ public sealed class DashboardWindow : Window
 
     internal int? ExpandedAgent => _expanded;
 
-    internal static string Hints(string version, bool expanded) => expanded
-        ? $"a-team {version} · Tab: next agent · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: back"
-        : $"a-team {version} · Tab/arrows: select agent · Enter: expand · PgUp/PgDn/Home/End: scroll · t: tool calls · Ctrl+,: settings · Esc: quit";
+    internal CommandRegistry Commands => _commands;
+
+    internal static string Hints(string version, bool expanded, CommandRegistry commands) =>
+        $"a-team {version} · {commands.Hints(expanded ? Mode.Expanded : Mode.Grid)}";
 
     public void Refresh()
     {
@@ -98,69 +100,52 @@ public sealed class DashboardWindow : Window
             _dispatch.Text = tail;
     }
 
-    protected override bool OnKeyDown(Key key)
-    {
-        if (key == Settings)
-            return OpenSettings();
-        if (key == Key.Enter)
-            return Expand();
-        if (key == Key.Esc)
-            return Collapse();
-        if (key == Key.Tab)
-            return Step(+1);
-        if (key == Key.Tab.WithShift)
-            return Step(-1);
-        if (key == Key.CursorRight)
-            return MoveSelection(0, +1);
-        if (key == Key.CursorLeft)
-            return MoveSelection(0, -1);
-        if (key == Key.CursorDown)
-            return MoveSelection(+1, 0);
-        if (key == Key.CursorUp)
-            return MoveSelection(-1, 0);
+    protected override bool OnKeyDown(Key key) => _commands.Press(key) || base.OnKeyDown(key);
 
-        var pane = Selected();
-        if (pane is null)
-            return base.OnKeyDown(key);
-        if (key == Key.PageUp)
-            pane.Page(-1);
-        else if (key == Key.PageDown)
-            pane.Page(+1);
-        else if (key == Key.Home)
-            pane.Home();
-        else if (key == Key.End)
-            pane.End();
-        else if (key == ToolCalls)
-            pane.ToggleToolCalls();
-        else
-            return base.OnKeyDown(key);
-        return true;
+    private void RegisterCommands()
+    {
+        var arrows = new Hint("arrows", "select", Mode.Grid);
+        var scroll = new Hint("PgUp/PgDn", "scroll", Mode.Expanded);
+        bool AnyAgents() => _panes.Count > 0;
+        bool Selection() => Selected() is not null;
+        _commands
+            .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents)
+            .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents)
+            .Register("agent.right", "Select the agent to the right", () => MoveSelection(0, +1), Key.CursorRight, arrows, AnyAgents)
+            .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, arrows, AnyAgents)
+            .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, arrows, AnyAgents)
+            .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, arrows, AnyAgents)
+            .Register("agent.expand", "Expand the selected agent", () => Expand(), Key.Enter, new Hint("Enter", "expand", Mode.Grid), Selection)
+            .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, scroll, Selection)
+            .Register("log.pageDown", "Scroll the log down", () => Selected()?.Page(+1), Key.PageDown, scroll, Selection)
+            .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
+            .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
+            .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
+            .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, new Hint("Ctrl+E", "commands"), HasApp)
+            .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
+            .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("Esc", "back", Mode.Expanded), () => _expanded is not null)
+            .Register("quit", "Quit", () => App?.RequestStop(), hint: new Hint("Esc", "quit", Mode.Grid));
     }
 
-    private bool OpenSettings()
+    private bool HasApp() => App is not null;
+
+    private void OpenCommands()
     {
-        if (App is null)
-            return false;
-        SettingsDialog.Show(App, _settings);
-        return true;
+        if (App is { } app)
+            CommandsDialog.Show(app, _commands);
     }
 
-    private bool Expand()
+    private void OpenSettings()
+    {
+        if (App is { } app)
+            SettingsDialog.Show(app, _settings);
+    }
+
+    private void Expand()
     {
         var index = SelectedIndex();
-        if (index < 0)
-            return false;
-        if (_expanded is null)
+        if (index >= 0 && _expanded is null)
             SetExpanded(index);
-        return true;
-    }
-
-    private bool Collapse()
-    {
-        if (_expanded is null)
-            return false;
-        SetExpanded(null);
-        return true;
     }
 
     private void SetExpanded(int? index)
@@ -168,7 +153,7 @@ public sealed class DashboardWindow : Window
         _expanded = index;
         for (var i = 0; i < _panes.Count; i++)
             _panes[i].Visible = index is null || index == i;
-        Title = Hints(_version, index is not null);
+        Title = Hints(_version, index is not null, _commands);
         var selected = SelectedIndex();
         if (index is not null)
             ScrollTo(0);
@@ -178,15 +163,12 @@ public sealed class DashboardWindow : Window
         SetNeedsDraw();
     }
 
-    private bool Step(int step)
+    private void Step(int step)
     {
-        if (_panes.Count == 0)
-            return false;
         var current = SelectedIndex();
         Select(current < 0
             ? step > 0 ? 0 : _panes.Count - 1
             : (current + step + _panes.Count) % _panes.Count);
-        return true;
     }
 
     private void Select(int index)
@@ -245,23 +227,20 @@ public sealed class DashboardWindow : Window
             _agents.Viewport = _agents.Viewport with { Y = top };
     }
 
-    private bool MoveSelection(int rowStep, int columnStep)
+    private void MoveSelection(int rowStep, int columnStep)
     {
-        if (_panes.Count == 0)
-            return false;
         if (_expanded is not null)
-            return true;
+            return;
         var current = SelectedIndex();
         if (current < 0)
         {
             _panes[0].SetFocus();
-            return true;
+            return;
         }
         var rows = (_panes.Count + _columns - 1) / _columns;
         var row = Math.Clamp(current / _columns + rowStep, 0, rows - 1);
         var column = Math.Clamp(current % _columns + columnStep, 0, _columns - 1);
         Select(Math.Min(row * _columns + column, _panes.Count - 1));
-        return true;
     }
 
     private int SelectedIndex() => Selected() is { } pane ? _panes.IndexOf(pane) : -1;
