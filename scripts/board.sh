@@ -675,7 +675,7 @@ case "$CMD" in
 
   setup)
     dry_run=false
-    { [ "${1:-}" = --dry-run ] || [ -n "$DRY_RUN" ]; } && dry_run=true
+    { [ "${1:-}" = --dry-run ] || [ -n "$DRY_RUN" ]; } && { dry_run=true; DRY_RUN=1; }
     field=$(project_meta | jq '.field // empty')
     jq -e '.id' <<<"$field" >/dev/null 2>&1 || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
     input=$(jq -n --argjson field "$field" --slurpfile cfg "$CONFIG" '
@@ -703,15 +703,20 @@ case "$CMD" in
         gh api graphql --input - >/dev/null
       echo "Status options set on $OWNER project $NUMBER"
     fi
-    existing=$(gh label list -R "$REPO" --limit 500 --json name --jq '.[].name')
+    existing=$(gh label list -R "$REPO" --limit 500 --json name,color,description)
     while IFS='|' read -r name color description; do
-      if grep -qxF "$name" <<<"$existing"; then continue; fi
-      if $dry_run; then
-        echo "  add label $name"
-      else
-        gh label create "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null
-        echo "created label $name"
+      current=$(jq -c --arg n "$name" 'map(select(.name == $n)) | first' <<<"$existing")
+      if [ "$current" = null ]; then
+        $dry_run || gh label create "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null
+        say "created label $name"
+        continue
       fi
+      changed=
+      [ "$(jq -r '.color' <<<"$current")" = "$color" ] || changed=colour
+      [ "$(jq -r '.description' <<<"$current")" = "$description" ] || changed="${changed:+$changed and }description"
+      [ -n "$changed" ] || continue
+      $dry_run || gh label edit "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null
+      say "updated label $name: $changed"
     done <<<"pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it
 a-team:dev|0e8a16|Claimed by the a-team Dev
 a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched
