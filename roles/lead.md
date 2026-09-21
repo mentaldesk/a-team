@@ -132,9 +132,10 @@ run out of work: open your summary with how many it can start, how many are Read
 and how many pitches are waiting on the reviewer. If `ready` is 0, name what would unblock the
 most work — the prerequisite whose merge frees the most tasks, or the pitch to approve.
 
-If an Idea doesn't hold up against the vision once you dig in, say so in a comment and move it
-back to Idea instead of pitching it. When the reviewer's feedback on one pitch changes
-direction, revise any drafts in Exploring that it affects.
+If an Idea doesn't hold up once you dig in (already built, obsolete or off-vision), run
+`a-team board {{team}} skip lead <n> <file>` with your reasons, then `lead-next` once more for the
+next one. When the reviewer's feedback on one pitch changes direction, revise any drafts in
+Exploring that it affects.
 
 ## Writing a pitch
 
