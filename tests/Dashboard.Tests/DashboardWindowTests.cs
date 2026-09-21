@@ -342,6 +342,138 @@ public class DashboardWindowTests : IDisposable
         Assert.EndsWith("Esc: quit", window.Title);
     }
 
+    [Fact]
+    public void A_cell_never_shrinks_below_five_rows()
+    {
+        using var window = Open(agents: Agents(6));
+
+        var cells = LayOut(window, 120, 20);
+
+        Assert.All(cells, cell => Assert.Equal(5, cell.Height));
+        Assert.True(window.Agents.GetContentSize().Height > window.Agents.Viewport.Height);
+    }
+
+    [Theory]
+    [InlineData(8, 120, 30, false)]
+    [InlineData(10, 120, 30, true)]
+    [InlineData(4, 120, 20, false)]
+    [InlineData(6, 120, 20, true)]
+    public void The_grid_scrolls_from_a_fifth_team_at_120_by_30_and_a_third_on_a_20_row_window(
+        int count, int width, int height, bool scrolls)
+    {
+        using var window = Open(agents: Agents(count));
+
+        LayOut(window, width, height);
+
+        Assert.Equal(scrolls, window.Agents.VerticalScrollBar.Visible);
+        Assert.Equal(scrolls, window.Agents.GetContentSize().Height > window.Agents.Viewport.Height);
+    }
+
+    [Fact]
+    public void A_scrolling_grid_still_tiles_its_content_with_nothing_left_over()
+    {
+        using var window = Open(agents: Agents(10));
+
+        var cells = LayOut(window, 120, 30);
+
+        AssertTiles(new Rectangle(Point.Empty, window.Agents.GetContentSize()), cells);
+    }
+
+    [Fact]
+    public void Selecting_an_agent_below_the_fold_scrolls_it_into_view_and_back_again()
+    {
+        using var window = Open(agents: Agents(6));
+        LayOut(window, 120, 20);
+
+        SelectAgent(window, 4);
+        Assert.True(window.Agents.Viewport.Y > 0);
+        Assert.True(InView(window, 4));
+
+        window.NewKeyDownEvent(Key.CursorUp);
+        window.NewKeyDownEvent(Key.CursorUp);
+        Assert.Equal(0, Selected(window));
+        Assert.Equal(0, window.Agents.Viewport.Y);
+    }
+
+    [Fact]
+    public void Scrolling_keys_stay_with_the_selected_panes_log_and_leave_the_grid_where_it_is()
+    {
+        using var window = Open(agents: Agents(6));
+        LayOut(window, 120, 20);
+        SelectAgent(window, 4);
+        var top = window.Agents.Viewport.Y;
+
+        Assert.True(window.NewKeyDownEvent(Key.PageUp));
+        Assert.True(window.NewKeyDownEvent(Key.PageDown));
+        Assert.True(window.NewKeyDownEvent(Key.Home));
+        Assert.True(window.NewKeyDownEvent(Key.End));
+
+        Assert.Equal(top, window.Agents.Viewport.Y);
+    }
+
+    [Fact]
+    public void Expanding_from_a_scrolled_grid_fills_the_area_and_Esc_comes_back_to_that_agent()
+    {
+        using var window = Open(agents: Agents(6));
+        LayOut(window, 120, 20);
+        SelectAgent(window, 4);
+
+        window.NewKeyDownEvent(Key.Enter);
+        var expanded = LayOut(window, 120, 20);
+        Assert.Equal(0, window.Agents.Viewport.Y);
+        Assert.False(window.Agents.VerticalScrollBar.Visible);
+        Assert.Equal(new Rectangle(Point.Empty, window.Agents.Viewport.Size), expanded[4]);
+
+        window.NewKeyDownEvent(Key.Esc);
+        LayOut(window, 120, 20);
+        Assert.Equal(4, Selected(window));
+        Assert.True(InView(window, 4));
+    }
+
+    [Fact]
+    public void Resizing_down_to_where_the_floor_bites_and_back_keeps_the_selection_in_view()
+    {
+        using var window = Open(agents: Agents(6));
+        LayOut(window, 120, 30);
+        SelectAgent(window, 4);
+        Assert.Equal(0, window.Agents.Viewport.Y);
+
+        LayOut(window, 120, 20);
+        Assert.True(InView(window, 4));
+
+        var back = LayOut(window, 120, 30);
+        Assert.Equal(0, window.Agents.Viewport.Y);
+        AssertTiles(AgentArea(window), back);
+    }
+
+    [Fact]
+    public void The_dispatcher_strip_does_not_scroll_with_the_grid()
+    {
+        using var window = Open(agents: Agents(6));
+        LayOut(window, 120, 20);
+        var strip = window.Dispatcher.Frame;
+
+        SelectAgent(window, 4);
+        LayOut(window, 120, 20);
+
+        Assert.True(window.Agents.Viewport.Y > 0);
+        Assert.Equal(strip, window.Dispatcher.Frame);
+    }
+
+    private static void SelectAgent(DashboardWindow window, int index)
+    {
+        for (var i = 0; i <= index; i++)
+            window.NewKeyDownEvent(Key.Tab);
+        Assert.Equal(index, Selected(window));
+    }
+
+    private static bool InView(DashboardWindow window, int index)
+    {
+        var cell = window.Panes[index].Frame;
+        var view = window.Agents.Viewport;
+        return cell.Top >= view.Y && cell.Bottom <= view.Y + view.Height;
+    }
+
     private static (string, string)[] Agents(int count) =>
         [.. Enumerable.Range(0, count).Select(i => ($"team{i / 2}", i % 2 == 0 ? "lead" : "dev"))];
 
