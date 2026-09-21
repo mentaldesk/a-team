@@ -176,11 +176,12 @@ parent_of() {
 }
 
 # The Idea the Lead should pitch next: the reviewer's own, or any the reviewer has prioritised,
-# passing over the ones the Lead has skipped.
+# passing over the ones the Lead has skipped and the reviewer hasn't since commented on.
 pitchable_idea() {
   local candidate
   while IFS= read -r candidate; do
-    if jq -e '.labels | index("a-team:skipped")' <<<"$candidate" >/dev/null; then
+    if jq -e '.labels | index("a-team:skipped")' <<<"$candidate" >/dev/null &&
+      [ "$(unanswered_feedback lead "$(jq -r .number <<<"$candidate")" | jq length)" -eq 0 ]; then
       continue
     fi
     if [ "$(jq -r .priority <<<"$candidate")" = null ] &&
@@ -346,6 +347,7 @@ case "$CMD" in
     pitched=$(count '(.labels | index("pitch")) and .status == "Pitched"')
     exploring=$(count '(.labels | index("pitch")) and .status == "Exploring"')
     found=$(count '(.labels | index("a-team:idea")) and .status == "Idea"')
+    skipped=$(count '(.labels | index("a-team:skipped")) and .status == "Idea"')
     ready=$(count "$STARTABLE")
     blocked=$(count "$UNSTARTABLE")
     swap=$(pitch_swap "$all")
@@ -369,12 +371,12 @@ case "$CMD" in
     if [ "$turn" != none ]; then mkdir -p "$(dirname "$state")" && echo "$turn" >"$state"; fi
     jq -n --argjson promote "$promote" --argjson demote "$demote" --arg turn "$turn" --argjson item "$idea" \
       --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" --argjson blocked "$blocked" \
-      --argjson floor "$(cfg '.wip.readyFloor // 0')" '
+      --argjson floor "$(cfg '.wip.readyFloor // 0')" --argjson skipped "$skipped" '
       {promote: $promote, demote: $demote, turn: $turn}
       + (if $turn == "pitch" then {item: $item}
          elif $turn == "discover" then {room: $room}
          else {reason: "Exploring and the discovery queue are both full, or there is no Idea to pitch"} end)
-      + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor)}'
+      + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor), skipped: $skipped}'
     ;;
 
   move)
@@ -467,7 +469,7 @@ case "$CMD" in
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     write "label #$n a-team:skipped" gh issue edit "$n" -R "$REPO" --add-label a-team:skipped >/dev/null
-    say "#$n: skipped; remove the 'a-team:skipped' label to put it back in the running"
+    say "#$n: skipped; a comment there, or removing the 'a-team:skipped' label, puts it back"
     ;;
 
   feedback)
@@ -713,7 +715,7 @@ case "$CMD" in
     done <<<"pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it
 a-team:dev|0e8a16|Claimed by the a-team Dev
 a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched
-a-team:skipped|d4c5f9|The Lead found nothing to pitch here; remove this label to put it back in the running
+a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running
 blocked|fbca04|Waiting on another issue"
     ;;
 
