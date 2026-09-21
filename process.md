@@ -61,6 +61,8 @@ a-team board {{team}} lead-next                 # Lead only: pitch or discover t
 a-team board {{team}} move <role> <n> <STATUS>
 a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on the board
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours
+a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass
+                                                # over it from now on
 a-team board {{team}} feedback <role> <n>       # reviewer comments you haven't answered yet
 a-team board {{team}} link <parent> <child>     # make <child> a sub-issue of <parent>
 a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again

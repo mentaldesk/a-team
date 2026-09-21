@@ -175,10 +175,14 @@ parent_of() {
   gh api "repos/$REPO/issues/$1" --jq '.parent_issue_url // empty | split("/") | last'
 }
 
-# The Idea the Lead should pitch next: the reviewer's own, or any the reviewer has prioritised.
+# The Idea the Lead should pitch next: the reviewer's own, or any the reviewer has prioritised,
+# passing over the ones the Lead has skipped.
 pitchable_idea() {
   local candidate
   while IFS= read -r candidate; do
+    if jq -e '.labels | index("a-team:skipped")' <<<"$candidate" >/dev/null; then
+      continue
+    fi
     if [ "$(jq -r .priority <<<"$candidate")" = null ] &&
       { jq -e '.labels | index("a-team:idea")' <<<"$candidate" >/dev/null ||
         agent_written "$(jq -r .number <<<"$candidate")"; }; then
@@ -449,6 +453,23 @@ case "$CMD" in
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     ;;
 
+  skip)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM skip <role> <n> <file>"
+    role=$1 n=$2 file=$3
+    check_role "$role"
+    [ "$role" = lead ] || die "only lead may skip an Idea"
+    [ -f "$file" ] || die "no such file: $file"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board, so it is not an Idea to skip"
+    status=$(jq -r .status <<<"$it")
+    [ "$status" = Idea ] || die "skip is only for Ideas (#$n is in '$status')"
+    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    write "label #$n a-team:skipped" gh issue edit "$n" -R "$REPO" --add-label a-team:skipped >/dev/null
+    say "#$n: skipped; remove the 'a-team:skipped' label to put it back in the running"
+    ;;
+
   feedback)
     [ $# -eq 2 ] || die "usage: board.sh $TEAM feedback <role> <n>"
     role=$1 n=$2
@@ -692,6 +713,7 @@ case "$CMD" in
     done <<<"pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it
 a-team:dev|0e8a16|Claimed by the a-team Dev
 a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched
+a-team:skipped|d4c5f9|The Lead found nothing to pitch here; remove this label to put it back in the running
 blocked|fbca04|Waiting on another issue"
     ;;
 
