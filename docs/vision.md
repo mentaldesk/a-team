@@ -10,6 +10,15 @@ towards it, it doesn't ship, however good it is on its own.
 work off the stakeholder or makes the work only they can do (setting direction, approving,
 judging the result) faster. If we stop doing that, a-team stops being worth using.
 
+**When more needs the stakeholder than they can absorb, fix their end, not the team's.** The
+answer is always to make the decisions fewer, faster or unnecessary: show what's waiting, order it
+so the thing that matters is first, group what can be judged together, and hand back the ones that
+never needed a person. Throttling the team so its output fits the stakeholder's day is the failure
+mode that looks like the fix — it spends the value a-team exists to create in order to make the
+queue look calm. The stakeholder can always pull capacity back themselves: pause a team, end an
+experiment, cap what it spends. That is them setting direction, and it stays theirs. a-team never
+makes that choice for them.
+
 ## Press release
 
 ### a-team gives anyone with an idea their own AI product team
@@ -106,15 +115,28 @@ an accepted pitch. Stakeholder hours are the time spent at gates and giving feed
 a-team can log because every approval, comment and merge goes through it. Commits per day is a
 cheap sanity check alongside it, not the measure.
 
+**What's the most tempting wrong turn?**
+Throttling. The stakeholder's queue is the most visible problem in the product, and capping it —
+rate limits, portfolio caps, teams that slow down when the queue is long — is the easiest thing to
+build and the easiest to mistake for the tenet. It isn't: it makes a-team deliver less so that the
+dashboard feels calm. Measuring the queue is right, and we don't do it yet. Bounding it
+automatically is the failure mode. Only the stakeholder throttles a-team, by deciding that an idea
+matters less than another one.
+
 **What's the evidence so far?**
 One project for one day: the first version of a-team, run on TuiCode, delivered more in a day
 than six months of herding PRs through Claude by hand. That's promising, but the release
 promises tens of projects, so we still have to show it holds at that scale.
 
 **Can one person really run fifteen teams?**
-Only if the gates are cheap. Fifteen teams are fifteen streams of pitches and releases waiting
-on one person, so the dashboard has to put what needs the stakeholder in front of them, in
-order, and let them answer without leaving it.
+Only if the gates are cheap *and there are fewer of them*. Fifteen teams are fifteen streams of
+pitches and releases waiting on one person, so the dashboard has to put what needs the stakeholder
+in front of them, in order, and let them answer without leaving it. Cheapening each gate doesn't
+close the gap on its own: at two teams the stakeholder already makes tens of merge decisions a day.
+The rest comes from the number of items — judging a batch instead of an item, a question settled
+once instead of asked fifty times, and the team not manufacturing decisions it could have made
+itself. Both gates stay; what changes is how many things arrive at them and what each one costs.
+What can't close the gap is the teams producing less.
 
 **How does a non-developer grant what deployment needs?**
 Open. Shipping can need things only the customer can provide: a cloud account, a domain, a
@@ -171,22 +193,31 @@ Roughly in order. Each is a direction, not a commitment; pitches turn them into 
    (#9); then a command palette and a registry to hang commands off (#86, #49), which is what
    every action after it is reached by; and then act on every gate from it: approve a pitch,
    give feedback, accept work.
-2. **Trust the loop.** Feedback is never lost and the team never spins, so the stakeholder
+2. **Fewer decisions, not slower teams.** The stakeholder's queue is the bottleneck the whole
+   product is judged on, and nothing measures it: start with the total waiting on you, across
+   every team, in the order you'd want to answer it. Then bring it down from the demand side —
+   judge related work together rather than item by item, settle a question once and have the team
+   apply it, stop the team asking what it could have decided itself. Never by making the teams
+   produce less.
+3. **Trust the loop.** Feedback is never lost and the team never spins, so the stakeholder
    never has to repeat themselves or chase a stuck item: comments mid-run or older than a day
    (#3, #5), stuck triggers (#4), readyLow counting blocked tasks (#23), shelving a pitch on
    request (#24, #26).
-3. **Guardrails that don't depend on the model.** A spending cap and API headroom (#13), and
+4. **Guardrails that don't depend on the model.** A spending cap and API headroom (#13), and
    the team's own GitHub identity so GitHub enforces the gates (#6).
-4. **Beyond the first user.** Starting a team without knowing how a-team works: setup that
+5. **Beyond the first user.** Starting a team without knowing how a-team works: setup that
    checks itself, a dispatcher beyond macOS launchd (#6), shared release tooling (#25), and
    first steps towards the non-developer experience.
 
 ## How to judge a proposal
 
 - Does it save the stakeholder attention, or spend it?
+- Does it raise how much the stakeholder can get through, or lower what the team delivers to fit
+  them?
 - Does it keep both gates in the stakeholder's hands, enforced by a script rather than a
   sentence?
 - Does it move a-team towards the press release, or only polish today's version?
 - Does it land where the stakeholder already is, or does it add somewhere else to go?
-- Does it keep an idle team free and a busy one bounded?
+- Does it keep an idle team free and a busy one bounded in what it spends, not in what it
+  delivers?
 - Is it the smallest version that's actually useful?
