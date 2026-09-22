@@ -13,12 +13,12 @@ public class HelpDialogTests
 
         Assert.Equal(
             [
-                "Ctrl+E      every command, by name",
-                "Tab/arrows  select an agent",
-                "Enter       expand the selected agent",
-                "PgUp/PgDn   scroll the log",
-                "s           settings",
-                "Esc         back, or quit",
+                "Ctrl+E        every command, by name",
+                "Tab/arrows    select an agent",
+                "Enter         expand the selected agent",
+                "PgUp/PgDn     scroll the log",
+                "s             settings",
+                "Esc           back, or quit",
             ],
             Rows(dialog));
     }
@@ -31,8 +31,8 @@ public class HelpDialogTests
             .Register("agent.expand", "Expand", () => { }, Key.Space)
             .Registered);
 
-        Assert.Equal("Ctrl+P  every command, by name", Rows(dialog)[0]);
-        Assert.Equal("Space   expand the selected agent", Rows(dialog)[2]);
+        Assert.Equal("Ctrl+P    every command, by name", Rows(dialog)[0]);
+        Assert.Equal("Space     expand the selected agent", Rows(dialog)[2]);
     }
 
     [Fact]
@@ -74,6 +74,42 @@ public class HelpDialogTests
 
         Assert.False(dialog.Keys.CanFocus);
         Assert.DoesNotContain(dialog.SubViews, view => view.CanFocus);
+    }
+
+    [Fact]
+    public void The_rows_sit_in_from_the_border_rather_than_against_it()
+    {
+        using var host = new View { Width = 80, Height = 24 };
+        using var dialog = Open();
+        host.Add(dialog);
+
+        host.Layout(new Size(80, 24));
+
+        Assert.Equal(2, dialog.Keys.Frame.X);
+        Assert.Equal(2, dialog.Viewport.Width - dialog.Keys.Frame.Right);
+    }
+
+    [Fact]
+    public void The_hint_is_centred_on_the_last_row()
+    {
+        using var host = new View { Width = 80, Height = 24 };
+        using var dialog = Open();
+        host.Add(dialog);
+
+        host.Layout(new Size(80, 24));
+
+        Assert.Equal(dialog.Viewport.Height - 1, dialog.Hint.Frame.Y);
+        Assert.Equal((dialog.Viewport.Width - dialog.Hint.Frame.Width) / 2, dialog.Hint.Frame.X);
+    }
+
+    [Fact]
+    public void Clicking_the_hint_closes_it()
+    {
+        using var dialog = Open();
+
+        dialog.Hint.InvokeCommand(Command.Accept);
+
+        Assert.True(dialog.Closed);
     }
 
     [Fact]

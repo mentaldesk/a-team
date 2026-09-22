@@ -1,3 +1,4 @@
+using System.Text;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
@@ -17,13 +18,18 @@ public sealed class HelpDialog : Dialog
         ("back, or quit", ["agent.collapse"]),
     ];
 
+    private const string HintText = "Esc close";
+    private const int Gap = 4;
+    private const int Inset = 2;
+
     private readonly Label _keys;
+    private readonly Button _hint;
 
     public HelpDialog(IReadOnlyList<CommandDescriptor> commands)
     {
         var rows = Rows(commands);
-        var wide = rows.Max(row => row.Length);
-        var tall = rows.Count + 1;
+        var wide = Math.Max(rows.Max(row => row.Length), HintText.Length) + (Inset * 2);
+        var tall = rows.Count + 2;
 
         Title = "Help";
         Width = Dim.Func(_ => Fits(wide + GetAdornmentsThickness().Horizontal, SuperView?.Viewport.Width), this);
@@ -31,18 +37,31 @@ public sealed class HelpDialog : Dialog
 
         _keys = new Label
         {
-            X = 0,
+            X = Inset,
             Y = 0,
-            Width = Dim.Fill(),
-            Height = Dim.Fill(1),
+            Width = Dim.Fill(Inset),
+            Height = Dim.Fill(2),
             Text = string.Join('\n', rows),
             TextFormatter = { WordWrap = false, MultiLine = true },
         };
-        var hints = new StatusBar([Shortcut("Esc", "close", () => Close())]) { CanFocus = false };
-        Add(_keys, hints);
+        _hint = new Button
+        {
+            Text = HintText,
+            X = Pos.Center(),
+            Y = Pos.AnchorEnd(1),
+            NoDecorations = true,
+            NoPadding = true,
+            ShadowStyle = ShadowStyles.None,
+            HotKeySpecifier = (Rune)0xffff,
+            CanFocus = false,
+        };
+        _hint.Accepting += (_, args) => args.Handled = Close();
+        Add(_keys, _hint);
     }
 
     internal Label Keys => _keys;
+
+    internal Button Hint => _hint;
 
     internal bool Closed { get; private set; }
 
@@ -64,7 +83,7 @@ public sealed class HelpDialog : Dialog
     {
         var keys = Curated.Select(row => KeysFor(commands, row.Ids)).ToList();
         var width = keys.Max(key => key.Length);
-        return [.. Curated.Select((row, index) => $"{keys[index].PadRight(width)}  {row.Text}")];
+        return [.. Curated.Select((row, index) => $"{keys[index].PadRight(width)}{new string(' ', Gap)}{row.Text}")];
     }
 
     private static string KeysFor(IReadOnlyList<CommandDescriptor> commands, string[] ids) =>
@@ -80,9 +99,6 @@ public sealed class HelpDialog : Dialog
         : key == Key.PageUp ? "PgUp"
         : key == Key.PageDown ? "PgDn"
         : key.ToString();
-
-    private static Shortcut Shortcut(string keys, string what, Action action) =>
-        new() { Title = what, HelpText = keys, Key = Key.Empty, Action = action, CanFocus = false };
 
     public static void Show(IApplication app, CommandRegistry commands)
     {
