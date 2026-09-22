@@ -10,8 +10,9 @@ public enum Mode
     Both = Grid | Expanded,
 }
 
-/// <summary>How a command reads in the window title. Commands sharing a hint are named once, like the four arrows.</summary>
-public sealed record Hint(string Keys, string Text, Mode Modes = Mode.Both);
+/// <summary>How a command reads in the window title. Commands sharing a hint are named once, like the four arrows.
+/// The keys come from what they're bound to; <paramref name="Keys"/> is for a hint whose commands have none.</summary>
+public sealed record Hint(string Text, Mode Modes = Mode.Both, string Keys = "");
 
 public sealed record CommandDescriptor(string Id, string Label, Key Key, Hint? Hint);
 
@@ -45,6 +46,20 @@ public sealed class CommandRegistry
         return this;
     }
 
+    /// <summary>Rebinds commands, in the order given. An id nobody registered, and a key another command still
+    /// holds, are each ignored on their own, leaving that command on the key it had.</summary>
+    public CommandRegistry Apply(IEnumerable<(string Id, Key Key)> keys)
+    {
+        foreach (var (id, key) in keys)
+        {
+            var index = _entries.FindIndex(entry => entry.Id == id);
+            if (index < 0 || key == Key.Empty || _entries.Exists(entry => entry.Id != id && entry.Key == key))
+                continue;
+            _entries[index] = _entries[index] with { Key = key };
+        }
+        return this;
+    }
+
     /// <summary>Runs a command by name, enabled or not. False when nothing is registered under that id.</summary>
     public bool Execute(string id)
     {
@@ -67,11 +82,18 @@ public sealed class CommandRegistry
 
     /// <summary>The hint bar for <paramref name="mode"/>, in registration order, each hint once.</summary>
     public string Hints(Mode mode) => string.Join(" · ", _entries
-        .Select(entry => entry.Hint)
-        .OfType<Hint>()
-        .Where(hint => hint.Modes.HasFlag(mode))
-        .Distinct()
-        .Select(hint => $"{hint.Keys}: {hint.Text}"));
+        .Where(entry => entry.Hint is { } hint && hint.Modes.HasFlag(mode))
+        .GroupBy(entry => entry.Hint!)
+        .Select(hinted => $"{Keys(hinted)}: {hinted.Key.Text}"));
+
+    private static string Keys(IGrouping<Hint, Entry> hinted)
+    {
+        var bound = string.Join('/', hinted
+            .Where(entry => entry.Key != Key.Empty)
+            .Select(entry => KeyNames.Short(entry.Key))
+            .Distinct());
+        return bound.Length > 0 ? bound : hinted.Key.Keys;
+    }
 
     private sealed record Entry(string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled);
 }

@@ -93,12 +93,11 @@ public sealed class HelpDialog : Dialog
             .Select(Named)
             .Distinct());
 
-    /// <summary>How a key reads in help: the four arrows are one row, and the long page keys are abbreviated.</summary>
+    /// <summary>How a key reads in help: the four arrows are one row, and everything else reads as it does elsewhere.</summary>
     private static string Named(Key key) =>
-        key == Key.CursorUp || key == Key.CursorDown || key == Key.CursorLeft || key == Key.CursorRight ? "arrows"
-        : key == Key.PageUp ? "PgUp"
-        : key == Key.PageDown ? "PgDn"
-        : key.ToString();
+        key == Key.CursorUp || key == Key.CursorDown || key == Key.CursorLeft || key == Key.CursorRight
+            ? "arrows"
+            : KeyNames.Short(key);
 
     public static void Show(IApplication app, CommandRegistry commands)
     {

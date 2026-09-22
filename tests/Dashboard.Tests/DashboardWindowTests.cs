@@ -379,6 +379,69 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void A_key_the_file_names_runs_that_command_and_the_one_in_the_source_no_longer_does()
+    {
+        using var window = Open(keys: "{ \"log.toolCalls\": \"d\" }");
+        window.NewKeyDownEvent(Key.Tab);
+
+        Assert.True(window.NewKeyDownEvent(new Key('d')));
+        Assert.False(window.NewKeyDownEvent(new Key('t')));
+
+        Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));
+    }
+
+    [Fact]
+    public void A_command_the_file_says_nothing_about_keeps_the_key_it_had()
+    {
+        using var window = Open(keys: "{ \"log.toolCalls\": \"d\" }");
+
+        Assert.Equal(Key.F1, window.Commands.Registered.Single(command => command.Id == "help").Key);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{ \"nobody.registered.this\": \"F4\" }")]
+    [InlineData("{ \"settings\": \"nonsense\" }")]
+    [InlineData("{ \"settings\": \"t\" }")]
+    public void An_override_we_cannot_use_is_ignored_on_its_own_and_leaves_every_default_alone(string keys)
+    {
+        using var window = Open(keys: keys);
+
+        Assert.Equal(new Key('s'), window.Commands.Registered.Single(command => command.Id == "settings").Key);
+        Assert.Equal(new Key('t'), window.Commands.Registered.Single(command => command.Id == "log.toolCalls").Key);
+    }
+
+    [Theory]
+    [InlineData("{ \"nobody.registered.this\": \"F4\", \"help\": \"F2\" }")]
+    [InlineData("{ \"settings\": \"nonsense\", \"help\": \"F2\" }")]
+    [InlineData("{ \"settings\": \"t\", \"help\": \"F2\" }")]
+    public void The_rest_of_the_file_still_applies_around_an_override_we_cannot_use(string keys)
+    {
+        using var window = Open(keys: keys);
+
+        Assert.Equal(Key.F2, window.Commands.Registered.Single(command => command.Id == "help").Key);
+    }
+
+    [Fact]
+    public void The_title_names_the_key_the_file_bound_and_not_the_one_in_the_source()
+    {
+        using var window = Open(agents: Agents(4), keys: "{ \"commands\": \"Ctrl+K\" }");
+
+        Assert.Contains("Ctrl+K: commands", DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
+        Assert.DoesNotContain("Ctrl+E", DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
+    }
+
+    [Fact]
+    public void The_commands_list_names_the_key_the_file_bound()
+    {
+        using var window = Open(agents: Agents(4), keys: "{ \"commands\": \"Ctrl+K\" }");
+
+        using var dialog = new CommandsDialog(window.Commands.Registered);
+
+        Assert.Contains(dialog.Matches.Select(command => command.Key), key => key == Key.K.WithCtrl);
+    }
+
+    [Fact]
     public void The_window_title_follows_the_view_it_is_showing()
     {
         using var window = Open(agents: Agents(4));
@@ -687,9 +750,15 @@ public class DashboardWindowTests : IDisposable
     private DashboardWindow Open(
         bool expandToolCalls = false,
         IReadOnlyList<(string, string)>? agents = null,
-        Func<string, string, Task<string?>>? run = null)
+        Func<string, string, Task<string?>>? run = null,
+        string? keys = null)
     {
         Directory.CreateDirectory(_root);
+        if (keys is not null)
+        {
+            Directory.CreateDirectory(Config);
+            File.WriteAllText(Path.Combine(Config, "dashboard.json"), $"{{ \"keys\": {keys} }}");
+        }
         var settings = new DashboardSettings(Config);
         if (expandToolCalls)
             settings.WriteExpandToolCalls(true);

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -153,6 +154,91 @@ public class DashboardSettingsTests : IDisposable
         Assert.False(settings.ReadExpandToolCalls());
         Assert.Single(JsonDocument.Parse(File.ReadAllText(Path.Combine(_configRoot, "dashboard.json")))
             .RootElement.EnumerateObject());
+    }
+
+    [Fact]
+    public void The_keys_object_says_which_key_runs_which_command_in_the_order_it_gives_them()
+    {
+        Write("{ \"keys\": { \"settings\": \"Ctrl+,\", \"log.toolCalls\": \"d\" } }");
+
+        Assert.Equal(
+            [("settings", new Key(',').WithCtrl), ("log.toolCalls", new Key('d'))],
+            new DashboardSettings(_configRoot).ReadKeys());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not json at all")]
+    [InlineData("{}")]
+    [InlineData("{\"keys\": {}}")]
+    [InlineData("{\"keys\": null}")]
+    [InlineData("{\"keys\": \"Ctrl+E\"}")]
+    [InlineData("{\"keys\": []}")]
+    public void Anything_we_cannot_read_as_a_keys_object_rebinds_nothing(string? contents)
+    {
+        if (contents is not null)
+            Write(contents);
+
+        Assert.Empty(new DashboardSettings(_configRoot).ReadKeys());
+    }
+
+    [Theory]
+    [InlineData("\"PgUp\"")]
+    [InlineData("\"nonsense\"")]
+    [InlineData("\"\"")]
+    [InlineData("3")]
+    [InlineData("null")]
+    public void A_name_that_is_not_a_key_is_left_out_while_the_rest_of_the_file_still_applies(string value)
+    {
+        Write($"{{ \"keys\": {{ \"settings\": {value}, \"help\": \"F2\" }} }}");
+
+        Assert.Equal([("help", Key.F2)], new DashboardSettings(_configRoot).ReadKeys());
+    }
+
+    [Theory]
+    [InlineData("Ctrl+,")]
+    [InlineData("PageUp")]
+    [InlineData("t")]
+    public void A_key_name_reads_back_as_the_name_it_was_written_under(string name)
+    {
+        Assert.True(Key.TryParse(name, out var key));
+
+        Assert.Equal(name, key.ToString());
+    }
+
+    [Fact]
+    public void Reading_the_keys_leaves_the_file_exactly_as_it_was()
+    {
+        var contents = "{ \"keys\": { \"settings\": \"PgUp\" } }";
+        var path = Write(contents);
+
+        new DashboardSettings(_configRoot).ReadKeys();
+
+        Assert.Equal(contents, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void A_key_written_is_the_key_the_next_run_reads()
+    {
+        new DashboardSettings(_configRoot).WriteKeys([("settings", new Key(',').WithCtrl)]);
+
+        Assert.Equal([("settings", new Key(',').WithCtrl)], new DashboardSettings(_configRoot).ReadKeys());
+    }
+
+    [Fact]
+    public void Writing_a_key_keeps_the_keys_and_the_settings_already_in_the_file()
+    {
+        var settings = new DashboardSettings(_configRoot);
+        settings.WriteTheme(BundledThemes.Daylight);
+        settings.WriteExpandToolCalls(true);
+        settings.WriteKeys([("settings", Key.F2)]);
+
+        settings.WriteKeys([("help", Key.F3), ("settings", Key.F4)]);
+
+        Assert.Equal([("settings", Key.F4), ("help", Key.F3)], settings.ReadKeys());
+        Assert.Equal(BundledThemes.Daylight, settings.ReadTheme());
+        Assert.True(settings.ReadExpandToolCalls());
     }
 
     private string Write(string contents)
