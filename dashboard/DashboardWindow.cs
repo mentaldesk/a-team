@@ -123,17 +123,16 @@ public sealed class DashboardWindow : Window
 
     private void RegisterCommands()
     {
-        var arrows = new Hint("arrows", "select", Mode.Grid);
         var scroll = new Hint("PgUp/PgDn", "scroll", Mode.Expanded);
         bool AnyAgents() => _panes.Count > 0;
         bool Selection() => Selected() is not null;
         _commands
             .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents)
             .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents)
-            .Register("agent.right", "Select the agent to the right", () => MoveSelection(0, +1), Key.CursorRight, arrows, AnyAgents)
-            .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, arrows, AnyAgents)
-            .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, arrows, AnyAgents)
-            .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, arrows, AnyAgents)
+            .Register("agent.right", "Select the agent to the right", () => MoveSelection(0, +1), Key.CursorRight, isEnabled: AnyAgents)
+            .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, isEnabled: AnyAgents)
+            .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: AnyAgents)
+            .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: AnyAgents)
             .Register("agent.expand", "Expand the selected agent", () => Expand(), Key.Enter, new Hint("Enter", "expand", Mode.Grid), Selection)
             .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, scroll, Selection)
             .Register("log.pageDown", "Scroll the log down", () => Selected()?.Page(+1), Key.PageDown, scroll, Selection)
@@ -141,8 +140,9 @@ public sealed class DashboardWindow : Window
             .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
             .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
             .Register("team.pause", PauseLabel, TogglePause)
-            .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, new Hint("Ctrl+E", "commands"), HasApp)
+            .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, new Hint("Ctrl+E", "commands", Mode.Grid), HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
+            .Register("help", "Help", OpenHelp, Key.F1, new Hint("F1", "help"), HasApp)
             .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("Esc", "back", Mode.Expanded), () => _expanded is not null)
             .Register("quit", "Quit", () => App?.RequestStop(), hint: new Hint("Esc", "quit", Mode.Grid));
     }
@@ -200,6 +200,12 @@ public sealed class DashboardWindow : Window
     {
         if (App is { } app)
             CommandsDialog.Show(app, _commands);
+    }
+
+    private void OpenHelp()
+    {
+        if (App is { } app)
+            HelpDialog.Show(app, _commands);
     }
 
     private void OpenSettings()
