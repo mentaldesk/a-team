@@ -13,6 +13,8 @@ public class LogStyleTests : StaticConfigurationTest
         { LogLineKind.ToolError, SchemeManager.SchemesToSchemeName(Schemes.Error), VisualRole.Normal },
         { LogLineKind.ResultError, SchemeManager.SchemesToSchemeName(Schemes.Error), VisualRole.Normal },
         { LogLineKind.ResultOk, LogSchemes.Success, VisualRole.Normal },
+        { LogLineKind.DispatchSkipped, null, VisualRole.Disabled },
+        { LogLineKind.DispatchFailed, SchemeManager.SchemesToSchemeName(Schemes.Error), VisualRole.Normal },
     };
 
     [Theory]

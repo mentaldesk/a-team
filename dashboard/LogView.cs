@@ -4,7 +4,7 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Word-wrapped lines that follow the end until the user scrolls up.</summary>
+/// <summary>Word-wrapped lines that follow the end until the user scrolls up, or an elided tail that never wraps.</summary>
 public sealed class LogView : View
 {
     private IReadOnlyList<LogLine> _lines = [];
@@ -32,6 +32,9 @@ public sealed class LogView : View
         get => _expanded;
         init => _expanded = value;
     }
+
+    /// <summary>One row per line, elided in the middle rather than wrapped, for a tail nobody can scroll.</summary>
+    public bool Elides { get; init; }
 
     /// <summary>Shows every tool call again, or folds the runs back up, keeping the line you were reading.</summary>
     public void ToggleToolCalls()
@@ -86,7 +89,21 @@ public sealed class LogView : View
             : GetAttributeForRole(VisualRole.Normal);
     }
 
-    internal List<LogLine> Rows(int width) => Wrap(_expanded ? _lines : Collapse(_lines, width), width);
+    internal List<LogLine> Rows(int width) => Elides
+        ? [.. _lines.Select(line => line with { Text = Elide(line.Text, width) })]
+        : Wrap(_expanded ? _lines : Collapse(_lines, width), width);
+
+    /// <summary>Drops the middle of a line too long to fit, so its head and its tail both survive in exactly <paramref name="width"/> cells.</summary>
+    internal static string Elide(string text, int width)
+    {
+        if (width < 1)
+            return "";
+        if (text.Length <= width)
+            return text;
+        var head = width / 2;
+        var tail = width - 1 - head;
+        return text[..head] + "…" + text[^tail..];
+    }
 
     /// <summary>The row in <paramref name="after"/> holding what row <paramref name="top"/> of <paramref name="before"/> held.</summary>
     internal static int Anchor(IReadOnlyList<LogLine> before, IReadOnlyList<LogLine> after, int top)
