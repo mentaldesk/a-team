@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Reflection;
+using Terminal.Gui;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 
@@ -85,6 +86,8 @@ public sealed class DashboardWindow : Window
         Add(_message);
 
         RegisterCommands();
+        _commands.Apply(settings.ReadKeys());
+        SyncQuitKey();
         Title = Hints(_version, expanded: false, _commands);
     }
 
@@ -123,7 +126,7 @@ public sealed class DashboardWindow : Window
 
     private void RegisterCommands()
     {
-        var scroll = new Hint("PgUp/PgDn", "scroll", Mode.Expanded);
+        var scroll = new Hint("scroll", Mode.Expanded);
         bool AnyAgents() => _panes.Count > 0;
         bool Selection() => Selected() is not null;
         _commands
@@ -133,18 +136,26 @@ public sealed class DashboardWindow : Window
             .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, isEnabled: AnyAgents)
             .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: AnyAgents)
             .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: AnyAgents)
-            .Register("agent.expand", "Expand the selected agent", () => Expand(), Key.Enter, new Hint("Enter", "expand", Mode.Grid), Selection)
+            .Register("agent.expand", "Expand the selected agent", () => Expand(), Key.Enter, new Hint("expand", Mode.Grid), Selection)
             .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, scroll, Selection)
             .Register("log.pageDown", "Scroll the log down", () => Selected()?.Page(+1), Key.PageDown, scroll, Selection)
             .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
             .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
             .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
             .Register("team.pause", PauseLabel, TogglePause)
-            .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, new Hint("Ctrl+E", "commands", Mode.Grid), HasApp)
+            .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, new Hint("commands", Mode.Grid), HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
-            .Register("help", "Help", OpenHelp, Key.F1, new Hint("F1", "help"), HasApp)
-            .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("Esc", "back", Mode.Expanded), () => _expanded is not null)
-            .Register("quit", "Quit", () => App?.RequestStop(), hint: new Hint("Esc", "quit", Mode.Grid));
+            .Register("help", "Help", OpenHelp, Key.F1, new Hint("help"), HasApp)
+            .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded), () => _expanded is not null)
+            .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'), new Hint("quit"));
+    }
+
+    // Point Terminal.Gui's own Quit binding at our quit key: removing it leaves PopoverImpl binding Key.Empty, which throws.
+    private void SyncQuitKey()
+    {
+        var key = _commands.KeyFor("quit");
+        if (key != Key.Empty)
+            Application.SetDefaultKeyBinding(Command.Quit, Bind.All(key));
     }
 
     private bool HasApp() => App is not null;
@@ -210,8 +221,11 @@ public sealed class DashboardWindow : Window
 
     private void OpenSettings()
     {
-        if (App is { } app)
-            SettingsDialog.Show(app, _settings);
+        if (App is not { } app)
+            return;
+        SettingsDialog.Show(app, _settings, _commands);
+        SyncQuitKey();
+        Title = Hints(_version, _expanded is not null, _commands);
     }
 
     private void Expand()

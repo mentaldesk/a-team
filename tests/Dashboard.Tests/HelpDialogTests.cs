@@ -18,7 +18,8 @@ public class HelpDialogTests
                 "Enter         expand the selected agent",
                 "PgUp/PgDn     scroll the log",
                 "s             settings",
-                "Esc           back, or quit",
+                "Esc           back to the grid",
+                "q             quit",
             ],
             Rows(dialog));
     }
@@ -148,6 +149,7 @@ public class HelpDialogTests
         .Register("settings", "Settings", () => { }, new Key('s'))
         .Register("commands", "Commands", () => { }, Key.E.WithCtrl)
         .Register("agent.collapse", "Back to the agent grid", () => { }, Key.Esc)
+        .Register("quit", "Quit", () => { }, new Key('q'))
         .Registered);
 
     private static IReadOnlyList<string> Rows(HelpDialog dialog) =>

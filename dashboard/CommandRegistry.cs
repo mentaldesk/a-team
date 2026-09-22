@@ -10,8 +10,9 @@ public enum Mode
     Both = Grid | Expanded,
 }
 
-/// <summary>How a command reads in the window title. Commands sharing a hint are named once, like the four arrows.</summary>
-public sealed record Hint(string Keys, string Text, Mode Modes = Mode.Both);
+/// <summary>How a command reads in the window title, named by the key it's bound to. Commands sharing a hint are
+/// named once, like the four arrows.</summary>
+public sealed record Hint(string Text, Mode Modes = Mode.Both);
 
 public sealed record CommandDescriptor(string Id, string Label, Key Key, Hint? Hint);
 
@@ -45,6 +46,23 @@ public sealed class CommandRegistry
         return this;
     }
 
+    /// <summary>Rebinds commands, in the order given. An id nobody registered, and a key another command still
+    /// holds, are each ignored on their own, leaving that command on the key it had.</summary>
+    public CommandRegistry Apply(IEnumerable<(string Id, Key Key)> keys)
+    {
+        foreach (var (id, key) in keys)
+        {
+            var index = _entries.FindIndex(entry => entry.Id == id);
+            if (index < 0 || key == Key.Empty || _entries.Exists(entry => entry.Id != id && entry.Key == key))
+                continue;
+            _entries[index] = _entries[index] with { Key = key };
+        }
+        return this;
+    }
+
+    /// <summary>What <paramref name="id"/> is bound to, or <see cref="Key.Empty"/> when nothing is.</summary>
+    public Key KeyFor(string id) => _entries.Find(entry => entry.Id == id)?.Key ?? Key.Empty;
+
     /// <summary>Runs a command by name, enabled or not. False when nothing is registered under that id.</summary>
     public bool Execute(string id)
     {
@@ -65,13 +83,19 @@ public sealed class CommandRegistry
         return true;
     }
 
-    /// <summary>The hint bar for <paramref name="mode"/>, in registration order, each hint once.</summary>
+    /// <summary>The hint bar for <paramref name="mode"/>, in registration order, each hint once. A hint with no
+    /// bound key has nothing to name and is left out.</summary>
     public string Hints(Mode mode) => string.Join(" · ", _entries
-        .Select(entry => entry.Hint)
-        .OfType<Hint>()
-        .Where(hint => hint.Modes.HasFlag(mode))
-        .Distinct()
+        .Where(entry => entry.Hint is { } hint && hint.Modes.HasFlag(mode))
+        .GroupBy(entry => entry.Hint!)
+        .Select(hinted => (Keys: Keys(hinted), hinted.Key.Text))
+        .Where(hint => hint.Keys.Length > 0)
         .Select(hint => $"{hint.Keys}: {hint.Text}"));
+
+    private static string Keys(IGrouping<Hint, Entry> hinted) => string.Join('/', hinted
+        .Where(entry => entry.Key != Key.Empty)
+        .Select(entry => KeyNames.Short(entry.Key))
+        .Distinct());
 
     private sealed record Entry(string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled);
 }

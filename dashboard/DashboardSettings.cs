@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
@@ -40,6 +41,46 @@ public sealed class DashboardSettings
     }
 
     public void WriteExpandToolCalls(bool expand) => Write("expandToolCalls", writer => writer.WriteBooleanValue(expand));
+
+    /// <summary>The key each command is to run on instead of its default, in the order the file gives them.
+    /// A name <see cref="Key.TryParse(string?, out Key)"/> rejects is left out. Never writes, whatever it finds.</summary>
+    public IReadOnlyList<(string Id, Key Key)> ReadKeys()
+    {
+        using var file = Parse();
+        if (Setting(file, "keys") is not { ValueKind: JsonValueKind.Object } keys)
+            return [];
+        return
+        [
+            .. keys.EnumerateObject()
+                .Where(property => property.Value.ValueKind == JsonValueKind.String)
+                .Select(property => (
+                    property.Name,
+                    Key: property.Value.GetString() is { } name && Key.TryParse(name, out var key) ? key : Key.Empty))
+                .Where(binding => binding.Key != Key.Empty)
+        ];
+    }
+
+    /// <summary>Writes these overrides, keeping any others the file already holds.</summary>
+    public void WriteKeys(IEnumerable<(string Id, Key Key)> keys)
+    {
+        var merged = ReadKeys().ToList();
+        foreach (var binding in keys)
+        {
+            var index = merged.FindIndex(existing => existing.Id == binding.Id);
+            if (index < 0)
+                merged.Add(binding);
+            else
+                merged[index] = binding;
+        }
+
+        Write("keys", writer =>
+        {
+            writer.WriteStartObject();
+            foreach (var (id, key) in merged)
+                writer.WriteString(id, key.ToString());
+            writer.WriteEndObject();
+        });
+    }
 
     /// <summary>Writes one setting, carrying over every other one the file already holds.</summary>
     private void Write(string name, Action<Utf8JsonWriter> value)

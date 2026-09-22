@@ -1,4 +1,6 @@
 using System.Drawing;
+using Terminal.Gui;
+using Terminal.Gui.App;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -6,12 +8,30 @@ namespace ATeam.Dashboard.Tests;
 public class DashboardWindowTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"a-team-{Guid.NewGuid():n}");
+    private readonly PlatformKeyBinding _quit = Application.DefaultKeyBindings![Command.Quit];
 
     public void Dispose()
     {
+        Application.SetDefaultKeyBinding(Command.Quit, _quit);
         if (Directory.Exists(_root))
             Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
+    }
+
+    [Fact]
+    public void The_apps_own_quit_binding_moves_to_the_quit_key_so_Esc_only_goes_back()
+    {
+        using var window = Open();
+
+        Assert.Equal(new Key('q'), Application.GetDefaultKey(Command.Quit));
+    }
+
+    [Fact]
+    public void Rebinding_quit_takes_the_apps_quit_binding_with_it()
+    {
+        using var window = Open(keys: "{ \"quit\": \"x\" }");
+
+        Assert.Equal(new Key('x'), Application.GetDefaultKey(Command.Quit));
     }
 
     [Fact]
@@ -250,12 +270,13 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Esc_with_nothing_expanded_is_left_alone_so_it_still_quits()
+    public void Esc_with_nothing_expanded_does_nothing_and_q_is_the_way_out()
     {
         using var window = Open(agents: Agents(4));
         window.NewKeyDownEvent(Key.Tab);
 
         Assert.False(window.NewKeyDownEvent(Key.Esc));
+        Assert.True(window.NewKeyDownEvent(new Key('q')));
     }
 
     [Fact]
@@ -324,10 +345,10 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(4));
 
         Assert.Equal(
-            "a-team 1.2.3 · Enter: expand · Ctrl+E: commands · F1: help · Esc: quit",
+            "a-team 1.2.3 · Enter: expand · Ctrl+E: commands · F1: help · q: quit",
             DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · PgUp/PgDn: scroll · F1: help · Esc: back",
+            "a-team 1.2.3 · PgUp/PgDn: scroll · F1: help · Esc: back · q: quit",
             DashboardWindow.Hints("1.2.3", expanded: true, window.Commands));
     }
 
@@ -379,16 +400,80 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void A_key_the_file_names_runs_that_command_and_the_one_in_the_source_no_longer_does()
+    {
+        using var window = Open(keys: "{ \"log.toolCalls\": \"d\" }");
+        window.NewKeyDownEvent(Key.Tab);
+
+        Assert.True(window.NewKeyDownEvent(new Key('d')));
+        Assert.False(window.NewKeyDownEvent(new Key('t')));
+
+        Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));
+    }
+
+    [Fact]
+    public void A_command_the_file_says_nothing_about_keeps_the_key_it_had()
+    {
+        using var window = Open(keys: "{ \"log.toolCalls\": \"d\" }");
+
+        Assert.Equal(Key.F1, window.Commands.Registered.Single(command => command.Id == "help").Key);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{ \"nobody.registered.this\": \"F4\" }")]
+    [InlineData("{ \"settings\": \"nonsense\" }")]
+    [InlineData("{ \"settings\": \"t\" }")]
+    public void An_override_we_cannot_use_is_ignored_on_its_own_and_leaves_every_default_alone(string keys)
+    {
+        using var window = Open(keys: keys);
+
+        Assert.Equal(new Key('s'), window.Commands.Registered.Single(command => command.Id == "settings").Key);
+        Assert.Equal(new Key('t'), window.Commands.Registered.Single(command => command.Id == "log.toolCalls").Key);
+    }
+
+    [Theory]
+    [InlineData("{ \"nobody.registered.this\": \"F4\", \"help\": \"F2\" }")]
+    [InlineData("{ \"settings\": \"nonsense\", \"help\": \"F2\" }")]
+    [InlineData("{ \"settings\": \"t\", \"help\": \"F2\" }")]
+    public void The_rest_of_the_file_still_applies_around_an_override_we_cannot_use(string keys)
+    {
+        using var window = Open(keys: keys);
+
+        Assert.Equal(Key.F2, window.Commands.Registered.Single(command => command.Id == "help").Key);
+    }
+
+    [Fact]
+    public void The_title_names_the_key_the_file_bound_and_not_the_one_in_the_source()
+    {
+        using var window = Open(agents: Agents(4), keys: "{ \"commands\": \"Ctrl+K\" }");
+
+        Assert.Contains("Ctrl+K: commands", DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
+        Assert.DoesNotContain("Ctrl+E", DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
+    }
+
+    [Fact]
+    public void The_commands_list_names_the_key_the_file_bound()
+    {
+        using var window = Open(agents: Agents(4), keys: "{ \"commands\": \"Ctrl+K\" }");
+
+        using var dialog = new CommandsDialog(window.Commands.Registered);
+
+        Assert.Contains(dialog.Matches.Select(command => command.Key), key => key == Key.K.WithCtrl);
+    }
+
+    [Fact]
     public void The_window_title_follows_the_view_it_is_showing()
     {
         using var window = Open(agents: Agents(4));
         window.NewKeyDownEvent(Key.Tab);
 
         window.NewKeyDownEvent(Key.Enter);
-        Assert.EndsWith("Esc: back", window.Title);
+        Assert.Contains("Esc: back", window.Title);
 
         window.NewKeyDownEvent(Key.Esc);
-        Assert.EndsWith("Esc: quit", window.Title);
+        Assert.DoesNotContain("Esc: back", window.Title);
+        Assert.Contains("Enter: expand", window.Title);
     }
 
     [Fact]
@@ -687,9 +772,15 @@ public class DashboardWindowTests : IDisposable
     private DashboardWindow Open(
         bool expandToolCalls = false,
         IReadOnlyList<(string, string)>? agents = null,
-        Func<string, string, Task<string?>>? run = null)
+        Func<string, string, Task<string?>>? run = null,
+        string? keys = null)
     {
         Directory.CreateDirectory(_root);
+        if (keys is not null)
+        {
+            Directory.CreateDirectory(Config);
+            File.WriteAllText(Path.Combine(Config, "dashboard.json"), $"{{ \"keys\": {keys} }}");
+        }
         var settings = new DashboardSettings(Config);
         if (expandToolCalls)
             settings.WriteExpandToolCalls(true);

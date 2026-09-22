@@ -126,13 +126,29 @@ enough to read a session without scrolling, and there Tab and Shift+Tab read the
 agent without leaving the expanded view; the dispatcher strip stays put. PgUp/PgDn/Home/End scroll
 the selected session in either view; scrolling up stops it following new output until you press End. A run of tool calls draws as one row so the
 agent's narration isn't pushed off the top; t shows every call in the selected pane again (the
-title says [tool calls]) and t again folds them back up. s opens Settings: the theme —
-Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode — and whether panes
-start with every tool call showing. Ctrl+Enter keeps what's picked there, Esc discards it. What
-you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
+title says [tool calls]) and t again folds them back up. s opens Settings, a page at a time: the
+pages down the left, the one picked on the right, Tab into it and Tab back. Theme is one of
+Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode; Keyboard Shortcuts
+is a row per command with the key that runs it; Dashboard is whether panes start with every tool
+call showing. Enter on a shortcut row takes the next key you press; a key another command already
+holds is refused, naming the one that holds it. Ctrl+Enter keeps what's picked on any page, Esc
+discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
 what the dashboard comes up in next time, with t still folding and unfolding a pane for the
-session. Esc goes back to the grid from an expanded agent, and quits the dashboard when there
-isn't one.
+session. Esc goes back to the grid from an expanded agent and does nothing when there isn't one;
+q quits the dashboard, from either view.
+
+Keys can be set by hand in that file too, which is the way out of a key your terminal or
+multiplexer swallows. A `keys` object maps a command's id — the ones Ctrl+E lists — to a key
+name, spelled as Terminal.Gui spells it (`PageUp`, not the `PgUp` the hint bar abbreviates it to):
+
+```json
+{ "theme": "Midnight", "keys": { "settings": "Ctrl+,", "log.toolCalls": "d" } }
+```
+
+A command named there is reached by that key instead of the one it ships with, and only by that
+key. An id nothing is registered under, a name that isn't a key, and a key another command already
+holds are each ignored on their own: that command keeps the key it had, and the rest of the file
+still applies.
 
 Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it. Type to narrow
 the list, Up/Down (or PgUp/PgDn and Home/End) to pick, Enter to run it, Esc to close. Every key
