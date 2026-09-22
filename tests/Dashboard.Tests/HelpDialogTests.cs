@@ -7,11 +7,10 @@ namespace ATeam.Dashboard.Tests;
 public class HelpDialogTests
 {
     [Fact]
-    public void It_opens_on_the_list_with_the_palette_first_and_the_keys_worth_memorising_under_it()
+    public void It_lists_the_palette_first_and_the_keys_worth_memorising_under_it()
     {
         using var dialog = Open();
 
-        Assert.True(dialog.List.HasFocus);
         Assert.Equal(
             [
                 "Ctrl+E      every command, by name",
@@ -22,7 +21,6 @@ public class HelpDialogTests
                 "Esc         back, or quit",
             ],
             Rows(dialog));
-        Assert.Equal(0, dialog.List.Value);
     }
 
     [Fact]
@@ -64,23 +62,30 @@ public class HelpDialogTests
         dialog.NewKeyDownEvent(Key.Enter);
 
         Assert.False(dialog.Closed);
-        Assert.Equal(0, dialog.List.Value);
     }
 
     [Fact]
-    public void PgUp_and_PgDn_scroll_the_list()
+    public void Nothing_in_it_takes_focus_because_there_is_nothing_to_pick()
     {
-        using var host = new View { Width = 48, Height = 8, CanFocus = true };
+        using var host = new View { Width = 48, Height = 12, CanFocus = true };
         using var dialog = Open();
         host.Add(dialog);
-        host.Layout(new Size(48, 8));
-        dialog.List.SetFocus();
+        host.Layout(new Size(48, 12));
 
-        dialog.NewKeyDownEvent(Key.PageDown);
-        Assert.True(dialog.List.Value > 0);
+        Assert.False(dialog.Keys.CanFocus);
+        Assert.DoesNotContain(dialog.SubViews, view => view.CanFocus);
+    }
 
-        dialog.NewKeyDownEvent(Key.PageUp);
-        Assert.Equal(0, dialog.List.Value);
+    [Fact]
+    public void It_is_only_as_big_as_the_keys_it_lists_so_none_of_them_wrap_or_fall_off()
+    {
+        using var host = new View { Width = 80, Height = 24 };
+        using var dialog = Open();
+        host.Add(dialog);
+
+        host.Layout(new Size(80, 24));
+
+        Assert.Equal(Rows(dialog), dialog.Keys.TextFormatter.GetLines());
     }
 
     [Fact]
@@ -110,5 +115,5 @@ public class HelpDialogTests
         .Registered);
 
     private static IReadOnlyList<string> Rows(HelpDialog dialog) =>
-        [.. dialog.List.Source!.ToList().Cast<string>().Select(row => row.TrimEnd())];
+        [.. dialog.Keys.Text.Split('\n').Select(row => row.TrimEnd())];
 }
