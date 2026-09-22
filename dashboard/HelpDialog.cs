@@ -26,8 +26,8 @@ public sealed class HelpDialog : Dialog
     public HelpDialog(IReadOnlyList<CommandDescriptor> commands)
     {
         Title = "Help";
-        Width = Dim.Func(help => Math.Min(Wide, help.SuperView?.Viewport.Width ?? Wide), this);
-        Height = Dim.Func(help => Math.Min(Tall, help.SuperView?.Viewport.Height ?? Tall), this);
+        Width = Dim.Func(_ => Math.Min(Wide, SuperView?.Viewport.Width ?? Wide), this);
+        Height = Dim.Func(_ => Math.Min(Tall, SuperView?.Viewport.Height ?? Tall), this);
 
         var rows = Rows(commands);
         _list = new ListView { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(1) };
