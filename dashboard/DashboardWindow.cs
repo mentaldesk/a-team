@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Reflection;
+using Terminal.Gui;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 
@@ -86,6 +87,7 @@ public sealed class DashboardWindow : Window
 
         RegisterCommands();
         _commands.Apply(settings.ReadKeys());
+        SyncQuitKey();
         Title = Hints(_version, expanded: false, _commands);
     }
 
@@ -146,6 +148,14 @@ public sealed class DashboardWindow : Window
             .Register("help", "Help", OpenHelp, Key.F1, new Hint("help"), HasApp)
             .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded), () => _expanded is not null)
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'), new Hint("quit"));
+    }
+
+    // Point Terminal.Gui's own Quit binding at our quit key: removing it leaves PopoverImpl binding Key.Empty, which throws.
+    private void SyncQuitKey()
+    {
+        var key = _commands.KeyFor("quit");
+        if (key != Key.Empty)
+            Application.SetDefaultKeyBinding(Command.Quit, Bind.All(key));
     }
 
     private bool HasApp() => App is not null;
@@ -214,6 +224,7 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         SettingsDialog.Show(app, _settings, _commands);
+        SyncQuitKey();
         Title = Hints(_version, _expanded is not null, _commands);
     }
 

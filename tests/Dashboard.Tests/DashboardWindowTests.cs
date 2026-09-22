@@ -1,4 +1,6 @@
 using System.Drawing;
+using Terminal.Gui;
+using Terminal.Gui.App;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -6,12 +8,30 @@ namespace ATeam.Dashboard.Tests;
 public class DashboardWindowTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"a-team-{Guid.NewGuid():n}");
+    private readonly PlatformKeyBinding _quit = Application.DefaultKeyBindings![Command.Quit];
 
     public void Dispose()
     {
+        Application.SetDefaultKeyBinding(Command.Quit, _quit);
         if (Directory.Exists(_root))
             Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
+    }
+
+    [Fact]
+    public void The_apps_own_quit_binding_moves_to_the_quit_key_so_Esc_only_goes_back()
+    {
+        using var window = Open();
+
+        Assert.Equal(new Key('q'), Application.GetDefaultKey(Command.Quit));
+    }
+
+    [Fact]
+    public void Rebinding_quit_takes_the_apps_quit_binding_with_it()
+    {
+        using var window = Open(keys: "{ \"quit\": \"x\" }");
+
+        Assert.Equal(new Key('x'), Application.GetDefaultKey(Command.Quit));
     }
 
     [Fact]

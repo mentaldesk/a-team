@@ -34,6 +34,18 @@ public class CommandRegistryTests
     }
 
     [Fact]
+    public void A_command_reports_the_key_it_is_bound_to_and_nothing_for_one_nobody_registered()
+    {
+        var commands = new CommandRegistry()
+            .Register("greet", "Say hello", () => { }, Key.F1)
+            .Register("quit", "Quit", () => { });
+
+        Assert.Equal(Key.F1, commands.KeyFor("greet"));
+        Assert.Equal(Key.Empty, commands.KeyFor("quit"));
+        Assert.Equal(Key.Empty, commands.KeyFor("nobody"));
+    }
+
+    [Fact]
     public void A_key_runs_what_it_is_bound_to_and_nothing_runs_for_an_unbound_one()
     {
         var ran = 0;

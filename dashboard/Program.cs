@@ -1,5 +1,4 @@
 using ATeam.Dashboard;
-using Terminal.Gui.Input;
 
 var root = FindRepoRoot(AppContext.BaseDirectory) ?? FindRepoRoot(Environment.CurrentDirectory);
 if (root is null)
@@ -34,8 +33,6 @@ var command = new TeamCommand(Path.Combine(root, "bin", "a-team"));
 BundledThemes.Load(settings.ReadTheme());
 using var app = Application.Create();
 app.Init();
-// Esc is Terminal.Gui's built-in quit key; here it goes back to the grid, and quit has a key of its own.
-Application.RemoveDefaultKeyBinding(Command.Quit);
 LogSchemes.Register();
 using var window = new DashboardWindow(agents, stateRoot, settings, teams, command.Run);
 window.Refresh();
