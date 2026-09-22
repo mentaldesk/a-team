@@ -52,6 +52,7 @@ public class SettingsDialogTests : IDisposable
     public void The_hint_row_reads_what_the_dialog_can_do_with_the_keys_that_do_it()
     {
         using var dialog = Open(out _);
+        OpenPage(dialog, "Keyboard Shortcuts");
 
         Assert.Equal("Enter rebind · Ctrl+Enter keep · Esc cancel", HintRow(dialog));
     }
@@ -125,6 +126,7 @@ public class SettingsDialogTests : IDisposable
     public void Space_on_the_tool_calls_box_turns_it_on_without_closing_the_dialog()
     {
         using var dialog = Open(out _);
+        OpenPage(dialog, "Dashboard");
         var box = ToolCalls(dialog);
         box.SetFocus();
 
@@ -138,6 +140,7 @@ public class SettingsDialogTests : IDisposable
     public void Enter_on_the_tool_calls_box_does_not_close_the_dialog_either()
     {
         using var dialog = Open(out _);
+        OpenPage(dialog, "Dashboard");
         var box = ToolCalls(dialog);
         box.SetFocus();
 
@@ -148,11 +151,68 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
-    public void Focus_starts_on_the_theme_selector()
+    public void Focus_starts_on_the_page_list()
     {
         using var dialog = Open(out _);
 
-        Assert.True(Themes(dialog).HasFocus);
+        Assert.True(dialog.Pages.HasFocus);
+    }
+
+    [Fact]
+    public void The_page_list_names_a_page_per_group_of_settings()
+    {
+        using var dialog = Open(out _);
+
+        Assert.Equal(["Theme", "Keyboard Shortcuts", "Dashboard"], PageNames(dialog));
+    }
+
+    [Fact]
+    public void Only_the_page_the_list_is_on_is_showing()
+    {
+        using var dialog = Open(out _);
+
+        Assert.True(Themes(dialog).Visible);
+        Assert.False(dialog.Keys.Visible);
+        Assert.False(ToolCalls(dialog).Visible);
+
+        OpenPage(dialog, "Keyboard Shortcuts");
+
+        Assert.False(Themes(dialog).Visible);
+        Assert.True(dialog.Keys.Visible);
+        Assert.False(ToolCalls(dialog).Visible);
+
+        OpenPage(dialog, "Dashboard");
+
+        Assert.False(Themes(dialog).Visible);
+        Assert.False(dialog.Keys.Visible);
+        Assert.True(ToolCalls(dialog).Visible);
+    }
+
+    [Fact]
+    public void Tab_moves_from_the_page_list_into_the_page_showing()
+    {
+        using var dialog = Open(out _);
+        OpenPage(dialog, "Dashboard");
+
+        dialog.AdvanceFocus(NavigationDirection.Forward, TabBehavior.TabStop);
+
+        Assert.True(ToolCalls(dialog).HasFocus);
+    }
+
+    [Fact]
+    public void The_hint_row_names_rebinding_only_on_the_keys_page()
+    {
+        using var dialog = Open(out _);
+
+        Assert.Equal("Ctrl+Enter keep · Esc cancel", HintRow(dialog));
+
+        OpenPage(dialog, "Keyboard Shortcuts");
+
+        Assert.Equal("Enter rebind · Ctrl+Enter keep · Esc cancel", HintRow(dialog));
+
+        OpenPage(dialog, "Dashboard");
+
+        Assert.Equal("Ctrl+Enter keep · Esc cancel", HintRow(dialog));
     }
 
     [Fact]
@@ -178,6 +238,7 @@ public class SettingsDialogTests : IDisposable
     public void Enter_on_a_row_asks_for_the_key_to_run_it()
     {
         using var dialog = Open(out _);
+        OpenPage(dialog, "Keyboard Shortcuts");
         dialog.Keys.SetFocus();
 
         Assert.True(dialog.NewKeyDownEvent(Key.Enter));
@@ -270,6 +331,7 @@ public class SettingsDialogTests : IDisposable
     {
         using var host = new View { Width = 30, Height = 12 };
         using var dialog = Open(out _);
+        OpenPage(dialog, "Keyboard Shortcuts");
         host.Add(dialog);
 
         host.Layout(new Size(30, 12));
@@ -280,18 +342,30 @@ public class SettingsDialogTests : IDisposable
 
     private static void Rebind(SettingsDialog dialog, int row, Key key)
     {
+        OpenPage(dialog, "Keyboard Shortcuts");
         dialog.Keys.SetFocus();
         dialog.Keys.Value = row;
         dialog.NewKeyDownEvent(Key.Enter);
         dialog.NewKeyDownEvent(key);
     }
 
+    private static IReadOnlyList<string> PageNames(SettingsDialog dialog) =>
+        [.. Enumerable.Range(0, dialog.Pages.Source?.Count ?? 0)
+            .Select(i => dialog.Pages.Source!.ToList()[i]?.ToString() ?? "")];
+
     private static IReadOnlyList<string> Showing(SettingsDialog dialog) =>
         [.. Enumerable.Range(0, dialog.Keys.Source?.Count ?? 0).Select(i => dialog.Keys.Source!.ToList()[i]?.ToString() ?? "")];
 
     private static OptionSelector Themes(SettingsDialog dialog) => dialog.SubViews.OfType<OptionSelector>().Single();
 
-    private static CheckBox ToolCalls(SettingsDialog dialog) => dialog.SubViews.OfType<CheckBox>().Single();
+    private static CheckBox ToolCalls(SettingsDialog dialog) =>
+        dialog.SubViews.OfType<CheckBox>().Single(box => box.Text == "Show tool calls in full");
+
+    private static void OpenPage(SettingsDialog dialog, string name)
+    {
+        dialog.Pages.Value = Enumerable.Range(0, dialog.Pages.Source!.Count)
+            .First(row => dialog.Pages.Source!.ToList()[row]?.ToString() == name);
+    }
 
     private static Button Hint(SettingsDialog dialog, string text) =>
         dialog.SubViews.OfType<Button>().Single(hint => hint.Text == text);

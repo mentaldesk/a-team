@@ -6,20 +6,27 @@ using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The dashboard's settings, one row per setting under its label, keys last.</summary>
+/// <summary>The dashboard's settings, a page at a time: the pages on the left, the one picked on the right.</summary>
 public sealed class SettingsDialog : Dialog
 {
     private static readonly Key Apply = Key.Enter.WithCtrl;
     private const string Prompt = "Press a key…";
-    private static readonly string[] HintTexts = ["Enter rebind", "Ctrl+Enter keep", "Esc cancel"];
+    private const string RebindHint = "Enter rebind";
+    private const string KeepHint = "Ctrl+Enter keep";
+    private const string CancelHint = "Esc cancel";
     private const string Separator = " · ";
+    private const string ToolCalls = "Show tool calls in full";
     private const int Inset = 1;
+    private const int Gap = 1;
+    private const int GlyphAndSpace = 2;
 
     private readonly CommandRegistry _commands;
     private readonly List<(string Id, string Label, Key Key)> _bindings;
     private readonly List<(string Id, Key Key)> _changed = [];
     private readonly int _labelWidth;
-    private readonly int _listTop;
+    private readonly List<Page> _pages;
+    private readonly List<View> _hints = [];
+    private readonly ListView _picker = new();
     private readonly CheckBox _toolCalls;
     private readonly KeyList _keys;
     private readonly MessageBar _message = new();
@@ -31,20 +38,12 @@ public sealed class SettingsDialog : Dialog
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
 
-        const int themesTop = 1;
-        var toolCallsTop = themesTop + BundledThemes.Names.Count + 1;
-        var keysTop = toolCallsTop + 3;
-        _listTop = keysTop + 1;
-
         Title = "Settings";
         Width = Dim.Func(_ => Fits(Wide() + GetAdornmentsThickness().Horizontal, SuperView?.Viewport.Width), this);
         Height = Dim.Func(_ => Fits(Tall() + GetAdornmentsThickness().Vertical, SuperView?.Viewport.Height), this);
 
-        var label = new Label { X = Inset, Y = 0, Text = "Theme:" };
         var themes = new OptionSelector
         {
-            X = Inset + 2,
-            Y = themesTop,
             Orientation = Orientation.Vertical,
             Labels = [.. BundledThemes.Names],
             Value = BundledThemes.Names.ToList().IndexOf(theme.Current),
@@ -57,34 +56,55 @@ public sealed class SettingsDialog : Dialog
                 redraw();
             }
         };
-        var toolCallsLabel = new Label { X = Inset, Y = toolCallsTop, Text = "Tool calls:" };
         _toolCalls = new CheckBox
         {
-            X = Inset + 2,
-            Y = toolCallsTop + 1,
-            Text = "Show tool calls in full",
+            Text = ToolCalls,
             Value = expandToolCalls ? CheckState.Checked : CheckState.UnChecked,
         };
-        var keysLabel = new Label { X = Inset, Y = keysTop, Text = "Keys:" };
-        _keys = new KeyList
-        {
-            X = Inset,
-            Y = _listTop,
-            Width = Dim.Fill(Inset),
-            Height = Dim.Func(_ => Math.Max(1, Viewport.Height - _listTop - 1 - _message.Lines), this),
-        };
+        _keys = new KeyList();
         _keys.Captured = key => _capturing && Capture(key);
+
+        _pages =
+        [
+            new Page("Theme", themes, () => BundledThemes.Names.Max(name => name.Length) + GlyphAndSpace,
+                BundledThemes.Names.Count, [KeepHint, CancelHint]),
+            new Page("Keyboard Shortcuts", _keys, KeysWide, Math.Max(1, _bindings.Count),
+                [RebindHint, KeepHint, CancelHint]),
+            new Page("Dashboard", _toolCalls, () => ToolCalls.Length + GlyphAndSpace, 1, [KeepHint, CancelHint]),
+        ];
+
+        var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
+        _picker.X = Inset;
+        _picker.Y = 0;
+        _picker.Width = _pages.Max(page => page.Name.Length);
+        _picker.Height = content;
+        _picker.SetSource(new ObservableCollection<string>(_pages.Select(page => page.Name)));
+        _picker.Value = 0;
+        _picker.ValueChanged += (_, _) => ShowPage();
+
+        var rule = new Line { X = Pos.Right(_picker) + Gap, Y = 0, Orientation = Orientation.Vertical, Height = content };
+        foreach (var page in _pages)
+        {
+            page.View.X = Pos.Right(rule) + Gap;
+            page.View.Y = 0;
+        }
+        _keys.Width = Dim.Fill(Inset);
+        _keys.Height = content;
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
-        Add(label, themes, toolCallsLabel, _toolCalls, keysLabel, _keys);
-        Add(Hints());
+        Add(_picker, rule);
+        foreach (var page in _pages)
+            Add(page.View);
         Add(_message);
         ShowKeys();
+        ShowPage();
     }
 
     internal bool Confirmed { get; private set; }
 
     internal bool ExpandToolCalls => _toolCalls.Value == CheckState.Checked;
+
+    internal ListView Pages => _picker;
 
     internal ListView Keys => _keys;
 
@@ -94,7 +114,7 @@ public sealed class SettingsDialog : Dialog
 
     internal IReadOnlyList<(string Id, Key Key)> Changed => _changed;
 
-    /// <summary>Enter reaches a Dialog as Accept, from the keys list or the theme list alike, and never as a key.
+    /// <summary>Enter reaches a Dialog as Accept, from the keys list or the pages list alike, and never as a key.
     /// The hints close the dialog from their own Accepting, so nothing here does.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => !_keys.HasFocus || Rebind();
 
@@ -175,6 +195,17 @@ public sealed class SettingsDialog : Dialog
     private int? Selected() =>
         _keys.Value is { } index && index >= 0 && index < _bindings.Count ? index : null;
 
+    /// <summary>Shows the page the list is on, and only that one, with the hints that page answers to.</summary>
+    private void ShowPage()
+    {
+        var selected = _picker.Value ?? 0;
+        for (var index = 0; index < _pages.Count; index++)
+            _pages[index].View.Visible = index == selected;
+        ShowHints(_pages[selected].Hints);
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
     private void ShowKeys()
     {
         var selected = _keys.Value;
@@ -204,19 +235,26 @@ public sealed class SettingsDialog : Dialog
         return true;
     }
 
-    /// <summary>The hint row, each hint clickable and the separators between them not.</summary>
-    private View[] Hints()
+    private void ShowHints(IReadOnlyList<string> texts)
     {
-        Func<bool>[] runs =
-        [
-            () => { _keys.SetFocus(); return Rebind(); },
-            () => Close(confirmed: true),
-            () => Close(confirmed: false),
-        ];
+        foreach (var hint in _hints)
+        {
+            Remove(hint);
+            hint.Dispose();
+        }
+        _hints.Clear();
+        _hints.AddRange(Hints(texts));
+        foreach (var hint in _hints)
+            Add(hint);
+    }
+
+    /// <summary>The hint row, each hint clickable and the separators between them not.</summary>
+    private View[] Hints(IReadOnlyList<string> texts)
+    {
         var y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
         List<View> row = [];
         Pos x = Inset;
-        foreach (var (text, run) in HintTexts.Zip(runs))
+        foreach (var text in texts)
         {
             if (row.Count > 0)
             {
@@ -235,22 +273,38 @@ public sealed class SettingsDialog : Dialog
                 HotKeySpecifier = (Rune)0xffff,
                 CanFocus = false,
             };
-            hint.Accepting += (_, args) => args.Handled = run();
+            hint.Accepting += (_, args) => args.Handled = Run(text);
             row.Add(hint);
             x = Pos.Right(hint);
         }
         return [.. row];
     }
 
-    private static int HintWidth =>
-        HintTexts.Sum(text => text.Length) + (Separator.Length * (HintTexts.Length - 1));
+    private bool Run(string hint)
+    {
+        if (hint != RebindHint)
+            return Close(confirmed: hint == KeepHint);
+        _keys.SetFocus();
+        return Rebind();
+    }
 
-    private int Wide() =>
-        Math.Max(_bindings.Count == 0 ? 0 : Rows.Max(row => row.Length), HintWidth) + (Inset * 2);
+    private int KeysWide() => Math.Max(
+        _bindings.Count == 0 ? 0 : Rows.Max(row => row.Length),
+        _labelWidth + 2 + Prompt.Length);
 
-    private int Tall() => _listTop + Math.Max(1, _bindings.Count) + 1 + _message.Lines;
+    private static int HintWidth(IReadOnlyList<string> texts) =>
+        texts.Sum(text => text.Length) + (Separator.Length * (texts.Count - 1));
+
+    private int Wide() => Math.Max(
+        _pages.Max(page => page.Name.Length) + Gap + 1 + Gap + _pages.Max(page => page.Width()),
+        _pages.Max(page => HintWidth(page.Hints))) + (Inset * 2);
+
+    private int Tall() =>
+        Math.Max(_pages.Count, _pages.Max(page => page.Height)) + 1 + _message.Lines;
 
     private static int Fits(int wanted, int? available) => available is { } room ? Math.Min(wanted, room) : wanted;
+
+    private sealed record Page(string Name, View View, Func<int> Width, int Height, string[] Hints);
 
     /// <summary>A list that can take a key literally. ListView's own type-ahead answers a letter before any
     /// handler the dialog could attach, so the letter being bound would never reach the capture.</summary>

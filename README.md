@@ -126,12 +126,13 @@ enough to read a session without scrolling, and there Tab and Shift+Tab read the
 agent without leaving the expanded view; the dispatcher strip stays put. PgUp/PgDn/Home/End scroll
 the selected session in either view; scrolling up stops it following new output until you press End. A run of tool calls draws as one row so the
 agent's narration isn't pushed off the top; t shows every call in the selected pane again (the
-title says [tool calls]) and t again folds them back up. s opens Settings: the theme —
-Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode — whether panes
-start with every tool call showing, and Keys, a row per command with the key that runs it. Enter
-on a row takes the next key you press; a key another command already holds is refused, naming the
-one that holds it. Ctrl+Enter keeps what's picked there, Esc discards it. What
-you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
+title says [tool calls]) and t again folds them back up. s opens Settings, a page at a time: the
+pages down the left, the one picked on the right, Tab into it and Tab back. Theme is one of
+Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode; Keyboard Shortcuts
+is a row per command with the key that runs it; Dashboard is whether panes start with every tool
+call showing. Enter on a shortcut row takes the next key you press; a key another command already
+holds is refused, naming the one that holds it. Ctrl+Enter keeps what's picked on any page, Esc
+discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
 what the dashboard comes up in next time, with t still folding and unfolding a pane for the
 session. Esc goes back to the grid from an expanded agent, and quits the dashboard when there
 isn't one.
