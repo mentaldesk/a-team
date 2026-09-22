@@ -141,7 +141,7 @@ Pause (or Resume) for the selected agent's team, named after it: it runs `a-team
 panes follow within a second. While it runs, a line at the foot of the window says so; if it
 fails, that line says why, in red.
 
-? opens Help: the handful of keys worth having in your fingers, the first of them Ctrl+E for
+F1 opens Help: the handful of keys worth having in your fingers, the first of them Ctrl+E for
 everything else. Esc closes it.
 
 Releases include a native build. Run from a clone, it's built from source and needs the

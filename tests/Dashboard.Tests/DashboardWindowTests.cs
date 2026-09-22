@@ -324,10 +324,10 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(4));
 
         Assert.Equal(
-            "a-team 1.2.3 · Enter: expand · Ctrl+E: commands · ?: help · Esc: quit",
+            "a-team 1.2.3 · Enter: expand · Ctrl+E: commands · F1: help · Esc: quit",
             DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · PgUp/PgDn: scroll · ?: help · Esc: back",
+            "a-team 1.2.3 · PgUp/PgDn: scroll · F1: help · Esc: back",
             DashboardWindow.Hints("1.2.3", expanded: true, window.Commands));
     }
 
@@ -358,11 +358,11 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Help_opens_with_a_question_mark()
+    public void Help_opens_with_F1()
     {
         using var window = Open(agents: Agents(4));
 
-        Assert.Equal(new Key('?'), window.Commands.Registered.Single(c => c.Id == "help").Key);
+        Assert.Equal(Key.F1, window.Commands.Registered.Single(c => c.Id == "help").Key);
     }
 
     [Fact]

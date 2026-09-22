@@ -142,7 +142,7 @@ public sealed class DashboardWindow : Window
             .Register("team.pause", PauseLabel, TogglePause)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, new Hint("Ctrl+E", "commands", Mode.Grid), HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
-            .Register("help", "Help", OpenHelp, new Key('?'), new Hint("?", "help"), HasApp)
+            .Register("help", "Help", OpenHelp, Key.F1, new Hint("F1", "help"), HasApp)
             .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("Esc", "back", Mode.Expanded), () => _expanded is not null)
             .Register("quit", "Quit", () => App?.RequestStop(), hint: new Hint("Esc", "quit", Mode.Grid));
     }
