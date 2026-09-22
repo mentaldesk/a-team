@@ -37,11 +37,12 @@ release.
 |---|---|
 | `process.md` | The shared rules: board states, gates, markers, what agents never do |
 | `roles/lead.md`, `roles/dev.md` | What each role does on a run |
-| `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `dashboard`, `run` |
+| `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
 | `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
+| `scripts/pause.sh` | `a-team pause` / `a-team resume`: turns a team's dispatch off and on |
 | `dashboard/` | `a-team dashboard`: a terminal dashboard of the teams |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
@@ -114,11 +115,11 @@ keep that folder in a repo of your own and link it into place.
 a-team dashboard [team...]
 ```
 
-One pane per agent. The title shows whether it's running (●) or idle (○). Under it: how long
-the current run has been going, or when it last ran and the countdown to the dispatcher's next
-check; then why it was last started; then its latest session as it happens (what it said, the
+One pane per agent. The title shows whether it's running (●), idle (○) or paused (⏸). Under it:
+how long the current run has been going, or when it last ran and the countdown to the dispatcher's
+next check; then why it was last started; then its latest session as it happens (what it said, the
 tools it called, any errors and how the run finished). The strip along the bottom is the
-dispatcher's recent decisions. With no arguments it shows every team with dispatch enabled.
+dispatcher's recent decisions. With no arguments it shows every configured team, paused or not.
 
 Tab or the arrow keys select an agent (▶). Enter expands it over the whole agent area, wide
 enough to read a session without scrolling, and there Tab and Shift+Tab read the next and previous
@@ -135,7 +136,10 @@ isn't one.
 
 Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it. Type to narrow
 the list, Up/Down (or PgUp/PgDn and Home/End) to pick, Enter to run it, Esc to close. Every key
-above is one of those commands, so anything you can press you can also run by name.
+above is one of those commands, so anything you can press you can also run by name. Among them is
+Pause (or Resume) for the selected agent's team, named after it: it runs `a-team pause` and the
+panes follow within a second. While it runs, a line at the foot of the window says so; if it
+fails, that line says why, in red.
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.

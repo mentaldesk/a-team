@@ -49,6 +49,11 @@ Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashbo
 outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's
 draw loop, so cover the logic behind the views instead.
 
+## Scripts
+
+`tests/scripts.sh` is the shell side's test suite (`bash tests/scripts.sh`). CI runs it, along with
+`bash -n` and ShellCheck over `scripts/`, `bin/a-team` and `tests/`.
+
 ## Releasing
 
 Run the **Release** workflow from the Actions tab. Leave *bump* on `auto` to pick the version from

@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Reflection;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -15,15 +16,26 @@ public sealed class DashboardWindow : Window
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
     private readonly TextView _dispatch;
+    private readonly MessageBar _message = new();
     private readonly string _dispatchLog;
     private readonly string _nextPass;
     private readonly DashboardSettings _settings;
+    private readonly TeamConfigs _teams;
+    private readonly Func<string, string, Task<string?>> _run;
+    private Task<string?>? _pending;
     private int? _expanded;
     private Size _laidOutOver;
 
-    public DashboardWindow(IReadOnlyList<(string Team, string Role)> agents, string stateRoot, DashboardSettings settings)
+    public DashboardWindow(
+        IReadOnlyList<(string Team, string Role)> agents,
+        string stateRoot,
+        DashboardSettings settings,
+        TeamConfigs teams,
+        Func<string, string, Task<string?>> run)
     {
         _settings = settings;
+        _teams = teams;
+        _run = run;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
 
@@ -33,7 +45,7 @@ public sealed class DashboardWindow : Window
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(DispatchLines + 2),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - Foot()), this),
             CanFocus = true,
         };
         _agents.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
@@ -60,7 +72,7 @@ public sealed class DashboardWindow : Window
         {
             Title = "dispatcher",
             X = 0,
-            Y = Pos.AnchorEnd(DispatchLines + 2),
+            Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Foot()), this),
             Width = Dim.Fill(),
             Height = DispatchLines + 2,
             CanFocus = false,
@@ -68,6 +80,9 @@ public sealed class DashboardWindow : Window
         _dispatch = new TextView { Width = Dim.Fill(), Height = Dim.Fill(), ReadOnly = true, CanFocus = false };
         _dispatchFrame.Add(_dispatch);
         Add(_dispatchFrame);
+
+        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
+        Add(_message);
 
         RegisterCommands();
         Title = Hints(_version, expanded: false, _commands);
@@ -79,6 +94,8 @@ public sealed class DashboardWindow : Window
 
     internal View Agents => _agents;
 
+    internal MessageBar Message => _message;
+
     internal int? ExpandedAgent => _expanded;
 
     internal CommandRegistry Commands => _commands;
@@ -88,12 +105,14 @@ public sealed class DashboardWindow : Window
 
     public void Refresh()
     {
+        Settle();
         var now = DateTimeOffset.UtcNow;
         DateTimeOffset? nextCheck = long.TryParse(ReadText(_nextPass), out var seconds)
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : null;
+        var paused = _panes.Select(pane => pane.Team).Distinct().ToDictionary(team => team, _teams.IsPaused);
         foreach (var pane in _panes)
-            pane.Refresh(now, nextCheck);
+            pane.Refresh(now, nextCheck, paused[pane.Team]);
 
         var tail = ReadTail(_dispatchLog, DispatchLines);
         if (_dispatch.Text != tail)
@@ -121,6 +140,7 @@ public sealed class DashboardWindow : Window
             .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
             .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
             .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
+            .Register("team.pause", PauseLabel, TogglePause)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, new Hint("Ctrl+E", "commands"), HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
             .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("Esc", "back", Mode.Expanded), () => _expanded is not null)
@@ -128,6 +148,53 @@ public sealed class DashboardWindow : Window
     }
 
     private bool HasApp() => App is not null;
+
+    /// <summary>The team the pause command acts on: the selected agent's, or the first one's.</summary>
+    private AgentPane? Target() => Selected() ?? _panes.FirstOrDefault();
+
+    private string PauseLabel() =>
+        Target() is { } pane ? $"{(pane.Paused ? "Resume" : "Pause")} {pane.Team}" : "Pause a team";
+
+    private void TogglePause()
+    {
+        if (_pending is not null || Target() is not { } pane)
+            return;
+        Say(pane.Paused ? "Resuming…" : "Pausing…", Schemes.Accent);
+        _pending = _run(pane.Paused ? "resume" : "pause", pane.Team);
+    }
+
+    /// <summary>Picked up by the next refresh, so a command runs off the draw loop and reports back on it.</summary>
+    private void Settle()
+    {
+        if (_pending is not { IsCompleted: true } finished)
+            return;
+        _pending = null;
+        var failure = finished.Status == TaskStatus.RanToCompletion
+            ? finished.Result
+            : finished.Exception?.GetBaseException().Message ?? "the command didn't finish";
+        if (failure is { Length: > 0 })
+            Say(failure, Schemes.Error);
+        else
+            Hush();
+    }
+
+    private void Say(string message, Schemes scheme)
+    {
+        _message.Show(message, scheme);
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private void Hush()
+    {
+        if (_message.Lines == 0)
+            return;
+        _message.Clear();
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private int Foot() => DispatchLines + 2 + _message.Lines;
 
     private void OpenCommands()
     {

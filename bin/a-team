@@ -46,6 +46,8 @@ usage: a-team <command> [args...]
   dispatch [--dry-run]                    start any agent that has work (launchd runs this)
   install [--dry-run | --uninstall]       run the dispatcher every 2 minutes on this Mac
   status                                  what each agent is doing, and its last run
+  pause [--dry-run] <team>                stop the dispatcher starting that team's agents
+  resume [--dry-run] <team>               start them again
   dashboard [team...]                     terminal dashboard of the teams
   run <team> <role>                       print the brief a run starts from
   task-prompt <team> <role>               print a role's scheduled prompt
@@ -64,6 +66,8 @@ shift
 case "$command" in
   board | dispatch | install | status | dashboard | run | task-prompt)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
+  pause | resume)
+    exec bash "$ROOT/scripts/pause.sh" "$command" "$@" ;;
   teams)
     source "$ROOT/scripts/common.sh"
     for team in $(team_names); do

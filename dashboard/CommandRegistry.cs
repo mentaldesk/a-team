@@ -21,11 +21,21 @@ public sealed class CommandRegistry
     private readonly List<Entry> _entries = [];
 
     public IReadOnlyList<CommandDescriptor> Registered =>
-        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label, entry.Key, entry.Hint))];
+        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.Hint))];
 
     public CommandRegistry Register(
         string id,
         string label,
+        Action handler,
+        Key? key = null,
+        Hint? hint = null,
+        Func<bool>? isEnabled = null) =>
+        Register(id, () => label, handler, key, hint, isEnabled);
+
+    /// <summary>A command whose label depends on what it would do now, like pausing the selected team.</summary>
+    public CommandRegistry Register(
+        string id,
+        Func<string> label,
         Action handler,
         Key? key = null,
         Hint? hint = null,
@@ -63,5 +73,5 @@ public sealed class CommandRegistry
         .Distinct()
         .Select(hint => $"{hint.Keys}: {hint.Text}"));
 
-    private sealed record Entry(string Id, string Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled);
+    private sealed record Entry(string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled);
 }
