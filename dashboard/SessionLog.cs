@@ -3,6 +3,14 @@ using System.Text.Json;
 
 namespace ATeam.Dashboard;
 
+/// <summary>How a session's last run ended, as its final result event reported it.</summary>
+public enum RunVerdict
+{
+    None,
+    Ok,
+    Error,
+}
+
 /// <summary>Follows a session's stream-json log and turns its events into readable lines.</summary>
 public sealed class SessionLog
 {
@@ -14,6 +22,9 @@ public sealed class SessionLog
 
     public IReadOnlyList<LogLine> Lines => _lines;
 
+    /// <summary>The last result event's verdict, kept even once that line has been trimmed out of <see cref="Lines"/>.</summary>
+    public RunVerdict Verdict { get; private set; }
+
     /// <summary>Reads anything new. Returns true if the lines changed.</summary>
     public bool Refresh(string? path)
     {
@@ -23,6 +34,7 @@ public sealed class SessionLog
             _offset = 0;
             _partial = "";
             _lines.Clear();
+            Verdict = RunVerdict.None;
             if (path is null)
                 return true;
         }
@@ -48,8 +60,16 @@ public sealed class SessionLog
         if (end < 0)
             return false;
 
-        foreach (var line in text[..end].Split('\n', StringSplitOptions.RemoveEmptyEntries))
-            _lines.AddRange(Render(line));
+        foreach (var rendered in text[..end].Split('\n', StringSplitOptions.RemoveEmptyEntries).SelectMany(Render))
+        {
+            Verdict = rendered.Kind switch
+            {
+                LogLineKind.ResultOk => RunVerdict.Ok,
+                LogLineKind.ResultError => RunVerdict.Error,
+                _ => Verdict,
+            };
+            _lines.Add(rendered);
+        }
         if (_lines.Count > MaxLines)
             _lines.RemoveRange(0, _lines.Count - MaxLines);
         return true;
