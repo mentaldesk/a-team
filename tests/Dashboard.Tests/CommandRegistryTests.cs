@@ -92,11 +92,13 @@ public class CommandRegistryTests
     }
 
     [Fact]
-    public void A_hint_whose_commands_have_no_key_falls_back_to_the_keys_it_names()
+    public void A_hint_whose_commands_have_no_key_has_nothing_to_name_and_is_left_out()
     {
-        var commands = new CommandRegistry().Register("quit", "Quit", () => { }, hint: new Hint("quit", Keys: "Esc"));
+        var commands = new CommandRegistry()
+            .Register("quit", "Quit", () => { }, hint: new Hint("quit"))
+            .Register("help", "Help", () => { }, Key.F1, new Hint("help"));
 
-        Assert.Equal("Esc: quit", commands.Hints(Mode.Grid));
+        Assert.Equal("F1: help", commands.Hints(Mode.Grid));
     }
 
     [Fact]

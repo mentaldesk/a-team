@@ -250,12 +250,13 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Esc_with_nothing_expanded_is_left_alone_so_it_still_quits()
+    public void Esc_with_nothing_expanded_does_nothing_and_q_is_the_way_out()
     {
         using var window = Open(agents: Agents(4));
         window.NewKeyDownEvent(Key.Tab);
 
         Assert.False(window.NewKeyDownEvent(Key.Esc));
+        Assert.True(window.NewKeyDownEvent(new Key('q')));
     }
 
     [Fact]
@@ -324,10 +325,10 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(4));
 
         Assert.Equal(
-            "a-team 1.2.3 · Enter: expand · Ctrl+E: commands · F1: help · Esc: quit",
+            "a-team 1.2.3 · Enter: expand · Ctrl+E: commands · F1: help · q: quit",
             DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · PgUp/PgDn: scroll · F1: help · Esc: back",
+            "a-team 1.2.3 · PgUp/PgDn: scroll · F1: help · Esc: back · q: quit",
             DashboardWindow.Hints("1.2.3", expanded: true, window.Commands));
     }
 
@@ -448,10 +449,11 @@ public class DashboardWindowTests : IDisposable
         window.NewKeyDownEvent(Key.Tab);
 
         window.NewKeyDownEvent(Key.Enter);
-        Assert.EndsWith("Esc: back", window.Title);
+        Assert.Contains("Esc: back", window.Title);
 
         window.NewKeyDownEvent(Key.Esc);
-        Assert.EndsWith("Esc: quit", window.Title);
+        Assert.DoesNotContain("Esc: back", window.Title);
+        Assert.Contains("Enter: expand", window.Title);
     }
 
     [Fact]

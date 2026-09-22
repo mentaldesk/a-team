@@ -15,7 +15,8 @@ public sealed class HelpDialog : Dialog
         ("expand the selected agent", ["agent.expand"]),
         ("scroll the log", ["log.pageUp", "log.pageDown"]),
         ("settings", ["settings"]),
-        ("back, or quit", ["agent.collapse"]),
+        ("back to the grid", ["agent.collapse"]),
+        ("quit", ["quit"]),
     ];
 
     private const string HintText = "Esc close";

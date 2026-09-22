@@ -134,8 +134,8 @@ call showing. Enter on a shortcut row takes the next key you press; a key anothe
 holds is refused, naming the one that holds it. Ctrl+Enter keeps what's picked on any page, Esc
 discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
 what the dashboard comes up in next time, with t still folding and unfolding a pane for the
-session. Esc goes back to the grid from an expanded agent, and quits the dashboard when there
-isn't one.
+session. Esc goes back to the grid from an expanded agent and does nothing when there isn't one;
+q quits the dashboard, from either view.
 
 Keys can be set by hand in that file too, which is the way out of a key your terminal or
 multiplexer swallows. A `keys` object maps a command's id — the ones Ctrl+E lists — to a key

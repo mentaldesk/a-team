@@ -145,7 +145,7 @@ public sealed class DashboardWindow : Window
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
             .Register("help", "Help", OpenHelp, Key.F1, new Hint("help"), HasApp)
             .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded), () => _expanded is not null)
-            .Register("quit", "Quit", () => App?.RequestStop(), hint: new Hint("quit", Mode.Grid, Keys: "Esc"));
+            .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'), new Hint("quit"));
     }
 
     private bool HasApp() => App is not null;
