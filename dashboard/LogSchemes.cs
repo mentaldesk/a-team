@@ -8,6 +8,7 @@ namespace ATeam.Dashboard;
 public static class LogSchemes
 {
     public const string Success = "Success";
+    public const string Dimmed = "Dimmed";
 
     public static void Register()
     {
@@ -15,6 +16,10 @@ public static class LogSchemes
         SchemeManager.AddScheme(Success, baseScheme with
         {
             Normal = new Attribute(StandardColor.Green, baseScheme.Normal.Background),
+        });
+        SchemeManager.AddScheme(Dimmed, baseScheme with
+        {
+            Normal = baseScheme.GetAttributeForRole(VisualRole.Disabled),
         });
     }
 }

@@ -1,15 +1,36 @@
+using Terminal.Gui.Configuration;
+using Terminal.Gui.Drawing;
+
 namespace ATeam.Dashboard;
 
-/// <summary>One agent: running or idle and its timing, why it last started, and a tail of its latest session.</summary>
+/// <summary>What a pane says about its agent: the state its title glyph and colour come from.</summary>
+public enum PaneStatus
+{
+    NeverRun,
+    Ok,
+    Failed,
+    CutShort,
+    Running,
+    Paused,
+}
+
+/// <summary>The scheme each part of a pane draws from.</summary>
+public readonly record struct PaneSchemes(string Frame, string Status, string Why, string Body);
+
+/// <summary>One agent: how its last run went and its timing, why it last started, and a tail of its latest session.</summary>
 public sealed class AgentPane : FrameView
 {
+    private const string Stopped = "dispatcher not running";
+    private static readonly string BaseScheme = SchemeManager.SchemesToSchemeName(Schemes.Base)!;
+    private static readonly string ErrorScheme = SchemeManager.SchemesToSchemeName(Schemes.Error)!;
+
     private readonly string _stateDir;
     private readonly string _name;
     private readonly SessionLog _log = new();
-    private readonly Label _status;
+    private readonly Label _statusRow;
     private readonly Label _why;
     private readonly LogView _body;
-    private bool _running;
+    private PaneStatus _status = PaneStatus.NeverRun;
     private string _timing = "";
 
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
@@ -18,10 +39,10 @@ public sealed class AgentPane : FrameView
         _name = $"{team} · {role}";
         _stateDir = stateDir;
         CanFocus = true;
-        _status = new Label { X = 0, Y = 0, Width = Dim.Fill() };
+        _statusRow = new Label { X = 0, Y = 0, Width = Dim.Fill() };
         _why = new Label { X = 0, Y = 1, Width = Dim.Fill() };
         _body = new LogView { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(), Expanded = expandToolCalls };
-        Add(_status, _why, _body);
+        Add(_statusRow, _why, _body);
         HasFocusChanged += (_, _) => UpdateHeader();
         UpdateHeader();
     }
@@ -59,41 +80,84 @@ public sealed class AgentPane : FrameView
     public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck, bool paused)
     {
         var state = AgentState.Read(_stateDir);
-        _running = state.Running;
         Paused = paused;
-        _timing = Describe(state, now, nextCheck, paused);
-        UpdateHeader();
-
-        var why = state.Reasons.Count == 0 ? "" : "why: " + string.Join("; ", state.Reasons);
-        if (_why.Text != why)
-            _why.Text = why;
 
         if (_log.Refresh(state.LogPath))
             _body.Lines = _log.Lines.Count == 0
                 ? [new LogLine("(no session yet)", LogLineKind.Prose)]
                 : [.. _log.Lines];
+
+        _status = Status(state, paused, _log.Verdict);
+        _timing = Describe(state, now, nextCheck, _status);
+        UpdateHeader();
+
+        var why = state.Reasons.Count == 0 ? "" : "why: " + string.Join("; ", state.Reasons);
+        if (_why.Text != why)
+            _why.Text = why;
     }
 
     private void UpdateHeader()
     {
-        var title = Header(_name, HasFocus, _running, Paused, _body.Following, _body.Expanded);
+        var title = Header(_name, HasFocus, _status, _body.Following, _body.Expanded);
         if (Title != title)
             Title = title;
-        if (_status.Text != _timing)
-            _status.Text = _timing;
+        if (_statusRow.Text != _timing)
+            _statusRow.Text = _timing;
+
+        var schemes = SchemesFor(_status, _timing);
+        Use(this, schemes.Frame);
+        Use(_statusRow, schemes.Status);
+        Use(_why, schemes.Why);
+        Use(_body, schemes.Body);
     }
 
-    internal static string Header(string name, bool selected, bool running, bool paused, bool following, bool expanded) =>
-        $"{(selected ? "▶ " : "")}{Glyph(running, paused)} {name}{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}";
+    private static void Use(View view, string scheme)
+    {
+        if (view.SchemeName != scheme)
+            view.SchemeName = scheme;
+    }
 
-    private static string Glyph(bool running, bool paused) => paused ? "⏸" : running ? "●" : "○";
+    /// <summary>Pause wins, then running, then how the last run went.</summary>
+    internal static PaneStatus Status(AgentState state, bool paused, RunVerdict verdict) =>
+        paused ? PaneStatus.Paused
+            : state.Running ? PaneStatus.Running
+            : verdict switch
+            {
+                RunVerdict.Ok => PaneStatus.Ok,
+                RunVerdict.Error => PaneStatus.Failed,
+                _ => state.LastStart is null ? PaneStatus.NeverRun : PaneStatus.CutShort,
+            };
 
-    internal static string Describe(AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck, bool paused)
+    internal static string Header(string name, bool selected, PaneStatus status, bool following, bool expanded) =>
+        $"{(selected ? "▶ " : "")}{Glyph(status)} {name}{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}";
+
+    /// <summary>A failed run reddens the frame and the status row; only the body is never red.</summary>
+    internal static PaneSchemes SchemesFor(PaneStatus status, string timing)
+    {
+        var failed = status is PaneStatus.Failed or PaneStatus.CutShort;
+        return new PaneSchemes(
+            failed ? ErrorScheme : BaseScheme,
+            failed || timing.EndsWith(Stopped, StringComparison.Ordinal) ? ErrorScheme : BaseScheme,
+            LogSchemes.Dimmed,
+            BaseScheme);
+    }
+
+    private static string Glyph(PaneStatus status) => status switch
+    {
+        PaneStatus.Paused => "⏸",
+        PaneStatus.Running => "●",
+        PaneStatus.Ok => "✓",
+        PaneStatus.Failed or PaneStatus.CutShort => "✗",
+        _ => "○",
+    };
+
+    internal static string Describe(AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck, PaneStatus status)
     {
         if (state.Running)
             return state.LastStart is { } started ? $"running {Clock(now - started)}" : "running";
         var ran = state.LastStart is { } last ? $"ran {Ago(now - last)} ago" : "never run";
-        return $"{ran} · {(paused ? "paused" : NextCheck(now, nextCheck))}";
+        var cut = status == PaneStatus.CutShort ? " · cut short" : "";
+        return $"{ran}{cut} · {(status == PaneStatus.Paused ? "paused" : NextCheck(now, nextCheck))}";
     }
 
     private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck) => nextCheck switch
@@ -101,7 +165,7 @@ public sealed class AgentPane : FrameView
         null => "dispatcher hasn't run",
         { } next when next - now >= TimeSpan.Zero => $"next check {Clock(next - now)}",
         { } next when now - next < TimeSpan.FromMinutes(1) => "checking now",
-        _ => "dispatcher not running",
+        _ => Stopped,
     };
 
     private static string Clock(TimeSpan span) => span.TotalHours >= 1

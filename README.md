@@ -115,9 +115,11 @@ keep that folder in a repo of your own and link it into place.
 a-team dashboard [team...]
 ```
 
-One pane per agent. The title shows whether it's running (●), idle (○) or paused (⏸). Under it:
-how long the current run has been going, or when it last ran and the countdown to the dispatcher's
-next check; then why it was last started; then its latest session as it happens (what it said, the
+One pane per agent. The title shows whether it's running (●) or paused (⏸), and when it's neither,
+how its last run went: ✓ clean, ✗ failed, ○ never run. A failed run draws the pane's border, title
+and status row in the error colour until the next run clears it. Under the title: how long the
+current run has been going, or when it last ran and the countdown to the dispatcher's next check;
+then why it was last started; then its latest session as it happens (what it said, the
 tools it called, any errors and how the run finished). The strip along the bottom is the
 dispatcher's recent decisions. With no arguments it shows every configured team, paused or not.
 
