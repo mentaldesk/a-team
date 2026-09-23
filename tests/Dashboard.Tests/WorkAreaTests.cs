@@ -191,6 +191,39 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void The_arrows_reach_every_column_and_every_lane()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.Equal("Review · team0", window.Message.Text);
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal("Review · team1", window.Message.Text);
+
+        window.NewKeyDownEvent(Key.CursorLeft);
+        Assert.Equal(133, window.Work.Selected?.Number);
+        Assert.Equal("Pitches · team1", window.Message.Text);
+    }
+
+    [Fact]
+    public void Enter_opens_a_card_the_arrows_moved_to()
+    {
+        var opened = new List<string>();
+        using var window = Open(openUrl: opened.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal(["https://github.com/mentaldesk/team0/issues/49"], opened);
+    }
+
+    [Fact]
     public void The_work_area_fills_the_window_under_the_menu()
     {
         using var window = Open();

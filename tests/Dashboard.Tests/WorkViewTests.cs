@@ -94,6 +94,107 @@ public class WorkViewTests
         Assert.Null(view.Selected);
     }
 
+    [Fact]
+    public void Right_and_left_step_between_the_columns_of_a_lane()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+
+        view.MoveColumn(+1);
+
+        Assert.Equal("Review · a-team", view.Region);
+        Assert.Equal(49, view.Selected?.Number);
+
+        view.MoveColumn(-1);
+
+        Assert.Equal("Pitches · a-team", view.Region);
+        Assert.Equal(107, view.Selected?.Number);
+    }
+
+    [Fact]
+    public void A_lane_has_no_column_past_its_edges()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+
+        view.MoveColumn(-1);
+        Assert.Equal("Pitches · a-team", view.Region);
+
+        view.MoveColumn(+1);
+        view.MoveColumn(+1);
+        Assert.Equal("Review · a-team", view.Region);
+    }
+
+    [Fact]
+    public void An_empty_column_can_still_be_reached()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveCard(+1);
+        view.MoveCard(+1);
+
+        view.MoveColumn(+1);
+
+        Assert.Equal("Review · tuicode", view.Region);
+        Assert.Null(view.Selected);
+    }
+
+    [Fact]
+    public void Down_walks_a_columns_cards_and_then_the_next_lanes()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+
+        view.MoveCard(+1);
+        Assert.Equal(108, view.Selected?.Number);
+
+        view.MoveCard(+1);
+        Assert.Equal("Pitches · tuicode", view.Region);
+        Assert.Equal(133, view.Selected?.Number);
+
+        view.MoveCard(+1);
+        Assert.Equal(133, view.Selected?.Number);
+    }
+
+    [Fact]
+    public void Up_from_the_first_card_lands_on_the_last_of_the_lane_above()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveCard(+1);
+        view.MoveCard(+1);
+
+        view.MoveCard(-1);
+
+        Assert.Equal("Pitches · a-team", view.Region);
+        Assert.Equal(108, view.Selected?.Number);
+    }
+
+    [Fact]
+    public void A_card_below_the_window_is_scrolled_into_view()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 8);
+        view.FocusFirstCard();
+
+        view.MoveCard(+1);
+        view.MoveCard(+1);
+
+        Assert.Equal("Pitches · tuicode", view.Region);
+        Assert.True(view.Viewport.Y > 0);
+    }
+
     [Theory]
     [InlineData(41, "#107  When the dashboard goes quiet, I c…")]
     [InlineData(53, "#107  When the dashboard goes quiet, I can't tell why")]

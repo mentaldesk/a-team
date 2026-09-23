@@ -58,6 +58,35 @@ public sealed class WorkView : View
         ShowFocus();
     }
 
+    /// <summary>Left and right step between the columns of a lane, stopping at its edges.</summary>
+    internal void MoveColumn(int step)
+    {
+        if (At() is not { } at)
+        {
+            FocusFirstCard();
+            return;
+        }
+        Land(at.Lane, Math.Clamp(at.Gate + step, 0, _lanes[at.Lane].Columns.Count - 1), 0);
+    }
+
+    /// <summary>Up and down walk a column's cards, then carry on into the same column of the lane above or below.</summary>
+    internal void MoveCard(int step)
+    {
+        if (At() is not { } at)
+        {
+            FocusFirstCard();
+            return;
+        }
+        if (_lanes[at.Lane].Columns[at.Gate].MoveSelection(step))
+        {
+            ScrollIntoView(at.Lane, at.Gate);
+            return;
+        }
+        var lane = at.Lane + step;
+        if (lane >= 0 && lane < _lanes.Count)
+            Land(lane, at.Gate, step);
+    }
+
     private void FocusMoved()
     {
         ShowFocus();
@@ -69,6 +98,37 @@ public sealed class WorkView : View
         var focused = FocusedColumn();
         foreach (var column in _lanes.SelectMany(lane => lane.Columns))
             column.ShowFocus(column == focused);
+    }
+
+    /// <summary>Lands on a column: coming from above on its first card, from below on its last.</summary>
+    private void Land(int lane, int gate, int step)
+    {
+        var column = _lanes[lane].Columns[gate];
+        column.FocusCards(step switch { > 0 => 0, < 0 => column.Count - 1, _ => null });
+        ScrollIntoView(lane, gate);
+    }
+
+    /// <summary>The card the keyboard is on has to be in the part of the lanes the window shows.</summary>
+    private void ScrollIntoView(int lane, int gate)
+    {
+        var column = _lanes[lane].Columns[gate];
+        var row = _lanes[lane].Frame.Y + column.Frame.Y + column.Row;
+        if (row < Viewport.Y)
+            Viewport = Viewport with { Y = row };
+        else if (row >= Viewport.Y + Viewport.Height)
+            Viewport = Viewport with { Y = row - Viewport.Height + 1 };
+    }
+
+    /// <summary>Which lane and which of its columns focus is in.</summary>
+    private (int Lane, int Gate)? At()
+    {
+        if (FocusedColumn() is not { } focused)
+            return null;
+        for (var lane = 0; lane < _lanes.Count; lane++)
+            for (var gate = 0; gate < _lanes[lane].Columns.Count; gate++)
+                if (_lanes[lane].Columns[gate] == focused)
+                    return (lane, gate);
+        return null;
     }
 
     private WorkColumn? FocusedColumn() =>
@@ -199,7 +259,25 @@ public sealed class WorkColumn : FrameView
 
     internal bool Holds(View view) => view == _cards || view == this;
 
-    internal void FocusCards() => _cards.SetFocus();
+    /// <summary>The row the selected card is drawn on, inside the frame.</summary>
+    internal int Row => (_cards.SelectedItem ?? 0) + 1;
+
+    /// <summary>Moves the selection a card on, or reports that the column has no card that way.</summary>
+    internal bool MoveSelection(int step)
+    {
+        var index = (_cards.SelectedItem ?? 0) + step;
+        if (index < 0 || index >= _items.Count)
+            return false;
+        _cards.SelectedItem = index;
+        return true;
+    }
+
+    internal void FocusCards(int? select = null)
+    {
+        if (select is { } index && _items.Count > 0)
+            _cards.SelectedItem = Math.Clamp(index, 0, _items.Count - 1);
+        _cards.SetFocus();
+    }
 
     internal static string Heading(string gate, int count) => $"{gate} · {count}";
 
