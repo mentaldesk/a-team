@@ -306,9 +306,9 @@ turns() {
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
       | if $asked != ""
         then . + {turn: $role, reason: "answering your feedback\(since($asked))"}
-        else . + {turn: "you",
-                  reason: "awaiting your \(if .status == "Pitched" then "approval" else "acceptance" end)"
-                          + since(if $said != "" then $said else $opened end)}
+        else (if $said != "" then $said else $opened end) as $waited
+             | (if .status == "Pitched" then "approval" else "acceptance" end) as $for
+             | . + {turn: "you", reason: "awaiting your \($for)\(since($waited))"}
         end)'
 }
 
