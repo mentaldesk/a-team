@@ -128,18 +128,39 @@ gh_items() {
                 issueDependenciesSummary: {blockedBy: 0}}})
     | {data: {organization: {projectV2: {items: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: .}}}}}' \
     >"$ITEMS"
+  TALK="$BIN/talk.json"
+  echo '{"data": {"repository": {}}}' >"$TALK"
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
-cat "$ITEMS"
+if printf '%s\\n' "\$@" | grep -q issueOrPullRequest; then cat "$TALK"; else cat "$ITEMS"; fi
 SH
   chmod +x "$BIN/gh"
   PATH="$BIN:$PATH"
 }
 
-case_ "waiting returns what's at a gate, and nothing else, in one call"
+# The one GraphQL page `waiting` reads for whose turn it is, from lines of
+# "<n> body|comment <timestamp> <author> <text...>". The body line is the item's own.
+gh_talk() {
+  jq -R -s '
+    split("\n") | map(select(length > 0)) | map(split(" ") as $f
+      | {n: ($f[0] | tonumber), kind: $f[1], at: $f[2], author: $f[3], body: ($f[4:] | join(" "))})
+    | group_by(.n) | map((map(select(.kind == "body")) | first) as $body | {
+        key: "x\(.[0].n)",
+        value: {number: .[0].n, createdAt: $body.at, body: ($body.body // ""),
+                author: {login: ($body.author // "")},
+                comments: {nodes: map(select(.kind == "comment")
+                  | {createdAt: .at, body: .body, author: {login: .author}})}}})
+    | from_entries | {data: {repository: .}}' >"$TALK"
+}
+
+# Times read in the reviewer's own zone, so these cases pin one they can predict.
+export TZ=UTC
+TODAY=$(jq -rn 'now | strftime("%Y-%m-%d")')
+
+case_ "waiting returns what's at a gate, and nothing else, in two calls"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 gh_items <<'ITEMS'
 Pitched 106 Both gates are mine
@@ -147,23 +168,76 @@ In_review 115 I can change any of the keys
 Ready 128 Everything waiting on me
 Done 99 Already merged
 ITEMS
+gh_talk <<TALK
+106 body 2025-09-19T08:14:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:14:00Z reviewer The task <!-- a-team:lead -->
+TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "numbers" '[106,115]' "$(jq -c '[.[].number]' "$OUT")"
 same "statuses" '["Pitched","In review"]' "$(jq -c '[.[].status]' "$OUT")"
-same "fields" '["number","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "fields" '["number","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "title" '"Both gates are mine"' "$(jq -c '.[0].title' "$OUT")"
 same "url" '"https://github.com/mentaldesk/demo/issues/106"' "$(jq -c '.[0].url' "$OUT")"
 same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
-same "api calls" 1 "$(grep -c '' <"$CALLS")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
 
-case_ "a team with nothing at a gate waits on nothing"
+case_ "a gate nobody has answered is the reviewer's, since the item was opened"
+same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
+same "pitch reason" '"awaiting your approval since 19 Sep 08:14"' "$(jq -c '.[0].reason' "$OUT")"
+same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"awaiting your acceptance since 08:14"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a reviewer comment since the role last spoke makes it the role's turn"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+106 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 comment ${TODAY}T08:30:00Z reviewer Draft PR #9 is up. <!-- a-team:dev -->
+115 comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "pitch turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
+same "pitch reason" '"answering your feedback since 09:30"' "$(jq -c '.[0].reason' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a role that has answered since hands the gate back"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+106 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+106 comment ${TODAY}T11:00:00Z reviewer Redrafted. <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+115 comment ${TODAY}T11:45:00Z reviewer Added one. <!-- a-team:dev -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
+same "pitch reason" '"awaiting your approval since 11:00"' "$(jq -c '.[0].reason' "$OUT")"
+same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"awaiting your acceptance since 11:45"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a comment from anyone but the reviewer is nobody's turn"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+106 comment ${TODAY}T09:30:00Z passer-by Have you considered doing it differently?
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 comment ${TODAY}T09:30:00Z passer-by This looks wrong to me.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "turns" '["you","you"]' "$(jq -c '[.[].turn]' "$OUT")"
+
+case_ "a team with nothing at a gate waits on nothing, and asks nobody whose turn it is"
 gh_items <<'ITEMS'
 Ready 128 Everything waiting on me
 ITEMS
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
+same "api calls" 1 "$(grep -c '' <"$CALLS")"
 
 case_ "a-team with no command opens the app, and dashboard opens it on the Dashboard"
 APP=$(mktemp -d "$WORK/app.XXXXXX")

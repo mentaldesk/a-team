@@ -126,11 +126,18 @@ in is what it opens in next time; a first run lands on Work.
 
 A swimlane per team, and two columns in each: **Pitches** (waiting for you to approve) and
 **Review** (waiting for you to merge or accept), each headed by its count. Enter opens the selected
-card's issue in your browser. The card list is read when the area opens and when you press `r`,
-never on a timer, so an app left open overnight costs nothing against the rate limit the agents
-share; the header says how long ago it read, and the line at the foot names the column you're in.
-A read that fails — offline, rate-limited — says so there in red and leaves the cards and that
-stamp exactly as they were.
+card's issue in your browser.
+
+A gated column doesn't mean it's your turn: a card the Lead or the Dev owes you an answer on names
+that role in front of its title, and the line at the foot says why — `#118 · lead · answering your
+feedback since 08:14`. It's theirs from the moment you comment until they answer, which is the same
+test the dispatcher makes when it decides what to start a run for. `m` hides everything that isn't
+your move and `m` again brings it back; the counts follow, and it opens the way you left it.
+
+The card list is read when the area opens and when you press `r`, never on a timer, so an app left
+open overnight costs nothing against the rate limit the agents share; the header says how long ago
+it read. A read that fails — offline, rate-limited — says so at the foot in red and leaves the
+cards and that stamp exactly as they were.
 
 ### Watching the team
 

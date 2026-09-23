@@ -6,6 +6,7 @@ using Terminal.Gui.Input;
 namespace ATeam.Dashboard.Tests;
 
 /// <summary>The window with the Work area in front: what it reads, when, and what a key does there.</summary>
+[Collection("StaticConfiguration")]
 public class WorkAreaTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"a-team-{Guid.NewGuid():n}");
@@ -37,7 +38,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Focus_starts_on_the_first_card_and_the_message_bar_names_the_region_it_is_in()
+    public void Focus_starts_on_the_first_card_and_the_message_bar_says_whose_move_it_is()
     {
         using var window = Open();
 
@@ -45,7 +46,73 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(107, window.Work.Selected?.Number);
-        Assert.Equal("Pitches · team0", window.Message.Text);
+        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Text);
+    }
+
+    [Fact]
+    public void The_message_bar_follows_the_selection()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Text);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal("#49 · dev · answering your feedback since 10:15", window.Message.Text);
+    }
+
+    [Fact]
+    public void A_column_with_no_card_to_describe_names_the_region_instead()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.Null(window.Work.Selected);
+        Assert.Equal("Review · team1", window.Message.Text);
+    }
+
+    [Fact]
+    public void m_hides_every_card_that_isn_t_yours_and_m_again_brings_them_back()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(new Key('m')));
+        LayOut(window, 120, 30);
+
+        Assert.Equal(["Pitches · 1", "Review · 0", "Pitches · 1", "Review · 0"], Titles(window));
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        window.NewKeyDownEvent(new Key('m'));
+        LayOut(window, 120, 30);
+
+        Assert.Equal(["Pitches · 2", "Review · 1", "Pitches · 1", "Review · 0"], Titles(window));
+    }
+
+    [Fact]
+    public void Whether_only_mine_is_on_is_what_the_app_opens_with_next_time()
+    {
+        using (var window = Open())
+        {
+            window.Refresh();
+            window.NewKeyDownEvent(new Key('m'));
+        }
+
+        Assert.True(new DashboardSettings(Config).ReadOnlyMine());
+
+        using var reopened = Open();
+        reopened.Refresh();
+        LayOut(reopened, 120, 30);
+
+        Assert.True(reopened.Work.OnlyMine);
+        Assert.Equal(["Pitches · 1", "Review · 0", "Pitches · 1", "Review · 0"], Titles(reopened));
     }
 
     [Fact]
@@ -199,14 +266,14 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(49, window.Work.Selected?.Number);
-        Assert.Equal("Review · team0", window.Message.Text);
+        Assert.Equal("Review · team0", window.Work.Region);
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("Review · team1", window.Message.Text);
+        Assert.Equal("Review · team1", window.Work.Region);
 
         window.NewKeyDownEvent(Key.CursorLeft);
         Assert.Equal(133, window.Work.Selected?.Number);
-        Assert.Equal("Pitches · team1", window.Message.Text);
+        Assert.Equal("Pitches · team1", window.Work.Region);
     }
 
     [Fact]
@@ -280,19 +347,24 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("Resume team0", window.MenuItems.Single(item => item.Id == "team.pause").Item.Title);
     }
 
-    /// <summary>Two gated items for the first team and one for the second, so a column comes back empty.</summary>
+    /// <summary>Two gated items for the first team and one for the second, so a column comes back empty.
+    /// One of the first team's is the Lead's move, so the filter has something to hide.</summary>
     private static string Gated(string team) => team == "team0"
         ? """
           [{"number": 107, "title": "When the dashboard goes quiet", "status": "Pitched",
-            "url": "https://github.com/mentaldesk/team0/issues/107", "team": "team0"},
+            "url": "https://github.com/mentaldesk/team0/issues/107", "team": "team0",
+            "turn": "you", "reason": "awaiting your approval since 08:14"},
            {"number": 108, "title": "A misconfigured team looks like a working one", "status": "Pitched",
-            "url": "https://github.com/mentaldesk/team0/issues/108", "team": "team0"},
+            "url": "https://github.com/mentaldesk/team0/issues/108", "team": "team0",
+            "turn": "lead", "reason": "answering your feedback since 09:30"},
            {"number": 49, "title": "I can't change any of the keys", "status": "In review",
-            "url": "https://github.com/mentaldesk/team0/issues/49", "team": "team0"}]
+            "url": "https://github.com/mentaldesk/team0/issues/49", "team": "team0",
+            "turn": "dev", "reason": "answering your feedback since 10:15"}]
           """
         : """
           [{"number": 133, "title": "Notice when open files change on disk", "status": "Pitched",
-            "url": "https://github.com/mentaldesk/team1/issues/133", "team": "team1"}]
+            "url": "https://github.com/mentaldesk/team1/issues/133", "team": "team1",
+            "turn": "you", "reason": "awaiting your approval since 21:37"}]
           """;
 
     private static IEnumerable<string> Titles(DashboardWindow window) =>

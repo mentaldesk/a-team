@@ -45,6 +45,15 @@ public sealed class DashboardSettings
 
     public void WriteArea(Area area) => Write("area", writer => writer.WriteStringValue(area.ToString()));
 
+    /// <summary>Whether Work opens showing only what's the reviewer's move. Off unless the file says otherwise.</summary>
+    public bool ReadOnlyMine()
+    {
+        using var file = Parse();
+        return Setting(file, "onlyMine") is { ValueKind: JsonValueKind.True };
+    }
+
+    public void WriteOnlyMine(bool onlyMine) => Write("onlyMine", writer => writer.WriteBooleanValue(onlyMine));
+
     /// <summary>Whether panes start with every tool call showing. Off unless the file says otherwise.</summary>
     public bool ReadExpandToolCalls()
     {

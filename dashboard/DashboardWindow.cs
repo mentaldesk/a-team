@@ -119,6 +119,7 @@ public sealed class DashboardWindow : Window
             Visible = area == Area.Work,
         };
         _work.FocusChanged += ShowMessage;
+        _work.ShowOnlyMine(settings.ReadOnlyMine());
         Add(_work);
 
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
@@ -224,6 +225,7 @@ public sealed class DashboardWindow : Window
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
             .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
             .Register("work.open", "Open the selected issue on GitHub", OpenIssue, Key.Enter, new Hint("open issue", Mode.Work), () => OnWork() && _work.Selected is not null)
+            .Register("work.mine", "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork)
             .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
@@ -267,6 +269,15 @@ public sealed class DashboardWindow : Window
     {
         _reading ??= Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
         ShowMessage();
+    }
+
+    private void ToggleOnlyMine()
+    {
+        _work.ShowOnlyMine(!_work.OnlyMine);
+        _settings.WriteOnlyMine(_work.OnlyMine);
+        ShowMessage();
+        SetNeedsLayout();
+        SetNeedsDraw();
     }
 
     private void OpenIssue()
@@ -314,6 +325,7 @@ public sealed class DashboardWindow : Window
             _failure is { Length: > 0 } ? (_failure, Schemes.Error)
             : _reading is not null ? ("Reading…", Schemes.Accent)
             : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
+            : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : ("", Schemes.Base);
         if (_message.Text == text)
