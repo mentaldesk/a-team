@@ -586,6 +586,69 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void Every_dispatcher_line_gets_one_row_of_its_own_coloured_by_what_it_says()
+    {
+        WriteDispatchLog(
+            "2026-09-20T16:53:09Z a-team lead: would start: 3 Ideas to shape",
+            "2026-09-20T17:01:17Z tuicode dev: triggers failed: gh: Not Found (HTTP 404)",
+            "2026-09-20T17:04:02Z tuicode dev: started 41234: 1 task Ready");
+        using var window = Open(agents: Agents(4));
+        LayOut(window, 120, 30);
+
+        window.Refresh();
+
+        Assert.Equal(
+            ["16:53 a-team lead: would start: 3 Ideas to shape",
+             "17:01 tuicode dev: triggers failed: gh: Not Found (HTTP 404)",
+             "17:04 tuicode dev: started 41234: 1 task Ready"],
+            window.DispatchLog.Lines.Select(line => line.Text));
+        Assert.Equal(
+            [LogLineKind.DispatchSkipped, LogLineKind.DispatchFailed, LogLineKind.Prose],
+            window.DispatchLog.Lines.Select(line => line.Kind));
+    }
+
+    [Fact]
+    public void The_last_four_lines_fill_four_rows_of_the_panes_width_at_any_size()
+    {
+        WriteDispatchLog([.. Enumerable.Range(1, 6).Select(n =>
+            $"2026-09-20T17:0{n}:17Z tuicode dev: triggers failed: " + new string('x', 400))]);
+        using var window = Open(agents: Agents(4));
+        LayOut(window, 120, 30);
+
+        window.Refresh();
+
+        Assert.Equal(4, window.DispatchLog.Lines.Count);
+        Assert.Equal(116, window.DispatchLog.Viewport.Width);
+        AssertFourRowsOfTheWidth(window);
+
+        LayOut(window, 80, 30);
+        Assert.Equal(76, window.DispatchLog.Viewport.Width);
+        AssertFourRowsOfTheWidth(window);
+    }
+
+    private static void AssertFourRowsOfTheWidth(DashboardWindow window)
+    {
+        var rows = window.DispatchLog.Rows(window.DispatchLog.Viewport.Width);
+        Assert.Equal(4, rows.Count);
+        Assert.All(rows, row => Assert.Equal(window.DispatchLog.Viewport.Width, row.Text.Length));
+    }
+
+    [Fact]
+    public void A_dispatcher_that_has_never_run_says_so_below_a_grid_the_message_bar_still_sits_under()
+    {
+        using var window = Open(agents: Agents(4));
+        LayOut(window, 120, 30);
+
+        window.Refresh();
+
+        var line = Assert.Single(window.DispatchLog.Lines);
+        Assert.Equal("(the dispatcher hasn't run yet)", line.Text);
+        Assert.Equal(LogLineKind.Prose, line.Kind);
+        Assert.Equal(0, window.Message.Lines);
+        Assert.Equal(window.Viewport.Height - 6, window.Dispatcher.Frame.Y);
+    }
+
+    [Fact]
     public void The_dispatcher_strip_does_not_scroll_with_the_grid()
     {
         using var window = Open(agents: Agents(6));
@@ -804,6 +867,12 @@ public class DashboardWindowTests : IDisposable
     }
 
     private string Config => Path.Combine(_root, "config");
+
+    private void WriteDispatchLog(params string[] lines)
+    {
+        Directory.CreateDirectory(_root);
+        File.WriteAllLines(Path.Combine(_root, "dispatch.log"), lines);
+    }
 
     private void WriteTeam(string team, bool enabled)
     {
