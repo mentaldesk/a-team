@@ -120,8 +120,7 @@ and update it if needed.
   than 2. Look inward, at user pain in the repo's issues and discussions, what the product's
   dependencies now make possible, and gaps against the vision. Look outward too, at the
   products the vision learns from: what they've shipped lately, and what their users ask for
-  and complain about. Search for newer ones it doesn't name yet. At least one Idea a turn comes
-  from outside the repo, with a link to the product or its users as evidence. File each as
+  and complain about. Search for newer ones it doesn't name yet. File ideas from outside as
   an opportunity, not a solution: a need, pain point or desire, described from the user's side
   ("I lose my place when I switch between files", not "add a recent files list"). Title it that
   way too. Body: the **Opportunity**, the **Evidence** with links, **Why it fits** the vision,
