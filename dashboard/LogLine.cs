@@ -9,6 +9,8 @@ public enum LogLineKind
     ToolError,
     ResultOk,
     ResultError,
+    DispatchSkipped,
+    DispatchFailed,
 }
 
 /// <summary>One rendered line of a session log, and what it came from.</summary>

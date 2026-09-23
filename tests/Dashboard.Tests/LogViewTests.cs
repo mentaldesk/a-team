@@ -194,6 +194,50 @@ public class LogViewTests
         Assert.Equal(1, LogView.Anchor(expanded, collapsed, 4));
     }
 
+    [Theory]
+    [InlineData(80)]
+    [InlineData(160)]
+    public void A_line_too_long_to_fit_keeps_its_head_and_its_tail(int width)
+    {
+        var line = "17:01 tuicode dev: triggers failed: Get \"https://api.github.com/"
+            + new string('x', 366) + "\": operation timed out";
+        Assert.Equal(452, line.Length);
+
+        var elided = LogView.Elide(line, width);
+
+        Assert.Equal(width, elided.Length);
+        Assert.StartsWith("17:01 tuicode dev: triggers failed:", elided, StringComparison.Ordinal);
+        Assert.EndsWith(": operation timed out", elided, StringComparison.Ordinal);
+        Assert.Contains('…', elided);
+    }
+
+    [Fact]
+    public void A_line_that_already_fits_comes_back_untouched()
+    {
+        const string line = "17:01 a-team lead: would start: 3 Ideas to shape";
+
+        Assert.Equal(line, LogView.Elide(line, 80));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void A_pane_too_narrow_for_even_the_head_is_still_drawn(int width) =>
+        Assert.Equal(Math.Max(0, width), LogView.Elide("17:01 a-team lead: started 41234: 1 task Ready", width).Length);
+
+    [Fact]
+    public void An_eliding_view_gives_every_line_one_row_of_exactly_the_width()
+    {
+        var view = new LogView { Elides = true };
+        view.Lines = [.. Enumerable.Range(1, 4).Select(n => new LogLine(new string((char)('a' + n), 452), LogLineKind.Prose))];
+
+        var rows = view.Rows(80);
+
+        Assert.Equal(4, rows.Count);
+        Assert.All(rows, row => Assert.Equal(80, row.Text.Length));
+    }
+
     private static List<LogLine> Fixture() =>
         File.ReadLines(Path.Combine(AppContext.BaseDirectory, "fixtures", "pane.jsonl"))
             .SelectMany(SessionLog.Render)

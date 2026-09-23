@@ -16,7 +16,7 @@ public sealed class DashboardWindow : Window
     private readonly string _version = Version();
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
-    private readonly TextView _dispatch;
+    private readonly LogView _dispatch;
     private readonly MessageBar _message = new();
     private readonly string _dispatchLog;
     private readonly string _nextPass;
@@ -78,7 +78,7 @@ public sealed class DashboardWindow : Window
             Height = DispatchLines + 2,
             CanFocus = false,
         };
-        _dispatch = new TextView { Width = Dim.Fill(), Height = Dim.Fill(), ReadOnly = true, CanFocus = false };
+        _dispatch = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true };
         _dispatchFrame.Add(_dispatch);
         Add(_dispatchFrame);
 
@@ -94,6 +94,8 @@ public sealed class DashboardWindow : Window
     internal IReadOnlyList<AgentPane> Panes => _panes;
 
     internal View Dispatcher => _dispatchFrame;
+
+    internal LogView DispatchLog => _dispatch;
 
     internal View Agents => _agents;
 
@@ -118,8 +120,8 @@ public sealed class DashboardWindow : Window
             pane.Refresh(now, nextCheck, paused[pane.Team]);
 
         var tail = ReadTail(_dispatchLog, DispatchLines);
-        if (_dispatch.Text != tail)
-            _dispatch.Text = tail;
+        if (!_dispatch.Lines.SequenceEqual(tail))
+            _dispatch.Lines = tail;
     }
 
     protected override bool OnKeyDown(Key key) => _commands.Press(key) || base.OnKeyDown(key);
@@ -344,12 +346,12 @@ public sealed class DashboardWindow : Window
         catch (IOException) { return null; }
     }
 
-    private static string ReadTail(string path, int count)
+    private static IReadOnlyList<LogLine> ReadTail(string path, int count)
     {
         try
         {
-            return string.Join('\n', File.ReadLines(path).TakeLast(count));
+            return [.. File.ReadLines(path).TakeLast(count).Select(DispatchLine.Read)];
         }
-        catch (IOException) { return "(the dispatcher hasn't run yet)"; }
+        catch (IOException) { return [new LogLine("(the dispatcher hasn't run yet)", LogLineKind.Prose)]; }
     }
 }
