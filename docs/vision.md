@@ -184,6 +184,29 @@ a conversation is better as a session in the terminal than as a wizard, and the 
 satisfied when the palette is what starts it. And it doesn't make the dashboard the only
 front-end for ever — the portal is coming — only the one home there is at a time.
 
+## Who we learn from
+
+a-team isn't the only way to put agents to work. Study these for what to borrow and what to
+avoid, and look for newer ones.
+
+- **[Vibe Kanban](https://vibekanban.com/)**: a kanban board over coding agents, each task in its
+  own worktree. The closest to our board-driven loop, seen from the developer's seat.
+- **[Nimbalyst](https://nimbalyst.com/)**: a kanban card per agent session, visual mockups, and
+  approving work from a phone.
+- **[OpenAI Symphony](https://github.com/openai/symphony)**: an issue tracker as the control
+  plane for agents. Our Dev loop, without a Lead.
+- **[Paperclip](https://github.com/paperclipai/paperclip)**: agents in an org chart with
+  budgets, and a human board over them. Our portfolio controls.
+- **[Orca](https://github.com/stablyai/orca), [Conductor](https://www.conductor.build/),
+  [Superset](https://superset.sh/)**: one developer supervising many agents at once. The
+  attention cost we remove.
+- **[Atoms](https://atoms.dev/), [Replit Agent](https://replit.com/),
+  [Lovable](https://lovable.dev/)**: idea to app for people who don't code. The customer in our
+  press release.
+- **[GitHub Agent HQ](https://github.blog/news-insights/company-news/welcome-home-agents/),
+  Claude Code agent teams**: the platforms building orchestration in. Not something to compete
+  with head-on.
+
 ## Next themes
 
 Roughly in order. Each is a direction, not a commitment; pitches turn them into work.

@@ -117,12 +117,16 @@ and update it if needed.
   the opportunity behind it first: the need or pain that makes X worth having. Then treat X as
   one of the options, not the answer.
 - `"discover"`: research new opportunities and file up to `room` of the best, but no more
-  than 2. Look at user pain in the repo's issues and discussions, what comparable tools do,
-  what the product's dependencies now make possible, and gaps against the vision. File each as
+  than 2. Look inward, at user pain in the repo's issues and discussions, what the product's
+  dependencies now make possible, and gaps against the vision. Look outward too, at the
+  products the vision learns from: what they've shipped lately, and what their users ask for
+  and complain about. Search for newer ones it doesn't name yet. At least one Idea a turn comes
+  from outside the repo, with a link to the product or its users as evidence. File each as
   an opportunity, not a solution: a need, pain point or desire, described from the user's side
   ("I lose my place when I switch between files", not "add a recent files list"). Title it that
   way too. Body: the **Opportunity**, the **Evidence** with links, **Why it fits** the vision,
-  and your marker. Then `a-team board {{team}} add lead <n> Idea`. The reviewer gives it a priority if they
+  and your marker. If a product you learned from isn't named in the vision, say so under
+  **Why it fits**. Then `a-team board {{team}} add lead <n> Idea`. The reviewer gives it a priority if they
   want it pitched and closes it if not. Don't pitch it yourself.
 - `"none"`: nothing new to start.
 
@@ -166,8 +170,9 @@ One good pitch beats three thin ones.
 
 If the vision file is missing and there's no open PR from branch `a-team/vision`, draft one from
 the README, the open issues and the code: who it's for, what it's trying to be, what it
-deliberately isn't, and the next few themes. Open it as a draft PR from `a-team/vision` with
-your marker in the body, then `a-team board {{team}} add lead <pr> Pitched`. Don't wait for CI.
+deliberately isn't, the products it learns from, and the next few themes. Open it as a draft
+PR from `a-team/vision` with your marker in the body, then `a-team board {{team}} add lead <pr> Pitched`.
+Don't wait for CI.
 
 Until the reviewer merges it, only do steps 1 to 3. If the PR is open, answer the reviewer's
 feedback on it (`a-team board {{team}} feedback lead <pr>`) by pushing to the branch and replying.
