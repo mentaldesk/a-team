@@ -104,6 +104,29 @@ public class DashboardSettingsTests : IDisposable
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public void The_icon_style_written_is_the_one_the_next_run_draws_cards_with(bool nerdFont)
+    {
+        new DashboardSettings(_configRoot).WriteNerdFont(nerdFont);
+
+        Assert.Equal(nerdFont, new DashboardSettings(_configRoot).ReadNerdFont());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("{}")]
+    [InlineData("{\"nerdFont\": \"no\"}")]
+    [InlineData("{\"nerdFont\": true}")]
+    public void Only_the_file_saying_so_turns_the_Nerd_Font_icons_off(string? contents)
+    {
+        if (contents is not null)
+            Write(contents);
+
+        Assert.True(new DashboardSettings(_configRoot).ReadNerdFont());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public void Showing_tool_calls_in_full_is_what_the_next_run_starts_panes_as(bool expand)
     {
         new DashboardSettings(_configRoot).WriteExpandToolCalls(expand);

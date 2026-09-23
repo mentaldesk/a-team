@@ -284,6 +284,37 @@ public class WorkViewTests
         Assert.Equal("#107  When the dashboard goes quiet, I can't tell why", WorkColumn.Card(Gated[0], 0));
     }
 
+    [Fact]
+    public void A_cards_text_is_elided_to_leave_the_room_its_icon_needs()
+    {
+        using var view = Open(["a-team"]);
+        LayOut(view, 60, 20);
+
+        view.Show(Gated);
+
+        Assert.Equal(
+            ["#107  When the dashboar…", "#108  lead · A misconfi…"],
+            view.Lanes[0].Columns[0].CardText);
+    }
+
+    [Fact]
+    public void Every_card_wears_the_icon_for_whose_move_it_is_in_the_style_the_view_is_showing()
+    {
+        using var view = Open(["a-team"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+
+        view.ShowIcons(true);
+        Assert.True(view.NerdFont);
+        Assert.Equal(
+            [TurnIcons.For(Gated[0], nerdFont: true), TurnIcons.For(Gated[1], nerdFont: true)],
+            view.Lanes[0].Columns[0].Icons);
+
+        view.ShowIcons(false);
+        Assert.False(view.NerdFont);
+        Assert.Equal("✓", view.Lanes[0].Columns[0].Icons[0].Glyph);
+    }
+
     private static WorkView Open(string[] teams)
     {
         var view = new WorkView(teams);

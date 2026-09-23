@@ -686,7 +686,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("team.pause");
         var after = LayOut(window, 120, 30);
 
-        Assert.Equal("Pausing…", window.Message.Text);
+        Assert.Equal("Pausing…", window.Message.Says);
         Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
         Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
         Assert.Equal(before.Sum(cell => cell.Height) - 2, after.Sum(cell => cell.Height));
@@ -708,7 +708,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("team.pause");
 
         Assert.Equal([("pause", "team1")], calls);
-        Assert.Equal("Pausing…", window.Message.Text);
+        Assert.Equal("Pausing…", window.Message.Says);
     }
 
     [Fact]
@@ -756,7 +756,7 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("a-team pause: can't write /nope/team0.json", window.Message.Text);
+        Assert.Equal("a-team pause: can't write /nope/team0.json", window.Message.Says);
         Assert.Equal(1, window.Message.Lines);
         Assert.True(window.NewKeyDownEvent(Key.Tab));
         Assert.Equal(0, Selected(window));

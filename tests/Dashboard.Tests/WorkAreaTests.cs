@@ -46,7 +46,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(107, window.Work.Selected?.Number);
-        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Text);
+        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
     }
 
     [Fact]
@@ -57,10 +57,10 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Text);
+        Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Says);
 
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("#49 · dev · answering your feedback since 10:15", window.Message.Text);
+        Assert.Equal("#49 · dev · answering your feedback since 10:15", window.Message.Says);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorDown);
 
         Assert.Null(window.Work.Selected);
-        Assert.Equal("Review · team1", window.Message.Text);
+        Assert.Equal("Review · team1", window.Message.Says);
     }
 
     [Fact]
@@ -94,6 +94,61 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(["Pitches · 2", "Review · 1", "Pitches · 1", "Review · 0"], Titles(window));
+    }
+
+    [Fact]
+    public void The_foot_of_the_Work_area_says_whether_the_filter_is_on()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal("All items", window.Message.Status);
+        Assert.EndsWith("All items", window.Message.Text, StringComparison.Ordinal);
+
+        window.NewKeyDownEvent(new Key('m'));
+        LayOut(window, 120, 30);
+
+        Assert.Equal("My items", window.Message.Status);
+        Assert.EndsWith("My items", window.Message.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_Dashboard_has_no_filter_to_report()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal("", window.Message.Status);
+    }
+
+    [Fact]
+    public void Every_card_wears_the_icon_for_whose_move_it_is()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        var icons = window.Work.Lanes[0].Columns[0].Icons;
+
+        Assert.True(window.Work.NerdFont);
+        Assert.Equal([LogSchemes.Success, LogSchemes.Dimmed], icons.Select(icon => icon.Scheme));
+    }
+
+    [Fact]
+    public void A_terminal_without_a_Nerd_Font_is_what_the_app_opens_with_next_time()
+    {
+        new DashboardSettings(Config).WriteNerdFont(false);
+
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.False(window.Work.NerdFont);
+        Assert.Equal(["✓", "·"], window.Work.Lanes[0].Columns[0].Icons.Select(icon => icon.Glyph));
     }
 
     [Fact]
@@ -183,7 +238,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("a-team board: API rate limit exceeded", window.Message.Text);
+        Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
         Assert.Equal(["Pitches · 2", "Review · 1", "Pitches · 1", "Review · 0"], Titles(window));
         Assert.Equal(stamp, window.Stamp.Text);
         Assert.Equal(107, window.Work.Selected?.Number);
@@ -201,7 +256,7 @@ public class WorkAreaTests : IDisposable
         });
 
         window.NewKeyDownEvent(new Key('r'));
-        Assert.Equal("Reading…", window.Message.Text);
+        Assert.Equal("Reading…", window.Message.Says);
         window.NewKeyDownEvent(new Key('r'));
 
         Assert.Equal(2, reads);

@@ -18,6 +18,8 @@ public sealed class DashboardWindow : Window
     private const int MenuLines = 1;
     private const int DispatchLines = 4;
     private const int MinCellHeight = 5;
+    private const string AllItems = "All items";
+    private const string MyItems = "My items";
     private readonly List<AgentPane> _panes = [];
     private readonly CommandRegistry _commands = new();
     private readonly int _columns;
@@ -120,6 +122,7 @@ public sealed class DashboardWindow : Window
         };
         _work.FocusChanged += ShowMessage;
         _work.ShowOnlyMine(settings.ReadOnlyMine());
+        _work.ShowIcons(settings.ReadNerdFont());
         Add(_work);
 
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
@@ -328,8 +331,10 @@ public sealed class DashboardWindow : Window
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : ("", Schemes.Base);
-        if (_message.Text == text)
+        var status = _area == Area.Work ? (_work.OnlyMine ? MyItems : AllItems) : "";
+        if (_message.Says == text && _message.Status == status)
             return;
+        _message.ShowStatus(status);
         if (text.Length == 0)
             Hush();
         else
@@ -399,6 +404,7 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         SettingsDialog.Show(app, _settings, _commands);
+        _work.ShowIcons(_settings.ReadNerdFont());
         SyncQuitKey();
         _menu.Refresh();
         Title = Hints(_version, CurrentMode, _commands);
