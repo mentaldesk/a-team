@@ -33,6 +33,18 @@ public sealed class DashboardSettings
 
     public void WriteTheme(string theme) => Write("theme", writer => writer.WriteStringValue(theme));
 
+    /// <summary>The area to open in. Work unless the file names the Dashboard, so a first run lands on Work.</summary>
+    public Area ReadArea()
+    {
+        using var file = Parse();
+        return Setting(file, "area") is { ValueKind: JsonValueKind.String } area &&
+               string.Equals(area.GetString(), nameof(Area.Dashboard), StringComparison.OrdinalIgnoreCase)
+            ? Area.Dashboard
+            : Area.Work;
+    }
+
+    public void WriteArea(Area area) => Write("area", writer => writer.WriteStringValue(area.ToString()));
+
     /// <summary>Whether panes start with every tool call showing. Off unless the file says otherwise.</summary>
     public bool ReadExpandToolCalls()
     {

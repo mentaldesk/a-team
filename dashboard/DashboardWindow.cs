@@ -6,24 +6,43 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
+/// <summary>The two areas the app opens in: the agents, or everything waiting on the reviewer.</summary>
+public enum Area
+{
+    Dashboard,
+    Work,
+}
+
 public sealed class DashboardWindow : Window
 {
+    private const int MenuLines = 1;
     private const int DispatchLines = 4;
     private const int MinCellHeight = 5;
     private readonly List<AgentPane> _panes = [];
     private readonly CommandRegistry _commands = new();
     private readonly int _columns;
     private readonly string _version = Version();
+    private readonly AppMenu _menu;
+    private readonly Label _stamp;
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
     private readonly LogView _dispatch;
+    private readonly WorkView _work;
+    private readonly IReadOnlyList<string> _teamNames;
     private readonly MessageBar _message = new();
     private readonly string _dispatchLog;
     private readonly string _nextPass;
     private readonly DashboardSettings _settings;
     private readonly TeamConfigs _teams;
     private readonly Func<string, string, Task<string?>> _run;
+    private readonly Func<string, Task<Reading>> _readWaiting;
+    private readonly Action<string> _openUrl;
+    private Area _area;
     private Task<string?>? _pending;
+    private Task<Reading[]>? _reading;
+    private DateTimeOffset? _readAt;
+    private string? _failure;
+    private string? _progress;
     private int? _expanded;
     private Size _laidOutOver;
 
@@ -32,22 +51,30 @@ public sealed class DashboardWindow : Window
         string stateRoot,
         DashboardSettings settings,
         TeamConfigs teams,
-        Func<string, string, Task<string?>> run)
+        Func<string, string, Task<string?>> run,
+        Func<string, Task<Reading>> readWaiting,
+        Action<string> openUrl,
+        Area area)
     {
         _settings = settings;
         _teams = teams;
         _run = run;
+        _readWaiting = readWaiting;
+        _openUrl = openUrl;
+        _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
+        _teamNames = [.. agents.Select(agent => agent.Team).Distinct()];
 
         _columns = AgentGrid.Columns(agents);
         _agents = new View
         {
             X = 0,
-            Y = 0,
+            Y = MenuLines,
             Width = Dim.Fill(),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - Foot()), this),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - Foot() - MenuLines), this),
             CanFocus = true,
+            Visible = area == Area.Dashboard,
         };
         _agents.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
         _agents.SubViewLayout += (_, _) => FitGrid();
@@ -77,10 +104,22 @@ public sealed class DashboardWindow : Window
             Width = Dim.Fill(),
             Height = DispatchLines + 2,
             CanFocus = false,
+            Visible = area == Area.Dashboard,
         };
         _dispatch = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true };
         _dispatchFrame.Add(_dispatch);
         Add(_dispatchFrame);
+
+        _work = new WorkView(_teamNames)
+        {
+            X = 0,
+            Y = MenuLines,
+            Width = Dim.Fill(),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - _message.Lines), this),
+            Visible = area == Area.Work,
+        };
+        _work.FocusChanged += ShowMessage;
+        Add(_work);
 
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         Add(_message);
@@ -88,7 +127,16 @@ public sealed class DashboardWindow : Window
         RegisterCommands();
         _commands.Apply(settings.ReadKeys());
         SyncQuitKey();
-        Title = Hints(_version, expanded: false, _commands);
+        _menu = new AppMenu(_commands);
+        _menu.Bar.X = 0;
+        _menu.Bar.Y = 0;
+        Add(_menu.Bar);
+        _stamp = new Label { X = Pos.AnchorEnd(), Y = 0, CanFocus = false };
+        Add(_stamp);
+
+        Title = Hints(_version, CurrentMode, _commands);
+        if (_area == Area.Work)
+            ReadWaiting();
     }
 
     internal IReadOnlyList<AgentPane> Panes => _panes;
@@ -99,14 +147,24 @@ public sealed class DashboardWindow : Window
 
     internal View Agents => _agents;
 
+    internal WorkView Work => _work;
+
     internal MessageBar Message => _message;
+
+    internal Label Stamp => _stamp;
+
+    internal MenuBar Menu => _menu.Bar;
+
+    internal IReadOnlyList<(string Id, MenuItem Item)> MenuItems => _menu.Items;
+
+    internal Area CurrentArea => _area;
 
     internal int? ExpandedAgent => _expanded;
 
     internal CommandRegistry Commands => _commands;
 
-    internal static string Hints(string version, bool expanded, CommandRegistry commands) =>
-        $"a-team {version} · {commands.Hints(expanded ? Mode.Expanded : Mode.Grid)}";
+    internal static string Hints(string version, Mode mode, CommandRegistry commands) =>
+        $"a-team {version} · {commands.Hints(mode)}";
 
     public void Refresh()
     {
@@ -122,15 +180,32 @@ public sealed class DashboardWindow : Window
         var tail = ReadTail(_dispatchLog, DispatchLines);
         if (!_dispatch.Lines.SequenceEqual(tail))
             _dispatch.Lines = tail;
+
+        var stamp = _area == Area.Work ? Stamped(_readAt, now) : "";
+        if (_stamp.Text != stamp)
+            _stamp.Text = stamp;
+        _menu.Refresh();
+        ShowMessage();
     }
 
-    protected override bool OnKeyDown(Key key) => _commands.Press(key) || base.OnKeyDown(key);
+    /// <summary>When the Work area was last read, for the header.</summary>
+    internal static string Stamped(DateTimeOffset? at, DateTimeOffset now) =>
+        at is { } read ? $"read {AgentPane.Ago(now - read)} ago " : "";
+
+    /// <summary>While a menu is open it owns the keyboard: its own keys would otherwise run a command as well.</summary>
+    protected override bool OnKeyDown(Key key) =>
+        (!_menu.Bar.IsOpen() && _commands.Press(key)) || base.OnKeyDown(key);
+
+    private Mode CurrentMode =>
+        _area == Area.Work ? Mode.Work : _expanded is null ? Mode.Grid : Mode.Expanded;
 
     private void RegisterCommands()
     {
         var scroll = new Hint("scroll", Mode.Expanded);
-        bool AnyAgents() => _panes.Count > 0;
-        bool Selection() => Selected() is not null;
+        bool OnDashboard() => _area == Area.Dashboard;
+        bool OnWork() => _area == Area.Work;
+        bool AnyAgents() => OnDashboard() && _panes.Count > 0;
+        bool Selection() => OnDashboard() && Selected() is not null;
         _commands
             .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents)
             .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents)
@@ -144,12 +219,22 @@ public sealed class DashboardWindow : Window
             .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
             .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
             .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
+            .Register("work.right", "Select the column to the right", () => _work.MoveColumn(+1), Key.CursorRight, isEnabled: OnWork)
+            .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
+            .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
+            .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
+            .Register("work.open", "Open the selected issue on GitHub", OpenIssue, Key.Enter, new Hint("open issue", Mode.Work), () => OnWork() && _work.Selected is not null)
+            .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
+            .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
+            .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
             .Register("team.pause", PauseLabel, TogglePause)
-            .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, new Hint("commands", Mode.Grid), HasApp)
+            .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
-            .Register("help", "Help", OpenHelp, Key.F1, new Hint("help"), HasApp)
-            .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded), () => _expanded is not null)
-            .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'), new Hint("quit"));
+            .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
+            .Register("about", "About", OpenAbout, isEnabled: HasApp)
+            .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded), () => OnDashboard() && _expanded is not null)
+            .Register("work.back", "Back to the Dashboard", () => Show(Area.Dashboard), Key.Esc, new Hint("dashboard", Mode.Work), OnWork)
+            .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
     }
 
     // Point Terminal.Gui's own Quit binding at our quit key: removing it leaves PopoverImpl binding Key.Empty, which throws.
@@ -172,23 +257,71 @@ public sealed class DashboardWindow : Window
     {
         if (_pending is not null || Target() is not { } pane)
             return;
-        Say(pane.Paused ? "Resuming…" : "Pausing…", Schemes.Accent);
+        _progress = pane.Paused ? "Resuming…" : "Pausing…";
+        ShowMessage();
         _pending = _run(pane.Paused ? "resume" : "pause", pane.Team);
+    }
+
+    /// <summary>Reads every team's gates at once. A second go while one is running is refused, not queued.</summary>
+    private void ReadWaiting()
+    {
+        _reading ??= Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
+        ShowMessage();
+    }
+
+    private void OpenIssue()
+    {
+        if (_work.Selected is { Url.Length: > 0 } item)
+            _openUrl(item.Url);
     }
 
     /// <summary>Picked up by the next refresh, so a command runs off the draw loop and reports back on it.</summary>
     private void Settle()
     {
-        if (_pending is not { IsCompleted: true } finished)
+        if (_pending is { IsCompleted: true } finished)
+        {
+            _pending = null;
+            _progress = null;
+            _failure = finished.Status == TaskStatus.RanToCompletion
+                ? finished.Result
+                : finished.Exception?.GetBaseException().Message ?? "the command didn't finish";
+        }
+
+        if (_reading is not { IsCompleted: true } read)
             return;
-        _pending = null;
-        var failure = finished.Status == TaskStatus.RanToCompletion
-            ? finished.Result
-            : finished.Exception?.GetBaseException().Message ?? "the command didn't finish";
+        _reading = null;
+        var readings = read.Status == TaskStatus.RanToCompletion ? read.Result : null;
+        var failure = readings is null
+            ? read.Exception?.GetBaseException().Message ?? "the read didn't finish"
+            : readings.Select(reading => reading.Failure).FirstOrDefault(line => line is { Length: > 0 });
         if (failure is { Length: > 0 })
-            Say(failure, Schemes.Error);
-        else
+        {
+            // Nothing is cleared: the cards and the stamp stay as they were.
+            _failure = failure;
+            return;
+        }
+        _failure = null;
+        _readAt = DateTimeOffset.UtcNow;
+        _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
+        if (_area == Area.Work && _work.Selected is null)
+            _work.FocusFirstCard();
+    }
+
+    /// <summary>What went wrong, then what's running, then the region focus is in.</summary>
+    private void ShowMessage()
+    {
+        var (text, scheme) =
+            _failure is { Length: > 0 } ? (_failure, Schemes.Error)
+            : _reading is not null ? ("Reading…", Schemes.Accent)
+            : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
+            : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
+            : ("", Schemes.Base);
+        if (_message.Text == text)
+            return;
+        if (text.Length == 0)
             Hush();
+        else
+            Say(text, scheme);
     }
 
     private void Say(string message, Schemes scheme)
@@ -209,6 +342,28 @@ public sealed class DashboardWindow : Window
 
     private int Foot() => DispatchLines + 2 + _message.Lines;
 
+    private void Show(Area area)
+    {
+        if (_area == area)
+            return;
+        _area = area;
+        _settings.WriteArea(area);
+        _failure = null;
+        _agents.Visible = _dispatchFrame.Visible = area == Area.Dashboard;
+        _work.Visible = area == Area.Work;
+        if (area == Area.Work)
+        {
+            ReadWaiting();
+            _work.FocusFirstCard();
+        }
+        else
+            _panes.FirstOrDefault()?.SetFocus();
+        Title = Hints(_version, CurrentMode, _commands);
+        ShowMessage();
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
     private void OpenCommands()
     {
         if (App is { } app)
@@ -221,13 +376,20 @@ public sealed class DashboardWindow : Window
             HelpDialog.Show(app, _commands);
     }
 
+    private void OpenAbout()
+    {
+        if (App is { } app)
+            AboutDialog.Show(app, _version);
+    }
+
     private void OpenSettings()
     {
         if (App is not { } app)
             return;
         SettingsDialog.Show(app, _settings, _commands);
         SyncQuitKey();
-        Title = Hints(_version, _expanded is not null, _commands);
+        _menu.Refresh();
+        Title = Hints(_version, CurrentMode, _commands);
     }
 
     private void Expand()
@@ -242,7 +404,7 @@ public sealed class DashboardWindow : Window
         _expanded = index;
         for (var i = 0; i < _panes.Count; i++)
             _panes[i].Visible = index is null || index == i;
-        Title = Hints(_version, index is not null, _commands);
+        Title = Hints(_version, CurrentMode, _commands);
         var selected = SelectedIndex();
         if (index is not null)
             ScrollTo(0);

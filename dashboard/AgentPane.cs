@@ -172,7 +172,7 @@ public sealed class AgentPane : FrameView
         ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
         : $"{span.Minutes}:{span.Seconds:00}";
 
-    private static string Ago(TimeSpan span) => span.TotalMinutes < 1
+    internal static string Ago(TimeSpan span) => span.TotalMinutes < 1
         ? "<1m"
         : span.TotalHours < 1
             ? $"{(int)span.TotalMinutes}m"
