@@ -113,5 +113,78 @@ run help
 grep -q '^  pause ' "$OUT" || fail "usage: no pause line"
 grep -q '^  resume ' "$OUT" || fail "usage: no resume line"
 
+# The one GraphQL page board.sh's `items` reads, from lines of "<status with _ for space> <n> <title>".
+gh_items() {
+  BIN=$(mktemp -d "$WORK/bin.XXXXXX")
+  ITEMS="$BIN/items.json"
+  CALLS="$BIN/calls"
+  jq -R -s --arg repo mentaldesk/demo '
+    split("\n") | map(select(length > 0)) | map(split(" ") as $f | {
+      id: "PVTI_\($f[1])",
+      fieldValueByName: {name: ($f[0] | gsub("_"; " "))},
+      content: {__typename: "Issue", number: ($f[1] | tonumber), title: ($f[2:] | join(" ")),
+                url: "https://github.com/\($repo)/issues/\($f[1])",
+                repository: {nameWithOwner: $repo}, labels: {nodes: []},
+                issueDependenciesSummary: {blockedBy: 0}}})
+    | {data: {organization: {projectV2: {items: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: .}}}}}' \
+    >"$ITEMS"
+  cat >"$BIN/gh" <<SH
+#!/usr/bin/env bash
+echo call >>"$CALLS"
+cat "$ITEMS"
+SH
+  chmod +x "$BIN/gh"
+  PATH="$BIN:$PATH"
+}
+
+case_ "waiting returns what's at a gate, and nothing else, in one call"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+In_review 115 I can change any of the keys
+Ready 128 Everything waiting on me
+Done 99 Already merged
+ITEMS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "numbers" '[106,115]' "$(jq -c '[.[].number]' "$OUT")"
+same "statuses" '["Pitched","In review"]' "$(jq -c '[.[].status]' "$OUT")"
+same "fields" '["number","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "title" '"Both gates are mine"' "$(jq -c '.[0].title' "$OUT")"
+same "url" '"https://github.com/mentaldesk/demo/issues/106"' "$(jq -c '.[0].url' "$OUT")"
+same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
+same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "a team with nothing at a gate waits on nothing"
+gh_items <<'ITEMS'
+Ready 128 Everything waiting on me
+ITEMS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "items" '[]' "$(jq -c . "$OUT")"
+
+case_ "a-team with no command opens the app, and dashboard opens it on the Dashboard"
+APP=$(mktemp -d "$WORK/app.XXXXXX")
+mkdir -p "$APP/bin" "$APP/scripts" "$APP/libexec"
+cp "$ROOT/bin/a-team" "$APP/bin/"
+cp "$ROOT"/scripts/*.sh "$APP/scripts/"
+cat >"$APP/libexec/a-team-dashboard" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$@" >"$WORK/app-args"
+SH
+chmod +x "$APP/libexec/a-team-dashboard"
+
+"$APP/bin/a-team" >"$OUT" 2>"$ERR"
+STATUS=$?
+same "exit" 0 "$STATUS"
+same "arguments" "" "$(cat "$WORK/app-args")"
+
+"$APP/bin/a-team" dashboard tuicode >"$OUT" 2>"$ERR"
+STATUS=$?
+same "exit" 0 "$STATUS"
+same "arguments" "--area dashboard tuicode" "$(tr '\n' ' ' <"$WORK/app-args" | sed 's/ $//')"
+
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

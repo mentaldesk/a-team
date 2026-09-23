@@ -544,6 +544,12 @@ case "$CMD" in
       jq -s 'add // [] | map({number, title, state, labels: [.labels[].name]})'
     ;;
 
+  waiting)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
+    items | jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
+      | {number, title, status, url, team: $team})'
+    ;;
+
   pr)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM pr <n>"
     pr_for "$1"

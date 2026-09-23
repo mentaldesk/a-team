@@ -345,11 +345,14 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(4));
 
         Assert.Equal(
-            "a-team 1.2.3 · Enter: expand · Ctrl+E: commands · F1: help · q: quit",
-            DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
+            "a-team 1.2.3 · Enter: expand",
+            DashboardWindow.Hints("1.2.3", Mode.Grid, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · PgUp/PgDn: scroll · F1: help · Esc: back · q: quit",
-            DashboardWindow.Hints("1.2.3", expanded: true, window.Commands));
+            "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
+            DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
+        Assert.Equal(
+            "a-team 1.2.3 · Enter: open issue · r: refresh · Esc: dashboard",
+            DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
     }
 
     [Fact]
@@ -358,8 +361,8 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(4));
 
         Assert.All(
-            new[] { false, true },
-            expanded => Assert.InRange(DashboardWindow.Hints("1.2.3", expanded, window.Commands).Length, 1, 76));
+            new[] { Mode.Grid, Mode.Expanded, Mode.Work },
+            mode => Assert.InRange(DashboardWindow.Hints("1.2.3", mode, window.Commands).Length, 1, 76));
     }
 
     [Fact]
@@ -373,7 +376,9 @@ public class DashboardWindowTests : IDisposable
                 "Select the agent to the left", "Select the agent below", "Select the agent above",
                 "Expand the selected agent", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
-                "Pause team0", "Commands", "Settings", "Help", "Back to the agent grid", "Quit",
+                "Open the selected issue on GitHub", "Read what's waiting again", "Dashboard", "Work",
+                "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid",
+                "Back to the Dashboard", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -395,17 +400,17 @@ public class DashboardWindowTests : IDisposable
         Assert.DoesNotContain(window.Commands.Registered, c => c.Key == new Key(',').WithCtrl);
         Assert.False(window.NewKeyDownEvent(new Key(',').WithCtrl));
         Assert.All(
-            new[] { false, true },
-            expanded => Assert.DoesNotContain("Ctrl+,", DashboardWindow.Hints("1.2.3", expanded, window.Commands)));
+            new[] { Mode.Grid, Mode.Expanded, Mode.Work },
+            mode => Assert.DoesNotContain("Ctrl+,", DashboardWindow.Hints("1.2.3", mode, window.Commands)));
     }
 
     [Fact]
     public void A_key_the_file_names_runs_that_command_and_the_one_in_the_source_no_longer_does()
     {
-        using var window = Open(keys: "{ \"log.toolCalls\": \"d\" }");
+        using var window = Open(keys: "{ \"log.toolCalls\": \"x\" }");
         window.NewKeyDownEvent(Key.Tab);
 
-        Assert.True(window.NewKeyDownEvent(new Key('d')));
+        Assert.True(window.NewKeyDownEvent(new Key('x')));
         Assert.False(window.NewKeyDownEvent(new Key('t')));
 
         Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));
@@ -414,7 +419,7 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void A_command_the_file_says_nothing_about_keeps_the_key_it_had()
     {
-        using var window = Open(keys: "{ \"log.toolCalls\": \"d\" }");
+        using var window = Open(keys: "{ \"log.toolCalls\": \"x\" }");
 
         Assert.Equal(Key.F1, window.Commands.Registered.Single(command => command.Id == "help").Key);
     }
@@ -446,10 +451,10 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void The_title_names_the_key_the_file_bound_and_not_the_one_in_the_source()
     {
-        using var window = Open(agents: Agents(4), keys: "{ \"commands\": \"Ctrl+K\" }");
+        using var window = Open(agents: Agents(4), keys: "{ \"agent.expand\": \"x\" }");
 
-        Assert.Contains("Ctrl+K: commands", DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
-        Assert.DoesNotContain("Ctrl+E", DashboardWindow.Hints("1.2.3", expanded: false, window.Commands));
+        Assert.Contains("x: expand", DashboardWindow.Hints("1.2.3", Mode.Grid, window.Commands));
+        Assert.DoesNotContain("Enter", DashboardWindow.Hints("1.2.3", Mode.Grid, window.Commands));
     }
 
     [Fact]
@@ -751,7 +756,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     private static Rectangle AgentArea(DashboardWindow window) =>
-        new(0, 0, window.Viewport.Width, window.Dispatcher.Frame.Y);
+        new(0, 0, window.Viewport.Width, window.Dispatcher.Frame.Y - window.Agents.Frame.Y);
 
     private static int Selected(DashboardWindow window) =>
         window.Panes.ToList().FindIndex(pane => pane.HasFocus);
@@ -773,7 +778,10 @@ public class DashboardWindowTests : IDisposable
         bool expandToolCalls = false,
         IReadOnlyList<(string, string)>? agents = null,
         Func<string, string, Task<string?>>? run = null,
-        string? keys = null)
+        string? keys = null,
+        Func<string, Task<Reading>>? readWaiting = null,
+        Action<string>? openUrl = null,
+        Area area = Area.Dashboard)
     {
         Directory.CreateDirectory(_root);
         if (keys is not null)
@@ -789,7 +797,10 @@ public class DashboardWindowTests : IDisposable
             _root,
             settings,
             new TeamConfigs(Config),
-            run ?? ((_, _) => Task.FromResult<string?>(null)));
+            run ?? ((_, _) => Task.FromResult<string?>(null)),
+            readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
+            openUrl ?? (_ => { }),
+            area);
     }
 
     private string Config => Path.Combine(_root, "config");

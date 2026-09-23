@@ -43,7 +43,7 @@ release.
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
 | `scripts/pause.sh` | `a-team pause` / `a-team resume`: turns a team's dispatch off and on |
-| `dashboard/` | `a-team dashboard`: a terminal dashboard of the teams |
+| `dashboard/` | `a-team`: the app, with a Work area and the agent Dashboard |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
 | `examples/team.json` | A starting point for a team's config (see *Starting a team*) |
@@ -109,11 +109,30 @@ keep that folder in a repo of your own and link it into place.
 - **Logs** are under `~/.local/state/a-team/` (or `$A_TEAM_STATE`). `a-team status` shows what each role is
   doing and how its last run went.
 
-## Watching the team
+## The app
 
 ```
-a-team dashboard [team...]
+a-team                      the area you were last in
+a-team dashboard [team...]  straight to the agents
 ```
+
+The app has two areas: **Work**, everything waiting on you across every team, and **Dashboard**,
+what each agent is doing. `d` and `w` switch between them, Esc goes back to the Dashboard, and the
+menu across the top — F10, then the arrows — carries the same commands: View (Dashboard, Work,
+Settings, Quit), Team (Pause or Resume) and Help (Keys, Commands, About). Whichever area you were
+in is what it opens in next time; a first run lands on Work.
+
+### What's waiting on you
+
+A swimlane per team, and two columns in each: **Pitches** (waiting for you to approve) and
+**Review** (waiting for you to merge or accept), each headed by its count. Enter opens the selected
+card's issue in your browser. The card list is read when the area opens and when you press `r`,
+never on a timer, so an app left open overnight costs nothing against the rate limit the agents
+share; the header says how long ago it read, and the line at the foot names the column you're in.
+A read that fails — offline, rate-limited — says so there in red and leaves the cards and that
+stamp exactly as they were.
+
+### Watching the team
 
 One pane per agent. The title shows whether it's running (●) or paused (⏸), and when it's neither,
 how its last run went: ✓ clean, ✗ failed, ○ never run. A failed run draws the pane's border, title
@@ -137,7 +156,7 @@ holds is refused, naming the one that holds it. Ctrl+Enter keeps what's picked o
 discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
 what the dashboard comes up in next time, with t still folding and unfolding a pane for the
 session. Esc goes back to the grid from an expanded agent and does nothing when there isn't one;
-q quits the dashboard, from either view.
+q quits the app, from either area.
 
 Keys can be set by hand in that file too, which is the way out of a key your terminal or
 multiplexer swallows. A `keys` object maps a command's id — the ones Ctrl+E lists — to a key
@@ -159,8 +178,8 @@ Pause (or Resume) for the selected agent's team, named after it: it runs `a-team
 panes follow within a second. While it runs, a line at the foot of the window says so; if it
 fails, that line says why, in red.
 
-F1 opens Help: the handful of keys worth having in your fingers, the first of them Ctrl+E for
-everything else. Esc closes it.
+F1 opens Keys: the handful worth having in your fingers, the first of them Ctrl+E for everything
+else. Esc closes it.
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.

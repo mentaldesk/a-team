@@ -7,6 +7,7 @@ public enum Mode
 {
     Grid = 1,
     Expanded = 2,
+    Work = 4,
     Both = Grid | Expanded,
 }
 
@@ -72,12 +73,12 @@ public sealed class CommandRegistry
         return true;
     }
 
-    /// <summary>Runs what <paramref name="key"/> is bound to. False leaves the key to whoever else wants it.</summary>
+    /// <summary>Runs what <paramref name="key"/> is bound to. Commands may share a key where only one of them is
+    /// ever enabled, like Enter in each area. False leaves the key to whoever else wants it.</summary>
     public bool Press(Key key)
     {
-        if (_entries.Find(entry => entry.Key == key && entry.Key != Key.Empty) is not { } entry)
-            return false;
-        if (entry.IsEnabled?.Invoke() == false)
+        if (_entries.Find(entry => entry.Key == key && entry.Key != Key.Empty && entry.IsEnabled?.Invoke() != false)
+            is not { } entry)
             return false;
         entry.Handler();
         return true;

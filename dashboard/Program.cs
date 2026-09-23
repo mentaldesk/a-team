@@ -18,8 +18,13 @@ var stateRoot = Environment.GetEnvironmentVariable("A_TEAM_STATE") is { Length: 
 
 var configRoot = DashboardSettings.ConfigRoot();
 
+var requested = args is ["--area", var name, ..] && Enum.TryParse<Area>(name, ignoreCase: true, out var chosen)
+    ? chosen
+    : (Area?)null;
+var wanted = requested is null ? args : args[2..];
+
 var teams = new TeamConfigs(configRoot);
-var named = args.Length > 0 ? args : teams.Names();
+var named = wanted.Length > 0 ? wanted : teams.Names();
 if (named.Length == 0)
 {
     Console.Error.WriteLine(
@@ -34,7 +39,15 @@ BundledThemes.Load(settings.ReadTheme());
 using var app = Application.Create();
 app.Init();
 LogSchemes.Register();
-using var window = new DashboardWindow(agents, stateRoot, settings, teams, command.Run);
+using var window = new DashboardWindow(
+    agents,
+    stateRoot,
+    settings,
+    teams,
+    command.Run,
+    team => command.Read("board", team, "waiting"),
+    url => Link.OpenUrl(url),
+    requested ?? settings.ReadArea());
 window.Refresh();
 app.AddTimeout(TimeSpan.FromSeconds(1), () =>
 {

@@ -40,7 +40,9 @@ version() {
 
 usage() {
   cat <<USAGE
-usage: a-team <command> [args...]
+usage: a-team [command] [args...]
+
+With no command, a-team opens the app where you left it.
 
   board [--dry-run] <team> <command> ...  read or change a team's board (see process.md)
   dispatch [--dry-run]                    start any agent that has work (launchd runs this)
@@ -48,7 +50,7 @@ usage: a-team <command> [args...]
   status                                  what each agent is doing, and its last run
   pause [--dry-run] <team>                stop the dispatcher starting that team's agents
   resume [--dry-run] <team>               start them again
-  dashboard [team...]                     terminal dashboard of the teams
+  dashboard [team...]                     the app, on the Dashboard area
   run <team> <role>                       print the brief a run starts from
   task-prompt <team> <role>               print a role's scheduled prompt
   teams                                   the configured teams, and where their config lives
@@ -60,12 +62,14 @@ to try a clone without touching the real teams' state.
 USAGE
 }
 
-[ $# -ge 1 ] || { usage >&2; exit 2; }
+[ $# -ge 1 ] || exec bash "$ROOT/scripts/dashboard.sh"
 command=$1
 shift
 case "$command" in
-  board | dispatch | install | status | dashboard | run | task-prompt)
+  board | dispatch | install | status | run | task-prompt)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
+  dashboard)
+    exec bash "$ROOT/scripts/dashboard.sh" --area dashboard "$@" ;;
   pause | resume)
     exec bash "$ROOT/scripts/pause.sh" "$command" "$@" ;;
   teams)

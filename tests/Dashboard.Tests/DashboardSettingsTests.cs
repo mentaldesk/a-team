@@ -32,6 +32,29 @@ public class DashboardSettingsTests : IDisposable
     }
 
     [Fact]
+    public void The_area_written_is_the_area_the_next_run_opens_in()
+    {
+        new DashboardSettings(_configRoot).WriteArea(Area.Dashboard);
+
+        Assert.Equal(Area.Dashboard, new DashboardSettings(_configRoot).ReadArea());
+        Assert.Contains("\"area\"", File.ReadAllText(Path.Combine(_configRoot, "dashboard.json")));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("{}")]
+    [InlineData("{\"area\": \"nowhere\"}")]
+    [InlineData("{\"area\": 3}")]
+    [InlineData("{\"area\": \"Work\"}")]
+    public void A_first_run_and_anything_we_cannot_read_as_an_area_open_on_Work(string? contents)
+    {
+        if (contents is not null)
+            Write(contents);
+
+        Assert.Equal(Area.Work, new DashboardSettings(_configRoot).ReadArea());
+    }
+
+    [Fact]
     public void Writing_creates_the_config_directory_if_it_is_not_there_yet()
     {
         var nested = Path.Combine(_configRoot, "nested");
