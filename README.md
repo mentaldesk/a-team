@@ -126,13 +126,17 @@ in is what it opens in next time; a first run lands on Work.
 
 A swimlane per team, and two columns in each: **Pitches** (waiting for you to approve) and
 **Review** (waiting for you to merge or accept), each headed by its count. Enter opens the selected
-card's issue in your browser.
+card's issue in your browser, and `p` the PR that closes it — on a card with no open PR it says so
+instead.
 
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the
 line at the foot says why — `#118 · lead · answering your feedback since 08:14`. It's theirs from
 the moment you comment — on the card's own issue or on the PR that closes it — until they answer,
-which is the same test the dispatcher makes when it decides what to start a run for. `m` hides everything that isn't your move and `m` again brings it
+which is the same test the dispatcher makes when it decides what to start a run for. A PR that's
+failing CI, conflicting with its base or still a draft is theirs too, and the card names which —
+`#124  dev · CI failing · A finished task` — so you never open one to find CI still running on it.
+`m` hides everything that isn't your move and `m` again brings it
 back; the counts follow, the right of that same line says which you're looking at — *All items* or
 *My items* — and it opens the way you left it.
 

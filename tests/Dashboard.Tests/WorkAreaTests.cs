@@ -60,7 +60,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Says);
 
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("#49 · dev · answering your feedback since 10:15", window.Message.Says);
+        Assert.Equal("#49 · dev · answering your feedback since 10:15 · PR #122", window.Message.Says);
     }
 
     [Fact]
@@ -181,6 +181,48 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(Key.Enter));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/107"], opened);
+    }
+
+    [Fact]
+    public void p_opens_the_selected_cards_PR()
+    {
+        var opened = new List<string>();
+        using var window = Open(openUrl: opened.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.True(window.NewKeyDownEvent(new Key('p')));
+
+        Assert.Equal(["https://github.com/mentaldesk/team0/pull/122"], opened);
+    }
+
+    [Fact]
+    public void p_on_a_card_with_no_PR_says_so_and_leaves_the_selection_alone()
+    {
+        var opened = new List<string>();
+        using var window = Open(openUrl: opened.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(new Key('p')));
+
+        Assert.Empty(opened);
+        Assert.Equal("#107 has no open PR", window.Message.Says);
+        Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void That_refusal_goes_when_you_move_to_another_card()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(new Key('p'));
+
+        window.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Says);
     }
 
     [Fact]
@@ -414,7 +456,9 @@ public class WorkAreaTests : IDisposable
             "turn": "lead", "reason": "answering your feedback since 09:30"},
            {"number": 49, "title": "I can't change any of the keys", "status": "In review",
             "url": "https://github.com/mentaldesk/team0/issues/49", "team": "team0",
-            "turn": "dev", "reason": "answering your feedback since 10:15"}]
+            "turn": "dev", "reason": "answering your feedback since 10:15",
+            "pr": 122, "prUrl": "https://github.com/mentaldesk/team0/pull/122",
+            "checks": "pass", "conflicting": false, "draft": false}]
           """
         : """
           [{"number": 133, "title": "Notice when open files change on disk", "status": "Pitched",

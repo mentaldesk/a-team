@@ -351,11 +351,12 @@ public sealed class WorkColumn : FrameView
         return false;
     }
 
-    /// <summary>A card: the issue's number, whose move it is when it isn't the reviewer's, then as much of
-    /// its title as the column has room for.</summary>
+    /// <summary>A card: the issue's number, whose move it is when it isn't the reviewer's, what its PR is in
+    /// trouble over where that's why, then as much of its title as the column has room for.</summary>
     internal static string Card(WaitingItem item, int width)
     {
-        var text = item.Mine ? $"#{item.Number}  {item.Title}" : $"#{item.Number}  {item.Turn} · {item.Title}";
+        var said = new[] { item.Mine ? "" : item.Turn, item.Trouble, item.Title }.Where(part => part.Length > 0);
+        var text = $"#{item.Number}  {string.Join(" · ", said)}";
         if (width <= 0 || text.Length <= width)
             return text;
         return width == 1 ? "…" : string.Concat(text.AsSpan(0, width - 1), "…");

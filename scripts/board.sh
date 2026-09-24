@@ -226,9 +226,10 @@ pr_for() {
     }' --jq '.data.repository.issue.closedByPullRequestsReferences.nodes | first // "null"'
 }
 
+# ci <pr> [sha]: the CI verdict for <pr>, reading its head commit where the caller already knows it.
 ci() {
-  local sha
-  sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
+  local sha=${2:-}
+  [ -n "$sha" ] || sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
   gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]' |
     jq -s '
       def failed: .conclusion as $c
@@ -237,7 +238,7 @@ ci() {
         verdict: (if any(.[]; failed) then "fail"
                   elif length == 0 or any(.[]; .status != "completed") then "pending"
                   else "pass" end),
-        failing: map(select(failed) | {name, link: .html_url}),
+        failing: map(select(failed) | {name, at: .completed_at, link: .html_url}),
         pending: map(select(.status != "completed") | .name)
       }'
 }
@@ -269,15 +270,15 @@ awaiting() {
     | max // empty' <<<"$1"
 }
 
-# gated_comments <items>: the body and comments of every item, in one call whatever the number of
-# them, as {n, at, author, body, kind}. The open PR that closes a task comes back nested in the
-# same call and under the task's own number: the reviewer answers a task on either. `waiting`
-# works out whose turn it is from these alone.
-gated_comments() {
+# gated_talk <items>: one page holding the body, comments and open PR of every item, in one call
+# whatever the number of them. The open PR that closes a task comes back nested under the task's
+# own number: the reviewer answers a task on either. `waiting` reads whose turn it is off this page.
+gated_talk() {
   local said reviewed n query=''
   said='number createdAt body author { login }
         comments(last: 50) { nodes { createdAt body author { login } } }'
-  reviewed="$said"' reviews(last: 50) { nodes { createdAt body state author { login }
+  reviewed="$said"' url isDraft mergeable baseRefName headRefOid
+              reviews(last: 50) { nodes { createdAt body state author { login }
               comments(first: 50) { nodes { createdAt body author { login } } } } }'
   for n in $(jq -r '.[].number' <<<"$1"); do
     query+=" x$n: issueOrPullRequest(number: $n) {
@@ -285,25 +286,50 @@ gated_comments() {
         closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { $reviewed } } }
       ... on PullRequest { $reviewed } }"
   done
-  [ -n "$query" ] || { echo '[]'; return; }
+  [ -n "$query" ] || { echo '{"data": {"repository": {}}}'; return; }
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" \
-    -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query} }" |
-    jq 'def who: {at: .createdAt, author: (.author.login // ""), body: (.body // "")};
-        def talk:
-          (who + {kind: "body"}),
-          (.comments.nodes[]? | who + {kind: "comment"}),
-          (.reviews.nodes[]? |
-            (select((.body // "") != "" or .state == "CHANGES_REQUESTED") | who + {kind: "review"}),
-            (.comments.nodes[]? | who + {kind: "line"}));
-        [.data.repository | to_entries[].value | select(. != null) | .number as $n
-         | (talk, (.closedByPullRequestsReferences.nodes[]? | talk))
-         | . + {n: $n}]'
+    -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query} }"
 }
 
-# turns <items> <comments>: each item with whose move it is and why. A gate is the reviewer's until
-# they comment; from then it is the role's, the same test `unanswered_feedback` makes.
+# gated_comments <talk>: everything said on those items, as {n, at, author, body, kind}.
+gated_comments() {
+  jq 'def who: {at: .createdAt, author: (.author.login // ""), body: (.body // "")};
+      def talk:
+        (who + {kind: "body"}),
+        (.comments.nodes[]? | who + {kind: "comment"}),
+        (.reviews.nodes[]? |
+          (select((.body // "") != "" or .state == "CHANGES_REQUESTED") | who + {kind: "review"}),
+          (.comments.nodes[]? | who + {kind: "line"}));
+      [.data.repository | to_entries[].value | select(. != null) | .number as $n
+       | (talk, (.closedByPullRequestsReferences.nodes[]? | talk))
+       | . + {n: $n}]' <<<"$1"
+}
+
+# gated_prs <talk>: the open PR that closes each of those items, as {n, pr, prUrl, draft,
+# conflicting, base, sha}. UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING
+# counts as a conflict.
+gated_prs() {
+  jq '[.data.repository | to_entries[].value | select(. != null) | .number as $n
+       | .closedByPullRequestsReferences.nodes[]?
+       | {n: $n, pr: .number, prUrl: .url, draft: .isDraft,
+          conflicting: (.mergeable == "CONFLICTING"), base: .baseRefName, sha: .headRefOid}]' <<<"$1"
+}
+
+# pr_checks <prs>: each of them with the verdict `checks` gives it, and when a failing run finished.
+pr_checks() {
+  local row
+  while IFS= read -r row; do
+    jq -c --argjson ci "$(ci "$(jq -r .pr <<<"$row")" "$(jq -r .sha <<<"$row")")" \
+      '. + {checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}' <<<"$row"
+  done < <(jq -c '.[]' <<<"$1") | jq -s .
+}
+
+# turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
+# reviewer's until they comment; from then it is the role's, the same test `unanswered_feedback`
+# makes. A PR that is failing, conflicting or still a draft is the Dev's too, but an unanswered
+# comment outranks all three: the answer is owed before a green build means anything.
 turns() {
-  jq -n --argjson items "$1" --argjson comments "$2" --arg reviewer "$REVIEWER" '
+  jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" '
     def stamp: fromdateiso8601
       | if strflocaltime("%Y-%m-%d") == (now | strflocaltime("%Y-%m-%d"))
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
@@ -312,13 +338,24 @@ turns() {
       . as $item
       | (if .status == "Pitched" then "lead" else "dev" end) as $role
       | ($comments | map(select(.n == $item.number))) as $theirs
+      | ($prs | map(select(.n == $item.number)) | first) as $pr
       | ($theirs | map(select(.body | contains("<!-- a-team:\($role) -->")) | .at) | max // "") as $said
       | ($theirs | map(select(.kind != "body" and .author == $reviewer
                               and (.body | contains("<!-- a-team:") | not) and .at > $said) | .at)
          | max // "") as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
+      | (if $pr == null then null
+         elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
+         elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
+         elif $pr.draft then {trouble: "still a draft", at: ""}
+         else null end) as $wrong
+      | (if $pr == null then . else . + {pr: $pr.pr, prUrl: $pr.prUrl, checks: $pr.checks,
+                                         conflicting: $pr.conflicting, draft: $pr.draft} end)
       | if $asked != ""
         then . + {turn: $role, reason: "answering your feedback\(since($asked))"}
+        elif $wrong != null
+        then . + {turn: $role, trouble: $wrong.trouble,
+                  reason: "\($wrong.trouble)\(since($wrong.at))"}
         else (if $said != "" then $said else $opened end) as $waited
              | (if .status == "Pitched" then "approval" else "acceptance" end) as $for
              | . + {turn: "you", reason: "awaiting your \($for)\(since($waited))"}
@@ -604,7 +641,8 @@ case "$CMD" in
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
     gated=$(items | jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team})')
-    turns "$gated" "$(gated_comments "$gated")"
+    talk=$(gated_talk "$gated")
+    turns "$gated" "$(gated_comments "$talk")" "$(pr_checks "$(gated_prs "$talk")")"
     ;;
 
   pr)
