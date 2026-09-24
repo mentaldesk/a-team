@@ -3,10 +3,12 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Everything waiting on the reviewer: a swimlane per team, a column per gate.</summary>
+/// <summary>Everything waiting on the reviewer: a swimlane per team, holding the Ideas that can't be
+/// pitched until they're ranked and then a column per gate, in the order the work moves through them.</summary>
 public sealed class WorkView : View
 {
-    internal static readonly (string Name, string Status)[] Gates = [("Pitches", "Pitched"), ("Review", "In review")];
+    internal static readonly (string Name, string Status)[] Gates =
+        [("Ideas", "Idea"), ("Pitches", "Pitched"), ("Review", "In review")];
 
     private readonly List<WorkLane> _lanes = [];
     private IReadOnlyList<WaitingItem> _items = [];
@@ -290,6 +292,9 @@ public sealed class WorkColumn : FrameView
     /// <summary>The icon each of those cards wears.</summary>
     internal IReadOnlyList<TurnIcon> Icons { get; private set; } = [];
 
+    /// <summary>The Priority colour each of those cards wears on its number.</summary>
+    internal IReadOnlyList<PriorityMark> Marks { get; private set; } = [];
+
     internal WaitingItem? Selected =>
         _cards.SelectedItem is { } index && index >= 0 && index < _items.Count ? _items[index] : null;
 
@@ -376,8 +381,10 @@ public sealed class WorkColumn : FrameView
             return;
         _laidOutOver = width;
         var selected = _cards.SelectedItem;
+        var cards = _items.Select(item => Card(item, width - TurnIcons.Width)).ToList();
         Icons = [.. _items.Select(item => TurnIcons.For(item, _nerdFont))];
-        _cards.Source = new CardSource([.. _items.Select(item => Card(item, width - TurnIcons.Width))], Icons);
+        Marks = [.. _items.Zip(cards, Priorities.Mark)];
+        _cards.Source = new CardSource(cards, Icons, Marks);
         if (_items.Count > 0)
             _cards.SelectedItem = Math.Clamp(selected ?? 0, 0, _items.Count - 1);
     }

@@ -27,14 +27,15 @@ public class WorkAreaTests : IDisposable
         using var window = Open(read: team =>
         {
             teams.Add(team);
-            return Task.FromResult(new Reading(Gated(team), null));
+            return Task.FromResult(new Reading(Waiting(team), null));
         });
 
         window.Refresh();
         LayOut(window, 120, 30);
 
         Assert.Equal(["team0", "team1"], teams);
-        Assert.Equal(["Pitches · 2", "Review · 1", "Pitches · 1", "Review · 0"], Titles(window));
+        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
+            Titles(window));
     }
 
     [Fact]
@@ -45,8 +46,8 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(107, window.Work.Selected?.Number);
-        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
+        Assert.Equal(6, window.Work.Selected?.Number);
+        Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
     }
 
     [Fact]
@@ -55,6 +56,9 @@ public class WorkAreaTests : IDisposable
         using var window = Open();
         window.Refresh();
         LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
 
         window.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Says);
@@ -70,6 +74,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorDown);
 
@@ -87,13 +92,15 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('m')));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Pitches · 1", "Review · 0", "Pitches · 1", "Review · 0"], Titles(window));
-        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.Equal(["Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0", "Pitches · 1", "Review · 0"],
+            Titles(window));
+        Assert.Equal(6, window.Work.Selected?.Number);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Pitches · 2", "Review · 1", "Pitches · 1", "Review · 0"], Titles(window));
+        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
+            Titles(window));
     }
 
     [Fact]
@@ -132,7 +139,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        var icons = window.Work.Lanes[0].Columns[0].Icons;
+        var icons = window.Work.Lanes[0].Columns[1].Icons;
 
         Assert.True(window.Work.NerdFont);
         Assert.Equal([LogSchemes.Success, LogSchemes.Dimmed], icons.Select(icon => icon.Scheme));
@@ -148,7 +155,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.False(window.Work.NerdFont);
-        Assert.Equal(["✓", "·"], window.Work.Lanes[0].Columns[0].Icons.Select(icon => icon.Glyph));
+        Assert.Equal(["✓", "·"], window.Work.Lanes[0].Columns[1].Icons.Select(icon => icon.Glyph));
     }
 
     [Fact]
@@ -167,7 +174,8 @@ public class WorkAreaTests : IDisposable
         LayOut(reopened, 120, 30);
 
         Assert.True(reopened.Work.OnlyMine);
-        Assert.Equal(["Pitches · 1", "Review · 0", "Pitches · 1", "Review · 0"], Titles(reopened));
+        Assert.Equal(["Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0", "Pitches · 1", "Review · 0"],
+            Titles(reopened));
     }
 
     [Fact]
@@ -178,6 +186,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
+        window.NewKeyDownEvent(Key.CursorRight);
         Assert.True(window.NewKeyDownEvent(Key.Enter));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/107"], opened);
@@ -192,6 +201,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
         Assert.True(window.NewKeyDownEvent(new Key('p')));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/pull/122"], opened);
@@ -205,6 +215,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
+        window.NewKeyDownEvent(Key.CursorRight);
         Assert.True(window.NewKeyDownEvent(new Key('p')));
 
         Assert.Empty(opened);
@@ -213,11 +224,29 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void An_Idea_hands_over_to_GitHub_on_Enter_and_has_no_PR_to_open()
+    {
+        var opened = new List<string>();
+        using var window = Open(openUrl: opened.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
+
+        Assert.True(window.NewKeyDownEvent(new Key('p')));
+        Assert.Equal("#6 has no open PR", window.Message.Says);
+    }
+
+    [Fact]
     public void That_refusal_goes_when_you_move_to_another_card()
     {
         using var window = Open();
         window.Refresh();
         LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(new Key('p'));
 
         window.NewKeyDownEvent(Key.CursorDown);
@@ -270,7 +299,7 @@ public class WorkAreaTests : IDisposable
         var failing = false;
         using var window = Open(read: team => Task.FromResult(failing
             ? new Reading("", "a-team board: API rate limit exceeded\nand a second line")
-            : new Reading(Gated(team), null)));
+            : new Reading(Waiting(team), null)));
         window.Refresh();
         LayOut(window, 120, 30);
         var stamp = window.Stamp.Text;
@@ -281,9 +310,10 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
-        Assert.Equal(["Pitches · 2", "Review · 1", "Pitches · 1", "Review · 0"], Titles(window));
+        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
+            Titles(window));
         Assert.Equal(stamp, window.Stamp.Text);
-        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.Equal(6, window.Work.Selected?.Number);
     }
 
     [Fact]
@@ -315,7 +345,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(read: team =>
         {
             reads++;
-            return Task.FromResult(new Reading(Gated(team), null));
+            return Task.FromResult(new Reading(Waiting(team), null));
         });
 
         for (var tick = 0; tick < 5; tick++)
@@ -331,7 +361,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(read: team =>
         {
             reads++;
-            return Task.FromResult(new Reading(Gated(team), null));
+            return Task.FromResult(new Reading(Waiting(team), null));
         });
         window.Refresh();
 
@@ -348,6 +378,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorDown);
 
         Assert.Equal(108, window.Work.Selected?.Number);
@@ -361,6 +392,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(49, window.Work.Selected?.Number);
         Assert.Equal("Review · team0", window.Work.Region);
@@ -381,6 +413,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.Enter);
 
@@ -444,9 +477,9 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("Resume team0", window.MenuItems.Single(item => item.Id == "team.pause").Item.Title);
     }
 
-    /// <summary>Two gated items for the first team and one for the second, so a column comes back empty.
-    /// One of the first team's is the Lead's move, so the filter has something to hide.</summary>
-    private static string Gated(string team) => team == "team0"
+    /// <summary>Two gated items and an unranked Idea for the first team, one gated item for the second, so
+    /// columns come back empty. One of the first team's is the Lead's move, so the filter has something to hide.</summary>
+    private static string Waiting(string team) => team == "team0"
         ? """
           [{"number": 107, "title": "When the dashboard goes quiet", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team0/issues/107", "team": "team0",
@@ -458,7 +491,10 @@ public class WorkAreaTests : IDisposable
             "url": "https://github.com/mentaldesk/team0/issues/49", "team": "team0",
             "turn": "dev", "reason": "answering your feedback since 10:15",
             "pr": 122, "prUrl": "https://github.com/mentaldesk/team0/pull/122",
-            "checks": "pass", "conflicting": false, "draft": false}]
+            "checks": "pass", "conflicting": false, "draft": false},
+           {"number": 6, "title": "The agents can't say what they'd change", "status": "Idea",
+            "url": "https://github.com/mentaldesk/team0/issues/6", "team": "team0",
+            "turn": "you", "reason": "waiting to be ranked"}]
           """
         : """
           [{"number": 133, "title": "Notice when open files change on disk", "status": "Pitched",
@@ -487,7 +523,7 @@ public class WorkAreaTests : IDisposable
             new DashboardSettings(Config),
             new TeamConfigs(Config),
             (_, _) => Task.FromResult<string?>(null),
-            read ?? (team => Task.FromResult(new Reading(Gated(team), null))),
+            read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             openUrl ?? (_ => { }),
             area);
     }

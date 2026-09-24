@@ -4,7 +4,7 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The named schemes the log draws with, beyond Terminal.Gui's built-ins.</summary>
+/// <summary>The named schemes the dashboard draws with, beyond Terminal.Gui's built-ins.</summary>
 public static class LogSchemes
 {
     public const string Success = "Success";
@@ -21,5 +21,6 @@ public static class LogSchemes
         {
             Normal = baseScheme.GetAttributeForRole(VisualRole.Disabled),
         });
+        Priorities.Register(baseScheme);
     }
 }

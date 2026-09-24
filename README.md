@@ -124,10 +124,12 @@ in is what it opens in next time; a first run lands on Work.
 
 ### What's waiting on you
 
-A swimlane per team, and two columns in each: **Pitches** (waiting for you to approve) and
-**Review** (waiting for you to merge or accept), each headed by its count. Enter opens the selected
-card's issue in your browser, and `p` the PR that closes it — on a card with no open PR it says so
-instead.
+A swimlane per team, and three columns in each, left to right in the order work moves through
+them: **Ideas** (the ones with no Priority set, which never get pitched until you give them one),
+**Pitches** (waiting for you to approve) and **Review** (waiting for you to merge or accept), each
+headed by its count. A card's issue number is coloured by the item's Priority, in the colours
+GitHub gives that field's own options. Enter opens the selected card's issue in your browser, and
+`p` the PR that closes it — on a card with no open PR it says so instead.
 
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the
@@ -137,8 +139,9 @@ which is the same test the dispatcher makes when it decides what to start a run 
 failing CI, conflicting with its base or still a draft is theirs too, and the card names which —
 `#124  dev · CI failing · A finished task` — so you never open one to find CI still running on it.
 `m` hides everything that isn't your move and `m` again brings it
-back; the counts follow, the right of that same line says which you're looking at — *All items* or
-*My items* — and it opens the way you left it.
+back — every Idea is yours, so that column keeps them all; the counts follow, the right of that
+same line says which you're looking at — *All items* or *My items* — and it opens the way you left
+it.
 
 The two icons are Nerd Font glyphs. No terminal reports its font, so if yours draws them as boxes,
 turn *Nerd Font icons on the cards* off under Settings → Dashboard and they become `✓` and `·`.

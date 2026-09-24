@@ -44,7 +44,7 @@ public class TurnIconsTests : StaticConfigurationTest
         BundledThemes.Load();
         var row = new Attribute(StandardColor.White, StandardColor.Blue);
 
-        var colour = CardSource.Colour(TurnIcons.For(Mine, nerdFont: true), row);
+        var colour = CardSource.Colour(TurnIcons.For(Mine, nerdFont: true).Scheme, row);
 
         Assert.Equal(SchemeManager.GetScheme(LogSchemes.Success).Normal.Foreground, colour.Foreground);
         Assert.Equal(row.Background, colour.Background);
@@ -55,6 +55,6 @@ public class TurnIconsTests : StaticConfigurationTest
     {
         var row = new Attribute(StandardColor.White, StandardColor.Blue);
 
-        Assert.Equal(row, CardSource.Colour(new TurnIcon("?", "NoSuchScheme"), row));
+        Assert.Equal(row, CardSource.Colour("NoSuchScheme", row));
     }
 }
