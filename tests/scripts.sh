@@ -114,7 +114,9 @@ grep -q '^  pause ' "$OUT" || fail "usage: no pause line"
 grep -q '^  resume ' "$OUT" || fail "usage: no resume line"
 
 # The one GraphQL page board.sh's `items` reads, from lines of "<status with _ for space> <n> <title>".
-# The issue numbers passed as arguments are the ones with a Priority set.
+# The issue numbers passed as arguments are the ones with a Priority set. An item's labels follow
+# its status, as a real board's do: a pitch carries `pitch` from Exploring on, and a task the Dev
+# has claimed is the one In progress or In review.
 gh_items() {
   BIN=$(mktemp -d "$WORK/bin.XXXXXX")
   ITEMS="$BIN/items.json"
@@ -126,7 +128,12 @@ gh_items() {
       fieldValueByName: {name: ($f[0] | gsub("_"; " "))},
       content: {__typename: "Issue", number: ($f[1] | tonumber), title: ($f[2:] | join(" ")),
                 url: "https://github.com/\($repo)/issues/\($f[1])",
-                repository: {nameWithOwner: $repo}, labels: {nodes: []},
+                repository: {nameWithOwner: $repo},
+                labels: {nodes: (($f[0] | gsub("_"; " ")) as $s
+                  | if ["Exploring", "Pitched", "Approved", "Building"] | index($s)
+                    then [{name: "pitch"}]
+                    elif ["In progress", "In review"] | index($s) then [{name: "a-team:dev"}]
+                    else [] end)},
                 issueDependenciesSummary: {blockedBy: 0},
                 issueFieldValues: {nodes: (if $ranked | index($f[1] | tonumber)
                                            then [{name: "High", field: {name: "Priority"}}] else [] end)}}})
@@ -134,6 +141,13 @@ gh_items() {
     >"$ITEMS"
   TALK="$BIN/talk.json"
   echo '{"data": {"repository": {}}}' >"$TALK"
+  ISSUE="$BIN/issue.json" THREAD="$BIN/thread.json"
+  LINE="$BIN/line.json" REVIEWS="$BIN/reviews.json" RECENT="$BIN/recent.json"
+  ACKED="$BIN/acked" POSTED="$BIN/posted" EMPTY="$BIN/empty.json"
+  : >"$ACKED"
+  echo '[]' >"$EMPTY"
+  gh_thread </dev/null
+  gh_recent </dev/null
   RUNS="$BIN/runs.json"
   gh_runs <<'RUNS'
 completed success 2025-09-19T09:00:00Z build
@@ -142,8 +156,16 @@ RUNS
 #!/usr/bin/env bash
 echo call >>"$CALLS"
 case " \$* " in
+  *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
+  *"issue comment"*) cat >"$POSTED"; exit 0 ;;
   *check-runs*) page="$RUNS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
+  *reviews*) page="$REVIEWS" ;;
+  *"/issues/comments?since"*) page="$RECENT" ;;
+  *"comments?since"*) page="$EMPTY" ;;
+  *"/issues/"*"/comments"*) page="$THREAD" ;;
+  *"/pulls/"*"/comments"*) page="$LINE" ;;
+  *"/issues/"[0-9]*) page="$ISSUE" ;;
   *) page="$ITEMS" ;;
 esac
 filter=
@@ -171,26 +193,31 @@ gh_runs() {
 # "<n> <kind> <timestamp> <author> <text...>". The body line is the item's own; the pr-* kinds
 # (pr-body, pr-comment, pr-review, pr-line) belong to the open PR that closes #<n>, which is
 # numbered 900 + n and is ready and mergeable unless `gh_talk <draft> <mergeable>` says otherwise.
+# A kind ending `+seen` carries the 👀 a run leaves on a comment it has read.
 gh_talk() {
   jq -R -s --arg draft "${1:-false}" --arg mergeable "${2:-MERGEABLE}" '
+    def seen: {reactions: {totalCount: (if .seen then 1 else 0 end)}};
     def node($rows; $number):
       ($rows | map(select(.kind == "body")) | first) as $body
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
-         author: {login: ($body.author // "")},
+         author: {login: ($body.author // "")}, reactions: {totalCount: 0},
          comments: {nodes: ($rows | map(select(.kind == "comment")
-           | {createdAt: .at, body: .body, author: {login: .author}}))},
+           | seen + {createdAt: .at, body: .body, author: {login: .author}}))},
          reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
            | if .kind == "review"
-             then {createdAt: .at, body: .body, state: "COMMENTED",
+             then seen + {createdAt: .at, body: .body, state: "COMMENTED",
                    author: {login: .author}, comments: {nodes: []}}
              else {createdAt: .at, body: "", state: "COMMENTED", author: {login: .author},
-                   comments: {nodes: [{createdAt: .at, body: .body, author: {login: .author}}]}}
+                   reactions: {totalCount: 0},
+                   comments: {nodes: [seen + {createdAt: .at, body: .body,
+                                              author: {login: .author}}]}}
              end))}};
     def open_pr($rows; $number): node($rows; $number)
       + {url: "https://github.com/mentaldesk/demo/pull/\($number)", isDraft: ($draft == "true"),
          mergeable: $mergeable, baseRefName: "main", headRefOid: "deadbee"};
     split("\n") | map(select(length > 0)) | map(split(" ") as $f
-      | {n: ($f[0] | tonumber), kind: $f[1], at: $f[2], author: $f[3], body: ($f[4:] | join(" "))})
+      | {n: ($f[0] | tonumber), kind: ($f[1] | rtrimstr("+seen")), at: $f[2], author: $f[3],
+         body: ($f[4:] | join(" ")), seen: ($f[1] | endswith("+seen"))})
     | group_by(.n) | map(
         (map(select(.kind | startswith("pr-") | not))) as $own
         | (map(select(.kind | startswith("pr-")) | .kind |= ltrimstr("pr-"))) as $pr
@@ -198,6 +225,37 @@ gh_talk() {
            value: (node($own; .[0].n) + {closedByPullRequestsReferences: {nodes:
              (if ($pr | length) > 0 then [open_pr($pr; 900 + .[0].n)] else [] end)}})})
     | from_entries | {data: {repository: .}}' >"$TALK"
+}
+
+# The whole thread on #7, which `feedback` and `comment` read, from lines of
+# "<kind> <timestamp> <author> <eyes> <text...>" — kinds body, comment, review and line, and
+# <eyes> the reaction count on it. With `gh_thread pull`, #7 is a PR, so its reviews and line
+# comments are read too. Every comment's node id is "IC_<its line>".
+gh_thread() {
+  local rows
+  rows=$(jq -R -s 'split("\n") | map(select(length > 0)) | to_entries
+    | map(.key as $i | .value | split(" ") as $f
+      | {id: "IC_\($i)", kind: $f[0], at: $f[1], author: $f[2], eyes: ($f[3] | tonumber),
+         body: ($f[4:] | join(" ")), url: "https://github.com/mentaldesk/demo/issues/7#\($i)"})')
+  local rest='{node_id: .id, user: {login: .author}, created_at: .at, body: .body,
+               html_url: .url, reactions: {eyes: .eyes}}'
+  jq --arg pull "${1:-}" "(map(select(.kind == \"body\")) | first // {}) | $rest
+    + (if \$pull == \"pull\" then {pull_request: {}} else {} end)" <<<"$rows" >"$ISSUE"
+  jq "[.[] | select(.kind == \"comment\") | $rest]" <<<"$rows" >"$THREAD"
+  jq "[.[] | select(.kind == \"line\") | $rest + {path: \"board.sh\", line: 1}]" <<<"$rows" >"$LINE"
+  jq '{data: {repository: {pullRequest: {reviews: {nodes:
+        [.[] | select(.kind == "review")
+         | {id, url, state: "COMMENTED", body, submittedAt: .at,
+            author: {login: .author}, reactions: {totalCount: .eyes}}]}}}}}' <<<"$rows" >"$REVIEWS"
+}
+
+# The repo-wide conversation comments of the last day that `triggers` reads, from lines of
+# "<n> <timestamp> <author> <eyes> <text...>".
+gh_recent() {
+  jq -R -s 'split("\n") | map(select(length > 0)) | map(split(" ") as $f
+    | {issue_url: "https://api.github.com/repos/mentaldesk/demo/issues/\($f[0])",
+       user: {login: $f[2]}, created_at: $f[1], body: ($f[4:] | join(" ")),
+       reactions: {eyes: ($f[3] | tonumber)}})' >"$RECENT"
 }
 
 # Times read in the reviewer's own zone, so these cases pin one they can predict.
@@ -249,13 +307,13 @@ same "pitch reason" '"answering your feedback since 09:30"' "$(jq -c '.[0].reaso
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
 
-case_ "a role that has answered since hands the gate back"
+case_ "a comment a run has read and answered hands the gate back"
 gh_talk <<TALK
 106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-106 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+106 comment+seen ${TODAY}T09:30:00Z reviewer What about the second gate?
 106 comment ${TODAY}T11:00:00Z reviewer Redrafted. <!-- a-team:lead -->
 115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+115 comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
 115 comment ${TODAY}T11:45:00Z reviewer Added one. <!-- a-team:dev -->
 TALK
 run board demo waiting
@@ -309,7 +367,7 @@ gh_talk <<TALK
 106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
 115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
 115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
-115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+115 pr-comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
 115 pr-comment ${TODAY}T11:45:00Z reviewer Added one. <!-- a-team:dev -->
 TALK
 run board demo waiting
@@ -465,6 +523,162 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+# The 👀: a reviewer comment is answered once a run has left one on it, and a run leaves one only
+# on what it could have seen. The races replayed here are the ones in pitch #3. $TODAY is on or
+# after board.sh's ACK_FROM, so these cases see the 👀 rule and the dated ones below the old.
+case_ "comment acks what the run could have seen, and not a comment that arrived while it worked"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer",
+  "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 3, "exploring": 4, "ideas": 4 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 7 A pitch in front of me
+ITEMS
+gh_thread <<TALK
+body ${TODAY}T02:10:00Z reviewer 0 The pitch <!-- a-team:lead -->
+comment ${TODAY}T02:20:00Z reviewer 0 Needs a second option.
+comment ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
+TALK
+echo "Added one." >"$WORK/reply"
+export A_TEAM_RUN_STARTED=${TODAY}T02:21:49Z
+run board demo comment lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_1" "$(cat "$ACKED")"
+grep -q '<!-- a-team:lead -->' "$POSTED" || fail "reply: no marker in '$(cat "$POSTED")'"
+unset A_TEAM_RUN_STARTED
+
+case_ "the comment that arrived mid-run is still unanswered, however recently the role replied"
+gh_thread <<TALK
+body ${TODAY}T02:10:00Z reviewer 0 The pitch <!-- a-team:lead -->
+comment ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
+comment ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
+comment ${TODAY}T02:33:03Z reviewer 0 Added one. <!-- a-team:lead -->
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '["And do the same for subissue links."]' "$(jq -c '[.[].body]' "$OUT")"
+
+case_ "triggers names it too, so it gets a run of its own"
+gh_recent <<RECENT
+7 ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
+7 ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
+7 ${TODAY}T02:33:03Z reviewer 0 Added one. <!-- a-team:lead -->
+RECENT
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" "[\"reviewer feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .reasons "$OUT")"
+
+case_ "waiting says the same: the gate is the Lead's until the 👀 is there"
+gh_talk <<TALK
+7 body ${TODAY}T02:10:00Z reviewer The pitch <!-- a-team:lead -->
+7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
+7 comment ${TODAY}T02:28:46Z reviewer And do the same for subissue links.
+7 comment ${TODAY}T02:33:03Z reviewer Added one. <!-- a-team:lead -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
+same "reason" '"answering your feedback since 02:28"' "$(jq -c '.[0].reason' "$OUT")"
+
+case_ "and hands it back once the 👀 is"
+gh_talk <<TALK
+7 body ${TODAY}T02:10:00Z reviewer The pitch <!-- a-team:lead -->
+7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
+7 comment+seen ${TODAY}T02:28:46Z reviewer And do the same for subissue links.
+7 comment ${TODAY}T02:33:03Z reviewer Added one. <!-- a-team:lead -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
+same "reason" '"awaiting your approval since 02:33"' "$(jq -c '.[0].reason' "$OUT")"
+
+case_ "a comment older than ACK_FROM with no 👀 keeps the watermark rule, so an upgrade reopens nothing"
+gh_thread <<'TALK'
+body 2026-09-20T02:10:00Z reviewer 0 The pitch <!-- a-team:lead -->
+comment 2026-09-20T02:28:46Z reviewer 0 And do the same for subissue links.
+comment 2026-09-20T02:33:03Z reviewer 0 Added one. <!-- a-team:lead -->
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '[]' "$(jq -c . "$OUT")"
+
+case_ "an older comment the role never answered is still returned"
+gh_thread <<'TALK'
+body 2026-09-20T02:10:00Z reviewer 0 The pitch <!-- a-team:lead -->
+comment 2026-09-20T02:33:03Z reviewer 0 Drafted. <!-- a-team:lead -->
+comment 2026-09-20T02:40:00Z reviewer 0 Still needs a second option.
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '["Still needs a second option."]' "$(jq -c '[.[].body]' "$OUT")"
+
+case_ "a review and a line comment on a PR are acked like any other comment"
+gh_thread pull <<TALK
+body ${TODAY}T08:00:00Z reviewer 0 Closes #7 <!-- a-team:dev -->
+review ${TODAY}T09:00:00Z reviewer 0 Nearly there.
+line ${TODAY}T09:10:00Z reviewer 0 This name reads oddly.
+TALK
+: >"$ACKED"
+export A_TEAM_RUN_STARTED=${TODAY}T09:30:00Z
+run board demo comment dev 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_1 IC_2" "$(tr '\n' ' ' <"$ACKED" | sed 's/ $//')"
+unset A_TEAM_RUN_STARTED
+
+case_ "A_TEAM_RUN_STARTED unset acks the whole thread: whoever ran it by hand has just read it"
+: >"$ACKED"
+run board demo comment dev 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_1 IC_2" "$(tr '\n' ' ' <"$ACKED" | sed 's/ $//')"
+
+case_ "a comment already carrying a 👀 is not acked again"
+gh_thread pull <<TALK
+body ${TODAY}T08:00:00Z reviewer 0 Closes #7 <!-- a-team:dev -->
+review ${TODAY}T09:00:00Z reviewer 1 Nearly there.
+line ${TODAY}T09:10:00Z reviewer 0 This name reads oddly.
+TALK
+: >"$ACKED"
+run board demo comment dev 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_2" "$(cat "$ACKED")"
+
+case_ "a comment from anyone but the reviewer is not acked"
+gh_thread <<TALK
+body ${TODAY}T08:00:00Z reviewer 0 The pitch <!-- a-team:lead -->
+comment ${TODAY}T09:00:00Z passer-by 0 Have you considered doing it differently?
+TALK
+: >"$ACKED"
+run board demo comment lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "" "$(cat "$ACKED")"
+
+case_ "skip acks too, or the Idea it just passed over would be back in the running at once"
+gh_items <<'ITEMS'
+Idea 7 An Idea with nothing to pitch in it
+ITEMS
+gh_thread <<TALK
+body ${TODAY}T08:00:00Z reviewer 0 The idea <!-- a-team:lead -->
+comment ${TODAY}T09:00:00Z reviewer 0 Worth a look.
+TALK
+: >"$ACKED"
+run board demo skip lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_1" "$(cat "$ACKED")"
+
+case_ "--dry-run says which reactions it would add and adds none"
+gh_thread <<TALK
+body ${TODAY}T08:00:00Z reviewer 0 The pitch <!-- a-team:lead -->
+comment ${TODAY}T09:00:00Z reviewer 0 Needs a second option.
+TALK
+: >"$ACKED"
+: >"$POSTED"
+run board --dry-run demo comment lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "" "$(cat "$ACKED")"
+same "posted" "" "$(cat "$POSTED")"
+grep -q "would add 👀 to your comment of ${TODAY}T09:00:00Z on #7" "$ERR" || fail "dry run: nothing about the 👀 in '$(cat "$ERR")'"
 
 case_ "a-team with no command opens the app, and dashboard opens it on the Dashboard"
 APP=$(mktemp -d "$WORK/app.XXXXXX")

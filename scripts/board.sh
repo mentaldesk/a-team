@@ -48,6 +48,17 @@ PRIORITY=${PRIORITY:-Priority}
 REVIEWER=$(cfg .reviewer)
 [ -n "$NUMBER" ] || die "project.number is not set in $CONFIG"
 
+# A reviewer comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
+# older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
+# Delete it, and the $ackFrom half of `unanswered`, once no open item predates it.
+ACK_FROM=2026-09-24T00:00:00Z
+
+# unanswered($since): of comments shaped {at, author, body, eyes, kind?}, the ones the reviewer is
+# owed an answer to. $since is the role's own newest comment, which only ACK_FROM's tail needs.
+UNANSWERED='def unanswered($since): map(select(
+    .kind != "body" and .author == $reviewer and (.body | contains("<!-- a-team:") | not)
+    and (.eyes // 0) == 0 and (.at >= $ackFrom or .at > $since)));'
+
 is_state() {
   local s
   for s in "${STATES[@]}"; do [ "$s" = "$1" ] && return 0; done
@@ -246,31 +257,43 @@ ci() {
       }'
 }
 
-# Conversation and line comments across the whole repo from the last day, as {n, author, at, body}.
+# Conversation and line comments across the whole repo from the last day, as
+# {n, author, at, body, eyes}. Both payloads carry the reaction count inline, so the 2-minute
+# trigger path reads a number it is already being handed.
 recent_comments() {
   local since
   since=$(jq -rn 'now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ")')
   {
     gh api --paginate "repos/$REPO/issues/comments?since=$since&per_page=100" \
-      --jq '.[] | {n: (.issue_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // "")}'
+      --jq '.[] | {n: (.issue_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // ""), eyes: .reactions.eyes}'
     gh api --paginate "repos/$REPO/pulls/comments?since=$since&per_page=100" \
-      --jq '.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // "")}'
+      --jq '.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // ""), eyes: .reactions.eyes}'
   } | jq -s .
 }
 
-pr_reviews() {
-  gh api --paginate "repos/$REPO/pulls/$1/reviews" \
-    --jq '.[] | select(.body != "" or .state == "CHANGES_REQUESTED")
-          | {n: '"$1"', author: .user.login, at: .submitted_at, body: (.body // "")}' | jq -s .
+# reviews <pr>: the PR's review summaries, as {kind, state, author, at, body, url, id, eyes}.
+# GraphQL rather than REST, which carries no reaction count for a review.
+reviews() {
+  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F number="$1" -f query='
+    query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) { pullRequest(number: $number) {
+        reviews(last: 50) { nodes { id url state body submittedAt author { login }
+          reactions(content: EYES) { totalCount } } } } } }' \
+    --jq '.data.repository.pullRequest.reviews.nodes[]
+          | select((.body // "") != "" or .state == "CHANGES_REQUESTED")
+          | {kind: "review", state, author: (.author.login // ""), at: .submittedAt,
+             body: (.body // ""), url, id, eyes: .reactions.totalCount}'
 }
 
-# awaiting <comments> <role> <n>: the time of the reviewer's newest comment on #n since the role
-# last commented, or nothing. It goes into the trigger so new feedback never looks like a retry.
+pr_reviews() { reviews "$1" | jq -s --argjson n "$1" 'map(. + {n: $n})'; }
+
+# awaiting <comments> <role> <n>: the time of the reviewer's newest unanswered comment on #n, or
+# nothing. It goes into the trigger so new feedback never looks like a retry.
 awaiting() {
-  jq -r --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" '
+  jq -r --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" \
+    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
     map(select(.n == $n)) | (map(select(.body | contains($marker)) | .at) | max // "") as $since
-    | map(select(.author == $reviewer and (.body | contains("<!-- a-team:") | not) and .at > $since) | .at)
-    | max // empty' <<<"$1"
+    | unanswered($since) | map(.at) | max // empty' <<<"$1"
 }
 
 # gated_talk <items>: one page holding the body, comments and open PR of every item, in one call
@@ -278,11 +301,12 @@ awaiting() {
 # own number: the reviewer answers a task on either. `waiting` reads whose turn it is off this page.
 gated_talk() {
   local said reviewed n query=''
-  said='number createdAt body author { login }
-        comments(last: 50) { nodes { createdAt body author { login } } }'
-  reviewed="$said"' url isDraft mergeable baseRefName headRefOid
-              reviews(last: 50) { nodes { createdAt body state author { login }
-              comments(first: 50) { nodes { createdAt body author { login } } } } }'
+  local seen='reactions(content: EYES) { totalCount }'
+  said="number createdAt body author { login }
+        comments(last: 50) { nodes { createdAt body author { login } $seen } }"
+  reviewed="$said"" url isDraft mergeable baseRefName headRefOid
+              reviews(last: 50) { nodes { createdAt body state author { login } $seen
+              comments(first: 50) { nodes { createdAt body author { login } $seen } } } }"
   for n in $(jq -r '.[].number' <<<"$1"); do
     query+=" x$n: issueOrPullRequest(number: $n) {
       ... on Issue { $said
@@ -294,9 +318,10 @@ gated_talk() {
     -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query} }"
 }
 
-# gated_comments <talk>: everything said on those items, as {n, at, author, body, kind}.
+# gated_comments <talk>: everything said on those items, as {n, at, author, body, eyes, kind}.
 gated_comments() {
-  jq 'def who: {at: .createdAt, author: (.author.login // ""), body: (.body // "")};
+  jq 'def who: {at: .createdAt, author: (.author.login // ""), body: (.body // ""),
+                eyes: (.reactions.totalCount // 0)};
       def talk:
         (who + {kind: "body"}),
         (.comments.nodes[]? | who + {kind: "comment"}),
@@ -332,7 +357,8 @@ pr_checks() {
 # makes. A PR that is failing, conflicting or still a draft is the Dev's too, but an unanswered
 # comment outranks all three: the answer is owed before a green build means anything.
 turns() {
-  jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" '
+  jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" \
+    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
     def stamp: fromdateiso8601
       | if strflocaltime("%Y-%m-%d") == (now | strflocaltime("%Y-%m-%d"))
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
@@ -343,9 +369,7 @@ turns() {
       | ($comments | map(select(.n == $item.number))) as $theirs
       | ($prs | map(select(.n == $item.number)) | first) as $pr
       | ($theirs | map(select(.body | contains("<!-- a-team:\($role) -->")) | .at) | max // "") as $said
-      | ($theirs | map(select(.kind != "body" and .author == $reviewer
-                              and (.body | contains("<!-- a-team:") | not) and .at > $said) | .at)
-         | max // "") as $asked
+      | ($theirs | unanswered($said) | map(.at) | max // "") as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
@@ -376,25 +400,42 @@ comments() {
   local n=$1 issue
   issue=$(gh api "repos/$REPO/issues/$n")
   {
-    jq '{kind: "body", author: .user.login, at: .created_at, body: (.body // ""), url: .html_url}' <<<"$issue"
+    jq '{kind: "body", author: .user.login, at: .created_at, body: (.body // ""), url: .html_url,
+         id: .node_id, eyes: .reactions.eyes}' <<<"$issue"
     gh api --paginate "repos/$REPO/issues/$n/comments" |
-      jq '.[] | {kind: "comment", author: .user.login, at: .created_at, body: (.body // ""), url: .html_url}'
+      jq '.[] | {kind: "comment", author: .user.login, at: .created_at, body: (.body // ""), url: .html_url,
+                 id: .node_id, eyes: .reactions.eyes}'
     if jq -e '.pull_request' <<<"$issue" >/dev/null; then
-      gh api --paginate "repos/$REPO/pulls/$n/reviews" |
-        jq '.[] | select(.body != "" or .state == "CHANGES_REQUESTED")
-            | {kind: "review", state, author: .user.login, at: .submitted_at, body: (.body // ""), url: .html_url}'
+      reviews "$n"
       gh api --paginate "repos/$REPO/pulls/$n/comments" |
-        jq '.[] | {kind: "line", author: .user.login, at: .created_at, body: (.body // ""), url: .html_url, path, line}'
+        jq '.[] | {kind: "line", author: .user.login, at: .created_at, body: (.body // ""), url: .html_url,
+                   path, line, id: .node_id, eyes: .reactions.eyes}'
     fi
   } | jq -s 'sort_by(.at)'
 }
 
-# The reviewer's comments on #<n> since <role> last answered. What `feedback` returns.
+# The reviewer's comments on #<n> that no run has left a 👀 on. What `feedback` returns.
 unanswered_feedback() {
-  comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --arg reviewer "$REVIEWER" '
+  comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --arg reviewer "$REVIEWER" \
+    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
     (map(select(.body | contains($marker)) | .at) | max // "") as $since
+    | unanswered($since) | map(del(.id, .eyes))'
+}
+
+# ack <n>: a 👀 on every reviewer comment on #n this run could have seen. One that arrived mid-run
+# is newer than A_TEAM_RUN_STARTED, so it stays unanswered and gets a run of its own. Unset means
+# now, which is right for a person running `comment` by hand, since they have just read the thread.
+ack() {
+  local id at started=${A_TEAM_RUN_STARTED:-$(iso "$(date +%s)")}
+  while IFS=$'\t' read -r id at; do
+    write "add 👀 to your comment of $at on #$1" gh api graphql -F subject="$id" -f query='
+      mutation($subject: ID!) {
+        addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
+  done < <(comments "$1" | jq -r --arg reviewer "$REVIEWER" --arg started "$started" '
+    map(select(.at < $started))
     | map(select(.kind != "body" and .author == $reviewer
-                 and (.body | contains("<!-- a-team:") | not) and .at > $since))'
+                 and (.body | contains("<!-- a-team:") | not) and (.eyes // 0) == 0))
+    | .[] | [.id, .at] | @tsv')
 }
 
 # feedback_at <recent> <role> <n>: when the reviewer last asked <role> something on #n and got no
@@ -556,6 +597,7 @@ case "$CMD" in
     body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    ack "$n"
     ;;
 
   skip)
@@ -571,6 +613,7 @@ case "$CMD" in
     body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    ack "$n"
     write "label #$n a-team:skipped" gh issue edit "$n" -R "$REPO" --add-label a-team:skipped >/dev/null
     say "#$n: skipped; a comment there, or removing the 'a-team:skipped' label, puts it back"
     ;;

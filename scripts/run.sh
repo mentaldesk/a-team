@@ -27,6 +27,10 @@ cat <<EOF
 Board: a-team board $TEAM <command> ...
 Version: $("$ROOT/bin/a-team" version)
 
+Run this first, so a comment that arrives while you work isn't marked answered:
+
+    export A_TEAM_RUN_STARTED=$(iso "$(date +%s)")
+
 ## Team config
 
 \`\`\`json
