@@ -3,10 +3,12 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Everything waiting on the reviewer: a swimlane per team, a column per gate.</summary>
+/// <summary>Everything waiting on the reviewer: a swimlane per team, a column per gate, and the Ideas
+/// that can't be pitched until they're ranked.</summary>
 public sealed class WorkView : View
 {
-    internal static readonly (string Name, string Status)[] Gates = [("Pitches", "Pitched"), ("Review", "In review")];
+    internal static readonly (string Name, string Status)[] Gates =
+        [("Pitches", "Pitched"), ("Review", "In review"), ("Ideas", "Idea")];
 
     private readonly List<WorkLane> _lanes = [];
     private IReadOnlyList<WaitingItem> _items = [];

@@ -96,10 +96,12 @@ items() {
             content {
               __typename
               ... on Issue { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } }
-                             issueDependenciesSummary { blockedBy } }
+                             issueDependenciesSummary { blockedBy }
+                             issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue {
+                               name field { ... on IssueFieldSingleSelect { name } } } } } }
               ... on PullRequest { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
             } } } } } }" -F field="$FIELD" --paginate |
-    jq -s --arg kind "$KIND" --arg repo "$REPO" \
+    jq -s --arg kind "$KIND" --arg repo "$REPO" --arg priority "$PRIORITY" \
       --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" \
       --slurpfile cfg "$CONFIG" '
       ($cfg[0].project.statusMap // {} | to_entries | map({key: .value, value: .key}) | from_entries) as $rev
@@ -114,6 +116,7 @@ items() {
              url: .content.url,
              labels: [.content.labels.nodes[].name],
              blockedBy: (.content.issueDependenciesSummary.blockedBy // 0),
+             priority: ([.content.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
              status: (if $raw == null then "None"
                       elif $rev[$raw] then $rev[$raw]
                       elif ($states | index($raw)) then $raw
@@ -360,6 +363,13 @@ turns() {
              | (if .status == "Pitched" then "approval" else "acceptance" end) as $for
              | . + {turn: "you", reason: "awaiting your \($for)\(since($waited))"}
         end)'
+}
+
+# unranked_ideas <items>: the Ideas with no Priority, which never get pitched until the reviewer
+# gives them one. They come off the page `waiting` has already read, so they cost no call of their own.
+unranked_ideas() {
+  jq --arg team "$TEAM" 'map(select(.status == "Idea" and .type == "Issue" and .priority == null)
+    | {number, title, status, url, team: $team, turn: "you", reason: "waiting to be ranked"})' <<<"$1"
 }
 
 comments() {
@@ -639,10 +649,12 @@ case "$CMD" in
 
   waiting)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
-    gated=$(items | jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
-      | {number, title, status, url, team: $team})')
+    all=$(items)
+    gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
+      | {number, title, status, url, team: $team})' <<<"$all")
     talk=$(gated_talk "$gated")
-    turns "$gated" "$(gated_comments "$talk")" "$(pr_checks "$(gated_prs "$talk")")"
+    turns "$gated" "$(gated_comments "$talk")" "$(pr_checks "$(gated_prs "$talk")")" |
+      jq --argjson unranked "$(unranked_ideas "$all")" '. + $unranked'
     ;;
 
   pr)

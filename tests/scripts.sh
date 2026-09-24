@@ -114,18 +114,22 @@ grep -q '^  pause ' "$OUT" || fail "usage: no pause line"
 grep -q '^  resume ' "$OUT" || fail "usage: no resume line"
 
 # The one GraphQL page board.sh's `items` reads, from lines of "<status with _ for space> <n> <title>".
+# The issue numbers passed as arguments are the ones with a Priority set.
 gh_items() {
   BIN=$(mktemp -d "$WORK/bin.XXXXXX")
   ITEMS="$BIN/items.json"
   CALLS="$BIN/calls"
-  jq -R -s --arg repo mentaldesk/demo '
+  jq -R -s --arg repo mentaldesk/demo \
+    --argjson ranked "$(printf '%s\n' "$@" | jq -R . | jq -s 'map(select(length > 0) | tonumber)')" '
     split("\n") | map(select(length > 0)) | map(split(" ") as $f | {
       id: "PVTI_\($f[1])",
       fieldValueByName: {name: ($f[0] | gsub("_"; " "))},
       content: {__typename: "Issue", number: ($f[1] | tonumber), title: ($f[2:] | join(" ")),
                 url: "https://github.com/\($repo)/issues/\($f[1])",
                 repository: {nameWithOwner: $repo}, labels: {nodes: []},
-                issueDependenciesSummary: {blockedBy: 0}}})
+                issueDependenciesSummary: {blockedBy: 0},
+                issueFieldValues: {nodes: (if $ranked | index($f[1] | tonumber)
+                                           then [{name: "High", field: {name: "Priority"}}] else [] end)}}})
     | {data: {organization: {projectV2: {items: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: .}}}}}' \
     >"$ITEMS"
   TALK="$BIN/talk.json"
@@ -411,6 +415,38 @@ same "task reason" '"awaiting your acceptance since 08:00"' "$(jq -c '.[1].reaso
 case_ "a team with nothing at a gate waits on nothing, and asks nobody whose turn it is"
 gh_items <<'ITEMS'
 Ready 128 Everything waiting on me
+ITEMS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "items" '[]' "$(jq -c . "$OUT")"
+same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "the Ideas with no Priority are waiting on the reviewer to rank them"
+gh_items 26 <<'ITEMS'
+Pitched 106 Both gates are mine
+Idea 6 The agents can't say what they'd change
+Idea 26 A pitch I've shelved
+In_review 115 I can change any of the keys
+Ready 128 Everything waiting on me
+ITEMS
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "numbers" '[106,115,6]' "$(jq -c '[.[].number]' "$OUT")"
+same "idea status" '"Idea"' "$(jq -c '.[2].status' "$OUT")"
+same "idea turn" '"you"' "$(jq -c '.[2].turn' "$OUT")"
+same "idea reason" '"waiting to be ranked"' "$(jq -c '.[2].reason' "$OUT")"
+same "idea fields" '["number","reason","status","team","title","turn","url"]' "$(jq -c '.[2] | keys' "$OUT")"
+same "idea url" '"https://github.com/mentaldesk/demo/issues/6"' "$(jq -c '.[2].url' "$OUT")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
+
+case_ "a team whose every Idea is ranked has none of them waiting"
+gh_items 6 26 <<'ITEMS'
+Idea 6 The agents can't say what they'd change
+Idea 26 A pitch I've shelved
 ITEMS
 run board demo waiting
 same "exit" 0 "$STATUS"
