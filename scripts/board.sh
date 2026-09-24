@@ -269,6 +269,62 @@ awaiting() {
     | max // empty' <<<"$1"
 }
 
+# gated_comments <items>: the body and comments of every item, in one call whatever the number of
+# them, as {n, at, author, body, kind}. The open PR that closes a task comes back nested in the
+# same call and under the task's own number: the reviewer answers a task on either. `waiting`
+# works out whose turn it is from these alone.
+gated_comments() {
+  local said reviewed n query=''
+  said='number createdAt body author { login }
+        comments(last: 50) { nodes { createdAt body author { login } } }'
+  reviewed="$said"' reviews(last: 50) { nodes { createdAt body state author { login }
+              comments(first: 50) { nodes { createdAt body author { login } } } } }'
+  for n in $(jq -r '.[].number' <<<"$1"); do
+    query+=" x$n: issueOrPullRequest(number: $n) {
+      ... on Issue { $said
+        closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { $reviewed } } }
+      ... on PullRequest { $reviewed } }"
+  done
+  [ -n "$query" ] || { echo '[]'; return; }
+  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" \
+    -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query} }" |
+    jq 'def who: {at: .createdAt, author: (.author.login // ""), body: (.body // "")};
+        def talk:
+          (who + {kind: "body"}),
+          (.comments.nodes[]? | who + {kind: "comment"}),
+          (.reviews.nodes[]? |
+            (select((.body // "") != "" or .state == "CHANGES_REQUESTED") | who + {kind: "review"}),
+            (.comments.nodes[]? | who + {kind: "line"}));
+        [.data.repository | to_entries[].value | select(. != null) | .number as $n
+         | (talk, (.closedByPullRequestsReferences.nodes[]? | talk))
+         | . + {n: $n}]'
+}
+
+# turns <items> <comments>: each item with whose move it is and why. A gate is the reviewer's until
+# they comment; from then it is the role's, the same test `unanswered_feedback` makes.
+turns() {
+  jq -n --argjson items "$1" --argjson comments "$2" --arg reviewer "$REVIEWER" '
+    def stamp: fromdateiso8601
+      | if strflocaltime("%Y-%m-%d") == (now | strflocaltime("%Y-%m-%d"))
+        then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
+    def since($at): if $at == "" then "" else " since \($at | stamp)" end;
+    $items | map(
+      . as $item
+      | (if .status == "Pitched" then "lead" else "dev" end) as $role
+      | ($comments | map(select(.n == $item.number))) as $theirs
+      | ($theirs | map(select(.body | contains("<!-- a-team:\($role) -->")) | .at) | max // "") as $said
+      | ($theirs | map(select(.kind != "body" and .author == $reviewer
+                              and (.body | contains("<!-- a-team:") | not) and .at > $said) | .at)
+         | max // "") as $asked
+      | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
+      | if $asked != ""
+        then . + {turn: $role, reason: "answering your feedback\(since($asked))"}
+        else (if $said != "" then $said else $opened end) as $waited
+             | (if .status == "Pitched" then "approval" else "acceptance" end) as $for
+             | . + {turn: "you", reason: "awaiting your \($for)\(since($waited))"}
+        end)'
+}
+
 comments() {
   local n=$1 issue
   issue=$(gh api "repos/$REPO/issues/$n")
@@ -546,8 +602,9 @@ case "$CMD" in
 
   waiting)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
-    items | jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
-      | {number, title, status, url, team: $team})'
+    gated=$(items | jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
+      | {number, title, status, url, team: $team})')
+    turns "$gated" "$(gated_comments "$gated")"
     ;;
 
   pr)

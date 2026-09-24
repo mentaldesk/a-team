@@ -126,11 +126,23 @@ in is what it opens in next time; a first run lands on Work.
 
 A swimlane per team, and two columns in each: **Pitches** (waiting for you to approve) and
 **Review** (waiting for you to merge or accept), each headed by its count. Enter opens the selected
-card's issue in your browser. The card list is read when the area opens and when you press `r`,
-never on a timer, so an app left open overnight costs nothing against the rate limit the agents
-share; the header says how long ago it read, and the line at the foot names the column you're in.
-A read that fails — offline, rate-limited — says so there in red and leaves the cards and that
-stamp exactly as they were.
+card's issue in your browser.
+
+A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
+agent owes you an answer on a dimmed headset and names that role in front of its title, and the
+line at the foot says why — `#118 · lead · answering your feedback since 08:14`. It's theirs from
+the moment you comment — on the card's own issue or on the PR that closes it — until they answer,
+which is the same test the dispatcher makes when it decides what to start a run for. `m` hides everything that isn't your move and `m` again brings it
+back; the counts follow, the right of that same line says which you're looking at — *All items* or
+*My items* — and it opens the way you left it.
+
+The two icons are Nerd Font glyphs. No terminal reports its font, so if yours draws them as boxes,
+turn *Nerd Font icons on the cards* off under Settings → Dashboard and they become `✓` and `·`.
+
+The card list is read when the area opens and when you press `r`, never on a timer, so an app left
+open overnight costs nothing against the rate limit the agents share; the header says how long ago
+it read. A read that fails — offline, rate-limited — says so at the foot in red and leaves the
+cards and that stamp exactly as they were.
 
 ### Watching the team
 
@@ -151,8 +163,9 @@ title says [tool calls]) and t again folds them back up. s opens Settings, a pag
 pages down the left, the one picked on the right, Tab into it and Tab back. Theme is one of
 Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode; Keyboard Shortcuts
 is a row per command with the key that runs it; Dashboard is whether panes start with every tool
-call showing. Enter on a shortcut row takes the next key you press; a key another command already
-holds is refused, naming the one that holds it. Ctrl+Enter keeps what's picked on any page, Esc
+call showing, and whether the Work area's cards wear Nerd Font icons. Enter on a shortcut row takes
+the next key you press; a key another command already holds is refused, naming the one that holds
+it. Ctrl+Enter keeps what's picked on any page, Esc
 discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
 what the dashboard comes up in next time, with t still folding and unfolding a pane for the
 session. Esc goes back to the grid from an expanded agent and does nothing when there isn't one;

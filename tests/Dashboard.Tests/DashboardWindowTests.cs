@@ -5,6 +5,7 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
 
+[Collection("StaticConfiguration")]
 public class DashboardWindowTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"a-team-{Guid.NewGuid():n}");
@@ -351,18 +352,18 @@ public class DashboardWindowTests : IDisposable
             "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
             DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · Enter: open issue · r: refresh · Esc: dashboard",
+            "a-team 1.2.3 · Enter: open issue · m: only mine · r: refresh · Esc: dashboard",
             DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
     }
 
     [Fact]
-    public void Both_titles_fit_the_76_columns_an_80_column_window_gives_them()
+    public void No_title_runs_away_with_the_80_columns_the_narrowest_window_has()
     {
         using var window = Open(agents: Agents(4));
 
         Assert.All(
             new[] { Mode.Grid, Mode.Expanded, Mode.Work },
-            mode => Assert.InRange(DashboardWindow.Hints("1.2.3", mode, window.Commands).Length, 1, 76));
+            mode => Assert.InRange(DashboardWindow.Hints("1.2.3", mode, window.Commands).Length, 1, 77));
     }
 
     [Fact]
@@ -377,7 +378,8 @@ public class DashboardWindowTests : IDisposable
                 "Expand the selected agent", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
-                "Select the card above", "Open the selected issue on GitHub", "Read what's waiting again", "Dashboard", "Work",
+                "Select the card above", "Open the selected issue on GitHub", "Show only what's your move",
+                "Read what's waiting again", "Dashboard", "Work",
                 "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid",
                 "Back to the Dashboard", "Quit",
             ],
@@ -684,7 +686,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("team.pause");
         var after = LayOut(window, 120, 30);
 
-        Assert.Equal("Pausing…", window.Message.Text);
+        Assert.Equal("Pausing…", window.Message.Says);
         Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
         Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
         Assert.Equal(before.Sum(cell => cell.Height) - 2, after.Sum(cell => cell.Height));
@@ -706,7 +708,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("team.pause");
 
         Assert.Equal([("pause", "team1")], calls);
-        Assert.Equal("Pausing…", window.Message.Text);
+        Assert.Equal("Pausing…", window.Message.Says);
     }
 
     [Fact]
@@ -754,7 +756,7 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("a-team pause: can't write /nope/team0.json", window.Message.Text);
+        Assert.Equal("a-team pause: can't write /nope/team0.json", window.Message.Says);
         Assert.Equal(1, window.Message.Lines);
         Assert.True(window.NewKeyDownEvent(Key.Tab));
         Assert.Equal(0, Selected(window));

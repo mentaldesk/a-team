@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Drawing;
 using Terminal.Gui.Input;
 
@@ -10,6 +9,7 @@ public sealed class WorkView : View
     internal static readonly (string Name, string Status)[] Gates = [("Pitches", "Pitched"), ("Review", "In review")];
 
     private readonly List<WorkLane> _lanes = [];
+    private IReadOnlyList<WaitingItem> _items = [];
 
     public WorkView(IReadOnlyList<string> teams)
     {
@@ -41,13 +41,40 @@ public sealed class WorkView : View
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
 
+    /// <summary>Whether the cards that aren't the reviewer's move are hidden.</summary>
+    internal bool OnlyMine { get; private set; }
+
+    /// <summary>Whether the cards wear Nerd Font glyphs rather than their plain equivalents.</summary>
+    internal bool NerdFont { get; private set; }
+
     /// <summary>Lays the cards out again, keeping the columns a team has even when they're empty.</summary>
     public void Show(IReadOnlyList<WaitingItem> items)
     {
-        foreach (var lane in _lanes)
-            lane.Show(items);
-        SetNeedsLayout();
-        SetNeedsDraw();
+        _items = items;
+        Lay();
+    }
+
+    /// <summary>Hides everything that isn't the reviewer's move, or brings it all back, staying on the
+    /// selected card when the filter still shows it.</summary>
+    public void ShowOnlyMine(bool onlyMine)
+    {
+        if (OnlyMine == onlyMine)
+            return;
+        OnlyMine = onlyMine;
+        var was = Selected;
+        Lay();
+        if (was is null || !Reselect(was))
+            FocusFirstCard();
+    }
+
+    /// <summary>Draws the cards' icons as Nerd Font glyphs, or as the plain ones a terminal without it can show.</summary>
+    public void ShowIcons(bool nerdFont)
+    {
+        if (NerdFont == nerdFont)
+            return;
+        NerdFont = nerdFont;
+        foreach (var column in _lanes.SelectMany(lane => lane.Columns))
+            column.ShowIcons(nerdFont);
     }
 
     /// <summary>Focus starts on the first card in the first team's first column that has one.</summary>
@@ -86,6 +113,19 @@ public sealed class WorkView : View
         if (lane >= 0 && lane < _lanes.Count)
             Land(lane, at.Gate, step);
     }
+
+    private void Lay()
+    {
+        var shown = OnlyMine ? _items.Where(item => item.Mine).ToList() : _items;
+        foreach (var lane in _lanes)
+            lane.Show(shown);
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    /// <summary>Puts the selection back on a card, where the column it was in still has it.</summary>
+    private bool Reselect(WaitingItem item) =>
+        _lanes.SelectMany(lane => lane.Columns).Any(column => column.Select(item));
 
     private void FocusMoved()
     {
@@ -219,6 +259,7 @@ public sealed class WorkColumn : FrameView
     private readonly FocusBorder _border;
     private IReadOnlyList<WaitingItem> _items = [];
     private int _laidOutOver = -1;
+    private bool _nerdFont;
 
     internal WorkColumn(string team, string gate, string status, Action focusChanged)
     {
@@ -229,6 +270,8 @@ public sealed class WorkColumn : FrameView
         Title = Heading(gate, 0);
         _border = new FocusBorder(this);
         _cards.HasFocusChanged += (_, _) => focusChanged();
+        // Moving within a column changes the list's value, not its focus, and the message bar follows both.
+        _cards.ValueChanged += (_, _) => focusChanged();
         Add(_cards);
         SubViewLayout += (_, _) => Fit();
     }
@@ -240,6 +283,12 @@ public sealed class WorkColumn : FrameView
     internal string Status { get; }
 
     internal int Count => _items.Count;
+
+    /// <summary>The text of the cards as the list draws them, their icons apart.</summary>
+    internal IReadOnlyList<string> CardText => [.. _cards.Source?.ToList().Cast<string>() ?? []];
+
+    /// <summary>The icon each of those cards wears.</summary>
+    internal IReadOnlyList<TurnIcon> Icons { get; private set; } = [];
 
     internal WaitingItem? Selected =>
         _cards.SelectedItem is { } index && index >= 0 && index < _items.Count ? _items[index] : null;
@@ -253,6 +302,14 @@ public sealed class WorkColumn : FrameView
         _laidOutOver = -1;
         Fit();
         SetNeedsLayout();
+    }
+
+    internal void ShowIcons(bool nerdFont)
+    {
+        _nerdFont = nerdFont;
+        _laidOutOver = -1;
+        Fit();
+        SetNeedsDraw();
     }
 
     internal void ShowFocus(bool focused) => _border.Show(focused);
@@ -281,10 +338,24 @@ public sealed class WorkColumn : FrameView
 
     internal static string Heading(string gate, int count) => $"{gate} · {count}";
 
-    /// <summary>A card: the issue's number, then as much of its title as the column has room for.</summary>
+    /// <summary>Moves the selection onto <paramref name="item"/>, where this column is showing it.</summary>
+    internal bool Select(WaitingItem item)
+    {
+        for (var index = 0; index < _items.Count; index++)
+        {
+            if (_items[index] != item)
+                continue;
+            _cards.SelectedItem = index;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>A card: the issue's number, whose move it is when it isn't the reviewer's, then as much of
+    /// its title as the column has room for.</summary>
     internal static string Card(WaitingItem item, int width)
     {
-        var text = $"#{item.Number}  {item.Title}";
+        var text = item.Mine ? $"#{item.Number}  {item.Title}" : $"#{item.Number}  {item.Turn} · {item.Title}";
         if (width <= 0 || text.Length <= width)
             return text;
         return width == 1 ? "…" : string.Concat(text.AsSpan(0, width - 1), "…");
@@ -304,7 +375,8 @@ public sealed class WorkColumn : FrameView
             return;
         _laidOutOver = width;
         var selected = _cards.SelectedItem;
-        _cards.SetSource(new ObservableCollection<string>(_items.Select(item => Card(item, width))));
+        Icons = [.. _items.Select(item => TurnIcons.For(item, _nerdFont))];
+        _cards.Source = new CardSource([.. _items.Select(item => Card(item, width - TurnIcons.Width))], Icons);
         if (_items.Count > 0)
             _cards.SelectedItem = Math.Clamp(selected ?? 0, 0, _items.Count - 1);
     }

@@ -80,6 +80,30 @@ public class SettingsDialogTests : IDisposable
         Assert.Equal(expand, dialog.ExpandToolCalls);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void The_Nerd_Font_box_opens_showing_what_is_stored(bool nerdFont)
+    {
+        using var dialog = Open(out _, nerdFont: nerdFont);
+
+        Assert.Equal(nerdFont ? CheckState.Checked : CheckState.UnChecked, NerdFont(dialog).Value);
+        Assert.Equal(nerdFont, dialog.NerdFontIcons);
+    }
+
+    [Fact]
+    public void Confirming_stores_the_Nerd_Font_box_as_it_was_left()
+    {
+        var settings = new DashboardSettings(_configRoot);
+        using var dialog = Open(out var theme);
+        NerdFont(dialog).InvokeCommand(Command.Activate);
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        dialog.Store(theme, settings);
+
+        Assert.False(settings.ReadNerdFont());
+    }
+
     [Fact]
     public void Confirming_stores_the_tool_calls_box_as_it_was_left()
     {
@@ -304,7 +328,7 @@ public class SettingsDialogTests : IDisposable
 
         Rebind(dialog, 0, new Key('s'));
 
-        Assert.Equal("s already runs Settings.", dialog.Message.Text);
+        Assert.Equal("s already runs Settings.", dialog.Message.Says);
         Assert.Equal("Commands  Ctrl+E", Showing(dialog).First());
         Assert.Empty(dialog.Changed);
         Assert.True(dialog.Keys.HasFocus);
@@ -361,6 +385,9 @@ public class SettingsDialogTests : IDisposable
     private static CheckBox ToolCalls(SettingsDialog dialog) =>
         dialog.SubViews.OfType<CheckBox>().Single(box => box.Text == "Show tool calls in full");
 
+    private static CheckBox NerdFont(SettingsDialog dialog) =>
+        dialog.SubViews.OfType<CheckBox>().Single(box => box.Text == "Nerd Font icons on the cards");
+
     private static void OpenPage(SettingsDialog dialog, string name)
     {
         dialog.Pages.Value = Enumerable.Range(0, dialog.Pages.Source!.Count)
@@ -382,11 +409,12 @@ public class SettingsDialogTests : IDisposable
     private static SettingsDialog Open(
         out ThemeSetting theme,
         bool expand = false,
+        bool nerdFont = true,
         Action<string>? keep = null,
         CommandRegistry? commands = null)
     {
         theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, keep ?? (_ => { }));
-        var dialog = new SettingsDialog(theme, expand, commands ?? Registry(), () => { });
+        var dialog = new SettingsDialog(theme, expand, nerdFont, commands ?? Registry(), () => { });
         dialog.SetFocus();
         return dialog;
     }

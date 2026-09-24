@@ -6,10 +6,14 @@ public class WorkViewTests
 {
     private static readonly WaitingItem[] Gated =
     [
-        new(107, "When the dashboard goes quiet, I can't tell why", "Pitched", "https://github.com/x/1", "a-team"),
-        new(108, "A misconfigured team looks like a working one", "Pitched", "https://github.com/x/2", "a-team"),
-        new(49, "I can't change any of the dashboard's keys", "In review", "https://github.com/x/3", "a-team"),
-        new(133, "Notice when open files change on disk", "Pitched", "https://github.com/x/4", "tuicode"),
+        new(107, "When the dashboard goes quiet, I can't tell why", "Pitched", "https://github.com/x/1", "a-team",
+            "you", "awaiting your approval since 08:14"),
+        new(108, "A misconfigured team looks like a working one", "Pitched", "https://github.com/x/2", "a-team",
+            "lead", "answering your feedback since 09:30"),
+        new(49, "I can't change any of the dashboard's keys", "In review", "https://github.com/x/3", "a-team",
+            "dev", "answering your feedback since 10:15"),
+        new(133, "Notice when open files change on disk", "Pitched", "https://github.com/x/4", "tuicode",
+            "you", "awaiting your approval since 21:37"),
     ];
 
     [Fact]
@@ -205,10 +209,110 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void A_card_puts_the_role_first_only_where_the_move_isn_t_yours()
+    {
+        Assert.Equal("#107  When the dashboard goes quiet, I can't tell why", WorkColumn.Card(Gated[0], 0));
+        Assert.Equal("#108  lead · A misconfigured team looks like a working one", WorkColumn.Card(Gated[1], 0));
+        Assert.Equal("#49  dev · I can't change any of the dashboard's keys", WorkColumn.Card(Gated[2], 0));
+    }
+
+    [Fact]
+    public void A_card_the_board_said_nothing_about_is_read_as_yours()
+    {
+        var unsaid = new WaitingItem(12, "Whatever this is", "Pitched", "https://github.com/x/5", "a-team");
+
+        Assert.True(unsaid.Mine);
+        Assert.Equal("#12  Whatever this is", WorkColumn.Card(unsaid, 0));
+    }
+
+    [Fact]
+    public void Only_mine_hides_the_rest_and_every_count_follows_it()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+
+        view.ShowOnlyMine(true);
+        LayOut(view, 120, 20);
+
+        Assert.True(view.OnlyMine);
+        Assert.Equal(["Pitches · 1", "Review · 0", "Pitches · 1", "Review · 0"], Titles(view));
+        Assert.All(Cells(view), cell => Assert.True(cell.Width > 0 && cell.Height > 0));
+
+        view.ShowOnlyMine(false);
+        LayOut(view, 120, 20);
+
+        Assert.False(view.OnlyMine);
+        Assert.Equal(["Pitches · 2", "Review · 1", "Pitches · 1", "Review · 0"], Titles(view));
+    }
+
+    [Fact]
+    public void Filtering_stays_on_the_selected_card_where_it_survives_the_filter()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+
+        view.ShowOnlyMine(true);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(107, view.Selected?.Number);
+        Assert.Equal("Pitches · a-team", view.Region);
+    }
+
+    [Fact]
+    public void Filtering_the_selected_card_away_lands_on_the_first_one_left()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveCard(+1);
+        Assert.Equal(108, view.Selected?.Number);
+
+        view.ShowOnlyMine(true);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(107, view.Selected?.Number);
+    }
+
+    [Fact]
     public void A_narrow_column_still_shows_something()
     {
         Assert.Equal("…", WorkColumn.Card(Gated[0], 1));
         Assert.Equal("#107  When the dashboard goes quiet, I can't tell why", WorkColumn.Card(Gated[0], 0));
+    }
+
+    [Fact]
+    public void A_cards_text_is_elided_to_leave_the_room_its_icon_needs()
+    {
+        using var view = Open(["a-team"]);
+        LayOut(view, 60, 20);
+
+        view.Show(Gated);
+
+        Assert.Equal(
+            ["#107  When the dashboar…", "#108  lead · A misconfi…"],
+            view.Lanes[0].Columns[0].CardText);
+    }
+
+    [Fact]
+    public void Every_card_wears_the_icon_for_whose_move_it_is_in_the_style_the_view_is_showing()
+    {
+        using var view = Open(["a-team"]);
+        view.Show(Gated);
+        LayOut(view, 120, 20);
+
+        view.ShowIcons(true);
+        Assert.True(view.NerdFont);
+        Assert.Equal(
+            [TurnIcons.For(Gated[0], nerdFont: true), TurnIcons.For(Gated[1], nerdFont: true)],
+            view.Lanes[0].Columns[0].Icons);
+
+        view.ShowIcons(false);
+        Assert.False(view.NerdFont);
+        Assert.Equal("✓", view.Lanes[0].Columns[0].Icons[0].Glyph);
     }
 
     private static WorkView Open(string[] teams)

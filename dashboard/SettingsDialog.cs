@@ -16,6 +16,7 @@ public sealed class SettingsDialog : Dialog
     private const string CancelHint = "Esc cancel";
     private const string Separator = " · ";
     private const string ToolCalls = "Show tool calls in full";
+    private const string NerdFont = "Nerd Font icons on the cards";
     private const int Inset = 1;
     private const int Gap = 1;
     private const int GlyphAndSpace = 2;
@@ -28,11 +29,13 @@ public sealed class SettingsDialog : Dialog
     private readonly List<View> _hints = [];
     private readonly ListView _picker = new();
     private readonly CheckBox _toolCalls;
+    private readonly CheckBox _nerdFont;
     private readonly KeyList _keys;
     private readonly MessageBar _message = new();
     private bool _capturing;
 
-    public SettingsDialog(ThemeSetting theme, bool expandToolCalls, CommandRegistry commands, Action redraw)
+    public SettingsDialog(
+        ThemeSetting theme, bool expandToolCalls, bool nerdFont, CommandRegistry commands, Action redraw)
     {
         _commands = commands;
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
@@ -61,16 +64,22 @@ public sealed class SettingsDialog : Dialog
             Text = ToolCalls,
             Value = expandToolCalls ? CheckState.Checked : CheckState.UnChecked,
         };
+        _nerdFont = new CheckBox
+        {
+            Text = NerdFont,
+            Value = nerdFont ? CheckState.Checked : CheckState.UnChecked,
+        };
         _keys = new KeyList();
         _keys.Captured = key => _capturing && Capture(key);
 
         _pages =
         [
-            new Page("Theme", themes, () => BundledThemes.Names.Max(name => name.Length) + GlyphAndSpace,
+            new Page("Theme", [themes], () => BundledThemes.Names.Max(name => name.Length) + GlyphAndSpace,
                 BundledThemes.Names.Count, [KeepHint, CancelHint]),
-            new Page("Keyboard Shortcuts", _keys, KeysWide, Math.Max(1, _bindings.Count),
+            new Page("Keyboard Shortcuts", [_keys], KeysWide, Math.Max(1, _bindings.Count),
                 [RebindHint, KeepHint, CancelHint]),
-            new Page("Dashboard", _toolCalls, () => ToolCalls.Length + GlyphAndSpace, 1, [KeepHint, CancelHint]),
+            new Page("Dashboard", [_toolCalls, _nerdFont],
+                () => Math.Max(ToolCalls.Length, NerdFont.Length) + GlyphAndSpace, 2, [KeepHint, CancelHint]),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -84,17 +93,18 @@ public sealed class SettingsDialog : Dialog
 
         var rule = new Line { X = Pos.Right(_picker) + Gap, Y = 0, Orientation = Orientation.Vertical, Height = content };
         foreach (var page in _pages)
-        {
-            page.View.X = Pos.Right(rule) + Gap;
-            page.View.Y = 0;
-        }
+            for (var row = 0; row < page.Views.Count; row++)
+            {
+                page.Views[row].X = Pos.Right(rule) + Gap;
+                page.Views[row].Y = row;
+            }
         _keys.Width = Dim.Fill(Inset);
         _keys.Height = content;
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
         Add(_picker, rule);
-        foreach (var page in _pages)
-            Add(page.View);
+        foreach (var view in _pages.SelectMany(page => page.Views))
+            Add(view);
         Add(_message);
         ShowKeys();
         ShowPage();
@@ -103,6 +113,8 @@ public sealed class SettingsDialog : Dialog
     internal bool Confirmed { get; private set; }
 
     internal bool ExpandToolCalls => _toolCalls.Value == CheckState.Checked;
+
+    internal bool NerdFontIcons => _nerdFont.Value == CheckState.Checked;
 
     internal ListView Pages => _picker;
 
@@ -132,7 +144,7 @@ public sealed class SettingsDialog : Dialog
     {
         var theme = ThemeSetting.Live(settings);
         using var dialog = new SettingsDialog(
-            theme, settings.ReadExpandToolCalls(), commands, () => app.LayoutAndDraw(true));
+            theme, settings.ReadExpandToolCalls(), settings.ReadNerdFont(), commands, () => app.LayoutAndDraw(true));
         app.Run(dialog);
         dialog.Store(theme, settings);
     }
@@ -147,6 +159,7 @@ public sealed class SettingsDialog : Dialog
         }
         theme.Keep();
         settings.WriteExpandToolCalls(ExpandToolCalls);
+        settings.WriteNerdFont(NerdFontIcons);
         if (_changed.Count == 0)
             return;
         settings.WriteKeys(_changed);
@@ -200,7 +213,8 @@ public sealed class SettingsDialog : Dialog
     {
         var selected = _picker.Value ?? 0;
         for (var index = 0; index < _pages.Count; index++)
-            _pages[index].View.Visible = index == selected;
+            foreach (var view in _pages[index].Views)
+                view.Visible = index == selected;
         ShowHints(_pages[selected].Hints);
         SetNeedsLayout();
         SetNeedsDraw();
@@ -304,7 +318,7 @@ public sealed class SettingsDialog : Dialog
 
     private static int Fits(int wanted, int? available) => available is { } room ? Math.Min(wanted, room) : wanted;
 
-    private sealed record Page(string Name, View View, Func<int> Width, int Height, string[] Hints);
+    private sealed record Page(string Name, IReadOnlyList<View> Views, Func<int> Width, int Height, string[] Hints);
 
     /// <summary>A list that can take a key literally. ListView's own type-ahead answers a letter before any
     /// handler the dialog could attach, so the letter being bound would never reach the capture.</summary>

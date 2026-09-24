@@ -7,11 +7,13 @@ public class WaitingItemTests
     {
         var items = WaitingItem.Parse("""
             [{"number": 106, "title": "Both gates are mine", "status": "Pitched",
-              "url": "https://github.com/mentaldesk/a-team/issues/106", "team": "a-team"}]
+              "url": "https://github.com/mentaldesk/a-team/issues/106", "team": "a-team",
+              "turn": "lead", "reason": "answering your feedback since 08:14"}]
             """);
 
         Assert.Equal(
-            new WaitingItem(106, "Both gates are mine", "Pitched", "https://github.com/mentaldesk/a-team/issues/106", "a-team"),
+            new WaitingItem(106, "Both gates are mine", "Pitched", "https://github.com/mentaldesk/a-team/issues/106",
+                "a-team", "lead", "answering your feedback since 08:14"),
             Assert.Single(items));
     }
 
@@ -38,5 +40,16 @@ public class WaitingItemTests
         var item = Assert.Single(WaitingItem.Parse("""[{"number": 12}]"""));
 
         Assert.Equal(new WaitingItem(12, "", "", "", ""), item);
+        Assert.True(item.Mine);
+    }
+
+    [Theory]
+    [InlineData("you", "awaiting your approval since 08:14", "#116 · awaiting your approval since 08:14")]
+    [InlineData("dev", "answering your feedback since 08:14", "#116 · dev · answering your feedback since 08:14")]
+    [InlineData("", "", "#116")]
+    public void The_message_bar_line_names_the_role_only_where_the_move_isn_t_yours(
+        string turn, string reason, string expected)
+    {
+        Assert.Equal(expected, new WaitingItem(116, "A title", "In review", "https://github.com/x/1", "a-team", turn, reason).Line);
     }
 }
