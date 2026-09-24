@@ -46,8 +46,8 @@ public sealed class WorkView : View
     /// <summary>Whether the cards that aren't the reviewer's move are hidden.</summary>
     internal bool OnlyMine { get; private set; }
 
-    /// <summary>Whether the cards wear Nerd Font glyphs rather than their plain equivalents.</summary>
-    internal bool NerdFont { get; private set; }
+    /// <summary>The vocabulary the cards wear their icons from.</summary>
+    internal IconStyle Icons { get; private set; } = IconStyle.Auto;
 
     /// <summary>Lays the cards out again, keeping the columns a team has even when they're empty.</summary>
     public void Show(IReadOnlyList<WaitingItem> items)
@@ -69,14 +69,14 @@ public sealed class WorkView : View
             FocusFirstCard();
     }
 
-    /// <summary>Draws the cards' icons as Nerd Font glyphs, or as the plain ones a terminal without it can show.</summary>
-    public void ShowIcons(bool nerdFont)
+    /// <summary>Draws the cards' icons from the vocabulary the reviewer picked.</summary>
+    public void ShowIcons(IconStyle style)
     {
-        if (NerdFont == nerdFont)
+        if (Icons == style)
             return;
-        NerdFont = nerdFont;
+        Icons = style;
         foreach (var column in _lanes.SelectMany(lane => lane.Columns))
-            column.ShowIcons(nerdFont);
+            column.ShowIcons(style);
     }
 
     /// <summary>Focus starts on the first card in the first team's first column that has one.</summary>
@@ -261,7 +261,7 @@ public sealed class WorkColumn : FrameView
     private readonly FocusBorder _border;
     private IReadOnlyList<WaitingItem> _items = [];
     private int _laidOutOver = -1;
-    private bool _nerdFont;
+    private IconStyle _icons = IconStyle.Auto;
 
     internal WorkColumn(string team, string gate, string status, Action focusChanged)
     {
@@ -290,7 +290,7 @@ public sealed class WorkColumn : FrameView
     internal IReadOnlyList<string> CardText => [.. _cards.Source?.ToList().Cast<string>() ?? []];
 
     /// <summary>The icon each of those cards wears.</summary>
-    internal IReadOnlyList<TurnIcon> Icons { get; private set; } = [];
+    internal IReadOnlyList<TurnIcon> CardIcons { get; private set; } = [];
 
     /// <summary>The Priority colour each of those cards wears on its number.</summary>
     internal IReadOnlyList<PriorityMark> Marks { get; private set; } = [];
@@ -309,9 +309,9 @@ public sealed class WorkColumn : FrameView
         SetNeedsLayout();
     }
 
-    internal void ShowIcons(bool nerdFont)
+    internal void ShowIcons(IconStyle style)
     {
-        _nerdFont = nerdFont;
+        _icons = style;
         _laidOutOver = -1;
         Fit();
         SetNeedsDraw();
@@ -381,10 +381,10 @@ public sealed class WorkColumn : FrameView
             return;
         _laidOutOver = width;
         var selected = _cards.SelectedItem;
-        var cards = _items.Select(item => Card(item, width - TurnIcons.Width)).ToList();
-        Icons = [.. _items.Select(item => TurnIcons.For(item, _nerdFont))];
+        var cards = _items.Select(item => Card(item, width - Icons.Width)).ToList();
+        CardIcons = [.. _items.Select(item => Icons.For(item, _icons))];
         Marks = [.. _items.Zip(cards, Priorities.Mark)];
-        _cards.Source = new CardSource(cards, Icons, Marks);
+        _cards.Source = new CardSource(cards, CardIcons, Marks);
         if (_items.Count > 0)
             _cards.SelectedItem = Math.Clamp(selected ?? 0, 0, _items.Count - 1);
     }

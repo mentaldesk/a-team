@@ -102,26 +102,38 @@ public class DashboardSettingsTests : IDisposable
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void The_icon_style_written_is_the_one_the_next_run_draws_cards_with(bool nerdFont)
+    [InlineData(IconStyle.Auto)]
+    [InlineData(IconStyle.NerdFont)]
+    [InlineData(IconStyle.Unicode)]
+    public void The_icon_style_written_is_the_one_the_next_run_draws_with(IconStyle style)
     {
-        new DashboardSettings(_configRoot).WriteNerdFont(nerdFont);
+        new DashboardSettings(_configRoot).WriteIcons(style);
 
-        Assert.Equal(nerdFont, new DashboardSettings(_configRoot).ReadNerdFont());
+        Assert.Equal(style, new DashboardSettings(_configRoot).ReadIcons());
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("{}")]
-    [InlineData("{\"nerdFont\": \"no\"}")]
+    [InlineData("{\"icons\": \"boxes\"}")]
+    [InlineData("{\"icons\": true}")]
+    [InlineData("{\"icons\": 1}")]
     [InlineData("{\"nerdFont\": true}")]
-    public void Only_the_file_saying_so_turns_the_Nerd_Font_icons_off(string? contents)
+    public void A_file_that_does_not_name_a_style_we_know_leaves_the_dashboard_on_Auto(string? contents)
     {
-        if (contents is not null)
-            Write(contents);
+        var path = contents is null ? null : Write(contents);
 
-        Assert.True(new DashboardSettings(_configRoot).ReadNerdFont());
+        Assert.Equal(IconStyle.Auto, new DashboardSettings(_configRoot).ReadIcons());
+        if (path is not null)
+            Assert.Equal(contents, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void The_style_a_file_names_is_read_whatever_case_it_is_written_in()
+    {
+        Write("{\"icons\": \"nerdfont\"}");
+
+        Assert.Equal(IconStyle.NerdFont, new DashboardSettings(_configRoot).ReadIcons());
     }
 
     [Theory]

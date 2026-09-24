@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Text;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Terminal.Gui.Text;
 using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
@@ -16,10 +17,20 @@ public sealed class SettingsDialog : Dialog
     private const string CancelHint = "Esc cancel";
     private const string Separator = " · ";
     private const string ToolCalls = "Show tool calls in full";
-    private const string NerdFont = "Nerd Font icons on the cards";
+    private const string IconsHeading = "Icons:";
+    private const string IconLegend = "run  idle  paused  ok  error  here  tool";
     private const int Inset = 1;
     private const int Gap = 1;
     private const int GlyphAndSpace = 2;
+    private const int Indent = 2;
+    private const int IconsHeadingRow = 2;
+    private const int IconStylesRow = IconsHeadingRow + 1;
+
+    private static readonly (IconStyle Style, string Name)[] IconChoices =
+        [(IconStyle.Auto, "Automatic"), (IconStyle.NerdFont, "Nerd Font"), (IconStyle.Unicode, "Unicode")];
+
+    private static readonly int IconLegendRow = IconStylesRow + IconChoices.Length + 1;
+    private static readonly int DashboardTall = IconLegendRow + 1;
 
     private readonly CommandRegistry _commands;
     private readonly List<(string Id, string Label, Key Key)> _bindings;
@@ -29,13 +40,13 @@ public sealed class SettingsDialog : Dialog
     private readonly List<View> _hints = [];
     private readonly ListView _picker = new();
     private readonly CheckBox _toolCalls;
-    private readonly CheckBox _nerdFont;
+    private readonly OptionSelector _iconStyles;
     private readonly KeyList _keys;
     private readonly MessageBar _message = new();
     private bool _capturing;
 
     public SettingsDialog(
-        ThemeSetting theme, bool expandToolCalls, bool nerdFont, CommandRegistry commands, Action redraw)
+        ThemeSetting theme, IconSetting icons, bool expandToolCalls, CommandRegistry commands, Action redraw)
     {
         _commands = commands;
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
@@ -64,22 +75,30 @@ public sealed class SettingsDialog : Dialog
             Text = ToolCalls,
             Value = expandToolCalls ? CheckState.Checked : CheckState.UnChecked,
         };
-        _nerdFont = new CheckBox
+        _iconStyles = new OptionSelector
         {
-            Text = NerdFont,
-            Value = nerdFont ? CheckState.Checked : CheckState.UnChecked,
+            Orientation = Orientation.Vertical,
+            Labels = [.. IconChoices.Select(IconRow)],
+            Value = Math.Max(0, Array.FindIndex(IconChoices, choice => choice.Style == icons.Current)),
+        };
+        _iconStyles.ValueChanged += (_, e) =>
+        {
+            if (e.NewValue is { } index && index >= 0 && index < IconChoices.Length)
+            {
+                icons.Preview(IconChoices[index].Style);
+                redraw();
+            }
         };
         _keys = new KeyList();
         _keys.Captured = key => _capturing && Capture(key);
 
         _pages =
         [
-            new Page("Theme", [themes], () => BundledThemes.Names.Max(name => name.Length) + GlyphAndSpace,
+            new Page("Theme", [new Placed(themes)], () => BundledThemes.Names.Max(name => name.Length) + GlyphAndSpace,
                 BundledThemes.Names.Count, [KeepHint, CancelHint]),
-            new Page("Keyboard Shortcuts", [_keys], KeysWide, Math.Max(1, _bindings.Count),
+            new Page("Keyboard Shortcuts", [new Placed(_keys)], KeysWide, Math.Max(1, _bindings.Count),
                 [RebindHint, KeepHint, CancelHint]),
-            new Page("Dashboard", [_toolCalls, _nerdFont],
-                () => Math.Max(ToolCalls.Length, NerdFont.Length) + GlyphAndSpace, 2, [KeepHint, CancelHint]),
+            new Page("Dashboard", DashboardRows(), DashboardWide, DashboardTall, [KeepHint, CancelHint]),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -92,19 +111,18 @@ public sealed class SettingsDialog : Dialog
         _picker.ValueChanged += (_, _) => ShowPage();
 
         var rule = new Line { X = Pos.Right(_picker) + Gap, Y = 0, Orientation = Orientation.Vertical, Height = content };
-        foreach (var page in _pages)
-            for (var row = 0; row < page.Views.Count; row++)
-            {
-                page.Views[row].X = Pos.Right(rule) + Gap;
-                page.Views[row].Y = row;
-            }
+        foreach (var placed in _pages.SelectMany(page => page.Rows))
+        {
+            placed.View.X = Pos.Right(rule) + Gap + placed.X;
+            placed.View.Y = placed.Y;
+        }
         _keys.Width = Dim.Fill(Inset);
         _keys.Height = content;
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
         Add(_picker, rule);
-        foreach (var view in _pages.SelectMany(page => page.Views))
-            Add(view);
+        foreach (var placed in _pages.SelectMany(page => page.Rows))
+            Add(placed.View);
         Add(_message);
         ShowKeys();
         ShowPage();
@@ -113,8 +131,6 @@ public sealed class SettingsDialog : Dialog
     internal bool Confirmed { get; private set; }
 
     internal bool ExpandToolCalls => _toolCalls.Value == CheckState.Checked;
-
-    internal bool NerdFontIcons => _nerdFont.Value == CheckState.Checked;
 
     internal ListView Pages => _picker;
 
@@ -140,26 +156,29 @@ public sealed class SettingsDialog : Dialog
     }
 
     /// <summary>Runs the dialog, keeping what was picked in it only if it was accepted.</summary>
-    public static void Show(IApplication app, DashboardSettings settings, CommandRegistry commands)
+    public static void Show(
+        IApplication app, DashboardSettings settings, CommandRegistry commands, Action<IconStyle> showIcons)
     {
         var theme = ThemeSetting.Live(settings);
+        var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
-            theme, settings.ReadExpandToolCalls(), settings.ReadNerdFont(), commands, () => app.LayoutAndDraw(true));
+            theme, icons, settings.ReadExpandToolCalls(), commands, () => app.LayoutAndDraw(true));
         app.Run(dialog);
-        dialog.Store(theme, settings);
+        dialog.Store(theme, icons, settings);
     }
 
     /// <summary>Keeps what the dialog was left holding, or puts back what was in effect before it opened.</summary>
-    internal void Store(ThemeSetting theme, DashboardSettings settings)
+    internal void Store(ThemeSetting theme, IconSetting icons, DashboardSettings settings)
     {
         if (!Confirmed)
         {
             theme.Cancel();
+            icons.Cancel();
             return;
         }
         theme.Keep();
+        icons.Keep();
         settings.WriteExpandToolCalls(ExpandToolCalls);
-        settings.WriteNerdFont(NerdFontIcons);
         if (_changed.Count == 0)
             return;
         settings.WriteKeys(_changed);
@@ -213,8 +232,8 @@ public sealed class SettingsDialog : Dialog
     {
         var selected = _picker.Value ?? 0;
         for (var index = 0; index < _pages.Count; index++)
-            foreach (var view in _pages[index].Views)
-                view.Visible = index == selected;
+            foreach (var placed in _pages[index].Rows)
+                placed.View.Visible = index == selected;
         ShowHints(_pages[selected].Hints);
         SetNeedsLayout();
         SetNeedsDraw();
@@ -302,6 +321,24 @@ public sealed class SettingsDialog : Dialog
         return Rebind();
     }
 
+    private IReadOnlyList<Placed> DashboardRows() =>
+    [
+        new Placed(_toolCalls),
+        new Placed(new Label { Text = IconsHeading }, 0, IconsHeadingRow),
+        new Placed(_iconStyles, Indent, IconStylesRow),
+        new Placed(new Label { Text = IconLegend }, Indent, IconLegendRow),
+    ];
+
+    /// <summary>A style's row, its own glyphs after its name, so you pick the row that isn't boxes.</summary>
+    private static string IconRow((IconStyle Style, string Name) choice) => choice.Style == IconStyle.Auto
+        ? choice.Name
+        : $"{choice.Name.PadRight(IconChoices.Max(other => other.Name.Length))}  {Icons.Sample(choice.Style)}";
+
+    private static int DashboardWide() => Math.Max(
+        Math.Max(ToolCalls.Length + GlyphAndSpace, IconsHeading.Length),
+        Indent + Math.Max(
+            IconChoices.Max(choice => IconRow(choice).GetColumns()) + GlyphAndSpace, IconLegend.Length));
+
     private int KeysWide() => Math.Max(
         _bindings.Count == 0 ? 0 : Rows.Max(row => row.Length),
         _labelWidth + 2 + Prompt.Length);
@@ -318,7 +355,10 @@ public sealed class SettingsDialog : Dialog
 
     private static int Fits(int wanted, int? available) => available is { } room ? Math.Min(wanted, room) : wanted;
 
-    private sealed record Page(string Name, IReadOnlyList<View> Views, Func<int> Width, int Height, string[] Hints);
+    /// <summary>A view on a page, at the row and indent the page wants it.</summary>
+    private sealed record Placed(View View, int X = 0, int Y = 0);
+
+    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, Func<int> Width, int Height, string[] Hints);
 
     /// <summary>A list that can take a key literally. ListView's own type-ahead answers a letter before any
     /// handler the dialog could attach, so the letter being bound would never reach the capture.</summary>

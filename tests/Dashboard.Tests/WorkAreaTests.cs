@@ -139,23 +139,26 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        var icons = window.Work.Lanes[0].Columns[1].Icons;
+        var icons = window.Work.Lanes[0].Columns[1].CardIcons;
 
-        Assert.True(window.Work.NerdFont);
+        Assert.Equal(IconStyle.Auto, window.Work.Icons);
         Assert.Equal([LogSchemes.Success, LogSchemes.Dimmed], icons.Select(icon => icon.Scheme));
     }
 
     [Fact]
-    public void A_terminal_without_a_Nerd_Font_is_what_the_app_opens_with_next_time()
+    public void The_icon_style_stored_is_what_the_app_opens_with_next_time()
     {
-        new DashboardSettings(Config).WriteNerdFont(false);
+        new DashboardSettings(Config).WriteIcons(IconStyle.NerdFont);
 
         using var window = Open();
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.False(window.Work.NerdFont);
-        Assert.Equal(["✓", "·"], window.Work.Lanes[0].Columns[1].Icons.Select(icon => icon.Glyph));
+        Assert.Equal(IconStyle.NerdFont, window.Work.Icons);
+        Assert.Equal(
+            [Icons.Glyph(Icon.YourMove, IconStyle.NerdFont), Icons.Glyph(Icon.TheirMove, IconStyle.NerdFont)],
+            window.Work.Lanes[0].Columns[1].CardIcons.Select(icon => icon.Glyph));
+        Assert.All(window.Panes, pane => Assert.InRange(char.ConvertToUtf32(pane.Title, 0), 0xF0001, 0xF1AF0));
     }
 
     [Fact]
