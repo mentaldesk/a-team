@@ -19,6 +19,7 @@ public sealed class SettingsDialog : Dialog
     private const string ToolCalls = "Show tool calls in full";
     private const string IconsHeading = "Icons:";
     private const string IconLegend = "run  idle  paused  ok  error  here  tool";
+    private const string ThisTerminal = "this terminal: ";
     private const int Inset = 1;
     private const int Gap = 1;
     private const int GlyphAndSpace = 2;
@@ -43,12 +44,19 @@ public sealed class SettingsDialog : Dialog
     private readonly OptionSelector _iconStyles;
     private readonly KeyList _keys;
     private readonly MessageBar _message = new();
+    private readonly IconStyle _auto;
     private bool _capturing;
 
     public SettingsDialog(
-        ThemeSetting theme, IconSetting icons, bool expandToolCalls, CommandRegistry commands, Action redraw)
+        ThemeSetting theme,
+        IconSetting icons,
+        bool expandToolCalls,
+        CommandRegistry commands,
+        Action redraw,
+        IconStyle auto)
     {
         _commands = commands;
+        _auto = auto;
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
 
@@ -78,7 +86,7 @@ public sealed class SettingsDialog : Dialog
         _iconStyles = new OptionSelector
         {
             Orientation = Orientation.Vertical,
-            Labels = [.. IconChoices.Select(IconRow)],
+            Labels = [.. IconChoices.Select(choice => IconRow(choice, auto))],
             Value = Math.Max(0, Array.FindIndex(IconChoices, choice => choice.Style == icons.Current)),
         };
         _iconStyles.ValueChanged += (_, e) =>
@@ -157,12 +165,16 @@ public sealed class SettingsDialog : Dialog
 
     /// <summary>Runs the dialog, keeping what was picked in it only if it was accepted.</summary>
     public static void Show(
-        IApplication app, DashboardSettings settings, CommandRegistry commands, Action<IconStyle> showIcons)
+        IApplication app,
+        DashboardSettings settings,
+        CommandRegistry commands,
+        Action<IconStyle> showIcons,
+        IconStyle auto)
     {
         var theme = ThemeSetting.Live(settings);
         var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
-            theme, icons, settings.ReadExpandToolCalls(), commands, () => app.LayoutAndDraw(true));
+            theme, icons, settings.ReadExpandToolCalls(), commands, () => app.LayoutAndDraw(true), auto);
         app.Run(dialog);
         dialog.Store(theme, icons, settings);
     }
@@ -329,15 +341,20 @@ public sealed class SettingsDialog : Dialog
         new Placed(new Label { Text = IconLegend }, Indent, IconLegendRow),
     ];
 
-    /// <summary>A style's row, its own glyphs after its name, so you pick the row that isn't boxes.</summary>
-    private static string IconRow((IconStyle Style, string Name) choice) => choice.Style == IconStyle.Auto
-        ? choice.Name
-        : $"{choice.Name.PadRight(IconChoices.Max(other => other.Name.Length))}  {Icons.Sample(choice.Style)}";
+    /// <summary>A style's row: its own glyphs after its name, so you pick the row that isn't boxes, and for
+    /// Automatic what it decided for the terminal you're in, so the row answers rather than promises.</summary>
+    private static string IconRow((IconStyle Style, string Name) choice, IconStyle auto)
+    {
+        var name = choice.Name.PadRight(IconChoices.Max(other => other.Name.Length));
+        return choice.Style == IconStyle.Auto
+            ? $"{name}  {ThisTerminal}{IconChoices.First(other => other.Style == auto).Name}"
+            : $"{name}  {Icons.Sample(choice.Style)}";
+    }
 
-    private static int DashboardWide() => Math.Max(
+    private int DashboardWide() => Math.Max(
         Math.Max(ToolCalls.Length + GlyphAndSpace, IconsHeading.Length),
         Indent + Math.Max(
-            IconChoices.Max(choice => IconRow(choice).GetColumns()) + GlyphAndSpace, IconLegend.Length));
+            IconChoices.Max(choice => IconRow(choice, _auto).GetColumns()) + GlyphAndSpace, IconLegend.Length));
 
     private int KeysWide() => Math.Max(
         _bindings.Count == 0 ? 0 : Rows.Max(row => row.Length),
