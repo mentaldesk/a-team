@@ -123,8 +123,8 @@ public sealed class DashboardWindow : Window
         };
         _work.FocusChanged += CardChanged;
         _work.ShowOnlyMine(settings.ReadOnlyMine());
-        _work.ShowIcons(settings.ReadNerdFont());
         Add(_work);
+        ShowIcons(settings.ReadIcons());
 
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         Add(_message);
@@ -426,11 +426,18 @@ public sealed class DashboardWindow : Window
     {
         if (App is not { } app)
             return;
-        SettingsDialog.Show(app, _settings, _commands);
-        _work.ShowIcons(_settings.ReadNerdFont());
+        SettingsDialog.Show(app, _settings, _commands, ShowIcons);
         SyncQuitKey();
         _menu.Refresh();
         Title = Hints(_version, CurrentMode, _commands);
+    }
+
+    /// <summary>The vocabulary the panes and the cards draw their icons from, together.</summary>
+    private void ShowIcons(IconStyle style)
+    {
+        _work.ShowIcons(style);
+        foreach (var pane in _panes)
+            pane.ShowIcons(style);
     }
 
     private void Expand()

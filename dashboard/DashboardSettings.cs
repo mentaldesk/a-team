@@ -54,15 +54,17 @@ public sealed class DashboardSettings
 
     public void WriteOnlyMine(bool onlyMine) => Write("onlyMine", writer => writer.WriteBooleanValue(onlyMine));
 
-    /// <summary>Whether the cards wear Nerd Font glyphs. On unless the file says otherwise, since no terminal
-    /// reports its font: a terminal without one turns it off in Settings.</summary>
-    public bool ReadNerdFont()
+    /// <summary>The vocabulary to draw icons from: Auto unless the file names one of the others, since no
+    /// terminal reports its font. Never writes, whatever it finds.</summary>
+    public IconStyle ReadIcons()
     {
         using var file = Parse();
-        return Setting(file, "nerdFont") is not { ValueKind: JsonValueKind.False };
+        var named = Setting(file, "icons") is { ValueKind: JsonValueKind.String } icons ? icons.GetString() : null;
+        return Enum.GetValues<IconStyle>().FirstOrDefault(
+            style => string.Equals(style.ToString(), named, StringComparison.OrdinalIgnoreCase), IconStyle.Auto);
     }
 
-    public void WriteNerdFont(bool nerdFont) => Write("nerdFont", writer => writer.WriteBooleanValue(nerdFont));
+    public void WriteIcons(IconStyle style) => Write("icons", writer => writer.WriteStringValue(style.ToString()));
 
     /// <summary>Whether panes start with every tool call showing. Off unless the file says otherwise.</summary>
     public bool ReadExpandToolCalls()

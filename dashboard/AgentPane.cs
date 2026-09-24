@@ -3,7 +3,7 @@ using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
 
-/// <summary>What a pane says about its agent: the state its title glyph and colour come from.</summary>
+/// <summary>What a pane says about its agent: the state its title icon and colour come from.</summary>
 public enum PaneStatus
 {
     NeverRun,
@@ -16,6 +16,12 @@ public enum PaneStatus
 
 /// <summary>The scheme each part of a pane draws from.</summary>
 public readonly record struct PaneSchemes(string Frame, string Status, string Why, string Body);
+
+/// <summary>A pane's title: the icons it wears, and the bare name they're drawn in front of.</summary>
+public readonly record struct PaneTitle(string Icons, string Name)
+{
+    public override string ToString() => Icons + Name;
+}
 
 /// <summary>One agent: how its last run went and its timing, why it last started, and a tail of its latest session.</summary>
 public sealed class AgentPane : FrameView
@@ -31,6 +37,7 @@ public sealed class AgentPane : FrameView
     private readonly Label _why;
     private readonly LogView _body;
     private PaneStatus _status = PaneStatus.NeverRun;
+    private IconStyle _icons = IconStyle.Auto;
     private string _timing = "";
 
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
@@ -62,6 +69,15 @@ public sealed class AgentPane : FrameView
     public void End()
     {
         _body.End();
+        UpdateHeader();
+    }
+
+    /// <summary>Draws the title's icons from the vocabulary the reviewer picked.</summary>
+    public void ShowIcons(IconStyle style)
+    {
+        if (_icons == style)
+            return;
+        _icons = style;
         UpdateHeader();
     }
 
@@ -98,7 +114,7 @@ public sealed class AgentPane : FrameView
 
     private void UpdateHeader()
     {
-        var title = Header(_name, HasFocus, _status, _body.Following, _body.Expanded);
+        var title = Header(_name, HasFocus, _status, _body.Following, _body.Expanded, _icons).ToString();
         if (Title != title)
             Title = title;
         if (_statusRow.Text != _timing)
@@ -128,8 +144,11 @@ public sealed class AgentPane : FrameView
                 _ => state.LastStart is null ? PaneStatus.NeverRun : PaneStatus.CutShort,
             };
 
-    internal static string Header(string name, bool selected, PaneStatus status, bool following, bool expanded) =>
-        $"{(selected ? "▶ " : "")}{Glyph(status)} {name}{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}";
+    internal static PaneTitle Header(
+        string name, bool selected, PaneStatus status, bool following, bool expanded, IconStyle style) =>
+        new(
+            (selected ? Icons.Field(Icon.Selected, style) : "") + Icons.Field(Icons.For(status), style),
+            $"{name}{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}");
 
     /// <summary>A failed run reddens the frame and the status row; only the body is never red.</summary>
     internal static PaneSchemes SchemesFor(PaneStatus status, string timing)
@@ -141,15 +160,6 @@ public sealed class AgentPane : FrameView
             LogSchemes.Dimmed,
             BaseScheme);
     }
-
-    private static string Glyph(PaneStatus status) => status switch
-    {
-        PaneStatus.Paused => "⏸",
-        PaneStatus.Running => "●",
-        PaneStatus.Ok => "✓",
-        PaneStatus.Failed or PaneStatus.CutShort => "✗",
-        _ => "○",
-    };
 
     internal static string Describe(AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck, PaneStatus status)
     {

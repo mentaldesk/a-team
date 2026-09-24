@@ -1,5 +1,6 @@
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -18,22 +19,46 @@ public class AgentPaneTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false, PaneStatus.NeverRun, true, false, "○ a-team · dev")]
-    [InlineData(true, PaneStatus.NeverRun, true, false, "▶ ○ a-team · dev")]
-    [InlineData(true, PaneStatus.Running, true, false, "▶ ● a-team · dev")]
-    [InlineData(true, PaneStatus.Running, false, false, "▶ ● a-team · dev [scrolled]")]
-    [InlineData(true, PaneStatus.Running, true, true, "▶ ● a-team · dev [tool calls]")]
-    [InlineData(true, PaneStatus.Running, false, true, "▶ ● a-team · dev [tool calls] [scrolled]")]
-    [InlineData(false, PaneStatus.NeverRun, false, true, "○ a-team · dev [tool calls] [scrolled]")]
-    [InlineData(false, PaneStatus.Ok, true, false, "✓ a-team · dev")]
-    [InlineData(false, PaneStatus.Failed, true, false, "✗ a-team · dev")]
-    [InlineData(false, PaneStatus.CutShort, true, false, "✗ a-team · dev")]
-    [InlineData(true, PaneStatus.Failed, false, true, "▶ ✗ a-team · dev [tool calls] [scrolled]")]
-    [InlineData(false, PaneStatus.Paused, true, false, "⏸ a-team · dev")]
-    [InlineData(true, PaneStatus.Paused, false, true, "▶ ⏸ a-team · dev [tool calls] [scrolled]")]
-    public void The_title_says_which_state_the_pane_is_in(
-        bool selected, PaneStatus status, bool following, bool expanded, string expected) =>
-        Assert.Equal(expected, AgentPane.Header("a-team · dev", selected, status, following, expanded));
+    [InlineData(false, PaneStatus.NeverRun, true, false, "a-team · dev")]
+    [InlineData(true, PaneStatus.NeverRun, true, false, "a-team · dev")]
+    [InlineData(true, PaneStatus.Running, true, false, "a-team · dev")]
+    [InlineData(true, PaneStatus.Running, false, false, "a-team · dev [scrolled]")]
+    [InlineData(true, PaneStatus.Running, true, true, "a-team · dev [tool calls]")]
+    [InlineData(true, PaneStatus.Running, false, true, "a-team · dev [tool calls] [scrolled]")]
+    [InlineData(false, PaneStatus.NeverRun, false, true, "a-team · dev [tool calls] [scrolled]")]
+    [InlineData(false, PaneStatus.Ok, true, false, "a-team · dev")]
+    [InlineData(false, PaneStatus.Failed, true, false, "a-team · dev")]
+    [InlineData(false, PaneStatus.CutShort, true, false, "a-team · dev")]
+    [InlineData(true, PaneStatus.Failed, false, true, "a-team · dev [tool calls] [scrolled]")]
+    [InlineData(false, PaneStatus.Paused, true, false, "a-team · dev")]
+    [InlineData(true, PaneStatus.Paused, false, true, "a-team · dev [tool calls] [scrolled]")]
+    public void A_title_carries_the_bare_name_with_the_icons_its_state_earns_in_front_of_it(
+        bool selected, PaneStatus status, bool following, bool expanded, string name)
+    {
+        var title = AgentPane.Header("a-team · dev", selected, status, following, expanded, IconStyle.Unicode);
+
+        Assert.Equal(name, title.Name);
+        Assert.Equal(
+            (selected ? Icons.Field(Icon.Selected, IconStyle.Unicode) : "") +
+            Icons.Field(Icons.For(status), IconStyle.Unicode),
+            title.Icons);
+        Assert.Equal(title.Icons + name, title.ToString());
+    }
+
+    [Theory]
+    [InlineData(IconStyle.Auto)]
+    [InlineData(IconStyle.NerdFont)]
+    [InlineData(IconStyle.Unicode)]
+    public void A_titles_icons_cost_the_same_cells_whichever_style_it_is_drawn_in(IconStyle style) =>
+        Assert.All(Enum.GetValues<PaneStatus>(), status =>
+        {
+            Assert.Equal(
+                Icons.Width,
+                AgentPane.Header("a-team · dev", false, status, true, false, style).Icons.GetColumns());
+            Assert.Equal(
+                Icons.Width * 2,
+                AgentPane.Header("a-team · dev", true, status, true, false, style).Icons.GetColumns());
+        });
 
     [Theory]
     [InlineData(true, true, RunVerdict.Error, PaneStatus.Paused)]
@@ -140,7 +165,7 @@ public class AgentPaneTests : IDisposable
 
         pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false);
 
-        Assert.StartsWith("✗ ", pane.Title);
+        Assert.StartsWith(Icons.Field(Icon.Failed, IconStyle.Unicode), pane.Title);
         Assert.Equal(Error, pane.SchemeName);
         Assert.Equal(Base, pane.SubViews.OfType<LogView>().Single().SchemeName);
     }
@@ -152,8 +177,19 @@ public class AgentPaneTests : IDisposable
 
         pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false);
 
-        Assert.StartsWith("✓ ", pane.Title);
+        Assert.StartsWith(Icons.Field(Icon.Ok, IconStyle.Unicode), pane.Title);
         Assert.Equal(Base, pane.SchemeName);
+    }
+
+    [Fact]
+    public void A_pane_wears_its_title_icons_in_the_style_it_is_shown()
+    {
+        using var pane = Open("""{"type":"result","num_turns":2,"total_cost_usd":0.1}""");
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false);
+
+        pane.ShowIcons(IconStyle.NerdFont);
+
+        Assert.StartsWith(Icons.Field(Icon.Ok, IconStyle.NerdFont), pane.Title);
     }
 
     private AgentPane Open(string session)

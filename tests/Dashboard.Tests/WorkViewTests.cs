@@ -330,15 +330,15 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
 
-        view.ShowIcons(true);
-        Assert.True(view.NerdFont);
+        view.ShowIcons(IconStyle.NerdFont);
+        Assert.Equal(IconStyle.NerdFont, view.Icons);
         Assert.Equal(
-            [TurnIcons.For(Waiting[0], nerdFont: true), TurnIcons.For(Waiting[1], nerdFont: true)],
-            view.Lanes[0].Columns[1].Icons);
+            [Icons.For(Waiting[0], IconStyle.NerdFont), Icons.For(Waiting[1], IconStyle.NerdFont)],
+            view.Lanes[0].Columns[1].CardIcons);
 
-        view.ShowIcons(false);
-        Assert.False(view.NerdFont);
-        Assert.Equal("✓", view.Lanes[0].Columns[1].Icons[0].Glyph);
+        view.ShowIcons(IconStyle.Unicode);
+        Assert.Equal(IconStyle.Unicode, view.Icons);
+        Assert.Equal("✓", view.Lanes[0].Columns[1].CardIcons[0].Glyph);
     }
 
     [Fact]

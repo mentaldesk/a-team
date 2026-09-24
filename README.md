@@ -143,8 +143,9 @@ back — every Idea is yours, so that column keeps them all; the counts follow, 
 same line says which you're looking at — *All items* or *My items* — and it opens the way you left
 it.
 
-The two icons are Nerd Font glyphs. No terminal reports its font, so if yours draws them as boxes,
-turn *Nerd Font icons on the cards* off under Settings → Dashboard and they become `✓` and `·`.
+The two icons come from the same vocabulary the panes use, and the cards start on the plain one
+(`✓` and `·`). No terminal reports its font, so if yours has a Nerd Font, pick that vocabulary
+under Settings → Dashboard — you pick the row you can read.
 
 The card list is read when the area opens and when you press `r`, never on a timer, so an app left
 open overnight costs nothing against the rate limit the agents share; the header says how long ago
@@ -154,7 +155,8 @@ cards and that stamp exactly as they were.
 ### Watching the team
 
 One pane per agent. The title shows whether it's running (●) or paused (⏸), and when it's neither,
-how its last run went: ✓ clean, ✗ failed, ○ never run. A failed run draws the pane's border, title
+how its last run went: ✓ clean, ✗ failed, ○ never run — or the Nerd Font glyph for each, where
+Settings → Dashboard is set to those. A failed run draws the pane's border, title
 and status row in the error colour until the next run clears it. Under the title: how long the
 current run has been going, or when it last ran and the countdown to the dispatcher's next check;
 then why it was last started; then its latest session as it happens (what it said, the
@@ -170,7 +172,10 @@ title says [tool calls]) and t again folds them back up. s opens Settings, a pag
 pages down the left, the one picked on the right, Tab into it and Tab back. Theme is one of
 Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode; Keyboard Shortcuts
 is a row per command with the key that runs it; Dashboard is whether panes start with every tool
-call showing, and whether the Work area's cards wear Nerd Font icons. Enter on a shortcut row takes
+call showing, and which icons the panes and cards wear — *Automatic*, *Nerd Font* or *Unicode*,
+the last two drawn in their own glyphs so you pick the row that isn't boxes, previewing behind the
+dialog as you move. *Automatic* is the Unicode one until the dashboard learns to recognise the
+terminals that bundle a Nerd Font. Enter on a shortcut row takes
 the next key you press; a key another command already holds is refused, naming the one that holds
 it. Ctrl+Enter keeps what's picked on any page, Esc
 discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
