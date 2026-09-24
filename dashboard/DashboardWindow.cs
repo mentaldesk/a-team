@@ -44,6 +44,7 @@ public sealed class DashboardWindow : Window
     private Task<Reading[]>? _reading;
     private DateTimeOffset? _readAt;
     private string? _failure;
+    private string? _refusal;
     private string? _progress;
     private int? _expanded;
     private Size _laidOutOver;
@@ -120,7 +121,7 @@ public sealed class DashboardWindow : Window
             Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - _message.Lines), this),
             Visible = area == Area.Work,
         };
-        _work.FocusChanged += ShowMessage;
+        _work.FocusChanged += CardChanged;
         _work.ShowOnlyMine(settings.ReadOnlyMine());
         _work.ShowIcons(settings.ReadNerdFont());
         Add(_work);
@@ -228,6 +229,7 @@ public sealed class DashboardWindow : Window
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
             .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
             .Register("work.open", "Open the selected issue on GitHub", OpenIssue, Key.Enter, new Hint("open issue", Mode.Work), () => OnWork() && _work.Selected is not null)
+            .Register("work.pr", "Open the selected item's PR on GitHub", OpenPr, new Key('p'), new Hint("open PR", Mode.Work), () => OnWork() && _work.Selected is not null)
             .Register("work.mine", "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork)
             .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
@@ -271,6 +273,14 @@ public sealed class DashboardWindow : Window
     private void ReadWaiting()
     {
         _reading ??= Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
+        _refusal = null;
+        ShowMessage();
+    }
+
+    /// <summary>A refusal is about the card it was made on, so moving off that card clears it.</summary>
+    private void CardChanged()
+    {
+        _refusal = null;
         ShowMessage();
     }
 
@@ -278,6 +288,7 @@ public sealed class DashboardWindow : Window
     {
         _work.ShowOnlyMine(!_work.OnlyMine);
         _settings.WriteOnlyMine(_work.OnlyMine);
+        _refusal = null;
         ShowMessage();
         SetNeedsLayout();
         SetNeedsDraw();
@@ -287,6 +298,17 @@ public sealed class DashboardWindow : Window
     {
         if (_work.Selected is { Url.Length: > 0 } item)
             _openUrl(item.Url);
+    }
+
+    private void OpenPr()
+    {
+        if (_work.Selected is not { } item)
+            return;
+        if (item.PrUrl.Length > 0)
+            _openUrl(item.PrUrl);
+        else
+            _refusal = $"#{item.Number} has no open PR";
+        ShowMessage();
     }
 
     /// <summary>Picked up by the next refresh, so a command runs off the draw loop and reports back on it.</summary>
@@ -325,7 +347,8 @@ public sealed class DashboardWindow : Window
     private void ShowMessage()
     {
         var (text, scheme) =
-            _failure is { Length: > 0 } ? (_failure, Schemes.Error)
+            _refusal is { Length: > 0 } ? (_refusal, Schemes.Error)
+            : _failure is { Length: > 0 } ? (_failure, Schemes.Error)
             : _reading is not null ? ("Reading…", Schemes.Accent)
             : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
@@ -365,7 +388,7 @@ public sealed class DashboardWindow : Window
             return;
         _area = area;
         _settings.WriteArea(area);
-        _failure = null;
+        _failure = _refusal = null;
         _agents.Visible = _dispatchFrame.Visible = area == Area.Dashboard;
         _work.Visible = area == Area.Work;
         if (area == Area.Work)

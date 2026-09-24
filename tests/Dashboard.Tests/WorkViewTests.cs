@@ -217,6 +217,16 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void A_card_whose_PR_is_in_trouble_says_so_between_the_role_and_the_title()
+    {
+        var failing = new WaitingItem(116, "I can change a key from the dashboard", "In review",
+            "https://github.com/x/6", "a-team", "dev", "CI failing since 09:02",
+            Pr: 131, PrUrl: "https://github.com/x/pull/131", Trouble: "CI failing");
+
+        Assert.Equal("#116  dev · CI failing · I can change a key from the dashboard", WorkColumn.Card(failing, 0));
+    }
+
+    [Fact]
     public void A_card_the_board_said_nothing_about_is_read_as_yours()
     {
         var unsaid = new WaitingItem(12, "Whatever this is", "Pitched", "https://github.com/x/5", "a-team");

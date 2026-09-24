@@ -130,20 +130,45 @@ gh_items() {
     >"$ITEMS"
   TALK="$BIN/talk.json"
   echo '{"data": {"repository": {}}}' >"$TALK"
+  RUNS="$BIN/runs.json"
+  gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+RUNS
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
-if printf '%s\\n' "\$@" | grep -q issueOrPullRequest; then cat "$TALK"; else cat "$ITEMS"; fi
+case " \$* " in
+  *check-runs*) page="$RUNS" ;;
+  *issueOrPullRequest*) page="$TALK" ;;
+  *) page="$ITEMS" ;;
+esac
+filter=
+while [ \$# -gt 0 ]; do
+  [ "\$1" = --jq ] && { filter=\$2; break; }
+  shift
+done
+if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
   chmod +x "$BIN/gh"
   PATH="$BIN:$PATH"
 }
 
+# The check runs on a PR's head commit, from lines of "<status> <conclusion> <finished> <name>",
+# with "-" where a run of that status has no such field.
+gh_runs() {
+  jq -R -s 'split("\n") | map(select(length > 0)) | map(split(" ") as $f
+    | {status: $f[0], name: $f[3], html_url: "https://github.com/mentaldesk/demo/runs/1",
+       conclusion: (if $f[1] == "-" then null else $f[1] end),
+       completed_at: (if $f[2] == "-" then null else $f[2] end)})
+    | {check_runs: .}' >"$RUNS"
+}
+
 # The one GraphQL page `waiting` reads for whose turn it is, from lines of
 # "<n> <kind> <timestamp> <author> <text...>". The body line is the item's own; the pr-* kinds
-# (pr-body, pr-comment, pr-review, pr-line) belong to the open PR that closes #<n>.
+# (pr-body, pr-comment, pr-review, pr-line) belong to the open PR that closes #<n>, which is
+# numbered 900 + n and is ready and mergeable unless `gh_talk <draft> <mergeable>` says otherwise.
 gh_talk() {
-  jq -R -s '
+  jq -R -s --arg draft "${1:-false}" --arg mergeable "${2:-MERGEABLE}" '
     def node($rows; $number):
       ($rows | map(select(.kind == "body")) | first) as $body
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
@@ -157,6 +182,9 @@ gh_talk() {
              else {createdAt: .at, body: "", state: "COMMENTED", author: {login: .author},
                    comments: {nodes: [{createdAt: .at, body: .body, author: {login: .author}}]}}
              end))}};
+    def open_pr($rows; $number): node($rows; $number)
+      + {url: "https://github.com/mentaldesk/demo/pull/\($number)", isDraft: ($draft == "true"),
+         mergeable: $mergeable, baseRefName: "main", headRefOid: "deadbee"};
     split("\n") | map(select(length > 0)) | map(split(" ") as $f
       | {n: ($f[0] | tonumber), kind: $f[1], at: $f[2], author: $f[3], body: ($f[4:] | join(" "))})
     | group_by(.n) | map(
@@ -164,7 +192,7 @@ gh_talk() {
         | (map(select(.kind | startswith("pr-")) | .kind |= ltrimstr("pr-"))) as $pr
         | {key: "x\(.[0].n)",
            value: (node($own; .[0].n) + {closedByPullRequestsReferences: {nodes:
-             (if ($pr | length) > 0 then [node($pr; 900 + .[0].n)] else [] end)}})})
+             (if ($pr | length) > 0 then [open_pr($pr; 900 + .[0].n)] else [] end)}})})
     | from_entries | {data: {repository: .}}' >"$TALK"
 }
 
@@ -257,7 +285,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 2 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a review and a line comment on that PR count as feedback too"
 gh_talk <<TALK
@@ -284,6 +312,91 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"awaiting your acceptance since 11:45"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "an In review item carries its open PR, and a Pitched one carries none"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "pitch fields" '["number","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "task fields" \
+  '["checks","conflicting","draft","number","pr","prUrl","reason","status","team","title","turn","url"]' \
+  "$(jq -c '.[1] | keys' "$OUT")"
+same "pr" 1015 "$(jq -c '.[1].pr' "$OUT")"
+same "prUrl" '"https://github.com/mentaldesk/demo/pull/1015"' "$(jq -c '.[1].prUrl' "$OUT")"
+
+case_ "a green, mergeable, ready PR with nothing unanswered stays the reviewer's"
+same "checks" '"pass"' "$(jq -c '.[1].checks' "$OUT")"
+same "conflicting" false "$(jq -c '.[1].conflicting' "$OUT")"
+same "draft" false "$(jq -c '.[1].draft' "$OUT")"
+same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"awaiting your acceptance since 08:25"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a PR whose CI is failing is the Dev's turn, since the run finished"
+gh_runs <<RUNS
+completed failure ${TODAY}T09:02:00Z build
+RUNS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task trouble" '"CI failing"' "$(jq -c '.[1].trouble' "$OUT")"
+same "task reason" '"CI failing since 09:02"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "an unanswered comment outranks the failing build it hasn't been answered with"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task trouble" null "$(jq -c '.[1].trouble' "$OUT")"
+same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a PR that conflicts with its base is the Dev's turn"
+gh_runs <<RUNS
+completed success ${TODAY}T09:00:00Z build
+RUNS
+gh_talk false CONFLICTING <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "conflicting" true "$(jq -c '.[1].conflicting' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"conflicts with main"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a PR GitHub hasn't worked the conflict out for yet is nobody's fault"
+gh_talk false UNKNOWN <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "conflicting" false "$(jq -c '.[1].conflicting' "$OUT")"
+same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+
+case_ "a PR still in draft is the Dev's turn"
+gh_talk true <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "draft" true "$(jq -c '.[1].draft' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"still a draft"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a task with no PR yet waits on the reviewer since the task was opened"
 gh_talk <<TALK
