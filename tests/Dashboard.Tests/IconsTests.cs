@@ -65,13 +65,17 @@ public class IconsTests : StaticConfigurationTest
     }
 
     [Fact]
-    public void Auto_draws_the_style_a_terminal_we_cannot_ask_about_its_font_can_show()
+    public void Auto_draws_the_style_the_terminal_answered_with()
     {
-        Assert.Equal(IconStyle.Unicode, Icons.Resolve(IconStyle.Auto));
-        Assert.Equal(IconStyle.NerdFont, Icons.Resolve(IconStyle.NerdFont));
-        Assert.All(
-            Enum.GetValues<Icon>(),
-            icon => Assert.Equal(Icons.Glyph(icon, IconStyle.Unicode), Icons.Glyph(icon, IconStyle.Auto)));
+        Assert.Equal(IconStyle.NerdFont, Icons.Resolve(IconStyle.Auto, IconStyle.NerdFont));
+        Assert.Equal(IconStyle.Unicode, Icons.Resolve(IconStyle.Auto, IconStyle.Unicode));
+    }
+
+    [Fact]
+    public void A_style_of_its_own_is_drawn_whatever_the_terminal_answered()
+    {
+        Assert.Equal(IconStyle.NerdFont, Icons.Resolve(IconStyle.NerdFont, IconStyle.Unicode));
+        Assert.Equal(IconStyle.Unicode, Icons.Resolve(IconStyle.Unicode, IconStyle.NerdFont));
     }
 
     [Fact]

@@ -79,13 +79,12 @@ public static class Icons
     private static readonly Icon[] Sampled =
         [Icon.Running, Icon.NeverRun, Icon.Paused, Icon.Ok, Icon.Failed, Icon.Selected, Icon.ToolCall];
 
-    /// <summary>The style a view actually draws in. Auto means Unicode until the dashboard learns to
-    /// recognise the terminals that bundle a Nerd Font.</summary>
-    public static IconStyle Resolve(IconStyle style) =>
-        style == IconStyle.NerdFont ? IconStyle.NerdFont : IconStyle.Unicode;
+    /// <summary>The style a view actually draws in: a style the reader picked is their own, and Auto is what
+    /// <paramref name="auto"/> — the terminal this launch is drawing in — answered.</summary>
+    public static IconStyle Resolve(IconStyle style, IconStyle auto) => style == IconStyle.Auto ? auto : style;
 
     public static string Glyph(Icon icon, IconStyle style) =>
-        (Resolve(style) == IconStyle.NerdFont ? NerdGlyphs : UnicodeGlyphs)[icon];
+        (style == IconStyle.NerdFont ? NerdGlyphs : UnicodeGlyphs)[icon];
 
     public static string Field(Icon icon, IconStyle style) => Field(Glyph(icon, style));
 

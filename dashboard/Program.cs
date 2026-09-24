@@ -47,7 +47,8 @@ using var window = new DashboardWindow(
     command.Run,
     team => command.Read("board", team, "waiting"),
     url => Link.OpenUrl(url),
-    requested ?? settings.ReadArea());
+    requested ?? settings.ReadArea(),
+    TerminalIcons.Detect(Environment.GetEnvironmentVariable));
 window.Refresh();
 app.AddTimeout(TimeSpan.FromSeconds(1), () =>
 {

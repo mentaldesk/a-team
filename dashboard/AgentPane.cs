@@ -37,7 +37,7 @@ public sealed class AgentPane : FrameView
     private readonly Label _why;
     private readonly LogView _body;
     private PaneStatus _status = PaneStatus.NeverRun;
-    private IconStyle _icons = IconStyle.Auto;
+    private IconStyle _icons = IconStyle.Unicode;
     private string _timing = "";
 
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
@@ -72,7 +72,7 @@ public sealed class AgentPane : FrameView
         UpdateHeader();
     }
 
-    /// <summary>Draws the title's and the session's icons from the vocabulary the reviewer picked.</summary>
+    /// <summary>Draws the title's and the session's icons from the vocabulary in effect.</summary>
     public void ShowIcons(IconStyle style)
     {
         _body.ShowIcons(style);

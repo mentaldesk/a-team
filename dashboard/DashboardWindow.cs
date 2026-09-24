@@ -39,6 +39,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<string, string, Task<string?>> _run;
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Action<string> _openUrl;
+    private readonly IconStyle _auto;
     private Area _area;
     private Task<string?>? _pending;
     private Task<Reading[]>? _reading;
@@ -57,9 +58,11 @@ public sealed class DashboardWindow : Window
         Func<string, string, Task<string?>> run,
         Func<string, Task<Reading>> readWaiting,
         Action<string> openUrl,
-        Area area)
+        Area area,
+        IconStyle auto)
     {
         _settings = settings;
+        _auto = auto;
         _teams = teams;
         _run = run;
         _readWaiting = readWaiting;
@@ -426,18 +429,20 @@ public sealed class DashboardWindow : Window
     {
         if (App is not { } app)
             return;
-        SettingsDialog.Show(app, _settings, _commands, ShowIcons);
+        SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto);
         SyncQuitKey();
         _menu.Refresh();
         Title = Hints(_version, CurrentMode, _commands);
     }
 
-    /// <summary>The vocabulary the panes and the cards draw their icons from, together.</summary>
+    /// <summary>The vocabulary the panes and the cards draw their icons from, together, with Auto resolved here
+    /// so no view has to know what this terminal answered.</summary>
     private void ShowIcons(IconStyle style)
     {
-        _work.ShowIcons(style);
+        var drawn = Icons.Resolve(style, _auto);
+        _work.ShowIcons(drawn);
         foreach (var pane in _panes)
-            pane.ShowIcons(style);
+            pane.ShowIcons(drawn);
     }
 
     private void Expand()
