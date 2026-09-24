@@ -141,8 +141,34 @@ public class WorkAreaTests : IDisposable
 
         var icons = window.Work.Lanes[0].Columns[1].CardIcons;
 
-        Assert.Equal(IconStyle.Auto, window.Work.Icons);
+        Assert.Equal(IconStyle.Unicode, window.Work.Icons);
         Assert.Equal([LogSchemes.Success, LogSchemes.Dimmed], icons.Select(icon => icon.Scheme));
+    }
+
+    [Fact]
+    public void A_terminal_that_bundles_a_Nerd_Font_draws_those_icons_on_the_first_run()
+    {
+        using var window = Open(auto: IconStyle.NerdFont);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(IconStyle.NerdFont, window.Work.Icons);
+        Assert.All(window.Panes, pane => Assert.InRange(char.ConvertToUtf32(pane.Title, 0), 0xF0001, 0xF1AF0));
+        Assert.False(File.Exists(Path.Combine(Config, "dashboard.json")));
+    }
+
+    [Theory]
+    [InlineData(IconStyle.NerdFont, IconStyle.Unicode)]
+    [InlineData(IconStyle.Unicode, IconStyle.NerdFont)]
+    public void A_style_of_my_own_is_what_the_app_draws_whatever_the_terminal_is(IconStyle stored, IconStyle auto)
+    {
+        new DashboardSettings(Config).WriteIcons(stored);
+
+        using var window = Open(auto: auto);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(stored, window.Work.Icons);
     }
 
     [Fact]
@@ -517,7 +543,8 @@ public class WorkAreaTests : IDisposable
     private DashboardWindow Open(
         Func<string, Task<Reading>>? read = null,
         Action<string>? openUrl = null,
-        Area area = Area.Work)
+        Area area = Area.Work,
+        IconStyle auto = IconStyle.Unicode)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -528,7 +555,8 @@ public class WorkAreaTests : IDisposable
             (_, _) => Task.FromResult<string?>(null),
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             openUrl ?? (_ => { }),
-            area);
+            area,
+            auto);
     }
 
     private string Config => Path.Combine(_root, "config");

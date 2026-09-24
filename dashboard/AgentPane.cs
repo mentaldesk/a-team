@@ -37,7 +37,7 @@ public sealed class AgentPane : FrameView
     private readonly Label _why;
     private readonly LogView _body;
     private PaneStatus _status = PaneStatus.NeverRun;
-    private IconStyle _icons = IconStyle.Auto;
+    private IconStyle _icons = IconStyle.Unicode;
     private string _timing = "";
 
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)

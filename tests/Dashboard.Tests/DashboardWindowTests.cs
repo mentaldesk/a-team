@@ -849,7 +849,8 @@ public class DashboardWindowTests : IDisposable
         string? keys = null,
         Func<string, Task<Reading>>? readWaiting = null,
         Action<string>? openUrl = null,
-        Area area = Area.Dashboard)
+        Area area = Area.Dashboard,
+        IconStyle auto = IconStyle.Unicode)
     {
         Directory.CreateDirectory(_root);
         if (keys is not null)
@@ -868,7 +869,8 @@ public class DashboardWindowTests : IDisposable
             run ?? ((_, _) => Task.FromResult<string?>(null)),
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
             openUrl ?? (_ => { }),
-            area);
+            area,
+            auto);
     }
 
     private string Config => Path.Combine(_root, "config");

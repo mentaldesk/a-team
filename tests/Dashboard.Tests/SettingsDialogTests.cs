@@ -89,9 +89,23 @@ public class SettingsDialogTests : IDisposable
         using var dialog = Open(out _, out _, iconStyle: style);
 
         Assert.Equal(
-            ["Automatic", $"Nerd Font  {Icons.Sample(IconStyle.NerdFont)}", $"Unicode    {Icons.Sample(IconStyle.Unicode)}"],
+            [
+                "Automatic  this terminal: Unicode",
+                $"Nerd Font  {Icons.Sample(IconStyle.NerdFont)}",
+                $"Unicode    {Icons.Sample(IconStyle.Unicode)}",
+            ],
             IconStyles(dialog).Labels);
         Assert.Equal((int)style, IconStyles(dialog).Value);
+    }
+
+    [Theory]
+    [InlineData(IconStyle.NerdFont, "Automatic  this terminal: Nerd Font")]
+    [InlineData(IconStyle.Unicode, "Automatic  this terminal: Unicode")]
+    public void The_Automatic_row_names_what_it_decided_for_the_terminal_you_are_in(IconStyle auto, string row)
+    {
+        using var dialog = Open(out _, out _, auto: auto);
+
+        Assert.Equal(row, IconStyles(dialog).Labels![0]);
     }
 
     [Fact]
@@ -449,7 +463,8 @@ public class SettingsDialogTests : IDisposable
         dialog.SubViews.OfType<Label>().Single(label => label.Text == "run  idle  paused  ok  error  here  tool");
 
     private static OptionSelector IconStyles(SettingsDialog dialog) =>
-        dialog.SubViews.OfType<OptionSelector>().First(selector => selector.Labels!.Contains("Automatic"));
+        dialog.SubViews.OfType<OptionSelector>()
+            .First(selector => selector.Labels!.Any(label => label.StartsWith("Automatic", StringComparison.Ordinal)));
 
     private static CheckBox ToolCalls(SettingsDialog dialog) =>
         dialog.SubViews.OfType<CheckBox>().Single(box => box.Text == "Show tool calls in full");
@@ -479,11 +494,12 @@ public class SettingsDialogTests : IDisposable
         IconStyle iconStyle = IconStyle.Auto,
         Action<string>? keep = null,
         Action<IconStyle>? apply = null,
-        CommandRegistry? commands = null)
+        CommandRegistry? commands = null,
+        IconStyle auto = IconStyle.Unicode)
     {
         theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, keep ?? (_ => { }));
         icons = new IconSetting(iconStyle, apply ?? (_ => { }), new DashboardSettings(_configRoot).WriteIcons);
-        var dialog = new SettingsDialog(theme, icons, expand, commands ?? Registry(), () => { });
+        var dialog = new SettingsDialog(theme, icons, expand, commands ?? Registry(), () => { }, auto);
         dialog.SetFocus();
         return dialog;
     }

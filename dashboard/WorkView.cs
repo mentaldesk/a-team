@@ -47,7 +47,7 @@ public sealed class WorkView : View
     internal bool OnlyMine { get; private set; }
 
     /// <summary>The vocabulary the cards wear their icons from.</summary>
-    internal IconStyle Icons { get; private set; } = IconStyle.Auto;
+    internal IconStyle Icons { get; private set; } = IconStyle.Unicode;
 
     /// <summary>Lays the cards out again, keeping the columns a team has even when they're empty.</summary>
     public void Show(IReadOnlyList<WaitingItem> items)
@@ -261,7 +261,7 @@ public sealed class WorkColumn : FrameView
     private readonly FocusBorder _border;
     private IReadOnlyList<WaitingItem> _items = [];
     private int _laidOutOver = -1;
-    private IconStyle _icons = IconStyle.Auto;
+    private IconStyle _icons = IconStyle.Unicode;
 
     internal WorkColumn(string team, string gate, string status, Action focusChanged)
     {
