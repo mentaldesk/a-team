@@ -69,7 +69,7 @@ public sealed class WorkView : View
             FocusFirstCard();
     }
 
-    /// <summary>Draws the cards' icons from the vocabulary the reviewer picked.</summary>
+    /// <summary>Draws the cards' icons from the vocabulary in effect.</summary>
     public void ShowIcons(IconStyle style)
     {
         if (Icons == style)
