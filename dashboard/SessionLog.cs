@@ -109,7 +109,7 @@ public sealed class SessionLog
                     lines.Add(new LogLine("", LogLineKind.Prose));
                     break;
                 case "tool_use":
-                    lines.Add(new LogLine($"▸ {Str(part, "name")} {ToolSummary(part)}".TrimEnd(), LogLineKind.ToolCall));
+                    lines.Add(new LogLine($"{Str(part, "name")} {ToolSummary(part)}".TrimEnd(), LogLineKind.ToolCall));
                     break;
             }
         }
@@ -127,7 +127,7 @@ public sealed class SessionLog
             var text = content.ValueKind == JsonValueKind.String
                 ? content.GetString() ?? ""
                 : string.Join(" ", content.EnumerateArray().Select(c => Str(c, "text")));
-            yield return new LogLine($"  ✗ {Clip(FirstLine(text), 200)}", LogLineKind.ToolError);
+            yield return new LogLine(Clip(FirstLine(text), 200), LogLineKind.ToolError);
         }
     }
 
@@ -136,7 +136,7 @@ public sealed class SessionLog
         var failed = root.TryGetProperty("is_error", out var e) && e.ValueKind == JsonValueKind.True;
         var turns = root.TryGetProperty("num_turns", out var t) ? t.GetInt32() : 0;
         var cost = root.TryGetProperty("total_cost_usd", out var c) ? c.GetDouble() : 0;
-        var text = $"■ finished: {(failed ? "error" : "ok")}, {turns} turns, ${cost.ToString("0.00", CultureInfo.InvariantCulture)}";
+        var text = $"finished: {(failed ? "error" : "ok")}, {turns} turns, ${cost.ToString("0.00", CultureInfo.InvariantCulture)}";
         return new LogLine(text, failed ? LogLineKind.ResultError : LogLineKind.ResultOk);
     }
 

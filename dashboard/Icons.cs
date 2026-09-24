@@ -108,6 +108,15 @@ public static class Icons
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, "No icon for this status."),
     };
 
+    /// <summary>The meaning a log line carries, or null for a line that classifies nothing.</summary>
+    public static Icon? For(LogLineKind kind) => kind switch
+    {
+        LogLineKind.ToolCall => Icon.ToolCall,
+        LogLineKind.ToolError => Icon.ToolError,
+        LogLineKind.ResultOk or LogLineKind.ResultError => Icon.Finished,
+        _ => null,
+    };
+
     public static TurnIcon For(WaitingItem item, IconStyle style) => item.Mine
         ? new TurnIcon(Glyph(Icon.YourMove, style), LogSchemes.Success)
         : new TurnIcon(Glyph(Icon.TheirMove, style), LogSchemes.Dimmed);

@@ -172,7 +172,7 @@ title says [tool calls]) and t again folds them back up. s opens Settings, a pag
 pages down the left, the one picked on the right, Tab into it and Tab back. Theme is one of
 Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode; Keyboard Shortcuts
 is a row per command with the key that runs it; Dashboard is whether panes start with every tool
-call showing, and which icons the panes and cards wear — *Automatic*, *Nerd Font* or *Unicode*,
+call showing, and which icons the panes, their sessions and the cards wear — *Automatic*, *Nerd Font* or *Unicode*,
 the last two drawn in their own glyphs so you pick the row that isn't boxes, previewing behind the
 dialog as you move. *Automatic* is the Unicode one until the dashboard learns to recognise the
 terminals that bundle a Nerd Font. Enter on a shortcut row takes

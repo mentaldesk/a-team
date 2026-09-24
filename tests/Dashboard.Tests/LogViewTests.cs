@@ -1,11 +1,15 @@
+using Terminal.Gui.Text;
+
 namespace ATeam.Dashboard.Tests;
 
 public class LogViewTests
 {
+    public static TheoryData<IconStyle> Styles => [IconStyle.Auto, IconStyle.NerdFont, IconStyle.Unicode];
+
     [Fact]
     public void Wrapping_keeps_the_kind_on_every_continuation_row()
     {
-        var line = new LogLine("  ✗ " + string.Join(' ', Enumerable.Repeat("error", 12)), LogLineKind.ToolError);
+        var line = new LogLine(string.Join(' ', Enumerable.Repeat("error", 12)), LogLineKind.ToolError);
 
         var rows = LogView.Wrap([line], 20);
 
@@ -17,30 +21,105 @@ public class LogViewTests
     [Fact]
     public void A_line_that_fits_is_left_alone()
     {
-        var line = new LogLine("■ finished: ok, 34 turns, $1.42", LogLineKind.ResultOk);
+        var line = new LogLine("finished: ok, 34 turns, $1.42", LogLineKind.ResultOk);
 
-        Assert.Equal([line], LogView.Wrap([line], 80));
+        Assert.Equal([new LogRow(line.Text, line.Kind)], LogView.Wrap([line], 80));
     }
 
     [Fact]
-    public void An_unbroken_run_longer_than_the_width_is_split_at_the_width()
+    public void An_unbroken_run_longer_than_the_width_is_split_at_what_is_left_of_it()
     {
         var line = new LogLine(new string('x', 25), LogLineKind.ToolCall);
 
         var rows = LogView.Wrap([line], 10);
 
-        Assert.Equal(["xxxxxxxxxx", "xxxxxxxxxx", "xxxxx"], rows.Select(r => r.Text));
+        Assert.Equal(["xxxxxxxx", "xxxxxxxx", "xxxxxxxx", "x"], rows.Select(r => r.Text));
         Assert.All(rows, row => Assert.Equal(LogLineKind.ToolCall, row.Kind));
+    }
+
+    [Fact]
+    public void Only_the_first_row_of_a_wrapped_line_wears_the_icon()
+    {
+        var line = new LogLine(string.Join(' ', Enumerable.Repeat("error", 12)), LogLineKind.ToolError);
+
+        var rows = LogView.Wrap([line], 20);
+
+        Assert.False(rows[0].Wrapped);
+        Assert.All(rows.Skip(1), row => Assert.True(row.Wrapped));
+    }
+
+    [Fact]
+    public void The_icon_comes_out_of_the_rows_width_budget()
+    {
+        var text = string.Join(' ', Enumerable.Repeat("narration", 8));
+
+        var call = LogView.Wrap([new LogLine(text, LogLineKind.ToolCall)], 40);
+
+        Assert.Equal(
+            LogView.Wrap([new LogLine(text, LogLineKind.Prose)], 40 - Icons.Width).Select(r => r.Text),
+            call.Select(r => r.Text));
+    }
+
+    [Theory]
+    [MemberData(nameof(Styles))]
+    public void A_row_wears_its_icon_in_a_field_the_text_starts_at_the_same_column_after(IconStyle style)
+    {
+        var view = new LogView();
+        view.ShowIcons(style);
+
+        var drawn = view.Drawn(new LogRow("Bash ls", LogLineKind.ToolCall), 20);
+
+        Assert.StartsWith(Icons.Field(Icon.ToolCall, style) + "Bash ls", drawn, StringComparison.Ordinal);
+        Assert.Equal(20, drawn.GetColumns());
+    }
+
+    [Fact]
+    public void A_continuation_row_is_drawn_under_its_text_rather_than_under_its_icon()
+    {
+        var view = new LogView();
+
+        var drawn = view.Drawn(new LogRow("ls", LogLineKind.ToolCall, Wrapped: true), 20);
+
+        Assert.StartsWith(new string(' ', Icons.Width) + "ls", drawn, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_Unicode_style_draws_the_lines_the_log_drew_before_the_icons_left_the_text()
+    {
+        var view = new LogView();
+        view.ShowIcons(IconStyle.Unicode);
+
+        Assert.Equal(
+            ["▸ Bash ls", "  ✗ boom", "■ finished: ok, 34 turns, $1.42", "narration"],
+            new[]
+            {
+                new LogRow("Bash ls", LogLineKind.ToolCall),
+                new LogRow("boom", LogLineKind.ToolError),
+                new LogRow("finished: ok, 34 turns, $1.42", LogLineKind.ResultOk),
+                new LogRow("narration", LogLineKind.Prose),
+            }.Select(row => view.Drawn(row, 40).TrimEnd()));
+    }
+
+    [Fact]
+    public void An_elided_row_leaves_its_icon_room_inside_the_viewport()
+    {
+        var view = new LogView { Elides = true };
+        view.Lines = [new LogLine(new string('x', 452), LogLineKind.ToolError)];
+
+        var row = Assert.Single(view.Rows(80));
+
+        Assert.Equal(80 - LogView.Lead(LogLineKind.ToolError), row.Text.Length);
+        Assert.Equal(80, view.Drawn(row, 80).GetColumns());
     }
 
     [Fact]
     public void A_run_of_tool_calls_becomes_one_row_showing_the_latest()
     {
-        LogLine[] lines = [.. Enumerable.Range(1, 5).Select(n => new LogLine($"▸ Bash step {n}", LogLineKind.ToolCall))];
+        LogLine[] lines = [.. Enumerable.Range(1, 5).Select(n => new LogLine($"Bash step {n}", LogLineKind.ToolCall))];
 
         var row = Assert.Single(LogView.Collapse(lines, 38));
 
-        Assert.Equal("▸ Bash step 5 (+4)", row.Text);
+        Assert.Equal("Bash step 5 (+4)", row.Text);
         Assert.Equal(LogLineKind.ToolCall, row.Kind);
     }
 
@@ -50,13 +129,13 @@ public class LogViewTests
         LogLine[] lines =
         [
             new("before", LogLineKind.Prose),
-            new("▸ Bash ls", LogLineKind.ToolCall),
+            new("Bash ls", LogLineKind.ToolCall),
             new("after", LogLineKind.Prose),
         ];
 
         var rows = LogView.Collapse(lines, 38);
 
-        Assert.Equal(["before", "▸ Bash ls", "after"], rows.Select(r => r.Text));
+        Assert.Equal(["before", "Bash ls", "after"], rows.Select(r => r.Text));
     }
 
     [Fact]
@@ -64,15 +143,15 @@ public class LogViewTests
     {
         LogLine[] lines =
         [
-            new("▸ Bash " + new string('x', 160), LogLineKind.ToolCall),
-            new("▸ Bash " + new string('y', 160), LogLineKind.ToolCall),
+            new("Bash " + new string('x', 160), LogLineKind.ToolCall),
+            new("Bash " + new string('y', 160), LogLineKind.ToolCall),
         ];
 
         var rows = LogView.Wrap(LogView.Collapse(lines, 38), 38);
 
         var row = Assert.Single(rows);
-        Assert.Equal(38, row.Text.Length);
-        Assert.Equal("▸ Bash " + new string('y', 25) + "… (+1)", row.Text);
+        Assert.Equal(38 - Icons.Width, row.Text.Length);
+        Assert.Equal("Bash " + new string('y', 25) + "… (+1)", row.Text);
     }
 
     [Fact]
@@ -80,17 +159,17 @@ public class LogViewTests
     {
         LogLine[] lines =
         [
-            new("▸ Bash one", LogLineKind.ToolCall),
-            new("▸ Bash two", LogLineKind.ToolCall),
-            new("  ✗ no such file", LogLineKind.ToolError),
-            new("▸ Bash three", LogLineKind.ToolCall),
-            new("▸ Bash four", LogLineKind.ToolCall),
-            new("▸ Bash five", LogLineKind.ToolCall),
+            new("Bash one", LogLineKind.ToolCall),
+            new("Bash two", LogLineKind.ToolCall),
+            new("no such file", LogLineKind.ToolError),
+            new("Bash three", LogLineKind.ToolCall),
+            new("Bash four", LogLineKind.ToolCall),
+            new("Bash five", LogLineKind.ToolCall),
         ];
 
         var rows = LogView.Wrap(LogView.Collapse(lines, 38), 38);
 
-        Assert.Equal(["▸ Bash two (+1)", "  ✗ no such file", "▸ Bash five (+2)"], rows.Select(r => r.Text));
+        Assert.Equal(["Bash two (+1)", "no such file", "Bash five (+2)"], rows.Select(r => r.Text));
         Assert.Equal(
             [LogLineKind.ToolCall, LogLineKind.ToolError, LogLineKind.ToolCall],
             rows.Select(r => r.Kind));
@@ -103,9 +182,9 @@ public class LogViewTests
         [
             new("── session started (opus) ──", LogLineKind.SessionBoundary),
             new(string.Join(' ', Enumerable.Repeat("narration", 8)), LogLineKind.Prose),
-            new("  ✗ boom", LogLineKind.ToolError),
-            new("■ finished: ok, 34 turns, $1.42", LogLineKind.ResultOk),
-            new("■ finished: error, 2 turns, $0.10", LogLineKind.ResultError),
+            new("boom", LogLineKind.ToolError),
+            new("finished: ok, 34 turns, $1.42", LogLineKind.ResultOk),
+            new("finished: error, 2 turns, $0.10", LogLineKind.ResultError),
         ];
 
         Assert.Equal(LogView.Wrap(lines, 38), LogView.Wrap(LogView.Collapse(lines, 38), 38));
@@ -167,7 +246,7 @@ public class LogViewTests
         LogLine[] lines =
         [
             new("first", LogLineKind.Prose),
-            .. Enumerable.Range(1, 6).Select(n => new LogLine($"▸ Bash step {n}", LogLineKind.ToolCall)),
+            .. Enumerable.Range(1, 6).Select(n => new LogLine($"Bash step {n}", LogLineKind.ToolCall)),
             new("second", LogLineKind.Prose),
             new("third", LogLineKind.Prose),
         ];
@@ -184,7 +263,7 @@ public class LogViewTests
         LogLine[] lines =
         [
             new("first", LogLineKind.Prose),
-            .. Enumerable.Range(1, 6).Select(n => new LogLine($"▸ Bash step {n}", LogLineKind.ToolCall)),
+            .. Enumerable.Range(1, 6).Select(n => new LogLine($"Bash step {n}", LogLineKind.ToolCall)),
             new("second", LogLineKind.Prose),
         ];
         var collapsed = LogView.Wrap(LogView.Collapse(lines, 38), 38);
