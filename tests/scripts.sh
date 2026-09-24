@@ -140,17 +140,31 @@ SH
 }
 
 # The one GraphQL page `waiting` reads for whose turn it is, from lines of
-# "<n> body|comment <timestamp> <author> <text...>". The body line is the item's own.
+# "<n> <kind> <timestamp> <author> <text...>". The body line is the item's own; the pr-* kinds
+# (pr-body, pr-comment, pr-review, pr-line) belong to the open PR that closes #<n>.
 gh_talk() {
   jq -R -s '
+    def node($rows; $number):
+      ($rows | map(select(.kind == "body")) | first) as $body
+      | {number: $number, createdAt: $body.at, body: ($body.body // ""),
+         author: {login: ($body.author // "")},
+         comments: {nodes: ($rows | map(select(.kind == "comment")
+           | {createdAt: .at, body: .body, author: {login: .author}}))},
+         reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
+           | if .kind == "review"
+             then {createdAt: .at, body: .body, state: "COMMENTED",
+                   author: {login: .author}, comments: {nodes: []}}
+             else {createdAt: .at, body: "", state: "COMMENTED", author: {login: .author},
+                   comments: {nodes: [{createdAt: .at, body: .body, author: {login: .author}}]}}
+             end))}};
     split("\n") | map(select(length > 0)) | map(split(" ") as $f
       | {n: ($f[0] | tonumber), kind: $f[1], at: $f[2], author: $f[3], body: ($f[4:] | join(" "))})
-    | group_by(.n) | map((map(select(.kind == "body")) | first) as $body | {
-        key: "x\(.[0].n)",
-        value: {number: .[0].n, createdAt: $body.at, body: ($body.body // ""),
-                author: {login: ($body.author // "")},
-                comments: {nodes: map(select(.kind == "comment")
-                  | {createdAt: .at, body: .body, author: {login: .author}})}}})
+    | group_by(.n) | map(
+        (map(select(.kind | startswith("pr-") | not))) as $own
+        | (map(select(.kind | startswith("pr-")) | .kind |= ltrimstr("pr-"))) as $pr
+        | {key: "x\(.[0].n)",
+           value: (node($own; .[0].n) + {closedByPullRequestsReferences: {nodes:
+             (if ($pr | length) > 0 then [node($pr; 900 + .[0].n)] else [] end)}})})
     | from_entries | {data: {repository: .}}' >"$TALK"
 }
 
@@ -229,6 +243,57 @@ TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "turns" '["you","you"]' "$(jq -c '[.[].turn]' "$OUT")"
+
+case_ "the reviewer answering on the task's PR rather than on the task is still the Dev's turn"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 comment ${TODAY}T08:30:00Z reviewer Draft PR #9 is up. <!-- a-team:dev -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+TALK
+: >"$CALLS"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
+
+case_ "a review and a line comment on that PR count as feedback too"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+115 pr-review ${TODAY}T09:00:00Z reviewer Nearly there.
+115 pr-line ${TODAY}T10:45:00Z reviewer This name reads oddly.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"answering your feedback since 10:45"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "the Dev answering on the PR hands the task back"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+115 pr-comment ${TODAY}T11:45:00Z reviewer Added one. <!-- a-team:dev -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"awaiting your acceptance since 11:45"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a task with no PR yet waits on the reviewer since the task was opened"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"awaiting your acceptance since 08:00"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a team with nothing at a gate waits on nothing, and asks nobody whose turn it is"
 gh_items <<'ITEMS'

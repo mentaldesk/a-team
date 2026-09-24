@@ -270,20 +270,33 @@ awaiting() {
 }
 
 # gated_comments <items>: the body and comments of every item, in one call whatever the number of
-# them, as {n, at, author, body, kind}. `waiting` works out whose turn it is from these alone.
+# them, as {n, at, author, body, kind}. The open PR that closes a task comes back nested in the
+# same call and under the task's own number: the reviewer answers a task on either. `waiting`
+# works out whose turn it is from these alone.
 gated_comments() {
-  local fields n query=''
-  fields='number createdAt body author { login }
-          comments(last: 50) { nodes { createdAt body author { login } } }'
+  local said reviewed n query=''
+  said='number createdAt body author { login }
+        comments(last: 50) { nodes { createdAt body author { login } } }'
+  reviewed="$said"' reviews(last: 50) { nodes { createdAt body state author { login }
+              comments(first: 50) { nodes { createdAt body author { login } } } } }'
   for n in $(jq -r '.[].number' <<<"$1"); do
-    query+=" x$n: issueOrPullRequest(number: $n) { ... on Issue { $fields } ... on PullRequest { $fields } }"
+    query+=" x$n: issueOrPullRequest(number: $n) {
+      ... on Issue { $said
+        closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { $reviewed } } }
+      ... on PullRequest { $reviewed } }"
   done
   [ -n "$query" ] || { echo '[]'; return; }
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" \
     -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query} }" |
-    jq '[.data.repository | to_entries[].value | select(. != null) | .number as $n
-         | ({kind: "body", at: .createdAt, author: (.author.login // ""), body: (.body // "")},
-            (.comments.nodes[] | {kind: "comment", at: .createdAt, author: (.author.login // ""), body: (.body // "")}))
+    jq 'def who: {at: .createdAt, author: (.author.login // ""), body: (.body // "")};
+        def talk:
+          (who + {kind: "body"}),
+          (.comments.nodes[]? | who + {kind: "comment"}),
+          (.reviews.nodes[]? |
+            (select((.body // "") != "" or .state == "CHANGES_REQUESTED") | who + {kind: "review"}),
+            (.comments.nodes[]? | who + {kind: "line"}));
+        [.data.repository | to_entries[].value | select(. != null) | .number as $n
+         | (talk, (.closedByPullRequestsReferences.nodes[]? | talk))
          | . + {n: $n}]'
 }
 

@@ -131,8 +131,8 @@ card's issue in your browser.
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the
 line at the foot says why — `#118 · lead · answering your feedback since 08:14`. It's theirs from
-the moment you comment until they answer, which is the same test the dispatcher makes when it
-decides what to start a run for. `m` hides everything that isn't your move and `m` again brings it
+the moment you comment — on the card's own issue or on the PR that closes it — until they answer,
+which is the same test the dispatcher makes when it decides what to start a run for. `m` hides everything that isn't your move and `m` again brings it
 back; the counts follow, the right of that same line says which you're looking at — *All items* or
 *My items* — and it opens the way you left it.
 
