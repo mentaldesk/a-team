@@ -4,10 +4,16 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
+/// <summary>One drawn row of a log line: the text alone, and whether it's the row the icon goes beside.</summary>
+public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false);
+
 /// <summary>Word-wrapped lines that follow the end until the user scrolls up, or an elided tail that never wraps.</summary>
 public sealed class LogView : View
 {
+    private const int ErrorIndent = 2;
+
     private IReadOnlyList<LogLine> _lines = [];
+    private IconStyle _icons = IconStyle.Auto;
     private int _top;
     private int _maxTop;
     private bool _following = true;
@@ -35,6 +41,15 @@ public sealed class LogView : View
 
     /// <summary>One row per line, elided in the middle rather than wrapped, for a tail nobody can scroll.</summary>
     public bool Elides { get; init; }
+
+    /// <summary>Draws the rows' icons from the vocabulary the reviewer picked.</summary>
+    public void ShowIcons(IconStyle style)
+    {
+        if (_icons == style)
+            return;
+        _icons = style;
+        SetNeedsDraw();
+    }
 
     /// <summary>Shows every tool call again, or folds the runs back up, keeping the line you were reading.</summary>
     public void ToggleToolCalls()
@@ -72,11 +87,21 @@ public sealed class LogView : View
         _top = _following ? _maxTop : Math.Min(_top, _maxTop);
         for (var row = 0; row < height; row++)
         {
-            var line = _top + row < rows.Count ? rows[_top + row] : new LogLine("", LogLineKind.Prose);
+            var line = _top + row < rows.Count ? rows[_top + row] : new LogRow("", LogLineKind.Prose);
             SetAttribute(AttributeFor(line.Kind));
-            AddStr(0, row, line.Text.PadRight(width));
+            AddStr(0, row, Drawn(line, width));
         }
         return true;
+    }
+
+    /// <summary>The row as it reaches the screen: its icon in the field the text is budgeted around, then the text.</summary>
+    internal string Drawn(LogRow row, int width)
+    {
+        var lead = Lead(row.Kind);
+        var icon = row.Wrapped ? null : Icons.For(row.Kind);
+        var prefix = new string(' ', lead - (icon is null ? 0 : Icons.Width))
+            + (icon is { } drawn ? Icons.Field(drawn, _icons) : "");
+        return prefix + row.Text.PadRight(Math.Max(0, width - lead));
     }
 
     private Attribute AttributeFor(LogLineKind kind)
@@ -89,9 +114,17 @@ public sealed class LogView : View
             : GetAttributeForRole(VisualRole.Normal);
     }
 
-    internal List<LogLine> Rows(int width) => Elides
-        ? [.. _lines.Select(line => line with { Text = Elide(line.Text, width) })]
+    /// <summary>The cells a row spends before its text: its icon's field, and an error's indent so it hangs under the call it came from.</summary>
+    internal static int Lead(LogLineKind kind) => Icons.For(kind) is null
+        ? 0
+        : Icons.Width + (kind == LogLineKind.ToolError ? ErrorIndent : 0);
+
+    internal List<LogRow> Rows(int width) => Elides
+        ? [.. _lines.Select(line => new LogRow(Elide(line.Text, Room(width, line.Kind)), line.Kind))]
         : Wrap(_expanded ? _lines : Collapse(_lines, width), width);
+
+    /// <summary>The cells a line of this kind has left for its text, never fewer than one.</summary>
+    private static int Room(int width, LogLineKind kind) => Math.Max(1, width - Lead(kind));
 
     /// <summary>Drops the middle of a line too long to fit, so its head and its tail both survive in exactly <paramref name="width"/> cells.</summary>
     internal static string Elide(string text, int width)
@@ -106,7 +139,7 @@ public sealed class LogView : View
     }
 
     /// <summary>The row in <paramref name="after"/> holding what row <paramref name="top"/> of <paramref name="before"/> held.</summary>
-    internal static int Anchor(IReadOnlyList<LogLine> before, IReadOnlyList<LogLine> after, int top)
+    internal static int Anchor(IReadOnlyList<LogRow> before, IReadOnlyList<LogRow> after, int top)
     {
         top = Math.Clamp(top, 0, before.Count);
         var prose = 0;
@@ -139,7 +172,7 @@ public sealed class LogView : View
             var first = i;
             while (i + 1 < lines.Count && lines[i + 1].Kind == LogLineKind.ToolCall)
                 i++;
-            rows.Add(lines[i] with { Text = Fold(lines[i].Text, i - first, width) });
+            rows.Add(lines[i] with { Text = Fold(lines[i].Text, i - first, Room(width, LogLineKind.ToolCall)) });
         }
         return rows;
     }
@@ -153,26 +186,29 @@ public sealed class LogView : View
 
     private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
 
-    internal static List<LogLine> Wrap(IReadOnlyList<LogLine> lines, int width)
+    internal static List<LogRow> Wrap(IReadOnlyList<LogLine> lines, int width)
     {
-        var rows = new List<LogLine>(lines.Count);
+        var rows = new List<LogRow>(lines.Count);
         foreach (var line in lines)
         {
-            if (line.Text.Length <= width)
+            var room = Room(width, line.Kind);
+            if (line.Text.Length <= room)
             {
-                rows.Add(line);
+                rows.Add(new LogRow(line.Text, line.Kind));
                 continue;
             }
             var rest = line.Text;
-            while (rest.Length > width)
+            var wrapped = false;
+            while (rest.Length > room)
             {
-                var cut = rest.LastIndexOf(' ', width - 1);
+                var cut = rest.LastIndexOf(' ', room - 1);
                 if (cut <= 0)
-                    cut = width;
-                rows.Add(line with { Text = rest[..cut] });
+                    cut = room;
+                rows.Add(new LogRow(rest[..cut], line.Kind, wrapped));
                 rest = rest[cut..].TrimStart();
+                wrapped = true;
             }
-            rows.Add(line with { Text = rest });
+            rows.Add(new LogRow(rest, line.Kind, wrapped));
         }
         return rows;
     }

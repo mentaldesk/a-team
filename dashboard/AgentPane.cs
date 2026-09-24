@@ -72,9 +72,10 @@ public sealed class AgentPane : FrameView
         UpdateHeader();
     }
 
-    /// <summary>Draws the title's icons from the vocabulary in effect.</summary>
+    /// <summary>Draws the title's and the session's icons from the vocabulary in effect.</summary>
     public void ShowIcons(IconStyle style)
     {
+        _body.ShowIcons(style);
         if (_icons == style)
             return;
         _icons = style;

@@ -5,6 +5,8 @@ public class SessionLogTests : IDisposable
     private const string Ok = """{"type":"result","num_turns":1,"total_cost_usd":0.1}""";
     private const string Failed = """{"type":"result","is_error":true,"num_turns":1,"total_cost_usd":0.1}""";
     private const string Prose = """{"type":"assistant","message":{"content":[{"type":"text","text":"still going"}]}}""";
+    private const string Call = """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}""";
+    private const string Broke = """{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"boom"}]}}""";
 
     private readonly string _dir = Path.Combine(Path.GetTempPath(), $"a-team-{Guid.NewGuid():n}");
 
@@ -41,7 +43,7 @@ public class SessionLogTests : IDisposable
         var line = Assert.Single(SessionLog.Render("""
             {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}
             """));
-        Assert.Equal("▸ Bash ls", line.Text);
+        Assert.Equal("Bash ls", line.Text);
         Assert.Equal(LogLineKind.ToolCall, line.Kind);
     }
 
@@ -51,7 +53,7 @@ public class SessionLogTests : IDisposable
         var line = Assert.Single(SessionLog.Render("""
             {"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"boom"}]}}
             """));
-        Assert.Equal("  ✗ boom", line.Text);
+        Assert.Equal("boom", line.Text);
         Assert.Equal(LogLineKind.ToolError, line.Kind);
     }
 
@@ -69,7 +71,7 @@ public class SessionLogTests : IDisposable
         var line = Assert.Single(SessionLog.Render("""
             {"type":"result","num_turns":34,"total_cost_usd":1.42}
             """));
-        Assert.Equal("■ finished: ok, 34 turns, $1.42", line.Text);
+        Assert.Equal("finished: ok, 34 turns, $1.42", line.Text);
         Assert.Equal(LogLineKind.ResultOk, line.Kind);
     }
 
@@ -79,8 +81,24 @@ public class SessionLogTests : IDisposable
         var line = Assert.Single(SessionLog.Render("""
             {"type":"result","is_error":true,"num_turns":2,"total_cost_usd":0.1}
             """));
-        Assert.Equal("■ finished: error, 2 turns, $0.10", line.Text);
+        Assert.Equal("finished: error, 2 turns, $0.10", line.Text);
         Assert.Equal(LogLineKind.ResultError, line.Kind);
+    }
+
+    [Fact]
+    public void A_classified_line_carries_its_meaning_and_no_glyph_of_its_own()
+    {
+        LogLine[] lines =
+        [
+            Assert.Single(SessionLog.Render(Call)),
+            Assert.Single(SessionLog.Render(Broke)),
+            Assert.Single(SessionLog.Render(Ok)),
+        ];
+
+        Assert.Equal(
+            [Icon.ToolCall, Icon.ToolError, Icon.Finished],
+            lines.Select(line => Icons.For(line.Kind)));
+        Assert.All(lines, line => Assert.DoesNotContain(line.Text, c => "▸✗■".Contains(c)));
     }
 
     [Fact]
