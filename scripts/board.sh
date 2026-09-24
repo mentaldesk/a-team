@@ -651,7 +651,7 @@ case "$CMD" in
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
     all=$(items)
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
-      | {number, title, status, url, team: $team})' <<<"$all")
+      | {number, title, status, url, team: $team, priority})' <<<"$all")
     talk=$(gated_talk "$gated")
     turns "$gated" "$(gated_comments "$talk")" "$(pr_checks "$(gated_prs "$talk")")" |
       jq --argjson unranked "$(unranked_ideas "$all")" '. + $unranked'

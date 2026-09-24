@@ -7,13 +7,13 @@ public class WorkViewTests
     private static readonly WaitingItem[] Waiting =
     [
         new(107, "When the dashboard goes quiet, I can't tell why", "Pitched", "https://github.com/x/1", "a-team",
-            "you", "awaiting your approval since 08:14"),
+            "you", "awaiting your approval since 08:14", Priority: "Urgent"),
         new(108, "A misconfigured team looks like a working one", "Pitched", "https://github.com/x/2", "a-team",
-            "lead", "answering your feedback since 09:30"),
+            "lead", "answering your feedback since 09:30", Priority: "High"),
         new(49, "I can't change any of the dashboard's keys", "In review", "https://github.com/x/3", "a-team",
-            "dev", "answering your feedback since 10:15"),
+            "dev", "answering your feedback since 10:15", Priority: "Medium"),
         new(133, "Notice when open files change on disk", "Pitched", "https://github.com/x/4", "tuicode",
-            "you", "awaiting your approval since 21:37"),
+            "you", "awaiting your approval since 21:37", Priority: "Low"),
         new(6, "The agents can't say what they'd change", "Idea", "https://github.com/x/5", "a-team",
             "you", "waiting to be ranked"),
     ];
@@ -24,7 +24,7 @@ public class WorkViewTests
         using var view = Open(["a-team", "tuicode"]);
 
         Assert.Equal(["a-team", "tuicode"], view.Lanes.Select(lane => lane.Team));
-        Assert.All(view.Lanes, lane => Assert.Equal(["Pitches", "Review", "Ideas"], lane.Columns.Select(column => column.Gate)));
+        Assert.All(view.Lanes, lane => Assert.Equal(["Ideas", "Pitches", "Review"], lane.Columns.Select(column => column.Gate)));
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
 
-        Assert.Equal(["Pitches · 2", "Review · 1", "Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0"], Titles(view));
+        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"], Titles(view));
         Assert.All(Cells(view), cell => Assert.True(cell.Width > 0 && cell.Height > 0));
     }
 
@@ -84,7 +84,7 @@ public class WorkViewTests
 
         Assert.Equal("Review · a-team", view.Region);
         Assert.Equal(49, view.Selected?.Number);
-        Assert.Equal([false, true, false, false, false, false],
+        Assert.Equal([false, false, true, false, false, false],
             view.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Shown));
     }
 
@@ -97,7 +97,7 @@ public class WorkViewTests
 
         view.FocusFirstCard();
 
-        Assert.Equal("Pitches · a-team", view.Region);
+        Assert.Equal("Ideas · a-team", view.Region);
         Assert.Null(view.Selected);
     }
 
@@ -108,6 +108,11 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
         view.FocusFirstCard();
+
+        view.MoveColumn(+1);
+
+        Assert.Equal("Pitches · a-team", view.Region);
+        Assert.Equal(107, view.Selected?.Number);
 
         view.MoveColumn(+1);
 
@@ -129,12 +134,12 @@ public class WorkViewTests
         view.FocusFirstCard();
 
         view.MoveColumn(-1);
-        Assert.Equal("Pitches · a-team", view.Region);
+        Assert.Equal("Ideas · a-team", view.Region);
 
         view.MoveColumn(+1);
         view.MoveColumn(+1);
         view.MoveColumn(+1);
-        Assert.Equal("Ideas · a-team", view.Region);
+        Assert.Equal("Review · a-team", view.Region);
     }
 
     [Fact]
@@ -144,6 +149,7 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
         view.FocusFirstCard();
+        view.MoveColumn(+1);
         view.MoveCard(+1);
         view.MoveCard(+1);
 
@@ -160,6 +166,7 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
         view.FocusFirstCard();
+        view.MoveColumn(+1);
 
         view.MoveCard(+1);
         Assert.Equal(108, view.Selected?.Number);
@@ -179,6 +186,7 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
         view.FocusFirstCard();
+        view.MoveColumn(+1);
         view.MoveCard(+1);
         view.MoveCard(+1);
 
@@ -195,6 +203,7 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 8);
         view.FocusFirstCard();
+        view.MoveColumn(+1);
 
         view.MoveCard(+1);
         view.MoveCard(+1);
@@ -250,14 +259,14 @@ public class WorkViewTests
         LayOut(view, 120, 20);
 
         Assert.True(view.OnlyMine);
-        Assert.Equal(["Pitches · 1", "Review · 0", "Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0"], Titles(view));
+        Assert.Equal(["Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0", "Pitches · 1", "Review · 0"], Titles(view));
         Assert.All(Cells(view), cell => Assert.True(cell.Width > 0 && cell.Height > 0));
 
         view.ShowOnlyMine(false);
         LayOut(view, 120, 20);
 
         Assert.False(view.OnlyMine);
-        Assert.Equal(["Pitches · 2", "Review · 1", "Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0"],
+        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
             Titles(view));
     }
 
@@ -268,6 +277,7 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
         view.FocusFirstCard();
+        view.MoveColumn(+1);
 
         view.ShowOnlyMine(true);
         LayOut(view, 120, 20);
@@ -283,13 +293,14 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
         view.FocusFirstCard();
+        view.MoveColumn(+1);
         view.MoveCard(+1);
         Assert.Equal(108, view.Selected?.Number);
 
         view.ShowOnlyMine(true);
         LayOut(view, 120, 20);
 
-        Assert.Equal(107, view.Selected?.Number);
+        Assert.Equal(6, view.Selected?.Number);
     }
 
     [Fact]
@@ -309,7 +320,7 @@ public class WorkViewTests
 
         Assert.Equal(
             ["#107  When the dashboar…", "#108  lead · A misconfi…"],
-            view.Lanes[0].Columns[0].CardText);
+            view.Lanes[0].Columns[1].CardText);
     }
 
     [Fact]
@@ -323,11 +334,24 @@ public class WorkViewTests
         Assert.True(view.NerdFont);
         Assert.Equal(
             [TurnIcons.For(Waiting[0], nerdFont: true), TurnIcons.For(Waiting[1], nerdFont: true)],
-            view.Lanes[0].Columns[0].Icons);
+            view.Lanes[0].Columns[1].Icons);
 
         view.ShowIcons(false);
         Assert.False(view.NerdFont);
-        Assert.Equal("✓", view.Lanes[0].Columns[0].Icons[0].Glyph);
+        Assert.Equal("✓", view.Lanes[0].Columns[1].Icons[0].Glyph);
+    }
+
+    [Fact]
+    public void Every_cards_number_is_coloured_by_its_Priority_and_an_unranked_Idea_has_none()
+    {
+        using var view = Open(["a-team"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+
+        Assert.Equal([default], view.Lanes[0].Columns[0].Marks);
+        Assert.Equal([Priorities.Scheme("Urgent"), Priorities.Scheme("High")],
+            view.Lanes[0].Columns[1].Marks.Select(mark => mark.Scheme));
+        Assert.Equal([Priorities.Scheme("Medium")], view.Lanes[0].Columns[2].Marks.Select(mark => mark.Scheme));
     }
 
     [Fact]

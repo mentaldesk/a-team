@@ -27,9 +27,11 @@ public static class TurnIcons
         : new TurnIcon(nerdFont ? NerdTheirs : PlainTheirs, LogSchemes.Dimmed);
 }
 
-/// <summary>Cards that wear their icon: drawn rather than put in the text, so a card's text stays the item's own,
-/// in the icon's colour over the row's own background so the selection still reads.</summary>
-internal sealed class CardSource(IReadOnlyList<string> cards, IReadOnlyList<TurnIcon> icons) : IListDataSource
+/// <summary>Cards that wear their icon and their Priority: both drawn rather than put in the text, so a card's
+/// text stays the item's own, in their own colours over the row's own background so the selection still reads.</summary>
+internal sealed class CardSource(
+    IReadOnlyList<string> cards, IReadOnlyList<TurnIcon> icons, IReadOnlyList<PriorityMark> priorities)
+    : IListDataSource
 {
     private readonly ListWrapper<string> _text = new(new ObservableCollection<string>(cards));
 
@@ -60,12 +62,14 @@ internal sealed class CardSource(IReadOnlyList<string> cards, IReadOnlyList<Turn
 
         var attribute = listView.GetCurrentAttribute();
         listView.Move(col, row);
-        listView.SetAttribute(Colour(icons[item], attribute));
+        listView.SetAttribute(Colour(icons[item].Scheme, attribute));
         listView.AddStr(icons[item].Glyph);
         listView.SetAttribute(attribute);
         listView.AddStr(" ");
-        if (width > TurnIcons.Width)
-            _text.Render(listView, selected, item, col + TurnIcons.Width, row, width - TurnIcons.Width);
+        if (width <= TurnIcons.Width)
+            return;
+        _text.Render(listView, selected, item, col + TurnIcons.Width, row, width - TurnIcons.Width);
+        Number(listView, item, col + TurnIcons.Width, row, attribute);
     }
 
     public bool IsMarked(int item) => _text.IsMarked(item);
@@ -77,8 +81,19 @@ internal sealed class CardSource(IReadOnlyList<string> cards, IReadOnlyList<Turn
     public void Dispose() => _text.Dispose();
 
     /// <summary>The scheme's own foreground over the row's background, so a selected card keeps its highlight.</summary>
-    internal static Attribute Colour(TurnIcon icon, Attribute row) =>
-        SchemeManager.TryGetScheme(icon.Scheme, out var scheme)
+    internal static Attribute Colour(string name, Attribute row) =>
+        SchemeManager.TryGetScheme(name, out var scheme)
             ? new Attribute(scheme.GetAttributeForRole(VisualRole.Normal).Foreground, row.Background, row.Style)
             : row;
+
+    /// <summary>The issue number over again in its Priority's colour, leaving the rest of the card as drawn.</summary>
+    private void Number(ListView listView, int item, int col, int row, Attribute attribute)
+    {
+        if (item >= priorities.Count || priorities[item] is not { Width: > 0 } mark)
+            return;
+        listView.Move(col, row);
+        listView.SetAttribute(Colour(mark.Scheme, attribute));
+        listView.AddStr(cards[item][..mark.Width]);
+        listView.SetAttribute(attribute);
+    }
 }

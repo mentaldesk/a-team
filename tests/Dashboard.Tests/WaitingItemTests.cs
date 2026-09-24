@@ -8,12 +8,12 @@ public class WaitingItemTests
         var items = WaitingItem.Parse("""
             [{"number": 106, "title": "Both gates are mine", "status": "Pitched",
               "url": "https://github.com/mentaldesk/a-team/issues/106", "team": "a-team",
-              "turn": "lead", "reason": "answering your feedback since 08:14"}]
+              "turn": "lead", "reason": "answering your feedback since 08:14", "priority": "Urgent"}]
             """);
 
         Assert.Equal(
             new WaitingItem(106, "Both gates are mine", "Pitched", "https://github.com/mentaldesk/a-team/issues/106",
-                "a-team", "lead", "answering your feedback since 08:14"),
+                "a-team", "lead", "answering your feedback since 08:14", Priority: "Urgent"),
             Assert.Single(items));
     }
 

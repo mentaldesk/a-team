@@ -222,7 +222,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "numbers" '[106,115]' "$(jq -c '[.[].number]' "$OUT")"
 same "statuses" '["Pitched","In review"]' "$(jq -c '[.[].status]' "$OUT")"
-same "fields" '["number","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "fields" '["number","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "title" '"Both gates are mine"' "$(jq -c '.[0].title' "$OUT")"
 same "url" '"https://github.com/mentaldesk/demo/issues/106"' "$(jq -c '.[0].url' "$OUT")"
 same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
@@ -325,9 +325,9 @@ gh_talk <<TALK
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
-same "pitch fields" '["number","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "pitch fields" '["number","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "task fields" \
-  '["checks","conflicting","draft","number","pr","prUrl","reason","status","team","title","turn","url"]' \
+  '["checks","conflicting","draft","number","pr","prUrl","priority","reason","status","team","title","turn","url"]' \
   "$(jq -c '.[1] | keys' "$OUT")"
 same "pr" 1015 "$(jq -c '.[1].pr' "$OUT")"
 same "prUrl" '"https://github.com/mentaldesk/demo/pull/1015"' "$(jq -c '.[1].prUrl' "$OUT")"
@@ -420,6 +420,19 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "a gated item carries the Priority the cards colour its number by"
+gh_items 106 <<'ITEMS'
+Pitched 106 Both gates are mine
+In_review 115 I can change any of the keys
+ITEMS
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "priorities" '["High",null]' "$(jq -c '[.[].priority]' "$OUT")"
 
 case_ "the Ideas with no Priority are waiting on the reviewer to rank them"
 gh_items 26 <<'ITEMS'
