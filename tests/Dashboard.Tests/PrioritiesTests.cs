@@ -36,7 +36,7 @@ public class PrioritiesTests : StaticConfigurationTest
     [Fact]
     public void A_cards_number_is_what_wears_the_colour_and_the_rest_of_it_is_left_alone()
     {
-        var card = WorkColumn.Card(At("High"), 0);
+        var card = new Card(At("High"), false).Text(0);
 
         Assert.Equal(new PriorityMark(4, Priorities.Scheme("High")), Priorities.Mark(At("High"), card));
         Assert.StartsWith("#107", card, StringComparison.Ordinal);
@@ -47,12 +47,12 @@ public class PrioritiesTests : StaticConfigurationTest
     [InlineData("Whatever")]
     public void An_item_with_no_Priority_we_colour_leaves_its_number_as_it_is(string priority)
     {
-        Assert.Equal(default, Priorities.Mark(At(priority), WorkColumn.Card(At(priority), 0)));
+        Assert.Equal(default, Priorities.Mark(At(priority), new Card(At(priority), false).Text(0)));
     }
 
     [Fact]
     public void A_column_too_narrow_for_the_whole_number_colours_only_what_it_drew()
     {
-        Assert.Equal(3, Priorities.Mark(At("Low"), WorkColumn.Card(At("Low"), 4)).Width);
+        Assert.Equal(3, Priorities.Mark(At("Low"), new Card(At("Low"), false).Text(4)).Width);
     }
 }

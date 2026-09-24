@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Text;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -37,8 +38,12 @@ public sealed class WorkView : View
     /// <summary>Raised when the keyboard moves between columns, so the window can name the region it's in.</summary>
     internal event Action? FocusChanged;
 
-    /// <summary>The card the keyboard is on, or null when no column has focus.</summary>
-    internal WaitingItem? Selected => FocusedColumn()?.Selected;
+    /// <summary>The item the keyboard is on, whether it's on the item's own row or its PR's, or null when no
+    /// column has focus.</summary>
+    internal WaitingItem? Selected => FocusedColumn()?.SelectedItem;
+
+    /// <summary>The page Enter opens: the issue's on a card, the PR's on the row under it.</summary>
+    internal string? SelectedUrl => FocusedColumn()?.Selected?.Url;
 
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
@@ -98,7 +103,7 @@ public sealed class WorkView : View
         Land(at.Lane, Math.Clamp(at.Gate + step, 0, _lanes[at.Lane].Columns.Count - 1), 0);
     }
 
-    /// <summary>Up and down walk a column's cards, then carry on into the same column of the lane above or below.</summary>
+    /// <summary>Up and down walk a column's rows, then carry on into the same column of the lane above or below.</summary>
     internal void MoveCard(int step)
     {
         if (At() is not { } at)
@@ -146,11 +151,11 @@ public sealed class WorkView : View
     private void Land(int lane, int gate, int step)
     {
         var column = _lanes[lane].Columns[gate];
-        column.FocusCards(step switch { > 0 => 0, < 0 => column.Count - 1, _ => null });
+        column.FocusCards(step switch { > 0 => 0, < 0 => column.Nodes - 1, _ => null });
         ScrollIntoView(lane, gate);
     }
 
-    /// <summary>The card the keyboard is on has to be in the part of the lanes the window shows.</summary>
+    /// <summary>The row the keyboard is on has to be in the part of the lanes the window shows.</summary>
     private void ScrollIntoView(int lane, int gate)
     {
         var column = _lanes[lane].Columns[gate];
@@ -228,8 +233,9 @@ public sealed class WorkLane : View
 
     internal IReadOnlyList<WorkColumn> Columns => _columns;
 
-    /// <summary>How many card rows the lane gives each column: enough for its fullest, and never none.</summary>
-    internal int Rows => Math.Max(1, _columns.Max(column => column.Count));
+    /// <summary>How many rows the lane gives each column: enough for the fullest one's cards and their PRs, and
+    /// never none.</summary>
+    internal int Rows => Math.Max(1, _columns.Max(column => column.Nodes));
 
     internal string Header => _header.Text;
 
@@ -254,12 +260,14 @@ public sealed class WorkLane : View
     private int Split(int index) => Viewport.Width * index / _columns.Count;
 }
 
-/// <summary>One gate's cards for one team: a frame titled with the count, holding a list of them.</summary>
+/// <summary>One gate's cards for one team: a frame titled with the count, holding a tree of them, each item's
+/// PR hanging under it.</summary>
 public sealed class WorkColumn : FrameView
 {
     private readonly Cards _cards = new() { X = 1, Y = 0, Width = Dim.Fill(1), Height = Dim.Fill(), CanFocus = true };
     private readonly FocusBorder _border;
     private IReadOnlyList<WaitingItem> _items = [];
+    private List<Card> _nodes = [];
     private int _laidOutOver = -1;
     private IconStyle _icons = IconStyle.Unicode;
 
@@ -271,9 +279,12 @@ public sealed class WorkColumn : FrameView
         CanFocus = true;
         Title = Heading(gate, 0);
         _border = new FocusBorder(this);
+        _cards.TreeBuilder = new DelegateTreeBuilder<Card>(card => card.Children, card => card.Children.Count > 0);
+        _cards.AspectGetter = Aspect;
+        _cards.DrawLine += (_, line) => Paint(line);
         _cards.HasFocusChanged += (_, _) => focusChanged();
-        // Moving within a column changes the list's value, not its focus, and the message bar follows both.
-        _cards.ValueChanged += (_, _) => focusChanged();
+        // Moving within a column changes the tree's selection, not its focus, and the message bar follows both.
+        _cards.SelectionChanged += (_, _) => focusChanged();
         Add(_cards);
         SubViewLayout += (_, _) => Fit();
     }
@@ -284,26 +295,39 @@ public sealed class WorkColumn : FrameView
 
     internal string Status { get; }
 
+    /// <summary>How many items the column holds, which is what its title counts.</summary>
     internal int Count => _items.Count;
 
-    /// <summary>The text of the cards as the list draws them, their icons apart.</summary>
-    internal IReadOnlyList<string> CardText => [.. _cards.Source?.ToList().Cast<string>() ?? []];
+    /// <summary>How many rows it draws them in: the items and the PRs under them.</summary>
+    internal int Nodes => _nodes.Count;
 
-    /// <summary>The icon each of those cards wears.</summary>
+    /// <summary>The text of the rows as the tree draws them, their icons apart.</summary>
+    internal IReadOnlyList<string> CardText { get; private set; } = [];
+
+    /// <summary>The icon each of those rows wears.</summary>
     internal IReadOnlyList<TurnIcon> CardIcons { get; private set; } = [];
 
-    /// <summary>The Priority colour each of those cards wears on its number.</summary>
+    /// <summary>The Priority colour each of those rows wears on its number.</summary>
     internal IReadOnlyList<PriorityMark> Marks { get; private set; } = [];
 
-    internal WaitingItem? Selected =>
-        _cards.SelectedItem is { } index && index >= 0 && index < _items.Count ? _items[index] : null;
+    /// <summary>The row the keyboard is on, or null when the column is empty.</summary>
+    internal Card? Selected =>
+        _cards.SelectedObject is { } card && _nodes.Contains(card) ? card : null;
+
+    /// <summary>The item that row belongs to, whether it's the item's own row or its PR's.</summary>
+    internal WaitingItem? SelectedItem => Selected?.Item;
 
     internal bool Shown => _border.Focused;
 
     internal void Show(IReadOnlyList<WaitingItem> items)
     {
         _items = items;
+        var roots = Card.Roots(items);
+        _nodes = [.. Card.Nodes(roots)];
         Title = Heading(Gate, items.Count);
+        _cards.ClearObjects();
+        _cards.AddObjects(roots);
+        _cards.ExpandAll();
         _laidOutOver = -1;
         Fit();
         SetNeedsLayout();
@@ -321,57 +345,74 @@ public sealed class WorkColumn : FrameView
 
     internal bool Holds(View view) => view == _cards || view == this;
 
-    /// <summary>The row the selected card is drawn on, inside the frame.</summary>
-    internal int Row => (_cards.SelectedItem ?? 0) + 1;
+    /// <summary>The row the selection is on, inside the frame.</summary>
+    internal int Row => Index + 1;
 
-    /// <summary>Moves the selection a card on, or reports that the column has no card that way.</summary>
+    /// <summary>Moves the selection a row on, or reports that the column has no row that way.</summary>
     internal bool MoveSelection(int step)
     {
-        var index = (_cards.SelectedItem ?? 0) + step;
-        if (index < 0 || index >= _items.Count)
+        var index = Index + step;
+        if (index < 0 || index >= _nodes.Count)
             return false;
-        _cards.SelectedItem = index;
+        _cards.GoTo(_nodes[index]);
         return true;
     }
 
+    /// <summary>Takes the keyboard, on the row asked for or on the one it was left on.</summary>
     internal void FocusCards(int? select = null)
     {
-        if (select is { } index && _items.Count > 0)
-            _cards.SelectedItem = Math.Clamp(index, 0, _items.Count - 1);
+        if (_nodes.Count > 0)
+            _cards.GoTo(_nodes[Math.Clamp(select ?? Index, 0, _nodes.Count - 1)]);
         _cards.SetFocus();
     }
 
     internal static string Heading(string gate, int count) => $"{gate} · {count}";
 
-    /// <summary>Moves the selection onto <paramref name="item"/>, where this column is showing it.</summary>
+    /// <summary>Moves the selection onto <paramref name="item"/>'s own row, where this column is showing it.</summary>
     internal bool Select(WaitingItem item)
     {
-        for (var index = 0; index < _items.Count; index++)
+        var index = _nodes.FindIndex(card => !card.IsPr && card.Item == item);
+        if (index < 0)
+            return false;
+        _cards.GoTo(_nodes[index]);
+        return true;
+    }
+
+    /// <summary>Terminal.Gui's own TreeView answers the arrows and the letters itself: left and right would collapse
+    /// the PR this view keeps expanded, and down would stop at the last row rather than carry on into the next lane.
+    /// The Work area moves the selection itself, so the tree is left handling no key at all. Its expand and collapse
+    /// symbols are a blank cell rather than hidden, so every row starts in the same column, PR or no PR.</summary>
+    private sealed class Cards : TreeView<Card>
+    {
+        internal Cards()
         {
-            if (_items[index] != item)
-                continue;
-            _cards.SelectedItem = index;
-            return true;
+            MultiSelect = false;
+            Style.ShowBranchLines = false;
+            Style.CollapseableSymbol = (Rune)' ';
+            Style.ExpandableSymbol = (Rune)' ';
+            KeyBindings.Clear();
         }
-        return false;
-    }
 
-    /// <summary>A card: the issue's number, whose move it is when it isn't the reviewer's, what its PR is in
-    /// trouble over where that's why, then as much of its title as the column has room for.</summary>
-    internal static string Card(WaitingItem item, int width)
-    {
-        var said = new[] { item.Mine ? "" : item.Turn, item.Trouble, item.Title }.Where(part => part.Length > 0);
-        var text = $"#{item.Number}  {string.Join(" · ", said)}";
-        if (width <= 0 || text.Length <= width)
-            return text;
-        return width == 1 ? "…" : string.Concat(text.AsSpan(0, width - 1), "…");
-    }
-
-    /// <summary>Terminal.Gui's own ListView jumps to the item a letter starts, which would swallow the app's keys.
-    /// Its key bindings — the arrows and the page keys — are invoked separately and still reach it.</summary>
-    private sealed class Cards : ListView
-    {
         protected override bool OnKeyDown(Key key) => false;
+    }
+
+    private int Index => Selected is { } card ? _nodes.IndexOf(card) : 0;
+
+    /// <summary>The row as the tree lays it out: the field the icon is painted into, then the card's own text.</summary>
+    private string Aspect(Card card) => new string(' ', Icons.Width) + card.Text(Room(card));
+
+    /// <summary>What the card's text is left: the tree spends a cell on its symbol and another on a PR's indent,
+    /// and the icon has its field.</summary>
+    private int Room(Card card) => _cards.Viewport.Width - Icons.Width - (card.IsPr ? 2 : 1);
+
+    private void Paint(DrawTreeViewLineEventArgs<Card> line)
+    {
+        if (line is not { Model: { } card, Cells: { } cells })
+            return;
+        var index = _nodes.IndexOf(card);
+        if (index < 0 || index >= CardIcons.Count)
+            return;
+        CardCells.Paint(cells, line.IndexOfModelText, CardIcons[index], Marks[index]);
     }
 
     private void Fit()
@@ -380,12 +421,8 @@ public sealed class WorkColumn : FrameView
         if (_laidOutOver == width)
             return;
         _laidOutOver = width;
-        var selected = _cards.SelectedItem;
-        var cards = _items.Select(item => Card(item, width - Icons.Width)).ToList();
-        CardIcons = [.. _items.Select(item => Icons.For(item, _icons))];
-        Marks = [.. _items.Zip(cards, Priorities.Mark)];
-        _cards.Source = new CardSource(cards, CardIcons, Marks);
-        if (_items.Count > 0)
-            _cards.SelectedItem = Math.Clamp(selected ?? 0, 0, _items.Count - 1);
+        CardText = [.. _nodes.Select(card => card.Text(Room(card)))];
+        CardIcons = [.. _nodes.Select(card => card.Lead(_icons))];
+        Marks = [.. _nodes.Select(card => card.Mark(Room(card)))];
     }
 }

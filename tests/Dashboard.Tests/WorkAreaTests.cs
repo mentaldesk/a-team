@@ -77,6 +77,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorDown);
 
         Assert.Null(window.Work.Selected);
         Assert.Equal("Review · team1", window.Message.Says);
@@ -222,7 +223,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void p_opens_the_selected_cards_PR()
+    public void Enter_on_the_row_under_a_card_opens_its_PR()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -231,29 +232,15 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.True(window.NewKeyDownEvent(new Key('p')));
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/pull/122"], opened);
+        Assert.Equal(49, window.Work.Selected?.Number);
     }
 
     [Fact]
-    public void p_on_a_card_with_no_PR_says_so_and_leaves_the_selection_alone()
-    {
-        var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
-        window.Refresh();
-        LayOut(window, 120, 30);
-
-        window.NewKeyDownEvent(Key.CursorRight);
-        Assert.True(window.NewKeyDownEvent(new Key('p')));
-
-        Assert.Empty(opened);
-        Assert.Equal("#107 has no open PR", window.Message.Says);
-        Assert.Equal(107, window.Work.Selected?.Number);
-    }
-
-    [Fact]
-    public void An_Idea_hands_over_to_GitHub_on_Enter_and_has_no_PR_to_open()
+    public void An_Idea_has_no_row_under_it_and_hands_over_to_GitHub_on_Enter()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -265,22 +252,24 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(Key.Enter));
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
 
-        Assert.True(window.NewKeyDownEvent(new Key('p')));
-        Assert.Equal("#6 has no open PR", window.Message.Says);
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal("Ideas · team1", window.Work.Region);
     }
 
     [Fact]
-    public void That_refusal_goes_when_you_move_to_another_card()
+    public void p_is_no_longer_a_key_the_Work_area_answers()
     {
-        using var window = Open();
+        var opened = new List<string>();
+        using var window = Open(openUrl: opened.Add);
         window.Refresh();
         LayOut(window, 120, 30);
+
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(new Key('p'));
 
-        window.NewKeyDownEvent(Key.CursorDown);
-
-        Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Says);
+        Assert.Empty(opened);
+        Assert.DoesNotContain("work.pr", window.Commands.Registered.Select(command => command.Id));
+        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
     }
 
     [Fact]
@@ -424,6 +413,9 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.Equal("Review · team0", window.Work.Region);
+
+        window.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal("Review · team0", window.Work.Region);
 
         window.NewKeyDownEvent(Key.CursorDown);

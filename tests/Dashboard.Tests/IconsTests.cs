@@ -127,7 +127,7 @@ public class IconsTests : StaticConfigurationTest
         BundledThemes.Load();
         var row = new Attribute(StandardColor.White, StandardColor.Blue);
 
-        var colour = CardSource.Colour(Icons.For(Mine, IconStyle.NerdFont).Scheme, row);
+        var colour = CardCells.Colour(Icons.For(Mine, IconStyle.NerdFont).Scheme, row);
 
         Assert.Equal(SchemeManager.GetScheme(LogSchemes.Success).Normal.Foreground, colour.Foreground);
         Assert.Equal(row.Background, colour.Background);
@@ -138,6 +138,46 @@ public class IconsTests : StaticConfigurationTest
     {
         var row = new Attribute(StandardColor.White, StandardColor.Blue);
 
-        Assert.Equal(row, CardSource.Colour("NoSuchScheme", row));
+        Assert.Equal(row, CardCells.Colour("NoSuchScheme", row));
     }
+
+    [Fact]
+    public void A_field_is_a_cell_per_column_and_a_glyph_that_fills_it_leaves_the_second_one_empty()
+    {
+        Assert.Equal(["✓", " "], CardCells.Field("✓"));
+        Assert.Equal(["└", " "], CardCells.Field("└"));
+    }
+
+    [Fact]
+    public void The_icon_and_the_number_are_painted_over_the_cells_the_tree_laid_out()
+    {
+        BundledThemes.Load();
+        var row = new Attribute(StandardColor.White, StandardColor.Blue);
+        var cells = Row($"  {new Card(Mine, false).Text(0)}", row);
+
+        CardCells.Paint(cells, 0, Icons.For(Mine, IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
+
+        Assert.Equal("✓ #107  When the dashboard goes quiet", Text(cells));
+        Assert.Equal(SchemeManager.GetScheme(LogSchemes.Success).Normal.Foreground, cells[0].Attribute?.Foreground);
+        Assert.Equal(SchemeManager.GetScheme(Priorities.Scheme("Urgent")).Normal.Foreground, cells[2].Attribute?.Foreground);
+        Assert.Equal(row.Foreground, cells[^1].Attribute?.Foreground);
+        Assert.All(cells, cell => Assert.Equal(row.Background, cell.Attribute?.Background));
+    }
+
+    [Fact]
+    public void A_row_scrolled_past_its_field_is_left_as_the_tree_drew_it()
+    {
+        var row = new Attribute(StandardColor.White, StandardColor.Blue);
+        var cells = Row("dashboard goes quiet", row);
+
+        CardCells.Paint(cells, -3, Icons.For(Mine, IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
+
+        Assert.Equal("dashboard goes quiet", Text(cells));
+        Assert.All(cells, cell => Assert.Equal(row, cell.Attribute));
+    }
+
+    private static List<Cell> Row(string text, Attribute attribute) =>
+        [.. text.Select(character => new Cell { Grapheme = character.ToString(), Attribute = attribute })];
+
+    private static string Text(IEnumerable<Cell> cells) => string.Concat(cells.Select(cell => cell.Grapheme));
 }

@@ -1,6 +1,3 @@
-using System.Collections;
-using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Text;
@@ -112,57 +109,22 @@ public static class Icons
         : new TurnIcon(Glyph(Icon.TheirMove, style), LogSchemes.Dimmed);
 }
 
-/// <summary>Cards that wear their icon and their Priority: both drawn rather than put in the text, so a card's
-/// text stays the item's own, in their own colours over the row's own background so the selection still reads.</summary>
-internal sealed class CardSource(
-    IReadOnlyList<string> cards, IReadOnlyList<TurnIcon> icons, IReadOnlyList<PriorityMark> priorities)
-    : IListDataSource
+/// <summary>A row wears its icon and its Priority in the cells the tree laid out in front of its text: drawn
+/// rather than put in the text, in their own colours over the row's own background so the selection still reads.</summary>
+internal static class CardCells
 {
-    private readonly ListWrapper<string> _text = new(new ObservableCollection<string>(cards));
-
-    public event NotifyCollectionChangedEventHandler? CollectionChanged
+    /// <summary>Paints the field at <paramref name="at"/> with <paramref name="lead"/>, and the number after it in
+    /// its Priority's colour. A row scrolled sideways has neither on screen.</summary>
+    internal static void Paint(IList<Cell> cells, int at, TurnIcon lead, PriorityMark mark)
     {
-        add => _text.CollectionChanged += value;
-        remove => _text.CollectionChanged -= value;
-    }
-
-    public int Count => _text.Count;
-
-    public int MaxItemLength => _text.MaxItemLength + Icons.Width;
-
-    public bool SuspendCollectionChangedEvent
-    {
-        get => _text.SuspendCollectionChangedEvent;
-        set => _text.SuspendCollectionChangedEvent = value;
-    }
-
-    public void Render(ListView listView, bool selected, int item, int col, int row, int width, int viewportX = 0)
-    {
-        // Scrolled sideways, the icon would sit on top of the text; draw the text alone.
-        if (viewportX > 0 || item < 0 || item >= icons.Count)
-        {
-            _text.Render(listView, selected, item, col, row, width, viewportX);
+        if (at < 0)
             return;
-        }
-
-        var attribute = listView.GetCurrentAttribute();
-        listView.Move(col, row);
-        listView.SetAttribute(Colour(icons[item].Scheme, attribute));
-        listView.AddStr(Icons.Field(icons[item].Glyph));
-        listView.SetAttribute(attribute);
-        if (width <= Icons.Width)
-            return;
-        _text.Render(listView, selected, item, col + Icons.Width, row, width - Icons.Width);
-        Number(listView, item, col + Icons.Width, row, attribute);
+        var field = Field(lead.Glyph);
+        for (var cell = 0; cell < Icons.Width; cell++)
+            Paint(cells, at + cell, field[cell], lead.Scheme);
+        for (var cell = 0; cell < mark.Width; cell++)
+            Paint(cells, at + Icons.Width + cell, null, mark.Scheme);
     }
-
-    public bool IsMarked(int item) => _text.IsMarked(item);
-
-    public void SetMark(int item, bool value) => _text.SetMark(item, value);
-
-    public IList ToList() => _text.ToList();
-
-    public void Dispose() => _text.Dispose();
 
     /// <summary>The scheme's own foreground over the row's background, so a selected card keeps its highlight.</summary>
     internal static Attribute Colour(string name, Attribute row) =>
@@ -170,14 +132,28 @@ internal sealed class CardSource(
             ? new Attribute(scheme.GetAttributeForRole(VisualRole.Normal).Foreground, row.Background, row.Style)
             : row;
 
-    /// <summary>The issue number over again in its Priority's colour, leaving the rest of the card as drawn.</summary>
-    private void Number(ListView listView, int item, int col, int row, Attribute attribute)
+    /// <summary>The field a cell at a time: a glyph the runtime draws in two cells fills it by itself, leaving the
+    /// second one empty.</summary>
+    internal static string[] Field(string glyph)
     {
-        if (item >= priorities.Count || priorities[item] is not { Width: > 0 } mark)
+        var field = new string[Icons.Width];
+        var cell = 0;
+        foreach (var rune in Icons.Field(glyph).EnumerateRunes())
+            if (cell < field.Length)
+                field[cell++] = rune.ToString();
+        while (cell < field.Length)
+            field[cell++] = "";
+        return field;
+    }
+
+    private static void Paint(IList<Cell> cells, int index, string? grapheme, string scheme)
+    {
+        if (index < 0 || index >= cells.Count)
             return;
-        listView.Move(col, row);
-        listView.SetAttribute(Colour(mark.Scheme, attribute));
-        listView.AddStr(cards[item][..mark.Width]);
-        listView.SetAttribute(attribute);
+        var cell = cells[index];
+        cell.Attribute = Colour(scheme, cell.Attribute ?? default);
+        if (grapheme is not null)
+            cell.Grapheme = grapheme;
+        cells[index] = cell;
     }
 }
