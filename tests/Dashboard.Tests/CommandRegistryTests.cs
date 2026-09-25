@@ -68,6 +68,21 @@ public class CommandRegistryTests
     }
 
     [Fact]
+    public void Whether_a_command_would_run_reads_back_by_name()
+    {
+        var enabled = false;
+        var commands = new CommandRegistry()
+            .Register("greet", "Say hello", () => { }, Key.F1, isEnabled: () => enabled)
+            .Register("quit", "Quit", () => { });
+
+        Assert.False(commands.IsEnabled("greet"));
+        enabled = true;
+        Assert.True(commands.IsEnabled("greet"));
+        Assert.True(commands.IsEnabled("quit"));
+        Assert.True(commands.IsEnabled("nobody"));
+    }
+
+    [Fact]
     public void A_disabled_command_still_runs_when_it_is_asked_for_by_name()
     {
         var ran = 0;

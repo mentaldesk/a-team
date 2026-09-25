@@ -48,6 +48,7 @@
       "Bash(gh repo edit *)",
       "Bash(gh repo rename *)",
       "Bash(gh repo archive *)",
+      "Bash(a-team board * priority *)",
       "Bash(a-team dispatch*)",
       "Bash(a-team install*)"
     ]

@@ -127,12 +127,16 @@ in is what it opens in next time; a first run lands on Work.
 ### What's waiting on you
 
 A swimlane per team, and three columns in each, left to right in the order work moves through
-them: **Ideas** (the ones with no Priority set, which never get pitched until you give them one),
-**Pitches** (waiting for you to approve) and **Review** (waiting for you to merge or accept), each
-headed by its count of items. A card's issue number is coloured by the item's Priority, in the
-colours GitHub gives that field's own options, and the PR that closes it hangs under it as a row of
-its own — `PR #149  The session log reads…`. Enter opens whichever row you're on in your browser:
-the issue on the card, the PR on the row under it.
+them: **Triage** (the Ideas and pitches with no Priority set, which never get pitched or approved
+until you give them one), **Pitches** (waiting for you to approve) and **Review** (waiting for you
+to merge or accept), each headed by its count of items. A card's issue number is coloured by the
+item's Priority, in the colours GitHub gives that field's own options, and the PR that closes it
+hangs under it as a row of its own — `PR #149  The session log reads…`. Enter opens whichever row
+you're on in your browser: the issue on the card, the PR on the row under it.
+
+`p` ranks the card you're on, or clears its rank with **None**, without leaving the app. The card
+moves to the column its new Priority puts it in there and then, with nothing re-read: a pitch you
+unrank drops into Triage, one you rank leaves it, and an Idea you rank is off your queue for good.
 
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the
@@ -142,9 +146,9 @@ which is the same test the dispatcher makes when it decides what to start a run 
 failing CI, conflicting with its base or still a draft is theirs too, and the card names which —
 `#124  dev · CI failing · A finished task` — so you never open one to find CI still running on it.
 `m` hides everything that isn't your move and `m` again brings it
-back — every Idea is yours, so that column keeps them all; the counts follow, the right of that
-same line says which you're looking at — *All items* or *My items* — and it opens the way you left
-it.
+back — an unranked Idea is always yours, so Triage keeps nearly all of it; the counts follow, the
+right of that same line says which you're looking at — *All items* or *My items* — and it opens the
+way you left it.
 
 The two icons come from the same vocabulary the panes use (`✓` and `·`, or their Nerd Font
 glyphs). No terminal reports its font, so the dashboard uses the Nerd Font one in kitty, WezTerm

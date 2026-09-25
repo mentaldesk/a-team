@@ -160,15 +160,20 @@ set_status() {
                                             value: {singleSelectOptionId: $option}}) { clientMutationId } }' >/dev/null
 }
 
+# The organisation's Priority field: its id, and its options, which are the values it takes.
+priority_field() {
+  gh api graphql -F owner="$OWNER" -f query='query($owner: String!) {
+      organization(login: $owner) { issueFields(first: 50) { nodes {
+        ... on IssueFieldSingleSelect { id name options { id name } } } } } }' |
+    jq --arg f "$PRIORITY" '[.data.organization.issueFields.nodes[] | select(.name == $f)] | first // empty'
+}
+
 # Reads a JSON array of items on stdin; adds .priority and sorts highest first, unset last.
 by_priority() {
   local list ranks values
   list=$(cat)
   if [ "$(jq length <<<"$list")" -eq 0 ]; then echo '[]'; return; fi
-  ranks=$(gh api graphql -F owner="$OWNER" -f query='query($owner: String!) {
-      organization(login: $owner) { issueFields(first: 50) { nodes {
-        ... on IssueFieldSingleSelect { name options { name } } } } } }' |
-    jq --arg f "$PRIORITY" '[.data.organization.issueFields.nodes[] | select(.name == $f) | .options[].name]')
+  ranks=$(priority_field | jq -s '[.[0].options[]?.name]')
   values=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="query(\$owner: String!, \$name: String!) {
       repository(owner: \$owner, name: \$name) {
         $(jq -r '.[] | "i\(.number): issue(number: \(.number)) { issueFieldValues(first: 20) { nodes {
@@ -596,6 +601,40 @@ case "$CMD" in
       --jq .data.addProjectV2ItemById.item.id)
     set_status "${id:-new-item}" "$to"
     say "#$n: added as $to"
+    ;;
+
+  priority)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM priority <role> <n> <value|none>"
+    role=$1 n=$2 value=$3
+    case "$role" in
+      lead | dev) die "$role may not set a $PRIORITY; ranking an item is the reviewer's own gate" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    field=$(priority_field)
+    [ -n "$field" ] || die "no issue field '$PRIORITY' on $OWNER"
+    option=
+    if [ "$value" != none ]; then
+      option=$(jq -r --arg v "$value" '.options[] | select(.name == $v) | .id' <<<"$field")
+      [ -n "$option" ] ||
+        die "unknown $PRIORITY '$value' ($(jq -r '[.options[].name, "none"] | join(" | ")' <<<"$field"))"
+    fi
+    # Priority is an organisation-level issue field, so this is not the mutation `move` uses.
+    issue=$(gh api "repos/$REPO/issues/$n" --jq .node_id)
+    if [ -z "$option" ]; then
+      write "clear $PRIORITY on #$n" gh api graphql -F issue="$issue" -F field="$(jq -r .id <<<"$field")" -f query='
+        mutation($issue: ID!, $field: ID!) {
+          updateIssueFieldValue(input: {issueId: $issue, issueField: {fieldId: $field, delete: true}}) {
+            clientMutationId } }' >/dev/null
+      say "#$n: $PRIORITY cleared"
+    else
+      write "set $PRIORITY on #$n to '$value'" gh api graphql -F issue="$issue" \
+        -F field="$(jq -r .id <<<"$field")" -F option="$option" -f query='
+        mutation($issue: ID!, $field: ID!, $option: ID!) {
+          updateIssueFieldValue(input: {issueId: $issue, issueField: {fieldId: $field,
+                                        singleSelectOptionId: $option}}) { clientMutationId } }' >/dev/null
+      say "#$n: $PRIORITY set to '$value'"
+    fi
     ;;
 
   comment)
