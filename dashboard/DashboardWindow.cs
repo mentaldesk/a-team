@@ -36,12 +36,16 @@ public sealed class DashboardWindow : Window
     private readonly string _nextPass;
     private readonly DashboardSettings _settings;
     private readonly TeamConfigs _teams;
-    private readonly Func<string, string, Task<string?>> _run;
+    private readonly Func<string[], Task<string?>> _run;
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Action<string> _openUrl;
+    private readonly Func<WaitingItem, Rank?> _askPriority;
     private readonly IconStyle _auto;
     private Area _area;
     private Task<string?>? _pending;
+    private (WaitingItem Item, Rank Rank)? _ranking;
+    private string? _said;
+    private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
     private DateTimeOffset? _readAt;
     private string? _failure;
@@ -54,9 +58,10 @@ public sealed class DashboardWindow : Window
         string stateRoot,
         DashboardSettings settings,
         TeamConfigs teams,
-        Func<string, string, Task<string?>> run,
+        Func<string[], Task<string?>> run,
         Func<string, Task<Reading>> readWaiting,
         Action<string> openUrl,
+        Func<WaitingItem, Rank?> askPriority,
         Area area,
         IconStyle auto)
     {
@@ -66,6 +71,7 @@ public sealed class DashboardWindow : Window
         _run = run;
         _readWaiting = readWaiting;
         _openUrl = openUrl;
+        _askPriority = askPriority;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
@@ -231,6 +237,7 @@ public sealed class DashboardWindow : Window
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
             .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
             .Register("work.open", "Open the selected issue or PR on GitHub", OpenSelected, Key.Enter, new Hint("open", Mode.Work), () => OnWork() && _work.SelectedUrl is { Length: > 0 })
+            .Register("work.priority", "Set the selected item's priority", SetPriority, new Key('p'), new Hint("set priority", Mode.Work), () => OnWork() && _work.SelectedCard is not null)
             .Register("work.mine", "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork)
             .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
@@ -267,7 +274,7 @@ public sealed class DashboardWindow : Window
             return;
         _progress = pane.Paused ? "Resuming…" : "Pausing…";
         ShowMessage();
-        _pending = _run(pane.Paused ? "resume" : "pause", pane.Team);
+        _pending = _run([pane.Paused ? "resume" : "pause", pane.Team]);
     }
 
     /// <summary>Reads every team's gates at once. A second go while one is running is refused, not queued.</summary>
@@ -292,6 +299,29 @@ public sealed class DashboardWindow : Window
             _openUrl(url);
     }
 
+    /// <summary>Asks for a rank and writes it. The board decides what the field will take, so an unknown value
+    /// comes back as a refusal rather than being guessed at here.</summary>
+    private void SetPriority()
+    {
+        if (_pending is not null || _work.SelectedCard is not { } item || _askPriority(item) is not { } rank)
+            return;
+        _ranking = (item, rank);
+        _progress = "Setting…";
+        ShowMessage();
+        _pending = _run(["board", item.Team, "priority", "you", item.Number.ToString(), Priorities.Value(rank)]);
+    }
+
+    /// <summary>What the board took: a ranked Idea leaves the Ideas column, and the bar says so until the
+    /// selection moves off the card the selection was left on.</summary>
+    private void Ranked(WaitingItem item, Rank rank)
+    {
+        _work.Ranked(item, rank);
+        _said = $"#{item.Number} · set to {rank}";
+        _saidOn = _work.Selected;
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
     /// <summary>Picked up by the next refresh, so a command runs off the draw loop and reports back on it.</summary>
     private void Settle()
     {
@@ -302,6 +332,13 @@ public sealed class DashboardWindow : Window
             _failure = finished.Status == TaskStatus.RanToCompletion
                 ? finished.Result
                 : finished.Exception?.GetBaseException().Message ?? "the command didn't finish";
+            // Nothing moves until the board has taken it: a refused write leaves the card as it was.
+            if (_ranking is { } ranking)
+            {
+                _ranking = null;
+                if (_failure is null or { Length: 0 })
+                    Ranked(ranking.Item, ranking.Rank);
+            }
         }
 
         if (_reading is not { IsCompleted: true } read)
@@ -327,10 +364,16 @@ public sealed class DashboardWindow : Window
     /// <summary>What went wrong, then what's running, then the region focus is in.</summary>
     private void ShowMessage()
     {
+        if (_said is { Length: > 0 } && _work.Selected != _saidOn)
+        {
+            _said = null;
+            _saidOn = null;
+        }
         var (text, scheme) =
             _failure is { Length: > 0 } ? (_failure, Schemes.Error)
             : _reading is not null ? ("Reading…", Schemes.Accent)
             : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
+            : _said is { Length: > 0 } ? (_said, Schemes.Accent)
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : ("", Schemes.Base);

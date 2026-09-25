@@ -352,7 +352,7 @@ public class DashboardWindowTests : IDisposable
             "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
             DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · Enter: open · m: only mine · r: refresh · Esc: dashboard",
+            "a-team 1.2.3 · Enter: open · p: set priority · m: only mine · r: refresh · Esc: dashboard",
             DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
     }
 
@@ -379,7 +379,8 @@ public class DashboardWindowTests : IDisposable
                 "Expand the selected agent", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
-                "Select the card above", "Open the selected issue or PR on GitHub", "Show only what's your move",
+                "Select the card above", "Open the selected issue or PR on GitHub",
+                "Set the selected item's priority", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
                 "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid",
                 "Back to the Dashboard", "Quit",
@@ -681,7 +682,7 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void A_message_shrinks_the_grid_above_it_instead_of_covering_anything()
     {
-        using var window = Open(agents: Agents(4), run: (_, _) => new TaskCompletionSource<string?>().Task);
+        using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
         var before = LayOut(window, 120, 30);
 
         window.Commands.Execute("team.pause");
@@ -697,18 +698,18 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void Pausing_runs_a_team_pause_for_the_selected_agents_team_and_says_so_while_it_runs()
     {
-        var calls = new List<(string Verb, string Team)>();
+        var calls = new List<string[]>();
         var finish = new TaskCompletionSource<string?>();
-        using var window = Open(agents: Agents(4), run: (verb, team) =>
+        using var window = Open(agents: Agents(4), run: arguments =>
         {
-            calls.Add((verb, team));
+            calls.Add(arguments);
             return finish.Task;
         });
         SelectAgent(window, 2);
 
         window.Commands.Execute("team.pause");
 
-        Assert.Equal([("pause", "team1")], calls);
+        Assert.Equal([["pause", "team1"]], calls);
         Assert.Equal("Pausing…", window.Message.Says);
     }
 
@@ -717,7 +718,7 @@ public class DashboardWindowTests : IDisposable
     {
         var calls = 0;
         var finish = new TaskCompletionSource<string?>();
-        using var window = Open(agents: Agents(4), run: (_, _) =>
+        using var window = Open(agents: Agents(4), run: _ =>
         {
             calls++;
             return finish.Task;
@@ -751,7 +752,7 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open(
             agents: Agents(4),
-            run: (_, _) => Task.FromResult<string?>("a-team pause: can't write /nope/team0.json\nstack\ntrace"));
+            run: _ => Task.FromResult<string?>("a-team pause: can't write /nope/team0.json\nstack\ntrace"));
 
         window.Commands.Execute("team.pause");
         window.Refresh();
@@ -780,9 +781,9 @@ public class DashboardWindowTests : IDisposable
     public void Pausing_a_team_reaches_its_panes_on_the_next_refresh()
     {
         WriteTeam("team0", enabled: true);
-        using var window = Open(agents: Agents(2), run: (_, team) =>
+        using var window = Open(agents: Agents(2), run: arguments =>
         {
-            WriteTeam(team, enabled: false);
+            WriteTeam(arguments[1], enabled: false);
             return Task.FromResult<string?>(null);
         });
         window.Refresh();
@@ -844,7 +845,7 @@ public class DashboardWindowTests : IDisposable
     private DashboardWindow Open(
         bool expandToolCalls = false,
         IReadOnlyList<(string, string)>? agents = null,
-        Func<string, string, Task<string?>>? run = null,
+        Func<string[], Task<string?>>? run = null,
         string? keys = null,
         Func<string, Task<Reading>>? readWaiting = null,
         Action<string>? openUrl = null,
@@ -865,9 +866,10 @@ public class DashboardWindowTests : IDisposable
             _root,
             settings,
             new TeamConfigs(Config),
-            run ?? ((_, _) => Task.FromResult<string?>(null)),
+            run ?? (_ => Task.FromResult<string?>(null)),
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
             openUrl ?? (_ => { }),
+            _ => null,
             area,
             auto);
     }

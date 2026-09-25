@@ -60,6 +60,7 @@ a-team board {{team}} next                      # the next task Dev should take 
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)
 a-team board {{team}} move <role> <n> <STATUS>
 a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on the board
+a-team board {{team}} priority <role> <n> <value|none>  # reviewer only: rank an item, or clear its rank
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours
 a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass
                                                 # over it from now on

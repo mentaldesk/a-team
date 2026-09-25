@@ -4,6 +4,16 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
+/// <summary>A Priority an item can carry, and <see cref="None"/> for carrying none.</summary>
+public enum Rank
+{
+    Urgent,
+    High,
+    Medium,
+    Low,
+    None,
+}
+
 /// <summary>How much of a card is its issue number, and the scheme to draw that number in.</summary>
 public readonly record struct PriorityMark(int Width, string Scheme);
 
@@ -11,18 +21,18 @@ public readonly record struct PriorityMark(int Width, string Scheme);
 /// own options.</summary>
 public static class Priorities
 {
-    private static readonly (string Name, string Scheme, string Colour)[] Levels =
+    private static readonly (Rank Rank, string Colour)[] Levels =
     [
-        ("Urgent", "Priority.Urgent", "#c1408d"),
-        ("High", "Priority.High", "#d4323c"),
-        ("Medium", "Priority.Medium", "#9a6700"),
-        ("Low", "Priority.Low", "#21833d"),
+        (Rank.Urgent, "#c1408d"),
+        (Rank.High, "#d4323c"),
+        (Rank.Medium, "#9a6700"),
+        (Rank.Low, "#21833d"),
     ];
 
     internal static void Register(Scheme baseScheme)
     {
-        foreach (var (_, scheme, colour) in Levels)
-            SchemeManager.AddScheme(scheme, baseScheme with
+        foreach (var (rank, colour) in Levels)
+            SchemeManager.AddScheme(Scheme(rank.ToString()), baseScheme with
             {
                 Normal = new Attribute(new Color(colour), baseScheme.Normal.Background),
             });
@@ -30,7 +40,16 @@ public static class Priorities
 
     /// <summary>The scheme a Priority is drawn in, or none for an item that has no Priority set.</summary>
     public static string Scheme(string priority) =>
-        Array.Find(Levels, level => level.Name == priority).Scheme ?? "";
+        Array.Exists(Levels, level => level.Rank.ToString() == priority) ? $"Priority.{priority}" : "";
+
+    /// <summary>What the board calls <paramref name="rank"/>, which for <see cref="Rank.None"/> is what
+    /// clears the field.</summary>
+    public static string Value(Rank rank) => rank == Rank.None ? "none" : rank.ToString();
+
+    /// <summary>The Priority <paramref name="item"/> carries, or <see cref="Rank.None"/> where it carries
+    /// one we don't colour.</summary>
+    public static Rank Of(WaitingItem item) =>
+        Scheme(item.Priority).Length > 0 ? Enum.Parse<Rank>(item.Priority) : Rank.None;
 
     /// <summary>The part of <paramref name="card"/> that is the item's number, which a column too narrow
     /// to draw the whole of it cuts short.</summary>

@@ -10,7 +10,7 @@ public sealed record Reading(string Output, string? Failure);
 public sealed class TeamCommand(string executable)
 {
     /// <summary>Null once it has run; otherwise the first line of its stderr.</summary>
-    public Task<string?> Run(string verb, string team) => Task.Run(() => Invoke(verb, team).Failure);
+    public Task<string?> Run(params string[] arguments) => Task.Run(() => Invoke(arguments).Failure);
 
     /// <summary>What a read-only command printed, for the caller to parse.</summary>
     public Task<Reading> Read(params string[] arguments) => Task.Run(() => Invoke(arguments));

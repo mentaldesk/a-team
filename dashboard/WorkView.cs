@@ -45,6 +45,10 @@ public sealed class WorkView : View
     /// <summary>The page Enter opens: the issue's on a card, the PR's on the row under it.</summary>
     internal string? SelectedUrl => FocusedColumn()?.Selected?.Url;
 
+    /// <summary>The item a rank would be set on: a card's own, and nothing on the PR row under it.</summary>
+    internal WaitingItem? SelectedCard =>
+        FocusedColumn()?.Selected is { IsPr: false } card ? card.Item : null;
+
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
 
@@ -119,6 +123,25 @@ public sealed class WorkView : View
         var lane = at.Lane + step;
         if (lane >= 0 && lane < _lanes.Count)
             Land(lane, at.Gate, step);
+    }
+
+    /// <summary>What a rank the reviewer has just given leaves on screen. `waiting` only returns the Ideas with
+    /// no Priority, so a ranked one is no longer waiting: its card goes and the selection carries on down the
+    /// column. Every other card stays where it is, wearing the colour its new rank gives its number.</summary>
+    internal void Ranked(WaitingItem item, Rank rank)
+    {
+        var column = FocusedColumn();
+        var row = column?.Index ?? 0;
+        var ranked = item with { Priority = rank == Rank.None ? "" : rank.ToString() };
+        var gone = item.Status == "Idea" && rank != Rank.None;
+        _items = [.. _items.Select(each => each == item ? ranked : each).Where(each => !gone || each != ranked)];
+        Lay();
+        if (column is null)
+            return;
+        if (gone)
+            column.FocusCards(row);
+        else
+            column.Select(ranked);
     }
 
     private void Lay()
@@ -348,6 +371,9 @@ public sealed class WorkColumn : FrameView
     /// <summary>The row the selection is on, inside the frame.</summary>
     internal int Row => Index + 1;
 
+    /// <summary>Which of the column's rows that is, for a caller that wants to land on it again.</summary>
+    internal int Index => Selected is { } card ? _nodes.IndexOf(card) : 0;
+
     /// <summary>Moves the selection a row on, or reports that the column has no row that way.</summary>
     internal bool MoveSelection(int step)
     {
@@ -395,8 +421,6 @@ public sealed class WorkColumn : FrameView
 
         protected override bool OnKeyDown(Key key) => false;
     }
-
-    private int Index => Selected is { } card ? _nodes.IndexOf(card) : 0;
 
     /// <summary>The row as the tree lays it out: the field the icon is painted into, then the card's own text.</summary>
     private string Aspect(Card card) => new string(' ', Icons.Width) + CardCells.LaidOut(card.Text(Room(card)));
