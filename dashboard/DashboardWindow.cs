@@ -311,8 +311,8 @@ public sealed class DashboardWindow : Window
         _pending = _run(["board", item.Team, "priority", "you", item.Number.ToString(), Priorities.Value(rank)]);
     }
 
-    /// <summary>What the board took: a ranked Idea leaves the Ideas column, and the bar says so until the
-    /// selection moves off the card the selection was left on.</summary>
+    /// <summary>What the board took: the card moves to the column its new Priority puts it in, and the bar says
+    /// so until the selection moves off the card the selection was left on.</summary>
     private void Ranked(WaitingItem item, Rank rank)
     {
         _work.Ranked(item, rank);

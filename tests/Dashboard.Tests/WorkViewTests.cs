@@ -25,7 +25,7 @@ public class WorkViewTests
         using var view = Open(["a-team", "tuicode"]);
 
         Assert.Equal(["a-team", "tuicode"], view.Lanes.Select(lane => lane.Team));
-        Assert.All(view.Lanes, lane => Assert.Equal(["Ideas", "Pitches", "Review"], lane.Columns.Select(column => column.Gate)));
+        Assert.All(view.Lanes, lane => Assert.Equal(["Triage", "Pitches", "Review"], lane.Columns.Select(column => column.Gate)));
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
 
-        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"], Titles(view));
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"], Titles(view));
         Assert.All(Cells(view), cell => Assert.True(cell.Width > 0 && cell.Height > 0));
     }
 
@@ -98,7 +98,7 @@ public class WorkViewTests
 
         view.FocusFirstCard();
 
-        Assert.Equal("Ideas · a-team", view.Region);
+        Assert.Equal("Triage · a-team", view.Region);
         Assert.Null(view.Selected);
     }
 
@@ -135,7 +135,7 @@ public class WorkViewTests
         view.FocusFirstCard();
 
         view.MoveColumn(-1);
-        Assert.Equal("Ideas · a-team", view.Region);
+        Assert.Equal("Triage · a-team", view.Region);
 
         view.MoveColumn(+1);
         view.MoveColumn(+1);
@@ -260,14 +260,14 @@ public class WorkViewTests
         LayOut(view, 120, 20);
 
         Assert.True(view.OnlyMine);
-        Assert.Equal(["Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0", "Pitches · 1", "Review · 0"], Titles(view));
+        Assert.Equal(["Triage · 1", "Pitches · 1", "Review · 0", "Triage · 0", "Pitches · 1", "Review · 0"], Titles(view));
         Assert.All(Cells(view), cell => Assert.True(cell.Width > 0 && cell.Height > 0));
 
         view.ShowOnlyMine(false);
         LayOut(view, 120, 20);
 
         Assert.False(view.OnlyMine);
-        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
             Titles(view));
     }
 
