@@ -138,6 +138,12 @@ you're on in your browser: the issue on the card, the PR on the row under it.
 moves to the column its new Priority puts it in there and then, with nothing re-read: a pitch you
 unrank drops into Triage, one you rank leaves it, and an Idea you rank is off your queue for good.
 
+On an unranked Idea, `p` clears the whole queue rather than one card: the dialog stays up and moves
+to the next unranked Idea it can see, counting down — *Priority · 7 left* — until there are none,
+and the foot says how many you set. Esc stops it there, keeping everything already set, and a write
+the board refuses stops it too, with the refusal in the foot. `m` decides what it visits, so the
+queue is the Ideas you're looking at.
+
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the
 line at the foot says why — `#118 · lead · answering your feedback since 08:14`. It's theirs from

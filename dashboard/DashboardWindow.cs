@@ -39,11 +39,14 @@ public sealed class DashboardWindow : Window
     private readonly Func<string[], Task<string?>> _run;
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Action<string> _openUrl;
-    private readonly Func<WaitingItem, Rank?> _askPriority;
+    private readonly Action<PriorityDialog> _ask;
     private readonly IconStyle _auto;
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
+    private PriorityDialog? _dialog;
+    private WaitingItem? _asking;
+    private int _ranked;
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
@@ -61,7 +64,7 @@ public sealed class DashboardWindow : Window
         Func<string[], Task<string?>> run,
         Func<string, Task<Reading>> readWaiting,
         Action<string> openUrl,
-        Func<WaitingItem, Rank?> askPriority,
+        Action<PriorityDialog> ask,
         Area area,
         IconStyle auto)
     {
@@ -71,7 +74,7 @@ public sealed class DashboardWindow : Window
         _run = run;
         _readWaiting = readWaiting;
         _openUrl = openUrl;
-        _askPriority = askPriority;
+        _ask = ask;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
@@ -175,6 +178,9 @@ public sealed class DashboardWindow : Window
     internal int? ExpandedAgent => _expanded;
 
     internal CommandRegistry Commands => _commands;
+
+    /// <summary>The dialog a run through the queue has in front of the reviewer, or null when none is.</summary>
+    internal PriorityDialog? Dialog => _dialog;
 
     internal static string Hints(string version, Mode mode, CommandRegistry commands) =>
         $"a-team {version} · {commands.Hints(mode)}";
@@ -299,11 +305,36 @@ public sealed class DashboardWindow : Window
             _openUrl(url);
     }
 
-    /// <summary>Asks for a rank and writes it. The board decides what the field will take, so an unknown value
-    /// comes back as a refusal rather than being guessed at here.</summary>
+    /// <summary>Opens the dialog on the selected card. An unranked Idea starts a run through the whole queue:
+    /// the dialog stays up and moves to the next one until they're gone. Anything else is one item on its own.
+    /// </summary>
     private void SetPriority()
     {
-        if (_pending is not null || _work.SelectedCard is not { } item || _askPriority(item) is not { } rank)
+        if (_pending is not null || _dialog is not null || _work.SelectedCard is not { } item)
+            return;
+        _ranked = 0;
+        _dialog = new PriorityDialog();
+        _dialog.Set += Write;
+        _dialog.Dismissed += Stop;
+        // Anything else that takes the dialog off the stack — the quit key, say — ends the run too.
+        _dialog.IsRunningChanged += (_, running) => { if (!running.Value) Stop(); };
+        Ask(item);
+        _ask(_dialog);
+    }
+
+    /// <summary>Puts an item in front of the reviewer, saying how many are still to rank. A card that isn't an
+    /// unranked Idea is on its own however full the queue is.</summary>
+    private void Ask(WaitingItem item)
+    {
+        _asking = item;
+        _dialog?.Ask(item, WorkView.NeedsRank(item) ? _work.Queue.Count : 1);
+    }
+
+    /// <summary>Writes the rank the reviewer chose. The board decides what the field will take, so an unknown
+    /// value comes back as a refusal rather than being guessed at here.</summary>
+    private void Write(Rank rank)
+    {
+        if (_pending is not null || _asking is not { } item)
             return;
         _ranking = (item, rank);
         _progress = "Setting…";
@@ -316,10 +347,26 @@ public sealed class DashboardWindow : Window
     private void Ranked(WaitingItem item, Rank rank)
     {
         _work.Ranked(item, rank);
+        _ranked++;
         _said = $"#{item.Number} · set to {rank}";
         _saidOn = _work.Selected;
         SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    /// <summary>Closes the dialog, whether the queue ran out, the reviewer pressed Esc or a write failed. What's
+    /// set stays set, and a run that ranked more than one is counted rather than named.</summary>
+    private void Stop()
+    {
+        if (_dialog is not { } dialog)
+            return;
+        _dialog = null;
+        _asking = null;
+        dialog.Finish();
+        if (_ranked <= 1)
+            return;
+        _said = $"Ideas ranked · {_ranked}";
+        _saidOn = _work.Selected;
     }
 
     /// <summary>Picked up by the next refresh, so a command runs off the draw loop and reports back on it.</summary>
@@ -332,12 +379,22 @@ public sealed class DashboardWindow : Window
             _failure = finished.Status == TaskStatus.RanToCompletion
                 ? finished.Result
                 : finished.Exception?.GetBaseException().Message ?? "the command didn't finish";
-            // Nothing moves until the board has taken it: a refused write leaves the card as it was.
+            // Nothing moves until the board has taken it: a refused write leaves the card as it was, and a run
+            // through the queue doesn't carry on past one.
             if (_ranking is { } ranking)
             {
                 _ranking = null;
-                if (_failure is null or { Length: 0 })
+                if (_failure is { Length: > 0 })
+                    Stop();
+                else
+                {
+                    var walking = WorkView.NeedsRank(ranking.Item);
                     Ranked(ranking.Item, ranking.Rank);
+                    if (walking && _work.Queue.FirstOrDefault() is { } next)
+                        Ask(next);
+                    else
+                        Stop();
+                }
             }
         }
 

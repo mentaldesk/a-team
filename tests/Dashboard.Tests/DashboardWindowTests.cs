@@ -869,7 +869,7 @@ public class DashboardWindowTests : IDisposable
             run ?? (_ => Task.FromResult<string?>(null)),
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
             openUrl ?? (_ => { }),
-            _ => null,
+            dialog => dialog.Dispose(),
             area,
             auto);
     }
