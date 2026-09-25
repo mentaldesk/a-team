@@ -382,16 +382,18 @@ public class WorkAreaTests : IDisposable
             askPriority: _ => Rank.None);
         window.Refresh();
         LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
 
         window.Commands.Execute("work.priority");
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal([["board", "team0", "priority", "you", "6", "none"]], calls);
+        Assert.Equal([["board", "team0", "priority", "you", "107", "none"]], calls);
         Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
             Titles(window));
-        Assert.Equal(6, window.Work.Selected?.Number);
-        Assert.Equal("#6 · set to None", window.Message.Says);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.Equal("#107 · set to None", window.Message.Says);
     }
 
     [Fact]
@@ -665,7 +667,7 @@ public class WorkAreaTests : IDisposable
         ? """
           [{"number": 107, "title": "When the dashboard goes quiet", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team0/issues/107", "team": "team0",
-            "turn": "you", "reason": "awaiting your approval since 08:14"},
+            "turn": "you", "reason": "awaiting your approval since 08:14", "priority": "High"},
            {"number": 108, "title": "A misconfigured team looks like a working one", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team0/issues/108", "team": "team0",
             "turn": "lead", "reason": "answering your feedback since 09:30"},
