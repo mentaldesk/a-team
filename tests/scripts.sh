@@ -144,9 +144,11 @@ gh_items() {
   ISSUE="$BIN/issue.json" THREAD="$BIN/thread.json"
   LINE="$BIN/line.json" REVIEWS="$BIN/reviews.json" RECENT="$BIN/recent.json"
   ACKED="$BIN/acked" POSTED="$BIN/posted" EMPTY="$BIN/empty.json"
-  WRITES="$BIN/writes"
+  BLOCKED="$BIN/blocked.json" WRITES="$BIN/writes"
   : >"$ACKED"
+  : >"$POSTED"
   : >"$WRITES"
+  gh_blocked </dev/null
   FIELDS="$BIN/fields.json"
   jq -n '{data: {organization: {issueFields: {nodes: [{id: "IF_priority", name: "Priority", options: [
     {id: "OP_urgent", name: "Urgent"}, {id: "OP_high", name: "High"},
@@ -171,6 +173,9 @@ case " \$* " in
   *reviews*) page="$REVIEWS" ;;
   *"/issues/comments?since"*) page="$RECENT" ;;
   *"comments?since"*) page="$EMPTY" ;;
+  *"-X POST"*dependencies/blocked_by*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
+  *"-X DELETE"*dependencies/blocked_by*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
+  *dependencies/blocked_by*) page="$BLOCKED" ;;
   *"/issues/"*"/comments"*) page="$THREAD" ;;
   *"/pulls/"*"/comments"*) page="$LINE" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
@@ -185,6 +190,12 @@ if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
   chmod +x "$BIN/gh"
   PATH="$BIN:$PATH"
+}
+
+# What blocks a task, from lines of "<n>", each becoming a prerequisite whose id is "DEP_<n>".
+gh_blocked() {
+  jq -R -s 'split("\n") | map(select(length > 0))
+    | map({number: (. | tonumber), id: "DEP_\(.)"})' >"$BLOCKED"
 }
 
 # The check runs on a PR's head commit, from lines of "<status> <conclusion> <finished> <name>",
@@ -247,7 +258,7 @@ gh_thread() {
          body: ($f[4:] | join(" ")), url: "https://github.com/mentaldesk/demo/issues/7#\($i)"})')
   local rest='{node_id: .id, user: {login: .author}, created_at: .at, body: .body,
                html_url: .url, reactions: {eyes: .eyes}}'
-  jq --arg pull "${1:-}" "(map(select(.kind == \"body\")) | first // {}) | $rest
+  jq --arg pull "${1:-}" "(map(select(.kind == \"body\")) | first // {}) | $rest + {id: 4242}
     + (if \$pull == \"pull\" then {pull_request: {}} else {} end)" <<<"$rows" >"$ISSUE"
   jq "[.[] | select(.kind == \"comment\") | $rest]" <<<"$rows" >"$THREAD"
   jq "[.[] | select(.kind == \"line\") | $rest + {path: \"board.sh\", line: 1}]" <<<"$rows" >"$LINE"
@@ -742,6 +753,96 @@ same "exit" 0 "$STATUS"
 same "acked" "" "$(cat "$ACKED")"
 same "posted" "" "$(cat "$POSTED")"
 grep -q "would add 👀 to your comment of ${TODAY}T09:00:00Z on #7" "$ERR" || fail "dry run: nothing about the 👀 in '$(cat "$ERR")'"
+
+case_ "either role may block either task, across pitches and at any status"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Building 10 A pitch
+Building 20 Another pitch
+Ready 11 A task of the first pitch
+In_progress 21 A task of the second pitch
+ITEMS
+run board demo depends lead 11 21 "both rewrite the same view"
+same "exit" 0 "$STATUS"
+same "said" "#11 is now blocked by #21, and said why on #11" "$(cat "$OUT")"
+grep -q "^POST .*/issues/11/dependencies/blocked_by" "$WRITES" || fail "depends: no POST in '$(cat "$WRITES")'"
+grep -q "^Blocked by #21: both rewrite the same view$" "$POSTED" || fail "depends: no reason in '$(cat "$POSTED")'"
+grep -q '<!-- a-team:lead -->' "$POSTED" || fail "depends: no lead marker in '$(cat "$POSTED")'"
+
+case_ "the Dev may block its own In progress task, and the comment carries the Dev's marker"
+: >"$WRITES"
+run board demo depends dev 21 11 "taking #11 first; both are in WaitingView"
+same "exit" 0 "$STATUS"
+same "said" "#21 is now blocked by #11, and said why on #21" "$(cat "$OUT")"
+grep -q "^POST .*/issues/21/dependencies/blocked_by" "$WRITES" || fail "depends: no POST in '$(cat "$WRITES")'"
+grep -q '<!-- a-team:dev -->' "$POSTED" || fail "depends: no dev marker in '$(cat "$POSTED")'"
+
+case_ "either role may undo it again, wherever it was drawn"
+gh_blocked <<'DEPS'
+21
+DEPS
+: >"$WRITES"
+run board demo undepend dev 11 21 "looked again: #11 is in DashboardSettings"
+same "exit" 0 "$STATUS"
+same "said" "#11 is no longer blocked by #21, and said why on #11" "$(cat "$OUT")"
+same "writes" "DELETE" "$(cut -d' ' -f1 <"$WRITES")"
+grep -q "/issues/11/dependencies/blocked_by/DEP_21" "$WRITES" || fail "undepend: wrong url in '$(cat "$WRITES")'"
+grep -q "^No longer blocked by #21: looked again: #11 is in DashboardSettings$" "$POSTED" ||
+  fail "undepend: no reason in '$(cat "$POSTED")'"
+grep -q '<!-- a-team:dev -->' "$POSTED" || fail "undepend: no dev marker in '$(cat "$POSTED")'"
+run board demo undepend lead 11 21 "the Lead can undo the Dev's block too"
+same "exit" 0 "$STATUS"
+grep -q '<!-- a-team:lead -->' "$POSTED" || fail "undepend: no lead marker in '$(cat "$POSTED")'"
+
+case_ "an unknown role is refused, in one line, by both verbs"
+run board demo depends nobody 11 21 "why"
+failed "depends role"
+one_line "depends role"
+grep -q "unknown role 'nobody' (lead | dev)" "$ERR" || fail "depends role: '$(cat "$ERR")'"
+run board demo undepend nobody 11 21 "why"
+failed "undepend role"
+one_line "undepend role"
+grep -q "unknown role 'nobody' (lead | dev)" "$ERR" || fail "undepend role: '$(cat "$ERR")'"
+
+case_ "undepend on a pair that isn't linked is refused, in one line"
+gh_blocked </dev/null
+: >"$WRITES"
+run board demo undepend lead 11 21 "not needed"
+failed "undepend unlinked"
+one_line "undepend unlinked"
+grep -q "#11 is not blocked by #21" "$ERR" || fail "undepend unlinked: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "the wrong number of arguments shows the new signature, in one line"
+run board demo depends 11 21
+failed "depends usage"
+one_line "depends usage"
+grep -qF 'usage: board.sh demo depends <role> <task> <prerequisite> "<why>"' "$ERR" ||
+  fail "depends usage: '$(cat "$ERR")'"
+run board demo undepend lead 11 21
+failed "undepend usage"
+one_line "undepend usage"
+grep -qF 'usage: board.sh demo undepend <role> <task> <prerequisite> "<why>"' "$ERR" ||
+  fail "undepend usage: '$(cat "$ERR")'"
+
+case_ "--dry-run gives the same verdicts, and neither the dependency nor the comment is created"
+: >"$POSTED"
+: >"$WRITES"
+run board --dry-run demo depends lead 11 21 "both rewrite the same view"
+same "exit" 0 "$STATUS"
+same "said" "(dry run) #11 is now blocked by #21, and said why on #11" "$(cat "$OUT")"
+grep -q "Blocked by #21: both rewrite the same view" "$ERR" || fail "dry run: no comment in '$(cat "$ERR")'"
+gh_blocked <<'DEPS'
+21
+DEPS
+run board --dry-run demo undepend lead 11 21 "looked again"
+same "exit" 0 "$STATUS"
+same "said" "(dry run) #11 is no longer blocked by #21, and said why on #11" "$(cat "$OUT")"
+grep -q "No longer blocked by #21: looked again" "$ERR" || fail "dry run: no comment in '$(cat "$ERR")'"
+same "posted" "" "$(cat "$POSTED")"
+same "writes" "" "$(cat "$WRITES")"
 
 case_ "a-team with no command opens the app, and dashboard opens it on the Dashboard"
 APP=$(mktemp -d "$WORK/app.XXXXXX")

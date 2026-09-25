@@ -38,10 +38,10 @@ sitting. Where the reviewer has commented:
 - On a pitch in **Building**, feedback is usually about its tasks. Rewrite tasks still in Ready
   that the Dev hasn't claimed, and add new ones, as in step 2. List any task that's now redundant
   for the reviewer to close. Drop what the new plan no longer needs — dependencies with
-  `a-team board {{team}} undepend lead <task> <prereq>`, and tasks that no longer belong to the pitch with
-  `a-team board {{team}} unlink lead <pitch> <task>` — and name each one you dropped in the same reply.
-  Tasks the Dev has already started are the Dev's: say in your reply what you'd change, and the
-  reviewer takes it up on that task's PR.
+  `a-team board {{team}} undepend lead <task> <prereq> "<why>"`, and tasks that no longer belong to
+  the pitch with `a-team board {{team}} unlink lead <pitch> <task>` — and name each one you dropped
+  in the same reply. Tasks the Dev has already started are the Dev's: say in your reply what you'd
+  change, and the reviewer takes it up on that task's PR.
 
 ### 2. Break down approved pitches
 
@@ -70,11 +70,13 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
 4. `a-team board {{team}} link <pitch> <task>`, then `a-team board {{team}} add lead <task> Ready`. For a task that
-   needs another merged first, `a-team board {{team}} depends <task> <prerequisite>` and name the
-   prerequisite in its body. It becomes available to the Dev by itself when the prerequisite
+   needs another merged first, `a-team board {{team}} depends lead <task> <prerequisite> "<why>"` and name
+   the prerequisite in its body. It becomes available to the Dev by itself when the prerequisite
    closes. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
-   independent of each other if they touch different parts of the code. If two would edit the
-   same files, make the later one depend on the earlier. Don't plan stacked branches.
+   independent of each other if they touch different parts of the code. Make the later one depend
+   on the earlier when both would make major changes to the same file or the same part of the
+   code; two unrelated behaviour changes that only brush a shared file run in parallel. Don't plan
+   stacked branches.
 5. `a-team board {{team}} move lead <pitch> Building`, and comment on the pitch listing the tasks in the
    order you expect them to land and any open questions you settled with your own
    recommendation.

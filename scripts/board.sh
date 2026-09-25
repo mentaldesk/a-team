@@ -452,6 +452,15 @@ feedback_at() {
   printf '%s' "$at"
 }
 
+# depend_note <role> <task> <text>: why a dependency changed, on the blocked task, with the
+# role's marker, so a blocked task answers "why?" by itself.
+depend_note() {
+  local body
+  body=$(printf '%s\n\n<!-- a-team:%s -->' "$3" "$1")
+  [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+  printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
+}
+
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
 STARTABLE="$READY_TASK"' and (.labels | index("blocked") | not) and .blockedBy == 0'
@@ -672,34 +681,26 @@ case "$CMD" in
     ;;
 
   depends)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM depends <task> <prerequisite>"
-    write "block #$1 on #$2" gh api -X POST "repos/$REPO/issues/$1/dependencies/blocked_by" \
-      -F "issue_id=$(gh api "repos/$REPO/issues/$2" --jq .id)" >/dev/null
-    say "#$1 is now blocked by #$2"
+    [ $# -eq 4 ] || die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\""
+    role=$1 task=$2 prereq=$3 why=$4
+    check_role "$role"
+    write "block #$task on #$prereq" gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" \
+      -F "issue_id=$(gh api "repos/$REPO/issues/$prereq" --jq .id)" >/dev/null
+    depend_note "$role" "$task" "Blocked by #$prereq: $why"
+    say "#$task is now blocked by #$prereq, and said why on #$task"
     ;;
 
   undepend)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM undepend <role> <task> <prerequisite>"
-    role=$1 task=$2 prereq=$3
+    [ $# -eq 4 ] || die "usage: board.sh $TEAM undepend <role> <task> <prerequisite> \"<why>\""
+    role=$1 task=$2 prereq=$3 why=$4
     check_role "$role"
-    [ "$role" = lead ] || die "$role may not remove a dependency; only lead draws breakdowns"
-    all=$(items)
-    board_status() { jq -r --argjson n "$1" 'map(select(.number == $n)) | first | .status // empty' <<<"$all"; }
-    from=$(board_status "$task")
-    [ -n "$from" ] || die "#$task is not on the board"
-    [ "$from" = Ready ] || die "$role may only remove a dependency on a Ready task (#$task is '$from')"
-    pitch=$(parent_of "$task")
-    [ -n "$pitch" ] && [ "$pitch" = "$(parent_of "$prereq")" ] ||
-      die "$role may only remove a dependency between tasks of one pitch in Building (#$task and #$prereq are not sub-issues of the same pitch)"
-    pitch_status=$(board_status "$pitch")
-    [ "$pitch_status" = Building ] ||
-      die "$role may only remove a dependency between tasks of one pitch in Building (#$pitch is '${pitch_status:-not on the board}')"
     prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
       jq -r --argjson n "$prereq" '[.[] | select(.number == $n) | .id] | first // empty')
     [ -n "$prereq_id" ] || die "#$task is not blocked by #$prereq"
     write "unblock #$task from #$prereq" \
       gh api -X DELETE "repos/$REPO/issues/$task/dependencies/blocked_by/$prereq_id" >/dev/null
-    say "#$task is no longer blocked by #$prereq"
+    depend_note "$role" "$task" "No longer blocked by #$prereq: $why"
+    say "#$task is no longer blocked by #$prereq, and said why on #$task"
     ;;
 
   unlink)
