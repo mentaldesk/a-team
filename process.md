@@ -66,8 +66,11 @@ a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on I
 a-team board {{team}} feedback <role> <n>       # reviewer comments with no 👀 on them yet
 a-team board {{team}} link <parent> <child>     # make <child> a sub-issue of <parent>
 a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again
-a-team board {{team}} depends <task> <prereq>   # <task> can't start until <prereq> closes
-a-team board {{team}} undepend <role> <task> <prereq>  # Lead only: drop that dependency again
+a-team board {{team}} depends <role> <task> <prereq> "<why>"
+                                                # <task> can't start until <prereq> closes; <why>
+                                                # is posted on <task>
+a-team board {{team}} undepend <role> <task> <prereq> "<why>"
+                                                # drop that dependency again, saying why on <task>
 a-team board {{team}} children <n>              # sub-issues and whether they're closed
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
