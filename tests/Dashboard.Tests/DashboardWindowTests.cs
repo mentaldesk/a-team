@@ -352,7 +352,7 @@ public class DashboardWindowTests : IDisposable
             "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
             DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · Enter: open issue · p: open PR · m: only mine · r: refresh · Esc: dashboard",
+            "a-team 1.2.3 · Enter: open · m: only mine · r: refresh · Esc: dashboard",
             DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
     }
 
@@ -379,8 +379,7 @@ public class DashboardWindowTests : IDisposable
                 "Expand the selected agent", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
-                "Select the card above", "Open the selected issue on GitHub",
-                "Open the selected item's PR on GitHub", "Show only what's your move",
+                "Select the card above", "Open the selected issue or PR on GitHub", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
                 "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid",
                 "Back to the Dashboard", "Quit",

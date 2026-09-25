@@ -11,7 +11,8 @@ public class WorkViewTests
         new(108, "A misconfigured team looks like a working one", "Pitched", "https://github.com/x/2", "a-team",
             "lead", "answering your feedback since 09:30", Priority: "High"),
         new(49, "I can't change any of the dashboard's keys", "In review", "https://github.com/x/3", "a-team",
-            "dev", "answering your feedback since 10:15", Priority: "Medium"),
+            "dev", "answering your feedback since 10:15", Pr: 122, PrUrl: "https://github.com/x/pull/122",
+            Priority: "Medium"),
         new(133, "Notice when open files change on disk", "Pitched", "https://github.com/x/4", "tuicode",
             "you", "awaiting your approval since 21:37", Priority: "Low"),
         new(6, "The agents can't say what they'd change", "Idea", "https://github.com/x/5", "a-team",
@@ -217,16 +218,16 @@ public class WorkViewTests
     [InlineData(53, "#107  When the dashboard goes quiet, I can't tell why")]
     public void A_card_reads_as_the_number_then_as_much_of_the_title_as_fits(int width, string expected)
     {
-        Assert.Equal(expected, WorkColumn.Card(Waiting[0], width));
-        Assert.True(WorkColumn.Card(Waiting[0], width).Length <= width);
+        Assert.Equal(expected, new Card(Waiting[0], false).Text(width));
+        Assert.True(new Card(Waiting[0], false).Text(width).Length <= width);
     }
 
     [Fact]
     public void A_card_puts_the_role_first_only_where_the_move_isn_t_yours()
     {
-        Assert.Equal("#107  When the dashboard goes quiet, I can't tell why", WorkColumn.Card(Waiting[0], 0));
-        Assert.Equal("#108  lead · A misconfigured team looks like a working one", WorkColumn.Card(Waiting[1], 0));
-        Assert.Equal("#49  dev · I can't change any of the dashboard's keys", WorkColumn.Card(Waiting[2], 0));
+        Assert.Equal("#107  When the dashboard goes quiet, I can't tell why", new Card(Waiting[0], false).Text(0));
+        Assert.Equal("#108  lead · A misconfigured team looks like a working one", new Card(Waiting[1], false).Text(0));
+        Assert.Equal("#49  dev · I can't change any of the dashboard's keys", new Card(Waiting[2], false).Text(0));
     }
 
     [Fact]
@@ -236,7 +237,7 @@ public class WorkViewTests
             "https://github.com/x/6", "a-team", "dev", "CI failing since 09:02",
             Pr: 131, PrUrl: "https://github.com/x/pull/131", Trouble: "CI failing");
 
-        Assert.Equal("#116  dev · CI failing · I can change a key from the dashboard", WorkColumn.Card(failing, 0));
+        Assert.Equal("#116  dev · CI failing · I can change a key from the dashboard", new Card(failing, false).Text(0));
     }
 
     [Fact]
@@ -245,7 +246,7 @@ public class WorkViewTests
         var unsaid = new WaitingItem(12, "Whatever this is", "Pitched", "https://github.com/x/5", "a-team");
 
         Assert.True(unsaid.Mine);
-        Assert.Equal("#12  Whatever this is", WorkColumn.Card(unsaid, 0));
+        Assert.Equal("#12  Whatever this is", new Card(unsaid, false).Text(0));
     }
 
     [Fact]
@@ -306,12 +307,12 @@ public class WorkViewTests
     [Fact]
     public void A_narrow_column_still_shows_something()
     {
-        Assert.Equal("…", WorkColumn.Card(Waiting[0], 1));
-        Assert.Equal("#107  When the dashboard goes quiet, I can't tell why", WorkColumn.Card(Waiting[0], 0));
+        Assert.Equal("…", new Card(Waiting[0], false).Text(1));
+        Assert.Equal("#107  When the dashboard goes quiet, I can't tell why", new Card(Waiting[0], false).Text(0));
     }
 
     [Fact]
-    public void A_cards_text_is_elided_to_leave_the_room_its_icon_needs()
+    public void A_cards_text_is_elided_to_leave_the_room_its_icon_and_its_indent_need()
     {
         using var view = Open(["a-team"]);
         LayOut(view, 90, 20);
@@ -319,7 +320,7 @@ public class WorkViewTests
         view.Show(Waiting);
 
         Assert.Equal(
-            ["#107  When the dashboar…", "#108  lead · A misconfi…"],
+            ["#107  When the dashboa…", "#108  lead · A misconf…"],
             view.Lanes[0].Columns[1].CardText);
     }
 
@@ -351,7 +352,7 @@ public class WorkViewTests
         Assert.Equal([default], view.Lanes[0].Columns[0].Marks);
         Assert.Equal([Priorities.Scheme("Urgent"), Priorities.Scheme("High")],
             view.Lanes[0].Columns[1].Marks.Select(mark => mark.Scheme));
-        Assert.Equal([Priorities.Scheme("Medium")], view.Lanes[0].Columns[2].Marks.Select(mark => mark.Scheme));
+        Assert.Equal([Priorities.Scheme("Medium"), null], view.Lanes[0].Columns[2].Marks.Select(mark => mark.Scheme));
     }
 
     [Fact]
@@ -371,6 +372,108 @@ public class WorkViewTests
         });
         Assert.All(view.Lanes.SelectMany(lane => lane.Columns), column =>
             Assert.All(column.CardText, text => Assert.True(text.Length <= column.Frame.Width)));
+    }
+
+    [Fact]
+    public void A_card_with_a_PR_draws_a_row_under_it_and_the_title_still_counts_items()
+    {
+        using var view = Open(["a-team"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[2];
+
+        Assert.Equal(1, review.Count);
+        Assert.Equal("Review · 1", review.Title);
+        Assert.Equal(2, review.Nodes);
+        Assert.Equal(["#49  dev · I can't change any of…", "PR #122  I can't change any of …"], review.CardText);
+    }
+
+    [Fact]
+    public void A_lane_is_tall_enough_for_the_row_a_PR_adds()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([.. Waiting.Where(item => item.Status == "In review")]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(2, view.Lanes[0].Rows);
+    }
+
+    [Fact]
+    public void Down_walks_a_card_then_the_row_under_it_and_up_comes_back_to_the_last_row()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+        view.MoveColumn(+1);
+
+        Assert.Equal("https://github.com/x/3", view.SelectedUrl);
+
+        view.MoveCard(+1);
+        Assert.Equal(49, view.Selected?.Number);
+        Assert.Equal("https://github.com/x/pull/122", view.SelectedUrl);
+
+        view.MoveCard(+1);
+        Assert.Equal("Review · tuicode", view.Region);
+        Assert.Null(view.SelectedUrl);
+
+        view.MoveCard(-1);
+        Assert.Equal("Review · a-team", view.Region);
+        Assert.Equal("https://github.com/x/pull/122", view.SelectedUrl);
+    }
+
+    [Fact]
+    public void The_row_under_a_card_is_scrolled_into_view_like_the_card_itself()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 8);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+        view.MoveColumn(+1);
+
+        view.MoveCard(+1);
+        view.MoveCard(+1);
+
+        Assert.Equal("Review · tuicode", view.Region);
+        Assert.True(view.Viewport.Y > 0);
+    }
+
+    [Fact]
+    public void Filtering_puts_the_selection_back_on_the_cards_own_row()
+    {
+        using var view = Open(["a-team"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+        view.MoveColumn(+1);
+        view.MoveCard(+1);
+
+        view.ShowOnlyMine(false);
+        LayOut(view, 120, 20);
+
+        Assert.Equal("https://github.com/x/pull/122", view.SelectedUrl);
+    }
+
+    [Fact]
+    public void A_title_with_an_emoji_keeps_it_and_still_lays_out_a_cell_the_tree_can_draw()
+    {
+        var watched = new WaitingItem(157, "A \U0001F440 appears on my comment", "In review",
+            "https://github.com/x/157", "a-team", "dev", "answering your feedback",
+            Pr: 159, PrUrl: "https://github.com/x/pull/159");
+        using var view = Open(["a-team"]);
+
+        view.Show([watched]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[2];
+
+        Assert.All(review.CardText, text => Assert.Contains("\U0001F440", text));
+        Assert.All(review.CardText, text => Assert.DoesNotContain(CardCells.LaidOut(text), char.IsSurrogate));
     }
 
     private static WorkView Open(string[] teams)

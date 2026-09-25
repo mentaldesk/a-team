@@ -128,9 +128,10 @@ in is what it opens in next time; a first run lands on Work.
 A swimlane per team, and three columns in each, left to right in the order work moves through
 them: **Ideas** (the ones with no Priority set, which never get pitched until you give them one),
 **Pitches** (waiting for you to approve) and **Review** (waiting for you to merge or accept), each
-headed by its count. A card's issue number is coloured by the item's Priority, in the colours
-GitHub gives that field's own options. Enter opens the selected card's issue in your browser, and
-`p` the PR that closes it — on a card with no open PR it says so instead.
+headed by its count of items. A card's issue number is coloured by the item's Priority, in the
+colours GitHub gives that field's own options, and the PR that closes it hangs under it as a row of
+its own — `PR #149  The session log reads…`. Enter opens whichever row you're on in your browser:
+the issue on the card, the PR on the row under it.
 
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the
