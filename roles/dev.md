@@ -48,7 +48,7 @@ For each item in `a-team board {{team}} mine dev "In review"`, find its PR with 
 
 An item in `a-team board {{team}} mine dev "In progress"` was left by a run that didn't finish. Pick it
 up from its worktree and branch if they exist. If its draft PR is already up, carry on from
-step 4.8. If it can't be finished, comment why and `a-team board {{team}} move dev <n> Ready`.
+step 4.9. If it can't be finished, comment why and `a-team board {{team}} move dev <n> Ready`.
 
 ### 4. Take new work
 
@@ -56,23 +56,30 @@ Only if your **In progress** plus **In review** count in `a-team board {{team}} 
 below `wip.worktrees` — or, while an unblocked Ready task is Urgent, below `wip.worktrees + 1`:
 
 1. `a-team board {{team}} next`. If it returns `null`, stop.
-2. `a-team board {{team}} move dev <n> "In progress"`. This labels it `a-team:dev`, which is what makes it
+2. Before claiming it, judge whether it would make major changes to the same file or the same
+   part of the code as one of your open PRs; two unrelated changes that only brush a shared file
+   run in parallel. If it would collide, defer it behind that PR's task with
+   `a-team board {{team}} depends dev <n> <prerequisite> "<why>"` and go back to 1 for something
+   else rather than claiming it. The block clears itself when that PR merges, so there is nothing
+   to undo and nothing to ask the reviewer; if the deferral turns out to be wrong, either role can
+   drop it with `undepend`.
+3. `a-team board {{team}} move dev <n> "In progress"`. This labels it `a-team:dev`, which is what makes it
    yours.
-3. Read the issue and the pitch it belongs to. If the acceptance criteria are ambiguous or
+4. Read the issue and the pitch it belongs to. If the acceptance criteria are ambiguous or
    contradict the code, comment with the specific question, move it back to Ready with the
    `blocked` label, and go back to 1.
-4. Fetch `origin`, create a fresh worktree from `origin/<default branch>` following the repo's
+5. Fetch `origin`, create a fresh worktree from `origin/<default branch>` following the repo's
    conventions, and implement it. Stay inside the task's scope; note anything else you spot
    in the PR body instead of fixing it.
-5. Build and run the tests locally until they pass.
-6. Push and open a **draft** PR. Body: a short summary, `Closes #<n>`, anything the reviewer
+6. Build and run the tests locally until they pass.
+7. Push and open a **draft** PR. Body: a short summary, `Closes #<n>`, anything the reviewer
    should look at closely, and your marker. No test-plan section.
-7. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
-8. Check `a-team board {{team}} checks <pr>` every 2 minutes, for up to 20 minutes. Fix failures as in
+8. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
+9. Check `a-team board {{team}} checks <pr>` every 2 minutes, for up to 20 minutes. Fix failures as in
    step 2. If it's still pending after that, leave the item In progress for the next run.
-9. Once `checks` says `pass`, mark the PR ready (`gh pr ready <pr>`) and
-   `a-team board {{team}} move dev <n> "In review"`. A PR is ready for the reviewer only when it's green:
-   never mark a failing or pending PR ready. This is the one exception to the reviewer's
-   general rule that PRs stay in draft.
+10. Once `checks` says `pass`, mark the PR ready (`gh pr ready <pr>`) and
+    `a-team board {{team}} move dev <n> "In review"`. A PR is ready for the reviewer only when it's
+    green: never mark a failing or pending PR ready. This is the one exception to the reviewer's
+    general rule that PRs stay in draft.
 
 Take at most one new task per run.
