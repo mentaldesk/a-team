@@ -466,7 +466,7 @@ public class WorkAreaTests : IDisposable
         Assert.All(window.MenuItems, item =>
         {
             var command = window.Commands.Registered.Single(registered => registered.Id == item.Id);
-            Assert.Equal(command.Label, item.Item.Title);
+            Assert.Equal($"_{command.Label}", item.Item.Title);
             Assert.Equal(command.Key, item.Item.Key);
         });
     }
@@ -495,7 +495,7 @@ public class WorkAreaTests : IDisposable
 
         window.Refresh();
 
-        Assert.Equal("Resume team0", window.MenuItems.Single(item => item.Id == "team.pause").Item.Title);
+        Assert.Equal("_Resume team0", window.MenuItems.Single(item => item.Id == "team.pause").Item.Title);
     }
 
     /// <summary>Two gated items and an unranked Idea for the first team, one gated item for the second, so
