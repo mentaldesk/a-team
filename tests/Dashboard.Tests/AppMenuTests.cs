@@ -76,10 +76,10 @@ public class AppMenuTests : IDisposable
     [Fact]
     public void The_letter_reaches_an_item_whose_command_has_no_key_of_its_own()
     {
-        var calls = new List<string>();
-        using var window = Open(run: (command, team) =>
+        var calls = new List<string[]>();
+        using var window = Open(run: args =>
         {
-            calls.Add($"{command} {team}");
+            calls.Add(args);
             return Task.FromResult<string?>(null);
         });
         var pause = InOpenMenu(window, "team.pause");
@@ -87,7 +87,7 @@ public class AppMenuTests : IDisposable
         Assert.Equal(new Key('p'), pause.HotKey);
         Assert.True(pause.NewKeyDownEvent(pause.HotKey));
 
-        Assert.Equal(["pause a-team"], calls);
+        Assert.Equal([["pause", "a-team"]], calls);
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public class AppMenuTests : IDisposable
         return opened;
     }
 
-    private DashboardWindow Open(Func<string, string, Task<string?>>? run = null)
+    private DashboardWindow Open(Func<string[], Task<string?>>? run = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -187,9 +187,10 @@ public class AppMenuTests : IDisposable
             _root,
             new DashboardSettings(Config),
             new TeamConfigs(Config),
-            run ?? ((_, _) => Task.FromResult<string?>(null)),
+            run ?? (_ => Task.FromResult<string?>(null)),
             _ => Task.FromResult(new Reading("[]", null)),
             _ => { },
+            _ => null,
             Area.Dashboard,
             IconStyle.Unicode);
     }
