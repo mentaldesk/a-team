@@ -35,28 +35,34 @@ var agents = named.SelectMany(team => new[] { (team, "lead"), (team, "dev") }).T
 
 var settings = new DashboardSettings(configRoot);
 var command = new TeamCommand(Path.Combine(root, "bin", "a-team"));
-BundledThemes.Load(settings.ReadTheme());
-using var app = Application.Create();
-app.Init();
-LogSchemes.Register();
-using var window = new DashboardWindow(
-    agents,
-    stateRoot,
-    settings,
-    teams,
-    command.Run,
-    team => command.Read("board", team, "waiting"),
-    url => Link.OpenUrl(url),
-    requested ?? settings.ReadArea(),
-    TerminalIcons.Detect(Environment.GetEnvironmentVariable));
-window.Refresh();
-app.AddTimeout(TimeSpan.FromSeconds(1), () =>
+
+return CrashReport.Guard(Run, stateRoot, args, Console.Error);
+
+int Run()
 {
+    BundledThemes.Load(settings.ReadTheme());
+    using var app = Application.Create();
+    app.Init();
+    LogSchemes.Register();
+    using var window = new DashboardWindow(
+        agents,
+        stateRoot,
+        settings,
+        teams,
+        command.Run,
+        team => command.Read("board", team, "waiting"),
+        url => Link.OpenUrl(url),
+        requested ?? settings.ReadArea(),
+        TerminalIcons.Detect(Environment.GetEnvironmentVariable));
     window.Refresh();
-    return true;
-});
-app.Run(window);
-return 0;
+    app.AddTimeout(TimeSpan.FromSeconds(1), () =>
+    {
+        window.Refresh();
+        return true;
+    });
+    app.Run(window);
+    return 0;
+}
 
 static string? FindRepoRoot(string start)
 {
