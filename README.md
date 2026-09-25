@@ -123,8 +123,8 @@ what each agent is doing. `d` and `w` switch between them, Esc goes back to the 
 menu across the top carries the same commands: View (Dashboard, Work, Settings, Quit), Team
 (Pause or Resume) and Help (Keys, Commands, About). Each title and item underlines a letter:
 `Alt`+it opens a menu, and once one is open the bare letter picks from it — `Alt+H` `k` for Keys.
-F10 and the arrows still work. Whichever area you were in is what it opens in next time; a first
-run lands on Work.
+Esc closes it, and F10 and the arrows still work. Whichever area you were in is what it opens in
+next time; a first run lands on Work.
 
 ### What's waiting on you
 

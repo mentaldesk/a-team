@@ -1,3 +1,5 @@
+using Terminal.Gui.Input;
+
 namespace ATeam.Dashboard;
 
 /// <summary>The menu across the top of both areas. Every item runs a registered command by id, so the menu,
@@ -44,14 +46,26 @@ internal sealed class AppMenu
 
     /// <summary>Terminal.Gui binds a hot key with and without Alt, whether or not the view has focus, so a bare
     /// title letter would open a menu from anywhere and swallow the app's own single-letter keys. A title keeps
-    /// only its Alt forms; an item keeps its bare letter, which reaches it only while its menu is open.</summary>
+    /// only its Alt forms; an item keeps its bare letter, which only its own menu answers.</summary>
     private MenuBarItem Menu((string Title, string[] Ids) entry)
     {
         var menu = new MenuBarItem(entry.Title, entry.Ids.Select(Item).ToArray<View>());
         menu.HotKeyBindings.Remove(menu.HotKey);
         menu.HotKeyBindings.Remove(menu.HotKey.WithShift);
+        // The app's quit key took Esc off the framework's Quit command, and the menu's close with it.
+        menu.PopoverMenu?.KeyBindings.Add(Key.Esc, Command.Quit);
+        menu.PopoverMenuOpenChanged += (_, _) => Shut(menu);
+        Shut(menu);
         _menus.Add(menu);
         return menu;
+    }
+
+    /// <summary>A menu the application still holds enabled answers its items' letters wherever the app is, open
+    /// or shut, so a shut one is disabled. The framework enables it again as it shows it.</summary>
+    private static void Shut(MenuBarItem menu)
+    {
+        if (menu is { PopoverMenuOpen: false, PopoverMenu: { } popover })
+            popover.Enabled = false;
     }
 
     private View Item(string id)

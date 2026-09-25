@@ -65,7 +65,7 @@ public class AppMenuTests : IDisposable
     public void A_bare_letter_in_an_open_menu_runs_that_item()
     {
         using var window = Open();
-        var work = Item(window, "view.work");
+        var work = InOpenMenu(window, "view.work");
 
         Assert.Equal(new Key('w'), work.HotKey);
         Assert.True(work.NewKeyDownEvent(work.HotKey));
@@ -82,7 +82,7 @@ public class AppMenuTests : IDisposable
             calls.Add($"{command} {team}");
             return Task.FromResult<string?>(null);
         });
-        var pause = Item(window, "team.pause");
+        var pause = InOpenMenu(window, "team.pause");
 
         Assert.Equal(new Key('p'), pause.HotKey);
         Assert.True(pause.NewKeyDownEvent(pause.HotKey));
@@ -124,6 +124,24 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
+    public void No_shut_menu_answers_its_items_letters_however_many_titles_there_are()
+    {
+        using var window = Open();
+
+        Assert.All(window.Menus, menu => Assert.False(menu.PopoverMenu!.Enabled, menu.Title));
+    }
+
+    [Fact]
+    public void Esc_closes_whichever_menu_is_open()
+    {
+        using var window = Open();
+
+        Assert.All(
+            window.Menus,
+            menu => Assert.Contains(Command.Quit, menu.PopoverMenu!.KeyBindings.GetCommands(Key.Esc)));
+    }
+
+    [Fact]
     public void Nothing_advertises_a_key_for_the_menu()
     {
         using var window = Open();
@@ -135,6 +153,14 @@ public class AppMenuTests : IDisposable
 
     private static MenuItem Item(DashboardWindow window, string id) =>
         window.MenuItems.Single(item => item.Id == id).Item;
+
+    /// <summary>The item, with the menu holding it enabled, which is what the framework does as it shows it.</summary>
+    private static MenuItem InOpenMenu(DashboardWindow window, string id)
+    {
+        var title = AppMenu.Layout.Single(entry => entry.Ids.Contains(id)).Title;
+        window.Menus.Single(menu => menu.Title == title).PopoverMenu!.Enabled = true;
+        return Item(window, id);
+    }
 
     private static string Label(DashboardWindow window, string id) =>
         window.Commands.Registered.Single(command => command.Id == id).Label;
