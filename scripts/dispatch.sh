@@ -83,7 +83,7 @@ $(sed 's/^/- /' <<<"$reasons")"
 
   (
     cd "$workdir" || exit 1
-    PATH="$ROOT/bin:$PATH" nohup claude -p "$prompt" \
+    PATH="$ROOT/bin:$PATH" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
       --permission-mode auto --permission-prompts none \
       --settings "$settings" \
       --name "a-team · $team · $role" \

@@ -57,7 +57,8 @@ release.
   suggestions another team's agents opened on this repo) are only pitched once you've given
   them a priority. Close the ones you don't want.
 - **Give feedback:** comment on the pitch or PR. The agents pick up your comments on their next
-  run and reply.
+  run and reply. A 👀 on your comment means a run has read it — so don't 👀 your own comments;
+  every other reaction is yours to use. One you leave mid-run gets a run of its own.
 - **Approve a pitch:** move it to *Approved*.
 - **Accept work:** merge the PR, or close the pitch once you're happy with the Lead's validation.
 - **Your inbox:** a board view filtered to `status:Pitched,"In review"`.
