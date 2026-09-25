@@ -459,6 +459,23 @@ public class WorkViewTests
         Assert.Equal("https://github.com/x/pull/122", view.SelectedUrl);
     }
 
+    [Fact]
+    public void A_title_with_an_emoji_keeps_it_and_still_lays_out_a_cell_the_tree_can_draw()
+    {
+        var watched = new WaitingItem(157, "A \U0001F440 appears on my comment", "In review",
+            "https://github.com/x/157", "a-team", "dev", "answering your feedback",
+            Pr: 159, PrUrl: "https://github.com/x/pull/159");
+        using var view = Open(["a-team"]);
+
+        view.Show([watched]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[2];
+
+        Assert.All(review.CardText, text => Assert.Contains("\U0001F440", text));
+        Assert.All(review.CardText, text => Assert.DoesNotContain(CardCells.LaidOut(text), char.IsSurrogate));
+    }
+
     private static WorkView Open(string[] teams)
     {
         var view = new WorkView(teams);

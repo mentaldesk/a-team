@@ -38,10 +38,14 @@ public sealed record Card(WaitingItem Item, bool IsPr)
         return Elide($"#{Item.Number}  {string.Join(" · ", said)}", width);
     }
 
+    /// <summary>Cut a char earlier again rather than through a surrogate pair, which would leave half a rune.</summary>
     private static string Elide(string text, int width)
     {
         if (width <= 0 || text.Length <= width)
             return text;
-        return width == 1 ? "…" : string.Concat(text.AsSpan(0, width - 1), "…");
+        if (width == 1)
+            return "…";
+        var cut = width - 1;
+        return string.Concat(text.AsSpan(0, char.IsHighSurrogate(text[cut - 1]) ? cut - 1 : cut), "…");
     }
 }

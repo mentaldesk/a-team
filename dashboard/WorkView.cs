@@ -399,7 +399,7 @@ public sealed class WorkColumn : FrameView
     private int Index => Selected is { } card ? _nodes.IndexOf(card) : 0;
 
     /// <summary>The row as the tree lays it out: the field the icon is painted into, then the card's own text.</summary>
-    private string Aspect(Card card) => new string(' ', Icons.Width) + card.Text(Room(card));
+    private string Aspect(Card card) => new string(' ', Icons.Width) + CardCells.LaidOut(card.Text(Room(card)));
 
     /// <summary>What the card's text is left: the tree spends a cell on its symbol and another on a PR's indent,
     /// and the icon has its field.</summary>
@@ -412,7 +412,7 @@ public sealed class WorkColumn : FrameView
         var index = _nodes.IndexOf(card);
         if (index < 0 || index >= CardIcons.Count)
             return;
-        CardCells.Paint(cells, line.IndexOfModelText, CardIcons[index], Marks[index]);
+        CardCells.Paint(cells, line.IndexOfModelText, CardText[index], CardIcons[index], Marks[index]);
     }
 
     private void Fit()

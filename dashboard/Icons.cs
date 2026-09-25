@@ -113,9 +113,10 @@ public static class Icons
 /// rather than put in the text, in their own colours over the row's own background so the selection still reads.</summary>
 internal static class CardCells
 {
-    /// <summary>Paints the field at <paramref name="at"/> with <paramref name="lead"/>, and the number after it in
-    /// its Priority's colour. A row scrolled sideways has neither on screen.</summary>
-    internal static void Paint(IList<Cell> cells, int at, TurnIcon lead, PriorityMark mark)
+    /// <summary>Paints the field at <paramref name="at"/> with <paramref name="lead"/>, the number after it in
+    /// its Priority's colour, and <paramref name="text"/>'s astral runes back into the cells
+    /// <see cref="LaidOut"/> kept for them. A row scrolled sideways has none of it on screen.</summary>
+    internal static void Paint(IList<Cell> cells, int at, string text, TurnIcon lead, PriorityMark mark)
     {
         if (at < 0)
             return;
@@ -124,6 +125,32 @@ internal static class CardCells
             Paint(cells, at + cell, field[cell], lead.Scheme);
         for (var cell = 0; cell < mark.Width; cell++)
             Paint(cells, at + Icons.Width + cell, null, mark.Scheme);
+        Astral(cells, at + Icons.Width, text);
+    }
+
+    /// <summary>The text as the tree can lay it out. It makes a cell of every <c>char</c>, and half a surrogate pair
+    /// isn't a grapheme a cell can hold, so an astral rune — an emoji in a title — throws as it draws. A blank
+    /// stands in for each of its two chars, leaving the row the length the tree measured, and <see cref="Paint"/>
+    /// writes the rune back into the first of them.</summary>
+    internal static string LaidOut(string text) =>
+        text.Any(char.IsSurrogate)
+            ? string.Concat(text.EnumerateRunes().Select(rune => rune.IsBmp ? rune.ToString() : "  "))
+            : text;
+
+    /// <summary>Each astral rune in the first of its two cells, leaving the second empty as a glyph that fills two
+    /// is drawn.</summary>
+    private static void Astral(IList<Cell> cells, int at, string text)
+    {
+        var index = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (!rune.IsBmp)
+            {
+                Paint(cells, at + index, rune.ToString(), null);
+                Paint(cells, at + index + 1, "", null);
+            }
+            index += rune.Utf16SequenceLength;
+        }
     }
 
     /// <summary>The scheme's own foreground over the row's background, so a selected card keeps its highlight.</summary>
@@ -146,12 +173,13 @@ internal static class CardCells
         return field;
     }
 
-    private static void Paint(IList<Cell> cells, int index, string? grapheme, string scheme)
+    private static void Paint(IList<Cell> cells, int index, string? grapheme, string? scheme)
     {
         if (index < 0 || index >= cells.Count)
             return;
         var cell = cells[index];
-        cell.Attribute = Colour(scheme, cell.Attribute ?? default);
+        if (scheme is not null)
+            cell.Attribute = Colour(scheme, cell.Attribute ?? default);
         if (grapheme is not null)
             cell.Grapheme = grapheme;
         cells[index] = cell;

@@ -37,6 +37,16 @@ public class CardTests
     }
 
     [Fact]
+    public void A_title_cut_short_at_an_emoji_drops_the_whole_rune_rather_than_half_of_it()
+    {
+        var watched = new WaitingItem(157, "A \U0001F440 appears on my comment", "In review",
+            "https://github.com/x/157", "a-team", "you", "awaiting you");
+
+        Assert.Equal("#157  A \U0001F440\u2026", new Card(watched, false).Text(11));
+        Assert.Equal("#157  A \u2026", new Card(watched, false).Text(10));
+    }
+
+    [Fact]
     public void Enter_opens_the_issue_on_a_card_and_the_PR_on_the_row_under_it()
     {
         Assert.Equal("https://github.com/x/49", new Card(Reviewing, false).Url);

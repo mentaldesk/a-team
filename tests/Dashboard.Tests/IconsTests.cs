@@ -155,7 +155,7 @@ public class IconsTests : StaticConfigurationTest
         var row = new Attribute(StandardColor.White, StandardColor.Blue);
         var cells = Row($"  {new Card(Mine, false).Text(0)}", row);
 
-        CardCells.Paint(cells, 0, Icons.For(Mine, IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
+        CardCells.Paint(cells, 0, "", Icons.For(Mine, IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
 
         Assert.Equal("✓ #107  When the dashboard goes quiet", Text(cells));
         Assert.Equal(SchemeManager.GetScheme(LogSchemes.Success).Normal.Foreground, cells[0].Attribute?.Foreground);
@@ -170,11 +170,30 @@ public class IconsTests : StaticConfigurationTest
         var row = new Attribute(StandardColor.White, StandardColor.Blue);
         var cells = Row("dashboard goes quiet", row);
 
-        CardCells.Paint(cells, -3, Icons.For(Mine, IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
+        CardCells.Paint(cells, -3, "", Icons.For(Mine, IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
 
         Assert.Equal("dashboard goes quiet", Text(cells));
         Assert.All(cells, cell => Assert.Equal(row, cell.Attribute));
     }
+
+    [Fact]
+    public void An_astral_rune_is_laid_out_over_the_two_cells_it_costs_and_painted_back_into_the_first()
+    {
+        BundledThemes.Load();
+        var text = "#157  A \U0001F440 appears on my comment";
+        var row = new Attribute(StandardColor.White, StandardColor.Blue);
+
+        Assert.Equal("#157  A    appears on my comment", CardCells.LaidOut(text));
+        var cells = Row($"  {CardCells.LaidOut(text)}", row);
+
+        CardCells.Paint(cells, 0, text, Icons.For(Mine, IconStyle.Unicode), default);
+
+        Assert.Equal($"✓ {text}", Text(cells));
+    }
+
+    [Fact]
+    public void Text_the_tree_can_already_lay_out_is_left_as_it_is() =>
+        Assert.Equal("#107  When the dashboard goes quiet", CardCells.LaidOut("#107  When the dashboard goes quiet"));
 
     private static List<Cell> Row(string text, Attribute attribute) =>
         [.. text.Select(character => new Cell { Grapheme = character.ToString(), Attribute = attribute })];
