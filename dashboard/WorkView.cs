@@ -4,12 +4,19 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Everything waiting on the reviewer: a swimlane per team, holding the Ideas that can't be
-/// pitched until they're ranked and then a column per gate, in the order the work moves through them.</summary>
+/// <summary>Everything waiting on the reviewer: a swimlane per team, holding what's still to rank and then a
+/// column per gate, in the order the work moves through them.</summary>
 public sealed class WorkView : View
 {
-    internal static readonly (string Name, string Status)[] Gates =
-        [("Ideas", "Idea"), ("Pitches", "Pitched"), ("Review", "In review")];
+    /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
+    /// Idea or a pitch that carries none is still to rank; by In review it's decided, and a PR waits for
+    /// acceptance whatever its rank.</summary>
+    internal static readonly (string Name, Func<WaitingItem, bool> Holds)[] Gates =
+    [
+        ("Triage", item => item.Priority.Length == 0 && item.Status is "Idea" or "Pitched"),
+        ("Pitches", item => item.Status == "Pitched" && item.Priority.Length > 0),
+        ("Review", item => item.Status == "In review"),
+    ];
 
     private readonly List<WorkLane> _lanes = [];
     private IReadOnlyList<WaitingItem> _items = [];
@@ -44,6 +51,10 @@ public sealed class WorkView : View
 
     /// <summary>The page Enter opens: the issue's on a card, the PR's on the row under it.</summary>
     internal string? SelectedUrl => FocusedColumn()?.Selected?.Url;
+
+    /// <summary>The item a rank would be set on: a card's own, and nothing on the PR row under it.</summary>
+    internal WaitingItem? SelectedCard =>
+        FocusedColumn()?.Selected is { IsPr: false } card ? card.Item : null;
 
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
@@ -119,6 +130,22 @@ public sealed class WorkView : View
         var lane = at.Lane + step;
         if (lane >= 0 && lane < _lanes.Count)
             Land(lane, at.Gate, step);
+    }
+
+    /// <summary>What a rank the reviewer has just given leaves on screen, with no re-read: the card is laid out
+    /// again where its new Priority puts it, so ranking and clearing move it between Triage and its Status column,
+    /// and a ranked Idea — which `waiting` no longer returns — leaves the screen. A card that stays in the column
+    /// keeps the selection, wearing the colour its new rank gives its number; one that leaves hands it to the next
+    /// card down.</summary>
+    internal void Ranked(WaitingItem item, Rank rank)
+    {
+        var column = FocusedColumn();
+        var row = column?.Index ?? 0;
+        var ranked = item with { Priority = rank == Rank.None ? "" : rank.ToString() };
+        _items = [.. _items.Select(each => each == item ? ranked : each)];
+        Lay();
+        if (column is not null && !column.Select(ranked))
+            column.FocusCards(row);
     }
 
     private void Lay()
@@ -216,7 +243,7 @@ public sealed class WorkLane : View
         for (var i = 0; i < WorkView.Gates.Length; i++)
         {
             var index = i;
-            var column = new WorkColumn(team, WorkView.Gates[i].Name, WorkView.Gates[i].Status, focusChanged)
+            var column = new WorkColumn(team, WorkView.Gates[i].Name, WorkView.Gates[i].Holds, focusChanged)
             {
                 X = Pos.Func(_ => Split(index), this),
                 Y = 2,
@@ -242,7 +269,7 @@ public sealed class WorkLane : View
     internal void Show(IReadOnlyList<WaitingItem> items)
     {
         foreach (var column in _columns)
-            column.Show([.. items.Where(item => item.Team == Team && item.Status == column.Status)]);
+            column.Show([.. items.Where(item => item.Team == Team && column.Holds(item))]);
     }
 
     /// <summary>The team's name, then a rule to the right edge.</summary>
@@ -260,10 +287,11 @@ public sealed class WorkLane : View
     private int Split(int index) => Viewport.Width * index / _columns.Count;
 }
 
-/// <summary>One gate's cards for one team: a frame titled with the count, holding a tree of them, each item's
+/// <summary>One column's cards for one team: a frame titled with the count, holding a tree of them, each item's
 /// PR hanging under it.</summary>
 public sealed class WorkColumn : FrameView
 {
+    private readonly Func<WaitingItem, bool> _holds;
     private readonly Cards _cards = new() { X = 1, Y = 0, Width = Dim.Fill(1), Height = Dim.Fill(), CanFocus = true };
     private readonly FocusBorder _border;
     private IReadOnlyList<WaitingItem> _items = [];
@@ -271,11 +299,11 @@ public sealed class WorkColumn : FrameView
     private int _laidOutOver = -1;
     private IconStyle _icons = IconStyle.Unicode;
 
-    internal WorkColumn(string team, string gate, string status, Action focusChanged)
+    internal WorkColumn(string team, string gate, Func<WaitingItem, bool> holds, Action focusChanged)
     {
         Team = team;
         Gate = gate;
-        Status = status;
+        _holds = holds;
         CanFocus = true;
         Title = Heading(gate, 0);
         _border = new FocusBorder(this);
@@ -292,8 +320,6 @@ public sealed class WorkColumn : FrameView
     internal string Team { get; }
 
     internal string Gate { get; }
-
-    internal string Status { get; }
 
     /// <summary>How many items the column holds, which is what its title counts.</summary>
     internal int Count => _items.Count;
@@ -345,8 +371,14 @@ public sealed class WorkColumn : FrameView
 
     internal bool Holds(View view) => view == _cards || view == this;
 
+    /// <summary>Whether this is the column <paramref name="item"/> belongs in.</summary>
+    internal bool Holds(WaitingItem item) => _holds(item);
+
     /// <summary>The row the selection is on, inside the frame.</summary>
     internal int Row => Index + 1;
+
+    /// <summary>Which of the column's rows that is, for a caller that wants to land on it again.</summary>
+    internal int Index => Selected is { } card ? _nodes.IndexOf(card) : 0;
 
     /// <summary>Moves the selection a row on, or reports that the column has no row that way.</summary>
     internal bool MoveSelection(int step)
@@ -395,8 +427,6 @@ public sealed class WorkColumn : FrameView
 
         protected override bool OnKeyDown(Key key) => false;
     }
-
-    private int Index => Selected is { } card ? _nodes.IndexOf(card) : 0;
 
     /// <summary>The row as the tree lays it out: the field the icon is painted into, then the card's own text.</summary>
     private string Aspect(Card card) => new string(' ', Icons.Width) + CardCells.LaidOut(card.Text(Room(card)));

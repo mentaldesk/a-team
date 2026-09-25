@@ -34,7 +34,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(["team0", "team1"], teams);
-        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
             Titles(window));
     }
 
@@ -93,14 +93,14 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('m')));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 1", "Review · 0", "Triage · 0", "Pitches · 1", "Review · 0"],
             Titles(window));
         Assert.Equal(6, window.Work.Selected?.Number);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
             Titles(window));
     }
 
@@ -204,7 +204,7 @@ public class WorkAreaTests : IDisposable
         LayOut(reopened, 120, 30);
 
         Assert.True(reopened.Work.OnlyMine);
-        Assert.Equal(["Ideas · 1", "Pitches · 1", "Review · 0", "Ideas · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 1", "Review · 0", "Triage · 0", "Pitches · 1", "Review · 0"],
             Titles(reopened));
     }
 
@@ -253,7 +253,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("Ideas · team1", window.Work.Region);
+        Assert.Equal("Triage · team1", window.Work.Region);
     }
 
     [Fact]
@@ -270,6 +270,194 @@ public class WorkAreaTests : IDisposable
         Assert.Empty(opened);
         Assert.DoesNotContain("work.pr", window.Commands.Registered.Select(command => command.Id));
         Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
+    }
+
+    [Fact]
+    public void p_sets_a_priority_on_a_card_in_any_column_and_on_no_PR_row()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(new Key('p'), window.Commands.KeyFor("work.priority"));
+        Assert.True(window.Commands.IsEnabled("work.priority"));
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.True(window.Commands.IsEnabled("work.priority"));
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.True(window.Commands.IsEnabled("work.priority"));
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.False(window.Commands.IsEnabled("work.priority"));
+    }
+
+    [Fact]
+    public void Ranking_an_Idea_asks_the_board_to_set_it_and_says_so_while_it_runs()
+    {
+        var calls = new List<string[]>();
+        var finish = new TaskCompletionSource<string?>();
+        using var window = Open(run: arguments =>
+        {
+            calls.Add(arguments);
+            return finish.Task;
+        }, askPriority: _ => Rank.High);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+
+        Assert.Equal([["board", "team0", "priority", "you", "6", "High"]], calls);
+        Assert.Equal("Setting…", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_ranked_Idea_leaves_its_column_at_once_and_the_selection_carries_on()
+    {
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(Waiting(team), null));
+            },
+            askPriority: _ => Rank.High);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(["Triage · 0", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+            Titles(window));
+        Assert.Equal("#6 · set to High", window.Message.Says);
+        Assert.Equal(2, reads);
+    }
+
+    [Fact]
+    public void The_selection_carries_on_to_the_next_card_in_the_queue()
+    {
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Queue : "[]", null)),
+            askPriority: _ => Rank.High);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(6, window.Work.Selected?.Number);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(26, window.Work.Selected?.Number);
+        Assert.Equal("Triage · 1", window.Work.Lanes[0].Columns[0].Title);
+    }
+
+    [Fact]
+    public void The_message_goes_as_soon_as_the_selection_does()
+    {
+        using var window = Open(askPriority: _ => Rank.High);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        Assert.Equal("#6 · set to High", window.Message.Says);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
+    }
+
+    [Fact]
+    public void Clearing_a_rank_with_None_drops_the_card_into_Triage_and_the_selection_carries_on()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            askPriority: _ => Rank.None);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal([["board", "team0", "priority", "you", "107", "none"]], calls);
+        Assert.Equal(["Triage · 2", "Pitches · 1", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+            Titles(window));
+        Assert.Equal(108, window.Work.Selected?.Number);
+        Assert.Equal("#107 · set to None", window.Message.Says);
+    }
+
+    [Fact]
+    public void Ranking_a_pitch_that_carried_none_takes_it_out_of_Triage_into_Pitches()
+    {
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(team == "team0" ? Unranked : "[]", null));
+            },
+            askPriority: _ => Rank.High);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal("Triage · team0", window.Work.Region);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(["Triage · 0", "Pitches · 1", "Review · 0", "Triage · 0", "Pitches · 0", "Review · 0"],
+            Titles(window));
+        Assert.Equal("#107 · set to High", window.Message.Says);
+        Assert.Equal(2, reads);
+    }
+
+    [Fact]
+    public void A_write_that_failed_says_so_and_leaves_the_cards_the_counts_and_the_stamp_as_they_were()
+    {
+        using var window = Open(
+            run: _ => Task.FromResult<string?>("board.sh: API rate limit exceeded\nand a second line"),
+            askPriority: _ => Rank.High);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        var stamp = window.Stamp.Text;
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal("board.sh: API rate limit exceeded", window.Message.Says);
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+            Titles(window));
+        Assert.Equal(stamp, window.Stamp.Text);
+        Assert.Equal(6, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void Cancelling_the_dialog_asks_the_board_for_nothing()
+    {
+        var calls = 0;
+        using var window = Open(run: _ =>
+        {
+            calls++;
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+
+        Assert.Equal(0, calls);
+        Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
     }
 
     [Fact]
@@ -328,7 +516,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
-        Assert.Equal(["Ideas · 1", "Pitches · 2", "Review · 1", "Ideas · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Stamp.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -504,10 +692,10 @@ public class WorkAreaTests : IDisposable
         ? """
           [{"number": 107, "title": "When the dashboard goes quiet", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team0/issues/107", "team": "team0",
-            "turn": "you", "reason": "awaiting your approval since 08:14"},
+            "turn": "you", "reason": "awaiting your approval since 08:14", "priority": "High"},
            {"number": 108, "title": "A misconfigured team looks like a working one", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team0/issues/108", "team": "team0",
-            "turn": "lead", "reason": "answering your feedback since 09:30"},
+            "turn": "lead", "reason": "answering your feedback since 09:30", "priority": "Medium"},
            {"number": 49, "title": "I can't change any of the keys", "status": "In review",
             "url": "https://github.com/mentaldesk/team0/issues/49", "team": "team0",
             "turn": "dev", "reason": "answering your feedback since 10:15",
@@ -520,8 +708,27 @@ public class WorkAreaTests : IDisposable
         : """
           [{"number": 133, "title": "Notice when open files change on disk", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team1/issues/133", "team": "team1",
-            "turn": "you", "reason": "awaiting your approval since 21:37"}]
+            "turn": "you", "reason": "awaiting your approval since 21:37", "priority": "Low"}]
           """;
+
+    /// <summary>A pitch carrying no Priority, which waits in Triage until it's ranked.</summary>
+    private const string Unranked =
+        """
+        [{"number": 107, "title": "When the dashboard goes quiet", "status": "Pitched",
+          "url": "https://github.com/mentaldesk/team0/issues/107", "team": "team0",
+          "turn": "you", "reason": "awaiting your approval since 08:14"}]
+        """;
+
+    /// <summary>Two Ideas of one team's own, so ranking the first leaves the selection somewhere to go.</summary>
+    private const string Queue =
+        """
+        [{"number": 6, "title": "The agents can't say what they'd change", "status": "Idea",
+          "url": "https://github.com/mentaldesk/team0/issues/6", "team": "team0",
+          "turn": "you", "reason": "waiting to be ranked"},
+         {"number": 26, "title": "A pitch I've shelved", "status": "Idea",
+          "url": "https://github.com/mentaldesk/team0/issues/26", "team": "team0",
+          "turn": "you", "reason": "waiting to be ranked"}]
+        """;
 
     private static IEnumerable<string> Titles(DashboardWindow window) =>
         window.Work.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Title);
@@ -535,6 +742,8 @@ public class WorkAreaTests : IDisposable
     private DashboardWindow Open(
         Func<string, Task<Reading>>? read = null,
         Action<string>? openUrl = null,
+        Func<string[], Task<string?>>? run = null,
+        Func<WaitingItem, Rank?>? askPriority = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode)
     {
@@ -544,9 +753,10 @@ public class WorkAreaTests : IDisposable
             _root,
             new DashboardSettings(Config),
             new TeamConfigs(Config),
-            (_, _) => Task.FromResult<string?>(null),
+            run ?? (_ => Task.FromResult<string?>(null)),
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             openUrl ?? (_ => { }),
+            askPriority ?? (_ => null),
             area,
             auto);
     }

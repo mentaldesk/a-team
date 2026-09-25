@@ -149,6 +149,10 @@ gh_items() {
   : >"$POSTED"
   : >"$WRITES"
   gh_blocked </dev/null
+  FIELDS="$BIN/fields.json"
+  jq -n '{data: {organization: {issueFields: {nodes: [{id: "IF_priority", name: "Priority", options: [
+    {id: "OP_urgent", name: "Urgent"}, {id: "OP_high", name: "High"},
+    {id: "OP_medium", name: "Medium"}, {id: "OP_low", name: "Low"}]}]}}}}' >"$FIELDS"
   echo '[]' >"$EMPTY"
   gh_thread </dev/null
   gh_recent </dev/null
@@ -161,6 +165,8 @@ RUNS
 echo call >>"$CALLS"
 case " \$* " in
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
+  *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
+  *issueFields*) page="$FIELDS" ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
   *check-runs*) page="$RUNS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
@@ -536,6 +542,61 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+# Ranking: the one field the app writes, and the gate it is the reviewer's alone to clear.
+case_ "priority sets the field's own option on the issue, and nothing on the project"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Idea 6 The agents can't say what they'd change
+ITEMS
+gh_thread <<TALK
+body ${TODAY}T08:00:00Z reviewer 0 An Idea of my own
+TALK
+run board demo priority you 6 High
+same "exit" 0 "$STATUS"
+same "said" "#6: Priority set to 'High'" "$(cat "$OUT")"
+same "writes" 1 "$(grep -c '' <"$WRITES")"
+grep -q "issue=IC_0 " "$WRITES" || fail "priority: not the issue's node id in '$(cat "$WRITES")'"
+grep -q "field=IF_priority " "$WRITES" || fail "priority: not the field's id in '$(cat "$WRITES")'"
+grep -q "option=OP_high " "$WRITES" || fail "priority: not the option's id in '$(cat "$WRITES")'"
+grep -q "updateIssueFieldValue" "$WRITES" || fail "priority: not the issue-field mutation"
+grep -q "singleSelectOptionId" "$WRITES" || fail "priority: no option in the mutation"
+
+case_ "none clears it rather than setting an option"
+: >"$WRITES"
+run board demo priority you 6 none
+same "exit" 0 "$STATUS"
+same "said" "#6: Priority cleared" "$(cat "$OUT")"
+same "writes" 1 "$(grep -c '' <"$WRITES")"
+grep -q "delete: true" "$WRITES" || fail "priority none: nothing deleted in '$(cat "$WRITES")'"
+grep -q "singleSelectOptionId" "$WRITES" && fail "priority none: an option was set as well"
+
+case_ "a value the field hasn't got is refused by name, listing the ones it has"
+: >"$WRITES"
+run board demo priority you 6 Urgentish
+failed "unknown value"
+one_line "unknown value"
+grep -q "Urgent | High | Medium | Low | none" "$ERR" || fail "unknown value: no list in '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "neither agent may rank an item: that gate is the reviewer's own"
+for role in lead dev; do
+  : >"$WRITES"
+  run board demo priority "$role" 6 High
+  failed "$role ranking"
+  one_line "$role ranking"
+  grep -q "$role may not set a Priority" "$ERR" || fail "$role ranking: '$(cat "$ERR")'"
+  same "$role writes" "" "$(cat "$WRITES")"
+done
+
+case_ "--dry-run says what it would set and sets nothing"
+: >"$WRITES"
+run board --dry-run demo priority you 6 Low
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+grep -q "would set Priority on #6 to 'Low'" "$ERR" || fail "dry run: nothing about the rank in '$(cat "$ERR")'"
 
 # The 👀: a reviewer comment is answered once a run has left one on it, and a run leaves one only
 # on what it could have seen. The races replayed here are the ones in pitch #3. $TODAY is on or
