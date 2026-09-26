@@ -52,6 +52,14 @@ public sealed class WorkView : View
     /// <summary>The page Enter opens: the issue's on a card, the PR's on the row under it.</summary>
     internal string? SelectedUrl => FocusedColumn()?.Selected?.Url;
 
+    /// <summary>An Idea carrying no Priority: the one kind of card a run through the queue walks.</summary>
+    internal static bool NeedsRank(WaitingItem item) => item.Status == "Idea" && item.Priority.Length == 0;
+
+    /// <summary>The Ideas still to rank, in the order the columns lay them out: lane by lane, top to bottom.
+    /// Only what the filter shows, so a run through the queue visits what the reviewer is looking at.</summary>
+    internal IReadOnlyList<WaitingItem> Queue =>
+        [.. _lanes.SelectMany(lane => lane.Columns).SelectMany(column => column.Items).Where(NeedsRank)];
+
     /// <summary>The item a rank would be set on: a card's own, and nothing on the PR row under it.</summary>
     internal WaitingItem? SelectedCard =>
         FocusedColumn()?.Selected is { IsPr: false } card ? card.Item : null;
@@ -320,6 +328,9 @@ public sealed class WorkColumn : FrameView
     internal string Team { get; }
 
     internal string Gate { get; }
+
+    /// <summary>The items the column holds, in the order it draws them.</summary>
+    internal IReadOnlyList<WaitingItem> Items => _items;
 
     /// <summary>How many items the column holds, which is what its title counts.</summary>
     internal int Count => _items.Count;

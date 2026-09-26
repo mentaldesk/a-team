@@ -52,7 +52,7 @@ int Run()
         command.Run,
         team => command.Read("board", team, "waiting"),
         url => Link.OpenUrl(url),
-        item => PriorityDialog.Show(app, item),
+        dialog => { using (dialog) app.Run(dialog); },
         requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable));
     window.Refresh();

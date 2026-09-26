@@ -190,7 +190,7 @@ public class AppMenuTests : IDisposable
             run ?? (_ => Task.FromResult<string?>(null)),
             _ => Task.FromResult(new Reading("[]", null)),
             _ => { },
-            _ => null,
+            dialog => dialog.Dispose(),
             Area.Dashboard,
             IconStyle.Unicode);
     }
