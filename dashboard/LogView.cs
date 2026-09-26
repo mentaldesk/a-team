@@ -51,7 +51,7 @@ public sealed class LogView : View
         SetNeedsDraw();
     }
 
-    /// <summary>Shows every tool call again, or folds the runs back up, keeping the line you were reading.</summary>
+    /// <summary>Shows every tool call again, or folds them back into the newest one, keeping the line you were reading.</summary>
     public void ToggleToolCalls()
     {
         var width = Math.Max(1, Viewport.Width);
@@ -158,22 +158,24 @@ public sealed class LogView : View
         return after.Count;
     }
 
-    /// <summary>Folds each run of consecutive tool calls into one clipped row, showing the latest call.</summary>
+    /// <summary>Keeps the newest tool call in the log, on one clipped row counting every older call, and drops
+    /// the rest.</summary>
     internal static List<LogLine> Collapse(IReadOnlyList<LogLine> lines, int width)
     {
+        var newest = -1;
+        var calls = 0;
+        for (var i = 0; i < lines.Count; i++)
+            if (lines[i].Kind == LogLineKind.ToolCall)
+            {
+                newest = i;
+                calls++;
+            }
         var rows = new List<LogLine>(lines.Count);
         for (var i = 0; i < lines.Count; i++)
-        {
             if (lines[i].Kind != LogLineKind.ToolCall)
-            {
                 rows.Add(lines[i]);
-                continue;
-            }
-            var first = i;
-            while (i + 1 < lines.Count && lines[i + 1].Kind == LogLineKind.ToolCall)
-                i++;
-            rows.Add(lines[i] with { Text = Fold(lines[i].Text, i - first, Room(width, LogLineKind.ToolCall)) });
-        }
+            else if (i == newest)
+                rows.Add(lines[i] with { Text = Fold(lines[i].Text, calls - 1, Room(width, LogLineKind.ToolCall)) });
         return rows;
     }
 
