@@ -28,7 +28,8 @@ public sealed class CommandsDialog : Dialog
         _filter.KeyBindings.Remove(Key.Home);
         _filter.KeyBindings.Remove(Key.End);
         _list = new ListView { X = 0, Y = Pos.Bottom(_filter), Width = Dim.Fill(), Height = Dim.Fill(1) };
-        var hints = new StatusBar([
+        // Terminal.Gui's bar, not the window's own StatusBar next door.
+        var hints = new Terminal.Gui.Views.StatusBar([
             Shortcut("Up/Down/PgUp/PgDn/Home/End", "select", () => Move(+1)),
             Shortcut("Enter", "run", () => Run()),
             Shortcut("Esc", "cancel", () => Cancel()),

@@ -16,6 +16,7 @@ public enum Area
 public sealed class DashboardWindow : Window
 {
     private const int MenuLines = 1;
+    private const int StatusLines = 1;
     private const int DispatchLines = 4;
     private const int MinCellHeight = 5;
     private const string AllItems = "All items";
@@ -25,7 +26,7 @@ public sealed class DashboardWindow : Window
     private readonly int _columns;
     private readonly string _version = Version();
     private readonly AppMenu _menu;
-    private readonly Label _stamp;
+    private readonly StatusBar _status = new();
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
     private readonly LogView _dispatch;
@@ -65,6 +66,7 @@ public sealed class DashboardWindow : Window
         Area area,
         IconStyle auto)
     {
+        BorderStyle = LineStyle.None;
         _settings = settings;
         _auto = auto;
         _teams = teams;
@@ -126,7 +128,7 @@ public sealed class DashboardWindow : Window
             X = 0,
             Y = MenuLines,
             Width = Dim.Fill(),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - _message.Lines), this),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines - _message.Lines), this),
             Visible = area == Area.Work,
         };
         _work.FocusChanged += ShowMessage;
@@ -136,6 +138,8 @@ public sealed class DashboardWindow : Window
 
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         Add(_message);
+        _status.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines - _message.Lines), this);
+        Add(_status);
 
         RegisterCommands();
         _commands.Apply(settings.ReadKeys());
@@ -144,10 +148,8 @@ public sealed class DashboardWindow : Window
         _menu.Bar.X = 0;
         _menu.Bar.Y = 0;
         Add(_menu.Bar);
-        _stamp = new Label { X = Pos.AnchorEnd(), Y = 0, CanFocus = false };
-        Add(_stamp);
 
-        Title = Hints(_version, CurrentMode, _commands);
+        ShowHints();
         if (_area == Area.Work)
             ReadWaiting();
     }
@@ -164,7 +166,7 @@ public sealed class DashboardWindow : Window
 
     internal MessageBar Message => _message;
 
-    internal Label Stamp => _stamp;
+    internal StatusBar Status => _status;
 
     internal MenuBar Menu => _menu.Bar;
 
@@ -179,7 +181,10 @@ public sealed class DashboardWindow : Window
     internal CommandRegistry Commands => _commands;
 
     internal static string Hints(string version, Mode mode, CommandRegistry commands) =>
-        $"a-team {version} · {commands.Hints(mode)}";
+        $"{Named(version)} · {commands.Hints(mode)}";
+
+    /// <summary>The status bar as it reads now, hints and all.</summary>
+    internal string HintLine => Hints(_version, CurrentMode, _commands);
 
     public void Refresh()
     {
@@ -196,16 +201,13 @@ public sealed class DashboardWindow : Window
         if (!_dispatch.Lines.SequenceEqual(tail))
             _dispatch.Lines = tail;
 
-        var stamp = _area == Area.Work ? Stamped(_readAt, now) : "";
-        if (_stamp.Text != stamp)
-            _stamp.Text = stamp;
         _menu.Refresh();
         ShowMessage();
     }
 
-    /// <summary>When the Work area was last read, for the header.</summary>
+    /// <summary>When the Work area was last read, for the status bar.</summary>
     internal static string Stamped(DateTimeOffset? at, DateTimeOffset now) =>
-        at is { } read ? $"read {AgentPane.Ago(now - read)} ago " : "";
+        at is { } read ? $"read {AgentPane.Ago(now - read)} ago" : "";
 
     /// <summary>While a menu is open it owns the keyboard: its own keys would otherwise run a command as well.</summary>
     protected override bool OnKeyDown(Key key) =>
@@ -379,15 +381,20 @@ public sealed class DashboardWindow : Window
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : ("", Schemes.Base);
-        var status = _area == Area.Work ? (_work.OnlyMine ? MyItems : AllItems) : "";
-        if (_message.Says == text && _message.Status == status)
+        var stamp = _area == Area.Work ? Stamped(_readAt, DateTimeOffset.UtcNow) : "";
+        var filter = _area == Area.Work ? _work.OnlyMine ? MyItems : AllItems : "";
+        _status.ShowState(stamp, filter);
+        if (_message.Says == text)
             return;
-        _message.ShowStatus(status);
         if (text.Length == 0)
             Hush();
         else
             Say(text, scheme);
     }
+
+    private static string Named(string version) => $"a-team {version}";
+
+    private void ShowHints() => _status.Show(Named(_version), _commands.HintBar(CurrentMode), _commands.Execute);
 
     private void Say(string message, Schemes scheme)
     {
@@ -405,7 +412,7 @@ public sealed class DashboardWindow : Window
         SetNeedsDraw();
     }
 
-    private int Foot() => DispatchLines + 2 + _message.Lines;
+    private int Foot() => DispatchLines + 2 + StatusLines + _message.Lines;
 
     private void Show(Area area)
     {
@@ -423,7 +430,7 @@ public sealed class DashboardWindow : Window
         }
         else
             _panes.FirstOrDefault()?.SetFocus();
-        Title = Hints(_version, CurrentMode, _commands);
+        ShowHints();
         ShowMessage();
         SetNeedsLayout();
         SetNeedsDraw();
@@ -454,7 +461,7 @@ public sealed class DashboardWindow : Window
         SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto);
         SyncQuitKey();
         _menu.Refresh();
-        Title = Hints(_version, CurrentMode, _commands);
+        ShowHints();
     }
 
     /// <summary>The vocabulary the panes and the cards draw their icons from, together, with Auto resolved here
@@ -479,7 +486,7 @@ public sealed class DashboardWindow : Window
         _expanded = index;
         for (var i = 0; i < _panes.Count; i++)
             _panes[i].Visible = index is null || index == i;
-        Title = Hints(_version, CurrentMode, _commands);
+        ShowHints();
         var selected = SelectedIndex();
         if (index is not null)
             ScrollTo(0);

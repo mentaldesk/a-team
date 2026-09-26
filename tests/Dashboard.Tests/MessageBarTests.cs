@@ -1,52 +1,33 @@
+using Terminal.Gui.Drawing;
+
 namespace ATeam.Dashboard.Tests;
 
 public class MessageBarTests
 {
     [Fact]
-    public void The_status_sits_against_the_right_edge_with_the_message_at_the_left()
-    {
-        var line = MessageBar.Line("#118 · lead · answering your feedback since 08:14", "My items", 60);
-
-        Assert.Equal(60, line.Length);
-        Assert.StartsWith("#118 · lead · answering your feedback since 08:14", line, StringComparison.Ordinal);
-        Assert.EndsWith("My items", line, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_message_with_no_room_left_for_it_is_elided_rather_than_the_status()
-    {
-        var line = MessageBar.Line("#118 · lead · answering your feedback since 08:14", "All items", 30);
-
-        Assert.Equal(30, line.Length);
-        Assert.Equal("#118 · lead · answe… All items", line);
-    }
-
-    [Fact]
-    public void Too_narrow_for_both_the_status_is_what_is_left()
-    {
-        Assert.Equal("All items", MessageBar.Line("Reading…", "All items", 8));
-        Assert.Equal("All items", MessageBar.Line("Reading…", "All items", 0));
-    }
-
-    [Fact]
-    public void With_no_status_the_line_is_the_message_as_it_was()
-    {
-        Assert.Equal("Reading…", MessageBar.Line("Reading…", "", 60));
-        Assert.Equal("", MessageBar.Line("", "", 60));
-    }
-
-    [Fact]
-    public void A_bar_with_a_status_and_nothing_to_say_still_takes_its_row()
+    public void A_bar_with_nothing_to_say_takes_no_row_at_all()
     {
         var bar = new MessageBar();
 
-        bar.ShowStatus("All items");
+        Assert.Equal(0, bar.Lines);
+
+        bar.Show("Reading…", Schemes.Accent);
         Assert.Equal(1, bar.Lines);
+        Assert.Equal("Reading…", bar.Text);
 
         bar.Clear();
-        Assert.Equal(1, bar.Lines);
-
-        bar.ShowStatus("");
         Assert.Equal(0, bar.Lines);
+        Assert.Equal("", bar.Text);
+    }
+
+    [Fact]
+    public void A_message_with_more_to_it_is_shown_one_line_deep()
+    {
+        var bar = new MessageBar();
+
+        bar.Show("a-team pause: can't write /nope/team0.json\nstack\ntrace", Schemes.Error);
+
+        Assert.Equal(1, bar.Lines);
+        Assert.Equal("a-team pause: can't write /nope/team0.json", bar.Says);
     }
 }

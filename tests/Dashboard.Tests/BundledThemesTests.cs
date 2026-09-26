@@ -45,6 +45,19 @@ public class BundledThemesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void Every_theme_draws_the_status_bar_in_a_band_of_its_own()
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            Assert.True(SchemeManager.TryGetScheme(StatusBar.Scheme, out var status), $"{theme} has no StatusBar scheme");
+            Assert.NotEqual(SchemeManager.GetScheme(Schemes.Base).Normal.Background, status!.Normal.Background);
+        }
+    }
+
+    [Fact]
     public void Every_theme_draws_an_open_menu_as_a_bordered_panel()
     {
         BundledThemes.Load();

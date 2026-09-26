@@ -11,9 +11,12 @@ public enum Mode
     Both = Grid | Expanded,
 }
 
-/// <summary>How a command reads in the window title, named by the key it's bound to. Commands sharing a hint are
+/// <summary>How a command reads in the status bar, named by the key it's bound to. Commands sharing a hint are
 /// named once, like the four arrows.</summary>
 public sealed record Hint(string Text, Mode Modes = Mode.Both);
+
+/// <summary>One hint as the status bar draws it, and the command clicking it runs.</summary>
+public sealed record HintedCommand(string Id, string Text);
 
 public sealed record CommandDescriptor(string Id, string Label, Key Key, Hint? Hint);
 
@@ -87,17 +90,19 @@ public sealed class CommandRegistry
         return true;
     }
 
-    /// <summary>The hint bar for <paramref name="mode"/>, in registration order, each hint once. A hint with no
-    /// bound key has nothing to name and is left out.</summary>
-    public string Hints(Mode mode) => string.Join(" · ", _entries
+    /// <summary>The hint bar for <paramref name="mode"/>, in registration order, each hint once, and the command
+    /// each one runs. A hint with no bound key has nothing to name and is left out.</summary>
+    public IReadOnlyList<HintedCommand> HintBar(Mode mode) => [.. _entries
         .Where(entry => entry.Hint is { } hint && hint.Modes.HasFlag(mode))
         .GroupBy(entry => entry.Hint!)
-        .Select(hinted => (Keys: Keys(hinted), hinted.Key.Text))
-        .Where(hint => hint.Keys.Length > 0)
-        .Select(hint => $"{hint.Keys}: {hint.Text}"));
+        .Select(hinted => (Named: hinted.Where(entry => entry.Key != Key.Empty).ToList(), hinted.Key.Text))
+        .Where(hinted => hinted.Named.Count > 0)
+        .Select(hinted => new HintedCommand(hinted.Named[0].Id, $"{Keys(hinted.Named)}: {hinted.Text}"))];
 
-    private static string Keys(IGrouping<Hint, Entry> hinted) => string.Join('/', hinted
-        .Where(entry => entry.Key != Key.Empty)
+    /// <summary>The same bar as one line, which is what it reads as.</summary>
+    public string Hints(Mode mode) => string.Join(" · ", HintBar(mode).Select(hint => hint.Text));
+
+    private static string Keys(IEnumerable<Entry> named) => string.Join('/', named
         .Select(entry => KeyNames.Short(entry.Key))
         .Distinct());
 
