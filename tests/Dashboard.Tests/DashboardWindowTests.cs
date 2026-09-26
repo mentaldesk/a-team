@@ -356,7 +356,7 @@ public class DashboardWindowTests : IDisposable
             "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
             DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · Enter: open · p: set priority · m: only mine · r: refresh · Esc: dashboard",
+            "a-team 1.2.3 · Enter: open · p: set priority · m: only mine · r: refresh",
             DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
     }
 
@@ -386,8 +386,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open the selected issue or PR on GitHub",
                 "Set the selected item's priority", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
-                "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid",
-                "Back to the Dashboard", "Quit",
+                "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
