@@ -40,6 +40,7 @@ public sealed class PriorityDialog : Dialog
             Width = Dim.Fill(Inset),
             Height = Dim.Func(_ => BandRow(), this),
             Following = false,
+            Scrolls = true,
             Lines = body.Lines,
         };
         _ranks = new OptionSelector<Rank>

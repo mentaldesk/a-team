@@ -175,6 +175,32 @@ public class PriorityDialogTests
     }
 
     [Fact]
+    public void A_body_too_long_for_the_pane_gets_a_scroll_bar_and_one_that_fits_does_not()
+    {
+        using var overflows = Open(new IssueBody(Long()), height: 10);
+        using var fits = Open(new IssueBody("One line."), height: 10);
+
+        Assert.True(overflows.Body.VerticalScrollBar.Visible);
+        Assert.False(fits.Body.VerticalScrollBar.Visible);
+    }
+
+    [Fact]
+    public void The_bar_says_how_far_down_the_body_you_are_and_dragging_it_takes_you_there()
+    {
+        using var dialog = Open(new IssueBody(Long()), height: 10);
+        var bar = dialog.Body.VerticalScrollBar;
+
+        Assert.Equal(0, bar.Value);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.PageDown));
+        Assert.Equal(dialog.Body.Top, bar.Value);
+        Assert.True(bar.Value > 0);
+
+        bar.Value = 0;
+        Assert.Equal(0, dialog.Body.Top);
+    }
+
+    [Fact]
     public void Left_and_Right_move_between_the_ranks_and_leave_the_pane_where_it_was()
     {
         using var dialog = Open(new IssueBody(Long()), "Medium", height: 10);
