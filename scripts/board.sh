@@ -738,6 +738,16 @@ case "$CMD" in
     say "#$child is no longer a sub-issue of #$parent"
     ;;
 
+  body)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM body <n>"
+    # gh puts the error's own body on stdout, so its one-line reason is read from stderr alone.
+    trouble=$(mktemp)
+    issue=$(gh api "repos/$REPO/issues/$1" --jq '{number, title, body: (.body // "")}' 2>"$trouble") ||
+      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read #$1 ($reason)"; }
+    rm -f "$trouble"
+    printf '%s\n' "$issue"
+    ;;
+
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
