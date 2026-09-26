@@ -509,11 +509,11 @@ same "task reason" '"still a draft"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a ready PR whose CI is still running, after a push to answer feedback, isn't your turn yet"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 115 pr-comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
-115 pr-comment ${TODAY}T10:40:00Z reviewer Added one. <!-- a-team:dev -->
+115 pr-comment ${TODAY}T10:40:00Z reviewer Added one.\n<!-- a-team:dev -->
 TALK
 gh_runs <<RUNS
 completed success ${TODAY}T10:45:00Z build
