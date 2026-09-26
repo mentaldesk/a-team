@@ -52,8 +52,9 @@ step 4.9. If it can't be finished, comment why and `a-team board {{team}} move d
 
 ### 4. Take new work
 
-Only if your **In progress** plus **In review** count in `a-team board {{team}} wip` (under `dev`) is
-below `wip.worktrees` — or, while an unblocked Ready task is Urgent, below `wip.worktrees + 1`:
+Only if your **In progress** plus **In review** count in `a-team board {{team}} wip` (under `dev`,
+which leaves blocked tasks out) is below `wip.worktrees` — or, while an unblocked Ready task is
+Urgent, below `wip.worktrees + 1`:
 
 1. `a-team board {{team}} next`. If it returns `null`, stop.
 2. Before claiming it, judge whether it would make major changes to the same file or the same

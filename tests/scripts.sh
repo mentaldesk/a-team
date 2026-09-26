@@ -167,6 +167,8 @@ case " \$* " in
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
   *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
   *issueFields*) page="$FIELDS" ;;
+  *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
+                        | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
   *check-runs*) page="$RUNS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
@@ -190,6 +192,12 @@ if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
   chmod +x "$BIN/gh"
   PATH="$BIN:$PATH"
+}
+
+# Applies a jq update to the content of #<n> on the page gh_items wrote.
+edit_item() {
+  jq --argjson n "$1" "(.data.organization.projectV2.items.nodes[].content | select(.number == \$n)) |= ($2)" \
+    "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
 }
 
 # What blocks a task, from lines of "<n>", each becoming a prerequisite whose id is "DEP_<n>".
@@ -851,6 +859,37 @@ same "said" "(dry run) #11 is no longer blocked by #21, and said why on #11" "$(
 grep -q "No longer blocked by #21: looked again" "$ERR" || fail "dry run: no comment in '$(cat "$ERR")'"
 same "posted" "" "$(cat "$POSTED")"
 same "writes" "" "$(cat "$WRITES")"
+
+case_ "with every worktree taken, the Dev isn't woken for a Ready task"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 2 } }
+JSON
+gh_items <<'ITEMS'
+In_review 12 Waiting on a pane nobody has built
+In_review 14 Waiting on the reviewer
+Ready 13 Something to start
+Done 15 Merged with its blocked label left on
+ITEMS
+edit_item 15 '.labels.nodes = [{name: "a-team:dev"}, {name: "blocked"}]'
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "a task blocked by another issue frees its worktree, and wip counts it apart"
+edit_item 12 '.issueDependenciesSummary.blockedBy = 1'
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
+run board demo wip
+same "exit" 0 "$STATUS"
+same "dev" '{"Done":1,"In review":1,"blocked":1}' "$(jq -c .dev "$OUT")"
+
+case_ "so does one the reviewer holds with the blocked label"
+edit_item 12 '.issueDependenciesSummary.blockedBy = 0 | .labels.nodes += [{name: "blocked"}]'
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
 
 case_ "a-team with no command opens the app, and dashboard opens it on the Dashboard"
 APP=$(mktemp -d "$WORK/app.XXXXXX")
