@@ -61,6 +61,12 @@
             }
           },
           {
+            "StatusBar": {
+              "Normal": { "Foreground": "#E6E9EF", "Background": "#2B5A8A" },
+              "HotNormal": { "Foreground": "#FFFFFF", "Background": "#2B5A8A" }
+            }
+          },
+          {
             "Error": {
               "Normal": { "Foreground": "#F2B8B5", "Background": "#3B1E22" },
               "Focus": { "Foreground": "#FFFFFF", "Background": "#8C2F39" },
@@ -134,6 +140,12 @@
               "Editable": { "Foreground": "#383A42", "Background": "#FFFFFF" },
               "ReadOnly": { "Foreground": "#C7D4E2", "Background": "#2B5A8A" },
               "Disabled": { "Foreground": "#9CB4CC", "Background": "#2B5A8A" }
+            }
+          },
+          {
+            "StatusBar": {
+              "Normal": { "Foreground": "#FFFFFF", "Background": "#3B6EA8" },
+              "HotNormal": { "Foreground": "#FFFFFF", "Background": "#3B6EA8" }
             }
           },
           {
@@ -213,6 +225,12 @@
             }
           },
           {
+            "StatusBar": {
+              "Normal": { "Foreground": "#000000", "Background": "#AAAAAA" },
+              "HotNormal": { "Foreground": "#AA0000", "Background": "#AAAAAA" }
+            }
+          },
+          {
             "Error": {
               "Normal": { "Foreground": "#FFFFFF", "Background": "#AA0000" },
               "Focus": { "Foreground": "#000000", "Background": "#00AA00" },
@@ -286,6 +304,12 @@
               "Editable": { "Foreground": "#FFFF57", "Background": "#003078" },
               "ReadOnly": { "Foreground": "#004E84", "Background": "#00A8A8" },
               "Disabled": { "Foreground": "#004E84", "Background": "#00A8A8" }
+            }
+          },
+          {
+            "StatusBar": {
+              "Normal": { "Foreground": "#000000", "Background": "#308800" },
+              "HotNormal": { "Foreground": "#FFFFFF", "Background": "#308800" }
             }
           },
           {
