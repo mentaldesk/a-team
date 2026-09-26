@@ -281,6 +281,9 @@ gh_recent() {
 export TZ=UTC
 TODAY=$(jq -rn 'now | strftime("%Y-%m-%d")')
 
+# ago <minutes>: a timestamp that long before now, for the cases that meet board.sh's own clock.
+ago() { jq -rn --argjson m "$1" 'now - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
+
 case_ "waiting returns what's at a gate, and nothing else, in two calls"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
@@ -688,14 +691,19 @@ run board demo feedback lead 7
 same "exit" 0 "$STATUS"
 same "unanswered" '["Still needs a second option."]' "$(jq -c '[.[].body]' "$OUT")"
 
+# Unset, A_TEAM_RUN_STARTED means now, so these threads are dated back from it, not from an hour of
+# the day the suite could be running before.
+OPENED=$(ago 90) ASKED=$(ago 60) ASKED_AGAIN=$(ago 50)
+
 case_ "a review and a line comment on a PR are acked like any other comment"
 gh_thread pull <<TALK
-body ${TODAY}T08:00:00Z reviewer 0 Closes #7 <!-- a-team:dev -->
-review ${TODAY}T09:00:00Z reviewer 0 Nearly there.
-line ${TODAY}T09:10:00Z reviewer 0 This name reads oddly.
+body $OPENED reviewer 0 Closes #7 <!-- a-team:dev -->
+review $ASKED reviewer 0 Nearly there.
+line $ASKED_AGAIN reviewer 0 This name reads oddly.
 TALK
 : >"$ACKED"
-export A_TEAM_RUN_STARTED=${TODAY}T09:30:00Z
+A_TEAM_RUN_STARTED=$(ago 30)
+export A_TEAM_RUN_STARTED
 run board demo comment dev 7 "$WORK/reply"
 same "exit" 0 "$STATUS"
 same "acked" "IC_1 IC_2" "$(tr '\n' ' ' <"$ACKED" | sed 's/ $//')"
@@ -709,9 +717,9 @@ same "acked" "IC_1 IC_2" "$(tr '\n' ' ' <"$ACKED" | sed 's/ $//')"
 
 case_ "a comment already carrying a 👀 is not acked again"
 gh_thread pull <<TALK
-body ${TODAY}T08:00:00Z reviewer 0 Closes #7 <!-- a-team:dev -->
-review ${TODAY}T09:00:00Z reviewer 1 Nearly there.
-line ${TODAY}T09:10:00Z reviewer 0 This name reads oddly.
+body $OPENED reviewer 0 Closes #7 <!-- a-team:dev -->
+review $ASKED reviewer 1 Nearly there.
+line $ASKED_AGAIN reviewer 0 This name reads oddly.
 TALK
 : >"$ACKED"
 run board demo comment dev 7 "$WORK/reply"
@@ -720,8 +728,8 @@ same "acked" "IC_2" "$(cat "$ACKED")"
 
 case_ "a comment from anyone but the reviewer is not acked"
 gh_thread <<TALK
-body ${TODAY}T08:00:00Z reviewer 0 The pitch <!-- a-team:lead -->
-comment ${TODAY}T09:00:00Z passer-by 0 Have you considered doing it differently?
+body $OPENED reviewer 0 The pitch <!-- a-team:lead -->
+comment $ASKED passer-by 0 Have you considered doing it differently?
 TALK
 : >"$ACKED"
 run board demo comment lead 7 "$WORK/reply"
@@ -733,8 +741,8 @@ gh_items <<'ITEMS'
 Idea 7 An Idea with nothing to pitch in it
 ITEMS
 gh_thread <<TALK
-body ${TODAY}T08:00:00Z reviewer 0 The idea <!-- a-team:lead -->
-comment ${TODAY}T09:00:00Z reviewer 0 Worth a look.
+body $OPENED reviewer 0 The idea <!-- a-team:lead -->
+comment $ASKED reviewer 0 Worth a look.
 TALK
 : >"$ACKED"
 run board demo skip lead 7 "$WORK/reply"
@@ -743,8 +751,8 @@ same "acked" "IC_1" "$(cat "$ACKED")"
 
 case_ "--dry-run says which reactions it would add and adds none"
 gh_thread <<TALK
-body ${TODAY}T08:00:00Z reviewer 0 The pitch <!-- a-team:lead -->
-comment ${TODAY}T09:00:00Z reviewer 0 Needs a second option.
+body $OPENED reviewer 0 The pitch <!-- a-team:lead -->
+comment $ASKED reviewer 0 Needs a second option.
 TALK
 : >"$ACKED"
 : >"$POSTED"
@@ -752,7 +760,7 @@ run board --dry-run demo comment lead 7 "$WORK/reply"
 same "exit" 0 "$STATUS"
 same "acked" "" "$(cat "$ACKED")"
 same "posted" "" "$(cat "$POSTED")"
-grep -q "would add 👀 to your comment of ${TODAY}T09:00:00Z on #7" "$ERR" || fail "dry run: nothing about the 👀 in '$(cat "$ERR")'"
+grep -q "would add 👀 to your comment of $ASKED on #7" "$ERR" || fail "dry run: nothing about the 👀 in '$(cat "$ERR")'"
 
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'

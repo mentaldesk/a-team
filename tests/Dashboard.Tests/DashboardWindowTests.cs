@@ -1,7 +1,11 @@
 using System.Drawing;
+using System.Text;
 using Terminal.Gui;
 using Terminal.Gui.App;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
+using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -153,7 +157,7 @@ public class DashboardWindowTests : IDisposable
 
         var cells = LayOut(window, 120, 30);
 
-        Assert.All(cells, cell => Assert.Equal(59, cell.Width));
+        Assert.All(cells, cell => Assert.Equal(60, cell.Width));
     }
 
     [Fact]
@@ -164,7 +168,7 @@ public class DashboardWindowTests : IDisposable
 
         var strip = window.Dispatcher.Frame;
 
-        Assert.Equal(new Rectangle(0, window.Viewport.Height - 6, window.Viewport.Width, 6), strip);
+        Assert.Equal(new Rectangle(0, window.Viewport.Height - 7, window.Viewport.Width, 6), strip);
     }
 
     [Fact]
@@ -341,7 +345,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_title_offers_Enter_to_expand_and_Esc_to_go_back_from_there()
+    public void The_status_bar_offers_Enter_to_expand_and_Esc_to_go_back_from_there()
     {
         using var window = Open(agents: Agents(4));
 
@@ -358,7 +362,7 @@ public class DashboardWindowTests : IDisposable
 
     /// <summary>Work's bar is the one #130 asks for, which its mockup already draws cut off at 80 columns.</summary>
     [Fact]
-    public void No_title_but_the_Work_area_s_runs_away_with_the_80_columns_the_narrowest_window_has()
+    public void Every_bar_but_the_Work_area_s_fits_the_80_columns_the_narrowest_window_has()
     {
         using var window = Open(agents: Agents(4));
 
@@ -454,7 +458,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_title_names_the_key_the_file_bound_and_not_the_one_in_the_source()
+    public void The_status_bar_names_the_key_the_file_bound_and_not_the_one_in_the_source()
     {
         using var window = Open(agents: Agents(4), keys: "{ \"agent.expand\": \"x\" }");
 
@@ -473,17 +477,87 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_window_title_follows_the_view_it_is_showing()
+    public void The_status_bar_follows_the_view_it_is_showing()
     {
         using var window = Open(agents: Agents(4));
         window.NewKeyDownEvent(Key.Tab);
 
         window.NewKeyDownEvent(Key.Enter);
-        Assert.Contains("Esc: back", window.Title);
+        Assert.Equal(window.HintLine, window.Status.Says);
+        Assert.Contains("Esc: back", window.Status.Says);
 
         window.NewKeyDownEvent(Key.Esc);
-        Assert.DoesNotContain("Esc: back", window.Title);
-        Assert.Contains("Enter: expand", window.Title);
+        Assert.Equal(window.HintLine, window.Status.Says);
+        Assert.DoesNotContain("Esc: back", window.Status.Says);
+        Assert.Contains("Enter: expand", window.Status.Says);
+    }
+
+    [Fact]
+    public void The_hints_are_the_last_row_of_the_window_in_a_band_of_their_own()
+    {
+        using var window = Open(agents: Agents(4));
+
+        LayOut(window, 120, 30);
+
+        Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Status.Frame);
+        Assert.Equal(StatusBar.Scheme, window.Status.SchemeName);
+        Assert.Equal(window.HintLine, window.Status.Says);
+        Assert.Equal(0, window.Message.Lines);
+    }
+
+    [Fact]
+    public void A_message_takes_the_row_below_the_hints_and_never_their_own()
+    {
+        using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
+        LayOut(window, 120, 30);
+        var hints = window.Status.Frame;
+
+        window.Commands.Execute("team.pause");
+        LayOut(window, 120, 30);
+
+        Assert.Equal("Pausing…", window.Message.Says);
+        Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
+        Assert.Equal(hints with { Y = window.Viewport.Height - 2 }, window.Status.Frame);
+        Assert.Equal(window.HintLine, window.Status.Says);
+    }
+
+    [Fact]
+    public void Clicking_a_hint_runs_the_command_it_names()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+
+        Hint(window, "Enter: expand").InvokeCommand(Command.Accept);
+
+        Assert.Equal(0, window.ExpandedAgent);
+    }
+
+    [Fact]
+    public void A_hint_is_a_clickable_one_of_its_own_that_claims_no_key()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.All(window.Status.Hints, hint =>
+        {
+            Assert.True(hint.NoDecorations);
+            Assert.True(hint.NoPadding);
+            Assert.Equal(ShadowStyles.None, hint.ShadowStyle);
+            Assert.False(hint.CanFocus);
+            Assert.Equal((Rune)0xffff, hint.HotKeySpecifier);
+        });
+    }
+
+    [Fact]
+    public void The_window_has_no_border_and_no_title_so_the_menu_is_row_zero()
+    {
+        using var window = Open(agents: Agents(4));
+
+        LayOut(window, 120, 30);
+
+        Assert.Equal("", window.Title);
+        Assert.Equal(LineStyle.None, window.BorderStyle);
+        Assert.Equal(new Size(120, 30), window.Viewport.Size);
+        Assert.Equal(new Rectangle(0, 0, 120, 1), window.Menu.Frame);
     }
 
     [Fact]
@@ -623,11 +697,11 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
 
         Assert.Equal(4, window.DispatchLog.Lines.Count);
-        Assert.Equal(116, window.DispatchLog.Viewport.Width);
+        Assert.Equal(118, window.DispatchLog.Viewport.Width);
         AssertFourRowsOfTheWidth(window);
 
         LayOut(window, 80, 30);
-        Assert.Equal(76, window.DispatchLog.Viewport.Width);
+        Assert.Equal(78, window.DispatchLog.Viewport.Width);
         AssertFourRowsOfTheWidth(window);
     }
 
@@ -650,7 +724,7 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal("(the dispatcher hasn't run yet)", line.Text);
         Assert.Equal(LogLineKind.Prose, line.Kind);
         Assert.Equal(0, window.Message.Lines);
-        Assert.Equal(window.Viewport.Height - 6, window.Dispatcher.Frame.Y);
+        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
     }
 
     [Fact]
@@ -676,7 +750,7 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal(0, window.Message.Lines);
         Assert.Equal(0, window.Message.Frame.Height);
-        Assert.Equal(window.Viewport.Height - 6, window.Dispatcher.Frame.Y);
+        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
     }
 
     [Fact]
@@ -690,7 +764,7 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal("Pausing…", window.Message.Says);
         Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
-        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
+        Assert.Equal(window.Viewport.Height - 8, window.Dispatcher.Frame.Y);
         Assert.Equal(before.Sum(cell => cell.Height) - 2, after.Sum(cell => cell.Height));
         AssertTiles(AgentArea(window), after);
     }
@@ -744,7 +818,7 @@ public class DashboardWindowTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(0, window.Message.Lines);
-        Assert.Equal(window.Viewport.Height - 6, window.Dispatcher.Frame.Y);
+        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
     }
 
     [Fact]
@@ -825,6 +899,9 @@ public class DashboardWindowTests : IDisposable
 
     private static Rectangle AgentArea(DashboardWindow window) =>
         new(0, 0, window.Viewport.Width, window.Dispatcher.Frame.Y - window.Agents.Frame.Y);
+
+    private static Button Hint(DashboardWindow window, string text) =>
+        window.Status.Hints.Single(hint => hint.Text == text);
 
     private static int Selected(DashboardWindow window) =>
         window.Panes.ToList().FindIndex(pane => pane.HasFocus);

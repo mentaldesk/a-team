@@ -2,6 +2,7 @@ using System.Drawing;
 using Terminal.Gui;
 using Terminal.Gui.App;
 using Terminal.Gui.Input;
+using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -107,20 +108,54 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_foot_of_the_Work_area_says_whether_the_filter_is_on()
+    public void The_status_bar_says_when_it_last_read_and_whether_the_filter_is_on()
     {
         using var window = Open();
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("All items", window.Message.Status);
-        Assert.EndsWith("All items", window.Message.Text, StringComparison.Ordinal);
+        Assert.Equal("read <1m ago · All items", window.Status.State.Text);
+        Assert.Equal(window.Status.Viewport.Width, window.Status.State.Frame.Right);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal("My items", window.Message.Status);
-        Assert.EndsWith("My items", window.Message.Text, StringComparison.Ordinal);
+        Assert.Equal("read <1m ago · My items", window.Status.State.Text);
+    }
+
+    [Fact]
+    public void The_status_bar_carries_the_Work_areas_keys_and_clicking_one_runs_it()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(window.HintLine, window.Status.Says);
+        Assert.Contains("Enter: open", window.Status.Says);
+
+        Hint(window, "m: only mine").InvokeCommand(Command.Accept);
+
+        Assert.True(window.Work.OnlyMine);
+    }
+
+    /// <summary>The filter has moved to the status bar, so the message row is the message and nothing else: on the
+    /// Dashboard, where there's nothing to say, it takes no rows at all.</summary>
+    [Fact]
+    public void The_message_row_says_what_there_is_to_say_and_no_longer_the_filter()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
+        Assert.Equal(window.Message.Says, window.Message.Text);
+        Assert.Equal(window.Viewport.Height - 2, window.Status.Frame.Y);
+
+        window.NewKeyDownEvent(Key.Esc);
+        LayOut(window, 120, 30);
+
+        Assert.Equal(0, window.Message.Lines);
+        Assert.Equal(window.Viewport.Height - 1, window.Status.Frame.Y);
     }
 
     [Fact]
@@ -132,7 +167,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.Esc);
 
-        Assert.Equal("", window.Message.Status);
+        Assert.Equal("", window.Status.State.Text);
     }
 
     [Fact]
@@ -431,7 +466,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(run: _ => Task.FromResult<string?>("board.sh: API rate limit exceeded\nand a second line"));
         window.Refresh();
         LayOut(window, 120, 30);
-        var stamp = window.Stamp.Text;
+        var stamp = window.Status.State.Text;
 
         window.Commands.Execute("work.priority");
         Set(Rank.High);
@@ -441,7 +476,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("board.sh: API rate limit exceeded", window.Message.Says);
         Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
             Titles(window));
-        Assert.Equal(stamp, window.Stamp.Text);
+        Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
     }
 
@@ -627,16 +662,16 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_header_says_when_it_last_read()
+    public void The_status_bar_says_when_it_last_read()
     {
         var now = DateTimeOffset.UtcNow;
         using var window = Open();
-        Assert.Equal("", window.Stamp.Text);
+        Assert.Equal("All items", window.Status.State.Text);
 
         window.Refresh();
 
-        Assert.Equal("read <1m ago ", window.Stamp.Text);
-        Assert.Equal("read 2m ago ", DashboardWindow.Stamped(now, now.AddMinutes(2)));
+        Assert.Equal("read <1m ago · All items", window.Status.State.Text);
+        Assert.Equal("read 2m ago", DashboardWindow.Stamped(now, now.AddMinutes(2)));
     }
 
     [Fact]
@@ -648,7 +683,7 @@ public class WorkAreaTests : IDisposable
             : new Reading(Waiting(team), null)));
         window.Refresh();
         LayOut(window, 120, 30);
-        var stamp = window.Stamp.Text;
+        var stamp = window.Status.State.Text;
 
         failing = true;
         window.NewKeyDownEvent(new Key('r'));
@@ -658,7 +693,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
         Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
             Titles(window));
-        Assert.Equal(stamp, window.Stamp.Text);
+        Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
     }
 
@@ -779,7 +814,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(new Rectangle(0, 0, window.Viewport.Width, 1), window.Menu.Frame);
         Assert.Equal(
-            new Rectangle(0, 1, window.Viewport.Width, window.Viewport.Height - 1 - window.Message.Lines),
+            new Rectangle(0, 1, window.Viewport.Width, window.Viewport.Height - 2 - window.Message.Lines),
             window.Work.Frame);
     }
 
@@ -794,7 +829,7 @@ public class WorkAreaTests : IDisposable
         Assert.All(window.MenuItems, item =>
         {
             var command = window.Commands.Registered.Single(registered => registered.Id == item.Id);
-            Assert.Equal(command.Label, item.Item.Title);
+            Assert.Equal($"_{command.Label}", item.Item.Title);
             Assert.Equal(command.Key, item.Item.Key);
         });
     }
@@ -823,7 +858,7 @@ public class WorkAreaTests : IDisposable
 
         window.Refresh();
 
-        Assert.Equal("Resume team0", window.MenuItems.Single(item => item.Id == "team.pause").Item.Title);
+        Assert.Equal("_Resume team0", window.MenuItems.Single(item => item.Id == "team.pause").Item.Title);
     }
 
     /// <summary>Two gated items and an unranked Idea for the first team, one gated item for the second, so
@@ -891,6 +926,9 @@ public class WorkAreaTests : IDisposable
         _dialog!.Ranks.FocusedItem = (int)rank;
         _dialog.Ranks.NewKeyDownEvent(Key.Enter);
     }
+
+    private static Button Hint(DashboardWindow window, string text) =>
+        window.Status.Hints.Single(hint => hint.Text == text);
 
     private static IEnumerable<string> Titles(DashboardWindow window) =>
         window.Work.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Title);
