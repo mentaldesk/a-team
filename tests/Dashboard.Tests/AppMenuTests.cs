@@ -189,8 +189,9 @@ public class AppMenuTests : IDisposable
             new TeamConfigs(Config),
             run ?? (_ => Task.FromResult<string?>(null)),
             _ => Task.FromResult(new Reading("[]", null)),
+            _ => Task.FromResult(new Reading("{}", null)),
             _ => { },
-            _ => null,
+            (_, _) => null,
             Area.Dashboard,
             IconStyle.Unicode);
     }

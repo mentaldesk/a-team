@@ -180,6 +180,7 @@ case " \$* " in
   *dependencies/blocked_by*) page="$BLOCKED" ;;
   *"/issues/"*"/comments"*) page="$THREAD" ;;
   *"/pulls/"*"/comments"*) page="$LINE" ;;
+  *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
   *) page="$ITEMS" ;;
 esac
@@ -266,7 +267,8 @@ gh_thread() {
          body: ($f[4:] | join(" ")), url: "https://github.com/mentaldesk/demo/issues/7#\($i)"})')
   local rest='{node_id: .id, user: {login: .author}, created_at: .at, body: .body,
                html_url: .url, reactions: {eyes: .eyes}}'
-  jq --arg pull "${1:-}" "(map(select(.kind == \"body\")) | first // {}) | $rest + {id: 4242}
+  jq --arg pull "${1:-}" "(map(select(.kind == \"body\")) | first // {})
+    | $rest + {id: 4242, number: 7, title: \"The whole thread\"}
     + (if \$pull == \"pull\" then {pull_request: {}} else {} end)" <<<"$rows" >"$ISSUE"
   jq "[.[] | select(.kind == \"comment\") | $rest]" <<<"$rows" >"$THREAD"
   jq "[.[] | select(.kind == \"line\") | $rest + {path: \"board.sh\", line: 1}]" <<<"$rows" >"$LINE"
@@ -553,6 +555,43 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "body returns an issue's number, title and body, in one call"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Idea 7 An Idea of my own
+ITEMS
+gh_thread <<TALK
+body ${TODAY}T08:00:00Z reviewer 0 ## Opportunity
+TALK
+run board demo body 7
+same "exit" 0 "$STATUS"
+same "number" 7 "$(jq -c .number "$OUT")"
+same "title" '"The whole thread"' "$(jq -c .title "$OUT")"
+same "body" '"## Opportunity"' "$(jq -c .body "$OUT")"
+same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "reading a body writes nothing, and --dry-run has no change to report"
+: >"$WRITES"
+run board --dry-run demo body 7
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+same "body" '"## Opportunity"' "$(jq -c .body "$OUT")"
+grep -q "dry-run" "$ERR" && fail "body dry-run: it claimed a change in '$(cat "$ERR")'"
+
+case_ "an issue that can't be read is refused in one line, naming it"
+run board demo body 404
+failed "unreadable issue"
+one_line "unreadable issue"
+grep -q "can't read #404" "$ERR" || fail "unreadable issue: '$(cat "$ERR")'"
+
+case_ "body names no role, so either agent may read one"
+run board demo body
+failed "body with no issue"
+one_line "body with no issue"
+grep -q "usage: board.sh demo body <n>" "$ERR" || fail "body usage: '$(cat "$ERR")'"
 
 # Ranking: the one field the app writes, and the gate it is the reviewer's alone to clear.
 case_ "priority sets the field's own option on the issue, and nothing on the project"

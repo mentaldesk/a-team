@@ -39,8 +39,9 @@ public sealed class DashboardWindow : Window
     private readonly TeamConfigs _teams;
     private readonly Func<string[], Task<string?>> _run;
     private readonly Func<string, Task<Reading>> _readWaiting;
+    private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Action<string> _openUrl;
-    private readonly Func<WaitingItem, Rank?> _askPriority;
+    private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
     private readonly IconStyle _auto;
     private Area _area;
     private Task<string?>? _pending;
@@ -48,6 +49,7 @@ public sealed class DashboardWindow : Window
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
+    private (WaitingItem Item, Task<Reading> Read)? _readingBody;
     private DateTimeOffset? _readAt;
     private string? _failure;
     private string? _progress;
@@ -61,8 +63,9 @@ public sealed class DashboardWindow : Window
         TeamConfigs teams,
         Func<string[], Task<string?>> run,
         Func<string, Task<Reading>> readWaiting,
+        Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
-        Func<WaitingItem, Rank?> askPriority,
+        Func<WaitingItem, IssueBody, Rank?> askPriority,
         Area area,
         IconStyle auto)
     {
@@ -72,6 +75,7 @@ public sealed class DashboardWindow : Window
         _teams = teams;
         _run = run;
         _readWaiting = readWaiting;
+        _readBody = readBody;
         _openUrl = openUrl;
         _askPriority = askPriority;
         _area = area;
@@ -302,11 +306,23 @@ public sealed class DashboardWindow : Window
             _openUrl(url);
     }
 
-    /// <summary>Asks for a rank and writes it. The board decides what the field will take, so an unknown value
-    /// comes back as a refusal rather than being guessed at here.</summary>
+    /// <summary>Reads what the item is about first, off the draw loop, so the dialog opens on something worth
+    /// ranking.</summary>
     private void SetPriority()
     {
-        if (_pending is not null || _work.SelectedCard is not { } item || _askPriority(item) is not { } rank)
+        if (_pending is not null || _readingBody is not null || _work.SelectedCard is not { } item)
+            return;
+        _progress = $"Reading #{item.Number}…";
+        ShowMessage();
+        _readingBody = (item, _readBody(item));
+    }
+
+    /// <summary>Asks for a rank and writes it. The board decides what the field will take, so an unknown value
+    /// comes back as a refusal rather than being guessed at here. A body that wouldn't read still asks: you
+    /// pressed the key to rank, not to read.</summary>
+    private void Ask(WaitingItem item, IssueBody body)
+    {
+        if (_askPriority(item, body) is not { } rank)
             return;
         _ranking = (item, rank);
         _progress = "Setting…";
@@ -342,6 +358,15 @@ public sealed class DashboardWindow : Window
                 if (_failure is null or { Length: 0 })
                     Ranked(ranking.Item, ranking.Rank);
             }
+        }
+
+        if (_readingBody is { Read.IsCompleted: true } body)
+        {
+            _readingBody = null;
+            _progress = null;
+            Ask(body.Item, body.Read.Status == TaskStatus.RanToCompletion
+                ? IssueBody.Of(body.Read.Result, body.Item.Number)
+                : new IssueBody(Failure: $"couldn't read #{body.Item.Number}"));
         }
 
         if (_reading is not { IsCompleted: true } read)

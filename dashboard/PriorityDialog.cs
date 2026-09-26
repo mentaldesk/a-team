@@ -5,50 +5,68 @@ using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The rank to give an item: the Priority field's own options, and None to clear it.</summary>
+/// <summary>What an item is about, and the rank to give it: the Priority field's own options, and None to
+/// clear it.</summary>
 public sealed class PriorityDialog : Dialog
 {
+    private const string ScrollHint = "PgUp/PgDn scroll";
     private const string SetHint = "Enter set";
     private const string CancelHint = "Esc cancel";
     private const string Separator = " · ";
     private const int Inset = 1;
-    private const int OptionAndSpace = 4;
-    private const int RanksRow = 2;
 
     private readonly OptionSelector<Rank> _ranks;
+    private readonly LogView _body;
+    private readonly MessageBar _message = new();
 
-    public PriorityDialog(WaitingItem item)
+    public PriorityDialog(WaitingItem item, IssueBody body)
     {
-        var number = $"#{item.Number}";
         var carried = Priorities.Of(item);
-        var wide = Math.Max(
-            Math.Max(number.Length, Enum.GetNames<Rank>().Max(name => name.Length) + OptionAndSpace),
-            SetHint.Length + Separator.Length + CancelHint.Length) + (Inset * 2);
-        var tall = RanksRow + Enum.GetValues<Rank>().Length + 2;
+        var ranks = Enum.GetValues<Rank>().Length;
 
-        Title = "Priority";
-        Width = Dim.Func(_ => Fits(wide + GetAdornmentsThickness().Horizontal, SuperView?.Viewport.Width), this);
-        Height = Dim.Func(_ => Fits(tall + GetAdornmentsThickness().Vertical, SuperView?.Viewport.Height), this);
+        Title = $"#{item.Number}  {item.Title}";
+        X = 0;
+        Y = 0;
+        Width = Dim.Fill();
+        Height = Dim.Fill();
 
+        int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
+        int RanksRow() => Math.Max(0, HintRow() - ranks);
+
+        _body = new LogView
+        {
+            X = Inset,
+            Y = 0,
+            Width = Dim.Fill(Inset),
+            Height = Dim.Func(_ => RanksRow(), this),
+            Following = false,
+            Lines = body.Lines,
+        };
         _ranks = new OptionSelector<Rank>
         {
             X = Inset,
-            Y = RanksRow,
+            Y = Pos.Func(_ => RanksRow(), this),
             Orientation = Orientation.Vertical,
+            // NoStop is what makes Up/Down move between the ranks; with the default the options are Tab stops.
+            TabBehavior = TabBehavior.NoStop,
             Value = carried,
         };
         foreach (var (row, rank) in _ranks.SubViews.Zip(Enum.GetValues<Rank>()))
             if (Priorities.Scheme(rank.ToString()) is { Length: > 0 } scheme)
                 row.SchemeName = scheme;
+        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
-        Add(new Label { X = Inset, Y = 0, Text = number, CanFocus = false }, _ranks);
+        Add(_body, _ranks);
         Pos x = Inset;
-        foreach (var hint in Hints())
+        foreach (var hint in Hints(Pos.Func(_ => HintRow(), this)))
         {
             hint.X = x;
             x = Pos.Right(hint);
             Add(hint);
         }
+        Add(_message);
+        if (body.Failure is { Length: > 0 } failure)
+            _message.Show(failure, Schemes.Error);
         // SetFocus lands the keyboard on the first option, so the item's own rank is put under it after.
         _ranks.SetFocus();
         _ranks.FocusedItem = (int)carried;
@@ -59,21 +77,43 @@ public sealed class PriorityDialog : Dialog
 
     internal OptionSelector<Rank> Ranks => _ranks;
 
+    internal LogView Body => _body;
+
+    internal MessageBar Message => _message;
+
     /// <summary>Enter reaches a Dialog as Accept, from the options themselves, and never as a key.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => Close(_ranks.Value);
 
-    protected override bool OnKeyDown(Key key) => key == Key.Esc ? Close(null) : base.OnKeyDown(key);
+    /// <summary>The pane never takes focus, so the keys that scroll it are the dialog's own.</summary>
+    protected override bool OnKeyDown(Key key)
+    {
+        if (key == Key.Esc)
+            return Close(null);
+        return Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
+    }
 
     /// <summary>Asks for a rank, starting on the one the item has, so opening it and pressing Esc changes
     /// nothing.</summary>
-    public static Rank? Show(IApplication app, WaitingItem item)
+    public static Rank? Show(IApplication app, WaitingItem item, IssueBody body)
     {
-        using var dialog = new PriorityDialog(item);
+        using var dialog = new PriorityDialog(item, body);
         app.Run(dialog);
         return dialog.Chosen;
     }
 
-    private static int Fits(int wanted, int? available) => available is { } room ? Math.Min(wanted, room) : wanted;
+    private bool Scrolled(Action scroll)
+    {
+        scroll();
+        SetNeedsDraw();
+        return true;
+    }
+
+    private Action? Scroll(Key key) =>
+        key == Key.PageUp ? () => _body.Page(-1)
+        : key == Key.PageDown ? () => _body.Page(+1)
+        : key == Key.Home ? _body.Home
+        : key == Key.End ? _body.End
+        : null;
 
     private bool Close(Rank? chosen)
     {
@@ -83,19 +123,21 @@ public sealed class PriorityDialog : Dialog
     }
 
     /// <summary>The hint row, each hint clickable and the separator between them not.</summary>
-    private IEnumerable<View> Hints()
+    private IEnumerable<View> Hints(Pos y)
     {
-        yield return Hint(SetHint, () => Close(_ranks.Value));
-        yield return new Label { Text = Separator, Y = Pos.AnchorEnd(1), CanFocus = false };
-        yield return Hint(CancelHint, () => Close(null));
+        yield return Hint(ScrollHint, y, () => Scrolled(() => _body.Page(+1)));
+        yield return new Label { Text = Separator, Y = y, CanFocus = false };
+        yield return Hint(SetHint, y, () => Close(_ranks.Value));
+        yield return new Label { Text = Separator, Y = y, CanFocus = false };
+        yield return Hint(CancelHint, y, () => Close(null));
     }
 
-    private static Button Hint(string text, Func<bool> run)
+    private static Button Hint(string text, Pos y, Func<bool> run)
     {
         var hint = new Button
         {
             Text = text,
-            Y = Pos.AnchorEnd(1),
+            Y = y,
             NoDecorations = true,
             NoPadding = true,
             ShadowStyle = ShadowStyles.None,

@@ -31,7 +31,15 @@ public sealed class LogView : View
         }
     }
 
-    public bool Following => _following;
+    /// <summary>Whether new lines pull the view to the end, as a session log's do. A body read once starts at the
+    /// top instead.</summary>
+    public bool Following
+    {
+        get => _following;
+        init => _following = value;
+    }
+
+    internal int Top => _top;
 
     public bool Expanded
     {
@@ -73,6 +81,8 @@ public sealed class LogView : View
 
     private void ScrollTo(int top)
     {
+        if (Viewport.Height > 0)
+            _maxTop = Math.Max(0, Rows(Math.Max(1, Viewport.Width)).Count - Viewport.Height);
         _top = Math.Clamp(top, 0, _maxTop);
         _following = _top >= _maxTop;
         SetNeedsDraw();

@@ -301,6 +301,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(new Key('p'));
+        window.Refresh();
 
         Assert.Empty(opened);
         Assert.DoesNotContain("work.pr", window.Commands.Registered.Select(command => command.Id));
@@ -337,11 +338,14 @@ public class WorkAreaTests : IDisposable
         {
             calls.Add(arguments);
             return finish.Task;
-        }, askPriority: _ => Rank.High);
+        }, askPriority: (_, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        Assert.Equal("Reading #6…", window.Message.Says);
+
+        window.Refresh();
 
         Assert.Equal([["board", "team0", "priority", "you", "6", "High"]], calls);
         Assert.Equal("Setting…", window.Message.Says);
@@ -357,11 +361,12 @@ public class WorkAreaTests : IDisposable
                 reads++;
                 return Task.FromResult(new Reading(Waiting(team), null));
             },
-            askPriority: _ => Rank.High);
+            askPriority: (_, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -376,12 +381,13 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open(
             read: team => Task.FromResult(new Reading(team == "team0" ? Queue : "[]", null)),
-            askPriority: _ => Rank.High);
+            askPriority: (_, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
         Assert.Equal(6, window.Work.Selected?.Number);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -392,11 +398,12 @@ public class WorkAreaTests : IDisposable
     [Fact]
     public void The_message_goes_as_soon_as_the_selection_does()
     {
-        using var window = Open(askPriority: _ => Rank.High);
+        using var window = Open(askPriority: (_, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         window.Refresh();
         Assert.Equal("#6 · set to High", window.Message.Says);
 
@@ -414,13 +421,14 @@ public class WorkAreaTests : IDisposable
                 calls.Add(arguments);
                 return Task.FromResult<string?>(null);
             },
-            askPriority: _ => Rank.None);
+            askPriority: (_, _) => Rank.None);
         window.Refresh();
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(107, window.Work.Selected?.Number);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -441,12 +449,13 @@ public class WorkAreaTests : IDisposable
                 reads++;
                 return Task.FromResult(new Reading(team == "team0" ? Unranked : "[]", null));
             },
-            askPriority: _ => Rank.High);
+            askPriority: (_, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
         Assert.Equal("Triage · team0", window.Work.Region);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -461,12 +470,13 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open(
             run: _ => Task.FromResult<string?>("board.sh: API rate limit exceeded\nand a second line"),
-            askPriority: _ => Rank.High);
+            askPriority: (_, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
         var stamp = window.Status.State.Text;
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -475,6 +485,74 @@ public class WorkAreaTests : IDisposable
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void p_reads_the_item_before_the_dialog_opens_and_hands_it_the_body()
+    {
+        var read = new List<WaitingItem>();
+        IssueBody? asked = null;
+        using var window = Open(
+            readBody: item =>
+            {
+                read.Add(item);
+                return Task.FromResult(new Reading(Body, null));
+            },
+            askPriority: (_, body) =>
+            {
+                asked = body;
+                return null;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        Assert.Null(asked);
+
+        window.Refresh();
+
+        Assert.Equal([6], read.Select(item => item.Number));
+        Assert.Equal(new IssueBody("## Opportunity"), asked);
+    }
+
+    [Fact]
+    public void A_read_that_failed_still_opens_the_dialog_saying_what_went_wrong()
+    {
+        IssueBody? asked = null;
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading("", "board.sh: can't read #6 (gh: Not Found (HTTP 404))")),
+            askPriority: (_, body) =>
+            {
+                asked = body;
+                return null;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+
+        Assert.Equal(new IssueBody(Failure: "board.sh: can't read #6 (gh: Not Found (HTTP 404))"), asked);
+    }
+
+    [Fact]
+    public void A_second_p_while_the_first_is_still_reading_is_refused_not_queued()
+    {
+        var reads = 0;
+        var finish = new TaskCompletionSource<Reading>();
+        using var window = Open(readBody: _ =>
+        {
+            reads++;
+            return finish.Task;
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        window.Commands.Execute("work.priority");
+
+        Assert.Equal(1, reads);
     }
 
     [Fact]
@@ -490,6 +568,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
 
         Assert.Equal(0, calls);
         Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
@@ -785,6 +864,8 @@ public class WorkAreaTests : IDisposable
           "turn": "you", "reason": "waiting to be ranked"}]
         """;
 
+    private const string Body = """{"number": 6, "title": "t", "body": "## Opportunity"}""";
+
     private static Button Hint(DashboardWindow window, string text) =>
         window.Status.Hints.Single(hint => hint.Text == text);
 
@@ -801,7 +882,8 @@ public class WorkAreaTests : IDisposable
         Func<string, Task<Reading>>? read = null,
         Action<string>? openUrl = null,
         Func<string[], Task<string?>>? run = null,
-        Func<WaitingItem, Rank?>? askPriority = null,
+        Func<WaitingItem, IssueBody, Rank?>? askPriority = null,
+        Func<WaitingItem, Task<Reading>>? readBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode)
     {
@@ -813,8 +895,9 @@ public class WorkAreaTests : IDisposable
             new TeamConfigs(Config),
             run ?? (_ => Task.FromResult<string?>(null)),
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
+            readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
-            askPriority ?? (_ => null),
+            askPriority ?? ((_, _) => null),
             area,
             auto);
     }
