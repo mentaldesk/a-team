@@ -1,4 +1,3 @@
-using System.Text;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -9,20 +8,20 @@ namespace ATeam.Dashboard;
 /// clear it.</summary>
 public sealed class PriorityDialog : Dialog
 {
-    private const string ScrollHint = "PgUp/PgDn scroll";
-    private const string SetHint = "Enter set";
-    private const string CancelHint = "Esc cancel";
-    private const string Separator = " · ";
+    private const string ScrollHint = "scroll";
+    private const string SetHint = "set";
+    private const string CancelHint = "cancel";
+    private const int RankLines = 1;
     private const int Inset = 1;
 
     private readonly OptionSelector<Rank> _ranks;
     private readonly LogView _body;
+    private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
 
     public PriorityDialog(WaitingItem item, IssueBody body)
     {
         var carried = Priorities.Of(item);
-        var ranks = Enum.GetValues<Rank>().Length;
 
         Title = $"#{item.Number}  {item.Title}";
         X = 0;
@@ -31,7 +30,7 @@ public sealed class PriorityDialog : Dialog
         Height = Dim.Fill();
 
         int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
-        int RanksRow() => Math.Max(0, HintRow() - ranks);
+        int RanksRow() => Math.Max(0, HintRow() - RankLines);
 
         _body = new LogView
         {
@@ -46,25 +45,24 @@ public sealed class PriorityDialog : Dialog
         {
             X = Inset,
             Y = Pos.Func(_ => RanksRow(), this),
-            Orientation = Orientation.Vertical,
-            // NoStop is what makes Up/Down move between the ranks; with the default the options are Tab stops.
+            Width = Dim.Fill(Inset),
+            Orientation = Orientation.Horizontal,
+            // NoStop is what makes the arrows move between the ranks; with the default the options are Tab stops.
             TabBehavior = TabBehavior.NoStop,
             Value = carried,
         };
         foreach (var (row, rank) in _ranks.SubViews.Zip(Enum.GetValues<Rank>()))
             if (Priorities.Scheme(rank.ToString()) is { Length: > 0 } scheme)
                 row.SchemeName = scheme;
+        _hints.Y = Pos.Func(_ => HintRow(), this);
+        _hints.Show("", [
+            new HintedCommand(ScrollHint, "PgUp/PgDn scroll"),
+            new HintedCommand(SetHint, "Enter set"),
+            new HintedCommand(CancelHint, "Esc cancel"),
+        ], Run);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
-        Add(_body, _ranks);
-        Pos x = Inset;
-        foreach (var hint in Hints(Pos.Func(_ => HintRow(), this)))
-        {
-            hint.X = x;
-            x = Pos.Right(hint);
-            Add(hint);
-        }
-        Add(_message);
+        Add(_body, _ranks, _hints, _message);
         if (body.Failure is { Length: > 0 } failure)
             _message.Show(failure, Schemes.Error);
         // SetFocus lands the keyboard on the first option, so the item's own rank is put under it after.
@@ -78,6 +76,8 @@ public sealed class PriorityDialog : Dialog
     internal OptionSelector<Rank> Ranks => _ranks;
 
     internal LogView Body => _body;
+
+    internal StatusBar Hints => _hints;
 
     internal MessageBar Message => _message;
 
@@ -122,29 +122,10 @@ public sealed class PriorityDialog : Dialog
         return true;
     }
 
-    /// <summary>The hint row, each hint clickable and the separator between them not.</summary>
-    private IEnumerable<View> Hints(Pos y)
+    private bool Run(string hint) => hint switch
     {
-        yield return Hint(ScrollHint, y, () => Scrolled(() => _body.Page(+1)));
-        yield return new Label { Text = Separator, Y = y, CanFocus = false };
-        yield return Hint(SetHint, y, () => Close(_ranks.Value));
-        yield return new Label { Text = Separator, Y = y, CanFocus = false };
-        yield return Hint(CancelHint, y, () => Close(null));
-    }
-
-    private static Button Hint(string text, Pos y, Func<bool> run)
-    {
-        var hint = new Button
-        {
-            Text = text,
-            Y = y,
-            NoDecorations = true,
-            NoPadding = true,
-            ShadowStyle = ShadowStyles.None,
-            HotKeySpecifier = (Rune)0xffff,
-            CanFocus = false,
-        };
-        hint.Accepting += (_, args) => args.Handled = run();
-        return hint;
-    }
+        ScrollHint => Scrolled(() => _body.Page(+1)),
+        SetHint => Close(_ranks.Value),
+        _ => Close(null),
+    };
 }

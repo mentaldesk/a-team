@@ -56,7 +56,7 @@ public class PriorityDialogTests
         using var dialog = new PriorityDialog(Idea(), new IssueBody());
 
         Assert.Equal(["Urgent", "High", "Medium", "Low", "None"], dialog.Ranks.Labels);
-        Assert.Equal(Orientation.Vertical, dialog.Ranks.Orientation);
+        Assert.Equal(Orientation.Horizontal, dialog.Ranks.Orientation);
     }
 
     [Fact]
@@ -148,27 +148,29 @@ public class PriorityDialogTests
     }
 
     [Fact]
-    public void Up_and_Down_still_move_between_the_ranks_and_leave_the_pane_where_it_was()
+    public void Left_and_Right_move_between_the_ranks_and_leave_the_pane_where_it_was()
     {
         using var dialog = Open(new IssueBody(Long()), "Urgent", height: 10);
 
         dialog.Ranks.FocusedItem = (int)Rank.Urgent;
 
-        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.CursorRight);
 
         Assert.Equal((int)Rank.High, dialog.Ranks.FocusedItem);
+
+        dialog.NewKeyDownEvent(Key.CursorLeft);
+
+        Assert.Equal((int)Rank.Urgent, dialog.Ranks.FocusedItem);
         Assert.Equal(0, dialog.Body.Top);
     }
 
     [Fact]
-    public void The_hints_name_the_three_keys_with_cancel_last()
+    public void The_hints_name_the_three_keys_with_cancel_last_in_the_window_s_own_band()
     {
         using var dialog = new PriorityDialog(Idea(), new IssueBody());
 
-        Assert.Equal(
-            ["PgUp/PgDn scroll", " · ", "Enter set", " · ", "Esc cancel"],
-            dialog.SubViews.Where(view => view is Button or Label && view != dialog.Message)
-                .Select(view => view.Text));
+        Assert.Equal("PgUp/PgDn scroll · Enter set · Esc cancel", dialog.Hints.Says);
+        Assert.Equal(StatusBar.Scheme, dialog.Hints.SchemeName);
     }
 
     [Fact]
@@ -177,9 +179,7 @@ public class PriorityDialogTests
         using var dialog = Open(new IssueBody(Prose), height: 12);
 
         Assert.Equal(0, dialog.Message.Lines);
-        Assert.Equal(
-            dialog.Viewport.Height - 1,
-            dialog.SubViews.Single(view => view.Text == "Esc cancel").Frame.Y);
+        Assert.Equal(dialog.Viewport.Height - 1, dialog.Hints.Frame.Y);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public class PriorityDialogTests
         Assert.DoesNotContain(dialog.Body.Lines, line => line.Text.Length > 0);
         Assert.Equal("board.sh: can't read #136 (gh: Not Found (HTTP 404))", dialog.Message.Says);
         Assert.Equal(dialog.Viewport.Height - 1, dialog.Message.Frame.Y);
-        Assert.Equal(dialog.Viewport.Height - 2, dialog.SubViews.Single(view => view.Text == "Esc cancel").Frame.Y);
+        Assert.Equal(dialog.Viewport.Height - 2, dialog.Hints.Frame.Y);
 
         dialog.Ranks.FocusedItem = (int)Rank.Low;
         dialog.Ranks.NewKeyDownEvent(Key.Enter);
@@ -206,7 +206,7 @@ public class PriorityDialogTests
 
         Assert.Equal(new Rectangle(0, 0, 60, 20), dialog.Frame);
         Assert.Equal(dialog.Body.Frame.Bottom, dialog.Ranks.Frame.Y);
-        Assert.Equal(Enum.GetValues<Rank>().Length, dialog.Ranks.Frame.Height);
+        Assert.Equal(1, dialog.Ranks.Frame.Height);
     }
 
     [Fact]
