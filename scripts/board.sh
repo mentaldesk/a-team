@@ -493,8 +493,8 @@ case "$CMD" in
     items | jq "def open_blocked: .status != \"Done\" and $BLOCKED;"'
       def counts: group_by(.status) | map({key: .[0].status, value: length}) | from_entries;
       {pitches: map(select(.labels | index("pitch"))) | counts,
-       dev: map(select(.labels | index("a-team:dev")))
-         | (map(select(open_blocked | not)) | counts) + {blocked: map(select(open_blocked)) | length},
+       dev: (map(select(.labels | index("a-team:dev")))
+         | (map(select(open_blocked | not)) | counts) + {blocked: map(select(open_blocked)) | length}),
        reviewer: map(select((.labels | index("pitch") or index("a-team:dev")) | not)) | counts}'
     ;;
 
