@@ -232,7 +232,8 @@ gh_pr() {
 # "<n> <kind> <timestamp> <author> <text...>". The body line is the item's own; the pr-* kinds
 # (pr-body, pr-comment, pr-review, pr-line) belong to the open PR that closes #<n>, which is
 # numbered 900 + n and is ready and mergeable unless `gh_talk <draft> <mergeable>` says otherwise.
-# A kind ending `+seen` carries the 👀 a run leaves on a comment it has read.
+# A kind ending `+seen` carries the 👀 a run leaves on a comment it has read, and `\n` in the
+# text is a line break.
 gh_talk() {
   jq -R -s --arg draft "${1:-false}" --arg mergeable "${2:-MERGEABLE}" '
     def seen: {reactions: {totalCount: (if .seen then 1 else 0 end)}};
@@ -256,7 +257,8 @@ gh_talk() {
          mergeable: $mergeable, baseRefName: "main", headRefOid: "deadbee"};
     split("\n") | map(select(length > 0)) | map(split(" ") as $f
       | {n: ($f[0] | tonumber), kind: ($f[1] | rtrimstr("+seen")), at: $f[2], author: $f[3],
-         body: ($f[4:] | join(" ")), seen: ($f[1] | endswith("+seen"))})
+         body: ($f[4:] | join(" ") | split("\\n") | join("\n")),
+         seen: ($f[1] | endswith("+seen"))})
     | group_by(.n) | map(
         (map(select(.kind | startswith("pr-") | not))) as $own
         | (map(select(.kind | startswith("pr-")) | .kind |= ltrimstr("pr-"))) as $pr
@@ -269,13 +271,15 @@ gh_talk() {
 # The whole thread on #7, which `feedback` and `comment` read, from lines of
 # "<kind> <timestamp> <author> <eyes> <text...>" — kinds body, comment, review and line, and
 # <eyes> the reaction count on it. With `gh_thread pull`, #7 is a PR, so its reviews and line
-# comments are read too. Every comment's node id is "IC_<its line>".
+# comments are read too. Every comment's node id is "IC_<its line>", and `\n` in the text is a
+# line break.
 gh_thread() {
   local rows
   rows=$(jq -R -s 'split("\n") | map(select(length > 0)) | to_entries
     | map(.key as $i | .value | split(" ") as $f
       | {id: "IC_\($i)", kind: $f[0], at: $f[1], author: $f[2], eyes: ($f[3] | tonumber),
-         body: ($f[4:] | join(" ")), url: "https://github.com/mentaldesk/demo/issues/7#\($i)"})')
+         body: ($f[4:] | join(" ") | split("\\n") | join("\n")),
+         url: "https://github.com/mentaldesk/demo/issues/7#\($i)"})')
   local rest='{node_id: .id, user: {login: .author}, created_at: .at, body: .body,
                html_url: .url, reactions: {eyes: .eyes}}'
   jq --arg pull "${1:-}" "(map(select(.kind == \"body\")) | first // {}) | $rest + {id: 4242}
@@ -289,11 +293,12 @@ gh_thread() {
 }
 
 # The repo-wide conversation comments of the last day that `triggers` reads, from lines of
-# "<n> <timestamp> <author> <eyes> <text...>".
+# "<n> <timestamp> <author> <eyes> <text...>", where `\n` in the text is a line break.
 gh_recent() {
   jq -R -s 'split("\n") | map(select(length > 0)) | map(split(" ") as $f
     | {issue_url: "https://api.github.com/repos/mentaldesk/demo/issues/\($f[0])",
-       user: {login: $f[2]}, created_at: $f[1], body: ($f[4:] | join(" ")),
+       user: {login: $f[2]}, created_at: $f[1],
+       body: ($f[4:] | join(" ") | split("\\n") | join("\n")),
        reactions: {eyes: ($f[3] | tonumber)}})' >"$RECENT"
 }
 
@@ -315,8 +320,8 @@ Ready 128 Everything waiting on me
 Done 99 Already merged
 ITEMS
 gh_talk <<TALK
-106 body 2025-09-19T08:14:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:14:00Z reviewer The task <!-- a-team:lead -->
+106 body 2025-09-19T08:14:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:14:00Z reviewer The task\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -336,10 +341,10 @@ same "task reason" '"awaiting your acceptance since 08:14"' "$(jq -c '.[1].reaso
 
 case_ "a reviewer comment since the role last spoke makes it the role's turn"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
 106 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 comment ${TODAY}T08:30:00Z reviewer Draft PR #9 is up. <!-- a-team:dev -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 comment ${TODAY}T08:30:00Z reviewer Draft PR #9 is up.\n<!-- a-team:dev -->
 115 comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
 run board demo waiting
@@ -351,12 +356,12 @@ same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason
 
 case_ "a comment a run has read and answered hands the gate back"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
 106 comment+seen ${TODAY}T09:30:00Z reviewer What about the second gate?
-106 comment ${TODAY}T11:00:00Z reviewer Redrafted. <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+106 comment ${TODAY}T11:00:00Z reviewer Redrafted.\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
 115 comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
-115 comment ${TODAY}T11:45:00Z reviewer Added one. <!-- a-team:dev -->
+115 comment ${TODAY}T11:45:00Z reviewer Added one.\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -367,9 +372,9 @@ same "task reason" '"awaiting your acceptance since 11:45"' "$(jq -c '.[1].reaso
 
 case_ "a comment from anyone but the reviewer is nobody's turn"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
 106 comment ${TODAY}T09:30:00Z passer-by Have you considered doing it differently?
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
 115 comment ${TODAY}T09:30:00Z passer-by This looks wrong to me.
 TALK
 run board demo waiting
@@ -378,10 +383,10 @@ same "turns" '["you","you"]' "$(jq -c '[.[].turn]' "$OUT")"
 
 case_ "the reviewer answering on the task's PR rather than on the task is still the Dev's turn"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 comment ${TODAY}T08:30:00Z reviewer Draft PR #9 is up. <!-- a-team:dev -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 comment ${TODAY}T08:30:00Z reviewer Draft PR #9 is up.\n<!-- a-team:dev -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
 : >"$CALLS"
@@ -393,9 +398,9 @@ same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a review and a line comment on that PR count as feedback too"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 115 pr-review ${TODAY}T09:00:00Z reviewer Nearly there.
 115 pr-line ${TODAY}T10:45:00Z reviewer This name reads oddly.
 TALK
@@ -406,11 +411,11 @@ same "task reason" '"answering your feedback since 10:45"' "$(jq -c '.[1].reason
 
 case_ "the Dev answering on the PR hands the task back"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 115 pr-comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
-115 pr-comment ${TODAY}T11:45:00Z reviewer Added one. <!-- a-team:dev -->
+115 pr-comment ${TODAY}T11:45:00Z reviewer Added one.\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -419,9 +424,9 @@ same "task reason" '"awaiting your acceptance since 11:45"' "$(jq -c '.[1].reaso
 
 case_ "an In review item carries its open PR, and a Pitched one carries none"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -452,9 +457,9 @@ same "task reason" '"CI failing since 09:02"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "an unanswered comment outranks the failing build it hasn't been answered with"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
 run board demo waiting
@@ -469,9 +474,9 @@ gh_runs <<RUNS
 completed success ${TODAY}T09:00:00Z build
 RUNS
 gh_talk false CONFLICTING <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -481,9 +486,9 @@ same "task reason" '"conflicts with main"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a PR GitHub hasn't worked the conflict out for yet is nobody's fault"
 gh_talk false UNKNOWN <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -492,9 +497,9 @@ same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 
 case_ "a PR still in draft is the Dev's turn"
 gh_talk true <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -531,8 +536,8 @@ same "task reason" '"awaiting your acceptance since 10:40"' "$(jq -c '.[1].reaso
 
 case_ "a task with no PR yet waits on the reviewer since the task was opened"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -554,8 +559,8 @@ Pitched 106 Both gates are mine
 In_review 115 I can change any of the keys
 ITEMS
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -570,8 +575,8 @@ In_review 115 I can change any of the keys
 Ready 128 Everything waiting on me
 ITEMS
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -661,7 +666,7 @@ gh_items <<'ITEMS'
 Pitched 7 A pitch in front of me
 ITEMS
 gh_thread <<TALK
-body ${TODAY}T02:10:00Z reviewer 0 The pitch <!-- a-team:lead -->
+body ${TODAY}T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
 comment ${TODAY}T02:20:00Z reviewer 0 Needs a second option.
 comment ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
 TALK
@@ -675,10 +680,10 @@ unset A_TEAM_RUN_STARTED
 
 case_ "the comment that arrived mid-run is still unanswered, however recently the role replied"
 gh_thread <<TALK
-body ${TODAY}T02:10:00Z reviewer 0 The pitch <!-- a-team:lead -->
+body ${TODAY}T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
 comment ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
 comment ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
-comment ${TODAY}T02:33:03Z reviewer 0 Added one. <!-- a-team:lead -->
+comment ${TODAY}T02:33:03Z reviewer 0 Added one.\n<!-- a-team:lead -->
 TALK
 run board demo feedback lead 7
 same "exit" 0 "$STATUS"
@@ -688,7 +693,7 @@ case_ "triggers names it too, so it gets a run of its own"
 gh_recent <<RECENT
 7 ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
 7 ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
-7 ${TODAY}T02:33:03Z reviewer 0 Added one. <!-- a-team:lead -->
+7 ${TODAY}T02:33:03Z reviewer 0 Added one.\n<!-- a-team:lead -->
 RECENT
 run board demo triggers lead
 same "exit" 0 "$STATUS"
@@ -696,10 +701,10 @@ same "reasons" "[\"reviewer feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .re
 
 case_ "waiting says the same: the gate is the Lead's until the 👀 is there"
 gh_talk <<TALK
-7 body ${TODAY}T02:10:00Z reviewer The pitch <!-- a-team:lead -->
+7 body ${TODAY}T02:10:00Z reviewer The pitch\n<!-- a-team:lead -->
 7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
 7 comment ${TODAY}T02:28:46Z reviewer And do the same for subissue links.
-7 comment ${TODAY}T02:33:03Z reviewer Added one. <!-- a-team:lead -->
+7 comment ${TODAY}T02:33:03Z reviewer Added one.\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -708,16 +713,18 @@ same "reason" '"answering your feedback since 02:28"' "$(jq -c '.[0].reason' "$O
 
 case_ "and hands it back once the 👀 is"
 gh_talk <<TALK
-7 body ${TODAY}T02:10:00Z reviewer The pitch <!-- a-team:lead -->
+7 body ${TODAY}T02:10:00Z reviewer The pitch\n<!-- a-team:lead -->
 7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
 7 comment+seen ${TODAY}T02:28:46Z reviewer And do the same for subissue links.
-7 comment ${TODAY}T02:33:03Z reviewer Added one. <!-- a-team:lead -->
+7 comment ${TODAY}T02:33:03Z reviewer Added one.\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
 same "reason" '"awaiting your approval since 02:33"' "$(jq -c '.[0].reason' "$OUT")"
 
+# Before ACK_FROM a marker counted wherever it appeared, so these threads carry it mid-line as the
+# team used to leave it, and have to keep reading exactly as they did.
 case_ "a comment older than ACK_FROM with no 👀 keeps the watermark rule, so an upgrade reopens nothing"
 gh_thread <<'TALK'
 body 2026-09-20T02:10:00Z reviewer 0 The pitch <!-- a-team:lead -->
@@ -738,13 +745,81 @@ run board demo feedback lead 7
 same "exit" 0 "$STATUS"
 same "unanswered" '["Still needs a second option."]' "$(jq -c '[.[].body]' "$OUT")"
 
+# The marker only counts alone on the body's last line, which is the one place the script writes
+# it. GitHub's Quote reply copies a team comment's source, marker and all, into your own words.
+case_ "a Quote reply carrying the team's marker is your feedback"
+gh_thread <<TALK
+body ${TODAY}T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
+comment ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
+comment ${TODAY}T02:28:46Z reviewer 0 > The pitch\n> <!-- a-team:lead -->\n\nAnd include the path.
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" "[\"${TODAY}T02:28:46Z\"]" "$(jq -c '[.[].at]' "$OUT")"
+
+case_ "triggers names the Quote reply too, so a run starts for it"
+gh_recent <<TALK
+7 ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
+7 ${TODAY}T02:28:46Z reviewer 0 > The pitch\n> <!-- a-team:lead -->\n\nAnd include the path.
+TALK
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" "[\"reviewer feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .reasons "$OUT")"
+
+case_ "waiting says the same: the Quote reply makes the gate the Lead's"
+gh_talk <<TALK
+7 body ${TODAY}T02:10:00Z reviewer The pitch\n<!-- a-team:lead -->
+7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
+7 comment ${TODAY}T02:28:46Z reviewer > The pitch\n> <!-- a-team:lead -->\n\nAnd include the path.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
+same "reason" '"answering your feedback since 02:28"' "$(jq -c '.[0].reason' "$OUT")"
+
+case_ "a Quote reply that is your only comment is returned, not dropped"
+gh_thread <<'TALK'
+body 2026-09-25T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
+comment 2026-09-25T02:28:46Z reviewer 0 > The pitch\n> <!-- a-team:lead -->\n\nAnd include the path.
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '["2026-09-25T02:28:46Z"]' "$(jq -c '[.[].at]' "$OUT")"
+
+case_ "comment acks a Quote reply, so it doesn't come back once answered"
+: >"$ACKED"
+export A_TEAM_RUN_STARTED=2026-09-25T03:00:00Z
+run board demo comment lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_1" "$(cat "$ACKED")"
+unset A_TEAM_RUN_STARTED
+
+case_ "a marker mid-sentence or in a fenced code block is your feedback"
+gh_thread <<'TALK'
+body 2026-09-25T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
+comment 2026-09-25T02:20:00Z reviewer 0 Does <!-- a-team:lead --> have to be last?
+comment 2026-09-25T02:28:46Z reviewer 0 Every body ends with\n```\n<!-- a-team:lead -->\n```
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '["2026-09-25T02:20:00Z","2026-09-25T02:28:46Z"]' "$(jq -c '[.[].at]' "$OUT")"
+
+case_ "the team's own comment, marker alone on the last line, is still not feedback"
+gh_thread <<'TALK'
+body 2026-09-25T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
+comment 2026-09-25T02:33:03Z reviewer 0 Added one.\n<!-- a-team:lead -->
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '[]' "$(jq -c . "$OUT")"
+
 # Unset, A_TEAM_RUN_STARTED means now, so these threads are dated back from it, not from an hour of
 # the day the suite could be running before.
 OPENED=$(ago 90) ASKED=$(ago 60) ASKED_AGAIN=$(ago 50)
 
 case_ "a review and a line comment on a PR are acked like any other comment"
 gh_thread pull <<TALK
-body $OPENED reviewer 0 Closes #7 <!-- a-team:dev -->
+body $OPENED reviewer 0 Closes #7\n<!-- a-team:dev -->
 review $ASKED reviewer 0 Nearly there.
 line $ASKED_AGAIN reviewer 0 This name reads oddly.
 TALK
@@ -764,7 +839,7 @@ same "acked" "IC_1 IC_2" "$(tr '\n' ' ' <"$ACKED" | sed 's/ $//')"
 
 case_ "a comment already carrying a 👀 is not acked again"
 gh_thread pull <<TALK
-body $OPENED reviewer 0 Closes #7 <!-- a-team:dev -->
+body $OPENED reviewer 0 Closes #7\n<!-- a-team:dev -->
 review $ASKED reviewer 1 Nearly there.
 line $ASKED_AGAIN reviewer 0 This name reads oddly.
 TALK
@@ -775,7 +850,7 @@ same "acked" "IC_2" "$(cat "$ACKED")"
 
 case_ "a comment from anyone but the reviewer is not acked"
 gh_thread <<TALK
-body $OPENED reviewer 0 The pitch <!-- a-team:lead -->
+body $OPENED reviewer 0 The pitch\n<!-- a-team:lead -->
 comment $ASKED passer-by 0 Have you considered doing it differently?
 TALK
 : >"$ACKED"
@@ -788,7 +863,7 @@ gh_items <<'ITEMS'
 Idea 7 An Idea with nothing to pitch in it
 ITEMS
 gh_thread <<TALK
-body $OPENED reviewer 0 The idea <!-- a-team:lead -->
+body $OPENED reviewer 0 The idea\n<!-- a-team:lead -->
 comment $ASKED reviewer 0 Worth a look.
 TALK
 : >"$ACKED"
@@ -798,7 +873,7 @@ same "acked" "IC_1" "$(cat "$ACKED")"
 
 case_ "--dry-run says which reactions it would add and adds none"
 gh_thread <<TALK
-body $OPENED reviewer 0 The pitch <!-- a-team:lead -->
+body $OPENED reviewer 0 The pitch\n<!-- a-team:lead -->
 comment $ASKED reviewer 0 Needs a second option.
 TALK
 : >"$ACKED"
