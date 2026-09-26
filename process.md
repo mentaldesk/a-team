@@ -39,7 +39,7 @@ Two kinds of item share the board:
   technical milestone on its own), and travels Ready → In progress → In review → Done.
   A task that needs another merged first is recorded as blocked by it, a GitHub issue
   dependency, and becomes available by itself when that one closes. The `blocked` label is
-  for a task waiting on an answer from the reviewer.
+  for a task waiting on the reviewer: for an answer, or because they're holding it.
 
 The reviewer uses the same board for their own work. Pitches carry the `pitch` label and tasks
 the Dev has claimed carry `a-team:dev`; anything else past Ready belongs to the reviewer.
@@ -54,7 +54,8 @@ answer. Don't work around it.
 ```
 a-team board {{team}} list [STATUS...]          # items, as JSON
 a-team board {{team}} mine <role> [STATUS...]   # items your role owns
-a-team board {{team}} wip                       # counts per status: pitches, dev, reviewer
+a-team board {{team}} wip                       # counts per status: pitches, dev, reviewer;
+                                                # the Dev's blocked tasks under dev.blocked
 a-team board {{team}} next                      # the next task Dev should take (or null):
                                                 # highest issue Priority first, unset last
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)
@@ -110,8 +111,9 @@ tell what `$B` will run.
 2. Check the board before doing anything else. If there is nothing for your role to do, say so
    in one line and stop. An empty run should cost almost nothing.
 3. Finish existing work before starting new work. Respect the WIP limits in the team config:
-   - `worktrees`: the Dev's tasks In progress + In review, one worktree each. While an unblocked
-     Ready task is Urgent, one extra worktree is allowed, until it leaves Ready.
+   - `worktrees`: the Dev's tasks In progress + In review, one worktree each. Blocked tasks,
+     either way, wait without taking a slot. While an unblocked Ready task is Urgent, one extra
+     worktree is allowed, until it leaves Ready.
    - `pitched`: pitches in front of the reviewer
    - `exploring`: drafted pitches waiting for room in Pitched
    - `ideas`: the Lead's discoveries waiting for the reviewer to prioritise or close them

@@ -461,10 +461,13 @@ depend_note() {
   printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
 }
 
+BLOCKED='((.labels | index("blocked")) or .blockedBy > 0)'
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
-STARTABLE="$READY_TASK"' and (.labels | index("blocked") | not) and .blockedBy == 0'
-UNSTARTABLE="$READY_TASK"' and ((.labels | index("blocked")) or .blockedBy > 0)'
+STARTABLE="$READY_TASK and ($BLOCKED | not)"
+UNSTARTABLE="$READY_TASK and $BLOCKED"
+# The Dev's tasks that take up one of wip.worktrees.
+WORKING='(.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
 case "$CMD" in
   list)
@@ -487,10 +490,11 @@ case "$CMD" in
     ;;
 
   wip)
-    items | jq '
+    items | jq "def open_blocked: .status != \"Done\" and $BLOCKED;"'
       def counts: group_by(.status) | map({key: .[0].status, value: length}) | from_entries;
       {pitches: map(select(.labels | index("pitch"))) | counts,
-       dev: map(select(.labels | index("a-team:dev"))) | counts,
+       dev: map(select(.labels | index("a-team:dev")))
+         | (map(select(open_blocked | not)) | counts) + {blocked: map(select(open_blocked)) | length},
        reviewer: map(select((.labels | index("pitch") or index("a-team:dev")) | not)) | counts}'
     ;;
 
@@ -800,7 +804,7 @@ case "$CMD" in
         done < <(git -C "$checkout" worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
       fi
 
-      used=$(jq '[.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))] | length' <<<"$all")
+      used=$(jq "[.[] | select($WORKING)] | length" <<<"$all")
       limit=$(cfg .wip.worktrees)
       startable=$(jq "[.[] | select($STARTABLE)]" <<<"$all")
       ready=$(jq -r '.[0].number // empty' <<<"$startable")
