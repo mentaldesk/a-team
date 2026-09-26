@@ -51,6 +51,7 @@ int Run()
         teams,
         command.Run,
         team => command.Read("board", team, "waiting"),
+        item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
         dialog => { using (dialog) app.Run(dialog); },
         requested ?? settings.ReadArea(),

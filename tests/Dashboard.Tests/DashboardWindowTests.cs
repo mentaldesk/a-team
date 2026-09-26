@@ -944,6 +944,7 @@ public class DashboardWindowTests : IDisposable
             new TeamConfigs(Config),
             run ?? (_ => Task.FromResult<string?>(null)),
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
+            _ => Task.FromResult(new Reading("{}", null)),
             openUrl ?? (_ => { }),
             dialog => dialog.Dispose(),
             area,

@@ -50,13 +50,22 @@ REVIEWER=$(cfg .reviewer)
 
 # A reviewer comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
 # older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
-# Delete it, and the $ackFrom half of `unanswered`, once no open item predates it.
+# Delete it, and the $ackFrom halves of `said` and `unanswered`, once no open item predates it.
 ACK_FROM=2026-09-24T00:00:00Z
 
+# marked($m): the team wrote this. It says so by ending the body with its marker alone on the last
+# line, so a `>`-quoted or fenced one — as GitHub's Quote reply leaves — is only ever text.
+MARKED='def marked($m): (.body // "") | gsub("\r"; "") | split("\n")
+    | map(sub("[ \t]+$"; "")) | map(select(. != "")) | last // "" | startswith($m);'
+
+# said($m): when the role last spoke on this thread. Before ACK_FROM a marker anywhere counted, and
+# that history keeps reading as it did.
 # unanswered($since): of comments shaped {at, author, body, eyes, kind?}, the ones the reviewer is
 # owed an answer to. $since is the role's own newest comment, which only ACK_FROM's tail needs.
-UNANSWERED='def unanswered($since): map(select(
-    .kind != "body" and .author == $reviewer and (.body | contains("<!-- a-team:") | not)
+UNANSWERED='def said($m): map(select(marked($m) or (.at < $ackFrom and (.body | contains($m)))) | .at)
+    | max // "";
+  def unanswered($since): map(select(
+    .kind != "body" and .author == $reviewer and (marked("<!-- a-team:") | not)
     and (.eyes // 0) == 0 and (.at >= $ackFrom or .at > $since)));'
 
 is_state() {
@@ -296,8 +305,8 @@ pr_reviews() { reviews "$1" | jq -s --argjson n "$1" 'map(. + {n: $n})'; }
 # nothing. It goes into the trigger so new feedback never looks like a retry.
 awaiting() {
   jq -r --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
-    map(select(.n == $n)) | (map(select(.body | contains($marker)) | .at) | max // "") as $since
+    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
+    map(select(.n == $n)) | said($marker) as $since
     | unanswered($since) | map(.at) | max // empty' <<<"$1"
 }
 
@@ -359,11 +368,11 @@ pr_checks() {
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
 # reviewer's until they comment; from then it is the role's, the same test `unanswered_feedback`
-# makes. A PR that is failing, conflicting or still a draft is the Dev's too, but an unanswered
-# comment outranks all three: the answer is owed before a green build means anything.
+# makes. A PR that is failing, conflicting, still running CI or still a draft is the Dev's too, but
+# an unanswered comment outranks them all: the answer is owed before a green build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
+    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
     def stamp: fromdateiso8601
       | if strflocaltime("%Y-%m-%d") == (now | strflocaltime("%Y-%m-%d"))
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
@@ -373,12 +382,13 @@ turns() {
       | (if .status == "Pitched" then "lead" else "dev" end) as $role
       | ($comments | map(select(.n == $item.number))) as $theirs
       | ($prs | map(select(.n == $item.number)) | first) as $pr
-      | ($theirs | map(select(.body | contains("<!-- a-team:\($role) -->")) | .at) | max // "") as $said
+      | ($theirs | said("<!-- a-team:\($role) -->")) as $said
       | ($theirs | unanswered($said) | map(.at) | max // "") as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
+         elif $pr.checks == "pending" then {trouble: "CI running", at: ""}
          elif $pr.draft then {trouble: "still a draft", at: ""}
          else null end) as $wrong
       | (if $pr == null then . else . + {pr: $pr.pr, prUrl: $pr.prUrl, checks: $pr.checks,
@@ -422,8 +432,8 @@ comments() {
 # The reviewer's comments on #<n> that no run has left a 👀 on. What `feedback` returns.
 unanswered_feedback() {
   comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
-    (map(select(.body | contains($marker)) | .at) | max // "") as $since
+    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
+    said($marker) as $since
     | unanswered($since) | map(del(.id, .eyes))'
 }
 
@@ -436,10 +446,10 @@ ack() {
     write "add 👀 to your comment of $at on #$1" gh api graphql -F subject="$id" -f query='
       mutation($subject: ID!) {
         addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
-  done < <(comments "$1" | jq -r --arg reviewer "$REVIEWER" --arg started "$started" '
+  done < <(comments "$1" | jq -r --arg reviewer "$REVIEWER" --arg started "$started" "$MARKED"'
     map(select(.at < $started))
     | map(select(.kind != "body" and .author == $reviewer
-                 and (.body | contains("<!-- a-team:") | not) and (.eyes // 0) == 0))
+                 and (marked("<!-- a-team:") | not) and (.eyes // 0) == 0))
     | .[] | [.id, .at] | @tsv')
 }
 
@@ -461,10 +471,13 @@ depend_note() {
   printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
 }
 
+BLOCKED='((.labels | index("blocked")) or .blockedBy > 0)'
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
-STARTABLE="$READY_TASK"' and (.labels | index("blocked") | not) and .blockedBy == 0'
-UNSTARTABLE="$READY_TASK"' and ((.labels | index("blocked")) or .blockedBy > 0)'
+STARTABLE="$READY_TASK and ($BLOCKED | not)"
+UNSTARTABLE="$READY_TASK and $BLOCKED"
+# The Dev's tasks that take up one of wip.worktrees.
+WORKING='(.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
 case "$CMD" in
   list)
@@ -487,10 +500,11 @@ case "$CMD" in
     ;;
 
   wip)
-    items | jq '
+    items | jq "def open_blocked: .status != \"Done\" and $BLOCKED;"'
       def counts: group_by(.status) | map({key: .[0].status, value: length}) | from_entries;
       {pitches: map(select(.labels | index("pitch"))) | counts,
-       dev: map(select(.labels | index("a-team:dev"))) | counts,
+       dev: (map(select(.labels | index("a-team:dev")))
+         | (map(select(open_blocked | not)) | counts) + {blocked: map(select(open_blocked)) | length}),
        reviewer: map(select((.labels | index("pitch") or index("a-team:dev")) | not)) | counts}'
     ;;
 
@@ -724,6 +738,16 @@ case "$CMD" in
     say "#$child is no longer a sub-issue of #$parent"
     ;;
 
+  body)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM body <n>"
+    # gh puts the error's own body on stdout, so its one-line reason is read from stderr alone.
+    trouble=$(mktemp)
+    issue=$(gh api "repos/$REPO/issues/$1" --jq '{number, title, body: (.body // "")}' 2>"$trouble") ||
+      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read #$1 ($reason)"; }
+    rm -f "$trouble"
+    printf '%s\n' "$issue"
+    ;;
+
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
@@ -774,8 +798,11 @@ case "$CMD" in
           p=$(jq -r .number <<<"$pr")
           numbers+=("$p")
           recent=$(jq -s 'add' <(echo "$recent") <(pr_reviews "$p"))
-          verdict=$(ci "$p" | jq -r .verdict)
-          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')")
+          checks=$(ci "$p")
+          verdict=$(jq -r .verdict <<<"$checks")
+          # Changes once the rest settle, so a run starts that can re-run a transient failure.
+          running=$(jq -r 'if .pending == [] then "" else ", other checks still running" end' <<<"$checks")
+          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')$running")
           [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ] &&
             reasons+=("PR #$p is green but still a draft")
           # UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING fires.
@@ -800,7 +827,7 @@ case "$CMD" in
         done < <(git -C "$checkout" worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
       fi
 
-      used=$(jq '[.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))] | length' <<<"$all")
+      used=$(jq "[.[] | select($WORKING)] | length" <<<"$all")
       limit=$(cfg .wip.worktrees)
       startable=$(jq "[.[] | select($STARTABLE)]" <<<"$all")
       ready=$(jq -r '.[0].number // empty' <<<"$startable")

@@ -1,54 +1,77 @@
-using System.Text;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The rank to give an item: the Priority field's own options, and None to clear it. It asks about
-/// one item at a time and never closes itself, so whoever opened it can walk a queue through it.</summary>
+/// <summary>What an item is about, and the rank to give it: the Priority field's own options, and None to
+/// clear it. It asks about one item at a time and never closes itself, so whoever opened it can walk a queue
+/// through it.</summary>
 public sealed class PriorityDialog : Dialog
 {
-    private const string SetHint = "Enter set";
-    private const string DoneHint = "Esc done";
-    private const string CancelHint = "Esc cancel";
-    private const string Separator = " · ";
+    private const string ScrollHint = "scroll";
+    private const string SetHint = "set";
+    private const string StopHint = "stop";
+    private const string DoneText = "Esc done";
+    private const string CancelText = "Esc cancel";
+    private const int BandLines = 3;
     private const int Inset = 1;
-    private const int OptionAndSpace = 4;
-    private const int TitleChrome = 4;
-    private const int RanksRow = 2;
 
+    private readonly View _band;
     private readonly OptionSelector<Rank> _ranks;
-    private readonly Label _number;
-    private readonly Button _stop;
+    private readonly LogView _body;
+    private readonly StatusBar _hints = new();
+    private readonly MessageBar _message = new();
 
     public PriorityDialog()
     {
-        Title = "Priority";
-        Width = Dim.Func(_ => Fits(Wide() + GetAdornmentsThickness().Horizontal, SuperView?.Viewport.Width), this);
-        Height = Dim.Func(_ => Fits(Tall() + GetAdornmentsThickness().Vertical, SuperView?.Viewport.Height), this);
+        X = 0;
+        Y = 0;
+        Width = Dim.Fill();
+        Height = Dim.Fill();
 
-        _ranks = new OptionSelector<Rank>
+        int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
+        int BandRow() => Math.Max(0, HintRow() - BandLines);
+
+        _body = new LogView
         {
             X = Inset,
-            Y = RanksRow,
-            Orientation = Orientation.Vertical,
+            Y = 0,
+            Width = Dim.Fill(Inset),
+            Height = Dim.Func(_ => BandRow(), this),
+            Following = false,
+            Scrolls = true,
+        };
+        _ranks = new OptionSelector<Rank>
+        {
+            X = Pos.Center(),
+            Y = 1,
+            Orientation = Orientation.Horizontal,
+            // NoStop is what makes the arrows move between the ranks; with the default the options are Tab stops.
+            TabBehavior = TabBehavior.NoStop,
+            // The ranks' initials are unique, so this is what gives each option the key its name starts with.
+            AssignHotKeys = true,
         };
         foreach (var (row, rank) in _ranks.SubViews.Zip(Enum.GetValues<Rank>()))
-            if (Priorities.Scheme(rank.ToString()) is { Length: > 0 } scheme)
+            if (Priorities.FormScheme(rank.ToString()) is { Length: > 0 } scheme)
                 row.SchemeName = scheme;
-
-        _number = new Label { X = Inset, Y = 0, CanFocus = false };
-        _stop = Hint(CancelHint, () => Dismissed?.Invoke());
-        Add(_number, _ranks);
-        Pos x = Inset;
-        var gap = new Label { Text = Separator, Y = Pos.AnchorEnd(1), CanFocus = false };
-        foreach (View hint in new View[] { Hint(SetHint, Chose), gap, _stop })
+        _band = new View
         {
-            hint.X = x;
-            x = Pos.Right(hint);
-            Add(hint);
-        }
+            X = 0,
+            Y = Pos.Func(_ => BandRow(), this),
+            Width = Dim.Fill(),
+            Height = BandLines,
+            // Without this the ranks can't take focus, whatever they say.
+            CanFocus = true,
+            // A Dialog only takes Accept from a child of its own, so the band has to pass Enter on.
+            CommandsToBubbleUp = [Command.Accept],
+            SchemeName = LogSchemes.Form,
+        };
+        _band.Add(_ranks);
+        _hints.Y = Pos.Func(_ => HintRow(), this);
+        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
+
+        Add(_body, _band, _hints, _message);
     }
 
     /// <summary>Raised on Enter, with the rank the keyboard is on.</summary>
@@ -57,22 +80,30 @@ public sealed class PriorityDialog : Dialog
     /// <summary>Raised on Esc, and by the hint beside it.</summary>
     internal event Action? Dismissed;
 
+    internal View Band => _band;
+
     internal OptionSelector<Rank> Ranks => _ranks;
 
-    internal string Number => _number.Text;
+    internal LogView Body => _body;
 
-    /// <summary>The hint row as it reads now.</summary>
-    internal string Hints => $"{SetHint}{Separator}{_stop.Text}";
+    internal StatusBar Hints => _hints;
 
-    /// <summary>Puts <paramref name="item"/> in front of the reviewer, with <paramref name="left"/> still to
-    /// rank, this one among them. The keyboard lands on the rank the item carries, so Esc changes nothing.
-    /// </summary>
-    internal void Ask(WaitingItem item, int left)
+    internal MessageBar Message => _message;
+
+    /// <summary>Puts <paramref name="item"/> in front of the reviewer, with what it's about and
+    /// <paramref name="left"/> still to rank, this one among them. The keyboard lands on the rank the item
+    /// carries, so Esc changes nothing.</summary>
+    internal void Ask(WaitingItem item, IssueBody body, int left)
     {
         var carried = Priorities.Of(item);
-        Title = left > 1 ? $"Priority · {left} left" : "Priority";
-        _number.Text = $"#{item.Number}";
-        _stop.Text = left > 1 ? DoneHint : CancelHint;
+        var named = $"#{item.Number}  {item.Title}";
+        Title = left > 1 ? $"{named} · {left} left" : named;
+        _body.Show(body.Lines);
+        if (body.Failure is { Length: > 0 } failure)
+            _message.Show(failure, Schemes.Error);
+        else
+            _message.Clear();
+        Say(left > 1 ? DoneText : CancelText);
         _ranks.Value = carried;
         // SetFocus lands the keyboard on the first option, so the item's own rank is put under it after.
         _ranks.SetFocus();
@@ -85,51 +116,53 @@ public sealed class PriorityDialog : Dialog
     internal void Finish() => RequestStop();
 
     /// <summary>Enter reaches a Dialog as Accept, from the options themselves, and never as a key.</summary>
-    protected override bool OnAccepting(CommandEventArgs args)
+    protected override bool OnAccepting(CommandEventArgs args) => Chose();
+
+    /// <summary>The pane never takes focus, so the keys that scroll it are the dialog's own.</summary>
+    protected override bool OnKeyDown(Key key)
     {
-        Chose();
+        if (key == Key.Esc)
+            return Stopped();
+        return Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
+    }
+
+    private void Say(string stop) =>
+        _hints.Show("", [
+            new HintedCommand(ScrollHint, "PgUp/PgDn scroll"),
+            new HintedCommand(SetHint, "Enter set"),
+            new HintedCommand(StopHint, stop),
+        ], Run);
+
+    private bool Chose()
+    {
+        Set?.Invoke(_ranks.Value ?? Rank.None);
         return true;
     }
 
-    protected override bool OnKeyDown(Key key)
+    private bool Stopped()
     {
-        if (key != Key.Esc)
-            return base.OnKeyDown(key);
         Dismissed?.Invoke();
         return true;
     }
 
-    private void Chose() => Set?.Invoke(_ranks.Value ?? Rank.None);
-
-    private static int Fits(int wanted, int? available) => available is { } room ? Math.Min(wanted, room) : wanted;
-
-    private static int Tall() => RanksRow + Enum.GetValues<Rank>().Length + 2;
-
-    private int Wide() =>
-        Math.Max(
-            Math.Max(Title.Length + TitleChrome, _number.Text.Length),
-            Math.Max(
-                Enum.GetNames<Rank>().Max(name => name.Length) + OptionAndSpace,
-                Hints.Length)) + (Inset * 2);
-
-    /// <summary>One clickable hint on the bottom row.</summary>
-    private static Button Hint(string text, Action run)
+    private bool Scrolled(Action scroll)
     {
-        var hint = new Button
-        {
-            Text = text,
-            Y = Pos.AnchorEnd(1),
-            NoDecorations = true,
-            NoPadding = true,
-            ShadowStyle = ShadowStyles.None,
-            HotKeySpecifier = (Rune)0xffff,
-            CanFocus = false,
-        };
-        hint.Accepting += (_, args) =>
-        {
-            run();
-            args.Handled = true;
-        };
-        return hint;
+        scroll();
+        SetNeedsDraw();
+        return true;
     }
+
+    private Action? Scroll(Key key) =>
+        key == Key.PageUp ? () => _body.Page(-1)
+        : key == Key.PageDown ? () => _body.Page(+1)
+        : key == Key.Home ? _body.Home
+        : key == Key.End ? _body.End
+        : null;
+
+    private bool Run(string hint) => hint switch
+    {
+        ScrollHint => Scrolled(() => _body.Page(+1)),
+        SetHint => Chose(),
+        _ => Stopped(),
+    };
 }

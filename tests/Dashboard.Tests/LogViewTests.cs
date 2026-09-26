@@ -155,7 +155,7 @@ public class LogViewTests
     }
 
     [Fact]
-    public void An_error_splits_a_run_into_two_rows_and_stays_on_its_own()
+    public void Every_error_survives_the_loss_of_the_call_it_came_from()
     {
         LogLine[] lines =
         [
@@ -163,16 +163,83 @@ public class LogViewTests
             new("Bash two", LogLineKind.ToolCall),
             new("no such file", LogLineKind.ToolError),
             new("Bash three", LogLineKind.ToolCall),
+            new("permission denied", LogLineKind.ToolError),
             new("Bash four", LogLineKind.ToolCall),
             new("Bash five", LogLineKind.ToolCall),
         ];
 
         var rows = LogView.Wrap(LogView.Collapse(lines, 38), 38);
 
-        Assert.Equal(["Bash two (+1)", "no such file", "Bash five (+2)"], rows.Select(r => r.Text));
+        Assert.Equal(["no such file", "permission denied", "Bash five (+4)"], rows.Select(r => r.Text));
         Assert.Equal(
-            [LogLineKind.ToolCall, LogLineKind.ToolError, LogLineKind.ToolCall],
+            [LogLineKind.ToolError, LogLineKind.ToolError, LogLineKind.ToolCall],
             rows.Select(r => r.Kind));
+        Assert.Equal(Icons.Width + 2, LogView.Lead(LogLineKind.ToolError));
+    }
+
+    [Fact]
+    public void Several_runs_of_calls_leave_one_row_and_it_is_the_newest()
+    {
+        LogLine[] lines =
+        [
+            new("Bash one", LogLineKind.ToolCall),
+            new("Bash two", LogLineKind.ToolCall),
+            new("narration", LogLineKind.Prose),
+            new("Bash three", LogLineKind.ToolCall),
+            new("more narration", LogLineKind.Prose),
+            new("Bash four", LogLineKind.ToolCall),
+            new("Bash five", LogLineKind.ToolCall),
+        ];
+
+        var rows = LogView.Collapse(lines, 38);
+
+        Assert.Equal(["narration", "more narration", "Bash five (+4)"], rows.Select(r => r.Text));
+    }
+
+    [Fact]
+    public void Two_sessions_in_a_pane_leave_one_row_in_the_later_one()
+    {
+        LogLine[] lines =
+        [
+            new("── session started (opus) ──", LogLineKind.SessionBoundary),
+            new("Bash one", LogLineKind.ToolCall),
+            new("finished: ok, 34 turns, $1.42", LogLineKind.ResultOk),
+            new("── session started (opus) ──", LogLineKind.SessionBoundary),
+            new("Bash two", LogLineKind.ToolCall),
+        ];
+
+        var rows = LogView.Collapse(lines, 38);
+
+        var call = Assert.Single(rows, row => row.Kind == LogLineKind.ToolCall);
+        Assert.Equal("Bash two (+1)", call.Text);
+        Assert.Equal(rows[^1], call);
+    }
+
+    [Fact]
+    public void The_call_the_agent_is_on_is_the_last_row()
+    {
+        LogLine[] lines =
+        [
+            new("Bash one", LogLineKind.ToolCall),
+            new("narration", LogLineKind.Prose),
+            new("Bash two", LogLineKind.ToolCall),
+        ];
+
+        var rows = LogView.Wrap(LogView.Collapse(lines, 38), 38);
+
+        Assert.Equal("Bash two (+1)", rows[^1].Text);
+    }
+
+    [Fact]
+    public void The_retained_row_counts_every_call_hidden_across_the_whole_log()
+    {
+        var lines = Fixture();
+        var calls = lines.Count(line => line.Kind == LogLineKind.ToolCall);
+        Assert.True(calls > 2, $"the fixture has {calls} tool calls");
+
+        var row = Assert.Single(LogView.Collapse(lines, 200), line => line.Kind == LogLineKind.ToolCall);
+
+        Assert.EndsWith($" (+{calls - 1})", row.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -255,6 +322,26 @@ public class LogViewTests
 
         Assert.Equal("second", expanded[LogView.Anchor(collapsed, expanded, 2)].Text);
         Assert.Equal(2, LogView.Anchor(expanded, collapsed, 7));
+    }
+
+    [Fact]
+    public void A_scrolled_pane_lands_on_the_same_line_with_runs_gone_from_between()
+    {
+        LogLine[] lines =
+        [
+            new("first", LogLineKind.Prose),
+            new("Bash one", LogLineKind.ToolCall),
+            new("Bash two", LogLineKind.ToolCall),
+            new("second", LogLineKind.Prose),
+            new("Bash three", LogLineKind.ToolCall),
+            new("third", LogLineKind.Prose),
+            new("Bash four", LogLineKind.ToolCall),
+        ];
+        var collapsed = LogView.Wrap(LogView.Collapse(lines, 38), 38);
+        var expanded = LogView.Wrap(lines, 38);
+
+        Assert.Equal("third", expanded[LogView.Anchor(collapsed, expanded, 2)].Text);
+        Assert.Equal("third", collapsed[LogView.Anchor(expanded, collapsed, 5)].Text);
     }
 
     [Fact]

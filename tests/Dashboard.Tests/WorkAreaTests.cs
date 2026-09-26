@@ -303,6 +303,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(new Key('p'));
+        window.Refresh();
 
         Assert.Empty(opened);
         Assert.DoesNotContain("work.pr", window.Commands.Registered.Select(command => command.Id));
@@ -344,6 +345,9 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        Assert.Equal("Reading #6…", window.Message.Says);
+
+        window.Refresh();
         Set(Rank.High);
 
         Assert.Equal([["board", "team0", "priority", "you", "6", "High"]], calls);
@@ -363,6 +367,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         Set(Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -381,6 +386,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         Set(Rank.High);
         window.Refresh();
         Assert.Equal("#6 · set to High", window.Message.Says);
@@ -404,6 +410,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(107, window.Work.Selected?.Number);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         Set(Rank.None);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -429,6 +436,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("Triage · team0", window.Work.Region);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         Set(Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -448,9 +456,10 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
 
-        Assert.Equal("Priority", window.Dialog?.Title);
-        Assert.Equal("Enter set · Esc cancel", window.Dialog?.Hints);
+        Assert.Equal("#107  When the dashboard goes quiet", window.Dialog?.Title);
+        Assert.Equal("PgUp/PgDn scroll · Enter set · Esc cancel", window.Dialog?.Hints.Says);
 
         Set(Rank.Low);
         window.Refresh();
@@ -469,6 +478,7 @@ public class WorkAreaTests : IDisposable
         var stamp = window.Status.State.Text;
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         Set(Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -478,6 +488,83 @@ public class WorkAreaTests : IDisposable
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void p_reads_the_item_before_the_dialog_opens_and_hands_it_the_body()
+    {
+        var read = new List<WaitingItem>();
+        using var window = Open(readBody: item =>
+        {
+            read.Add(item);
+            return Task.FromResult(new Reading(Body, null));
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        Assert.Null(window.Dialog);
+
+        window.Refresh();
+
+        Assert.Equal([6], read.Select(item => item.Number));
+        Assert.Equal(["## Opportunity"], window.Dialog?.Body.Lines.Select(line => line.Text));
+    }
+
+    [Fact]
+    public void A_read_that_failed_still_opens_the_dialog_saying_what_went_wrong()
+    {
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading("", "board.sh: can't read #6 (gh: Not Found (HTTP 404))")));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+
+        Assert.Equal("board.sh: can't read #6 (gh: Not Found (HTTP 404))", window.Dialog?.Message.Says);
+    }
+
+    [Fact]
+    public void A_second_p_while_the_first_is_still_reading_is_refused_not_queued()
+    {
+        var reads = 0;
+        var finish = new TaskCompletionSource<Reading>();
+        using var window = Open(readBody: _ =>
+        {
+            reads++;
+            return finish.Task;
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        window.Commands.Execute("work.priority");
+
+        Assert.Equal(1, reads);
+    }
+
+    [Fact]
+    public void Every_item_the_run_moves_on_to_is_read_before_it_is_asked_about()
+    {
+        var read = new List<WaitingItem>();
+        using var window = Open(read: Queued, readBody: item =>
+        {
+            read.Add(item);
+            return Task.FromResult(new Reading(Body, null));
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        Set(Rank.High);
+        Settle(window);
+        Set(Rank.High);
+        Settle(window);
+
+        Assert.Equal([6, 26, 41], read.Select(item => item.Number));
     }
 
     [Fact]
@@ -493,6 +580,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         _dialog!.NewKeyDownEvent(Key.Esc);
         window.Refresh();
 
@@ -514,10 +602,11 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         Set(Rank.High);
-        window.Refresh();
+        Settle(window);
         Set(Rank.Low);
-        window.Refresh();
+        Settle(window);
         Set(Rank.Medium);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -540,22 +629,21 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
-        Assert.Equal("Priority · 3 left", window.Dialog?.Title);
-        Assert.Equal("Enter set · Esc done", window.Dialog?.Hints);
-        Assert.Equal("#6", window.Dialog?.Number);
+        window.Refresh();
+        Assert.Equal("#6  The agents can't say what they'd change · 3 left", window.Dialog?.Title);
+        Assert.Equal("PgUp/PgDn scroll · Enter set · Esc done", window.Dialog?.Hints.Says);
 
         Set(Rank.High);
-        window.Refresh();
+        Settle(window);
         LayOut(window, 120, 30);
-        Assert.Equal("Priority · 2 left", window.Dialog?.Title);
-        Assert.Equal("#26", window.Dialog?.Number);
+        Assert.Equal("#26  A pitch I've shelved · 2 left", window.Dialog?.Title);
         Assert.Equal(26, window.Work.Selected?.Number);
 
         Set(Rank.High);
-        window.Refresh();
+        Settle(window);
         LayOut(window, 120, 30);
-        Assert.Equal("Priority", window.Dialog?.Title);
-        Assert.Equal("Enter set · Esc cancel", window.Dialog?.Hints);
+        Assert.Equal("#41  The dispatcher forgets a team it can't read", window.Dialog?.Title);
+        Assert.Equal("PgUp/PgDn scroll · Enter set · Esc cancel", window.Dialog?.Hints.Says);
     }
 
     [Fact]
@@ -571,10 +659,11 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
+        window.Refresh();
         Set(Rank.High);
-        window.Refresh();
+        Settle(window);
         Set(Rank.Low);
-        window.Refresh();
+        Settle(window);
         _dialog!.NewKeyDownEvent(Key.Esc);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -596,8 +685,9 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
-        Set(Rank.High);
         window.Refresh();
+        Set(Rank.High);
+        Settle(window);
         Set(Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -623,11 +713,12 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
-        Assert.Equal("Priority · 2 left", window.Dialog?.Title);
-        Set(Rank.High);
         window.Refresh();
+        Assert.Equal("#6  The agents can't say what they'd change · 2 left", window.Dialog?.Title);
+        Set(Rank.High);
+        Settle(window);
         LayOut(window, 120, 30);
-        Assert.Equal("#41", window.Dialog?.Number);
+        Assert.Equal("#41  The dispatcher forgets a team it can't read", window.Dialog?.Title);
         Set(Rank.High);
         window.Refresh();
 
@@ -929,6 +1020,8 @@ public class WorkAreaTests : IDisposable
           "turn": "you", "reason": "waiting to be ranked"}]
         """;
 
+    private const string Body = """{"number": 6, "title": "t", "body": "## Opportunity"}""";
+
     private static Task<Reading> Queued(string team) =>
         Task.FromResult(new Reading(team == "team0" ? Queue : "[]", null));
 
@@ -947,6 +1040,13 @@ public class WorkAreaTests : IDisposable
         _dialog.Ranks.NewKeyDownEvent(Key.Enter);
     }
 
+    /// <summary>The refreshes a rank takes: one for the write, and one for the read the next item needs.</summary>
+    private static void Settle(DashboardWindow window)
+    {
+        window.Refresh();
+        window.Refresh();
+    }
+
     private static Button Hint(DashboardWindow window, string text) =>
         window.Status.Hints.Single(hint => hint.Text == text);
 
@@ -963,6 +1063,7 @@ public class WorkAreaTests : IDisposable
         Func<string, Task<Reading>>? read = null,
         Action<string>? openUrl = null,
         Func<string[], Task<string?>>? run = null,
+        Func<WaitingItem, Task<Reading>>? readBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode)
     {
@@ -974,6 +1075,7 @@ public class WorkAreaTests : IDisposable
             new TeamConfigs(Config),
             run ?? (_ => Task.FromResult<string?>(null)),
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
+            readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
             Hold,
             area,

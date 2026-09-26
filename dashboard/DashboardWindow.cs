@@ -39,6 +39,7 @@ public sealed class DashboardWindow : Window
     private readonly TeamConfigs _teams;
     private readonly Func<string[], Task<string?>> _run;
     private readonly Func<string, Task<Reading>> _readWaiting;
+    private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Action<string> _openUrl;
     private readonly Action<PriorityDialog> _ask;
     private readonly IconStyle _auto;
@@ -51,6 +52,7 @@ public sealed class DashboardWindow : Window
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
+    private (WaitingItem Item, Task<Reading> Read)? _readingBody;
     private DateTimeOffset? _readAt;
     private string? _failure;
     private string? _progress;
@@ -64,6 +66,7 @@ public sealed class DashboardWindow : Window
         TeamConfigs teams,
         Func<string[], Task<string?>> run,
         Func<string, Task<Reading>> readWaiting,
+        Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
         Action<PriorityDialog> ask,
         Area area,
@@ -75,6 +78,7 @@ public sealed class DashboardWindow : Window
         _teams = teams;
         _run = run;
         _readWaiting = readWaiting;
+        _readBody = readBody;
         _openUrl = openUrl;
         _ask = ask;
         _area = area;
@@ -308,29 +312,46 @@ public sealed class DashboardWindow : Window
             _openUrl(url);
     }
 
-    /// <summary>Opens the dialog on the selected card. An unranked Idea starts a run through the whole queue:
-    /// the dialog stays up and moves to the next one until they're gone. Anything else is one item on its own.
-    /// </summary>
+    /// <summary>Opens the dialog on the selected card, reading what it's about first so it opens on something
+    /// worth ranking. An unranked Idea starts a run through the whole queue: the dialog stays up and moves to
+    /// the next one until they're gone. Anything else is one item on its own.</summary>
     private void SetPriority()
     {
-        if (_pending is not null || _dialog is not null || _work.SelectedCard is not { } item)
+        if (_pending is not null || _readingBody is not null || _dialog is not null ||
+            _work.SelectedCard is not { } item)
             return;
         _ranked = 0;
-        _dialog = new PriorityDialog();
-        _dialog.Set += Write;
-        _dialog.Dismissed += Stop;
-        // Anything else that takes the dialog off the stack — the quit key, say — ends the run too.
-        _dialog.IsRunningChanged += (_, running) => { if (!running.Value) Stop(); };
-        Ask(item);
-        _ask(_dialog);
+        Read(item);
+    }
+
+    /// <summary>Reads what an item is about, off the draw loop.</summary>
+    private void Read(WaitingItem item)
+    {
+        _progress = $"Reading #{item.Number}…";
+        ShowMessage();
+        _readingBody = (item, _readBody(item));
     }
 
     /// <summary>Puts an item in front of the reviewer, saying how many are still to rank. A card that isn't an
-    /// unranked Idea is on its own however full the queue is.</summary>
-    private void Ask(WaitingItem item)
+    /// unranked Idea is on its own however full the queue is. A body that wouldn't read still asks: you pressed
+    /// the key to rank, not to read.</summary>
+    private void Ask(WaitingItem item, IssueBody body)
     {
         _asking = item;
-        _dialog?.Ask(item, WorkView.NeedsRank(item) ? _work.Queue.Count : 1);
+        var left = WorkView.NeedsRank(item) ? _work.Queue.Count : 1;
+        if (_dialog is { } asking)
+        {
+            asking.Ask(item, body, left);
+            return;
+        }
+        var dialog = new PriorityDialog();
+        dialog.Set += Write;
+        dialog.Dismissed += Stop;
+        // Anything else that takes the dialog off the stack — the quit key, say — ends the run too.
+        dialog.IsRunningChanged += (_, running) => { if (!running.Value) Stop(); };
+        dialog.Ask(item, body, left);
+        _dialog = dialog;
+        _ask(dialog);
     }
 
     /// <summary>Writes the rank the reviewer chose. The board decides what the field will take, so an unknown
@@ -394,11 +415,20 @@ public sealed class DashboardWindow : Window
                     var walking = WorkView.NeedsRank(ranking.Item);
                     Ranked(ranking.Item, ranking.Rank);
                     if (walking && _work.Queue.FirstOrDefault() is { } next)
-                        Ask(next);
+                        Read(next);
                     else
                         Stop();
                 }
             }
+        }
+
+        if (_readingBody is { Read.IsCompleted: true } body)
+        {
+            _readingBody = null;
+            _progress = null;
+            Ask(body.Item, body.Read.Status == TaskStatus.RanToCompletion
+                ? IssueBody.Of(body.Read.Result, body.Item.Number)
+                : new IssueBody(Failure: $"couldn't read #{body.Item.Number}"));
         }
 
         if (_reading is not { IsCompleted: true } read)

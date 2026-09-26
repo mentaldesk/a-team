@@ -34,6 +34,25 @@ public class PrioritiesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void The_same_colour_on_a_form_band_keeps_the_band_s_background_and_its_underline()
+    {
+        BundledThemes.Load();
+
+        var form = SchemeManager.GetScheme(Priorities.FormScheme("Urgent"));
+
+        Assert.Equal(new Color("#c1408d"), form.Normal.Foreground);
+        Assert.Equal(new Color("#c1408d"), form.HotNormal.Foreground);
+        Assert.Equal(SchemeManager.GetScheme(LogSchemes.Form).Normal.Background, form.Normal.Background);
+        Assert.True(form.HotNormal.Style.HasFlag(TextStyle.Underline));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Whatever")]
+    public void A_priority_we_do_not_colour_has_no_scheme_on_a_form_band_either(string priority) =>
+        Assert.Equal("", Priorities.FormScheme(priority));
+
+    [Fact]
     public void A_cards_number_is_what_wears_the_colour_and_the_rest_of_it_is_left_alone()
     {
         var card = new Card(At("High"), false).Text(0);

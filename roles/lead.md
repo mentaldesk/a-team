@@ -173,7 +173,6 @@ If the vision file is missing and there's no open PR from branch `a-team/vision`
 the README, the open issues and the code: who it's for, what it's trying to be, what it
 deliberately isn't, the products it learns from, and the next few themes. Open it as a draft
 PR from `a-team/vision` with your marker in the body, then `a-team board {{team}} add lead <pr> Pitched`.
-Don't wait for CI.
 
 Until the reviewer merges it, only do steps 1 to 3. If the PR is open, answer the reviewer's
 feedback on it (`a-team board {{team}} feedback lead <pr>`) by pushing to the branch and replying.

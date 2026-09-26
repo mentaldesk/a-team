@@ -2,9 +2,9 @@ using System.Text;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The window's last row: the keys you can press, each one clickable, and at its right end what the
-/// area is showing. Terminal.Gui's own StatusBar lays out Shortcuts with a border between each, so the hints
-/// are laid out here instead.</summary>
+/// <summary>The last row of a window or a dialog: the keys you can press, each one clickable, and at its
+/// right end what the area is showing. Terminal.Gui's own StatusBar lays out Shortcuts with a border between
+/// each, so the hints are laid out here instead.</summary>
 public sealed class StatusBar : View
 {
     internal const string Scheme = "StatusBar";
@@ -38,8 +38,9 @@ public sealed class StatusBar : View
 
     internal IReadOnlyList<Button> Hints => [.. _hints.SubViews.OfType<Button>()];
 
-    /// <summary>The keys for the mode the window is in now. Clicking one runs the command it names; where
-    /// several commands share a hint, like the scroll keys, it runs the first of them.</summary>
+    /// <summary>The keys for the mode the window is in now, after <paramref name="version"/> where there is
+    /// one. Clicking a hint runs the command it names; where several commands share a hint, like the scroll
+    /// keys, it runs the first of them.</summary>
     public void Show(string version, IReadOnlyList<HintedCommand> hints, Func<string, bool> run)
     {
         foreach (var view in _hints.SubViews.ToArray())
@@ -47,16 +48,25 @@ public sealed class StatusBar : View
             _hints.Remove(view);
             view.Dispose();
         }
-        var lead = new Label { Text = version, X = 0, Y = 0, CanFocus = false };
-        _hints.Add(lead);
-        Pos x = Pos.Right(lead);
+        Pos x = 0;
+        if (version.Length > 0)
+        {
+            var lead = new Label { Text = version, X = 0, Y = 0, CanFocus = false };
+            _hints.Add(lead);
+            x = Pos.Right(lead);
+        }
         foreach (var hint in hints)
         {
-            var separator = new Label { Text = Separator, X = x, Y = 0, CanFocus = false };
+            if (_hints.SubViews.Count > 0)
+            {
+                var separator = new Label { Text = Separator, X = x, Y = 0, CanFocus = false };
+                _hints.Add(separator);
+                x = Pos.Right(separator);
+            }
             var button = new Button
             {
                 Text = hint.Text,
-                X = Pos.Right(separator),
+                X = x,
                 Y = 0,
                 NoDecorations = true,
                 NoPadding = true,
@@ -65,7 +75,7 @@ public sealed class StatusBar : View
                 CanFocus = false,
             };
             button.Accepting += (_, args) => args.Handled = run(hint.Id);
-            _hints.Add(separator, button);
+            _hints.Add(button);
             x = Pos.Right(button);
         }
         SetNeedsLayout();
