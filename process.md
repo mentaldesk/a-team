@@ -129,10 +129,9 @@ tell what `$B` will run.
 The GitHub API allows 5,000 requests an hour, shared by both roles and the reviewer. Running
 out stops everyone.
 
-- Only wait on CI where your role file says to. That overrides any general "watch CI after
-  pushing" rule you've been given elsewhere.
-- When you do wait, check at most every 2 minutes and give up after 20. Never poll in a loop
-  without a sleep.
+- Never wait on CI in a run: no `sleep` loops, `Monitor` or `--watch`. The dispatcher starts the
+  Dev when a PR's CI fails or goes green, so end the run instead. This overrides any "watch CI
+  after pushing" rule you've been given elsewhere.
 - If any `gh` or `a-team board` call reports a rate limit, stop the run straight away and say so
   in your summary. Don't retry.
 

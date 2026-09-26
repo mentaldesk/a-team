@@ -33,7 +33,8 @@ For each item in `a-team board {{team}} mine dev "In review"`, find its PR with 
 - `a-team board {{team}} checks <pr>`. If it's `fail`, read the failing job's log
   (`gh run view <run-id> --log-failed`), fix the root cause in that PR's worktree, and push. A
   failure that's clearly transient (network, runner) is re-run with `gh run rerun <run-id>
-  --failed` once the run has finished, not fixed.
+  --failed`, not fixed. GitHub allows that only once the whole run has finished; until then,
+  leave it.
 - `a-team board {{team}} feedback dev <pr>` and `a-team board {{team}} feedback dev <n>`: the reviewer may comment on
   either the PR or the issue. Address each point, push, and reply with `a-team board {{team}} comment` where
   the comment was made. If you disagree with a point, say why in the reply instead of changing
@@ -46,9 +47,14 @@ For each item in `a-team board {{team}} mine dev "In review"`, find its PR with 
 
 ### 3. Resume anything In progress
 
-An item in `a-team board {{team}} mine dev "In progress"` was left by a run that didn't finish. Pick it
-up from its worktree and branch if they exist. If its draft PR is already up, carry on from
-step 4.9. If it can't be finished, comment why and `a-team board {{team}} move dev <n> Ready`.
+For each item in `a-team board {{team}} mine dev "In progress"`:
+
+- If its draft PR is up, run `a-team board {{team}} checks <pr>`. On `fail`, fix it as in step 2.
+  On `pass`, mark the PR ready (`gh pr ready <pr>`) and `a-team board {{team}} move dev <n> "In review"`.
+  Only a green PR is marked ready, never a failing or pending one: this is the one exception to
+  the reviewer's general rule that PRs stay in draft. On `pending`, leave it.
+- Otherwise a run didn't finish it. Pick it up from its worktree and branch if they exist. If it
+  can't be finished, comment why and `a-team board {{team}} move dev <n> Ready`.
 
 ### 4. Take new work
 
@@ -76,11 +82,7 @@ Urgent, below `wip.worktrees + 1`:
 7. Push and open a **draft** PR. Body: a short summary, `Closes #<n>`, anything the reviewer
    should look at closely, and your marker. No test-plan section.
 8. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
-9. Check `a-team board {{team}} checks <pr>` every 2 minutes, for up to 20 minutes. Fix failures as in
-   step 2. If it's still pending after that, leave the item In progress for the next run.
-10. Once `checks` says `pass`, mark the PR ready (`gh pr ready <pr>`) and
-    `a-team board {{team}} move dev <n> "In review"`. A PR is ready for the reviewer only when it's
-    green: never mark a failing or pending PR ready. This is the one exception to the reviewer's
-    general rule that PRs stay in draft.
+9. Leave the item In progress and end the run. Step 3 of a later run marks the PR ready once
+   CI is green.
 
 Take at most one new task per run.

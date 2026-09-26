@@ -147,7 +147,7 @@ agent owes you an answer on a dimmed headset and names that role in front of its
 line at the foot says why — `#118 · lead · answering your feedback since 08:14`. It's theirs from
 the moment you comment — on the card's own issue or on the PR that closes it — until they answer,
 which is the same test the dispatcher makes when it decides what to start a run for. A PR that's
-failing CI, conflicting with its base or still a draft is theirs too, and the card names which —
+failing CI, conflicting with its base, still running CI or still a draft is theirs too, and the card names which —
 `#124  dev · CI failing · A finished task` — so you never open one to find CI still running on it.
 `m` hides everything that isn't your move and `m` again brings it
 back — an unranked Idea is always yours, so Triage keeps nearly all of it; the counts follow, the

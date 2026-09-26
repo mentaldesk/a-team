@@ -50,7 +50,11 @@
       "Bash(gh repo archive *)",
       "Bash(a-team board * priority *)",
       "Bash(a-team dispatch*)",
-      "Bash(a-team install*)"
+      "Bash(a-team install*)",
+      "Bash(gh run watch *)",
+      "Bash(gh pr checks *--watch*)",
+      "Monitor",
+      "ScheduleWakeup"
     ]
   }
 }
