@@ -51,8 +51,9 @@ int Run()
         teams,
         command.Run,
         team => command.Read("board", team, "waiting"),
+        item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
-        item => PriorityDialog.Show(app, item),
+        (item, body) => PriorityDialog.Show(app, item, body),
         requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable));
     window.Refresh();

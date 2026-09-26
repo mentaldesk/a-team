@@ -1,5 +1,7 @@
+using System.Drawing;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Views;
 using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
@@ -18,8 +20,14 @@ public sealed class LogView : View
     private int _maxTop;
     private bool _following = true;
     private bool _expanded;
+    private bool _scrolls;
 
-    public LogView() => CanFocus = false;
+    public LogView()
+    {
+        CanFocus = false;
+        SubViewLayout += (_, _) => Fit();
+        ViewportChanged += (_, _) => Dragged();
+    }
 
     public IReadOnlyList<LogLine> Lines
     {
@@ -31,7 +39,28 @@ public sealed class LogView : View
         }
     }
 
-    public bool Following => _following;
+    /// <summary>Whether new lines pull the view to the end, as a session log's do. A body read once starts at the
+    /// top instead.</summary>
+    public bool Following
+    {
+        get => _following;
+        init => _following = value;
+    }
+
+    internal int Top => _top;
+
+    /// <summary>Whether text too long for the view gets a scroll bar beside it, as a body read at a sitting
+    /// does.</summary>
+    public bool Scrolls
+    {
+        get => _scrolls;
+        init
+        {
+            _scrolls = value;
+            if (value)
+                VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+        }
+    }
 
     public bool Expanded
     {
@@ -73,10 +102,36 @@ public sealed class LogView : View
 
     private void ScrollTo(int top)
     {
+        if (Viewport.Height > 0)
+            _maxTop = Math.Max(0, Rows(Math.Max(1, Viewport.Width)).Count - Viewport.Height);
         _top = Math.Clamp(top, 0, _maxTop);
         _following = _top >= _maxTop;
+        if (_scrolls)
+            Viewport = Viewport with { Y = _top };
         SetNeedsDraw();
     }
+
+    /// <summary>The bar scrolls the viewport, not the rows, so where it lands becomes the top row.</summary>
+    private void Dragged()
+    {
+        if (_scrolls && _top != Viewport.Y)
+            ScrollTo(Viewport.Y);
+    }
+
+    private void Fit()
+    {
+        if (!_scrolls)
+            return;
+        // A second pass: the scroll bar takes a column off the width the first one wrapped to.
+        for (var pass = 0; pass < 2 && GetContentSize() != Content(); pass++)
+            SetContentSize(Content());
+        ScrollTo(_following ? int.MaxValue : _top);
+    }
+
+    private Size Content() => Viewport.Size with
+    {
+        Height = Math.Max(Viewport.Height, Rows(Math.Max(1, Viewport.Width)).Count),
+    };
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
