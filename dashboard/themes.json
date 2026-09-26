@@ -48,16 +48,16 @@
           },
           {
             "Menu": {
-              "Normal": { "Foreground": "#C5CAD3", "Background": "#262A33" },
-              "Focus": { "Foreground": "#E6E9EF", "Background": "#2F4A6D" },
-              "HotNormal": { "Foreground": "#6CB6FF", "Background": "#262A33", "Style": "Underline" },
-              "HotFocus": { "Foreground": "#6CB6FF", "Background": "#2F4A6D", "Style": "Underline" },
-              "Active": { "Foreground": "#E6E9EF", "Background": "#2F4A6D" },
-              "HotActive": { "Foreground": "#6CB6FF", "Background": "#2F4A6D", "Style": "Underline" },
-              "Highlight": { "Foreground": "#E6C07B", "Background": "#262A33" },
+              "Normal": { "Foreground": "#FFFFFF", "Background": "#2B5A8A" },
+              "Focus": { "Foreground": "#FFFFFF", "Background": "#0F3557" },
+              "HotNormal": { "Foreground": "#FFD866", "Background": "#2B5A8A", "Style": "Underline" },
+              "HotFocus": { "Foreground": "#FFD866", "Background": "#0F3557", "Style": "Underline" },
+              "Active": { "Foreground": "#FFFFFF", "Background": "#0F3557" },
+              "HotActive": { "Foreground": "#FFD866", "Background": "#0F3557", "Style": "Underline" },
+              "Highlight": { "Foreground": "#FFD866", "Background": "#2B5A8A" },
               "Editable": { "Foreground": "#D4D7DD", "Background": "#1B1E24" },
-              "ReadOnly": { "Foreground": "#7F8794", "Background": "#262A33" },
-              "Disabled": { "Foreground": "#4B5263", "Background": "#262A33" }
+              "ReadOnly": { "Foreground": "#C7D4E2", "Background": "#2B5A8A" },
+              "Disabled": { "Foreground": "#9CB4CC", "Background": "#2B5A8A" }
             }
           },
           {
@@ -124,16 +124,16 @@
           },
           {
             "Menu": {
-              "Normal": { "Foreground": "#383A42", "Background": "#EDEEF1" },
-              "Focus": { "Foreground": "#1F2328", "Background": "#CFE0F5" },
-              "HotNormal": { "Foreground": "#0969DA", "Background": "#EDEEF1", "Style": "Underline" },
-              "HotFocus": { "Foreground": "#0969DA", "Background": "#CFE0F5", "Style": "Underline" },
-              "Active": { "Foreground": "#1F2328", "Background": "#CFE0F5" },
-              "HotActive": { "Foreground": "#0969DA", "Background": "#CFE0F5", "Style": "Underline" },
-              "Highlight": { "Foreground": "#9A6700", "Background": "#EDEEF1" },
+              "Normal": { "Foreground": "#FFFFFF", "Background": "#2B5A8A" },
+              "Focus": { "Foreground": "#FFFFFF", "Background": "#0F3557" },
+              "HotNormal": { "Foreground": "#FFD866", "Background": "#2B5A8A", "Style": "Underline" },
+              "HotFocus": { "Foreground": "#FFD866", "Background": "#0F3557", "Style": "Underline" },
+              "Active": { "Foreground": "#FFFFFF", "Background": "#0F3557" },
+              "HotActive": { "Foreground": "#FFD866", "Background": "#0F3557", "Style": "Underline" },
+              "Highlight": { "Foreground": "#FFD866", "Background": "#2B5A8A" },
               "Editable": { "Foreground": "#383A42", "Background": "#FFFFFF" },
-              "ReadOnly": { "Foreground": "#6A6F78", "Background": "#EDEEF1" },
-              "Disabled": { "Foreground": "#A0A4AC", "Background": "#EDEEF1" }
+              "ReadOnly": { "Foreground": "#C7D4E2", "Background": "#2B5A8A" },
+              "Disabled": { "Foreground": "#9CB4CC", "Background": "#2B5A8A" }
             }
           },
           {

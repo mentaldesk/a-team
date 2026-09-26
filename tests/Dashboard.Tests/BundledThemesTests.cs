@@ -125,8 +125,58 @@ public class BundledThemesTests : StaticConfigurationTest
         BundledThemes.Load();
         var before = SchemeManager.GetScheme(Schemes.Menu).Normal.Background;
 
-        BundledThemes.Apply(BundledThemes.Daylight);
+        BundledThemes.Apply(BundledThemes.TurboPascal);
 
         Assert.NotEqual(before, SchemeManager.GetScheme(Schemes.Menu).Normal.Background);
+    }
+
+    [Fact]
+    public void Midnight_and_daylight_share_one_menu_band()
+    {
+        BundledThemes.Load();
+        var midnight = SchemeManager.GetScheme(Schemes.Menu).Normal;
+
+        BundledThemes.Apply(BundledThemes.Daylight);
+
+        Assert.Equal(midnight, SchemeManager.GetScheme(Schemes.Menu).Normal);
+    }
+
+    [Theory]
+    [InlineData(BundledThemes.Midnight)]
+    [InlineData(BundledThemes.Daylight)]
+    public void The_menu_reads_against_its_own_band(string theme)
+    {
+        BundledThemes.Load();
+        BundledThemes.Apply(theme);
+        var menu = SchemeManager.GetScheme(Schemes.Menu);
+
+        foreach (var (role, attribute) in new[]
+                 {
+                     ("Normal", menu.Normal),
+                     ("HotNormal", menu.HotNormal),
+                     ("Focus", menu.Focus),
+                     ("HotFocus", menu.HotFocus),
+                     ("Active", menu.Active),
+                     ("HotActive", menu.HotActive),
+                 })
+            Assert.True(Contrast(attribute.Foreground, attribute.Background) >= 4.5,
+                $"{theme} {role} is {Contrast(attribute.Foreground, attribute.Background):0.00}:1");
+    }
+
+    static double Contrast(Color foreground, Color background)
+    {
+        var (a, b) = (Luminance(foreground), Luminance(background));
+        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
+    }
+
+    static double Luminance(Color colour)
+    {
+        static double Channel(byte value)
+        {
+            var v = value / 255.0;
+            return v <= 0.03928 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
+        }
+
+        return 0.2126 * Channel(colour.R) + 0.7152 * Channel(colour.G) + 0.0722 * Channel(colour.B);
     }
 }
