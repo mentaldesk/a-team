@@ -51,11 +51,11 @@ public class PriorityDialogTests
     }
 
     [Fact]
-    public void The_options_are_the_fields_four_and_a_fifth_that_clears_it()
+    public void The_options_run_from_the_one_that_clears_the_field_up_to_the_most_urgent()
     {
         using var dialog = new PriorityDialog(Idea(), new IssueBody());
 
-        Assert.Equal(["Urgent", "High", "Medium", "Low", "None"], dialog.Ranks.Labels);
+        Assert.Equal(["None", "Low", "Medium", "High", "Urgent"], dialog.Ranks.Labels);
         Assert.Equal(Orientation.Horizontal, dialog.Ranks.Orientation);
     }
 
@@ -65,8 +65,35 @@ public class PriorityDialogTests
         using var dialog = new PriorityDialog(Idea(), new IssueBody());
 
         Assert.Equal(
-            ["Priority.Urgent", "Priority.High", "Priority.Medium", "Priority.Low", null],
+            [null, "Priority.Low.Form", "Priority.Medium.Form", "Priority.High.Form", "Priority.Urgent.Form"],
             dialog.Ranks.SubViews.Select(row => row.SchemeName));
+    }
+
+    [Fact]
+    public void Each_option_answers_to_the_letter_its_name_starts_with()
+    {
+        using var dialog = new PriorityDialog(Idea(), new IssueBody());
+
+        Assert.Equal(["_None", "_Low", "_Medium", "_High", "_Urgent"],
+            dialog.Ranks.SubViews.Select(row => row.Title));
+        Assert.Equal([Key.N, Key.L, Key.M, Key.H, Key.U], dialog.Ranks.SubViews.Select(row => row.HotKey));
+    }
+
+    [Theory]
+    [InlineData("n", Rank.None)]
+    [InlineData("l", Rank.Low)]
+    [InlineData("m", Rank.Medium)]
+    [InlineData("h", Rank.High)]
+    [InlineData("u", Rank.Urgent)]
+    public void That_letter_puts_the_keyboard_on_its_rank_without_setting_it(string key, Rank rank)
+    {
+        using var dialog = Open(new IssueBody(Prose), "Medium", height: 12);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key(key)));
+
+        Assert.Equal(rank, dialog.Ranks.Value);
+        Assert.Equal((int)rank, dialog.Ranks.FocusedItem);
+        Assert.Null(dialog.Chosen);
     }
 
     [Fact]
@@ -75,7 +102,7 @@ public class PriorityDialogTests
         using var dialog = new PriorityDialog(Idea("Medium"), new IssueBody());
 
         dialog.Ranks.FocusedItem = (int)Rank.High;
-        dialog.Ranks.NewKeyDownEvent(Key.Enter);
+        dialog.NewKeyDownEvent(Key.Enter);
 
         Assert.Equal(Rank.High, dialog.Chosen);
     }
@@ -150,9 +177,9 @@ public class PriorityDialogTests
     [Fact]
     public void Left_and_Right_move_between_the_ranks_and_leave_the_pane_where_it_was()
     {
-        using var dialog = Open(new IssueBody(Long()), "Urgent", height: 10);
+        using var dialog = Open(new IssueBody(Long()), "Medium", height: 10);
 
-        dialog.Ranks.FocusedItem = (int)Rank.Urgent;
+        dialog.Ranks.FocusedItem = (int)Rank.Medium;
 
         dialog.NewKeyDownEvent(Key.CursorRight);
 
@@ -160,7 +187,7 @@ public class PriorityDialogTests
 
         dialog.NewKeyDownEvent(Key.CursorLeft);
 
-        Assert.Equal((int)Rank.Urgent, dialog.Ranks.FocusedItem);
+        Assert.Equal((int)Rank.Medium, dialog.Ranks.FocusedItem);
         Assert.Equal(0, dialog.Body.Top);
     }
 
@@ -200,13 +227,33 @@ public class PriorityDialogTests
     }
 
     [Fact]
-    public void The_body_fills_the_screen_above_the_ranks()
+    public void The_body_fills_the_screen_above_the_band_the_ranks_sit_in()
     {
         using var dialog = Open(new IssueBody(Prose), width: 60, height: 20);
 
         Assert.Equal(new Rectangle(0, 0, 60, 20), dialog.Frame);
-        Assert.Equal(dialog.Body.Frame.Bottom, dialog.Ranks.Frame.Y);
+        Assert.Equal(dialog.Body.Frame.Bottom, dialog.Band.Frame.Y);
+        Assert.Equal(dialog.Hints.Frame.Y, dialog.Band.Frame.Bottom);
+    }
+
+    [Fact]
+    public void The_ranks_sit_in_a_band_of_their_own_a_blank_row_above_and_below_them()
+    {
+        using var dialog = Open(new IssueBody(Prose), width: 60, height: 20);
+
+        Assert.Equal(LogSchemes.Form, dialog.Band.SchemeName);
+        Assert.Equal(new Rectangle(0, dialog.Hints.Frame.Y - 3, dialog.Viewport.Width, 3), dialog.Band.Frame);
+        Assert.Equal(1, dialog.Ranks.Frame.Y);
         Assert.Equal(1, dialog.Ranks.Frame.Height);
+    }
+
+    [Fact]
+    public void The_ranks_are_centred_across_that_band()
+    {
+        using var dialog = Open(new IssueBody(Prose), width: 60, height: 20);
+
+        Assert.Equal(dialog.Band.Viewport.Width - dialog.Ranks.Frame.Right, dialog.Ranks.Frame.X);
+        Assert.True(dialog.Ranks.Frame.X > 0, $"{dialog.Ranks.Frame} is not centred in {dialog.Band.Viewport}");
     }
 
     [Fact]

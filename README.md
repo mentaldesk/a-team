@@ -138,9 +138,11 @@ you're on in your browser: the issue on the card, the PR on the row under it.
 
 `p` ranks the card you're on, or clears its rank with **None**, without leaving the app. It reads
 the item first, so what you're ranking is in front of you: the issue's own words fill the dialog
-above the ranks, as written, and `PgUp`/`PgDn` scroll them. The card moves to the column its new
-Priority puts it in there and then, with nothing re-read: a pitch you unrank drops into Triage, one
-you rank leaves it, and an Idea you rank is off your queue for good.
+above the ranks, as written, and `PgUp`/`PgDn` scroll them. The ranks sit in a band of their own
+below, **None** at the left up to **Urgent** at the right, each on the letter its name starts with.
+The card moves to the column its new Priority puts it in there and then, with nothing re-read: a
+pitch you unrank drops into Triage, one you rank leaves it, and an Idea you rank is off your queue
+for good.
 
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the

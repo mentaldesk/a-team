@@ -11,9 +11,10 @@ public sealed class PriorityDialog : Dialog
     private const string ScrollHint = "scroll";
     private const string SetHint = "set";
     private const string CancelHint = "cancel";
-    private const int RankLines = 1;
+    private const int BandLines = 3;
     private const int Inset = 1;
 
+    private readonly View _band;
     private readonly OptionSelector<Rank> _ranks;
     private readonly LogView _body;
     private readonly StatusBar _hints = new();
@@ -30,30 +31,44 @@ public sealed class PriorityDialog : Dialog
         Height = Dim.Fill();
 
         int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
-        int RanksRow() => Math.Max(0, HintRow() - RankLines);
+        int BandRow() => Math.Max(0, HintRow() - BandLines);
 
         _body = new LogView
         {
             X = Inset,
             Y = 0,
             Width = Dim.Fill(Inset),
-            Height = Dim.Func(_ => RanksRow(), this),
+            Height = Dim.Func(_ => BandRow(), this),
             Following = false,
             Lines = body.Lines,
         };
         _ranks = new OptionSelector<Rank>
         {
-            X = Inset,
-            Y = Pos.Func(_ => RanksRow(), this),
-            Width = Dim.Fill(Inset),
+            X = Pos.Center(),
+            Y = 1,
             Orientation = Orientation.Horizontal,
             // NoStop is what makes the arrows move between the ranks; with the default the options are Tab stops.
             TabBehavior = TabBehavior.NoStop,
+            // The ranks' initials are unique, so this is what gives each option the key its name starts with.
+            AssignHotKeys = true,
             Value = carried,
         };
         foreach (var (row, rank) in _ranks.SubViews.Zip(Enum.GetValues<Rank>()))
-            if (Priorities.Scheme(rank.ToString()) is { Length: > 0 } scheme)
+            if (Priorities.FormScheme(rank.ToString()) is { Length: > 0 } scheme)
                 row.SchemeName = scheme;
+        _band = new View
+        {
+            X = 0,
+            Y = Pos.Func(_ => BandRow(), this),
+            Width = Dim.Fill(),
+            Height = BandLines,
+            // Without this the ranks can't take focus, whatever they say.
+            CanFocus = true,
+            // A Dialog only takes Accept from a child of its own, so the band has to pass Enter on.
+            CommandsToBubbleUp = [Command.Accept],
+            SchemeName = LogSchemes.Form,
+        };
+        _band.Add(_ranks);
         _hints.Y = Pos.Func(_ => HintRow(), this);
         _hints.Show("", [
             new HintedCommand(ScrollHint, "PgUp/PgDn scroll"),
@@ -62,7 +77,7 @@ public sealed class PriorityDialog : Dialog
         ], Run);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
-        Add(_body, _ranks, _hints, _message);
+        Add(_body, _band, _hints, _message);
         if (body.Failure is { Length: > 0 } failure)
             _message.Show(failure, Schemes.Error);
         // SetFocus lands the keyboard on the first option, so the item's own rank is put under it after.
@@ -72,6 +87,8 @@ public sealed class PriorityDialog : Dialog
 
     /// <summary>The rank the dialog was accepted on, or null where it was cancelled.</summary>
     internal Rank? Chosen { get; private set; }
+
+    internal View Band => _band;
 
     internal OptionSelector<Rank> Ranks => _ranks;
 

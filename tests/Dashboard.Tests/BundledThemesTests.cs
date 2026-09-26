@@ -58,6 +58,23 @@ public class BundledThemesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void Every_theme_draws_a_dialog_s_form_band_in_a_background_of_its_own()
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            var dialog = SchemeManager.GetScheme(Schemes.Dialog);
+            var form = SchemeManager.GetScheme(LogSchemes.Form);
+            Assert.NotEqual(dialog.Normal.Background, form.Normal.Background);
+            Assert.Equal(dialog.Normal.Foreground, form.Normal.Foreground);
+            Assert.Equal(form.Normal.Background, form.HotNormal.Background);
+            Assert.Equal(dialog.Focus, form.Focus);
+        }
+    }
+
+    [Fact]
     public void Every_theme_draws_an_open_menu_as_a_bordered_panel()
     {
         BundledThemes.Load();
