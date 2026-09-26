@@ -160,6 +160,9 @@ gh_items() {
   gh_runs <<'RUNS'
 completed success 2025-09-19T09:00:00Z build
 RUNS
+  PRS="$BIN/prs.json" PULL="$BIN/pull.json"
+  gh_pr
+  echo '{"head": {"sha": "deadbeefcafe"}}' >"$PULL"
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
@@ -172,6 +175,7 @@ case " \$* " in
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
   *check-runs*) page="$RUNS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
+  *closedByPullRequestsReferences*) page="$PRS" ;;
   *reviews*) page="$REVIEWS" ;;
   *"/issues/comments?since"*) page="$RECENT" ;;
   *"comments?since"*) page="$EMPTY" ;;
@@ -180,6 +184,7 @@ case " \$* " in
   *dependencies/blocked_by*) page="$BLOCKED" ;;
   *"/issues/"*"/comments"*) page="$THREAD" ;;
   *"/pulls/"*"/comments"*) page="$LINE" ;;
+  *"/pulls/"[0-9]*) page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
   *) page="$ITEMS" ;;
 esac
@@ -214,6 +219,13 @@ gh_runs() {
        conclusion: (if $f[1] == "-" then null else $f[1] end),
        completed_at: (if $f[2] == "-" then null else $f[2] end)})
     | {check_runs: .}' >"$RUNS"
+}
+
+# `gh_pr <number> <draft>`: the open PR that closes every issue `pr` asks about. No arguments, none.
+gh_pr() {
+  jq -n --arg n "${1:-}" --arg draft "${2:-true}" '{data: {repository: {issue: {closedByPullRequestsReferences: {nodes:
+    (if $n == "" then [] else [{number: ($n | tonumber), url: "https://github.com/mentaldesk/demo/pull/\($n)",
+       isDraft: ($draft == "true"), headRefName: "task", mergeable: "MERGEABLE"}] end)}}}}}' >"$PRS"
 }
 
 # The one GraphQL page `waiting` reads for whose turn it is, from lines of
@@ -890,6 +902,48 @@ edit_item 12 '.issueDependenciesSummary.blockedBy = 0 | .labels.nodes += [{name:
 run board demo triggers dev
 same "exit" 0 "$STATUS"
 same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
+
+case_ "a draft PR whose CI is still running doesn't wake the Dev"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 1 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 12 A task with its draft PR up
+ITEMS
+gh_pr 912 true
+gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+in_progress - - windows
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "a failed check wakes the Dev while the rest still run, and again once they've finished"
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+in_progress - - windows
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["CI failed on PR #912 at deadbee, other checks still running"]' "$(jq -c .reasons "$OUT")"
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+completed success 2025-09-19T09:20:00Z windows
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["CI failed on PR #912 at deadbee"]' "$(jq -c .reasons "$OUT")"
+
+case_ "a draft PR that goes green wakes the Dev to mark it ready"
+gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+completed success 2025-09-19T09:20:00Z windows
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["PR #912 is green but still a draft"]' "$(jq -c .reasons "$OUT")"
 
 case_ "a-team with no command opens the app, and dashboard opens it on the Dashboard"
 APP=$(mktemp -d "$WORK/app.XXXXXX")

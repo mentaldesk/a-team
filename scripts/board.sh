@@ -778,8 +778,11 @@ case "$CMD" in
           p=$(jq -r .number <<<"$pr")
           numbers+=("$p")
           recent=$(jq -s 'add' <(echo "$recent") <(pr_reviews "$p"))
-          verdict=$(ci "$p" | jq -r .verdict)
-          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')")
+          checks=$(ci "$p")
+          verdict=$(jq -r .verdict <<<"$checks")
+          # Changes once the rest settle, so a run starts that can re-run a transient failure.
+          running=$(jq -r 'if .pending == [] then "" else ", other checks still running" end' <<<"$checks")
+          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')$running")
           [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ] &&
             reasons+=("PR #$p is green but still a draft")
           # UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING fires.
