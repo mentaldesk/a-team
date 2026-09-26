@@ -151,7 +151,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(window.Message.Says, window.Message.Text);
         Assert.Equal(window.Viewport.Height - 2, window.Status.Frame.Y);
 
-        window.NewKeyDownEvent(Key.Esc);
+        window.NewKeyDownEvent(new Key('d'));
         LayOut(window, 120, 30);
 
         Assert.Equal(0, window.Message.Lines);
@@ -165,7 +165,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(Key.Esc);
+        window.NewKeyDownEvent(new Key('d'));
 
         Assert.Equal("", window.Status.State.Text);
     }
@@ -636,12 +636,12 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Esc_goes_back_to_the_Dashboard_and_the_agents_are_there_again()
+    public void The_d_key_goes_back_to_the_Dashboard_and_the_agents_are_there_again()
     {
         using var window = Open();
         window.Refresh();
 
-        Assert.True(window.NewKeyDownEvent(Key.Esc));
+        Assert.True(window.NewKeyDownEvent(new Key('d')));
 
         Assert.Equal(Area.Dashboard, window.CurrentArea);
         Assert.True(window.Agents.Visible);
@@ -654,7 +654,7 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open();
 
-        window.NewKeyDownEvent(Key.Esc);
+        window.NewKeyDownEvent(new Key('d'));
 
         Assert.Equal(Area.Dashboard, new DashboardSettings(Config).ReadArea());
         Assert.True(window.NewKeyDownEvent(new Key('w')));
@@ -746,10 +746,30 @@ public class WorkAreaTests : IDisposable
         });
         window.Refresh();
 
-        window.NewKeyDownEvent(Key.Esc);
+        window.NewKeyDownEvent(new Key('d'));
         window.NewKeyDownEvent(new Key('w'));
 
         Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void Esc_in_Work_does_nothing_at_all()
+    {
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        Assert.False(window.NewKeyDownEvent(Key.Esc));
+
+        Assert.Equal(Area.Work, window.CurrentArea);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.Equal(2, reads);
     }
 
     [Fact]
