@@ -170,6 +170,8 @@ public sealed class DashboardWindow : Window
 
     internal IReadOnlyList<(string Id, MenuItem Item)> MenuItems => _menu.Items;
 
+    internal IReadOnlyList<MenuBarItem> Menus => _menu.Menus;
+
     internal Area CurrentArea => _area;
 
     internal int? ExpandedAgent => _expanded;

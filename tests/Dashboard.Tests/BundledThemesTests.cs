@@ -27,6 +27,28 @@ public class BundledThemesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void Every_theme_underlines_the_hot_letter_the_way_the_framework_would()
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            foreach (var name in new[] { "Base", "Accent", "Dialog", "Error" })
+            {
+                var scheme = SchemeManager.GetScheme(name);
+                foreach (var (role, attribute) in new[]
+                         {
+                             ("HotNormal", scheme.HotNormal),
+                             ("HotFocus", scheme.HotFocus),
+                             ("HotActive", scheme.HotActive),
+                         })
+                    Assert.True(attribute.Style.HasFlag(TextStyle.Underline), $"{theme} {name} {role}");
+            }
+        }
+    }
+
+    [Fact]
     public void A_theme_we_do_not_ship_falls_back_to_the_default()
     {
         BundledThemes.Load();
