@@ -1,5 +1,6 @@
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -21,8 +22,37 @@ public class BundledThemesTests : StaticConfigurationTest
         foreach (var theme in BundledThemes.Names)
         {
             BundledThemes.Apply(theme);
-            foreach (var scheme in new[] { "Base", "Accent", "Dialog", "Error" })
-                Assert.True(SchemeManager.TryGetScheme(scheme, out _), $"{theme} has no {scheme} scheme");
+            foreach (var scheme in Enum.GetValues<Schemes>())
+            {
+                var name = SchemeManager.SchemesToSchemeName(scheme);
+                Assert.True(name is not null && SchemeManager.TryGetScheme(name, out _), $"{theme} has no {scheme} scheme");
+            }
+        }
+    }
+
+    [Fact]
+    public void Every_theme_draws_the_menu_in_a_background_of_its_own()
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            var menu = SchemeManager.GetScheme(Schemes.Menu);
+            var window = SchemeManager.GetScheme(Schemes.Base);
+            Assert.NotEqual(window.Normal.Background, menu.Normal.Background);
+        }
+    }
+
+    [Fact]
+    public void Every_theme_draws_an_open_menu_as_a_bordered_panel()
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            Assert.NotEqual(LineStyle.None, Menu.DefaultBorderStyle);
         }
     }
 
@@ -34,7 +64,7 @@ public class BundledThemesTests : StaticConfigurationTest
         foreach (var theme in BundledThemes.Names)
         {
             BundledThemes.Apply(theme);
-            foreach (var name in new[] { "Base", "Accent", "Dialog", "Error" })
+            foreach (var name in new[] { "Base", "Accent", "Dialog", "Menu", "Error" })
             {
                 var scheme = SchemeManager.GetScheme(name);
                 foreach (var (role, attribute) in new[]
@@ -87,5 +117,16 @@ public class BundledThemesTests : StaticConfigurationTest
         Assert.NotEqual(before, baseScheme.Normal.Background);
         Assert.Equal(baseScheme.Normal.Background, success.Normal.Background);
         Assert.NotEqual(baseScheme.Normal.Foreground, success.Normal.Foreground);
+    }
+
+    [Fact]
+    public void The_menu_scheme_is_re_resolved_from_the_theme_it_switched_to()
+    {
+        BundledThemes.Load();
+        var before = SchemeManager.GetScheme(Schemes.Menu).Normal.Background;
+
+        BundledThemes.Apply(BundledThemes.Daylight);
+
+        Assert.NotEqual(before, SchemeManager.GetScheme(Schemes.Menu).Normal.Background);
     }
 }
