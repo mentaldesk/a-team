@@ -359,8 +359,8 @@ pr_checks() {
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
 # reviewer's until they comment; from then it is the role's, the same test `unanswered_feedback`
-# makes. A PR that is failing, conflicting or still a draft is the Dev's too, but an unanswered
-# comment outranks all three: the answer is owed before a green build means anything.
+# makes. A PR that is failing, conflicting, still running CI or still a draft is the Dev's too, but
+# an unanswered comment outranks them all: the answer is owed before a green build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" \
     --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
@@ -379,6 +379,7 @@ turns() {
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
+         elif $pr.checks == "pending" then {trouble: "CI running", at: ""}
          elif $pr.draft then {trouble: "still a draft", at: ""}
          else null end) as $wrong
       | (if $pr == null then . else . + {pr: $pr.pr, prUrl: $pr.prUrl, checks: $pr.checks,

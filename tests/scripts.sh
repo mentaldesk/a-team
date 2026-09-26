@@ -502,6 +502,33 @@ same "draft" true "$(jq -c '.[1].draft' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"still a draft"' "$(jq -c '.[1].reason' "$OUT")"
 
+case_ "a ready PR whose CI is still running, after a push to answer feedback, isn't your turn yet"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z reviewer The task <!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115 <!-- a-team:dev -->
+115 pr-comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
+115 pr-comment ${TODAY}T10:40:00Z reviewer Added one. <!-- a-team:dev -->
+TALK
+gh_runs <<RUNS
+completed success ${TODAY}T10:45:00Z build
+in_progress - - windows
+RUNS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "checks" '"pending"' "$(jq -c '.[1].checks' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task trouble" '"CI running"' "$(jq -c '.[1].trouble' "$OUT")"
+same "task reason" '"CI running"' "$(jq -c '.[1].reason' "$OUT")"
+gh_runs <<RUNS
+completed success ${TODAY}T10:45:00Z build
+completed success ${TODAY}T10:55:00Z windows
+RUNS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"awaiting your acceptance since 10:40"' "$(jq -c '.[1].reason' "$OUT")"
+
 case_ "a task with no PR yet waits on the reviewer since the task was opened"
 gh_talk <<TALK
 106 body ${TODAY}T08:00:00Z reviewer The pitch <!-- a-team:lead -->
