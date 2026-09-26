@@ -359,8 +359,8 @@ pr_checks() {
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
 # reviewer's until they comment; from then it is the role's, the same test `unanswered_feedback`
-# makes. A PR that is failing, conflicting or still a draft is the Dev's too, but an unanswered
-# comment outranks all three: the answer is owed before a green build means anything.
+# makes. A PR that is failing, conflicting, still running CI or still a draft is the Dev's too, but
+# an unanswered comment outranks them all: the answer is owed before a green build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" \
     --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
@@ -379,6 +379,7 @@ turns() {
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
+         elif $pr.checks == "pending" then {trouble: "CI running", at: ""}
          elif $pr.draft then {trouble: "still a draft", at: ""}
          else null end) as $wrong
       | (if $pr == null then . else . + {pr: $pr.pr, prUrl: $pr.prUrl, checks: $pr.checks,
@@ -778,8 +779,11 @@ case "$CMD" in
           p=$(jq -r .number <<<"$pr")
           numbers+=("$p")
           recent=$(jq -s 'add' <(echo "$recent") <(pr_reviews "$p"))
-          verdict=$(ci "$p" | jq -r .verdict)
-          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')")
+          checks=$(ci "$p")
+          verdict=$(jq -r .verdict <<<"$checks")
+          # Changes once the rest settle, so a run starts that can re-run a transient failure.
+          running=$(jq -r 'if .pending == [] then "" else ", other checks still running" end' <<<"$checks")
+          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')$running")
           [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ] &&
             reasons+=("PR #$p is green but still a draft")
           # UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING fires.
