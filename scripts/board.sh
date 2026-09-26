@@ -50,13 +50,22 @@ REVIEWER=$(cfg .reviewer)
 
 # A reviewer comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
 # older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
-# Delete it, and the $ackFrom half of `unanswered`, once no open item predates it.
+# Delete it, and the $ackFrom halves of `said` and `unanswered`, once no open item predates it.
 ACK_FROM=2026-09-24T00:00:00Z
 
+# marked($m): the team wrote this. It says so by ending the body with its marker alone on the last
+# line, so a `>`-quoted or fenced one — as GitHub's Quote reply leaves — is only ever text.
+MARKED='def marked($m): (.body // "") | gsub("\r"; "") | split("\n")
+    | map(sub("[ \t]+$"; "")) | map(select(. != "")) | last // "" | startswith($m);'
+
+# said($m): when the role last spoke on this thread. Before ACK_FROM a marker anywhere counted, and
+# that history keeps reading as it did.
 # unanswered($since): of comments shaped {at, author, body, eyes, kind?}, the ones the reviewer is
 # owed an answer to. $since is the role's own newest comment, which only ACK_FROM's tail needs.
-UNANSWERED='def unanswered($since): map(select(
-    .kind != "body" and .author == $reviewer and (.body | contains("<!-- a-team:") | not)
+UNANSWERED='def said($m): map(select(marked($m) or (.at < $ackFrom and (.body | contains($m)))) | .at)
+    | max // "";
+  def unanswered($since): map(select(
+    .kind != "body" and .author == $reviewer and (marked("<!-- a-team:") | not)
     and (.eyes // 0) == 0 and (.at >= $ackFrom or .at > $since)));'
 
 is_state() {
@@ -296,8 +305,8 @@ pr_reviews() { reviews "$1" | jq -s --argjson n "$1" 'map(. + {n: $n})'; }
 # nothing. It goes into the trigger so new feedback never looks like a retry.
 awaiting() {
   jq -r --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
-    map(select(.n == $n)) | (map(select(.body | contains($marker)) | .at) | max // "") as $since
+    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
+    map(select(.n == $n)) | said($marker) as $since
     | unanswered($since) | map(.at) | max // empty' <<<"$1"
 }
 
@@ -363,7 +372,7 @@ pr_checks() {
 # comment outranks all three: the answer is owed before a green build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
+    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
     def stamp: fromdateiso8601
       | if strflocaltime("%Y-%m-%d") == (now | strflocaltime("%Y-%m-%d"))
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
@@ -373,7 +382,7 @@ turns() {
       | (if .status == "Pitched" then "lead" else "dev" end) as $role
       | ($comments | map(select(.n == $item.number))) as $theirs
       | ($prs | map(select(.n == $item.number)) | first) as $pr
-      | ($theirs | map(select(.body | contains("<!-- a-team:\($role) -->")) | .at) | max // "") as $said
+      | ($theirs | said("<!-- a-team:\($role) -->")) as $said
       | ($theirs | unanswered($said) | map(.at) | max // "") as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
       | (if $pr == null then null
@@ -422,8 +431,8 @@ comments() {
 # The reviewer's comments on #<n> that no run has left a 👀 on. What `feedback` returns.
 unanswered_feedback() {
   comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$UNANSWERED"'
-    (map(select(.body | contains($marker)) | .at) | max // "") as $since
+    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
+    said($marker) as $since
     | unanswered($since) | map(del(.id, .eyes))'
 }
 
@@ -436,10 +445,10 @@ ack() {
     write "add 👀 to your comment of $at on #$1" gh api graphql -F subject="$id" -f query='
       mutation($subject: ID!) {
         addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
-  done < <(comments "$1" | jq -r --arg reviewer "$REVIEWER" --arg started "$started" '
+  done < <(comments "$1" | jq -r --arg reviewer "$REVIEWER" --arg started "$started" "$MARKED"'
     map(select(.at < $started))
     | map(select(.kind != "body" and .author == $reviewer
-                 and (.body | contains("<!-- a-team:") | not) and (.eyes // 0) == 0))
+                 and (marked("<!-- a-team:") | not) and (.eyes // 0) == 0))
     | .[] | [.id, .at] | @tsv')
 }
 
