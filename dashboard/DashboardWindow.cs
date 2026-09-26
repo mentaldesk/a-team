@@ -252,7 +252,6 @@ public sealed class DashboardWindow : Window
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded), () => OnDashboard() && _expanded is not null)
-            .Register("work.back", "Back to the Dashboard", () => Show(Area.Dashboard), Key.Esc, new Hint("dashboard", Mode.Work), OnWork)
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
     }
 
