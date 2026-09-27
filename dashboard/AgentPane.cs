@@ -12,6 +12,8 @@ public enum PaneStatus
     CutShort,
     Running,
     Paused,
+    Held,
+    StoppedByYou,
 }
 
 /// <summary>The scheme each part of a pane draws from.</summary>
@@ -43,6 +45,7 @@ public sealed class AgentPane : FrameView
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
     {
         Team = team;
+        Role = role;
         _name = $"{team} · {role}";
         _stateDir = stateDir;
         CanFocus = true;
@@ -92,9 +95,11 @@ public sealed class AgentPane : FrameView
 
     internal string Team { get; }
 
+    internal string Role { get; }
+
     internal bool Paused { get; private set; }
 
-    public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck, bool paused)
+    public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held)
     {
         var state = AgentState.Read(_stateDir);
         Paused = paused;
@@ -104,7 +109,7 @@ public sealed class AgentPane : FrameView
                 ? [new LogLine("(no session yet)", LogLineKind.Prose)]
                 : [.. _log.Lines];
 
-        _status = Status(state, paused, _log.Verdict);
+        _status = Status(state, paused, held, _log.Verdict);
         _timing = Describe(state, now, nextCheck, _status);
         UpdateHeader();
 
@@ -134,9 +139,10 @@ public sealed class AgentPane : FrameView
             view.SchemeName = scheme;
     }
 
-    /// <summary>Pause wins, then running, then how the last run went.</summary>
-    internal static PaneStatus Status(AgentState state, bool paused, RunVerdict verdict) =>
-        paused ? PaneStatus.Paused
+    /// <summary>A held role that isn't running wins, then pause, then running, then how the last run went.</summary>
+    internal static PaneStatus Status(AgentState state, bool paused, bool held, RunVerdict verdict) =>
+        held && !state.Running ? (verdict == RunVerdict.None ? PaneStatus.StoppedByYou : PaneStatus.Held)
+            : paused ? PaneStatus.Paused
             : state.Running ? PaneStatus.Running
             : verdict switch
             {
@@ -166,9 +172,17 @@ public sealed class AgentPane : FrameView
     {
         if (state.Running)
             return state.LastStart is { } started ? $"running {Clock(now - started)}" : "running";
+        if (status == PaneStatus.StoppedByYou)
+            return state.Stopped is { } stopped ? $"stopped by you {Ago(now - stopped)} ago · held" : "stopped by you · held";
         var ran = state.LastStart is { } last ? $"ran {Ago(now - last)} ago" : "never run";
         var cut = status == PaneStatus.CutShort ? " · cut short" : "";
-        return $"{ran}{cut} · {(status == PaneStatus.Paused ? "paused" : NextCheck(now, nextCheck))}";
+        var next = status switch
+        {
+            PaneStatus.Paused => "paused",
+            PaneStatus.Held => "held",
+            _ => NextCheck(now, nextCheck),
+        };
+        return $"{ran}{cut} · {next}";
     }
 
     private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck) => nextCheck switch

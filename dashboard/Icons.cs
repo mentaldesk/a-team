@@ -19,6 +19,8 @@ public enum Icon
     Running,
     NeverRun,
     Paused,
+    Held,
+    StoppedByYou,
     Ok,
     Failed,
     CutShort,
@@ -45,6 +47,8 @@ public static class Icons
         [Icon.Running] = "\U000F040C",   // nf-md-play_circle
         [Icon.NeverRun] = "\U000F0766",  // nf-md-circle_outline
         [Icon.Paused] = "\U000F03E5",    // nf-md-pause_circle
+        [Icon.Held] = "\U000F03E5",      // nf-md-pause_circle
+        [Icon.StoppedByYou] = "\U000F03E5", // nf-md-pause_circle
         [Icon.Ok] = "\U000F05E0",        // nf-md-check_circle
         [Icon.Failed] = "\U000F0159",    // nf-md-close_circle
         [Icon.CutShort] = "\U000F0159",  // nf-md-close_circle
@@ -61,6 +65,8 @@ public static class Icons
         [Icon.Running] = "●",
         [Icon.NeverRun] = "○",
         [Icon.Paused] = "⏸",
+        [Icon.Held] = "⏸",
+        [Icon.StoppedByYou] = "⏸",
         [Icon.Ok] = "✓",
         [Icon.Failed] = "✗",
         [Icon.CutShort] = "✗",
@@ -98,6 +104,8 @@ public static class Icons
         PaneStatus.Running => Icon.Running,
         PaneStatus.NeverRun => Icon.NeverRun,
         PaneStatus.Paused => Icon.Paused,
+        PaneStatus.Held => Icon.Held,
+        PaneStatus.StoppedByYou => Icon.StoppedByYou,
         PaneStatus.Ok => Icon.Ok,
         PaneStatus.Failed => Icon.Failed,
         PaneStatus.CutShort => Icon.CutShort,

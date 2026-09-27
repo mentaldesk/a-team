@@ -213,7 +213,7 @@ public sealed class DashboardWindow : Window
             : null;
         var paused = _panes.Select(pane => pane.Team).Distinct().ToDictionary(team => team, _teams.IsPaused);
         foreach (var pane in _panes)
-            pane.Refresh(now, nextCheck, paused[pane.Team]);
+            pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role));
 
         var tail = ReadTail(_dispatchLog, DispatchLines);
         if (!_dispatch.Lines.SequenceEqual(tail))

@@ -44,6 +44,8 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.Running] = "●",
                 [Icon.NeverRun] = "○",
                 [Icon.Paused] = "⏸",
+                [Icon.Held] = "⏸",
+                [Icon.StoppedByYou] = "⏸",
                 [Icon.Ok] = "✓",
                 [Icon.Failed] = "✗",
                 [Icon.CutShort] = "✗",
@@ -88,6 +90,14 @@ public class IconsTests : StaticConfigurationTest
     [MemberData(nameof(Styles))]
     public void A_run_cut_short_wears_the_icon_a_failed_one_wears(IconStyle style) =>
         Assert.Equal(Icons.Glyph(Icon.Failed, style), Icons.Glyph(Icon.CutShort, style));
+
+    [Theory]
+    [MemberData(nameof(Styles))]
+    public void A_held_role_wears_the_icon_a_paused_one_wears(IconStyle style)
+    {
+        Assert.Equal(Icons.Glyph(Icon.Paused, style), Icons.Glyph(Icon.Held, style));
+        Assert.Equal(Icons.Glyph(Icon.Paused, style), Icons.Glyph(Icon.StoppedByYou, style));
+    }
 
     [Fact]
     public void A_card_that_is_your_move_wears_the_check_and_one_that_isn_t_wears_the_agent()

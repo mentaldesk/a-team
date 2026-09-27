@@ -49,7 +49,8 @@ With no command, a-team opens the app where you left it.
   install [--dry-run | --uninstall]       run the dispatcher every 2 minutes on this Mac
   status                                  what each agent is doing, and its last run
   pause [--dry-run] <team>                stop the dispatcher starting that team's agents
-  resume [--dry-run] <team>               start them again
+  resume [--dry-run] <team> [<role>]      start them again, or let a held role start again
+  stop [--dry-run] <team> <role>          stop a role's run and hold it until resumed
   dashboard [team...]                     the app, on the Dashboard area
   try <team> [<pr>] [--clean]             run a PR, or main, sandboxed in a scratch worktree
   run <team> <role>                       print the brief a run starts from
@@ -71,7 +72,7 @@ case "$command" in
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
   dashboard)
     exec bash "$ROOT/scripts/dashboard.sh" --area dashboard "$@" ;;
-  pause | resume)
+  pause | resume | stop)
     exec bash "$ROOT/scripts/pause.sh" "$command" "$@" ;;
   teams)
     source "$ROOT/scripts/common.sh"

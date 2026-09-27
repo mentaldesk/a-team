@@ -1,6 +1,7 @@
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Text;
+using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -73,7 +74,39 @@ public class AgentPaneTests : IDisposable
     {
         var state = new AgentState(running, DateTimeOffset.UnixEpoch, [], null);
 
-        Assert.Equal(expected, AgentPane.Status(state, paused, verdict));
+        Assert.Equal(expected, AgentPane.Status(state, paused, held: false, verdict));
+    }
+
+    [Theory]
+    [InlineData(false, RunVerdict.None, PaneStatus.StoppedByYou)]
+    [InlineData(true, RunVerdict.None, PaneStatus.StoppedByYou)]
+    [InlineData(false, RunVerdict.Ok, PaneStatus.Held)]
+    [InlineData(false, RunVerdict.Error, PaneStatus.Held)]
+    public void A_held_role_is_stopped_by_you_unless_its_last_run_finished(
+        bool paused, RunVerdict verdict, PaneStatus expected)
+    {
+        var state = new AgentState(Running: false, DateTimeOffset.UnixEpoch, [], null);
+
+        Assert.Equal(expected, AgentPane.Status(state, paused, held: true, verdict));
+    }
+
+    [Fact]
+    public void A_held_role_with_a_run_still_going_shows_it_running()
+    {
+        var state = new AgentState(Running: true, DateTimeOffset.UnixEpoch, [], null);
+
+        Assert.Equal(PaneStatus.Running, AgentPane.Status(state, paused: false, held: true, RunVerdict.None));
+    }
+
+    [Fact]
+    public void A_held_pane_says_you_stopped_it_or_how_its_last_run_went()
+    {
+        var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(1);
+        var stopped = new AgentState(false, now - TimeSpan.FromMinutes(30), [], null, now - TimeSpan.FromMinutes(4));
+        var finished = new AgentState(false, now - TimeSpan.FromMinutes(5), [], null);
+
+        Assert.Equal("stopped by you 4m ago · held", AgentPane.Describe(stopped, now, now.AddMinutes(2), PaneStatus.StoppedByYou));
+        Assert.Equal("ran 5m ago · held", AgentPane.Describe(finished, now, now.AddMinutes(2), PaneStatus.Held));
     }
 
     [Fact]
@@ -81,7 +114,7 @@ public class AgentPaneTests : IDisposable
     {
         var state = new AgentState(Running: false, LastStart: null, [], null);
 
-        Assert.Equal(PaneStatus.NeverRun, AgentPane.Status(state, paused: false, RunVerdict.None));
+        Assert.Equal(PaneStatus.NeverRun, AgentPane.Status(state, paused: false, held: false, RunVerdict.None));
     }
 
     [Fact]
@@ -131,6 +164,8 @@ public class AgentPaneTests : IDisposable
     [InlineData(PaneStatus.Ok)]
     [InlineData(PaneStatus.Running)]
     [InlineData(PaneStatus.Paused)]
+    [InlineData(PaneStatus.Held)]
+    [InlineData(PaneStatus.StoppedByYou)]
     public void Nothing_but_a_failed_run_reddens_the_pane(PaneStatus status)
     {
         var schemes = AgentPane.SchemesFor(status, "ran 5m ago · next check 1:30");
@@ -163,7 +198,7 @@ public class AgentPaneTests : IDisposable
     {
         using var pane = Open("""{"type":"result","is_error":true,"num_turns":2,"total_cost_usd":0.1}""");
 
-        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false);
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
 
         Assert.StartsWith(Icons.Field(Icon.Failed, IconStyle.Unicode), pane.Title);
         Assert.Equal(Error, pane.SchemeName);
@@ -175,17 +210,30 @@ public class AgentPaneTests : IDisposable
     {
         using var pane = Open("""{"type":"result","num_turns":2,"total_cost_usd":0.1}""");
 
-        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false);
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
 
         Assert.StartsWith(Icons.Field(Icon.Ok, IconStyle.Unicode), pane.Title);
         Assert.Equal(Base, pane.SchemeName);
     }
 
     [Fact]
+    public void A_run_you_stopped_wears_the_paused_icon_and_colours_not_cut_short()
+    {
+        using var pane = Open("""{"type":"system","subtype":"init"}""");
+        File.WriteAllText(Path.Combine(_dir, "stopped"), DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());
+
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: true);
+
+        Assert.StartsWith(Icons.Field(Icon.StoppedByYou, IconStyle.Unicode), pane.Title);
+        Assert.Equal(Base, pane.SchemeName);
+        Assert.Equal("stopped by you <1m ago · held", pane.SubViews.OfType<Label>().First().Text);
+    }
+
+    [Fact]
     public void A_pane_wears_its_title_icons_in_the_style_it_is_shown()
     {
         using var pane = Open("""{"type":"result","num_turns":2,"total_cost_usd":0.1}""");
-        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false);
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
 
         pane.ShowIcons(IconStyle.NerdFont);
 

@@ -42,7 +42,7 @@ release.
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
-| `scripts/pause.sh` | `a-team pause` / `a-team resume`: turns a team's dispatch off and on |
+| `scripts/pause.sh` | `a-team pause` / `a-team resume` / `a-team stop`: turns a team's dispatch off and on, or holds one role |
 | `dashboard/` | `a-team`: the app, with a Work area and the agent Dashboard |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
@@ -104,6 +104,10 @@ keep that folder in a repo of your own and link it into place.
   is stopped. If the same triggers are still there after a run, the dispatcher waits
   `dispatch.retryAfter` minutes before trying again, so a problem the role can't fix doesn't
   start a run every 2 minutes.
+- **Stopping a run.** `a-team stop <team> <role>` ends the role's live run and holds the role
+  (`dispatch.hold` in the team config), so the dispatcher starts no replacement until
+  `a-team resume <team> <role>`. It lists anything the run left claimed In progress; the next run
+  picks that up. The other role carries on as normal.
 - **Permissions** come from `settings/agents.json` and the task prompt in `tasks/`. Runs use
   auto mode, and anything that would ask for permission is refused rather than waiting for
   someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
@@ -176,7 +180,8 @@ cards and that stamp exactly as they were.
 One pane per agent. The title shows whether it's running (●) or paused (⏸), and when it's neither,
 how its last run went: ✓ clean, ✗ failed, ○ never run — or the Nerd Font glyph for each, where
 that's the vocabulary in effect. A failed run draws the pane's border, title
-and status row in the error colour until the next run clears it. Under the title: how long the
+and status row in the error colour until the next run clears it. A role you've held with `a-team stop`
+wears ⏸ and reads `stopped by you` (or how its last run went) `· held`. Under the title: how long the
 current run has been going, or when it last ran and the countdown to the dispatcher's next check;
 then why it was last started; then its latest session as it happens (what it said, the
 tools it called, any errors and how the run finished). The strip along the bottom is the

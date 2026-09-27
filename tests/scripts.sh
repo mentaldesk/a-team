@@ -1439,5 +1439,109 @@ STATUS=$?
 same "exit" 0 "$STATUS"
 same "arguments" "--area dashboard tuicode" "$(tr '\n' ' ' <"$WORK/app-args" | sed 's/ $//')"
 
+# A run that counts the TERMs it gets in $SIGNALS, as the dev's run in $A_TEAM_STATE.
+fake_run() {
+  SIGNALS="$A_TEAM_STATE/signals"
+  : >"$SIGNALS"
+  mkdir -p "$A_TEAM_STATE/demo/dev"
+  bash -c "trap 'echo TERM >>\"$SIGNALS\"; exit' TERM; while :; do sleep 0.1; done" &
+  RUN_PID=$!
+  echo "$RUN_PID" >"$A_TEAM_STATE/demo/dev/pid"
+}
+held() { jq -c '.dispatch.hold' "$TEAM"; }
+
+export A_TEAM_STATE
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+
+case_ "stop ends the run once, holds the role, and lists what it left claimed"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "dispatch": { "enabled": true } }
+JSON
+gh_items <<'ITEMS'
+In_progress 12 A task left half done
+Ready 13 A task nobody has claimed
+ITEMS
+fake_run
+run stop demo dev
+wait "$RUN_PID"
+same "exit" 0 "$STATUS"
+same "signals" 1 "$(grep -c TERM "$SIGNALS")"
+same "hold" '["dev"]' "$(held)"
+same "enabled" true "$(enabled)"
+grep -q "stopped demo dev's run ($RUN_PID)" "$OUT" || fail "stop: no word of the run in '$(cat "$OUT")'"
+grep -q '#12 A task left half done' "$OUT" || fail "stop: #12 isn't listed as left claimed"
+grep -q '#13' "$OUT" && fail "stop: #13 was never claimed"
+
+case_ "a dispatcher pass skips the held role, and starts its sibling"
+APP=$(mktemp -d "$WORK/dispatch.XXXXXX")
+mkdir -p "$APP/bin" "$APP/scripts"
+cp "$ROOT"/scripts/*.sh "$APP/scripts/"
+cat >"$APP/bin/a-team" <<'SH'
+#!/usr/bin/env bash
+echo '{"reasons": ["work to do"], "creative": false}'
+SH
+chmod +x "$APP/bin/a-team"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch: the lead wasn't started"
+grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the held dev was started"
+
+case_ "resume <team> <role> lets it go and leaves dispatch.enabled alone"
+jq '.dispatch.enabled = false' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+run resume demo dev
+same "exit" 0 "$STATUS"
+same "hold" '[]' "$(held)"
+same "enabled" false "$(enabled)"
+
+case_ "stop with no run going still holds, and says there was nothing to stop"
+true &
+dead=$!
+wait "$dead"
+echo "$dead" >"$A_TEAM_STATE/demo/dev/pid"
+gh_items </dev/null
+run stop demo dev
+same "exit" 0 "$STATUS"
+same "hold" '["dev"]' "$(held)"
+grep -q 'no run to stop' "$OUT" || fail "dead pid: '$(cat "$OUT")'"
+grep -q 'left nothing claimed' "$OUT" || fail "nothing claimed: '$(cat "$OUT")'"
+
+case_ "stopping it again doesn't hold it twice"
+run stop demo dev
+same "hold" '["dev"]' "$(held)"
+
+case_ "stop --dry-run names the run it would stop, and neither stops nor holds it"
+run resume demo dev
+fake_run
+run stop --dry-run demo dev
+same "exit" 0 "$STATUS"
+same "hold" '[]' "$(held)"
+grep -q "would stop run $RUN_PID" "$OUT" || fail "dry run: '$(cat "$OUT")'"
+kill -0 "$RUN_PID" 2>/dev/null || fail "dry run: the run was stopped"
+
+if [ "$(id -u)" != 0 ]; then
+  case_ "a config stop can't write is refused, and the run goes on"
+  chmod 444 "$TEAM"
+  run stop demo dev
+  failed "unwritable"
+  grep -q "$TEAM" "$ERR" || fail "unwritable: the file isn't named in '$(cat "$ERR")'"
+  kill -0 "$RUN_PID" 2>/dev/null || fail "unwritable: the run was stopped anyway"
+  same "signals" 0 "$(grep -c TERM "$SIGNALS")"
+  chmod 644 "$TEAM"
+fi
+kill "$RUN_PID" 2>/dev/null
+wait "$RUN_PID" 2>/dev/null
+
+case_ "stop needs a role it knows"
+run stop demo
+failed "no role"
+run stop demo tester
+failed "unknown role"
+
+case_ "stop and the per-role resume are in the usage text"
+run help
+grep -q '^  stop ' "$OUT" || fail "usage: no stop line"
+grep -q '^  resume \[--dry-run\] <team> \[<role>\]' "$OUT" || fail "usage: resume takes no role"
+unset A_TEAM_STATE
+
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"
