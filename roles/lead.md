@@ -67,9 +67,10 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
 3. Create each task as an issue (`gh issue create`). Body:
    - **Context**: one paragraph and a link to the pitch.
    - **Acceptance criteria**: a checklist of what the user can do and see once it merges, which
-     the reviewer can try. Not classes, APIs or internal commands: prove those under **Tests**.
-     For UI, name the control for each element.
-   - **Tests**: what should be covered.
+     the reviewer ticks off as they try it. Each item is an end result, checked by using the
+     product the way the vision's user does, never how it's built: no classes, APIs, internal
+     commands, config keys or file formats. For UI, name the control for each element.
+   - **Tests**: what should be covered, including the internals the criteria leave out.
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
 4. `a-team board {{team}} link <pitch> <task>`, then `a-team board {{team}} add lead <task> Ready`. For a task that
