@@ -651,6 +651,24 @@ case "$CMD" in
     fi
     ;;
 
+  approve)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM approve <role> <n>"
+    role=$1 n=$2
+    case "$role" in
+      lead | dev) die "$role may not approve a pitch; approving is the reviewer's own gate" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a pitch to approve"
+    jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
+    status=$(jq -r .status <<<"$it")
+    [ "$status" = Pitched ] || die "only a Pitched pitch can be approved (#$n is in '$status')"
+    set_status "$(jq -r .id <<<"$it")" Approved
+    say "#$n: Pitched -> Approved"
+    ;;
+
   comment)
     [ $# -eq 3 ] || die "usage: board.sh $TEAM comment <role> <n> <file>"
     role=$1 n=$2 file=$3
@@ -758,7 +776,8 @@ case "$CMD" in
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
     all=$(items)
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
-      | {number, title, status, url, team: $team, priority})' <<<"$all")
+      | {number, title, status, url, team: $team, priority,
+         pitch: (.type == "Issue" and (.labels | index("pitch")) != null)})' <<<"$all")
     talk=$(gated_talk "$gated")
     turns "$gated" "$(gated_comments "$talk")" "$(pr_checks "$(gated_prs "$talk")")" |
       jq --argjson unranked "$(unranked_ideas "$all")" '. + $unranked'

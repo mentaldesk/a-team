@@ -608,7 +608,7 @@ public class WorkAreaTests : IDisposable
                 read.Add(item);
                 return Task.FromResult(new Reading(Body, null));
             },
-            showBody: (item, body, _) => shown = (item, body));
+            showBody: (item, body, _, _) => shown = (item, body));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -623,13 +623,137 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void a_in_the_reader_approves_the_pitch_it_shows_and_the_card_leaves_with_no_re_read()
+    {
+        var calls = new List<string[]>();
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(Waiting(team), null));
+            },
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, onApprove) => onApprove!());
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        var before = reads;
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        Assert.Equal("Approving #107…", window.Message.Says);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal([["board", "team0", "approve", "you", "107"]], calls);
+        Assert.Equal("Pitches · 1", window.Work.Lanes[0].Columns[1].Title);
+        Assert.Equal(108, window.Work.Selected?.Number);
+        Assert.Equal(before, reads);
+        Assert.Equal("#107 approved", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_failed_approve_leaves_the_card_where_it_was_and_says_why_in_the_error_colour()
+    {
+        using var window = Open(
+            run: _ => Task.FromResult<string?>("board.sh: only a Pitched pitch can be approved (#107 is in 'Approved')"),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, onApprove) => onApprove!());
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal("Pitches · 2", window.Work.Lanes[0].Columns[1].Title);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.Equal("board.sh: only a Pitched pitch can be approved (#107 is in 'Approved')", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(2, 0)]
+    public void The_reader_offers_no_approve_on_anything_but_a_Pitched_pitch(int right, int down)
+    {
+        var offered = new List<bool>();
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, onApprove) => offered.Add(onApprove is not null));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        for (var i = 0; i < right; i++)
+            window.NewKeyDownEvent(Key.CursorRight);
+        for (var i = 0; i < down; i++)
+            window.NewKeyDownEvent(Key.CursorDown);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([false], offered);
+    }
+
+    [Fact]
+    public void A_Pitched_item_that_isn_t_a_pitch_offers_no_approve()
+    {
+        var offered = new List<bool>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Unranked : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, onApprove) => offered.Add(onApprove is not null));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([false], offered);
+    }
+
+    [Fact]
+    public void work_approve_is_registered_on_a_but_neither_bound_nor_hinted_on_the_board()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        var approve = window.Commands.Registered.Single(command => command.Id == "work.approve");
+        Assert.Equal("Approve the pitch you're reading", approve.Label);
+        Assert.Equal(new Key('a'), approve.Key);
+        Assert.Null(approve.Hint);
+        Assert.False(window.Commands.IsEnabled("work.approve"));
+
+        Assert.False(window.NewKeyDownEvent(new Key('a')));
+        window.Refresh();
+
+        Assert.Empty(calls);
+        Assert.DoesNotContain("approve", window.Status.Says);
+        Assert.Equal("Pitches · 2", window.Work.Lanes[0].Columns[1].Title);
+    }
+
+    [Fact]
     public void o_in_the_reader_opens_what_o_on_the_board_would_have()
     {
         var opened = new List<string>();
         using var window = Open(
             openUrl: opened.Add,
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, onGitHub) => onGitHub());
+            showBody: (_, _, onGitHub, _) => onGitHub());
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -674,7 +798,7 @@ public class WorkAreaTests : IDisposable
         var shown = false;
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading("", "board.sh: can't read #6 (gh: Not Found (HTTP 404))")),
-            showBody: (_, _, _) => shown = true);
+            showBody: (_, _, _, _) => shown = true);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -690,7 +814,7 @@ public class WorkAreaTests : IDisposable
     public void A_card_with_no_body_opens_no_reader_and_says_so_in_the_error_colour()
     {
         var shown = false;
-        using var window = Open(showBody: (_, _, _) => shown = true);
+        using var window = Open(showBody: (_, _, _, _) => shown = true);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1005,10 +1129,10 @@ public class WorkAreaTests : IDisposable
         ? """
           [{"number": 107, "title": "When the dashboard goes quiet", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team0/issues/107", "team": "team0",
-            "turn": "you", "reason": "awaiting your approval since 08:14", "priority": "High"},
+            "turn": "you", "reason": "awaiting your approval since 08:14", "priority": "High", "pitch": true},
            {"number": 108, "title": "A misconfigured team looks like a working one", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team0/issues/108", "team": "team0",
-            "turn": "lead", "reason": "answering your feedback since 09:30", "priority": "Medium"},
+            "turn": "lead", "reason": "answering your feedback since 09:30", "priority": "Medium", "pitch": true},
            {"number": 49, "title": "I can't change any of the keys", "status": "In review",
             "url": "https://github.com/mentaldesk/team0/issues/49", "team": "team0",
             "turn": "dev", "reason": "answering your feedback since 10:15",
@@ -1021,7 +1145,7 @@ public class WorkAreaTests : IDisposable
         : """
           [{"number": 133, "title": "Notice when open files change on disk", "status": "Pitched",
             "url": "https://github.com/mentaldesk/team1/issues/133", "team": "team1",
-            "turn": "you", "reason": "awaiting your approval since 21:37", "priority": "Low"}]
+            "turn": "you", "reason": "awaiting your approval since 21:37", "priority": "Low", "pitch": true}]
           """;
 
     /// <summary>A pitch carrying no Priority, which waits in Triage until it's ranked.</summary>
@@ -1063,7 +1187,7 @@ public class WorkAreaTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?>? askPriority = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
-        Action<WaitingItem, IssueBody, Action>? showBody = null,
+        Action<WaitingItem, IssueBody, Action, Action?>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode)
     {
@@ -1078,7 +1202,7 @@ public class WorkAreaTests : IDisposable
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
             askPriority ?? ((_, _) => null),
-            showBody ?? ((_, _, _) => { }),
+            showBody ?? ((_, _, _, _) => { }),
             area,
             auto);
     }

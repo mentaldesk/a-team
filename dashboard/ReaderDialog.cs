@@ -7,17 +7,21 @@ namespace ATeam.Dashboard;
 public sealed class ReaderDialog : Dialog
 {
     private const string ScrollHint = "scroll";
+    private const string ApproveHint = "approve";
     private const string GitHubHint = "github";
     private const string CloseHint = "close";
     private const int Inset = 1;
 
     private readonly Action _onGitHub;
+    private readonly Action? _onApprove;
     private readonly LogView _body;
     private readonly StatusBar _hints = new();
 
-    public ReaderDialog(WaitingItem item, IssueBody body, Action onGitHub)
+    /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
+    public ReaderDialog(WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null)
     {
         _onGitHub = onGitHub;
+        _onApprove = onApprove;
         Title = $"#{item.Number}  {item.Title}";
         X = 0;
         Y = 0;
@@ -42,6 +46,7 @@ public sealed class ReaderDialog : Dialog
         _hints.Y = Pos.Func(_ => HintRow(), this);
         _hints.Show("", [
             new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll"),
+            .. onApprove is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ApproveHint, "a approve")],
             new HintedCommand(GitHubHint, "o on GitHub"),
             new HintedCommand(CloseHint, "Esc close"),
         ], Run);
@@ -60,12 +65,14 @@ public sealed class ReaderDialog : Dialog
             return Close();
         if (key == new Key('o'))
             return OnGitHub();
+        if (key == new Key('a') && _onApprove is not null)
+            return Approve();
         return Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
     }
 
-    public static void Show(IApplication app, WaitingItem item, IssueBody body, Action onGitHub)
+    public static void Show(IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove)
     {
-        using var dialog = new ReaderDialog(item, body, onGitHub);
+        using var dialog = new ReaderDialog(item, body, onGitHub, onApprove);
         app.Run(dialog);
     }
 
@@ -91,6 +98,12 @@ public sealed class ReaderDialog : Dialog
         return true;
     }
 
+    private bool Approve()
+    {
+        _onApprove!();
+        return Close();
+    }
+
     private bool Close()
     {
         RequestStop();
@@ -100,6 +113,7 @@ public sealed class ReaderDialog : Dialog
     private bool Run(string hint) => hint switch
     {
         ScrollHint => Scrolled(() => _body.Page(+1)),
+        ApproveHint => Approve(),
         GitHubHint => OnGitHub(),
         _ => Close(),
     };

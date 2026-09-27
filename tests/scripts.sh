@@ -154,6 +154,9 @@ gh_items() {
     {id: "OP_urgent", name: "Urgent"}, {id: "OP_high", name: "High"},
     {id: "OP_medium", name: "Medium"}, {id: "OP_low", name: "Low"}]}]}}}}' >"$FIELDS"
   echo '[]' >"$EMPTY"
+  META="$BIN/meta.json"
+  jq -n '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options: [
+    {id: "OPT_pitched", name: "Pitched"}, {id: "OPT_approved", name: "Approved"}]}}}}}' >"$META"
   gh_thread </dev/null
   gh_recent </dev/null
   RUNS="$BIN/runs.json"
@@ -169,6 +172,8 @@ echo call >>"$CALLS"
 case " \$* " in
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
   *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
+  *updateProjectV2ItemFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
+  *ProjectV2SingleSelectField*) page="$META" ;;
   *issueFields*) page="$FIELDS" ;;
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
@@ -329,7 +334,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "numbers" '[106,115]' "$(jq -c '[.[].number]' "$OUT")"
 same "statuses" '["Pitched","In review"]' "$(jq -c '[.[].status]' "$OUT")"
-same "fields" '["number","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "fields" '["number","pitch","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "title" '"Both gates are mine"' "$(jq -c '.[0].title' "$OUT")"
 same "url" '"https://github.com/mentaldesk/demo/issues/106"' "$(jq -c '.[0].url' "$OUT")"
 same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
@@ -432,10 +437,11 @@ gh_talk <<TALK
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
-same "pitch fields" '["number","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "pitch fields" '["number","pitch","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "task fields" \
-  '["checks","conflicting","draft","number","pr","prUrl","priority","reason","status","team","title","turn","url"]' \
+  '["checks","conflicting","draft","number","pitch","pr","prUrl","priority","reason","status","team","title","turn","url"]' \
   "$(jq -c '.[1] | keys' "$OUT")"
+same "pitch flags" '[true,false]' "$(jq -c '[.[].pitch]' "$OUT")"
 same "pr" 1015 "$(jq -c '.[1].pr' "$OUT")"
 same "prUrl" '"https://github.com/mentaldesk/demo/pull/1015"' "$(jq -c '.[1].prUrl' "$OUT")"
 
@@ -691,6 +697,73 @@ run board --dry-run demo priority you 6 Low
 same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
 grep -q "would set Priority on #6 to 'Low'" "$ERR" || fail "dry run: nothing about the rank in '$(cat "$ERR")'"
+
+# Approving: the other write the app makes, and the other gate that is the reviewer's alone.
+case_ "approve moves a Pitched pitch to Approved on the project"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 7 A pitch in front of me
+Exploring 8 A pitch still being drafted
+Idea 9 An Idea of my own
+ITEMS
+run board demo approve you 7
+same "exit" 0 "$STATUS"
+same "said" "#7: Pitched -> Approved" "$(cat "$OUT")"
+same "writes" 1 "$(grep -c '' <"$WRITES")"
+grep -q "item=PVTI_7 " "$WRITES" || fail "approve: not the pitch's item in '$(cat "$WRITES")'"
+grep -q "option=OPT_approved " "$WRITES" || fail "approve: not the Approved option in '$(cat "$WRITES")'"
+
+case_ "--dry-run says what it would approve and approves nothing"
+: >"$WRITES"
+run board --dry-run demo approve you 7
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+grep -q "would set item PVTI_7 to 'Approved'" "$ERR" || fail "approve dry run: '$(cat "$ERR")'"
+
+case_ "neither agent may approve a pitch: that gate is the reviewer's own"
+for role in lead dev; do
+  : >"$WRITES"
+  run board demo approve "$role" 7
+  failed "$role approving"
+  one_line "$role approving"
+  grep -q "$role may not approve a pitch; approving is the reviewer's own gate" "$ERR" ||
+    fail "$role approving: '$(cat "$ERR")'"
+  same "$role writes" "" "$(cat "$WRITES")"
+done
+
+case_ "any other role is unknown"
+run board demo approve reviewer 7
+failed "unknown role"
+one_line "unknown role"
+grep -q "unknown role 'reviewer' (you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
+
+case_ "approve is not a general move: only a pitch-labelled issue in Pitched"
+for n in 8 9 404; do
+  : >"$WRITES"
+  run board demo approve you "$n"
+  failed "approve #$n"
+  one_line "approve #$n"
+  same "approve #$n writes" "" "$(cat "$WRITES")"
+done
+grep -q "#404 is not on the board" "$ERR" || fail "approve off the board: '$(cat "$ERR")'"
+run board demo approve you 8
+grep -q "is in 'Exploring'" "$ERR" || fail "approve Exploring: '$(cat "$ERR")'"
+run board demo approve you 9
+grep -q "#9 is not a pitch" "$ERR" || fail "approve Idea: '$(cat "$ERR")'"
+edit_item 7 '.labels.nodes = []'
+run board demo approve you 7
+failed "approve unlabelled"
+grep -q "#7 is not a pitch" "$ERR" || fail "approve unlabelled: '$(cat "$ERR")'"
+edit_item 7 '.labels.nodes = [{name: "pitch"}] | .__typename = "PullRequest"'
+run board demo approve you 7
+failed "approve a PR"
+grep -q "#7 is not an issue" "$ERR" || fail "approve a PR: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "the agents' settings deny approve, beside priority"
+grep -qF '"Bash(a-team board * approve *)"' "$ROOT/settings/agents.json" || fail "no approve deny rule"
 
 # The 👀: a reviewer comment is answered once a run has left one on it, and a run leaves one only
 # on what it could have seen. The races replayed here are the ones in pitch #3. $TODAY is on or

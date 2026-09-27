@@ -192,7 +192,7 @@ public class AppMenuTests : IDisposable
             _ => Task.FromResult(new Reading("{}", null)),
             _ => { },
             (_, _) => null,
-            (_, _, _) => { },
+            (_, _, _, _) => { },
             Area.Dashboard,
             IconStyle.Unicode);
     }

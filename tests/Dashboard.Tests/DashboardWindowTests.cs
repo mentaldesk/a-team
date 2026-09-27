@@ -384,6 +384,7 @@ public class DashboardWindowTests : IDisposable
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Read the selected item", "Open the selected item on GitHub",
+                "Approve the pitch you're reading",
                 "Set the selected item's priority", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
                 "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
@@ -947,7 +948,7 @@ public class DashboardWindowTests : IDisposable
             _ => Task.FromResult(new Reading("{}", null)),
             openUrl ?? (_ => { }),
             (_, _) => null,
-            (_, _, _) => { },
+            (_, _, _, _) => { },
             area,
             auto);
     }
