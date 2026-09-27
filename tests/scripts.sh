@@ -1117,7 +1117,8 @@ JSON
 }
 
 # The PR `try` looks up: `try_gh [<state> [<head repo>]]`. Anything else is a 404, as a PR that
-# isn't there would be.
+# isn't there would be. `try_closes <number> <body>` makes it close an issue; `try_closes fail`
+# makes reading that fail.
 try_gh() {
   TRY_BIN=$(mktemp -d "$WORK/trybin.XXXXXX")
   jq -n --arg state "${1:-open}" --arg repo "${2:-mentaldesk/demo}" --arg sha "$TRY_SHA" \
@@ -1127,6 +1128,9 @@ try_gh() {
 #!/usr/bin/env bash
 case " \$* " in
   *"/pulls/7"*) cat "$TRY_BIN/pull.json" ;;
+  *" graphql "*)
+    [ ! -e "$TRY_BIN/closes.fail" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+    cat "$TRY_BIN/closes.json" 2>/dev/null || true ;;
   *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
 esac
 SH
@@ -1137,6 +1141,14 @@ SH
 SH
   chmod +x "$TRY_BIN/record"
   PATH="$TRY_BIN:$PATH"
+}
+
+try_closes() {
+  if [ "$1" = fail ]; then
+    touch "$TRY_BIN/closes.fail"
+  else
+    jq -cn --argjson number "$1" --arg body "$2" '{number: $number, body: $body}' >"$TRY_BIN/closes.json"
+  fi
 }
 
 worktrees() { git -C "$CHECKOUT" worktree list | sed 1d; }
@@ -1221,6 +1233,56 @@ failed "fork"
 grep -q 'someone-else/demo' "$OUT" || fail "fork: it doesn't say whose branch it is"
 [ ! -e "$TRY_WORK/.try" ] || fail "fork: something was left in .try"
 git -C "$CHECKOUT" cat-file -e "$TRY_SHA" 2>/dev/null && fail "fork: it fetched the PR anyway"
+
+case_ "a PR that closes an issue shows its acceptance criteria, unticked and in order, before running"
+try_fixture record
+try_gh
+try_closes 92 "$(printf '%s\r\n' '## Context' '' 'Why.' '' '## Acceptance criteria' '' \
+  '- [ ] A grid cell never goes below' '      5 rows' '- [x] Moving the selection scrolls' \
+  '  - [ ] and the strip never does' '' '## Tests' '' '- [ ] not this one')"
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/ran" ] || fail "criteria: the team's command didn't run"
+sed -n 2p "$OUT" | grep -q "at ${TRY_SHA:0:7} (closes #92)$" || fail "criteria: second line '$(sed -n 2p "$OUT")'"
+same "checklist" "  What this should let you do
+    [ ] A grid cell never goes below 5 rows
+    [ ] Moving the selection scrolls
+      [ ] and the strip never does" "$(sed -n '4,7p' "$OUT")"
+same "then the sandbox" "" "$(sed -n 8p "$OUT")"
+grep -q 'not this one' "$OUT" && fail "criteria: it ran on past the section in '$(cat "$OUT")'"
+
+case_ "an issue with no acceptance criteria, or a PR closing nothing, shows no checklist and runs"
+try_fixture record
+try_gh
+try_closes 92 "Just some words."
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/ran" ] || fail "no criteria: the team's command didn't run"
+grep -q 'What this should let you do' "$OUT" && fail "no criteria: a checklist in '$(cat "$OUT")'"
+same "stderr" "" "$(cat "$ERR")"
+try_gh
+run try demo 7
+same "exit" 0 "$STATUS"
+grep -q 'closes\|What this should' "$OUT" && fail "closes nothing: '$(cat "$OUT")'"
+same "stderr" "" "$(cat "$ERR")"
+
+case_ "an issue that won't read is one line, and try runs anyway"
+try_fixture record
+try_gh
+try_closes fail
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/ran" ] || fail "unreadable: the team's command didn't run"
+same "lines about it" 1 "$(grep -c 'Could not read' "$OUT")"
+grep -q 'What this should' "$OUT" && fail "unreadable: a checklist in '$(cat "$OUT")'"
+
+case_ "with no PR, there's no checklist"
+try_fixture record
+try_gh
+try_closes 92 "$(printf '%s\n' '## Acceptance criteria' '- [ ] something')"
+run try demo
+same "exit" 0 "$STATUS"
+grep -q 'What this should' "$OUT" && fail "no PR: a checklist in '$(cat "$OUT")'"
 
 case_ "with no PR, try runs origin's default branch as it is now, not the checkout's stale copy"
 try_fixture record

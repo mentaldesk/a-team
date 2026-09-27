@@ -13,6 +13,28 @@ die() { echo "a-team try: $*" >&2; exit 1; }
 refuse() { echo "a-team try: $*" >&2; echo "usage: a-team try <team> [<pr>] [--clean]" >&2; exit 2; }
 tilde() { echo "${1/#$HOME/\~}"; }
 
+# The "Acceptance criteria" section of an issue body, as an unticked checklist.
+criteria() {
+  tr -d '\r' | awk '
+    /^#+[[:space:]]+[Aa]cceptance [Cc]riteria[[:space:]]*$/ { on = 1; next }
+    on && /^#+[[:space:]]/ { exit }
+    !on || /^[[:space:]]*$/ { next }
+    {
+      match($0, /^[[:space:]]*/); indent = RLENGTH; text = substr($0, indent + 1)
+      if (text ~ /^[-*+][[:space:]]/) {
+        if (item != "") print item
+        text = substr(text, 3); sub(/^\[[ xX]\][[:space:]]*/, "", text)
+        depth = (indent == 0) ? "" : "  "
+        item = "    " depth "[ ] " text
+      } else if (item != "") {
+        item = item " " text
+      } else {
+        print "    " text
+      }
+    }
+    END { if (item != "") print item }'
+}
+
 CLEAN=false
 ARGS=()
 for arg in "$@"; do
@@ -97,6 +119,20 @@ else
   PROMPT="try:$TEAM#$PR"
   AT=${sha:0:7}
   WHAT="this PR's"
+
+  closes=$(gh api graphql -F owner="${REPO%%/*}" -F name="${REPO#*/}" -F pr="$PR" -f query='
+    query($owner: String!, $name: String!, $pr: Int!) {
+      repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
+        closingIssuesReferences(first: 1) { nodes { number body } } } } }' \
+    --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[0] // empty' 2>/dev/null) ||
+    closes=failed
+  if [ "$closes" = failed ]; then
+    CHECKLIST="  Could not read the issue #$PR closes, so there's no checklist."
+  elif [ -n "$closes" ]; then
+    AT="$AT (closes #$(jq -r .number <<<"$closes"))"
+    CHECKLIST=$(jq -r '.body // empty' <<<"$closes" | criteria)
+    [ -z "$CHECKLIST" ] || CHECKLIST=$'  What this should let you do\n'"$CHECKLIST"
+  fi
   AFTER="Removed the worktree. Merge #$PR if it did what you wanted."
 fi
 
@@ -105,6 +141,7 @@ git -C "$CHECKOUT" worktree add --detach --quiet "$TREE" "$sha" || die "could no
 mkdir -p "$SANDBOX"
 echo "Worktree $(tilde "$TREE") at $AT"
 echo
+[ -z "${CHECKLIST:-}" ] || printf '%s\n\n' "$CHECKLIST"
 echo "  Sandbox: A_TEAM_STATE=$(tilde "$SANDBOX") · A_TEAM_DRY_RUN=1 (nothing can write to the board)"
 
 export A_TEAM_STATE="$SANDBOX" A_TEAM_DRY_RUN=1
