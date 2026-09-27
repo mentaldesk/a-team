@@ -172,7 +172,8 @@ Nothing that needs them is somewhere else.
 **The CLI has three jobs, and stakeholder work isn't one of them:** getting a-team onto a
 machine (`install`), the agents' own API (`board`), and debugging (`run`, `task-prompt`). It
 isn't going away, and a command may well have both a dashboard and a CLI form; what it can't
-have is only the CLI one.
+have is only the CLI one. That holds for each slice as well as the finished feature: a CLI form
+ships in the same PR as the dashboard command that runs it, never ahead of it.
 
 **A capability is a command before it's a key.** Every action is registered with an id and a
 label, so it shows up in the palette, can be rebound, and can be driven from somewhere else
