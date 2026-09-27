@@ -1,6 +1,7 @@
 using System.Drawing;
 using Terminal.Gui.Drawing;
 using Attribute = Terminal.Gui.Drawing.Attribute;
+using Color = Terminal.Gui.Drawing.Color;
 
 namespace ATeam.Dashboard;
 
@@ -8,25 +9,37 @@ namespace ATeam.Dashboard;
 internal readonly record struct ArtSpan(string Text, string Colour);
 
 /// <summary>The van, driving, in place of the issue body while the team writes one rank and fetches the next
-/// item. <see cref="SpinnerView"/> draws a single line in the view's own colour, so it can't show this.</summary>
+/// item: a solid body on a dotted road, in a frame of its own. <see cref="SpinnerView"/> draws a single line
+/// in the view's own colour, so it can't show this.</summary>
 public sealed class LoadingView : View
 {
     private const string Resource = "loading.anim";
     private const string Break = "---FRAME---";
     private const string Untagged = "gray";
 
+    private const char Dot = '·';
+
     private static readonly TimeSpan Beat = TimeSpan.FromMilliseconds(120);
 
-    // The art is a picture, not chrome: it keeps its own palette on black in every theme, as the van does.
-    private static readonly Attribute Backdrop = new(StandardColor.Black, StandardColor.Black);
-
+    // The van is a picture, not chrome: it keeps its own palette on black in every theme.
     private static readonly Dictionary<string, Attribute> Inks = new()
     {
         [Untagged] = new Attribute(StandardColor.Gray, StandardColor.Black),
-        ["darkgray"] = new Attribute(StandardColor.DarkGray, StandardColor.Black),
         ["white"] = new Attribute(StandardColor.White, StandardColor.Black),
         ["red"] = new Attribute(StandardColor.BrightRed, StandardColor.Black),
         ["yellow"] = new Attribute(StandardColor.BrightYellow, StandardColor.Black),
+    };
+
+    private static readonly Attribute Dos = new(new Color(0x55, 0x55, 0x55), new Color(0xC0, 0xC0, 0xC0));
+
+    // The road is the part that follows the theme, so the frame isn't a black hole in a pale one. The DOS
+    // themes get grey rather than their own blue: the van is parked on a road, not in a window.
+    private static readonly Dictionary<string, Attribute> Roads = new()
+    {
+        [BundledThemes.Midnight] = new Attribute(new Color(0x4B, 0x52, 0x63), new Color(0x1B, 0x1E, 0x24)),
+        [BundledThemes.Daylight] = new Attribute(new Color(0xA0, 0xA4, 0xAC), new Color(0xFA, 0xFA, 0xFA)),
+        [BundledThemes.TurboPascal] = Dos,
+        [BundledThemes.ModernBorland] = Dos,
     };
 
     private int _frame;
@@ -36,6 +49,7 @@ public sealed class LoadingView : View
     {
         CanFocus = false;
         Visible = false;
+        BorderStyle = LineStyle.Single;
     }
 
     internal static IReadOnlyList<IReadOnlyList<IReadOnlyList<ArtSpan>>> Frames { get; } = Read();
@@ -93,6 +107,33 @@ public sealed class LoadingView : View
 
     /// <summary>Whether <paramref name="colour"/> is one the view has an ink for.</summary>
     internal static bool Draws(string colour) => Inks.ContainsKey(colour);
+
+    /// <summary>The dots and the surface behind them in <paramref name="theme"/>, or Midnight's for one we
+    /// don't ship.</summary>
+    internal static Attribute Road(string theme) =>
+        Roads.TryGetValue(theme, out var road) ? road : Roads[BundledThemes.Default];
+
+    /// <summary>The picture in a row — its runs from the first mark to the last, and the cell that starts at.
+    /// The van's own ink fills those cells, so it reads as a body; everywhere else the road shows through.</summary>
+    internal static (int Start, List<ArtSpan> Spans) Solid(IReadOnlyList<ArtSpan> row)
+    {
+        var text = string.Concat(row.Select(span => span.Text));
+        var start = text.AsSpan().IndexOfAnyExcept(' ');
+        if (start < 0)
+            return (0, []);
+        var end = text.AsSpan().LastIndexOfAnyExcept(' ') + 1;
+        var spans = new List<ArtSpan>(row.Count);
+        var column = 0;
+        foreach (var span in row)
+        {
+            var from = Math.Clamp(start, column, column + span.Text.Length) - column;
+            var to = Math.Clamp(end, column, column + span.Text.Length) - column;
+            if (to > from)
+                spans.Add(span with { Text = span.Text[from..to] });
+            column += span.Text.Length;
+        }
+        return (start, spans);
+    }
 
     /// <summary>Where the art sits in <paramref name="room"/>: centred, and cut down to it rather than
     /// spilling out of it.</summary>
@@ -166,14 +207,18 @@ public sealed class LoadingView : View
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        var box = Box(Viewport.Size);
+        var room = Viewport.Size;
+        SetAttribute(Road(BundledThemes.Current));
+        for (var row = 0; row < room.Height; row++)
+            AddStr(0, row, new string(Dot, room.Width));
+
+        var box = Box(room);
         var frame = Frames[_frame];
         for (var row = 0; row < box.Height && row < frame.Count; row++)
         {
-            SetAttribute(Backdrop);
-            AddStr(box.X, box.Y + row, new string(' ', box.Width));
-            var column = 0;
-            foreach (var span in Clip(frame[row], box.Width))
+            var (start, spans) = Solid(Clip(frame[row], box.Width));
+            var column = start;
+            foreach (var span in spans)
             {
                 SetAttribute(Inks.TryGetValue(span.Colour, out var ink) ? ink : Inks[Untagged]);
                 AddStr(box.X + column, box.Y + row, span.Text);

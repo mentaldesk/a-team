@@ -44,6 +44,40 @@ public class LoadingViewTests
     }
 
     [Fact]
+    public void A_rows_picture_is_what_lies_between_its_first_mark_and_its_last()
+    {
+        var (start, spans) = LoadingView.Solid(LoadingView.Spans("  [red]A[/red] B  "));
+
+        Assert.Equal(2, start);
+        Assert.Equal([new ArtSpan("A", "red"), new ArtSpan(" B", "gray")], spans);
+    }
+
+    [Fact]
+    public void A_row_with_no_marks_on_it_is_all_road()
+    {
+        var (start, spans) = LoadingView.Solid(LoadingView.Spans("     "));
+
+        Assert.Equal(0, start);
+        Assert.Empty(spans);
+    }
+
+    [Fact]
+    public void The_road_is_dark_under_a_dark_theme_and_pale_under_a_pale_one()
+    {
+        Assert.True(LoadingView.Road(BundledThemes.Midnight).Background.IsDarkColor());
+        Assert.False(LoadingView.Road(BundledThemes.Daylight).Background.IsDarkColor());
+        Assert.False(LoadingView.Road(BundledThemes.TurboPascal).Background.IsDarkColor());
+        Assert.All(BundledThemes.Names,
+            theme => Assert.NotEqual(LoadingView.Road(theme).Foreground, LoadingView.Road(theme).Background));
+    }
+
+    [Fact]
+    public void A_theme_we_dont_ship_drives_on_the_default_ones_road()
+    {
+        Assert.Equal(LoadingView.Road(BundledThemes.Default), LoadingView.Road("Solarized"));
+    }
+
+    [Fact]
     public void A_bracket_that_closes_nothing_is_text_like_any_other()
     {
         Assert.Equal([new ArtSpan("[ . ]", "gray")], LoadingView.Spans("[ . ]"));
