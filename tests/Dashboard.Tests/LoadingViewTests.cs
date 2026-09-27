@@ -1,5 +1,6 @@
 using System.Drawing;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.ViewBase;
 using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard.Tests;
@@ -183,6 +184,28 @@ public class LoadingViewTests
 
         Assert.Equal(0, view.Showing);
         Assert.Equal(LoadingView.Frames.Count, view.Travelled);
+    }
+
+    [Fact]
+    public void It_is_a_frame_just_big_enough_for_the_picture()
+    {
+        using var host = new View();
+        using var view = new LoadingView();
+        host.Add(view);
+
+        host.Layout(new Size(200, 60));
+
+        Assert.Equal(new Size(LoadingView.Cells + 2, LoadingView.Rows + 2), view.Frame.Size);
+    }
+
+    [Fact]
+    public void Its_heading_sits_in_the_middle_of_the_top_edge()
+    {
+        var width = LoadingView.Cells + 2;
+        var start = LoadingView.HeadingAt(width);
+        var end = start + LoadingView.Heading.Length + 2;
+
+        Assert.InRange(start - (width - end), -1, 1);
     }
 
     [Fact]

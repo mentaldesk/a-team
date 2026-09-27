@@ -42,7 +42,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_van_fills_the_Work_area_until_the_first_read_lands()
+    public void The_van_drives_in_the_Work_area_until_the_first_read_lands()
     {
         var finish = new TaskCompletionSource<Reading>();
         using var window = Open(read: _ => finish.Task);
@@ -54,6 +54,19 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.False(window.Loading.Visible);
+    }
+
+    [Fact]
+    public void The_van_is_a_frame_in_the_middle_of_the_Work_area_rather_than_filling_it()
+    {
+        using var window = Open(read: _ => new TaskCompletionSource<Reading>().Task);
+
+        LayOut(window, 120, 40);
+
+        var van = window.Loading.Frame;
+        Assert.Equal(new Size(LoadingView.Cells + 2, LoadingView.Rows + 2), van.Size);
+        Assert.InRange(van.X - (120 - van.Right), -1, 1);
+        Assert.InRange(van.Y - 1 - (40 - 2 - van.Bottom), -1, 1);
     }
 
     [Fact]

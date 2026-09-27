@@ -139,7 +139,7 @@ public sealed class DashboardWindow : Window
             X = 0,
             Y = MenuLines,
             Width = Dim.Fill(),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines - _message.Lines), this),
+            Height = Dim.Func(_ => WorkHeight(), this),
             Visible = area == Area.Work,
         };
         _work.FocusChanged += ShowMessage;
@@ -147,10 +147,8 @@ public sealed class DashboardWindow : Window
         Add(_work);
         _loading = new LoadingView
         {
-            X = 0,
-            Y = MenuLines,
-            Width = Dim.Fill(),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines - _message.Lines), this),
+            X = Pos.Center(),
+            Y = Pos.Func(_ => MenuLines + Math.Max(0, (WorkHeight() - _loading!.Frame.Height) / 2), this),
         };
         Add(_loading);
         ShowIcons(settings.ReadIcons());
@@ -313,8 +311,9 @@ public sealed class DashboardWindow : Window
         ShowLoading();
     }
 
-    /// <summary>The van fills the Work area while the read that first fills it is still going: there are no
-    /// cards to look at until it lands. A later read leaves the ones already on screen where they are.</summary>
+    /// <summary>The van drives in the middle of the Work area while the read that first fills it is still going:
+    /// there are no cards to look at until it lands. A later read leaves the ones already on screen where they
+    /// are.</summary>
     private void ShowLoading()
     {
         if (_area == Area.Work && _reading is not null && _work.Unread)
@@ -539,6 +538,8 @@ public sealed class DashboardWindow : Window
     }
 
     private int Foot() => DispatchLines + 2 + StatusLines + _message.Lines;
+
+    private int WorkHeight() => Math.Max(0, Viewport.Height - MenuLines - StatusLines - _message.Lines);
 
     private void Show(Area area)
     {

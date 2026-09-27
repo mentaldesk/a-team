@@ -17,11 +17,14 @@ internal sealed record Art(
 /// <summary>The surface outside the van, the dots on it, and the colour the exhaust is drawn in there.</summary>
 internal readonly record struct Road(Color Surface, Color Dots, Color Smoke);
 
-/// <summary>The van, driving, in place of the issue body while the team writes one rank and fetches the next
-/// item: a solid body on a dotted road, in a frame of its own. <see cref="SpinnerView"/> draws a single line
-/// in the view's own colour, so it can't show this.</summary>
+/// <summary>The van, driving, while the team writes one rank and fetches the next item or first reads the Work
+/// area: a solid body on a dotted road, framed and headed, sized to the picture for whoever shows it to centre.
+/// <see cref="SpinnerView"/> draws a single line in the view's own colour, so it can't show this. It draws its
+/// own frame because a border's title can only sit at the start of its edge.</summary>
 public sealed class LoadingView : View
 {
+    internal const string Heading = "Loading";
+
     private const string Resource = "loading.anim";
     private const string BodyBreak = "---BODY---";
     private const string RoadBreak = "---ROAD---";
@@ -74,7 +77,8 @@ public sealed class LoadingView : View
     {
         CanFocus = false;
         Visible = false;
-        BorderStyle = LineStyle.Single;
+        Width = Cells + 2;
+        Height = Rows + 2;
     }
 
     internal static Art Shipped { get; } = Read();
@@ -180,6 +184,9 @@ public sealed class LoadingView : View
         return new Rectangle((room.Width - width) / 2, (room.Height - height) / 2, width, height);
     }
 
+    /// <summary>Where the heading, brackets and all, starts along a top edge <paramref name="width"/> wide.</summary>
+    internal static int HeadingAt(int width) => (width - Heading.Length - 2) / 2;
+
     /// <summary>The glyph at <paramref name="column"/> of a row and the colour it's in: a space past the end.</summary>
     internal static (char Glyph, string Colour) At(IReadOnlyList<ArtSpan> row, int column)
     {
@@ -269,7 +276,7 @@ public sealed class LoadingView : View
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        var room = Viewport.Size;
+        var room = new Size(Math.Max(0, Viewport.Width - 2), Math.Max(0, Viewport.Height - 2));
         var road = RoadIn(BundledThemes.Current);
         var box = Box(room);
         var frame = Frames[_frame];
@@ -287,10 +294,28 @@ public sealed class LoadingView : View
                 var ground = Ground(Shipped.Texture, column, row, _travelled);
                 var (shown, paint) = Cell(fill, glyph, colour, road, ground);
                 SetAttribute(paint);
-                AddStr(column, row, shown.ToString());
+                AddStr(column + 1, row + 1, shown.ToString());
             }
         }
+        Outline(Viewport.Size);
         return true;
+    }
+
+    private void Outline(Size size)
+    {
+        if (size.Width < 2 || size.Height < 2)
+            return;
+        using var canvas = new LineCanvas();
+        var style = FrameView.DefaultBorderStyle;
+        canvas.AddLine(new Point(0, 0), size.Width, Orientation.Horizontal, style);
+        canvas.AddLine(new Point(0, size.Height - 1), size.Width, Orientation.Horizontal, style);
+        canvas.AddLine(new Point(0, 0), size.Height, Orientation.Vertical, style);
+        canvas.AddLine(new Point(size.Width - 1, 0), size.Height, Orientation.Vertical, style);
+        SetAttributeForRole(VisualRole.Normal);
+        foreach (var (at, rune) in canvas.GetMap())
+            AddRune(at.X, at.Y, rune);
+        if (Heading.Length + 4 <= size.Width)
+            AddStr(HeadingAt(size.Width), 0, $"{Glyphs.RightTee}{Heading}{Glyphs.LeftTee}");
     }
 
     private static Art Read()

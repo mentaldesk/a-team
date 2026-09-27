@@ -47,10 +47,8 @@ public sealed class PriorityDialog : Dialog
         };
         _loading = new LoadingView
         {
-            X = Inset,
-            Y = 0,
-            Width = Dim.Fill(Inset),
-            Height = Dim.Func(_ => BandRow(), this),
+            X = Pos.Center(),
+            Y = Pos.Func(_ => Math.Max(0, (BandRow() - _loading!.Frame.Height) / 2), this),
         };
         _ranks = new OptionSelector<Rank>
         {

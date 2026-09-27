@@ -207,6 +207,20 @@ public class PriorityDialogTests
     }
 
     [Fact]
+    public void The_van_sits_in_the_middle_of_where_the_body_was()
+    {
+        using var dialog = Open(new IssueBody(Prose), width: 100, height: 30);
+
+        dialog.Busy("Setting…");
+        dialog.Layout(new Size(100, 30));
+
+        var van = dialog.Loading.Frame;
+        var room = dialog.Viewport.Width;
+        Assert.InRange(van.X - (room - van.Right), -1, 1);
+        Assert.InRange(van.Y - (dialog.Band.Frame.Y - van.Bottom), -1, 1);
+    }
+
+    [Fact]
     public void With_the_body_gone_there_is_nothing_left_to_scroll()
     {
         using var dialog = Open(new IssueBody(Long()), height: 10);
