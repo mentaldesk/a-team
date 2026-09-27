@@ -53,20 +53,24 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    assumed.
 2. Split it into tasks, each of which ships an increment of user value. This is the rule that
    matters most in a breakdown:
-   - Once a task merges, a user can do or see something they couldn't before, however small.
-   - Never split by layer or technical milestone ("the core first, then the UI"). The model,
+   - Once a task merges, the vision's user can do or see something they couldn't before,
+     however small, from where the vision says they work.
+   - Never split by layer or technical milestone ("the core first, then the UI"). A command,
+     API or script that the product's own code or agents call is a layer too. The model,
      plumbing and tests a slice needs ship inside that slice.
    - When a slice is too big, shrink the experience, not the layer: one case first, fewer
      options, a plainer UI. For example, a dialog showing line and word counts for the whole
      file, then selection counts, then a status bar readout.
-   - Check every task: if we stopped after this one merged, would a user notice? If not, fold
+   - Check every task: if we stopped after this one merged, would that user notice? If not, fold
      it into the slice that first puts it in front of a user.
    - Each task is still one reviewable PR with the tests that prove it.
 3. Create each task as an issue (`gh issue create`). Body:
    - **Context**: one paragraph and a link to the pitch.
    - **Acceptance criteria**: a checklist of what the user can do and see once it merges, which
-     the reviewer can try. Not classes or APIs. For UI, name the control for each element.
-   - **Tests**: what should be covered.
+     the reviewer ticks off as they try it. Each item is an end result, checked by using the
+     product the way the vision's user does, never how it's built: no classes, APIs, internal
+     commands, config keys or file formats. For UI, name the control for each element.
+   - **Tests**: what should be covered, including the internals the criteria leave out.
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
 4. `a-team board {{team}} link <pitch> <task>`, then `a-team board {{team}} add lead <task> Ready`. For a task that

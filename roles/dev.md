@@ -79,9 +79,11 @@ Urgent, below `wip.worktrees + 1`:
    conventions, and implement it. Stay inside the task's scope; note anything else you spot
    in the PR body instead of fixing it.
 6. Build and run the tests locally until they pass.
-7. Push and open a **draft** PR. Body: a short summary, `Closes #<n>`, anything the reviewer
-   should look at closely, and your marker. No test-plan section. Once the PR has a number, edit
-   the body so it ends, just above the marker, with the line `a-team try {{team}} <pr>` for it.
+7. Push and open a **draft** PR. Body: a short summary of what the user can now do or see,
+   `Closes #<n>`, any choice you made that changes what they see or do beyond what the task
+   says, and your marker. How you built it goes in the commit messages, not the body. No
+   test-plan section. Once the PR has a number, edit the body so it ends, just above the
+   marker, with the line `a-team try {{team}} <pr>` for it.
 8. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
 9. Leave the item In progress and end the run. Step 3 of a later run marks the PR ready once
    CI is green.
