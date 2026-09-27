@@ -13,6 +13,8 @@ public readonly record struct LogStyle(string? Scheme, VisualRole Role)
         LogLineKind.ToolCall or LogLineKind.DispatchSkipped => new LogStyle(null, VisualRole.Disabled),
         LogLineKind.ToolError or LogLineKind.ResultError or LogLineKind.DispatchFailed => new LogStyle(SchemeManager.SchemesToSchemeName(Schemes.Error), VisualRole.Normal),
         LogLineKind.ResultOk => new LogStyle(LogSchemes.Success, VisualRole.Normal),
+        LogLineKind.Heading or LogLineKind.Code or LogLineKind.Quote or LogLineKind.InlineCode or LogLineKind.Strong
+            or LogLineKind.ListMarker => new LogStyle(MarkdownSchemes.Scheme(kind), VisualRole.Normal),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "No colour for this log line kind."),
     };
 }

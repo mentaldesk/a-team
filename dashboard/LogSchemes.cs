@@ -10,6 +10,7 @@ public static class LogSchemes
     public const string Success = "Success";
     public const string Dimmed = "Dimmed";
     public const string Form = "Form";
+    public const string Reader = "Reader";
 
     // Anything under 0.1 GetBrighterColor doubles, so that's the floor for a step it takes as asked.
     private const double Lift = 0.12;
@@ -25,6 +26,9 @@ public static class LogSchemes
         {
             Normal = baseScheme.GetAttributeForRole(VisualRole.Disabled),
         });
+        var reader = baseScheme with { Normal = baseScheme.GetAttributeForRole(VisualRole.Editable) };
+        SchemeManager.AddScheme(Reader, reader);
+        MarkdownSchemes.Register(reader, ThemeManager.Theme);
         var form = Banded(SchemeManager.GetScheme(Schemes.Dialog));
         SchemeManager.AddScheme(Form, form);
         Priorities.Register(baseScheme, form);

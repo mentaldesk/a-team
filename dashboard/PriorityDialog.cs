@@ -41,6 +41,8 @@ public sealed class PriorityDialog : Dialog
             Height = Dim.Func(_ => BandRow(), this),
             Following = false,
             Scrolls = true,
+            ReadsMarkdown = true,
+            SchemeName = LogSchemes.Reader,
             Lines = body.Lines,
         };
         _ranks = new OptionSelector<Rank>

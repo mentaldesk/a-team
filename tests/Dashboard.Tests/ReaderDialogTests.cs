@@ -40,7 +40,16 @@ public class ReaderDialogTests
         using var dialog = Open(Pitch);
 
         Assert.Equal(Pitch.Split('\n'), dialog.Body.Lines.Select(line => line.Text));
-        Assert.All(dialog.Body.Lines, line => Assert.Equal(LogLineKind.Prose, line.Kind));
+    }
+
+    [Fact]
+    public void The_body_is_read_as_markdown_on_the_reader_s_own_surface()
+    {
+        using var dialog = Open(Pitch);
+
+        Assert.True(dialog.Body.ReadsMarkdown);
+        Assert.Equal(LogSchemes.Reader, dialog.Body.SchemeName);
+        Assert.Equal(LogLineKind.Heading, dialog.Body.Lines[0].Kind);
     }
 
     [Fact]

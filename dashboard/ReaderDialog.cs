@@ -35,6 +35,8 @@ public sealed class ReaderDialog : Dialog
             CanFocus = true,
             Following = false,
             Scrolls = true,
+            ReadsMarkdown = true,
+            SchemeName = LogSchemes.Reader,
             Lines = body.Lines,
         };
         _hints.Y = Pos.Func(_ => HintRow(), this);

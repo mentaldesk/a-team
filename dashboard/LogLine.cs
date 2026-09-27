@@ -11,6 +11,12 @@ public enum LogLineKind
     ResultError,
     DispatchSkipped,
     DispatchFailed,
+    Heading,
+    Code,
+    Quote,
+    InlineCode,
+    Strong,
+    ListMarker,
 }
 
 /// <summary>One rendered line of a session log, and what it came from.</summary>

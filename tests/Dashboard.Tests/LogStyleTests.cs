@@ -15,6 +15,12 @@ public class LogStyleTests : StaticConfigurationTest
         { LogLineKind.ResultOk, LogSchemes.Success, VisualRole.Normal },
         { LogLineKind.DispatchSkipped, null, VisualRole.Disabled },
         { LogLineKind.DispatchFailed, SchemeManager.SchemesToSchemeName(Schemes.Error), VisualRole.Normal },
+        { LogLineKind.Heading, "Markdown.Heading", VisualRole.Normal },
+        { LogLineKind.Code, "Markdown.Code", VisualRole.Normal },
+        { LogLineKind.Quote, "Markdown.Quote", VisualRole.Normal },
+        { LogLineKind.InlineCode, "Markdown.InlineCode", VisualRole.Normal },
+        { LogLineKind.Strong, "Markdown.Strong", VisualRole.Normal },
+        { LogLineKind.ListMarker, "Markdown.ListMarker", VisualRole.Normal },
     };
 
     [Theory]
