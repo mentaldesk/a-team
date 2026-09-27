@@ -93,7 +93,7 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void Every_item_wears_the_first_letter_of_its_label_and_no_two_in_a_menu_share_one()
+    public void No_two_items_in_a_menu_share_a_letter()
     {
         using var window = Open();
 
@@ -103,8 +103,6 @@ public class AppMenuTests : IDisposable
             var ids = Under(window, menu);
             var letters = ids.Select(id => Letter(Item(window, id).HotKey)).ToList();
             Assert.Equal(letters.Count, letters.Distinct().Count());
-            Assert.All(ids, id =>
-                Assert.Equal(char.ToLowerInvariant(Label(window, id)[0]), Letter(Item(window, id).HotKey)));
         }
     }
 
@@ -119,6 +117,16 @@ public class AppMenuTests : IDisposable
             Under(window, Cards(window)));
         Assert.Equal(["work.read", "work.priority", "work.try", "work.github"], Under(window, Cards(window)));
         Assert.All(Under(window, Cards(window)), id => Assert.Equal(window.Commands.KeyFor(id), Item(window, id).Key));
+    }
+
+    [Fact]
+    public void Cards_items_are_short_and_wear_the_letter_of_their_own_key()
+    {
+        using var window = Open();
+
+        Assert.Equal(
+            ["_Open", "Set _priority", "_Try PR", "Open on _GitHub"],
+            Under(window, Cards(window)).Select(id => Item(window, id).Title));
     }
 
     [Fact]
@@ -241,9 +249,6 @@ public class AppMenuTests : IDisposable
     private static List<string> Under(DashboardWindow window, MenuBarItem menu) =>
         [.. menu.PopoverMenu!.Root!.SubViews.OfType<MenuItem>()
             .Select(shown => window.MenuItems.Single(item => item.Item == shown).Id)];
-
-    private static string Label(DashboardWindow window, string id) =>
-        window.Commands.Registered.Single(command => command.Id == id).Label;
 
     private static char Letter(Key key) => char.ToLowerInvariant((char)key);
 

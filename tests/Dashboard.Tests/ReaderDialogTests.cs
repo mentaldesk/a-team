@@ -75,7 +75,7 @@ public class ReaderDialogTests
     {
         using var dialog = Open(Pitch);
 
-        Assert.Equal("Up/Down/PgUp/PgDn scroll · o on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · g on GitHub · Esc close", dialog.Hints.Says);
         Assert.Equal(dialog.Viewport.Height - 1, dialog.Hints.Frame.Y);
     }
 
@@ -84,7 +84,7 @@ public class ReaderDialogTests
     {
         using var dialog = Open(Pitch, onApprove: () => { });
 
-        Assert.Equal("Up/Down/PgUp/PgDn scroll · a approve · o on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · a approve · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public class ReaderDialogTests
         var opened = 0;
         using var dialog = Open(Pitch, () => opened++);
 
-        dialog.Hints.Hints.Single(hint => hint.Text == "o on GitHub").InvokeCommand(Command.Accept);
+        dialog.Hints.Hints.Single(hint => hint.Text == "g on GitHub").InvokeCommand(Command.Accept);
 
         Assert.Equal(1, opened);
     }
@@ -151,12 +151,12 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void o_opens_the_item_on_GitHub()
+    public void g_opens_the_item_on_GitHub()
     {
         var opened = 0;
         using var dialog = Open(Pitch, () => opened++);
 
-        Assert.True(dialog.NewKeyDownEvent(new Key('o')));
+        Assert.True(dialog.NewKeyDownEvent(new Key('g')));
 
         Assert.Equal(1, opened);
     }

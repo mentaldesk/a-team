@@ -50,8 +50,8 @@ internal sealed class AppMenu
         {
             if (registered.FirstOrDefault(entry => entry.Id == id) is not { } command)
                 continue;
-            if (item.Title != Hot(command.Label))
-                item.Title = Hot(command.Label);
+            if (item.Title != Hot(command.Label, command.Key))
+                item.Title = Hot(command.Label, command.Key);
             if (item.Key != command.Key)
                 item.Key = command.Key;
         }
@@ -104,7 +104,9 @@ internal sealed class AppMenu
     {
         var item = new MenuItem
         {
-            Title = Hot(_commands.Registered.FirstOrDefault(command => command.Id == id)?.Label ?? id),
+            Title = _commands.Registered.FirstOrDefault(command => command.Id == id) is { } command
+                ? Hot(command.Label, command.Key)
+                : Hot(id, Key.Empty),
             Key = _commands.KeyFor(id),
             // The key is a label here: the window's registry already runs it, and a second binding would run it twice.
             BindKeyToApplication = false,
@@ -114,6 +116,13 @@ internal sealed class AppMenu
         return item;
     }
 
-    /// <summary>The label with its first letter marked as the hot one.</summary>
-    private static string Hot(string label) => $"_{label}";
+    /// <summary>The label with its command's own letter key marked as the hot one where the label has it, and its
+    /// first letter otherwise.</summary>
+    private static string Hot(string label, Key key)
+    {
+        var at = key.IsKeyCodeAtoZ && !key.IsCtrl && !key.IsAlt
+            ? label.IndexOf((char)key.NoShift.KeyCode, StringComparison.OrdinalIgnoreCase)
+            : -1;
+        return at < 0 ? $"_{label}" : label.Insert(at, "_");
+    }
 }

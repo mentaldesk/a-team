@@ -19,6 +19,7 @@ public sealed class WorkView : View
     ];
 
     private readonly List<WorkLane> _lanes = [];
+    private WorkColumn? _lastFocused;
     private IReadOnlyList<WaitingItem> _items = [];
 
     public WorkView(IReadOnlyList<string> teams)
@@ -45,16 +46,16 @@ public sealed class WorkView : View
     /// <summary>Raised when the keyboard moves between columns, so the window can name the region it's in.</summary>
     internal event Action? FocusChanged;
 
-    /// <summary>The item the keyboard is on, whether it's on the item's own row or its PR's, or null when no
-    /// column has focus.</summary>
-    internal WaitingItem? Selected => FocusedColumn()?.SelectedItem;
+    /// <summary>The item the keyboard is on, whether it's on the item's own row or its PR's, or null before any
+    /// column has had focus.</summary>
+    internal WaitingItem? Selected => SelectedColumn()?.SelectedItem;
 
     /// <summary>The page Enter opens: the issue's on a card, the PR's on the row under it.</summary>
-    internal string? SelectedUrl => FocusedColumn()?.Selected?.Url;
+    internal string? SelectedUrl => SelectedColumn()?.Selected?.Url;
 
     /// <summary>The item a rank would be set on: a card's own, and nothing on the PR row under it.</summary>
     internal WaitingItem? SelectedCard =>
-        FocusedColumn()?.Selected is { IsPr: false } card ? card.Item : null;
+        SelectedColumn()?.Selected is { IsPr: false } card ? card.Item : null;
 
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
@@ -187,6 +188,8 @@ public sealed class WorkView : View
 
     private void FocusMoved()
     {
+        if (FocusedColumn() is { } column)
+            _lastFocused = column;
         ShowFocus();
         FocusChanged?.Invoke();
     }
@@ -228,6 +231,9 @@ public sealed class WorkView : View
                     return (lane, gate);
         return null;
     }
+
+    /// <summary>The column focus is in, or was last in while something outside the cards, like the Cards menu, has it.</summary>
+    private WorkColumn? SelectedColumn() => FocusedColumn() ?? _lastFocused;
 
     private WorkColumn? FocusedColumn() =>
         MostFocused is { } view ? _lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Holds(view)) : null;

@@ -47,7 +47,7 @@ public sealed class ReaderDialog : Dialog
         _hints.Show("", [
             new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll"),
             .. onApprove is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ApproveHint, "a approve")],
-            new HintedCommand(GitHubHint, "o on GitHub"),
+            new HintedCommand(GitHubHint, "g on GitHub"),
             new HintedCommand(CloseHint, "Esc close"),
         ], Run);
 
@@ -63,7 +63,7 @@ public sealed class ReaderDialog : Dialog
     {
         if (key == Key.Esc)
             return Close();
-        if (key == new Key('o'))
+        if (key == new Key('g'))
             return OnGitHub();
         if (key == new Key('a') && _onApprove is not null)
             return Approve();

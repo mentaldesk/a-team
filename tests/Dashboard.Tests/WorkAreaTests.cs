@@ -306,7 +306,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void o_opens_the_selected_cards_issue()
+    public void g_opens_the_selected_cards_issue()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -314,13 +314,13 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.True(window.NewKeyDownEvent(new Key('o')));
+        Assert.True(window.NewKeyDownEvent(new Key('g')));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/107"], opened);
     }
 
     [Fact]
-    public void o_on_the_row_under_a_card_opens_its_PR()
+    public void g_on_the_row_under_a_card_opens_its_PR()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -330,14 +330,14 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.True(window.NewKeyDownEvent(new Key('o')));
+        Assert.True(window.NewKeyDownEvent(new Key('g')));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/pull/122"], opened);
         Assert.Equal(49, window.Work.Selected?.Number);
     }
 
     [Fact]
-    public void An_Idea_has_no_row_under_it_and_hands_over_to_GitHub_on_o()
+    public void An_Idea_has_no_row_under_it_and_hands_over_to_GitHub_on_g()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -346,7 +346,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
 
-        Assert.True(window.NewKeyDownEvent(new Key('o')));
+        Assert.True(window.NewKeyDownEvent(new Key('g')));
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
 
         window.NewKeyDownEvent(Key.CursorDown);
@@ -832,7 +832,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            [("work.read", "Read the selected item", Key.Enter), ("work.github", "Open the selected item on GitHub", new Key('o'))],
+            [("work.read", "Open", Key.Enter), ("work.github", "Open on GitHub", new Key('g'))],
             window.Commands.Registered
                 .Where(command => command.Id is "work.read" or "work.github")
                 .Select(command => (command.Id, command.Label, command.Key)));
@@ -1061,7 +1061,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
-        window.NewKeyDownEvent(new Key('o'));
+        window.NewKeyDownEvent(new Key('g'));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/49"], opened);
     }
@@ -1094,7 +1094,7 @@ public class WorkAreaTests : IDisposable
         Assert.All(window.MenuItems, item =>
         {
             var command = window.Commands.Registered.Single(registered => registered.Id == item.Id);
-            Assert.Equal($"_{command.Label}", item.Item.Title);
+            Assert.Equal(command.Label, item.Item.Title.Replace("_", ""));
             Assert.Equal(command.Key, item.Item.Key);
         });
     }
@@ -1232,6 +1232,22 @@ public class WorkAreaTests : IDisposable
 
         Assert.Empty(handed);
         Assert.True(window.Panes[0].Expanded);
+    }
+
+    [Fact]
+    public void The_card_commands_stay_on_the_selected_card_while_the_menu_has_focus()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        // An open menu is a popover outside the window, so the window loses focus to it.
+        window.HasFocus = false;
+
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.All(["work.read", "work.priority", "work.try", "work.github"], id => Assert.True(window.Commands.IsEnabled(id), id));
     }
 
     [Theory]

@@ -135,7 +135,7 @@ until you give them one), **Pitches** (waiting for you to approve) and **Review*
 to merge or accept), each headed by its count of items. A card's issue number is coloured by the
 item's Priority, in the colours GitHub gives that field's own options, and the PR that closes it
 hangs under it as a row of its own — `PR #149  The session log reads…`. Enter shows the issue's
-body as written, without leaving the app; `o` opens whichever row you're on in your browser: the
+body as written, without leaving the app; `g` opens whichever row you're on in your browser: the
 issue on the card, the PR on the row under it. Reading a pitch that's waiting on you, `a` approves
 it: no confirmation, and the card leaves the column with nothing re-read. Reading every team's
 gates takes a moment, so a van drives across the empty area, framed off from the rest, until the
