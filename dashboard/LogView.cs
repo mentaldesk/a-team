@@ -96,6 +96,8 @@ public sealed class LogView : View
 
     public void Page(int direction) => ScrollTo(_top + direction * Math.Max(1, Viewport.Height - 1));
 
+    public void Step(int direction) => ScrollTo(_top + direction);
+
     public void Home() => ScrollTo(0);
 
     public void End() => ScrollTo(int.MaxValue);

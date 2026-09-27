@@ -1,4 +1,6 @@
 using System.Drawing;
+using Terminal.Gui.Configuration;
+using Terminal.Gui.Drawing;
 using Terminal.Gui;
 using Terminal.Gui.App;
 using Terminal.Gui.Input;
@@ -189,7 +191,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(window.HintLine, window.Status.Says);
-        Assert.Contains("Enter: open", window.Status.Says);
+        Assert.Contains("Enter: read", window.Status.Says);
 
         Hint(window, "m: only mine").InvokeCommand(Command.Accept);
 
@@ -304,7 +306,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Enter_opens_the_selected_cards_issue()
+    public void o_opens_the_selected_cards_issue()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -312,13 +314,13 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        Assert.True(window.NewKeyDownEvent(new Key('o')));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/107"], opened);
     }
 
     [Fact]
-    public void Enter_on_the_row_under_a_card_opens_its_PR()
+    public void o_on_the_row_under_a_card_opens_its_PR()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -328,14 +330,14 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        Assert.True(window.NewKeyDownEvent(new Key('o')));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/pull/122"], opened);
         Assert.Equal(49, window.Work.Selected?.Number);
     }
 
     [Fact]
-    public void An_Idea_has_no_row_under_it_and_hands_over_to_GitHub_on_Enter()
+    public void An_Idea_has_no_row_under_it_and_hands_over_to_GitHub_on_o()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -344,7 +346,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
 
-        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        Assert.True(window.NewKeyDownEvent(new Key('o')));
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
 
         window.NewKeyDownEvent(Key.CursorDown);
@@ -596,6 +598,123 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Enter_reads_the_selected_card_and_opens_the_reader_on_its_body()
+    {
+        var read = new List<WaitingItem>();
+        (WaitingItem Item, IssueBody Body)? shown = null;
+        using var window = Open(
+            readBody: item =>
+            {
+                read.Add(item);
+                return Task.FromResult(new Reading(Body, null));
+            },
+            showBody: (item, body, _) => shown = (item, body));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        Assert.Null(shown);
+
+        window.Refresh();
+
+        Assert.Equal([6], read.Select(item => item.Number));
+        Assert.Equal(6, shown?.Item.Number);
+        Assert.Equal(new IssueBody("## Opportunity"), shown?.Body);
+    }
+
+    [Fact]
+    public void o_in_the_reader_opens_what_o_on_the_board_would_have()
+    {
+        var opened = new List<string>();
+        using var window = Open(
+            openUrl: opened.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, onGitHub) => onGitHub());
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal(["https://github.com/mentaldesk/team0/pull/122"], opened);
+    }
+
+    [Fact]
+    public void Closing_the_reader_leaves_the_same_card_selected_and_the_board_unread()
+    {
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(Waiting(team), null));
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        var selected = window.Work.Selected;
+        var region = window.Work.Region;
+        var before = reads;
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Same(selected, window.Work.Selected);
+        Assert.Equal(region, window.Work.Region);
+        Assert.Equal(before, reads);
+    }
+
+    [Fact]
+    public void A_read_that_failed_opens_no_reader_and_says_why_in_the_error_colour()
+    {
+        var shown = false;
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading("", "board.sh: can't read #6 (gh: Not Found (HTTP 404))")),
+            showBody: (_, _, _) => shown = true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.False(shown);
+        Assert.Equal("board.sh: can't read #6 (gh: Not Found (HTTP 404))", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+    }
+
+    [Fact]
+    public void A_card_with_no_body_opens_no_reader_and_says_so_in_the_error_colour()
+    {
+        var shown = false;
+        using var window = Open(showBody: (_, _, _) => shown = true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.False(shown);
+        Assert.Equal("#6 has no description", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+    }
+
+    [Fact]
+    public void Reading_and_opening_on_GitHub_are_commands_of_their_own()
+    {
+        using var window = Open();
+
+        Assert.Equal(
+            [("work.read", "Read the selected item", Key.Enter), ("work.github", "Open the selected item on GitHub", new Key('o'))],
+            window.Commands.Registered
+                .Where(command => command.Id is "work.read" or "work.github")
+                .Select(command => (command.Id, command.Label, command.Key)));
+    }
+
+    [Fact]
     public void A_second_p_while_the_first_is_still_reading_is_refused_not_queued()
     {
         var reads = 0;
@@ -809,7 +928,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Enter_opens_a_card_the_arrows_moved_to()
+    public void o_opens_a_card_the_arrows_moved_to()
     {
         var opened = new List<string>();
         using var window = Open(openUrl: opened.Add);
@@ -818,7 +937,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
-        window.NewKeyDownEvent(Key.Enter);
+        window.NewKeyDownEvent(new Key('o'));
 
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/49"], opened);
     }
@@ -944,6 +1063,7 @@ public class WorkAreaTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?>? askPriority = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
+        Action<WaitingItem, IssueBody, Action>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode)
     {
@@ -958,6 +1078,7 @@ public class WorkAreaTests : IDisposable
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
             askPriority ?? ((_, _) => null),
+            showBody ?? ((_, _, _) => { }),
             area,
             auto);
     }

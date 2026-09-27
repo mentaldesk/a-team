@@ -356,7 +356,7 @@ public class DashboardWindowTests : IDisposable
             "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
             DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · Enter: open · p: set priority · m: only mine · r: refresh",
+            "a-team 1.2.3 · Enter: read · p: set priority · m: only mine · r: refresh",
             DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
     }
 
@@ -383,7 +383,7 @@ public class DashboardWindowTests : IDisposable
                 "Expand the selected agent", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
-                "Select the card above", "Open the selected issue or PR on GitHub",
+                "Select the card above", "Read the selected item", "Open the selected item on GitHub",
                 "Set the selected item's priority", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
                 "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
@@ -947,6 +947,7 @@ public class DashboardWindowTests : IDisposable
             _ => Task.FromResult(new Reading("{}", null)),
             openUrl ?? (_ => { }),
             (_, _) => null,
+            (_, _, _) => { },
             area,
             auto);
     }
