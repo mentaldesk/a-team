@@ -8,8 +8,11 @@ namespace ATeam.Dashboard;
 /// <summary>A run of one row's cells in a single colour.</summary>
 internal readonly record struct ArtSpan(string Text, string Colour);
 
-/// <summary>An animation: the body every frame is painted on, and the frames.</summary>
-internal sealed record Art(IReadOnlyList<string> Body, IReadOnlyList<IReadOnlyList<IReadOnlyList<ArtSpan>>> Frames);
+/// <summary>An animation: the body every frame is painted on, the road it drives over, and the frames.</summary>
+internal sealed record Art(
+    IReadOnlyList<string> Body,
+    IReadOnlyList<string> Texture,
+    IReadOnlyList<IReadOnlyList<IReadOnlyList<ArtSpan>>> Frames);
 
 /// <summary>The surface outside the van, the dots on it, and the colour the exhaust is drawn in there.</summary>
 internal readonly record struct Road(Color Surface, Color Dots, Color Smoke);
@@ -21,6 +24,7 @@ public sealed class LoadingView : View
 {
     private const string Resource = "loading.anim";
     private const string BodyBreak = "---BODY---";
+    private const string RoadBreak = "---ROAD---";
     private const string FrameBreak = "---FRAME---";
     private const string Untagged = "gray";
     private const string Exhaust = "yellow";
@@ -63,6 +67,7 @@ public sealed class LoadingView : View
     };
 
     private int _frame;
+    private int _travelled;
     private object? _beat;
 
     public LoadingView()
@@ -83,6 +88,8 @@ public sealed class LoadingView : View
     internal static int Rows { get; } = Math.Max(Shipped.Frames.Max(frame => frame.Count), Shipped.Body.Count);
 
     internal int Showing => _frame;
+
+    internal int Travelled => _travelled;
 
     /// <summary>Shows it, driving. One already up keeps rolling, so the write and the read that follows it
     /// don't jog it back to the first frame between them.</summary>
@@ -116,23 +123,28 @@ public sealed class LoadingView : View
     internal void Advance()
     {
         _frame = (_frame + 1) % Frames.Count;
+        _travelled++;
         SetNeedsDraw();
     }
 
-    /// <summary>An animation: a <c>---BODY---</c> section, then a <c>---FRAME---</c> section per frame. The body
-    /// is one letter per cell for what's under the picture — <c>g</c> grey, <c>d</c> dark grey, <c>b</c> black,
-    /// <c>r</c> red — and a space for the road. A frame is rows of <c>[colour]text[/colour]</c>, anything outside
-    /// a tag in the default colour. A closing tag goes back to that colour rather than to whatever was around
-    /// it, so the tags don't nest.</summary>
+    /// <summary>An animation: a <c>---BODY---</c> section, a <c>---ROAD---</c> section, then a
+    /// <c>---FRAME---</c> section per frame. The body is one letter per cell for what's under the picture —
+    /// <c>g</c> grey, <c>d</c> dark grey, <c>b</c> black, <c>r</c> red — and a space for the road. The road is a
+    /// tile repeated across the whole view that moves one cell right each beat. A frame is rows of
+    /// <c>[colour]text[/colour]</c>, anything outside a tag in the default colour. A closing tag goes back to
+    /// that colour rather than to whatever was around it, so the tags don't nest.</summary>
     internal static Art Parse(string art)
     {
         List<string> body = [];
+        List<string> texture = [];
         List<List<string>> frames = [];
         List<string>? section = null;
         foreach (var line in art.Replace("\r", "").Split('\n'))
         {
             if (line == BodyBreak)
                 section = body;
+            else if (line == RoadBreak)
+                section = texture;
             else if (line == FrameBreak)
                 frames.Add(section = []);
             else
@@ -144,6 +156,7 @@ public sealed class LoadingView : View
         }
         return new Art(
             Trimmed(body),
+            Trimmed(texture),
             [.. frames.Select(rows => (IReadOnlyList<IReadOnlyList<ArtSpan>>)[.. Trimmed(rows).Select(Spans)])]);
     }
 
@@ -179,14 +192,25 @@ public sealed class LoadingView : View
         return (Open, Untagged);
     }
 
-    /// <summary>What a cell shows: on the body, its glyph in its own ink on the body's colour; on the road, a
-    /// dot where there's nothing, and the exhaust in the road's own colour for it.</summary>
-    internal static (char Glyph, Attribute Paint) Cell(char fill, char glyph, string colour, Road road)
+    /// <summary>The road under a cell of the view once it has gone <paramref name="travelled"/> beats: the tile
+    /// shifted that far right, or a dot everywhere without one.</summary>
+    internal static char Ground(IReadOnlyList<string> texture, int column, int row, int travelled)
+    {
+        if (texture.Count == 0)
+            return Dot;
+        var line = texture[row % texture.Count];
+        return line.Length == 0 ? Open : line[((column - travelled) % line.Length + line.Length) % line.Length];
+    }
+
+    /// <summary>What a cell shows: on the body, its glyph in its own ink on the body's colour; on the road, the
+    /// road's own <paramref name="ground"/> where there's nothing, and the exhaust in the road's colour for
+    /// it.</summary>
+    internal static (char Glyph, Attribute Paint) Cell(char fill, char glyph, string colour, Road road, char ground)
     {
         if (Fills.TryGetValue(fill, out var body))
             return (glyph, new Attribute(Ink(colour), body));
         if (glyph == Open)
-            return (Dot, new Attribute(road.Dots, road.Surface));
+            return (ground, new Attribute(road.Dots, road.Surface));
         return (glyph, new Attribute(colour == Exhaust ? road.Smoke : Ink(colour), road.Surface));
     }
 
@@ -260,7 +284,8 @@ public sealed class LoadingView : View
                 var x = column - box.X;
                 var fill = x >= 0 && x < box.Width && x < body.Length ? body[x] : Open;
                 var (glyph, colour) = x >= 0 && x < box.Width ? At(art, x) : (Open, Untagged);
-                var (shown, paint) = Cell(fill, glyph, colour, road);
+                var ground = Ground(Shipped.Texture, column, row, _travelled);
+                var (shown, paint) = Cell(fill, glyph, colour, road, ground);
                 SetAttribute(paint);
                 AddStr(column, row, shown.ToString());
             }

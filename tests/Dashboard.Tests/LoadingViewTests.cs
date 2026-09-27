@@ -47,9 +47,10 @@ public class LoadingViewTests
     public void The_body_is_read_apart_from_the_frames_and_a_frame_break_starts_the_next()
     {
         var art = LoadingView.Parse(
-            "---BODY---\nbb\ngg\n---FRAME---\n[red]one[/red]\nrow\n---FRAME---\n[red]two[/red]\nrow\n");
+            "---BODY---\nbb\ngg\n---ROAD---\n· ·\n---FRAME---\n[red]one[/red]\nrow\n---FRAME---\n[red]two[/red]\nrow\n");
 
         Assert.Equal(["bb", "gg"], art.Body);
+        Assert.Equal(["· ·"], art.Texture);
         Assert.Equal(2, art.Frames.Count);
         Assert.All(art.Frames, frame => Assert.Equal(2, frame.Count));
         Assert.Equal("one", art.Frames[0][0][0].Text);
@@ -57,12 +58,26 @@ public class LoadingViewTests
     }
 
     [Fact]
-    public void Art_with_no_body_is_all_road()
+    public void Art_with_no_body_is_all_road_and_with_no_road_is_dots_everywhere()
     {
         var art = LoadingView.Parse("[red]one[/red]\n---FRAME---\n[red]two[/red]\n");
 
         Assert.Empty(art.Body);
+        Assert.Empty(art.Texture);
         Assert.Equal(2, art.Frames.Count);
+        Assert.Equal('·', LoadingView.Ground(art.Texture, 7, 3, 5));
+    }
+
+    [Fact]
+    public void The_road_repeats_its_tile_across_the_view_and_moves_right_as_the_van_drives()
+    {
+        IReadOnlyList<string> tile = ["ab", "cde"];
+
+        Assert.Equal('a', LoadingView.Ground(tile, 0, 0, 0));
+        Assert.Equal('b', LoadingView.Ground(tile, 3, 2, 0));
+        Assert.Equal('e', LoadingView.Ground(tile, 2, 1, 0));
+        Assert.Equal('a', LoadingView.Ground(tile, 1, 0, 1));
+        Assert.Equal('e', LoadingView.Ground(tile, 0, 1, 1));
     }
 
     [Fact]
@@ -80,7 +95,7 @@ public class LoadingViewTests
     {
         var road = LoadingView.RoadIn(BundledThemes.Midnight);
 
-        var (glyph, paint) = LoadingView.Cell('b', ' ', "gray", road);
+        var (glyph, paint) = LoadingView.Cell('b', ' ', "gray", road, '·');
 
         Assert.Equal(' ', glyph);
         Assert.NotEqual(road.Surface, paint.Background);
@@ -91,10 +106,10 @@ public class LoadingViewTests
     {
         var road = LoadingView.RoadIn(BundledThemes.Daylight);
 
-        var (dot, under) = LoadingView.Cell(' ', ' ', "gray", road);
-        var (smoke, exhaust) = LoadingView.Cell(' ', '@', "yellow", road);
+        var (dot, under) = LoadingView.Cell(' ', ' ', "gray", road, '·');
+        var (smoke, exhaust) = LoadingView.Cell(' ', '@', "yellow", road, '·');
 
-        Assert.NotEqual(' ', dot);
+        Assert.Equal('·', dot);
         Assert.Equal(new Attribute(road.Dots, road.Surface), under);
         Assert.Equal('@', smoke);
         Assert.Equal(new Attribute(road.Smoke, road.Surface), exhaust);
@@ -167,6 +182,7 @@ public class LoadingViewTests
         view.Advance();
 
         Assert.Equal(0, view.Showing);
+        Assert.Equal(LoadingView.Frames.Count, view.Travelled);
     }
 
     [Fact]
