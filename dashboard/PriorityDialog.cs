@@ -5,29 +5,26 @@ using Terminal.Gui.ViewBase;
 namespace ATeam.Dashboard;
 
 /// <summary>What an item is about, and the rank to give it: the Priority field's own options, and None to
-/// clear it. It asks about one item at a time and never closes itself, so whoever opened it can walk a queue
-/// through it.</summary>
+/// clear it.</summary>
 public sealed class PriorityDialog : Dialog
 {
     private const string ScrollHint = "scroll";
     private const string SetHint = "set";
-    private const string StopHint = "stop";
-    private const string DoneText = "Esc done";
-    private const string CancelText = "Esc cancel";
+    private const string CancelHint = "cancel";
     private const int BandLines = 3;
     private const int Inset = 1;
 
     private readonly View _band;
     private readonly OptionSelector<Rank> _ranks;
     private readonly LogView _body;
-    private readonly LoadingView _loading;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
-    private string _stop = CancelText;
-    private bool _busy;
 
-    public PriorityDialog()
+    public PriorityDialog(WaitingItem item, IssueBody body)
     {
+        var carried = Priorities.Of(item);
+
+        Title = $"#{item.Number}  {item.Title}";
         X = 0;
         Y = 0;
         Width = Dim.Fill();
@@ -44,11 +41,7 @@ public sealed class PriorityDialog : Dialog
             Height = Dim.Func(_ => BandRow(), this),
             Following = false,
             Scrolls = true,
-        };
-        _loading = new LoadingView
-        {
-            X = Pos.Center(),
-            Y = Pos.Func(_ => Math.Max(0, (BandRow() - _loading!.Frame.Height) / 2), this),
+            Lines = body.Lines,
         };
         _ranks = new OptionSelector<Rank>
         {
@@ -59,6 +52,7 @@ public sealed class PriorityDialog : Dialog
             TabBehavior = TabBehavior.NoStop,
             // The ranks' initials are unique, so this is what gives each option the key its name starts with.
             AssignHotKeys = true,
+            Value = carried,
         };
         foreach (var (row, rank) in _ranks.SubViews.Zip(Enum.GetValues<Rank>()))
             if (Priorities.FormScheme(rank.ToString()) is { Length: > 0 } scheme)
@@ -77,16 +71,23 @@ public sealed class PriorityDialog : Dialog
         };
         _band.Add(_ranks);
         _hints.Y = Pos.Func(_ => HintRow(), this);
+        _hints.Show("", [
+            new HintedCommand(ScrollHint, "PgUp/PgDn scroll"),
+            new HintedCommand(SetHint, "Enter set"),
+            new HintedCommand(CancelHint, "Esc cancel"),
+        ], Run);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
-        Add(_body, _loading, _band, _hints, _message);
+        Add(_body, _band, _hints, _message);
+        if (body.Failure is { Length: > 0 } failure)
+            _message.Show(failure, Schemes.Error);
+        // SetFocus lands the keyboard on the first option, so the item's own rank is put under it after.
+        _ranks.SetFocus();
+        _ranks.FocusedItem = (int)carried;
     }
 
-    /// <summary>Raised on Enter, with the rank the keyboard is on.</summary>
-    internal event Action<Rank>? Set;
-
-    /// <summary>Raised on Esc, and by the hint beside it.</summary>
-    internal event Action? Dismissed;
+    /// <summary>The rank the dialog was accepted on, or null where it was cancelled.</summary>
+    internal Rank? Chosen { get; private set; }
 
     internal View Band => _band;
 
@@ -94,95 +95,28 @@ public sealed class PriorityDialog : Dialog
 
     internal LogView Body => _body;
 
-    internal LoadingView Loading => _loading;
-
     internal StatusBar Hints => _hints;
 
     internal MessageBar Message => _message;
 
-    /// <summary>Puts <paramref name="item"/> in front of the reviewer, with what it's about and
-    /// <paramref name="left"/> still to rank, this one among them. The keyboard lands on the rank the item
-    /// carries, so Esc changes nothing.</summary>
-    internal void Ask(WaitingItem item, IssueBody body, int left)
-    {
-        var carried = Priorities.Of(item);
-        var named = $"#{item.Number}  {item.Title}";
-        Title = left > 1 ? $"{named} · {left} left" : named;
-        _loading.Stop();
-        _body.Visible = true;
-        _body.Show(body.Lines);
-        if (body.Failure is { Length: > 0 } failure)
-            _message.Show(failure, Schemes.Error);
-        else
-            _message.Clear();
-        _busy = false;
-        _stop = left > 1 ? DoneText : CancelText;
-        Say();
-        _ranks.Enabled = true;
-        _ranks.Value = carried;
-        // SetFocus lands the keyboard on the first option, so the item's own rank is put under it after.
-        _ranks.SetFocus();
-        _ranks.FocusedItem = (int)carried;
-        SetNeedsLayout();
-        SetNeedsDraw();
-    }
-
-    /// <summary>Says what's running and refuses a second Enter until it's done: what the reviewer chose is
-    /// already on its way to the board. The body it replaces belongs to the item just ranked, so the van takes
-    /// its place until the next one is read. Esc still stops it.</summary>
-    internal void Busy(string what)
-    {
-        _busy = true;
-        _ranks.Enabled = false;
-        _body.Visible = false;
-        _loading.Start();
-        _message.Show(what, Schemes.Accent);
-        Say();
-        SetNeedsLayout();
-        SetNeedsDraw();
-    }
-
-    /// <summary>Takes it away again.</summary>
-    internal void Finish()
-    {
-        _loading.Stop();
-        RequestStop();
-    }
-
     /// <summary>Enter reaches a Dialog as Accept, from the options themselves, and never as a key.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => Chose();
+    protected override bool OnAccepting(CommandEventArgs args) => Close(_ranks.Value);
 
     /// <summary>The pane never takes focus, so the keys that scroll it are the dialog's own.</summary>
     protected override bool OnKeyDown(Key key)
     {
         if (key == Key.Esc)
-            return Stopped();
-        return !_busy && Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
+            return Close(null);
+        return Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
     }
 
-    private void Say()
+    /// <summary>Asks for a rank, starting on the one the item has, so opening it and pressing Esc changes
+    /// nothing.</summary>
+    public static Rank? Show(IApplication app, WaitingItem item, IssueBody body)
     {
-        List<HintedCommand> hints = [];
-        if (!_busy)
-        {
-            hints.Add(new(ScrollHint, "PgUp/PgDn scroll"));
-            hints.Add(new(SetHint, "Enter set"));
-        }
-        hints.Add(new(StopHint, _stop));
-        _hints.Show("", hints, Run);
-    }
-
-    private bool Chose()
-    {
-        if (!_busy)
-            Set?.Invoke(_ranks.Value ?? Rank.None);
-        return true;
-    }
-
-    private bool Stopped()
-    {
-        Dismissed?.Invoke();
-        return true;
+        using var dialog = new PriorityDialog(item, body);
+        app.Run(dialog);
+        return dialog.Chosen;
     }
 
     private bool Scrolled(Action scroll)
@@ -199,10 +133,17 @@ public sealed class PriorityDialog : Dialog
         : key == Key.End ? _body.End
         : null;
 
+    private bool Close(Rank? chosen)
+    {
+        Chosen = chosen;
+        RequestStop();
+        return true;
+    }
+
     private bool Run(string hint) => hint switch
     {
         ScrollHint => Scrolled(() => _body.Page(+1)),
-        SetHint => Chose(),
-        _ => Stopped(),
+        SetHint => Close(_ranks.Value),
+        _ => Close(null),
     };
 }

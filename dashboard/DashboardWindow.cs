@@ -41,18 +41,12 @@ public sealed class DashboardWindow : Window
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Action<string> _openUrl;
-    private readonly Action<PriorityDialog> _ask;
+    private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
     private readonly IconStyle _auto;
     private readonly LoadingView _loading;
-    private readonly HashSet<(string Team, int Number)> _visited = [];
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
-    private PriorityDialog? _dialog;
-    private WaitingItem? _asking;
-    // A press of p is still live: cleared by Stop, so a read that lands after Esc doesn't reopen the dialog.
-    private bool _running;
-    private int _ranked;
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
@@ -72,7 +66,7 @@ public sealed class DashboardWindow : Window
         Func<string, Task<Reading>> readWaiting,
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
-        Action<PriorityDialog> ask,
+        Func<WaitingItem, IssueBody, Rank?> askPriority,
         Area area,
         IconStyle auto)
     {
@@ -84,7 +78,7 @@ public sealed class DashboardWindow : Window
         _readWaiting = readWaiting;
         _readBody = readBody;
         _openUrl = openUrl;
-        _ask = ask;
+        _askPriority = askPriority;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
@@ -196,9 +190,6 @@ public sealed class DashboardWindow : Window
     internal int? ExpandedAgent => _expanded;
 
     internal CommandRegistry Commands => _commands;
-
-    /// <summary>The dialog a run through the queue has in front of the reviewer, or null when none is.</summary>
-    internal PriorityDialog? Dialog => _dialog;
 
     internal LoadingView Loading => _loading;
 
@@ -337,65 +328,27 @@ public sealed class DashboardWindow : Window
             _openUrl(url);
     }
 
-    /// <summary>Opens the dialog on the selected card, reading what it's about first so it opens on something
-    /// worth ranking. An unranked Idea starts a run through the whole queue: the dialog stays up and moves to
-    /// the next one until they're gone. Anything else is one item on its own.</summary>
+    /// <summary>Reads what the item is about first, off the draw loop, so the dialog opens on something worth
+    /// ranking.</summary>
     private void SetPriority()
     {
-        if (_pending is not null || _readingBody is not null || _dialog is not null ||
-            _work.SelectedCard is not { } item)
+        if (_pending is not null || _readingBody is not null || _work.SelectedCard is not { } item)
             return;
-        _ranked = 0;
-        _running = true;
-        _visited.Clear();
-        Read(item);
-    }
-
-    /// <summary>Reads what an item is about, off the draw loop, saying so on the dialog where one is already
-    /// up.</summary>
-    private void Read(WaitingItem item)
-    {
         _progress = $"Reading #{item.Number}…";
         ShowMessage();
-        _dialog?.Busy(_progress);
         _readingBody = (item, _readBody(item));
     }
 
-    /// <summary>Puts an item in front of the reviewer, saying how many are still to rank. A card that isn't an
-    /// unranked Idea is on its own however full the queue is. A body that wouldn't read still asks: you pressed
-    /// the key to rank, not to read.</summary>
+    /// <summary>Asks for a rank and writes it. The board decides what the field will take, so an unknown value
+    /// comes back as a refusal rather than being guessed at here. A body that wouldn't read still asks: you
+    /// pressed the key to rank, not to read.</summary>
     private void Ask(WaitingItem item, IssueBody body)
     {
-        if (!_running)
-            return;
-        _asking = item;
-        var left = WorkView.NeedsRank(item) ? Rest().Count : 1;
-        _visited.Add((item.Team, item.Number));
-        if (_dialog is { } asking)
-        {
-            asking.Ask(item, body, left);
-            return;
-        }
-        var dialog = new PriorityDialog();
-        dialog.Set += Write;
-        dialog.Dismissed += Stop;
-        // Anything else that takes the dialog off the stack — the quit key, say — ends the run too.
-        dialog.IsRunningChanged += (_, running) => { if (!running.Value) Stop(); };
-        dialog.Ask(item, body, left);
-        _dialog = dialog;
-        _ask(dialog);
-    }
-
-    /// <summary>Writes the rank the reviewer chose. The board decides what the field will take, so an unknown
-    /// value comes back as a refusal rather than being guessed at here.</summary>
-    private void Write(Rank rank)
-    {
-        if (_pending is not null || _asking is not { } item)
+        if (_askPriority(item, body) is not { } rank)
             return;
         _ranking = (item, rank);
         _progress = "Setting…";
         ShowMessage();
-        _dialog?.Busy(_progress);
         _pending = _run(["board", item.Team, "priority", "you", item.Number.ToString(), Priorities.Value(rank)]);
     }
 
@@ -404,33 +357,11 @@ public sealed class DashboardWindow : Window
     private void Ranked(WaitingItem item, Rank rank)
     {
         _work.Ranked(item, rank);
-        _ranked++;
         _said = $"#{item.Number} · set to {rank}";
         _saidOn = _work.Selected;
         SetNeedsLayout();
         SetNeedsDraw();
     }
-
-    /// <summary>Closes the dialog, whether the queue ran out, the reviewer pressed Esc or a write failed. What's
-    /// set stays set, and a run that ranked more than one is counted rather than named.</summary>
-    private void Stop()
-    {
-        if (_dialog is not { } dialog)
-            return;
-        _dialog = null;
-        _asking = null;
-        _running = false;
-        dialog.Finish();
-        if (_ranked <= 1)
-            return;
-        _said = $"Ideas ranked · {_ranked}";
-        _saidOn = _work.Selected;
-    }
-
-    /// <summary>The Ideas this run hasn't asked about yet. An Idea set to None stays unranked, so without this
-    /// the run would keep coming back to it.</summary>
-    private IReadOnlyList<WaitingItem> Rest() =>
-        [.. _work.Queue.Where(item => !_visited.Contains((item.Team, item.Number)))];
 
     /// <summary>Picked up by the next refresh, so a command runs off the draw loop and reports back on it.</summary>
     private void Settle()
@@ -442,22 +373,12 @@ public sealed class DashboardWindow : Window
             _failure = finished.Status == TaskStatus.RanToCompletion
                 ? finished.Result
                 : finished.Exception?.GetBaseException().Message ?? "the command didn't finish";
-            // Nothing moves until the board has taken it: a refused write leaves the card as it was, and a run
-            // through the queue doesn't carry on past one.
+            // Nothing moves until the board has taken it: a refused write leaves the card as it was.
             if (_ranking is { } ranking)
             {
                 _ranking = null;
-                if (_failure is { Length: > 0 })
-                    Stop();
-                else
-                {
-                    var walking = WorkView.NeedsRank(ranking.Item);
+                if (_failure is null or { Length: 0 })
                     Ranked(ranking.Item, ranking.Rank);
-                    if (walking && _running && Rest().FirstOrDefault() is { } next)
-                        Read(next);
-                    else
-                        Stop();
-                }
             }
         }
 

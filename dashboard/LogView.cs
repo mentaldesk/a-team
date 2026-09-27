@@ -94,19 +94,6 @@ public sealed class LogView : View
             ScrollTo(Anchor(before, after, _top));
     }
 
-    /// <summary>A body read at a sitting, in place of the last one: read from the top, rather than from
-    /// wherever the last one was left. Home would do it, except that a view not laid out yet has no end to be
-    /// short of, so it would read as following one.</summary>
-    public void Show(IReadOnlyList<LogLine> lines)
-    {
-        _lines = lines;
-        _top = 0;
-        if (_scrolls)
-            Viewport = Viewport with { Y = 0 };
-        SetNeedsLayout();
-        SetNeedsDraw();
-    }
-
     public void Page(int direction) => ScrollTo(_top + direction * Math.Max(1, Viewport.Height - 1));
 
     public void Home() => ScrollTo(0);

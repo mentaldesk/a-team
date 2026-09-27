@@ -191,7 +191,7 @@ public class AppMenuTests : IDisposable
             _ => Task.FromResult(new Reading("[]", null)),
             _ => Task.FromResult(new Reading("{}", null)),
             _ => { },
-            dialog => dialog.Dispose(),
+            (_, _) => null,
             Area.Dashboard,
             IconStyle.Unicode);
     }

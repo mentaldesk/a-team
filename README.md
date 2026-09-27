@@ -146,15 +146,6 @@ The card moves to the column its new Priority puts it in there and then, with no
 pitch you unrank drops into Triage, one you rank leaves it, and an Idea you rank is off your queue
 for good.
 
-On an unranked Idea, `p` clears the whole queue rather than one card: the dialog stays up, reads
-the next unranked Idea it can see and names it, counting down in its title — *#139  The dispatcher
-forgets a team · 7 left* — until there are none, and the foot says how many you set. While it
-writes one and reads the next, the ranks go dead, the van drives in place of the issue you've just
-ranked, and the foot says which it's on, so Enter can't set the same card twice. One you leave at
-`None` stays in Triage, and the queue moves past it rather than coming back to it. Esc stops it
-there, keeping everything already set, and a write the board refuses stops it too, with the refusal
-in the foot. `m` decides what it visits, so the queue is the Ideas you're looking at.
-
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the
 line at the foot says why — `#118 · lead · answering your feedback since 08:14`. It's theirs from
