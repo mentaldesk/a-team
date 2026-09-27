@@ -163,6 +163,8 @@ gh_items() {
   gh_runs <<'RUNS'
 completed success 2025-09-19T09:00:00Z build
 RUNS
+  WORKFLOWS="$BIN/workflows.json"
+  gh_workflows </dev/null
   PRS="$BIN/prs.json" PULL="$BIN/pull.json"
   gh_pr
   echo '{"head": {"sha": "deadbeefcafe"}}' >"$PULL"
@@ -179,6 +181,7 @@ case " \$* " in
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
   *check-runs*) page="$RUNS" ;;
+  *actions/runs*) page="$WORKFLOWS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
   *closedByPullRequestsReferences*) page="$PRS" ;;
   *reviews*) page="$REVIEWS" ;;
@@ -225,6 +228,12 @@ gh_runs() {
        conclusion: (if $f[1] == "-" then null else $f[1] end),
        completed_at: (if $f[2] == "-" then null else $f[2] end)})
     | {check_runs: .}' >"$RUNS"
+}
+
+# The workflow runs on a PR's head commit, from lines of "<status> <name>".
+gh_workflows() {
+  jq -R -s 'split("\n") | map(select(length > 0)) | map(split(" ") as $f | {status: $f[0], name: $f[1]})
+    | {workflow_runs: .}' >"$WORKFLOWS"
 }
 
 # `gh_pr <number> <draft>`: the open PR that closes every issue `pr` asks about. No arguments, none.
@@ -401,7 +410,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "a review and a line comment on that PR count as feedback too"
 gh_talk <<TALK
@@ -1149,6 +1158,23 @@ RUNS
 run board demo triggers dev
 same "exit" 0 "$STATUS"
 same "reasons" '["CI failed on PR #912 at deadbee"]' "$(jq -c .reasons "$OUT")"
+
+case_ "a draft PR whose checks passed doesn't wake the Dev while another workflow waits for its jobs"
+gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+RUNS
+gh_workflows <<'WORKFLOWS'
+completed CI
+queued Release
+WORKFLOWS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+run board demo checks 912
+same "exit" 0 "$STATUS"
+same "verdict" '"pending"' "$(jq -c .verdict "$OUT")"
+same "pending" '["Release"]' "$(jq -c .pending "$OUT")"
+gh_workflows </dev/null
 
 case_ "a draft PR that goes green wakes the Dev to mark it ready"
 gh_runs <<'RUNS'

@@ -258,7 +258,12 @@ pr_for() {
 ci() {
   local sha=${2:-}
   [ -n "$sha" ] || sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
-  gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]' |
+  {
+    gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]'
+    # A workflow run has no check runs until its first job is created, and none between jobs.
+    gh api --paginate "repos/$REPO/actions/runs?head_sha=$sha&per_page=100" \
+      --jq '.workflow_runs[] | select(.status != "completed") | {name, status}'
+  } |
     jq -s '
       def failed: .conclusion as $c
         | ["failure", "timed_out", "cancelled", "action_required", "startup_failure"] | index($c);
