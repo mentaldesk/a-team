@@ -38,10 +38,14 @@ nothing to restart.
 
 `dashboard/` is a Terminal.Gui 2.1 app, the same stack as TuiCode.
 
-UI design rules — which control to use, hint bars, how errors are shown, icons, and what a UI
-requirement has to say — live in the [MentalDesk TUI style guide](https://github.com/mentaldesk/tui-style-guide).
-Read it before describing UI in an issue or PR, and before building one. It's shared with TuiCode,
-so rules that keep coming back in review go there, not here.
+How the dashboard looks and behaves lives in the
+[MentalDesk TUI style guide](https://github.com/mentaldesk/tui-style-guide). Read it before
+describing UI in an issue or PR, and before building one. It's shared with TuiCode, so rules that
+keep coming back in review go there, not here.
+
+Each rule is built once in the guide's shared library, `MentalDesk.Tui`, and shown working in its
+reference app, Swatch. Build new UI from the library type the guide's section names, not from
+TuiCode's version or an older copy here.
 
 The dashboard has two custom views, each for a reason the built-ins can't cover: `LogView`, because
 `TextView` can't scroll without moving its cursor, and `LoadingView`, because `SpinnerView` draws a
