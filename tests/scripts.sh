@@ -1092,8 +1092,9 @@ same "reasons" '["PR #912 is green but still a draft"]' "$(jq -c .reasons "$OUT"
 try_fixture() {
   TRY_WORK=$(mktemp -d "$WORK/try.XXXXXX")
   CHECKOUT="$TRY_WORK/main"
-  local origin="$TRY_WORK/origin" seed="$TRY_WORK/seed"
-  git init -q --bare "$origin"
+  TRY_ORIGIN="$TRY_WORK/origin"
+  local origin=$TRY_ORIGIN seed="$TRY_WORK/seed"
+  git -c init.defaultBranch=main init -q --bare "$origin"
   git -c init.defaultBranch=main clone -q "$origin" "$seed" 2>/dev/null
   git -C "$seed" config user.email test@example.com
   git -C "$seed" config user.name Test
@@ -1139,6 +1140,17 @@ SH
 }
 
 worktrees() { git -C "$CHECKOUT" worktree list | sed 1d; }
+
+# Lands a commit on origin's <branch> after the checkout was cloned, so the checkout's own view of
+# it is stale, as it normally is. `land <branch>` sets TRY_LANDED to the new commit.
+land() {
+  local seed="$TRY_WORK/land"
+  git clone -q "file://$TRY_ORIGIN" "$seed" 2>/dev/null
+  git -C "$seed" -c user.email=test@example.com -c user.name=Test commit -q --allow-empty -m landed
+  TRY_LANDED=$(git -C "$seed" rev-parse HEAD)
+  git -C "$seed" push -q origin "HEAD:refs/heads/$1"
+  rm -rf "$seed"
+}
 
 case_ "try runs the team's command in a worktree at the PR's head, sandboxed, and clears up after"
 try_fixture record
@@ -1210,6 +1222,54 @@ grep -q 'someone-else/demo' "$OUT" || fail "fork: it doesn't say whose branch it
 [ ! -e "$TRY_WORK/.try" ] || fail "fork: something was left in .try"
 git -C "$CHECKOUT" cat-file -e "$TRY_SHA" 2>/dev/null && fail "fork: it fetched the PR anyway"
 
+case_ "with no PR, try runs origin's default branch as it is now, not the checkout's stale copy"
+try_fixture record
+try_gh
+land main
+run try demo
+same "exit" 0 "$STATUS"
+same "working directory" "$TRY_WORK/.try/main" "$(sed -n 1p "$TRY_WORK/ran")"
+same "commit" "$TRY_LANDED" "$(sed -n 2p "$TRY_WORK/ran")"
+same "A_TEAM_STATE" "$TRY_WORK/.try/state/main" "$(sed -n 3p "$TRY_WORK/ran")"
+same "A_TEAM_DRY_RUN" 1 "$(sed -n 4p "$TRY_WORK/ran")"
+same "first line" "Fetching mentaldesk/demo main…" "$(sed -n 1p "$OUT")"
+sed -n 2p "$OUT" | grep -q "at main ${TRY_LANDED:0:7}$" || fail "no PR: second line '$(sed -n 2p "$OUT")'"
+grep -q '#' "$OUT" && fail "no PR: it talks about a PR in '$(cat "$OUT")'"
+same "worktrees left" "" "$(worktrees)"
+[ ! -e "$TRY_WORK/.try/main" ] || fail "no PR: the worktree is still there"
+[ ! -e "$TRY_WORK/.try/state/main" ] || fail "no PR: the sandbox state is still there"
+
+case_ "running it again after a merge gives you the newer commit"
+land main
+run try demo
+same "exit" 0 "$STATUS"
+same "commit" "$TRY_LANDED" "$(sed -n 2p "$TRY_WORK/ran")"
+
+case_ "the default branch is whatever origin's HEAD names, not main"
+land trunk
+git -C "$TRY_ORIGIN" symbolic-ref HEAD refs/heads/trunk
+run try demo
+same "exit" 0 "$STATUS"
+same "commit" "$TRY_LANDED" "$(sed -n 2p "$TRY_WORK/ran")"
+same "first line" "Fetching mentaldesk/demo trunk…" "$(sed -n 1p "$OUT")"
+
+case_ "with no PR, a shell names the branch, a change keeps the worktree, and --clean removes it"
+try_fixture
+run try demo <<IN
+pwd >"$TRY_WORK/shell"
+touch note.md
+IN
+same "exit" 0 "$STATUS"
+same "working directory" "$TRY_WORK/.try/main" "$(cat "$TRY_WORK/shell")"
+grep -q 'try:demo@main' "$ERR" || fail "shell: the prompt doesn't name the branch"
+[ -d "$TRY_WORK/.try/main" ] || fail "kept: the worktree was removed anyway"
+grep -q 'a-team try demo --clean' "$OUT" || fail "kept: no --clean line in '$(cat "$OUT")'"
+run try demo --clean
+same "exit" 0 "$STATUS"
+same "worktrees left" "" "$(worktrees)"
+[ ! -e "$TRY_WORK/.try/main" ] || fail "--clean: the worktree is still there"
+[ ! -e "$TRY_WORK/.try/state/main" ] || fail "--clean: the sandbox state is still there"
+
 case_ "an unknown team, or no team at all, is refused with the usage"
 run try nobody 7
 failed "unknown team"
@@ -1220,7 +1280,7 @@ grep -q "^usage: a-team try" "$ERR" || fail "no team: no usage in '$(cat "$ERR")
 
 case_ "try is in the usage text, and the example config carries the optional try key"
 run help
-grep -q '^  try ' "$OUT" || fail "usage: no try line"
+grep -q '^  try <team> \[<pr>\]' "$OUT" || fail "usage: no try line with an optional PR"
 same "example try" '"./bin/a-team dashboard"' "$(jq -c .try "$ROOT/examples/team.json")"
 
 case_ "a-team with no command opens the app, and dashboard opens it on the Dashboard"

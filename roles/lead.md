@@ -89,7 +89,8 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
   the way a user would, and compare it with the pitch's acceptance criteria. Then either
   - file follow-up tasks (as in step 2) if something's missing, or
   - comment a short validation report (what you tried, what you saw, anything the reviewer
-    should try themselves) and `a-team board {{team}} move lead <pitch> "In review"`.
+    should try themselves), ending with the line `a-team try {{team}}` so they can try it too, and
+    `a-team board {{team}} move lead <pitch> "In review"`.
 
 ### 4. Swap Pitched, then pitch or discover
 
