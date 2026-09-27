@@ -232,7 +232,8 @@ Releases include a native build. Run from a clone, it's built from source and ne
 risk, and takes it away again when you quit:
 
 ```
-a-team try a-team 97
+a-team try a-team 97     # PR #97
+a-team try a-team        # main as it is now, to accept a finished pitch
 ```
 
 It fetches the PR's head into a scratch worktree at `<workdir>/.try/<pr>`, exports
@@ -247,6 +248,10 @@ On the way out it removes the worktree and the sandbox state. If you changed a f
 keeps the worktree and tells you, and `a-team try <team> <pr> --clean` removes it when you're done.
 `try` runs the PR's code on purpose, so it asks before running a branch from a repo that isn't the
 team's own.
+
+To accept a finished pitch, leave the PR out: `a-team try <team>` fetches the default branch and
+runs it as it is on origin now, at `<workdir>/.try/main`, the same way. Its first lines name the
+branch and commit, and `a-team try <team> --clean` removes it.
 
 ### Trying out a clone or worktree
 
