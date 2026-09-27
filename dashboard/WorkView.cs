@@ -19,6 +19,7 @@ public sealed class WorkView : View
     ];
 
     private readonly List<WorkLane> _lanes = [];
+    private WorkColumn? _lastFocused;
     private IReadOnlyList<WaitingItem> _items = [];
 
     public WorkView(IReadOnlyList<string> teams)
@@ -45,19 +46,22 @@ public sealed class WorkView : View
     /// <summary>Raised when the keyboard moves between columns, so the window can name the region it's in.</summary>
     internal event Action? FocusChanged;
 
-    /// <summary>The item the keyboard is on, whether it's on the item's own row or its PR's, or null when no
-    /// column has focus.</summary>
-    internal WaitingItem? Selected => FocusedColumn()?.SelectedItem;
+    /// <summary>The item the keyboard is on, whether it's on the item's own row or its PR's, or null before any
+    /// column has had focus.</summary>
+    internal WaitingItem? Selected => SelectedColumn()?.SelectedItem;
 
     /// <summary>The page Enter opens: the issue's on a card, the PR's on the row under it.</summary>
-    internal string? SelectedUrl => FocusedColumn()?.Selected?.Url;
+    internal string? SelectedUrl => SelectedColumn()?.Selected?.Url;
 
     /// <summary>The item a rank would be set on: a card's own, and nothing on the PR row under it.</summary>
     internal WaitingItem? SelectedCard =>
-        FocusedColumn()?.Selected is { IsPr: false } card ? card.Item : null;
+        SelectedColumn()?.Selected is { IsPr: false } card ? card.Item : null;
 
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
+
+    /// <summary>Every item the last read brought, shown or filtered out.</summary>
+    internal IReadOnlyList<WaitingItem> Items => _items;
 
     /// <summary>Whether no read has landed yet, so there are no cards to look at.</summary>
     internal bool Unread => _items.Count == 0;
@@ -168,12 +172,24 @@ public sealed class WorkView : View
         SetNeedsDraw();
     }
 
+    /// <summary>Gives the keyboard to <paramref name="item"/>'s own row, or its PR's, wherever it's shown.</summary>
+    internal bool Focus(WaitingItem item, bool onPr)
+    {
+        if (_lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Select(item, onPr)) is not { } found)
+            return false;
+        found.FocusCards();
+        ShowFocus();
+        return true;
+    }
+
     /// <summary>Puts the selection back on a card, where the column it was in still has it.</summary>
     private bool Reselect(WaitingItem item) =>
         _lanes.SelectMany(lane => lane.Columns).Any(column => column.Select(item));
 
     private void FocusMoved()
     {
+        if (FocusedColumn() is { } column)
+            _lastFocused = column;
         ShowFocus();
         FocusChanged?.Invoke();
     }
@@ -215,6 +231,9 @@ public sealed class WorkView : View
                     return (lane, gate);
         return null;
     }
+
+    /// <summary>The column focus is in, or was last in while something outside the cards, like the Cards menu, has it.</summary>
+    private WorkColumn? SelectedColumn() => FocusedColumn() ?? _lastFocused;
 
     private WorkColumn? FocusedColumn() =>
         MostFocused is { } view ? _lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Holds(view)) : null;
@@ -411,10 +430,11 @@ public sealed class WorkColumn : FrameView
 
     internal static string Heading(string gate, int count) => $"{gate} · {count}";
 
-    /// <summary>Moves the selection onto <paramref name="item"/>'s own row, where this column is showing it.</summary>
-    internal bool Select(WaitingItem item)
+    /// <summary>Moves the selection onto <paramref name="item"/>'s own row, or its PR's, where this column is
+    /// showing it.</summary>
+    internal bool Select(WaitingItem item, bool onPr = false)
     {
-        var index = _nodes.FindIndex(card => !card.IsPr && card.Item == item);
+        var index = _nodes.FindIndex(card => card.IsPr == onPr && card.Item == item);
         if (index < 0)
             return false;
         _cards.GoTo(_nodes[index]);

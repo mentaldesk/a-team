@@ -15,6 +15,40 @@ public sealed class TeamCommand(string executable)
     /// <summary>What a read-only command printed, for the caller to parse.</summary>
     public Task<Reading> Read(params string[] arguments) => Task.Run(() => Invoke(arguments));
 
+    /// <summary>Runs a command that owns the terminal until it quits, Ctrl+C included. Null once it has run;
+    /// otherwise how it failed, once the user has read what it printed.</summary>
+    public string? Hand(params string[] arguments)
+    {
+        var said = string.Join(' ', arguments);
+        var start = new ProcessStartInfo(executable);
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
+        ConsoleCancelEventHandler stay = (_, e) => e.Cancel = true;
+        Console.CancelKeyPress += stay;
+        string? failure;
+        try
+        {
+            using var process = Process.Start(start);
+            process?.WaitForExit();
+            failure = process is null ? $"couldn't run {said}"
+                : process.ExitCode == 0 ? null
+                : $"{said} exited {process.ExitCode}";
+        }
+        catch (Exception e) when (e is IOException or Win32Exception or InvalidOperationException)
+        {
+            failure = e.Message;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= stay;
+        }
+        if (failure is null)
+            return null;
+        Console.Error.WriteLine($"\n{failure}. Press Enter to go back to the dashboard.");
+        Console.ReadLine();
+        return failure;
+    }
+
     private Reading Invoke(params string[] arguments)
     {
         var start = new ProcessStartInfo(executable) { RedirectStandardOutput = true, RedirectStandardError = true };
