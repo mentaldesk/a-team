@@ -43,6 +43,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<string> _openUrl;
     private readonly Action<PriorityDialog> _ask;
     private readonly IconStyle _auto;
+    private readonly LoadingView _loading;
     private readonly HashSet<(string Team, int Number)> _visited = [];
     private Area _area;
     private Task<string?>? _pending;
@@ -144,6 +145,14 @@ public sealed class DashboardWindow : Window
         _work.FocusChanged += ShowMessage;
         _work.ShowOnlyMine(settings.ReadOnlyMine());
         Add(_work);
+        _loading = new LoadingView
+        {
+            X = 0,
+            Y = MenuLines,
+            Width = Dim.Fill(),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines - _message.Lines), this),
+        };
+        Add(_loading);
         ShowIcons(settings.ReadIcons());
 
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
@@ -193,6 +202,8 @@ public sealed class DashboardWindow : Window
     /// <summary>The dialog a run through the queue has in front of the reviewer, or null when none is.</summary>
     internal PriorityDialog? Dialog => _dialog;
 
+    internal LoadingView Loading => _loading;
+
     internal static string Hints(string version, Mode mode, CommandRegistry commands) =>
         $"{Named(version)} · {commands.Hints(mode)}";
 
@@ -216,6 +227,7 @@ public sealed class DashboardWindow : Window
 
         _menu.Refresh();
         ShowMessage();
+        ShowLoading();
     }
 
     /// <summary>When the Work area was last read, for the status bar.</summary>
@@ -298,6 +310,17 @@ public sealed class DashboardWindow : Window
     {
         _reading ??= Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
         ShowMessage();
+        ShowLoading();
+    }
+
+    /// <summary>The van fills the Work area while the read that first fills it is still going: there are no
+    /// cards to look at until it lands. A later read leaves the ones already on screen where they are.</summary>
+    private void ShowLoading()
+    {
+        if (_area == Area.Work && _reading is not null && _work.Unread)
+            _loading.Start();
+        else
+            _loading.Stop();
     }
 
     private void ToggleOnlyMine()
@@ -535,6 +558,7 @@ public sealed class DashboardWindow : Window
             _panes.FirstOrDefault()?.SetFocus();
         ShowHints();
         ShowMessage();
+        ShowLoading();
         SetNeedsLayout();
         SetNeedsDraw();
     }

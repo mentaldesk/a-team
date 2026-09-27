@@ -67,6 +67,9 @@ public sealed class WorkView : View
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
 
+    /// <summary>Whether no read has landed yet, so there are no cards to look at.</summary>
+    internal bool Unread => _items.Count == 0;
+
     /// <summary>Whether the cards that aren't the reviewer's move are hidden.</summary>
     internal bool OnlyMine { get; private set; }
 

@@ -54,11 +54,7 @@ public sealed class LoadingView : View
         if (!Visible)
             _frame = 0;
         Visible = true;
-        _beat ??= App?.AddTimeout(Beat, () =>
-        {
-            Advance();
-            return true;
-        });
+        Roll();
         SetNeedsDraw();
     }
 
@@ -69,6 +65,15 @@ public sealed class LoadingView : View
         if (_beat is { } beat)
             App?.RemoveTimeout(beat);
         _beat = null;
+    }
+
+    /// <summary>One shown before the application was running has no loop to drive it, so it picks one up
+    /// here: the Work area's first read starts before <c>Run</c> does.</summary>
+    public override void EndInit()
+    {
+        base.EndInit();
+        if (Visible)
+            Roll();
     }
 
     internal void Advance()
@@ -146,6 +151,12 @@ public sealed class LoadingView : View
             return null;
         return closing ? Untagged : name;
     }
+
+    private void Roll() => _beat ??= App?.AddTimeout(Beat, () =>
+    {
+        Advance();
+        return true;
+    });
 
     protected override void Dispose(bool disposing)
     {

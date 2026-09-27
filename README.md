@@ -134,7 +134,9 @@ until you give them one), **Pitches** (waiting for you to approve) and **Review*
 to merge or accept), each headed by its count of items. A card's issue number is coloured by the
 item's Priority, in the colours GitHub gives that field's own options, and the PR that closes it
 hangs under it as a row of its own — `PR #149  The session log reads…`. Enter opens whichever row
-you're on in your browser: the issue on the card, the PR on the row under it.
+you're on in your browser: the issue on the card, the PR on the row under it. Reading every team's
+gates takes a moment, so a van drives in the empty area until the first cards land; `r` afterwards
+leaves the ones on screen where they are.
 
 `p` ranks the card you're on, or clears its rank with **None**, without leaving the app. It reads
 the item first, so what you're ranking is in front of you: the issue's own words fill the dialog

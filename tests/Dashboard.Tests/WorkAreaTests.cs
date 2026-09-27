@@ -42,6 +42,53 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void The_van_fills_the_Work_area_until_the_first_read_lands()
+    {
+        var finish = new TaskCompletionSource<Reading>();
+        using var window = Open(read: _ => finish.Task);
+
+        Assert.True(window.Loading.Visible);
+
+        finish.SetResult(new Reading(Waiting("team0"), null));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.False(window.Loading.Visible);
+    }
+
+    [Fact]
+    public void A_later_read_leaves_the_cards_already_on_screen_rather_than_covering_them()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.refresh");
+
+        Assert.False(window.Loading.Visible);
+    }
+
+    [Fact]
+    public void Leaving_Work_while_it_is_still_reading_takes_the_van_with_it()
+    {
+        var finish = new TaskCompletionSource<Reading>();
+        using var window = Open(read: _ => finish.Task);
+        Assert.True(window.Loading.Visible);
+
+        window.Commands.Execute("view.dashboard");
+
+        Assert.False(window.Loading.Visible);
+    }
+
+    [Fact]
+    public void Opening_on_the_Dashboard_reads_nothing_and_shows_no_van()
+    {
+        using var window = Open(area: Area.Dashboard, read: _ => new TaskCompletionSource<Reading>().Task);
+
+        Assert.False(window.Loading.Visible);
+    }
+
+    [Fact]
     public void Focus_starts_on_the_first_card_and_the_message_bar_says_whose_move_it_is()
     {
         using var window = Open();
