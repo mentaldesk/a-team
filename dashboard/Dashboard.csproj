@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="themes.json" LogicalName="themes.json" />
+    <EmbeddedResource Include="loading.anim" LogicalName="loading.anim" />
   </ItemGroup>
 
   <ItemGroup>

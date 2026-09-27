@@ -43,6 +43,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
     private readonly IconStyle _auto;
+    private readonly LoadingView _loading;
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
@@ -132,12 +133,18 @@ public sealed class DashboardWindow : Window
             X = 0,
             Y = MenuLines,
             Width = Dim.Fill(),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines - _message.Lines), this),
+            Height = Dim.Func(_ => WorkHeight(), this),
             Visible = area == Area.Work,
         };
         _work.FocusChanged += ShowMessage;
         _work.ShowOnlyMine(settings.ReadOnlyMine());
         Add(_work);
+        _loading = new LoadingView
+        {
+            X = Pos.Center(),
+            Y = Pos.Func(_ => MenuLines + Math.Max(0, (WorkHeight() - _loading!.Frame.Height) / 2), this),
+        };
+        Add(_loading);
         ShowIcons(settings.ReadIcons());
 
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
@@ -184,6 +191,8 @@ public sealed class DashboardWindow : Window
 
     internal CommandRegistry Commands => _commands;
 
+    internal LoadingView Loading => _loading;
+
     internal static string Hints(string version, Mode mode, CommandRegistry commands) =>
         $"{Named(version)} · {commands.Hints(mode)}";
 
@@ -207,6 +216,7 @@ public sealed class DashboardWindow : Window
 
         _menu.Refresh();
         ShowMessage();
+        ShowLoading();
     }
 
     /// <summary>When the Work area was last read, for the status bar.</summary>
@@ -289,6 +299,18 @@ public sealed class DashboardWindow : Window
     {
         _reading ??= Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
         ShowMessage();
+        ShowLoading();
+    }
+
+    /// <summary>The van drives in the middle of the Work area while the read that first fills it is still going:
+    /// there are no cards to look at until it lands. A later read leaves the ones already on screen where they
+    /// are.</summary>
+    private void ShowLoading()
+    {
+        if (_area == Area.Work && _reading is not null && _work.Unread)
+            _loading.Start();
+        else
+            _loading.Stop();
     }
 
     private void ToggleOnlyMine()
@@ -438,6 +460,8 @@ public sealed class DashboardWindow : Window
 
     private int Foot() => DispatchLines + 2 + StatusLines + _message.Lines;
 
+    private int WorkHeight() => Math.Max(0, Viewport.Height - MenuLines - StatusLines - _message.Lines);
+
     private void Show(Area area)
     {
         if (_area == area)
@@ -456,6 +480,7 @@ public sealed class DashboardWindow : Window
             _panes.FirstOrDefault()?.SetFocus();
         ShowHints();
         ShowMessage();
+        ShowLoading();
         SetNeedsLayout();
         SetNeedsDraw();
     }
