@@ -688,7 +688,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("Setting…", window.Dialog?.Message.Says);
         Assert.False(window.Dialog?.Ranks.Enabled);
-        Assert.Equal("PgUp/PgDn scroll · Esc done", window.Dialog?.Hints.Says);
+        Assert.Equal("Esc done", window.Dialog?.Hints.Says);
 
         finish.SetResult(null);
         Settle(window);
@@ -697,6 +697,28 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("", window.Dialog?.Message.Says);
         Assert.True(window.Dialog?.Ranks.Enabled);
         Assert.Equal("PgUp/PgDn scroll · Enter set · Esc done", window.Dialog?.Hints.Says);
+    }
+
+    [Fact]
+    public void The_van_drives_from_the_rank_going_in_until_the_next_item_is_read()
+    {
+        var finish = new TaskCompletionSource<string?>();
+        using var window = Open(read: Queued, run: _ => finish.Task);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        Set(Rank.High);
+
+        Assert.True(window.Dialog?.Loading.Visible);
+        Assert.False(window.Dialog?.Body.Visible);
+
+        finish.SetResult(null);
+        Settle(window);
+
+        Assert.False(window.Dialog?.Loading.Visible);
+        Assert.True(window.Dialog?.Body.Visible);
     }
 
     [Fact]

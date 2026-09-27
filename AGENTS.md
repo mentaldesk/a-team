@@ -43,7 +43,9 @@ requirement has to say — live in the [MentalDesk TUI style guide](https://gith
 Read it before describing UI in an issue or PR, and before building one. It's shared with TuiCode,
 so rules that keep coming back in review go there, not here.
 
-`LogView` is the dashboard's one custom view: `TextView` can't scroll without moving its cursor.
+The dashboard has two custom views, each for a reason the built-ins can't cover: `LogView`, because
+`TextView` can't scroll without moving its cursor, and `LoadingView`, because `SpinnerView` draws a
+single line in one colour.
 
 Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj`),
 outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's

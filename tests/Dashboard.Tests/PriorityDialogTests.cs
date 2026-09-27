@@ -184,7 +184,39 @@ public class PriorityDialogTests
 
         Assert.Equal("Setting…", dialog.Message.Says);
         Assert.False(dialog.Ranks.Enabled);
-        Assert.Equal("PgUp/PgDn scroll · Esc done", dialog.Hints.Says);
+        Assert.Equal("Esc done", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void The_van_drives_in_place_of_the_body_while_the_team_is_working()
+    {
+        using var dialog = Asking(Idea(), new IssueBody(Prose), left: 3);
+
+        Assert.True(dialog.Body.Visible);
+        Assert.False(dialog.Loading.Visible);
+
+        dialog.Busy("Setting…");
+
+        Assert.False(dialog.Body.Visible);
+        Assert.True(dialog.Loading.Visible);
+
+        dialog.Ask(Idea("Low", 139), new IssueBody("Another one."), left: 2);
+
+        Assert.True(dialog.Body.Visible);
+        Assert.False(dialog.Loading.Visible);
+    }
+
+    [Fact]
+    public void With_the_body_gone_there_is_nothing_left_to_scroll()
+    {
+        using var dialog = Open(new IssueBody(Long()), height: 10);
+        Assert.True(dialog.NewKeyDownEvent(Key.PageDown));
+        var top = dialog.Body.Top;
+
+        dialog.Busy("Setting…");
+
+        Assert.False(dialog.NewKeyDownEvent(Key.PageDown));
+        Assert.Equal(top, dialog.Body.Top);
     }
 
     [Fact]

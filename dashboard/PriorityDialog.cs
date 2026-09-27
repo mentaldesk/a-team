@@ -20,6 +20,7 @@ public sealed class PriorityDialog : Dialog
     private readonly View _band;
     private readonly OptionSelector<Rank> _ranks;
     private readonly LogView _body;
+    private readonly LoadingView _loading;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private string _stop = CancelText;
@@ -43,6 +44,13 @@ public sealed class PriorityDialog : Dialog
             Height = Dim.Func(_ => BandRow(), this),
             Following = false,
             Scrolls = true,
+        };
+        _loading = new LoadingView
+        {
+            X = Inset,
+            Y = 0,
+            Width = Dim.Fill(Inset),
+            Height = Dim.Func(_ => BandRow(), this),
         };
         _ranks = new OptionSelector<Rank>
         {
@@ -73,7 +81,7 @@ public sealed class PriorityDialog : Dialog
         _hints.Y = Pos.Func(_ => HintRow(), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
-        Add(_body, _band, _hints, _message);
+        Add(_body, _loading, _band, _hints, _message);
     }
 
     /// <summary>Raised on Enter, with the rank the keyboard is on.</summary>
@@ -88,6 +96,8 @@ public sealed class PriorityDialog : Dialog
 
     internal LogView Body => _body;
 
+    internal LoadingView Loading => _loading;
+
     internal StatusBar Hints => _hints;
 
     internal MessageBar Message => _message;
@@ -100,6 +110,8 @@ public sealed class PriorityDialog : Dialog
         var carried = Priorities.Of(item);
         var named = $"#{item.Number}  {item.Title}";
         Title = left > 1 ? $"{named} · {left} left" : named;
+        _loading.Stop();
+        _body.Visible = true;
         _body.Show(body.Lines);
         if (body.Failure is { Length: > 0 } failure)
             _message.Show(failure, Schemes.Error);
@@ -118,11 +130,14 @@ public sealed class PriorityDialog : Dialog
     }
 
     /// <summary>Says what's running and refuses a second Enter until it's done: what the reviewer chose is
-    /// already on its way to the board. Esc still stops it.</summary>
+    /// already on its way to the board. The body it replaces belongs to the item just ranked, so the van takes
+    /// its place until the next one is read. Esc still stops it.</summary>
     internal void Busy(string what)
     {
         _busy = true;
         _ranks.Enabled = false;
+        _body.Visible = false;
+        _loading.Start();
         _message.Show(what, Schemes.Accent);
         Say();
         SetNeedsLayout();
@@ -130,7 +145,11 @@ public sealed class PriorityDialog : Dialog
     }
 
     /// <summary>Takes it away again.</summary>
-    internal void Finish() => RequestStop();
+    internal void Finish()
+    {
+        _loading.Stop();
+        RequestStop();
+    }
 
     /// <summary>Enter reaches a Dialog as Accept, from the options themselves, and never as a key.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => Chose();
@@ -140,14 +159,17 @@ public sealed class PriorityDialog : Dialog
     {
         if (key == Key.Esc)
             return Stopped();
-        return Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
+        return !_busy && Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
     }
 
     private void Say()
     {
-        List<HintedCommand> hints = [new(ScrollHint, "PgUp/PgDn scroll")];
+        List<HintedCommand> hints = [];
         if (!_busy)
+        {
+            hints.Add(new(ScrollHint, "PgUp/PgDn scroll"));
             hints.Add(new(SetHint, "Enter set"));
+        }
         hints.Add(new(StopHint, _stop));
         _hints.Show("", hints, Run);
     }
