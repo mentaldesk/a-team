@@ -43,11 +43,14 @@ public sealed class DashboardWindow : Window
     private readonly Action<string> _openUrl;
     private readonly Action<PriorityDialog> _ask;
     private readonly IconStyle _auto;
+    private readonly HashSet<(string Team, int Number)> _visited = [];
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
     private PriorityDialog? _dialog;
     private WaitingItem? _asking;
+    // A press of p is still live: cleared by Stop, so a read that lands after Esc doesn't reopen the dialog.
+    private bool _running;
     private int _ranked;
     private string? _said;
     private WaitingItem? _saidOn;
@@ -321,14 +324,18 @@ public sealed class DashboardWindow : Window
             _work.SelectedCard is not { } item)
             return;
         _ranked = 0;
+        _running = true;
+        _visited.Clear();
         Read(item);
     }
 
-    /// <summary>Reads what an item is about, off the draw loop.</summary>
+    /// <summary>Reads what an item is about, off the draw loop, saying so on the dialog where one is already
+    /// up.</summary>
     private void Read(WaitingItem item)
     {
         _progress = $"Reading #{item.Number}…";
         ShowMessage();
+        _dialog?.Busy(_progress);
         _readingBody = (item, _readBody(item));
     }
 
@@ -337,8 +344,11 @@ public sealed class DashboardWindow : Window
     /// the key to rank, not to read.</summary>
     private void Ask(WaitingItem item, IssueBody body)
     {
+        if (!_running)
+            return;
         _asking = item;
-        var left = WorkView.NeedsRank(item) ? _work.Queue.Count : 1;
+        var left = WorkView.NeedsRank(item) ? Rest().Count : 1;
+        _visited.Add((item.Team, item.Number));
         if (_dialog is { } asking)
         {
             asking.Ask(item, body, left);
@@ -363,6 +373,7 @@ public sealed class DashboardWindow : Window
         _ranking = (item, rank);
         _progress = "Setting…";
         ShowMessage();
+        _dialog?.Busy(_progress);
         _pending = _run(["board", item.Team, "priority", "you", item.Number.ToString(), Priorities.Value(rank)]);
     }
 
@@ -386,12 +397,18 @@ public sealed class DashboardWindow : Window
             return;
         _dialog = null;
         _asking = null;
+        _running = false;
         dialog.Finish();
         if (_ranked <= 1)
             return;
         _said = $"Ideas ranked · {_ranked}";
         _saidOn = _work.Selected;
     }
+
+    /// <summary>The Ideas this run hasn't asked about yet. An Idea set to None stays unranked, so without this
+    /// the run would keep coming back to it.</summary>
+    private IReadOnlyList<WaitingItem> Rest() =>
+        [.. _work.Queue.Where(item => !_visited.Contains((item.Team, item.Number)))];
 
     /// <summary>Picked up by the next refresh, so a command runs off the draw loop and reports back on it.</summary>
     private void Settle()
@@ -414,7 +431,7 @@ public sealed class DashboardWindow : Window
                 {
                     var walking = WorkView.NeedsRank(ranking.Item);
                     Ranked(ranking.Item, ranking.Rank);
-                    if (walking && _work.Queue.FirstOrDefault() is { } next)
+                    if (walking && _running && Rest().FirstOrDefault() is { } next)
                         Read(next);
                     else
                         Stop();

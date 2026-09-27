@@ -53,7 +53,8 @@ int Run()
         team => command.Read("board", team, "waiting"),
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
-        dialog => { using (dialog) app.Run(dialog); },
+        // Off the refresh tick: a timeout is off the queue while its callback runs, so a loop started there starves it.
+        dialog => app.AddTimeout(TimeSpan.Zero, () => { using (dialog) app.Run(dialog); return false; }),
         requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable));
     window.Refresh();

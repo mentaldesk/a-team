@@ -146,9 +146,12 @@ for good.
 
 On an unranked Idea, `p` clears the whole queue rather than one card: the dialog stays up, reads
 the next unranked Idea it can see and names it, counting down in its title — *#139  The dispatcher
-forgets a team · 7 left* — until there are none, and the foot says how many you set. Esc stops it
-there, keeping everything already set, and a write the board refuses stops it too, with the refusal
-in the foot. `m` decides what it visits, so the queue is the Ideas you're looking at.
+forgets a team · 7 left* — until there are none, and the foot says how many you set. While it writes
+one and reads the next, the ranks go dead and the foot says which it's on, so Enter can't set the
+same card twice. One you leave at `None` stays in Triage, and the queue moves past it rather than
+coming back to it. Esc stops it there, keeping everything already set, and a write the board refuses
+stops it too, with the refusal in the foot. `m` decides what it visits, so the queue is the Ideas
+you're looking at.
 
 A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
 agent owes you an answer on a dimmed headset and names that role in front of its title, and the

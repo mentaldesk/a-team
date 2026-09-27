@@ -22,6 +22,8 @@ public sealed class PriorityDialog : Dialog
     private readonly LogView _body;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
+    private string _stop = CancelText;
+    private bool _busy;
 
     public PriorityDialog()
     {
@@ -103,11 +105,26 @@ public sealed class PriorityDialog : Dialog
             _message.Show(failure, Schemes.Error);
         else
             _message.Clear();
-        Say(left > 1 ? DoneText : CancelText);
+        _busy = false;
+        _stop = left > 1 ? DoneText : CancelText;
+        Say();
+        _ranks.Enabled = true;
         _ranks.Value = carried;
         // SetFocus lands the keyboard on the first option, so the item's own rank is put under it after.
         _ranks.SetFocus();
         _ranks.FocusedItem = (int)carried;
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    /// <summary>Says what's running and refuses a second Enter until it's done: what the reviewer chose is
+    /// already on its way to the board. Esc still stops it.</summary>
+    internal void Busy(string what)
+    {
+        _busy = true;
+        _ranks.Enabled = false;
+        _message.Show(what, Schemes.Accent);
+        Say();
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -126,16 +143,19 @@ public sealed class PriorityDialog : Dialog
         return Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
     }
 
-    private void Say(string stop) =>
-        _hints.Show("", [
-            new HintedCommand(ScrollHint, "PgUp/PgDn scroll"),
-            new HintedCommand(SetHint, "Enter set"),
-            new HintedCommand(StopHint, stop),
-        ], Run);
+    private void Say()
+    {
+        List<HintedCommand> hints = [new(ScrollHint, "PgUp/PgDn scroll")];
+        if (!_busy)
+            hints.Add(new(SetHint, "Enter set"));
+        hints.Add(new(StopHint, _stop));
+        _hints.Show("", hints, Run);
+    }
 
     private bool Chose()
     {
-        Set?.Invoke(_ranks.Value ?? Rank.None);
+        if (!_busy)
+            Set?.Invoke(_ranks.Value ?? Rank.None);
         return true;
     }
 

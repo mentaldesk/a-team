@@ -675,6 +675,78 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void The_dialog_says_it_is_setting_and_goes_back_to_the_ranks_on_the_next_one()
+    {
+        var finish = new TaskCompletionSource<string?>();
+        using var window = Open(read: Queued, run: _ => finish.Task);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        Set(Rank.High);
+
+        Assert.Equal("Setting…", window.Dialog?.Message.Says);
+        Assert.False(window.Dialog?.Ranks.Enabled);
+        Assert.Equal("PgUp/PgDn scroll · Esc done", window.Dialog?.Hints.Says);
+
+        finish.SetResult(null);
+        Settle(window);
+
+        Assert.Equal("#26  A pitch I've shelved · 2 left", window.Dialog?.Title);
+        Assert.Equal("", window.Dialog?.Message.Says);
+        Assert.True(window.Dialog?.Ranks.Enabled);
+        Assert.Equal("PgUp/PgDn scroll · Enter set · Esc done", window.Dialog?.Hints.Says);
+    }
+
+    [Fact]
+    public void Esc_while_a_write_is_still_going_closes_the_dialog_for_good()
+    {
+        var finish = new TaskCompletionSource<string?>();
+        using var window = Open(read: Queued, run: _ => finish.Task);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        Set(Rank.High);
+        _dialog!.NewKeyDownEvent(Key.Esc);
+        window.Refresh();
+        Assert.Null(window.Dialog);
+
+        finish.SetResult(null);
+        Settle(window);
+        LayOut(window, 120, 30);
+
+        Assert.Null(window.Dialog);
+        Assert.Equal("Triage · 2", window.Work.Lanes[0].Columns[0].Title);
+        Assert.Equal("#6 · set to High", window.Message.Says);
+    }
+
+    [Fact]
+    public void An_Idea_left_at_None_stays_in_Triage_and_the_run_moves_past_it()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(read: Queued, run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        Set(Rank.None);
+        Settle(window);
+        LayOut(window, 120, 30);
+
+        Assert.Equal(["6"], calls.Select(call => call[4]));
+        Assert.Equal("#26  A pitch I've shelved · 2 left", window.Dialog?.Title);
+        Assert.Equal("Triage · 3", window.Work.Lanes[0].Columns[0].Title);
+    }
+
+    [Fact]
     public void A_write_that_fails_part_way_stops_the_run_and_keeps_what_it_set()
     {
         var calls = 0;

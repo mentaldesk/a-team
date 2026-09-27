@@ -176,6 +176,48 @@ public class PriorityDialogTests
     }
 
     [Fact]
+    public void While_a_write_is_going_it_says_so_and_the_ranks_go_dead_with_the_set_hint()
+    {
+        using var dialog = Asking(Idea(), left: 3);
+
+        dialog.Busy("Setting…");
+
+        Assert.Equal("Setting…", dialog.Message.Says);
+        Assert.False(dialog.Ranks.Enabled);
+        Assert.Equal("PgUp/PgDn scroll · Esc done", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Enter_while_a_write_is_going_sets_nothing_and_Esc_still_stops_it()
+    {
+        var chosen = 0;
+        var dismissed = 0;
+        using var dialog = Asking(Idea(), left: 3);
+        dialog.Set += _ => chosen++;
+        dialog.Dismissed += () => dismissed++;
+
+        dialog.Busy("Setting…");
+        dialog.Ranks.NewKeyDownEvent(Key.Enter);
+        Assert.Equal(0, chosen);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+        Assert.Equal(1, dismissed);
+    }
+
+    [Fact]
+    public void Moving_on_gives_the_ranks_and_the_set_hint_back()
+    {
+        using var dialog = Asking(Idea(), left: 3);
+        dialog.Busy("Reading #139…");
+
+        dialog.Ask(Idea("Low", 139), new IssueBody(Prose), left: 2);
+
+        Assert.Equal("", dialog.Message.Says);
+        Assert.True(dialog.Ranks.Enabled);
+        Assert.Equal("PgUp/PgDn scroll · Enter set · Esc done", dialog.Hints.Says);
+    }
+
+    [Fact]
     public void Moving_on_from_a_body_that_would_not_read_takes_its_message_away()
     {
         using var dialog = Asking(Idea(), new IssueBody(Failure: "board.sh: can't read #136"), left: 2);
