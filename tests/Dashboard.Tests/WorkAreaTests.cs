@@ -1086,7 +1086,10 @@ public class WorkAreaTests : IDisposable
         using var window = Open(area: Area.Dashboard);
 
         Assert.Equal(
-            ["view.dashboard", "view.work", "settings", "quit", "team.pause", "help", "commands", "about"],
+            [
+                "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
+                "work.github", "team.pause", "help", "commands", "about",
+            ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>
         {
@@ -1121,6 +1124,167 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.Equal("_Resume team0", window.MenuItems.Single(item => item.Id == "team.pause").Item.Title);
+    }
+
+    [Fact]
+    public void work_try_is_on_t_with_no_hint_and_the_Work_bar_is_unchanged()
+    {
+        using var window = Open();
+
+        var command = window.Commands.Registered.Single(registered => registered.Id == "work.try");
+
+        Assert.Equal(new Key('t'), command.Key);
+        Assert.Null(command.Hint);
+        Assert.True(command.OnCard);
+        Assert.Equal("Enter: read · p: set priority · m: only mine · r: refresh", window.Commands.Hints(Mode.Work));
+    }
+
+    [Fact]
+    public void work_try_is_disabled_until_a_card_with_a_PR_is_selected()
+    {
+        using var window = Open();
+
+        Assert.False(window.Commands.IsEnabled("work.try"));
+
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(6, window.Work.Selected?.Number);
+        Assert.False(window.Commands.IsEnabled("work.try"));
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.True(window.Commands.IsEnabled("work.try"));
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Null(window.Work.SelectedCard);
+        Assert.True(window.Commands.IsEnabled("work.try"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void t_hands_the_terminal_to_try_for_the_cards_team_and_PR_from_either_of_its_rows(bool onPr)
+    {
+        var handed = new List<Handover>();
+        using var window = Open(handOver: handed.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        if (onPr)
+            window.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.True(window.NewKeyDownEvent(new Key('t')));
+
+        var handover = Assert.Single(handed);
+        Assert.Equal(["try", "team0", "122"], handover.Arguments);
+        Assert.Equal(49, handover.Item.Number);
+        Assert.Equal(onPr, handover.OnPr);
+        Assert.Equal(window.Work.Items, handover.Items);
+    }
+
+    [Fact]
+    public void t_on_a_card_with_no_PR_does_nothing_and_its_Cards_item_is_greyed_out()
+    {
+        var handed = new List<Handover>();
+        using var window = Open(handOver: handed.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.Menus.Single(menu => menu.Title == AppMenu.Cards).PopoverMenu!.Enabled = true;
+        var item = window.MenuItems.Single(entry => entry.Id == "work.try").Item;
+
+        Assert.False(window.NewKeyDownEvent(new Key('t')));
+        window.Refresh();
+
+        Assert.Empty(handed);
+        Assert.False(item.Enabled);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.Refresh();
+        Assert.True(item.Enabled);
+    }
+
+    [Fact]
+    public void Picking_Try_from_Cards_hands_over_as_t_would()
+    {
+        var handed = new List<Handover>();
+        using var window = Open(handOver: handed.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.MenuItems.Single(entry => entry.Id == "work.try").Item.Action!();
+
+        Assert.Equal(["try", "team0", "122"], Assert.Single(handed).Arguments);
+    }
+
+    [Fact]
+    public void t_on_the_Dashboard_shows_tool_calls_and_hands_nothing_over()
+    {
+        var handed = new List<Handover>();
+        using var window = Open(handOver: handed.Add, area: Area.Dashboard);
+        window.NewKeyDownEvent(Key.Tab);
+
+        Assert.True(window.NewKeyDownEvent(new Key('t')));
+
+        Assert.Empty(handed);
+        Assert.True(window.Panes[0].Expanded);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Back_from_a_try_the_same_row_is_selected_with_the_same_cards_and_no_re_read(bool onPr)
+    {
+        var handed = new List<Handover>();
+        using var first = Open(handOver: handed.Add);
+        first.Refresh();
+        LayOut(first, 120, 30);
+        first.NewKeyDownEvent(Key.CursorRight);
+        first.NewKeyDownEvent(Key.CursorRight);
+        if (onPr)
+            first.NewKeyDownEvent(Key.CursorDown);
+        first.NewKeyDownEvent(new Key('t'));
+        var titles = Titles(first).ToList();
+        var reads = 0;
+
+        using var back = Open(read: _ =>
+        {
+            reads++;
+            return Task.FromResult(new Reading("[]", null));
+        }, resume: handed.Single());
+        back.Refresh();
+        LayOut(back, 120, 30);
+        back.FocusResumed();
+
+        Assert.Equal(0, reads);
+        Assert.Equal(titles, Titles(back));
+        Assert.Equal(49, back.Work.Selected?.Number);
+        Assert.Equal(onPr, back.Work.SelectedCard is null);
+        Assert.False(back.Loading.Visible);
+    }
+
+    [Fact]
+    public void A_try_that_failed_says_so_in_the_error_colour_once_you_re_back()
+    {
+        var handed = new List<Handover>();
+        using var first = Open(handOver: handed.Add);
+        first.Refresh();
+        LayOut(first, 120, 30);
+        first.NewKeyDownEvent(Key.CursorRight);
+        first.NewKeyDownEvent(Key.CursorRight);
+        first.NewKeyDownEvent(new Key('t'));
+
+        using var back = Open(resume: handed.Single() with { Failure = "try team0 122 exited 1" });
+        back.Refresh();
+        LayOut(back, 120, 30);
+        back.FocusResumed();
+
+        Assert.Equal("try team0 122 exited 1", back.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), back.Message.SchemeName);
     }
 
     /// <summary>Two gated items and an unranked Idea for the first team, one gated item for the second, so
@@ -1189,7 +1353,9 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, Task<Reading>>? readBody = null,
         Action<WaitingItem, IssueBody, Action, Action?>? showBody = null,
         Area area = Area.Work,
-        IconStyle auto = IconStyle.Unicode)
+        IconStyle auto = IconStyle.Unicode,
+        Action<Handover>? handOver = null,
+        Handover? resume = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -1204,7 +1370,9 @@ public class WorkAreaTests : IDisposable
             askPriority ?? ((_, _) => null),
             showBody ?? ((_, _, _, _) => { }),
             area,
-            auto);
+            auto,
+            handOver,
+            resume);
     }
 
     private string Config => Path.Combine(_root, "config");

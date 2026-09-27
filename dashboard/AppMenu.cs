@@ -8,9 +8,13 @@ namespace ATeam.Dashboard;
 /// that's open.</summary>
 internal sealed class AppMenu
 {
+    /// <summary>Holds whatever commands the registry marks as acting on the selected card, rather than a fixed list.</summary>
+    internal const string Cards = "_Cards";
+
     internal static readonly (string Title, string[] Ids)[] Layout =
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
+        (Cards, []),
         ("_Team", ["team.pause"]),
         ("_Help", ["help", "commands", "about"]),
     ];
@@ -18,11 +22,13 @@ internal sealed class AppMenu
     private readonly CommandRegistry _commands;
     private readonly List<(string Id, MenuItem Item)> _items = [];
     private readonly List<MenuBarItem> _menus = [];
+    private readonly MenuBarItem _cards;
 
     internal AppMenu(CommandRegistry commands)
     {
         _commands = commands;
         Bar = new MenuBar { Menus = [.. Layout.Select(Menu)] };
+        _cards = _menus.Single(menu => menu.Title == Cards);
     }
 
     internal MenuBar Bar { get; }
@@ -32,16 +38,25 @@ internal sealed class AppMenu
     /// <summary>The titles across the bar, each holding the items under it.</summary>
     internal IReadOnlyList<MenuBarItem> Menus => _menus;
 
-    /// <summary>Keeps each item reading as its command does now, like pausing the selected team. Setting the
-    /// title sets the hot letter with it, so Pause's <c>P</c> becomes Resume's <c>R</c>.</summary>
+    /// <summary>Keeps each item reading as its command does now, like pausing the selected team, and showing the
+    /// key it's bound to now. Setting the title sets the hot letter with it, so Pause's <c>P</c> becomes Resume's
+    /// <c>R</c>. A card command registered since the menu was built joins Cards.</summary>
     internal void Refresh()
     {
+        foreach (var id in CardIds().Where(id => !_items.Exists(entry => entry.Id == id)))
+            _cards.PopoverMenu?.Root?.Add(Item(id));
         var registered = _commands.Registered;
         foreach (var (id, item) in _items)
         {
-            if (registered.FirstOrDefault(entry => entry.Id == id) is { } command && item.Title != Hot(command.Label))
+            if (registered.FirstOrDefault(entry => entry.Id == id) is not { } command)
+                continue;
+            if (item.Title != Hot(command.Label))
                 item.Title = Hot(command.Label);
+            if (item.Key != command.Key)
+                item.Key = command.Key;
         }
+        foreach (var menu in _menus)
+            Grey(menu);
     }
 
     /// <summary>Terminal.Gui binds a hot key with and without Alt, whether or not the view has focus, so a bare
@@ -49,12 +64,17 @@ internal sealed class AppMenu
     /// only its Alt forms; an item keeps its bare letter, which only its own menu answers.</summary>
     private MenuBarItem Menu((string Title, string[] Ids) entry)
     {
-        var menu = new MenuBarItem(entry.Title, entry.Ids.Select(Item).ToArray<View>());
+        var ids = entry.Title == Cards ? CardIds() : entry.Ids;
+        var menu = new MenuBarItem(entry.Title, ids.Select(Item).ToArray<View>());
         menu.HotKeyBindings.Remove(menu.HotKey);
         menu.HotKeyBindings.Remove(menu.HotKey.WithShift);
         // The app's quit key took Esc off the framework's Quit command, and the menu's close with it.
         menu.PopoverMenu?.KeyBindings.Add(Key.Esc, Command.Quit);
-        menu.PopoverMenuOpenChanged += (_, _) => Shut(menu);
+        menu.PopoverMenuOpenChanged += (_, _) =>
+        {
+            Shut(menu);
+            Grey(menu);
+        };
         Shut(menu);
         _menus.Add(menu);
         return menu;
@@ -68,7 +88,19 @@ internal sealed class AppMenu
             popover.Enabled = false;
     }
 
-    private View Item(string id)
+    /// <summary>Greys out what wouldn't run now, like trying a card with no PR. Only in an open menu: enabling an
+    /// item in a shut one would have it answer its letter from anywhere.</summary>
+    private void Grey(MenuBarItem menu)
+    {
+        if (menu.PopoverMenu is not { Enabled: true })
+            return;
+        foreach (var (id, item) in _items.Where(entry => entry.Item.SuperView == menu.PopoverMenu.Root))
+            item.Enabled = _commands.IsEnabled(id);
+    }
+
+    private string[] CardIds() => [.. _commands.Registered.Where(command => command.OnCard).Select(command => command.Id)];
+
+    private MenuItem Item(string id)
     {
         var item = new MenuItem
         {

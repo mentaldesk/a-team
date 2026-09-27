@@ -40,10 +40,25 @@ return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 
 int Run()
 {
+    var terminal = TerminalMode.Save();
+    Handover? back = null;
+    while (Show(back) is { } handover)
+    {
+        terminal.Restore();
+        back = handover with { Failure = command.Hand(handover.Arguments) };
+    }
+    terminal.Restore();
+    return 0;
+}
+
+// Handing the terminal over ends the app, which gives the terminal back, and a new one takes it again after.
+Handover? Show(Handover? back)
+{
     BundledThemes.Load(settings.ReadTheme());
     using var app = Application.Create();
     app.Init();
     LogSchemes.Register();
+    Handover? handedOver = null;
     using var window = new DashboardWindow(
         agents,
         stateRoot,
@@ -55,8 +70,14 @@ int Run()
         url => Link.OpenUrl(url),
         (item, body) => PriorityDialog.Show(app, item, body),
         (item, body, onGitHub, onApprove) => ReaderDialog.Show(app, item, body, onGitHub, onApprove),
-        requested ?? settings.ReadArea(),
-        TerminalIcons.Detect(Environment.GetEnvironmentVariable));
+        back is null ? requested ?? settings.ReadArea() : Area.Work,
+        TerminalIcons.Detect(Environment.GetEnvironmentVariable),
+        handover =>
+        {
+            handedOver = handover;
+            app.RequestStop();
+        },
+        back);
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {
@@ -64,7 +85,7 @@ int Run()
         return true;
     });
     app.Run(window);
-    return 0;
+    return handedOver;
 }
 
 static string? FindRepoRoot(string start)

@@ -18,7 +18,9 @@ public sealed record Hint(string Text, Mode Modes = Mode.Both);
 /// <summary>One hint as the status bar draws it, and the command clicking it runs.</summary>
 public sealed record HintedCommand(string Id, string Text);
 
-public sealed record CommandDescriptor(string Id, string Label, Key Key, Hint? Hint);
+/// <summary>A command as the registry holds it. <paramref name="OnCard"/> marks one that acts on the Work area's
+/// selected card, which is what puts it in the Cards menu.</summary>
+public sealed record CommandDescriptor(string Id, string Label, Key Key, Hint? Hint, bool OnCard = false);
 
 /// <summary>Everything the dashboard can do, by id, so a key or the Commands dialog can run any of it.</summary>
 public sealed class CommandRegistry
@@ -26,7 +28,7 @@ public sealed class CommandRegistry
     private readonly List<Entry> _entries = [];
 
     public IReadOnlyList<CommandDescriptor> Registered =>
-        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.Hint))];
+        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.Hint, entry.OnCard))];
 
     public CommandRegistry Register(
         string id,
@@ -34,8 +36,9 @@ public sealed class CommandRegistry
         Action handler,
         Key? key = null,
         Hint? hint = null,
-        Func<bool>? isEnabled = null) =>
-        Register(id, () => label, handler, key, hint, isEnabled);
+        Func<bool>? isEnabled = null,
+        bool onCard = false) =>
+        Register(id, () => label, handler, key, hint, isEnabled, onCard);
 
     /// <summary>A command whose label depends on what it would do now, like pausing the selected team.</summary>
     public CommandRegistry Register(
@@ -44,9 +47,10 @@ public sealed class CommandRegistry
         Action handler,
         Key? key = null,
         Hint? hint = null,
-        Func<bool>? isEnabled = null)
+        Func<bool>? isEnabled = null,
+        bool onCard = false)
     {
-        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, hint, isEnabled));
+        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, hint, isEnabled, onCard));
         return this;
     }
 
@@ -106,5 +110,6 @@ public sealed class CommandRegistry
         .Select(entry => KeyNames.Short(entry.Key))
         .Distinct());
 
-    private sealed record Entry(string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled);
+    private sealed record Entry(
+        string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled, bool OnCard);
 }

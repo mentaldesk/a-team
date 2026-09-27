@@ -59,6 +59,9 @@ public sealed class WorkView : View
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
 
+    /// <summary>Every item the last read brought, shown or filtered out.</summary>
+    internal IReadOnlyList<WaitingItem> Items => _items;
+
     /// <summary>Whether no read has landed yet, so there are no cards to look at.</summary>
     internal bool Unread => _items.Count == 0;
 
@@ -166,6 +169,16 @@ public sealed class WorkView : View
             lane.Show(shown);
         SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    /// <summary>Gives the keyboard to <paramref name="item"/>'s own row, or its PR's, wherever it's shown.</summary>
+    internal bool Focus(WaitingItem item, bool onPr)
+    {
+        if (_lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Select(item, onPr)) is not { } found)
+            return false;
+        found.FocusCards();
+        ShowFocus();
+        return true;
     }
 
     /// <summary>Puts the selection back on a card, where the column it was in still has it.</summary>
@@ -411,10 +424,11 @@ public sealed class WorkColumn : FrameView
 
     internal static string Heading(string gate, int count) => $"{gate} · {count}";
 
-    /// <summary>Moves the selection onto <paramref name="item"/>'s own row, where this column is showing it.</summary>
-    internal bool Select(WaitingItem item)
+    /// <summary>Moves the selection onto <paramref name="item"/>'s own row, or its PR's, where this column is
+    /// showing it.</summary>
+    internal bool Select(WaitingItem item, bool onPr = false)
     {
-        var index = _nodes.FindIndex(card => !card.IsPr && card.Item == item);
+        var index = _nodes.FindIndex(card => card.IsPr == onPr && card.Item == item);
         if (index < 0)
             return false;
         _cards.GoTo(_nodes[index]);

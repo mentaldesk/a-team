@@ -19,6 +19,7 @@ public class AppMenuTests : IDisposable
 
     [Theory]
     [InlineData("_View", 'v')]
+    [InlineData("_Cards", 'c')]
     [InlineData("_Team", 't')]
     [InlineData("_Help", 'h')]
     public void Alt_and_a_titles_letter_opens_that_menu(string title, char letter)
@@ -33,6 +34,7 @@ public class AppMenuTests : IDisposable
 
     [Theory]
     [InlineData('v', false)]
+    [InlineData('c', false)]
     [InlineData('t', true)]
     [InlineData('h', false)]
     public void A_bare_title_letter_opens_no_menu_and_the_key_it_would_shadow_still_works(char letter, bool answered)
@@ -95,14 +97,86 @@ public class AppMenuTests : IDisposable
     {
         using var window = Open();
 
-        Assert.Equal(['v', 't', 'h'], window.Menus.Select(menu => Letter(menu.HotKey)));
-        foreach (var entry in AppMenu.Layout)
+        Assert.Equal(['v', 'c', 't', 'h'], window.Menus.Select(menu => Letter(menu.HotKey)));
+        foreach (var menu in window.Menus)
         {
-            var letters = entry.Ids.Select(id => Letter(Item(window, id).HotKey)).ToList();
+            var ids = Under(window, menu);
+            var letters = ids.Select(id => Letter(Item(window, id).HotKey)).ToList();
             Assert.Equal(letters.Count, letters.Distinct().Count());
-            Assert.All(entry.Ids, id =>
+            Assert.All(ids, id =>
                 Assert.Equal(char.ToLowerInvariant(Label(window, id)[0]), Letter(Item(window, id).HotKey)));
         }
+    }
+
+    [Fact]
+    public void Cards_sits_between_View_and_Team_holding_the_card_commands_in_registration_order_with_their_keys()
+    {
+        using var window = Open();
+
+        Assert.Equal(["_View", "_Cards", "_Team", "_Help"], window.Menus.Select(menu => menu.Title));
+        Assert.Equal(
+            window.Commands.Registered.Where(command => command.OnCard).Select(command => command.Id),
+            Under(window, Cards(window)));
+        Assert.Equal(["work.read", "work.priority", "work.try", "work.github"], Under(window, Cards(window)));
+        Assert.All(Under(window, Cards(window)), id => Assert.Equal(window.Commands.KeyFor(id), Item(window, id).Key));
+    }
+
+    [Fact]
+    public void Picking_a_Cards_item_runs_its_command()
+    {
+        var ran = new List<string>();
+        using var window = Open();
+        window.Commands.Register("work.probe", "Probe the selected item", () => ran.Add("work.probe"), onCard: true);
+        window.Refresh();
+        Item(window, "work.probe").Action!();
+
+        Assert.Equal(["work.probe"], ran);
+    }
+
+    [Fact]
+    public void A_card_command_registered_after_the_window_was_built_joins_Cards()
+    {
+        using var window = Open();
+
+        window.Commands.Register("work.approve.card", "Approve the selected pitch", () => { }, new Key('a'), onCard: true);
+        window.Refresh();
+
+        Assert.Equal("work.approve.card", Under(window, Cards(window)).Last());
+        Assert.Equal(new Key('a'), Item(window, "work.approve.card").Key);
+    }
+
+    [Fact]
+    public void Rebinding_try_changes_the_key_Cards_shows_for_it()
+    {
+        using var window = Open();
+
+        window.Commands.Apply([("work.try", new Key('y'))]);
+        window.Refresh();
+
+        Assert.Equal(new Key('y'), Item(window, "work.try").Key);
+    }
+
+    [Fact]
+    public void A_rebinding_in_settings_is_the_key_Cards_opens_with()
+    {
+        Directory.CreateDirectory(Config);
+        new DashboardSettings(Config).WriteKeys([("work.try", new Key('y'))]);
+
+        using var window = Open();
+
+        Assert.Equal(new Key('y'), Item(window, "work.try").Key);
+        Assert.Contains(window.Commands.Registered, command => command.Id == "work.try" && command.Key == new Key('y'));
+    }
+
+    [Fact]
+    public void An_open_Cards_menu_greys_out_what_the_selection_can_t_do()
+    {
+        using var window = Open();
+        Cards(window).PopoverMenu!.Enabled = true;
+
+        window.Refresh();
+
+        Assert.All(Under(window, Cards(window)), id => Assert.False(Item(window, id).Enabled, id));
     }
 
     [Fact]
@@ -157,10 +231,16 @@ public class AppMenuTests : IDisposable
     /// <summary>The item, with the menu holding it enabled, which is what the framework does as it shows it.</summary>
     private static MenuItem InOpenMenu(DashboardWindow window, string id)
     {
-        var title = AppMenu.Layout.Single(entry => entry.Ids.Contains(id)).Title;
-        window.Menus.Single(menu => menu.Title == title).PopoverMenu!.Enabled = true;
+        window.Menus.Single(menu => Under(window, menu).Contains(id)).PopoverMenu!.Enabled = true;
         return Item(window, id);
     }
+
+    private static MenuBarItem Cards(DashboardWindow window) => window.Menus.Single(menu => menu.Title == AppMenu.Cards);
+
+    /// <summary>The ids of the items a menu holds, in the order it shows them.</summary>
+    private static List<string> Under(DashboardWindow window, MenuBarItem menu) =>
+        [.. menu.PopoverMenu!.Root!.SubViews.OfType<MenuItem>()
+            .Select(shown => window.MenuItems.Single(item => item.Item == shown).Id)];
 
     private static string Label(DashboardWindow window, string id) =>
         window.Commands.Registered.Single(command => command.Id == id).Label;

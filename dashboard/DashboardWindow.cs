@@ -43,6 +43,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
     private readonly Action<WaitingItem, IssueBody, Action, Action?> _showBody;
+    private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
     private readonly LoadingView _loading;
     private Area _area;
@@ -59,6 +60,7 @@ public sealed class DashboardWindow : Window
     private string? _progress;
     private int? _expanded;
     private Size _laidOutOver;
+    private Handover? _resume;
 
     public DashboardWindow(
         IReadOnlyList<(string Team, string Role)> agents,
@@ -72,7 +74,9 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, IssueBody, Rank?> askPriority,
         Action<WaitingItem, IssueBody, Action, Action?> showBody,
         Area area,
-        IconStyle auto)
+        IconStyle auto,
+        Action<Handover>? handOver = null,
+        Handover? resume = null)
     {
         BorderStyle = LineStyle.None;
         _settings = settings;
@@ -84,6 +88,7 @@ public sealed class DashboardWindow : Window
         _openUrl = openUrl;
         _askPriority = askPriority;
         _showBody = showBody;
+        _handOver = handOver;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
@@ -166,7 +171,9 @@ public sealed class DashboardWindow : Window
         Add(_menu.Bar);
 
         ShowHints();
-        if (_area == Area.Work)
+        if (resume is not null)
+            Resume(resume);
+        else if (_area == Area.Work)
             ReadWaiting();
     }
 
@@ -259,10 +266,11 @@ public sealed class DashboardWindow : Window
             .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
             .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
-            .Register("work.read", "Read the selected item", ReadSelected, Key.Enter, new Hint("read", Mode.Work), () => OnWork() && _work.Selected is not null)
-            .Register("work.github", "Open the selected item on GitHub", OpenSelected, new Key('o'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 })
+            .Register("work.read", "Read the selected item", ReadSelected, Key.Enter, new Hint("read", Mode.Work), () => OnWork() && _work.Selected is not null, onCard: true)
+            .Register("work.priority", "Set the selected item's priority", SetPriority, new Key('p'), new Hint("set priority", Mode.Work), () => OnWork() && _work.SelectedCard is not null, onCard: true)
+            .Register("work.try", "Try the selected item's PR", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Pr: > 0 }, onCard: true)
+            .Register("work.github", "Open the selected item on GitHub", OpenSelected, new Key('o'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
-            .Register("work.priority", "Set the selected item's priority", SetPriority, new Key('p'), new Hint("set priority", Mode.Work), () => OnWork() && _work.SelectedCard is not null)
             .Register("work.mine", "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork)
             .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
@@ -327,6 +335,39 @@ public sealed class DashboardWindow : Window
         ShowMessage();
         SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    /// <summary>Hands the terminal to <c>a-team try</c> for the card's PR, from its own row or the PR's.</summary>
+    private void Try()
+    {
+        if (_work.Selected is { Pr: > 0 } item)
+            _handOver?.Invoke(new Handover(item, _work.SelectedCard is null, _work.Items, _readAt));
+    }
+
+    /// <summary>Back from a try: the cards as they were, with no re-read, and what went wrong if it failed.</summary>
+    private void Resume(Handover handover)
+    {
+        _resume = handover;
+        _readAt = handover.ReadAt;
+        _failure = handover.Failure;
+        _work.Show(handover.Items);
+        ShowMessage();
+    }
+
+    protected override void OnIsRunningChanged(bool newIsRunning)
+    {
+        base.OnIsRunningChanged(newIsRunning);
+        if (newIsRunning)
+            FocusResumed();
+    }
+
+    internal void FocusResumed()
+    {
+        if (_resume is not { } resume)
+            return;
+        _resume = null;
+        if (!_work.Focus(resume.Item, resume.OnPr))
+            _work.FocusFirstCard();
     }
 
     private void OpenSelected()
