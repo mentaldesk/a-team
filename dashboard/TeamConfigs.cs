@@ -36,4 +36,21 @@ public sealed class TeamConfigs
             return true;
         }
     }
+
+    /// <summary>Held is a role named in <c>dispatch.hold</c>, which <c>a-team stop</c> writes.</summary>
+    public bool IsHeld(string team, string role)
+    {
+        try
+        {
+            using var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(TeamsDirectory, $"{team}.json")));
+            return config.RootElement.TryGetProperty("dispatch", out var dispatch) &&
+                   dispatch.TryGetProperty("hold", out var hold) &&
+                   hold.ValueKind == JsonValueKind.Array &&
+                   hold.EnumerateArray().Any(held => held.ValueKind == JsonValueKind.String && held.GetString() == role);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return false;
+        }
+    }
 }

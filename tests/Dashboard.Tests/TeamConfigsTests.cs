@@ -38,6 +38,20 @@ public class TeamConfigsTests : IDisposable
         Assert.Equal(paused, new TeamConfigs(_root).IsPaused("demo"));
     }
 
+    [Theory]
+    [InlineData("""{"dispatch": {"enabled": true, "hold": ["dev"]}}""", "dev", true)]
+    [InlineData("""{"dispatch": {"enabled": true, "hold": ["dev"]}}""", "lead", false)]
+    [InlineData("""{"dispatch": {"enabled": true, "hold": []}}""", "dev", false)]
+    [InlineData("""{"dispatch": {"enabled": true}}""", "dev", false)]
+    [InlineData("""{"dispatch": {"hold": "dev"}}""", "dev", false)]
+    [InlineData("{ not json", "dev", false)]
+    public void Held_is_a_role_named_in_dispatch_hold(string config, string role, bool held)
+    {
+        Write("demo", config);
+
+        Assert.Equal(held, new TeamConfigs(_root).IsHeld("demo", role));
+    }
+
     [Fact]
     public void A_team_with_no_config_at_all_reads_as_paused() =>
         Assert.True(new TeamConfigs(_root).IsPaused("demo"));

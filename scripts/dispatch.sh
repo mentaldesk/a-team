@@ -35,6 +35,7 @@ dispatch() {
     fi
     return
   fi
+  jq -e --arg role "$role" '.dispatch.hold // [] | index($role)' "$config" >/dev/null 2>&1 && return
 
   # A missing last-sweep reads as never, so a fresh install sweeps on its first pass.
   [ $((now - $(cat "$dir/${prefix}last-sweep" 2>/dev/null || echo 0))) \
