@@ -70,7 +70,8 @@ release.
    `process.md`, or a `statusMap` in the team config from those names to the ones it has.
 3. Copy `examples/team.json` to `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
    your GitHub login as `reviewer`, the Project, and where the product is checked out on this
-   machine (`workdir` for its worktrees, `checkout` for its main clone). `a-team teams` lists
+   machine (`workdir` for its worktrees, `checkout` for its main clone), and optionally `try`,
+   the command that runs the product from a worktree. `a-team teams` lists
    the teams it finds. Check the board with
    `a-team board <name> check`.
 4. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
@@ -225,15 +226,38 @@ else. Esc closes it.
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.
 
-## Trying out a clone or worktree
+## Trying out a pull request
 
-`bin/a-team` runs the code next to it, so any clone or worktree can be tried out while the
-installed dispatcher keeps running the teams:
+`a-team try <team> <pr>` puts you in the product built from that PR, with nothing of yours at
+risk, and takes it away again when you quit:
 
 ```
-./bin/a-team dashboard
-./bin/a-team board tuicode --dry-run move dev 160 "In progress"
-A_TEAM_STATE=/tmp/a-team-test ./bin/a-team dispatch --dry-run
+a-team try a-team 97
+```
+
+It fetches the PR's head into a scratch worktree at `<workdir>/.try/<pr>`, exports
+`A_TEAM_STATE=<workdir>/.try/state/<pr>` and `A_TEAM_DRY_RUN=1` — so the code you're trying reads
+the real board and writes nothing to it, and can't touch your teams' state — and runs the team
+config's **`try`** command there. That key is the one thing a-team can't work out for itself:
+`"try": "./bin/a-team dashboard"` for this repo, `"dotnet run --project src/TuiCode"` for TuiCode.
+With no `try` key you get a shell in the worktree instead, with `try:<team>#<pr>` in the prompt and
+that PR's `a-team` first on your `PATH`; `Ctrl+D` comes back.
+
+On the way out it removes the worktree and the sandbox state. If you changed a file in there it
+keeps the worktree and tells you, and `a-team try <team> <pr> --clean` removes it when you're done.
+`try` runs the PR's code on purpose, so it asks before running a branch from a repo that isn't the
+team's own.
+
+### Trying out a clone or worktree
+
+`bin/a-team` runs the code next to it, so any clone or worktree can be tried out — this is what to
+reach for when you want to keep the tree and work in it, rather than look and leave:
+
+```
+git -C ~/code/a-team/main fetch origin
+git -C ~/code/a-team/main worktree add ../mine -b my-branch origin/main
+cd ~/code/a-team/mine
+A_TEAM_STATE=/tmp/a-team-test ./bin/a-team dashboard
 ```
 
 Give a clone's dispatcher its own `A_TEAM_STATE`, or it shares state with the real one.

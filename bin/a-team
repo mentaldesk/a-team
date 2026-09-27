@@ -51,6 +51,7 @@ With no command, a-team opens the app where you left it.
   pause [--dry-run] <team>                stop the dispatcher starting that team's agents
   resume [--dry-run] <team>               start them again
   dashboard [team...]                     the app, on the Dashboard area
+  try <team> <pr> [--clean]               run that PR's code in a scratch worktree, sandboxed
   run <team> <role>                       print the brief a run starts from
   task-prompt <team> <role>               print a role's scheduled prompt
   teams                                   the configured teams, and where their config lives
@@ -66,7 +67,7 @@ USAGE
 command=$1
 shift
 case "$command" in
-  board | dispatch | install | status | run | task-prompt)
+  board | dispatch | install | status | run | task-prompt | try)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
   dashboard)
     exec bash "$ROOT/scripts/dashboard.sh" --area dashboard "$@" ;;

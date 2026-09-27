@@ -1086,6 +1086,143 @@ run board demo triggers dev
 same "exit" 0 "$STATUS"
 same "reasons" '["PR #912 is green but still a draft"]' "$(jq -c .reasons "$OUT")"
 
+# --- a-team try -----------------------------------------------------------------------------
+# A throwaway origin holding main and one PR head, a checkout cloned from it that has only main,
+# and a config pointing workdir and checkout at them. `try_fixture [<try command>]`.
+try_fixture() {
+  TRY_WORK=$(mktemp -d "$WORK/try.XXXXXX")
+  CHECKOUT="$TRY_WORK/main"
+  local origin="$TRY_WORK/origin" seed="$TRY_WORK/seed"
+  git init -q --bare "$origin"
+  git -c init.defaultBranch=main clone -q "$origin" "$seed" 2>/dev/null
+  git -C "$seed" config user.email test@example.com
+  git -C "$seed" config user.name Test
+  echo one >"$seed/file"
+  git -C "$seed" add -A
+  git -C "$seed" commit -qm first
+  git -C "$seed" push -q origin HEAD:refs/heads/main
+  echo two >"$seed/file"
+  git -C "$seed" commit -qam "the change under review"
+  TRY_SHA=$(git -C "$seed" rev-parse HEAD)
+  git -C "$seed" push -q origin HEAD:refs/pull/7/head
+  rm -rf "$seed"
+  # file:// rather than a path: a local clone hardlinks the whole object store, PR head included.
+  git clone -q "file://$origin" "$CHECKOUT"
+  fixture <<JSON
+{ "repo": "mentaldesk/demo", "workdir": "$TRY_WORK", "checkout": "$CHECKOUT"$(
+    [ -n "${1:-}" ] && printf ', "try": "%s"' "$1"
+  ) }
+JSON
+}
+
+# The PR `try` looks up: `try_gh [<state> [<head repo>]]`. Anything else is a 404, as a PR that
+# isn't there would be.
+try_gh() {
+  TRY_BIN=$(mktemp -d "$WORK/trybin.XXXXXX")
+  jq -n --arg state "${1:-open}" --arg repo "${2:-mentaldesk/demo}" --arg sha "$TRY_SHA" \
+    '{number: 7, title: "A change worth a look", state: $state,
+      head: {sha: $sha, repo: {full_name: $repo}}}' >"$TRY_BIN/pull.json"
+  cat >"$TRY_BIN/gh" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *"/pulls/7"*) cat "$TRY_BIN/pull.json" ;;
+  *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+esac
+SH
+  chmod +x "$TRY_BIN/gh"
+  cat >"$TRY_BIN/record" <<SH
+#!/usr/bin/env bash
+{ pwd; git rev-parse HEAD; echo "\${A_TEAM_STATE:-}"; echo "\${A_TEAM_DRY_RUN:-}"; } >"$TRY_WORK/ran"
+SH
+  chmod +x "$TRY_BIN/record"
+  PATH="$TRY_BIN:$PATH"
+}
+
+worktrees() { git -C "$CHECKOUT" worktree list | sed 1d; }
+
+case_ "try runs the team's command in a worktree at the PR's head, sandboxed, and clears up after"
+try_fixture record
+try_gh
+run try demo 7
+same "exit" 0 "$STATUS"
+same "working directory" "$TRY_WORK/.try/7" "$(sed -n 1p "$TRY_WORK/ran")"
+same "commit" "$TRY_SHA" "$(sed -n 2p "$TRY_WORK/ran")"
+same "A_TEAM_STATE" "$TRY_WORK/.try/state/7" "$(sed -n 3p "$TRY_WORK/ran")"
+same "A_TEAM_DRY_RUN" 1 "$(sed -n 4p "$TRY_WORK/ran")"
+grep -q 'A_TEAM_DRY_RUN=1' "$OUT" || fail "sandbox: nothing about it in '$(cat "$OUT")'"
+grep -q 'Running: record' "$OUT" || fail "run: nothing about what it ran in '$(cat "$OUT")'"
+grep -q 'Merge #7 if it did what you wanted' "$OUT" || fail "merge: no invitation in '$(cat "$OUT")'"
+same "worktrees left" "" "$(worktrees)"
+[ ! -e "$TRY_WORK/.try/7" ] || fail "clean exit: the worktree is still there"
+[ ! -e "$TRY_WORK/.try/state/7" ] || fail "clean exit: the sandbox state is still there"
+
+case_ "no try command in the config drops you into a shell in the worktree instead"
+try_fixture
+try_gh
+run try demo 7 <<IN
+pwd >"$TRY_WORK/shell"
+IN
+same "exit" 0 "$STATUS"
+same "working directory" "$TRY_WORK/.try/7" "$(cat "$TRY_WORK/shell")"
+[ ! -e "$TRY_WORK/ran" ] || fail "shell: the team's command ran as well"
+grep -q 'Ctrl+D' "$OUT" || fail "shell: nothing saying how to come back in '$(cat "$OUT")'"
+grep -q 'try:demo#7' "$ERR" || fail "shell: the prompt doesn't name the PR"
+
+case_ "a worktree you changed something in is kept, with the line that removes it"
+try_fixture 'touch note.md'
+try_gh
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -d "$TRY_WORK/.try/7" ] || fail "kept: the worktree was removed anyway"
+grep -q 'you changed 1 file there' "$OUT" || fail "kept: nothing about what you changed in '$(cat "$OUT")'"
+grep -q 'a-team try demo 7 --clean' "$OUT" || fail "kept: no --clean line in '$(cat "$OUT")'"
+
+case_ "--clean removes it without running anything, and is happy when there's nothing to remove"
+run try demo 7 --clean
+same "exit" 0 "$STATUS"
+same "worktrees left" "" "$(worktrees)"
+[ ! -e "$TRY_WORK/.try/7" ] || fail "--clean: the worktree is still there"
+[ ! -e "$TRY_WORK/.try/state/7" ] || fail "--clean: the sandbox state is still there"
+run try demo 7 --clean
+same "exit" 0 "$STATUS"
+grep -q 'Nothing to remove' "$OUT" || fail "--clean twice: '$(cat "$OUT")'"
+
+case_ "a PR that isn't there is refused in one line, leaving nothing behind"
+try_fixture record
+try_gh
+run try demo 404
+failed "no such PR"
+one_line "no such PR"
+[ ! -e "$TRY_WORK/.try" ] || fail "no such PR: something was left in .try"
+
+case_ "so is one that's already closed"
+try_gh closed
+run try demo 7
+failed "closed PR"
+one_line "closed PR"
+[ ! -e "$TRY_WORK/.try" ] || fail "closed PR: something was left in .try"
+
+case_ "a PR from somewhere else asks first, and n stops it before anything is fetched"
+try_gh open someone-else/demo
+run try demo 7 <<<n
+failed "fork"
+grep -q 'someone-else/demo' "$OUT" || fail "fork: it doesn't say whose branch it is"
+[ ! -e "$TRY_WORK/.try" ] || fail "fork: something was left in .try"
+git -C "$CHECKOUT" cat-file -e "$TRY_SHA" 2>/dev/null && fail "fork: it fetched the PR anyway"
+
+case_ "an unknown team, or no team at all, is refused with the usage"
+run try nobody 7
+failed "unknown team"
+grep -q "^usage: a-team try" "$ERR" || fail "unknown team: no usage in '$(cat "$ERR")'"
+run try
+failed "no team"
+grep -q "^usage: a-team try" "$ERR" || fail "no team: no usage in '$(cat "$ERR")'"
+
+case_ "try is in the usage text, and the example config carries the optional try key"
+run help
+grep -q '^  try ' "$OUT" || fail "usage: no try line"
+same "example try" '"./bin/a-team dashboard"' "$(jq -c .try "$ROOT/examples/team.json")"
+
 case_ "a-team with no command opens the app, and dashboard opens it on the Dashboard"
 APP=$(mktemp -d "$WORK/app.XXXXXX")
 mkdir -p "$APP/bin" "$APP/scripts" "$APP/libexec"
