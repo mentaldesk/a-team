@@ -16,6 +16,7 @@
     "ideas": 6,
     "readyFloor": 3
   },
+  "try": "./bin/a-team dashboard",
   "workdir": "~/code/repo",
   "checkout": "~/code/repo/main",
   "dispatch": {
