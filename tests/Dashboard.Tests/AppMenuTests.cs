@@ -20,7 +20,7 @@ public class AppMenuTests : IDisposable
     [Theory]
     [InlineData("_View", 'v')]
     [InlineData("_Cards", 'c')]
-    [InlineData("_Team", 't')]
+    [InlineData("_Agents", 'a')]
     [InlineData("_Help", 'h')]
     public void Alt_and_a_titles_letter_opens_that_menu(string title, char letter)
     {
@@ -35,7 +35,7 @@ public class AppMenuTests : IDisposable
     [Theory]
     [InlineData('v', false)]
     [InlineData('c', false)]
-    [InlineData('t', true)]
+    [InlineData('a', false)]
     [InlineData('h', false)]
     public void A_bare_title_letter_opens_no_menu_and_the_key_it_would_shadow_still_works(char letter, bool answered)
     {
@@ -97,7 +97,7 @@ public class AppMenuTests : IDisposable
     {
         using var window = Open();
 
-        Assert.Equal(['v', 'c', 't', 'h'], window.Menus.Select(menu => Letter(menu.HotKey)));
+        Assert.Equal(['v', 'c', 'a', 'h'], window.Menus.Select(menu => Letter(menu.HotKey)));
         foreach (var menu in window.Menus)
         {
             var ids = Under(window, menu);
@@ -107,11 +107,11 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void Cards_sits_between_View_and_Team_holding_the_card_commands_in_registration_order_with_their_keys()
+    public void Cards_sits_between_View_and_Agents_holding_the_card_commands_in_registration_order_with_their_keys()
     {
         using var window = Open();
 
-        Assert.Equal(["_View", "_Cards", "_Team", "_Help"], window.Menus.Select(menu => menu.Title));
+        Assert.Equal(["_View", "_Cards", "_Agents", "_Help"], window.Menus.Select(menu => menu.Title));
         Assert.Equal(
             window.Commands.Registered.Where(command => command.OnCard).Select(command => command.Id),
             Under(window, Cards(window)));
@@ -203,6 +203,28 @@ public class AppMenuTests : IDisposable
 
         Assert.Equal("_Resume a-team", pause.Title);
         Assert.Equal(new Key('r'), pause.HotKey);
+    }
+
+    [Fact]
+    public void Agents_holds_pause_then_stop_which_shows_its_key()
+    {
+        using var window = Open();
+        var agents = window.Menus.Single(menu => menu.Title == "_Agents");
+
+        Assert.Equal(["team.pause", "agent.stop"], Under(window, agents));
+        Assert.Equal("_Stop this run", Item(window, "agent.stop").Title);
+        Assert.Equal(new Key('k'), Item(window, "agent.stop").Key);
+    }
+
+    [Fact]
+    public void Rebinding_stop_changes_the_key_Agents_shows_for_it()
+    {
+        Directory.CreateDirectory(Config);
+        new DashboardSettings(Config).WriteKeys([("agent.stop", new Key('x'))]);
+
+        using var window = Open();
+
+        Assert.Equal(new Key('x'), Item(window, "agent.stop").Key);
     }
 
     [Fact]

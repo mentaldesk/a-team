@@ -15,7 +15,7 @@ internal sealed class AppMenu
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
         (Cards, []),
-        ("_Team", ["team.pause"]),
+        ("_Agents", ["team.pause", "agent.stop"]),
         ("_Help", ["help", "commands", "about"]),
     ];
 

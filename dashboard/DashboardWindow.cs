@@ -276,6 +276,7 @@ public sealed class DashboardWindow : Window
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
             .Register("team.pause", PauseLabel, TogglePause)
+            .Register("agent.stop", StopLabel, ToggleStop, new Key('k'), isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true })
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
@@ -307,6 +308,17 @@ public sealed class DashboardWindow : Window
         _progress = pane.Paused ? "Resuming…" : "Pausing…";
         ShowMessage();
         _pending = _run([pane.Paused ? "resume" : "pause", pane.Team]);
+    }
+
+    private string StopLabel() => Selected() is { Held: true } ? "Let it start again" : "Stop this run";
+
+    private void ToggleStop()
+    {
+        if (_pending is not null || Selected() is not { } pane || !(pane.Running || pane.Held))
+            return;
+        _progress = pane.Held ? "Letting it start again…" : "Stopping…";
+        ShowMessage();
+        _pending = _run([pane.Held ? "resume" : "stop", pane.Team, pane.Role]);
     }
 
     /// <summary>Reads every team's gates at once. A second go while one is running is refused, not queued.</summary>
