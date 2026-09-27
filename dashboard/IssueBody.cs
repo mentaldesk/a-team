@@ -13,8 +13,7 @@ public sealed record IssueBody(string Text = "", string? Failure = null)
         : new IssueBody(Failure: $"couldn't read #{number}");
 
     /// <summary>The body's own lines, with no trailing carriage returns, to draw as written.</summary>
-    public IReadOnlyList<LogLine> Lines =>
-        [.. Text.Split('\n').Select(line => new LogLine(line.TrimEnd('\r'), LogLineKind.Prose))];
+    public IReadOnlyList<LogLine> Lines => Markdown.Lines(Text);
 
     private static string? Parse(string json)
     {

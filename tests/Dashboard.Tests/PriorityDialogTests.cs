@@ -133,7 +133,8 @@ public class PriorityDialogTests
         using var dialog = new PriorityDialog(Idea(), new IssueBody(Prose));
 
         Assert.Equal(Prose.Split('\n'), dialog.Body.Lines.Select(line => line.Text));
-        Assert.All(dialog.Body.Lines, line => Assert.Equal(LogLineKind.Prose, line.Kind));
+        Assert.True(dialog.Body.ReadsMarkdown);
+        Assert.Equal(LogSchemes.Reader, dialog.Body.SchemeName);
     }
 
     [Fact]

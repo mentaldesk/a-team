@@ -42,6 +42,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
+    private readonly Action<WaitingItem, IssueBody, Action> _showBody;
     private readonly IconStyle _auto;
     private readonly LoadingView _loading;
     private Area _area;
@@ -50,7 +51,7 @@ public sealed class DashboardWindow : Window
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
-    private (WaitingItem Item, Task<Reading> Read)? _readingBody;
+    private (WaitingItem Item, Task<Reading> Read, Action<WaitingItem, IssueBody> Then)? _readingBody;
     private DateTimeOffset? _readAt;
     private string? _failure;
     private string? _progress;
@@ -67,6 +68,7 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
         Func<WaitingItem, IssueBody, Rank?> askPriority,
+        Action<WaitingItem, IssueBody, Action> showBody,
         Area area,
         IconStyle auto)
     {
@@ -79,6 +81,7 @@ public sealed class DashboardWindow : Window
         _readBody = readBody;
         _openUrl = openUrl;
         _askPriority = askPriority;
+        _showBody = showBody;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
@@ -254,7 +257,8 @@ public sealed class DashboardWindow : Window
             .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
             .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
-            .Register("work.open", "Open the selected issue or PR on GitHub", OpenSelected, Key.Enter, new Hint("open", Mode.Work), () => OnWork() && _work.SelectedUrl is { Length: > 0 })
+            .Register("work.read", "Read the selected item", ReadSelected, Key.Enter, new Hint("read", Mode.Work), () => OnWork() && _work.Selected is not null)
+            .Register("work.github", "Open the selected item on GitHub", OpenSelected, new Key('o'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 })
             .Register("work.priority", "Set the selected item's priority", SetPriority, new Key('p'), new Hint("set priority", Mode.Work), () => OnWork() && _work.SelectedCard is not null)
             .Register("work.mine", "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork)
             .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
@@ -332,11 +336,41 @@ public sealed class DashboardWindow : Window
     /// ranking.</summary>
     private void SetPriority()
     {
-        if (_pending is not null || _readingBody is not null || _work.SelectedCard is not { } item)
+        if (_work.SelectedCard is { } item)
+            ReadBody(item, Ask);
+    }
+
+    private void ReadSelected()
+    {
+        if (_work.Selected is not { } item)
             return;
+        var url = _work.SelectedUrl;
+        ReadBody(item, (read, body) => ShowBody(read, body, url));
+    }
+
+    private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then)
+    {
+        if (_pending is not null || _readingBody is not null)
+            return;
+        _failure = null;
         _progress = $"Reading #{item.Number}…";
         ShowMessage();
-        _readingBody = (item, _readBody(item));
+        _readingBody = (item, _readBody(item), then);
+    }
+
+    /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board.</summary>
+    private void ShowBody(WaitingItem item, IssueBody body, string? url)
+    {
+        if (body.Failure is { Length: > 0 } failure)
+            _failure = failure;
+        else if (string.IsNullOrWhiteSpace(body.Text))
+            _failure = $"#{item.Number} has no description";
+        else
+            _showBody(item, body, () =>
+            {
+                if (url is { Length: > 0 })
+                    _openUrl(url);
+            });
     }
 
     /// <summary>Asks for a rank and writes it. The board decides what the field will take, so an unknown value
@@ -386,7 +420,7 @@ public sealed class DashboardWindow : Window
         {
             _readingBody = null;
             _progress = null;
-            Ask(body.Item, body.Read.Status == TaskStatus.RanToCompletion
+            body.Then(body.Item, body.Read.Status == TaskStatus.RanToCompletion
                 ? IssueBody.Of(body.Read.Result, body.Item.Number)
                 : new IssueBody(Failure: $"couldn't read #{body.Item.Number}"));
         }

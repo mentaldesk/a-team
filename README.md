@@ -134,8 +134,9 @@ them: **Triage** (the Ideas and pitches with no Priority set, which never get pi
 until you give them one), **Pitches** (waiting for you to approve) and **Review** (waiting for you
 to merge or accept), each headed by its count of items. A card's issue number is coloured by the
 item's Priority, in the colours GitHub gives that field's own options, and the PR that closes it
-hangs under it as a row of its own — `PR #149  The session log reads…`. Enter opens whichever row
-you're on in your browser: the issue on the card, the PR on the row under it. Reading every team's
+hangs under it as a row of its own — `PR #149  The session log reads…`. Enter shows the issue's
+body as written, without leaving the app; `o` opens whichever row you're on in your browser: the
+issue on the card, the PR on the row under it. Reading every team's
 gates takes a moment, so a van drives across the empty area, framed off from the rest, until the
 first cards land; `r` afterwards leaves the ones on screen where they are.
 

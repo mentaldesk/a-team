@@ -31,6 +31,25 @@ public class BundledThemesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void Every_theme_sets_each_kind_of_markdown_apart_from_the_text_on_the_reader_s_background()
+    {
+        BundledThemes.Load();
+        LogLineKind[] marked = [LogLineKind.Heading, LogLineKind.Code, LogLineKind.Quote, LogLineKind.InlineCode, LogLineKind.Strong, LogLineKind.ListMarker];
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            var text = SchemeManager.GetScheme(LogSchemes.Reader).Normal;
+            foreach (var kind in marked)
+            {
+                var ink = SchemeManager.GetScheme(MarkdownSchemes.Scheme(kind)).Normal;
+                Assert.Equal(text.Background, ink.Background);
+                Assert.True(ink.Foreground != text.Foreground || ink.Style != text.Style, $"{theme} draws {kind} as plain text");
+            }
+        }
+    }
+
+    [Fact]
     public void Every_theme_draws_the_menu_in_a_background_of_its_own()
     {
         BundledThemes.Load();

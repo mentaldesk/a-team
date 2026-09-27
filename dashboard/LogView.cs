@@ -1,6 +1,7 @@
 using System.Drawing;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Text;
 using Terminal.Gui.Views;
 using Attribute = Terminal.Gui.Drawing.Attribute;
 
@@ -68,6 +69,9 @@ public sealed class LogView : View
         init => _expanded = value;
     }
 
+    /// <summary>Colours the markdown inside prose rows too: list markers, inline code and bold.</summary>
+    public bool ReadsMarkdown { get; init; }
+
     /// <summary>One row per line, elided in the middle rather than wrapped, for a tail nobody can scroll.</summary>
     public bool Elides { get; init; }
 
@@ -95,6 +99,8 @@ public sealed class LogView : View
     }
 
     public void Page(int direction) => ScrollTo(_top + direction * Math.Max(1, Viewport.Height - 1));
+
+    public void Step(int direction) => ScrollTo(_top + direction);
 
     public void Home() => ScrollTo(0);
 
@@ -145,6 +151,8 @@ public sealed class LogView : View
             var line = _top + row < rows.Count ? rows[_top + row] : new LogRow("", LogLineKind.Prose);
             SetAttribute(AttributeFor(line.Kind));
             AddStr(0, row, Drawn(line, width));
+            if (ReadsMarkdown)
+                DrawSpans(line, row);
         }
         return true;
     }
@@ -157,6 +165,15 @@ public sealed class LogView : View
         var prefix = new string(' ', lead - (icon is null ? 0 : Icons.Width))
             + (icon is { } drawn ? Icons.Field(drawn, _icons) : "");
         return prefix + row.Text.PadRight(Math.Max(0, width - lead));
+    }
+
+    private void DrawSpans(LogRow line, int row)
+    {
+        foreach (var span in Markdown.Spans(line))
+        {
+            SetAttribute(AttributeFor(span.Kind));
+            AddStr(Lead(line.Kind) + line.Text[..span.Start].GetColumns(), row, line.Text.Substring(span.Start, span.Length));
+        }
     }
 
     private Attribute AttributeFor(LogLineKind kind)
