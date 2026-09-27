@@ -54,7 +54,7 @@ int Run()
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
         (item, body) => PriorityDialog.Show(app, item, body),
-        (item, body, onGitHub) => ReaderDialog.Show(app, item, body, onGitHub),
+        (item, body, onGitHub, onApprove) => ReaderDialog.Show(app, item, body, onGitHub, onApprove),
         requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable));
     window.Refresh();

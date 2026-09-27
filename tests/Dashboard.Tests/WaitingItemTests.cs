@@ -8,13 +8,24 @@ public class WaitingItemTests
         var items = WaitingItem.Parse("""
             [{"number": 106, "title": "Both gates are mine", "status": "Pitched",
               "url": "https://github.com/mentaldesk/a-team/issues/106", "team": "a-team",
-              "turn": "lead", "reason": "answering your feedback since 08:14", "priority": "Urgent"}]
+              "turn": "lead", "reason": "answering your feedback since 08:14", "priority": "Urgent",
+              "pitch": true}]
             """);
 
         Assert.Equal(
             new WaitingItem(106, "Both gates are mine", "Pitched", "https://github.com/mentaldesk/a-team/issues/106",
-                "a-team", "lead", "answering your feedback since 08:14", Priority: "Urgent"),
+                "a-team", "lead", "answering your feedback since 08:14", Priority: "Urgent", Pitch: true),
             Assert.Single(items));
+    }
+
+    [Theory]
+    [InlineData(true, "Pitched", true)]
+    [InlineData(false, "Pitched", false)]
+    [InlineData(true, "In review", false)]
+    [InlineData(false, "Idea", false)]
+    public void Only_a_pitch_in_Pitched_can_be_approved(bool pitch, string status, bool approvable)
+    {
+        Assert.Equal(approvable, new WaitingItem(1, "", status, "", "", Pitch: pitch).Approvable);
     }
 
     [Fact]

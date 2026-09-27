@@ -27,9 +27,9 @@ public class ReaderDialogTests
         new(180, "The dashboard tells me a pitch needs me", "Pitched", "https://github.com/x/180", "a-team",
             "you", "awaiting your approval since 22:25");
 
-    private static ReaderDialog Open(string body, Action? onGitHub = null, int height = 20)
+    private static ReaderDialog Open(string body, Action? onGitHub = null, int height = 20, Action? onApprove = null)
     {
-        var dialog = new ReaderDialog(Item, new IssueBody(body), onGitHub ?? (() => { }));
+        var dialog = new ReaderDialog(Item, new IssueBody(body), onGitHub ?? (() => { }), onApprove);
         dialog.Layout(new Size(60, height));
         return dialog;
     }
@@ -77,6 +77,44 @@ public class ReaderDialogTests
 
         Assert.Equal("Up/Down/PgUp/PgDn scroll · o on GitHub · Esc close", dialog.Hints.Says);
         Assert.Equal(dialog.Viewport.Height - 1, dialog.Hints.Frame.Y);
+    }
+
+    [Fact]
+    public void A_pitch_to_approve_puts_a_between_scrolling_and_GitHub()
+    {
+        using var dialog = Open(Pitch, onApprove: () => { });
+
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · a approve · o on GitHub · Esc close", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void a_approves_at_once()
+    {
+        var approved = 0;
+        using var dialog = Open(Pitch, onApprove: () => approved++);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('a')));
+
+        Assert.Equal(1, approved);
+    }
+
+    [Fact]
+    public void Clicking_the_approve_hint_approves()
+    {
+        var approved = 0;
+        using var dialog = Open(Pitch, onApprove: () => approved++);
+
+        dialog.Hints.Hints.Single(hint => hint.Text == "a approve").InvokeCommand(Command.Accept);
+
+        Assert.Equal(1, approved);
+    }
+
+    [Fact]
+    public void With_nothing_to_approve_a_does_nothing()
+    {
+        using var dialog = Open(Pitch);
+
+        Assert.False(dialog.NewKeyDownEvent(new Key('a')));
     }
 
     [Fact]

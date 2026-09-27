@@ -140,14 +140,22 @@ public sealed class WorkView : View
     /// and a ranked Idea — which `waiting` no longer returns — leaves the screen. A card that stays in the column
     /// keeps the selection, wearing the colour its new rank gives its number; one that leaves hands it to the next
     /// card down.</summary>
-    internal void Ranked(WaitingItem item, Rank rank)
+    internal void Ranked(WaitingItem item, Rank rank) =>
+        Replace(item, item with { Priority = rank == Rank.None ? "" : rank.ToString() });
+
+    /// <summary>What an approval leaves on screen, with no re-read: Approved isn't a gate, so the card leaves and
+    /// hands the selection to the next card down.</summary>
+    internal void Approved(WaitingItem item) => Replace(item, null);
+
+    private void Replace(WaitingItem item, WaitingItem? now)
     {
         var column = FocusedColumn();
         var row = column?.Index ?? 0;
-        var ranked = item with { Priority = rank == Rank.None ? "" : rank.ToString() };
-        _items = [.. _items.Select(each => each == item ? ranked : each)];
+        _items = now is null
+            ? [.. _items.Where(each => each != item)]
+            : [.. _items.Select(each => each == item ? now : each)];
         Lay();
-        if (column is not null && !column.Select(ranked))
+        if (column is not null && (now is null || !column.Select(now)))
             column.FocusCards(row);
     }
 

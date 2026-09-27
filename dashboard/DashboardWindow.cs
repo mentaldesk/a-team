@@ -42,12 +42,14 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
-    private readonly Action<WaitingItem, IssueBody, Action> _showBody;
+    private readonly Action<WaitingItem, IssueBody, Action, Action?> _showBody;
     private readonly IconStyle _auto;
     private readonly LoadingView _loading;
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
+    private WaitingItem? _approvable;
+    private WaitingItem? _approving;
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
@@ -68,7 +70,7 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
         Func<WaitingItem, IssueBody, Rank?> askPriority,
-        Action<WaitingItem, IssueBody, Action> showBody,
+        Action<WaitingItem, IssueBody, Action, Action?> showBody,
         Area area,
         IconStyle auto)
     {
@@ -259,6 +261,7 @@ public sealed class DashboardWindow : Window
             .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
             .Register("work.read", "Read the selected item", ReadSelected, Key.Enter, new Hint("read", Mode.Work), () => OnWork() && _work.Selected is not null)
             .Register("work.github", "Open the selected item on GitHub", OpenSelected, new Key('o'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 })
+            .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.priority", "Set the selected item's priority", SetPriority, new Key('p'), new Hint("set priority", Mode.Work), () => OnWork() && _work.SelectedCard is not null)
             .Register("work.mine", "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork)
             .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
@@ -366,11 +369,35 @@ public sealed class DashboardWindow : Window
         else if (string.IsNullOrWhiteSpace(body.Text))
             _failure = $"#{item.Number} has no description";
         else
+        {
+            _approvable = item.Approvable ? item : null;
             _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
                     _openUrl(url);
-            });
+            }, _approvable is null ? null : () => _commands.Execute("work.approve"));
+            _approvable = null;
+        }
+    }
+
+    /// <summary>Approves the pitch the reader is showing. Like a rank, the card stays put until the board takes it.</summary>
+    private void Approve()
+    {
+        if (_approvable is not { } item || _pending is not null)
+            return;
+        _approving = item;
+        _progress = $"Approving #{item.Number}…";
+        ShowMessage();
+        _pending = _run(["board", item.Team, "approve", "you", item.Number.ToString()]);
+    }
+
+    private void Approved(WaitingItem item)
+    {
+        _work.Approved(item);
+        _said = $"#{item.Number} approved";
+        _saidOn = _work.Selected;
+        SetNeedsLayout();
+        SetNeedsDraw();
     }
 
     /// <summary>Asks for a rank and writes it. The board decides what the field will take, so an unknown value
@@ -413,6 +440,12 @@ public sealed class DashboardWindow : Window
                 _ranking = null;
                 if (_failure is null or { Length: 0 })
                     Ranked(ranking.Item, ranking.Rank);
+            }
+            if (_approving is { } approving)
+            {
+                _approving = null;
+                if (_failure is null or { Length: 0 })
+                    Approved(approving);
             }
         }
 
