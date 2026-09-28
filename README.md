@@ -142,7 +142,8 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
 - **Stopping a run.** `a-team stop <team> <role>` ends the role's live run and holds the role
   (`dispatch.hold` in the team config), so the dispatcher starts no replacement until
   `a-team resume <team> <role>`. It lists anything the run left claimed In progress; the next run
-  picks that up. The other role carries on as normal.
+  picks that up. The other role carries on as normal. `a-team pause <team> <role>` holds the role
+  the same way but lets a run already going finish.
 - **Stepping into a run.** `a-team attach <team> <role>` does what `a-team stop` does, then runs
   `claude --resume` on the latest run's session in the team's `workdir`, so you pick up the
   conversation with everything it had worked out. Quitting lets the role start again.
@@ -164,7 +165,7 @@ a-team dashboard [team...]  straight to the agents
 The app has two areas: **Work**, everything waiting on you across every team, and **Dashboard**,
 what each agent is doing. `d` and `w` switch between them, Esc goes back to the Dashboard, and the
 menu across the top carries the same commands: View (Dashboard, Work, Settings, Quit), Agents
-(Pause or Resume, Interrupt) and Help (Keys, Commands, About). Each title and item underlines a letter:
+(Pause or Resume, Pause this role, Interrupt) and Help (Keys, Commands, About). Each title and item underlines a letter:
 `Alt`+it opens a menu, and once one is open the bare letter picks from it — `Alt+H` `k` for Keys.
 Esc closes it, and F10 and the arrows still work. Whichever area you were in is what it opens in
 next time; a first run lands on Work.
@@ -266,7 +267,10 @@ panes follow within a second. `i` interrupts the selected agent's run: it runs `
 the dashboard's place, so you're in that run's conversation, and quitting brings you back to the
 grid with the role free to start again. A run too new to have a session is just stopped and held,
 as `a-team stop` does. On a held role the same command reads *Let it start again* and runs
-`a-team resume <team> <role>`. While either runs, a line at the foot of the window says so; if it
+`a-team resume <team> <role>`. `h` pauses the selected agent's role, as `a-team pause <team> <role>`
+does: a run already going finishes, its pane reading `running <time> · held`, and no new one starts
+until the same command, now *Let this role start again*, runs `a-team resume <team> <role>`. While
+any of these runs, a line at the foot of the window says so; if it
 fails, that line says why, in red.
 
 F1 opens Keys: the handful worth having in your fingers, the first of them Ctrl+E for everything

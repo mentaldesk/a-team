@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # pause.sh <pause|resume|stop> [--dry-run] <team> [<role>] — turns a team's dispatch off or on,
-# or stops a role's run and holds the role until `resume <team> <role>`. The dispatcher reads
-# the config on every pass, so there is nothing to restart either way.
+# or holds a role until `resume <team> <role>`: `pause` lets its run finish, `stop` ends it. The
+# dispatcher reads the config on every pass, so there is nothing to restart either way.
 #
 set -euo pipefail
 
@@ -23,10 +23,10 @@ if [ "${1:-}" = --dry-run ]; then
   shift
 fi
 case "$CMD $#" in
-  "pause 1" | "resume 1" | "resume 2" | "stop 2") ;;
+  "pause 1" | "pause 2" | "resume 1" | "resume 2" | "stop 2") ;;
   stop*) die "usage: a-team stop [--dry-run] <team> <role>" ;;
   resume*) die "usage: a-team resume [--dry-run] <team> [<role>]" ;;
-  *) die "usage: a-team $CMD [--dry-run] <team>" ;;
+  *) die "usage: a-team pause [--dry-run] <team> [<role>]" ;;
 esac
 
 source "$ROOT/scripts/common.sh"
@@ -39,14 +39,11 @@ esac
 CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG"
 
-case "$CMD" in
-  pause) FILTER='.dispatch.enabled = false' CHANGE="set dispatch.enabled to false" ;;
-  resume) if [ -n "$ROLE" ]; then
-      FILTER='.dispatch.hold = ((.dispatch.hold // []) - [$role])' CHANGE="remove $ROLE from dispatch.hold"
-    else
-      FILTER='.dispatch.enabled = true' CHANGE="set dispatch.enabled to true"
-    fi ;;
-  stop) FILTER='.dispatch.hold = ((.dispatch.hold // []) - [$role] + [$role])' CHANGE="add $ROLE to dispatch.hold" ;;
+case "$CMD $ROLE" in
+  "pause ") FILTER='.dispatch.enabled = false' CHANGE="set dispatch.enabled to false" ;;
+  "resume ") FILTER='.dispatch.enabled = true' CHANGE="set dispatch.enabled to true" ;;
+  resume*) FILTER='.dispatch.hold = ((.dispatch.hold // []) - [$role])' CHANGE="remove $ROLE from dispatch.hold" ;;
+  *) FILTER='.dispatch.hold = ((.dispatch.hold // []) - [$role] + [$role])' CHANGE="add $ROLE to dispatch.hold" ;;
 esac
 
 UPDATED=$(jq -e --arg role "$ROLE" "if type == \"object\" then $FILTER else null end" "$CONFIG" 2>/dev/null) ||
@@ -70,9 +67,10 @@ fi
 [ -w "$CONFIG" ] || die "can't write $CONFIG"
 { printf '%s\n' "$UPDATED" >"$CONFIG"; } 2>/dev/null || die "can't write $CONFIG"
 
-case "$CMD" in
-  pause | resume) echo "${CMD}d $TEAM${ROLE:+ $ROLE}" ;;
-  stop)
+case "$CMD $ROLE" in
+  "pause "?*) echo "held $ROLE: a run already going finishes, and none starts until: a-team resume $TEAM $ROLE" ;;
+  pause* | resume*) echo "${CMD}d $TEAM${ROLE:+ $ROLE}" ;;
+  stop*)
     mkdir -p "$DIR"
     date +%s >"$DIR/stopped"
     if [ -n "$PID" ]; then

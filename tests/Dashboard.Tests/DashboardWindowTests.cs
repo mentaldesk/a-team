@@ -387,7 +387,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
-                "Pause team0", "Interrupt selected agent", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
+                "Pause team0", "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -868,6 +868,53 @@ public class DashboardWindowTests : IDisposable
 
         Assert.All(window.Panes, pane => Assert.True(pane.Paused));
         Assert.Equal("Resume team0", Label(window, "team.pause"));
+    }
+
+    [Fact]
+    public void Pause_this_role_holds_the_selected_role_without_stopping_its_run()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(agents: Agents(4), run: arguments =>
+        {
+            calls.Add(arguments);
+            return new TaskCompletionSource<string?>().Task;
+        });
+        WriteRunning("team1", "dev");
+        window.Refresh();
+        SelectAgent(window, 3);
+
+        Assert.True(window.NewKeyDownEvent(new Key('h')));
+
+        Assert.Equal([["pause", "team1", "dev"]], calls);
+        Assert.Equal("Pausing this role…", window.Message.Says);
+    }
+
+    [Fact]
+    public void Pause_this_role_reads_Let_this_role_start_again_once_held_which_resumes_it()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(agents: Agents(2), run: arguments =>
+        {
+            calls.Add(arguments);
+            if (arguments[0] == "pause")
+                WriteHold(arguments[1], arguments[2]);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+        Assert.True(window.Commands.IsEnabled("agent.hold"));
+        Assert.Equal("Pause selected agent's role", Label(window, "agent.hold"));
+
+        window.Commands.Execute("agent.hold");
+        window.Refresh();
+
+        Assert.True(window.Panes[1].Held);
+        Assert.Equal("Let selected agent's role start again", Label(window, "agent.hold"));
+        Assert.Equal("Let t_his role start again", window.MenuItems.Single(item => item.Id == "agent.hold").Item.Title);
+
+        window.Commands.Execute("agent.hold");
+
+        Assert.Equal([["pause", "team0", "dev"], ["resume", "team0", "dev"]], calls);
     }
 
     [Fact]

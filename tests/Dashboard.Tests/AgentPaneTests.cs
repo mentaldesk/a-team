@@ -99,6 +99,15 @@ public class AgentPaneTests : IDisposable
     }
 
     [Fact]
+    public void A_held_role_with_a_run_still_going_says_it_is_held()
+    {
+        var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(1);
+        var running = new AgentState(true, now - TimeSpan.FromSeconds(75), [], null);
+
+        Assert.Equal("running 1:15 · held", AgentPane.Describe(running, now, now.AddMinutes(2), PaneStatus.Running, held: true));
+    }
+
+    [Fact]
     public void A_held_pane_says_you_stopped_it_or_how_its_last_run_went()
     {
         var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(1);

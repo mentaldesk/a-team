@@ -1537,10 +1537,44 @@ failed "no role"
 run stop demo tester
 failed "unknown role"
 
+case_ "pause <team> <role> holds the role and lets its run finish"
+jq '.dispatch.enabled = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+fake_run
+run pause demo dev
+same "exit" 0 "$STATUS"
+same "hold" '["dev"]' "$(held)"
+same "enabled" true "$(enabled)"
+grep -q 'a-team resume demo dev' "$OUT" || fail "pause role: '$(cat "$OUT")'"
+kill -0 "$RUN_PID" 2>/dev/null || fail "pause role: the run was stopped"
+same "signals" 0 "$(grep -c TERM "$SIGNALS")"
+kill "$RUN_PID" 2>/dev/null
+wait "$RUN_PID" 2>/dev/null
+
+case_ "a dispatcher pass skips the role pause held"
+A_TEAM_STATE_WAS=$A_TEAM_STATE
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch: the lead wasn't started"
+grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the paused dev was started"
+A_TEAM_STATE=$A_TEAM_STATE_WAS
+
+case_ "pause --dry-run <team> <role> says it would hold the role, and doesn't"
+run resume demo dev
+run pause --dry-run demo dev
+same "exit" 0 "$STATUS"
+same "hold" '[]' "$(held)"
+grep -q "would add dev to dispatch.hold" "$OUT" || fail "dry run: '$(cat "$OUT")'"
+
+case_ "pause needs a role it knows"
+run pause demo tester
+failed "unknown role"
+same "hold" '[]' "$(held)"
+
 case_ "stop and the per-role resume are in the usage text"
 run help
 grep -q '^  stop ' "$OUT" || fail "usage: no stop line"
 grep -q '^  resume \[--dry-run\] <team> \[<role>\]' "$OUT" || fail "usage: resume takes no role"
+grep -q '^  pause \[--dry-run\] <team> \[<role>\]' "$OUT" || fail "usage: pause takes no role"
 # A claude that records what it was asked to resume, where, and what the run and the hold were by then.
 fake_claude() {
   RESUMED="$BIN/resumed"
