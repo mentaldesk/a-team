@@ -206,25 +206,25 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void Agents_holds_pause_then_stop_which_shows_its_key()
+    public void Agents_holds_pause_then_interrupt_which_shows_its_key()
     {
         using var window = Open();
         var agents = window.Menus.Single(menu => menu.Title == "_Agents");
 
-        Assert.Equal(["team.pause", "agent.stop"], Under(window, agents));
-        Assert.Equal("_Stop this run", Item(window, "agent.stop").Title);
-        Assert.Equal(new Key('k'), Item(window, "agent.stop").Key);
+        Assert.Equal(["team.pause", "agent.interrupt"], Under(window, agents));
+        Assert.Equal("_Interrupt", Item(window, "agent.interrupt").Title);
+        Assert.Equal(new Key('i'), Item(window, "agent.interrupt").Key);
     }
 
     [Fact]
-    public void Rebinding_stop_changes_the_key_Agents_shows_for_it()
+    public void Rebinding_interrupt_changes_the_key_Agents_shows_for_it()
     {
         Directory.CreateDirectory(Config);
-        new DashboardSettings(Config).WriteKeys([("agent.stop", new Key('x'))]);
+        new DashboardSettings(Config).WriteKeys([("agent.interrupt", new Key('x'))]);
 
         using var window = Open();
 
-        Assert.Equal(new Key('x'), Item(window, "agent.stop").Key);
+        Assert.Equal(new Key('x'), Item(window, "agent.interrupt").Key);
     }
 
     [Fact]

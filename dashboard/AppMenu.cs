@@ -15,7 +15,7 @@ internal sealed class AppMenu
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
         (Cards, []),
-        ("_Agents", ["team.pause", "agent.stop"]),
+        ("_Agents", ["team.pause", "agent.interrupt"]),
         ("_Help", ["help", "commands", "about"]),
     ];
 
@@ -50,8 +50,8 @@ internal sealed class AppMenu
         {
             if (registered.FirstOrDefault(entry => entry.Id == id) is not { } command)
                 continue;
-            if (item.Title != Hot(command.Label, command.Key))
-                item.Title = Hot(command.Label, command.Key);
+            if (item.Title != Hot(command.MenuLabel, command.Key))
+                item.Title = Hot(command.MenuLabel, command.Key);
             if (item.Key != command.Key)
                 item.Key = command.Key;
         }
@@ -105,7 +105,7 @@ internal sealed class AppMenu
         var item = new MenuItem
         {
             Title = _commands.Registered.FirstOrDefault(command => command.Id == id) is { } command
-                ? Hot(command.Label, command.Key)
+                ? Hot(command.MenuLabel, command.Key)
                 : Hot(id, Key.Empty),
             Key = _commands.KeyFor(id),
             // The key is a label here: the window's registry already runs it, and a second binding would run it twice.
