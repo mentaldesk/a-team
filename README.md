@@ -111,7 +111,7 @@ keep that folder in a repo of your own and link it into place.
   picks that up. The other role carries on as normal.
 - **Stepping into a run.** `a-team attach <team> <role>` does what `a-team stop` does, then runs
   `claude --resume` on the latest run's session in the team's `workdir`, so you pick up the
-  conversation with everything it had worked out. The role stays held after you quit.
+  conversation with everything it had worked out. Quitting lets the role start again.
 - **Permissions** come from `settings/agents.json` and the task prompt in `tasks/`. Runs use
   auto mode, and anything that would ask for permission is refused rather than waiting for
   someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
@@ -228,12 +228,12 @@ Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it
 the list, Up/Down (or PgUp/PgDn and Home/End) to pick, Enter to run it, Esc to close. Every key
 above is one of those commands, so anything you can press you can also run by name. Among them is
 Pause (or Resume) for the selected agent's team, named after it: it runs `a-team pause` and the
-panes follow within a second. `i` interrupts the selected agent's run and holds its role, as
-`a-team stop` does; on a held role the same command reads *Let it start again* and runs
+panes follow within a second. `i` interrupts the selected agent's run: it runs `a-team attach` in
+the dashboard's place, so you're in that run's conversation, and quitting brings you back to the
+grid with the role free to start again. A run too new to have a session is just stopped and held,
+as `a-team stop` does. On a held role the same command reads *Let it start again* and runs
 `a-team resume <team> <role>`. While either runs, a line at the foot of the window says so; if it
-fails, that line says why, in red. *Step in and take it over*, under Agents and with no key, runs
-`a-team attach` for the selected agent in the dashboard's place; quitting it brings you back to the
-grid.
+fails, that line says why, in red.
 
 F1 opens Keys: the handful worth having in your fingers, the first of them Ctrl+E for everything
 else. Esc closes it.

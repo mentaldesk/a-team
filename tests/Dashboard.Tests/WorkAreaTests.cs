@@ -1088,7 +1088,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "team.pause", "agent.interrupt", "agent.attach", "help", "commands", "about",
+                "work.github", "team.pause", "agent.interrupt", "help", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>

@@ -285,8 +285,6 @@ public sealed class DashboardWindow : Window
             .Register("agent.interrupt", () => InterruptLabel("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
                 isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true },
                 menuLabel: () => InterruptLabel("Interrupt", "Let it start again"))
-            .Register("agent.attach", "Step in and take it over", Attach,
-                isEnabled: () => OnDashboard() && Selected() is { SessionId: not null })
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
@@ -326,6 +324,11 @@ public sealed class DashboardWindow : Window
     {
         if (_pending is not null || Selected() is not { } pane || !(pane.Running || pane.Held))
             return;
+        if (pane is { Held: false, SessionId: not null })
+        {
+            _handOver?.Invoke(new AttachHandover(pane.Team, pane.Role));
+            return;
+        }
         _progress = pane.Held ? "Letting it start again…" : "Interrupting…";
         ShowMessage();
         _pending = _run([pane.Held ? "resume" : "stop", pane.Team, pane.Role]);
@@ -364,13 +367,6 @@ public sealed class DashboardWindow : Window
     {
         if (_work.Selected is { Pr: > 0 } item)
             _handOver?.Invoke(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt));
-    }
-
-    /// <summary>Hands the terminal to <c>a-team attach</c>, which stops and holds the role before resuming its run.</summary>
-    private void Attach()
-    {
-        if (Selected() is { SessionId: not null } pane)
-            _handOver?.Invoke(new AttachHandover(pane.Team, pane.Role));
     }
 
     /// <summary>Back from a try, the cards as they were with no re-read; from an attach, the grid. Either way, what

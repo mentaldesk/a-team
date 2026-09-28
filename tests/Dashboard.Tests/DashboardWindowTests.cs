@@ -387,7 +387,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
-                "Pause team0", "Interrupt selected agent", "Step in and take it over", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
+                "Pause team0", "Interrupt selected agent", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -1015,58 +1015,64 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Step_in_hands_the_selected_agent_to_attach()
+    public void i_on_a_run_with_a_session_hands_it_to_attach_instead_of_stopping_it()
     {
+        var calls = new List<string[]>();
         var handed = new List<Handover>();
-        using var window = Open(agents: Agents(4), handOver: handed.Add);
+        using var window = Open(agents: Agents(4), handOver: handed.Add, run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        WriteRunning("team1", "dev");
         WriteSession("team1", "dev");
         window.Refresh();
         SelectAgent(window, 3);
 
-        window.Commands.Execute("agent.attach");
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
 
         var handover = Assert.IsType<AttachHandover>(Assert.Single(handed));
         Assert.Equal(["attach", "team1", "dev"], handover.Arguments);
         Assert.Equal(Area.Dashboard, handover.Area);
+        Assert.Empty(calls);
     }
 
     [Fact]
-    public void Step_in_is_enabled_only_for_a_selected_role_with_a_session_to_resume()
+    public void i_on_a_held_role_with_a_session_lets_it_start_again_rather_than_attaching()
     {
-        WriteSession("team0", "dev");
-        WriteRunning("team1", "lead");
-        var dir = Path.Combine(_root, "team1", "dev");
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "latest.jsonl"), "{\"type\":\"assistant\"}\n");
+        var calls = new List<string[]>();
         var handed = new List<Handover>();
-        using var window = Open(agents: Agents(4), handOver: handed.Add);
-        window.Refresh();
-        Assert.False(window.Commands.IsEnabled("agent.attach"));
-
-        var enabled = Enumerable.Range(0, 4).Select(_ =>
+        WriteHold("team0", "dev");
+        WriteSession("team0", "dev");
+        using var window = Open(agents: Agents(2), handOver: handed.Add, run: arguments =>
         {
-            window.NewKeyDownEvent(Key.Tab);
-            window.Commands.Execute("agent.attach");
-            return window.Commands.IsEnabled("agent.attach");
-        }).ToList();
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
 
-        Assert.Equal([false, true, false, false], enabled);
-        Assert.Equal(["attach", "team0", "dev"], Assert.Single(handed).Arguments);
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        Assert.Equal([["resume", "team0", "dev"]], calls);
+        Assert.Empty(handed);
     }
 
     [Fact]
-    public void Step_in_has_no_key_and_is_found_in_the_commands_list()
+    public void i_does_not_attach_to_a_finished_run()
     {
-        using var window = Open(agents: Agents(4));
+        var handed = new List<Handover>();
+        WriteSession("team0", "dev");
+        using var window = Open(agents: Agents(2), handOver: handed.Add);
+        window.Refresh();
+        SelectAgent(window, 1);
 
-        using var dialog = new CommandsDialog(window.Commands.Registered);
-
-        Assert.Equal(Key.Empty, window.Commands.KeyFor("agent.attach"));
-        Assert.Contains(dialog.Matches, command => command.Id == "agent.attach" && command.Label == "Step in and take it over");
+        Assert.False(window.NewKeyDownEvent(new Key('i')));
+        Assert.Empty(handed);
     }
 
     [Fact]
-    public void Back_from_stepping_in_the_grid_has_the_same_agent_selected()
+    public void Back_from_an_interrupt_the_grid_has_the_same_agent_selected()
     {
         using var window = Open(agents: Agents(4), resume: new AttachHandover("team1", "dev"));
         window.Refresh();

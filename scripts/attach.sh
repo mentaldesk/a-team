@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # attach.sh [--dry-run] <team> <role> — stops the role's run and holds it (as `a-team stop`), then
-# resumes the latest run's conversation with `claude --resume` in the team's workdir. The role
-# stays held after you quit, until `a-team resume <team> <role>`.
+# resumes the latest run's conversation with `claude --resume` in the team's workdir. Quitting
+# lets the role start again; if the session won't resume, it stays held.
 #
 set -euo pipefail
 
@@ -54,3 +54,4 @@ done
 cd "$WORKDIR" || die "can't open $WORKDIR; $TEAM $ROLE is stopped and held"
 claude --resume "$SESSION" ||
   die "couldn't resume session $SESSION; $TEAM $ROLE is stopped and held until: a-team resume $TEAM $ROLE"
+bash "$ROOT/scripts/pause.sh" resume "$TEAM" "$ROLE"

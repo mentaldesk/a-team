@@ -1559,7 +1559,7 @@ session_log() {
     '{"type":"assistant","session_id":"sess-123"}' >"$A_TEAM_STATE/demo/dev/latest.jsonl"
 }
 
-case_ "attach on a running role stops and holds it before resuming its session in the workdir"
+case_ "attach on a running role stops and holds it while you resume its session, then lets it start again"
 WORKDIR=$(mktemp -d "$WORK/workdir.XXXXXX")
 fixture <<JSON
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
@@ -1576,10 +1576,9 @@ same "resumed" "args: --resume sess-123" "$(sed -n 1p "$RESUMED")"
 same "cwd" "cwd: $(cd "$WORKDIR" && pwd -P)" "$(sed -n 2p "$RESUMED")"
 same "held first" 'hold: ["dev"]' "$(sed -n 3p "$RESUMED")"
 same "stopped first" "signals: 1" "$(sed -n 4p "$RESUMED")"
-same "still held" '["dev"]' "$(held)"
+same "released" '[]' "$(held)"
 
 case_ "attach on a finished role doesn't signal anything, and resumes"
-run resume demo dev
 true &
 dead=$!
 wait "$dead"
@@ -1590,10 +1589,9 @@ run attach demo dev
 same "exit" 0 "$STATUS"
 same "resumed" "args: --resume sess-123" "$(sed -n 1p "$RESUMED")"
 same "signals" "signals: 0" "$(sed -n 4p "$RESUMED")"
-same "held" '["dev"]' "$(held)"
+same "released" '[]' "$(held)"
 
 case_ "attach --dry-run names the session and workdir, and neither stops, holds nor resumes"
-run resume demo dev
 fake_run
 fake_claude
 run attach --dry-run demo dev

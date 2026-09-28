@@ -206,16 +206,14 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void Agents_holds_pause_interrupt_which_shows_its_key_and_step_in_which_has_none()
+    public void Agents_holds_pause_then_interrupt_which_shows_its_key()
     {
         using var window = Open();
         var agents = window.Menus.Single(menu => menu.Title == "_Agents");
 
-        Assert.Equal(["team.pause", "agent.interrupt", "agent.attach"], Under(window, agents));
+        Assert.Equal(["team.pause", "agent.interrupt"], Under(window, agents));
         Assert.Equal("_Interrupt", Item(window, "agent.interrupt").Title);
         Assert.Equal(new Key('i'), Item(window, "agent.interrupt").Key);
-        Assert.Equal("_Step in and take it over", Item(window, "agent.attach").Title);
-        Assert.Equal(Key.Empty, Item(window, "agent.attach").Key);
     }
 
     [Fact]
