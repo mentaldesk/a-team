@@ -48,7 +48,7 @@ PID=$(cat "$STATE/$TEAM/$ROLE/pid" 2>/dev/null || true)
 bash "$ROOT/scripts/pause.sh" stop "$TEAM" "$ROLE"
 # The stopped run may still be writing to the session, so let it exit before resuming it.
 for _ in $(seq 100); do
-  [ -n "$PID" ] && running "$PID" || break
+  { [ -n "$PID" ] && running "$PID"; } || break
   sleep 0.1
 done
 cd "$WORKDIR" || die "can't open $WORKDIR; $TEAM $ROLE is stopped and held"
