@@ -59,6 +59,7 @@ public sealed class DashboardWindow : Window
     private string? _failure;
     private string? _progress;
     private int? _expanded;
+    private AgentPane? _lastSelected;
     private Size _laidOutOver;
     private Handover? _resume;
 
@@ -119,6 +120,11 @@ public sealed class DashboardWindow : Window
                 Y = Pos.Func(_ => Cell(index).Y, this),
                 Width = Dim.Func(_ => Cell(index).Width, this),
                 Height = Dim.Func(_ => Cell(index).Height, this),
+            };
+            pane.HasFocusChanged += (_, e) =>
+            {
+                if (e.NewValue)
+                    _lastSelected = pane;
             };
             _panes.Add(pane);
             _agents.Add(pane);
@@ -276,6 +282,9 @@ public sealed class DashboardWindow : Window
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
             .Register("team.pause", PauseLabel, TogglePause)
+            .Register("agent.interrupt", () => InterruptLabel("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
+                isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true },
+                menuLabel: () => InterruptLabel("Interrupt", "Let it start again"))
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
@@ -307,6 +316,17 @@ public sealed class DashboardWindow : Window
         _progress = pane.Paused ? "Resuming…" : "Pausing…";
         ShowMessage();
         _pending = _run([pane.Paused ? "resume" : "pause", pane.Team]);
+    }
+
+    private string InterruptLabel(string interrupt, string resume) => Selected() is { Held: true } ? resume : interrupt;
+
+    private void ToggleInterrupt()
+    {
+        if (_pending is not null || Selected() is not { } pane || !(pane.Running || pane.Held))
+            return;
+        _progress = pane.Held ? "Letting it start again…" : "Interrupting…";
+        ShowMessage();
+        _pending = _run([pane.Held ? "resume" : "stop", pane.Team, pane.Role]);
     }
 
     /// <summary>Reads every team's gates at once. A second go while one is running is refused, not queued.</summary>
@@ -735,7 +755,8 @@ public sealed class DashboardWindow : Window
 
     private int SelectedIndex() => Selected() is { } pane ? _panes.IndexOf(pane) : -1;
 
-    private AgentPane? Selected() => _panes.FirstOrDefault(pane => pane.HasFocus);
+    /// <summary>The focused pane, or the last one focused while something else, like an open menu, has focus.</summary>
+    private AgentPane? Selected() => _panes.FirstOrDefault(pane => pane.HasFocus) ?? (_area == Area.Dashboard ? _lastSelected : null);
 
     private static string Version() =>
         typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?

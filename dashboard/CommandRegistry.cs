@@ -19,8 +19,12 @@ public sealed record Hint(string Text, Mode Modes = Mode.Both);
 public sealed record HintedCommand(string Id, string Text);
 
 /// <summary>A command as the registry holds it. <paramref name="OnCard"/> marks one that acts on the Work area's
-/// selected card, which is what puts it in the Cards menu.</summary>
-public sealed record CommandDescriptor(string Id, string Label, Key Key, Hint? Hint, bool OnCard = false);
+/// selected card, which is what puts it in the Cards menu. <paramref name="MenuLabel"/> is how it reads in the menu,
+/// where the title it sits under can say the rest.</summary>
+public sealed record CommandDescriptor(string Id, string Label, Key Key, Hint? Hint, bool OnCard = false, string? MenuLabel = null)
+{
+    public string MenuLabel { get; init; } = MenuLabel ?? Label;
+}
 
 /// <summary>Everything the dashboard can do, by id, so a key or the Commands dialog can run any of it.</summary>
 public sealed class CommandRegistry
@@ -28,7 +32,7 @@ public sealed class CommandRegistry
     private readonly List<Entry> _entries = [];
 
     public IReadOnlyList<CommandDescriptor> Registered =>
-        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.Hint, entry.OnCard))];
+        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.Hint, entry.OnCard, entry.MenuLabel?.Invoke()))];
 
     public CommandRegistry Register(
         string id,
@@ -48,9 +52,10 @@ public sealed class CommandRegistry
         Key? key = null,
         Hint? hint = null,
         Func<bool>? isEnabled = null,
-        bool onCard = false)
+        bool onCard = false,
+        Func<string>? menuLabel = null)
     {
-        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, hint, isEnabled, onCard));
+        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, hint, isEnabled, onCard, menuLabel));
         return this;
     }
 
@@ -111,5 +116,5 @@ public sealed class CommandRegistry
         .Distinct());
 
     private sealed record Entry(
-        string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled, bool OnCard);
+        string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled, bool OnCard, Func<string>? MenuLabel);
 }

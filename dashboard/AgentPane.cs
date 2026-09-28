@@ -99,10 +99,16 @@ public sealed class AgentPane : FrameView
 
     internal bool Paused { get; private set; }
 
+    internal bool Running { get; private set; }
+
+    internal bool Held { get; private set; }
+
     public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held)
     {
         var state = AgentState.Read(_stateDir);
         Paused = paused;
+        Running = state.Running;
+        Held = held;
 
         if (_log.Refresh(state.LogPath))
             _body.Lines = _log.Lines.Count == 0

@@ -125,8 +125,8 @@ a-team dashboard [team...]  straight to the agents
 
 The app has two areas: **Work**, everything waiting on you across every team, and **Dashboard**,
 what each agent is doing. `d` and `w` switch between them, Esc goes back to the Dashboard, and the
-menu across the top carries the same commands: View (Dashboard, Work, Settings, Quit), Team
-(Pause or Resume) and Help (Keys, Commands, About). Each title and item underlines a letter:
+menu across the top carries the same commands: View (Dashboard, Work, Settings, Quit), Agents
+(Pause or Resume, Interrupt) and Help (Keys, Commands, About). Each title and item underlines a letter:
 `Alt`+it opens a menu, and once one is open the bare letter picks from it — `Alt+H` `k` for Keys.
 Esc closes it, and F10 and the arrows still work. Whichever area you were in is what it opens in
 next time; a first run lands on Work.
@@ -224,7 +224,9 @@ Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it
 the list, Up/Down (or PgUp/PgDn and Home/End) to pick, Enter to run it, Esc to close. Every key
 above is one of those commands, so anything you can press you can also run by name. Among them is
 Pause (or Resume) for the selected agent's team, named after it: it runs `a-team pause` and the
-panes follow within a second. While it runs, a line at the foot of the window says so; if it
+panes follow within a second. `i` interrupts the selected agent's run and holds its role, as
+`a-team stop` does; on a held role the same command reads *Let it start again* and runs
+`a-team resume <team> <role>`. While either runs, a line at the foot of the window says so; if it
 fails, that line says why, in red.
 
 F1 opens Keys: the handful worth having in your fingers, the first of them Ctrl+E for everything

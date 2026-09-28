@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Text;
 using Terminal.Gui;
 using Terminal.Gui.App;
+using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -386,7 +387,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
-                "Pause team0", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
+                "Pause team0", "Interrupt selected agent", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -869,6 +870,150 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal("Resume team0", Label(window, "team.pause"));
     }
 
+    [Fact]
+    public void i_interrupts_the_selected_agents_run_and_says_so_while_it_runs()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(agents: Agents(4), run: arguments =>
+        {
+            calls.Add(arguments);
+            return new TaskCompletionSource<string?>().Task;
+        });
+        WriteRunning("team1", "dev");
+        window.Refresh();
+        SelectAgent(window, 3);
+
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        Assert.Equal([["stop", "team1", "dev"]], calls);
+        Assert.Equal("Interrupting…", window.Message.Says);
+    }
+
+    [Fact]
+    public void Interrupting_a_run_reaches_its_pane_on_the_next_refresh()
+    {
+        using var window = Open(agents: Agents(2), run: arguments =>
+        {
+            WriteHold(arguments[1], arguments[2]);
+            return Task.FromResult<string?>(null);
+        });
+        WriteRunning("team0", "dev");
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        window.Commands.Execute("agent.interrupt");
+        window.Refresh();
+
+        Assert.True(window.Panes[1].Held);
+        Assert.Equal("Let selected agent start again", Label(window, "agent.interrupt"));
+    }
+
+    [Fact]
+    public void A_held_role_is_offered_Let_it_start_again_which_resumes_it()
+    {
+        var calls = new List<string[]>();
+        WriteHold("team0", "dev");
+        using var window = Open(agents: Agents(2), run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        Assert.Equal("Let selected agent start again", Label(window, "agent.interrupt"));
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        Assert.Equal([["resume", "team0", "dev"]], calls);
+    }
+
+    [Fact]
+    public void Interrupt_is_enabled_only_for_a_selected_role_that_is_running_or_held()
+    {
+        WriteHold("team0", "dev");
+        WriteRunning("team1", "lead");
+        using var window = Open(agents: Agents(4));
+        window.Refresh();
+        Assert.False(window.Commands.IsEnabled("agent.interrupt"));
+
+        var enabled = Enumerable.Range(0, 4).Select(_ =>
+        {
+            window.NewKeyDownEvent(Key.Tab);
+            return window.Commands.IsEnabled("agent.interrupt");
+        }).ToList();
+
+        Assert.Equal([false, true, true, false], enabled);
+    }
+
+    [Fact]
+    public void Interrupt_stays_on_the_selected_agent_while_the_menu_has_focus()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(agents: Agents(2), run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        WriteRunning("team0", "dev");
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        window.HasFocus = false;
+        window.Refresh();
+
+        Assert.DoesNotContain(window.Panes, pane => pane.HasFocus);
+        Assert.True(window.Commands.IsEnabled("agent.interrupt"));
+        window.Commands.Execute("agent.interrupt");
+        Assert.Equal([["stop", "team0", "dev"]], calls);
+    }
+
+    [Fact]
+    public void i_does_nothing_on_an_idle_role()
+    {
+        var calls = 0;
+        using var window = Open(agents: Agents(2), run: _ =>
+        {
+            calls++;
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        Assert.False(window.NewKeyDownEvent(new Key('i')));
+        window.Commands.Execute("agent.interrupt");
+
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public void An_interrupt_that_failed_shows_the_file_in_red()
+    {
+        using var window = Open(
+            agents: Agents(2),
+            run: _ => Task.FromResult<string?>("a-team stop: can't write /nope/team0.json"));
+        WriteRunning("team0", "dev");
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        window.Commands.Execute("agent.interrupt");
+        window.Refresh();
+
+        Assert.Equal("a-team stop: can't write /nope/team0.json", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.False(window.Panes[1].Held);
+        Assert.Equal("Interrupt selected agent", Label(window, "agent.interrupt"));
+    }
+
+    [Fact]
+    public void Interrupt_adds_nothing_to_either_hint_bar()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.All(
+            [Mode.Grid, Mode.Expanded, Mode.Work],
+            mode => Assert.DoesNotContain("k:", DashboardWindow.Hints("1.2.3", mode, window.Commands)));
+    }
+
     private static string Label(DashboardWindow window, string id) =>
         window.Commands.Registered.Single(command => command.Id == id).Label;
 
@@ -958,6 +1103,22 @@ public class DashboardWindowTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         File.WriteAllLines(Path.Combine(_root, "dispatch.log"), lines);
+    }
+
+    private void WriteRunning(string team, string role)
+    {
+        var dir = Path.Combine(_root, team, role);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "pid"), Environment.ProcessId.ToString());
+    }
+
+    private void WriteHold(string team, string role)
+    {
+        var teams = Path.Combine(Config, "teams");
+        Directory.CreateDirectory(teams);
+        File.WriteAllText(
+            Path.Combine(teams, team + ".json"),
+            "{\"dispatch\": {\"enabled\": true, \"hold\": [\"" + role + "\"]}}");
     }
 
     private void WriteTeam(string team, bool enabled)

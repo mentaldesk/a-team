@@ -1088,13 +1088,13 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "team.pause", "help", "commands", "about",
+                "work.github", "team.pause", "agent.interrupt", "help", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>
         {
             var command = window.Commands.Registered.Single(registered => registered.Id == item.Id);
-            Assert.Equal(command.Label, item.Item.Title.Replace("_", ""));
+            Assert.Equal(command.MenuLabel, item.Item.Title.Replace("_", ""));
             Assert.Equal(command.Key, item.Item.Key);
         });
     }
