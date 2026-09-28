@@ -38,14 +38,22 @@ on:
         description: Pattern matching the caller's uploaded build artifacts.
         type: string
         default: '*'
+      environment:
+        description: Environment in the calling repo the job runs in. Its PACKAGES_TOKEN secret is used in place of packages-token, so only the branches it allows can reach the token.
+        type: string
+        default: ''
     secrets:
       packages-token:
         description: Token with contents and pull-requests write on the tap, and contents write on the bucket. Without it the release still publishes and the packaging steps warn.
+        required: false
+      PACKAGES_TOKEN:
+        description: 'The same token, from the environment named by `environment`. It only resolves when the caller passes `secrets: inherit`.'
         required: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     permissions:
       contents: write
     steps:
@@ -96,25 +104,25 @@ jobs:
       - name: Check for the packages token
         id: tap
         env:
-          TOKEN: ${{ secrets.packages-token }}
+          TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.packages-token }}
           SCOOP: ${{ inputs.scoop }}
         run: |
           what="the formula wasn't"
           if [ -n "$SCOOP" ]; then what="the formula and the Scoop manifest weren't"; fi
           if [ -n "$TOKEN" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
-          else echo "::warning::No packages-token was passed, so $what updated. Set the secret your release workflow passes as packages-token, then re-run this job."; fi
+          else echo "::warning::No packages token, so $what updated. Set PACKAGES_TOKEN in the environment this job runs in, or the secret your release workflow passes as packages-token, then re-run this job."; fi
 
       - uses: actions/checkout@v7
         if: steps.tap.outputs.ok == 'true'
         with:
           repository: ${{ inputs.tap }}
-          token: ${{ secrets.packages-token }}
+          token: ${{ secrets.PACKAGES_TOKEN || secrets.packages-token }}
           path: tap
 
       - name: Open tap PR
         if: steps.tap.outputs.ok == 'true'
         env:
-          GH_TOKEN: ${{ secrets.packages-token }}
+          GH_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.packages-token }}
           NAME: ${{ inputs.name }}
           VERSION: ${{ inputs.version }}
           RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.tag }}
@@ -145,7 +153,7 @@ jobs:
         if: inputs.scoop != '' && steps.tap.outputs.ok == 'true'
         with:
           repository: ${{ inputs.bucket }}
-          token: ${{ secrets.packages-token }}
+          token: ${{ secrets.PACKAGES_TOKEN || secrets.packages-token }}
           path: scoop-bucket
 
       - name: Commit Scoop manifest

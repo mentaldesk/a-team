@@ -39,6 +39,7 @@ release.
 | `roles/lead.md`, `roles/dev.md` | What each role does on a run |
 | `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
 | `bin/gh` | `gh` as the team's App inside a run, when the team has one |
+| `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run, when the team has one |
 | `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
@@ -95,9 +96,10 @@ keep that folder in a repo of your own and link it into place.
 ## Giving the team its own identity
 
 A team needs a GitHub App of its own before it runs. Everything it writes — comments, issues,
-PRs — shows `<app>[bot]` as its author, which is how `a-team` tells your feedback from the team's
-words, and a run's `gh` reaches only the repos you install the App on instead of your whole
-account. Until the App is installed, the dispatcher skips the team and `a-team status` says why.
+PRs and commits — shows `<app>[bot]` as its author, which is how `a-team` tells your feedback from
+the team's words, and a run's `gh` and `git push` reach only the repos you install the App on
+instead of your whole account. Until the App is installed, the dispatcher skips the team and
+`a-team status` says why.
 
 ```
 a-team app create <team>
@@ -119,7 +121,9 @@ but no team config names the App, pass its ID from the App's settings page:
 `a-team app create <team> --id <app id>`.
 
 Runs mint an hour-long installation token when they need one (`a-team token <team>` prints it)
-and use it for every `gh` command. Your own `gh` login and git config are untouched.
+and use it for every `gh` command and every push, which never stops to ask for a password. A run's
+commits are authored as `<app>[bot]`. Your own `gh` login and git config are untouched, so a
+`git commit` you make by hand in the same worktree is still yours.
 
 ## How runs are started
 

@@ -80,7 +80,7 @@ jobs:
 
   publish:
     needs: [version, build]
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/release-publish.yml
     permissions:
       contents: write
@@ -90,5 +90,6 @@ jobs:
       tag: ${{ needs.version.outputs.tag }}
       formula: packaging/a-team.rb
       artifacts: a-team-*
-    secrets:
-      packages-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      environment: release
+    # The only way an environment's secrets reach a called workflow: actions/runner#4453.
+    secrets: inherit
