@@ -27,8 +27,10 @@ if jq -er --argjson now "$(date +%s)" '
 fi
 
 jwt=$(app_jwt "$ID" "${REPO%/*}") || exit 1
-installation=$(github GET "repos/$REPO/installation" "$jwt") ||
-  die "no installation of app $ID on $REPO (${installation:-no answer}): install it at https://github.com/apps/$SLUG/installations/new"
+installation=$(installation "$ID" "${REPO%/*}" "$REPO" "$jwt") || {
+  [ $? -eq 2 ] && die "$installation: install it at https://github.com/apps/$SLUG/installations/new"
+  die "$installation"
+}
 installation=$(jq -r .id <<<"$installation")
 minted=$(github POST "app/installations/$installation/access_tokens" "$jwt") ||
   die "GitHub wouldn't mint a token for installation $installation: $minted"

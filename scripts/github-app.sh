@@ -26,13 +26,36 @@ app_jwt() {
 }
 
 # github <method> <path> [<bearer>]: GitHub's REST API with curl, since gh won't send a JWT. The
-# bearer goes in through a file descriptor, so it never shows in the process list.
+# bearer goes in through a file descriptor, so it never shows in the process list. On an error it
+# prints GitHub's message and the HTTP status instead, and fails.
 github() {
-  local method=$1 path=$2 bearer=${3:-}
-  curl -sS --fail-with-body -X "$method" \
+  local method=$1 path=$2 bearer=${3:-} response status message
+  response=$(curl -s -w '\n%{http_code}' -X "$method" \
     -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
     ${bearer:+--header @<(printf 'Authorization: Bearer %s\n' "$bearer")} \
-    "https://api.github.com/$path"
+    "https://api.github.com/$path") || { echo "couldn't reach GitHub"; return 1; }
+  status=${response##*$'\n'}
+  response=${response%$'\n'*}
+  case $status in
+    2??) printf '%s\n' "$response" ;;
+    *)
+      message=$(jq -r '.message // empty' <<<"$response" 2>/dev/null) || message=''
+      echo "${message:-no message} (HTTP $status)"
+      return 1 ;;
+  esac
+}
+
+# installation <app id> <owner> <repo> <jwt>: the App's installation on the repo. Fails with why,
+# with status 2 when the App just isn't installed there.
+installation() {
+  local answer
+  answer=$(github GET "repos/$3/installation" "$4") && { printf '%s\n' "$answer"; return; }
+  case $answer in
+    *"(HTTP 404)") echo "app $1 isn't installed on $3"; return 2 ;;
+    *"(HTTP 401)") echo "GitHub turned down app $1's key: the one in the Keychain under account $2 isn't that App's ($answer)" ;;
+    *) echo "GitHub wouldn't say whether app $1 is installed on $3: $answer" ;;
+  esac
+  return 1
 }
 
 token_cache() { echo "$STATE/$1/token.json"; }

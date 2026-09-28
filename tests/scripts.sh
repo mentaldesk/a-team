@@ -1546,7 +1546,8 @@ unset A_TEAM_STATE
 # --- the team's GitHub App -------------------------------------------------------------------
 # A Keychain holding a real test key, and GitHub's App endpoints, stubbed on PATH. `security` has
 # no key when NO_KEY is set; `curl` records each mint in $MINTS, keeps the JWT it was sent in
-# $APP_BIN/jwt, grants what $APP_BIN/perms.json holds, and fails every call when MINT_FAILS is set.
+# $APP_BIN/jwt, grants what $APP_BIN/perms.json holds, turns down every JWT when MINT_FAILS is set,
+# and finds no installation when NOT_INSTALLED is.
 APP_BIN=$(mktemp -d "$WORK/app.XXXXXX")
 MINTS="$APP_BIN/mints" OPENED="$APP_BIN/opened"
 openssl genrsa 2048 2>/dev/null >"$APP_BIN/key.pem"
@@ -1561,19 +1562,21 @@ case " \$* " in *" -w "*) cat "$APP_BIN/key.b64" ;; esac
 SH
 cat >"$APP_BIN/curl" <<SH
 #!/usr/bin/env bash
-[ -z "\${MINT_FAILS:-}" ] || { echo '{"message": "Bad credentials"}'; exit 22; }
+answer() { printf '%s\n%s' "\$2" "\$1"; }
+[ -z "\${MINT_FAILS:-}" ] || { answer 401 '{"message": "Bad credentials"}'; exit; }
 for arg; do
   case "\$arg" in @*) sed -n 's/^Authorization: Bearer //p' "\${arg#@}" >"$APP_BIN/jwt" ;; esac
 done
 case "\${!#}" in
-  */repos/*/installation) echo '{"id": 42}' ;;
-  */app) echo '{"id": 7, "slug": "demo-app"}' ;;
+  */repos/*/installation)
+    if [ -n "\${NOT_INSTALLED:-}" ]; then answer 404 '{"message": "Not Found"}'; else answer 200 '{"id": 42}'; fi ;;
+  */app) answer 200 '{"id": 7, "slug": "demo-app"}' ;;
   */app/installations/42/access_tokens)
     sleep 0.2
     echo mint >>"$MINTS"
-    jq -n --arg t "ghs_\$\$" --slurpfile p "$APP_BIN/perms.json" \
-      '{token: \$t, expires_at: (now + 3600 | todate), permissions: \$p[0]}' ;;
-  *) echo '{"message": "Not Found"}'; exit 22 ;;
+    answer 201 "\$(jq -n --arg t "ghs_\$\$" --slurpfile p "$APP_BIN/perms.json" \
+      '{token: \$t, expires_at: (now + 3600 | todate), permissions: \$p[0]}')" ;;
+  *) answer 404 '{"message": "Not Found"}' ;;
 esac
 SH
 printf '#!/usr/bin/env bash\necho "$*" >>"%s"\n' "$OPENED" >"$APP_BIN/open"
@@ -1654,6 +1657,21 @@ winner=$(jq -r .token "$CACHE")
 { [ "$winner" = "$(cat "$WORK/mint1")" ] || [ "$winner" = "$(cat "$WORK/mint2")" ]; } ||
   fail "concurrent: cache holds '$winner', not either run's token"
 same "leftovers" 1 "$(find "$(dirname "$CACHE")" -name 'token.json*' | grep -c '')"
+
+case_ "a key GitHub turns down is blamed on the key, in a-team's words, not on the install"
+rm -f "$CACHE"
+MINT_FAILS=1 run token demo
+failed "wrong key"
+grep -q "the one in the Keychain under account mentaldesk isn't that App's (Bad credentials (HTTP 401))" "$ERR" ||
+  fail "wrong key: '$(cat "$ERR")'"
+grep -q 'install' "$ERR" && fail "wrong key: told to install it: '$(cat "$ERR")'"
+grep -q 'curl\|{' "$ERR" && fail "wrong key: curl's own output got through: '$(cat "$ERR")'"
+
+case_ "an App that isn't installed on the repo is told where to install it"
+NOT_INSTALLED=1 run token demo
+failed "not installed"
+grep -q "app 7 isn't installed on mentaldesk/demo: install it at https://github.com/apps/demo-app/installations/new" "$ERR" ||
+  fail "not installed: '$(cat "$ERR")'"
 
 case_ "a team with no app key has no token, and is told how to get one"
 fixture <<'JSON'
@@ -1785,11 +1803,24 @@ fixture <<'JSON'
 JSON
 echo '{ "repo": "mentaldesk/other", "app": { "id": 9, "slug": "shared-app" } }' >"$CONFIG/teams/other.json"
 : >"$OPENED"
-run app create demo
+NOT_INSTALLED=1 run app create demo
 same "exit" 0 "$STATUS"
 same "app" '{"id":9,"slug":"shared-app"}' "$(jq -c .app "$TEAM")"
 same "reviewer" '"reviewer"' "$(jq -c .reviewer "$TEAM")"
 same "opened" 'https://github.com/apps/shared-app/installations/new' "$(cat "$OPENED")"
+
+case_ "app create again on a team whose App is installed doesn't reopen the install page"
+: >"$OPENED"
+run app create demo
+same "exit" 0 "$STATUS"
+grep -q 'installed    on mentaldesk/demo already' "$OUT" || fail "installed: '$(cat "$OUT")'"
+same "opened" '' "$(cat "$OPENED")"
+
+case_ "app create again with a key that isn't the App's says so, rather than opening the install page"
+MINT_FAILS=1 run app create demo
+failed "wrong key"
+grep -q "isn't that App's" "$ERR" || fail "wrong key: '$(cat "$ERR")'"
+same "opened" '' "$(cat "$OPENED")"
 
 case_ "app create with the owner's key in the Keychain but no team naming it needs the App's id"
 fixture <<'JSON'
