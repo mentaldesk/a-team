@@ -1,6 +1,7 @@
 {
   "repo": "owner/repo",
   "reviewer": "your-github-login",
+  "app": null,
   "project": {
     "owner": "owner",
     "number": 1,

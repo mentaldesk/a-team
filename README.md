@@ -38,6 +38,7 @@ release.
 | `process.md` | The shared rules: board states, gates, markers, what agents never do |
 | `roles/lead.md`, `roles/dev.md` | What each role does on a run |
 | `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
+| `bin/gh` | `gh` as the team's App inside a run, when the team has one |
 | `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
@@ -74,8 +75,9 @@ release.
    the command that runs the product from a worktree. `a-team teams` lists
    the teams it finds. Check the board with
    `a-team board <name> check`.
-4. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
-5. Install the dispatcher, first in dry-run mode, which only logs what it would start:
+4. Optionally, give the team its own identity (next section).
+5. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
+6. Install the dispatcher, first in dry-run mode, which only logs what it would start:
 
    ```
    a-team install --dry-run
@@ -88,6 +90,35 @@ release.
 Team configs are yours, not part of a-team: they live in `~/.config/a-team/teams/`
 (`$A_TEAM_CONFIG/teams/` to use another folder). To version them or share them across machines,
 keep that folder in a repo of your own and link it into place.
+
+## Giving the team its own identity
+
+Out of the box the team posts as you. Give it a GitHub App and everything it writes from then on —
+comments, issues, PRs — shows `<app>[bot]` as its author, and a run's `gh` reaches only the repos
+you install the App on instead of your whole account. It's optional for now: a team without one
+runs exactly as before.
+
+```
+a-team app create <team>
+```
+
+1. Your browser opens on GitHub's *Create GitHub App* page, filled in from a manifest with the
+   permissions the team needs and no webhook. Change the name if you like (it must be unique
+   across GitHub) and click **Create GitHub App**.
+2. GitHub hands the App's private key back to `a-team`, which stores it in your login Keychain
+   (service `a-team-app`, account `<owner>`, base64-encoded) — never on disk — and writes
+   `app: { id, slug }` into the team's config.
+3. The App's install page opens. Install it on the team's repo, then run
+   `a-team board <team> check`: its `identity:` line says whether a token mints, the project reads
+   and writes, the Priority field reads and the App can push, and what to grant if one can't.
+
+One App serves every team under the same account. Run `app create` for a second team there and it
+reuses the first team's App; install that App on the second repo too. If the key is in the Keychain
+but no team config names the App, pass its ID from the App's settings page:
+`a-team app create <team> --id <app id>`.
+
+Runs mint an hour-long installation token when they need one (`a-team token <team>` prints it)
+and use it for every `gh` command. Your own `gh` login and git config are untouched.
 
 ## How runs are started
 
