@@ -1177,7 +1177,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.True(window.NewKeyDownEvent(new Key('t')));
 
-        var handover = Assert.Single(handed);
+        var handover = Assert.IsType<TryHandover>(Assert.Single(handed));
         Assert.Equal(["try", "team0", "122"], handover.Arguments);
         Assert.Equal(49, handover.Item.Number);
         Assert.Equal(onPr, handover.OnPr);

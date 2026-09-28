@@ -44,6 +44,7 @@ release.
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
 | `scripts/pause.sh` | `a-team pause` / `a-team resume` / `a-team stop`: turns a team's dispatch off and on, or holds one role |
+| `scripts/attach.sh` | `a-team attach`: stops and holds a role, then resumes its last run's conversation |
 | `dashboard/` | `a-team`: the app, with a Work area and the agent Dashboard |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
@@ -139,6 +140,9 @@ and use it for every `gh` command. Your own `gh` login and git config are untouc
   (`dispatch.hold` in the team config), so the dispatcher starts no replacement until
   `a-team resume <team> <role>`. It lists anything the run left claimed In progress; the next run
   picks that up. The other role carries on as normal.
+- **Stepping into a run.** `a-team attach <team> <role>` does what `a-team stop` does, then runs
+  `claude --resume` on the latest run's session in the team's `workdir`, so you pick up the
+  conversation with everything it had worked out. Quitting lets the role start again.
 - **Permissions** come from `settings/agents.json` and the task prompt in `tasks/`. Runs use
   auto mode, and anything that would ask for permission is refused rather than waiting for
   someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
@@ -255,8 +259,10 @@ Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it
 the list, Up/Down (or PgUp/PgDn and Home/End) to pick, Enter to run it, Esc to close. Every key
 above is one of those commands, so anything you can press you can also run by name. Among them is
 Pause (or Resume) for the selected agent's team, named after it: it runs `a-team pause` and the
-panes follow within a second. `i` interrupts the selected agent's run and holds its role, as
-`a-team stop` does; on a held role the same command reads *Let it start again* and runs
+panes follow within a second. `i` interrupts the selected agent's run: it runs `a-team attach` in
+the dashboard's place, so you're in that run's conversation, and quitting brings you back to the
+grid with the role free to start again. A run too new to have a session is just stopped and held,
+as `a-team stop` does. On a held role the same command reads *Let it start again* and runs
 `a-team resume <team> <role>`. While either runs, a line at the foot of the window says so; if it
 fails, that line says why, in red.
 

@@ -1014,6 +1014,91 @@ public class DashboardWindowTests : IDisposable
             mode => Assert.DoesNotContain("k:", DashboardWindow.Hints("1.2.3", mode, window.Commands)));
     }
 
+    [Fact]
+    public void i_on_a_run_with_a_session_hands_it_to_attach_instead_of_stopping_it()
+    {
+        var calls = new List<string[]>();
+        var handed = new List<Handover>();
+        using var window = Open(agents: Agents(4), handOver: handed.Add, run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        WriteRunning("team1", "dev");
+        WriteSession("team1", "dev");
+        window.Refresh();
+        SelectAgent(window, 3);
+
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        var handover = Assert.IsType<AttachHandover>(Assert.Single(handed));
+        Assert.Equal(["attach", "team1", "dev"], handover.Arguments);
+        Assert.Equal(Area.Dashboard, handover.Area);
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void i_on_a_held_role_with_a_session_lets_it_start_again_rather_than_attaching()
+    {
+        var calls = new List<string[]>();
+        var handed = new List<Handover>();
+        WriteHold("team0", "dev");
+        WriteSession("team0", "dev");
+        using var window = Open(agents: Agents(2), handOver: handed.Add, run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        Assert.Equal([["resume", "team0", "dev"]], calls);
+        Assert.Empty(handed);
+    }
+
+    [Fact]
+    public void i_does_not_attach_to_a_finished_run()
+    {
+        var handed = new List<Handover>();
+        WriteSession("team0", "dev");
+        using var window = Open(agents: Agents(2), handOver: handed.Add);
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        Assert.False(window.NewKeyDownEvent(new Key('i')));
+        Assert.Empty(handed);
+    }
+
+    [Fact]
+    public void Back_from_an_interrupt_the_grid_has_the_same_agent_selected()
+    {
+        using var window = Open(agents: Agents(4), resume: new AttachHandover("team1", "dev"));
+        window.Refresh();
+        LayOut(window, 120, 40);
+        window.FocusResumed();
+
+        Assert.Equal(3, Selected(window));
+        Assert.True(window.Agents.Visible);
+        Assert.Equal("", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_session_that_would_not_resume_says_so_in_red_once_you_re_back()
+    {
+        using var window = Open(
+            agents: Agents(4),
+            resume: new AttachHandover("team1", "dev") { Failure = "attach team1 dev exited 1" });
+        window.Refresh();
+        LayOut(window, 120, 40);
+        window.FocusResumed();
+
+        Assert.Equal(3, Selected(window));
+        Assert.Equal("attach team1 dev exited 1", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+    }
+
     private static string Label(DashboardWindow window, string id) =>
         window.Commands.Registered.Single(command => command.Id == id).Label;
 
@@ -1071,7 +1156,9 @@ public class DashboardWindowTests : IDisposable
         Func<string, Task<Reading>>? readWaiting = null,
         Action<string>? openUrl = null,
         Area area = Area.Dashboard,
-        IconStyle auto = IconStyle.Unicode)
+        IconStyle auto = IconStyle.Unicode,
+        Action<Handover>? handOver = null,
+        Handover? resume = null)
     {
         Directory.CreateDirectory(_root);
         if (keys is not null)
@@ -1094,7 +1181,9 @@ public class DashboardWindowTests : IDisposable
             (_, _) => null,
             (_, _, _, _) => { },
             area,
-            auto);
+            auto,
+            handOver,
+            resume);
     }
 
     private string Config => Path.Combine(_root, "config");
@@ -1110,6 +1199,15 @@ public class DashboardWindowTests : IDisposable
         var dir = Path.Combine(_root, team, role);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "pid"), Environment.ProcessId.ToString());
+    }
+
+    private void WriteSession(string team, string role)
+    {
+        var dir = Path.Combine(_root, team, role);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(
+            Path.Combine(dir, "latest.jsonl"),
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"sess-" + team + role + "\"}\n");
     }
 
     private void WriteHold(string team, string role)

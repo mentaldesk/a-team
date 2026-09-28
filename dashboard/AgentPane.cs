@@ -103,6 +103,8 @@ public sealed class AgentPane : FrameView
 
     internal bool Held { get; private set; }
 
+    internal string? SessionId => _log.SessionId;
+
     public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held)
     {
         var state = AgentState.Read(_stateDir);

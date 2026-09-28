@@ -324,6 +324,11 @@ public sealed class DashboardWindow : Window
     {
         if (_pending is not null || Selected() is not { } pane || !(pane.Running || pane.Held))
             return;
+        if (pane is { Held: false, SessionId: not null })
+        {
+            _handOver?.Invoke(new AttachHandover(pane.Team, pane.Role));
+            return;
+        }
         _progress = pane.Held ? "Letting it start again…" : "Interrupting…";
         ShowMessage();
         _pending = _run([pane.Held ? "resume" : "stop", pane.Team, pane.Role]);
@@ -361,16 +366,20 @@ public sealed class DashboardWindow : Window
     private void Try()
     {
         if (_work.Selected is { Pr: > 0 } item)
-            _handOver?.Invoke(new Handover(item, _work.SelectedCard is null, _work.Items, _readAt));
+            _handOver?.Invoke(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt));
     }
 
-    /// <summary>Back from a try: the cards as they were, with no re-read, and what went wrong if it failed.</summary>
+    /// <summary>Back from a try, the cards as they were with no re-read; from an attach, the grid. Either way, what
+    /// went wrong if it failed.</summary>
     private void Resume(Handover handover)
     {
         _resume = handover;
-        _readAt = handover.ReadAt;
         _failure = handover.Failure;
-        _work.Show(handover.Items);
+        if (handover is TryHandover tried)
+        {
+            _readAt = tried.ReadAt;
+            _work.Show(tried.Items);
+        }
         ShowMessage();
     }
 
@@ -386,8 +395,15 @@ public sealed class DashboardWindow : Window
         if (_resume is not { } resume)
             return;
         _resume = null;
-        if (!_work.Focus(resume.Item, resume.OnPr))
-            _work.FocusFirstCard();
+        switch (resume)
+        {
+            case TryHandover tried when !_work.Focus(tried.Item, tried.OnPr):
+                _work.FocusFirstCard();
+                break;
+            case AttachHandover attached when _panes.FindIndex(pane => pane.Team == attached.Team && pane.Role == attached.Role) is >= 0 and var index:
+                Select(index);
+                break;
+        }
     }
 
     private void OpenSelected()
