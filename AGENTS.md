@@ -53,7 +53,7 @@ draw loop, so cover the logic behind the views instead.
 ## Scripts
 
 `tests/scripts.sh` is the shell side's test suite (`bash tests/scripts.sh`). CI runs it, along with
-`bash -n` and ShellCheck over `scripts/`, `bin/a-team` and `tests/`.
+`bash -n` and ShellCheck over `scripts/`, `bin/` and `tests/`.
 
 ## Releasing
 

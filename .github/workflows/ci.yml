@@ -12,10 +12,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Syntax
-        run: for f in scripts/*.sh bin/a-team tests/*.sh; do bash -n "$f"; done
+        run: for f in scripts/*.sh bin/a-team bin/gh tests/*.sh; do bash -n "$f"; done
 
       - name: ShellCheck
-        run: shellcheck --severity=warning scripts/*.sh bin/a-team tests/*.sh
+        run: shellcheck --severity=warning scripts/*.sh bin/a-team bin/gh tests/*.sh
 
       - name: Test
         run: bash tests/scripts.sh
