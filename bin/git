@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# git, committing and pushing as the team's GitHub App when the run's team has one. Like bin/gh, it
+# is only on a run's PATH; anywhere else it's the real git, unchanged. The config goes in through
+# GIT_CONFIG_COUNT, so nothing is written to your git config or the repo's.
+#
+set -euo pipefail
+
+here="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+path=
+IFS=: read -ra dirs <<<"$PATH"
+for dir in "${dirs[@]}"; do
+  [ "$(cd -P "${dir:-.}" 2>/dev/null && pwd)" = "$here" ] || path=${path:+$path:}$dir
+done
+real=$(PATH=$path command -v git) || { echo "git: not installed" >&2; exit 127; }
+
+if [ -n "${A_TEAM_RUN_TEAM:-}" ]; then
+  source "$here/../scripts/common.sh"
+  source "$here/../scripts/github-app.sh"
+  if slug=$(jq -er '.app.slug' "$(team_config "$A_TEAM_RUN_TEAM")" 2>/dev/null); then
+    id=$(bot_user_id "$A_TEAM_RUN_TEAM" "$slug")
+    n=${GIT_CONFIG_COUNT:-0}
+    set_config() {
+      export "GIT_CONFIG_KEY_$n=$1" "GIT_CONFIG_VALUE_$n=$2"
+      n=$((n + 1))
+    }
+    # An empty helper drops yours, so a push can only ever use the App's token.
+    set_config credential.helper ''
+    set_config credential.helper "!bash '$here/../scripts/credential.sh' '$A_TEAM_RUN_TEAM'"
+    set_config credential.useHttpPath true
+    set_config user.name "${slug}[bot]"
+    set_config user.email "$id+${slug}[bot]@users.noreply.github.com"
+    export GIT_CONFIG_COUNT=$n GIT_TERMINAL_PROMPT=0
+  fi
+fi
+exec "$real" "$@"

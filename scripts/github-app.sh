@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Sourced by token.sh, app.sh and board.sh: the team's GitHub App, as seen from this Mac.
+# Sourced by token.sh, app.sh, board.sh, credential.sh and bin/git: the team's GitHub App, as seen
+# from this Mac.
 
 # The private key is a base64-encoded PEM in the login Keychain, one item per account the App is
 # registered under.
@@ -59,3 +60,17 @@ installation() {
 }
 
 token_cache() { echo "$STATE/$1/token.json"; }
+
+# bot_user_id <team> <slug>: the id of the App's bot user, which a commit email needs for GitHub to
+# credit the bot. It never changes, so it's looked up once per slug.
+bot_user_id() {
+  local cache="$STATE/$1/bot.json" user
+  jq -er --arg slug "$2" 'select(.slug == $slug) | .id' "$cache" 2>/dev/null && return
+  user=$(github GET "users/$2%5Bbot%5D") || {
+    echo "a-team: couldn't look up $2[bot] on GitHub: $user" >&2
+    return 1
+  }
+  mkdir -p "$(dirname "$cache")"
+  jq --arg slug "$2" '{slug: $slug, id}' <<<"$user" >"$cache"
+  jq -r .id <<<"$user"
+}
