@@ -91,3 +91,5 @@ jobs:
       formula: packaging/a-team.rb
       artifacts: a-team-*
       environment: release
+    # The only way an environment's secrets reach a called workflow: actions/runner#4453.
+    secrets: inherit

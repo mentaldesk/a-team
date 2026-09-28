@@ -93,7 +93,7 @@ the artifacts it uploaded.
 |---|---|
 | Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `artifacts` (artifact name pattern, default `*`), and — added after `v0.0.4` — `scoop` (Scoop manifest template path in the caller; omitted, no Scoop step runs) and `bucket` (default `mentaldesk/scoop-bucket`), and — added after `v0.1.2` — `environment` (an environment in the caller the job runs in; omitted, none). |
 | Outputs | None. |
-| Secrets | `packages-token` (optional): write access to `tap` and `bucket`. With `environment`, that environment's `PACKAGES_TOKEN` secret is used instead, and the caller passes nothing. Without either, the release still publishes and the packaging steps warn. |
+| Secrets | `packages-token` (optional): write access to `tap` and `bucket`. With `environment`, that environment's `PACKAGES_TOKEN` secret is used instead, and the caller passes `secrets: inherit`: it's the only way an environment's secrets reach a called workflow. Without either, the release still publishes and the packaging steps warn. |
 | Permissions the caller must grant | `contents: write`. Permissions are not inherited, so the calling job declares them. |
 
 Both templates are rendered from the artifacts, not from a list of platforms: `{{version}}`,
@@ -138,7 +138,7 @@ jobs:
       tag: ${{ needs.version.outputs.tag }}
       formula: packaging/tuicode.rb
       # scoop: packaging/tuicode.json          # needs a newer pin than v0.0.4; omit it, no Scoop step runs
-      # environment: release                   # needs a newer pin than v0.1.2; then drop `secrets:`
+      # environment: release                   # needs a newer pin than v0.1.2; then `secrets: inherit` below
     secrets:
       packages-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 ```
