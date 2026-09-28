@@ -47,7 +47,7 @@ on:
         description: Token with contents and pull-requests write on the tap, and contents write on the bucket. Without it the release still publishes and the packaging steps warn.
         required: false
       PACKAGES_TOKEN:
-        description: The same token, from the environment named by `environment`. It only resolves when the caller passes `secrets: inherit`.
+        description: 'The same token, from the environment named by `environment`. It only resolves when the caller passes `secrets: inherit`.'
         required: false
 
 jobs:
