@@ -42,7 +42,15 @@ if [ -n "$DRY_RUN" ]; then
   exit 0
 fi
 
+running() { local stat; stat=$(ps -o stat= -p "$1" 2>/dev/null) && [[ $stat != Z* ]]; }
+
+PID=$(cat "$STATE/$TEAM/$ROLE/pid" 2>/dev/null || true)
 bash "$ROOT/scripts/pause.sh" stop "$TEAM" "$ROLE"
+# The stopped run may still be writing to the session, so let it exit before resuming it.
+for _ in $(seq 100); do
+  [ -n "$PID" ] && running "$PID" || break
+  sleep 0.1
+done
 cd "$WORKDIR" || die "can't open $WORKDIR; $TEAM $ROLE is stopped and held"
 claude --resume "$SESSION" ||
   die "couldn't resume session $SESSION; $TEAM $ROLE is stopped and held until: a-team resume $TEAM $ROLE"
