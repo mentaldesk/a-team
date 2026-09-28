@@ -56,6 +56,8 @@ With no command, a-team opens the app where you left it.
   run <team> <role>                       print the brief a run starts from
   task-prompt <team> <role>               print a role's scheduled prompt
   teams                                   the configured teams, and where their config lives
+  app create <team> [--id <app id>]       give the team its own GitHub App identity (README)
+  token <team>                            print an installation token for the team's App
   version                                 the installed version, or a MinVer-style one in a clone
 
 Team configs live in \${A_TEAM_CONFIG:-~/.config/a-team}/teams/<team>.json (start from
@@ -68,7 +70,7 @@ USAGE
 command=$1
 shift
 case "$command" in
-  board | dispatch | install | status | run | task-prompt | try)
+  app | board | dispatch | install | status | run | task-prompt | token | try)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
   dashboard)
     exec bash "$ROOT/scripts/dashboard.sh" --area dashboard "$@" ;;

@@ -913,6 +913,31 @@ case "$CMD" in
     unmapped=$(items | jq -r 'map(select(.status | startswith("?"))) | .[] | "  #\(.number) \(.status)"')
     [ -z "$unmapped" ] || { echo "items with a status outside the team's states:" >&2; echo "$unmapped" >&2; exit 1; }
     echo "ok: $OWNER project $NUMBER, field '$FIELD'"
+    if ! jq -e '.app.id' "$CONFIG" >/dev/null 2>&1; then
+      echo "identity: no \"app\" key in this team's config — the team posts as you"
+      echo "          run: a-team app create $TEAM"
+      exit 0
+    fi
+    source "$ROOT/scripts/github-app.sh"
+    line="identity: $(cfg .app.slug)[bot]"
+    wrong() { printf '%s · %s\n          %s\n' "$line" "$1" "$2" >&2; exit 1; }
+    has_app_key "${REPO%/*}" ||
+      wrong "NO KEY" "nothing in the login Keychain under service '$KEYCHAIN_SERVICE', account '${REPO%/*}': run a-team app create $TEAM"
+    token=$("$ROOT/bin/a-team" token "$TEAM" 2>&1) || wrong "NO TOKEN" "${token#a-team token: }"
+    line="$line · token ok"
+    GH_TOKEN=$token gql 'query($owner: String!, $number: Int!) {
+        organization(login: $owner) { projectV2(number: $number) { items(first: 1) { totalCount } } } }' \
+      --jq '.data.organization.projectV2.items.totalCount' >/dev/null 2>&1 ||
+      wrong "PROJECT $NUMBER UNREADABLE" "grant the organisation's \"Projects: read and write\", and install the App on $REPO"
+    granted() { jq -e --arg p "$1" '.permissions[$p] == "write"' "$(token_cache "$TEAM")" >/dev/null 2>&1; }
+    granted organization_projects ||
+      wrong "PROJECT $NUMBER READ-ONLY" "grant the organisation's \"Projects: read and write\""
+    line="$line · project $NUMBER read+write ok"
+    GH_TOKEN=$token priority_field >/dev/null 2>&1 ||
+      wrong "PRIORITY UNREADABLE" "grant the organisation's \"Issue Fields: read\" — without it \`triggers\` fails with \"Resource not accessible by integration\""
+    line="$line · $PRIORITY readable"
+    granted contents || wrong "NO PUSH" "grant the repository's \"Contents: read and write\""
+    echo "$line · push access to $REPO ok"
     ;;
 
   setup)

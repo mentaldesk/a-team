@@ -1543,5 +1543,265 @@ grep -q '^  stop ' "$OUT" || fail "usage: no stop line"
 grep -q '^  resume \[--dry-run\] <team> \[<role>\]' "$OUT" || fail "usage: resume takes no role"
 unset A_TEAM_STATE
 
+# --- the team's GitHub App -------------------------------------------------------------------
+# A Keychain holding a real test key, and GitHub's App endpoints, stubbed on PATH. `security` has
+# no key when NO_KEY is set; `curl` records each mint in $MINTS, keeps the JWT it was sent in
+# $APP_BIN/jwt, grants what $APP_BIN/perms.json holds, and fails every call when MINT_FAILS is set.
+APP_BIN=$(mktemp -d "$WORK/app.XXXXXX")
+MINTS="$APP_BIN/mints" OPENED="$APP_BIN/opened"
+openssl genrsa 2048 2>/dev/null >"$APP_BIN/key.pem"
+openssl rsa -in "$APP_BIN/key.pem" -pubout 2>/dev/null >"$APP_BIN/pub.pem"
+openssl base64 -A <"$APP_BIN/key.pem" >"$APP_BIN/key.b64"
+rm "$APP_BIN/key.pem"
+echo '{"contents": "write", "issues": "write", "organization_projects": "write"}' >"$APP_BIN/perms.json"
+cat >"$APP_BIN/security" <<SH
+#!/usr/bin/env bash
+[ -z "\${NO_KEY:-}" ] || exit 44
+case " \$* " in *" -w "*) cat "$APP_BIN/key.b64" ;; esac
+SH
+cat >"$APP_BIN/curl" <<SH
+#!/usr/bin/env bash
+[ -z "\${MINT_FAILS:-}" ] || { echo '{"message": "Bad credentials"}'; exit 22; }
+for arg; do
+  case "\$arg" in @*) sed -n 's/^Authorization: Bearer //p' "\${arg#@}" >"$APP_BIN/jwt" ;; esac
+done
+case "\${!#}" in
+  */repos/*/installation) echo '{"id": 42}' ;;
+  */app) echo '{"id": 7, "slug": "demo-app"}' ;;
+  */app/installations/42/access_tokens)
+    sleep 0.2
+    echo mint >>"$MINTS"
+    jq -n --arg t "ghs_\$\$" --slurpfile p "$APP_BIN/perms.json" \
+      '{token: \$t, expires_at: (now + 3600 | todate), permissions: \$p[0]}' ;;
+  *) echo '{"message": "Not Found"}'; exit 22 ;;
+esac
+SH
+printf '#!/usr/bin/env bash\necho "$*" >>"%s"\n' "$OPENED" >"$APP_BIN/open"
+chmod +x "$APP_BIN/security" "$APP_BIN/curl" "$APP_BIN/open"
+PATH="$APP_BIN:$PATH"
+export A_TEAM_STATE
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+CACHE="$A_TEAM_STATE/demo/token.json"
+mints() { grep -c '' "$MINTS" 2>/dev/null || echo 0; }
+# cached <token> <seconds left>
+cached() {
+  mkdir -p "$(dirname "$CACHE")"
+  jq -n --arg t "$1" --argjson left "$2" --slurpfile p "$APP_BIN/perms.json" \
+    '{token: $t, expires_at: (now + $left | floor | todate), permissions: $p[0]}' >"$CACHE"
+}
+b64url_decode() {
+  local s
+  s=$(tr '_-' '/+')
+  while [ $((${#s} % 4)) -ne 0 ]; do s="$s="; done
+  printf '%s' "$s" | openssl base64 -d -A
+}
+app_fixture() {
+  fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "app": { "id": 7, "slug": "demo-app" } }
+JSON
+  rm -f "$CACHE" "$MINTS"
+}
+
+case_ "token mints one when nothing is cached, with a JWT the App's key signed"
+app_fixture
+run token demo
+same "exit" 0 "$STATUS"
+same "mints" 1 "$(mints)"
+same "cached" "$(cat "$OUT")" "$(jq -r .token "$CACHE")"
+IFS=. read -r jwt_header jwt_payload jwt_signature <"$APP_BIN/jwt"
+same "issuer" '"7"' "$(b64url_decode <<<"$jwt_payload" | jq -c .iss)"
+same "backdated" 600 "$(b64url_decode <<<"$jwt_payload" | jq '.exp - .iat')"
+b64url_decode <<<"$jwt_signature" >"$APP_BIN/signature"
+printf '%s.%s' "$jwt_header" "$jwt_payload" |
+  openssl dgst -sha256 -verify "$APP_BIN/pub.pem" -signature "$APP_BIN/signature" >/dev/null ||
+  fail "jwt: the signature doesn't verify against the App's key"
+
+case_ "run again straight away, it prints the same token and mints nothing"
+first=$(cat "$OUT")
+run token demo
+same "token" "$first" "$(cat "$OUT")"
+same "mints" 1 "$(mints)"
+
+case_ "with under five minutes left, it mints a new one"
+cached ghs_expiring 280
+run token demo
+same "exit" 0 "$STATUS"
+same "mints" 2 "$(mints)"
+[ "$(cat "$OUT")" != ghs_expiring ] || fail "expiring: the old token was passed on"
+
+case_ "with five minutes left, it's still reused"
+cached ghs_fresh 330
+run token demo
+same "token" ghs_fresh "$(cat "$OUT")"
+
+case_ "a malformed or empty cache is re-minted rather than passed on"
+for broken in 'not json' '' '{"token": "", "expires_at": "2099-01-01T00:00:00Z"}' '{"token": "ghs_x"}'; do
+  rm -f "$MINTS"
+  printf '%s' "$broken" >"$CACHE"
+  run token demo
+  same "exit ($broken)" 0 "$STATUS"
+  same "mints ($broken)" 1 "$(mints)"
+  same "token ($broken)" "$(jq -r .token "$CACHE")" "$(cat "$OUT")"
+done
+
+case_ "two concurrent mints leave a readable cache holding one of their tokens"
+rm -f "$CACHE"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" token demo >"$WORK/mint1" 2>&1 &
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" token demo >"$WORK/mint2" 2>&1 &
+wait
+winner=$(jq -r .token "$CACHE")
+{ [ "$winner" = "$(cat "$WORK/mint1")" ] || [ "$winner" = "$(cat "$WORK/mint2")" ]; } ||
+  fail "concurrent: cache holds '$winner', not either run's token"
+same "leftovers" 1 "$(find "$(dirname "$CACHE")" -name 'token.json*' | grep -c '')"
+
+case_ "a team with no app key has no token, and is told how to get one"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+run token demo
+failed "no app"
+grep -q 'a-team app create demo' "$ERR" || fail "no app: '$(cat "$ERR")'"
+
+# The real gh the wrapper stands in front of: prints GH_TOKEN, then each argument on its own line.
+mkdir -p "$APP_BIN/real"
+printf '#!/usr/bin/env bash\necho "GH_TOKEN=${GH_TOKEN:-}"\nprintf "[%%s]\\n" "$@"\n' >"$APP_BIN/real/gh"
+chmod +x "$APP_BIN/real/gh"
+wrapped() {
+  A_TEAM_CONFIG="$CONFIG" PATH="$ROOT/bin:$APP_BIN/real:$PATH" gh "$@" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+
+case_ "the gh wrapper passes arguments through unchanged, as the run's team's App"
+app_fixture
+cached ghs_cached 3600
+A_TEAM_RUN_TEAM=demo wrapped api 'a b' '' '$x' "it's"
+same "exit" 0 "$STATUS"
+same "output" 'GH_TOKEN=ghs_cached
+[api]
+[a b]
+[]
+[$x]
+[it'"'"'s]' "$(cat "$OUT")"
+same "caller's GH_TOKEN" '' "${GH_TOKEN:-}"
+
+case_ "outside a run, or for a team with no app key, it's the real gh as it was"
+wrapped pr list
+same "no run" 'GH_TOKEN=
+[pr]
+[list]' "$(cat "$OUT")"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo" }
+JSON
+A_TEAM_RUN_TEAM=demo wrapped pr list
+same "no app" 'GH_TOKEN=' "$(head -1 "$OUT")"
+
+case_ "a team whose token won't mint fails, rather than running gh as you"
+app_fixture
+A_TEAM_RUN_TEAM=demo NO_KEY=1 wrapped pr list
+failed "no key"
+grep -q 'GH_TOKEN' "$OUT" && fail "no key: the real gh ran"
+
+# board.sh's check against a board that's fine, with the App's own view of it broken by
+# PROJECT_UNREADABLE or PRIORITY_UNREADABLE when it asks with the cached token.
+mkdir -p "$APP_BIN/board"
+jq -n '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options:
+  (["Idea", "Exploring", "Pitched", "Approved", "Building", "Ready", "In progress", "In review", "Done"]
+   | map({id: ., name: .}))}}}}}' >"$APP_BIN/board/meta.json"
+echo '{"data": {"organization": {"projectV2": {"items": {"totalCount": 0,
+  "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": []}}}}}' >"$APP_BIN/board/items.json"
+echo '{"data": {"organization": {"issueFields": {"nodes": [{"id": "IF_priority", "name": "Priority",
+  "options": []}]}}}}' >"$APP_BIN/board/fields.json"
+cat >"$APP_BIN/board/gh" <<SH
+#!/usr/bin/env bash
+refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
+case " \$* " in
+  *ProjectV2SingleSelectField*) page="$APP_BIN/board/meta.json" ;;
+  *totalCount*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
+                page="$APP_BIN/board/items.json" ;;
+  *issueFields*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PRIORITY_UNREADABLE:-}" ] || refused
+                 page="$APP_BIN/board/fields.json" ;;
+  *) page="$APP_BIN/board/items.json" ;;
+esac
+filter=
+while [ \$# -gt 0 ]; do
+  [ "\$1" = --jq ] && { filter=\$2; break; }
+  shift
+done
+if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
+SH
+chmod +x "$APP_BIN/board/gh"
+checked() { PATH="$APP_BIN/board:$PATH" run board demo check; }
+grants() { jq "$1" "$CACHE" >"$CACHE.new" && mv "$CACHE.new" "$CACHE"; }
+
+case_ "check with no app key says the team posts as you, and still passes"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+checked
+same "exit" 0 "$STATUS"
+grep -q '^identity: no "app" key.*the team posts as you' "$OUT" || fail "no app: '$(cat "$OUT")'"
+grep -q 'run: a-team app create demo' "$OUT" || fail "no app: no command in '$(cat "$OUT")'"
+
+case_ "check reports the App's identity when every part of it works"
+app_fixture
+cached ghs_cached 3600
+checked
+same "exit" 0 "$STATUS"
+same "identity" 'identity: demo-app[bot] · token ok · project 1 read+write ok · Priority readable · push access to mentaldesk/demo ok' \
+  "$(grep '^identity' "$OUT")"
+
+case_ "check says which part of the identity is wrong, and what to do about it"
+NO_KEY=1 checked
+failed "no key"
+grep -q "NO KEY" "$ERR" && grep -q 'a-team app create demo' "$ERR" || fail "no key: '$(cat "$ERR")'"
+rm -f "$CACHE"
+MINT_FAILS=1 checked
+failed "no token"
+grep -q 'NO TOKEN' "$ERR" || fail "no token: '$(cat "$ERR")'"
+cached ghs_cached 3600
+PROJECT_UNREADABLE=1 checked
+failed "project unreadable"
+grep -q 'PROJECT 1 UNREADABLE' "$ERR" || fail "project unreadable: '$(cat "$ERR")'"
+grants '.permissions.organization_projects = "read"'
+checked
+failed "project read-only"
+grep -q 'PROJECT 1 READ-ONLY' "$ERR" || fail "project read-only: '$(cat "$ERR")'"
+cached ghs_cached 3600
+PRIORITY_UNREADABLE=1 checked
+failed "priority"
+grep -q 'PRIORITY UNREADABLE' "$ERR" && grep -q 'Issue Fields: read' "$ERR" || fail "priority: '$(cat "$ERR")'"
+grants '.permissions.contents = "read"'
+checked
+failed "no push"
+grep -q 'NO PUSH' "$ERR" || fail "no push: '$(cat "$ERR")'"
+
+case_ "examples/team.json carries the app key and stays valid"
+jq -e 'has("app")' "$ROOT/examples/team.json" >/dev/null || fail "example: no app key"
+
+case_ "app create reuses the App another team under the same owner already has"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer" }
+JSON
+echo '{ "repo": "mentaldesk/other", "app": { "id": 9, "slug": "shared-app" } }' >"$CONFIG/teams/other.json"
+: >"$OPENED"
+run app create demo
+same "exit" 0 "$STATUS"
+same "app" '{"id":9,"slug":"shared-app"}' "$(jq -c .app "$TEAM")"
+same "reviewer" '"reviewer"' "$(jq -c .reviewer "$TEAM")"
+same "opened" 'https://github.com/apps/shared-app/installations/new' "$(cat "$OPENED")"
+
+case_ "app create with the owner's key in the Keychain but no team naming it needs the App's id"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo" }
+JSON
+run app create demo
+failed "no id"
+grep -q -- '--id' "$ERR" || fail "no id: '$(cat "$ERR")'"
+run app create demo --id 7
+same "exit" 0 "$STATUS"
+same "app" '{"id":7,"slug":"demo-app"}' "$(jq -c .app "$TEAM")"
+unset A_TEAM_STATE
+
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"
