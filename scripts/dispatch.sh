@@ -96,9 +96,25 @@ $(sed 's/^/- /' <<<"$reasons")"
   log "$team $role: started $(cat "$dir/pid"): $(paste -sd ';' - <<<"$reasons")"
 }
 
+# cannot_run <team> <config>: why the team can't run, if it can't. It runs only as its own App.
+cannot_run() {
+  local why
+  jq -e '.app.id' "$2" >/dev/null 2>&1 ||
+    { echo "no GitHub App: run a-team app create $1, then install it"; return; }
+  why=$("$ROOT/bin/a-team" token "$1" 2>&1 >/dev/null) || echo "${why#a-team token: }"
+}
+
 for team in $(team_names); do
   config=$(team_config "$team")
   jq -e '.dispatch.enabled == true' "$config" >/dev/null 2>&1 || continue
+  why=$(cannot_run "$team" "$config")
+  if [ -n "$why" ]; then
+    mkdir -p "$STATE/$team"
+    [ "$why" = "$(cat "$STATE/$team/cannot-run" 2>/dev/null)" ] || log "$team: stopped: $why"
+    echo "$why" >"$STATE/$team/cannot-run"
+    continue
+  fi
+  rm -f "$STATE/$team/cannot-run"
   for role in lead dev; do
     dispatch "$team" "$role" "$config"
   done

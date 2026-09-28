@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# gh, as the team's GitHub App when the run's team has one. dispatch.sh puts this directory first
-# on a run's PATH and names the team in A_TEAM_RUN_TEAM; anywhere else it's the real gh, unchanged.
+# gh, as the team's GitHub App. dispatch.sh puts this directory first on a run's PATH and names the
+# team in A_TEAM_RUN_TEAM; anywhere else it's the real gh, unchanged.
 #
 set -euo pipefail
 
@@ -14,10 +14,7 @@ done
 real=$(PATH=$path command -v gh) || { echo "gh: not installed" >&2; exit 127; }
 
 if [ -n "${A_TEAM_RUN_TEAM:-}" ]; then
-  source "$here/../scripts/common.sh"
-  if jq -e '.app.id' "$(team_config "$A_TEAM_RUN_TEAM")" >/dev/null 2>&1; then
-    token=$("$here/a-team" token "$A_TEAM_RUN_TEAM")
-    GH_TOKEN=$token exec "$real" "$@"
-  fi
+  token=$("$here/a-team" token "$A_TEAM_RUN_TEAM")
+  GH_TOKEN=$token exec "$real" "$@"
 fi
 exec "$real" "$@"

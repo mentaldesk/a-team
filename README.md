@@ -94,10 +94,10 @@ keep that folder in a repo of your own and link it into place.
 
 ## Giving the team its own identity
 
-Out of the box the team posts as you. Give it a GitHub App and everything it writes from then on —
-comments, issues, PRs — shows `<app>[bot]` as its author, and a run's `gh` reaches only the repos
-you install the App on instead of your whole account. It's optional for now: a team without one
-runs exactly as before.
+A team needs a GitHub App of its own before it runs. Everything it writes — comments, issues,
+PRs — shows `<app>[bot]` as its author, which is how `a-team` tells your feedback from the team's
+words, and a run's `gh` reaches only the repos you install the App on instead of your whole
+account. Until the App is installed, the dispatcher skips the team and `a-team status` says why.
 
 ```
 a-team app create <team>
