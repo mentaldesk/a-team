@@ -70,7 +70,7 @@ Handover? Show(Handover? back)
         url => Link.OpenUrl(url),
         (item, body) => PriorityDialog.Show(app, item, body),
         (item, body, onGitHub, onApprove) => ReaderDialog.Show(app, item, body, onGitHub, onApprove),
-        back is null ? requested ?? settings.ReadArea() : Area.Work,
+        back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>
         {

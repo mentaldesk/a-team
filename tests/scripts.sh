@@ -1541,6 +1541,92 @@ case_ "stop and the per-role resume are in the usage text"
 run help
 grep -q '^  stop ' "$OUT" || fail "usage: no stop line"
 grep -q '^  resume \[--dry-run\] <team> \[<role>\]' "$OUT" || fail "usage: resume takes no role"
+# A claude that records what it was asked to resume, where, and what the run and the hold were by then.
+fake_claude() {
+  RESUMED="$BIN/resumed"
+  : >"$RESUMED"
+  cat >"$BIN/claude" <<SH
+#!/usr/bin/env bash
+{ echo "args: \$*"; echo "cwd: \$(pwd -P)"; echo "hold: \$(jq -c .dispatch.hold "$TEAM")"
+  echo "signals: \$(grep -c TERM "$SIGNALS")"; } >>"$RESUMED"
+exit ${1:-0}
+SH
+  chmod +x "$BIN/claude"
+}
+session_log() {
+  printf '%s\n' 'not json' \
+    '{"type":"system","subtype":"init","cwd":"/elsewhere","session_id":"sess-123"}' \
+    '{"type":"assistant","session_id":"sess-123"}' >"$A_TEAM_STATE/demo/dev/latest.jsonl"
+}
+
+case_ "attach on a running role stops and holds it before resuming its session in the workdir"
+WORKDIR=$(mktemp -d "$WORK/workdir.XXXXXX")
+fixture <<JSON
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "workdir": "$WORKDIR", "dispatch": { "enabled": true } }
+JSON
+gh_items </dev/null
+fake_run
+session_log
+fake_claude
+run attach demo dev
+wait "$RUN_PID"
+same "exit" 0 "$STATUS"
+same "resumed" "args: --resume sess-123" "$(sed -n 1p "$RESUMED")"
+same "cwd" "cwd: $(cd "$WORKDIR" && pwd -P)" "$(sed -n 2p "$RESUMED")"
+same "held first" 'hold: ["dev"]' "$(sed -n 3p "$RESUMED")"
+same "stopped first" "signals: 1" "$(sed -n 4p "$RESUMED")"
+same "still held" '["dev"]' "$(held)"
+
+case_ "attach on a finished role doesn't signal anything, and resumes"
+run resume demo dev
+true &
+dead=$!
+wait "$dead"
+echo "$dead" >"$A_TEAM_STATE/demo/dev/pid"
+: >"$SIGNALS"
+fake_claude
+run attach demo dev
+same "exit" 0 "$STATUS"
+same "resumed" "args: --resume sess-123" "$(sed -n 1p "$RESUMED")"
+same "signals" "signals: 0" "$(sed -n 4p "$RESUMED")"
+same "held" '["dev"]' "$(held)"
+
+case_ "attach --dry-run names the session and workdir, and neither stops, holds nor resumes"
+run resume demo dev
+fake_run
+fake_claude
+run attach --dry-run demo dev
+same "exit" 0 "$STATUS"
+grep -q "would stop run $RUN_PID" "$OUT" || fail "dry run: '$(cat "$OUT")'"
+grep -q "would run: claude --resume sess-123, in $WORKDIR" "$OUT" || fail "dry run: '$(cat "$OUT")'"
+same "hold" '[]' "$(held)"
+same "resumed" "" "$(cat "$RESUMED")"
+kill -0 "$RUN_PID" 2>/dev/null || fail "dry run: the run was stopped"
+kill "$RUN_PID" 2>/dev/null
+wait "$RUN_PID" 2>/dev/null
+
+case_ "a session that won't resume says so, and leaves the role stopped and held"
+fake_claude 1
+run attach demo dev
+failed "won't resume"
+grep -q "couldn't resume session sess-123" "$ERR" || fail "won't resume: '$(cat "$ERR")'"
+same "held" '["dev"]' "$(held)"
+
+case_ "attach with no session to resume is one clear line, and neither holds nor resumes"
+run resume demo dev
+echo '{"type":"assistant"}' >"$A_TEAM_STATE/demo/dev/latest.jsonl"
+fake_claude
+run attach demo dev
+failed "no session"
+one_line "no session"
+grep -q "demo dev has no run with a session to resume" "$ERR" || fail "no session: '$(cat "$ERR")'"
+same "hold" '[]' "$(held)"
+same "resumed" "" "$(cat "$RESUMED")"
+
+case_ "attach is in the usage text"
+run help
+grep -q '^  attach \[--dry-run\] <team> <role>' "$OUT" || fail "usage: no attach line"
 unset A_TEAM_STATE
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }

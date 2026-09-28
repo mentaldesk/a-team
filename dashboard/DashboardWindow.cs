@@ -285,6 +285,8 @@ public sealed class DashboardWindow : Window
             .Register("agent.interrupt", () => InterruptLabel("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
                 isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true },
                 menuLabel: () => InterruptLabel("Interrupt", "Let it start again"))
+            .Register("agent.attach", "Step in and take it over", Attach,
+                isEnabled: () => OnDashboard() && Selected() is { SessionId: not null })
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
@@ -361,16 +363,27 @@ public sealed class DashboardWindow : Window
     private void Try()
     {
         if (_work.Selected is { Pr: > 0 } item)
-            _handOver?.Invoke(new Handover(item, _work.SelectedCard is null, _work.Items, _readAt));
+            _handOver?.Invoke(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt));
     }
 
-    /// <summary>Back from a try: the cards as they were, with no re-read, and what went wrong if it failed.</summary>
+    /// <summary>Hands the terminal to <c>a-team attach</c>, which stops and holds the role before resuming its run.</summary>
+    private void Attach()
+    {
+        if (Selected() is { SessionId: not null } pane)
+            _handOver?.Invoke(new AttachHandover(pane.Team, pane.Role));
+    }
+
+    /// <summary>Back from a try, the cards as they were with no re-read; from an attach, the grid. Either way, what
+    /// went wrong if it failed.</summary>
     private void Resume(Handover handover)
     {
         _resume = handover;
-        _readAt = handover.ReadAt;
         _failure = handover.Failure;
-        _work.Show(handover.Items);
+        if (handover is TryHandover tried)
+        {
+            _readAt = tried.ReadAt;
+            _work.Show(tried.Items);
+        }
         ShowMessage();
     }
 
@@ -386,8 +399,15 @@ public sealed class DashboardWindow : Window
         if (_resume is not { } resume)
             return;
         _resume = null;
-        if (!_work.Focus(resume.Item, resume.OnPr))
-            _work.FocusFirstCard();
+        switch (resume)
+        {
+            case TryHandover tried when !_work.Focus(tried.Item, tried.OnPr):
+                _work.FocusFirstCard();
+                break;
+            case AttachHandover attached when _panes.FindIndex(pane => pane.Team == attached.Team && pane.Role == attached.Role) is >= 0 and var index:
+                Select(index);
+                break;
+        }
     }
 
     private void OpenSelected()

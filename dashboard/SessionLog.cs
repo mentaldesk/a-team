@@ -25,6 +25,9 @@ public sealed class SessionLog
     /// <summary>The last result event's verdict, kept even once that line has been trimmed out of <see cref="Lines"/>.</summary>
     public RunVerdict Verdict { get; private set; }
 
+    /// <summary>The session id from the run's init event, which <c>claude --resume</c> picks the conversation up from.</summary>
+    public string? SessionId { get; private set; }
+
     /// <summary>Reads anything new. Returns true if the lines changed.</summary>
     public bool Refresh(string? path)
     {
@@ -35,6 +38,7 @@ public sealed class SessionLog
             _partial = "";
             _lines.Clear();
             Verdict = RunVerdict.None;
+            SessionId = null;
             if (path is null)
                 return true;
         }
@@ -60,7 +64,9 @@ public sealed class SessionLog
         if (end < 0)
             return false;
 
-        foreach (var rendered in text[..end].Split('\n', StringSplitOptions.RemoveEmptyEntries).SelectMany(Render))
+        var events = text[..end].Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        SessionId ??= events.Select(SessionIdOf).FirstOrDefault(id => id is not null);
+        foreach (var rendered in events.SelectMany(Render))
         {
             Verdict = rendered.Kind switch
             {
@@ -73,6 +79,21 @@ public sealed class SessionLog
         if (_lines.Count > MaxLines)
             _lines.RemoveRange(0, _lines.Count - MaxLines);
         return true;
+    }
+
+    private static string? SessionIdOf(string json)
+    {
+        if (!json.Contains("\"init\""))
+            return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            return Str(root, "type") == "system" && Str(root, "subtype") == "init" && Str(root, "session_id") is { Length: > 0 } id
+                ? id
+                : null;
+        }
+        catch (JsonException) { return null; }
     }
 
     internal static IEnumerable<LogLine> Render(string json)

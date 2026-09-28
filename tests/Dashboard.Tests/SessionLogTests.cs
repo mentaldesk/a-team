@@ -6,6 +6,7 @@ public class SessionLogTests : IDisposable
     private const string Failed = """{"type":"result","is_error":true,"num_turns":1,"total_cost_usd":0.1}""";
     private const string Prose = """{"type":"assistant","message":{"content":[{"type":"text","text":"still going"}]}}""";
     private const string Call = """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}""";
+    private const string Init = """{"type":"system","subtype":"init","model":"claude","session_id":"sess-123"}""";
     private const string Broke = """{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"boom"}]}}""";
 
     private readonly string _dir = Path.Combine(Path.GetTempPath(), $"a-team-{Guid.NewGuid():n}");
@@ -107,6 +108,26 @@ public class SessionLogTests : IDisposable
         var line = Assert.Single(SessionLog.Render("not json at all"));
         Assert.Equal("not json at all", line.Text);
         Assert.Equal(LogLineKind.Prose, line.Kind);
+    }
+
+    [Fact]
+    public void The_session_id_comes_from_the_init_event()
+    {
+        var log = new SessionLog();
+
+        log.Refresh(Write("not json", Prose, Init, Ok));
+
+        Assert.Equal("sess-123", log.SessionId);
+    }
+
+    [Fact]
+    public void A_log_with_no_init_event_has_no_session_id()
+    {
+        var log = new SessionLog();
+
+        log.Refresh(Write(Prose, Ok));
+
+        Assert.Null(log.SessionId);
     }
 
     [Fact]

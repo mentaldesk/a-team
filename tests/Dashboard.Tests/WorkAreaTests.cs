@@ -1088,7 +1088,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "team.pause", "agent.interrupt", "help", "commands", "about",
+                "work.github", "team.pause", "agent.interrupt", "agent.attach", "help", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>
@@ -1177,7 +1177,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.True(window.NewKeyDownEvent(new Key('t')));
 
-        var handover = Assert.Single(handed);
+        var handover = Assert.IsType<TryHandover>(Assert.Single(handed));
         Assert.Equal(["try", "team0", "122"], handover.Arguments);
         Assert.Equal(49, handover.Item.Number);
         Assert.Equal(onPr, handover.OnPr);
