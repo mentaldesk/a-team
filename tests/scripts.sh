@@ -1571,6 +1571,8 @@ case "\${!#}" in
   */repos/*/installation)
     if [ -n "\${NOT_INSTALLED:-}" ]; then answer 404 '{"message": "Not Found"}'; else answer 200 '{"id": 42}'; fi ;;
   */app) answer 200 '{"id": 7, "slug": "demo-app"}' ;;
+  */users/demo-app%5Bbot%5D) echo lookup >>"$APP_BIN/lookups"; answer 200 '{"id": 99, "login": "demo-app[bot]"}' ;;
+  */installation/repositories*) answer 200 '{"total_count": 1, "repositories": [{"full_name": "mentaldesk/demo"}]}' ;;
   */app/installations/42/access_tokens)
     sleep 0.2
     echo mint >>"$MINTS"
@@ -1832,6 +1834,89 @@ grep -q -- '--id' "$ERR" || fail "no id: '$(cat "$ERR")'"
 run app create demo --id 7
 same "exit" 0 "$STATUS"
 same "app" '{"id":7,"slug":"demo-app"}' "$(jq -c .app "$TEAM")"
+
+# credential <action> <host> [<path>]: asks the helper as git would.
+credential() {
+  printf 'protocol=https\nhost=%s\n%s\n' "$2" "${3:+path=$3}" |
+    A_TEAM_CONFIG="$CONFIG" bash "$ROOT/scripts/credential.sh" demo "$1" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+
+case_ "the credential helper answers github.com with the App's token, in git's format"
+app_fixture
+cached ghs_cached 3600
+credential get github.com mentaldesk/demo.git
+same "exit" 0 "$STATUS"
+same "answer" 'username=x-access-token
+password=ghs_cached' "$(cat "$OUT")"
+
+case_ "it says nothing to any other host, or to store and erase"
+credential get gitlab.com mentaldesk/demo.git
+same "other host" '' "$(cat "$OUT")"
+credential store github.com mentaldesk/demo.git
+same "store" '' "$(cat "$OUT")"
+
+case_ "a repo the App can't reach makes git give up at once, saying where to install it"
+credential get github.com mentaldesk/elsewhere.git
+same "answer" 'quit=1' "$(cat "$OUT")"
+grep -q "demo-app\[bot\] has no access to mentaldesk/elsewhere: install the App there at https://github.com/apps/demo-app/installations/new" "$ERR" ||
+  fail "no access: '$(cat "$ERR")'"
+
+case_ "a token that won't mint makes git give up at once, saying why"
+rm -f "$CACHE"
+NO_KEY=1 credential get github.com mentaldesk/demo.git
+same "answer" 'quit=1' "$(cat "$OUT")"
+grep -q 'no private key in the login Keychain' "$ERR" || fail "no key: '$(cat "$ERR")'"
+
+REPO_DIR=$(mktemp -d "$WORK/repo.XXXXXX")
+export GIT_CONFIG_GLOBAL="$APP_BIN/gitconfig" GIT_CONFIG_NOSYSTEM=1
+printf '[user]\n\tname = Reviewer\n\temail = reviewer@example.com\n' >"$GIT_CONFIG_GLOBAL"
+git -C "$REPO_DIR" init -q
+# git as a run would find it: bin/ first on PATH.
+run_git() {
+  A_TEAM_CONFIG="$CONFIG" PATH="$ROOT/bin:$PATH" git -C "$REPO_DIR" "$@" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+last_commit() { git -C "$REPO_DIR" log -1 --format='%an <%ae> / %cn <%ce>'; }
+
+case_ "in a run, a commit is the App's bot's, and outside one it's yours"
+app_fixture
+cached ghs_cached 3600
+rm -f "$APP_BIN/lookups" "$A_TEAM_STATE/demo/bot.json"
+global=$(cat "$GIT_CONFIG_GLOBAL")
+A_TEAM_RUN_TEAM=demo run_git commit -q --allow-empty -m bot
+same "exit" 0 "$STATUS"
+same "in a run" 'demo-app[bot] <99+demo-app[bot]@users.noreply.github.com> / demo-app[bot] <99+demo-app[bot]@users.noreply.github.com>' \
+  "$(last_commit)"
+run_git commit -q --allow-empty -m me
+same "outside" 'Reviewer <reviewer@example.com> / Reviewer <reviewer@example.com>' "$(last_commit)"
+A_TEAM_RUN_TEAM=demo run_git commit -q --allow-empty -m again
+same "bot looked up once" 1 "$(grep -c '' "$APP_BIN/lookups")"
+same "global config" "$global" "$(cat "$GIT_CONFIG_GLOBAL")"
+same "repo config" '' "$(git -C "$REPO_DIR" config --local --get-regexp '^(user|credential)\.')"
+same "caller's GIT_CONFIG_COUNT" '' "${GIT_CONFIG_COUNT:-}"
+
+case_ "in a run, git asks only the App's helper, and gets the token"
+A_TEAM_RUN_TEAM=demo run_git config --get-all credential.helper
+same "helpers" "
+!bash '$ROOT/bin/../scripts/credential.sh' 'demo'" "$(cat "$OUT")"
+printf 'protocol=https\nhost=github.com\npath=mentaldesk/demo.git\n\n' |
+  A_TEAM_RUN_TEAM=demo run_git credential fill
+grep -qx 'password=ghs_cached' "$OUT" || fail "fill: '$(cat "$OUT")'"
+
+case_ "config the caller already passes in GIT_CONFIG_COUNT still counts"
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=a-team.test GIT_CONFIG_VALUE_0=kept A_TEAM_RUN_TEAM=demo run_git config a-team.test
+same "kept" kept "$(cat "$OUT")"
+
+case_ "a team with no app key gets no helper and no identity"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo" }
+JSON
+A_TEAM_RUN_TEAM=demo run_git config --get-all credential.helper
+same "helpers" '' "$(cat "$OUT")"
+A_TEAM_RUN_TEAM=demo run_git commit -q --allow-empty -m no-app
+same "no app" 'Reviewer <reviewer@example.com> / Reviewer <reviewer@example.com>' "$(last_commit)"
+unset GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
 unset A_TEAM_STATE
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
