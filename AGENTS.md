@@ -65,11 +65,12 @@ set to merge by itself once the tap's CI has installed and tested it on every pl
 version number. PRs that touch the dashboard, packaging or the workflow run the build part to
 check packaging.
 
-`HOMEBREW_TAP_TOKEN` is a fine-grained personal access token with access to
-`mentaldesk/homebrew-tap` only (Contents and Pull requests: read and write), stored as a secret on
-this repo and on TuiCode. When it expires, releases still publish but the formula step fails:
-regenerate it under your GitHub settings → Developer settings → Fine-grained tokens, and update
-the secret in both repos.
+Release publishes only from `main`. The tap token is a fine-grained personal access token with
+access to `mentaldesk/homebrew-tap` only (Contents and Pull requests: read and write), stored as
+`PACKAGES_TOKEN` in a `release` environment on this repo and on TuiCode. The environment lets only
+`main` deploy, so a workflow on any other branch can't read the token. When it expires, releases
+still publish but the formula step fails: regenerate it under your GitHub settings → Developer
+settings → Fine-grained tokens, and update the environment secret in both repos.
 
 ### The shared workflows
 
@@ -90,9 +91,9 @@ the artifacts it uploaded.
 
 | | |
 |---|---|
-| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `artifacts` (artifact name pattern, default `*`), and — added after `v0.0.4` — `scoop` (Scoop manifest template path in the caller; omitted, no Scoop step runs) and `bucket` (default `mentaldesk/scoop-bucket`). |
+| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `artifacts` (artifact name pattern, default `*`), and — added after `v0.0.4` — `scoop` (Scoop manifest template path in the caller; omitted, no Scoop step runs) and `bucket` (default `mentaldesk/scoop-bucket`), and — added after `v0.1.2` — `environment` (an environment in the caller the job runs in; omitted, none). |
 | Outputs | None. |
-| Secrets | `packages-token` (optional): write access to `tap` and `bucket`. Without it the release still publishes and the packaging steps warn. |
+| Secrets | `packages-token` (optional): write access to `tap` and `bucket`. With `environment`, that environment's `PACKAGES_TOKEN` secret is used instead, and the caller passes nothing. Without either, the release still publishes and the packaging steps warn. |
 | Permissions the caller must grant | `contents: write`. Permissions are not inherited, so the calling job declares them. |
 
 Both templates are rendered from the artifacts, not from a list of platforms: `{{version}}`,
@@ -114,8 +115,9 @@ The example pins `v0.0.4` because that's its **floor**: the oldest release that 
 input it passes. A later release adding an input raises the floor only for a caller that passes
 it, so the example runs as copied and stays right without being bumped each release. Pin newer
 freely; pin older only against that release's own copy of the file, e.g.
-`git show v0.0.4:.github/workflows/release-publish.yml`. Two inputs sit above the example's
-floor: `scoop` and `bucket`, added after `v0.0.4` and first carried by the next release after it.
+`git show v0.0.4:.github/workflows/release-publish.yml`. Three inputs sit above the example's
+floor: `scoop` and `bucket`, added after `v0.0.4`, and `environment`, added after `v0.1.2`, each
+first carried by the next release after it.
 
 ```yaml
 jobs:
@@ -136,6 +138,7 @@ jobs:
       tag: ${{ needs.version.outputs.tag }}
       formula: packaging/tuicode.rb
       # scoop: packaging/tuicode.json          # needs a newer pin than v0.0.4; omit it, no Scoop step runs
+      # environment: release                   # needs a newer pin than v0.1.2; then drop `secrets:`
     secrets:
       packages-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 ```
