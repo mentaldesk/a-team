@@ -132,20 +132,16 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void A_column_with_no_card_to_describe_names_the_region_instead()
+    public void A_card_with_nothing_to_describe_names_the_region_instead()
     {
-        using var window = Open();
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0"
+            ? """[{"number": 12, "title": "Whatever this is", "status": "Idea", "url": "https://github.com/x/12", "team": "team0"}]"""
+            : "[]", null)));
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(Key.CursorRight);
-        window.NewKeyDownEvent(Key.CursorRight);
-        window.NewKeyDownEvent(Key.CursorRight);
-        window.NewKeyDownEvent(Key.CursorDown);
-        window.NewKeyDownEvent(Key.CursorDown);
-
-        Assert.Null(window.Work.Selected);
-        Assert.Equal("Review · team1", window.Message.Says);
+        Assert.Equal(12, window.Work.Selected?.Number);
+        Assert.Equal("Triage · team0", window.Message.Says);
     }
 
     [Fact]
@@ -353,7 +349,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("Triage · team1", window.Work.Region);
+        Assert.Equal("Pitches · team1", window.Work.Region);
     }
 
     [Fact]
@@ -474,7 +470,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("#6 · set to High", window.Message.Says);
 
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
+        Assert.Equal("#49 · dev · answering your feedback since 10:15 · PR #122", window.Message.Says);
     }
 
     [Fact]
@@ -1059,13 +1055,12 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_arrows_reach_every_column_and_every_lane()
+    public void The_arrows_reach_every_column_and_every_lane_that_has_a_card()
     {
         using var window = Open();
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(49, window.Work.Selected?.Number);
@@ -1075,15 +1070,12 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("Review · team0", window.Work.Region);
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("Review · team1", window.Work.Region);
-
-        window.NewKeyDownEvent(Key.CursorLeft);
-        Assert.Null(window.Work.Selected);
-        Assert.Equal("Questions · team1", window.Work.Region);
-
-        window.NewKeyDownEvent(Key.CursorLeft);
         Assert.Equal(133, window.Work.Selected?.Number);
         Assert.Equal("Pitches · team1", window.Work.Region);
+
+        window.NewKeyDownEvent(Key.CursorUp);
+        Assert.Equal(108, window.Work.Selected?.Number);
+        Assert.Equal("Pitches · team0", window.Work.Region);
     }
 
     [Fact]

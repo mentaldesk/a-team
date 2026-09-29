@@ -29,7 +29,7 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void A_column_is_titled_with_its_count_and_an_empty_one_still_draws()
+    public void A_column_is_titled_with_its_count_and_an_empty_one_is_hidden()
     {
         using var view = Open(["a-team", "tuicode"]);
 
@@ -37,7 +37,7 @@ public class WorkViewTests
         LayOut(view, 120, 20);
 
         Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
-        Assert.All(Cells(view), cell => Assert.True(cell.Width > 0 && cell.Height > 0));
+        Assert.Equal([true, true, false, true, false, true, false, false], Visible(view));
     }
 
     [Fact]
@@ -53,15 +53,44 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void The_columns_of_a_lane_divide_its_width_between_them()
+    public void The_columns_a_lane_shows_divide_its_width_between_them()
     {
         using var view = Open(["a-team", "tuicode"]);
 
         view.Show(Waiting);
-        var cells = Cells(view);
+        LayOut(view, 120, 20);
 
-        Assert.Equal([0, 30, 60, 90, 0, 30, 60, 90], cells.Select(cell => cell.X));
-        Assert.Equal([30, 30, 30, 30, 30, 30, 30, 30], cells.Select(cell => cell.Width));
+        Assert.Equal([40, 40, 0, 40, 0, 120, 0, 0], Cells(view).Select(cell => cell.Width));
+        Assert.Equal([0, 40, 80], view.Lanes[0].Columns.Where(column => column.Visible).Select(column => column.Frame.X));
+    }
+
+    [Fact]
+    public void The_selected_column_takes_half_its_lane_and_the_others_share_the_rest()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+
+        LayOut(view, 120, 20);
+
+        Assert.Equal([30, 60, 0, 30], view.Lanes[0].Columns.Select(column => column.Frame.Width));
+        Assert.Equal([0, 30, 90], view.Lanes[0].Columns.Where(column => column.Visible).Select(column => column.Frame.X));
+        Assert.Equal(["#107  When the dashboard goes quiet, I can't tell why", "#108  lead · A misconfigured team looks like a worki…"],
+            view.Lanes[0].Columns[1].CardText);
+    }
+
+    [Fact]
+    public void A_lane_with_nothing_in_it_is_just_its_name()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+
+        view.Show([.. Waiting.Where(item => item.Team == "a-team")]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(2, view.Lanes[1].Lines);
+        Assert.All(view.Lanes[1].Columns, column => Assert.False(column.Visible));
     }
 
     [Fact]
@@ -102,7 +131,7 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void With_nothing_waiting_focus_still_lands_somewhere()
+    public void With_nothing_waiting_there_is_no_column_to_focus()
     {
         using var view = Open(["a-team"]);
         view.Show([]);
@@ -110,12 +139,12 @@ public class WorkViewTests
 
         view.FocusFirstCard();
 
-        Assert.Equal("Triage · a-team", view.Region);
+        Assert.Null(view.Region);
         Assert.Null(view.Selected);
     }
 
     [Fact]
-    public void Right_and_left_step_between_the_columns_of_a_lane()
+    public void Right_and_left_step_between_the_columns_a_lane_shows()
     {
         using var view = Open(["a-team", "tuicode"]);
         view.Show(Waiting);
@@ -128,15 +157,9 @@ public class WorkViewTests
         Assert.Equal(107, view.Selected?.Number);
 
         view.MoveColumn(+1);
-        view.MoveColumn(+1);
 
         Assert.Equal("Review · a-team", view.Region);
         Assert.Equal(49, view.Selected?.Number);
-
-        view.MoveColumn(-1);
-
-        Assert.Equal("Questions · a-team", view.Region);
-        Assert.Null(view.Selected);
 
         view.MoveColumn(-1);
 
@@ -163,21 +186,31 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void An_empty_column_can_still_be_reached()
+    public void Down_into_a_lane_without_the_column_lands_on_the_nearest_one_it_shows()
     {
         using var view = Open(["a-team", "tuicode"]);
         view.Show(Waiting);
         LayOut(view, 120, 20);
         view.FocusFirstCard();
-        view.MoveColumn(+1);
-        view.MoveCard(+1);
-        view.MoveCard(+1);
-        view.MoveColumn(+1);
 
-        view.MoveColumn(+1);
+        view.MoveCard(+1);
 
-        Assert.Equal("Review · tuicode", view.Region);
-        Assert.Null(view.Selected);
+        Assert.Equal("Pitches · tuicode", view.Region);
+        Assert.Equal(133, view.Selected?.Number);
+    }
+
+    [Fact]
+    public void Down_passes_over_a_lane_with_nothing_in_it()
+    {
+        using var view = Open(["a-team", "tuicode", "triagent"]);
+        view.Show([.. Waiting.Where(item => item.Team == "a-team"),
+            Waiting[3] with { Team = "triagent" }]);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+
+        view.MoveCard(+1);
+
+        Assert.Equal("Pitches · triagent", view.Region);
     }
 
     [Fact]
@@ -281,7 +314,7 @@ public class WorkViewTests
 
         Assert.True(view.OnlyMine);
         Assert.Equal(["Triage · 1", "Pitches · 1", "Questions · 0", "Review · 0", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
-        Assert.All(Cells(view), cell => Assert.True(cell.Width > 0 && cell.Height > 0));
+        Assert.Equal([true, true, false, false, false, true, false, false], Visible(view));
 
         view.ShowOnlyMine(false);
         LayOut(view, 120, 20);
@@ -406,7 +439,7 @@ public class WorkViewTests
         Assert.Equal(1, review.Count);
         Assert.Equal("Review · 1", review.Title);
         Assert.Equal(2, review.Nodes);
-        Assert.Equal(["#49  dev · I can't cha…", "PR #122  I can't chan…"], review.CardText);
+        Assert.Equal(["#49  dev · I can't change any of…", "PR #122  I can't change any of …"], review.CardText);
     }
 
     [Fact]
@@ -421,13 +454,12 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void Down_walks_a_card_then_the_row_under_it_and_up_comes_back_to_the_last_row()
+    public void Down_walks_a_card_then_the_row_under_it_then_the_next_lane()
     {
         using var view = Open(["a-team", "tuicode"]);
         view.Show(Waiting);
         LayOut(view, 120, 20);
         view.FocusFirstCard();
-        view.MoveColumn(+1);
         view.MoveColumn(+1);
         view.MoveColumn(+1);
 
@@ -437,13 +469,12 @@ public class WorkViewTests
         Assert.Equal(49, view.Selected?.Number);
         Assert.Equal("https://github.com/x/pull/122", view.SelectedUrl);
 
-        view.MoveCard(+1);
-        Assert.Equal("Review · tuicode", view.Region);
-        Assert.Null(view.SelectedUrl);
-
         view.MoveCard(-1);
-        Assert.Equal("Review · a-team", view.Region);
-        Assert.Equal("https://github.com/x/pull/122", view.SelectedUrl);
+        Assert.Equal("https://github.com/x/3", view.SelectedUrl);
+
+        view.MoveCard(+1);
+        view.MoveCard(+1);
+        Assert.Equal("Pitches · tuicode", view.Region);
     }
 
     [Fact]
@@ -455,12 +486,11 @@ public class WorkViewTests
         view.FocusFirstCard();
         view.MoveColumn(+1);
         view.MoveColumn(+1);
-        view.MoveColumn(+1);
 
         view.MoveCard(+1);
         view.MoveCard(+1);
 
-        Assert.Equal("Review · tuicode", view.Region);
+        Assert.Equal("Pitches · tuicode", view.Region);
         Assert.True(view.Viewport.Y > 0);
     }
 
@@ -514,6 +544,9 @@ public class WorkViewTests
 
     private static IEnumerable<string> Titles(WorkView view) =>
         view.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Title);
+
+    private static IEnumerable<bool> Visible(WorkView view) =>
+        view.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Visible);
 
     private static IReadOnlyList<Rectangle> Cells(WorkView view) =>
         [.. view.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Frame)];

@@ -73,7 +73,7 @@ public sealed class WorkView : View
     /// <summary>The vocabulary the cards wear their icons from.</summary>
     internal IconStyle Icons { get; private set; } = IconStyle.Unicode;
 
-    /// <summary>Lays the cards out again, keeping the columns a team has even when they're empty.</summary>
+    /// <summary>Lays the cards out again, hiding the columns a team has nothing in.</summary>
     public void Show(IReadOnlyList<WaitingItem> items)
     {
         _items = items;
@@ -106,12 +106,11 @@ public sealed class WorkView : View
     /// <summary>Focus starts on the first card in the first team's first column that has one.</summary>
     public void FocusFirstCard()
     {
-        var columns = _lanes.SelectMany(lane => lane.Columns).ToList();
-        (columns.Find(column => column.Count > 0) ?? columns.FirstOrDefault())?.FocusCards();
+        _lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Count > 0)?.FocusCards();
         ShowFocus();
     }
 
-    /// <summary>Left and right step between the columns of a lane, stopping at its edges.</summary>
+    /// <summary>Left and right step between the columns a lane shows, stopping at its edges.</summary>
     internal void MoveColumn(int step)
     {
         if (At() is not { } at)
@@ -119,10 +118,17 @@ public sealed class WorkView : View
             FocusFirstCard();
             return;
         }
-        Land(at.Lane, Math.Clamp(at.Gate + step, 0, _lanes[at.Lane].Columns.Count - 1), 0);
+        var columns = _lanes[at.Lane].Columns;
+        for (var gate = at.Gate + step; gate >= 0 && gate < columns.Count; gate += step)
+            if (columns[gate].Visible)
+            {
+                Land(at.Lane, gate, 0);
+                return;
+            }
     }
 
-    /// <summary>Up and down walk a column's rows, then carry on into the same column of the lane above or below.</summary>
+    /// <summary>Up and down walk a column's rows, then carry on into the lane above or below, in the same column
+    /// or the nearest one it shows.</summary>
     internal void MoveCard(int step)
     {
         if (At() is not { } at)
@@ -135,9 +141,12 @@ public sealed class WorkView : View
             ScrollIntoView(at.Lane, at.Gate);
             return;
         }
-        var lane = at.Lane + step;
-        if (lane >= 0 && lane < _lanes.Count)
-            Land(lane, at.Gate, step);
+        for (var lane = at.Lane + step; lane >= 0 && lane < _lanes.Count; lane += step)
+            if (_lanes[lane].Nearest(at.Gate) is { } gate)
+            {
+                Land(lane, gate, step);
+                return;
+            }
     }
 
     /// <summary>What a rank the reviewer has just given leaves on screen, with no re-read: the card is laid out
@@ -154,14 +163,23 @@ public sealed class WorkView : View
 
     private void Replace(WaitingItem item, WaitingItem? now)
     {
-        var column = FocusedColumn();
-        var row = column?.Index ?? 0;
+        var at = At();
+        var row = FocusedColumn()?.Index ?? 0;
         _items = now is null
             ? [.. _items.Where(each => each != item)]
             : [.. _items.Select(each => each == item ? now : each)];
         Lay();
-        if (column is not null && (now is null || !column.Select(now)))
+        if (at is not { } was)
+            return;
+        var column = _lanes[was.Lane].Columns[was.Gate];
+        if (now is not null && column.Select(now))
+            return;
+        if (column.Visible)
             column.FocusCards(row);
+        else if (_lanes[was.Lane].Nearest(was.Gate) is { } gate)
+            _lanes[was.Lane].Columns[gate].FocusCards(0);
+        else
+            FocusFirstCard();
     }
 
     private void Lay()
@@ -190,7 +208,10 @@ public sealed class WorkView : View
     private void FocusMoved()
     {
         if (FocusedColumn() is { } column)
+        {
             _lastFocused = column;
+            _lanes.First(lane => lane.Columns.Contains(column)).Widen(column);
+        }
         ShowFocus();
         FocusChanged?.Invoke();
     }
@@ -239,9 +260,9 @@ public sealed class WorkView : View
     private WorkColumn? FocusedColumn() =>
         MostFocused is { } view ? _lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Holds(view)) : null;
 
-    private int Top(int index) => _lanes.Take(index).Sum(lane => lane.Rows + WorkLane.Chrome);
+    private int Top(int index) => _lanes.Take(index).Sum(lane => lane.Lines);
 
-    private int Total() => _lanes.Sum(lane => lane.Rows + WorkLane.Chrome);
+    private int Total() => _lanes.Sum(lane => lane.Lines);
 
     private void Fit()
     {
@@ -254,7 +275,7 @@ public sealed class WorkView : View
     private Size Content() => Viewport.Size with { Height = Math.Max(Viewport.Height, Total()) };
 }
 
-/// <summary>One team's swimlane: the team's name, and a column per gate under it.</summary>
+/// <summary>One team's swimlane: the team's name, and a column per gate under it that has anything in it.</summary>
 public sealed class WorkLane : View
 {
     /// <summary>The rows a lane spends on anything but cards: a blank one, the team's name, and the column's frame.</summary>
@@ -262,13 +283,14 @@ public sealed class WorkLane : View
 
     private readonly List<WorkColumn> _columns = [];
     private readonly Label _header;
+    private WorkColumn? _wide;
     private int _laidOutOver = -1;
 
     internal WorkLane(string team, Action focusChanged)
     {
         Team = team;
         CanFocus = true;
-        Height = Dim.Func(_ => Rows + Chrome, this);
+        Height = Dim.Func(_ => Lines, this);
         _header = new Label { X = 0, Y = 1, Width = Dim.Fill(), CanFocus = false };
         Add(_header);
         for (var i = 0; i < WorkView.Gates.Length; i++)
@@ -276,9 +298,9 @@ public sealed class WorkLane : View
             var index = i;
             var column = new WorkColumn(team, WorkView.Gates[i].Name, WorkView.Gates[i].Holds, focusChanged)
             {
-                X = Pos.Func(_ => Split(index), this),
+                X = Pos.Func(_ => Left(index), this),
                 Y = 2,
-                Width = Dim.Func(_ => Split(index + 1) - Split(index), this),
+                Width = Dim.Func(_ => Width(index), this),
                 Height = Dim.Fill(),
             };
             _columns.Add(column);
@@ -295,13 +317,37 @@ public sealed class WorkLane : View
     /// never none.</summary>
     internal int Rows => Math.Max(1, _columns.Max(column => column.Nodes));
 
+    /// <summary>How tall the lane is: just its name when it shows no column.</summary>
+    internal int Lines => _columns.Any(column => column.Visible) ? Rows + Chrome : Chrome - 2;
+
     internal string Header => _header.Text;
 
     internal void Show(IReadOnlyList<WaitingItem> items)
     {
         foreach (var column in _columns)
+        {
             column.Show([.. items.Where(item => item.Team == Team && column.Holds(item))]);
+            column.Visible = column.Count > 0;
+        }
+        SetNeedsLayout();
     }
+
+    /// <summary>Gives <paramref name="column"/> the lane's wide share.</summary>
+    internal void Widen(WorkColumn column)
+    {
+        if (_wide == column)
+            return;
+        _wide = column;
+        SetNeedsLayout();
+    }
+
+    /// <summary>The column the lane shows nearest <paramref name="gate"/>, or null when it shows none.</summary>
+    internal int? Nearest(int gate) =>
+        Enumerable.Range(0, _columns.Count)
+            .Where(index => _columns[index].Visible)
+            .OrderBy(index => Math.Abs(index - gate))
+            .Cast<int?>()
+            .FirstOrDefault();
 
     /// <summary>The team's name, then a rule to the right edge.</summary>
     internal static string Rule(string team, int width) =>
@@ -315,7 +361,24 @@ public sealed class WorkLane : View
         _header.Text = Rule(Team, Viewport.Width);
     }
 
-    private int Split(int index) => Viewport.Width * index / _columns.Count;
+    private int Left(int index) => Enumerable.Range(0, index).Sum(Width);
+
+    /// <summary>The selected column takes half the lane and the others it shows share the rest.</summary>
+    private int Width(int index)
+    {
+        var column = _columns[index];
+        if (!column.Visible)
+            return 0;
+        var shown = _columns.Where(each => each.Visible).ToList();
+        var wide = shown.Count > 1 && _wide is { Visible: true } ? _wide : null;
+        var half = Viewport.Width / 2;
+        if (column == wide)
+            return half;
+        var rest = shown.Where(each => each != wide).ToList();
+        var room = wide is null ? Viewport.Width : Viewport.Width - half;
+        var at = rest.IndexOf(column);
+        return room * (at + 1) / rest.Count - room * at / rest.Count;
+    }
 }
 
 /// <summary>One column's cards for one team: a frame titled with the count, holding a tree of them, each item's
@@ -345,7 +408,7 @@ public sealed class WorkColumn : FrameView
         // Moving within a column changes the tree's selection, not its focus, and the message bar follows both.
         _cards.SelectionChanged += (_, _) => focusChanged();
         Add(_cards);
-        SubViewLayout += (_, _) => Fit();
+        SubViewsLaidOut += (_, _) => Fit();
     }
 
     internal string Team { get; }
