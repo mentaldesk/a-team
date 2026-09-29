@@ -11,11 +11,13 @@ internal sealed class AppMenu
     /// <summary>Holds whatever commands the registry marks as acting on the selected card, rather than a fixed list.</summary>
     internal const string Cards = "_Cards";
 
+    internal const string Agents = "_Agents";
+
     internal static readonly (string Title, string[] Ids)[] Layout =
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
         (Cards, []),
-        ("_Agents", ["agent.hold", "agent.interrupt"]),
+        (Agents, ["agent.hold", "agent.interrupt"]),
         ("_Help", ["help", "commands", "about"]),
     ];
 
@@ -23,12 +25,15 @@ internal sealed class AppMenu
     private readonly List<(string Id, MenuItem Item)> _items = [];
     private readonly List<MenuBarItem> _menus = [];
     private readonly MenuBarItem _cards;
+    private readonly MenuBarItem _agents;
 
-    internal AppMenu(CommandRegistry commands)
+    internal AppMenu(CommandRegistry commands, Area area)
     {
         _commands = commands;
         Bar = new MenuBar { Menus = [.. Layout.Select(Menu)] };
         _cards = _menus.Single(menu => menu.Title == Cards);
+        _agents = _menus.Single(menu => menu.Title == Agents);
+        Show(area);
     }
 
     internal MenuBar Bar { get; }
@@ -37,6 +42,15 @@ internal sealed class AppMenu
 
     /// <summary>The titles across the bar, each holding the items under it.</summary>
     internal IReadOnlyList<MenuBarItem> Menus => _menus;
+
+    /// <summary>Cards only in Work and Agents only on the dashboard, closing whatever menu is open.</summary>
+    internal void Show(Area area)
+    {
+        if (Bar.IsOpen())
+            Bar.HideActiveItem();
+        _cards.Visible = _cards.Enabled = area == Area.Work;
+        _agents.Visible = _agents.Enabled = area == Area.Dashboard;
+    }
 
     /// <summary>Keeps each item reading as its command does now, like holding the selected agent's role, and
     /// showing the key it's bound to now. Setting the title sets the hot letter with it. A card command registered

@@ -1,4 +1,6 @@
 using Terminal.Gui.Input;
+using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
@@ -18,18 +20,91 @@ public class AppMenuTests : IDisposable
     }
 
     [Theory]
-    [InlineData("_View", 'v')]
-    [InlineData("_Cards", 'c')]
-    [InlineData("_Agents", 'a')]
-    [InlineData("_Help", 'h')]
-    public void Alt_and_a_titles_letter_opens_that_menu(string title, char letter)
+    [InlineData(Area.Dashboard, "_View", 'v')]
+    [InlineData(Area.Work, "_Cards", 'c')]
+    [InlineData(Area.Dashboard, "_Agents", 'a')]
+    [InlineData(Area.Work, "_Help", 'h')]
+    public void Alt_and_a_titles_letter_opens_that_menu(Area area, string title, char letter)
     {
-        using var window = Open();
+        using var window = Open(area);
         var opened = Opened(window);
 
         Assert.True(window.NewKeyDownEvent(new Key(letter).WithAlt));
 
         Assert.Equal([title], opened);
+    }
+
+    [Theory]
+    [InlineData(Area.Dashboard, 'c')]
+    [InlineData(Area.Work, 'a')]
+    public void Alt_and_a_hidden_menus_letter_opens_nothing(Area area, char letter)
+    {
+        using var window = Open(area);
+        var opened = Opened(window);
+
+        window.NewKeyDownEvent(new Key(letter).WithAlt);
+
+        Assert.Empty(opened);
+    }
+
+    [Theory]
+    [InlineData(Area.Dashboard, new[] { "_View", "_Agents", "_Help" })]
+    [InlineData(Area.Work, new[] { "_View", "_Cards", "_Help" })]
+    public void The_bar_shows_only_the_menus_for_the_area(Area area, string[] titles)
+    {
+        using var window = Open(area);
+
+        Assert.Equal(titles, Shown(window));
+    }
+
+    [Fact]
+    public void An_expanded_agent_keeps_the_dashboard_bar()
+    {
+        using var window = Open(Area.Dashboard);
+
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.NotNull(window.ExpandedAgent);
+        Assert.Equal(["_View", "_Agents", "_Help"], Shown(window));
+    }
+
+    [Theory]
+    [InlineData('w', new[] { "_View", "_Cards", "_Help" })]
+    [InlineData('d', new[] { "_View", "_Agents", "_Help" })]
+    public void Switching_area_swaps_the_bar(char key, string[] titles)
+    {
+        using var window = Open(key == 'w' ? Area.Dashboard : Area.Work);
+
+        window.NewKeyDownEvent(new Key(key));
+
+        Assert.Equal(titles, Shown(window));
+    }
+
+    [Fact]
+    public void Switching_area_from_an_open_menu_closes_it_and_shows_the_other_bar()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open(Area.Dashboard);
+        app.Begin(window);
+        window.NewKeyDownEvent(new Key('v').WithAlt);
+        Assert.True(window.Menu.IsOpen());
+
+        window.MenuItems.Single(item => item.Id == "view.work").Item.Action!();
+
+        Assert.False(window.Menu.IsOpen());
+        Assert.All(window.Menus, menu => Assert.False(menu.PopoverMenuOpen, menu.Title));
+        Assert.Equal(["_View", "_Cards", "_Help"], Shown(window));
+    }
+
+    [Fact]
+    public void A_hidden_menus_letters_don_t_fire_from_the_other_area()
+    {
+        using var window = Open(Area.Work);
+        var agents = window.Menus.Single(menu => menu.Title == AppMenu.Agents);
+
+        Assert.False(agents.Visible);
+        Assert.False(agents.PopoverMenu!.Enabled);
     }
 
     [Theory]
@@ -39,7 +114,7 @@ public class AppMenuTests : IDisposable
     [InlineData('h', true)]
     public void A_bare_title_letter_opens_no_menu_and_the_key_it_would_shadow_still_works(char letter, bool answered)
     {
-        using var window = Open();
+        using var window = Open(Area.Dashboard);
         window.NewKeyDownEvent(Key.Tab);
         var opened = Opened(window);
 
@@ -254,6 +329,9 @@ public class AppMenuTests : IDisposable
         [.. menu.PopoverMenu!.Root!.SubViews.OfType<MenuItem>()
             .Select(shown => window.MenuItems.Single(item => item.Item == shown).Id)];
 
+    private static List<string> Shown(DashboardWindow window) =>
+        [.. window.Menus.Where(menu => menu.Visible).Select(menu => menu.Title)];
+
     private static char Letter(Key key) => char.ToLowerInvariant((char)key);
 
     /// <summary>The titles that have been asked to open, in the order they were.</summary>
@@ -268,7 +346,7 @@ public class AppMenuTests : IDisposable
         return opened;
     }
 
-    private DashboardWindow Open(Func<string[], Task<string?>>? run = null)
+    private DashboardWindow Open(Area area = Area.Dashboard, Func<string[], Task<string?>>? run = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -282,7 +360,7 @@ public class AppMenuTests : IDisposable
             _ => { },
             (_, _) => null,
             (_, _, _, _) => { },
-            Area.Dashboard,
+            area,
             IconStyle.Unicode);
     }
 

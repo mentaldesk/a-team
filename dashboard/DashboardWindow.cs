@@ -171,7 +171,7 @@ public sealed class DashboardWindow : Window
         RegisterCommands();
         _commands.Apply(settings.ReadKeys());
         SyncQuitKey();
-        _menu = new AppMenu(_commands);
+        _menu = new AppMenu(_commands, _area);
         _menu.Bar.X = 0;
         _menu.Bar.Y = 0;
         Add(_menu.Bar);
@@ -615,6 +615,7 @@ public sealed class DashboardWindow : Window
         _failure = null;
         _agents.Visible = _dispatchFrame.Visible = area == Area.Dashboard;
         _work.Visible = area == Area.Work;
+        _menu.Show(area);
         if (area == Area.Work)
         {
             ReadWaiting();
