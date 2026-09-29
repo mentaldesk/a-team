@@ -648,13 +648,13 @@ public class SettingsDialogTests : IDisposable
     {
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
         using var dialog = Open(out _, out _, page: "Teams");
-        Assert.Equal(["p pause", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p pause · Enter edit", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
 
         Assert.True(dialog.Teams.NewKeyDownEvent(new Key('p')));
 
         Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
         Assert.True(new TeamConfigs(_configRoot).IsPaused("alpha"));
-        Assert.Equal(["p resume", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p resume · Enter edit", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
 
         Hint(dialog, "p resume").InvokeCommand(Command.Accept);
 
@@ -686,6 +686,104 @@ public class SettingsDialogTests : IDisposable
 
         Assert.Null(dialog.Result);
         Assert.False(dialog.Confirmed);
+    }
+
+    [Fact]
+    public void Enter_on_a_team_opens_its_form_and_saving_it_updates_the_file_and_the_row()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "app": {"id": 1}, "dispatch": {"enabled": true, "hold": ["dev"]}}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        string? opened = null;
+        dialog.EditTeam = (team, settings, save) =>
+        {
+            opened = team;
+            var after = settings with { Repo = "mentaldesk/beta", Working = false };
+            return save(after) is null ? after : null;
+        };
+
+        dialog.Teams.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal("alpha", opened);
+        Assert.Equal(["alpha  mentaldesk/beta  paused"], TeamRows(dialog));
+        Assert.Equal(
+            """{"repo": "mentaldesk/beta", "app": {"id": 1}, "dispatch": {"enabled": false, "hold": ["dev"]}}""",
+            File.ReadAllText(Path.Combine(_configRoot, "teams", "alpha.json")));
+        Assert.Null(dialog.Result);
+        Assert.False(dialog.Confirmed);
+    }
+
+    [Fact]
+    public void A_save_that_leaves_the_workdir_missing_warns_on_the_Teams_page()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "workdir": "/nowhere/alpha"}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        dialog.EditTeam = (_, settings, _) => settings;
+
+        dialog.Teams.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal("/nowhere/alpha isn't there, so the agents would have nothing to work in.", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Enter_on_a_team_whose_file_is_broken_opens_nothing_and_says_why()
+    {
+        WriteTeam("gamma", "{\n  \"repo\": \"o/r\",\n}");
+        using var dialog = Open(out _, out _, page: "Teams");
+        var opened = false;
+        dialog.EditTeam = (_, _, _) =>
+        {
+            opened = true;
+            return null;
+        };
+
+        dialog.Teams.NewKeyDownEvent(Key.Enter);
+
+        Assert.False(opened);
+        Assert.StartsWith("gamma.json, line 3: ", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void A_save_to_a_read_only_file_leaves_the_form_open_and_filled_in()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "project": {"owner": "mentaldesk", "number": 1}, "vision": "v", "workdir": "w"}""");
+        var path = Path.Combine(_configRoot, "teams", "alpha.json");
+        File.SetUnixFileMode(path, UnixFileMode.UserRead);
+        using var dialog = Open(out _, out _, page: "Teams");
+        TeamForm? shown = null;
+        dialog.EditTeam = (team, settings, save) =>
+        {
+            shown = new TeamForm(team, settings, save);
+            shown.Repo.Text = "mentaldesk/beta";
+            shown.Save();
+            return shown.Saved;
+        };
+
+        dialog.Teams.NewKeyDownEvent(Key.Enter);
+
+        using var form = shown!;
+        Assert.Null(form.Saved);
+        Assert.StartsWith("Couldn't save alpha: ", form.Message.Says);
+        Assert.Equal("mentaldesk/beta", form.Repo.Text);
+        Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
+    }
+
+    [Fact]
+    public void The_Teams_page_hints_offer_Enter_edit()
+    {
+        WriteTeam("alpha", """{"dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        var opened = false;
+        dialog.EditTeam = (_, _, _) =>
+        {
+            opened = true;
+            return null;
+        };
+
+        Hint(dialog, "Enter edit").InvokeCommand(Command.Accept);
+
+        Assert.True(opened);
     }
 
     private void WriteTeam(string team, string config)

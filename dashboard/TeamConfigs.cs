@@ -67,6 +67,17 @@ public sealed class TeamConfigs
         File.WriteAllBytes(path, ConfigEdit.SetEnabled(File.ReadAllBytes(path), working));
     }
 
+    /// <summary>What the team form shows for <paramref name="team"/>, read from its file as it is now.</summary>
+    public TeamSettings Settings(string team) => TeamSettings.Read(File.ReadAllBytes(PathOf(team)));
+
+    /// <summary>Writes the settings that differ from <paramref name="before"/> into the file as it is now, leaving
+    /// every other byte as it was.</summary>
+    public void Save(string team, TeamSettings before, TeamSettings after)
+    {
+        var path = PathOf(team);
+        File.WriteAllBytes(path, after.Write(File.ReadAllBytes(path), before));
+    }
+
     private string PathOf(string team) => Path.Combine(TeamsDirectory, $"{team}.json");
 
     private static string Reason(string message) =>
