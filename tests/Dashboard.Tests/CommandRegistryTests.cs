@@ -174,6 +174,19 @@ public class CommandRegistryTests
     }
 
     [Fact]
+    public void Rebinding_to_no_key_leaves_the_command_unbound_even_beside_other_unbound_ones()
+    {
+        var commands = new CommandRegistry()
+            .Register("greet", "Say hello", () => { }, Key.F1)
+            .Register("quit", "Quit", () => { });
+
+        commands.Apply([("greet", Key.Empty)]);
+
+        Assert.Equal(Key.Empty, commands.KeyFor("greet"));
+        Assert.False(commands.Press(Key.F1));
+    }
+
+    [Fact]
     public void A_key_another_command_holds_is_refused_and_leaves_both_where_they_were()
     {
         var commands = new CommandRegistry()

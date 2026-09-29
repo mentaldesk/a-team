@@ -38,8 +38,8 @@ release.
 | `process.md` | The shared rules: board states, gates, markers, what agents never do |
 | `roles/lead.md`, `roles/dev.md` | What each role does on a run |
 | `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
-| `bin/gh` | `gh` as the team's App inside a run, when the team has one |
-| `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run, when the team has one |
+| `bin/gh` | `gh` as the team's App inside a run |
+| `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
 | `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
@@ -74,10 +74,10 @@ release.
 3. Copy `examples/team.json` to `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
    your GitHub login as `reviewer`, the Project, and where the product is checked out on this
    machine (`workdir` for its worktrees, `checkout` for its main clone), and optionally `try`,
-   the command that runs the product from a worktree. `a-team teams` lists
-   the teams it finds. Check the board with
+   the command that runs the product from a worktree. Leave `app` as `null`: the next step fills
+   it in. `a-team teams` lists the teams it finds. Check the board with
    `a-team board <name> check`.
-4. Optionally, give the team its own identity (next section).
+4. Give the team its own GitHub App (next section). The dispatcher won't run the team without one.
 5. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
 6. Install the dispatcher, first in dry-run mode, which only logs what it would start:
 
