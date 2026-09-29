@@ -243,8 +243,8 @@ gh_pr() {
 # "<n> <kind> <timestamp> <author> <text...>". The body line is the item's own; the pr-* kinds
 # (pr-body, pr-comment, pr-review, pr-line) belong to the open PR that closes #<n>, which is
 # numbered 900 + n and is ready and mergeable unless `gh_talk <draft> <mergeable>` says otherwise.
-# A kind ending `+seen` carries the 👀 a run leaves on a comment it has read, and `\n` in the
-# text is a line break.
+# A kind ending `+seen` carries the 👀 a run leaves on a comment it has read, a `labeled` row's text
+# is the label added, and `\n` in the text is a line break.
 gh_talk() {
   jq -R -s --arg draft "${1:-false}" --arg mergeable "${2:-MERGEABLE}" '
     def who($login): if $login | endswith("[bot]")
@@ -254,6 +254,8 @@ gh_talk() {
       ($rows | map(select(.kind == "body")) | first) as $body
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
          author: who($body.author // ""), reactions: {totalCount: 0},
+         timelineItems: {nodes: ($rows | map(select(.kind == "labeled")
+           | {createdAt: .at, label: {name: .body}}))},
          comments: {nodes: ($rows | map(select(.kind == "comment")
            | seen + {createdAt: .at, body: .body, author: who(.author)}))},
          reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
@@ -614,6 +616,57 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "a task the Dev handed back with a question waits on the reviewer, with the question"
+gh_items <<'ITEMS'
+In_review 115 I can change any of the keys
+Ready 192 I can reply to a pitch
+Ready 195 Held by me
+Ready 196 Waits on another task
+ITEMS
+edit_item 192 '.labels.nodes = [{name: "a-team:dev"}, {name: "blocked"}]'
+edit_item 195 '.labels.nodes = [{name: "blocked"}]'
+edit_item 196 '.issueDependenciesSummary.blockedBy = 1'
+gh_talk <<TALK
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 comment ${TODAY}T08:23:06Z demo-app[bot] Which marker should it post?\n\n<!-- a-team:dev -->
+192 labeled ${TODAY}T08:23:14Z demo-app[bot] blocked
+195 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 comment ${TODAY}T07:05:00Z demo-app[bot] Split off from #194.\n<!-- a-team:lead -->
+195 labeled ${TODAY}T09:00:00Z reviewer blocked
+TALK
+: >"$CALLS"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "numbers" '[115,192]' "$(jq -c '[.[].number]' "$OUT")"
+same "status" '"Ready"' "$(jq -c '.[1].status' "$OUT")"
+same "turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "reason" '"asked you since 08:23"' "$(jq -c '.[1].reason' "$OUT")"
+same "question" '"Which marker should it post?"' "$(jq -c '.[1].question' "$OUT")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
+
+case_ "once the reviewer replies to the question, it's the Dev's turn"
+gh_talk <<TALK
+192 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 comment ${TODAY}T08:23:06Z demo-app[bot] Which marker should it post?\n<!-- a-team:dev -->
+192 labeled ${TODAY}T08:23:14Z demo-app[bot] blocked
+192 comment+seen ${TODAY}T10:50:00Z reviewer The Dev's own.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "turn" '"dev"' "$(jq -c '.[] | select(.number == 192) | .turn' "$OUT")"
+same "reason" '"reading your answer since 10:50"' "$(jq -c '.[] | select(.number == 192) | .reason' "$OUT")"
+
+case_ "a Dev comment long before the task was labelled blocked is no question"
+gh_talk <<TALK
+192 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 comment ${TODAY}T07:10:00Z demo-app[bot] Draft PR #9 is up.\n<!-- a-team:dev -->
+192 labeled ${TODAY}T09:00:00Z reviewer blocked
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "numbers" '[115]' "$(jq -c '[.[].number]' "$OUT")"
 
 case_ "body returns an issue's number, title and body, in one call"
 fixture <<'JSON'

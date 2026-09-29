@@ -35,6 +35,16 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void A_question_s_title_names_the_task_and_says_it_is_the_Dev_s_question()
+    {
+        var question = Item with { Status = "Ready", Question = "Which marker?" };
+        using var dialog = new ReaderDialog(question, new IssueBody(question.Question), () => { });
+
+        Assert.Equal("#180  The dashboard tells me a pitch needs me · the Dev's question", dialog.Title);
+        Assert.Equal(["Which marker?"], dialog.Body.Lines.Select(line => line.Text));
+    }
+
+    [Fact]
     public void The_body_is_shown_character_for_character_fences_tables_and_all()
     {
         using var dialog = Open(Pitch);

@@ -10,11 +10,12 @@ public sealed class WorkView : View
 {
     /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
     /// Idea or a pitch that carries none is still to rank; by In review it's decided, and a PR waits for
-    /// acceptance whatever its rank.</summary>
+    /// acceptance whatever its rank. A Ready task here is one the Dev handed back with a question.</summary>
     internal static readonly (string Name, Func<WaitingItem, bool> Holds)[] Gates =
     [
         ("Triage", item => item.Priority.Length == 0 && item.Status is "Idea" or "Pitched"),
         ("Pitches", item => item.Status == "Pitched" && item.Priority.Length > 0),
+        ("Questions", item => item.Status == "Ready"),
         ("Review", item => item.Status == "In review"),
     ];
 

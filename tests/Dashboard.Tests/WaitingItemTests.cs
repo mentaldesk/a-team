@@ -18,6 +18,18 @@ public class WaitingItemTests
             Assert.Single(items));
     }
 
+    [Fact]
+    public void A_task_handed_back_with_a_question_brings_the_question()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 192, "title": "I can reply to a pitch", "status": "Ready", "team": "a-team",
+              "turn": "you", "reason": "asked you since 08:23", "question": "Which marker?\n\nThe Dev's or none?"}]
+            """));
+
+        Assert.Equal("Which marker?\n\nThe Dev's or none?", item.Question);
+        Assert.Equal("#192 · asked you since 08:23", item.Line);
+    }
+
     [Theory]
     [InlineData(true, "Pitched", true)]
     [InlineData(false, "Pitched", false)]
