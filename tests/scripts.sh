@@ -179,7 +179,7 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
-  *"issue edit"*) echo "\$*" >>"$WRITES"; exit 0 ;;
+  *"/labels -f labels[]="*) echo "\$*" >>"$WRITES"; echo '[]'; exit 0 ;;
   *"label list"*) page="$EMPTY" ;;
   *check-runs*) page="$RUNS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
@@ -1092,7 +1092,7 @@ Exploring 21 A higher draft
 ITEMS
 run board demo move lead 11 Exploring
 same "exit" 0 "$STATUS"
-same "label" 1 "$(grep -c 'issue edit 11 .*--add-label a-team:displaced' "$WRITES")"
+same "label" 1 "$(grep -c 'issues/11/labels -f labels\[\]=a-team:displaced' "$WRITES")"
 grep -q "option=OPT_exploring" "$WRITES" || fail "status not set: '$(cat "$WRITES")'"
 
 case_ "a repeat demote moves without labelling again"
@@ -1100,7 +1100,7 @@ edit_item 11 '.labels.nodes += [{name: "a-team:displaced"}]'
 : >"$WRITES"
 run board demo move lead 11 Exploring
 same "exit" 0 "$STATUS"
-same "label" 0 "$(grep -c 'issue edit' "$WRITES")"
+same "label" 0 "$(grep -c '/labels' "$WRITES")"
 grep -q "option=OPT_exploring" "$WRITES" || fail "status not set: '$(cat "$WRITES")'"
 
 case_ "--dry-run says it would label a first demote, and labels nothing"

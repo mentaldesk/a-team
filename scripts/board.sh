@@ -592,7 +592,7 @@ case "$CMD" in
     esac
     if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
       ! jq -e '.labels | index("a-team:displaced")' <<<"$it" >/dev/null; then
-      write "label #$n a-team:displaced" gh issue edit "$n" -R "$REPO" --add-label a-team:displaced >/dev/null
+      write "label #$n a-team:displaced" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:displaced' >/dev/null
     fi
     set_status "$(jq -r .id <<<"$it")" "$to"
     say "#$n: $from -> $to"
