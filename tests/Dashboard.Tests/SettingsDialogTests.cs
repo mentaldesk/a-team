@@ -49,12 +49,21 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
-    public void The_hint_row_reads_what_the_dialog_can_do_with_the_keys_that_do_it()
+    public void The_hint_rows_read_what_the_page_and_the_dialog_can_do_with_the_keys_that_do_it()
     {
-        using var dialog = Open(out _, out _);
-        OpenPage(dialog, "Keyboard Shortcuts");
+        using var dialog = Laid(Registry(), 80, 24);
 
-        Assert.Equal("Enter rebind · Ctrl+Enter keep · Esc cancel", HintRow(dialog));
+        Assert.Equal(["Enter rebind · Delete remove · Type to filter", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+    }
+
+    [Fact]
+    public void The_pages_hints_line_up_with_the_page_and_the_dialogs_with_its_left_edge()
+    {
+        using var dialog = Laid(Registry(), 80, 24);
+
+        Assert.Equal(dialog.Keys.Frame.X, Hint(dialog, "Enter rebind").Frame.X);
+        Assert.Equal(dialog.Pages.Frame.X, Hint(dialog, "Ctrl+Enter keep").Frame.X);
+        Assert.True(Hint(dialog, "Enter rebind").Frame.Y < Hint(dialog, "Ctrl+Enter keep").Frame.Y);
     }
 
     [Fact]
@@ -283,19 +292,18 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
-    public void The_hint_row_names_rebinding_only_on_the_keys_page()
+    public void Only_the_keys_page_has_hints_of_its_own()
     {
-        using var dialog = Open(out _, out _);
+        using var dialog = Laid(Registry(), 80, 24);
 
-        Assert.Equal("Ctrl+Enter keep · Esc cancel", HintRow(dialog));
+        OpenPage(dialog, "Theme");
+        Assert.Equal(["Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
 
         OpenPage(dialog, "Keyboard Shortcuts");
-
-        Assert.Equal("Enter rebind · Ctrl+Enter keep · Esc cancel", HintRow(dialog));
+        Assert.Equal(2, HintRows(dialog).Count);
 
         OpenPage(dialog, "Dashboard");
-
-        Assert.Equal("Ctrl+Enter keep · Esc cancel", HintRow(dialog));
+        Assert.Equal(["Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
     }
 
     [Fact]
@@ -391,6 +399,90 @@ public class SettingsDialogTests : IDisposable
         Assert.Equal("Commands  Ctrl+E", Showing(dialog).First());
         Assert.Empty(dialog.Changed);
         Assert.True(dialog.Keys.HasFocus);
+    }
+
+    [Fact]
+    public void Delete_on_a_row_leaves_its_command_with_no_key_once_kept()
+    {
+        var settings = new DashboardSettings(_configRoot);
+        var commands = Registry();
+        using var dialog = Open(out var theme, out var icons, commands: commands);
+        OpenPage(dialog, "Keyboard Shortcuts");
+        dialog.Keys.SetFocus();
+
+        dialog.NewKeyDownEvent(Key.Delete);
+
+        Assert.Equal("Commands  ", Showing(dialog).First());
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+        dialog.Store(theme, icons, settings);
+        Assert.Equal([("commands", Key.Empty)], settings.ReadKeys());
+        Assert.Equal(Key.Empty, commands.KeyFor("commands"));
+    }
+
+    [Fact]
+    public void Typing_on_the_keys_list_filters_it_and_backspace_takes_the_filter_back()
+    {
+        using var dialog = Open(out _, out _);
+        OpenPage(dialog, "Keyboard Shortcuts");
+        dialog.Keys.SetFocus();
+
+        dialog.NewKeyDownEvent(new Key('q'));
+
+        Assert.Equal("q", dialog.Filter.Text);
+        Assert.Equal(["Quit      "], dialog.Rows);
+        Assert.True(dialog.Keys.HasFocus);
+
+        dialog.NewKeyDownEvent(Key.Backspace);
+
+        Assert.Equal(3, dialog.Rows.Count);
+    }
+
+    [Fact]
+    public void The_filter_matches_a_key_as_well_as_a_command()
+    {
+        using var dialog = Open(out _, out _);
+
+        dialog.Filter.Text = "ctrl+e";
+
+        Assert.Equal(["Commands  Ctrl+E"], dialog.Rows);
+    }
+
+    [Fact]
+    public void Rebinding_a_filtered_row_rebinds_the_command_it_shows()
+    {
+        using var dialog = Open(out _, out _);
+        dialog.Filter.Text = "quit";
+
+        Rebind(dialog, 0, Key.F4);
+
+        Assert.Equal([("quit", Key.F4)], dialog.Changed);
+        Assert.Equal(["Quit      F4"], dialog.Rows);
+    }
+
+    [Fact]
+    public void Down_from_the_filter_moves_into_the_keys_list()
+    {
+        using var dialog = Open(out _, out _);
+        OpenPage(dialog, "Keyboard Shortcuts");
+        dialog.Filter.SetFocus();
+
+        dialog.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.True(dialog.Keys.HasFocus);
+    }
+
+    [Fact]
+    public void Every_other_row_but_the_selected_one_is_striped()
+    {
+        var normal = new Terminal.Gui.Drawing.Attribute(Terminal.Gui.Drawing.Color.White, Terminal.Gui.Drawing.Color.Black);
+
+        Assert.Null(SettingsDialog.Stripe(0, null, normal));
+        Assert.Null(SettingsDialog.Stripe(1, 1, normal));
+        Assert.Null(SettingsDialog.Stripe(2, null, normal));
+        var striped = SettingsDialog.Stripe(1, 0, normal);
+        Assert.NotNull(striped);
+        Assert.NotEqual(normal.Background, striped.Value.Background);
+        Assert.Equal(normal.Foreground, striped.Value.Foreground);
     }
 
     [Fact]
@@ -573,9 +665,15 @@ public class SettingsDialogTests : IDisposable
     private static Button Hint(SettingsDialog dialog, string text) =>
         dialog.SubViews.OfType<Button>().Single(hint => hint.Text == text);
 
-    private static string HintRow(SettingsDialog dialog) => string.Concat(dialog.SubViews
-        .Where(view => view is Button { NoDecorations: true } || view.Text == " · ")
-        .Select(view => view.Text));
+    private static IReadOnlyList<string> HintRows(SettingsDialog dialog)
+    {
+        dialog.Layout();
+        return [.. dialog.SubViews
+            .Where(view => view is Button { NoDecorations: true } || view.Text == " · ")
+            .GroupBy(view => view.Frame.Y)
+            .OrderBy(row => row.Key)
+            .Select(row => string.Concat(row.OrderBy(view => view.Frame.X).Select(view => view.Text)))];
+    }
 
     private static CommandRegistry Registry() => new CommandRegistry()
         .Register("commands", "Commands", () => { }, Key.E.WithCtrl)
