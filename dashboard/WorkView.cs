@@ -300,7 +300,7 @@ public sealed class WorkLane : View
             {
                 X = Pos.Func(_ => Left(index), this),
                 Y = 2,
-                Width = Dim.Func(_ => Width(index), this),
+                Width = Dim.Func(_ => ColumnWidth(index), this),
                 Height = Dim.Fill(),
             };
             _columns.Add(column);
@@ -361,10 +361,10 @@ public sealed class WorkLane : View
         _header.Text = Rule(Team, Viewport.Width);
     }
 
-    private int Left(int index) => Enumerable.Range(0, index).Sum(Width);
+    private int Left(int index) => Enumerable.Range(0, index).Sum(ColumnWidth);
 
     /// <summary>The selected column takes half the lane and the others it shows share the rest.</summary>
-    private int Width(int index)
+    private int ColumnWidth(int index)
     {
         var column = _columns[index];
         if (!column.Visible)
