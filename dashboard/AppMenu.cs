@@ -15,7 +15,7 @@ internal sealed class AppMenu
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
         (Cards, []),
-        ("_Agents", ["team.pause", "agent.hold", "agent.interrupt"]),
+        ("_Agents", ["agent.hold", "agent.interrupt"]),
         ("_Help", ["help", "commands", "about"]),
     ];
 
@@ -38,9 +38,9 @@ internal sealed class AppMenu
     /// <summary>The titles across the bar, each holding the items under it.</summary>
     internal IReadOnlyList<MenuBarItem> Menus => _menus;
 
-    /// <summary>Keeps each item reading as its command does now, like pausing the selected team, and showing the
-    /// key it's bound to now. Setting the title sets the hot letter with it, so Pause's <c>P</c> becomes Resume's
-    /// <c>R</c>. A card command registered since the menu was built joins Cards.</summary>
+    /// <summary>Keeps each item reading as its command does now, like holding the selected agent's role, and
+    /// showing the key it's bound to now. Setting the title sets the hot letter with it. A card command registered
+    /// since the menu was built joins Cards.</summary>
     internal void Refresh()
     {
         foreach (var id in CardIds().Where(id => !_items.Exists(entry => entry.Id == id)))

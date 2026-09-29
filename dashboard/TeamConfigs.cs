@@ -37,6 +37,41 @@ public sealed class TeamConfigs
         }
     }
 
+    /// <summary>A team as the Teams page lists it: its repo, whether it's paused, or why its file can't be read.</summary>
+    public TeamRow Row(string team)
+    {
+        try
+        {
+            using var config = JsonDocument.Parse(File.ReadAllText(PathOf(team)));
+            if (config.RootElement.ValueKind != JsonValueKind.Object)
+                return new TeamRow(team, "", true, "it isn't a JSON object");
+            var repo = config.RootElement.TryGetProperty("repo", out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? ""
+                : "";
+            return new TeamRow(team, repo, IsPaused(team), null);
+        }
+        catch (JsonException e)
+        {
+            return new TeamRow(team, "", true, $"line {e.LineNumber + 1}: {Reason(e.Message)}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new TeamRow(team, "", true, e.Message);
+        }
+    }
+
+    /// <summary>Sets <c>dispatch.enabled</c> and nothing else: every other byte of the file stays as it was.</summary>
+    public void SetWorking(string team, bool working)
+    {
+        var path = PathOf(team);
+        File.WriteAllBytes(path, ConfigEdit.SetEnabled(File.ReadAllBytes(path), working));
+    }
+
+    private string PathOf(string team) => Path.Combine(TeamsDirectory, $"{team}.json");
+
+    private static string Reason(string message) =>
+        message.IndexOf(" LineNumber:", StringComparison.Ordinal) is var at and >= 0 ? message[..at] : message;
+
     /// <summary>Held is a role named in <c>dispatch.hold</c>, which <c>a-team stop</c> writes.</summary>
     public bool IsHeld(string team, string role)
     {
@@ -54,3 +89,6 @@ public sealed class TeamConfigs
         }
     }
 }
+
+/// <summary>A team's row on the Teams page. <see cref="Problem"/> is set when its file can't be read.</summary>
+public sealed record TeamRow(string Name, string Repo, bool Paused, string? Problem);

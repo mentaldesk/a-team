@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text;
+using System.Text.Json;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.Text;
@@ -11,6 +12,7 @@ namespace ATeam.Dashboard;
 /// <summary>The dashboard's settings, a page at a time: the pages on the left, the one picked on the right.</summary>
 public sealed class SettingsDialog : Dialog
 {
+    internal const string TeamsPage = "Teams";
     private static readonly Key Apply = Key.Enter.WithCtrl;
     private const string Prompt = "Press a key…";
     private const string RebindHint = "Enter rebind";
@@ -18,6 +20,11 @@ public sealed class SettingsDialog : Dialog
     private const string FilterHint = "Type to filter";
     private const string KeepHint = "Ctrl+Enter keep";
     private const string CancelHint = "Esc cancel";
+    private const string PauseHint = "p pause";
+    private const string ResumeHint = "p resume";
+    private const string Working = "working";
+    private const string Paused = "paused";
+    private const string Unreadable = "can't read this file";
     private const string Separator = " · ";
     private const string ToolCalls = "Show tool calls in full";
     private const string IconsHeading = "Icons:";
@@ -50,6 +57,9 @@ public sealed class SettingsDialog : Dialog
     private readonly OptionSelector _iconStyles;
     private readonly TextField _filter = new();
     private readonly KeyList _keys;
+    private readonly TeamConfigs _teams;
+    private readonly List<TeamRow> _teamRows;
+    private readonly TeamList _teamList = new();
     private readonly MessageBar _message = new();
     private bool _capturing;
 
@@ -58,10 +68,14 @@ public sealed class SettingsDialog : Dialog
         IconSetting icons,
         bool expandToolCalls,
         CommandRegistry commands,
+        TeamConfigs teams,
         Action redraw,
-        IconStyle auto)
+        IconStyle auto,
+        string? page = null)
     {
         _commands = commands;
+        _teams = teams;
+        _teamRows = [.. teams.Names().Select(teams.Row)];
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
 
@@ -119,11 +133,15 @@ public sealed class SettingsDialog : Dialog
                 key.Handled = _keys.SetFocus();
         };
 
+        _teamList.Pause = TogglePause;
+        _teamList.ValueChanged += (_, _) => ShowTeam();
+
         _pages =
         [
-            new Page("Theme", [new Placed(themes)], []),
-            new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], [RebindHint, RemoveHint, FilterHint]),
-            new Page("Dashboard", DashboardRows(), []),
+            new Page("Theme", [new Placed(themes)], () => []),
+            new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint]),
+            new Page("Dashboard", DashboardRows(), () => []),
+            new Page(TeamsPage, [new Placed(_teamList)], () => [SelectedTeam() is { Paused: false } ? PauseHint : ResumeHint]),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -132,7 +150,7 @@ public sealed class SettingsDialog : Dialog
         _picker.Width = _pages.Max(page => page.Name.Length);
         _picker.Height = content;
         _picker.SetSource(new ObservableCollection<string>(_pages.Select(page => page.Name)));
-        _picker.Value = 0;
+        _picker.Value = Math.Max(0, _pages.FindIndex(shown => shown.Name == page));
         _picker.ValueChanged += (_, _) => ShowPage();
 
         var rule = new Line { X = Pos.Right(_picker) + Gap, Y = 0, Orientation = Orientation.Vertical, Height = content };
@@ -144,6 +162,8 @@ public sealed class SettingsDialog : Dialog
         _filter.Width = Dim.Fill(Inset);
         _keys.Width = Dim.Fill(Inset);
         _keys.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove - KeysRow), this);
+        _teamList.Width = Dim.Fill(Inset);
+        _teamList.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
         Add(_picker, rule);
@@ -151,7 +171,10 @@ public sealed class SettingsDialog : Dialog
             Add(placed.View);
         Add(_message);
         ShowKeys();
+        ShowTeams();
         ShowPage();
+        if (page == TeamsPage)
+            _teamList.SetFocus();
     }
 
     internal bool Confirmed { get; private set; }
@@ -162,6 +185,8 @@ public sealed class SettingsDialog : Dialog
 
     internal ListView Keys => _keys;
 
+    internal ListView Teams => _teamList;
+
     internal MessageBar Message => _message;
 
     internal TextField Filter => _filter;
@@ -170,7 +195,7 @@ public sealed class SettingsDialog : Dialog
 
     internal IReadOnlyList<(string Id, Key Key)> Changed => _changed;
 
-    /// <summary>Enter reaches a Dialog as Accept, from the keys list or the pages list alike, and never as a key.
+    /// <summary>Enter reaches a Dialog as Accept, from any of its lists alike, and never as a key.
     /// The hints close the dialog from their own Accepting, so nothing here does.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => !_keys.HasFocus || Rebind();
 
@@ -189,12 +214,14 @@ public sealed class SettingsDialog : Dialog
         DashboardSettings settings,
         CommandRegistry commands,
         Action<IconStyle> showIcons,
-        IconStyle auto)
+        IconStyle auto,
+        TeamConfigs teams,
+        string? page = null)
     {
         var theme = ThemeSetting.Live(settings);
         var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
-            theme, icons, settings.ReadExpandToolCalls(), commands, () => app.LayoutAndDraw(true), auto);
+            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page);
         app.Run(dialog);
         dialog.Store(theme, icons, settings);
     }
@@ -290,6 +317,65 @@ public sealed class SettingsDialog : Dialog
     private int? Selected() =>
         _keys.Value is { } row && row >= 0 && row < _shown.Count ? _shown[row] : null;
 
+    /// <summary>Starts the selected team if it's paused and pauses it if it's working, straight away: it's the
+    /// team's own file, not a setting the dialog keeps or cancels.</summary>
+    private void TogglePause()
+    {
+        if (_teamList.Value is not { } index || SelectedTeam() is not { } team)
+            return;
+        if (team.Problem is not null)
+        {
+            Say($"Fix {team.Name}.json before starting or pausing {team.Name}: a-team can't read it.");
+            return;
+        }
+        try
+        {
+            _teams.SetWorking(team.Name, team.Paused);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            Say($"Couldn't {(team.Paused ? "start" : "pause")} {team.Name}: {e.Message}");
+            return;
+        }
+        _teamRows[index] = _teams.Row(team.Name);
+        ShowTeams();
+        ShowTeam();
+    }
+
+    private TeamRow? SelectedTeam() =>
+        _teamList.Value is { } index && index >= 0 && index < _teamRows.Count ? _teamRows[index] : null;
+
+    /// <summary>What's wrong with the selected team's file, if anything, and the pause hint that fits it.</summary>
+    private void ShowTeam()
+    {
+        if (_pages[_picker.Value ?? 0].Name != TeamsPage)
+            return;
+        if (SelectedTeam() is { Problem: { } problem } team)
+            Say($"{team.Name}.json, {problem}");
+        else
+            _message.Clear();
+        ShowHints(_pages[_picker.Value ?? 0].Hints());
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private void ShowTeams()
+    {
+        var selected = _teamList.Value;
+        _teamList.SetSource(new ObservableCollection<string>(TeamRows()));
+        _teamList.Value = selected ?? (_teamRows.Count == 0 ? null : 0);
+    }
+
+    private IReadOnlyList<string> TeamRows()
+    {
+        var name = _teamRows.Count == 0 ? 0 : _teamRows.Max(team => team.Name.Length);
+        var repo = _teamRows.Count == 0 ? 0 : _teamRows.Max(team => team.Repo.Length);
+        return [.. _teamRows.Select(team => $"{team.Name.PadRight(name)}  {team.Repo.PadRight(repo)}  {Status(team)}")];
+    }
+
+    private static string Status(TeamRow team) =>
+        team.Problem is not null ? Unreadable : team.Paused ? Paused : Working;
+
     /// <summary>Shows the page the list is on, and only that one, with the hints that page answers to.</summary>
     private void ShowPage()
     {
@@ -297,7 +383,8 @@ public sealed class SettingsDialog : Dialog
         for (var index = 0; index < _pages.Count; index++)
             foreach (var placed in _pages[index].Rows)
                 placed.View.Visible = index == selected;
-        ShowHints(_pages[selected].Hints);
+        ShowHints(_pages[selected].Hints());
+        ShowTeam();
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -396,6 +483,11 @@ public sealed class SettingsDialog : Dialog
 
     private bool Run(string hint)
     {
+        if (hint is PauseHint or ResumeHint)
+        {
+            TogglePause();
+            return true;
+        }
         switch (hint)
         {
             case RebindHint:
@@ -432,7 +524,7 @@ public sealed class SettingsDialog : Dialog
     /// <summary>A view on a page, at the row and indent the page wants it.</summary>
     private sealed record Placed(View View, int X = 0, int Y = 0);
 
-    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, string[] Hints);
+    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, Func<string[]> Hints);
 
     /// <summary>A list that can take a key literally. ListView's own type-ahead answers a letter before any
     /// handler the dialog could attach, so neither the capture nor the filter would ever see it.</summary>
@@ -441,5 +533,19 @@ public sealed class SettingsDialog : Dialog
         public Func<Key, bool>? Captured { get; set; }
 
         protected override bool OnKeyDown(Key key) => Captured?.Invoke(key) == true || base.OnKeyDown(key);
+    }
+
+    /// <summary>A list that answers <c>p</c> itself, for the same reason as <see cref="KeyList"/>.</summary>
+    private sealed class TeamList : ListView
+    {
+        public Action? Pause { get; set; }
+
+        protected override bool OnKeyDown(Key key)
+        {
+            if (key != new Key('p'))
+                return base.OnKeyDown(key);
+            Pause?.Invoke();
+            return true;
+        }
     }
 }

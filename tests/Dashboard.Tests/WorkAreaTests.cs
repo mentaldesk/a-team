@@ -1088,7 +1088,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "team.pause", "agent.hold", "agent.interrupt", "help", "commands", "about",
+                "work.github", "agent.hold", "agent.interrupt", "help", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>
@@ -1113,18 +1113,6 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(Area.Work, window.CurrentArea);
     }
 
-    [Fact]
-    public void A_menu_item_says_what_its_command_would_do_now()
-    {
-        var teams = Path.Combine(Config, "teams");
-        Directory.CreateDirectory(teams);
-        File.WriteAllText(Path.Combine(teams, "team0.json"), "{\"dispatch\": {\"enabled\": false}}");
-        using var window = Open(area: Area.Dashboard);
-
-        window.Refresh();
-
-        Assert.Equal("_Resume team0", window.MenuItems.Single(item => item.Id == "team.pause").Item.Title);
-    }
 
     [Fact]
     public void work_try_is_on_t_with_no_hint_and_the_Work_bar_is_unchanged()

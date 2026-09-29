@@ -166,7 +166,7 @@ a-team dashboard [team...]  straight to the agents
 The app has two areas: **Work**, everything waiting on you across every team, and **Dashboard**,
 what each agent is doing. `d` and `w` switch between them, Esc goes back to the Dashboard, and the
 menu across the top carries the same commands: View (Dashboard, Work, Settings, Quit), Agents
-(Pause or Resume, Pause this role, Interrupt) and Help (Keys, Commands, About). Each title and item underlines a letter:
+(Pause this role, Interrupt) and Help (Keys, Commands, About). Each title and item underlines a letter:
 `Alt`+it opens a menu, and once one is open the bare letter picks from it — `Alt+H` `k` for Keys.
 Esc closes it, and F10 and the arrows still work. Whichever area you were in is what it opens in
 next time; a first run lands on Work.
@@ -239,7 +239,10 @@ is a row per command with the key that runs it; Dashboard is whether panes start
 call showing, and which icons the panes, their sessions and the cards wear — *Automatic*, *Nerd Font* or *Unicode*,
 the last two drawn in their own glyphs so you pick the row that isn't boxes, previewing behind the
 dialog as you move. *Automatic* names what it decided for the terminal you're in, and decides
-again on every launch: a font belongs to a terminal, what's stored belongs to the machine. Enter
+again on every launch: a font belongs to a terminal, what's stored belongs to the machine. Teams is a row per
+team with its repo and whether it's `working` or `paused`; p starts or pauses the selected one there
+and then, and Ctrl+E → *Teams* opens Settings on that page. A team whose file doesn't parse reads
+`can't read this file`, and selecting it names the line that's wrong. Enter
 on a shortcut row takes the next key you press; a key another command already holds is refused,
 naming the one that holds it. Ctrl+Enter keeps what's picked on any page, Esc
 discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
@@ -262,9 +265,7 @@ still applies.
 
 Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it. Type to narrow
 the list, Up/Down (or PgUp/PgDn and Home/End) to pick, Enter to run it, Esc to close. Every key
-above is one of those commands, so anything you can press you can also run by name. Among them is
-Pause (or Resume) for the selected agent's team, named after it: it runs `a-team pause` and the
-panes follow within a second. `i` interrupts the selected agent's run: it runs `a-team attach` in
+above is one of those commands, so anything you can press you can also run by name. `i` interrupts the selected agent's run: it runs `a-team attach` in
 the dashboard's place, so you're in that run's conversation, and quitting brings you back to the
 grid with the role free to start again. A run too new to have a session is just stopped and held,
 as `a-team stop` does. On a held role the same command reads *Let it start again* and runs
