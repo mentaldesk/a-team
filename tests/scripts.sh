@@ -790,7 +790,7 @@ for role in lead dev; do
   run board demo approve "$role" 7
   failed "$role approving"
   one_line "$role approving"
-  grep -q "$role may not approve a pitch; approving is the reviewer's own gate" "$ERR" ||
+  grep -q "$role may not approve a pitch; approving is the stakeholders' own gate" "$ERR" ||
     fail "$role approving: '$(cat "$ERR")'"
   same "$role writes" "" "$(cat "$WRITES")"
 done
@@ -871,7 +871,7 @@ gh_recent <<RECENT
 RECENT
 run board demo triggers lead
 same "exit" 0 "$STATUS"
-same "reasons" "[\"reviewer feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .reasons "$OUT")"
+same "reasons" "[\"stakeholder feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .reasons "$OUT")"
 
 case_ "waiting says the same: the gate is the Lead's until the 👀 is there"
 gh_talk <<TALK
@@ -938,7 +938,7 @@ gh_recent <<TALK
 TALK
 run board demo triggers lead
 same "exit" 0 "$STATUS"
-same "reasons" "[\"reviewer feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .reasons "$OUT")"
+same "reasons" "[\"stakeholder feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .reasons "$OUT")"
 
 case_ "waiting says the same: the Quote reply makes the gate the Lead's"
 gh_talk <<TALK
@@ -1043,6 +1043,72 @@ same "exit" 0 "$STATUS"
 same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
 same "pitch reason" '"awaiting your approval since 01 Oct 08:00"' "$(jq -c '.[0].reason' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+gh_items <<'ITEMS'
+Pitched 7 A pitch in front of me
+ITEMS
+
+# Stakeholders: whoever the config lists, not one login, is who the team answers.
+KEPT_CONFIG=$CONFIG KEPT_TEAM=$TEAM
+case_ "a second stakeholder's comment is feedback, and a stranger's isn't"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer", "second"], "app": { "id": 7, "slug": "demo-app" },
+  "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_thread <<'TALK'
+body 2026-10-01T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
+comment 2026-10-01T02:20:00Z second 0 Needs a second option.
+comment 2026-10-01T02:28:46Z stranger 0 Ship it now.
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '["Needs a second option."]' "$(jq -c '[.[].body]' "$OUT")"
+
+case_ "comment acks the second stakeholder's, and leaves the stranger's alone"
+: >"$ACKED"
+export A_TEAM_RUN_STARTED=2026-10-01T03:00:00Z
+run board demo comment lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_1" "$(cat "$ACKED")"
+unset A_TEAM_RUN_STARTED
+
+case_ "triggers starts a run for the second stakeholder, and not the stranger"
+gh_recent <<RECENT
+7 ${TODAY}T02:20:00Z second 0 Needs a second option.
+7 ${TODAY}T02:28:46Z stranger 0 Ship it now.
+RECENT
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" "[\"stakeholder feedback on #7 (${TODAY}T02:20:00Z)\"]" "$(jq -c .reasons "$OUT")"
+
+case_ "waiting hands the gate to the Lead for the second stakeholder, and not for the stranger"
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+Pitched 107 Someone else's opinion
+ITEMS
+gh_talk <<'TALK'
+106 body 2026-10-01T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+106 comment 2026-10-01T09:30:00Z second What about the second gate?
+107 body 2026-10-01T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+107 comment 2026-10-01T09:30:00Z stranger What about the second gate?
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "turns" '["lead","you"]' "$(jq -c '[.[].turn]' "$OUT")"
+
+case_ "a config that still says reviewer answers that one person, as before"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" },
+  "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_thread <<'TALK'
+body 2026-10-01T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
+comment 2026-10-01T02:20:00Z reviewer 0 Needs a second option.
+comment 2026-10-01T02:28:46Z second 0 Ship it now.
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '["Needs a second option."]' "$(jq -c '[.[].body]' "$OUT")"
+CONFIG=$KEPT_CONFIG TEAM=$KEPT_TEAM
 gh_items <<'ITEMS'
 Pitched 7 A pitch in front of me
 ITEMS

@@ -72,7 +72,7 @@ release.
 2. Create or pick a Project for the repo. Its Status field needs the nine options in
    `process.md`, or a `statusMap` in the team config from those names to the ones it has.
 3. Copy `examples/team.json` to `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
-   your GitHub login as `reviewer`, the Project, and where the product is checked out on this
+   your GitHub login in `stakeholders`, the Project, and where the product is checked out on this
    machine (`workdir` for its worktrees, `checkout` for its main clone), and optionally `try`,
    the command that runs the product from a worktree. Leave `app` as `null`: the next step fills
    it in. `a-team teams` lists the teams it finds. Check the board with
@@ -130,7 +130,7 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
 - **Triggers** (`a-team board <team> triggers <role>`) list what a role has to react to. Reactive work
   starts within a couple of minutes. Pitching and discovering happen at most every
   `dispatch.creativeEvery` minutes, except that the Lead pitches straight away when nothing is
-  Pitched or Exploring, so the reviewer always has a pitch to decide on.
+  Pitched or Exploring, so the stakeholder always has a pitch to decide on.
 - **Feedback is never too old to start a run.** The two-minute check reads the last day of
   comments repo-wide, so every `dispatch.sweepEvery` minutes (30 by default) a role's own items
   are read in full instead, however old the comments on them are. The gap is elapsed time, not

@@ -27,6 +27,30 @@ internal static class ConfigEdit
                 writer.WriteNullValue();
         }));
 
+    internal static byte[] Set(byte[] config, IReadOnlyList<string> path, IReadOnlyList<string> values) =>
+        SetLiteral(config, path, List(values));
+
+    /// <summary>The config with the top-level key <paramref name="from"/> swapped for <paramref name="to"/>, holding
+    /// <paramref name="values"/>, where it was; or with <paramref name="to"/> set, where <paramref name="from"/> isn't
+    /// there.</summary>
+    internal static byte[] Replace(byte[] config, string from, string to, IReadOnlyList<string> values)
+    {
+        JsonDocument.Parse(config).Dispose();
+        var reader = new Utf8JsonReader(config);
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("it isn't a JSON object");
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var start = (int)reader.TokenStartIndex;
+            var matches = reader.ValueTextEquals(from);
+            reader.Read();
+            reader.Skip();
+            if (matches)
+                return Splice(config, start, (int)reader.BytesConsumed, $"{Key(to)}: {List(values)}");
+        }
+        return Set(config, [to], values);
+    }
+
     /// <summary>The config with the value at <paramref name="path"/> set, adding it, or the objects on the way to
     /// it, where missing.</summary>
     private static byte[] SetLiteral(byte[] config, IReadOnlyList<string> path, string json)
@@ -70,6 +94,8 @@ internal static class ConfigEdit
             property = $"{Key(path[at])}: {{{property}}}";
         return property;
     }
+
+    private static string List(IReadOnlyList<string> values) => $"[{string.Join(", ", values.Select(Key))}]";
 
     private static string Key(string name) => Literal(writer => writer.WriteStringValue(name));
 

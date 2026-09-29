@@ -16,11 +16,13 @@ public enum TeamStatus
 public sealed class TeamForm : Dialog
 {
     internal const string RepoCaption = "The GitHub repo the team works on, as owner/repo.";
+    internal const string StakeholdersCaption = "Whose comments the team acts on. You, unless you add others.";
     internal const string ProjectCaption = "The GitHub Project whose board the team moves its work across.";
     internal const string OwnerCaption = "Who owns the Project: the user or organisation in its URL.";
     internal const string NumberCaption = "The Project's number, the last part of its URL.";
     internal const string VisionCaption = "The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.";
     internal const string WorkdirCaption = "Where the agents work. They can't write outside it.";
+    internal const string SkillsCaption = "Skills the agents load. Must be installed on this machine.";
     internal const string TryCaption = "What a-team try runs to let you try a change.";
     internal const string CheckoutCaption = "Where the Dev looks for merged work to clean up. Change it in the file.";
     internal const string StatusCaption = "Whether the team picks up work. Paused lets a run in flight finish.";
@@ -34,10 +36,15 @@ public sealed class TeamForm : Dialog
     private const int Inset = 1;
     private const int FieldX = 14;
     private const int LimitWidth = 6;
+    private const string PickText = "Enter ▸";
+    private const int PickWidth = 8;
 
     private readonly TeamSettings _before;
+    private readonly string _team;
     private readonly Func<TeamSettings, string?> _save;
     private readonly TextField _repo;
+    private readonly PickRow _stakeholders;
+    private readonly PickRow _skills;
     private readonly DropDownList _project;
     private readonly TextField _owner;
     private readonly TextField _number;
@@ -54,12 +61,20 @@ public sealed class TeamForm : Dialog
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private List<ProjectChoice> _projects = [];
+    private IReadOnlyList<string> _stakeholderNames;
+    private IReadOnlyList<string> _skillNames;
 
     /// <summary><paramref name="save"/> writes what the form holds, and says why it couldn't.</summary>
     public TeamForm(string team, TeamSettings settings, Func<TeamSettings, string?> save)
     {
         _before = settings;
         _save = save;
+        _team = team;
+        _stakeholderNames = settings.Stakeholders;
+        _skillNames = settings.Skills;
+        RunPicker = picker => App is { } app ? Picker.Show(app, picker) : null;
+        FindStakeholders = Stakeholders.Read;
+        FindSkills = () => SkillsFound.Find(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Current().CheckoutPath);
 
         Title = $"Team: {team}";
         X = 0;
@@ -69,6 +84,7 @@ public sealed class TeamForm : Dialog
 
         var row = 0;
         _repo = Field("Repo", settings.Repo, row++, RepoCaption);
+        _stakeholders = Picks("Stakeholders", _stakeholderNames, row++, StakeholdersCaption, PickStakeholders);
 
         Add(new Label { Text = "Project", X = Inset, Y = row });
         _project = new DropDownList { X = FieldX, Y = row, Width = Dim.Fill(Inset), ReadOnly = true };
@@ -88,6 +104,7 @@ public sealed class TeamForm : Dialog
 
         _vision = Field("Vision", settings.Vision, row++, VisionCaption);
         _workdir = Field("Workdir", settings.Workdir, row++, WorkdirCaption);
+        _skills = Picks("Skills", _skillNames, row++, SkillsCaption, PickSkills);
         _try = Field("Try", settings.Try, row++, TryCaption);
         if (settings.OtherCheckout is { } checkout)
             Field("Checkout", checkout, row++, CheckoutCaption).ReadOnly = true;
@@ -125,6 +142,18 @@ public sealed class TeamForm : Dialog
 
     internal TextField Repo => _repo;
 
+    internal View StakeholdersRow => _stakeholders;
+
+    internal View SkillsRow => _skills;
+
+    /// <summary>Runs a picker over the form and returns what it picked, or null where it was cancelled.</summary>
+    internal Func<Picker, IReadOnlyList<string>?> RunPicker { get; set; }
+
+    /// <summary>Who can push to a repo, or null where GitHub can't say.</summary>
+    internal Func<string, Task<IReadOnlyList<string>?>> FindStakeholders { get; set; }
+
+    internal Func<SkillsFound> FindSkills { get; set; }
+
     internal DropDownList Project => _project;
 
     internal TextField Owner => _owner;
@@ -155,6 +184,8 @@ public sealed class TeamForm : Dialog
             Vision = _vision.Text.Trim(),
             Workdir = _workdir.Text.Trim(),
             Try = _try.Text.Trim(),
+            Stakeholders = _stakeholderNames,
+            Skills = _skillNames,
             Working = _status.Value == TeamStatus.Working,
             Worktrees = _worktrees.Value,
             Pitched = _pitched.Value,
@@ -257,6 +288,34 @@ public sealed class TeamForm : Dialog
         _number.Text = picked.Number.ToString();
     }
 
+    /// <summary>Opens the stakeholders picker, filling it once GitHub says who can push to the repo.</summary>
+    internal void PickStakeholders()
+    {
+        var repo = Current().Repo;
+        using var picker = new Picker($"Stakeholders for {_team}", _stakeholderNames, "", $"Reading who can push to {repo}…");
+        FindStakeholders(repo).ContinueWith(read =>
+        {
+            var found = read.Status == TaskStatus.RanToCompletion ? read.Result : null;
+            void Show() => picker.ShowChoices(found ?? [], Stakeholders.Message(found, repo), found is null ? Schemes.Accent : Schemes.Base);
+            if (App is { } app)
+                app.Invoke(Show);
+            else
+                Show();
+        }, TaskContinuationOptions.ExecuteSynchronously);
+        if (RunPicker(picker) is { } picked)
+            _stakeholderNames = Show(_stakeholders, picked);
+    }
+
+    /// <summary>Opens the skills picker over the skills installed here and the repo's own.</summary>
+    internal void PickSkills()
+    {
+        var found = FindSkills();
+        using var picker = new Picker($"Skills for {_team}", _skillNames, "(not installed)", found.Message);
+        picker.ShowChoices(found.Names, found.Message);
+        if (RunPicker(picker) is { } picked)
+            _skillNames = Show(_skills, picked);
+    }
+
     private bool Run(string hint) => hint == SaveHint ? Save() : Close(null);
 
     private TextField Field(string label, string value, int row, string caption)
@@ -266,6 +325,22 @@ public sealed class TeamForm : Dialog
         Add(field);
         Caption(field, caption);
         return field;
+    }
+
+    private PickRow Picks(string label, IReadOnlyList<string> names, int row, string caption, Action pick)
+    {
+        Add(new Label { Text = label, X = Inset, Y = row });
+        var picks = new PickRow(pick) { X = FieldX + 1, Y = row, Width = Dim.Fill(Inset + PickWidth) };
+        Add(picks, new Label { Text = PickText, X = Pos.AnchorEnd(Inset + PickWidth), Y = row });
+        Show(picks, names);
+        Caption(picks, caption);
+        return picks;
+    }
+
+    private static IReadOnlyList<string> Show(PickRow row, IReadOnlyList<string> names)
+    {
+        row.Text = names.Count == 0 ? "none" : string.Join(", ", names);
+        return names;
     }
 
     private NumericUpDown<int> Limit(string label, int value, int column, int row, string caption)
@@ -292,5 +367,25 @@ public sealed class TeamForm : Dialog
         _message.Show(message, scheme);
         SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    /// <summary>The chosen names of a list field, which opens its picker on Enter.</summary>
+    private sealed class PickRow : Label
+    {
+        private readonly Action _pick;
+
+        public PickRow(Action pick)
+        {
+            _pick = pick;
+            CanFocus = true;
+        }
+
+        protected override bool OnKeyDown(Key key)
+        {
+            if (key != Key.Enter)
+                return base.OnKeyDown(key);
+            _pick();
+            return true;
+        }
     }
 }
