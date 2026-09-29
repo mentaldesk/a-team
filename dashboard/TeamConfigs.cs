@@ -78,6 +78,25 @@ public sealed class TeamConfigs
         File.WriteAllBytes(path, after.Write(File.ReadAllBytes(path), before));
     }
 
+    /// <summary>Where <see cref="Remove"/> would keep the team's file: <c>&lt;team&gt;.json.removed</c>, or, when an
+    /// older one is there, the first free <c>&lt;team&gt;.json.removed.&lt;n&gt;</c>.</summary>
+    public string RemovedName(string team)
+    {
+        var name = $"{team}.json.removed";
+        for (var n = 2; File.Exists(Path.Combine(TeamsDirectory, name)); n++)
+            name = $"{team}.json.removed.{n}";
+        return name;
+    }
+
+    /// <summary>Moves the team's file aside, so nothing lists it any more, and returns the name it's kept under.
+    /// The team's state is left alone.</summary>
+    public string Remove(string team)
+    {
+        var kept = RemovedName(team);
+        File.Move(PathOf(team), Path.Combine(TeamsDirectory, kept), overwrite: false);
+        return kept;
+    }
+
     private string PathOf(string team) => Path.Combine(TeamsDirectory, $"{team}.json");
 
     private static string Reason(string message) =>

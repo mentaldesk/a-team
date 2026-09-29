@@ -115,6 +115,36 @@ public class TeamConfigsTests : IDisposable
         Assert.True(row.Paused);
     }
 
+    [Fact]
+    public void Removing_a_team_moves_its_file_aside_and_leaves_its_state_alone()
+    {
+        Write("alpha", "{}");
+        Write("beta", """{"repo": "o/beta"}""");
+        var state = Path.Combine(_root, "state", "beta", "dev");
+        Directory.CreateDirectory(state);
+        var teams = new TeamConfigs(_root);
+
+        Assert.Equal("beta.json.removed", teams.Remove("beta"));
+
+        Assert.Equal(["alpha"], teams.Names());
+        Assert.Equal("""{"repo": "o/beta"}""", File.ReadAllText(Path.Combine(_root, "teams", "beta.json.removed")));
+        Assert.True(Directory.Exists(state));
+    }
+
+    [Fact]
+    public void Removing_a_team_again_keeps_the_older_removed_file()
+    {
+        Write("beta", "older", extension: ".json.removed");
+        Write("beta", "newer");
+        var teams = new TeamConfigs(_root);
+
+        Assert.Equal("beta.json.removed.2", teams.RemovedName("beta"));
+        Assert.Equal("beta.json.removed.2", teams.Remove("beta"));
+
+        Assert.Equal("older", File.ReadAllText(Path.Combine(_root, "teams", "beta.json.removed")));
+        Assert.Equal("newer", File.ReadAllText(Path.Combine(_root, "teams", "beta.json.removed.2")));
+    }
+
     private void Write(string team, string config, string extension = ".json")
     {
         var teams = Path.Combine(_root, "teams");

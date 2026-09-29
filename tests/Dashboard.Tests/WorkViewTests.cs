@@ -476,6 +476,21 @@ public class WorkViewTests
         Assert.All(review.CardText, text => Assert.DoesNotContain(CardCells.LaidOut(text), char.IsSurrogate));
     }
 
+    [Fact]
+    public void Forgetting_a_team_drops_its_lane_and_its_cards_and_closes_the_gap()
+    {
+        using var view = Open(["a-team", "tuicode", "goose"]);
+        view.Show(Waiting);
+
+        view.Forget(["a-team"]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(["tuicode", "goose"], view.Lanes.Select(lane => lane.Team));
+        Assert.All(view.Items, item => Assert.Equal("tuicode", item.Team));
+        Assert.Equal(0, view.Lanes[0].Frame.Y);
+        Assert.Equal(view.Lanes[0].Frame.Bottom, view.Lanes[1].Frame.Y);
+    }
+
     private static WorkView Open(string[] teams)
     {
         var view = new WorkView(teams);
