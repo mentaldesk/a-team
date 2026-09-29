@@ -422,7 +422,10 @@ public sealed class DashboardWindow : Window
         if (_work.Selected is not { } item)
             return;
         var url = _work.SelectedUrl;
-        ReadBody(item, (read, body) => ShowBody(read, body, url));
+        if (item.Question.Length > 0)
+            ShowBody(item, new IssueBody(item.Question), url);
+        else
+            ReadBody(item, (read, body) => ShowBody(read, body, url));
     }
 
     private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then)

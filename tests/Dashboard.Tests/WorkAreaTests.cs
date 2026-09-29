@@ -37,7 +37,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(["team0", "team1"], teams);
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
     }
 
@@ -127,23 +127,21 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Says);
 
         window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal("#49 · dev · answering your feedback since 10:15 · PR #122", window.Message.Says);
     }
 
     [Fact]
-    public void A_column_with_no_card_to_describe_names_the_region_instead()
+    public void A_card_with_nothing_to_describe_names_the_region_instead()
     {
-        using var window = Open();
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0"
+            ? """[{"number": 12, "title": "Whatever this is", "status": "Idea", "url": "https://github.com/x/12", "team": "team0"}]"""
+            : "[]", null)));
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(Key.CursorRight);
-        window.NewKeyDownEvent(Key.CursorRight);
-        window.NewKeyDownEvent(Key.CursorDown);
-        window.NewKeyDownEvent(Key.CursorDown);
-
-        Assert.Null(window.Work.Selected);
-        Assert.Equal("Review · team1", window.Message.Says);
+        Assert.Equal(12, window.Work.Selected?.Number);
+        Assert.Equal("Triage · team0", window.Message.Says);
     }
 
     [Fact]
@@ -156,14 +154,14 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('m')));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Triage · 1", "Pitches · 1", "Review · 0", "Triage · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 1", "Questions · 0", "Review · 0", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(6, window.Work.Selected?.Number);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
     }
 
@@ -301,7 +299,7 @@ public class WorkAreaTests : IDisposable
         LayOut(reopened, 120, 30);
 
         Assert.True(reopened.Work.OnlyMine);
-        Assert.Equal(["Triage · 1", "Pitches · 1", "Review · 0", "Triage · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 1", "Questions · 0", "Review · 0", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(reopened));
     }
 
@@ -329,6 +327,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorDown);
         Assert.True(window.NewKeyDownEvent(new Key('g')));
 
@@ -350,7 +349,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("Triage · team1", window.Work.Region);
+        Assert.Equal("Pitches · team1", window.Work.Region);
     }
 
     [Fact]
@@ -383,6 +382,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.True(window.Commands.IsEnabled("work.priority"));
 
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.True(window.Commands.IsEnabled("work.priority"));
 
@@ -432,7 +432,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Triage · 0", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 0", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal("#6 · set to High", window.Message.Says);
         Assert.Equal(2, reads);
@@ -470,7 +470,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("#6 · set to High", window.Message.Says);
 
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
+        Assert.Equal("#49 · dev · answering your feedback since 10:15 · PR #122", window.Message.Says);
     }
 
     [Fact]
@@ -495,7 +495,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal([["board", "team0", "priority", "you", "107", "none"]], calls);
-        Assert.Equal(["Triage · 2", "Pitches · 1", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 2", "Pitches · 1", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(108, window.Work.Selected?.Number);
         Assert.Equal("#107 · set to None", window.Message.Says);
@@ -521,7 +521,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Triage · 0", "Pitches · 1", "Review · 0", "Triage · 0", "Pitches · 0", "Review · 0"],
+        Assert.Equal(["Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0", "Triage · 0", "Pitches · 0", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal("#107 · set to High", window.Message.Says);
         Assert.Equal(2, reads);
@@ -543,7 +543,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("board.sh: API rate limit exceeded", window.Message.Says);
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -623,6 +623,31 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Enter_on_a_question_opens_the_reader_on_the_Dev_s_question_with_nothing_read()
+    {
+        var read = new List<WaitingItem>();
+        (WaitingItem Item, IssueBody Body)? shown = null;
+        using var window = Open(
+            read: _ => Task.FromResult(new Reading(Question, null)),
+            readBody: item =>
+            {
+                read.Add(item);
+                return Task.FromResult(new Reading(Body, null));
+            },
+            showBody: (item, body, _, _) => shown = (item, body));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal("Questions · team0", window.Work.Region);
+        Assert.Equal("#192 · asked you since 08:23", window.Work.Selected?.Line);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+
+        Assert.Empty(read);
+        Assert.Equal(192, shown?.Item.Number);
+        Assert.Equal(new IssueBody("Which marker should it post?"), shown?.Body);
+    }
+
+    [Fact]
     public void a_in_the_reader_approves_the_pitch_it_shows_and_the_card_leaves_with_no_re_read()
     {
         var calls = new List<string[]>();
@@ -682,7 +707,7 @@ public class WorkAreaTests : IDisposable
 
     [Theory]
     [InlineData(0, 0)]
-    [InlineData(2, 0)]
+    [InlineData(3, 0)]
     public void The_reader_offers_no_approve_on_anything_but_a_Pitched_pitch(int right, int down)
     {
         var offered = new List<bool>();
@@ -757,6 +782,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorDown);
@@ -933,7 +959,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Review · 0"],
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -1029,7 +1055,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_arrows_reach_every_column_and_every_lane()
+    public void The_arrows_reach_every_column_and_every_lane_that_has_a_card()
     {
         using var window = Open();
         window.Refresh();
@@ -1044,11 +1070,12 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("Review · team0", window.Work.Region);
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("Review · team1", window.Work.Region);
-
-        window.NewKeyDownEvent(Key.CursorLeft);
         Assert.Equal(133, window.Work.Selected?.Number);
         Assert.Equal("Pitches · team1", window.Work.Region);
+
+        window.NewKeyDownEvent(Key.CursorUp);
+        Assert.Equal(108, window.Work.Selected?.Number);
+        Assert.Equal("Pitches · team0", window.Work.Region);
     }
 
     [Fact]
@@ -1059,6 +1086,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(new Key('g'));
@@ -1141,6 +1169,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(49, window.Work.Selected?.Number);
         Assert.True(window.Commands.IsEnabled("work.try"));
 
@@ -1158,6 +1187,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(handOver: handed.Add);
         window.Refresh();
         LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         if (onPr)
@@ -1190,6 +1220,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
         window.Refresh();
         Assert.True(item.Enabled);
     }
@@ -1201,6 +1232,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(handOver: handed.Add);
         window.Refresh();
         LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
 
@@ -1230,6 +1262,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
 
         // An open menu is a popover outside the window, so the window loses focus to it.
         window.HasFocus = false;
@@ -1247,6 +1280,7 @@ public class WorkAreaTests : IDisposable
         using var first = Open(handOver: handed.Add);
         first.Refresh();
         LayOut(first, 120, 30);
+        first.NewKeyDownEvent(Key.CursorRight);
         first.NewKeyDownEvent(Key.CursorRight);
         first.NewKeyDownEvent(Key.CursorRight);
         if (onPr)
@@ -1278,6 +1312,7 @@ public class WorkAreaTests : IDisposable
         using var first = Open(handOver: handed.Add);
         first.Refresh();
         LayOut(first, 120, 30);
+        first.NewKeyDownEvent(Key.CursorRight);
         first.NewKeyDownEvent(Key.CursorRight);
         first.NewKeyDownEvent(Key.CursorRight);
         first.NewKeyDownEvent(new Key('t'));
@@ -1333,6 +1368,14 @@ public class WorkAreaTests : IDisposable
          {"number": 26, "title": "A pitch I've shelved", "status": "Idea",
           "url": "https://github.com/mentaldesk/team0/issues/26", "team": "team0",
           "turn": "you", "reason": "waiting to be ranked"}]
+        """;
+
+    /// <summary>A task the Dev handed back with a question, and nothing else.</summary>
+    private const string Question =
+        """
+        [{"number": 192, "title": "I can reply to a pitch", "status": "Ready",
+          "url": "https://github.com/mentaldesk/team0/issues/192", "team": "team0",
+          "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"}]
         """;
 
     private const string Body = """{"number": 6, "title": "t", "body": "## Opportunity"}""";

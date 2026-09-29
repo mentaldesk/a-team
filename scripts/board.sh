@@ -77,6 +77,12 @@ UNANSWERED='def said($m): map(select(team($m) or (.at < $ackFrom and (.body | co
     .kind != "body" and .author == $reviewer and (team("<!-- a-team:") | not)
     and (.eyes // 0) == 0 and (.at >= $ackFrom or .at > $since)));'
 
+# since($at): " since <when>", the time alone if it was today; nothing for no time.
+SINCE='def stamp: fromdateiso8601
+      | if strflocaltime("%Y-%m-%d") == (now | strflocaltime("%Y-%m-%d"))
+        then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
+  def since($at): if $at == "" then "" else " since \($at | stamp)" end;'
+
 is_state() {
   local s
   for s in "${STATES[@]}"; do [ "$s" = "$1" ] && return 0; done
@@ -333,6 +339,7 @@ gated_talk() {
   for n in $(jq -r '.[].number' <<<"$1"); do
     query+=" x$n: issueOrPullRequest(number: $n) {
       ... on Issue { $said
+        timelineItems(last: 50, itemTypes: [LABELED_EVENT]) { nodes { ... on LabeledEvent { createdAt label { name } } } }
         closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { $reviewed } } }
       ... on PullRequest { $reviewed } }"
   done
@@ -367,6 +374,14 @@ gated_prs() {
           conflicting: (.mergeable == "CONFLICTING"), base: .baseRefName, sha: .headRefOid}]' <<<"$1"
 }
 
+# gated_blocked <talk>: when each of those items was last labelled `blocked`, as {"<n>": at}.
+gated_blocked() {
+  jq '[.data.repository | to_entries[].value | select(. != null)
+       | {key: (.number | tostring),
+          value: ([.timelineItems.nodes[]? | select(.label.name == "blocked") | .createdAt] | max)}
+       | select(.value != null)] | from_entries' <<<"$1"
+}
+
 # pr_checks <prs>: each of them with the verdict `checks` gives it, and when a failing run finished.
 pr_checks() {
   local row
@@ -382,11 +397,7 @@ pr_checks() {
 # an unanswered comment outranks them all: the answer is owed before a green build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED"'
-    def stamp: fromdateiso8601
-      | if strflocaltime("%Y-%m-%d") == (now | strflocaltime("%Y-%m-%d"))
-        then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
-    def since($at): if $at == "" then "" else " since \($at | stamp)" end;
+    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE"'
     $items | map(
       . as $item
       | (if .status == "Pitched" then "lead" else "dev" end) as $role
@@ -412,6 +423,29 @@ turns() {
              | (if .status == "Pitched" then "approval" else "acceptance" end) as $for
              | . + {turn: "you", reason: "awaiting your \($for)\(since($waited))"}
         end)'
+}
+
+# questions <items> <comments> <blocked>: the Ready tasks the Dev handed back with a question, the
+# Dev's turn once the reviewer replies. The Dev asks just before labelling `blocked`, hence ASKED_BEFORE.
+ASKED_BEFORE=600
+questions() {
+  jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" --arg reviewer "$REVIEWER" \
+    --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE"'
+    $items | map(
+      . as $item
+      | ($blocked[$item.number | tostring] // null) as $labelled
+      | select($labelled != null)
+      | ($comments | map(select(.n == $item.number))) as $theirs
+      | ($theirs | map(select(.kind == "comment" and team("<!-- a-team:dev -->")
+                               and (.at | fromdateiso8601) >= ($labelled | fromdateiso8601) - $before))
+         | max_by(.at)) as $asked
+      | select($asked != null)
+      | ($theirs | map(select(.kind != "body" and .author == $reviewer and (team("<!-- a-team:") | not)
+                               and .at > $asked.at) | .at) | max // "") as $replied
+      | . + {question: ($asked.body | sub("\\s*<!-- a-team:dev -->\\s*$"; ""))}
+      | if $replied != ""
+        then . + {turn: "dev", reason: "reading your answer\(since($replied))"}
+        else . + {turn: "you", reason: "asked you\(since($asked.at))"} end)'
 }
 
 # unranked_ideas <items>: the Ideas with no Priority, which never get pitched until the reviewer
@@ -793,9 +827,13 @@ case "$CMD" in
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)})' <<<"$all")
-    talk=$(gated_talk "$gated")
-    turns "$gated" "$(gated_comments "$talk")" "$(pr_checks "$(gated_prs "$talk")")" |
-      jq --argjson unranked "$(unranked_ideas "$all")" '. + $unranked'
+    held=$(jq --arg team "$TEAM" "map(select($READY_TASK and (.labels | index(\"blocked\")))
+      | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
+    talk=$(gated_talk "$(jq -s add <<<"$gated$held")")
+    said=$(gated_comments "$talk")
+    turns "$gated" "$said" "$(pr_checks "$(gated_prs "$talk")")" |
+      jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")")" \
+        --argjson unranked "$(unranked_ideas "$all")" '. + $asked + $unranked'
     ;;
 
   pr)

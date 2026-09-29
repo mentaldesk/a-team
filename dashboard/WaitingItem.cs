@@ -5,7 +5,8 @@ namespace ATeam.Dashboard;
 /// <summary>One item at a gate, as <c>a-team board &lt;team&gt; waiting</c> reports it.</summary>
 public sealed record WaitingItem(
     int Number, string Title, string Status, string Url, string Team, string Turn = "", string Reason = "",
-    int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false)
+    int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
+    string Question = "")
 {
     /// <summary>Whether this is a pitch the reviewer can approve now.</summary>
     public bool Approvable => Pitch && Status == "Pitched";
@@ -34,7 +35,7 @@ public sealed record WaitingItem(
                         Numbered(item)!.Value, Text(item, "title"), Text(item, "status"), Text(item, "url"),
                         Text(item, "team"), Text(item, "turn"), Text(item, "reason"),
                         Numbered(item, "pr") ?? 0, Text(item, "prUrl"), Text(item, "trouble"),
-                        Text(item, "priority"), Flag(item, "pitch")))
+                        Text(item, "priority"), Flag(item, "pitch"), Text(item, "question")))
             ];
         }
         catch (JsonException)
