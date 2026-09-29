@@ -241,10 +241,27 @@ public class DashboardSettingsTests : IDisposable
         Assert.Empty(new DashboardSettings(_configRoot).ReadKeys());
     }
 
+    [Fact]
+    public void An_empty_name_is_a_command_left_with_no_key()
+    {
+        Write("{ \"keys\": { \"settings\": \"\" } }");
+
+        Assert.Equal([("settings", Key.Empty)], new DashboardSettings(_configRoot).ReadKeys());
+    }
+
+    [Fact]
+    public void A_command_left_with_no_key_reads_back_the_same()
+    {
+        var settings = new DashboardSettings(_configRoot);
+
+        settings.WriteKeys([("settings", Key.Empty), ("help", Key.F2)]);
+
+        Assert.Equal([("settings", Key.Empty), ("help", Key.F2)], settings.ReadKeys());
+    }
+
     [Theory]
     [InlineData("\"PgUp\"")]
     [InlineData("\"nonsense\"")]
-    [InlineData("\"\"")]
     [InlineData("3")]
     [InlineData("null")]
     public void A_name_that_is_not_a_key_is_left_out_while_the_rest_of_the_file_still_applies(string value)

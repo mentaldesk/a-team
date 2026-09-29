@@ -4,6 +4,7 @@ using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.Text;
 using Terminal.Gui.ViewBase;
+using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
@@ -13,6 +14,8 @@ public sealed class SettingsDialog : Dialog
     private static readonly Key Apply = Key.Enter.WithCtrl;
     private const string Prompt = "Press a key…";
     private const string RebindHint = "Enter rebind";
+    private const string RemoveHint = "Delete remove";
+    private const string FilterHint = "Type to filter";
     private const string KeepHint = "Ctrl+Enter keep";
     private const string CancelHint = "Esc cancel";
     private const string Separator = " · ";
@@ -22,8 +25,11 @@ public sealed class SettingsDialog : Dialog
     private const string ThisTerminal = "this terminal: ";
     private const int Inset = 1;
     private const int Gap = 1;
-    private const int GlyphAndSpace = 2;
+    private const int StatusLines = 1;
     private const int Indent = 2;
+    private const int KeysRow = 2;
+    private const int PageHintsAbove = 2;
+    private const double StripeTint = 0.1;
     private const int IconsHeadingRow = 2;
     private const int IconStylesRow = IconsHeadingRow + 1;
 
@@ -31,20 +37,20 @@ public sealed class SettingsDialog : Dialog
         [(IconStyle.Auto, "Automatic"), (IconStyle.NerdFont, "Nerd Font"), (IconStyle.Unicode, "Unicode")];
 
     private static readonly int IconLegendRow = IconStylesRow + IconChoices.Length + 1;
-    private static readonly int DashboardTall = IconLegendRow + 1;
 
     private readonly CommandRegistry _commands;
     private readonly List<(string Id, string Label, Key Key)> _bindings;
     private readonly List<(string Id, Key Key)> _changed = [];
+    private readonly List<int> _shown = [];
     private readonly int _labelWidth;
     private readonly List<Page> _pages;
     private readonly List<View> _hints = [];
     private readonly ListView _picker = new();
     private readonly CheckBox _toolCalls;
     private readonly OptionSelector _iconStyles;
+    private readonly TextField _filter = new();
     private readonly KeyList _keys;
     private readonly MessageBar _message = new();
-    private readonly IconStyle _auto;
     private bool _capturing;
 
     public SettingsDialog(
@@ -56,13 +62,14 @@ public sealed class SettingsDialog : Dialog
         IconStyle auto)
     {
         _commands = commands;
-        _auto = auto;
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
 
         Title = "Settings";
-        Width = Dim.Func(_ => Fits(Wide() + GetAdornmentsThickness().Horizontal, SuperView?.Viewport.Width), this);
-        Height = Dim.Func(_ => Fits(Tall() + GetAdornmentsThickness().Vertical, SuperView?.Viewport.Height), this);
+        X = 0;
+        Y = 0;
+        Width = Dim.Fill();
+        Height = Dim.Fill(StatusLines);
 
         var themes = new OptionSelector
         {
@@ -98,15 +105,25 @@ public sealed class SettingsDialog : Dialog
             }
         };
         _keys = new KeyList();
-        _keys.Captured = key => _capturing && Capture(key);
+        _keys.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+        _keys.Captured = OnKeysKey;
+        _keys.RowRender += (_, e) => e.RowAttribute = Stripe(e.Row, _keys.Value, _keys.GetAttributeForRole(VisualRole.Normal));
+        _filter.TextChanged += (_, _) =>
+        {
+            _keys.Value = null;
+            ShowKeys();
+        };
+        _filter.KeyDown += (_, key) =>
+        {
+            if (key == Key.CursorDown)
+                key.Handled = _keys.SetFocus();
+        };
 
         _pages =
         [
-            new Page("Theme", [new Placed(themes)], () => BundledThemes.Names.Max(name => name.Length) + GlyphAndSpace,
-                BundledThemes.Names.Count, [KeepHint, CancelHint]),
-            new Page("Keyboard Shortcuts", [new Placed(_keys)], KeysWide, Math.Max(1, _bindings.Count),
-                [RebindHint, KeepHint, CancelHint]),
-            new Page("Dashboard", DashboardRows(), DashboardWide, DashboardTall, [KeepHint, CancelHint]),
+            new Page("Theme", [new Placed(themes)], []),
+            new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], [RebindHint, RemoveHint, FilterHint]),
+            new Page("Dashboard", DashboardRows(), []),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -124,8 +141,9 @@ public sealed class SettingsDialog : Dialog
             placed.View.X = Pos.Right(rule) + Gap + placed.X;
             placed.View.Y = placed.Y;
         }
+        _filter.Width = Dim.Fill(Inset);
         _keys.Width = Dim.Fill(Inset);
-        _keys.Height = content;
+        _keys.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove - KeysRow), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
         Add(_picker, rule);
@@ -146,7 +164,9 @@ public sealed class SettingsDialog : Dialog
 
     internal MessageBar Message => _message;
 
-    internal IReadOnlyList<string> Rows => [.. _bindings.Select(Row)];
+    internal TextField Filter => _filter;
+
+    internal IReadOnlyList<string> Rows => [.. _shown.Select(index => Row(_bindings[index]))];
 
     internal IReadOnlyList<(string Id, Key Key)> Changed => _changed;
 
@@ -208,6 +228,32 @@ public sealed class SettingsDialog : Dialog
         return true;
     }
 
+    internal bool Unbind()
+    {
+        if (Selected() is { } index)
+            Bind(index, Key.Empty);
+        return true;
+    }
+
+    /// <summary>Typing on the keys list edits the filter, so it narrows the list without leaving it.</summary>
+    private bool OnKeysKey(Key key)
+    {
+        if (_capturing)
+            return Capture(key);
+        if (key == Key.Delete)
+            return Unbind();
+        if (key == Key.Backspace && _filter.Text.Length > 0)
+        {
+            _filter.Text = _filter.Text[..^1];
+            return true;
+        }
+        if (key.IsCtrl || key.IsAlt || !key.TryGetPrintableRune(out var typed))
+            return false;
+        _filter.Text += typed.ToString();
+        _filter.MoveEnd();
+        return true;
+    }
+
     private bool Capture(Key key)
     {
         _capturing = false;
@@ -225,6 +271,12 @@ public sealed class SettingsDialog : Dialog
             return true;
         }
 
+        Bind(index, key);
+        return true;
+    }
+
+    private void Bind(int index, Key key)
+    {
         var (id, label, _) = _bindings[index];
         _bindings[index] = (id, label, key);
         var change = _changed.FindIndex(binding => binding.Id == id);
@@ -233,11 +285,10 @@ public sealed class SettingsDialog : Dialog
         else
             _changed[change] = (id, key);
         ShowKeys();
-        return true;
     }
 
     private int? Selected() =>
-        _keys.Value is { } index && index >= 0 && index < _bindings.Count ? index : null;
+        _keys.Value is { } row && row >= 0 && row < _shown.Count ? _shown[row] : null;
 
     /// <summary>Shows the page the list is on, and only that one, with the hints that page answers to.</summary>
     private void ShowPage()
@@ -254,14 +305,31 @@ public sealed class SettingsDialog : Dialog
     private void ShowKeys()
     {
         var selected = _keys.Value;
+        var filter = _filter.Text.Trim();
+        _shown.Clear();
+        _shown.AddRange(Enumerable.Range(0, _bindings.Count).Where(index => Matches(_bindings[index], filter)));
         var rows = Rows.ToList();
-        if (_capturing && selected is { } index && index >= 0 && index < rows.Count)
-            rows[index] = $"{_bindings[index].Label.PadRight(_labelWidth)}  {Prompt}";
+        if (_capturing && selected is { } row && row >= 0 && row < rows.Count)
+            rows[row] = $"{_bindings[_shown[row]].Label.PadRight(_labelWidth)}  {Prompt}";
         _keys.SetSource(new ObservableCollection<string>(rows));
-        _keys.Value = selected ?? (_bindings.Count == 0 ? null : 0);
+        _keys.Value = rows.Count == 0 ? null : Math.Clamp(selected ?? 0, 0, rows.Count - 1);
+        _keys.EnsureSelectedItemVisible();
         SetNeedsLayout();
         SetNeedsDraw();
     }
+
+    private static bool Matches((string Id, string Label, Key Key) binding, string filter) =>
+        binding.Label.Contains(filter, StringComparison.OrdinalIgnoreCase)
+        || KeyNames.Short(binding.Key).Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Null leaves the row to the list, so the selected row keeps its highlight.</summary>
+    internal static Attribute? Stripe(int row, int? selected, Attribute normal) =>
+        row % 2 == 1 && row != selected ? normal with { Background = Blend(normal.Background, normal.Foreground) } : null;
+
+    private static Color Blend(Color from, Color to) =>
+        new(Mix(from.R, to.R), Mix(from.G, to.G), Mix(from.B, to.B));
+
+    private static int Mix(byte from, byte to) => (int)Math.Round(from + (to - from) * StripeTint);
 
     private string Row((string Id, string Label, Key Key) binding) =>
         $"{binding.Label.PadRight(_labelWidth)}  {KeyNames.Short(binding.Key)}";
@@ -280,7 +348,8 @@ public sealed class SettingsDialog : Dialog
         return true;
     }
 
-    private void ShowHints(IReadOnlyList<string> texts)
+    /// <summary>The page's own hints at the foot of the page, and the dialog's beneath them at its left edge.</summary>
+    private void ShowHints(IReadOnlyList<string> page)
     {
         foreach (var hint in _hints)
         {
@@ -288,17 +357,17 @@ public sealed class SettingsDialog : Dialog
             hint.Dispose();
         }
         _hints.Clear();
-        _hints.AddRange(Hints(texts));
+        var dialogRow = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
+        _hints.AddRange(Hints(page, _keys.X, dialogRow - PageHintsAbove));
+        _hints.AddRange(Hints([KeepHint, CancelHint], Inset, dialogRow));
         foreach (var hint in _hints)
             Add(hint);
     }
 
-    /// <summary>The hint row, each hint clickable and the separators between them not.</summary>
-    private View[] Hints(IReadOnlyList<string> texts)
+    /// <summary>A hint row, each hint clickable and the separators between them not.</summary>
+    private View[] Hints(IReadOnlyList<string> texts, Pos x, Pos y)
     {
-        var y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
         List<View> row = [];
-        Pos x = Inset;
         foreach (var text in texts)
         {
             if (row.Count > 0)
@@ -327,10 +396,19 @@ public sealed class SettingsDialog : Dialog
 
     private bool Run(string hint)
     {
-        if (hint != RebindHint)
-            return Close(confirmed: hint == KeepHint);
-        _keys.SetFocus();
-        return Rebind();
+        switch (hint)
+        {
+            case RebindHint:
+                _keys.SetFocus();
+                return Rebind();
+            case RemoveHint:
+                _keys.SetFocus();
+                return Unbind();
+            case FilterHint:
+                return _filter.SetFocus();
+            default:
+                return Close(confirmed: hint == KeepHint);
+        }
     }
 
     private IReadOnlyList<Placed> DashboardRows() =>
@@ -351,34 +429,13 @@ public sealed class SettingsDialog : Dialog
             : $"{name}  {Icons.Sample(choice.Style)}";
     }
 
-    private int DashboardWide() => Math.Max(
-        Math.Max(ToolCalls.Length + GlyphAndSpace, IconsHeading.Length),
-        Indent + Math.Max(
-            IconChoices.Max(choice => IconRow(choice, _auto).GetColumns()) + GlyphAndSpace, IconLegend.Length));
-
-    private int KeysWide() => Math.Max(
-        _bindings.Count == 0 ? 0 : Rows.Max(row => row.Length),
-        _labelWidth + 2 + Prompt.Length);
-
-    private static int HintWidth(IReadOnlyList<string> texts) =>
-        texts.Sum(text => text.Length) + (Separator.Length * (texts.Count - 1));
-
-    private int Wide() => Math.Max(
-        _pages.Max(page => page.Name.Length) + Gap + 1 + Gap + _pages.Max(page => page.Width()),
-        _pages.Max(page => HintWidth(page.Hints))) + (Inset * 2);
-
-    private int Tall() =>
-        Math.Max(_pages.Count, _pages.Max(page => page.Height)) + 1 + _message.Lines;
-
-    private static int Fits(int wanted, int? available) => available is { } room ? Math.Min(wanted, room) : wanted;
-
     /// <summary>A view on a page, at the row and indent the page wants it.</summary>
     private sealed record Placed(View View, int X = 0, int Y = 0);
 
-    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, Func<int> Width, int Height, string[] Hints);
+    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, string[] Hints);
 
     /// <summary>A list that can take a key literally. ListView's own type-ahead answers a letter before any
-    /// handler the dialog could attach, so the letter being bound would never reach the capture.</summary>
+    /// handler the dialog could attach, so neither the capture nor the filter would ever see it.</summary>
     private sealed class KeyList : ListView
     {
         public Func<Key, bool>? Captured { get; set; }

@@ -76,7 +76,8 @@ public sealed class DashboardSettings
     public void WriteExpandToolCalls(bool expand) => Write("expandToolCalls", writer => writer.WriteBooleanValue(expand));
 
     /// <summary>The key each command is to run on instead of its default, in the order the file gives them.
-    /// A name <see cref="Key.TryParse(string?, out Key)"/> rejects is left out. Never writes, whatever it finds.</summary>
+    /// An empty name unbinds the command, and one <see cref="Key.TryParse(string?, out Key)"/> rejects is left out. Never
+    /// writes, whatever it finds.</summary>
     public IReadOnlyList<(string Id, Key Key)> ReadKeys()
     {
         using var file = Parse();
@@ -86,12 +87,14 @@ public sealed class DashboardSettings
         [
             .. keys.EnumerateObject()
                 .Where(property => property.Value.ValueKind == JsonValueKind.String)
-                .Select(property => (
-                    property.Name,
-                    Key: property.Value.GetString() is { } name && Key.TryParse(name, out var key) ? key : Key.Empty))
-                .Where(binding => binding.Key != Key.Empty)
+                .Select(property => (property.Name, Key: KeyNamed(property.Value.GetString()!)))
+                .Where(binding => binding.Key is not null)
+                .Select(binding => (binding.Name, binding.Key!))
         ];
     }
+
+    private static Key? KeyNamed(string name) =>
+        name.Length == 0 ? Key.Empty : Key.TryParse(name, out var key) && key != Key.Empty ? key : null;
 
     /// <summary>Writes these overrides, keeping any others the file already holds.</summary>
     public void WriteKeys(IEnumerable<(string Id, Key Key)> keys)
@@ -110,7 +113,7 @@ public sealed class DashboardSettings
         {
             writer.WriteStartObject();
             foreach (var (id, key) in merged)
-                writer.WriteString(id, key.ToString());
+                writer.WriteString(id, key == Key.Empty ? "" : key.ToString());
             writer.WriteEndObject();
         });
     }

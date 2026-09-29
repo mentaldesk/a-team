@@ -59,14 +59,14 @@ public sealed class CommandRegistry
         return this;
     }
 
-    /// <summary>Rebinds commands, in the order given. An id nobody registered, and a key another command still
-    /// holds, are each ignored on their own, leaving that command on the key it had.</summary>
+    /// <summary>Rebinds commands, in the order given, <see cref="Key.Empty"/> unbinding one. An id nobody registered,
+    /// and a key another command still holds, are each ignored on their own, leaving that command on the key it had.</summary>
     public CommandRegistry Apply(IEnumerable<(string Id, Key Key)> keys)
     {
         foreach (var (id, key) in keys)
         {
             var index = _entries.FindIndex(entry => entry.Id == id);
-            if (index < 0 || key == Key.Empty || _entries.Exists(entry => entry.Id != id && entry.Key == key))
+            if (index < 0 || (key != Key.Empty && _entries.Exists(entry => entry.Id != id && entry.Key == key)))
                 continue;
             _entries[index] = _entries[index] with { Key = key };
         }
