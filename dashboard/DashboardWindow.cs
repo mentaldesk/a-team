@@ -281,7 +281,6 @@ public sealed class DashboardWindow : Window
             .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
-            .Register("team.pause", PauseLabel, TogglePause)
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
                 isEnabled: () => OnDashboard() && Selected() is not null,
                 menuLabel: () => UnlessHeld("Pause this role", "Let this role start again"))
@@ -289,7 +288,8 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true },
                 menuLabel: () => UnlessHeld("Interrupt", "Let it start again"))
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
-            .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
+            .Register("settings", "Settings", () => OpenSettings(), new Key('s'), isEnabled: HasApp)
+            .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded), () => OnDashboard() && _expanded is not null)
@@ -305,21 +305,6 @@ public sealed class DashboardWindow : Window
     }
 
     private bool HasApp() => App is not null;
-
-    /// <summary>The team the pause command acts on: the selected agent's, or the first one's.</summary>
-    private AgentPane? Target() => Selected() ?? _panes.FirstOrDefault();
-
-    private string PauseLabel() =>
-        Target() is { } pane ? $"{(pane.Paused ? "Resume" : "Pause")} {pane.Team}" : "Pause a team";
-
-    private void TogglePause()
-    {
-        if (_pending is not null || Target() is not { } pane)
-            return;
-        _progress = pane.Paused ? "Resuming…" : "Pausing…";
-        ShowMessage();
-        _pending = _run([pane.Paused ? "resume" : "pause", pane.Team]);
-    }
 
     private void ToggleHold()
     {
@@ -659,11 +644,11 @@ public sealed class DashboardWindow : Window
             AboutDialog.Show(app, _version);
     }
 
-    private void OpenSettings()
+    private void OpenSettings(string? page = null)
     {
         if (App is not { } app)
             return;
-        SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto);
+        SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page);
         SyncQuitKey();
         _menu.Refresh();
         ShowHints();

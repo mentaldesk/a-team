@@ -387,7 +387,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
-                "Pause team0", "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Keys", "About", "Back to the agent grid", "Quit",
+                "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Teams", "Keys", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -511,11 +511,12 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
         LayOut(window, 120, 30);
         var hints = window.Status.Frame;
+        SelectAgent(window, 0);
 
-        window.Commands.Execute("team.pause");
+        window.Commands.Execute("agent.hold");
         LayOut(window, 120, 30);
 
-        Assert.Equal("Pausing…", window.Message.Says);
+        Assert.Equal("Pausing this role…", window.Message.Says);
         Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
         Assert.Equal(hints with { Y = window.Viewport.Height - 2 }, window.Status.Frame);
         Assert.Equal(window.HintLine, window.Status.Says);
@@ -758,33 +759,16 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
         var before = LayOut(window, 120, 30);
+        SelectAgent(window, 0);
 
-        window.Commands.Execute("team.pause");
+        window.Commands.Execute("agent.hold");
         var after = LayOut(window, 120, 30);
 
-        Assert.Equal("Pausing…", window.Message.Says);
+        Assert.Equal("Pausing this role…", window.Message.Says);
         Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
         Assert.Equal(window.Viewport.Height - 8, window.Dispatcher.Frame.Y);
         Assert.Equal(before.Sum(cell => cell.Height) - 2, after.Sum(cell => cell.Height));
         AssertTiles(AgentArea(window), after);
-    }
-
-    [Fact]
-    public void Pausing_runs_a_team_pause_for_the_selected_agents_team_and_says_so_while_it_runs()
-    {
-        var calls = new List<string[]>();
-        var finish = new TaskCompletionSource<string?>();
-        using var window = Open(agents: Agents(4), run: arguments =>
-        {
-            calls.Add(arguments);
-            return finish.Task;
-        });
-        SelectAgent(window, 2);
-
-        window.Commands.Execute("team.pause");
-
-        Assert.Equal([["pause", "team1"]], calls);
-        Assert.Equal("Pausing…", window.Message.Says);
     }
 
     [Fact]
@@ -797,14 +781,15 @@ public class DashboardWindowTests : IDisposable
             calls++;
             return finish.Task;
         });
+        SelectAgent(window, 0);
 
-        window.Commands.Execute("team.pause");
-        window.Commands.Execute("team.pause");
+        window.Commands.Execute("agent.hold");
+        window.Commands.Execute("agent.hold");
         Assert.Equal(1, calls);
 
         finish.SetResult(null);
         window.Refresh();
-        window.Commands.Execute("team.pause");
+        window.Commands.Execute("agent.hold");
         Assert.Equal(2, calls);
     }
 
@@ -812,8 +797,9 @@ public class DashboardWindowTests : IDisposable
     public void A_command_that_worked_leaves_the_message_block_empty_again()
     {
         using var window = Open(agents: Agents(4));
+        SelectAgent(window, 0);
 
-        window.Commands.Execute("team.pause");
+        window.Commands.Execute("agent.hold");
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -827,47 +813,27 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(
             agents: Agents(4),
             run: _ => Task.FromResult<string?>("a-team pause: can't write /nope/team0.json\nstack\ntrace"));
+        SelectAgent(window, 0);
 
-        window.Commands.Execute("team.pause");
+        window.Commands.Execute("agent.hold");
         window.Refresh();
         LayOut(window, 120, 30);
 
         Assert.Equal("a-team pause: can't write /nope/team0.json", window.Message.Says);
         Assert.Equal(1, window.Message.Lines);
         Assert.True(window.NewKeyDownEvent(Key.Tab));
-        Assert.Equal(0, Selected(window));
+        Assert.Equal(1, Selected(window));
     }
 
     [Fact]
-    public void A_paused_team_is_offered_Resume_instead()
+    public void Teams_opens_Settings_on_its_Teams_page_and_nothing_pauses_a_team_from_outside_it()
     {
-        WriteTeam("team0", enabled: false);
-        WriteTeam("team1", enabled: true);
         using var window = Open(agents: Agents(4));
-        window.Refresh();
 
-        Assert.Equal("Resume team0", Label(window, "team.pause"));
-        SelectAgent(window, 2);
-        Assert.Equal("Pause team1", Label(window, "team.pause"));
-    }
-
-    [Fact]
-    public void Pausing_a_team_reaches_its_panes_on_the_next_refresh()
-    {
-        WriteTeam("team0", enabled: true);
-        using var window = Open(agents: Agents(2), run: arguments =>
-        {
-            WriteTeam(arguments[1], enabled: false);
-            return Task.FromResult<string?>(null);
-        });
-        window.Refresh();
-        Assert.All(window.Panes, pane => Assert.False(pane.Paused));
-
-        window.Commands.Execute("team.pause");
-        window.Refresh();
-
-        Assert.All(window.Panes, pane => Assert.True(pane.Paused));
-        Assert.Equal("Resume team0", Label(window, "team.pause"));
+        var ids = window.Commands.Registered.Select(command => command.Id).ToList();
+        Assert.DoesNotContain("team.pause", ids);
+        Assert.Contains("teams", ids);
+        Assert.DoesNotContain(window.MenuItems, item => item.Id == "team.pause");
     }
 
     [Fact]
@@ -1264,14 +1230,5 @@ public class DashboardWindowTests : IDisposable
         File.WriteAllText(
             Path.Combine(teams, team + ".json"),
             "{\"dispatch\": {\"enabled\": true, \"hold\": [\"" + role + "\"]}}");
-    }
-
-    private void WriteTeam(string team, bool enabled)
-    {
-        var teams = Path.Combine(Config, "teams");
-        Directory.CreateDirectory(teams);
-        File.WriteAllText(
-            Path.Combine(teams, team + ".json"),
-            "{\"dispatch\": {\"enabled\": " + (enabled ? "true" : "false") + "}}");
     }
 }

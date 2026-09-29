@@ -78,18 +78,16 @@ public class AppMenuTests : IDisposable
     [Fact]
     public void The_letter_reaches_an_item_whose_command_has_no_key_of_its_own()
     {
-        var calls = new List<string[]>();
-        using var window = Open(run: args =>
-        {
-            calls.Add(args);
-            return Task.FromResult<string?>(null);
-        });
-        var pause = InOpenMenu(window, "team.pause");
+        var ran = false;
+        using var window = Open();
+        window.Commands.Register("card.zap", "Zap", () => ran = true, onCard: true);
+        window.Refresh();
+        var zap = InOpenMenu(window, "card.zap");
 
-        Assert.Equal(new Key('p'), pause.HotKey);
-        Assert.True(pause.NewKeyDownEvent(pause.HotKey));
+        Assert.Equal(new Key('z'), zap.HotKey);
+        Assert.True(zap.NewKeyDownEvent(zap.HotKey));
 
-        Assert.Equal([["pause", "a-team"]], calls);
+        Assert.True(ran);
     }
 
     [Fact]
@@ -187,31 +185,14 @@ public class AppMenuTests : IDisposable
         Assert.All(Under(window, Cards(window)), id => Assert.False(Item(window, id).Enabled, id));
     }
 
-    [Fact]
-    public void The_pause_items_hot_letter_flips_with_its_label()
-    {
-        using var window = Open();
-        var pause = Item(window, "team.pause");
-        WriteTeam("a-team", enabled: true);
-        window.Refresh();
-
-        Assert.Equal("_Pause a-team", pause.Title);
-        Assert.Equal(new Key('p'), pause.HotKey);
-
-        WriteTeam("a-team", enabled: false);
-        window.Refresh();
-
-        Assert.Equal("_Resume a-team", pause.Title);
-        Assert.Equal(new Key('r'), pause.HotKey);
-    }
 
     [Fact]
-    public void Agents_holds_pause_then_pause_this_role_then_interrupt_which_shows_its_key()
+    public void Agents_holds_pause_this_role_then_interrupt_which_shows_its_key()
     {
         using var window = Open();
         var agents = window.Menus.Single(menu => menu.Title == "_Agents");
 
-        Assert.Equal(["team.pause", "agent.hold", "agent.interrupt"], Under(window, agents));
+        Assert.Equal(["agent.hold", "agent.interrupt"], Under(window, agents));
         Assert.Equal("Pause t_his role", Item(window, "agent.hold").Title);
         Assert.Equal("_Interrupt", Item(window, "agent.interrupt").Title);
         Assert.Equal(new Key('i'), Item(window, "agent.interrupt").Key);
@@ -306,13 +287,4 @@ public class AppMenuTests : IDisposable
     }
 
     private string Config => Path.Combine(_root, "config");
-
-    private void WriteTeam(string team, bool enabled)
-    {
-        var teams = Path.Combine(Config, "teams");
-        Directory.CreateDirectory(teams);
-        File.WriteAllText(
-            Path.Combine(teams, team + ".json"),
-            "{\"dispatch\": {\"enabled\": " + (enabled ? "true" : "false") + "}}");
-    }
 }

@@ -246,7 +246,7 @@ public class SettingsDialogTests : IDisposable
     {
         using var dialog = Open(out _, out _);
 
-        Assert.Equal(["Theme", "Keyboard Shortcuts", "Dashboard"], PageNames(dialog));
+        Assert.Equal(["Theme", "Keyboard Shortcuts", "Dashboard", "Teams"], PageNames(dialog));
     }
 
     [Fact]
@@ -440,6 +440,95 @@ public class SettingsDialogTests : IDisposable
                 dialog.Viewport.Contains(view.Frame), $"{view.GetType().Name} {view.Frame} overhangs {dialog.Viewport}"));
     }
 
+    [Fact]
+    public void The_Teams_page_lists_each_team_with_its_repo_and_whether_it_is_working()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        WriteTeam("beta", """{"repo": "mentaldesk/beta-long", "dispatch": {"enabled": false}}""");
+        WriteTeam("gamma", "{\n  \"repo\": \"mentaldesk/gamma\",\n}\n");
+        using var dialog = Open(out _, out _, page: "Teams");
+
+        Assert.Equal(
+            [
+                "alpha  mentaldesk/alpha      working",
+                "beta   mentaldesk/beta-long  paused",
+                "gamma                        can't read this file",
+            ],
+            TeamRows(dialog));
+        Assert.Equal(0, dialog.Teams.Value);
+        Assert.True(dialog.Teams.HasFocus);
+    }
+
+    [Fact]
+    public void Selecting_a_team_whose_file_is_broken_says_which_line_and_why()
+    {
+        WriteTeam("alpha", """{"dispatch": {"enabled": true}}""");
+        WriteTeam("gamma", "{\n  \"repo\": \"mentaldesk/gamma\",\n}\n");
+        using var dialog = Open(out _, out _, page: "Teams");
+        Assert.Equal("", dialog.Message.Says);
+
+        dialog.Teams.Value = 1;
+
+        Assert.StartsWith("gamma.json, line 3: ", dialog.Message.Says);
+        dialog.Teams.Value = 0;
+        Assert.Equal("", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void P_pauses_a_working_team_and_starts_a_paused_one_and_the_row_and_hint_follow()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        Assert.Equal("p pause · Ctrl+Enter keep · Esc cancel", HintRow(dialog));
+
+        Assert.True(dialog.Teams.NewKeyDownEvent(new Key('p')));
+
+        Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
+        Assert.True(new TeamConfigs(_configRoot).IsPaused("alpha"));
+        Assert.Equal("p resume · Ctrl+Enter keep · Esc cancel", HintRow(dialog));
+
+        Hint(dialog, "p resume").InvokeCommand(Command.Accept);
+
+        Assert.Equal(["alpha  mentaldesk/alpha  working"], TeamRows(dialog));
+        Assert.False(new TeamConfigs(_configRoot).IsPaused("alpha"));
+        Assert.False(dialog.Confirmed);
+    }
+
+    [Fact]
+    public void P_on_a_team_whose_file_is_broken_leaves_it_alone_and_says_why()
+    {
+        const string broken = "{\"dispatch\": {\"enabled\": true,}}";
+        WriteTeam("gamma", broken);
+        using var dialog = Open(out _, out _, page: "Teams");
+
+        dialog.Teams.NewKeyDownEvent(new Key('p'));
+
+        Assert.Equal(broken, File.ReadAllText(Path.Combine(_configRoot, "teams", "gamma.json")));
+        Assert.Equal("Fix gamma.json before starting or pausing gamma: a-team can't read it.", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Enter_on_the_Teams_list_does_not_close_the_dialog()
+    {
+        WriteTeam("alpha", """{"dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+
+        dialog.Teams.NewKeyDownEvent(Key.Enter);
+
+        Assert.Null(dialog.Result);
+        Assert.False(dialog.Confirmed);
+    }
+
+    private void WriteTeam(string team, string config)
+    {
+        var teams = Path.Combine(_configRoot, "teams");
+        Directory.CreateDirectory(teams);
+        File.WriteAllText(Path.Combine(teams, $"{team}.json"), config);
+    }
+
+    private static IReadOnlyList<string> TeamRows(SettingsDialog dialog) =>
+        [.. Enumerable.Range(0, dialog.Teams.Source?.Count ?? 0).Select(i => dialog.Teams.Source!.ToList()[i]?.ToString() ?? "")];
+
     private static void Rebind(SettingsDialog dialog, int row, Key key)
     {
         OpenPage(dialog, "Keyboard Shortcuts");
@@ -495,11 +584,13 @@ public class SettingsDialogTests : IDisposable
         Action<string>? keep = null,
         Action<IconStyle>? apply = null,
         CommandRegistry? commands = null,
-        IconStyle auto = IconStyle.Unicode)
+        IconStyle auto = IconStyle.Unicode,
+        string? page = null)
     {
         theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, keep ?? (_ => { }));
         icons = new IconSetting(iconStyle, apply ?? (_ => { }), new DashboardSettings(_configRoot).WriteIcons);
-        var dialog = new SettingsDialog(theme, icons, expand, commands ?? Registry(), () => { }, auto);
+        var dialog = new SettingsDialog(
+            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page);
         dialog.SetFocus();
         return dialog;
     }
