@@ -36,7 +36,7 @@ public class AppMenuTests : IDisposable
     [InlineData('v', false)]
     [InlineData('c', false)]
     [InlineData('a', false)]
-    [InlineData('h', false)]
+    [InlineData('h', true)]
     public void A_bare_title_letter_opens_no_menu_and_the_key_it_would_shadow_still_works(char letter, bool answered)
     {
         using var window = Open();
@@ -206,12 +206,13 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void Agents_holds_pause_then_interrupt_which_shows_its_key()
+    public void Agents_holds_pause_then_pause_this_role_then_interrupt_which_shows_its_key()
     {
         using var window = Open();
         var agents = window.Menus.Single(menu => menu.Title == "_Agents");
 
-        Assert.Equal(["team.pause", "agent.interrupt"], Under(window, agents));
+        Assert.Equal(["team.pause", "agent.hold", "agent.interrupt"], Under(window, agents));
+        Assert.Equal("Pause t_his role", Item(window, "agent.hold").Title);
         Assert.Equal("_Interrupt", Item(window, "agent.interrupt").Title);
         Assert.Equal(new Key('i'), Item(window, "agent.interrupt").Key);
     }

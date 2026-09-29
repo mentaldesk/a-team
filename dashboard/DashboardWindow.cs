@@ -282,9 +282,12 @@ public sealed class DashboardWindow : Window
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
             .Register("team.pause", PauseLabel, TogglePause)
-            .Register("agent.interrupt", () => InterruptLabel("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
+            .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
+                isEnabled: () => OnDashboard() && Selected() is not null,
+                menuLabel: () => UnlessHeld("Pause this role", "Let this role start again"))
+            .Register("agent.interrupt", () => UnlessHeld("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
                 isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true },
-                menuLabel: () => InterruptLabel("Interrupt", "Let it start again"))
+                menuLabel: () => UnlessHeld("Interrupt", "Let it start again"))
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", OpenSettings, new Key('s'), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
@@ -318,7 +321,16 @@ public sealed class DashboardWindow : Window
         _pending = _run([pane.Paused ? "resume" : "pause", pane.Team]);
     }
 
-    private string InterruptLabel(string interrupt, string resume) => Selected() is { Held: true } ? resume : interrupt;
+    private void ToggleHold()
+    {
+        if (_pending is not null || Selected() is not { } pane)
+            return;
+        _progress = pane.Held ? "Letting it start again…" : "Pausing this role…";
+        ShowMessage();
+        _pending = _run([pane.Held ? "resume" : "pause", pane.Team, pane.Role]);
+    }
+
+    private string UnlessHeld(string label, string resume) => Selected() is { Held: true } ? resume : label;
 
     private void ToggleInterrupt()
     {

@@ -48,7 +48,7 @@ With no command, a-team opens the app where you left it.
   dispatch [--dry-run]                    start any agent that has work (launchd runs this)
   install [--dry-run | --uninstall]       run the dispatcher every 2 minutes on this Mac
   status                                  what each agent is doing, and its last run
-  pause [--dry-run] <team>                stop the dispatcher starting that team's agents
+  pause [--dry-run] <team> [<role>]       stop the dispatcher starting that team's agents, or one role
   resume [--dry-run] <team> [<role>]      start them again, or let a held role start again
   stop [--dry-run] <team> <role>          stop a role's run and hold it until resumed
   attach [--dry-run] <team> <role>        stop a role and pick its conversation up yourself

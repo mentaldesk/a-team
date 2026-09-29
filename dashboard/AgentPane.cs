@@ -118,7 +118,7 @@ public sealed class AgentPane : FrameView
                 : [.. _log.Lines];
 
         _status = Status(state, paused, held, _log.Verdict);
-        _timing = Describe(state, now, nextCheck, _status);
+        _timing = Describe(state, now, nextCheck, _status, held);
         UpdateHeader();
 
         var why = state.Reasons.Count == 0 ? "" : "why: " + string.Join("; ", state.Reasons);
@@ -176,10 +176,11 @@ public sealed class AgentPane : FrameView
             BaseScheme);
     }
 
-    internal static string Describe(AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck, PaneStatus status)
+    internal static string Describe(
+        AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck, PaneStatus status, bool held = false)
     {
         if (state.Running)
-            return state.LastStart is { } started ? $"running {Clock(now - started)}" : "running";
+            return (state.LastStart is { } started ? $"running {Clock(now - started)}" : "running") + (held ? " · held" : "");
         if (status == PaneStatus.StoppedByYou)
             return state.Stopped is { } stopped ? $"stopped by you {Ago(now - stopped)} ago · held" : "stopped by you · held";
         var ran = state.LastStart is { } last ? $"ran {Ago(now - last)} ago" : "never run";
