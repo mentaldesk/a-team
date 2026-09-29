@@ -3,6 +3,8 @@
 # tests/scripts.sh — the shell side of a-team. Run it with `bash tests/scripts.sh`; CI does too.
 #
 set -uo pipefail
+# As in CI: a run's own team would otherwise reach every test's gh and git.
+unset A_TEAM_RUN_TEAM
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 A_TEAM="$ROOT/bin/a-team"
@@ -1936,6 +1938,38 @@ app_fixture
 A_TEAM_RUN_TEAM=demo NO_KEY=1 wrapped pr list
 failed "no key"
 grep -q 'GH_TOKEN' "$OUT" && fail "no key: the real gh ran"
+
+# A second copy of a-team, like an installed one alongside a worktree.
+COPY=$(mktemp -d "$WORK/copy.XXXXXX")
+cp -R "$ROOT/bin" "$ROOT/scripts" "$COPY/"
+# Runs "$@" into $OUT and $ERR, killing it after 10 seconds so a loop fails instead of hanging.
+within() {
+  "$@" >"$OUT" 2>"$ERR" &
+  local pid=$! watchdog
+  (sleep 10; kill "$pid") >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$pid"
+  STATUS=$?
+  kill "$watchdog" 2>/dev/null
+}
+
+for order in "$ROOT/bin:$COPY/bin" "$COPY/bin:$ROOT/bin"; do
+  case_ "with two copies of the wrappers on PATH ($order), gh and git return, as the App in a run"
+  app_fixture
+  cached ghs_cached 3600
+  wrappers="$order:$APP_BIN/real:$PATH"
+  A_TEAM_RUN_TEAM='' A_TEAM_CONFIG="$CONFIG" PATH="$wrappers" within gh --version
+  same "gh outside a run" 'GH_TOKEN=
+[--version]' "$(cat "$OUT")"
+  A_TEAM_RUN_TEAM=demo A_TEAM_CONFIG="$CONFIG" PATH="$wrappers" within gh --version
+  same "gh in a run" 'GH_TOKEN=ghs_cached
+[--version]' "$(cat "$OUT")"
+  A_TEAM_RUN_TEAM='' A_TEAM_CONFIG="$CONFIG" PATH="$wrappers" within git --version
+  same "git outside a run exit" 0 "$STATUS"
+  grep -q '^git version' "$OUT" || fail "git outside a run: '$(cat "$OUT" "$ERR")'"
+  A_TEAM_RUN_TEAM=demo A_TEAM_CONFIG="$CONFIG" PATH="$wrappers" within git config user.name
+  same "git in a run" 'demo-app[bot]' "$(cat "$OUT")"
+done
 
 # board.sh's check against a board that's fine, with the App's own view of it broken by
 # PROJECT_UNREADABLE or PRIORITY_UNREADABLE when it asks with the cached token.

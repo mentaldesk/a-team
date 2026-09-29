@@ -9,8 +9,9 @@ set -euo pipefail
 here="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 path=
 IFS=: read -ra dirs <<<"$PATH"
+# Skip every a-team bin/, not just this one, or two copies on PATH call each other for ever.
 for dir in "${dirs[@]}"; do
-  [ "$(cd -P "${dir:-.}" 2>/dev/null && pwd)" = "$here" ] || path=${path:+$path:}$dir
+  [ -f "${dir:-.}/../scripts/github-app.sh" ] || path=${path:+$path:}$dir
 done
 real=$(PATH=$path command -v git) || { echo "git: not installed" >&2; exit 127; }
 
