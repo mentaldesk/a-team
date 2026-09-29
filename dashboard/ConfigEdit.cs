@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace ATeam.Dashboard;
@@ -6,39 +7,78 @@ namespace ATeam.Dashboard;
 /// <summary>Changes one value in a team config in place, so the file's formatting and every other key survive.</summary>
 internal static class ConfigEdit
 {
+    private static readonly JsonWriterOptions Relaxed = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     /// <summary>The config with <c>dispatch.enabled</c> set, adding it, or <c>dispatch</c> itself, where missing.</summary>
-    internal static byte[] SetEnabled(byte[] config, bool enabled)
+    internal static byte[] SetEnabled(byte[] config, bool enabled) => Set(config, ["dispatch", "enabled"], enabled);
+
+    internal static byte[] Set(byte[] config, IReadOnlyList<string> path, bool value) =>
+        SetLiteral(config, path, Literal(writer => writer.WriteBooleanValue(value)));
+
+    internal static byte[] Set(byte[] config, IReadOnlyList<string> path, string value) =>
+        SetLiteral(config, path, Literal(writer => writer.WriteStringValue(value)));
+
+    internal static byte[] Set(byte[] config, IReadOnlyList<string> path, int? value) =>
+        SetLiteral(config, path, Literal(writer =>
+        {
+            if (value is { } number)
+                writer.WriteNumberValue(number);
+            else
+                writer.WriteNullValue();
+        }));
+
+    /// <summary>The config with the value at <paramref name="path"/> set, adding it, or the objects on the way to
+    /// it, where missing.</summary>
+    private static byte[] SetLiteral(byte[] config, IReadOnlyList<string> path, string json)
     {
         JsonDocument.Parse(config).Dispose();
-        var value = enabled ? "true" : "false";
         var reader = new Utf8JsonReader(config);
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
             throw new JsonException("it isn't a JSON object");
-        var root = (int)reader.TokenStartIndex;
 
-        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        for (var depth = 0; depth < path.Count; depth++)
         {
-            var isDispatch = reader.ValueTextEquals("dispatch");
-            reader.Read();
-            if (!isDispatch)
-            {
-                reader.Skip();
-                continue;
-            }
-            if (reader.TokenType != JsonTokenType.StartObject)
-                return Replace(config, reader, $"{{\"enabled\": {value}}}");
-            var dispatch = (int)reader.TokenStartIndex;
+            var brace = (int)reader.TokenStartIndex;
+            var found = false;
             while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
             {
-                var isEnabled = reader.ValueTextEquals("enabled");
+                var matches = reader.ValueTextEquals(path[depth]);
                 reader.Read();
-                if (isEnabled)
-                    return Replace(config, reader, value);
-                reader.Skip();
+                if (!matches)
+                {
+                    reader.Skip();
+                    continue;
+                }
+                found = true;
+                break;
             }
-            return Insert(config, dispatch, $"\"enabled\": {value}");
+            if (!found)
+                return Insert(config, brace, Nested(path, depth, json));
+            if (depth == path.Count - 1)
+                return Replace(config, reader, json);
+            if (reader.TokenType != JsonTokenType.StartObject)
+                return Replace(config, reader, $"{{{Nested(path, depth + 1, json)}}}");
         }
-        return Insert(config, root, $"\"dispatch\": {{\"enabled\": {value}}}");
+        return config;
+    }
+
+    /// <summary><c>"a": {"b": value}</c> for the keys from <paramref name="from"/> on.</summary>
+    private static string Nested(IReadOnlyList<string> path, int from, string json)
+    {
+        var property = $"{Key(path[^1])}: {json}";
+        for (var at = path.Count - 2; at >= from; at--)
+            property = $"{Key(path[at])}: {{{property}}}";
+        return property;
+    }
+
+    private static string Key(string name) => Literal(writer => writer.WriteStringValue(name));
+
+    private static string Literal(Action<Utf8JsonWriter> write)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer, Relaxed))
+            write(writer);
+        return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static byte[] Replace(byte[] config, Utf8JsonReader reader, string with)

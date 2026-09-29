@@ -242,7 +242,9 @@ dialog as you move. *Automatic* names what it decided for the terminal you're in
 again on every launch: a font belongs to a terminal, what's stored belongs to the machine. Teams is a row per
 team with its repo and whether it's `working` or `paused`; p starts or pauses the selected one there
 and then, and Ctrl+E → *Teams* opens Settings on that page. A team whose file doesn't parse reads
-`can't read this file`, and selecting it names the line that's wrong. Enter
+`can't read this file`, and selecting it names the line that's wrong. Enter on a team opens its
+form — repo, project, vision, workdir, try, status and limits — and Enter there saves them into its
+file, leaving every other key as it was. Enter
 on a shortcut row takes the next key you press; a key another command already holds is refused,
 naming the one that holds it. Ctrl+Enter keeps what's picked on any page, Esc
 discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is

@@ -22,6 +22,7 @@ public sealed class SettingsDialog : Dialog
     private const string CancelHint = "Esc cancel";
     private const string PauseHint = "p pause";
     private const string ResumeHint = "p resume";
+    private const string EditHint = "Enter edit";
     private const string Working = "working";
     private const string Paused = "paused";
     private const string Unreadable = "can't read this file";
@@ -134,6 +135,8 @@ public sealed class SettingsDialog : Dialog
         };
 
         _teamList.Pause = TogglePause;
+        EditTeam = (team, settings, save) =>
+            App is { } app ? TeamForm.Show(app, team, settings, save, ListProjects) : null;
         _teamList.ValueChanged += (_, _) => ShowTeam();
 
         _pages =
@@ -141,7 +144,7 @@ public sealed class SettingsDialog : Dialog
             new Page("Theme", [new Placed(themes)], () => []),
             new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint]),
             new Page("Dashboard", DashboardRows(), () => []),
-            new Page(TeamsPage, [new Placed(_teamList)], () => [SelectedTeam() is { Paused: false } ? PauseHint : ResumeHint]),
+            new Page(TeamsPage, [new Placed(_teamList)], () => [SelectedTeam() is { Paused: false } ? PauseHint : ResumeHint, EditHint]),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -195,9 +198,13 @@ public sealed class SettingsDialog : Dialog
 
     internal IReadOnlyList<(string Id, Key Key)> Changed => _changed;
 
+    /// <summary>Opens the team form and returns what it saved, or null where it was cancelled.</summary>
+    internal Func<string, TeamSettings, Func<TeamSettings, string?>, TeamSettings?> EditTeam { get; set; }
+
     /// <summary>Enter reaches a Dialog as Accept, from any of its lists alike, and never as a key.
     /// The hints close the dialog from their own Accepting, so nothing here does.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => !_keys.HasFocus || Rebind();
+    protected override bool OnAccepting(CommandEventArgs args) =>
+        _teamList.HasFocus ? OpenTeam() : !_keys.HasFocus || Rebind();
 
     protected override bool OnKeyDown(Key key)
     {
@@ -342,6 +349,54 @@ public sealed class SettingsDialog : Dialog
         ShowTeam();
     }
 
+    /// <summary>Opens the selected team's form, and saves what it's left holding straight into the team's file.</summary>
+    internal bool OpenTeam()
+    {
+        if (_teamList.Value is not { } index || SelectedTeam() is not { } team)
+            return true;
+        if (team.Problem is { } problem)
+        {
+            Say($"{team.Name}.json, {problem}");
+            return true;
+        }
+        TeamSettings before;
+        try
+        {
+            before = _teams.Settings(team.Name);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            _teamRows[index] = _teams.Row(team.Name);
+            ShowTeams();
+            Say($"Couldn't open {team.Name}: {e.Message}");
+            return true;
+        }
+        if (EditTeam(team.Name, before, after => SaveTeam(team.Name, before, after)) is not { } saved)
+            return true;
+        _teamRows[index] = _teams.Row(team.Name);
+        ShowTeams();
+        ShowTeam();
+        if (saved.Warning(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) is { } warning)
+            Say(warning, Schemes.Accent);
+        return true;
+    }
+
+    private string? SaveTeam(string team, TeamSettings before, TeamSettings after)
+    {
+        try
+        {
+            _teams.Save(team, before, after);
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return $"Couldn't save {team}: {e.Message}";
+        }
+    }
+
+    private static Task<Reading> ListProjects(string owner) =>
+        new TeamCommand("gh").Read("project", "list", "--owner", owner, "--format", "json", "--limit", "100");
+
     private TeamRow? SelectedTeam() =>
         _teamList.Value is { } index && index >= 0 && index < _teamRows.Count ? _teamRows[index] : null;
 
@@ -421,9 +476,9 @@ public sealed class SettingsDialog : Dialog
     private string Row((string Id, string Label, Key Key) binding) =>
         $"{binding.Label.PadRight(_labelWidth)}  {KeyNames.Short(binding.Key)}";
 
-    private void Say(string message)
+    private void Say(string message, Schemes scheme = Schemes.Error)
     {
-        _message.Show(message, Schemes.Error);
+        _message.Show(message, scheme);
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -487,6 +542,11 @@ public sealed class SettingsDialog : Dialog
         {
             TogglePause();
             return true;
+        }
+        if (hint == EditHint)
+        {
+            _teamList.SetFocus();
+            return OpenTeam();
         }
         switch (hint)
         {
