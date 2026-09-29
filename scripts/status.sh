@@ -10,6 +10,9 @@ source "$ROOT/scripts/common.sh"
 ago() { local s=$(($(date +%s) - $1)); printf '%dh%02dm ago' $((s / 3600)) $((s % 3600 / 60)); }
 
 for team in $(team_names); do
+  if [ -f "$STATE/$team/cannot-run" ]; then
+    printf '\n%s: stopped: %s\n' "$team" "$(cat "$STATE/$team/cannot-run")"
+  fi
   for role in lead dev; do
     dir="$STATE/$team/$role"
     printf '\n%s %s: ' "$team" "$role"

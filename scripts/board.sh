@@ -52,20 +52,29 @@ REVIEWER=$(cfg .reviewer)
 # older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
 # Delete it, and the $ackFrom halves of `said` and `unanswered`, once no open item predates it.
 ACK_FROM=2026-09-24T00:00:00Z
+# Since APP_FROM the team speaks only as its App, so whose words a comment is comes from its author.
+# Before it the team spoke as the reviewer, and the marker alone on the last line said so.
+APP_FROM=2026-09-29T00:00:00Z
+BOT=$(cfg .app.slug)
+BOT=${BOT:+${BOT}[bot]}
 
-# marked($m): the team wrote this. It says so by ending the body with its marker alone on the last
-# line, so a `>`-quoted or fenced one — as GitHub's Quote reply leaves — is only ever text.
-MARKED='def marked($m): (.body // "") | gsub("\r"; "") | split("\n")
-    | map(sub("[ \t]+$"; "")) | map(select(. != "")) | last // "" | startswith($m);'
+# login: an author as REST spells it. GraphQL leaves a bot's "[bot]" off its login.
+LOGIN='if . == null then "" elif .__typename == "Bot" then "\(.login)[bot]" else .login end'
+
+# team($m): the team wrote this, as the role whose marker is $m.
+TEAM_SAID='def team($m): if $bot != "" and .author == $bot then (.body // "") | contains($m)
+    elif .at >= $appFrom then false
+    else (.body // "") | gsub("\r"; "") | split("\n") | map(sub("[ \t]+$"; ""))
+         | map(select(. != "")) | last // "" | startswith($m) end;'
 
 # said($m): when the role last spoke on this thread. Before ACK_FROM a marker anywhere counted, and
 # that history keeps reading as it did.
 # unanswered($since): of comments shaped {at, author, body, eyes, kind?}, the ones the reviewer is
 # owed an answer to. $since is the role's own newest comment, which only ACK_FROM's tail needs.
-UNANSWERED='def said($m): map(select(marked($m) or (.at < $ackFrom and (.body | contains($m)))) | .at)
-    | max // "";
+UNANSWERED='def said($m): map(select(team($m) or (.at < $ackFrom and (.body | contains($m))))
+    | .at) | max // "";
   def unanswered($since): map(select(
-    .kind != "body" and .author == $reviewer and (marked("<!-- a-team:") | not)
+    .kind != "body" and .author == $reviewer and (team("<!-- a-team:") | not)
     and (.eyes // 0) == 0 and (.at >= $ackFrom or .at > $since)));'
 
 is_state() {
@@ -291,11 +300,11 @@ reviews() {
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F number="$1" -f query='
     query($owner: String!, $name: String!, $number: Int!) {
       repository(owner: $owner, name: $name) { pullRequest(number: $number) {
-        reviews(last: 50) { nodes { id url state body submittedAt author { login }
+        reviews(last: 50) { nodes { id url state body submittedAt author { __typename login }
           reactions(content: EYES) { totalCount } } } } } }' \
     --jq '.data.repository.pullRequest.reviews.nodes[]
           | select((.body // "") != "" or .state == "CHANGES_REQUESTED")
-          | {kind: "review", state, author: (.author.login // ""), at: .submittedAt,
+          | {kind: "review", state, author: (.author | '"$LOGIN"'), at: .submittedAt,
              body: (.body // ""), url, id, eyes: .reactions.totalCount}'
 }
 
@@ -305,7 +314,7 @@ pr_reviews() { reviews "$1" | jq -s --argjson n "$1" 'map(. + {n: $n})'; }
 # nothing. It goes into the trigger so new feedback never looks like a retry.
 awaiting() {
   jq -r --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
+    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED"'
     map(select(.n == $n)) | said($marker) as $since
     | unanswered($since) | map(.at) | max // empty' <<<"$1"
 }
@@ -316,11 +325,11 @@ awaiting() {
 gated_talk() {
   local said reviewed n query=''
   local seen='reactions(content: EYES) { totalCount }'
-  said="number createdAt body author { login }
-        comments(last: 50) { nodes { createdAt body author { login } $seen } }"
+  said="number createdAt body author { __typename login }
+        comments(last: 50) { nodes { createdAt body author { __typename login } $seen } }"
   reviewed="$said"" url isDraft mergeable baseRefName headRefOid
-              reviews(last: 50) { nodes { createdAt body state author { login } $seen
-              comments(first: 50) { nodes { createdAt body author { login } $seen } } } }"
+              reviews(last: 50) { nodes { createdAt body state author { __typename login } $seen
+              comments(first: 50) { nodes { createdAt body author { __typename login } $seen } } } }"
   for n in $(jq -r '.[].number' <<<"$1"); do
     query+=" x$n: issueOrPullRequest(number: $n) {
       ... on Issue { $said
@@ -334,7 +343,8 @@ gated_talk() {
 
 # gated_comments <talk>: everything said on those items, as {n, at, author, body, eyes, kind}.
 gated_comments() {
-  jq 'def who: {at: .createdAt, author: (.author.login // ""), body: (.body // ""),
+  jq "def login: $LOGIN;"'
+      def who: {at: .createdAt, author: (.author | login), body: (.body // ""),
                 eyes: (.reactions.totalCount // 0)};
       def talk:
         (who + {kind: "body"}),
@@ -372,7 +382,7 @@ pr_checks() {
 # an unanswered comment outranks them all: the answer is owed before a green build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
+    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED"'
     def stamp: fromdateiso8601
       | if strflocaltime("%Y-%m-%d") == (now | strflocaltime("%Y-%m-%d"))
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
@@ -432,7 +442,7 @@ comments() {
 # The reviewer's comments on #<n> that no run has left a 👀 on. What `feedback` returns.
 unanswered_feedback() {
   comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --arg reviewer "$REVIEWER" \
-    --arg ackFrom "$ACK_FROM" "$MARKED$UNANSWERED"'
+    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED"'
     said($marker) as $since
     | unanswered($since) | map(del(.id, .eyes))'
 }
@@ -446,10 +456,11 @@ ack() {
     write "add 👀 to your comment of $at on #$1" gh api graphql -F subject="$id" -f query='
       mutation($subject: ID!) {
         addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
-  done < <(comments "$1" | jq -r --arg reviewer "$REVIEWER" --arg started "$started" "$MARKED"'
+  done < <(comments "$1" | jq -r --arg reviewer "$REVIEWER" --arg started "$started" \
+    --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID"'
     map(select(.at < $started))
     | map(select(.kind != "body" and .author == $reviewer
-                 and (marked("<!-- a-team:") | not) and (.eyes // 0) == 0))
+                 and (team("<!-- a-team:") | not) and (.eyes // 0) == 0))
     | .[] | [.id, .at] | @tsv')
 }
 
@@ -913,14 +924,11 @@ case "$CMD" in
     unmapped=$(items | jq -r 'map(select(.status | startswith("?"))) | .[] | "  #\(.number) \(.status)"')
     [ -z "$unmapped" ] || { echo "items with a status outside the team's states:" >&2; echo "$unmapped" >&2; exit 1; }
     echo "ok: $OWNER project $NUMBER, field '$FIELD'"
-    if ! jq -e '.app.id' "$CONFIG" >/dev/null 2>&1; then
-      echo "identity: no \"app\" key in this team's config — the team posts as you"
-      echo "          run: a-team app create $TEAM"
-      exit 0
-    fi
-    source "$ROOT/scripts/github-app.sh"
-    line="identity: $(cfg .app.slug)[bot]"
     wrong() { printf '%s · %s\n          %s\n' "$line" "$1" "$2" >&2; exit 1; }
+    line="identity"
+    [ -n "$BOT" ] || wrong "NO APP" "the team can't run without its own GitHub App: run a-team app create $TEAM, then install it"
+    source "$ROOT/scripts/github-app.sh"
+    line="identity: $BOT"
     has_app_key "${REPO%/*}" ||
       wrong "NO KEY" "nothing in the login Keychain under service '$KEYCHAIN_SERVICE', account '${REPO%/*}': run a-team app create $TEAM"
     token=$("$ROOT/bin/a-team" token "$TEAM" 2>&1) || wrong "NO TOKEN" "${token#a-team token: }"

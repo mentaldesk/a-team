@@ -242,21 +242,23 @@ gh_pr() {
 # text is a line break.
 gh_talk() {
   jq -R -s --arg draft "${1:-false}" --arg mergeable "${2:-MERGEABLE}" '
+    def who($login): if $login | endswith("[bot]")
+      then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))} else {__typename: "User", login: $login} end;
     def seen: {reactions: {totalCount: (if .seen then 1 else 0 end)}};
     def node($rows; $number):
       ($rows | map(select(.kind == "body")) | first) as $body
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
-         author: {login: ($body.author // "")}, reactions: {totalCount: 0},
+         author: who($body.author // ""), reactions: {totalCount: 0},
          comments: {nodes: ($rows | map(select(.kind == "comment")
-           | seen + {createdAt: .at, body: .body, author: {login: .author}}))},
+           | seen + {createdAt: .at, body: .body, author: who(.author)}))},
          reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
            | if .kind == "review"
              then seen + {createdAt: .at, body: .body, state: "COMMENTED",
-                   author: {login: .author}, comments: {nodes: []}}
-             else {createdAt: .at, body: "", state: "COMMENTED", author: {login: .author},
+                   author: who(.author), comments: {nodes: []}}
+             else {createdAt: .at, body: "", state: "COMMENTED", author: who(.author),
                    reactions: {totalCount: 0},
                    comments: {nodes: [seen + {createdAt: .at, body: .body,
-                                              author: {login: .author}}]}}
+                                              author: who(.author)}]}}
              end))}};
     def open_pr($rows; $number): node($rows; $number)
       + {url: "https://github.com/mentaldesk/demo/pull/\($number)", isDraft: ($draft == "true"),
@@ -296,7 +298,9 @@ gh_thread() {
   jq '{data: {repository: {pullRequest: {reviews: {nodes:
         [.[] | select(.kind == "review")
          | {id, url, state: "COMMENTED", body, submittedAt: .at,
-            author: {login: .author}, reactions: {totalCount: .eyes}}]}}}}}' <<<"$rows" >"$REVIEWS"
+            author: (if .author | endswith("[bot]") then {__typename: "Bot", login: (.author | rtrimstr("[bot]"))}
+                     else {__typename: "User", login: .author} end),
+            reactions: {totalCount: .eyes}}]}}}}}' <<<"$rows" >"$REVIEWS"
 }
 
 # The repo-wide conversation comments of the last day that `triggers` reads, from lines of
@@ -318,7 +322,7 @@ ago() { jq -rn --argjson m "$1" 'now - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'
 
 case_ "waiting returns what's at a gate, and nothing else, in two calls"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 gh_items <<'ITEMS'
 Pitched 106 Both gates are mine
@@ -328,7 +332,7 @@ Done 99 Already merged
 ITEMS
 gh_talk <<TALK
 106 body 2025-09-19T08:14:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:14:00Z reviewer The task\n<!-- a-team:lead -->
+115 body ${TODAY}T08:14:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -348,10 +352,10 @@ same "task reason" '"awaiting your acceptance since 08:14"' "$(jq -c '.[1].reaso
 
 case_ "a reviewer comment since the role last spoke makes it the role's turn"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 106 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 comment ${TODAY}T08:30:00Z reviewer Draft PR #9 is up.\n<!-- a-team:dev -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 comment ${TODAY}T08:30:00Z demo-app[bot] Draft PR #9 is up.\n<!-- a-team:dev -->
 115 comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
 run board demo waiting
@@ -363,12 +367,12 @@ same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason
 
 case_ "a comment a run has read and answered hands the gate back"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 106 comment+seen ${TODAY}T09:30:00Z reviewer What about the second gate?
-106 comment ${TODAY}T11:00:00Z reviewer Redrafted.\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+106 comment ${TODAY}T11:00:00Z demo-app[bot] Redrafted.\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
-115 comment ${TODAY}T11:45:00Z reviewer Added one.\n<!-- a-team:dev -->
+115 comment ${TODAY}T11:45:00Z demo-app[bot] Added one.\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -379,9 +383,9 @@ same "task reason" '"awaiting your acceptance since 11:45"' "$(jq -c '.[1].reaso
 
 case_ "a comment from anyone but the reviewer is nobody's turn"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 106 comment ${TODAY}T09:30:00Z passer-by Have you considered doing it differently?
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 comment ${TODAY}T09:30:00Z passer-by This looks wrong to me.
 TALK
 run board demo waiting
@@ -390,10 +394,10 @@ same "turns" '["you","you"]' "$(jq -c '[.[].turn]' "$OUT")"
 
 case_ "the reviewer answering on the task's PR rather than on the task is still the Dev's turn"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 comment ${TODAY}T08:30:00Z reviewer Draft PR #9 is up.\n<!-- a-team:dev -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 comment ${TODAY}T08:30:00Z demo-app[bot] Draft PR #9 is up.\n<!-- a-team:dev -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
 : >"$CALLS"
@@ -405,9 +409,9 @@ same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a review and a line comment on that PR count as feedback too"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-review ${TODAY}T09:00:00Z reviewer Nearly there.
 115 pr-line ${TODAY}T10:45:00Z reviewer This name reads oddly.
 TALK
@@ -418,11 +422,11 @@ same "task reason" '"answering your feedback since 10:45"' "$(jq -c '.[1].reason
 
 case_ "the Dev answering on the PR hands the task back"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
-115 pr-comment ${TODAY}T11:45:00Z reviewer Added one.\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T11:45:00Z demo-app[bot] Added one.\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -431,9 +435,9 @@ same "task reason" '"awaiting your acceptance since 11:45"' "$(jq -c '.[1].reaso
 
 case_ "an In review item carries its open PR, and a Pitched one carries none"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -465,9 +469,9 @@ same "task reason" '"CI failing since 09:02"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "an unanswered comment outranks the failing build it hasn't been answered with"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
 run board demo waiting
@@ -482,9 +486,9 @@ gh_runs <<RUNS
 completed success ${TODAY}T09:00:00Z build
 RUNS
 gh_talk false CONFLICTING <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -494,9 +498,9 @@ same "task reason" '"conflicts with main"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a PR GitHub hasn't worked the conflict out for yet is nobody's fault"
 gh_talk false UNKNOWN <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -505,9 +509,9 @@ same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 
 case_ "a PR still in draft is the Dev's turn"
 gh_talk true <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -517,11 +521,11 @@ same "task reason" '"still a draft"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a ready PR whose CI is still running, after a push to answer feedback, isn't your turn yet"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
-115 pr-body ${TODAY}T08:25:00Z reviewer Closes #115\n<!-- a-team:dev -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
-115 pr-comment ${TODAY}T10:40:00Z reviewer Added one.\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T10:40:00Z demo-app[bot] Added one.\n<!-- a-team:dev -->
 TALK
 gh_runs <<RUNS
 completed success ${TODAY}T10:45:00Z build
@@ -544,8 +548,8 @@ same "task reason" '"awaiting your acceptance since 10:40"' "$(jq -c '.[1].reaso
 
 case_ "a task with no PR yet waits on the reviewer since the task was opened"
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -567,8 +571,8 @@ Pitched 106 Both gates are mine
 In_review 115 I can change any of the keys
 ITEMS
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -583,8 +587,8 @@ In_review 115 I can change any of the keys
 Ready 128 Everything waiting on me
 ITEMS
 gh_talk <<TALK
-106 body ${TODAY}T08:00:00Z reviewer The pitch\n<!-- a-team:lead -->
-115 body ${TODAY}T08:00:00Z reviewer The task\n<!-- a-team:lead -->
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -608,7 +612,7 @@ same "api calls" 1 "$(grep -c '' <"$CALLS")"
 
 case_ "body returns an issue's number, title and body, in one call"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 gh_items <<'ITEMS'
 Idea 7 An Idea of my own
@@ -646,7 +650,7 @@ grep -q "usage: board.sh demo body <n>" "$ERR" || fail "body usage: '$(cat "$ERR
 # Ranking: the one field the app writes, and the gate it is the reviewer's alone to clear.
 case_ "priority sets the field's own option on the issue, and nothing on the project"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 gh_items <<'ITEMS'
 Idea 6 The agents can't say what they'd change
@@ -701,7 +705,7 @@ grep -q "would set Priority on #6 to 'Low'" "$ERR" || fail "dry run: nothing abo
 # Approving: the other write the app makes, and the other gate that is the reviewer's alone.
 case_ "approve moves a Pitched pitch to Approved on the project"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 gh_items <<'ITEMS'
 Pitched 7 A pitch in front of me
@@ -770,7 +774,7 @@ grep -qF '"Bash(a-team board * approve *)"' "$ROOT/settings/agents.json" || fail
 # after board.sh's ACK_FROM, so these cases see the 👀 rule and the dated ones below the old.
 case_ "comment acks what the run could have seen, and not a comment that arrived while it worked"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer",
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" },
   "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "pitched": 3, "exploring": 4, "ideas": 4 } }
 JSON
@@ -778,7 +782,7 @@ gh_items <<'ITEMS'
 Pitched 7 A pitch in front of me
 ITEMS
 gh_thread <<TALK
-body ${TODAY}T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
+body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
 comment ${TODAY}T02:20:00Z reviewer 0 Needs a second option.
 comment ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
 TALK
@@ -792,10 +796,10 @@ unset A_TEAM_RUN_STARTED
 
 case_ "the comment that arrived mid-run is still unanswered, however recently the role replied"
 gh_thread <<TALK
-body ${TODAY}T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
+body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
 comment ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
 comment ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
-comment ${TODAY}T02:33:03Z reviewer 0 Added one.\n<!-- a-team:lead -->
+comment ${TODAY}T02:33:03Z demo-app[bot] 0 Added one.\n<!-- a-team:lead -->
 TALK
 run board demo feedback lead 7
 same "exit" 0 "$STATUS"
@@ -805,7 +809,7 @@ case_ "triggers names it too, so it gets a run of its own"
 gh_recent <<RECENT
 7 ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
 7 ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
-7 ${TODAY}T02:33:03Z reviewer 0 Added one.\n<!-- a-team:lead -->
+7 ${TODAY}T02:33:03Z demo-app[bot] 0 Added one.\n<!-- a-team:lead -->
 RECENT
 run board demo triggers lead
 same "exit" 0 "$STATUS"
@@ -813,10 +817,10 @@ same "reasons" "[\"reviewer feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .re
 
 case_ "waiting says the same: the gate is the Lead's until the 👀 is there"
 gh_talk <<TALK
-7 body ${TODAY}T02:10:00Z reviewer The pitch\n<!-- a-team:lead -->
+7 body ${TODAY}T02:10:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
 7 comment ${TODAY}T02:28:46Z reviewer And do the same for subissue links.
-7 comment ${TODAY}T02:33:03Z reviewer Added one.\n<!-- a-team:lead -->
+7 comment ${TODAY}T02:33:03Z demo-app[bot] Added one.\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -825,10 +829,10 @@ same "reason" '"answering your feedback since 02:28"' "$(jq -c '.[0].reason' "$O
 
 case_ "and hands it back once the 👀 is"
 gh_talk <<TALK
-7 body ${TODAY}T02:10:00Z reviewer The pitch\n<!-- a-team:lead -->
+7 body ${TODAY}T02:10:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
 7 comment+seen ${TODAY}T02:28:46Z reviewer And do the same for subissue links.
-7 comment ${TODAY}T02:33:03Z reviewer Added one.\n<!-- a-team:lead -->
+7 comment ${TODAY}T02:33:03Z demo-app[bot] Added one.\n<!-- a-team:lead -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
@@ -857,11 +861,11 @@ run board demo feedback lead 7
 same "exit" 0 "$STATUS"
 same "unanswered" '["Still needs a second option."]' "$(jq -c '[.[].body]' "$OUT")"
 
-# The marker only counts alone on the body's last line, which is the one place the script writes
-# it. GitHub's Quote reply copies a team comment's source, marker and all, into your own words.
+# Before APP_FROM the team spoke as the reviewer, and the marker counted only alone on the body's
+# last line. GitHub's Quote reply copies a team comment's source, marker and all, into your own words.
 case_ "a Quote reply carrying the team's marker is your feedback"
 gh_thread <<TALK
-body ${TODAY}T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
+body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
 comment ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
 comment ${TODAY}T02:28:46Z reviewer 0 > The pitch\n> <!-- a-team:lead -->\n\nAnd include the path.
 TALK
@@ -880,7 +884,7 @@ same "reasons" "[\"reviewer feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .re
 
 case_ "waiting says the same: the Quote reply makes the gate the Lead's"
 gh_talk <<TALK
-7 body ${TODAY}T02:10:00Z reviewer The pitch\n<!-- a-team:lead -->
+7 body ${TODAY}T02:10:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
 7 comment ${TODAY}T02:28:46Z reviewer > The pitch\n> <!-- a-team:lead -->\n\nAnd include the path.
 TALK
@@ -906,7 +910,7 @@ same "exit" 0 "$STATUS"
 same "acked" "IC_1" "$(cat "$ACKED")"
 unset A_TEAM_RUN_STARTED
 
-case_ "a marker mid-sentence or in a fenced code block is your feedback"
+case_ "before APP_FROM, a marker mid-sentence or in a fenced code block is your feedback"
 gh_thread <<'TALK'
 body 2026-09-25T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
 comment 2026-09-25T02:20:00Z reviewer 0 Does <!-- a-team:lead --> have to be last?
@@ -916,7 +920,7 @@ run board demo feedback lead 7
 same "exit" 0 "$STATUS"
 same "unanswered" '["2026-09-25T02:20:00Z","2026-09-25T02:28:46Z"]' "$(jq -c '[.[].at]' "$OUT")"
 
-case_ "the team's own comment, marker alone on the last line, is still not feedback"
+case_ "before APP_FROM, the team's own comment under your login is not feedback, so an upgrade reopens nothing"
 gh_thread <<'TALK'
 body 2026-09-25T02:10:00Z reviewer 0 The pitch\n<!-- a-team:lead -->
 comment 2026-09-25T02:33:03Z reviewer 0 Added one.\n<!-- a-team:lead -->
@@ -925,13 +929,73 @@ run board demo feedback lead 7
 same "exit" 0 "$STATUS"
 same "unanswered" '[]' "$(jq -c . "$OUT")"
 
+# Since APP_FROM the team speaks only as its App, so the author alone says whose words a comment is.
+case_ "after APP_FROM, the reviewer's comment is feedback whatever its body, marker on its last line or not"
+gh_thread <<'TALK'
+body 2026-10-01T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
+comment 2026-10-01T02:20:00Z reviewer 0 Pasted from the other thread:\n\nDrafted.\n<!-- a-team:lead -->
+comment 2026-10-01T02:28:46Z reviewer 0 Does <!-- a-team:dev --> have to be last?
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '["2026-10-01T02:20:00Z","2026-10-01T02:28:46Z"]' "$(jq -c '[.[].at]' "$OUT")"
+
+case_ "comment acks it too"
+: >"$ACKED"
+export A_TEAM_RUN_STARTED=2026-10-01T03:00:00Z
+run board demo comment lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_1
+IC_2" "$(cat "$ACKED")"
+unset A_TEAM_RUN_STARTED
+
+case_ "the App's comments and reviews are never feedback, however GitHub spells its login"
+gh_thread pull <<'TALK'
+body 2026-10-01T02:10:00Z demo-app[bot] 0 Closes #7\n<!-- a-team:dev -->
+comment 2026-10-01T02:20:00Z demo-app[bot] 0 A comment that lost its marker.
+review 2026-10-01T02:25:00Z demo-app[bot] 0 A review that lost its marker.
+line 2026-10-01T02:28:46Z demo-app[bot] 0 A line comment that lost its marker.
+TALK
+run board demo feedback dev 7
+same "exit" 0 "$STATUS"
+same "unanswered" '[]' "$(jq -c . "$OUT")"
+
+case_ "triggers doesn't start a run for the App's own words either"
+gh_recent <<'RECENT'
+7 2026-10-01T02:20:00Z demo-app[bot] 0 A comment that lost its marker.
+RECENT
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "waiting reads the App from GraphQL's spelling, and each role from its own marker"
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+In_review 115 I can change any of the keys
+ITEMS
+gh_talk <<'TALK'
+106 body 2026-10-01T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+106 comment 2026-10-01T09:00:00Z demo-app[bot] Wrong thread.\n<!-- a-team:dev -->
+106 comment 2026-10-01T09:30:00Z demo-app[bot] A comment that lost its marker.
+115 body 2026-10-01T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 comment 2026-10-01T09:00:00Z reviewer > Drafted.\n<!-- a-team:dev -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
+same "pitch reason" '"awaiting your approval since 01 Oct 08:00"' "$(jq -c '.[0].reason' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+gh_items <<'ITEMS'
+Pitched 7 A pitch in front of me
+ITEMS
+
 # Unset, A_TEAM_RUN_STARTED means now, so these threads are dated back from it, not from an hour of
 # the day the suite could be running before.
 OPENED=$(ago 90) ASKED=$(ago 60) ASKED_AGAIN=$(ago 50)
 
 case_ "a review and a line comment on a PR are acked like any other comment"
 gh_thread pull <<TALK
-body $OPENED reviewer 0 Closes #7\n<!-- a-team:dev -->
+body $OPENED demo-app[bot] 0 Closes #7\n<!-- a-team:dev -->
 review $ASKED reviewer 0 Nearly there.
 line $ASKED_AGAIN reviewer 0 This name reads oddly.
 TALK
@@ -951,7 +1015,7 @@ same "acked" "IC_1 IC_2" "$(tr '\n' ' ' <"$ACKED" | sed 's/ $//')"
 
 case_ "a comment already carrying a 👀 is not acked again"
 gh_thread pull <<TALK
-body $OPENED reviewer 0 Closes #7\n<!-- a-team:dev -->
+body $OPENED demo-app[bot] 0 Closes #7\n<!-- a-team:dev -->
 review $ASKED reviewer 1 Nearly there.
 line $ASKED_AGAIN reviewer 0 This name reads oddly.
 TALK
@@ -962,7 +1026,7 @@ same "acked" "IC_2" "$(cat "$ACKED")"
 
 case_ "a comment from anyone but the reviewer is not acked"
 gh_thread <<TALK
-body $OPENED reviewer 0 The pitch\n<!-- a-team:lead -->
+body $OPENED demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
 comment $ASKED passer-by 0 Have you considered doing it differently?
 TALK
 : >"$ACKED"
@@ -975,7 +1039,7 @@ gh_items <<'ITEMS'
 Idea 7 An Idea with nothing to pitch in it
 ITEMS
 gh_thread <<TALK
-body $OPENED reviewer 0 The idea\n<!-- a-team:lead -->
+body $OPENED demo-app[bot] 0 The idea\n<!-- a-team:lead -->
 comment $ASKED reviewer 0 Worth a look.
 TALK
 : >"$ACKED"
@@ -985,7 +1049,7 @@ same "acked" "IC_1" "$(cat "$ACKED")"
 
 case_ "--dry-run says which reactions it would add and adds none"
 gh_thread <<TALK
-body $OPENED reviewer 0 The pitch\n<!-- a-team:lead -->
+body $OPENED demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
 comment $ASKED reviewer 0 Needs a second option.
 TALK
 : >"$ACKED"
@@ -998,7 +1062,7 @@ grep -q "would add 👀 to your comment of $ASKED on #7" "$ERR" || fail "dry run
 
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 gh_items <<'ITEMS'
 Building 10 A pitch
@@ -1088,7 +1152,7 @@ same "writes" "" "$(cat "$WRITES")"
 
 case_ "with every worktree taken, the Dev isn't woken for a Ready task"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "worktrees": 2 } }
 JSON
 gh_items <<'ITEMS'
@@ -1119,7 +1183,7 @@ same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -
 
 case_ "a draft PR whose CI is still running doesn't wake the Dev"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "worktrees": 1 } }
 JSON
 gh_items <<'ITEMS'
@@ -1455,7 +1519,7 @@ A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
 
 case_ "stop ends the run once, holds the role, and lists what it left claimed"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "dispatch": { "enabled": true } }
 JSON
 gh_items <<'ITEMS'
@@ -1479,12 +1543,41 @@ mkdir -p "$APP/bin" "$APP/scripts"
 cp "$ROOT"/scripts/*.sh "$APP/scripts/"
 cat >"$APP/bin/a-team" <<'SH'
 #!/usr/bin/env bash
+if [ "$1" = token ] && [ -n "${NOT_INSTALLED:-}" ]; then
+  echo "a-team token: app 7 isn't installed on mentaldesk/$2: install it at https://github.com/apps/demo-app/installations/new" >&2
+  exit 1
+fi
 echo '{"reasons": ["work to do"], "creative": false}'
 SH
 chmod +x "$APP/bin/a-team"
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch: the lead wasn't started"
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the held dev was started"
+
+case_ "a dispatcher pass skips a team with no app key, says why in status, and runs the others"
+jq 'del(.app) | .dispatch.hold = []' "$TEAM" >"$CONFIG/teams/bare.json"
+: >"$A_TEAM_STATE/dispatch.log"
+rm -f "$A_TEAM_STATE"/demo/*/dry-*
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q 'bare lead\|bare dev' "$A_TEAM_STATE/dispatch.log" && fail "no app: bare was started"
+grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "no app: demo wasn't started"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/status.sh" >"$OUT"
+grep -q '^bare: stopped: no GitHub App: run a-team app create bare, then install it$' "$OUT" ||
+  fail "no app: status says '$(cat "$OUT")'"
+grep -q '^demo: stopped' "$OUT" && fail "no app: demo shows as stopped"
+
+case_ "and the same for a team whose App isn't installed, until it is"
+: >"$A_TEAM_STATE/dispatch.log"
+NOT_INSTALLED=1 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q "demo: stopped: app 7 isn't installed on mentaldesk/demo" "$A_TEAM_STATE/dispatch.log" ||
+  fail "not installed: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+grep -q 'demo lead' "$A_TEAM_STATE/dispatch.log" && fail "not installed: demo was started"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/status.sh" >"$OUT"
+grep -q "^demo: stopped: app 7 isn't installed" "$OUT" || fail "not installed: status says '$(cat "$OUT")'"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/status.sh" >"$OUT"
+grep -q '^demo: stopped' "$OUT" && fail "installed: demo still shows as stopped"
+rm "$CONFIG/teams/bare.json"
 
 case_ "resume <team> <role> lets it go and leaves dispatch.enabled alone"
 jq '.dispatch.enabled = false' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
@@ -1562,7 +1655,7 @@ session_log() {
 case_ "attach on a running role stops and holds it while you resume its session, then lets it start again"
 WORKDIR=$(mktemp -d "$WORK/workdir.XXXXXX")
 fixture <<JSON
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "workdir": "$WORKDIR", "dispatch": { "enabled": true } }
 JSON
 gh_items </dev/null
@@ -1789,16 +1882,20 @@ same "output" 'GH_TOKEN=ghs_cached
 [it'"'"'s]' "$(cat "$OUT")"
 same "caller's GH_TOKEN" '' "${GH_TOKEN:-}"
 
-case_ "outside a run, or for a team with no app key, it's the real gh as it was"
-wrapped pr list
+case_ "outside a run, it's the real gh as it was"
+A_TEAM_RUN_TEAM='' wrapped pr list
 same "no run" 'GH_TOKEN=
 [pr]
 [list]' "$(cat "$OUT")"
+
+case_ "in a run of a team with no app key, it fails and names the command, rather than running gh as you"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo" }
 JSON
 A_TEAM_RUN_TEAM=demo wrapped pr list
-same "no app" 'GH_TOKEN=' "$(head -1 "$OUT")"
+failed "no app"
+grep -q 'GH_TOKEN' "$OUT" && fail "no app: the real gh ran"
+grep -q 'a-team app create demo, then install it' "$ERR" || fail "no app: '$(cat "$ERR")'"
 
 case_ "a team whose token won't mint fails, rather than running gh as you"
 app_fixture
@@ -1838,14 +1935,14 @@ chmod +x "$APP_BIN/board/gh"
 checked() { PATH="$APP_BIN/board:$PATH" run board demo check; }
 grants() { jq "$1" "$CACHE" >"$CACHE.new" && mv "$CACHE.new" "$CACHE"; }
 
-case_ "check with no app key says the team posts as you, and still passes"
+case_ "check fails a team with no app key, and names the command"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 checked
-same "exit" 0 "$STATUS"
-grep -q '^identity: no "app" key.*the team posts as you' "$OUT" || fail "no app: '$(cat "$OUT")'"
-grep -q 'run: a-team app create demo' "$OUT" || fail "no app: no command in '$(cat "$OUT")'"
+failed "no app"
+grep -q '^identity · NO APP' "$ERR" || fail "no app: '$(cat "$ERR")'"
+grep -q 'run a-team app create demo, then install it' "$ERR" || fail "no app: no command in '$(cat "$ERR")'"
 
 case_ "check reports the App's identity when every part of it works"
 app_fixture
