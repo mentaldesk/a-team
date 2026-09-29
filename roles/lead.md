@@ -108,12 +108,17 @@ the draft beside it. **Alternate** them — demote the first, promote the first,
 promote the second — so Pitched never holds more than `wip.pitched` and every move is still one
 the board allows when it re-checks.
 
-For a demote, `a-team board {{team}} move lead <n> Exploring` and comment saying which pitch displaced
-it and that it keeps its priority, so it comes back by itself once a slot frees.
+Each entry's **`announce`** says whether that move gets a comment. Otherwise make it quietly.
+
+For a demote, `a-team board {{team}} move lead <n> Exploring`. If `announce` is true, comment saying
+which pitch displaced it, that it keeps its priority and comes back by itself once a slot frees,
+and that you won't comment on it moving again unless it changes. Post demote comments last thing
+in the run, and only for pitches still in Exploring by then.
 
 For a promote, `a-team board {{team}} move lead <n> Pitched`. A draft may have sat a while, so check it
 against the current vision, the code, and anything the reviewer has said on other pitches since,
-and update it if needed.
+and update it if needed. Comment if `announce` is true, or if you changed it, saying what changed;
+otherwise say nothing.
 
 **`turn`**:
 

@@ -533,7 +533,7 @@ case "$CMD" in
     skipped=$(count '(.labels | index("a-team:skipped")) and .status == "Idea"')
     ready=$(count "$STARTABLE")
     blocked=$(count "$UNSTARTABLE")
-    swap=$(pitch_swap "$all")
+    swap=$(pitch_swap "$all" | jq 'map_values(map(. + {announce: (.labels | index("a-team:displaced") | not)}))')
     promote=$(jq .promote <<<"$swap")
     demote=$(jq .demote <<<"$swap")
     idle=false
@@ -590,6 +590,10 @@ case "$CMD" in
         jq -e --arg l "$label" '.labels | index($l)' <<<"$it" >/dev/null ||
           die "#$n isn't $role's (no '$label' label); leave it to the reviewer" ;;
     esac
+    if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
+      ! jq -e '.labels | index("a-team:displaced")' <<<"$it" >/dev/null; then
+      write "label #$n a-team:displaced" gh issue edit "$n" -R "$REPO" --add-label a-team:displaced >/dev/null
+    fi
     set_status "$(jq -r .id <<<"$it")" "$to"
     say "#$n: $from -> $to"
     ;;
@@ -996,6 +1000,7 @@ case "$CMD" in
 a-team:dev|0e8a16|Claimed by the a-team Dev
 a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched
 a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running
+a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced
 blocked|fbca04|Waiting on another issue"
     ;;
 

@@ -156,7 +156,8 @@ gh_items() {
   echo '[]' >"$EMPTY"
   META="$BIN/meta.json"
   jq -n '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options: [
-    {id: "OPT_pitched", name: "Pitched"}, {id: "OPT_approved", name: "Approved"}]}}}}}' >"$META"
+    {id: "OPT_exploring", name: "Exploring"}, {id: "OPT_pitched", name: "Pitched"},
+    {id: "OPT_approved", name: "Approved"}]}}}}}' >"$META"
   gh_thread </dev/null
   gh_recent </dev/null
   RUNS="$BIN/runs.json"
@@ -178,6 +179,8 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"issue edit"*) echo "\$*" >>"$WRITES"; exit 0 ;;
+  *"label list"*) page="$EMPTY" ;;
   *check-runs*) page="$RUNS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
   *closedByPullRequestsReferences*) page="$PRS" ;;
@@ -1059,6 +1062,59 @@ same "exit" 0 "$STATUS"
 same "acked" "" "$(cat "$ACKED")"
 same "posted" "" "$(cat "$POSTED")"
 grep -q "would add 👀 to your comment of $ASKED on #7" "$ERR" || fail "dry run: nothing about the 👀 in '$(cat "$ERR")'"
+
+case_ "lead-next announces a swap only for pitches that have never been displaced"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
+JSON
+gh_items 21 22 <<'ITEMS'
+Pitched 11 Never displaced
+Pitched 12 Displaced before
+Exploring 21 A higher draft, never in Pitched
+Exploring 22 A higher draft, back again
+ITEMS
+edit_item 12 '.labels.nodes += [{name: "a-team:displaced"}]'
+edit_item 22 '.labels.nodes += [{name: "a-team:displaced"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "demote" '[[11,true],[12,false]]' "$(jq -c '[.demote[] | [.number, .announce]] | sort' "$OUT")"
+same "promote" '[[21,true],[22,false]]' "$(jq -c '[.promote[] | [.number, .announce]] | sort' "$OUT")"
+
+case_ "a first demote labels the pitch a-team:displaced"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 1 } }
+JSON
+gh_items 21 <<'ITEMS'
+Pitched 11 Out-ranked
+Exploring 21 A higher draft
+ITEMS
+run board demo move lead 11 Exploring
+same "exit" 0 "$STATUS"
+same "label" 1 "$(grep -c 'issue edit 11 .*--add-label a-team:displaced' "$WRITES")"
+grep -q "option=OPT_exploring" "$WRITES" || fail "status not set: '$(cat "$WRITES")'"
+
+case_ "a repeat demote moves without labelling again"
+edit_item 11 '.labels.nodes += [{name: "a-team:displaced"}]'
+: >"$WRITES"
+run board demo move lead 11 Exploring
+same "exit" 0 "$STATUS"
+same "label" 0 "$(grep -c 'issue edit' "$WRITES")"
+grep -q "option=OPT_exploring" "$WRITES" || fail "status not set: '$(cat "$WRITES")'"
+
+case_ "--dry-run says it would label a first demote, and labels nothing"
+edit_item 11 '.labels.nodes -= [{name: "a-team:displaced"}]'
+: >"$WRITES"
+run board --dry-run demo move lead 11 Exploring
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+grep -q "would label #11 a-team:displaced" "$ERR" || fail "dry run: nothing about the label in '$(cat "$ERR")'"
+
+case_ "setup creates the a-team:displaced label"
+run board --dry-run demo setup
+same "exit" 0 "$STATUS"
+grep -q "created label a-team:displaced" "$OUT" || fail "setup: '$(cat "$OUT")'"
 
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'
