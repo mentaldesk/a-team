@@ -409,18 +409,96 @@ public class SettingsDialogTests : IDisposable
         Assert.True(settings.ReadExpandToolCalls());
     }
 
-    [Fact]
-    public void The_dialog_stays_inside_a_small_terminal_and_scrolls_its_keys_instead()
+    [Theory]
+    [InlineData(80, 24, "Theme")]
+    [InlineData(80, 24, "Keyboard Shortcuts")]
+    [InlineData(80, 24, "Dashboard")]
+    [InlineData(200, 60, "Theme")]
+    [InlineData(200, 60, "Keyboard Shortcuts")]
+    [InlineData(200, 60, "Dashboard")]
+    public void The_dialog_fills_the_window_but_the_status_bar_on_every_page(int width, int height, string page)
     {
-        using var host = new View { Width = 30, Height = 12 };
+        using var host = new View { Width = width, Height = height };
         using var dialog = Open(out _, out _);
-        OpenPage(dialog, "Keyboard Shortcuts");
+        OpenPage(dialog, page);
         host.Add(dialog);
 
-        host.Layout(new Size(30, 12));
+        host.Layout(new Size(width, height));
 
-        Assert.True(host.Viewport.Contains(dialog.Frame), $"{dialog.Frame} overhangs {host.Viewport}");
+        Assert.Equal(new Rectangle(0, 0, width, height - 1), dialog.Frame);
+    }
+
+    [Fact]
+    public void Resizing_the_window_resizes_the_dialog_with_it()
+    {
+        using var host = new View { Width = 80, Height = 24 };
+        using var dialog = Open(out _, out _);
+        host.Add(dialog);
+        host.Layout(new Size(80, 24));
+
+        host.Width = 120;
+        host.Height = 40;
+        host.Layout(new Size(120, 40));
+
+        Assert.Equal(new Rectangle(0, 0, 120, 39), dialog.Frame);
+    }
+
+    [Fact]
+    public void The_keys_list_shows_a_scroll_bar_only_when_its_rows_do_not_fit()
+    {
+        using var tall = Laid(Registry(), 80, 24);
+        Assert.False(tall.Keys.VerticalScrollBar.Visible);
+
+        using var @short = Laid(Many(40), 80, 24);
+        Assert.True(@short.Keys.VerticalScrollBar.Visible);
+    }
+
+    [Fact]
+    public void Moving_down_past_the_last_row_showing_scrolls_the_keys_list()
+    {
+        using var dialog = Laid(Many(40), 80, 24);
+        dialog.Keys.SetFocus();
+        var showing = dialog.Keys.Viewport.Height;
+
+        for (var row = 0; row < showing + 5; row++)
+            dialog.Keys.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.Equal(showing + 5, dialog.Keys.Value);
+        Assert.InRange(dialog.Keys.Value!.Value, dialog.Keys.Viewport.Y, dialog.Keys.Viewport.Bottom - 1);
+    }
+
+    [Fact]
+    public void Rebinding_a_row_near_the_bottom_keeps_it_in_view()
+    {
+        using var dialog = Laid(Many(40), 80, 24);
+        dialog.Keys.SetFocus();
+        dialog.Keys.Value = 38;
+        dialog.Keys.EnsureSelectedItemVisible();
+
+        dialog.NewKeyDownEvent(Key.Enter);
+        dialog.Layout();
+
+        Assert.EndsWith("Press a key…", Showing(dialog)[38]);
+        Assert.InRange(38, dialog.Keys.Viewport.Y, dialog.Keys.Viewport.Bottom - 1);
+    }
+
+    [Fact]
+    public void A_refused_key_shows_its_message_on_a_short_terminal_with_the_list_and_hints_still_in_view()
+    {
+        using var dialog = Laid(Many(40), 80, 12);
+        dialog.Keys.SetFocus();
+        dialog.Keys.Value = 30;
+        dialog.NewKeyDownEvent(Key.Enter);
+        dialog.NewKeyDownEvent(Key.F2);
+        dialog.Layout();
+
+        Assert.Equal("F2 already runs Command 1.", dialog.Message.Says);
+        var hint = Hint(dialog, "Esc cancel");
         Assert.True(dialog.Keys.Frame.Height >= 1);
+        Assert.True(dialog.Keys.Frame.Bottom <= hint.Frame.Y, $"{dialog.Keys.Frame} runs into {hint.Frame}");
+        Assert.True(hint.Frame.Y < dialog.Message.Frame.Y, $"{hint.Frame} runs into {dialog.Message.Frame}");
+        Assert.True(dialog.Viewport.Contains(dialog.Message.Frame), $"{dialog.Message.Frame} overhangs {dialog.Viewport}");
+        Assert.InRange(30, dialog.Keys.Viewport.Y, dialog.Keys.Viewport.Bottom - 1);
     }
 
     [Fact]
@@ -433,11 +511,28 @@ public class SettingsDialogTests : IDisposable
 
         host.Layout(new Size(80, 24));
 
-        Assert.True(host.Viewport.Contains(dialog.Frame), $"{dialog.Frame} overhangs {host.Viewport}");
         Assert.All(
             new View[] { ToolCalls(dialog), IconStyles(dialog), Legend(dialog) },
             view => Assert.True(
                 dialog.Viewport.Contains(view.Frame), $"{view.GetType().Name} {view.Frame} overhangs {dialog.Viewport}"));
+    }
+
+    private SettingsDialog Laid(CommandRegistry commands, int width, int height)
+    {
+        var host = new View { Width = width, Height = height, CanFocus = true };
+        var dialog = Open(out _, out _, commands: commands);
+        OpenPage(dialog, "Keyboard Shortcuts");
+        host.Add(dialog);
+        host.Layout(new Size(width, height));
+        return dialog;
+    }
+
+    private static CommandRegistry Many(int count)
+    {
+        var commands = new CommandRegistry();
+        for (var index = 0; index < count; index++)
+            commands.Register($"command{index}", $"Command {index}", () => { }, index == 1 ? Key.F2 : null);
+        return commands;
     }
 
     private static void Rebind(SettingsDialog dialog, int row, Key key)

@@ -22,7 +22,7 @@ public sealed class SettingsDialog : Dialog
     private const string ThisTerminal = "this terminal: ";
     private const int Inset = 1;
     private const int Gap = 1;
-    private const int GlyphAndSpace = 2;
+    private const int StatusLines = 1;
     private const int Indent = 2;
     private const int IconsHeadingRow = 2;
     private const int IconStylesRow = IconsHeadingRow + 1;
@@ -31,7 +31,6 @@ public sealed class SettingsDialog : Dialog
         [(IconStyle.Auto, "Automatic"), (IconStyle.NerdFont, "Nerd Font"), (IconStyle.Unicode, "Unicode")];
 
     private static readonly int IconLegendRow = IconStylesRow + IconChoices.Length + 1;
-    private static readonly int DashboardTall = IconLegendRow + 1;
 
     private readonly CommandRegistry _commands;
     private readonly List<(string Id, string Label, Key Key)> _bindings;
@@ -44,7 +43,6 @@ public sealed class SettingsDialog : Dialog
     private readonly OptionSelector _iconStyles;
     private readonly KeyList _keys;
     private readonly MessageBar _message = new();
-    private readonly IconStyle _auto;
     private bool _capturing;
 
     public SettingsDialog(
@@ -56,13 +54,14 @@ public sealed class SettingsDialog : Dialog
         IconStyle auto)
     {
         _commands = commands;
-        _auto = auto;
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
 
         Title = "Settings";
-        Width = Dim.Func(_ => Fits(Wide() + GetAdornmentsThickness().Horizontal, SuperView?.Viewport.Width), this);
-        Height = Dim.Func(_ => Fits(Tall() + GetAdornmentsThickness().Vertical, SuperView?.Viewport.Height), this);
+        X = 0;
+        Y = 0;
+        Width = Dim.Fill();
+        Height = Dim.Fill(StatusLines);
 
         var themes = new OptionSelector
         {
@@ -98,15 +97,14 @@ public sealed class SettingsDialog : Dialog
             }
         };
         _keys = new KeyList();
+        _keys.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
         _keys.Captured = key => _capturing && Capture(key);
 
         _pages =
         [
-            new Page("Theme", [new Placed(themes)], () => BundledThemes.Names.Max(name => name.Length) + GlyphAndSpace,
-                BundledThemes.Names.Count, [KeepHint, CancelHint]),
-            new Page("Keyboard Shortcuts", [new Placed(_keys)], KeysWide, Math.Max(1, _bindings.Count),
-                [RebindHint, KeepHint, CancelHint]),
-            new Page("Dashboard", DashboardRows(), DashboardWide, DashboardTall, [KeepHint, CancelHint]),
+            new Page("Theme", [new Placed(themes)], [KeepHint, CancelHint]),
+            new Page("Keyboard Shortcuts", [new Placed(_keys)], [RebindHint, KeepHint, CancelHint]),
+            new Page("Dashboard", DashboardRows(), [KeepHint, CancelHint]),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -259,6 +257,7 @@ public sealed class SettingsDialog : Dialog
             rows[index] = $"{_bindings[index].Label.PadRight(_labelWidth)}  {Prompt}";
         _keys.SetSource(new ObservableCollection<string>(rows));
         _keys.Value = selected ?? (_bindings.Count == 0 ? null : 0);
+        _keys.EnsureSelectedItemVisible();
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -351,31 +350,10 @@ public sealed class SettingsDialog : Dialog
             : $"{name}  {Icons.Sample(choice.Style)}";
     }
 
-    private int DashboardWide() => Math.Max(
-        Math.Max(ToolCalls.Length + GlyphAndSpace, IconsHeading.Length),
-        Indent + Math.Max(
-            IconChoices.Max(choice => IconRow(choice, _auto).GetColumns()) + GlyphAndSpace, IconLegend.Length));
-
-    private int KeysWide() => Math.Max(
-        _bindings.Count == 0 ? 0 : Rows.Max(row => row.Length),
-        _labelWidth + 2 + Prompt.Length);
-
-    private static int HintWidth(IReadOnlyList<string> texts) =>
-        texts.Sum(text => text.Length) + (Separator.Length * (texts.Count - 1));
-
-    private int Wide() => Math.Max(
-        _pages.Max(page => page.Name.Length) + Gap + 1 + Gap + _pages.Max(page => page.Width()),
-        _pages.Max(page => HintWidth(page.Hints))) + (Inset * 2);
-
-    private int Tall() =>
-        Math.Max(_pages.Count, _pages.Max(page => page.Height)) + 1 + _message.Lines;
-
-    private static int Fits(int wanted, int? available) => available is { } room ? Math.Min(wanted, room) : wanted;
-
     /// <summary>A view on a page, at the row and indent the page wants it.</summary>
     private sealed record Placed(View View, int X = 0, int Y = 0);
 
-    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, Func<int> Width, int Height, string[] Hints);
+    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, string[] Hints);
 
     /// <summary>A list that can take a key literally. ListView's own type-ahead answers a letter before any
     /// handler the dialog could attach, so the letter being bound would never reach the capture.</summary>
