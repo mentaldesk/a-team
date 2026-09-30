@@ -96,7 +96,8 @@ manifest=$(jq -n --arg name "$NAME" --arg redirect "http://127.0.0.1:$port/" '{
   hook_attributes: {url: "https://github.com/mentaldesk/a-team", active: false},
   default_events: [],
   default_permissions: {issues: "write", pull_requests: "write", contents: "write", actions: "write",
-    checks: "read", metadata: "read", organization_projects: "write", issue_fields: "read"}}')
+    workflows: "write", checks: "read", metadata: "read", organization_projects: "write",
+    issue_fields: "read"}}')
 jq -rn --arg action "$action" --arg manifest "$manifest" '"<!doctype html><title>a-team</title>
 <form id=f method=post action=\"\($action | @html)\">
 <input type=hidden name=manifest value=\"\($manifest | @html)\"></form>

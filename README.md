@@ -116,7 +116,9 @@ a-team app create <team>
 
 1. Your browser opens on GitHub's *Create GitHub App* page, filled in from a manifest with the
    permissions the team needs and no webhook. Change the name if you like (it must be unique
-   across GitHub) and click **Create GitHub App**.
+   across GitHub) and click **Create GitHub App**. One of the permissions is *Workflows*, so the
+   team can change your CI too. A workflow can read your repo's secrets, so keep any that matter
+   in an environment only your default branch can deploy to.
 2. GitHub hands the App's private key back to `a-team`, which stores it in your login Keychain
    (service `a-team-app`, account `<owner>`, base64-encoded) — never on disk — and writes
    `app: { id, slug }` into the team's config.
