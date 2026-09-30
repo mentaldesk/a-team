@@ -6,7 +6,8 @@ namespace ATeam.Dashboard;
 
 /// <summary>One question on the way to a new team's first run. <paramref name="Work"/> is what answering yes runs,
 /// passing on each line it prints; <paramref name="Load"/> fills <paramref name="Lines"/> in once it's read.
-/// <paramref name="ShowOutput"/> keeps the dialog open on what the work printed, for you to read.</summary>
+/// <paramref name="ShowOutput"/> keeps the dialog open on what the work printed, for you to read.
+/// <paramref name="Choose"/> offers Yes and No as options, leaving Esc to cancel the new team.</summary>
 public sealed record Step(
     string Title,
     IReadOnlyList<string> Lines,
@@ -14,7 +15,8 @@ public sealed record Step(
     string No,
     Func<Action<string>, Task<string?>>? Work = null,
     Func<Task<(IReadOnlyList<string>? Lines, string? Failure)>>? Load = null,
-    bool ShowOutput = false);
+    bool ShowOutput = false,
+    bool Choose = false);
 
 /// <summary>Everything after a new team's file is written: cloning its repo, its GitHub App, setting its board up,
 /// and asking it to get to work. Each is offered, never done unasked.</summary>
@@ -46,8 +48,8 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
     }
 
     /// <summary>Offers each step the new team still needs, in order, through <paramref name="ask"/>, which answers
-    /// whether it was done. Returns the line to leave on the Teams page.</summary>
-    public (string Message, Schemes Scheme) Follow(TeamConfigs teams, string team, Func<Step, bool> ask)
+    /// whether it was done, or null where the new team was cancelled. Returns the line to leave on the Teams page.</summary>
+    public (string Message, Schemes Scheme) Follow(TeamConfigs teams, string team, Func<Step, bool?> ask)
     {
         var settings = teams.Settings(team);
         var checkout = settings.CheckoutPath;
@@ -80,10 +82,11 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             line => aTeam.Stream(line, "board", team, "setup"),
             async () =>
             {
-                var plan = await aTeam.Read("board", team, "setup", "--dry-run");
-                return plan.Failure is { } failure
+                var plan = aTeam.Read("board", team, "setup", "--dry-run");
+                var project = Project(settings);
+                return (await plan).Failure is { } failure
                     ? (null, $"Can't set up {team}'s board: {failure}")
-                    : (SetupPlan(plan.Output, settings.ProjectOwner, settings.ProjectNumber, settings.Repo), null);
+                    : (SetupPlan((await plan).Output, await project, settings.Repo), null);
             }));
 
         string? warning = Directory.Exists(clonePath) ? null : $"{checkout} isn't there, so the agents would have nothing to work in.";
@@ -93,8 +96,14 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         List<string> lines = [$"{team}'s board is ready. Its lead will start looking for opportunities and its dev will start building what you approve."];
         if (!dispatcherInstalled())
             lines.Add("No dispatcher is installed on this Mac, though, so nothing will start it until you run a-team install.");
-        if (!ask(new Step("Get to work?", lines, "get to work", "not yet")))
-            return warning is not null ? (warning, Schemes.Accent) : ($"{team} is paused. Press p when you want it to start.", Schemes.Base);
+        switch (ask(new Step("Get to work?", lines, "Get to work", "Keep the team paused for now", Choose: true)))
+        {
+            case null:
+                teams.Delete(team);
+                return ($"{team} is cancelled. Its clone, App and project are still there.", Schemes.Base);
+            case false:
+                return warning is not null ? (warning, Schemes.Accent) : ($"{team} is paused. Press p when you want it to start.", Schemes.Base);
+        }
         teams.SetWorking(team, true);
         return warning is not null ? (warning, Schemes.Accent) : ($"{team} is working.", Schemes.Base);
     }
@@ -147,7 +156,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
                 return "gh project create didn't say which number the new project got.";
             teams.Save(team, settings, settings with { ProjectOwner = owner, ProjectNumber = created });
             settings = teams.Settings(team);
-            line($"Created {owner} project {created}.");
+            line($"Created project {new ProjectChoice(owner, created, team)}.");
         }
         return await gh.Stream(line, "project", "link", $"{settings.ProjectNumber}", "--owner", owner, "--repo", settings.Repo);
     }
@@ -168,9 +177,17 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         }
     }
 
+    /// <summary>The team's project with its title, or with none where the list can't be read.</summary>
+    private async Task<ProjectChoice> Project(TeamSettings settings)
+    {
+        var number = settings.ProjectNumber ?? 0;
+        var listed = ProjectChoice.Parse(await Projects(settings.ProjectOwner), settings.ProjectOwner);
+        return listed?.FirstOrDefault(project => project.Number == number) ?? new ProjectChoice(settings.ProjectOwner, number, "");
+    }
+
     /// <summary>What <c>board setup --dry-run</c> printed, as the confirmation lists it: the Status options it would
     /// add or keep, then the labels it would create or update.</summary>
-    public static IReadOnlyList<string> SetupPlan(string output, string owner, int? number, string repo)
+    public static IReadOnlyList<string> SetupPlan(string output, ProjectChoice project, string repo)
     {
         List<string> options = [];
         List<string> labels = [];
@@ -183,7 +200,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         }
         return
         [
-            $"On {owner} project {number}, field '{StatusField}':",
+            $"On project {project}, field '{StatusField}':",
             .. options,
             $"On {repo}:",
             .. labels.Count == 0 ? ["  labels already set up"] : labels,

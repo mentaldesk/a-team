@@ -24,14 +24,12 @@ var requested = args is ["--area", var name, ..] && Enum.TryParse<Area>(name, ig
 var wanted = requested is null ? args : args[2..];
 
 var teams = new TeamConfigs(configRoot);
-var named = wanted.Length > 0 ? wanted : teams.Names();
-if (named.Length == 0)
+if ((wanted.Length > 0 ? wanted : teams.Names()).Length == 0)
 {
     Console.Error.WriteLine(
         $"a-team-dashboard: no teams in {teams.TeamsDirectory}. Start from examples/team.json.");
     return 1;
 }
-var agents = named.SelectMany(team => new[] { (team, "lead"), (team, "dev") }).ToList();
 
 var settings = new DashboardSettings(configRoot);
 var command = new TeamCommand(Path.Combine(root, "bin", "a-team"));
@@ -53,7 +51,7 @@ int Run()
     {
         BundledThemes.Cursor.Restore();
         terminal.Restore();
-        back = handover with { Failure = command.Hand(handover.Arguments) };
+        back = handover is TeamsChanged ? handover : handover with { Failure = command.Hand(handover.Arguments) };
     }
     BundledThemes.Cursor.Restore();
     terminal.Restore();
@@ -68,8 +66,9 @@ Handover? Show(Handover? back)
     app.Init();
     LogSchemes.Register();
     Handover? handedOver = null;
+    var named = wanted.Length > 0 ? wanted : teams.Names();
     using var window = new DashboardWindow(
-        agents,
+        [.. named.SelectMany(team => new[] { (team, "lead"), (team, "dev") })],
         stateRoot,
         settings,
         teams,
@@ -86,7 +85,7 @@ Handover? Show(Handover? back)
             handedOver = handover;
             app.RequestStop();
         },
-        back,
+        back is TeamsChanged ? null : back,
         start);
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>

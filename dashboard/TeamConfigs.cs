@@ -90,6 +90,8 @@ public sealed class TeamConfigs
         file.Write(config);
     }
 
+    public void Delete(string team) => File.Delete(PathOf(team));
+
     /// <summary>The team whose file names a GitHub App for a repo under <paramref name="owner"/>, if any.</summary>
     public string? WithApp(string owner, string except = "") =>
         Names().FirstOrDefault(team => team != except && AppOwner(team) == owner);

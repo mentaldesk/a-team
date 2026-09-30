@@ -10,6 +10,7 @@ public sealed class StepDialog : Dialog
     private const string YesHint = "yes";
     private const string NoHint = "no";
     private const string ContinueHint = "continue";
+    private const string ChooseHint = "choose";
     private const int Inset = 1;
     private const int OutputLines = 8;
 
@@ -19,6 +20,7 @@ public sealed class StepDialog : Dialog
     private readonly List<string> _printed = [];
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
+    private readonly OptionSelector? _choice;
     private bool _ready;
     private bool _running;
 
@@ -49,6 +51,20 @@ public sealed class StepDialog : Dialog
         _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         Add(_body, _output, _hints, _message);
+        if (step.Choose)
+        {
+            _choice = new OptionSelector
+            {
+                X = Inset,
+                Y = Pos.Bottom(_body) + 1,
+                Orientation = Orientation.Vertical,
+                TabBehavior = TabBehavior.NoStop,
+                Labels = [step.Yes, step.No],
+                Value = 0,
+            };
+            Add(_choice);
+            _choice.SetFocus();
+        }
         ShowLines(step.Lines);
 
         if (step.Load is { } load)
@@ -70,6 +86,11 @@ public sealed class StepDialog : Dialog
     /// <summary>Whether it was answered yes and anything that meant running went through.</summary>
     internal bool Done { get; private set; }
 
+    /// <summary>Whether a <see cref="Step.Choose"/> step was left with Esc, cancelling the new team.</summary>
+    internal bool Cancelled { get; private set; }
+
+    internal OptionSelector? Choice => _choice;
+
     internal Label Body => _body;
 
     internal IReadOnlyList<string> Printed => _printed;
@@ -78,12 +99,12 @@ public sealed class StepDialog : Dialog
 
     internal MessageBar Message => _message;
 
-    /// <summary>Asks the step, and returns whether it was done.</summary>
-    public static bool Show(IApplication app, Step step)
+    /// <summary>Asks the step, and returns whether it was done, or null where it was cancelled.</summary>
+    public static bool? Show(IApplication app, Step step)
     {
         using var dialog = new StepDialog(step);
         app.Run(dialog);
-        return dialog.Done;
+        return dialog.Cancelled ? null : dialog.Done;
     }
 
     /// <summary>Enter reaches a Dialog as Accept, and never as a key.</summary>
@@ -97,6 +118,8 @@ public sealed class StepDialog : Dialog
             return Close();
         if (!_ready || _running)
             return true;
+        if (_choice is not null && _choice.Value != 0)
+            return Close();
         if (_step.Work is not { } work)
         {
             Done = true;
@@ -115,7 +138,13 @@ public sealed class StepDialog : Dialog
         return true;
     }
 
-    internal bool No() => _running ? true : Close();
+    internal bool No()
+    {
+        if (_running)
+            return true;
+        Cancelled = _choice is not null;
+        return Close();
+    }
 
     private void Loaded(IReadOnlyList<string>? lines, string? failure)
     {
@@ -177,6 +206,13 @@ public sealed class StepDialog : Dialog
     private void ShowHints(bool? yes)
     {
         List<HintedCommand> hints = [];
+        if (_choice is not null)
+        {
+            _hints.Show("", [new HintedCommand(ChooseHint, "Enter choose"), new HintedCommand(NoHint, "Esc cancel new team")],
+                hint => hint == ChooseHint ? Yes() : No());
+            Refresh();
+            return;
+        }
         if (yes == true)
             hints.Add(new HintedCommand(YesHint, $"Enter {_step.Yes}"));
         if (yes is not null)

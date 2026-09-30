@@ -108,7 +108,7 @@ public class TeamStartTests : IDisposable
 
         Assert.Equal(
             [
-                "On mentaldesk project 7, field 'Status':",
+                "On project fretty (mentaldesk #7), field 'Status':",
                 "  keep  Idea",
                 "  add   Exploring",
                 "  add   Pitched",
@@ -118,7 +118,7 @@ public class TeamStartTests : IDisposable
                 "  create label a-team:dev",
                 "  update label blocked: colour and description",
             ],
-            TeamStart.SetupPlan(output, "mentaldesk", 7, "mentaldesk/fretty"));
+            TeamStart.SetupPlan(output, new ProjectChoice("mentaldesk", 7, "fretty"), "mentaldesk/fretty"));
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -186,11 +186,11 @@ public class TeamStartTests : IDisposable
 
         var (lines, failure) = await setup!.Load!();
         Assert.Null(failure);
-        Assert.Equal(["On mentaldesk project 7, field 'Status':", "  add   Exploring", "On mentaldesk/fretty:", "  create label pitch"], lines);
-        Assert.Equal(["board fretty setup --dry-run"], Ran());
+        Assert.Equal(["On project fretty (mentaldesk #7), field 'Status':", "  add   Exploring", "On mentaldesk/fretty:", "  create label pitch"], lines);
+        Assert.DoesNotContain("board fretty setup", Ran());
 
         Assert.Null(await setup.Work!(_ => { }));
-        Assert.Equal(["board fretty setup --dry-run", "board fretty setup"], Ran());
+        Assert.Contains("board fretty setup", Ran());
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -205,6 +205,17 @@ public class TeamStartTests : IDisposable
         var working = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?");
         Assert.False(_teams.IsPaused("fretty"));
         Assert.Equal(("fretty is working.", Schemes.Base), working);
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void Cancelling_Get_to_work_removes_the_new_team_s_file()
+    {
+        Team("fretty", app: true, checkout: true);
+
+        var said = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?" ? null : false);
+
+        Assert.DoesNotContain("fretty", _teams.Names());
+        Assert.Equal(("fretty is cancelled. Its clone, App and project are still there.", Schemes.Base), said);
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -317,6 +328,28 @@ public class TeamStartTests : IDisposable
     }
 
     [Fact]
+    public void A_choice_step_does_the_option_chosen_on_Enter_and_cancels_on_Esc()
+    {
+        var step = new Step("Get to work?", ["line"], "Get to work", "Keep the team paused for now", Choose: true);
+
+        using var yes = new StepDialog(step);
+        Assert.Equal(["Get to work", "Keep the team paused for now"], yes.Choice!.Labels);
+        Assert.Equal("Enter choose · Esc cancel new team", yes.Hints.Says);
+        yes.Yes();
+        Assert.True(yes.Done);
+
+        using var no = new StepDialog(step);
+        no.Choice!.Value = 1;
+        no.Yes();
+        Assert.False(no.Done);
+        Assert.False(no.Cancelled);
+
+        using var cancelled = new StepDialog(step);
+        cancelled.NewKeyDownEvent(Key.Esc);
+        Assert.True(cancelled.Cancelled);
+    }
+
+    [Fact]
     public void A_step_whose_work_fails_says_why_and_can_be_tried_again_or_skipped()
     {
         var step = new Step("Clone?", ["line"], "clone", "skip", _ => Task.FromResult<string?>("fatal: repository not found"));
@@ -355,6 +388,9 @@ public class TeamStartTests : IDisposable
             """)), new TeamCommand(Fake("gh", """
             if [ "$1 $2" = "project create" ]; then
               echo '{"number": 9, "title": "fretty"}'
+            fi
+            if [ "$1 $2" = "project list" ]; then
+              echo '{"projects": [{"number": 7, "title": "fretty", "owner": {"login": "mentaldesk"}}]}'
             fi
             """)), Path.Combine(_root, "home"), () => dispatcher);
 

@@ -27,3 +27,11 @@ public sealed record AttachHandover(string Team, string Role) : Handover
 
     public override Area Area => Area.Dashboard;
 }
+
+/// <summary>The teams changed in Settings, so the window is built again over the new list.</summary>
+public sealed record TeamsChanged(Area Shown) : Handover
+{
+    public override string[] Arguments => [];
+
+    public override Area Area => Shown;
+}

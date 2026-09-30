@@ -655,7 +655,13 @@ public sealed class DashboardWindow : Window
     {
         if (App is not { } app)
             return;
+        var before = _teams.Names();
         SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam);
+        if (!_teams.Names().SequenceEqual(before))
+        {
+            _handOver?.Invoke(new TeamsChanged(_area));
+            return;
+        }
         SyncQuitKey();
         _menu.Refresh();
         ShowHints();
