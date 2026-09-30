@@ -53,9 +53,10 @@ public sealed class CommandRegistry
         Hint? hint = null,
         Func<bool>? isEnabled = null,
         bool onCard = false,
-        Func<string>? menuLabel = null)
+        Func<string>? menuLabel = null,
+        Func<bool>? inMenu = null)
     {
-        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, hint, isEnabled, onCard, menuLabel));
+        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, hint, isEnabled, onCard, menuLabel, inMenu));
         return this;
     }
 
@@ -78,6 +79,10 @@ public sealed class CommandRegistry
 
     /// <summary>Whether <paramref name="id"/> would run now. One with no test of its own always would.</summary>
     public bool IsEnabled(string id) => _entries.Find(entry => entry.Id == id)?.IsEnabled?.Invoke() != false;
+
+    /// <summary>Whether the menu offers <paramref name="id"/> now: enabled, and not narrowed further for the menu alone.</summary>
+    public bool IsEnabledInMenu(string id) =>
+        IsEnabled(id) && _entries.Find(entry => entry.Id == id)?.InMenu?.Invoke() != false;
 
     /// <summary>Runs a command by name, enabled or not. False when nothing is registered under that id.</summary>
     public bool Execute(string id)
@@ -116,5 +121,6 @@ public sealed class CommandRegistry
         .Distinct());
 
     private sealed record Entry(
-        string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled, bool OnCard, Func<string>? MenuLabel);
+        string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled, bool OnCard, Func<string>? MenuLabel,
+        Func<bool>? InMenu);
 }

@@ -19,6 +19,7 @@ public class HelpDialogTests
                 "PgUp/PgDn     scroll the log",
                 "s             settings",
                 "Esc           back to the grid",
+                "F5            refresh the Work area",
                 "q             quit",
             ],
             Rows(dialog));
@@ -149,6 +150,7 @@ public class HelpDialogTests
         .Register("settings", "Settings", () => { }, new Key('s'))
         .Register("commands", "Commands", () => { }, Key.E.WithCtrl)
         .Register("agent.collapse", "Back to the agent grid", () => { }, Key.Esc)
+        .Register("work.refresh", "Read what's waiting again", () => { }, Key.F5)
         .Register("quit", "Quit", () => { }, new Key('q'))
         .Registered);
 

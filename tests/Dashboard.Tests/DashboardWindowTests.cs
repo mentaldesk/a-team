@@ -357,7 +357,7 @@ public class DashboardWindowTests : IDisposable
             "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
             DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · Enter: read · p: set priority · m: only mine · r: refresh",
+            "a-team 1.2.3 · Enter: read · p: set priority · m: only mine · F5: refresh",
             DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
     }
 
@@ -386,7 +386,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Show only what's your move",
-                "Read what's waiting again", "Dashboard", "Work",
+                "Show all", "Read what's waiting again", "Dashboard", "Work",
                 "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Teams", "Keys", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));

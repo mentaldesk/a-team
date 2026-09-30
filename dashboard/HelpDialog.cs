@@ -16,6 +16,7 @@ public sealed class HelpDialog : Dialog
         ("scroll the log", ["log.pageUp", "log.pageDown"]),
         ("settings", ["settings"]),
         ("back to the grid", ["agent.collapse"]),
+        ("refresh the Work area", ["work.refresh"]),
         ("quit", ["quit"]),
     ];
 

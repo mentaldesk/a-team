@@ -8,16 +8,19 @@ namespace ATeam.Dashboard;
 /// that's open.</summary>
 internal sealed class AppMenu
 {
-    /// <summary>Holds whatever commands the registry marks as acting on the selected card, rather than a fixed list.</summary>
+    /// <summary>Holds whatever commands the registry marks as acting on the selected card, then its own group under a line.</summary>
     internal const string Cards = "_Cards";
 
     internal const string Agents = "_Agents";
 
+    /// <summary>Stands in the layout for a line between two groups of items.</summary>
+    internal const string Separator = "-";
+
     internal static readonly (string Title, string[] Ids)[] Layout =
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
-        (Cards, []),
-        (Agents, ["agent.hold", "agent.interrupt"]),
+        (Cards, [Separator, "work.refresh", "work.all", "work.mine"]),
+        (Agents, ["agent.hold", "agent.interrupt", Separator, "agent.expand", "log.toolCalls", "agent.collapse"]),
         ("_Help", ["help", "commands", "about"]),
     ];
 
@@ -60,7 +63,7 @@ internal sealed class AppMenu
     internal void Refresh()
     {
         foreach (var id in CardIds().Where(id => !_items.Exists(entry => entry.Id == id)))
-            _cards.PopoverMenu?.Root?.Add(Item(id));
+            AddCard(Item(id));
         var registered = _commands.Registered;
         foreach (var (id, item) in _items)
         {
@@ -80,8 +83,8 @@ internal sealed class AppMenu
     /// only its Alt forms; an item keeps its bare letter, which only its own menu answers.</summary>
     private MenuBarItem Menu((string Title, string[] Ids) entry)
     {
-        var ids = entry.Title == Cards ? CardIds() : entry.Ids;
-        var menu = new MenuBarItem(entry.Title, ids.Select(Item).ToArray<View>());
+        var ids = entry.Title == Cards ? [.. CardIds(), .. entry.Ids] : entry.Ids;
+        var menu = new MenuBarItem(entry.Title, [.. ids.Select(id => id == Separator ? new Line() : (View)Item(id))]);
         menu.HotKeyBindings.Remove(menu.HotKey);
         menu.HotKeyBindings.Remove(menu.HotKey.WithShift);
         // The app's quit key took Esc off the framework's Quit command, and the menu's close with it.
@@ -111,7 +114,18 @@ internal sealed class AppMenu
         if (menu.PopoverMenu is not { Enabled: true })
             return;
         foreach (var (id, item) in _items.Where(entry => entry.Item.SuperView == menu.PopoverMenu.Root))
-            item.Enabled = _commands.IsEnabled(id);
+            item.Enabled = _commands.IsEnabledInMenu(id);
+    }
+
+    /// <summary>A card command goes last in the first group, above the line.</summary>
+    private void AddCard(MenuItem item)
+    {
+        if (_cards.PopoverMenu?.Root is not { } root)
+            return;
+        var below = root.SubViews.SkipWhile(view => view is not Line).ToList();
+        below.ForEach(view => root.Remove(view));
+        root.Add(item);
+        below.ForEach(view => root.Add(view));
     }
 
     private string[] CardIds() => [.. _commands.Registered.Where(command => command.OnCard).Select(command => command.Id)];
@@ -133,12 +147,12 @@ internal sealed class AppMenu
     }
 
     /// <summary>The label with its command's own letter key marked as the hot one where the label has it, and its
-    /// first letter otherwise.</summary>
+    /// first letter otherwise, past any mark in front of it.</summary>
     private static string Hot(string label, Key key)
     {
         var at = key.IsKeyCodeAtoZ && !key.IsCtrl && !key.IsAlt
             ? label.IndexOf((char)key.NoShift.KeyCode, StringComparison.OrdinalIgnoreCase)
             : -1;
-        return at < 0 ? $"_{label}" : label.Insert(at, "_");
+        return label.Insert(at < 0 ? Math.Max(0, label.ToList().FindIndex(char.IsLetterOrDigit)) : at, "_");
     }
 }

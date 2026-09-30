@@ -262,12 +262,14 @@ public sealed class DashboardWindow : Window
             .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, isEnabled: AnyAgents)
             .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: AnyAgents)
             .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: AnyAgents)
-            .Register("agent.expand", "Expand the selected agent", () => Expand(), Key.Enter, new Hint("expand", Mode.Grid), Selection)
+            .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter, new Hint("expand", Mode.Grid), Selection,
+                menuLabel: () => "Expand")
             .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, scroll, Selection)
             .Register("log.pageDown", "Scroll the log down", () => Selected()?.Page(+1), Key.PageDown, scroll, Selection)
             .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
             .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
-            .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
+            .Register("log.toolCalls", () => "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection,
+                inMenu: () => _expanded is not null)
             .Register("work.right", "Select the column to the right", () => _work.MoveColumn(+1), Key.CursorRight, isEnabled: OnWork)
             .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
@@ -277,8 +279,12 @@ public sealed class DashboardWindow : Window
             .Register("work.try", "Try PR", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Pr: > 0 }, onCard: true)
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
-            .Register("work.mine", "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork)
-            .Register("work.refresh", "Read what's waiting again", ReadWaiting, new Key('r'), new Hint("refresh", Mode.Work), OnWork)
+            .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork,
+                menuLabel: () => Marked("Show only mine", _work.OnlyMine))
+            .Register("work.all", () => "Show all", () => ShowOnlyMine(false), isEnabled: OnWork,
+                menuLabel: () => Marked("Show all", !_work.OnlyMine))
+            .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, new Hint("refresh", Mode.Work), OnWork,
+                menuLabel: () => "Refresh")
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
@@ -292,7 +298,8 @@ public sealed class DashboardWindow : Window
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
-            .Register("agent.collapse", "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded), () => OnDashboard() && _expanded is not null)
+            .Register("agent.collapse", () => "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded),
+                () => OnDashboard() && _expanded is not null, menuLabel: () => "Back to all agents")
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
     }
 
@@ -350,10 +357,15 @@ public sealed class DashboardWindow : Window
             _loading.Stop();
     }
 
-    private void ToggleOnlyMine()
+    private static string Marked(string label, bool inEffect) => $"{(inEffect ? "•" : " ")} {label}";
+
+    private void ToggleOnlyMine() => ShowOnlyMine(!_work.OnlyMine);
+
+    private void ShowOnlyMine(bool onlyMine)
     {
-        _work.ShowOnlyMine(!_work.OnlyMine);
+        _work.ShowOnlyMine(onlyMine);
         _settings.WriteOnlyMine(_work.OnlyMine);
+        _menu.Refresh();
         ShowMessage();
         SetNeedsLayout();
         SetNeedsDraw();
