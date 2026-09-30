@@ -8,7 +8,7 @@ public class TeamFormTests
 {
     private static readonly TeamSettings Settings =
         new("mentaldesk/a-team", "mentaldesk", 3, "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
-            2, 3, 4, 4, 2, "~/code/a-team/main");
+            2, 3, 4, 4, 2, "~/code/a-team/main", ["jamescrosswell"], ["a-team"]);
 
     [Fact]
     public void The_form_shows_the_team_s_current_values_under_its_name()
@@ -194,6 +194,112 @@ public class TeamFormTests
         Assert.Null(form.Saved);
         Assert.Equal("Couldn't save a-team: Access denied.", form.Message.Says);
         Assert.Equal("~/code/elsewhere", form.Workdir.Text);
+    }
+
+    [Fact]
+    public void Stakeholders_sit_between_Repo_and_Project_and_Skills_between_Workdir_and_Try()
+    {
+        using var form = new TeamForm("a-team", Settings with { Skills = [] }, _ => null);
+
+        Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
+        Assert.Equal("none", form.SkillsRow.Text);
+        Assert.Equal(
+            ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Limits"],
+            form.SubViews.OfType<Label>().Where(label => label.X.ToString() == Pos.Absolute(1).ToString())
+                .OrderBy(label => label.Frame.Y).Select(label => label.Text));
+    }
+
+    [Fact]
+    public void The_list_rows_say_what_they_change_as_they_take_focus()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.SetFocus();
+
+        form.StakeholdersRow.SetFocus();
+        Assert.Equal("Whose comments the team acts on. You, unless you add others.", form.Message.Says);
+        form.SkillsRow.SetFocus();
+        Assert.Equal("Skills the agents load. Must be installed on this machine.", form.Message.Says);
+    }
+
+    [Fact]
+    public void Enter_on_Stakeholders_opens_its_picker_and_Enter_there_brings_the_row_back_updated()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.FindStakeholders = _ => Task.FromResult<IReadOnlyList<string>?>(["jamescrosswell", "octocat"]);
+        Picker? opened = null;
+        form.RunPicker = picker =>
+        {
+            opened = picker;
+            picker.List.Value = 1;
+            picker.Toggle();
+            return picker.Done() ? picker.Picked : null;
+        };
+        form.SetFocus();
+        form.StakeholdersRow.SetFocus();
+
+        Assert.True(form.StakeholdersRow.NewKeyDownEvent(Key.Enter));
+
+        Assert.Equal("Stakeholders for a-team", opened?.Title);
+        Assert.Equal("2 can push to mentaldesk/a-team. Type a login to add one that isn't listed.", opened?.Message.Says);
+        Assert.Equal("jamescrosswell, octocat", form.StakeholdersRow.Text);
+        Assert.Equal(["jamescrosswell", "octocat"], form.Current().Stakeholders);
+        Assert.Null(form.Saved);
+    }
+
+    [Fact]
+    public void Esc_in_a_picker_leaves_the_row_as_it_was()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.FindSkills = () => new SkillsFound(["a-team", "tuicode"], [SkillsFound.Installed]);
+        form.RunPicker = picker =>
+        {
+            picker.List.Value = 1;
+            picker.Toggle();
+            picker.NewKeyDownEvent(Key.Esc);
+            return picker.Picked;
+        };
+
+        form.PickSkills();
+
+        Assert.Equal("a-team", form.SkillsRow.Text);
+        Assert.Equal(["a-team"], form.Current().Skills);
+    }
+
+    [Fact]
+    public void The_stakeholders_picker_says_when_GitHub_can_t_be_reached_and_typing_still_works()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.FindStakeholders = _ => Task.FromResult<IReadOnlyList<string>?>(null);
+        string? said = null;
+        form.RunPicker = picker =>
+        {
+            said = picker.Message.Says;
+            picker.Filter.Text = "octocat";
+            picker.Done();
+            return picker.Picked;
+        };
+
+        form.PickStakeholders();
+
+        Assert.Equal("Couldn't reach GitHub to see who can push to mentaldesk/a-team. Type a login to add one.", said);
+        Assert.Equal(["jamescrosswell", "octocat"], form.Current().Stakeholders);
+    }
+
+    [Fact]
+    public void A_chosen_skill_this_machine_has_not_got_stays_at_the_top_of_the_picker_ticked()
+    {
+        using var form = new TeamForm("a-team", Settings with { Skills = ["tuicode"] }, _ => null);
+        form.FindSkills = () => new SkillsFound(["a-team", "structural-analysis"], [SkillsFound.Installed]);
+        IReadOnlyList<(string, bool)>? rows = null;
+        form.RunPicker = picker =>
+        {
+            rows = picker.Rows;
+            return null;
+        };
+
+        form.PickSkills();
+
+        Assert.Equal([("tuicode (not installed)", true), ("a-team", false), ("structural-analysis", false)], rows);
     }
 
     private static IReadOnlyList<TextField> Fields(TeamForm form) =>

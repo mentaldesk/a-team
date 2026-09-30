@@ -17,8 +17,13 @@ public sealed partial record TeamSettings(
     int Exploring,
     int Ideas,
     int ReadyFloor,
-    string? Checkout)
+    string? Checkout,
+    IReadOnlyList<string> Stakeholders,
+    IReadOnlyList<string> Skills)
 {
+    /// <summary>The file names its one stakeholder under the old <c>reviewer</c> key, which saving replaces.</summary>
+    public bool SaysReviewer { get; init; }
+
     public static TeamSettings Read(byte[] config)
     {
         using var document = JsonDocument.Parse(config);
@@ -38,7 +43,14 @@ public sealed partial record TeamSettings(
             Number(root, "wip", "exploring") ?? 0,
             Number(root, "wip", "ideas") ?? 0,
             Number(root, "wip", "readyFloor") ?? 0,
-            Find(root, "checkout") is { ValueKind: JsonValueKind.String } checkout ? checkout.GetString() : null);
+            Find(root, "checkout") is { ValueKind: JsonValueKind.String } checkout ? checkout.GetString() : null,
+            Find(root, "stakeholders") is { ValueKind: JsonValueKind.Array }
+                ? Names(root, "stakeholders")
+                : Text(root, "reviewer") is { Length: > 0 } reviewer ? [reviewer] : [],
+            Names(root, "skills"))
+        {
+            SaysReviewer = Find(root, "stakeholders") is null && Text(root, "reviewer").Length > 0,
+        };
     }
 
     /// <summary>The config with each value that differs from <paramref name="before"/> set in place, so a save
@@ -62,11 +74,17 @@ public sealed partial record TeamSettings(
         }
 
         Set(Repo, before.Repo, "repo");
+        if (before.SaysReviewer)
+            config = ConfigEdit.Replace(config, "reviewer", "stakeholders", Stakeholders);
+        else if (!Stakeholders.SequenceEqual(before.Stakeholders))
+            config = ConfigEdit.Set(config, ["stakeholders"], Stakeholders);
         Set(ProjectOwner, before.ProjectOwner, "project", "owner");
         SetNumber(ProjectNumber, before.ProjectNumber, "project", "number");
         Set(Vision, before.Vision, "vision");
         Set(Workdir, before.Workdir, "workdir");
         Set(Try, before.Try, "try");
+        if (!Skills.SequenceEqual(before.Skills))
+            config = ConfigEdit.Set(config, ["skills"], Skills);
         SetFlag(Working, before.Working, "dispatch", "enabled");
         SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");
         SetNumber(Pitched, before.Pitched, "wip", "pitched");
@@ -87,13 +105,16 @@ public sealed partial record TeamSettings(
         : null;
 
     /// <summary>What's true of these that the team won't like, though it's still worth saving: a workdir that
-    /// isn't there, or a vision the repo hasn't got yet.</summary>
+    /// isn't there, a skill this machine hasn't got, or a vision the repo hasn't got yet.</summary>
     public string? Warning(string home)
     {
         var workdir = Expand(Workdir.Trim(), home);
         if (!Directory.Exists(workdir))
             return $"{Workdir.Trim()} isn't there, so the agents would have nothing to work in.";
-        var checkout = Expand(Checkout ?? Path.Combine(Workdir.Trim(), "main"), home);
+        var found = SkillsFound.Find(home, CheckoutPath);
+        if (Skills.FirstOrDefault(skill => !skill.Contains(':') && !found.Has(skill)) is { } missing)
+            return $"No skill named {missing} in {SkillsFound.Installed}: the agents will work without it.";
+        var checkout = Expand(CheckoutPath, home);
         return Directory.Exists(checkout) && !File.Exists(Path.Combine(checkout, Vision.Trim()))
             ? $"{Vision.Trim()} isn't there yet: the Lead will draft one and open it as a draft PR for you."
             : null;
@@ -105,7 +126,10 @@ public sealed partial record TeamSettings(
 
     public string RepoOwner => Repo.Split('/')[0].Trim();
 
-    private static string Expand(string path, string home) =>
+    /// <summary>Where the repo is checked out: the file's <c>checkout</c>, or <c>&lt;workdir&gt;/main</c>.</summary>
+    public string CheckoutPath => Checkout ?? $"{Workdir.Trim().TrimEnd('/')}/main";
+
+    internal static string Expand(string path, string home) =>
         path == "~" ? home : path.StartsWith("~/", StringComparison.Ordinal) ? Path.Combine(home, path[2..]) : path;
 
     private static JsonElement? Find(JsonElement root, params string[] path)
@@ -119,6 +143,11 @@ public sealed partial record TeamSettings(
 
     private static string Text(JsonElement root, params string[] path) =>
         Find(root, path) is { ValueKind: JsonValueKind.String } value ? value.GetString() ?? "" : "";
+
+    private static IReadOnlyList<string> Names(JsonElement root, params string[] path) =>
+        Find(root, path) is { ValueKind: JsonValueKind.Array } names
+            ? [.. names.EnumerateArray().Where(name => name.ValueKind == JsonValueKind.String).Select(name => name.GetString() ?? "")]
+            : [];
 
     private static int? Number(JsonElement root, params string[] path) =>
         Find(root, path) is { ValueKind: JsonValueKind.Number } value && value.TryGetInt32(out var number) ? number : null;

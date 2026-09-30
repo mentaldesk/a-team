@@ -45,15 +45,15 @@ FIELD=$(cfg .project.statusField)
 FIELD=${FIELD:-Status}
 PRIORITY=$(cfg .priorityField)
 PRIORITY=${PRIORITY:-Priority}
-REVIEWER=$(cfg .reviewer)
+STAKEHOLDERS=$(jq -c '.stakeholders // [.reviewer // empty]' "$CONFIG")
 [ -n "$NUMBER" ] || die "project.number is not set in $CONFIG"
 
-# A reviewer comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
+# A stakeholder comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
 # older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
 # Delete it, and the $ackFrom halves of `said` and `unanswered`, once no open item predates it.
 ACK_FROM=2026-09-24T00:00:00Z
 # Since APP_FROM the team speaks only as its App, so whose words a comment is comes from its author.
-# Before it the team spoke as the reviewer, and the marker alone on the last line said so.
+# Before it the team spoke from its stakeholder's account, and the marker alone on the last line said so.
 APP_FROM=2026-09-29T00:00:00Z
 BOT=$(cfg .app.slug)
 BOT=${BOT:+${BOT}[bot]}
@@ -69,12 +69,12 @@ TEAM_SAID='def team($m): if $bot != "" and .author == $bot then (.body // "") | 
 
 # said($m): when the role last spoke on this thread. Before ACK_FROM a marker anywhere counted, and
 # that history keeps reading as it did.
-# unanswered($since): of comments shaped {at, author, body, eyes, kind?}, the ones the reviewer is
+# unanswered($since): of comments shaped {at, author, body, eyes, kind?}, the ones a stakeholder is
 # owed an answer to. $since is the role's own newest comment, which only ACK_FROM's tail needs.
 UNANSWERED='def said($m): map(select(team($m) or (.at < $ackFrom and (.body | contains($m))))
     | .at) | max // "";
   def unanswered($since): map(select(
-    .kind != "body" and .author == $reviewer and (team("<!-- a-team:") | not)
+    .kind != "body" and (.author | IN($stakeholders[])) and (team("<!-- a-team:") | not)
     and (.eyes // 0) == 0 and (.at >= $ackFrom or .at > $since)));'
 
 # since($at): " since <when>", the time alone if it was today; nothing for no time.
@@ -90,7 +90,7 @@ is_state() {
 }
 
 allowed() {
-  # Both moves out of Pitched are gated again in `move`: Idea only with unanswered reviewer
+  # Both moves out of Pitched are gated again in `move`: Idea only with unanswered stakeholder
   # feedback, Exploring only for a pitch `lead-next` names in `demote`.
   case "$1:$2>$3" in
     "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
@@ -218,8 +218,8 @@ parent_of() {
   gh api "repos/$REPO/issues/$1" --jq '.parent_issue_url // empty | split("/") | last'
 }
 
-# The Idea the Lead should pitch next: the reviewer's own, or any the reviewer has prioritised,
-# passing over the ones the Lead has skipped and the reviewer hasn't since commented on.
+# The Idea the Lead should pitch next: a stakeholder's own, or any a stakeholder has prioritised,
+# passing over the ones the Lead has skipped and a stakeholder hasn't since commented on.
 pitchable_idea() {
   local candidate
   while IFS= read -r candidate; do
@@ -316,10 +316,10 @@ reviews() {
 
 pr_reviews() { reviews "$1" | jq -s --argjson n "$1" 'map(. + {n: $n})'; }
 
-# awaiting <comments> <role> <n>: the time of the reviewer's newest unanswered comment on #n, or
+# awaiting <comments> <role> <n>: the time of a stakeholder's newest unanswered comment on #n, or
 # nothing. It goes into the trigger so new feedback never looks like a retry.
 awaiting() {
-  jq -r --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --arg reviewer "$REVIEWER" \
+  jq -r --argjson n "$3" --arg marker "<!-- a-team:$2 -->" --argjson stakeholders "$STAKEHOLDERS" \
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED"'
     map(select(.n == $n)) | said($marker) as $since
     | unanswered($since) | map(.at) | max // empty' <<<"$1"
@@ -327,7 +327,7 @@ awaiting() {
 
 # gated_talk <items>: one page holding the body, comments and open PR of every item, in one call
 # whatever the number of them. The open PR that closes a task comes back nested under the task's
-# own number: the reviewer answers a task on either. `waiting` reads whose turn it is off this page.
+# own number: a stakeholder answers a task on either. `waiting` reads whose turn it is off this page.
 gated_talk() {
   local said reviewed n query=''
   local seen='reactions(content: EYES) { totalCount }'
@@ -392,11 +392,11 @@ pr_checks() {
 }
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
-# reviewer's until they comment; from then it is the role's, the same test `unanswered_feedback`
+# stakeholders' until one comments; from then it is the role's, the same test `unanswered_feedback`
 # makes. A PR that is failing, conflicting, still running CI or still a draft is the Dev's too, but
 # an unanswered comment outranks them all: the answer is owed before a green build means anything.
 turns() {
-  jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --arg reviewer "$REVIEWER" \
+  jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --argjson stakeholders "$STAKEHOLDERS" \
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE"'
     $items | map(
       . as $item
@@ -426,10 +426,10 @@ turns() {
 }
 
 # questions <items> <comments> <blocked>: the Ready tasks the Dev handed back with a question, the
-# Dev's turn once the reviewer replies. The Dev asks just before labelling `blocked`, hence ASKED_BEFORE.
+# Dev's turn once a stakeholder replies. The Dev asks just before labelling `blocked`, hence ASKED_BEFORE.
 ASKED_BEFORE=600
 questions() {
-  jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" --arg reviewer "$REVIEWER" \
+  jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" --argjson stakeholders "$STAKEHOLDERS" \
     --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE"'
     $items | map(
       . as $item
@@ -440,7 +440,7 @@ questions() {
                                and (.at | fromdateiso8601) >= ($labelled | fromdateiso8601) - $before))
          | max_by(.at)) as $asked
       | select($asked != null)
-      | ($theirs | map(select(.kind != "body" and .author == $reviewer and (team("<!-- a-team:") | not)
+      | ($theirs | map(select(.kind != "body" and (.author | IN($stakeholders[])) and (team("<!-- a-team:") | not)
                                and .at > $asked.at) | .at) | max // "") as $replied
       | . + {question: ($asked.body | sub("\\s*<!-- a-team:dev -->\\s*$"; ""))}
       | if $replied != ""
@@ -448,7 +448,7 @@ questions() {
         else . + {turn: "you", reason: "asked you\(since($asked.at))"} end)'
 }
 
-# unranked_ideas <items>: the Ideas with no Priority, which never get pitched until the reviewer
+# unranked_ideas <items>: the Ideas with no Priority, which never get pitched until a stakeholder
 # gives them one. They come off the page `waiting` has already read, so they cost no call of their own.
 unranked_ideas() {
   jq --arg team "$TEAM" 'map(select(.status == "Idea" and .type == "Issue" and .priority == null)
@@ -473,15 +473,15 @@ comments() {
   } | jq -s 'sort_by(.at)'
 }
 
-# The reviewer's comments on #<n> that no run has left a 👀 on. What `feedback` returns.
+# The stakeholders' comments on #<n> that no run has left a 👀 on. What `feedback` returns.
 unanswered_feedback() {
-  comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --arg reviewer "$REVIEWER" \
+  comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --argjson stakeholders "$STAKEHOLDERS" \
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED"'
     said($marker) as $since
     | unanswered($since) | map(del(.id, .eyes))'
 }
 
-# ack <n>: a 👀 on every reviewer comment on #n this run could have seen. One that arrived mid-run
+# ack <n>: a 👀 on every stakeholder comment on #n this run could have seen. One that arrived mid-run
 # is newer than A_TEAM_RUN_STARTED, so it stays unanswered and gets a run of its own. Unset means
 # now, which is right for a person running `comment` by hand, since they have just read the thread.
 ack() {
@@ -490,15 +490,15 @@ ack() {
     write "add 👀 to your comment of $at on #$1" gh api graphql -F subject="$id" -f query='
       mutation($subject: ID!) {
         addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
-  done < <(comments "$1" | jq -r --arg reviewer "$REVIEWER" --arg started "$started" \
+  done < <(comments "$1" | jq -r --argjson stakeholders "$STAKEHOLDERS" --arg started "$started" \
     --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID"'
     map(select(.at < $started))
-    | map(select(.kind != "body" and .author == $reviewer
+    | map(select(.kind != "body" and (.author | IN($stakeholders[]))
                  and (team("<!-- a-team:") | not) and (.eyes // 0) == 0))
     | .[] | [.id, .at] | @tsv')
 }
 
-# feedback_at <recent> <role> <n>: when the reviewer last asked <role> something on #n and got no
+# feedback_at <recent> <role> <n>: when a stakeholder last asked <role> something on #n and got no
 # answer. The day window keeps that cheap; a sweep falls back to #n's whole history, however old.
 feedback_at() {
   local at
@@ -550,7 +550,7 @@ case "$CMD" in
       {pitches: map(select(.labels | index("pitch"))) | counts,
        dev: (map(select(.labels | index("a-team:dev")))
          | (map(select(open_blocked | not)) | counts) + {blocked: map(select(open_blocked)) | length}),
-       reviewer: map(select((.labels | index("pitch") or index("a-team:dev")) | not)) | counts}'
+       stakeholders: map(select((.labels | index("pitch") or index("a-team:dev")) | not)) | counts}'
     ;;
 
   next)
@@ -611,7 +611,7 @@ case "$CMD" in
     fi
     if [ "$role:$from>$to" = "lead:Pitched>Idea" ] &&
       [ "$(unanswered_feedback lead "$n" | jq length)" -eq 0 ]; then
-      die "lead may move #$n out of Pitched only when the reviewer has asked (no unanswered reviewer feedback on #$n)"
+      die "lead may move #$n out of Pitched only when a stakeholder has asked (no unanswered stakeholder feedback on #$n)"
     fi
     if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
       ! pitch_swap "$(items)" | jq -e --argjson n "$n" 'any(.demote[]; .number == $n)' >/dev/null; then
@@ -622,7 +622,7 @@ case "$CMD" in
         write "label #$n $label" gh issue edit "$n" -R "$REPO" --add-label "$label" >/dev/null ;;
       *)
         jq -e --arg l "$label" '.labels | index($l)' <<<"$it" >/dev/null ||
-          die "#$n isn't $role's (no '$label' label); leave it to the reviewer" ;;
+          die "#$n isn't $role's (no '$label' label); leave it to the stakeholders" ;;
     esac
     if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
       ! jq -e '.labels | index("a-team:displaced")' <<<"$it" >/dev/null; then
@@ -670,7 +670,7 @@ case "$CMD" in
     [ $# -eq 3 ] || die "usage: board.sh $TEAM priority <role> <n> <value|none>"
     role=$1 n=$2 value=$3
     case "$role" in
-      lead | dev) die "$role may not set a $PRIORITY; ranking an item is the reviewer's own gate" ;;
+      lead | dev) die "$role may not set a $PRIORITY; ranking an item is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
@@ -704,7 +704,7 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM approve <role> <n>"
     role=$1 n=$2
     case "$role" in
-      lead | dev) die "$role may not approve a pitch; approving is the reviewer's own gate" ;;
+      lead | dev) die "$role may not approve a pitch; approving is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
@@ -885,7 +885,7 @@ case "$CMD" in
         fi
         for x in "${numbers[@]}"; do
           at=$(feedback_at "$recent" dev "$x")
-          [ -n "$at" ] && reasons+=("reviewer feedback on #$x ($at)")
+          [ -n "$at" ] && reasons+=("stakeholder feedback on #$x ($at)")
         done
       done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
 
@@ -917,7 +917,7 @@ case "$CMD" in
         n=$(jq -r .number <<<"$row")
         status=$(jq -r .status <<<"$row")
         at=$(feedback_at "$recent" lead "$n")
-        [ -n "$at" ] && reasons+=("reviewer feedback on #$n ($at)")
+        [ -n "$at" ] && reasons+=("stakeholder feedback on #$n ($at)")
         [ "$status" = Approved ] && reasons+=("#$n was approved: break it down")
         if [ "$status" = Building ]; then
           open=$(gh api "repos/$REPO/issues/$n/sub_issues" --jq '[length, (map(select(.state == "open")) | length)] | @tsv')
