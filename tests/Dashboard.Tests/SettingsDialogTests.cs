@@ -648,13 +648,13 @@ public class SettingsDialogTests : IDisposable
     {
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
         using var dialog = Open(out _, out _, page: "Teams");
-        Assert.Equal(["p pause · Enter edit", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p pause · Enter edit · n new", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
 
         Assert.True(dialog.Teams.NewKeyDownEvent(new Key('p')));
 
         Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
         Assert.True(new TeamConfigs(_configRoot).IsPaused("alpha"));
-        Assert.Equal(["p resume · Enter edit", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p resume · Enter edit · n new", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
 
         Hint(dialog, "p resume").InvokeCommand(Command.Accept);
 
@@ -784,6 +784,51 @@ public class SettingsDialogTests : IDisposable
         Hint(dialog, "Enter edit").InvokeCommand(Command.Accept);
 
         Assert.True(opened);
+    }
+
+    [Fact]
+    public void N_on_the_Teams_page_creates_a_team_selects_it_and_says_where_it_stands()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        dialog.CreateTeam = create =>
+        {
+            WriteTeam("fretty", """{"repo": "mentaldesk/fretty"}""");
+            return "fretty";
+        };
+        string? followed = null;
+        dialog.FollowTeam = team =>
+        {
+            followed = team;
+            return ($"{team} is paused. Press p when you want it to start.", Terminal.Gui.Drawing.Schemes.Base);
+        };
+
+        Assert.True(dialog.Teams.NewKeyDownEvent(new Key('n')));
+
+        Assert.Equal("fretty", followed);
+        Assert.Equal(["alpha   mentaldesk/alpha   working", "fretty  mentaldesk/fretty  paused"], TeamRows(dialog));
+        Assert.Equal(1, dialog.Teams.Value);
+        Assert.Equal("fretty is paused. Press p when you want it to start.", dialog.Message.Says);
+        Assert.False(dialog.Confirmed);
+    }
+
+    [Fact]
+    public void A_new_team_form_that_was_cancelled_changes_nothing()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha"}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        dialog.CreateTeam = _ => null;
+        var followed = false;
+        dialog.FollowTeam = _ =>
+        {
+            followed = true;
+            return null;
+        };
+
+        Hint(dialog, "n new").InvokeCommand(Command.Accept);
+
+        Assert.False(followed);
+        Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
     }
 
     private void WriteTeam(string team, string config)

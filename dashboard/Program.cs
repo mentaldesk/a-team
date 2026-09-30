@@ -35,6 +35,12 @@ var agents = named.SelectMany(team => new[] { (team, "lead"), (team, "dev") }).T
 
 var settings = new DashboardSettings(configRoot);
 var command = new TeamCommand(Path.Combine(root, "bin", "a-team"));
+var start = new TeamStart(
+    Path.Combine(root, "examples", "team.json"),
+    command,
+    new TeamCommand("gh"),
+    home,
+    () => File.Exists(Path.Combine(home, "Library", "LaunchAgents", "com.a-team.dispatch.plist")));
 
 return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 
@@ -77,7 +83,8 @@ Handover? Show(Handover? back)
             handedOver = handover;
             app.RequestStop();
         },
-        back);
+        back,
+        start);
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

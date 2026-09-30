@@ -21,7 +21,7 @@ public class TeamFormTests
         Assert.Equal("docs/vision.md", form.Vision.Text);
         Assert.Equal("~/code/a-team", form.Workdir.Text);
         Assert.Equal("./bin/a-team dashboard", form.Try.Text);
-        Assert.Equal(TeamStatus.Working, form.Status.Value);
+        Assert.Equal(TeamStatus.Working, form.Status!.Value);
         Assert.Equal(2, form.Worktrees.Value);
         Assert.Equal(Settings, form.Current());
     }
@@ -121,7 +121,7 @@ public class TeamFormTests
         });
         form.SetFocus();
         form.Repo.Text = "mentaldesk/other";
-        form.Status.Value = TeamStatus.Paused;
+        form.Status!.Value = TeamStatus.Paused;
 
         form.Repo.NewKeyDownEvent(Key.Enter);
 
@@ -300,6 +300,95 @@ public class TeamFormTests
         form.PickSkills();
 
         Assert.Equal([("tuicode (not installed)", true), ("a-team", false), ("structural-analysis", false)], rows);
+    }
+
+    private static readonly TeamSettings Blank =
+        new("", "", null, "docs/vision.md", "", "", false, 3, 3, 6, 6, 3, null, ["jamescrosswell"], []);
+
+    [Fact]
+    public void A_new_team_s_form_starts_on_Name_with_no_Status_and_offers_Enter_create()
+    {
+        using var form = TeamForm.New(Blank, ["a-team"], "~/.config/a-team/teams", (_, _) => null);
+        form.SetFocus();
+
+        Assert.Equal("New team", form.Title);
+        Assert.True(form.NameField!.HasFocus);
+        Assert.Null(form.Status);
+        Assert.Equal("Enter create · Esc cancel", form.Hints.Says);
+        Assert.Equal(
+            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Limits"],
+            form.SubViews.OfType<Label>().Where(label => label.X.ToString() == Pos.Absolute(1).ToString())
+                .OrderBy(label => label.Frame.Y).Select(label => label.Text));
+    }
+
+    [Fact]
+    public void Naming_a_new_team_says_which_file_it_becomes_and_fills_in_its_workdir()
+    {
+        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (_, _) => null);
+        form.SetFocus();
+
+        form.NameField!.Text = "fretty";
+
+        Assert.Equal("Becomes ~/.config/a-team/teams/fretty.json", form.Message.Says);
+        Assert.Equal("~/code/fretty", form.Workdir.Text);
+        form.Workdir.Text = "~/src/fretty";
+        form.NameField.Text = "frets";
+        Assert.Equal("~/src/fretty", form.Workdir.Text);
+    }
+
+    [Theory]
+    [InlineData("a-team", "There's already a team named a-team.")]
+    [InlineData("my team", "my team can't be a file name: use letters, digits, '.', '_' and '-'.")]
+    public void A_name_that_can_t_be_used_refuses_and_leaves_the_form_filled_in(string name, string refusal)
+    {
+        var created = false;
+        using var form = TeamForm.New(Blank, ["a-team"], "~/.config/a-team/teams", (_, _) =>
+        {
+            created = true;
+            return null;
+        });
+        form.NameField!.Text = name;
+        form.Repo.Text = "mentaldesk/fretty";
+
+        form.Save();
+
+        Assert.False(created);
+        Assert.Null(form.Saved);
+        Assert.Equal(refusal, form.Message.Says);
+        Assert.Equal("mentaldesk/fretty", form.Repo.Text);
+    }
+
+    [Fact]
+    public void Enter_creates_the_team_under_its_name()
+    {
+        string? named = null;
+        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (name, _) =>
+        {
+            named = name;
+            return null;
+        });
+        form.NameField!.Text = "fretty";
+        form.Repo.Text = "mentaldesk/fretty";
+        form.ShowProjects(null);
+        form.Owner.Text = "mentaldesk";
+        form.Number.Text = "7";
+
+        form.Save();
+
+        Assert.Equal("fretty", named);
+        Assert.Equal("fretty", form.SavedName);
+        Assert.Equal(("mentaldesk/fretty", "~/code/fretty", false), (form.Saved?.Repo, form.Saved?.Workdir, form.Saved?.Working));
+    }
+
+    [Fact]
+    public void Who_s_signed_in_becomes_the_stakeholder_unless_one_is_picked_already()
+    {
+        using var form = TeamForm.New(Blank with { Stakeholders = [] }, [], "~/.config/a-team/teams", (_, _) => null);
+
+        form.ShowMe("jamescrosswell");
+        form.ShowMe("someone-else");
+
+        Assert.Equal(["jamescrosswell"], form.Current().Stakeholders);
     }
 
     private static IReadOnlyList<TextField> Fields(TeamForm form) =>

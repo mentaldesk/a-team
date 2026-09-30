@@ -78,6 +78,47 @@ public sealed class TeamConfigs
         File.WriteAllBytes(path, after.Write(File.ReadAllBytes(path), before));
     }
 
+    /// <summary>Writes a new team's file from <paramref name="example"/>, with the form's values, its checkout at
+    /// <c>&lt;workdir&gt;/main</c>, and paused. Fails rather than replace a file that's already there.</summary>
+    public void Create(string team, byte[] example, TeamSettings settings)
+    {
+        var config = (settings with { Working = false }).Write(example, TeamSettings.Read(example));
+        config = ConfigEdit.Set(config, ["checkout"], settings.CheckoutPath);
+        config = ConfigEdit.SetEnabled(config, false);
+        Directory.CreateDirectory(TeamsDirectory);
+        using var file = new FileStream(PathOf(team), FileMode.CreateNew, FileAccess.Write);
+        file.Write(config);
+    }
+
+    /// <summary>The team whose file names a GitHub App for a repo under <paramref name="owner"/>, if any.</summary>
+    public string? WithApp(string owner, string except = "") =>
+        Names().FirstOrDefault(team => team != except && AppOwner(team) == owner);
+
+    /// <summary>Whether the team's file names its GitHub App.</summary>
+    public bool HasApp(string team) => AppOwner(team) is not null;
+
+    /// <summary>The owner of the repo a team with a GitHub App works on, or null where it has none.</summary>
+    private string? AppOwner(string team)
+    {
+        try
+        {
+            using var config = JsonDocument.Parse(File.ReadAllText(PathOf(team)));
+            var root = config.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("app", out var app) || app.ValueKind != JsonValueKind.Object ||
+                !app.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number)
+                return null;
+            var repo = root.TryGetProperty("repo", out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? ""
+                : "";
+            return repo.Split('/')[0];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return null;
+        }
+    }
+
     private string PathOf(string team) => Path.Combine(TeamsDirectory, $"{team}.json");
 
     private static string Reason(string message) =>

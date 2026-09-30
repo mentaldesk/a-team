@@ -23,6 +23,7 @@ public sealed class SettingsDialog : Dialog
     private const string PauseHint = "p pause";
     private const string ResumeHint = "p resume";
     private const string EditHint = "Enter edit";
+    private const string NewHint = "n new";
     private const string Working = "working";
     private const string Paused = "paused";
     private const string Unreadable = "can't read this file";
@@ -59,6 +60,7 @@ public sealed class SettingsDialog : Dialog
     private readonly TextField _filter = new();
     private readonly KeyList _keys;
     private readonly TeamConfigs _teams;
+    private readonly TeamStart? _start;
     private readonly List<TeamRow> _teamRows;
     private readonly TeamList _teamList = new();
     private readonly MessageBar _message = new();
@@ -72,10 +74,12 @@ public sealed class SettingsDialog : Dialog
         TeamConfigs teams,
         Action redraw,
         IconStyle auto,
-        string? page = null)
+        string? page = null,
+        TeamStart? start = null)
     {
         _commands = commands;
         _teams = teams;
+        _start = start;
         _teamRows = [.. teams.Names().Select(teams.Row)];
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
@@ -135,8 +139,22 @@ public sealed class SettingsDialog : Dialog
         };
 
         _teamList.Pause = TogglePause;
+        _teamList.New = () => NewTeam();
         EditTeam = (team, settings, save) =>
             App is { } app ? TeamForm.Show(app, team, settings, save, ListProjects) : null;
+        CreateTeam = create =>
+        {
+            if (App is not { } app || _start is null)
+                return null;
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var directory = _teams.TeamsDirectory.StartsWith(home, StringComparison.Ordinal)
+                ? $"~{_teams.TeamsDirectory[home.Length..]}"
+                : _teams.TeamsDirectory;
+            return TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Projects, _start.Me());
+        };
+        FollowTeam = team => App is { } app && _start is not null
+            ? _start.Follow(_teams, team, step => StepDialog.Show(app, step))
+            : null;
         _teamList.ValueChanged += (_, _) => ShowTeam();
 
         _pages =
@@ -144,7 +162,7 @@ public sealed class SettingsDialog : Dialog
             new Page("Theme", [new Placed(themes)], () => []),
             new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint]),
             new Page("Dashboard", DashboardRows(), () => []),
-            new Page(TeamsPage, [new Placed(_teamList)], () => [SelectedTeam() is { Paused: false } ? PauseHint : ResumeHint, EditHint]),
+            new Page(TeamsPage, [new Placed(_teamList)], () => [SelectedTeam() is { Paused: false } ? PauseHint : ResumeHint, EditHint, NewHint]),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -201,6 +219,13 @@ public sealed class SettingsDialog : Dialog
     /// <summary>Opens the team form and returns what it saved, or null where it was cancelled.</summary>
     internal Func<string, TeamSettings, Func<TeamSettings, string?>, TeamSettings?> EditTeam { get; set; }
 
+    /// <summary>Opens the new team form over <c>create</c>, and returns the name it created, or null where it was
+    /// cancelled.</summary>
+    internal Func<Func<string, TeamSettings, string?>, string?> CreateTeam { get; set; }
+
+    /// <summary>Takes a team just created through the steps to its first run, and returns the line to leave.</summary>
+    internal Func<string, (string Message, Schemes Scheme)?> FollowTeam { get; set; }
+
     /// <summary>Enter reaches a Dialog as Accept, from any of its lists alike, and never as a key.
     /// The hints close the dialog from their own Accepting, so nothing here does.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
@@ -223,12 +248,16 @@ public sealed class SettingsDialog : Dialog
         Action<IconStyle> showIcons,
         IconStyle auto,
         TeamConfigs teams,
-        string? page = null)
+        string? page = null,
+        TeamStart? start = null,
+        bool newTeam = false)
     {
         var theme = ThemeSetting.Live(settings);
         var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
-            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page);
+            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start);
+        if (newTeam)
+            app.Invoke(() => dialog.NewTeam());
         app.Run(dialog);
         dialog.Store(theme, icons, settings);
     }
@@ -379,6 +408,34 @@ public sealed class SettingsDialog : Dialog
         if (saved.Warning(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) is { } warning)
             Say(warning, Schemes.Accent);
         return true;
+    }
+
+    /// <summary>Opens the form for a new team, then offers what it needs to get to work, and leaves it selected.</summary>
+    internal bool NewTeam()
+    {
+        if (CreateTeam(CreateTeamFile) is not { } team)
+            return true;
+        ReadTeams(team);
+        if (FollowTeam(team) is { } said)
+        {
+            ReadTeams(team);
+            Say(said.Message, said.Scheme);
+        }
+        return true;
+    }
+
+    private string? CreateTeamFile(string team, TeamSettings settings) =>
+        _start is { } start ? start.Create(_teams, team, settings) : "There's no a-team install here to start a team from.";
+
+    private void ReadTeams(string selected)
+    {
+        _teamRows.Clear();
+        _teamRows.AddRange(_teams.Names().Select(_teams.Row));
+        _teamList.Value = null;
+        ShowTeams();
+        _teamList.Value = Math.Max(0, _teamRows.FindIndex(row => row.Name == selected));
+        _teamList.SetFocus();
+        ShowTeam();
     }
 
     private string? SaveTeam(string team, TeamSettings before, TeamSettings after)
@@ -543,6 +600,11 @@ public sealed class SettingsDialog : Dialog
             TogglePause();
             return true;
         }
+        if (hint == NewHint)
+        {
+            _teamList.SetFocus();
+            return NewTeam();
+        }
         if (hint == EditHint)
         {
             _teamList.SetFocus();
@@ -595,16 +657,21 @@ public sealed class SettingsDialog : Dialog
         protected override bool OnKeyDown(Key key) => Captured?.Invoke(key) == true || base.OnKeyDown(key);
     }
 
-    /// <summary>A list that answers <c>p</c> itself, for the same reason as <see cref="KeyList"/>.</summary>
+    /// <summary>A list that answers <c>p</c> and <c>n</c> itself, for the same reason as <see cref="KeyList"/>.</summary>
     private sealed class TeamList : ListView
     {
         public Action? Pause { get; set; }
 
+        public Action? New { get; set; }
+
         protected override bool OnKeyDown(Key key)
         {
-            if (key != new Key('p'))
+            if (key == new Key('p'))
+                Pause?.Invoke();
+            else if (key == new Key('n'))
+                New?.Invoke();
+            else
                 return base.OnKeyDown(key);
-            Pause?.Invoke();
             return true;
         }
     }

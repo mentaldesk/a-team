@@ -53,6 +53,23 @@ public class TeamCommandTests : IDisposable
         Assert.NotNull(await command.Run("pause", "demo"));
     }
 
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public async Task Streaming_passes_on_every_line_from_either_stream_and_reports_the_last_error()
+    {
+        var command = new TeamCommand(Script("""
+            echo "Cloning into 'main'..."
+            echo "remote: nope" >&2
+            echo "fatal: repository not found" >&2
+            exit 128
+            """));
+        List<string> lines = [];
+
+        var failure = await command.Stream(line => { lock (lines) lines.Add(line); }, "repo", "clone");
+
+        Assert.Equal("fatal: repository not found", failure);
+        Assert.Equal(["Cloning into 'main'...", "fatal: repository not found", "remote: nope"], lines.Order());
+    }
+
     private string Script(string body)
     {
         Directory.CreateDirectory(_root);

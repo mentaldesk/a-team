@@ -15,6 +15,41 @@ public sealed class TeamCommand(string executable)
     /// <summary>What a read-only command printed, for the caller to parse.</summary>
     public Task<Reading> Read(params string[] arguments) => Task.Run(() => Invoke(arguments));
 
+    /// <summary>Runs a command, passing on each line it prints to either stream as it prints it. Null once it has
+    /// run; otherwise its last line of stderr.</summary>
+    public Task<string?> Stream(Action<string> line, params string[] arguments) => Task.Run(async () =>
+    {
+        var start = new ProcessStartInfo(executable) { RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
+        var said = string.Join(' ', arguments);
+        string? lastError = null;
+        try
+        {
+            using var process = Process.Start(start);
+            if (process is null)
+                return $"couldn't run {Path.GetFileName(executable)} {said}";
+            async Task Pass(StreamReader reader, bool error)
+            {
+                while (await reader.ReadLineAsync() is { } text)
+                {
+                    if (text.Trim().Length == 0)
+                        continue;
+                    if (error)
+                        lastError = text.Trim();
+                    line(text);
+                }
+            }
+            await Task.WhenAll(Pass(process.StandardOutput, false), Pass(process.StandardError, true));
+            await process.WaitForExitAsync();
+            return process.ExitCode == 0 ? null : lastError ?? $"{said} exited {process.ExitCode}";
+        }
+        catch (Exception e) when (e is IOException or Win32Exception or InvalidOperationException)
+        {
+            return e.Message;
+        }
+    });
+
     /// <summary>Runs a command that owns the terminal until it quits, Ctrl+C included. Null once it has run;
     /// otherwise how it failed, once the user has read what it printed.</summary>
     public string? Hand(params string[] arguments)

@@ -53,6 +53,32 @@ public sealed partial record TeamSettings(
         };
     }
 
+    /// <summary>What the form starts a new team with: the example's vision and limits, and <paramref name="me"/>
+    /// as its stakeholder.</summary>
+    public static TeamSettings New(byte[] example, string me) =>
+        Read(example) with
+        {
+            Repo = "",
+            ProjectOwner = "",
+            ProjectNumber = null,
+            Workdir = "",
+            Try = "",
+            Working = false,
+            Checkout = null,
+            Stakeholders = me.Length == 0 ? [] : [me],
+            Skills = [],
+        };
+
+    /// <summary>Why <paramref name="name"/> can't be a new team's, or null when it can.</summary>
+    public static string? NameRefusal(string name, IReadOnlyCollection<string> taken) =>
+        name.Length == 0 ? "Name is required."
+        : !NameShape().IsMatch(name) ? $"{name} can't be a file name: use letters, digits, '.', '_' and '-'."
+        : taken.Contains(name) ? $"There's already a team named {name}."
+        : null;
+
+    /// <summary>The workdir a new team named <paramref name="name"/> gets unless you change it.</summary>
+    public static string WorkdirFor(string name) => $"~/code/{name}";
+
     /// <summary>The config with each value that differs from <paramref name="before"/> set in place, so a save
     /// that changed nothing writes back the same bytes.</summary>
     public byte[] Write(byte[] config, TeamSettings before)
@@ -154,4 +180,7 @@ public sealed partial record TeamSettings(
 
     [GeneratedRegex(@"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")]
     private static partial Regex RepoShape();
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9_.-]*$")]
+    private static partial Regex NameShape();
 }
