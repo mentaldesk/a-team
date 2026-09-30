@@ -77,7 +77,7 @@ Urgent, below `wip.worktrees + 1`:
    `blocked` label, and go back to 1.
 5. Fetch `origin`, create a fresh worktree from `origin/<default branch>` following the repo's
    conventions, and implement it. Stay inside the task's scope; note anything else you spot
-   in the PR body instead of fixing it.
+   in the PR body instead of fixing it. End every commit message with `Closes #<n>`.
 6. Build and run the tests locally until they pass.
 7. Push and open a **draft** PR. Body: a short summary of what the user can now do or see,
    `Closes #<n>`, any choice you made that changes what they see or do beyond what the task

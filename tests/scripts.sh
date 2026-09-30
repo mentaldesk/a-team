@@ -141,8 +141,9 @@ gh_items() {
                                            then [{name: "High", field: {name: "Priority"}}] else [] end)}}})
     | {data: {organization: {projectV2: {items: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: .}}}}}' \
     >"$ITEMS"
-  TALK="$BIN/talk.json"
+  TALK="$BIN/talk.json" UNLINKED="$BIN/unlinked.json"
   echo '{"data": {"repository": {}}}' >"$TALK"
+  echo '{"data": {"repository": {}}}' >"$UNLINKED"
   ISSUE="$BIN/issue.json" THREAD="$BIN/thread.json"
   LINE="$BIN/line.json" REVIEWS="$BIN/reviews.json" RECENT="$BIN/recent.json"
   ACKED="$BIN/acked" POSTED="$BIN/posted" EMPTY="$BIN/empty.json"
@@ -185,6 +186,7 @@ case " \$* " in
   *"label list"*) page="$EMPTY" ;;
   *check-runs*) page="$RUNS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
+  *": pullRequest(number"*) page="$UNLINKED" ;;
   *closedByPullRequestsReferences*) page="$PRS" ;;
   *reviews*) page="$REVIEWS" ;;
   *"/issues/comments?since"*) page="$RECENT" ;;
@@ -232,21 +234,28 @@ gh_runs() {
     | {check_runs: .}' >"$RUNS"
 }
 
-# `gh_pr <number> <draft>`: the open PR that closes every issue `pr` asks about. No arguments, none.
+# `gh_pr <number> <draft> [<issue>]`: the open PR that closes every issue `pr` asks about. No
+# arguments, none. With <issue>, GitHub hasn't linked it: only its body says it closes #<issue>.
 gh_pr() {
-  jq -n --arg n "${1:-}" --arg draft "${2:-true}" '{data: {repository: {issue: {closedByPullRequestsReferences: {nodes:
+  jq -n --arg n "${1:-}" --arg draft "${2:-true}" --arg issue "${3:-}" '
     (if $n == "" then [] else [{number: ($n | tonumber), url: "https://github.com/mentaldesk/demo/pull/\($n)",
-       isDraft: ($draft == "true"), headRefName: "task", mergeable: "MERGEABLE"}] end)}}}}}' >"$PRS"
+       isDraft: ($draft == "true"), headRefName: "task", mergeable: "MERGEABLE"}] end) as $pr
+    | {data: {repository: {
+        issue: {closedByPullRequestsReferences: {nodes: (if $issue == "" then $pr else [] end)}},
+        pullRequests: {nodes: (if $issue == "" then []
+          else $pr | map(. + {body: "Closes #\($issue)\n\n<!-- a-team:dev -->"}) end)}}}}' >"$PRS"
 }
 
 # The one GraphQL page `waiting` reads for whose turn it is, from lines of
 # "<n> <kind> <timestamp> <author> <text...>". The body line is the item's own; the pr-* kinds
 # (pr-body, pr-comment, pr-review, pr-line) belong to the open PR that closes #<n>, which is
 # numbered 900 + n and is ready and mergeable unless `gh_talk <draft> <mergeable>` says otherwise.
+# `gh_talk <draft> <mergeable> unlinked` leaves that PR unlinked, found only by what its body closes.
 # A kind ending `+seen` carries the 👀 a run leaves on a comment it has read, a `labeled` row's text
 # is the label added, and `\n` in the text is a line break.
 gh_talk() {
-  jq -R -s --arg draft "${1:-false}" --arg mergeable "${2:-MERGEABLE}" '
+  jq -R -s --arg draft "${1:-false}" --arg mergeable "${2:-MERGEABLE}" \
+    --argjson linked "$([ "${3:-}" = unlinked ] && echo false || echo true)" '
     def who($login): if $login | endswith("[bot]")
       then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))} else {__typename: "User", login: $login} end;
     def seen: {reactions: {totalCount: (if .seen then 1 else 0 end)}};
@@ -277,10 +286,15 @@ gh_talk() {
     | group_by(.n) | map(
         (map(select(.kind | startswith("pr-") | not))) as $own
         | (map(select(.kind | startswith("pr-")) | .kind |= ltrimstr("pr-"))) as $pr
-        | {key: "x\(.[0].n)",
-           value: (node($own; .[0].n) + {closedByPullRequestsReferences: {nodes:
-             (if ($pr | length) > 0 then [open_pr($pr; 900 + .[0].n)] else [] end)}})})
-    | from_entries | {data: {repository: .}}' >"$TALK"
+        | {n: .[0].n, own: node($own; .[0].n),
+           pr: (if ($pr | length) > 0 then open_pr($pr; 900 + .[0].n) else null end)})
+    | {talk: {data: {repository: ((map({key: "x\(.n)", value: (.own + {closedByPullRequestsReferences:
+          {nodes: (if .pr != null and $linked then [.pr] else [] end)}})}) | from_entries)
+          + if $linked then {} else {openPrs: {nodes: map(.pr // empty | {number, body})}} end)}},
+       unlinked: {data: {repository: (map(.pr // empty | {key: "p\(.number)", value: .}) | from_entries)}}}' \
+    >"$BIN/talk.all.json"
+  jq .talk "$BIN/talk.all.json" >"$TALK"
+  jq .unlinked "$BIN/talk.all.json" >"$UNLINKED"
 }
 
 # The whole thread on #7, which `feedback` and `comment` read, from lines of
@@ -413,6 +427,31 @@ same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
 same "api calls" 3 "$(grep -c '' <"$CALLS")"
+
+case_ "so it is when GitHub hasn't linked that PR to the task, and only its body closes it"
+gh_talk false MERGEABLE unlinked <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+TALK
+: >"$CALLS"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
+
+case_ "but a PR the Dev didn't open isn't taken for the task's on its word"
+gh_talk false MERGEABLE unlinked <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z passer-by Closes #115
+115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 
 case_ "a review and a line comment on that PR count as feedback too"
 gh_talk <<TALK
@@ -1399,6 +1438,25 @@ RUNS
 run board demo triggers dev
 same "exit" 0 "$STATUS"
 same "reasons" '["PR #912 is green but still a draft"]' "$(jq -c .reasons "$OUT")"
+
+case_ "a PR GitHub hasn't linked to its task is still found, by what its body closes"
+gh_pr 912 true 12
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["PR #912 is green but still a draft"]' "$(jq -c .reasons "$OUT")"
+run board demo pr 12
+same "exit" 0 "$STATUS"
+same "pr" 912 "$(jq -c .number "$OUT")"
+same "fields" '["headRefName","isDraft","mergeable","number","url"]' "$(jq -c keys "$OUT")"
+
+case_ "a task no PR closes, linked or not, has none"
+gh_pr 912 true 13
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["#12 is In progress but has no PR: an earlier run didn'"'"'t finish"]' "$(jq -c .reasons "$OUT")"
+run board demo pr 12
+same "exit" 0 "$STATUS"
+same "pr" null "$(cat "$OUT")"
 
 # --- a-team try -----------------------------------------------------------------------------
 # A throwaway origin holding main and one PR head, a checkout cloned from it that has only main,

@@ -83,6 +83,11 @@ SINCE='def stamp: fromdateiso8601
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
   def since($at): if $at == "" then "" else " since \($at | stamp)" end;'
 
+# closes: the issues a Dev PR's body closes, for when GitHub hasn't linked them.
+CLOSES='def closes: if (.body // "") | contains("<!-- a-team:dev -->")
+    then [.body | scan("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?[ \t]+#([0-9]+)\\b") | .[0] | tonumber]
+    else [] end;'
+
 is_state() {
   local s
   for s in "${STATES[@]}"; do [ "$s" = "$1" ] && return 0; done
@@ -265,8 +270,13 @@ pr_for() {
             nodes { number url isDraft headRefName mergeable }
           }
         }
+        pullRequests(states: OPEN, first: 100) {
+          nodes { number url isDraft headRefName mergeable body }
+        }
       }
-    }' --jq '.data.repository.issue.closedByPullRequestsReferences.nodes | first // "null"'
+    }' | jq -c --argjson n "$1" "$CLOSES"'.data.repository
+      | .issue.closedByPullRequestsReferences.nodes[0]
+        // ((.pullRequests.nodes // []) | map(select(any(closes[]; . == $n))) | first | del(.body))'
 }
 
 # ci <pr> [sha]: the CI verdict for <pr>, reading its head commit where the caller already knows it.
@@ -326,10 +336,11 @@ awaiting() {
 }
 
 # gated_talk <items>: one page holding the body, comments and open PR of every item, in one call
-# whatever the number of them. The open PR that closes a task comes back nested under the task's
-# own number: a stakeholder answers a task on either. `waiting` reads whose turn it is off this page.
+# whatever the number of them, plus one more for any PR GitHub hasn't linked to its task. The open
+# PR that closes a task comes back nested under the task's own number: a stakeholder answers a task
+# on either. `waiting` reads whose turn it is off this page.
 gated_talk() {
-  local said reviewed n query=''
+  local said reviewed n pr page unlinked prs query=''
   local seen='reactions(content: EYES) { totalCount }'
   said="number createdAt body author { __typename login }
         comments(last: 50) { nodes { createdAt body author { __typename login } $seen } }"
@@ -344,8 +355,25 @@ gated_talk() {
       ... on PullRequest { $reviewed } }"
   done
   [ -n "$query" ] || { echo '{"data": {"repository": {}}}'; return; }
-  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" \
-    -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query} }"
+  page=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" \
+    -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query
+      openPrs: pullRequests(states: OPEN, first: 100) { nodes { number body } } } }") || return
+  unlinked=$(jq -c "$CLOSES"'.data.repository | (.openPrs.nodes // []) as $open
+    | [to_entries[].value | select(.closedByPullRequestsReferences.nodes? == []) | .number as $n
+       | $open[] | select(any(closes[]; . == $n)) | {n: $n, pr: .number}] | unique_by(.n)' <<<"$page")
+  query=''
+  for pr in $(jq -r '[.[].pr] | unique[]' <<<"$unlinked"); do
+    query+=" p$pr: pullRequest(number: $pr) { $reviewed }"
+  done
+  prs='{"data": {"repository": {}}}'
+  if [ -n "$query" ]; then
+    prs=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" \
+      -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query} }") || return
+  fi
+  jq --argjson unlinked "$unlinked" --argjson prs "$prs" '
+    reduce $unlinked[] as $u (.; .data.repository["x\($u.n)"].closedByPullRequestsReferences.nodes
+      = [$prs.data.repository["p\($u.pr)"] // empty])
+    | del(.data.repository.openPrs)' <<<"$page"
 }
 
 # gated_comments <talk>: everything said on those items, as {n, at, author, body, eyes, kind}.
