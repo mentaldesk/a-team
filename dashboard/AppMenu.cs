@@ -33,6 +33,7 @@ internal sealed class AppMenu
         Bar = new MenuBar { Menus = [.. Layout.Select(Menu)] };
         _cards = _menus.Single(menu => menu.Title == Cards);
         _agents = _menus.Single(menu => menu.Title == Agents);
+        Bar.Disposing += (_, _) => _menus.Where(menu => menu.SuperView is null).ToList().ForEach(menu => menu.Dispose());
         Show(area);
     }
 
@@ -43,13 +44,14 @@ internal sealed class AppMenu
     /// <summary>The titles across the bar, each holding the items under it.</summary>
     internal IReadOnlyList<MenuBarItem> Menus => _menus;
 
-    /// <summary>Cards only in Work and Agents only on the dashboard, closing whatever menu is open.</summary>
+    /// <summary>Cards only in Work and Agents only on the dashboard, closing whatever menu is open. The other is
+    /// taken off the bar rather than hidden: the bar still spaces out a hidden title.</summary>
     internal void Show(Area area)
     {
         if (Bar.IsOpen())
             Bar.HideActiveItem();
-        _cards.Visible = _cards.Enabled = area == Area.Work;
-        _agents.Visible = _agents.Enabled = area == Area.Dashboard;
+        var gone = area == Area.Work ? _agents : _cards;
+        Bar.Menus = [.. _menus.Where(menu => menu != gone)];
     }
 
     /// <summary>Keeps each item reading as its command does now, like holding the selected agent's role, and

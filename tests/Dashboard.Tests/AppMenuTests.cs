@@ -97,13 +97,44 @@ public class AppMenuTests : IDisposable
         Assert.Equal(["_View", "_Cards", "_Help"], Shown(window));
     }
 
+    [Theory]
+    [InlineData(Area.Dashboard, 'w')]
+    [InlineData(Area.Work, 'd')]
+    public void The_titles_sit_side_by_side_leaving_no_gap_for_the_other_areas_menu(Area area, char other)
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open(area);
+        app.Begin(window);
+        window.NewKeyDownEvent(new Key(other));
+        window.NewKeyDownEvent(new Key(area == Area.Dashboard ? 'd' : 'w'));
+        window.Layout();
+
+        var frames = window.Menu.SubViews.OfType<MenuBarItem>().Select(menu => menu.Frame).ToList();
+
+        Assert.Equal(3, frames.Count);
+        Assert.All(frames.Zip(frames.Skip(1)), pair => Assert.Equal(pair.First.Right, pair.Second.X));
+    }
+
+    [Fact]
+    public void A_menu_back_on_the_bar_opens()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open(Area.Work);
+        app.Begin(window);
+        window.NewKeyDownEvent(new Key('d'));
+
+        window.NewKeyDownEvent(new Key('a').WithAlt);
+
+        Assert.Same(window.Menus.Single(menu => menu.Title == AppMenu.Agents).PopoverMenu, app.Popovers!.GetActivePopover());
+    }
+
     [Fact]
     public void A_hidden_menus_letters_don_t_fire_from_the_other_area()
     {
         using var window = Open(Area.Work);
         var agents = window.Menus.Single(menu => menu.Title == AppMenu.Agents);
 
-        Assert.False(agents.Visible);
+        Assert.Null(agents.SuperView);
         Assert.False(agents.PopoverMenu!.Enabled);
     }
 
@@ -330,7 +361,7 @@ public class AppMenuTests : IDisposable
             .Select(shown => window.MenuItems.Single(item => item.Item == shown).Id)];
 
     private static List<string> Shown(DashboardWindow window) =>
-        [.. window.Menus.Where(menu => menu.Visible).Select(menu => menu.Title)];
+        [.. window.Menu.SubViews.OfType<MenuBarItem>().Select(menu => menu.Title)];
 
     private static char Letter(Key key) => char.ToLowerInvariant((char)key);
 
