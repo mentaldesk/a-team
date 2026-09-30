@@ -179,6 +179,13 @@ public class TeamSettingsTests : IDisposable
             Repo = repo, ProjectOwner = owner, ProjectNumber = number, Vision = vision, Workdir = workdir,
         }).Refusal());
 
+    [Theory]
+    [InlineData("", null, null)]
+    [InlineData("o", null, "Project is required.")]
+    [InlineData("", 1, "Project is required.")]
+    public void A_new_team_may_leave_its_project_out_but_not_half_filled(string owner, int? number, string? refusal) =>
+        Assert.Equal(refusal, (Settings() with { Repo = "o/r", ProjectOwner = owner, ProjectNumber = number }).Refusal(projectOptional: true));
+
     [Fact]
     public void A_workdir_that_is_not_there_warns()
     {

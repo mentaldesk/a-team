@@ -107,7 +107,7 @@ nc -l 127.0.0.1 "$port" <"$tmp/response" >"$tmp/request" &
 listener=$!
 exec 3>"$tmp/response"
 
-echo "opening your browser to register $NAME under $OWNER…"
+echo "opening your browser to register $NAME under ${OWNER}…"
 open "$tmp/register.html"
 until grep -q $'\r' "$tmp/request" 2>/dev/null; do
   kill -0 "$listener" 2>/dev/null || die "the listener on port $port stopped before GitHub called back"

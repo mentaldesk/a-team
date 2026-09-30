@@ -381,6 +381,45 @@ public class TeamFormTests
     }
 
     [Fact]
+    public void A_new_team_can_leave_its_project_to_be_created_for_it()
+    {
+        TeamSettings? created = null;
+        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (_, settings) =>
+        {
+            created = settings;
+            return null;
+        });
+        form.NameField!.Text = "fretty";
+        form.Repo.Text = "mentaldesk/fretty";
+        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
+
+        Assert.Equal([TeamForm.NewProject, "TuiCode (mentaldesk #4)"], Choices(form));
+        Assert.Equal(TeamForm.NewProject, form.Project.Text);
+        form.Project.Text = "TuiCode (mentaldesk #4)";
+        form.Project.Text = TeamForm.NewProject;
+        form.Save();
+
+        Assert.Equal(("", (int?)null), (created?.ProjectOwner, created?.ProjectNumber));
+    }
+
+    [Fact]
+    public void The_project_list_is_read_again_each_time_it_takes_focus()
+    {
+        var reads = 0;
+        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (_, _) => null);
+        form.Repo.Text = "mentaldesk/fretty";
+        form.LoadProjects(_ =>
+        {
+            reads++;
+            return Task.FromResult(new Reading("{\"projects\": []}", null));
+        });
+
+        form.Project.SetFocus();
+
+        Assert.Equal(2, reads);
+    }
+
+    [Fact]
     public void Who_s_signed_in_becomes_the_stakeholder_unless_one_is_picked_already()
     {
         using var form = TeamForm.New(Blank with { Stakeholders = [] }, [], "~/.config/a-team/teams", (_, _) => null);

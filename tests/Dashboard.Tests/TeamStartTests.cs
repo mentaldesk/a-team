@@ -250,6 +250,47 @@ public class TeamStartTests : IDisposable
         Assert.Equal(("~/code/fretty/main isn't there, so the agents would have nothing to work in.", Schemes.Accent), said);
     }
 
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void A_team_without_a_project_is_offered_one_before_its_board_and_stays_paused_without_it()
+    {
+        Team("fretty", app: true, checkout: true, project: false);
+        List<string> asked = [];
+
+        var said = Start().Follow(_teams, "fretty", step =>
+        {
+            asked.Add(step.Title);
+            return false;
+        });
+
+        Assert.Equal(["Create a project for fretty?"], asked);
+        Assert.Equal(("fretty is paused: it has no project to move its work across. Pick one in its settings.", Schemes.Accent), said);
+        Assert.Empty(Ran());
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public async Task Creating_the_project_saves_its_number_and_links_it_and_a_retry_doesn_t_create_another()
+    {
+        Team("fretty", app: true, checkout: true, project: false);
+        Step? create = null;
+        Start().Follow(_teams, "fretty", step =>
+        {
+            create ??= step;
+            return false;
+        });
+
+        Assert.Equal("gh project create --owner mentaldesk --title fretty", create!.Lines[1]);
+        Assert.Null(await create.Work!(_ => { }));
+        Assert.Equal(("mentaldesk", (int?)9), (_teams.Settings("fretty").ProjectOwner, _teams.Settings("fretty").ProjectNumber));
+        await create.Work!(_ => { });
+        Assert.Equal(
+            [
+                "project create --owner mentaldesk --title fretty --format json",
+                "project link 9 --owner mentaldesk --repo mentaldesk/fretty",
+                "project link 9 --owner mentaldesk --repo mentaldesk/fretty",
+            ],
+            Ran());
+    }
+
     [Fact]
     public void A_step_s_work_runs_on_Enter_and_a_skip_runs_nothing()
     {
@@ -311,13 +352,17 @@ public class TeamStartTests : IDisposable
             if [ "$1 $3 $4" = "board setup --dry-run" ]; then
               printf '  add   Exploring\n(dry run) created label pitch\n'
             fi
-            """)), new TeamCommand(Fake("gh", "")), Path.Combine(_root, "home"), () => dispatcher);
+            """)), new TeamCommand(Fake("gh", """
+            if [ "$1 $2" = "project create" ]; then
+              echo '{"number": 9, "title": "fretty"}'
+            fi
+            """)), Path.Combine(_root, "home"), () => dispatcher);
 
-    private void Team(string name, bool app, bool checkout = false)
+    private void Team(string name, bool app, bool checkout = false, bool project = true)
     {
         Directory.CreateDirectory(_teams.TeamsDirectory);
         File.WriteAllText(Path.Combine(_teams.TeamsDirectory, $"{name}.json"), $$$"""
-            {"repo": "mentaldesk/{{{name}}}", "project": {"owner": "mentaldesk", "number": 7}, "vision": "docs/vision.md",
+            {"repo": "mentaldesk/{{{name}}}", "project": {{{(project ? "{\"owner\": \"mentaldesk\", \"number\": 7}" : "{\"owner\": \"\", \"number\": null}")}}}, "vision": "docs/vision.md",
              "workdir": "~/code/{{{name}}}", "checkout": "~/code/{{{name}}}/main", {{{(app ? "\"app\": {\"id\": 1, \"slug\": \"a-team-mentaldesk\"}," : "")}}}
              "dispatch": {"enabled": false}}
             """);

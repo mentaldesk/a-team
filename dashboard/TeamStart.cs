@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Terminal.Gui.Drawing;
 
@@ -63,6 +64,14 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             ask(AppStep(teams, team, settings));
         var hasApp = teams.HasApp(team);
 
+        if (settings.NoProject)
+        {
+            ask(ProjectStep(teams, team, settings));
+            settings = teams.Settings(team);
+            if (settings.NoProject)
+                return ($"{team} is paused: it has no project to move its work across. Pick one in its settings.", Schemes.Accent);
+        }
+
         ask(new Step(
             $"Set up {team}'s board?",
             ["Reading what setting it up would change…"],
@@ -107,6 +116,56 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             "skip",
             line => aTeam.Stream(line, "app", "create", team),
             ShowOutput: true);
+    }
+
+    private Step ProjectStep(TeamConfigs teams, string team, TeamSettings settings)
+    {
+        var owner = settings.RepoOwner;
+        return new Step(
+            $"Create a project for {team}?",
+            [
+                $"{team} moves its work across a GitHub Project's board, and hasn't got one yet.",
+                $"gh project create --owner {owner} --title {team}",
+                $"Then link it to {settings.Repo}.",
+            ],
+            "create it",
+            "skip",
+            line => CreateProject(teams, team, line));
+    }
+
+    /// <summary>Creates the team's project unless an earlier try already did, and links it to the repo.</summary>
+    private async Task<string?> CreateProject(TeamConfigs teams, string team, Action<string> line)
+    {
+        var settings = teams.Settings(team);
+        var owner = settings.RepoOwner;
+        if (settings.NoProject)
+        {
+            var made = await gh.Read("project", "create", "--owner", owner, "--title", team, "--format", "json");
+            if (made.Failure is { } failure)
+                return failure;
+            if (CreatedNumber(made.Output) is not { } created)
+                return "gh project create didn't say which number the new project got.";
+            teams.Save(team, settings, settings with { ProjectOwner = owner, ProjectNumber = created });
+            settings = teams.Settings(team);
+            line($"Created {owner} project {created}.");
+        }
+        return await gh.Stream(line, "project", "link", $"{settings.ProjectNumber}", "--owner", owner, "--repo", settings.Repo);
+    }
+
+    private static int? CreatedNumber(string output)
+    {
+        try
+        {
+            using var project = JsonDocument.Parse(output);
+            return project.RootElement.TryGetProperty("number", out var number) &&
+                   number.ValueKind == JsonValueKind.Number && number.TryGetInt32(out var value)
+                ? value
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>What <c>board setup --dry-run</c> printed, as the confirmation lists it: the Status options it would

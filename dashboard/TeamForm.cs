@@ -19,6 +19,7 @@ public sealed class TeamForm : Dialog
     internal const string RepoCaption = "The GitHub repo the team works on, as owner/repo.";
     internal const string StakeholdersCaption = "Whose comments the team acts on. You, unless you add others.";
     internal const string ProjectCaption = "The GitHub Project whose board the team moves its work across.";
+    internal const string NewProject = "A new project, named after the team";
     internal const string OwnerCaption = "Who owns the Project: the user or organisation in its URL.";
     internal const string NumberCaption = "The Project's number, the last part of its URL.";
     internal const string VisionCaption = "The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.";
@@ -143,6 +144,11 @@ public sealed class TeamForm : Dialog
         Caption(_owner, OwnerCaption);
         Caption(_number, NumberCaption);
         _project.TextChanged += (_, _) => Pick();
+        _project.HasFocusChanged += (_, _) =>
+        {
+            if (_project.HasFocus && _listProjects is { } list)
+                LoadProjects(list);
+        };
         ShowProjects([]);
         row++;
 
@@ -277,11 +283,15 @@ public sealed class TeamForm : Dialog
             : null;
         if (chosen is not null && !_projects.Contains(chosen))
             _projects.Insert(0, chosen);
-        _project.Source = new ListWrapper<string>(new ObservableCollection<string>(_projects.Select(project => project.ToString())));
-        _project.Text = chosen?.ToString() ?? "";
+        IEnumerable<string> choices = _projects.Select(project => project.ToString());
+        if (_team is null)
+            choices = choices.Prepend(NewProject);
+        _project.Source = new ListWrapper<string>(new ObservableCollection<string>(choices));
+        _project.Text = chosen?.ToString() ?? (_team is null ? NewProject : "");
     }
 
-    /// <summary>Fetches the repo owner's projects and puts them in the list when they arrive.</summary>
+    /// <summary>Fetches the repo owner's projects and puts them in the list when they arrive, again each time the list
+    /// takes focus so a project made meanwhile shows up.</summary>
     internal void LoadProjects(Func<string, Task<Reading>> list)
     {
         _listProjects = list;
@@ -352,7 +362,7 @@ public sealed class TeamForm : Dialog
         var now = Current();
         var name = _team ?? _name?.Text.Trim() ?? "";
         var refusal = _team is null ? TeamSettings.NameRefusal(name, _taken) : null;
-        if ((refusal ?? now.Refusal() ?? _save(name, now)) is { } failure)
+        if ((refusal ?? now.Refusal(projectOptional: _team is null) ?? _save(name, now)) is { } failure)
         {
             Say(failure, Schemes.Error);
             return true;
@@ -376,6 +386,12 @@ public sealed class TeamForm : Dialog
     /// <summary>Keeps the owner and number fields on the project picked, so they're what's saved either way.</summary>
     private void Pick()
     {
+        if (_team is null && _project.Text == NewProject)
+        {
+            _owner.Text = "";
+            _number.Text = "";
+            return;
+        }
         if (_projects.Find(project => project.ToString() == _project.Text) is not { } picked)
             return;
         _owner.Text = picked.Owner;

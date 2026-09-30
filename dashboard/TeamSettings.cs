@@ -120,11 +120,12 @@ public sealed partial record TeamSettings(
         return config;
     }
 
-    /// <summary>Why the form won't save these, or null when it will.</summary>
-    public string? Refusal() =>
+    /// <summary>Why the form won't save these, or null when it will. <paramref name="projectOptional"/> lets a new
+    /// team leave its project out, to be created for it.</summary>
+    public string? Refusal(bool projectOptional = false) =>
         Repo.Trim().Length == 0 ? "Repo is required."
         : !RepoShape().IsMatch(Repo.Trim()) ? $"Repo must be owner/repo, like mentaldesk/a-team, not {Repo.Trim()}."
-        : ProjectOwner.Trim().Length == 0 || ProjectNumber is null ? "Project is required."
+        : !(projectOptional && NoProject) && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null) ? "Project is required."
         : ProjectNumber <= 0 ? "Project number must be above 0."
         : Vision.Trim().Length == 0 ? "Vision is required."
         : Workdir.Trim().Length == 0 ? "Workdir is required."
@@ -149,6 +150,8 @@ public sealed partial record TeamSettings(
     /// <summary>A checkout other than <c>&lt;workdir&gt;/main</c>, which the form shows but doesn't change.</summary>
     public string? OtherCheckout =>
         Checkout is { } checkout && checkout.TrimEnd('/') != $"{Workdir.TrimEnd('/')}/main" ? checkout : null;
+
+    public bool NoProject => ProjectOwner.Trim().Length == 0 && ProjectNumber is null;
 
     public string RepoOwner => Repo.Split('/')[0].Trim();
 
