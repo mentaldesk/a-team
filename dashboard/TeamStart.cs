@@ -207,7 +207,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         ];
     }
 
-    [GeneratedRegex(@"^\s+(keep|add)\s+(.+)$")]
+    [GeneratedRegex(@"^\s+(keep|add|drop)\s+(.+)$")]
     private static partial Regex OptionLine();
 
     [GeneratedRegex(@"^(?:\(dry run\) )?(created|updated) label (.+)$")]

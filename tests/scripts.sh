@@ -1276,6 +1276,18 @@ run board --dry-run demo setup
 same "exit" 0 "$STATUS"
 grep -q "created label a-team:displaced" "$OUT" || fail "setup: '$(cat "$OUT")'"
 
+case_ "setup drops the Todo and In Progress GitHub made, unless an item has one"
+cp "$META" "$BIN/meta.saved"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_todo", name: "Todo"}, {id: "OPT_ip", name: "In Progress"}]' \
+  "$BIN/meta.saved" >"$META"
+jq '.data.organization.projectV2.items.nodes[0].fieldValueByName.name = "In Progress"' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+run board --dry-run demo setup
+same "exit" 0 "$STATUS"
+grep -q '^  drop  Todo$' "$OUT" || fail "setup: Todo not dropped in '$(cat "$OUT")'"
+grep -q '^  keep  In Progress$' "$OUT" || fail "setup: In Progress in use but not kept in '$(cat "$OUT")'"
+grep -q '^  keep  Exploring$' "$OUT" || fail "setup: '$(cat "$OUT")'"
+mv "$BIN/meta.saved" "$META"
+
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }

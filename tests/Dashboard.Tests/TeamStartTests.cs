@@ -101,6 +101,7 @@ public class TeamStartTests : IDisposable
               add   Exploring
               add   Pitched
               keep  Done
+              drop  Todo
             (dry run) created label pitch
             (dry run) created label a-team:dev
             (dry run) updated label blocked: colour and description
@@ -113,6 +114,7 @@ public class TeamStartTests : IDisposable
                 "  add   Exploring",
                 "  add   Pitched",
                 "  keep  Done",
+                "  drop  Todo",
                 "On mentaldesk/fretty:",
                 "  create label pitch",
                 "  create label a-team:dev",
