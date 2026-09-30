@@ -78,6 +78,11 @@
               "ReadOnly": { "Foreground": "#B08A8A", "Background": "#3B1E22" },
               "Disabled": { "Foreground": "#6E4A4E", "Background": "#3B1E22" }
             }
+          },
+          {
+            "Cursor": {
+              "Normal": { "Foreground": "#E6E9EF", "Background": "#1B1E24" }
+            }
           }
         ]
       }
@@ -159,6 +164,11 @@
               "Editable": { "Foreground": "#383A42", "Background": "#FFFFFF" },
               "ReadOnly": { "Foreground": "#9A6B6B", "Background": "#FBEAEA" },
               "Disabled": { "Foreground": "#C9A0A0", "Background": "#FBEAEA" }
+            }
+          },
+          {
+            "Cursor": {
+              "Normal": { "Foreground": "#1F2328", "Background": "#FAFAFA" }
             }
           }
         ]
@@ -242,6 +252,11 @@
               "ReadOnly": { "Foreground": "#AAAAAA", "Background": "#AA0000" },
               "Disabled": { "Foreground": "#AAAAAA", "Background": "#AA0000" }
             }
+          },
+          {
+            "Cursor": {
+              "Normal": { "Foreground": "#FFFF55", "Background": "#0000AA" }
+            }
           }
         ]
       }
@@ -323,6 +338,11 @@
               "Editable": { "Foreground": "#FFFF57", "Background": "#003078" },
               "ReadOnly": { "Foreground": "#A8A8A8", "Background": "#A80000" },
               "Disabled": { "Foreground": "#A8A8A8", "Background": "#A80000" }
+            }
+          },
+          {
+            "Cursor": {
+              "Normal": { "Foreground": "#FFFF57", "Background": "#003078" }
             }
           }
         ]

@@ -47,12 +47,15 @@ return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 int Run()
 {
     var terminal = TerminalMode.Save();
+    BundledThemes.Cursor = TerminalCursor.ForConsole();
     Handover? back = null;
     while (Show(back) is { } handover)
     {
+        BundledThemes.Cursor.Restore();
         terminal.Restore();
         back = handover with { Failure = command.Hand(handover.Arguments) };
     }
+    BundledThemes.Cursor.Restore();
     terminal.Restore();
     return 0;
 }

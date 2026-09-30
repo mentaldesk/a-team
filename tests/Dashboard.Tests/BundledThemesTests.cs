@@ -128,6 +128,54 @@ public class BundledThemesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void Every_theme_colours_the_cursor_to_stand_out_from_the_fields_it_sits_in()
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            var cursor = BundledThemes.CursorColour(theme);
+            Assert.True(cursor is not null, $"{theme} has no cursor colour");
+            foreach (var scheme in new[] { Schemes.Base, Schemes.Dialog })
+            {
+                var field = SchemeManager.GetScheme(scheme).Editable.Background;
+                Assert.True(Contrast(cursor!.Value, field) >= 3,
+                    $"{theme} {scheme} cursor is {Contrast(cursor.Value, field):0.00}:1");
+            }
+        }
+    }
+
+    [Fact]
+    public void Applying_a_theme_colours_the_terminal_cursor_and_exit_puts_it_back()
+    {
+        var written = new List<string>();
+        var before = BundledThemes.Cursor;
+        BundledThemes.Cursor = new TerminalCursor(written.Add);
+        try
+        {
+            BundledThemes.Load(BundledThemes.Daylight);
+            BundledThemes.Cursor.Restore();
+        }
+        finally
+        {
+            BundledThemes.Cursor = before;
+        }
+
+        Assert.Equal(["\x1b]12;#1F2328\x07", "\x1b]112\x07"], written);
+    }
+
+    [Fact]
+    public void Nothing_to_put_back_when_the_cursor_was_never_coloured()
+    {
+        var written = new List<string>();
+
+        new TerminalCursor(written.Add).Restore();
+
+        Assert.Empty(written);
+    }
+
+    [Fact]
     public void A_theme_we_do_not_ship_falls_back_to_the_default()
     {
         BundledThemes.Load();
