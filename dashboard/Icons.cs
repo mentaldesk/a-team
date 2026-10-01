@@ -30,6 +30,9 @@ public enum Icon
     Finished,
     YourMove,
     TheirMove,
+    Pitch,
+    Task,
+    PullRequest,
 }
 
 /// <summary>A card's icon for whose move it is, and the scheme its colour comes from.</summary>
@@ -58,6 +61,9 @@ public static class Icons
         [Icon.Finished] = "\U000F023C",  // nf-md-flag_checkered
         [Icon.YourMove] = "\U000F05E0",  // nf-md-check_circle
         [Icon.TheirMove] = "\U000F0D70", // nf-md-face_agent
+        [Icon.Pitch] = "\U000F0428",    // nf-md-presentation
+        [Icon.Task] = "\uEC37",         // nf-cod-code_review
+        [Icon.PullRequest] = "\uE726",  // nf-dev-git_pull_request
     };
 
     private static readonly Dictionary<Icon, string> UnicodeGlyphs = new()
@@ -76,6 +82,9 @@ public static class Icons
         [Icon.Finished] = "■",
         [Icon.YourMove] = "✓",
         [Icon.TheirMove] = "·",
+        [Icon.Pitch] = "◇",
+        [Icon.Task] = "‹›",
+        [Icon.PullRequest] = "PR",
     };
 
     /// <summary>The meanings a style's sample shows, in the order Settings names them underneath.</summary>
@@ -124,25 +133,33 @@ public static class Icons
     public static TurnIcon For(WaitingItem item, IconStyle style) => item.Mine
         ? new TurnIcon(Glyph(Icon.YourMove, style), LogSchemes.Success)
         : new TurnIcon(Glyph(Icon.TheirMove, style), LogSchemes.Dimmed);
+
+    /// <summary>What kind of thing the item is, in the colour of whose move it is.</summary>
+    public static TurnIcon Kind(WaitingItem item, IconStyle style) =>
+        For(item, style) with { Glyph = Glyph(item.Pitch ? Icon.Pitch : Icon.Task, style) };
 }
 
 /// <summary>A row wears its icon and its Priority in the cells the tree laid out in front of its text: drawn
 /// rather than put in the text, in their own colours over the row's own background so the selection still reads.</summary>
 internal static class CardCells
 {
-    /// <summary>Paints the field at <paramref name="at"/> with <paramref name="lead"/>, the number after it in
-    /// its Priority's colour, and <paramref name="text"/>'s astral runes back into the cells
+    /// <summary>Paints a field at <paramref name="at"/> for each of <paramref name="leads"/>, the number after them
+    /// in its Priority's colour, and <paramref name="text"/>'s astral runes back into the cells
     /// <see cref="LaidOut"/> kept for them. A row scrolled sideways has none of it on screen.</summary>
-    internal static void Paint(IList<Cell> cells, int at, string text, TurnIcon lead, PriorityMark mark)
+    internal static void Paint(IList<Cell> cells, int at, string text, IReadOnlyList<TurnIcon> leads, PriorityMark mark)
     {
         if (at < 0)
             return;
-        var field = Field(lead.Glyph);
-        for (var cell = 0; cell < Icons.Width; cell++)
-            Paint(cells, at + cell, field[cell], lead.Scheme);
+        foreach (var lead in leads)
+        {
+            var field = Field(lead.Glyph);
+            for (var cell = 0; cell < Icons.Width; cell++)
+                Paint(cells, at + cell, field[cell], lead.Scheme);
+            at += Icons.Width;
+        }
         for (var cell = 0; cell < mark.Width; cell++)
-            Paint(cells, at + Icons.Width + cell, null, mark.Scheme);
-        Astral(cells, at + Icons.Width, text);
+            Paint(cells, at + cell, null, mark.Scheme);
+        Astral(cells, at, text);
     }
 
     /// <summary>The text as the tree can lay it out. It makes a cell of every <c>char</c>, and half a surrogate pair
