@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -33,13 +34,16 @@ public sealed class TeamForm : Dialog
     internal const string ExploringCaption = "How many drafted pitches wait for room in Pitched.";
     internal const string IdeasCaption = "How many of the Lead's ideas wait for you to prioritise them.";
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
-    private const string SaveHint = "save";
+    private const string ProblemsHeading = "Problems";
+    private const int BandPadding = 1;
+    private const int ProblemsTop = BandPadding + 2;
     private const string NoName = "the new team";
-    private const string CancelHint = "cancel";
     private const int Inset = 1;
     private const int FieldX = 14;
     private const int LimitWidth = 6;
     private const string PickText = "Enter ▸";
+    private const int ButtonGap = 2;
+    private static readonly Key RepairKey = Key.F12;
     private const int PickWidth = 8;
 
     private readonly TeamSettings _before;
@@ -65,7 +69,15 @@ public sealed class TeamForm : Dialog
     private readonly NumericUpDown<int> _ideas;
     private readonly NumericUpDown<int> _readyFloor;
     private readonly StatusBar _hints = new();
+    private readonly View _buttons = new() { X = Pos.Center(), Width = Dim.Auto(), Height = 1, CanFocus = true };
+    private readonly Button _repair = Button($"Repair ({RepairKey})");
     private readonly MessageBar _message = new();
+    private readonly View _problemsBand = new() { SchemeName = LogSchemes.Warning, CanFocus = true, Visible = false };
+    private readonly Label _problemsLabel = new() { Text = ProblemsHeading, X = Inset, Y = BandPadding };
+    private readonly ListView _problems = new();
+    private TeamHealth? _health;
+    private Func<int, IReadOnlyList<string>> _problemRows = _ => [];
+    private int _wrappedTo;
     private List<ProjectChoice> _projects = [];
     private IReadOnlyList<string> _stakeholderNames;
     private IReadOnlyList<string> _skillNames;
@@ -113,7 +125,7 @@ public sealed class TeamForm : Dialog
             _name.HasFocusChanged += (_, _) =>
             {
                 if (_name.HasFocus)
-                    Say(Becomes(), Schemes.Base);
+                    Hint(Becomes());
             };
             var named = name;
             _name.TextChanged += (_, _) =>
@@ -122,7 +134,7 @@ public sealed class TeamForm : Dialog
                 if (_workdir is { } workdir && (workdir.Text.Length == 0 || workdir.Text == TeamSettings.WorkdirFor(named)))
                     workdir.Text = name.Length == 0 ? "" : TeamSettings.WorkdirFor(name);
                 named = name;
-                Say(Becomes(), Schemes.Base);
+                Hint(Becomes());
             };
         }
         _repo = Field("Repo", settings.Repo, row++, RepoCaption);
@@ -183,20 +195,47 @@ public sealed class TeamForm : Dialog
         _exploring = Limit("Exploring", settings.Exploring, 2, row++, ExploringCaption);
         _ideas = Limit("Ideas", settings.Ideas, 0, row, IdeasCaption);
         _readyFloor = Limit("Ready floor", settings.ReadyFloor, 1, row, ReadyFloorCaption);
+        row += 2;
 
+        _problemsBand.X = 0;
+        _problemsBand.Y = row;
+        _problemsBand.Width = Dim.Fill();
+        _problemsBand.Height = Dim.Func(_ => Math.Max(ProblemsTop + 1 + BandPadding,
+            Math.Min((_problems.Source?.Count ?? 0) + ProblemsTop + BandPadding, Viewport.Height - 2 - _message.Lines - row)), this);
+        _problems.X = Inset;
+        _problems.Y = ProblemsTop;
+        _problems.Width = Dim.Fill(Inset);
+        _problems.Height = Dim.Fill(BandPadding);
+        _problems.ViewportChanged += (_, _) =>
+        {
+            if (_problems.Viewport.Width != _wrappedTo)
+                LayProblems();
+        };
+        _problemsBand.Add(_problemsLabel, _problems);
+        Add(_problemsBand);
+
+        var saveButton = Button(team is null ? "Create" : "Save");
+        var cancelButton = Button("Cancel");
+        _repair.Visible = false;
+        _repair.Accepting += (_, args) => args.Handled = Repair();
+        saveButton.Accepting += (_, args) => args.Handled = Save();
+        cancelButton.Accepting += (_, args) => args.Handled = Close(null);
+        saveButton.X = Pos.Right(_repair) + ButtonGap;
+        cancelButton.X = Pos.Right(saveButton) + ButtonGap;
+        _buttons.Add(_repair, saveButton, cancelButton);
+        _buttons.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 2 - _message.Lines), this);
         _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
-        _hints.Show("", [new HintedCommand(SaveHint, team is null ? "Enter create" : "Enter save"), new HintedCommand(CancelHint, "Esc cancel")], Run);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
-        Add(_hints, _message);
+        Add(_buttons, _hints, _message);
         if (_name is { } first)
         {
             first.SetFocus();
-            Say(Becomes(), Schemes.Base);
+            Hint(Becomes());
         }
         else
         {
             _repo.SetFocus();
-            Say(RepoCaption, Schemes.Base);
+            Hint(RepoCaption);
         }
     }
 
@@ -241,6 +280,85 @@ public sealed class TeamForm : Dialog
     internal StatusBar Hints => _hints;
 
     internal MessageBar Message => _message;
+
+    /// <summary>The buttons along the foot of the form, as shown now.</summary>
+    internal IReadOnlyList<Button> FootButtons => [.. _buttons.SubViews.OfType<Button>().Where(button => button.Visible)];
+
+    internal ListView Problems => _problems;
+
+    internal string ProblemsTitle => _problemsLabel.Text;
+
+    /// <summary>The icons the Problems heading is drawn in.</summary>
+    internal IconStyle IconStyle
+    {
+        init => _problemsLabel.Text = Icons.Field(Icon.Warning, value) + ProblemsHeading;
+    }
+
+    /// <summary>Sets the team's board up again where it can be, and returns the check that follows it, or null where
+    /// nothing was done.</summary>
+    internal Func<Task<TeamHealth>?>? RepairBoard { get; set; }
+
+    /// <summary>Shows what's wrong with the team once <paramref name="health"/> says, and <c>checking…</c> until then.</summary>
+    internal void Watch(Task<TeamHealth> health)
+    {
+        if (health.IsCompleted)
+        {
+            ShowHealth(Health(health));
+            return;
+        }
+        ShowProblems(_ => [TeamHealth.Checking]);
+        health.ContinueWith(done =>
+        {
+            if (App is { } app)
+                app.Invoke(() => ShowHealth(Health(done)));
+            else
+                ShowHealth(Health(done));
+        }, TaskContinuationOptions.ExecuteSynchronously);
+    }
+
+    /// <summary>Runs <see cref="RepairBoard"/> where the problems are ones it can put right.</summary>
+    internal bool Repair()
+    {
+        if (_health is not { CanRepair: true } || RepairBoard?.Invoke() is not { } after)
+            return true;
+        Watch(after);
+        return true;
+    }
+
+    private static TeamHealth Health(Task<TeamHealth> done) =>
+        done.Status == TaskStatus.RanToCompletion
+            ? done.Result
+            : new TeamHealth([new TeamProblem("check", done.Exception?.InnerException?.Message ?? "it didn't finish")]);
+
+    private void ShowHealth(TeamHealth health)
+    {
+        _health = health;
+        ShowProblems(width => [.. health.Problems.SelectMany(problem => problem.Rows(width))]);
+    }
+
+    private void ShowProblems(Func<int, IReadOnlyList<string>> rows)
+    {
+        _problemRows = rows;
+        LayProblems();
+        ShowRepair();
+    }
+
+    private void LayProblems()
+    {
+        _wrappedTo = _problems.Viewport.Width;
+        var rows = _problemRows(_wrappedTo);
+        _problems.SetSource(new ObservableCollection<string>(rows));
+        _problemsBand.Visible = _problems.Visible = rows.Count > 0;
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private void ShowRepair()
+    {
+        _repair.Visible = _health is { CanRepair: true } && RepairBoard is not null;
+        _buttons.SetNeedsLayout();
+        SetNeedsDraw();
+    }
 
     /// <summary>The settings as the form holds them now.</summary>
     internal TeamSettings Current() =>
@@ -325,14 +443,19 @@ public sealed class TeamForm : Dialog
     {
         if (key == Key.Esc)
             return Close(null);
+        if (key == RepairKey)
+            return Repair();
         return base.OnKeyDown(key);
     }
 
     /// <summary>Opens the form, and returns what it saved, or null where it was cancelled.</summary>
     public static TeamSettings? Show(
-        IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save, Func<string, Task<Reading>> projects)
+        IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save, Func<string, Task<Reading>> projects,
+        Task<TeamHealth>? health = null, Func<Task<TeamHealth>?>? repair = null, IconStyle icons = IconStyle.Unicode)
     {
-        using var form = new TeamForm(team, settings, save);
+        using var form = new TeamForm(team, settings, save) { RepairBoard = repair, IconStyle = icons };
+        if (health is not null)
+            form.Watch(health);
         return Run(app, form, projects) ? form.Saved : null;
     }
 
@@ -435,8 +558,6 @@ public sealed class TeamForm : Dialog
             _skillNames = Show(_skills, picked);
     }
 
-    private bool Run(string hint) => hint == SaveHint ? Save() : Close(null);
-
     private TextField Field(string label, string value, int row, string caption)
     {
         Add(new Label { Text = label, X = Inset, Y = row });
@@ -473,13 +594,23 @@ public sealed class TeamForm : Dialog
         return limit;
     }
 
-    /// <summary>What a field changes, said as it takes focus.</summary>
+    /// <summary>What a field changes, said in the status bar as it takes focus.</summary>
     private void Caption(View field, string caption) =>
         field.HasFocusChanged += (_, _) =>
         {
             if (field.HasFocus)
-                Say(caption, Schemes.Base);
+                Hint(caption);
         };
+
+    private void Hint(string caption)
+    {
+        _hints.Say(caption, Schemes.Base);
+        _message.Clear();
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private static Button Button(string text) => new() { Text = text, Y = 0, HotKeySpecifier = (Rune)0xffff };
 
     private void Say(string message, Schemes scheme)
     {

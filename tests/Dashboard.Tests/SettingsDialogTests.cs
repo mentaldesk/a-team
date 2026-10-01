@@ -629,6 +629,16 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
+    public void The_Teams_page_heads_each_column_over_the_list()
+    {
+        WriteTeam("ai", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams", check: _ => Task.FromResult(new TeamHealth([])));
+
+        Assert.Equal("Team  Repo              Status   Health", dialog.TeamHeader);
+        Assert.Equal(["ai    mentaldesk/alpha  working  ok"], TeamRows(dialog));
+    }
+
+    [Fact]
     public void Selecting_a_team_whose_file_is_broken_says_which_line_and_why()
     {
         WriteTeam("alpha", """{"dispatch": {"enabled": true}}""");
@@ -674,6 +684,89 @@ public class SettingsDialogTests : IDisposable
 
         Assert.Equal(broken, File.ReadAllText(Path.Combine(_configRoot, "teams", "gamma.json")));
         Assert.Equal("Fix gamma.json before starting or pausing gamma: a-team can't read it.", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void The_Teams_page_says_checking_until_each_team_s_check_answers()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        WriteTeam("goose", """{"repo": "aaif-goose/goose"}""");
+        var goose = new TaskCompletionSource<TeamHealth>();
+        using var dialog = Open(out _, out _, page: "Teams", check: team => team == "goose"
+            ? goose.Task
+            : Task.FromResult(new TeamHealth([])));
+
+        Assert.Equal(["alpha  mentaldesk/alpha  working  ok", "goose  aaif-goose/goose  paused   checking…"], TeamRows(dialog));
+
+        goose.SetResult(new TeamHealth([new TeamProblem("project", "no field"), new TeamProblem("labels", "1 of 6 missing")]));
+        Assert.Equal(["alpha  mentaldesk/alpha  working  ok", "goose  aaif-goose/goose  paused   2 problems"], TeamRows(dialog));
+    }
+
+    [Fact]
+    public void Teams_are_checked_only_once_the_Teams_page_is_open()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha"}""");
+        List<string> checkedTeams = [];
+        using var dialog = Open(out _, out _, check: team =>
+        {
+            checkedTeams.Add(team);
+            return Task.FromResult(new TeamHealth([]));
+        });
+        Assert.Empty(checkedTeams);
+
+        OpenPage(dialog, "Teams");
+        OpenPage(dialog, "Theme");
+        OpenPage(dialog, "Teams");
+
+        Assert.Equal(["alpha"], checkedTeams);
+    }
+
+    [Fact]
+    public void A_file_that_can_t_be_read_is_one_problem_without_running_a_check()
+    {
+        WriteTeam("gamma", "{\"repo\": ");
+        var ran = false;
+        using var dialog = Open(out _, out _, page: "Teams", check: _ =>
+        {
+            ran = true;
+            return Task.FromResult(new TeamHealth([]));
+        });
+
+        Assert.Equal(["gamma        can't read this file  1 problem"], TeamRows(dialog));
+        Assert.False(ran);
+    }
+
+    [Fact]
+    public async Task After_a_repair_the_team_is_checked_again_and_its_row_follows()
+    {
+        WriteTeam("goose", """{"repo": "aaif-goose/goose"}""");
+        var checks = 0;
+        using var dialog = Open(out _, out _, page: "Teams", check: _ => Task.FromResult(++checks == 1
+            ? new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")])
+            : new TeamHealth([])));
+        Assert.Equal(["goose  aaif-goose/goose  paused  1 problem"], TeamRows(dialog));
+        dialog.RepairTeam = _ => true;
+
+        var after = dialog.Repaired("goose");
+
+        Assert.Empty((await after!).Problems);
+        Assert.Equal(["goose  aaif-goose/goose  paused  ok"], TeamRows(dialog));
+    }
+
+    [Fact]
+    public void A_repair_left_undone_checks_nothing_again()
+    {
+        WriteTeam("goose", """{"repo": "aaif-goose/goose"}""");
+        var checks = 0;
+        using var dialog = Open(out _, out _, page: "Teams", check: _ =>
+        {
+            checks++;
+            return Task.FromResult(new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")]));
+        });
+        dialog.RepairTeam = _ => false;
+
+        Assert.Null(dialog.Repaired("goose"));
+        Assert.Equal(1, checks);
     }
 
     [Fact]
@@ -1015,12 +1108,13 @@ public class SettingsDialogTests : IDisposable
         Action<IconStyle>? apply = null,
         CommandRegistry? commands = null,
         IconStyle auto = IconStyle.Unicode,
-        string? page = null)
+        string? page = null,
+        Func<string, Task<TeamHealth>>? check = null)
     {
         theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, keep ?? (_ => { }));
         icons = new IconSetting(iconStyle, apply ?? (_ => { }), new DashboardSettings(_configRoot).WriteIcons);
         var dialog = new SettingsDialog(
-            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page);
+            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check);
         dialog.SetFocus();
         return dialog;
     }

@@ -15,6 +15,9 @@ public sealed class TeamCommand(string executable)
     /// <summary>What a read-only command printed, for the caller to parse.</summary>
     public Task<Reading> Read(params string[] arguments) => Task.Run(() => Invoke(arguments));
 
+    /// <summary>What a command printed whether or not it failed, for one that reports problems and exits non-zero.</summary>
+    public Task<Reading> Report(params string[] arguments) => Task.Run(() => Invoke(arguments, keepOutput: true));
+
     /// <summary>Runs a command, passing on each line it prints to either stream as it prints it. Null once it has
     /// run; otherwise its last line of stderr.</summary>
     public Task<string?> Stream(Action<string> line, params string[] arguments) => Task.Run(async () =>
@@ -84,7 +87,7 @@ public sealed class TeamCommand(string executable)
         return failure;
     }
 
-    private Reading Invoke(params string[] arguments)
+    private Reading Invoke(string[] arguments, bool keepOutput = false)
     {
         var start = new ProcessStartInfo(executable) { RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var argument in arguments)
@@ -101,7 +104,7 @@ public sealed class TeamCommand(string executable)
             if (process.ExitCode == 0)
                 return new Reading(output.GetAwaiter().GetResult(), null);
             return new Reading(
-                "",
+                keepOutput ? output.GetAwaiter().GetResult() : "",
                 FirstLine(error.GetAwaiter().GetResult()) ?? $"{said} exited {process.ExitCode}");
         }
         catch (Exception e) when (e is IOException or Win32Exception or InvalidOperationException)

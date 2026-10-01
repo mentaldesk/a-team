@@ -38,6 +38,7 @@ public sealed class SettingsDialog : Dialog
     private const int StatusLines = 1;
     private const int Indent = 2;
     private const int KeysRow = 2;
+    private const int TeamListRow = 1;
     private const int PageHintsAbove = 2;
     private const double StripeTint = 0.1;
     private const int IconsHeadingRow = 2;
@@ -62,10 +63,15 @@ public sealed class SettingsDialog : Dialog
     private readonly KeyList _keys;
     private readonly TeamConfigs _teams;
     private readonly TeamStart? _start;
+    private readonly IconSetting _icons;
+    private readonly IconStyle _auto;
     private readonly List<TeamRow> _teamRows;
     private readonly TeamList _teamList = new();
+    private readonly Label _teamHeader = new();
     private readonly MessageBar _message = new();
     private readonly List<string> _removed = [];
+    private readonly Func<string, Task<TeamHealth>>? _check;
+    private readonly Dictionary<string, Task<TeamHealth>> _health = [];
     private bool _capturing;
 
     public SettingsDialog(
@@ -77,11 +83,15 @@ public sealed class SettingsDialog : Dialog
         Action redraw,
         IconStyle auto,
         string? page = null,
-        TeamStart? start = null)
+        TeamStart? start = null,
+        Func<string, Task<TeamHealth>>? check = null)
     {
         _commands = commands;
         _teams = teams;
         _start = start;
+        _icons = icons;
+        _auto = auto;
+        _check = check ?? (start is null ? null : start.Check);
         _teamRows = [.. teams.Names().Select(teams.Row)];
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
@@ -143,8 +153,13 @@ public sealed class SettingsDialog : Dialog
         _teamList.Pause = TogglePause;
         _teamList.New = () => NewTeam();
         _teamList.Drop = RemoveTeam;
+        RepairTeam = team => App is { } app && _start is { } start &&
+            StepDialog.Show(app, start.Repair(team, _teams.Settings(team))) == Answer.Done;
         EditTeam = (team, settings, save) =>
-            App is { } app ? TeamForm.Show(app, team, settings, save, ListProjects) : null;
+            App is { } app
+                ? TeamForm.Show(app, team, settings, save, ListProjects, _health.GetValueOrDefault(team),
+                    () => Repaired(team), Icons.Resolve(_icons.Current, _auto))
+                : null;
         CreateTeam = (again, create) =>
         {
             if (App is not { } app || _start is null)
@@ -163,13 +178,19 @@ public sealed class SettingsDialog : Dialog
             : (string.Empty, Schemes.Base);
         ConfirmRemove = (team, repo, kept) => App is { } app && RemoveTeamDialog.Show(app, team, repo, kept);
         _teamList.ValueChanged += (_, _) => ShowTeam();
+        _teamHeader.GettingAttributeForRole += (_, e) =>
+        {
+            var attribute = e.Result ?? GetAttributeForRole(e.Role);
+            e.Result = attribute with { Foreground = attribute.Background, Background = attribute.Foreground };
+            e.Handled = true;
+        };
 
         _pages =
         [
             new Page("Theme", [new Placed(themes)], () => []),
             new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint]),
             new Page("Dashboard", DashboardRows(), () => []),
-            new Page(TeamsPage, [new Placed(_teamList)], () => SelectedTeam() is { } team
+            new Page(TeamsPage, [new Placed(_teamHeader), new Placed(_teamList, 0, TeamListRow)], () => SelectedTeam() is { } team
                 ? [team.Paused ? ResumeHint : PauseHint, EditHint, RemoveTeamHint, NewHint]
                 : [NewHint]),
         ];
@@ -192,8 +213,9 @@ public sealed class SettingsDialog : Dialog
         _filter.Width = Dim.Fill(Inset);
         _keys.Width = Dim.Fill(Inset);
         _keys.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove - KeysRow), this);
+        _teamHeader.Width = Dim.Fill(Inset);
         _teamList.Width = Dim.Fill(Inset);
-        _teamList.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove), this);
+        _teamList.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove - TeamListRow), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
         Add(_picker, rule);
@@ -217,6 +239,8 @@ public sealed class SettingsDialog : Dialog
 
     internal ListView Teams => _teamList;
 
+    internal string TeamHeader => _teamHeader.Text;
+
     internal MessageBar Message => _message;
 
     internal TextField Filter => _filter;
@@ -238,6 +262,9 @@ public sealed class SettingsDialog : Dialog
 
     /// <summary>Asks whether to remove a team, given its name, its repo and the name its file would be kept as.</summary>
     internal Func<string, string, string, bool> ConfirmRemove { get; set; }
+
+    /// <summary>Sets a team's board up again, once you've seen what that does, and says whether it did.</summary>
+    internal Func<string, bool> RepairTeam { get; set; }
 
     /// <summary>The teams removed while the dialog was open.</summary>
     internal IReadOnlyList<string> RemovedTeams => _removed;
@@ -445,6 +472,7 @@ public sealed class SettingsDialog : Dialog
         if (EditTeam(team.Name, before, after => SaveTeam(team.Name, before, after)) is not { } saved)
             return true;
         _teamRows[index] = _teams.Row(team.Name);
+        Check(team.Name);
         ShowTeams();
         ShowTeam();
         if (saved.Warning(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) is { } warning)
@@ -489,6 +517,7 @@ public sealed class SettingsDialog : Dialog
         _teamRows.Clear();
         _teamRows.AddRange(_teams.Names().Select(_teams.Row));
         _teamList.Value = null;
+        CheckTeams();
         ShowTeams();
         if (_teamRows.Count > 0)
             _teamList.Value = Math.Max(0, _teamRows.FindIndex(row => row.Name == selected));
@@ -532,15 +561,59 @@ public sealed class SettingsDialog : Dialog
     private void ShowTeams()
     {
         var selected = _teamList.Value;
-        _teamList.SetSource(new ObservableCollection<string>(TeamRows()));
+        var (header, rows) = TeamColumns();
+        _teamHeader.Text = header;
+        _teamList.SetSource(new ObservableCollection<string>(rows));
         _teamList.Value = _teamRows.Count == 0 ? null : Math.Min(selected ?? 0, _teamRows.Count - 1);
     }
 
-    private IReadOnlyList<string> TeamRows()
+    private (string Header, IReadOnlyList<string> Rows) TeamColumns()
     {
-        var name = _teamRows.Count == 0 ? 0 : _teamRows.Max(team => team.Name.Length);
-        var repo = _teamRows.Count == 0 ? 0 : _teamRows.Max(team => team.Repo.Length);
-        return [.. _teamRows.Select(team => $"{team.Name.PadRight(name)}  {team.Repo.PadRight(repo)}  {Status(team)}")];
+        string[] headings = _check is null ? ["Team", "Repo", "Status"] : ["Team", "Repo", "Status", "Health"];
+        var cells = _teamRows.Select(team => new[] { team.Name, team.Repo, Status(team), Health(team) }).ToList();
+        var widths = Enumerable.Range(0, headings.Length - 1)
+            .Select(column => cells.Select(row => row[column].Length).Append(headings[column].Length).Max())
+            .ToArray();
+        string Line(IReadOnlyList<string> row) =>
+            string.Join("  ", row.Take(headings.Length).Select((cell, column) => column < widths.Length ? cell.PadRight(widths[column]) : cell)).TrimEnd();
+        return (Line(headings), [.. cells.Select(Line)]);
+    }
+
+    /// <summary>The health column: nothing where there's no way to check, and <c>checking…</c> until the check answers.</summary>
+    private string Health(TeamRow team) =>
+        _check is null ? ""
+        : team.Problem is { } problem ? TeamHealth.Unreadable(problem).Column
+        : !_health.TryGetValue(team.Name, out var health) || !health.IsCompleted ? TeamHealth.Checking
+        : health.Status == TaskStatus.RanToCompletion ? health.Result.Column
+        : "check failed";
+
+    /// <summary>Repairs the team's board and checks it again, so its row and the open form follow; null where nothing
+    /// was repaired.</summary>
+    internal Task<TeamHealth>? Repaired(string team) => RepairTeam(team) ? Check(team) : null;
+
+    /// <summary>Starts checking every readable team not checked yet, each filling its row in when it answers.</summary>
+    private void CheckTeams()
+    {
+        foreach (var team in _teamRows.Where(team => team.Problem is null && !_health.ContainsKey(team.Name)))
+            Check(team.Name);
+    }
+
+    private Task<TeamHealth>? Check(string team)
+    {
+        if (_check is null)
+            return null;
+        var health = _check(team);
+        _health[team] = health;
+        health.ContinueWith(_ => OnUi(ShowTeams), TaskContinuationOptions.ExecuteSynchronously);
+        return health;
+    }
+
+    private void OnUi(Action action)
+    {
+        if (App is { } app)
+            app.Invoke(action);
+        else
+            action();
     }
 
     private static string Status(TeamRow team) =>
@@ -550,6 +623,8 @@ public sealed class SettingsDialog : Dialog
     private void ShowPage()
     {
         var selected = _picker.Value ?? 0;
+        if (_pages[selected].Name == TeamsPage)
+            CheckTeams();
         for (var index = 0; index < _pages.Count; index++)
             foreach (var placed in _pages[index].Rows)
                 placed.View.Visible = index == selected;

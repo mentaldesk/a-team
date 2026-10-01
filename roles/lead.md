@@ -43,6 +43,9 @@ sitting. Where the stakeholder has commented:
   the pitch with `a-team board {{team}} unlink lead <pitch> <task>` — and name each one you dropped
   in the same reply. Tasks the Dev has already started are the Dev's: say in your reply what you'd
   change, and the stakeholder takes it up on that task's PR.
+- Feedback that's a new idea rather than a change to this pitch becomes an Idea of its own
+  (`gh issue create`, then `a-team board {{team}} add lead <idea> Idea`) with the line
+  `Follow-up from #<pitch>` in its body. Never `link` it under the pitch.
 
 ### 2. Break down approved pitches
 
@@ -90,6 +93,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
 
 For each item in `a-team board {{team}} mine lead Building`, run `children`:
 
+- A child that isn't a task (labelled `pitch`, or with a status from Idea to Building) doesn't hold
+  the pitch up: `a-team board {{team}} unlink lead <pitch> <child>`, and judge the pitch on its
+  tasks alone.
 - When every task is closed, validate the whole: fetch `origin/main`, build it, try the feature
   the way a user would, and compare it with the pitch's acceptance criteria. Then either
   - file follow-up tasks (as in step 2) if something's missing, or

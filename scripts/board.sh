@@ -36,6 +36,13 @@ shift 2
 source "$ROOT/scripts/common.sh"
 CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG (start from examples/team.json)"
+if ! unreadable=$(jq -e 'type == "object"' "$CONFIG" 2>&1 >/dev/null); then
+  unreadable=${unreadable#jq: }
+  unreadable="can't read $TEAM.json: ${unreadable#parse error: }"
+  [ "$unreadable" != "can't read $TEAM.json: " ] || unreadable="$TEAM.json isn't a JSON object"
+  [ "$CMD" = check ] && { printf '%-10s%s\n' config "$unreadable"; exit 1; }
+  die "$unreadable"
+fi
 
 cfg() { jq -r "$1 // empty" "$CONFIG"; }
 REPO=$(cfg .repo)
@@ -46,7 +53,15 @@ FIELD=${FIELD:-Status}
 PRIORITY=$(cfg .priorityField)
 PRIORITY=${PRIORITY:-Priority}
 STAKEHOLDERS=$(jq -c '.stakeholders // [.reviewer // empty]' "$CONFIG")
-[ -n "$NUMBER" ] || die "project.number is not set in $CONFIG"
+[ -n "$NUMBER" ] || [ "$CMD" = check ] || die "project.number is not set in $CONFIG"
+
+# The labels setup creates, as "<name>|<colour>|<description>|<what goes wrong without it>".
+LABELS="pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it|the team can't tell its pitches from tasks
+a-team:dev|0e8a16|Claimed by the a-team Dev|the Dev can't claim tasks
+a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched|the Lead can't flag the ideas it finds for you
+a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running|the Lead can't pass over an idea, and keeps coming back to it
+a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced|the Lead tells you every time it bumps a pitch out of Pitched, not just the first
+blocked|fbca04|Waiting on another issue|the Dev can't mark a task that waits on your answer"
 
 # A stakeholder comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
 # older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
@@ -83,12 +98,24 @@ SINCE='def stamp: fromdateiso8601
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
   def since($at): if $at == "" then "" else " since \($at | stamp)" end;'
 
+# fenced: for each line, whether it's inside a ``` or ~~~ code block, its fences included.
 # needs_answer: a pitch body's "Needs your answer" section, heading and all, or "" when nothing's in it.
-NEEDS='def needs_answer: (gsub("\r"; "") | split("\n")) as $lines
-    | ([range($lines | length) | select($lines[.] | test("^##[ \t]+Needs your answer[ \t]*$"; "i"))] | first) as $at
+NEEDS='def fenced: reduce .[] as $line ({fence: null, out: []};
+      .fence as $open
+      | if $open == null then
+          ([$line | capture("^ {0,3}(?<f>`{3,}|~{3,})")] | .[0].f) as $f | .fence = $f | .out += [$f != null]
+        else
+          .out += [true]
+          | if $line | test("^ {0,3}\($open[:1]){\($open | length),}[ \t]*$") then .fence = null else . end
+        end) | .out;
+  def needs_answer: (gsub("\r"; "") | split("\n")) as $lines | ($lines | fenced) as $fenced
+    | ([range($lines | length) | select(($fenced[.] | not) and ($lines[.] | test("^##[ \t]+Needs your answer[ \t]*$"; "i")))]
+       | first) as $at
     | if $at == null then "" else
-        ($lines[$at + 1:] | (map(test("^#{1,2}[ \t]|^---+[ \t]*$|<!-- a-team:")) | index(true)) as $end
-         | .[:($end // length)] | join("\n") | sub("^\\s+"; "") | sub("\\s+$"; "")) as $text
+        ([range($at + 1; $lines | length)
+          | select(($fenced[.] | not) and ($lines[.] | test("^#{1,2}[ \t]|^---+[ \t]*$|<!-- a-team:")))] | first) as $stop
+        | ($lines[$at + 1:($stop // ($lines | length))]
+           | join("\n") | sub("^\\s+"; "") | sub("\\s+$"; "")) as $text
         | if $text == "" or ($text | test("^none\\.?$"; "i")) then "" else "## Needs your answer\n\n\($text)" end
       end;'
 
@@ -177,12 +204,14 @@ item() {
   items | jq --argjson n "$1" 'map(select(.number == $n)) | first // empty'
 }
 
-project_meta() {
+project_raw() {
   gql "query(\$owner: String!, \$number: Int!, \$field: String!) {
       $KIND(login: \$owner) { projectV2(number: \$number) { id
         field(name: \$field) { ... on ProjectV2SingleSelectField { id options { id name color description } } } } } }" \
-    -F field="$FIELD" --jq ".data.$KIND.projectV2"
+    -F field="$FIELD" "$@"
 }
+
+project_meta() { project_raw --jq ".data.$KIND.projectV2"; }
 
 set_status() {
   local item_id=$1 state=$2 option meta option_id
@@ -230,6 +259,13 @@ agent_written() {
 # The number of the issue #1 is a sub-issue of, or nothing.
 parent_of() {
   gh api "repos/$REPO/issues/$1" --jq '.parent_issue_url // empty | split("/") | last'
+}
+
+# idea <issue> <status>: the child is an idea rather than a task, by its labels or its board status.
+idea() {
+  jq -e '.labels | index("pitch")' <<<"$1" >/dev/null && return 0
+  case "$2" in Idea | Exploring | Pitched | Approved | Building) return 0 ;; esac
+  return 1
 }
 
 # The Idea the Lead should pitch next: a stakeholder's own, or any a stakeholder has prioritised,
@@ -802,7 +838,10 @@ case "$CMD" in
 
   link)
     [ $# -eq 2 ] || die "usage: board.sh $TEAM link <parent> <child>"
-    child_id=$(gh api "repos/$REPO/issues/$2" --jq .id)
+    child=$(gh api "repos/$REPO/issues/$2" --jq '{id, labels: [.labels[].name]}')
+    child_id=$(jq -r .id <<<"$child")
+    idea "$child" "$(item "$2" | jq -r '.status // empty')" &&
+      die "#$2 is an idea, not a task: say \"Follow-up from #$1\" in its body instead of linking it"
     write "make #$2 a sub-issue of #$1" gh api -X POST "repos/$REPO/issues/$1/sub_issues" -F "sub_issue_id=$child_id" >/dev/null
     say "#$2 is now a sub-issue of #$1"
     ;;
@@ -838,17 +877,36 @@ case "$CMD" in
     all=$(items)
     board_status() { jq -r --argjson n "$1" 'map(select(.number == $n)) | first | .status // empty' <<<"$all"; }
     from=$(board_status "$child")
-    [ -n "$from" ] || die "#$child is not on the board"
-    [ "$from" = Ready ] || die "$role may only take a Ready task off a pitch (#$child is '$from')"
+    issue=$(gh api "repos/$REPO/issues/$child" --jq '{id, title, body: (.body // ""), labels: [.labels[].name]}')
     jq -e --argjson n "$parent" 'map(select(.number == $n)) | first | (.labels // []) | index("pitch")' <<<"$all" >/dev/null ||
       die "$role may only take a task off a pitch (#$parent is not one)"
     pitch_status=$(board_status "$parent")
-    [ "$pitch_status" = Building ] ||
-      die "$role may only take a task off a pitch in Building (#$parent is '$pitch_status')"
+    followup=
+    idea "$issue" "$from" && followup=1
+    if [ -n "$followup" ]; then
+      [ "$pitch_status" != Done ] || die "$role may not change a Done pitch (#$parent)"
+    else
+      [ -n "$from" ] || die "#$child is not on the board"
+      [ "$from" = Ready ] || die "$role may only take a Ready task off a pitch (#$child is '$from')"
+      [ "$pitch_status" = Building ] ||
+        die "$role may only take a task off a pitch in Building (#$parent is '$pitch_status')"
+    fi
     [ "$(parent_of "$child")" = "$parent" ] || die "#$child is not a sub-issue of #$parent"
     write "take #$child off #$parent" gh api -X DELETE "repos/$REPO/issues/$parent/sub_issue" \
-      -F "sub_issue_id=$(gh api "repos/$REPO/issues/$child" --jq .id)" >/dev/null
-    say "#$child is no longer a sub-issue of #$parent"
+      -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
+    if [ -z "$followup" ]; then
+      say "#$child is no longer a sub-issue of #$parent"
+      exit 0
+    fi
+    body=$(printf '#%s (%s) grew out of this pitch and is its own item now, so it no longer holds this one up. Its body names #%s as where it came from.\n\n<!-- a-team:%s -->' \
+      "$child" "$(jq -r .title <<<"$issue")" "$parent" "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$parent" gh issue comment "$parent" -R "$REPO" --body-file -
+    if ! jq -e --arg p "$parent" '.body | test("Follow-up from #" + $p + "\\b")' <<<"$issue" >/dev/null; then
+      write "add 'Follow-up from #$parent' to #$child" gh issue edit "$child" -R "$REPO" \
+        --body "$(jq -r --arg p "$parent" '"Follow-up from #\($p)\n\n\(.body)"' <<<"$issue")" >/dev/null
+    fi
+    say "#$child is no longer a sub-issue of #$parent; said so on #$parent, and #$child names #$parent as where it came from"
     ;;
 
   unblock)
@@ -881,7 +939,8 @@ case "$CMD" in
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
-      jq -s 'add // [] | map({number, title, state, labels: [.labels[].name]})'
+      jq -s --argjson all "$(items)" 'add // [] | map(.number as $n | {number, title, state, labels: [.labels[].name],
+        status: ([$all[] | select(.number == $n) | .status] | first)})'
     ;;
 
   waiting)
@@ -1022,44 +1081,100 @@ case "$CMD" in
     ;;
 
   check)
-    field=$(project_meta | jq '.field // empty')
-    jq -e '.id' <<<"$field" >/dev/null 2>&1 || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
-    missing=()
-    for s in "${STATES[@]}"; do
-      option=$(jq -r --arg s "$s" '.project.statusMap[$s] // $s' "$CONFIG")
-      jq -e --arg o "$option" '.options | map(.name) | index($o)' <<<"$field" >/dev/null ||
-        missing+=("$option")
-    done
-    if [ ${#missing[@]} -gt 0 ]; then
-      printf "field '%s' is missing options:\n" "$FIELD" >&2
-      printf '  %s\n' "${missing[@]}" >&2
-      exit 1
+    # Exits 1 when the team can't run, and 2 when it can but something it uses is missing.
+    fatal=0 minor=0
+    problem() { printf '%-10s%s\n' "$1" "$2"; fatal=1; }
+    note() { printf '%-10s%s\n' "$1" "$2"; minor=1; }
+    reached='' unreachable=''
+    if [ -z "$REPO" ]; then
+      problem repo "$TEAM.json names no repo"
+    elif reason=$(gh api "repos/$REPO" --silent 2>&1); then
+      reached=1
+    else
+      problem repo "can't reach $REPO: ${reason#gh: }"
     fi
-    unmapped=$(items | jq -r 'map(select(.status | startswith("?"))) | .[] | "  #\(.number) \(.status)"')
-    [ -z "$unmapped" ] || { echo "items with a status outside the team's states:" >&2; echo "$unmapped" >&2; exit 1; }
-    echo "ok: $OWNER project $NUMBER, field '$FIELD'"
-    wrong() { printf '%s · %s\n          %s\n' "$line" "$1" "$2" >&2; exit 1; }
-    line="identity"
-    [ -n "$BOT" ] || wrong "NO APP" "the team can't run without its own GitHub App: run a-team app create $TEAM, then install it"
-    source "$ROOT/scripts/github-app.sh"
-    line="identity: $BOT"
-    has_app_key "${REPO%/*}" ||
-      wrong "NO KEY" "nothing in the login Keychain under service '$KEYCHAIN_SERVICE', account '${REPO%/*}': run a-team app create $TEAM"
-    token=$("$ROOT/bin/a-team" token "$TEAM" 2>&1) || wrong "NO TOKEN" "${token#a-team token: }"
-    line="$line · token ok"
-    GH_TOKEN=$token gql 'query($owner: String!, $number: Int!) {
-        organization(login: $owner) { projectV2(number: $number) { items(first: 1) { totalCount } } } }' \
-      --jq '.data.organization.projectV2.items.totalCount' >/dev/null 2>&1 ||
-      wrong "PROJECT $NUMBER UNREADABLE" "grant the organisation's \"Projects: read and write\", and install the App on $REPO"
-    granted() { jq -e --arg p "$1" '.permissions[$p] == "write"' "$(token_cache "$TEAM")" >/dev/null 2>&1; }
-    granted organization_projects ||
-      wrong "PROJECT $NUMBER READ-ONLY" "grant the organisation's \"Projects: read and write\""
-    line="$line · project $NUMBER read+write ok"
-    GH_TOKEN=$token priority_field >/dev/null 2>&1 ||
-      wrong "PRIORITY UNREADABLE" "grant the organisation's \"Issue Fields: read\" — without it \`triggers\` fails with \"Resource not accessible by integration\""
-    line="$line · $PRIORITY readable"
-    granted contents || wrong "NO PUSH" "grant the repository's \"Contents: read and write\""
-    echo "$line · push access to $REPO ok"
+    workdir=$(cfg .workdir)
+    checkout=$(cfg .checkout)
+    checkout=${checkout:-${workdir%/}/main}
+    if [ -z "$workdir" ]; then
+      problem workdir "$TEAM.json names no workdir"
+    elif [ ! -d "${workdir/#\~/$HOME}" ]; then
+      problem workdir "$workdir isn't there, so the agents would have nothing to work in"
+    elif [ ! -d "${checkout/#\~/$HOME}" ]; then
+      problem checkout "$checkout isn't there: gh repo clone $REPO $checkout"
+    fi
+    vision=$(cfg .vision)
+    if [ -n "$reached" ] && [ -n "$vision" ] && ! gh api "repos/$REPO/contents/$vision" --silent >/dev/null 2>&1; then
+      note vision "$vision isn't in $REPO yet: the Lead will draft one and open it as a draft PR"
+    fi
+    if [ -z "$NUMBER" ]; then
+      problem project "$TEAM.json names no project number"
+    elif ! meta=$({ project_raw 2>/dev/null || true; } | jq -ce --arg k "$KIND" '.data[$k].projectV2 // empty' 2>/dev/null); then
+      reason=$(project_raw 2>&1 >/dev/null | tail -n 1) || true
+      problem project "can't read $OWNER project $NUMBER: ${reason#gh: }"
+      unreachable=1
+    elif ! jq -e '.field.id' <<<"$meta" >/dev/null 2>&1; then
+      problem project "no single-select field '$FIELD' on $OWNER project $NUMBER"
+    else
+      missing=()
+      for s in "${STATES[@]}"; do
+        option=$(jq -r --arg s "$s" '.project.statusMap[$s] // $s' "$CONFIG")
+        jq -e --arg o "$option" '.field.options | map(.name) | index($o)' <<<"$meta" >/dev/null ||
+          missing+=("$option")
+      done
+      if [ ${#missing[@]} -gt 0 ]; then
+        problem status "${#missing[@]} of ${#STATES[@]} options missing from '$FIELD': $(printf '%s, ' "${missing[@]}" | sed 's/, $//')"
+      else
+        unmapped=$(items | jq -r '[.[] | select(.status | startswith("?")) | "#\(.number) \(.status[1:])"] | join(", ")') ||
+          unmapped=
+        if [ -n "$unmapped" ]; then
+          problem items "outside the team's states: $unmapped"
+        else
+          echo "ok: $OWNER project $NUMBER, field '$FIELD'"
+        fi
+      fi
+    fi
+    if [ -n "$reached" ]; then
+      if ! have=$(gh label list -R "$REPO" --limit 500 --json name --jq '.[].name' 2>&1); then
+        note labels "can't list $REPO's labels: ${have#gh: }"
+      else
+        while IFS='|' read -r name _ _ without; do
+          grep -qxF -- "$name" <<<"$have" || note labels "no '$name' label, so $without"
+        done <<<"$LABELS"
+      fi
+    fi
+    identity() {
+      [ -n "$BOT" ] || { problem app "$TEAM has no GitHub App: run a-team app create $TEAM, then install it"; return; }
+      source "$ROOT/scripts/github-app.sh"
+      has_app_key "${REPO%/*}" || {
+        problem app "$BOT has no key in the login Keychain (service '$KEYCHAIN_SERVICE', account '${REPO%/*}'): run a-team app create $TEAM"
+        return
+      }
+      local token line="identity: $BOT"
+      token=$("$ROOT/bin/a-team" token "$TEAM" 2>&1) || { problem app "$BOT can't get a token: ${token#a-team token: }"; return; }
+      line="$line · token ok"
+      # The project's own problem says enough when nobody can read it.
+      [ -n "$unreachable" ] || GH_TOKEN=$token gql 'query($owner: String!, $number: Int!) {
+          organization(login: $owner) { projectV2(number: $number) { items(first: 1) { totalCount } } } }' \
+        --jq '.data.organization.projectV2.items.totalCount' >/dev/null 2>&1 || {
+        problem app "$BOT can't read project $NUMBER: grant the organisation's \"Projects: read and write\", and install the App on $REPO"
+        return
+      }
+      granted() { jq -e --arg p "$1" '.permissions[$p] == "write"' "$(token_cache "$TEAM")" >/dev/null 2>&1; }
+      [ -n "$unreachable" ] || granted organization_projects ||
+        { problem app "$BOT can only read project $NUMBER: grant the organisation's \"Projects: read and write\""; return; }
+      [ -n "$unreachable" ] || line="$line · project $NUMBER read+write ok"
+      GH_TOKEN=$token priority_field >/dev/null 2>&1 || {
+        problem app "$BOT can't read the $PRIORITY field: grant the organisation's \"Issue Fields: read\", or \`triggers\` fails with \"Resource not accessible by integration\""
+        return
+      }
+      line="$line · $PRIORITY readable"
+      granted contents || { problem app "$BOT can't push to $REPO: grant the repository's \"Contents: read and write\""; return; }
+      echo "$line · push access to $REPO ok"
+    }
+    [ -z "$NUMBER" ] || identity
+    [ "$fatal" = 0 ] || exit 1
+    [ "$minor" = 0 ] || exit 2
     ;;
 
   setup)
@@ -1102,7 +1217,7 @@ case "$CMD" in
       echo "Status options set on $OWNER project $NUMBER"
     fi
     existing=$(gh label list -R "$REPO" --limit 500 --json name,color,description)
-    while IFS='|' read -r name color description; do
+    while IFS='|' read -r name color description _; do
       current=$(jq -c --arg n "$name" 'map(select(.name == $n)) | first' <<<"$existing")
       if [ "$current" = null ]; then
         $dry_run || gh label create "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null
@@ -1115,12 +1230,7 @@ case "$CMD" in
       [ -n "$changed" ] || continue
       $dry_run || gh label edit "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null
       say "updated label $name: $changed"
-    done <<<"pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it
-a-team:dev|0e8a16|Claimed by the a-team Dev
-a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched
-a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running
-a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced
-blocked|fbca04|Waiting on another issue"
+    done <<<"$LABELS"
     ;;
 
   *)
