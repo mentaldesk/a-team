@@ -1071,16 +1071,16 @@ Pitched 106 Both gates are mine
 In_review 115 I can change any of the keys
 ITEMS
 gh_talk <<'TALK'
-106 body 2026-10-01T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
-106 comment 2026-10-01T09:00:00Z demo-app[bot] Wrong thread.\n<!-- a-team:dev -->
-106 comment 2026-10-01T09:30:00Z demo-app[bot] A comment that lost its marker.
-115 body 2026-10-01T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
-115 comment 2026-10-01T09:00:00Z reviewer > Drafted.\n<!-- a-team:dev -->
+106 body 2026-09-30T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+106 comment 2026-09-30T09:00:00Z demo-app[bot] Wrong thread.\n<!-- a-team:dev -->
+106 comment 2026-09-30T09:30:00Z demo-app[bot] A comment that lost its marker.
+115 body 2026-09-30T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 comment 2026-09-30T09:00:00Z reviewer > Drafted.\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
-same "pitch reason" '"awaiting your approval since 01 Oct 08:00"' "$(jq -c '.[0].reason' "$OUT")"
+same "pitch reason" '"awaiting your approval since 30 Sep 08:00"' "$(jq -c '.[0].reason' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 gh_items <<'ITEMS'
 Pitched 7 A pitch in front of me
