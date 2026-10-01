@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
@@ -8,6 +9,18 @@ public sealed record TeamProblem(string Topic, string Detail)
     private const int TopicWidth = 10;
 
     public override string ToString() => $"{Topic.PadRight(TopicWidth)}{Detail}";
+
+    /// <summary>The problem in rows no wider than <paramref name="width"/>, its detail wrapping under itself.</summary>
+    public IEnumerable<string> Rows(int width)
+    {
+        var room = width - TopicWidth;
+        if (room < 1 || Detail.Length <= room)
+            return [ToString()];
+        var lines = TextFormatter.Format(
+            Detail, room, Alignment.Start, wordWrap: true, preserveTrailingSpaces: false, tabWidth: 4,
+            TextDirection.LeftRight_TopBottom, multiLine: false, textFormatter: null, preserveTabs: false);
+        return lines.Select((line, index) => $"{(index == 0 ? Topic : "").PadRight(TopicWidth)}{line}");
+    }
 }
 
 /// <summary>What stops a team working, as <c>check</c> reports it, one problem a line.</summary>

@@ -35,6 +35,8 @@ public sealed class TeamForm : Dialog
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
     private const string SaveHint = "save";
     private const string RepairHint = "repair";
+    private const string ProblemsHeading = "Problems";
+    private const int BandPadding = 1;
     private const string NoName = "the new team";
     private const string CancelHint = "cancel";
     private const int Inset = 1;
@@ -67,9 +69,12 @@ public sealed class TeamForm : Dialog
     private readonly NumericUpDown<int> _readyFloor;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
-    private readonly Label _problemsLabel;
+    private readonly View _problemsBand = new() { SchemeName = LogSchemes.Warning, CanFocus = true, Visible = false };
+    private readonly Label _problemsLabel = new() { Text = ProblemsHeading, X = Inset, Y = BandPadding };
     private readonly ProblemList _problems = new();
     private TeamHealth? _health;
+    private Func<int, IReadOnlyList<string>> _problemRows = _ => [];
+    private int _wrappedTo;
     private List<ProjectChoice> _projects = [];
     private IReadOnlyList<string> _stakeholderNames;
     private IReadOnlyList<string> _skillNames;
@@ -189,14 +194,23 @@ public sealed class TeamForm : Dialog
         _readyFloor = Limit("Ready floor", settings.ReadyFloor, 1, row, ReadyFloorCaption);
         row += 2;
 
-        _problemsLabel = new Label { Text = "Problems", X = Inset, Y = row, Visible = false };
+        _problemsBand.X = 0;
+        _problemsBand.Y = row;
+        _problemsBand.Width = Dim.Fill();
+        _problemsBand.Height = Dim.Func(_ => Math.Max(1 + 2 * BandPadding,
+            Math.Min((_problems.Source?.Count ?? 0) + 2 * BandPadding, Viewport.Height - 1 - _message.Lines - row)), this);
         _problems.X = FieldX;
-        _problems.Y = row;
+        _problems.Y = BandPadding;
         _problems.Width = Dim.Fill(Inset);
-        _problems.Height = Dim.Func(_ => Math.Max(1, Math.Min(_problems.Source?.Count ?? 0, Viewport.Height - 2 - _message.Lines - row)), this);
-        _problems.Visible = false;
+        _problems.Height = Dim.Fill(BandPadding);
         _problems.Repair = () => Repair();
-        Add(_problemsLabel, _problems);
+        _problems.ViewportChanged += (_, _) =>
+        {
+            if (_problems.Viewport.Width != _wrappedTo)
+                LayProblems();
+        };
+        _problemsBand.Add(_problemsLabel, _problems);
+        Add(_problemsBand);
 
         _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
         ShowHints();
@@ -258,6 +272,14 @@ public sealed class TeamForm : Dialog
 
     internal ListView Problems => _problems;
 
+    internal string ProblemsTitle => _problemsLabel.Text;
+
+    /// <summary>The icons the Problems heading is drawn in.</summary>
+    internal IconStyle IconStyle
+    {
+        init => _problemsLabel.Text = Icons.Field(Icon.Warning, value) + ProblemsHeading;
+    }
+
     /// <summary>Sets the team's board up again where it can be, and returns the check that follows it, or null where
     /// nothing was done.</summary>
     internal Func<Task<TeamHealth>?>? RepairBoard { get; set; }
@@ -270,7 +292,7 @@ public sealed class TeamForm : Dialog
             ShowHealth(Health(health));
             return;
         }
-        ShowProblems([TeamHealth.Checking]);
+        ShowProblems(_ => [TeamHealth.Checking]);
         health.ContinueWith(done =>
         {
             if (App is { } app)
@@ -297,14 +319,22 @@ public sealed class TeamForm : Dialog
     private void ShowHealth(TeamHealth health)
     {
         _health = health;
-        ShowProblems([.. health.Problems.Select(problem => problem.ToString())]);
+        ShowProblems(width => [.. health.Problems.SelectMany(problem => problem.Rows(width))]);
     }
 
-    private void ShowProblems(IReadOnlyList<string> rows)
+    private void ShowProblems(Func<int, IReadOnlyList<string>> rows)
     {
-        _problems.SetSource(new ObservableCollection<string>(rows));
-        _problems.Visible = _problemsLabel.Visible = rows.Count > 0;
+        _problemRows = rows;
+        LayProblems();
         ShowHints();
+    }
+
+    private void LayProblems()
+    {
+        _wrappedTo = _problems.Viewport.Width;
+        var rows = _problemRows(_wrappedTo);
+        _problems.SetSource(new ObservableCollection<string>(rows));
+        _problemsBand.Visible = _problems.Visible = rows.Count > 0;
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -408,9 +438,9 @@ public sealed class TeamForm : Dialog
     /// <summary>Opens the form, and returns what it saved, or null where it was cancelled.</summary>
     public static TeamSettings? Show(
         IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save, Func<string, Task<Reading>> projects,
-        Task<TeamHealth>? health = null, Func<Task<TeamHealth>?>? repair = null)
+        Task<TeamHealth>? health = null, Func<Task<TeamHealth>?>? repair = null, IconStyle icons = IconStyle.Unicode)
     {
-        using var form = new TeamForm(team, settings, save) { RepairBoard = repair };
+        using var form = new TeamForm(team, settings, save) { RepairBoard = repair, IconStyle = icons };
         if (health is not null)
             form.Watch(health);
         return Run(app, form, projects) ? form.Saved : null;

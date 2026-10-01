@@ -8,7 +8,7 @@ public class TeamHealthTests
         const string output = """
             ok: mentaldesk project 3, field 'Status'
             vision    docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR
-            labels    3 of 6 missing: pitch, a-team:idea, a-team:skipped
+            labels    mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch
             identity: a-team-app[bot] · token ok · project 3 read+write ok · Priority readable · push access to mentaldesk/goose ok
             """;
 
@@ -17,7 +17,7 @@ public class TeamHealthTests
         Assert.Equal(
             [
                 new TeamProblem("vision", "docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR"),
-                new TeamProblem("labels", "3 of 6 missing: pitch, a-team:idea, a-team:skipped"),
+                new TeamProblem("labels", "mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch"),
             ],
             health.Problems);
         Assert.Equal("2 problems", health.Column);
@@ -56,4 +56,19 @@ public class TeamHealthTests
         Assert.Equal(
             "project   no single-select field 'Status' on aaif-goose project 2",
             new TeamProblem("project", "no single-select field 'Status' on aaif-goose project 2").ToString());
+
+    [Fact]
+    public void A_problem_too_wide_for_its_rows_wraps_its_detail_under_itself() =>
+        Assert.Equal(
+            ["labels    mentaldesk/goose has no", "          'blocked' label"],
+            new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label").Rows(34));
+
+    [Fact]
+    public void A_problem_that_fits_or_has_no_room_to_wrap_is_one_row()
+    {
+        var problem = new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label");
+
+        Assert.Equal([problem.ToString()], problem.Rows(80));
+        Assert.Equal([problem.ToString()], problem.Rows(0));
+    }
 }

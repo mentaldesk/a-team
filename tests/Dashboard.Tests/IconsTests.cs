@@ -55,6 +55,7 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.Finished] = "■",
                 [Icon.YourMove] = "✓",
                 [Icon.TheirMove] = "·",
+                [Icon.Warning] = "⚠",
             },
             Enum.GetValues<Icon>().ToDictionary(icon => icon, icon => Icons.Glyph(icon, IconStyle.Unicode)));
 

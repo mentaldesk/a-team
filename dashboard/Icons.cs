@@ -30,6 +30,7 @@ public enum Icon
     Finished,
     YourMove,
     TheirMove,
+    Warning,
 }
 
 /// <summary>A card's icon for whose move it is, and the scheme its colour comes from.</summary>
@@ -58,6 +59,7 @@ public static class Icons
         [Icon.Finished] = "\U000F023C",  // nf-md-flag_checkered
         [Icon.YourMove] = "\U000F05E0",  // nf-md-check_circle
         [Icon.TheirMove] = "\U000F0D70", // nf-md-face_agent
+        [Icon.Warning] = "\U000F0026",  // nf-md-alert
     };
 
     private static readonly Dictionary<Icon, string> UnicodeGlyphs = new()
@@ -76,6 +78,7 @@ public static class Icons
         [Icon.Finished] = "■",
         [Icon.YourMove] = "✓",
         [Icon.TheirMove] = "·",
+        [Icon.Warning] = "⚠",
     };
 
     /// <summary>The meanings a style's sample shows, in the order Settings names them underneath.</summary>

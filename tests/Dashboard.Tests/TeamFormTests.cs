@@ -449,12 +449,12 @@ public class TeamFormTests
         form.Watch(Task.FromResult(new TeamHealth(
         [
             new TeamProblem("project", "no single-select field 'Status' on aaif-goose project 2"),
-            new TeamProblem("labels", "3 of 6 missing: pitch, a-team:idea, a-team:skipped"),
+            new TeamProblem("labels", "mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch"),
         ])));
 
         Assert.True(form.Problems.Visible);
         Assert.Equal(
-            ["project   no single-select field 'Status' on aaif-goose project 2", "labels    3 of 6 missing: pitch, a-team:idea, a-team:skipped"],
+            ["project   no single-select field 'Status' on aaif-goose project 2", "labels    mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch"],
             ProblemRows(form));
         Assert.Equal("r repair · Enter save · Esc cancel", form.Hints.Says);
     }
@@ -504,7 +504,7 @@ public class TeamFormTests
                 return Task.FromResult(new TeamHealth([]));
             },
         };
-        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "1 of 6 missing: blocked")])));
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue")])));
 
         Assert.True(form.Problems.NewKeyDownEvent(new Key('r')));
 
@@ -517,11 +517,21 @@ public class TeamFormTests
     public void A_repair_left_undone_keeps_the_problems()
     {
         using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
-        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "1 of 6 missing: blocked")])));
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue")])));
 
         form.Hints.Hints.Single(hint => hint.Text == "r repair").InvokeCommand(Command.Accept);
 
-        Assert.Equal(["labels    1 of 6 missing: blocked"], ProblemRows(form));
+        Assert.Equal(["labels    mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue"], ProblemRows(form));
+    }
+
+    [Theory]
+    [InlineData(IconStyle.NerdFont, "\U000F0026 Problems")]
+    [InlineData(IconStyle.Unicode, "⚠ Problems")]
+    public void The_Problems_heading_wears_a_warning_icon(IconStyle style, string heading)
+    {
+        using var form = new TeamForm("goose", Settings, _ => null) { IconStyle = style };
+
+        Assert.Equal(heading, form.ProblemsTitle);
     }
 
     private static IReadOnlyList<string> ProblemRows(TeamForm form) =>

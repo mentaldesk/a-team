@@ -2447,7 +2447,9 @@ NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
 board_labels pitch a-team:dev blocked
 checked
-says 2 "labels    3 of 6 missing: a-team:idea, a-team:skipped, a-team:displaced"
+says 2 "labels    mentaldesk/demo has no 'a-team:idea' label, which the team uses to mark: found by the a-team Lead; give it a Priority to have it pitched
+labels    mentaldesk/demo has no 'a-team:skipped' label, which the team uses to mark: the Lead found nothing to pitch here; comment on it to put it back in the running
+labels    mentaldesk/demo has no 'a-team:displaced' label, which the team uses to mark: displaced from Pitched once already; its later moves go unannounced"
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
 
 case_ "check reports every problem it finds, not just the first"
@@ -2455,7 +2457,7 @@ board_labels pitch a-team:dev a-team:idea a-team:skipped blocked
 NO_VISION=1 NO_FIELD=1 checked
 says 1 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
 project   no single-select field 'Status' on mentaldesk project 1
-labels    1 of 6 missing: a-team:displaced"
+labels    mentaldesk/demo has no 'a-team:displaced' label, which the team uses to mark: displaced from Pitched once already; its later moves go unannounced"
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
 
 case_ "check reports a config it can't read, or one with no repo or project, as problems"

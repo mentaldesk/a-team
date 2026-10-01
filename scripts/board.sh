@@ -1083,12 +1083,10 @@ case "$CMD" in
       if ! have=$(gh label list -R "$REPO" --limit 500 --json name --jq '.[].name' 2>&1); then
         note labels "can't list $REPO's labels: ${have#gh: }"
       else
-        missing=()
-        while IFS='|' read -r name _; do
-          grep -qxF -- "$name" <<<"$have" || missing+=("$name")
+        while IFS='|' read -r name _ meaning; do
+          grep -qxF -- "$name" <<<"$have" ||
+            note labels "$REPO has no '$name' label, which the team uses to mark: $(tr '[:upper:]' '[:lower:]' <<<"${meaning:0:1}")${meaning:1}"
         done <<<"$LABELS"
-        [ ${#missing[@]} -eq 0 ] ||
-          note labels "${#missing[@]} of $(grep -c '' <<<"$LABELS") missing: $(printf '%s, ' "${missing[@]}" | sed 's/, $//')"
       fi
     fi
     identity() {

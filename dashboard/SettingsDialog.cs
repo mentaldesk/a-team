@@ -63,6 +63,8 @@ public sealed class SettingsDialog : Dialog
     private readonly KeyList _keys;
     private readonly TeamConfigs _teams;
     private readonly TeamStart? _start;
+    private readonly IconSetting _icons;
+    private readonly IconStyle _auto;
     private readonly List<TeamRow> _teamRows;
     private readonly TeamList _teamList = new();
     private readonly Label _teamHeader = new();
@@ -87,6 +89,8 @@ public sealed class SettingsDialog : Dialog
         _commands = commands;
         _teams = teams;
         _start = start;
+        _icons = icons;
+        _auto = auto;
         _check = check ?? (start is null ? null : start.Check);
         _teamRows = [.. teams.Names().Select(teams.Row)];
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
@@ -154,7 +158,7 @@ public sealed class SettingsDialog : Dialog
         EditTeam = (team, settings, save) =>
             App is { } app
                 ? TeamForm.Show(app, team, settings, save, ListProjects, _health.GetValueOrDefault(team),
-                    () => Repaired(team))
+                    () => Repaired(team), Icons.Resolve(_icons.Current, _auto))
                 : null;
         CreateTeam = (again, create) =>
         {
