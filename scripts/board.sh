@@ -83,6 +83,15 @@ SINCE='def stamp: fromdateiso8601
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
   def since($at): if $at == "" then "" else " since \($at | stamp)" end;'
 
+# needs_answer: a pitch body's "Needs your answer" section, heading and all, or "" when nothing's in it.
+NEEDS='def needs_answer: (gsub("\r"; "") | split("\n")) as $lines
+    | ([range($lines | length) | select($lines[.] | test("^##[ \t]+Needs your answer[ \t]*$"; "i"))] | first) as $at
+    | if $at == null then "" else
+        ($lines[$at + 1:] | (map(test("^#{1,2}[ \t]|^---+[ \t]*$|<!-- a-team:")) | index(true)) as $end
+         | .[:($end // length)] | join("\n") | sub("^\\s+"; "") | sub("\\s+$"; "")) as $text
+        | if $text == "" or ($text | test("^none\\.?$"; "i")) then "" else "## Needs your answer\n\n\($text)" end
+      end;'
+
 # closes: the issues a Dev PR's body closes, for when GitHub hasn't linked them.
 CLOSES='def closes: if (.body // "") | contains("<!-- a-team:dev -->")
     then [.body | scan("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?[ \t]+#([0-9]+)\\b") | .[0] | tonumber]
@@ -425,7 +434,7 @@ pr_checks() {
 # an unanswered comment outranks them all: the answer is owed before a green build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --argjson stakeholders "$STAKEHOLDERS" \
-    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE"'
+    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE$NEEDS"'
     $items | map(
       . as $item
       | (if .status == "Pitched" then "lead" else "dev" end) as $role
@@ -434,6 +443,8 @@ turns() {
       | ($theirs | said("<!-- a-team:\($role) -->")) as $said
       | ($theirs | unanswered($said) | map(.at) | max // "") as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
+      | (if .status == "Pitched" and .pitch
+         then $theirs | map(select(.kind == "body")) | first | .body // "" | needs_answer else "" end) as $question
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
@@ -442,14 +453,16 @@ turns() {
          else null end) as $wrong
       | (if $pr == null then . else . + {pr: $pr.pr, prUrl: $pr.prUrl, checks: $pr.checks,
                                          conflicting: $pr.conflicting, draft: $pr.draft} end)
+      | (if $question == "" then . else . + {question: $question} end)
       | if $asked != ""
         then . + {turn: $role, reason: "answering your feedback\(since($asked))"}
         elif $wrong != null
         then . + {turn: $role, trouble: $wrong.trouble,
                   reason: "\($wrong.trouble)\(since($wrong.at))"}
         else (if $said != "" then $said else $opened end) as $waited
-             | (if .status == "Pitched" then "approval" else "acceptance" end) as $for
-             | . + {turn: "you", reason: "awaiting your \($for)\(since($waited))"}
+             | (if $question != "" then "asked you"
+                elif .status == "Pitched" then "awaiting your approval" else "awaiting your acceptance" end) as $why
+             | . + {turn: "you", reason: "\($why)\(since($waited))"}
         end)'
 }
 
