@@ -53,6 +53,20 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void A_pitch_the_Lead_needs_an_answer_on_waits_in_Questions_whatever_its_rank()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        WaitingItem Asking(int number, string priority) =>
+            new(number, "I wait on the team", "Pitched", $"https://github.com/x/{number}", "a-team", "you",
+                "asked you since 08:00", Priority: priority, Pitch: true, Question: "## Needs your answer\n\n1. Which?");
+
+        view.Show([.. Waiting, Asking(257, "High"), Asking(258, "")]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+    }
+
+    [Fact]
     public void The_columns_a_lane_shows_divide_its_width_between_them()
     {
         using var view = Open(["a-team", "tuicode"]);

@@ -45,6 +45,15 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void A_pitch_s_question_is_the_Lead_s()
+    {
+        var question = Item with { Pitch = true, Question = "## Needs your answer" };
+        using var dialog = new ReaderDialog(question, new IssueBody(question.Question), () => { });
+
+        Assert.Equal("#180  The dashboard tells me a pitch needs me · the Lead's question", dialog.Title);
+    }
+
+    [Fact]
     public void The_body_is_shown_character_for_character_fences_tables_and_all()
     {
         using var dialog = Open(Pitch);

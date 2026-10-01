@@ -32,7 +32,8 @@ sitting. Where the stakeholder has commented:
   priority, so you'll pitch it again once higher-priority ideas have had their turn, unless the
   stakeholder clears the priority.
 - Revise the pitch in the issue body (`gh issue edit <n> --body-file ...`). The issue's edit
-  history is the version history, so rewrite; don't append.
+  history is the version history, so rewrite; don't append. Move each question the stakeholder
+  answered from **Needs your answer** into **Assumed**, and remove the section once it's empty.
 - Reply with `a-team board {{team}} comment` summarising what changed. Answer any direct questions.
 - Otherwise leave it where it is. The stakeholder moves it on.
 - On a pitch in **Building**, feedback is usually about its tasks. Rewrite tasks still in Ready
@@ -47,9 +48,10 @@ sitting. Where the stakeholder has commented:
 
 For each item in `a-team board {{team}} mine lead Approved`, once step 1 has folded in any feedback:
 
-1. Settle every open question in the pitch. Use the stakeholder's answer where they gave one; where
-   they approved without answering, take your own recommendation. Move each one to a
-   **Decided** section in the pitch, saying which it was, so the stakeholder can see what was
+1. If **Needs your answer** still holds a question the stakeholder hasn't answered, ask it in a
+   comment and leave the pitch in Approved until they do; there's no recommendation to fall back
+   on. Otherwise move each item in **Assumed**, and each answer, to a **Decided** section in the
+   pitch, saying whether it was the stakeholder's or yours, so the stakeholder can see what was
    assumed.
 2. Split it into tasks, each of which ships an increment of user value. This is the rule that
    matters most in a breakdown:
@@ -82,8 +84,7 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    code; two unrelated behaviour changes that only brush a shared file run in parallel. Don't plan
    stacked branches.
 5. `a-team board {{team}} move lead <pitch> Building`, and comment on the pitch listing the tasks in the
-   order you expect them to land and any open questions you settled with your own
-   recommendation.
+   order you expect them to land and anything in **Assumed** you settled yourself.
 
 ### 3. Tend pitches in Building
 
@@ -115,9 +116,10 @@ which pitch displaced it, that it keeps its priority and comes back by itself on
 and that you won't comment on it moving again unless it changes. Post demote comments last thing
 in the run, and only for pitches still in Exploring by then.
 
-For a promote, `a-team board {{team}} move lead <n> Pitched`. A draft may have sat a while, so check it
-against the current vision, the code, and anything the stakeholder has said on other pitches since,
-and update it if needed. Comment if `announce` is true, or if you changed it, saying what changed;
+For a promote, first rewrite a draft that still has **Open questions** into **Assumed** and
+**Needs your answer** (see *Writing a pitch*), then `a-team board {{team}} move lead <n> Pitched`. A
+draft may have sat a while, so check it against the current vision, the code, and anything the
+stakeholder has said on other pitches since, and update it if needed. Comment if `announce` is true, or if you changed it, saying what changed;
 otherwise say nothing.
 
 **`turn`**:
@@ -172,7 +174,11 @@ The pitch lives in the issue body:
 - **Scope**: in / out.
 - **Rough breakdown**: the slices you'd expect, each one something a user would notice, so the
   stakeholder can judge size and order.
-- **Open questions**: what you'd like the stakeholder to decide.
+- **Assumed**: what you've decided yourself, each with its reasoning in a line. Approving accepts
+  these; the stakeholder comments to change one.
+- **Needs your answer**: only what you can't settle yourself: a change of direction, a trade-off
+  with no sensible default, or something only the stakeholder knows. Leave the heading out when
+  there's nothing to ask. A pitch with this section waits under Questions on the stakeholder's board.
 - Your marker.
 
 One good pitch beats three thin ones.

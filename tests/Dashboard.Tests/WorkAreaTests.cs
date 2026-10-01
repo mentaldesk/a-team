@@ -664,6 +664,33 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Enter_on_a_pitch_s_question_opens_the_reader_on_it_and_a_approves_the_pitch()
+    {
+        var calls = new List<string[]>();
+        IssueBody? shown = null;
+        using var window = Open(
+            read: _ => Task.FromResult(new Reading(PitchQuestion, null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            showBody: (_, body, _, approve) =>
+            {
+                shown = body;
+                approve!();
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal("Questions · team0", window.Work.Region);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+
+        Assert.Equal(new IssueBody("## Needs your answer\n\n1. Which?"), shown);
+        Assert.Equal(["board", "team0", "approve", "you", "257"], Assert.Single(calls));
+    }
+
+    [Fact]
     public void a_in_the_reader_approves_the_pitch_it_shows_and_the_card_leaves_with_no_re_read()
     {
         var calls = new List<string[]>();
@@ -1388,6 +1415,14 @@ public class WorkAreaTests : IDisposable
         [{"number": 192, "title": "I can reply to a pitch", "status": "Ready",
           "url": "https://github.com/mentaldesk/team0/issues/192", "team": "team0",
           "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"}]
+        """;
+
+    /// <summary>A pitch the Lead needs an answer on, and nothing else.</summary>
+    private const string PitchQuestion =
+        """
+        [{"number": 257, "title": "I wait on the team", "status": "Pitched", "pitch": true,
+          "url": "https://github.com/mentaldesk/team0/issues/257", "team": "team0", "priority": "High",
+          "turn": "you", "reason": "asked you since 08:00", "question": "## Needs your answer\n\n1. Which?"}]
         """;
 
     private const string Body = """{"number": 6, "title": "t", "body": "## Opportunity"}""";

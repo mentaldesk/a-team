@@ -187,12 +187,12 @@ next time; a first run lands on Work.
 A swimlane per team, and four columns in each, left to right in the order work moves through
 them: **Triage** (the Ideas and pitches with no Priority set, which never get pitched or approved
 until you give them one), **Pitches** (waiting for you to approve), **Questions** (tasks the Dev
-handed back to ask you something) and **Review** (waiting for you to merge or accept), each headed
+handed back to ask you something, and pitches the Lead can't go ahead with until you answer) and **Review** (waiting for you to merge or accept), each headed
 by its count of items. A column with nothing in it is hidden, and the one you're on takes half its
 lane. A card's issue number is coloured by the
 item's Priority, in the colours GitHub gives that field's own options, and the PR that closes it
 hangs under it as a row of its own — `PR #149  The session log reads…`. Enter shows the issue's
-body as written, without leaving the app, or on a question the Dev's question; `g` opens whichever row you're on in your browser: the
+body as written, without leaving the app, or on a question just the question; `g` opens whichever row you're on in your browser: the
 issue on the card, the PR on the row under it. Reading a pitch that's waiting on you, `a` approves
 it: no confirmation, and the card leaves the column with nothing re-read. Reading every team's
 gates takes a moment, so a van drives across the empty area, framed off from the rest, until the
