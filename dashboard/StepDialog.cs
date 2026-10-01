@@ -11,6 +11,7 @@ public sealed class StepDialog : Dialog
     private const string NoHint = "no";
     private const string ContinueHint = "continue";
     private const string ChooseHint = "choose";
+    private const string BackHint = "back";
     private const int Inset = 1;
     private const int OutputLines = 8;
 
@@ -99,18 +100,22 @@ public sealed class StepDialog : Dialog
 
     internal MessageBar Message => _message;
 
-    /// <summary>Asks the step, and returns whether it was done, or null where it was cancelled.</summary>
-    public static bool? Show(IApplication app, Step step)
+    /// <summary>Whether Backspace left it, for the step before.</summary>
+    internal bool WentBack { get; private set; }
+
+    /// <summary>Asks the step, and returns how it was left.</summary>
+    public static Answer Show(IApplication app, Step step)
     {
         using var dialog = new StepDialog(step);
         app.Run(dialog);
-        return dialog.Cancelled ? null : dialog.Done;
+        return dialog.WentBack ? Answer.Back : dialog.Cancelled ? Answer.Cancelled : dialog.Done ? Answer.Done : Answer.Skipped;
     }
 
     /// <summary>Enter reaches a Dialog as Accept, and never as a key.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => Yes();
 
-    protected override bool OnKeyDown(Key key) => key == Key.Esc ? No() : base.OnKeyDown(key);
+    protected override bool OnKeyDown(Key key) =>
+        key == Key.Esc ? No() : key == Key.Backspace ? Back() : base.OnKeyDown(key);
 
     internal bool Yes()
     {
@@ -143,6 +148,14 @@ public sealed class StepDialog : Dialog
         if (_running)
             return true;
         Cancelled = _choice is not null;
+        return Close();
+    }
+
+    internal bool Back()
+    {
+        if (_running)
+            return true;
+        WentBack = true;
         return Close();
     }
 
@@ -208,18 +221,29 @@ public sealed class StepDialog : Dialog
         List<HintedCommand> hints = [];
         if (_choice is not null)
         {
-            _hints.Show("", [new HintedCommand(ChooseHint, "Enter choose"), new HintedCommand(NoHint, "Esc cancel new team")],
-                hint => hint == ChooseHint ? Yes() : No());
+            _hints.Show("",
+                [new HintedCommand(ChooseHint, "Enter choose"), new HintedCommand(NoHint, "Esc cancel new team"), new HintedCommand(BackHint, "Backspace back")],
+                Answered);
             Refresh();
             return;
         }
         if (yes == true)
             hints.Add(new HintedCommand(YesHint, $"Enter {_step.Yes}"));
         if (yes is not null)
+        {
             hints.Add(new HintedCommand(NoHint, $"Esc {_step.No}"));
-        _hints.Show("", hints, hint => hint == YesHint ? Yes() : No());
+            hints.Add(new HintedCommand(BackHint, "Backspace back"));
+        }
+        _hints.Show("", hints, Answered);
         Refresh();
     }
+
+    private bool Answered(string hint) => hint switch
+    {
+        YesHint or ChooseHint => Yes(),
+        BackHint => Back(),
+        _ => No(),
+    };
 
     private void OnUi(Action action)
     {

@@ -92,6 +92,22 @@ public sealed class TeamConfigs
 
     public void Delete(string team) => File.Delete(PathOf(team));
 
+    /// <summary>Writes the form's values over a new team's file as it is now, keeping what its steps saved there,
+    /// under <paramref name="name"/> where it was renamed. Its checkout follows the workdir.</summary>
+    public void Redo(string team, string name, TeamSettings settings)
+    {
+        var config = settings.Write(File.ReadAllBytes(PathOf(team)), Settings(team));
+        config = ConfigEdit.Set(config, ["checkout"], (settings with { Checkout = null }).CheckoutPath);
+        if (name == team)
+        {
+            File.WriteAllBytes(PathOf(team), config);
+            return;
+        }
+        using (var file = new FileStream(PathOf(name), FileMode.CreateNew, FileAccess.Write))
+            file.Write(config);
+        Delete(team);
+    }
+
     /// <summary>The team whose file names a GitHub App for a repo under <paramref name="owner"/>, if any.</summary>
     public string? WithApp(string owner, string except = "") =>
         Names().FirstOrDefault(team => team != except && AppOwner(team) == owner);

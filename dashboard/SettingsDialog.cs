@@ -142,7 +142,7 @@ public sealed class SettingsDialog : Dialog
         _teamList.New = () => NewTeam();
         EditTeam = (team, settings, save) =>
             App is { } app ? TeamForm.Show(app, team, settings, save, ListProjects) : null;
-        CreateTeam = create =>
+        CreateTeam = (again, create) =>
         {
             if (App is not { } app || _start is null)
                 return null;
@@ -150,11 +150,14 @@ public sealed class SettingsDialog : Dialog
             var directory = _teams.TeamsDirectory.StartsWith(home, StringComparison.Ordinal)
                 ? $"~{_teams.TeamsDirectory[home.Length..]}"
                 : _teams.TeamsDirectory;
-            return TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Projects, _start.Me());
+            return again is null
+                ? TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Projects, _start.Me())
+                : TeamForm.ShowNew(app, _teams.Settings(again), [.. _teams.Names().Where(name => name != again)], directory, create,
+                    _start.Projects, Task.FromResult(""), again);
         };
         FollowTeam = team => App is { } app && _start is not null
             ? _start.Follow(_teams, team, step => StepDialog.Show(app, step))
-            : null;
+            : (string.Empty, Schemes.Base);
         _teamList.ValueChanged += (_, _) => ShowTeam();
 
         _pages =
@@ -219,11 +222,12 @@ public sealed class SettingsDialog : Dialog
     /// <summary>Opens the team form and returns what it saved, or null where it was cancelled.</summary>
     internal Func<string, TeamSettings, Func<TeamSettings, string?>, TeamSettings?> EditTeam { get; set; }
 
-    /// <summary>Opens the new team form over <c>create</c>, and returns the name it created, or null where it was
-    /// cancelled.</summary>
-    internal Func<Func<string, TeamSettings, string?>, string?> CreateTeam { get; set; }
+    /// <summary>Opens the new team form over <c>create</c>, filled in from the team named where Back returned to it, and
+    /// returns the name it created, or null where it was cancelled.</summary>
+    internal Func<string?, Func<string, TeamSettings, string?>, string?> CreateTeam { get; set; }
 
-    /// <summary>Takes a team just created through the steps to its first run, and returns the line to leave.</summary>
+    /// <summary>Takes a team just created through the steps to its first run, and returns the line to leave, or null
+    /// where Back went past the first step.</summary>
     internal Func<string, (string Message, Schemes Scheme)?> FollowTeam { get; set; }
 
     /// <summary>Enter reaches a Dialog as Accept, from any of its lists alike, and never as a key.
@@ -413,16 +417,31 @@ public sealed class SettingsDialog : Dialog
     /// <summary>Opens the form for a new team, then offers what it needs to get to work, and leaves it selected.</summary>
     internal bool NewTeam()
     {
-        if (CreateTeam(CreateTeamFile) is not { } team)
+        if (CreateTeam(null, CreateTeamFile) is not { } team)
             return true;
-        ReadTeams(team);
-        if (FollowTeam(team) is { } said)
+        while (true)
         {
             ReadTeams(team);
-            Say(said.Message, said.Scheme);
+            if (FollowTeam(team) is { } said)
+            {
+                ReadTeams(team);
+                Say(said.Message, said.Scheme);
+                return true;
+            }
+            var was = team;
+            if (CreateTeam(was, (name, settings) => RedoTeamFile(was, name, settings)) is not { } redone)
+            {
+                _teams.Delete(was);
+                ReadTeams(was);
+                Say($"{was} is cancelled. Its clone, App and project are still there.", Schemes.Base);
+                return true;
+            }
+            team = redone;
         }
-        return true;
     }
+
+    private string? RedoTeamFile(string team, string name, TeamSettings settings) =>
+        _start is { } start ? start.Redo(_teams, team, name, settings) : "There's no a-team install here to start a team from.";
 
     private string? CreateTeamFile(string team, TeamSettings settings) =>
         _start is { } start ? start.Create(_teams, team, settings) : "There's no a-team install here to start a team from.";
@@ -433,7 +452,8 @@ public sealed class SettingsDialog : Dialog
         _teamRows.AddRange(_teams.Names().Select(_teams.Row));
         _teamList.Value = null;
         ShowTeams();
-        _teamList.Value = Math.Max(0, _teamRows.FindIndex(row => row.Name == selected));
+        if (_teamRows.Count > 0)
+            _teamList.Value = Math.Max(0, _teamRows.FindIndex(row => row.Name == selected));
         _teamList.SetFocus();
         ShowTeam();
     }

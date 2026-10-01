@@ -78,14 +78,16 @@ public sealed class TeamForm : Dialog
     {
     }
 
-    /// <summary>A form for a team that isn't there yet: a Name field first, and no Status, since it starts
-    /// paused. <paramref name="create"/> writes the team named, and says why it couldn't.</summary>
+    /// <summary>A form for a team that isn't there yet: a Name field first, holding <paramref name="name"/>, and no
+    /// Status, since it starts paused. <paramref name="create"/> writes the team named, and says why it couldn't.</summary>
     public static TeamForm New(
-        TeamSettings settings, IReadOnlyCollection<string> taken, string teamsDirectory, Func<string, TeamSettings, string?> create) =>
-        new(null, settings, create, taken, teamsDirectory);
+        TeamSettings settings, IReadOnlyCollection<string> taken, string teamsDirectory, Func<string, TeamSettings, string?> create,
+        string name = "") =>
+        new(null, settings, create, taken, teamsDirectory, name);
 
     private TeamForm(
-        string? team, TeamSettings settings, Func<string, TeamSettings, string?> save, IReadOnlyCollection<string> taken, string teamsDirectory)
+        string? team, TeamSettings settings, Func<string, TeamSettings, string?> save, IReadOnlyCollection<string> taken, string teamsDirectory,
+        string name = "")
     {
         _before = settings;
         _save = save;
@@ -107,13 +109,13 @@ public sealed class TeamForm : Dialog
         var row = 0;
         if (team is null)
         {
-            _name = Field("Name", "", row++, NameCaption);
+            _name = Field("Name", name, row++, NameCaption);
             _name.HasFocusChanged += (_, _) =>
             {
                 if (_name.HasFocus)
                     Say(Becomes(), Schemes.Base);
             };
-            var named = "";
+            var named = name;
             _name.TextChanged += (_, _) =>
             {
                 var name = _name.Text.Trim();
@@ -338,9 +340,9 @@ public sealed class TeamForm : Dialog
     /// cancelled.</summary>
     public static string? ShowNew(
         IApplication app, TeamSettings settings, IReadOnlyCollection<string> taken, string teamsDirectory,
-        Func<string, TeamSettings, string?> create, Func<string, Task<Reading>> projects, Task<string> me)
+        Func<string, TeamSettings, string?> create, Func<string, Task<Reading>> projects, Task<string> me, string name = "")
     {
-        using var form = New(settings, taken, teamsDirectory, create);
+        using var form = New(settings, taken, teamsDirectory, create, name);
         me.ContinueWith(read =>
         {
             if (read.Status == TaskStatus.RanToCompletion)

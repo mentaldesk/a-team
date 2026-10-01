@@ -133,7 +133,7 @@ public class TeamStartTests : IDisposable
         var said = start.Follow(_teams, "fretty", step =>
         {
             asked.Add(step.Title);
-            return step.Title == "Get to work?";
+            return step.Title == "Get to work?" ? Answer.Done : Answer.Skipped;
         });
 
         Assert.Equal(["Clone mentaldesk/fretty?", "Give fretty a GitHub App?", "Set up fretty's board?"], asked);
@@ -151,7 +151,7 @@ public class TeamStartTests : IDisposable
         Start().Follow(_teams, "fretty", step =>
         {
             asked.Add(step.Title);
-            return false;
+            return Answer.Skipped;
         });
 
         Assert.Equal(["Set up fretty's board?", "Get to work?"], asked);
@@ -167,7 +167,7 @@ public class TeamStartTests : IDisposable
         Start().Follow(_teams, "fretty", step =>
         {
             offered ??= step;
-            return false;
+            return Answer.Skipped;
         });
 
         Assert.Equal("Use mentaldesk's GitHub App for fretty?", offered?.Title);
@@ -183,7 +183,7 @@ public class TeamStartTests : IDisposable
         Start().Follow(_teams, "fretty", step =>
         {
             setup ??= step;
-            return false;
+            return Answer.Skipped;
         });
 
         var (lines, failure) = await setup!.Load!();
@@ -200,11 +200,11 @@ public class TeamStartTests : IDisposable
     {
         Team("fretty", app: true, checkout: true);
 
-        var notYet = Start().Follow(_teams, "fretty", _ => false);
+        var notYet = Start().Follow(_teams, "fretty", _ => Answer.Skipped);
         Assert.True(_teams.IsPaused("fretty"));
         Assert.Equal(("fretty is paused. Press p when you want it to start.", Schemes.Base), notYet);
 
-        var working = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?");
+        var working = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?" ? Answer.Done : Answer.Skipped);
         Assert.False(_teams.IsPaused("fretty"));
         Assert.Equal(("fretty is working.", Schemes.Base), working);
     }
@@ -214,7 +214,7 @@ public class TeamStartTests : IDisposable
     {
         Team("fretty", app: true, checkout: true);
 
-        var said = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?" ? null : false);
+        var said = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?" ? Answer.Cancelled : Answer.Skipped);
 
         Assert.DoesNotContain("fretty", _teams.Names());
         Assert.Equal(("fretty is cancelled. Its clone, App and project are still there.", Schemes.Base), said);
@@ -229,7 +229,7 @@ public class TeamStartTests : IDisposable
         Start(dispatcher: false).Follow(_teams, "fretty", step =>
         {
             asked = step;
-            return false;
+            return Answer.Skipped;
         });
 
         Assert.Equal("Get to work?", asked?.Title);
@@ -244,7 +244,7 @@ public class TeamStartTests : IDisposable
         Start().Follow(_teams, "fretty", step =>
         {
             clone ??= step;
-            return false;
+            return Answer.Skipped;
         });
 
         Assert.Equal(["~/code/fretty/main isn't there, so the agents would have nothing to work in.", "gh repo clone mentaldesk/fretty ~/code/fretty/main"], clone!.Lines);
@@ -258,7 +258,7 @@ public class TeamStartTests : IDisposable
     {
         Team("fretty", app: true);
 
-        var said = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?");
+        var said = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?" ? Answer.Done : Answer.Skipped);
 
         Assert.Equal(("~/code/fretty/main isn't there, so the agents would have nothing to work in.", Schemes.Accent), said);
     }
@@ -272,7 +272,7 @@ public class TeamStartTests : IDisposable
         var said = Start().Follow(_teams, "fretty", step =>
         {
             asked.Add(step.Title);
-            return false;
+            return Answer.Skipped;
         });
 
         Assert.Equal(["Create a project for fretty?"], asked);
@@ -288,7 +288,7 @@ public class TeamStartTests : IDisposable
         Start().Follow(_teams, "fretty", step =>
         {
             create ??= step;
-            return false;
+            return Answer.Skipped;
         });
 
         Assert.Equal("gh project create --owner mentaldesk --title fretty", create!.Lines[1]);
@@ -304,6 +304,73 @@ public class TeamStartTests : IDisposable
             Ran());
     }
 
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void Back_returns_to_the_step_before_and_past_the_first_to_the_form()
+    {
+        Team("fretty", app: false);
+        List<string> asked = [];
+        var answers = new Queue<Answer>([Answer.Skipped, Answer.Back, Answer.Back]);
+
+        var said = Start().Follow(_teams, "fretty", step =>
+        {
+            asked.Add(step.Title);
+            return answers.Dequeue();
+        });
+
+        Assert.Null(said);
+        Assert.Equal(["Clone mentaldesk/fretty?", "Give fretty a GitHub App?", "Clone mentaldesk/fretty?"], asked);
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void Back_passes_over_a_step_that_s_been_done_since()
+    {
+        Team("fretty", app: false);
+        List<string> asked = [];
+
+        var said = Start().Follow(_teams, "fretty", step =>
+        {
+            asked.Add(step.Title);
+            if (asked.Count > 1)
+                return Answer.Back;
+            Directory.CreateDirectory(Path.Combine(_root, "home", "code", "fretty", "main"));
+            return Answer.Done;
+        });
+
+        Assert.Null(said);
+        Assert.Equal(["Clone mentaldesk/fretty?", "Give fretty a GitHub App?"], asked);
+    }
+
+    [Fact]
+    public void Redoing_a_new_team_keeps_what_its_steps_saved_and_moves_its_checkout_with_its_workdir()
+    {
+        Team("fretty", app: true);
+        var settings = _teams.Settings("fretty") with { Workdir = "~/code/fret" };
+
+        _teams.Redo("fretty", "fret", settings);
+
+        Assert.Equal(["fret"], _teams.Names());
+        Assert.True(_teams.HasApp("fret"));
+        Assert.Equal(("~/code/fret", "~/code/fret/main", (int?)7), (_teams.Settings("fret").Workdir, _teams.Settings("fret").CheckoutPath, _teams.Settings("fret").ProjectNumber));
+    }
+
+    [Fact]
+    public void Backspace_goes_back_without_running_the_step()
+    {
+        var ran = false;
+        var step = new Step("Clone?", ["line"], "clone", "skip", _ =>
+        {
+            ran = true;
+            return Task.FromResult<string?>(null);
+        });
+
+        using var dialog = new StepDialog(step);
+        dialog.NewKeyDownEvent(Key.Backspace);
+
+        Assert.True(dialog.WentBack);
+        Assert.False(dialog.Done);
+        Assert.False(ran);
+    }
+
     [Fact]
     public void A_step_s_work_runs_on_Enter_and_a_skip_runs_nothing()
     {
@@ -316,7 +383,7 @@ public class TeamStartTests : IDisposable
         }, ShowOutput: true);
 
         using var skipped = new StepDialog(step);
-        Assert.Equal("Enter clone · Esc skip", skipped.Hints.Says);
+        Assert.Equal("Enter clone · Esc skip · Backspace back", skipped.Hints.Says);
         skipped.NewKeyDownEvent(Key.Esc);
         Assert.False(skipped.Done);
         Assert.Equal(0, ran);
@@ -336,7 +403,7 @@ public class TeamStartTests : IDisposable
 
         using var yes = new StepDialog(step);
         Assert.Equal(["Get to work", "Keep the team paused for now"], yes.Choice!.Labels);
-        Assert.Equal("Enter choose · Esc cancel new team", yes.Hints.Says);
+        Assert.Equal("Enter choose · Esc cancel new team · Backspace back", yes.Hints.Says);
         yes.Yes();
         Assert.True(yes.Done);
 
@@ -361,7 +428,7 @@ public class TeamStartTests : IDisposable
 
         Assert.False(dialog.Done);
         Assert.Equal("fatal: repository not found", dialog.Message.Says);
-        Assert.Equal("Enter clone · Esc skip", dialog.Hints.Says);
+        Assert.Equal("Enter clone · Esc skip · Backspace back", dialog.Hints.Says);
     }
 
     [Fact]
@@ -378,7 +445,7 @@ public class TeamStartTests : IDisposable
         dialog.Yes();
 
         Assert.False(ran);
-        Assert.Equal("Esc skip", dialog.Hints.Says);
+        Assert.Equal("Esc skip · Backspace back", dialog.Hints.Says);
         Assert.Equal("Can't set up fretty's board: no field", dialog.Message.Says);
     }
 

@@ -791,7 +791,7 @@ public class SettingsDialogTests : IDisposable
     {
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
         using var dialog = Open(out _, out _, page: "Teams");
-        dialog.CreateTeam = create =>
+        dialog.CreateTeam = (_, create) =>
         {
             WriteTeam("fretty", """{"repo": "mentaldesk/fretty"}""");
             return "fretty";
@@ -817,7 +817,7 @@ public class SettingsDialogTests : IDisposable
     {
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha"}""");
         using var dialog = Open(out _, out _, page: "Teams");
-        dialog.CreateTeam = _ => null;
+        dialog.CreateTeam = (_, _) => null;
         var followed = false;
         dialog.FollowTeam = _ =>
         {
@@ -829,6 +829,46 @@ public class SettingsDialogTests : IDisposable
 
         Assert.False(followed);
         Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
+    }
+
+    [Fact]
+    public void Back_past_the_first_step_reopens_the_form_on_the_team_and_follows_it_again()
+    {
+        using var dialog = Open(out _, out _, page: "Teams");
+        List<string?> opened = [];
+        dialog.CreateTeam = (again, create) =>
+        {
+            opened.Add(again);
+            if (again is null)
+                WriteTeam("fretty", """{"repo": "mentaldesk/fretty"}""");
+            return "fretty";
+        };
+        var follows = 0;
+        dialog.FollowTeam = team => ++follows == 1 ? null : ($"{team} is working.", Terminal.Gui.Drawing.Schemes.Base);
+
+        dialog.NewTeam();
+
+        Assert.Equal([null, "fretty"], opened);
+        Assert.Equal("fretty is working.", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Cancelling_the_form_Back_reopened_cancels_the_new_team()
+    {
+        using var dialog = Open(out _, out _, page: "Teams");
+        dialog.CreateTeam = (again, create) =>
+        {
+            if (again is not null)
+                return null;
+            WriteTeam("fretty", """{"repo": "mentaldesk/fretty"}""");
+            return "fretty";
+        };
+        dialog.FollowTeam = _ => null;
+
+        dialog.NewTeam();
+
+        Assert.Empty(TeamRows(dialog));
+        Assert.Equal("fretty is cancelled. Its clone, App and project are still there.", dialog.Message.Says);
     }
 
     private void WriteTeam(string team, string config)
