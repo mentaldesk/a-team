@@ -1900,6 +1900,16 @@ A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/status.sh" >"$OUT"
 grep -q '^demo: stopped' "$OUT" && fail "installed: demo still shows as stopped"
 rm "$CONFIG/teams/bare.json"
 
+case_ "a team moved aside to <name>.json.removed is neither listed nor dispatched"
+jq '.dispatch.hold = []' "$TEAM" >"$CONFIG/teams/gone.json.removed"
+: >"$A_TEAM_STATE/dispatch.log"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q 'gone' "$A_TEAM_STATE/dispatch.log" && fail "removed: gone was dispatched"
+run teams
+grep -q 'gone' "$OUT" && fail "removed: teams lists '$(cat "$OUT")'"
+grep -q '^demo ' "$OUT" || fail "removed: teams dropped demo: '$(cat "$OUT")'"
+rm "$CONFIG/teams/gone.json.removed"
+
 case_ "resume <team> <role> lets it go and leaves dispatch.enabled alone"
 jq '.dispatch.enabled = false' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 run resume demo dev

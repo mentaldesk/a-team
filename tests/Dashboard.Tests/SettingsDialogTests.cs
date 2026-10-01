@@ -648,13 +648,13 @@ public class SettingsDialogTests : IDisposable
     {
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
         using var dialog = Open(out _, out _, page: "Teams");
-        Assert.Equal(["p pause · Enter edit", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p pause · Enter edit · x remove", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
 
         Assert.True(dialog.Teams.NewKeyDownEvent(new Key('p')));
 
         Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
         Assert.True(new TeamConfigs(_configRoot).IsPaused("alpha"));
-        Assert.Equal(["p resume · Enter edit", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p resume · Enter edit · x remove", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
 
         Hint(dialog, "p resume").InvokeCommand(Command.Accept);
 
@@ -784,6 +784,60 @@ public class SettingsDialogTests : IDisposable
         Hint(dialog, "Enter edit").InvokeCommand(Command.Accept);
 
         Assert.True(opened);
+    }
+
+    [Fact]
+    public void X_asks_first_and_Esc_leaves_the_team_as_it_was()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        (string, string, string)? asked = null;
+        dialog.ConfirmRemove = (team, repo, kept) =>
+        {
+            asked = (team, repo, kept);
+            return false;
+        };
+
+        Assert.True(dialog.Teams.NewKeyDownEvent(new Key('x')));
+
+        Assert.Equal(("alpha", "mentaldesk/alpha", "alpha.json.removed"), asked);
+        Assert.True(File.Exists(Path.Combine(_configRoot, "teams", "alpha.json")));
+        Assert.Equal(["alpha  mentaldesk/alpha  working"], TeamRows(dialog));
+        Assert.Empty(dialog.RemovedTeams);
+    }
+
+    [Fact]
+    public void Removing_a_team_takes_it_off_the_page_and_keeps_its_file_as_removed()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha"}""");
+        WriteTeam("beta", """{"repo": "mentaldesk/beta"}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        dialog.ConfirmRemove = (_, _, _) => true;
+        dialog.Teams.Value = 1;
+
+        Hint(dialog, "x remove").InvokeCommand(Command.Accept);
+
+        Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
+        Assert.Equal(0, dialog.Teams.Value);
+        Assert.Equal(["beta"], dialog.RemovedTeams);
+        Assert.True(File.Exists(Path.Combine(_configRoot, "teams", "beta.json.removed")));
+        Assert.Equal("Removed beta. Rename beta.json.removed back to beta.json to bring it back.", dialog.Message.Says);
+        Assert.False(dialog.Confirmed);
+    }
+
+    [Fact]
+    public void Removing_the_last_team_leaves_an_empty_list_with_no_team_hints()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams");
+        dialog.ConfirmRemove = (_, _, _) => true;
+        Assert.Equal(["p pause · Enter edit · x remove", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+
+        dialog.Teams.NewKeyDownEvent(new Key('x'));
+
+        Assert.Empty(TeamRows(dialog));
+        Assert.Null(dialog.Teams.Value);
+        Assert.Equal(["Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
     }
 
     private void WriteTeam(string team, string config)

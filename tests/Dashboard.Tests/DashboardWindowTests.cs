@@ -152,6 +152,20 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void Forgetting_a_removed_team_takes_its_agents_off_the_grid_and_its_lane_out_of_the_Work_area()
+    {
+        using var window = Open(agents: Agents(6));
+        LayOut(window, 120, 30);
+
+        window.Forget(["team0"]);
+        var cells = LayOut(window, 120, 30);
+
+        Assert.Equal(["team1", "team1", "team2", "team2"], window.Panes.Select(pane => pane.Team));
+        Assert.Equal(["team1", "team2"], window.Work.Lanes.Select(lane => lane.Team));
+        AssertTiles(AgentArea(window), cells);
+    }
+
+    [Fact]
     public void Two_teams_at_120_by_30_give_each_agent_a_readable_width()
     {
         using var window = Open(agents: Agents(4));

@@ -29,13 +29,8 @@ public sealed class WorkView : View
         VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
         foreach (var team in teams)
         {
-            var index = _lanes.Count;
-            var lane = new WorkLane(team, FocusMoved)
-            {
-                X = 0,
-                Y = Pos.Func(_ => Top(index), this),
-                Width = Dim.Fill(),
-            };
+            var lane = new WorkLane(team, FocusMoved) { X = 0, Width = Dim.Fill() };
+            lane.Y = Pos.Func(_ => Top(_lanes.IndexOf(lane)), this);
             _lanes.Add(lane);
             Add(lane);
         }
@@ -77,6 +72,21 @@ public sealed class WorkView : View
     public void Show(IReadOnlyList<WaitingItem> items)
     {
         _items = items;
+        Lay();
+    }
+
+    /// <summary>Drops the lanes and the cards of teams that have been removed.</summary>
+    public void Forget(IReadOnlyList<string> teams)
+    {
+        foreach (var lane in _lanes.Where(lane => teams.Contains(lane.Team)).ToList())
+        {
+            if (_lastFocused is not null && lane.Columns.Contains(_lastFocused))
+                _lastFocused = null;
+            _lanes.Remove(lane);
+            Remove(lane);
+            lane.Dispose();
+        }
+        _items = [.. _items.Where(item => !teams.Contains(item.Team))];
         Lay();
     }
 
