@@ -13,6 +13,8 @@ I authorise you to do all of the following without asking me:
   branches other than the default branch to {{repo}}.
 - Open draft PRs on {{repo}}, mark your own PRs ready for review once CI is green, and comment
   on issues and PRs there.
+- Clear `blocked` on a task you handed back, once I've replied to your question, with
+  `a-team board {{team}} unblock dev <n>`. Never remove that label any other way.
 - Once GitHub reports one of your PRs as merged, remove its worktree and local branch with the
   `wrap-up` skill, including any untracked leftover files in that worktree.
 

@@ -454,7 +454,8 @@ turns() {
 }
 
 # questions <items> <comments> <blocked>: the Ready tasks the Dev handed back with a question, the
-# Dev's turn once a stakeholder replies. The Dev asks just before labelling `blocked`, hence ASKED_BEFORE.
+# Dev's turn once a stakeholder replies, and `unread` the newest reply no run has left a 👀 on.
+# The Dev asks just before labelling `blocked`, hence ASKED_BEFORE.
 ASKED_BEFORE=600
 questions() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" --argjson stakeholders "$STAKEHOLDERS" \
@@ -469,8 +470,10 @@ questions() {
          | max_by(.at)) as $asked
       | select($asked != null)
       | ($theirs | map(select(.kind != "body" and (.author | IN($stakeholders[])) and (team("<!-- a-team:") | not)
-                               and .at > $asked.at) | .at) | max // "") as $replied
-      | . + {question: ($asked.body | sub("\\s*<!-- a-team:dev -->\\s*$"; ""))}
+                               and .at > $asked.at))) as $replies
+      | ($replies | map(.at) | max // "") as $replied
+      | . + {question: ($asked.body | sub("\\s*<!-- a-team:dev -->\\s*$"; "")),
+             unread: ($replies | map(select((.eyes // 0) == 0) | .at) | max // "")}
       | if $replied != ""
         then . + {turn: "dev", reason: "reading your answer\(since($replied))"}
         else . + {turn: "you", reason: "asked you\(since($asked.at))"} end)'
@@ -549,6 +552,8 @@ BLOCKED='((.labels | index("blocked")) or .blockedBy > 0)'
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
 STARTABLE="$READY_TASK and ($BLOCKED | not)"
 UNSTARTABLE="$READY_TASK and $BLOCKED"
+# Ready tasks labelled `blocked`: handed back with a question, or held by a stakeholder.
+HELD="$READY_TASK and (.labels | index(\"blocked\"))"
 # The Dev's tasks that take up one of wip.worktrees.
 WORKING='(.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
@@ -833,6 +838,23 @@ case "$CMD" in
     say "#$child is no longer a sub-issue of #$parent"
     ;;
 
+  unblock)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM unblock <role> <n>"
+    role=$1 n=$2
+    check_role "$role"
+    [ "$role" = dev ] || die "only dev may unblock a task, and only one it handed back with a question"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a Ready task labelled blocked"
+    talk=$(gated_talk "[$it]")
+    turn=$(questions "[$it]" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" | jq -r '.[0].turn // empty')
+    [ -n "$turn" ] || die "#$n has no question from dev: a stakeholder is holding it, so leave it to them"
+    [ "$turn" = dev ] || die "no stakeholder has replied to dev's question on #$n since it was handed back"
+    write "remove blocked from #$n" gh issue edit "$n" -R "$REPO" --remove-label blocked >/dev/null
+    ack "$n"
+    say "#$n: no longer blocked"
+    ;;
+
   body)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM body <n>"
     # gh puts the error's own body on stdout, so its one-line reason is read from stderr alone.
@@ -855,12 +877,12 @@ case "$CMD" in
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)})' <<<"$all")
-    held=$(jq --arg team "$TEAM" "map(select($READY_TASK and (.labels | index(\"blocked\")))
+    held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
     talk=$(gated_talk "$(jq -s add <<<"$gated$held")")
     said=$(gated_comments "$talk")
     turns "$gated" "$said" "$(pr_checks "$(gated_prs "$talk")")" |
-      jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")")" \
+      jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
         --argjson unranked "$(unranked_ideas "$all")" '. + $asked + $unranked'
     ;;
 
@@ -916,6 +938,15 @@ case "$CMD" in
           [ -n "$at" ] && reasons+=("stakeholder feedback on #$x ($at)")
         done
       done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
+
+      held=$(jq -c "map(select($HELD))" <<<"$all")
+      if [ "$held" != "[]" ]; then
+        talk=$(gated_talk "$held")
+        while IFS=$'\t' read -r n at; do
+          reasons+=("stakeholder answered the Dev's question on #$n ($at)")
+        done < <(questions "$held" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" |
+          jq -r '.[] | select(.unread != "") | [.number, .unread] | @tsv')
+      fi
 
       checkout=$(cfg .checkout)
       checkout=${checkout/#\~/$HOME}

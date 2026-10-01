@@ -24,6 +24,7 @@ public sealed class SettingsDialog : Dialog
     private const string ResumeHint = "p resume";
     private const string EditHint = "Enter edit";
     private const string NewHint = "n new";
+    private const string RemoveTeamHint = "x remove";
     private const string Working = "working";
     private const string Paused = "paused";
     private const string Unreadable = "can't read this file";
@@ -64,6 +65,7 @@ public sealed class SettingsDialog : Dialog
     private readonly List<TeamRow> _teamRows;
     private readonly TeamList _teamList = new();
     private readonly MessageBar _message = new();
+    private readonly List<string> _removed = [];
     private bool _capturing;
 
     public SettingsDialog(
@@ -140,6 +142,7 @@ public sealed class SettingsDialog : Dialog
 
         _teamList.Pause = TogglePause;
         _teamList.New = () => NewTeam();
+        _teamList.Drop = RemoveTeam;
         EditTeam = (team, settings, save) =>
             App is { } app ? TeamForm.Show(app, team, settings, save, ListProjects) : null;
         CreateTeam = (again, create) =>
@@ -158,6 +161,7 @@ public sealed class SettingsDialog : Dialog
         FollowTeam = team => App is { } app && _start is not null
             ? _start.Follow(_teams, team, step => StepDialog.Show(app, step))
             : (string.Empty, Schemes.Base);
+        ConfirmRemove = (team, repo, kept) => App is { } app && RemoveTeamDialog.Show(app, team, repo, kept);
         _teamList.ValueChanged += (_, _) => ShowTeam();
 
         _pages =
@@ -165,7 +169,9 @@ public sealed class SettingsDialog : Dialog
             new Page("Theme", [new Placed(themes)], () => []),
             new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint]),
             new Page("Dashboard", DashboardRows(), () => []),
-            new Page(TeamsPage, [new Placed(_teamList)], () => [SelectedTeam() is { Paused: false } ? PauseHint : ResumeHint, EditHint, NewHint]),
+            new Page(TeamsPage, [new Placed(_teamList)], () => SelectedTeam() is { } team
+                ? [team.Paused ? ResumeHint : PauseHint, EditHint, RemoveTeamHint, NewHint]
+                : [NewHint]),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -230,6 +236,12 @@ public sealed class SettingsDialog : Dialog
     /// where Back went past the first step.</summary>
     internal Func<string, (string Message, Schemes Scheme)?> FollowTeam { get; set; }
 
+    /// <summary>Asks whether to remove a team, given its name, its repo and the name its file would be kept as.</summary>
+    internal Func<string, string, string, bool> ConfirmRemove { get; set; }
+
+    /// <summary>The teams removed while the dialog was open.</summary>
+    internal IReadOnlyList<string> RemovedTeams => _removed;
+
     /// <summary>Enter reaches a Dialog as Accept, from any of its lists alike, and never as a key.
     /// The hints close the dialog from their own Accepting, so nothing here does.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
@@ -244,8 +256,9 @@ public sealed class SettingsDialog : Dialog
         return base.OnKeyDown(key);
     }
 
-    /// <summary>Runs the dialog, keeping what was picked in it only if it was accepted.</summary>
-    public static void Show(
+    /// <summary>Runs the dialog, keeping what was picked in it only if it was accepted, and returns the teams
+    /// removed in it, which are gone either way.</summary>
+    public static IReadOnlyList<string> Show(
         IApplication app,
         DashboardSettings settings,
         CommandRegistry commands,
@@ -264,6 +277,7 @@ public sealed class SettingsDialog : Dialog
             app.Invoke(() => dialog.NewTeam());
         app.Run(dialog);
         dialog.Store(theme, icons, settings);
+        return dialog.RemovedTeams;
     }
 
     /// <summary>Keeps what the dialog was left holding, or puts back what was in effect before it opened.</summary>
@@ -382,6 +396,30 @@ public sealed class SettingsDialog : Dialog
         ShowTeam();
     }
 
+    /// <summary>Moves the selected team's file aside once you've said yes, straight away like pausing it.</summary>
+    private void RemoveTeam()
+    {
+        if (_teamList.Value is not { } index || SelectedTeam() is not { } team)
+            return;
+        var kept = _teams.RemovedName(team.Name);
+        if (!ConfirmRemove(team.Name, team.Repo, kept))
+            return;
+        try
+        {
+            kept = _teams.Remove(team.Name);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't remove {team.Name}: {e.Message}");
+            return;
+        }
+        _removed.Add(team.Name);
+        _teamRows.RemoveAt(index);
+        ShowTeams();
+        ShowTeam();
+        Say($"Removed {team.Name}. Rename {kept} back to {team.Name}.json to bring it back.", Schemes.Accent);
+    }
+
     /// <summary>Opens the selected team's form, and saves what it's left holding straight into the team's file.</summary>
     internal bool OpenTeam()
     {
@@ -495,7 +533,7 @@ public sealed class SettingsDialog : Dialog
     {
         var selected = _teamList.Value;
         _teamList.SetSource(new ObservableCollection<string>(TeamRows()));
-        _teamList.Value = selected ?? (_teamRows.Count == 0 ? null : 0);
+        _teamList.Value = _teamRows.Count == 0 ? null : Math.Min(selected ?? 0, _teamRows.Count - 1);
     }
 
     private IReadOnlyList<string> TeamRows()
@@ -630,6 +668,12 @@ public sealed class SettingsDialog : Dialog
             _teamList.SetFocus();
             return OpenTeam();
         }
+        if (hint == RemoveTeamHint)
+        {
+            _teamList.SetFocus();
+            RemoveTeam();
+            return true;
+        }
         switch (hint)
         {
             case RebindHint:
@@ -677,21 +721,21 @@ public sealed class SettingsDialog : Dialog
         protected override bool OnKeyDown(Key key) => Captured?.Invoke(key) == true || base.OnKeyDown(key);
     }
 
-    /// <summary>A list that answers <c>p</c> and <c>n</c> itself, for the same reason as <see cref="KeyList"/>.</summary>
+    /// <summary>A list that answers <c>p</c>, <c>x</c> and <c>n</c> itself, for the same reason as <see cref="KeyList"/>.</summary>
     private sealed class TeamList : ListView
     {
         public Action? Pause { get; set; }
+
+        public Action? Drop { get; set; }
 
         public Action? New { get; set; }
 
         protected override bool OnKeyDown(Key key)
         {
-            if (key == new Key('p'))
-                Pause?.Invoke();
-            else if (key == new Key('n'))
-                New?.Invoke();
-            else
+            var action = key == new Key('p') ? Pause : key == new Key('x') ? Drop : key == new Key('n') ? New : null;
+            if (action is null)
                 return base.OnKeyDown(key);
+            action();
             return true;
         }
     }

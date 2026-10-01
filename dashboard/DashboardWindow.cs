@@ -31,7 +31,7 @@ public sealed class DashboardWindow : Window
     private readonly FrameView _dispatchFrame;
     private readonly LogView _dispatch;
     private readonly WorkView _work;
-    private readonly IReadOnlyList<string> _teamNames;
+    private readonly List<string> _teamNames;
     private readonly MessageBar _message = new();
     private readonly string _dispatchLog;
     private readonly string _nextPass;
@@ -116,14 +116,11 @@ public sealed class DashboardWindow : Window
         for (var i = 0; i < agents.Count; i++)
         {
             var (team, role) = agents[i];
-            var index = i;
-            var pane = new AgentPane(team, role, Path.Combine(stateRoot, team, role), expandToolCalls)
-            {
-                X = Pos.Func(_ => Cell(index).X, this),
-                Y = Pos.Func(_ => Cell(index).Y, this),
-                Width = Dim.Func(_ => Cell(index).Width, this),
-                Height = Dim.Func(_ => Cell(index).Height, this),
-            };
+            var pane = new AgentPane(team, role, Path.Combine(stateRoot, team, role), expandToolCalls);
+            pane.X = Pos.Func(_ => Cell(_panes.IndexOf(pane)).X, this);
+            pane.Y = Pos.Func(_ => Cell(_panes.IndexOf(pane)).Y, this);
+            pane.Width = Dim.Func(_ => Cell(_panes.IndexOf(pane)).Width, this);
+            pane.Height = Dim.Func(_ => Cell(_panes.IndexOf(pane)).Height, this);
             pane.HasFocusChanged += (_, e) =>
             {
                 if (e.NewValue)
@@ -657,15 +654,38 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         var before = _teams.Names();
-        SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam);
-        if (!_teams.Names().SequenceEqual(before))
+        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam);
+        if (_teams.Names().Except(before).Any())
         {
             _handOver?.Invoke(new TeamsChanged(_area));
             return;
         }
+        Forget(removed);
         SyncQuitKey();
         _menu.Refresh();
         ShowHints();
+    }
+
+    /// <summary>Takes removed teams off the grid and out of the Work area.</summary>
+    internal void Forget(IReadOnlyList<string> teams)
+    {
+        if (!teams.Any(_teamNames.Contains))
+            return;
+        if (_expanded is not null)
+            SetExpanded(null);
+        foreach (var pane in _panes.Where(pane => teams.Contains(pane.Team)).ToList())
+        {
+            _panes.Remove(pane);
+            _agents.Remove(pane);
+            pane.Dispose();
+            if (_lastSelected == pane)
+                _lastSelected = null;
+        }
+        _teamNames.RemoveAll(teams.Contains);
+        _work.Forget(teams);
+        _laidOutOver = Size.Empty;
+        SetNeedsLayout();
+        SetNeedsDraw();
     }
 
     /// <summary>The vocabulary the panes and the cards draw their icons from, together, with Auto resolved here

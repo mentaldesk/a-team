@@ -75,6 +75,8 @@ a-team board {{team}} depends <role> <task> <prereq> "<why>"
                                                 # is posted on <task>
 a-team board {{team}} undepend <role> <task> <prereq> "<why>"
                                                 # drop that dependency again, saying why on <task>
+a-team board {{team}} unblock <role> <n>        # Dev only: clear `blocked` on a task it handed back,
+                                                # once a stakeholder has replied to its question
 a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON
 a-team board {{team}} children <n>              # sub-issues and whether they're closed
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
