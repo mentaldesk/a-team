@@ -19,7 +19,7 @@ internal sealed class AppMenu
     internal static readonly (string Title, string[] Ids)[] Layout =
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
-        (Cards, [Separator, "work.refresh", "work.all", "work.mine"]),
+        (Cards, [Separator, "work.refresh", "work.mine"]),
         (Agents, ["agent.hold", "agent.interrupt", Separator, "agent.expand", "log.toolCalls", "agent.collapse"]),
         ("_Help", ["help", "commands", "about"]),
     ];

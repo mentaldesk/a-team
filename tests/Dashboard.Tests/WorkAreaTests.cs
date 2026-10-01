@@ -1116,7 +1116,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "work.refresh", "work.all", "work.mine", "agent.hold", "agent.interrupt",
+                "work.github", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "agent.expand", "log.toolCalls", "agent.collapse", "help", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
@@ -1447,24 +1447,19 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_mark_follows_the_filter_whether_it_is_switched_from_the_menu_or_with_m()
+    public void The_menu_offers_whichever_filter_is_not_in_effect_whether_switched_from_the_menu_or_with_m()
     {
         using var window = Open();
         window.Refresh();
-        Assert.Equal(["• _Show all", "  Show only _mine"], FilterTitles(window));
+        Assert.Equal("Show only _mine", FilterTitle(window));
 
         MenuItem(window, "work.mine").Action!();
         Assert.True(window.Work.OnlyMine);
-        Assert.Equal(["  _Show all", "• Show only _mine"], FilterTitles(window));
+        Assert.Equal("_Show all", FilterTitle(window));
 
         window.NewKeyDownEvent(new Key('m'));
         Assert.False(window.Work.OnlyMine);
-        Assert.Equal(["• _Show all", "  Show only _mine"], FilterTitles(window));
-
-        window.NewKeyDownEvent(new Key('m'));
-        MenuItem(window, "work.all").Action!();
-        Assert.False(window.Work.OnlyMine);
-        Assert.Equal(["• _Show all", "  Show only _mine"], FilterTitles(window));
+        Assert.Equal("Show only _mine", FilterTitle(window));
     }
 
     [Fact]
@@ -1484,8 +1479,7 @@ public class WorkAreaTests : IDisposable
     private static MenuItem MenuItem(DashboardWindow window, string id) =>
         window.MenuItems.Single(item => item.Id == id).Item;
 
-    private static string[] FilterTitles(DashboardWindow window) =>
-        [MenuItem(window, "work.all").Title, MenuItem(window, "work.mine").Title];
+    private static string FilterTitle(DashboardWindow window) => MenuItem(window, "work.mine").Title;
 
     private DashboardWindow Open(
         Func<string, Task<Reading>>? read = null,

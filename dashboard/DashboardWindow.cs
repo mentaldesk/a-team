@@ -280,9 +280,7 @@ public sealed class DashboardWindow : Window
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork,
-                menuLabel: () => Marked("Show only mine", _work.OnlyMine))
-            .Register("work.all", () => "Show all", () => ShowOnlyMine(false), isEnabled: OnWork,
-                menuLabel: () => Marked("Show all", !_work.OnlyMine))
+                menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, new Hint("refresh", Mode.Work), OnWork,
                 menuLabel: () => "Refresh")
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
@@ -357,13 +355,9 @@ public sealed class DashboardWindow : Window
             _loading.Stop();
     }
 
-    private static string Marked(string label, bool inEffect) => $"{(inEffect ? "•" : " ")} {label}";
-
-    private void ToggleOnlyMine() => ShowOnlyMine(!_work.OnlyMine);
-
-    private void ShowOnlyMine(bool onlyMine)
+    private void ToggleOnlyMine()
     {
-        _work.ShowOnlyMine(onlyMine);
+        _work.ShowOnlyMine(!_work.OnlyMine);
         _settings.WriteOnlyMine(_work.OnlyMine);
         _menu.Refresh();
         ShowMessage();
