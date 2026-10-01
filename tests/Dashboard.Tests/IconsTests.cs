@@ -55,6 +55,7 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.Finished] = "■",
                 [Icon.YourMove] = "✓",
                 [Icon.TheirMove] = "·",
+                [Icon.Warning] = "⚠",
                 [Icon.Pitch] = "◇",
                 [Icon.Task] = "‹›",
                 [Icon.PullRequest] = "PR",

@@ -470,6 +470,38 @@ public class TeamStartTests : IDisposable
         Assert.Equal("Can't set up fretty's board: no field", dialog.Message.Says);
     }
 
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public async Task A_check_that_exits_non_zero_still_reports_the_problems_it_printed()
+    {
+        var start = new TeamStart(Example, new TeamCommand(Fake("a-team", """
+            echo "ok: mentaldesk project 7, field 'Status'"
+            echo "labels    1 of 6 missing: blocked"
+            exit 2
+            """)), new TeamCommand(Fake("gh", "")), Path.Combine(_root, "home"), () => true);
+
+        var health = await start.Check("fretty");
+
+        Assert.Equal([new TeamProblem("labels", "1 of 6 missing: blocked")], health.Problems);
+        Assert.Equal(["board fretty check"], Ran());
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public async Task Repair_shows_what_setting_the_board_up_would_do_and_does_only_that_on_yes()
+    {
+        Team("fretty", app: true);
+        var step = Start().Repair("fretty", _teams.Settings("fretty"));
+
+        var (lines, failure) = await step.Load!();
+        Assert.Null(failure);
+        Assert.Equal(
+            ["On project fretty (mentaldesk #7), field 'Status':", "  add   Exploring", "On mentaldesk/fretty:", "  create label pitch"],
+            lines);
+        Assert.Equal(["board fretty setup --dry-run"], Ran().Where(ran => ran.StartsWith("board", StringComparison.Ordinal)));
+
+        Assert.Null(await step.Work!(_ => { }));
+        Assert.Equal(["board fretty setup --dry-run", "board fretty setup"], Ran().Where(ran => ran.StartsWith("board", StringComparison.Ordinal)));
+    }
+
     private TeamStart Start(bool dispatcher = true, bool installed = true) =>
         new(Example, new TeamCommand(Fake("a-team", $$"""
             if [ "$1 $3 $4" = "board setup --dry-run" ]; then

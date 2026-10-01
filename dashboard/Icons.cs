@@ -30,6 +30,7 @@ public enum Icon
     Finished,
     YourMove,
     TheirMove,
+    Warning,
     Pitch,
     Task,
     PullRequest,
@@ -61,6 +62,7 @@ public static class Icons
         [Icon.Finished] = "\U000F023C",  // nf-md-flag_checkered
         [Icon.YourMove] = "\U000F05E0",  // nf-md-check_circle
         [Icon.TheirMove] = "\U000F0D70", // nf-md-face_agent
+        [Icon.Warning] = "\U000F0026",  // nf-md-alert
         [Icon.Pitch] = "\U000F0428",    // nf-md-presentation
         [Icon.Task] = "\uEC37",         // nf-cod-code_review
         [Icon.PullRequest] = "\uE726",  // nf-dev-git_pull_request
@@ -82,6 +84,7 @@ public static class Icons
         [Icon.Finished] = "■",
         [Icon.YourMove] = "✓",
         [Icon.TheirMove] = "·",
+        [Icon.Warning] = "⚠",
         [Icon.Pitch] = "◇",
         [Icon.Task] = "‹›",
         [Icon.PullRequest] = "PR",

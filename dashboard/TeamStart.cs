@@ -154,6 +154,12 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             "skip",
             line => gh.Stream(line, "repo", "clone", settings.Repo, clonePath, "--", "--progress"));
 
+    /// <summary>What <c>board check</c> finds wrong with the team.</summary>
+    public async Task<TeamHealth> Check(string team) => TeamHealth.Parse(await aTeam.Report("board", team, "check"));
+
+    /// <summary>Setting the board up again, which puts right its Status options and labels.</summary>
+    public Step Repair(string team, TeamSettings settings) => BoardStep(team, settings);
+
     private Step BoardStep(string team, TeamSettings settings) =>
         new(
             $"Set up {team}'s board?",

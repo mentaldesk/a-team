@@ -11,9 +11,12 @@ public static class LogSchemes
     public const string Dimmed = "Dimmed";
     public const string Form = "Form";
     public const string Reader = "Reader";
+    public const string Warning = "Warning";
 
     // Anything under 0.1 GetBrighterColor doubles, so that's the floor for a step it takes as asked.
     private const double Lift = 0.12;
+    private const double WarningTint = 0.3;
+    private static readonly Color Amber = new(0xFF, 0xC1, 0x07);
 
     public static void Register()
     {
@@ -31,6 +34,7 @@ public static class LogSchemes
         MarkdownSchemes.Register(reader, ThemeManager.Theme);
         var form = Banded(SchemeManager.GetScheme(Schemes.Dialog));
         SchemeManager.AddScheme(Form, form);
+        SchemeManager.AddScheme(Warning, Tinted(SchemeManager.GetScheme(Schemes.Dialog), Amber, WarningTint));
         Priorities.Register(baseScheme, form);
     }
 
@@ -48,5 +52,25 @@ public static class LogSchemes
             Highlight = dialog.Highlight with { Background = lifted },
             Disabled = dialog.Disabled with { Background = lifted },
         };
+    }
+
+    /// <summary>The dialog's colours over a background pulled toward <paramref name="tint"/>, so a block stands out
+    /// from the form around it in light and dark themes alike.</summary>
+    private static Scheme Tinted(Scheme dialog, Color tint, double amount)
+    {
+        var background = Mix(dialog.Normal.Background, tint, amount);
+        return dialog with
+        {
+            Normal = dialog.Normal with { Background = background },
+            HotNormal = dialog.HotNormal with { Background = background },
+            Highlight = dialog.Highlight with { Background = background },
+            Disabled = dialog.Disabled with { Background = background },
+        };
+    }
+
+    private static Color Mix(Color from, Color to, double amount)
+    {
+        int Step(byte a, byte b) => (int)Math.Round(a + (b - a) * amount);
+        return new Color(Step(from.R, to.R), Step(from.G, to.G), Step(from.B, to.B));
     }
 }

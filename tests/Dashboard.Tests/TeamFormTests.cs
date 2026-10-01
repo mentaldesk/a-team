@@ -33,7 +33,7 @@ public class TeamFormTests
         form.SetFocus();
 
         Assert.True(form.Repo.HasFocus);
-        Assert.Equal(TeamForm.RepoCaption, form.Message.Says);
+        Assert.Equal(TeamForm.RepoCaption, form.Hints.Message.Says);
     }
 
     [Fact]
@@ -43,21 +43,51 @@ public class TeamFormTests
         form.SetFocus();
 
         form.Workdir.SetFocus();
-        Assert.Equal("Where the agents work. They can't write outside it.", form.Message.Says);
+        Assert.Equal("Where the agents work. They can't write outside it.", form.Hints.Message.Says);
         form.Vision.SetFocus();
-        Assert.Equal("The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.", form.Message.Says);
+        Assert.Equal("The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.", form.Hints.Message.Says);
         form.Try.SetFocus();
-        Assert.Equal("What a-team try runs to let you try a change.", form.Message.Says);
+        Assert.Equal("What a-team try runs to let you try a change.", form.Hints.Message.Says);
         form.Worktrees.SetFocus();
-        Assert.Equal(TeamForm.WorktreesCaption, form.Message.Says);
+        Assert.Equal(TeamForm.WorktreesCaption, form.Hints.Message.Says);
     }
 
     [Fact]
-    public void The_hints_read_Enter_save_and_Esc_cancel()
+    public void The_foot_of_the_form_offers_Save_and_Cancel()
     {
         using var form = new TeamForm("a-team", Settings, _ => null);
 
-        Assert.Equal("Enter save · Esc cancel", form.Hints.Says);
+        Assert.Equal(["Save", "Cancel"], Buttons(form));
+    }
+
+    [Fact]
+    public void Cancel_closes_without_saving()
+    {
+        var saved = false;
+        using var form = new TeamForm("a-team", Settings, _ =>
+        {
+            saved = true;
+            return null;
+        });
+
+        form.FootButtons.Single(button => button.Text == "Cancel").InvokeCommand(Command.Accept);
+
+        Assert.False(saved);
+        Assert.Null(form.Saved);
+    }
+
+    [Fact]
+    public void A_field_s_caption_replaces_an_error_once_focus_moves_on()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => "Couldn't save a-team: Access denied.");
+        form.SetFocus();
+        form.FootButtons.Single(button => button.Text == "Save").InvokeCommand(Command.Accept);
+        Assert.Equal("Couldn't save a-team: Access denied.", form.Message.Says);
+
+        form.Workdir.SetFocus();
+
+        Assert.Equal("", form.Message.Says);
+        Assert.Equal(TeamForm.WorkdirCaption, form.Hints.Message.Says);
     }
 
     [Fact]
@@ -205,7 +235,7 @@ public class TeamFormTests
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
             ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Limits"],
-            form.SubViews.OfType<Label>().Where(label => label.X.ToString() == Pos.Absolute(1).ToString())
+            form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
 
@@ -216,9 +246,9 @@ public class TeamFormTests
         form.SetFocus();
 
         form.StakeholdersRow.SetFocus();
-        Assert.Equal("Whose comments the team acts on. You, unless you add others.", form.Message.Says);
+        Assert.Equal("Whose comments the team acts on. You, unless you add others.", form.Hints.Message.Says);
         form.SkillsRow.SetFocus();
-        Assert.Equal("Skills the agents load. Must be installed on this machine.", form.Message.Says);
+        Assert.Equal("Skills the agents load. Must be installed on this machine.", form.Hints.Message.Says);
     }
 
     [Fact]
@@ -314,10 +344,10 @@ public class TeamFormTests
         Assert.Equal("New team", form.Title);
         Assert.True(form.NameField!.HasFocus);
         Assert.Null(form.Status);
-        Assert.Equal("Enter create · Esc cancel", form.Hints.Says);
+        Assert.Equal(["Create", "Cancel"], Buttons(form));
         Assert.Equal(
             ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Limits"],
-            form.SubViews.OfType<Label>().Where(label => label.X.ToString() == Pos.Absolute(1).ToString())
+            form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
 
@@ -329,7 +359,7 @@ public class TeamFormTests
 
         form.NameField!.Text = "fretty";
 
-        Assert.Equal("Becomes ~/.config/a-team/teams/fretty.json", form.Message.Says);
+        Assert.Equal("Becomes ~/.config/a-team/teams/fretty.json", form.Hints.Message.Says);
         Assert.Equal("~/code/fretty", form.Workdir.Text);
         form.Workdir.Text = "~/src/fretty";
         form.NameField.Text = "frets";
@@ -429,6 +459,131 @@ public class TeamFormTests
 
         Assert.Equal(["jamescrosswell"], form.Current().Stakeholders);
     }
+
+    [Fact]
+    public void A_healthy_team_shows_no_Problems_list()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+
+        form.Watch(Task.FromResult(new TeamHealth([])));
+
+        Assert.False(form.Problems.Visible);
+        Assert.Equal(["Save", "Cancel"], Buttons(form));
+    }
+
+    [Fact]
+    public void A_team_with_problems_lists_them_at_the_foot_of_the_form_and_offers_Repair_where_setup_can()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
+
+        form.Watch(Task.FromResult(new TeamHealth(
+        [
+            new TeamProblem("project", "no single-select field 'Status' on aaif-goose project 2"),
+            new TeamProblem("labels", "no 'pitch' label, so the team can't tell its pitches from tasks"),
+        ])));
+
+        Assert.True(form.Problems.Visible);
+        Assert.Equal(
+            ["project   no single-select field 'Status' on aaif-goose project 2", "labels    no 'pitch' label, so the team can't tell its pitches from tasks"],
+            ProblemRows(form));
+        Assert.Equal(["Repair (F12)", "Save", "Cancel"], Buttons(form));
+    }
+
+    [Fact]
+    public void Problems_setup_can_t_put_right_offer_no_repair()
+    {
+        var repaired = false;
+        using var form = new TeamForm("goose", Settings, _ => null)
+        {
+            RepairBoard = () =>
+            {
+                repaired = true;
+                return null;
+            },
+        };
+
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("app", "goose has no GitHub App")])));
+        form.NewKeyDownEvent(Key.F12);
+
+        Assert.Equal(["Save", "Cancel"], Buttons(form));
+        Assert.False(repaired);
+    }
+
+    [Fact]
+    public void The_list_says_checking_until_the_check_answers()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null);
+        var health = new TaskCompletionSource<TeamHealth>();
+
+        form.Watch(health.Task);
+        Assert.Equal([TeamHealth.Checking], ProblemRows(form));
+
+        health.SetResult(new TeamHealth([new TeamProblem("status", "2 of 9 options missing from 'Status': Exploring, Pitched")]));
+        Assert.Equal(["status    2 of 9 options missing from 'Status': Exploring, Pitched"], ProblemRows(form));
+    }
+
+    [Fact]
+    public void F12_from_any_field_repairs_and_the_list_follows_the_check_after_it()
+    {
+        var repairs = 0;
+        using var form = new TeamForm("goose", Settings, _ => null)
+        {
+            RepairBoard = () =>
+            {
+                repairs++;
+                return Task.FromResult(new TeamHealth([]));
+            },
+        };
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")])));
+
+        form.SetFocus();
+
+        Assert.True(form.Repo.HasFocus);
+        Assert.True(form.NewKeyDownEvent(Key.F12));
+
+        Assert.Equal(1, repairs);
+        Assert.Equal("mentaldesk/a-team", form.Repo.Text);
+        Assert.False(form.Problems.Visible);
+        Assert.Equal(["Save", "Cancel"], Buttons(form));
+    }
+
+    [Fact]
+    public void A_repair_left_undone_keeps_the_problems()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")])));
+
+        form.FootButtons.Single(button => button.Text == "Repair (F12)").InvokeCommand(Command.Accept);
+
+        Assert.Equal(["labels    no 'blocked' label, so the Dev can't mark a task that waits on your answer"], ProblemRows(form));
+    }
+
+    [Theory]
+    [InlineData(IconStyle.NerdFont, "\U000F0026 Problems")]
+    [InlineData(IconStyle.Unicode, "⚠ Problems")]
+    public void The_Problems_heading_wears_a_warning_icon(IconStyle style, string heading)
+    {
+        using var form = new TeamForm("goose", Settings, _ => null) { IconStyle = style };
+
+        Assert.Equal(heading, form.ProblemsTitle);
+    }
+
+    private static IReadOnlyList<string> Buttons(TeamForm form) => [.. form.FootButtons.Select(button => button.Text)];
+
+    [Fact]
+    public void The_problems_sit_under_their_heading_after_a_blank_line()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null);
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("app", "goose has no GitHub App")])));
+        form.Layout();
+
+        var heading = form.SubViews.SelectMany(view => view.SubViews).OfType<Label>().Single(label => label.Text == form.ProblemsTitle);
+        Assert.Equal(heading.Frame.X, form.Problems.Frame.X);
+        Assert.Equal(heading.Frame.Y + 2, form.Problems.Frame.Y);
+    }
+
+    private static IReadOnlyList<string> ProblemRows(TeamForm form) =>
+        [.. Enumerable.Range(0, form.Problems.Source?.Count ?? 0).Select(i => form.Problems.Source!.ToList()[i]?.ToString() ?? "")];
 
     private static IReadOnlyList<TextField> Fields(TeamForm form) =>
         [.. form.SubViews.OfType<TextField>().Where(field => field is not DropDownList)];
