@@ -144,7 +144,7 @@ public static class Icons
     public static TurnIcon Kind(WaitingItem item, IconStyle style) =>
         For(item, style) with { Glyph = Glyph(KindOf(item), style) };
 
-    private static Icon KindOf(WaitingItem item) =>
+    internal static Icon KindOf(WaitingItem item) =>
         item.Status == "Idea" ? Icon.Idea : item.Pitch ? Icon.Pitch : Icon.Task;
 }
 

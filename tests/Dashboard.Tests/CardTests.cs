@@ -91,6 +91,24 @@ public class CardTests
     }
 
     [Fact]
+    public void A_card_leaves_its_kind_to_a_column_that_wears_it()
+    {
+        var card = new Card(Unranked, false, Icon.Idea);
+
+        Assert.Equal([card.Lead(IconStyle.Unicode)], card.Leads(IconStyle.Unicode));
+        Assert.Equal(Icons.Width, card.LeadWidth);
+    }
+
+    [Fact]
+    public void A_pitch_in_a_column_of_Ideas_still_wears_its_kind()
+    {
+        var card = new Card(Unranked with { Status = "Pitched", Pitch = true }, false, Icon.Idea);
+
+        Assert.Equal("◇", card.Leads(IconStyle.Unicode)[1].Glyph);
+        Assert.Equal(2 * Icons.Width, card.LeadWidth);
+    }
+
+    [Fact]
     public void A_PRs_row_wears_only_the_line_it_hangs_from()
     {
         var row = new Card(Reviewing, true);

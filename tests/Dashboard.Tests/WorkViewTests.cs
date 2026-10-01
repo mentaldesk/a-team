@@ -36,7 +36,7 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
 
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
         Assert.Equal([true, true, false, true, false, true, false, false], Visible(view));
     }
 
@@ -49,7 +49,7 @@ public class WorkViewTests
             "dev", "reading your answer since 10:50", Question: "Which marker?")]);
         LayOut(view, 120, 20);
 
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 1", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 1", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class WorkViewTests
         view.Show([.. Waiting, Asking(257, "High"), Asking(258, "")]);
         LayOut(view, 120, 20);
 
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 2", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
     }
 
     [Fact]
@@ -327,14 +327,14 @@ public class WorkViewTests
         LayOut(view, 120, 20);
 
         Assert.True(view.OnlyMine);
-        Assert.Equal(["Triage · 1", "Pitches · 1", "Questions · 0", "Review · 0", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
         Assert.Equal([true, true, false, false, false, true, false, false], Visible(view));
 
         view.ShowOnlyMine(false);
         LayOut(view, 120, 20);
 
         Assert.False(view.OnlyMine);
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(view));
     }
 
@@ -456,6 +456,24 @@ public class WorkViewTests
         view.ShowIcons(IconStyle.Unicode);
         Assert.Equal("‹›", review.CardLeads[0][1].Glyph);
         Assert.StartsWith("PR #122  ", review.CardText[1]);
+    }
+
+    [Fact]
+    public void Triage_and_Pitches_wear_their_kind_in_the_heading_in_the_icon_style_in_effect()
+    {
+        using var view = Open(["a-team"]);
+        view.Show([.. Waiting.Select(item => item with { Pitch = item.Status == "Pitched" })]);
+        LayOut(view, 120, 20);
+        var (triage, pitches) = (view.Lanes[0].Columns[0], view.Lanes[0].Columns[1]);
+
+        view.ShowIcons(IconStyle.NerdFont);
+        Assert.Equal("\uF400 Triage · 1", triage.Title);
+        Assert.Equal("\U000F0428 Pitches · 2", pitches.Title);
+        Assert.All(triage.CardLeads.Concat(pitches.CardLeads), leads => Assert.Single(leads));
+
+        view.ShowIcons(IconStyle.Unicode);
+        Assert.Equal("\U0001F4A1Triage · 1", triage.Title);
+        Assert.Equal("◇ Pitches · 2", pitches.Title);
     }
 
     [Fact]

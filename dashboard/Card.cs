@@ -2,12 +2,13 @@ using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
 
-/// <summary>A row in a Work column: an item, or the PR that closes it hanging under it.</summary>
-public sealed record Card(WaitingItem Item, bool IsPr)
+/// <summary>A row in a Work column: an item, or the PR that closes it hanging under it. <paramref name="Column"/> is
+/// the kind the column's heading already wears, which a card of that kind doesn't repeat.</summary>
+public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null)
 {
     /// <summary>A card per item, each of them a root of its column's tree.</summary>
-    internal static IReadOnlyList<Card> Roots(IEnumerable<WaitingItem> items) =>
-        [.. items.Select(item => new Card(item, false))];
+    internal static IReadOnlyList<Card> Roots(IEnumerable<WaitingItem> items, Icon? column = null) =>
+        [.. items.Select(item => new Card(item, false, column))];
 
     /// <summary>Those roots and their PRs, in the order the tree draws them.</summary>
     internal static IReadOnlyList<Card> Nodes(IEnumerable<Card> roots) =>
@@ -26,10 +27,12 @@ public sealed record Card(WaitingItem Item, bool IsPr)
 
     /// <summary>Every icon in front of the row's text: a card's lead is followed by what kind of thing it is.</summary>
     internal IReadOnlyList<TurnIcon> Leads(IconStyle style) =>
-        IsPr ? [Lead(style)] : [Lead(style), Icons.Kind(Item, style)];
+        WearsKind ? [Lead(style), Icons.Kind(Item, style)] : [Lead(style)];
 
     /// <summary>The cells those icons take.</summary>
-    internal int LeadWidth => Icons.Width * (IsPr ? 1 : 2);
+    internal int LeadWidth => Icons.Width * (WearsKind ? 2 : 1);
+
+    private bool WearsKind => !IsPr && Icons.KindOf(Item) != Column;
 
     /// <summary>The Priority colour the row's number wears, which a PR's row hasn't got.</summary>
     internal PriorityMark Mark(int width) => IsPr ? default : Priorities.Mark(Item, Text(width));
