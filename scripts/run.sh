@@ -16,7 +16,9 @@ CONFIG=$(team_config "$TEAM")
 command -v jq >/dev/null || { echo "run.sh: jq is not installed" >&2; exit 3; }
 gh auth status >/dev/null 2>&1 || { echo "run.sh: gh is not authenticated" >&2; exit 3; }
 
-if ! health=$("$ROOT/bin/a-team" board "$TEAM" check 2>&1); then
+# check exits 2 for what's missing but leaves the team able to run, like a vision the Lead is yet to draft.
+health=$("$ROOT/bin/a-team" board "$TEAM" check 2>&1) || healthy=$?
+if [ "${healthy:-0}" -ne 0 ] && [ "$healthy" -ne 2 ]; then
   printf 'run.sh: the board is not usable, so this run must stop and report:\n%s\n' "$health" >&2
   exit 3
 fi

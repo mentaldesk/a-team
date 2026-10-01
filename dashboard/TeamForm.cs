@@ -34,6 +34,7 @@ public sealed class TeamForm : Dialog
     internal const string IdeasCaption = "How many of the Lead's ideas wait for you to prioritise them.";
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
     private const string SaveHint = "save";
+    private const string RepairHint = "repair";
     private const string NoName = "the new team";
     private const string CancelHint = "cancel";
     private const int Inset = 1;
@@ -66,6 +67,9 @@ public sealed class TeamForm : Dialog
     private readonly NumericUpDown<int> _readyFloor;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
+    private readonly Label _problemsLabel;
+    private readonly ProblemList _problems = new();
+    private TeamHealth? _health;
     private List<ProjectChoice> _projects = [];
     private IReadOnlyList<string> _stakeholderNames;
     private IReadOnlyList<string> _skillNames;
@@ -183,9 +187,19 @@ public sealed class TeamForm : Dialog
         _exploring = Limit("Exploring", settings.Exploring, 2, row++, ExploringCaption);
         _ideas = Limit("Ideas", settings.Ideas, 0, row, IdeasCaption);
         _readyFloor = Limit("Ready floor", settings.ReadyFloor, 1, row, ReadyFloorCaption);
+        row += 2;
+
+        _problemsLabel = new Label { Text = "Problems", X = Inset, Y = row, Visible = false };
+        _problems.X = FieldX;
+        _problems.Y = row;
+        _problems.Width = Dim.Fill(Inset);
+        _problems.Height = Dim.Func(_ => Math.Max(1, Math.Min(_problems.Source?.Count ?? 0, Viewport.Height - 2 - _message.Lines - row)), this);
+        _problems.Visible = false;
+        _problems.Repair = () => Repair();
+        Add(_problemsLabel, _problems);
 
         _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
-        _hints.Show("", [new HintedCommand(SaveHint, team is null ? "Enter create" : "Enter save"), new HintedCommand(CancelHint, "Esc cancel")], Run);
+        ShowHints();
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         Add(_hints, _message);
         if (_name is { } first)
@@ -241,6 +255,69 @@ public sealed class TeamForm : Dialog
     internal StatusBar Hints => _hints;
 
     internal MessageBar Message => _message;
+
+    internal ListView Problems => _problems;
+
+    /// <summary>Sets the team's board up again where it can be, and returns the check that follows it, or null where
+    /// nothing was done.</summary>
+    internal Func<Task<TeamHealth>?>? RepairBoard { get; set; }
+
+    /// <summary>Shows what's wrong with the team once <paramref name="health"/> says, and <c>checking…</c> until then.</summary>
+    internal void Watch(Task<TeamHealth> health)
+    {
+        if (health.IsCompleted)
+        {
+            ShowHealth(Health(health));
+            return;
+        }
+        ShowProblems([TeamHealth.Checking]);
+        health.ContinueWith(done =>
+        {
+            if (App is { } app)
+                app.Invoke(() => ShowHealth(Health(done)));
+            else
+                ShowHealth(Health(done));
+        }, TaskContinuationOptions.ExecuteSynchronously);
+    }
+
+    /// <summary>Runs <see cref="RepairBoard"/> where the problems are ones it can put right.</summary>
+    internal bool Repair()
+    {
+        if (_health is not { CanRepair: true } || RepairBoard?.Invoke() is not { } after)
+            return true;
+        Watch(after);
+        return true;
+    }
+
+    private static TeamHealth Health(Task<TeamHealth> done) =>
+        done.Status == TaskStatus.RanToCompletion
+            ? done.Result
+            : new TeamHealth([new TeamProblem("check", done.Exception?.InnerException?.Message ?? "it didn't finish")]);
+
+    private void ShowHealth(TeamHealth health)
+    {
+        _health = health;
+        ShowProblems([.. health.Problems.Select(problem => problem.ToString())]);
+    }
+
+    private void ShowProblems(IReadOnlyList<string> rows)
+    {
+        _problems.SetSource(new ObservableCollection<string>(rows));
+        _problems.Visible = _problemsLabel.Visible = rows.Count > 0;
+        ShowHints();
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private void ShowHints()
+    {
+        List<HintedCommand> hints = [];
+        if (_health is { CanRepair: true } && RepairBoard is not null)
+            hints.Add(new HintedCommand(RepairHint, "r repair"));
+        hints.Add(new HintedCommand(SaveHint, _team is null ? "Enter create" : "Enter save"));
+        hints.Add(new HintedCommand(CancelHint, "Esc cancel"));
+        _hints.Show("", hints, Run);
+    }
 
     /// <summary>The settings as the form holds them now.</summary>
     internal TeamSettings Current() =>
@@ -330,9 +407,12 @@ public sealed class TeamForm : Dialog
 
     /// <summary>Opens the form, and returns what it saved, or null where it was cancelled.</summary>
     public static TeamSettings? Show(
-        IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save, Func<string, Task<Reading>> projects)
+        IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save, Func<string, Task<Reading>> projects,
+        Task<TeamHealth>? health = null, Func<Task<TeamHealth>?>? repair = null)
     {
-        using var form = new TeamForm(team, settings, save);
+        using var form = new TeamForm(team, settings, save) { RepairBoard = repair };
+        if (health is not null)
+            form.Watch(health);
         return Run(app, form, projects) ? form.Saved : null;
     }
 
@@ -435,7 +515,12 @@ public sealed class TeamForm : Dialog
             _skillNames = Show(_skills, picked);
     }
 
-    private bool Run(string hint) => hint == SaveHint ? Save() : Close(null);
+    private bool Run(string hint) => hint switch
+    {
+        SaveHint => Save(),
+        RepairHint => Repair(),
+        _ => Close(null),
+    };
 
     private TextField Field(string label, string value, int row, string caption)
     {
@@ -486,6 +571,20 @@ public sealed class TeamForm : Dialog
         _message.Show(message, scheme);
         SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    /// <summary>The problems a check found, read-only, answering <c>r</c> itself: ListView's type-ahead would take it.</summary>
+    private sealed class ProblemList : ListView
+    {
+        public Action? Repair { get; set; }
+
+        protected override bool OnKeyDown(Key key)
+        {
+            if (key != new Key('r') || Repair is null)
+                return base.OnKeyDown(key);
+            Repair();
+            return true;
+        }
     }
 
     /// <summary>The chosen names of a list field, which opens its picker on Enter.</summary>

@@ -84,8 +84,10 @@ The app opens only once there's a team, so your first one starts by hand:
    your GitHub login in `stakeholders`, the Project, and where the product is checked out on this
    machine (`workdir` for its worktrees, `checkout` for its main clone), and optionally `try`,
    the command that runs the product from a worktree. Leave `app` as `null`: the next step fills
-   it in. `a-team teams` lists the teams it finds. Check the board with
-   `a-team board <name> check`.
+   it in. `a-team teams` lists the teams it finds. Check the team with
+   `a-team board <name> check`: it prints one line per problem it finds, and exits 1 if the team
+   can't run, or 2 if it can but something's missing, like its vision or a label. The Teams page in
+   Settings shows the same problems, and `r repair` in a team's form sets its board up again.
 4. Give the team its own GitHub App (next section). The dispatcher won't run the team without one.
 5. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
 6. Install the dispatcher, first in dry-run mode, which only logs what it would start:

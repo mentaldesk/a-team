@@ -205,7 +205,7 @@ public class TeamFormTests
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
             ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Limits"],
-            form.SubViews.OfType<Label>().Where(label => label.X.ToString() == Pos.Absolute(1).ToString())
+            form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
 
@@ -317,7 +317,7 @@ public class TeamFormTests
         Assert.Equal("Enter create · Esc cancel", form.Hints.Says);
         Assert.Equal(
             ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Limits"],
-            form.SubViews.OfType<Label>().Where(label => label.X.ToString() == Pos.Absolute(1).ToString())
+            form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
 
@@ -429,6 +429,103 @@ public class TeamFormTests
 
         Assert.Equal(["jamescrosswell"], form.Current().Stakeholders);
     }
+
+    [Fact]
+    public void A_healthy_team_shows_no_Problems_list()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+
+        form.Watch(Task.FromResult(new TeamHealth([])));
+
+        Assert.False(form.Problems.Visible);
+        Assert.Equal("Enter save · Esc cancel", form.Hints.Says);
+    }
+
+    [Fact]
+    public void A_team_with_problems_lists_them_at_the_foot_of_the_form_and_offers_r_repair_where_setup_can()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
+
+        form.Watch(Task.FromResult(new TeamHealth(
+        [
+            new TeamProblem("project", "no single-select field 'Status' on aaif-goose project 2"),
+            new TeamProblem("labels", "3 of 6 missing: pitch, a-team:idea, a-team:skipped"),
+        ])));
+
+        Assert.True(form.Problems.Visible);
+        Assert.Equal(
+            ["project   no single-select field 'Status' on aaif-goose project 2", "labels    3 of 6 missing: pitch, a-team:idea, a-team:skipped"],
+            ProblemRows(form));
+        Assert.Equal("r repair · Enter save · Esc cancel", form.Hints.Says);
+    }
+
+    [Fact]
+    public void Problems_setup_can_t_put_right_offer_no_repair()
+    {
+        var repaired = false;
+        using var form = new TeamForm("goose", Settings, _ => null)
+        {
+            RepairBoard = () =>
+            {
+                repaired = true;
+                return null;
+            },
+        };
+
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("app", "goose has no GitHub App")])));
+        form.Problems.NewKeyDownEvent(new Key('r'));
+
+        Assert.Equal("Enter save · Esc cancel", form.Hints.Says);
+        Assert.False(repaired);
+    }
+
+    [Fact]
+    public void The_list_says_checking_until_the_check_answers()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null);
+        var health = new TaskCompletionSource<TeamHealth>();
+
+        form.Watch(health.Task);
+        Assert.Equal([TeamHealth.Checking], ProblemRows(form));
+
+        health.SetResult(new TeamHealth([new TeamProblem("status", "2 of 9 options missing from 'Status': Exploring, Pitched")]));
+        Assert.Equal(["status    2 of 9 options missing from 'Status': Exploring, Pitched"], ProblemRows(form));
+    }
+
+    [Fact]
+    public void R_on_the_Problems_list_repairs_and_the_list_follows_the_check_after_it()
+    {
+        var repairs = 0;
+        using var form = new TeamForm("goose", Settings, _ => null)
+        {
+            RepairBoard = () =>
+            {
+                repairs++;
+                return Task.FromResult(new TeamHealth([]));
+            },
+        };
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "1 of 6 missing: blocked")])));
+
+        Assert.True(form.Problems.NewKeyDownEvent(new Key('r')));
+
+        Assert.Equal(1, repairs);
+        Assert.False(form.Problems.Visible);
+        Assert.Equal("Enter save · Esc cancel", form.Hints.Says);
+    }
+
+    [Fact]
+    public void A_repair_left_undone_keeps_the_problems()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "1 of 6 missing: blocked")])));
+
+        form.Hints.Hints.Single(hint => hint.Text == "r repair").InvokeCommand(Command.Accept);
+
+        Assert.Equal(["labels    1 of 6 missing: blocked"], ProblemRows(form));
+    }
+
+    private static IReadOnlyList<string> ProblemRows(TeamForm form) =>
+        [.. Enumerable.Range(0, form.Problems.Source?.Count ?? 0).Select(i => form.Problems.Source!.ToList()[i]?.ToString() ?? "")];
 
     private static IReadOnlyList<TextField> Fields(TeamForm form) =>
         [.. form.SubViews.OfType<TextField>().Where(field => field is not DropDownList)];

@@ -185,6 +185,8 @@ case " \$* " in
   *"--remove-label"*) echo "\$*" >>"$WRITES"; exit 0 ;;
   *"/labels -f labels[]="*) echo "\$*" >>"$WRITES"; echo '[]'; exit 0 ;;
   *"label list"*) page="$EMPTY" ;;
+  *"label create"*) echo "\$*" >>"$WRITES"; exit 0 ;;
+  *"--input -"*) cat >"$BIN/mutation.json"; echo '{}'; exit 0 ;;
   *check-runs*) page="$RUNS" ;;
   *issueOrPullRequest*) page="$TALK" ;;
   *": pullRequest(number"*) page="$UNLINKED" ;;
@@ -1375,6 +1377,18 @@ grep -q '^  keep  In Progress$' "$OUT" || fail "setup: In Progress in use but no
 grep -q '^  keep  Exploring$' "$OUT" || fail "setup: '$(cat "$OUT")'"
 mv "$BIN/meta.saved" "$META"
 
+case_ "setup applies exactly what its dry run listed"
+run board --dry-run demo setup
+listed=$(cat "$OUT")
+: >"$WRITES"
+run board demo setup
+same "exit" 0 "$STATUS"
+[ -n "$listed" ] || fail "dry run: nothing listed"
+same "options" "$(sed -En 's/^  (keep|add ) {2}//p' <<<"$listed")" \
+  "$(jq -r '.variables.input.singleSelectOptions[].name' "$BIN/mutation.json")"
+same "labels" "$(sed -n 's/^(dry run) created label //p' <<<"$listed")" \
+  "$(sed -n 's/^label create \([^ ]*\) .*/\1/p' "$WRITES")"
+
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
@@ -2155,10 +2169,11 @@ b64url_decode() {
   while [ $((${#s} % 4)) -ne 0 ]; do s="$s="; done
   printf '%s' "$s" | openssl base64 -d -A
 }
+mkdir -p "$APP_BIN/work/main"
 app_fixture() {
-  fixture <<'JSON'
+  fixture <<JSON
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
-  "app": { "id": 7, "slug": "demo-app" } }
+  "vision": "docs/vision.md", "workdir": "$APP_BIN/work", "app": { "id": 7, "slug": "demo-app" } }
 JSON
   rm -f "$CACHE" "$MINTS"
 }
@@ -2314,11 +2329,16 @@ for order in "$ROOT/bin:$COPY/bin" "$COPY/bin:$ROOT/bin"; do
 done
 
 # board.sh's check against a board that's fine, with the App's own view of it broken by
-# PROJECT_UNREADABLE or PRIORITY_UNREADABLE when it asks with the cached token.
+# PROJECT_UNREADABLE or PRIORITY_UNREADABLE when it asks with the cached token, and the board itself
+# by REPO_GONE, NO_VISION, NO_PROJECT, NO_FIELD, and the options in meta.json and labels in labels.json.
 mkdir -p "$APP_BIN/board"
-jq -n '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options:
-  (["Idea", "Exploring", "Pitched", "Approved", "Building", "Ready", "In progress", "In review", "Done"]
-   | map({id: ., name: .}))}}}}}' >"$APP_BIN/board/meta.json"
+board_options() {
+  jq -n --args '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options:
+    ($ARGS.positional | map({id: ., name: .}))}}}}}' "$@" >"$APP_BIN/board/meta.json"
+}
+board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
+board_labels() { jq -n --args '$ARGS.positional | map({name: .})' "$@" >"$APP_BIN/board/labels.json"; }
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
 echo '{"data": {"organization": {"projectV2": {"items": {"totalCount": 0,
   "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": []}}}}}' >"$APP_BIN/board/items.json"
 echo '{"data": {"organization": {"issueFields": {"nodes": [{"id": "IF_priority", "name": "Priority",
@@ -2327,7 +2347,15 @@ cat >"$APP_BIN/board/gh" <<SH
 #!/usr/bin/env bash
 refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
 case " \$* " in
-  *ProjectV2SingleSelectField*) page="$APP_BIN/board/meta.json" ;;
+  *" repos/mentaldesk/demo/contents/"*) [ -z "\${NO_VISION:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *" repos/mentaldesk/demo "*) [ -z "\${REPO_GONE:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *"label list"*) page="$APP_BIN/board/labels.json" ;;
+  *ProjectV2SingleSelectField*)
+    [ -z "\${NO_PROJECT:-}" ] || { echo '{"data": {"organization": {"projectV2": null}}}'
+      echo "gh: Could not resolve to a ProjectV2 with the number 1." >&2; exit 1; }
+    [ -z "\${NO_FIELD:-}" ] || { echo '{"data": {"organization": {"projectV2": {"id": "PVT_1", "field": null}}}}'
+      echo "gh: Could not resolve to a Unions::ProjectV2FieldConfiguration with the name Status" >&2; exit 1; }
+    page="$APP_BIN/board/meta.json" ;;
   *totalCount*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
                 page="$APP_BIN/board/items.json" ;;
   *issueFields*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PRIORITY_UNREADABLE:-}" ] || refused
@@ -2350,9 +2378,9 @@ fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 checked
-failed "no app"
-grep -q '^identity · NO APP' "$ERR" || fail "no app: '$(cat "$ERR")'"
-grep -q 'run a-team app create demo, then install it' "$ERR" || fail "no app: no command in '$(cat "$ERR")'"
+same "no app exit" 1 "$STATUS"
+grep -q '^app       demo has no GitHub App: run a-team app create demo, then install it$' "$OUT" ||
+  fail "no app: '$(cat "$OUT")'"
 
 case_ "check reports the App's identity when every part of it works"
 app_fixture
@@ -2363,29 +2391,95 @@ same "identity" 'identity: demo-app[bot] · token ok · project 1 read+write ok 
   "$(grep '^identity' "$OUT")"
 
 case_ "check says which part of the identity is wrong, and what to do about it"
+# says <exit> <line>: check exited so, and printed exactly that one problem.
+says() {
+  same "exit" "$1" "$STATUS"
+  same "problems" "$2" "$(grep -E '^[a-z]+ {2,}' "$OUT")"
+}
 NO_KEY=1 checked
-failed "no key"
-grep -q "NO KEY" "$ERR" && grep -q 'a-team app create demo' "$ERR" || fail "no key: '$(cat "$ERR")'"
+says 1 "app       demo-app[bot] has no key in the login Keychain (service 'a-team-app', account 'mentaldesk'): run a-team app create demo"
 rm -f "$CACHE"
 MINT_FAILS=1 checked
-failed "no token"
-grep -q 'NO TOKEN' "$ERR" || fail "no token: '$(cat "$ERR")'"
+same "no token exit" 1 "$STATUS"
+grep -q "^app       demo-app\[bot\] can't get a token: " "$OUT" || fail "no token: '$(cat "$OUT")'"
 cached ghs_cached 3600
 PROJECT_UNREADABLE=1 checked
-failed "project unreadable"
-grep -q 'PROJECT 1 UNREADABLE' "$ERR" || fail "project unreadable: '$(cat "$ERR")'"
+says 1 "app       demo-app[bot] can't read project 1: grant the organisation's \"Projects: read and write\", and install the App on mentaldesk/demo"
 grants '.permissions.organization_projects = "read"'
 checked
-failed "project read-only"
-grep -q 'PROJECT 1 READ-ONLY' "$ERR" || fail "project read-only: '$(cat "$ERR")'"
+says 1 "app       demo-app[bot] can only read project 1: grant the organisation's \"Projects: read and write\""
 cached ghs_cached 3600
 PRIORITY_UNREADABLE=1 checked
-failed "priority"
-grep -q 'PRIORITY UNREADABLE' "$ERR" && grep -q 'Issue Fields: read' "$ERR" || fail "priority: '$(cat "$ERR")'"
+same "priority exit" 1 "$STATUS"
+grep -q "^app       demo-app\[bot\] can't read the Priority field: grant the organisation's \"Issue Fields: read\"" "$OUT" ||
+  fail "priority: '$(cat "$OUT")'"
 grants '.permissions.contents = "read"'
 checked
-failed "no push"
-grep -q 'NO PUSH' "$ERR" || fail "no push: '$(cat "$ERR")'"
+says 1 "app       demo-app[bot] can't push to mentaldesk/demo: grant the repository's \"Contents: read and write\""
+
+case_ "check names each problem with the board in a line of its own"
+cached ghs_cached 3600
+checked
+says 0 ""
+REPO_GONE=1 checked
+says 1 "repo      can't reach mentaldesk/demo: Not Found (HTTP 404)"
+NO_PROJECT=1 checked
+says 1 "project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
+grep -q '^identity: demo-app\[bot\] · token ok · Priority readable' "$OUT" || fail "no project: the App's view in '$(cat "$OUT")'"
+NO_FIELD=1 checked
+says 1 "project   no single-select field 'Status' on mentaldesk project 1"
+board_options Idea Approved Building Ready "In progress" "In review" Done
+checked
+says 1 "status    2 of 9 options missing from 'Status': Exploring, Pitched"
+board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
+
+case_ "check names what's missing from the machine"
+rm -rf "$APP_BIN/work/main"
+checked
+says 1 "checkout  $APP_BIN/work/main isn't there: gh repo clone mentaldesk/demo $APP_BIN/work/main"
+rm -rf "$APP_BIN/work"
+checked
+says 1 "workdir   $APP_BIN/work isn't there, so the agents would have nothing to work in"
+mkdir -p "$APP_BIN/work/main"
+
+case_ "a missing vision or labels are problems the team can still run with, so check exits 2"
+NO_VISION=1 checked
+says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
+board_labels pitch a-team:dev blocked
+checked
+says 2 "labels    3 of 6 missing: a-team:idea, a-team:skipped, a-team:displaced"
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+
+case_ "check reports every problem it finds, not just the first"
+board_labels pitch a-team:dev a-team:idea a-team:skipped blocked
+NO_VISION=1 NO_FIELD=1 checked
+says 1 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
+project   no single-select field 'Status' on mentaldesk project 1
+labels    1 of 6 missing: a-team:displaced"
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+
+case_ "check reports a config it can't read, or one with no repo or project, as problems"
+before=$(cat "$TEAM")
+printf '{\n "repo": "mentaldesk/demo",\n}\n' >"$TEAM"
+checked
+same "unparsable exit" 1 "$STATUS"
+grep -q "^config    can't read demo.json: .*line 3" "$OUT" || fail "unparsable: '$(cat "$OUT")'"
+echo '["not a team"]' >"$TEAM"
+checked
+says 1 "config    demo.json isn't a JSON object"
+echo "$before" | jq 'del(.repo, .project.number)' >"$TEAM"
+checked
+same "no repo exit" 1 "$STATUS"
+grep -q '^repo      demo.json names no repo$' "$OUT" || fail "no repo: '$(cat "$OUT")'"
+grep -q '^project   demo.json names no project number$' "$OUT" || fail "no project number: '$(cat "$OUT")'"
+echo "$before" >"$TEAM"
+
+case_ "any other command refuses a config it can't read, in one line"
+echo '["not a team"]' >"$TEAM"
+PATH="$APP_BIN/board:$PATH" run board demo wip
+failed "unreadable wip"
+same "unreadable wip" "board.sh: demo.json isn't a JSON object" "$(cat "$ERR")"
+echo "$before" >"$TEAM"
 
 case_ "examples/team.json carries the app key and stays valid"
 jq -e 'has("app")' "$ROOT/examples/team.json" >/dev/null || fail "example: no app key"
