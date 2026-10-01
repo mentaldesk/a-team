@@ -218,7 +218,11 @@ back — an unranked Idea is always yours, so Triage keeps nearly all of it; the
 right of that same line says which you're looking at — *All items* or *My items* — and it opens the
 way you left it.
 
-The two icons come from the same vocabulary the panes use (`✓` and `·`, or their Nerd Font
+After that icon, a second says what the card is: `◇` a pitch, `‹›` a task. With Nerd Font icons
+these are a presentation and a code review, and a PR row under a card wears a pull request glyph
+in place of the word `PR`.
+
+The turn icons come from the same vocabulary the panes use (`✓` and `·`, or their Nerd Font
 glyphs). No terminal reports its font, so the dashboard uses the Nerd Font one in kitty, WezTerm
 and Ghostty — which bundle such a font and fall back to it — and the plain one everywhere else. If
 that's the wrong answer for your terminal, pick a vocabulary under Settings → Dashboard.

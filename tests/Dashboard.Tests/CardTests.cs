@@ -65,6 +65,45 @@ public class CardTests
         Assert.Equal(Icons.Width, Icons.Field(line.Glyph).GetColumns());
     }
 
+    [Theory]
+    [InlineData(IconStyle.NerdFont, true, "\U000F0428")]
+    [InlineData(IconStyle.NerdFont, false, "\uEC37")]
+    [InlineData(IconStyle.Unicode, true, "◇")]
+    [InlineData(IconStyle.Unicode, false, "‹›")]
+    public void A_card_wears_what_kind_of_thing_it_is_after_whose_move_it_is(IconStyle style, bool pitch, string kind)
+    {
+        var card = new Card(Reviewing with { Pitch = pitch }, false);
+
+        Assert.Equal([card.Lead(style), new TurnIcon(kind, card.Lead(style).Scheme)], card.Leads(style));
+        Assert.Equal(2 * Icons.Width, card.LeadWidth);
+    }
+
+    [Fact]
+    public void A_PRs_row_wears_only_the_line_it_hangs_from()
+    {
+        var row = new Card(Reviewing, true);
+
+        Assert.Equal([row.Lead(IconStyle.NerdFont)], row.Leads(IconStyle.NerdFont));
+        Assert.Equal(Icons.Width, row.LeadWidth);
+    }
+
+    [Fact]
+    public void A_PRs_row_wears_the_pull_request_glyph_in_place_of_the_word_with_Nerd_Font_icons()
+    {
+        Assert.Equal("\uE726 #122  I can't change any of the dashboard's keys", new Card(Reviewing, true).Text(0, IconStyle.NerdFont));
+        Assert.Equal("\uE726 #122  I can't change …", new Card(Reviewing, true).Text(24, IconStyle.NerdFont));
+        Assert.Equal("PR #122  I can't change any of the dashboard's keys", new Card(Reviewing, true).Text(0, IconStyle.Unicode));
+    }
+
+    [Fact]
+    public void A_title_cut_short_at_a_Nerd_Font_glyph_drops_the_whole_rune()
+    {
+        var pitched = new WaitingItem(157, "A \U000F0428 pitch", "Pitched", "https://github.com/x/157", "a-team", Pitch: true);
+
+        Assert.Equal("#157  A \U000F0428\u2026", new Card(pitched, false).Text(11, IconStyle.NerdFont));
+        Assert.Equal("#157  A \u2026", new Card(pitched, false).Text(10, IconStyle.NerdFont));
+    }
+
     [Fact]
     public void A_PRs_row_wears_no_Priority_where_its_card_does()
     {

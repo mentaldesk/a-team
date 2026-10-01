@@ -24,16 +24,23 @@ public sealed record Card(WaitingItem Item, bool IsPr)
         ? new TurnIcon(Glyphs.LLCorner.ToString(), LogSchemes.Dimmed)
         : Icons.For(Item, style);
 
+    /// <summary>Every icon in front of the row's text: a card's lead is followed by what kind of thing it is.</summary>
+    internal IReadOnlyList<TurnIcon> Leads(IconStyle style) =>
+        IsPr ? [Lead(style)] : [Lead(style), Icons.Kind(Item, style)];
+
+    /// <summary>The cells those icons take.</summary>
+    internal int LeadWidth => Icons.Width * (IsPr ? 1 : 2);
+
     /// <summary>The Priority colour the row's number wears, which a PR's row hasn't got.</summary>
     internal PriorityMark Mark(int width) => IsPr ? default : Priorities.Mark(Item, Text(width));
 
     /// <summary>A card reads as the issue's number, whose move it is when it isn't the reviewer's, what its PR is
     /// in trouble over where that's why, then as much of its title as the column has room for. Its PR's row reads
     /// as the PR's own number and the same title.</summary>
-    internal string Text(int width)
+    internal string Text(int width, IconStyle style = IconStyle.Unicode)
     {
         if (IsPr)
-            return Elide($"PR #{Item.Pr}  {Item.Title}", width);
+            return Elide($"{Icons.Glyph(Icon.PullRequest, style)} #{Item.Pr}  {Item.Title}", width);
         var said = new[] { Item.Mine ? "" : Item.Turn, Item.Trouble, Item.Title }.Where(part => part.Length > 0);
         return Elide($"#{Item.Number}  {string.Join(" · ", said)}", width);
     }
