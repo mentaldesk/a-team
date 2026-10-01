@@ -76,14 +76,29 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
     {
         string Checkout() => teams.Settings(team).CheckoutPath;
         bool Cloned() => Directory.Exists(TeamSettings.Expand(Checkout(), home));
+        var uninstalled = false;
+        Step? App()
+        {
+            if (teams.HasApp(team))
+                return null;
+            var settings = teams.Settings(team);
+            if (teams.WithApp(settings.RepoOwner, except: team) is not { } reuse)
+                return AppStep(team, settings);
+            var reused = aTeam.Read("app", "create", team, "--no-open").GetAwaiter().GetResult();
+            if (!teams.HasApp(team))
+                return AppStep(team, settings);
+            uninstalled = reused.Failure is not null;
+            return uninstalled ? InstallStep(team, reuse, settings, reused.Failure!) : null;
+        }
         List<Func<Step?>> steps =
         [
             () => Cloned() ? null : CloneStep(teams.Settings(team), TeamSettings.Expand(Checkout(), home)),
-            () => teams.HasApp(team) ? null : AppStep(teams, team, teams.Settings(team)),
+            App,
             () => teams.Settings(team).NoProject ? ProjectStep(teams, team, teams.Settings(team)) : null,
             () => BoardStep(team, teams.Settings(team)),
             () => teams.HasApp(team) ? WorkStep(team) : null,
         ];
+        const int appStep = 1;
         const int projectStep = 2;
         Stack<int> shown = [];
         for (var at = 0; at < steps.Count;)
@@ -105,6 +120,8 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
                 continue;
             }
             shown.Push(at);
+            if (at == appStep && uninstalled)
+                uninstalled = answer != Answer.Done;
             if (at == projectStep && teams.Settings(team).NoProject)
                 return ($"{team} is paused: it has no project to move its work across. Pick one in its settings.", Schemes.Accent);
             if (at == steps.Count - 1)
@@ -121,7 +138,9 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         }
 
         if (!teams.HasApp(team))
-            return ($"{team} is paused: it won't run until it has a GitHub App (a-team app create {team}).", Schemes.Accent);
+            return ($"{team} won't run until it has a GitHub App (a-team app create {team}).", Schemes.Accent);
+        if (uninstalled)
+            return ($"{team} won't run until its GitHub App is installed on {teams.Settings(team).Repo} (a-team app create {team}).", Schemes.Accent);
         if (!Cloned())
             return ($"{Checkout()} isn't there, so the agents would have nothing to work in.", Schemes.Accent);
         return teams.IsPaused(team) ? ($"{team} is paused. Press p when you want it to start.", Schemes.Base) : ($"{team} is working.", Schemes.Base);
@@ -159,24 +178,30 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         return new Step("Get to work?", lines, "Get to work", "Keep the team paused for now", Choose: true);
     }
 
-    private Step AppStep(TeamConfigs teams, string team, TeamSettings settings)
-    {
-        var owner = settings.RepoOwner;
-        var reuse = teams.WithApp(owner, except: team);
-        return new Step(
-            reuse is null ? $"Give {team} a GitHub App?" : $"Use {owner}'s GitHub App for {team}?",
+    private Step AppStep(string team, TeamSettings settings) =>
+        new(
+            $"Give {team} a GitHub App?",
             [
                 $"{team} works as its own GitHub App, and won't run without one.",
-                reuse is null
-                    ? $"a-team app create {team} registers one under {owner}, in your browser."
-                    : $"{reuse} already has {owner}'s App, so {team} can use the same one.",
+                $"a-team app create {team} registers one under {settings.RepoOwner}, in your browser.",
                 $"Then install it on {settings.Repo}, on the page that opens.",
             ],
-            reuse is null ? "create it" : "use it",
+            "create it",
             "skip",
             line => aTeam.Stream(line, "app", "create", team),
             ShowOutput: true);
-    }
+
+    private Step InstallStep(string team, string reuse, TeamSettings settings, string failure) =>
+        new(
+            $"Install {settings.RepoOwner}'s GitHub App on {settings.Repo}?",
+            [
+                $"{team} uses the App {reuse} has, and won't run until it's installed on {settings.Repo}.",
+                failure,
+            ],
+            "open the install page",
+            "skip",
+            line => aTeam.Stream(line, "app", "create", team),
+            ShowOutput: true);
 
     private Step ProjectStep(TeamConfigs teams, string team, TeamSettings settings)
     {

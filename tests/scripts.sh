@@ -2306,6 +2306,13 @@ same "app" '{"id":9,"slug":"shared-app"}' "$(jq -c .app "$TEAM")"
 same "reviewer" '"reviewer"' "$(jq -c .reviewer "$TEAM")"
 same "opened" 'https://github.com/apps/shared-app/installations/new' "$(cat "$OPENED")"
 
+case_ "app create --no-open fails rather than opening the install page while the App isn't installed"
+: >"$OPENED"
+NOT_INSTALLED=1 run app create demo --no-open
+failed "not installed"
+grep -q "shared-app isn't installed on mentaldesk/demo yet" "$ERR" || fail "not installed: '$(cat "$ERR")'"
+same "opened" '' "$(cat "$OPENED")"
+
 case_ "app create again on a team whose App is installed doesn't reopen the install page"
 : >"$OPENED"
 run app create demo

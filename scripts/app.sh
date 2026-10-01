@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# app.sh create <team> [--id <app id>] [--name <name>] — gives the team its own GitHub App. Registers
-# one from a manifest under the team repo's owner, or reuses the one already registered there, then
-# opens the page that installs it.
+# app.sh create <team> [--id <app id>] [--name <name>] [--no-open] — gives the team its own GitHub App.
+# Registers one from a manifest under the team repo's owner, or reuses the one already registered
+# there, then opens the page that installs it. --no-open fails instead, if it isn't installed yet.
 #
 set -euo pipefail
 
@@ -11,16 +11,17 @@ source "$ROOT/scripts/common.sh"
 source "$ROOT/scripts/github-app.sh"
 
 die() { echo "a-team app: $*" >&2; exit 1; }
-usage="usage: a-team app create <team> [--id <app id>] [--name <name>]"
+usage="usage: a-team app create <team> [--id <app id>] [--name <name>] [--no-open]"
 
 [ "${1:-}" = create ] || die "$usage"
 TEAM=${2:?$usage}
 shift 2
-ID='' NAME=''
+ID='' NAME='' NO_OPEN=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --id) ID=${2:?$usage}; shift 2 ;;
     --name) NAME=${2:?$usage}; shift 2 ;;
+    --no-open) NO_OPEN=1; shift ;;
     *) die "$usage" ;;
   esac
 done
@@ -48,6 +49,7 @@ install() {
     return
   }
   [ $? -eq 2 ] || die "$found"
+  [ -z "$NO_OPEN" ] || die "$2 isn't installed on $REPO yet: install it at $url"
   echo "opening the install page: install it on $REPO, then run: a-team board $TEAM check"
   open "$url" 2>/dev/null || echo "  $url"
 }

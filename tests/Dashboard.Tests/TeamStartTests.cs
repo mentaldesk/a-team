@@ -137,7 +137,7 @@ public class TeamStartTests : IDisposable
         });
 
         Assert.Equal(["Clone mentaldesk/fretty?", "Give fretty a GitHub App?", "Set up fretty's board?"], asked);
-        Assert.Equal(("fretty is paused: it won't run until it has a GitHub App (a-team app create fretty).", Schemes.Accent), said);
+        Assert.Equal(("fretty won't run until it has a GitHub App (a-team app create fretty).", Schemes.Accent), said);
         Assert.True(_teams.IsPaused("fretty"));
         Assert.Empty(Ran());
     }
@@ -158,21 +158,42 @@ public class TeamStartTests : IDisposable
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
-    public void An_owner_s_App_on_another_team_is_offered_for_reuse()
+    public void An_owner_s_App_already_installed_on_the_repo_is_reused_without_asking()
+    {
+        Team("tuicode", app: true);
+        Team("fretty", app: false, checkout: true);
+        List<string> asked = [];
+
+        Start().Follow(_teams, "fretty", step =>
+        {
+            asked.Add(step.Title);
+            return Answer.Skipped;
+        });
+
+        Assert.Equal(["Set up fretty's board?", "Get to work?"], asked);
+        Assert.True(_teams.HasApp("fretty"));
+        Assert.Contains("app create fretty --no-open", Ran());
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void An_owner_s_App_not_yet_installed_on_the_repo_is_written_in_and_its_install_offered()
     {
         Team("tuicode", app: true);
         Team("fretty", app: false, checkout: true);
         Step? offered = null;
 
-        Start().Follow(_teams, "fretty", step =>
+        var said = Start(installed: false).Follow(_teams, "fretty", step =>
         {
             offered ??= step;
-            return Answer.Skipped;
+            return step.Title == "Get to work?" ? Answer.Done : Answer.Skipped;
         });
 
-        Assert.Equal("Use mentaldesk's GitHub App for fretty?", offered?.Title);
-        Assert.Equal("use it", offered?.Yes);
-        Assert.Contains("tuicode already has mentaldesk's App, so fretty can use the same one.", offered!.Lines);
+        Assert.Equal("Install mentaldesk's GitHub App on mentaldesk/fretty?", offered?.Title);
+        Assert.Equal("open the install page", offered?.Yes);
+        Assert.Contains("fretty uses the App tuicode has, and won't run until it's installed on mentaldesk/fretty.", offered!.Lines);
+        Assert.True(_teams.HasApp("fretty"));
+        Assert.False(_teams.IsPaused("fretty"));
+        Assert.Equal(("fretty won't run until its GitHub App is installed on mentaldesk/fretty (a-team app create fretty).", Schemes.Accent), said);
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -449,10 +470,14 @@ public class TeamStartTests : IDisposable
         Assert.Equal("Can't set up fretty's board: no field", dialog.Message.Says);
     }
 
-    private TeamStart Start(bool dispatcher = true) =>
-        new(Example, new TeamCommand(Fake("a-team", """
+    private TeamStart Start(bool dispatcher = true, bool installed = true) =>
+        new(Example, new TeamCommand(Fake("a-team", $$"""
             if [ "$1 $3 $4" = "board setup --dry-run" ]; then
               printf '  add   Exploring\n(dry run) created label pitch\n'
+            fi
+            if [ "$1 $2" = "app create" ]; then
+              sed -i.bak 's/"dispatch"/"app": {"id": 1, "slug": "a-team-mentaldesk"}, "dispatch"/' "{{_teams.TeamsDirectory}}/$3.json"
+              {{(installed ? "" : "echo \"a-team: a-team-mentaldesk isn't installed on mentaldesk/$3 yet\" >&2; exit 1")}}
             fi
             """)), new TeamCommand(Fake("gh", """
             if [ "$1 $2" = "project create" ]; then
