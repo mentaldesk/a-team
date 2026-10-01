@@ -323,6 +323,7 @@ gh_recent() {
 # Times read in the reviewer's own zone, so these cases pin one they can predict.
 export TZ=UTC
 TODAY=$(jq -rn 'now | strftime("%Y-%m-%d")')
+YESTERDAY=$(jq -rn 'now - 86400 | strftime("%Y-%m-%d")')
 
 # ago <minutes>: a timestamp that long before now, for the cases that meet board.sh's own clock.
 ago() { jq -rn --argjson m "$1" 'now - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
@@ -1031,17 +1032,17 @@ gh_items <<'ITEMS'
 Pitched 106 Both gates are mine
 In_review 115 I can change any of the keys
 ITEMS
-gh_talk <<'TALK'
-106 body 2026-09-30T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
-106 comment 2026-09-30T09:00:00Z demo-app[bot] Wrong thread.\n<!-- a-team:dev -->
-106 comment 2026-09-30T09:30:00Z demo-app[bot] A comment that lost its marker.
-115 body 2026-09-30T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
-115 comment 2026-09-30T09:00:00Z reviewer > Drafted.\n<!-- a-team:dev -->
+gh_talk <<TALK
+106 body ${YESTERDAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+106 comment ${YESTERDAY}T09:00:00Z demo-app[bot] Wrong thread.\n<!-- a-team:dev -->
+106 comment ${YESTERDAY}T09:30:00Z demo-app[bot] A comment that lost its marker.
+115 body ${YESTERDAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 comment ${YESTERDAY}T09:00:00Z reviewer > Drafted.\n<!-- a-team:dev -->
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
-same "pitch reason" '"awaiting your approval since 30 Sep 08:00"' "$(jq -c '.[0].reason' "$OUT")"
+same "pitch reason" "\"awaiting your approval since $(jq -rn 'now - 86400 | strftime("%d %b")') 08:00\"" "$(jq -c '.[0].reason' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 gh_items <<'ITEMS'
 Pitched 7 A pitch in front of me
