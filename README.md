@@ -68,6 +68,15 @@ release.
 
 ## Starting a team
 
+In the app, open Settings → Teams and press `n` (or run **New team** from the palette). Fill in the
+form and press `Enter`: a-team writes the team's file, paused, then offers in turn to clone the repo,
+give the team its GitHub App, create its Project, set its board up and get it to work. Each step says
+what it will do and waits for `Enter`; `Esc` skips it. The last asks whether to get to work or keep the
+team paused, and there `Esc` cancels the new team. Make sure `gh` can manage projects first:
+`gh auth refresh -s project`.
+
+The app opens only once there's a team, so your first one starts by hand:
+
 1. Make sure `gh` can manage projects: `gh auth refresh -s project`.
 2. Create or pick a Project for the repo. Its Status field needs the nine options in
    `process.md`, or a `statusMap` in the team config from those names to the ones it has.

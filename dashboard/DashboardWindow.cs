@@ -38,6 +38,7 @@ public sealed class DashboardWindow : Window
     private readonly DashboardSettings _settings;
     private readonly TeamConfigs _teams;
     private readonly Func<string[], Task<string?>> _run;
+    private readonly TeamStart? _start;
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Action<string> _openUrl;
@@ -77,8 +78,10 @@ public sealed class DashboardWindow : Window
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
-        Handover? resume = null)
+        Handover? resume = null,
+        TeamStart? start = null)
     {
+        _start = start;
         BorderStyle = LineStyle.None;
         _settings = settings;
         _auto = auto;
@@ -290,6 +293,7 @@ public sealed class DashboardWindow : Window
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", () => OpenSettings(), new Key('s'), isEnabled: HasApp)
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
+            .Register("teams.new", "New team", () => OpenSettings(SettingsDialog.TeamsPage, newTeam: true), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("agent.collapse", () => "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded),
@@ -650,11 +654,18 @@ public sealed class DashboardWindow : Window
             AboutDialog.Show(app, _version);
     }
 
-    private void OpenSettings(string? page = null)
+    private void OpenSettings(string? page = null, bool newTeam = false)
     {
         if (App is not { } app)
             return;
-        Forget(SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page));
+        var before = _teams.Names();
+        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam);
+        if (_teams.Names().Except(before).Any())
+        {
+            _handOver?.Invoke(new TeamsChanged(_area));
+            return;
+        }
+        Forget(removed);
         SyncQuitKey();
         _menu.Refresh();
         ShowHints();

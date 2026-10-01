@@ -401,7 +401,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Show only what's your move",
                 "Read what's waiting again", "Dashboard", "Work",
-                "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Teams", "Keys", "About", "Back to the agent grid", "Quit",
+                "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Teams", "New team", "Keys", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -847,6 +847,7 @@ public class DashboardWindowTests : IDisposable
         var ids = window.Commands.Registered.Select(command => command.Id).ToList();
         Assert.DoesNotContain("team.pause", ids);
         Assert.Contains("teams", ids);
+        Assert.Contains("teams.new", ids);
         Assert.DoesNotContain(window.MenuItems, item => item.Id == "team.pause");
     }
 

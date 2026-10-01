@@ -90,7 +90,7 @@ if [ -z "$PR" ]; then
   branch=$(git -C "$CHECKOUT" ls-remote --symref origin HEAD 2>/dev/null |
     sed -n 's|^ref: refs/heads/\(.*\)[[:space:]]HEAD$|\1|p')
   [ -n "$branch" ] || die "could not read origin's default branch in $CHECKOUT"
-  echo "Fetching $REPO $branch…"
+  echo "Fetching $REPO ${branch}…"
   git -C "$CHECKOUT" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" ||
     die "could not fetch $branch in $CHECKOUT"
   sha=$(git -C "$CHECKOUT" rev-parse "refs/remotes/origin/$branch")

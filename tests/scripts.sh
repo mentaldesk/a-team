@@ -1363,6 +1363,18 @@ run board --dry-run demo setup
 same "exit" 0 "$STATUS"
 grep -q "created label a-team:displaced" "$OUT" || fail "setup: '$(cat "$OUT")'"
 
+case_ "setup drops the Todo and In Progress GitHub made, unless an item has one"
+cp "$META" "$BIN/meta.saved"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_todo", name: "Todo"}, {id: "OPT_ip", name: "In Progress"}]' \
+  "$BIN/meta.saved" >"$META"
+jq '.data.organization.projectV2.items.nodes[0].fieldValueByName.name = "In Progress"' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+run board --dry-run demo setup
+same "exit" 0 "$STATUS"
+grep -q '^  drop  Todo$' "$OUT" || fail "setup: Todo not dropped in '$(cat "$OUT")'"
+grep -q '^  keep  In Progress$' "$OUT" || fail "setup: In Progress in use but not kept in '$(cat "$OUT")'"
+grep -q '^  keep  Exploring$' "$OUT" || fail "setup: '$(cat "$OUT")'"
+mv "$BIN/meta.saved" "$META"
+
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
@@ -2389,6 +2401,13 @@ same "exit" 0 "$STATUS"
 same "app" '{"id":9,"slug":"shared-app"}' "$(jq -c .app "$TEAM")"
 same "reviewer" '"reviewer"' "$(jq -c .reviewer "$TEAM")"
 same "opened" 'https://github.com/apps/shared-app/installations/new' "$(cat "$OPENED")"
+
+case_ "app create --no-open fails rather than opening the install page while the App isn't installed"
+: >"$OPENED"
+NOT_INSTALLED=1 run app create demo --no-open
+failed "not installed"
+grep -q "shared-app isn't installed on mentaldesk/demo yet" "$ERR" || fail "not installed: '$(cat "$ERR")'"
+same "opened" '' "$(cat "$OPENED")"
 
 case_ "app create again on a team whose App is installed doesn't reopen the install page"
 : >"$OPENED"

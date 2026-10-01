@@ -53,6 +53,32 @@ public sealed partial record TeamSettings(
         };
     }
 
+    /// <summary>What the form starts a new team with: the example's vision and limits, and <paramref name="me"/>
+    /// as its stakeholder.</summary>
+    public static TeamSettings New(byte[] example, string me) =>
+        Read(example) with
+        {
+            Repo = "",
+            ProjectOwner = "",
+            ProjectNumber = null,
+            Workdir = "",
+            Try = "",
+            Working = false,
+            Checkout = null,
+            Stakeholders = me.Length == 0 ? [] : [me],
+            Skills = [],
+        };
+
+    /// <summary>Why <paramref name="name"/> can't be a new team's, or null when it can.</summary>
+    public static string? NameRefusal(string name, IReadOnlyCollection<string> taken) =>
+        name.Length == 0 ? "Name is required."
+        : !NameShape().IsMatch(name) ? $"{name} can't be a file name: use letters, digits, '.', '_' and '-'."
+        : taken.Contains(name) ? $"There's already a team named {name}."
+        : null;
+
+    /// <summary>The workdir a new team named <paramref name="name"/> gets unless you change it.</summary>
+    public static string WorkdirFor(string name) => $"~/code/{name}";
+
     /// <summary>The config with each value that differs from <paramref name="before"/> set in place, so a save
     /// that changed nothing writes back the same bytes.</summary>
     public byte[] Write(byte[] config, TeamSettings before)
@@ -94,11 +120,12 @@ public sealed partial record TeamSettings(
         return config;
     }
 
-    /// <summary>Why the form won't save these, or null when it will.</summary>
-    public string? Refusal() =>
+    /// <summary>Why the form won't save these, or null when it will. <paramref name="projectOptional"/> lets a new
+    /// team leave its project out, to be created for it.</summary>
+    public string? Refusal(bool projectOptional = false) =>
         Repo.Trim().Length == 0 ? "Repo is required."
         : !RepoShape().IsMatch(Repo.Trim()) ? $"Repo must be owner/repo, like mentaldesk/a-team, not {Repo.Trim()}."
-        : ProjectOwner.Trim().Length == 0 || ProjectNumber is null ? "Project is required."
+        : !(projectOptional && NoProject) && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null) ? "Project is required."
         : ProjectNumber <= 0 ? "Project number must be above 0."
         : Vision.Trim().Length == 0 ? "Vision is required."
         : Workdir.Trim().Length == 0 ? "Workdir is required."
@@ -123,6 +150,8 @@ public sealed partial record TeamSettings(
     /// <summary>A checkout other than <c>&lt;workdir&gt;/main</c>, which the form shows but doesn't change.</summary>
     public string? OtherCheckout =>
         Checkout is { } checkout && checkout.TrimEnd('/') != $"{Workdir.TrimEnd('/')}/main" ? checkout : null;
+
+    public bool NoProject => ProjectOwner.Trim().Length == 0 && ProjectNumber is null;
 
     public string RepoOwner => Repo.Split('/')[0].Trim();
 
@@ -154,4 +183,7 @@ public sealed partial record TeamSettings(
 
     [GeneratedRegex(@"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")]
     private static partial Regex RepoShape();
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9_.-]*$")]
+    private static partial Regex NameShape();
 }

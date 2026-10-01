@@ -15,9 +15,11 @@ public enum TeamStatus
 /// <summary>One team's settings, to change and save without a text editor.</summary>
 public sealed class TeamForm : Dialog
 {
+    internal const string NameCaption = "The team's name, which names its file.";
     internal const string RepoCaption = "The GitHub repo the team works on, as owner/repo.";
     internal const string StakeholdersCaption = "Whose comments the team acts on. You, unless you add others.";
     internal const string ProjectCaption = "The GitHub Project whose board the team moves its work across.";
+    internal const string NewProject = "A new project, named after the team";
     internal const string OwnerCaption = "Who owns the Project: the user or organisation in its URL.";
     internal const string NumberCaption = "The Project's number, the last part of its URL.";
     internal const string VisionCaption = "The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.";
@@ -32,6 +34,7 @@ public sealed class TeamForm : Dialog
     internal const string IdeasCaption = "How many of the Lead's ideas wait for you to prioritise them.";
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
     private const string SaveHint = "save";
+    private const string NoName = "the new team";
     private const string CancelHint = "cancel";
     private const int Inset = 1;
     private const int FieldX = 14;
@@ -40,8 +43,11 @@ public sealed class TeamForm : Dialog
     private const int PickWidth = 8;
 
     private readonly TeamSettings _before;
-    private readonly string _team;
-    private readonly Func<TeamSettings, string?> _save;
+    private readonly string? _team;
+    private readonly Func<string, TeamSettings, string?> _save;
+    private readonly IReadOnlyCollection<string> _taken;
+    private readonly string _teamsDirectory;
+    private readonly TextField? _name;
     private readonly TextField _repo;
     private readonly PickRow _stakeholders;
     private readonly PickRow _skills;
@@ -52,7 +58,7 @@ public sealed class TeamForm : Dialog
     private readonly TextField _vision;
     private readonly TextField _workdir;
     private readonly TextField _try;
-    private readonly OptionSelector<TeamStatus> _status;
+    private readonly OptionSelector<TeamStatus>? _status;
     private readonly NumericUpDown<int> _worktrees;
     private readonly NumericUpDown<int> _pitched;
     private readonly NumericUpDown<int> _exploring;
@@ -63,27 +69,68 @@ public sealed class TeamForm : Dialog
     private List<ProjectChoice> _projects = [];
     private IReadOnlyList<string> _stakeholderNames;
     private IReadOnlyList<string> _skillNames;
+    private Func<string, Task<Reading>>? _listProjects;
+    private string? _projectsOwner;
 
     /// <summary><paramref name="save"/> writes what the form holds, and says why it couldn't.</summary>
     public TeamForm(string team, TeamSettings settings, Func<TeamSettings, string?> save)
+        : this(team, settings, (_, now) => save(now), [], "")
+    {
+    }
+
+    /// <summary>A form for a team that isn't there yet: a Name field first, holding <paramref name="name"/>, and no
+    /// Status, since it starts paused. <paramref name="create"/> writes the team named, and says why it couldn't.</summary>
+    public static TeamForm New(
+        TeamSettings settings, IReadOnlyCollection<string> taken, string teamsDirectory, Func<string, TeamSettings, string?> create,
+        string name = "") =>
+        new(null, settings, create, taken, teamsDirectory, name);
+
+    private TeamForm(
+        string? team, TeamSettings settings, Func<string, TeamSettings, string?> save, IReadOnlyCollection<string> taken, string teamsDirectory,
+        string name = "")
     {
         _before = settings;
         _save = save;
         _team = team;
+        _taken = taken;
+        _teamsDirectory = teamsDirectory;
         _stakeholderNames = settings.Stakeholders;
         _skillNames = settings.Skills;
         RunPicker = picker => App is { } app ? Picker.Show(app, picker) : null;
         FindStakeholders = Stakeholders.Read;
         FindSkills = () => SkillsFound.Find(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Current().CheckoutPath);
 
-        Title = $"Team: {team}";
+        Title = team is null ? "New team" : $"Team: {team}";
         X = 0;
         Y = 0;
         Width = Dim.Fill();
         Height = Dim.Fill();
 
         var row = 0;
+        if (team is null)
+        {
+            _name = Field("Name", name, row++, NameCaption);
+            _name.HasFocusChanged += (_, _) =>
+            {
+                if (_name.HasFocus)
+                    Say(Becomes(), Schemes.Base);
+            };
+            var named = name;
+            _name.TextChanged += (_, _) =>
+            {
+                var name = _name.Text.Trim();
+                if (_workdir is { } workdir && (workdir.Text.Length == 0 || workdir.Text == TeamSettings.WorkdirFor(named)))
+                    workdir.Text = name.Length == 0 ? "" : TeamSettings.WorkdirFor(name);
+                named = name;
+                Say(Becomes(), Schemes.Base);
+            };
+        }
         _repo = Field("Repo", settings.Repo, row++, RepoCaption);
+        _repo.HasFocusChanged += (_, _) =>
+        {
+            if (!_repo.HasFocus && _listProjects is { } list && Current().RepoOwner != _projectsOwner)
+                LoadProjects(list);
+        };
         _stakeholders = Picks("Stakeholders", _stakeholderNames, row++, StakeholdersCaption, PickStakeholders);
 
         Add(new Label { Text = "Project", X = Inset, Y = row });
@@ -99,6 +146,11 @@ public sealed class TeamForm : Dialog
         Caption(_owner, OwnerCaption);
         Caption(_number, NumberCaption);
         _project.TextChanged += (_, _) => Pick();
+        _project.HasFocusChanged += (_, _) =>
+        {
+            if (_project.HasFocus && _listProjects is { } list)
+                LoadProjects(list);
+        };
         ShowProjects([]);
         row++;
 
@@ -109,18 +161,21 @@ public sealed class TeamForm : Dialog
         if (settings.OtherCheckout is { } checkout)
             Field("Checkout", checkout, row++, CheckoutCaption).ReadOnly = true;
 
-        Add(new Label { Text = "Status", X = Inset, Y = row });
-        _status = new OptionSelector<TeamStatus>
+        if (team is not null)
         {
-            X = FieldX,
-            Y = row++,
-            Orientation = Orientation.Horizontal,
-            // NoStop is what makes the arrows move between the options; with the default they're Tab stops.
-            TabBehavior = TabBehavior.NoStop,
-            Value = settings.Working ? TeamStatus.Working : TeamStatus.Paused,
-        };
-        Add(_status);
-        Caption(_status, StatusCaption);
+            Add(new Label { Text = "Status", X = Inset, Y = row });
+            _status = new OptionSelector<TeamStatus>
+            {
+                X = FieldX,
+                Y = row++,
+                Orientation = Orientation.Horizontal,
+                // NoStop is what makes the arrows move between the options; with the default they're Tab stops.
+                TabBehavior = TabBehavior.NoStop,
+                Value = settings.Working ? TeamStatus.Working : TeamStatus.Paused,
+            };
+            Add(_status);
+            Caption(_status, StatusCaption);
+        }
 
         Add(new Label { Text = "Limits", X = Inset, Y = row });
         _worktrees = Limit("Worktrees", settings.Worktrees, 0, row, WorktreesCaption);
@@ -130,15 +185,28 @@ public sealed class TeamForm : Dialog
         _readyFloor = Limit("Ready floor", settings.ReadyFloor, 1, row, ReadyFloorCaption);
 
         _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
-        _hints.Show("", [new HintedCommand(SaveHint, "Enter save"), new HintedCommand(CancelHint, "Esc cancel")], Run);
+        _hints.Show("", [new HintedCommand(SaveHint, team is null ? "Enter create" : "Enter save"), new HintedCommand(CancelHint, "Esc cancel")], Run);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         Add(_hints, _message);
-        _repo.SetFocus();
-        Say(RepoCaption, Schemes.Base);
+        if (_name is { } first)
+        {
+            first.SetFocus();
+            Say(Becomes(), Schemes.Base);
+        }
+        else
+        {
+            _repo.SetFocus();
+            Say(RepoCaption, Schemes.Base);
+        }
     }
 
     /// <summary>What the form was saved with, or null where it was cancelled.</summary>
     internal TeamSettings? Saved { get; private set; }
+
+    /// <summary>The name a new team was created under.</summary>
+    internal string? SavedName { get; private set; }
+
+    internal TextField? NameField => _name;
 
     internal TextField Repo => _repo;
 
@@ -166,7 +234,7 @@ public sealed class TeamForm : Dialog
 
     internal TextField Try => _try;
 
-    internal OptionSelector<TeamStatus> Status => _status;
+    internal OptionSelector<TeamStatus>? Status => _status;
 
     internal NumericUpDown<int> Worktrees => _worktrees;
 
@@ -186,7 +254,7 @@ public sealed class TeamForm : Dialog
             Try = _try.Text.Trim(),
             Stakeholders = _stakeholderNames,
             Skills = _skillNames,
-            Working = _status.Value == TeamStatus.Working,
+            Working = _status is { } status ? status.Value == TeamStatus.Working : _before.Working,
             Worktrees = _worktrees.Value,
             Pitched = _pitched.Value,
             Exploring = _exploring.Value,
@@ -207,6 +275,8 @@ public sealed class TeamForm : Dialog
                 _owner.SetFocus();
             return;
         }
+        _project.Visible = true;
+        _ownedBy.Visible = false;
         _projects = [.. projects];
         var owner = _owner.Text.Trim();
         var chosen = int.TryParse(_number.Text.Trim(), out var number) && owner.Length > 0
@@ -215,14 +285,22 @@ public sealed class TeamForm : Dialog
             : null;
         if (chosen is not null && !_projects.Contains(chosen))
             _projects.Insert(0, chosen);
-        _project.Source = new ListWrapper<string>(new ObservableCollection<string>(_projects.Select(project => project.ToString())));
-        _project.Text = chosen?.ToString() ?? "";
+        IEnumerable<string> choices = _projects.Select(project => project.ToString());
+        if (_team is null)
+            choices = choices.Prepend(NewProject);
+        _project.Source = new ListWrapper<string>(new ObservableCollection<string>(choices));
+        _project.Text = chosen?.ToString() ?? (_team is null ? NewProject : "");
     }
 
-    /// <summary>Fetches the repo owner's projects and puts them in the list when they arrive.</summary>
+    /// <summary>Fetches the repo owner's projects and puts them in the list when they arrive, again each time the list
+    /// takes focus so a project made meanwhile shows up.</summary>
     internal void LoadProjects(Func<string, Task<Reading>> list)
     {
+        _listProjects = list;
         var owner = Current().RepoOwner is { Length: > 0 } repoOwner ? repoOwner : _before.ProjectOwner;
+        _projectsOwner = Current().RepoOwner;
+        if (owner.Length == 0)
+            return;
         list(owner).ContinueWith(read =>
         {
             var projects = read.Status == TaskStatus.RanToCompletion ? ProjectChoice.Parse(read.Result, owner) : null;
@@ -255,22 +333,50 @@ public sealed class TeamForm : Dialog
         IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save, Func<string, Task<Reading>> projects)
     {
         using var form = new TeamForm(team, settings, save);
+        return Run(app, form, projects) ? form.Saved : null;
+    }
+
+    /// <summary>Opens the form for a new team, and returns the name it was created under, or null where it was
+    /// cancelled.</summary>
+    public static string? ShowNew(
+        IApplication app, TeamSettings settings, IReadOnlyCollection<string> taken, string teamsDirectory,
+        Func<string, TeamSettings, string?> create, Func<string, Task<Reading>> projects, Task<string> me, string name = "")
+    {
+        using var form = New(settings, taken, teamsDirectory, create, name);
+        me.ContinueWith(read =>
+        {
+            if (read.Status == TaskStatus.RanToCompletion)
+                form.App?.Invoke(() => form.ShowMe(read.Result));
+        }, TaskScheduler.Default);
+        return Run(app, form, projects) ? form.SavedName : null;
+    }
+
+    private static bool Run(IApplication app, TeamForm form, Func<string, Task<Reading>> projects)
+    {
         form.LoadProjects(projects);
         app.Run(form);
-        return form.Saved;
+        return form.Saved is not null;
     }
 
     /// <summary>Saves and closes, or says why not and keeps what was typed.</summary>
     internal bool Save()
     {
         var now = Current();
-        if ((now.Refusal() ?? _save(now)) is { } failure)
+        var name = _team ?? _name?.Text.Trim() ?? "";
+        var refusal = _team is null ? TeamSettings.NameRefusal(name, _taken) : null;
+        if ((refusal ?? now.Refusal(projectOptional: _team is null) ?? _save(name, now)) is { } failure)
         {
             Say(failure, Schemes.Error);
             return true;
         }
+        SavedName = name;
         return Close(now);
     }
+
+    private string Becomes() =>
+        _name?.Text.Trim() is { Length: > 0 } name ? $"Becomes {_teamsDirectory}/{name}.json" : NameCaption;
+
+    private string TeamName => _team ?? (_name?.Text.Trim() is { Length: > 0 } name ? name : NoName);
 
     private bool Close(TeamSettings? saved)
     {
@@ -282,17 +388,30 @@ public sealed class TeamForm : Dialog
     /// <summary>Keeps the owner and number fields on the project picked, so they're what's saved either way.</summary>
     private void Pick()
     {
+        if (_team is null && _project.Text == NewProject)
+        {
+            _owner.Text = "";
+            _number.Text = "";
+            return;
+        }
         if (_projects.Find(project => project.ToString() == _project.Text) is not { } picked)
             return;
         _owner.Text = picked.Owner;
         _number.Text = picked.Number.ToString();
     }
 
+    /// <summary>Puts who's signed in as the stakeholder, unless some have been picked already.</summary>
+    internal void ShowMe(string me)
+    {
+        if (me.Length > 0 && _stakeholderNames.Count == 0)
+            _stakeholderNames = Show(_stakeholders, [me]);
+    }
+
     /// <summary>Opens the stakeholders picker, filling it once GitHub says who can push to the repo.</summary>
     internal void PickStakeholders()
     {
         var repo = Current().Repo;
-        using var picker = new Picker($"Stakeholders for {_team}", _stakeholderNames, "", $"Reading who can push to {repo}…");
+        using var picker = new Picker($"Stakeholders for {TeamName}", _stakeholderNames, "", $"Reading who can push to {repo}…");
         FindStakeholders(repo).ContinueWith(read =>
         {
             var found = read.Status == TaskStatus.RanToCompletion ? read.Result : null;
@@ -310,7 +429,7 @@ public sealed class TeamForm : Dialog
     internal void PickSkills()
     {
         var found = FindSkills();
-        using var picker = new Picker($"Skills for {_team}", _skillNames, "(not installed)", found.Message);
+        using var picker = new Picker($"Skills for {TeamName}", _skillNames, "(not installed)", found.Message);
         picker.ShowChoices(found.Names, found.Message);
         if (RunPicker(picker) is { } picked)
             _skillNames = Show(_skills, picked);

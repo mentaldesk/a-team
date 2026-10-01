@@ -1,4 +1,5 @@
 using Terminal.Gui.Configuration;
+using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
 
@@ -18,6 +19,9 @@ public static class BundledThemes
 
     public static string Current => ThemeManager.Theme;
 
+    /// <summary>The terminal cursor each theme colours. Silent until the app points it at the console.</summary>
+    public static TerminalCursor Cursor { get; set; } = new(_ => { });
+
     /// <summary>Registers the bundled themes and applies <paramref name="theme"/>. Call before the application starts.</summary>
     public static void Load(string theme = Default)
     {
@@ -33,7 +37,19 @@ public static class BundledThemes
         ThemeManager.Theme = Names.Contains(theme) ? theme : Default;
         ConfigurationManager.Apply();
         LogSchemes.Register();
+        if (CursorColour(ThemeManager.Theme) is { } colour)
+            Cursor.Colour(colour);
     }
+
+    /// <summary>The colour of <paramref name="theme"/>'s caret: its <c>Cursor</c> scheme, which nothing draws with.</summary>
+    public static Color? CursorColour(string theme) =>
+        ThemeManager.Themes?.TryGetValue(theme, out var scope) == true
+        && scope.TryGetValue("Schemes", out var property)
+        && property.PropertyValue is Dictionary<string, Scheme?> schemes
+        && schemes.TryGetValue("Cursor", out var cursor)
+        && cursor is not null
+            ? cursor.Normal.Foreground
+            : null;
 
     private static string ReadConfig()
     {
