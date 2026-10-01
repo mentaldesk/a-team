@@ -954,7 +954,7 @@ public class WorkAreaTests : IDisposable
         var stamp = window.Status.State.Text;
 
         failing = true;
-        window.NewKeyDownEvent(new Key('r'));
+        window.NewKeyDownEvent(Key.F5);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -976,14 +976,14 @@ public class WorkAreaTests : IDisposable
             return finish.Task;
         });
 
-        window.NewKeyDownEvent(new Key('r'));
+        window.NewKeyDownEvent(Key.F5);
         Assert.Equal("Reading…", window.Message.Says);
-        window.NewKeyDownEvent(new Key('r'));
+        window.NewKeyDownEvent(Key.F5);
 
         Assert.Equal(2, reads);
         finish.SetResult(new Reading("[]", null));
         window.Refresh();
-        window.NewKeyDownEvent(new Key('r'));
+        window.NewKeyDownEvent(Key.F5);
         Assert.Equal(4, reads);
     }
 
@@ -1116,7 +1116,8 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "agent.hold", "agent.interrupt", "help", "commands", "about",
+                "work.github", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
+                "agent.expand", "log.toolCalls", "agent.collapse", "help", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>
@@ -1152,7 +1153,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(new Key('t'), command.Key);
         Assert.Null(command.Hint);
         Assert.True(command.OnCard);
-        Assert.Equal("Enter: read · p: set priority · m: only mine · r: refresh", window.Commands.Hints(Mode.Work));
+        Assert.Equal("Enter: read · p: set priority · m: only mine · F5: refresh", window.Commands.Hints(Mode.Work));
     }
 
     [Fact]
@@ -1391,6 +1392,94 @@ public class WorkAreaTests : IDisposable
         window.Frame = new Rectangle(0, 0, width, height);
         window.Layout(new Size(width, height));
     }
+
+    [Fact]
+    public void F5_reads_what_s_waiting_again_and_r_no_longer_does()
+    {
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+
+        Assert.False(window.NewKeyDownEvent(new Key('r')));
+        Assert.Equal(2, reads);
+
+        Assert.True(window.NewKeyDownEvent(Key.F5));
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void A_rebound_refresh_keeps_its_key_and_the_menu_shows_it()
+    {
+        var reads = 0;
+        Directory.CreateDirectory(Config);
+        new DashboardSettings(Config).WriteKeys([("work.refresh", new Key('r'))]);
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+
+        Assert.True(window.NewKeyDownEvent(new Key('r')));
+
+        Assert.Equal(4, reads);
+        Assert.Equal(new Key('r'), MenuItem(window, "work.refresh").Key);
+    }
+
+    [Fact]
+    public void Refresh_in_the_menu_reads_what_s_waiting_again()
+    {
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+
+        MenuItem(window, "work.refresh").Action!();
+
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void The_menu_offers_whichever_filter_is_not_in_effect_whether_switched_from_the_menu_or_with_m()
+    {
+        using var window = Open();
+        window.Refresh();
+        Assert.Equal("Show only _mine", FilterTitle(window));
+
+        MenuItem(window, "work.mine").Action!();
+        Assert.True(window.Work.OnlyMine);
+        Assert.Equal("_Show all", FilterTitle(window));
+
+        window.NewKeyDownEvent(new Key('m'));
+        Assert.False(window.Work.OnlyMine);
+        Assert.Equal("Show only _mine", FilterTitle(window));
+    }
+
+    [Fact]
+    public void The_Commands_palette_shows_F5_for_refresh_and_Help_leaves_it_to_the_menu()
+    {
+        using var window = Open();
+
+        using var help = new HelpDialog(window.Commands.Registered);
+        using var palette = new CommandsDialog(window.Commands.Registered);
+
+        Assert.DoesNotContain("F5", help.Keys.Text);
+        Assert.Contains(
+            palette.List.Source!.ToList().Cast<string>(),
+            row => row.StartsWith("Read what's waiting again") && row.TrimEnd().EndsWith(" F5"));
+    }
+
+    private static MenuItem MenuItem(DashboardWindow window, string id) =>
+        window.MenuItems.Single(item => item.Id == id).Item;
+
+    private static string FilterTitle(DashboardWindow window) => MenuItem(window, "work.mine").Title;
 
     private DashboardWindow Open(
         Func<string, Task<Reading>>? read = null,

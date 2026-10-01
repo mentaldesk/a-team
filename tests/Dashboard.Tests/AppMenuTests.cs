@@ -218,8 +218,8 @@ public class AppMenuTests : IDisposable
         Assert.Equal(["_View", "_Cards", "_Agents", "_Help"], window.Menus.Select(menu => menu.Title));
         Assert.Equal(
             window.Commands.Registered.Where(command => command.OnCard).Select(command => command.Id),
-            Under(window, Cards(window)));
-        Assert.Equal(["work.read", "work.priority", "work.try", "work.github"], Under(window, Cards(window)));
+            Above(window, Cards(window)));
+        Assert.Equal(["work.read", "work.priority", "work.try", "work.github"], Above(window, Cards(window)));
         Assert.All(Under(window, Cards(window)), id => Assert.Equal(window.Commands.KeyFor(id), Item(window, id).Key));
     }
 
@@ -229,7 +229,7 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            ["_Open", "Set _priority", "_Try PR", "Open on _GitHub"],
+            ["_Open", "Set _priority", "_Try PR", "Open on _GitHub", "_Refresh", "Show only _mine"],
             Under(window, Cards(window)).Select(id => Item(window, id).Title));
     }
 
@@ -253,7 +253,8 @@ public class AppMenuTests : IDisposable
         window.Commands.Register("work.approve.card", "Approve the selected pitch", () => { }, new Key('a'), onCard: true);
         window.Refresh();
 
-        Assert.Equal("work.approve.card", Under(window, Cards(window)).Last());
+        Assert.Equal("work.approve.card", Above(window, Cards(window)).Last());
+        Assert.Equal(["work.refresh", "work.mine"], Below(window, Cards(window)));
         Assert.Equal(new Key('a'), Item(window, "work.approve.card").Key);
     }
 
@@ -298,7 +299,7 @@ public class AppMenuTests : IDisposable
         using var window = Open();
         var agents = window.Menus.Single(menu => menu.Title == "_Agents");
 
-        Assert.Equal(["agent.hold", "agent.interrupt"], Under(window, agents));
+        Assert.Equal(["agent.hold", "agent.interrupt"], Above(window, agents));
         Assert.Equal("Pause t_his role", Item(window, "agent.hold").Title);
         Assert.Equal("_Interrupt", Item(window, "agent.interrupt").Title);
         Assert.Equal(new Key('i'), Item(window, "agent.interrupt").Key);
@@ -313,6 +314,71 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.Equal(new Key('x'), Item(window, "agent.interrupt").Key);
+    }
+
+    [Fact]
+    public void On_the_grid_Agents_has_expand_and_tool_calls_under_a_line_with_their_keys()
+    {
+        using var window = Open();
+
+        Assert.Equal(["agent.expand", "log.toolCalls"], Below(window, Agents(window)));
+        Assert.Equal(["_Expand", "Show _tool calls in full"], Below(window, Agents(window)).Select(id => Item(window, id).Title));
+        Assert.Equal([Key.Enter, new Key('t')], Below(window, Agents(window)).Select(id => Item(window, id).Key));
+    }
+
+    [Fact]
+    public void Expanded_Agents_has_tool_calls_and_back_in_place_of_expand()
+    {
+        using var window = Open();
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+
+        window.Refresh();
+
+        Assert.Equal(["log.toolCalls", "agent.collapse"], Below(window, Agents(window)));
+        Assert.Equal("_Back to all agents", Item(window, "agent.collapse").Title);
+        Assert.Equal(Key.Esc, Item(window, "agent.collapse").Key);
+    }
+
+    [Fact]
+    public void Opening_Agents_after_going_back_to_the_grid_offers_expand_again()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open();
+        app.Begin(window);
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.Esc);
+
+        window.NewKeyDownEvent(new Key('a').WithAlt);
+
+        Assert.Equal(["agent.expand", "log.toolCalls"], Below(window, Agents(window)));
+    }
+
+    [Fact]
+    public void Cards_has_refresh_and_the_filter_under_a_line_with_their_keys()
+    {
+        using var window = Open();
+
+        Assert.Equal(["work.refresh", "work.mine"], Below(window, Cards(window)));
+        Assert.Equal([Key.F5, new Key('m')], Below(window, Cards(window)).Select(id => Item(window, id).Key));
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    public void An_open_Agents_menu_greys_out_what_needs_a_selected_agent(int keys, bool enabled)
+    {
+        using var window = Open();
+        foreach (var key in new[] { Key.Tab, Key.Enter }.Take(keys))
+            window.NewKeyDownEvent(key);
+        Agents(window).PopoverMenu!.Enabled = true;
+
+        window.Refresh();
+
+        Assert.All(Below(window, Agents(window)), id => Assert.Equal(enabled, Item(window, id).Enabled));
     }
 
     [Fact]
@@ -352,6 +418,22 @@ public class AppMenuTests : IDisposable
         window.Menus.Single(menu => Under(window, menu).Contains(id)).PopoverMenu!.Enabled = true;
         return Item(window, id);
     }
+
+    /// <summary>The ids above the menu's line, and below it.</summary>
+    private static List<string> Above(DashboardWindow window, MenuBarItem menu) => Group(window, menu, above: true);
+
+    private static List<string> Below(DashboardWindow window, MenuBarItem menu) => Group(window, menu, above: false);
+
+    private static List<string> Group(DashboardWindow window, MenuBarItem menu, bool above)
+    {
+        var views = menu.PopoverMenu!.Root!.SubViews.ToList();
+        var line = views.FindIndex(view => view is Line);
+        Assert.True(line > 0, menu.Title);
+        return [.. (above ? views.Take(line) : views.Skip(line + 1))
+            .Select(shown => window.MenuItems.Single(item => item.Item == shown).Id)];
+    }
+
+    private static MenuBarItem Agents(DashboardWindow window) => window.Menus.Single(menu => menu.Title == AppMenu.Agents);
 
     private static MenuBarItem Cards(DashboardWindow window) => window.Menus.Single(menu => menu.Title == AppMenu.Cards);
 

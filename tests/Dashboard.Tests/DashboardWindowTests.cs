@@ -371,7 +371,7 @@ public class DashboardWindowTests : IDisposable
             "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
             DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
         Assert.Equal(
-            "a-team 1.2.3 · Enter: read · p: set priority · m: only mine · r: refresh",
+            "a-team 1.2.3 · Enter: read · p: set priority · m: only mine · F5: refresh",
             DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
     }
 
