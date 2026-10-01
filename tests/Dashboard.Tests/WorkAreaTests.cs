@@ -1463,14 +1463,14 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Help_and_the_Commands_palette_show_F5_for_refresh()
+    public void The_Commands_palette_shows_F5_for_refresh_and_Help_leaves_it_to_the_menu()
     {
         using var window = Open();
 
         using var help = new HelpDialog(window.Commands.Registered);
         using var palette = new CommandsDialog(window.Commands.Registered);
 
-        Assert.Contains(help.Keys.Text.Split('\n'), row => row.StartsWith("F5 ") && row.EndsWith("refresh the Work area"));
+        Assert.DoesNotContain("F5", help.Keys.Text);
         Assert.Contains(
             palette.List.Source!.ToList().Cast<string>(),
             row => row.StartsWith("Read what's waiting again") && row.TrimEnd().EndsWith(" F5"));

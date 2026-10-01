@@ -4,21 +4,12 @@ using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The handful of keys worth memorising, starting with the one that finds the rest.</summary>
+/// <summary>Just enough to get started, starting with the key that finds the rest. Everything else is found in the
+/// menu or the Commands palette.</summary>
 public sealed class HelpDialog : Dialog
 {
-    /// <summary>What's worth memorising, in the order it's worth learning. The keys come from the registry.</summary>
-    private static readonly (string Text, string[] Ids)[] Curated =
-    [
-        ("every command, by name", ["commands"]),
-        ("select an agent", ["agent.next", "agent.right", "agent.left", "agent.down", "agent.up"]),
-        ("expand the selected agent", ["agent.expand"]),
-        ("scroll the log", ["log.pageUp", "log.pageDown"]),
-        ("settings", ["settings"]),
-        ("back to the grid", ["agent.collapse"]),
-        ("refresh the Work area", ["work.refresh"]),
-        ("quit", ["quit"]),
-    ];
+    private static readonly string[] Moves =
+        ["agent.next", "agent.right", "agent.left", "agent.down", "agent.up", "work.right", "work.left", "work.down", "work.up"];
 
     private const string HintText = "Esc close";
     private const int Gap = 4;
@@ -83,9 +74,15 @@ public sealed class HelpDialog : Dialog
 
     private static List<string> Rows(IReadOnlyList<CommandDescriptor> commands)
     {
-        var keys = Curated.Select(row => KeysFor(commands, row.Ids)).ToList();
-        var width = keys.Max(key => key.Length);
-        return [.. Curated.Select((row, index) => $"{keys[index].PadRight(width)}{new string(' ', Gap)}{row.Text}")];
+        (string Keys, string Text)[] rows =
+        [
+            (KeysFor(commands, ["commands"]), "every command, by name"),
+            (KeyNames.Short(MenuBar.DefaultKey), "the menu, or Alt and a menu's underlined letter"),
+            (KeysFor(commands, Moves), "move around"),
+            (KeysFor(commands, ["quit"]), "quit"),
+        ];
+        var width = rows.Max(row => row.Keys.Length);
+        return [.. rows.Select(row => $"{row.Keys.PadRight(width)}{new string(' ', Gap)}{row.Text}")];
     }
 
     private static string KeysFor(IReadOnlyList<CommandDescriptor> commands, string[] ids) =>

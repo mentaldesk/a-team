@@ -27,6 +27,7 @@ internal sealed class AppMenu
     private readonly CommandRegistry _commands;
     private readonly List<(string Id, MenuItem Item)> _items = [];
     private readonly List<MenuBarItem> _menus = [];
+    private readonly Dictionary<MenuBarItem, List<View>> _order = [];
     private readonly MenuBarItem _cards;
     private readonly MenuBarItem _agents;
 
@@ -36,7 +37,11 @@ internal sealed class AppMenu
         Bar = new MenuBar { Menus = [.. Layout.Select(Menu)] };
         _cards = _menus.Single(menu => menu.Title == Cards);
         _agents = _menus.Single(menu => menu.Title == Agents);
-        Bar.Disposing += (_, _) => _menus.Where(menu => menu.SuperView is null).ToList().ForEach(menu => menu.Dispose());
+        Bar.Disposing += (_, _) =>
+        {
+            _order.Values.SelectMany(views => views).Where(view => view.SuperView is null).ToList().ForEach(view => view.Dispose());
+            _menus.Where(menu => menu.SuperView is null).ToList().ForEach(menu => menu.Dispose());
+        };
         Show(area);
     }
 
@@ -75,7 +80,10 @@ internal sealed class AppMenu
                 item.Key = command.Key;
         }
         foreach (var menu in _menus)
+        {
+            Arrange(menu);
             Grey(menu);
+        }
     }
 
     /// <summary>Terminal.Gui binds a hot key with and without Alt, whether or not the view has focus, so a bare
@@ -84,7 +92,9 @@ internal sealed class AppMenu
     private MenuBarItem Menu((string Title, string[] Ids) entry)
     {
         var ids = entry.Title == Cards ? [.. CardIds(), .. entry.Ids] : entry.Ids;
-        var menu = new MenuBarItem(entry.Title, [.. ids.Select(id => id == Separator ? new Line() : (View)Item(id))]);
+        List<View> views = [.. ids.Select(id => id == Separator ? new Line() : (View)Item(id))];
+        var menu = new MenuBarItem(entry.Title, [.. views]);
+        _order[menu] = views;
         menu.HotKeyBindings.Remove(menu.HotKey);
         menu.HotKeyBindings.Remove(menu.HotKey.WithShift);
         // The app's quit key took Esc off the framework's Quit command, and the menu's close with it.
@@ -92,9 +102,11 @@ internal sealed class AppMenu
         menu.PopoverMenuOpenChanged += (_, _) =>
         {
             Shut(menu);
+            Arrange(menu);
             Grey(menu);
         };
         Shut(menu);
+        Arrange(menu);
         _menus.Add(menu);
         return menu;
     }
@@ -114,18 +126,29 @@ internal sealed class AppMenu
         if (menu.PopoverMenu is not { Enabled: true })
             return;
         foreach (var (id, item) in _items.Where(entry => entry.Item.SuperView == menu.PopoverMenu.Root))
-            item.Enabled = _commands.IsEnabledInMenu(id);
+            item.Enabled = _commands.IsEnabled(id);
+    }
+
+    /// <summary>Holds only the items the menu shows now, in layout order. One it doesn't is taken out rather than
+    /// hidden, since the menu still spaces out a hidden item.</summary>
+    private void Arrange(MenuBarItem menu)
+    {
+        if (menu.PopoverMenu?.Root is not { } root)
+            return;
+        List<View> shown = [.. _order[menu].Where(view => view is not MenuItem item || _commands.IsInMenu(_items.Single(entry => entry.Item == item).Id))];
+        if (root.SubViews.SequenceEqual(shown))
+            return;
+        root.SubViews.ToList().ForEach(view => root.Remove(view));
+        shown.ForEach(view => root.Add(view));
     }
 
     /// <summary>A card command goes last in the first group, above the line.</summary>
     private void AddCard(MenuItem item)
     {
-        if (_cards.PopoverMenu?.Root is not { } root)
-            return;
-        var below = root.SubViews.SkipWhile(view => view is not Line).ToList();
-        below.ForEach(view => root.Remove(view));
-        root.Add(item);
-        below.ForEach(view => root.Add(view));
+        var views = _order[_cards];
+        var line = views.FindIndex(view => view is Line);
+        views.Insert(line < 0 ? views.Count : line, item);
+        Arrange(_cards);
     }
 
     private string[] CardIds() => [.. _commands.Registered.Where(command => command.OnCard).Select(command => command.Id)];

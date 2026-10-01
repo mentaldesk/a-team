@@ -317,16 +317,43 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void Agents_has_expand_tool_calls_and_back_under_a_line_with_their_keys()
+    public void On_the_grid_Agents_has_expand_and_tool_calls_under_a_line_with_their_keys()
     {
         using var window = Open();
-        var agents = window.Menus.Single(menu => menu.Title == AppMenu.Agents);
 
-        Assert.Equal(["agent.expand", "log.toolCalls", "agent.collapse"], Below(window, agents));
-        Assert.Equal(
-            ["_Expand", "Show _tool calls in full", "_Back to all agents"],
-            Below(window, agents).Select(id => Item(window, id).Title));
-        Assert.Equal([Key.Enter, new Key('t'), Key.Esc], Below(window, agents).Select(id => Item(window, id).Key));
+        Assert.Equal(["agent.expand", "log.toolCalls"], Below(window, Agents(window)));
+        Assert.Equal(["_Expand", "Show _tool calls in full"], Below(window, Agents(window)).Select(id => Item(window, id).Title));
+        Assert.Equal([Key.Enter, new Key('t')], Below(window, Agents(window)).Select(id => Item(window, id).Key));
+    }
+
+    [Fact]
+    public void Expanded_Agents_has_tool_calls_and_back_in_place_of_expand()
+    {
+        using var window = Open();
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+
+        window.Refresh();
+
+        Assert.Equal(["log.toolCalls", "agent.collapse"], Below(window, Agents(window)));
+        Assert.Equal("_Back to all agents", Item(window, "agent.collapse").Title);
+        Assert.Equal(Key.Esc, Item(window, "agent.collapse").Key);
+    }
+
+    [Fact]
+    public void Opening_Agents_after_going_back_to_the_grid_offers_expand_again()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open();
+        app.Begin(window);
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.Esc);
+
+        window.NewKeyDownEvent(new Key('a').WithAlt);
+
+        Assert.Equal(["agent.expand", "log.toolCalls"], Below(window, Agents(window)));
     }
 
     [Fact]
@@ -339,32 +366,19 @@ public class AppMenuTests : IDisposable
     }
 
     [Theory]
-    [InlineData(0, new[] { false, false, false })]
-    [InlineData(1, new[] { true, false, false })]
-    [InlineData(2, new[] { true, true, true })]
-    public void An_open_Agents_menu_greys_out_what_needs_a_selected_or_expanded_agent(int keys, bool[] enabled)
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    public void An_open_Agents_menu_greys_out_what_needs_a_selected_agent(int keys, bool enabled)
     {
         using var window = Open();
-        var agents = window.Menus.Single(menu => menu.Title == AppMenu.Agents);
         foreach (var key in new[] { Key.Tab, Key.Enter }.Take(keys))
             window.NewKeyDownEvent(key);
-        agents.PopoverMenu!.Enabled = true;
+        Agents(window).PopoverMenu!.Enabled = true;
 
         window.Refresh();
 
-        Assert.Equal(enabled, Below(window, agents).Select(id => Item(window, id).Enabled));
-    }
-
-    [Fact]
-    public void Show_tool_calls_is_greyed_on_the_grid_but_t_still_works_there()
-    {
-        using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
-        window.Menus.Single(menu => menu.Title == AppMenu.Agents).PopoverMenu!.Enabled = true;
-        window.Refresh();
-
-        Assert.False(Item(window, "log.toolCalls").Enabled);
-        Assert.True(window.NewKeyDownEvent(new Key('t')));
+        Assert.All(Below(window, Agents(window)), id => Assert.Equal(enabled, Item(window, id).Enabled));
     }
 
     [Fact]
@@ -418,6 +432,8 @@ public class AppMenuTests : IDisposable
         return [.. (above ? views.Take(line) : views.Skip(line + 1))
             .Select(shown => window.MenuItems.Single(item => item.Item == shown).Id)];
     }
+
+    private static MenuBarItem Agents(DashboardWindow window) => window.Menus.Single(menu => menu.Title == AppMenu.Agents);
 
     private static MenuBarItem Cards(DashboardWindow window) => window.Menus.Single(menu => menu.Title == AppMenu.Cards);
 

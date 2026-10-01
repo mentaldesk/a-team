@@ -46,6 +46,9 @@ The dashboard has two custom views, each for a reason the built-ins can't cover:
 `TextView` can't scroll without moving its cursor, and `LoadingView`, because `SpinnerView` draws a
 single line in one colour.
 
+Help (F1) only gets someone started: the Commands palette key, how to open the menu, moving around,
+and quitting. Don't add rows to it. A new command belongs in the menu or the Commands palette.
+
 Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj`),
 outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's
 draw loop, so cover the logic behind the views instead.

@@ -263,13 +263,12 @@ public sealed class DashboardWindow : Window
             .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: AnyAgents)
             .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: AnyAgents)
             .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter, new Hint("expand", Mode.Grid), Selection,
-                menuLabel: () => "Expand")
+                menuLabel: () => "Expand", inMenu: () => _expanded is null)
             .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, scroll, Selection)
             .Register("log.pageDown", "Scroll the log down", () => Selected()?.Page(+1), Key.PageDown, scroll, Selection)
             .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
             .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
-            .Register("log.toolCalls", () => "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection,
-                inMenu: () => _expanded is not null)
+            .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
             .Register("work.right", "Select the column to the right", () => _work.MoveColumn(+1), Key.CursorRight, isEnabled: OnWork)
             .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
@@ -297,7 +296,7 @@ public sealed class DashboardWindow : Window
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("agent.collapse", () => "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded),
-                () => OnDashboard() && _expanded is not null, menuLabel: () => "Back to all agents")
+                () => OnDashboard() && _expanded is not null, menuLabel: () => "Back to all agents", inMenu: () => _expanded is not null)
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
     }
 

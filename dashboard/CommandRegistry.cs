@@ -80,9 +80,8 @@ public sealed class CommandRegistry
     /// <summary>Whether <paramref name="id"/> would run now. One with no test of its own always would.</summary>
     public bool IsEnabled(string id) => _entries.Find(entry => entry.Id == id)?.IsEnabled?.Invoke() != false;
 
-    /// <summary>Whether the menu offers <paramref name="id"/> now: enabled, and not narrowed further for the menu alone.</summary>
-    public bool IsEnabledInMenu(string id) =>
-        IsEnabled(id) && _entries.Find(entry => entry.Id == id)?.InMenu?.Invoke() != false;
+    /// <summary>Whether the menu shows <paramref name="id"/> now. One with no test of its own always does.</summary>
+    public bool IsInMenu(string id) => _entries.Find(entry => entry.Id == id)?.InMenu?.Invoke() != false;
 
     /// <summary>Runs a command by name, enabled or not. False when nothing is registered under that id.</summary>
     public bool Execute(string id)

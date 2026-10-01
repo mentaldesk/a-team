@@ -7,19 +7,15 @@ namespace ATeam.Dashboard.Tests;
 public class HelpDialogTests
 {
     [Fact]
-    public void It_lists_the_palette_first_and_the_keys_worth_memorising_under_it()
+    public void It_lists_the_palette_the_menu_moving_around_and_quitting_and_nothing_else()
     {
         using var dialog = Open();
 
         Assert.Equal(
             [
                 "Ctrl+E        every command, by name",
-                "Tab/arrows    select an agent",
-                "Enter         expand the selected agent",
-                "PgUp/PgDn     scroll the log",
-                "s             settings",
-                "Esc           back to the grid",
-                "F5            refresh the Work area",
+                "F10           the menu, or Alt and a menu's underlined letter",
+                "Tab/arrows    move around",
                 "q             quit",
             ],
             Rows(dialog));
@@ -30,20 +26,20 @@ public class HelpDialogTests
     {
         using var dialog = new HelpDialog(new CommandRegistry()
             .Register("commands", "Commands", () => { }, Key.P.WithCtrl)
-            .Register("agent.expand", "Expand", () => { }, Key.Space)
+            .Register("agent.next", "Select the next agent", () => { }, Key.Space)
             .Registered);
 
         Assert.Equal("Ctrl+P    every command, by name", Rows(dialog)[0]);
-        Assert.Equal("Space     expand the selected agent", Rows(dialog)[2]);
+        Assert.Equal("Space     move around", Rows(dialog)[2]);
     }
 
     [Fact]
     public void A_row_whose_commands_have_no_key_shows_none()
     {
-        using var dialog = new HelpDialog(new CommandRegistry().Register("settings", "Settings", () => { }).Registered);
+        using var dialog = new HelpDialog(new CommandRegistry().Register("quit", "Quit", () => { }).Registered);
 
         Assert.Equal("every command, by name", Rows(dialog)[0].Trim());
-        Assert.Equal("settings", Rows(dialog)[4].Trim());
+        Assert.Equal("quit", Rows(dialog)[3].Trim());
     }
 
     [Fact]
@@ -145,11 +141,8 @@ public class HelpDialogTests
         .Register("agent.down", "Select the agent below", () => { }, Key.CursorDown)
         .Register("agent.up", "Select the agent above", () => { }, Key.CursorUp)
         .Register("agent.expand", "Expand the selected agent", () => { }, Key.Enter)
-        .Register("log.pageUp", "Scroll the log up", () => { }, Key.PageUp)
-        .Register("log.pageDown", "Scroll the log down", () => { }, Key.PageDown)
         .Register("settings", "Settings", () => { }, new Key('s'))
         .Register("commands", "Commands", () => { }, Key.E.WithCtrl)
-        .Register("agent.collapse", "Back to the agent grid", () => { }, Key.Esc)
         .Register("work.refresh", "Read what's waiting again", () => { }, Key.F5)
         .Register("quit", "Quit", () => { }, new Key('q'))
         .Registered);
