@@ -98,12 +98,24 @@ SINCE='def stamp: fromdateiso8601
         then strflocaltime("%H:%M") else strflocaltime("%d %b %H:%M") end;
   def since($at): if $at == "" then "" else " since \($at | stamp)" end;'
 
+# fenced: for each line, whether it's inside a ``` or ~~~ code block, its fences included.
 # needs_answer: a pitch body's "Needs your answer" section, heading and all, or "" when nothing's in it.
-NEEDS='def needs_answer: (gsub("\r"; "") | split("\n")) as $lines
-    | ([range($lines | length) | select($lines[.] | test("^##[ \t]+Needs your answer[ \t]*$"; "i"))] | first) as $at
+NEEDS='def fenced: reduce .[] as $line ({fence: null, out: []};
+      .fence as $open
+      | if $open == null then
+          ([$line | capture("^ {0,3}(?<f>`{3,}|~{3,})")] | .[0].f) as $f | .fence = $f | .out += [$f != null]
+        else
+          .out += [true]
+          | if $line | test("^ {0,3}\($open[:1]){\($open | length),}[ \t]*$") then .fence = null else . end
+        end) | .out;
+  def needs_answer: (gsub("\r"; "") | split("\n")) as $lines | ($lines | fenced) as $fenced
+    | ([range($lines | length) | select(($fenced[.] | not) and ($lines[.] | test("^##[ \t]+Needs your answer[ \t]*$"; "i")))]
+       | first) as $at
     | if $at == null then "" else
-        ($lines[$at + 1:] | (map(test("^#{1,2}[ \t]|^---+[ \t]*$|<!-- a-team:")) | index(true)) as $end
-         | .[:($end // length)] | join("\n") | sub("^\\s+"; "") | sub("\\s+$"; "")) as $text
+        ([range($at + 1; $lines | length)
+          | select(($fenced[.] | not) and ($lines[.] | test("^#{1,2}[ \t]|^---+[ \t]*$|<!-- a-team:")))] | first) as $stop
+        | ($lines[$at + 1:($stop // ($lines | length))]
+           | join("\n") | sub("^\\s+"; "") | sub("\\s+$"; "")) as $text
         | if $text == "" or ($text | test("^none\\.?$"; "i")) then "" else "## Needs your answer\n\n\($text)" end
       end;'
 

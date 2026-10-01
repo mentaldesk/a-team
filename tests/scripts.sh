@@ -703,6 +703,26 @@ same "turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
 same "reason" '"answering your feedback since 10:50"' "$(jq -c '.[0].reason' "$OUT")"
 same "question" '"## Needs your answer\n\n1. **Devs or Worktrees?** I can'"'"'t pick."' "$(jq -c '.[0].question' "$OUT")"
 
+case_ "a Needs your answer heading inside a code block isn't a question, and doesn't end one"
+# #261 shows the new pitch format in a mockup; 264 adds a real section above it.
+PITCH_261=$(awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }' "$ROOT/tests/fixtures/pitch-261.md")
+gh_items <<'ITEMS'
+Pitched 263 Only a mockup
+Pitched 264 A real one and a mockup
+Pitched 265 A question with a code block
+Pitched 266 A tilde fence
+ITEMS
+gh_talk <<TALK
+263 body ${TODAY}T08:00:00Z demo-app[bot] $PITCH_261
+264 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\n1. **Which?** Real.\n\n$PITCH_261
+265 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\n1. **Which?** Like:\n\n   \`\`\`\n   # not a heading\n   \`\`\`\n\n2. **And?** More.\n\n## Original idea\n\n> Hi\n<!-- a-team:lead -->
+266 body ${TODAY}T08:00:00Z demo-app[bot] ~~~~\n## Needs your answer\n~~~\n1. Still fenced.\n~~~~\n<!-- a-team:lead -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "questions" '[[263,null],[264,"## Needs your answer\n\n1. **Which?** Real."],[265,"## Needs your answer\n\n1. **Which?** Like:\n\n   ```\n   # not a heading\n   ```\n\n2. **And?** More."],[266,null]]' \
+  "$(jq -c '[.[] | [.number, .question]]' "$OUT")"
+
 case_ "a task the Dev handed back with a question waits on the reviewer, with the question"
 gh_items <<'ITEMS'
 In_review 115 I can change any of the keys
