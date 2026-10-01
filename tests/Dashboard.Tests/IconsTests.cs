@@ -55,6 +55,7 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.Finished] = "■",
                 [Icon.YourMove] = "✓",
                 [Icon.TheirMove] = "·",
+                [Icon.Idea] = "\U0001F4A1",
                 [Icon.Pitch] = "◇",
                 [Icon.Task] = "‹›",
                 [Icon.PullRequest] = "PR",
@@ -74,7 +75,7 @@ public class IconsTests : StaticConfigurationTest
     [InlineData(IconStyle.Unicode)]
     public void A_cards_kind_and_its_PR_wear_glyphs_no_other_meaning_does(IconStyle style)
     {
-        Icon[] kinds = [Icon.Pitch, Icon.Task, Icon.PullRequest];
+        Icon[] kinds = [Icon.Idea, Icon.Pitch, Icon.Task, Icon.PullRequest];
         var others = Enum.GetValues<Icon>().Except(kinds).Select(icon => Icons.Glyph(icon, style)).ToHashSet();
 
         Assert.Equal(kinds.Length, kinds.Select(icon => Icons.Glyph(icon, style)).Distinct().Count());

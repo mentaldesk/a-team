@@ -79,11 +79,13 @@ public class CardTests
     }
 
     [Theory]
-    [InlineData(IconStyle.NerdFont, "\U000F0428")]
-    [InlineData(IconStyle.Unicode, "◇")]
-    public void An_Idea_wears_the_pitch_icon(IconStyle style, string kind)
+    [InlineData(IconStyle.NerdFont, false, "\uF400")]
+    [InlineData(IconStyle.NerdFont, true, "\uF400")]
+    [InlineData(IconStyle.Unicode, false, "\U0001F4A1")]
+    [InlineData(IconStyle.Unicode, true, "\U0001F4A1")]
+    public void An_Idea_wears_a_light_bulb(IconStyle style, bool pitch, string kind)
     {
-        var card = new Card(Unranked, false);
+        var card = new Card(Unranked with { Pitch = pitch }, false);
 
         Assert.Equal(new TurnIcon(kind, card.Lead(style).Scheme), card.Leads(style)[1]);
     }

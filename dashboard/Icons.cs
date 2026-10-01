@@ -30,6 +30,7 @@ public enum Icon
     Finished,
     YourMove,
     TheirMove,
+    Idea,
     Pitch,
     Task,
     PullRequest,
@@ -61,6 +62,7 @@ public static class Icons
         [Icon.Finished] = "\U000F023C",  // nf-md-flag_checkered
         [Icon.YourMove] = "\U000F05E0",  // nf-md-check_circle
         [Icon.TheirMove] = "\U000F0D70", // nf-md-face_agent
+        [Icon.Idea] = "\uF400",        // nf-oct-light_bulb
         [Icon.Pitch] = "\U000F0428",    // nf-md-presentation
         [Icon.Task] = "\uEC37",         // nf-cod-code_review
         [Icon.PullRequest] = "\uE726",  // nf-dev-git_pull_request
@@ -82,6 +84,7 @@ public static class Icons
         [Icon.Finished] = "■",
         [Icon.YourMove] = "✓",
         [Icon.TheirMove] = "·",
+        [Icon.Idea] = "\U0001F4A1",
         [Icon.Pitch] = "◇",
         [Icon.Task] = "‹›",
         [Icon.PullRequest] = "PR",
@@ -136,7 +139,10 @@ public static class Icons
 
     /// <summary>What kind of thing the item is, in the colour of whose move it is.</summary>
     public static TurnIcon Kind(WaitingItem item, IconStyle style) =>
-        For(item, style) with { Glyph = Glyph(item.Pitch || item.Status == "Idea" ? Icon.Pitch : Icon.Task, style) };
+        For(item, style) with { Glyph = Glyph(KindOf(item), style) };
+
+    private static Icon KindOf(WaitingItem item) =>
+        item.Status == "Idea" ? Icon.Idea : item.Pitch ? Icon.Pitch : Icon.Task;
 }
 
 /// <summary>A row wears its icon and its Priority in the cells the tree laid out in front of its text: drawn
