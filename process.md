@@ -68,8 +68,9 @@ a-team board {{team}} comment <role> <n> <file> # post a comment, marked as your
 a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass
                                                 # over it from now on
 a-team board {{team}} feedback <role> <n>       # stakeholder comments with no 👀 on them yet
-a-team board {{team}} link <parent> <child>     # make <child> a sub-issue of <parent>
+a-team board {{team}} link <parent> <child>     # make task <child> a sub-issue of <parent>
 a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again
+                                                # (an idea under a pitch: says so on both)
 a-team board {{team}} depends <role> <task> <prereq> "<why>"
                                                 # <task> can't start until <prereq> closes; <why>
                                                 # is posted on <task>
@@ -78,7 +79,7 @@ a-team board {{team}} undepend <role> <task> <prereq> "<why>"
 a-team board {{team}} unblock <role> <n>        # Dev only: clear `blocked` on a task it handed back,
                                                 # once a stakeholder has replied to its question
 a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON
-a-team board {{team}} children <n>              # sub-issues and whether they're closed
+a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
 a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a run for;

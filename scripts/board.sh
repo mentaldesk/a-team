@@ -249,6 +249,13 @@ parent_of() {
   gh api "repos/$REPO/issues/$1" --jq '.parent_issue_url // empty | split("/") | last'
 }
 
+# idea <issue> <status>: the child is an idea rather than a task, by its labels or its board status.
+idea() {
+  jq -e '.labels | index("pitch")' <<<"$1" >/dev/null && return 0
+  case "$2" in Idea | Exploring | Pitched | Approved | Building) return 0 ;; esac
+  return 1
+}
+
 # The Idea the Lead should pitch next: a stakeholder's own, or any a stakeholder has prioritised,
 # passing over the ones the Lead has skipped and a stakeholder hasn't since commented on.
 pitchable_idea() {
@@ -819,7 +826,10 @@ case "$CMD" in
 
   link)
     [ $# -eq 2 ] || die "usage: board.sh $TEAM link <parent> <child>"
-    child_id=$(gh api "repos/$REPO/issues/$2" --jq .id)
+    child=$(gh api "repos/$REPO/issues/$2" --jq '{id, labels: [.labels[].name]}')
+    child_id=$(jq -r .id <<<"$child")
+    idea "$child" "$(item "$2" | jq -r '.status // empty')" &&
+      die "#$2 is an idea, not a task: say \"Follow-up from #$1\" in its body instead of linking it"
     write "make #$2 a sub-issue of #$1" gh api -X POST "repos/$REPO/issues/$1/sub_issues" -F "sub_issue_id=$child_id" >/dev/null
     say "#$2 is now a sub-issue of #$1"
     ;;
@@ -855,17 +865,36 @@ case "$CMD" in
     all=$(items)
     board_status() { jq -r --argjson n "$1" 'map(select(.number == $n)) | first | .status // empty' <<<"$all"; }
     from=$(board_status "$child")
-    [ -n "$from" ] || die "#$child is not on the board"
-    [ "$from" = Ready ] || die "$role may only take a Ready task off a pitch (#$child is '$from')"
+    issue=$(gh api "repos/$REPO/issues/$child" --jq '{id, title, body: (.body // ""), labels: [.labels[].name]}')
     jq -e --argjson n "$parent" 'map(select(.number == $n)) | first | (.labels // []) | index("pitch")' <<<"$all" >/dev/null ||
       die "$role may only take a task off a pitch (#$parent is not one)"
     pitch_status=$(board_status "$parent")
-    [ "$pitch_status" = Building ] ||
-      die "$role may only take a task off a pitch in Building (#$parent is '$pitch_status')"
+    followup=
+    idea "$issue" "$from" && followup=1
+    if [ -n "$followup" ]; then
+      [ "$pitch_status" != Done ] || die "$role may not change a Done pitch (#$parent)"
+    else
+      [ -n "$from" ] || die "#$child is not on the board"
+      [ "$from" = Ready ] || die "$role may only take a Ready task off a pitch (#$child is '$from')"
+      [ "$pitch_status" = Building ] ||
+        die "$role may only take a task off a pitch in Building (#$parent is '$pitch_status')"
+    fi
     [ "$(parent_of "$child")" = "$parent" ] || die "#$child is not a sub-issue of #$parent"
     write "take #$child off #$parent" gh api -X DELETE "repos/$REPO/issues/$parent/sub_issue" \
-      -F "sub_issue_id=$(gh api "repos/$REPO/issues/$child" --jq .id)" >/dev/null
-    say "#$child is no longer a sub-issue of #$parent"
+      -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
+    if [ -z "$followup" ]; then
+      say "#$child is no longer a sub-issue of #$parent"
+      exit 0
+    fi
+    body=$(printf '#%s (%s) grew out of this pitch and is its own item now, so it no longer holds this one up. Its body names #%s as where it came from.\n\n<!-- a-team:%s -->' \
+      "$child" "$(jq -r .title <<<"$issue")" "$parent" "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$parent" gh issue comment "$parent" -R "$REPO" --body-file -
+    if ! jq -e --arg p "$parent" '.body | test("Follow-up from #" + $p + "\\b")' <<<"$issue" >/dev/null; then
+      write "add 'Follow-up from #$parent' to #$child" gh issue edit "$child" -R "$REPO" \
+        --body "$(jq -r --arg p "$parent" '"Follow-up from #\($p)\n\n\(.body)"' <<<"$issue")" >/dev/null
+    fi
+    say "#$child is no longer a sub-issue of #$parent; said so on #$parent, and #$child names #$parent as where it came from"
     ;;
 
   unblock)
@@ -898,7 +927,8 @@ case "$CMD" in
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
-      jq -s 'add // [] | map({number, title, state, labels: [.labels[].name]})'
+      jq -s --argjson all "$(items)" 'add // [] | map(.number as $n | {number, title, state, labels: [.labels[].name],
+        status: ([$all[] | select(.number == $n) | .status] | first)})'
     ;;
 
   waiting)

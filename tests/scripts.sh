@@ -148,6 +148,8 @@ gh_items() {
   LINE="$BIN/line.json" REVIEWS="$BIN/reviews.json" RECENT="$BIN/recent.json"
   ACKED="$BIN/acked" POSTED="$BIN/posted" EMPTY="$BIN/empty.json"
   BLOCKED="$BIN/blocked.json" WRITES="$BIN/writes"
+  EDITED="$BIN/edited" SUBS="$BIN/subs.json"
+  echo '[]' >"$SUBS"
   : >"$ACKED"
   : >"$POSTED"
   : >"$WRITES"
@@ -182,6 +184,10 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"; printf '%s' "\${@: -1}" >"$EDITED"; exit 0 ;;
+  *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
+  *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
+  *sub_issues*) page="$SUBS" ;;
   *"--remove-label"*) echo "\$*" >>"$WRITES"; exit 0 ;;
   *"/labels -f labels[]="*) echo "\$*" >>"$WRITES"; echo '[]'; exit 0 ;;
   *"label list"*) page="$EMPTY" ;;
@@ -1515,6 +1521,173 @@ same "said" "(dry run) #11 is no longer blocked by #21, and said why on #11" "$(
 grep -q "No longer blocked by #21: looked again" "$ERR" || fail "dry run: no comment in '$(cat "$ERR")'"
 same "posted" "" "$(cat "$POSTED")"
 same "writes" "" "$(cat "$WRITES")"
+
+# `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
+# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
+gh_child() {
+  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
+    {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
+     labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
+     parent_issue_url: (if $parent == "-" then null
+                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
+  : >"$POSTED"
+  : >"$WRITES"
+  : >"$EDITED"
+}
+
+case_ "link refuses to file an idea under a pitch, in one line, and writes nothing"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Building 10 A pitch
+Idea 30 An idea
+Exploring 31 A draft
+Pitched 32 A pitch in front of the stakeholder
+Approved 33 An approved pitch
+Building 34 A pitch being built
+Ready 40 A task
+ITEMS
+for n in 30 31 32 33 34; do
+  gh_child "$n" - -
+  run board demo link 10 "$n"
+  failed "link #$n"
+  one_line "link #$n"
+  grep -qF "#$n is an idea, not a task: say \"Follow-up from #10\" in its body instead of linking it" "$ERR" ||
+    fail "link #$n: '$(cat "$ERR")'"
+  same "link #$n writes" "" "$(cat "$WRITES")"
+done
+gh_child 50 - pitch
+run board demo link 10 50
+failed "link labelled pitch"
+grep -qF "#50 is an idea, not a task" "$ERR" || fail "link labelled pitch: '$(cat "$ERR")'"
+same "link labelled pitch writes" "" "$(cat "$WRITES")"
+
+case_ "link still files a task that's Ready, or not on the board yet"
+for n in 40 41; do
+  gh_child "$n" - -
+  run board demo link 10 "$n"
+  same "link #$n exit" 0 "$STATUS"
+  same "link #$n said" "#$n is now a sub-issue of #10" "$(cat "$OUT")"
+  grep -q "^POST .*/issues/10/sub_issues .*sub_issue_id=90$n" "$WRITES" || fail "link #$n: '$(cat "$WRITES")'"
+done
+
+case_ "unlink takes an idea off a pitch in any status before Done, says so on the pitch, and names the pitch on the idea"
+for parent in Pitched Approved Building In_review; do
+  gh_items <<ITEMS
+$parent 10 A pitch
+Building 30 The follow-up
+ITEMS
+  edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+  gh_child 30 10 pitch
+  run board demo unlink lead 10 30
+  same "$parent exit" 0 "$STATUS"
+  same "$parent said" "#30 is no longer a sub-issue of #10; said so on #10, and #30 names #10 as where it came from" "$(cat "$OUT")"
+  grep -q "^DELETE .*/issues/10/sub_issue .*sub_issue_id=9030" "$WRITES" || fail "$parent: no unlink in '$(cat "$WRITES")'"
+  grep -q "^#30 (The follow-up) grew out of this pitch and is its own item now, so it no longer holds this one up" "$POSTED" ||
+    fail "$parent: comment '$(cat "$POSTED")'"
+  grep -q '<!-- a-team:lead -->' "$POSTED" || fail "$parent: no lead marker in '$(cat "$POSTED")'"
+  same "$parent body" "Follow-up from #10
+
+Spotted while reviewing." "$(cat "$EDITED")"
+done
+
+case_ "an idea not labelled pitch yet is taken off too, by its board status"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Idea 30 The follow-up
+ITEMS
+gh_child 30 10 -
+run board demo unlink lead 10 30
+same "exit" 0 "$STATUS"
+grep -q "^DELETE " "$WRITES" || fail "idea: no unlink in '$(cat "$WRITES")'"
+
+case_ "unlink leaves the idea's body alone when it already names the pitch"
+gh_child 30 10 - "Follow-up from #10, where the stakeholder asked for it."
+run board demo unlink lead 10 30
+same "exit" 0 "$STATUS"
+same "edited" "" "$(cat "$EDITED")"
+grep -q "^EDIT " "$WRITES" && fail "named: body edited anyway"
+gh_child 30 10 - "Follow-up from #100."
+run board demo unlink lead 10 30
+grep -q "^Follow-up from #10$" "$EDITED" || fail "#100 isn't #10: '$(cat "$EDITED")'"
+
+case_ "unlink refuses an idea under a Done pitch, or one that isn't under it, and writes nothing"
+gh_items <<'ITEMS'
+Done 10 A pitch
+Building 20 Another pitch
+Building 30 The follow-up
+ITEMS
+edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+gh_child 30 10 pitch
+run board demo unlink lead 10 30
+failed "done"
+one_line "done"
+grep -q "may not change a Done pitch (#10)" "$ERR" || fail "done: '$(cat "$ERR")'"
+same "done writes" "" "$(cat "$WRITES")"
+run board demo unlink lead 20 30
+failed "not a sub-issue"
+one_line "not a sub-issue"
+grep -q "#30 is not a sub-issue of #20" "$ERR" || fail "not a sub-issue: '$(cat "$ERR")'"
+same "not a sub-issue writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "a task still unlinks only when Ready, from a Building pitch, with nothing said"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Ready 40 A task
+In_progress 41 A started task
+In_review 42 A task in review
+Done 43 A done task
+ITEMS
+gh_child 40 10 -
+run board demo unlink lead 10 40
+same "ready exit" 0 "$STATUS"
+same "ready said" "#40 is no longer a sub-issue of #10" "$(cat "$OUT")"
+grep -q "^DELETE " "$WRITES" || fail "ready: no unlink in '$(cat "$WRITES")'"
+same "ready posted" "" "$(cat "$POSTED")"
+same "ready edited" "" "$(cat "$EDITED")"
+for n in 41 42 43; do
+  gh_child "$n" 10 -
+  run board demo unlink lead 10 "$n"
+  failed "task #$n"
+  grep -q "may only take a Ready task off a pitch" "$ERR" || fail "task #$n: '$(cat "$ERR")'"
+  same "task #$n writes" "" "$(cat "$WRITES")"
+done
+gh_child 40 10 -
+run board demo unlink dev 10 40
+failed "dev"
+grep -q "dev may not take a task off a pitch" "$ERR" || fail "dev: '$(cat "$ERR")'"
+
+case_ "children shows each child's board status, null when it isn't on the board"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Ready 40 A task
+Building 30 The follow-up
+ITEMS
+jq -n '[{number: 40, title: "A task", state: "open", labels: []},
+        {number: 30, title: "The follow-up", state: "open", labels: [{name: "pitch"}]},
+        {number: 44, title: "Not on the board", state: "closed", labels: []}]' >"$SUBS"
+run board demo children 10
+same "exit" 0 "$STATUS"
+same "children" '[{"number":40,"status":"Ready"},{"number":30,"status":"Building"},{"number":44,"status":null}]' \
+  "$(jq -c 'map({number, status})' "$OUT")"
+same "labels" '["pitch"]' "$(jq -c '.[1].labels' "$OUT")"
+
+case_ "--dry-run says every write unlink would make, and makes none"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Building 30 The follow-up
+ITEMS
+gh_child 30 10 pitch
+run board --dry-run demo unlink lead 10 30
+same "exit" 0 "$STATUS"
+grep -q "would take #30 off #10" "$ERR" || fail "dry run: no unlink in '$(cat "$ERR")'"
+grep -q "would comment on #10" "$ERR" || fail "dry run: no comment in '$(cat "$ERR")'"
+grep -q "would add 'Follow-up from #10' to #30" "$ERR" || fail "dry run: no body edit in '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+same "edited" "" "$(cat "$EDITED")"
 
 case_ "with every worktree taken, the Dev isn't woken for a Ready task"
 fixture <<'JSON'
