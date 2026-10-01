@@ -56,7 +56,19 @@ For each item in `a-team board {{team}} mine dev "In progress"`:
 - Otherwise a run didn't finish it. Pick it up from its worktree and branch if they exist. If it
   can't be finished, comment why and `a-team board {{team}} move dev <n> Ready`.
 
-### 4. Take new work
+### 4. Read answers to your questions
+
+For each item in `a-team board {{team}} mine dev Ready` labelled `blocked` that you handed back
+with a question, read `a-team board {{team}} feedback dev <n>`. With nothing new, leave it. A
+task a stakeholder labelled `blocked` themselves, with no question from you, is theirs: leave it
+alone even if they comment. Otherwise judge whether the reply answers your question:
+
+- If it does, `a-team board {{team}} unblock dev <n>`. That task is this run's new work: take it
+  up as in step 5, from its step 3, if the WIP limit allows. If not, it waits in Ready for `next`.
+- If it doesn't, reply with `a-team board {{team}} comment dev <n>`: rephrase the question, or say
+  what you still need. Leave it `blocked`.
+
+### 5. Take new work
 
 Only if your **In progress** plus **In review** count in `a-team board {{team}} wip` (under `dev`,
 which leaves blocked tasks out) is below `wip.worktrees` — or, while an unblocked Ready task is

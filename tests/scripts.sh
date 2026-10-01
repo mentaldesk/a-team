@@ -182,6 +182,7 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"--remove-label"*) echo "\$*" >>"$WRITES"; exit 0 ;;
   *"/labels -f labels[]="*) echo "\$*" >>"$WRITES"; echo '[]'; exit 0 ;;
   *"label list"*) page="$EMPTY" ;;
   *check-runs*) page="$RUNS" ;;
@@ -707,6 +708,88 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "numbers" '[115]' "$(jq -c '[.[].number]' "$OUT")"
 
+case_ "a reply to the Dev's question starts a Dev run, and a held task's comment doesn't"
+gh_talk <<TALK
+192 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 comment ${TODAY}T08:23:06Z demo-app[bot] Which marker should it post?\n<!-- a-team:dev -->
+192 labeled ${TODAY}T08:23:14Z demo-app[bot] blocked
+192 comment ${TODAY}T10:50:00Z reviewer The Dev's own.
+195 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 labeled ${TODAY}T09:00:00Z reviewer blocked
+195 comment ${TODAY}T09:30:00Z reviewer Not yet, I'm holding this.
+TALK
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" "[\"stakeholder answered the Dev's question on #192 (${TODAY}T10:50:00Z)\"]" "$(jq -c .reasons "$OUT")"
+run board demo waiting
+same "no unread in waiting" 'null' "$(jq -c '.[] | select(.number == 192) | .unread' "$OUT")"
+
+case_ "once a run has read the reply, it starts no more runs"
+gh_talk <<TALK
+192 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 comment ${TODAY}T08:23:06Z demo-app[bot] Which marker should it post?\n<!-- a-team:dev -->
+192 labeled ${TODAY}T08:23:14Z demo-app[bot] blocked
+192 comment+seen ${TODAY}T10:50:00Z reviewer The Dev's own.
+TALK
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "the Dev asking again makes the question the reviewer's once more"
+gh_talk <<TALK
+192 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 comment ${TODAY}T08:23:06Z demo-app[bot] Which marker should it post?\n<!-- a-team:dev -->
+192 labeled ${TODAY}T08:23:14Z demo-app[bot] blocked
+192 comment+seen ${TODAY}T10:50:00Z reviewer I don't understand the question.
+192 comment ${TODAY}T11:00:00Z demo-app[bot] Put another way: the Lead's marker or the Dev's?\n<!-- a-team:dev -->
+TALK
+run board demo waiting
+same "turn" '"you"' "$(jq -c '.[] | select(.number == 192) | .turn' "$OUT")"
+same "reason" '"asked you since 11:00"' "$(jq -c '.[] | select(.number == 192) | .reason' "$OUT")"
+run board --dry-run demo unblock dev 192
+failed "unblock before a reply"
+grep -q "no stakeholder has replied" "$ERR" || fail "unblock before a reply: '$(cat "$ERR")'"
+
+case_ "the Dev may clear blocked once the reviewer has replied, and reads the reply once"
+gh_talk <<TALK
+192 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 comment ${TODAY}T08:23:06Z demo-app[bot] Which marker should it post?\n<!-- a-team:dev -->
+192 labeled ${TODAY}T08:23:14Z demo-app[bot] blocked
+192 comment ${TODAY}T10:50:00Z reviewer The Dev's own.
+TALK
+gh_thread <<THREAD
+body ${TODAY}T07:00:00Z demo-app[bot] 0 The task\n<!-- a-team:lead -->
+comment ${TODAY}T08:23:06Z demo-app[bot] 0 Which marker should it post?\n<!-- a-team:dev -->
+comment ${TODAY}T10:50:00Z reviewer 0 The Dev's own.
+THREAD
+: >"$WRITES"
+: >"$ACKED"
+run board --dry-run demo unblock dev 192
+same "dry-run exit" 0 "$STATUS"
+same "dry-run said" "(dry run) #192: no longer blocked" "$(cat "$OUT")"
+same "dry-run writes" "" "$(cat "$WRITES")"
+same "dry-run acked" "" "$(cat "$ACKED")"
+A_TEAM_RUN_STARTED=${TODAY}T23:59:59Z run board demo unblock dev 192
+same "exit" 0 "$STATUS"
+same "writes" "issue edit 192 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
+same "acked" "IC_2" "$(cat "$ACKED")"
+
+case_ "the Dev may not clear blocked on a task the reviewer holds, nor may the Lead"
+gh_talk <<TALK
+195 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 labeled ${TODAY}T09:00:00Z reviewer blocked
+195 comment ${TODAY}T09:30:00Z reviewer Not yet, I'm holding this.
+TALK
+: >"$WRITES"
+run board demo unblock dev 195
+failed "held task"
+grep -q "a stakeholder is holding it" "$ERR" || fail "held task: '$(cat "$ERR")'"
+run board demo unblock lead 192
+failed "lead"
+run board demo unblock dev 115
+failed "a task in review"
+same "writes" "" "$(cat "$WRITES")"
+
 case_ "body returns an issue's number, title and body, in one call"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
@@ -862,6 +945,9 @@ run board demo approve you 7
 failed "approve a PR"
 grep -q "#7 is not an issue" "$ERR" || fail "approve a PR: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+case_ "the agents' settings deny removing a label by hand, so blocked is cleared only through unblock"
+grep -qF '"Bash(gh issue edit *--remove-label*)"' "$ROOT/settings/agents.json" || fail "no remove-label deny rule"
 
 case_ "the agents' settings deny approve, beside priority"
 grep -qF '"Bash(a-team board * approve *)"' "$ROOT/settings/agents.json" || fail "no approve deny rule"
