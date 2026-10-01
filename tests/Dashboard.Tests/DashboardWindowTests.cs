@@ -360,33 +360,6 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_offers_Enter_to_expand_and_Esc_to_go_back_from_there()
-    {
-        using var window = Open(agents: Agents(4));
-
-        Assert.Equal(
-            "a-team 1.2.3 · Enter: expand",
-            DashboardWindow.Hints("1.2.3", Mode.Grid, window.Commands));
-        Assert.Equal(
-            "a-team 1.2.3 · PgUp/PgDn: scroll · Esc: back",
-            DashboardWindow.Hints("1.2.3", Mode.Expanded, window.Commands));
-        Assert.Equal(
-            "a-team 1.2.3 · Enter: read · p: set priority · m: only mine · F5: refresh",
-            DashboardWindow.Hints("1.2.3", Mode.Work, window.Commands));
-    }
-
-    /// <summary>Work's bar is the one #130 asks for, which its mockup already draws cut off at 80 columns.</summary>
-    [Fact]
-    public void Every_bar_but_the_Work_area_s_fits_the_80_columns_the_narrowest_window_has()
-    {
-        using var window = Open(agents: Agents(4));
-
-        Assert.All(
-            new[] { Mode.Grid, Mode.Expanded },
-            mode => Assert.InRange(DashboardWindow.Hints("1.2.3", mode, window.Commands).Length, 1, 77));
-    }
-
-    [Fact]
     public void Every_action_the_dashboard_has_is_a_command_you_can_run_by_name()
     {
         using var window = Open(agents: Agents(4));
@@ -422,9 +395,6 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(new Key('s'), window.Commands.Registered.Single(c => c.Id == "settings").Key);
         Assert.DoesNotContain(window.Commands.Registered, c => c.Key == new Key(',').WithCtrl);
         Assert.False(window.NewKeyDownEvent(new Key(',').WithCtrl));
-        Assert.All(
-            new[] { Mode.Grid, Mode.Expanded, Mode.Work },
-            mode => Assert.DoesNotContain("Ctrl+,", DashboardWindow.Hints("1.2.3", mode, window.Commands)));
     }
 
     [Fact]
@@ -472,15 +442,6 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_names_the_key_the_file_bound_and_not_the_one_in_the_source()
-    {
-        using var window = Open(agents: Agents(4), keys: "{ \"agent.expand\": \"x\" }");
-
-        Assert.Contains("x: expand", DashboardWindow.Hints("1.2.3", Mode.Grid, window.Commands));
-        Assert.DoesNotContain("Enter", DashboardWindow.Hints("1.2.3", Mode.Grid, window.Commands));
-    }
-
-    [Fact]
     public void The_commands_list_names_the_key_the_file_bound()
     {
         using var window = Open(agents: Agents(4), keys: "{ \"commands\": \"Ctrl+K\" }");
@@ -491,23 +452,21 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_follows_the_view_it_is_showing()
+    public void The_status_bar_names_no_keys_and_no_version_on_the_grid_expanded_or_in_Work()
     {
         using var window = Open(agents: Agents(4));
         window.NewKeyDownEvent(Key.Tab);
+        AssertNoHints(window);
 
         window.NewKeyDownEvent(Key.Enter);
-        Assert.Equal(window.HintLine, window.Status.Says);
-        Assert.Contains("Esc: back", window.Status.Says);
+        AssertNoHints(window);
 
-        window.NewKeyDownEvent(Key.Esc);
-        Assert.Equal(window.HintLine, window.Status.Says);
-        Assert.DoesNotContain("Esc: back", window.Status.Says);
-        Assert.Contains("Enter: expand", window.Status.Says);
+        window.Commands.Execute("view.work");
+        AssertNoHints(window);
     }
 
     [Fact]
-    public void The_hints_are_the_last_row_of_the_window_in_a_band_of_their_own()
+    public void The_status_bar_is_the_last_row_of_the_window_in_a_band_of_its_own()
     {
         using var window = Open(agents: Agents(4));
 
@@ -515,44 +474,49 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Status.Frame);
         Assert.Equal(StatusBar.Scheme, window.Status.SchemeName);
-        Assert.Equal(window.HintLine, window.Status.Says);
         Assert.Equal(0, window.Message.Lines);
     }
 
     [Fact]
-    public void A_message_takes_the_row_below_the_hints_and_never_their_own()
+    public void A_message_shows_at_the_left_of_the_status_bar_in_its_colours_and_takes_no_row_of_its_own()
     {
         using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
         LayOut(window, 120, 30);
-        var hints = window.Status.Frame;
+        var status = window.Status.Frame;
+        var dispatcher = window.Dispatcher.Frame;
         SelectAgent(window, 0);
 
         window.Commands.Execute("agent.hold");
         LayOut(window, 120, 30);
 
         Assert.Equal("Pausing this role…", window.Message.Says);
-        Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
-        Assert.Equal(hints with { Y = window.Viewport.Height - 2 }, window.Status.Frame);
-        Assert.Equal(window.HintLine, window.Status.Says);
+        Assert.Same(window.Status, window.Message.SuperView);
+        Assert.Equal(new Rectangle(0, 0, window.Status.Viewport.Width, 1), window.Message.Frame);
+        Assert.Equal(StatusBar.Scheme, window.Message.SchemeName);
+        Assert.Equal(status, window.Status.Frame);
+        Assert.Equal(dispatcher, window.Dispatcher.Frame);
     }
 
     [Fact]
     public void Clicking_a_hint_runs_the_command_it_names()
     {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
+        using var bar = new StatusBar();
+        string? ran = null;
+        bar.Show("", [new HintedCommand("save", "Enter save")], id => (ran = id) is not null);
 
-        Hint(window, "Enter: expand").InvokeCommand(Command.Accept);
+        bar.Hints.Single().InvokeCommand(Command.Accept);
 
-        Assert.Equal(0, window.ExpandedAgent);
+        Assert.Equal("save", ran);
     }
 
     [Fact]
     public void A_hint_is_a_clickable_one_of_its_own_that_claims_no_key()
     {
-        using var window = Open(agents: Agents(4));
+        using var bar = new StatusBar();
+        bar.Show("", [new HintedCommand("save", "Enter save"), new HintedCommand("cancel", "Esc cancel")], _ => true);
 
-        Assert.All(window.Status.Hints, hint =>
+        Assert.Equal(2, bar.Hints.Count);
+        Assert.All(bar.Hints, hint =>
         {
             Assert.True(hint.NoDecorations);
             Assert.True(hint.NoPadding);
@@ -769,7 +733,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void A_message_shrinks_the_grid_above_it_instead_of_covering_anything()
+    public void A_message_leaves_the_grid_its_full_height()
     {
         using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
         var before = LayOut(window, 120, 30);
@@ -779,9 +743,8 @@ public class DashboardWindowTests : IDisposable
         var after = LayOut(window, 120, 30);
 
         Assert.Equal("Pausing this role…", window.Message.Says);
-        Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Message.Frame);
-        Assert.Equal(window.Viewport.Height - 8, window.Dispatcher.Frame.Y);
-        Assert.Equal(before.Sum(cell => cell.Height) - 2, after.Sum(cell => cell.Height));
+        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
+        Assert.Equal(before, after);
         AssertTiles(AgentArea(window), after);
     }
 
@@ -1032,16 +995,6 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Interrupt_adds_nothing_to_either_hint_bar()
-    {
-        using var window = Open(agents: Agents(4));
-
-        Assert.All(
-            [Mode.Grid, Mode.Expanded, Mode.Work],
-            mode => Assert.DoesNotContain("k:", DashboardWindow.Hints("1.2.3", mode, window.Commands)));
-    }
-
-    [Fact]
     public void i_on_a_run_with_a_session_hands_it_to_attach_instead_of_stopping_it()
     {
         var calls = new List<string[]>();
@@ -1156,8 +1109,12 @@ public class DashboardWindowTests : IDisposable
     private static Rectangle AgentArea(DashboardWindow window) =>
         new(0, 0, window.Viewport.Width, window.Dispatcher.Frame.Y - window.Agents.Frame.Y);
 
-    private static Button Hint(DashboardWindow window, string text) =>
-        window.Status.Hints.Single(hint => hint.Text == text);
+    private static void AssertNoHints(DashboardWindow window)
+    {
+        Assert.Empty(window.Status.Hints);
+        Assert.Equal("", window.Status.Says);
+        Assert.DoesNotContain("a-team", window.Message.Says);
+    }
 
     private static int Selected(DashboardWindow window) =>
         window.Panes.ToList().FindIndex(pane => pane.HasFocus);

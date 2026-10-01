@@ -258,7 +258,7 @@ q quits the app, from either area.
 
 Keys can be set by hand in that file too, which is the way out of a key your terminal or
 multiplexer swallows. A `keys` object maps a command's id — the ones Ctrl+E lists — to a key
-name, spelled as Terminal.Gui spells it (`PageUp`, not the `PgUp` the hint bar abbreviates it to):
+name, spelled as Terminal.Gui spells it (`PageUp`, not the `PgUp` Settings abbreviates it to):
 
 ```json
 { "theme": "Midnight", "keys": { "settings": "Ctrl+,", "log.toolCalls": "d" } }

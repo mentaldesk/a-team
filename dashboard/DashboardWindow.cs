@@ -32,7 +32,6 @@ public sealed class DashboardWindow : Window
     private readonly LogView _dispatch;
     private readonly WorkView _work;
     private readonly List<string> _teamNames;
-    private readonly MessageBar _message = new();
     private readonly string _dispatchLog;
     private readonly string _nextPass;
     private readonly DashboardSettings _settings;
@@ -160,9 +159,7 @@ public sealed class DashboardWindow : Window
         Add(_loading);
         ShowIcons(settings.ReadIcons());
 
-        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
-        Add(_message);
-        _status.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines - _message.Lines), this);
+        _status.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
         Add(_status);
 
         RegisterCommands();
@@ -173,7 +170,6 @@ public sealed class DashboardWindow : Window
         _menu.Bar.Y = 0;
         Add(_menu.Bar);
 
-        ShowHints();
         if (resume is not null)
             Resume(resume);
         else if (_area == Area.Work)
@@ -190,7 +186,7 @@ public sealed class DashboardWindow : Window
 
     internal WorkView Work => _work;
 
-    internal MessageBar Message => _message;
+    internal MessageBar Message => _status.Message;
 
     internal StatusBar Status => _status;
 
@@ -207,12 +203,6 @@ public sealed class DashboardWindow : Window
     internal CommandRegistry Commands => _commands;
 
     internal LoadingView Loading => _loading;
-
-    internal static string Hints(string version, Mode mode, CommandRegistry commands) =>
-        $"{Named(version)} · {commands.Hints(mode)}";
-
-    /// <summary>The status bar as it reads now, hints and all.</summary>
-    internal string HintLine => Hints(_version, CurrentMode, _commands);
 
     public void Refresh()
     {
@@ -242,12 +232,8 @@ public sealed class DashboardWindow : Window
     protected override bool OnKeyDown(Key key) =>
         (!_menu.Bar.IsOpen() && _commands.Press(key)) || base.OnKeyDown(key);
 
-    private Mode CurrentMode =>
-        _area == Area.Work ? Mode.Work : _expanded is null ? Mode.Grid : Mode.Expanded;
-
     private void RegisterCommands()
     {
-        var scroll = new Hint("scroll", Mode.Expanded);
         bool OnDashboard() => _area == Area.Dashboard;
         bool OnWork() => _area == Area.Work;
         bool AnyAgents() => OnDashboard() && _panes.Count > 0;
@@ -259,10 +245,10 @@ public sealed class DashboardWindow : Window
             .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, isEnabled: AnyAgents)
             .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: AnyAgents)
             .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: AnyAgents)
-            .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter, new Hint("expand", Mode.Grid), Selection,
+            .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter, isEnabled: Selection,
                 menuLabel: () => "Expand", inMenu: () => _expanded is null)
-            .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, scroll, Selection)
-            .Register("log.pageDown", "Scroll the log down", () => Selected()?.Page(+1), Key.PageDown, scroll, Selection)
+            .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, isEnabled: Selection)
+            .Register("log.pageDown", "Scroll the log down", () => Selected()?.Page(+1), Key.PageDown, isEnabled: Selection)
             .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
             .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
             .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
@@ -270,14 +256,14 @@ public sealed class DashboardWindow : Window
             .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
             .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
-            .Register("work.read", "Open", ReadSelected, Key.Enter, new Hint("read", Mode.Work), () => OnWork() && _work.Selected is not null, onCard: true)
-            .Register("work.priority", "Set priority", SetPriority, new Key('p'), new Hint("set priority", Mode.Work), () => OnWork() && _work.SelectedCard is not null, onCard: true)
+            .Register("work.read", "Open", ReadSelected, Key.Enter, isEnabled: () => OnWork() && _work.Selected is not null, onCard: true)
+            .Register("work.priority", "Set priority", SetPriority, new Key('p'), isEnabled: () => OnWork() && _work.SelectedCard is not null, onCard: true)
             .Register("work.try", "Try PR", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Pr: > 0 }, onCard: true)
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
-            .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), new Hint("only mine", Mode.Work), OnWork,
+            .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
-            .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, new Hint("refresh", Mode.Work), OnWork,
+            .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
                 menuLabel: () => "Refresh")
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
@@ -292,8 +278,8 @@ public sealed class DashboardWindow : Window
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
-            .Register("agent.collapse", () => "Back to the agent grid", () => SetExpanded(null), Key.Esc, new Hint("back", Mode.Expanded),
-                () => OnDashboard() && _expanded is not null, menuLabel: () => "Back to all agents", inMenu: () => _expanded is not null)
+            .Register("agent.collapse", () => "Back to the agent grid", () => SetExpanded(null), Key.Esc,
+                isEnabled: () => OnDashboard() && _expanded is not null, menuLabel: () => "Back to all agents", inMenu: () => _expanded is not null)
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
     }
 
@@ -576,7 +562,7 @@ public sealed class DashboardWindow : Window
         var stamp = _area == Area.Work ? Stamped(_readAt, DateTimeOffset.UtcNow) : "";
         var filter = _area == Area.Work ? _work.OnlyMine ? MyItems : AllItems : "";
         _status.ShowState(stamp, filter);
-        if (_message.Says == text)
+        if (_status.Message.Says == text)
             return;
         if (text.Length == 0)
             Hush();
@@ -584,29 +570,25 @@ public sealed class DashboardWindow : Window
             Say(text, scheme);
     }
 
-    private static string Named(string version) => $"a-team {version}";
-
-    private void ShowHints() => _status.Show(Named(_version), _commands.HintBar(CurrentMode), _commands.Execute);
-
     private void Say(string message, Schemes scheme)
     {
-        _message.Show(message, scheme);
+        _status.Say(message, scheme);
         SetNeedsLayout();
         SetNeedsDraw();
     }
 
     private void Hush()
     {
-        if (_message.Lines == 0)
+        if (_status.Message.Lines == 0)
             return;
-        _message.Clear();
+        _status.Message.Clear();
         SetNeedsLayout();
         SetNeedsDraw();
     }
 
-    private int Foot() => DispatchLines + 2 + StatusLines + _message.Lines;
+    private int Foot() => DispatchLines + 2 + StatusLines;
 
-    private int WorkHeight() => Math.Max(0, Viewport.Height - MenuLines - StatusLines - _message.Lines);
+    private int WorkHeight() => Math.Max(0, Viewport.Height - MenuLines - StatusLines);
 
     private void Show(Area area)
     {
@@ -625,7 +607,6 @@ public sealed class DashboardWindow : Window
         }
         else
             _panes.FirstOrDefault()?.SetFocus();
-        ShowHints();
         ShowMessage();
         ShowLoading();
         SetNeedsLayout();
@@ -657,7 +638,6 @@ public sealed class DashboardWindow : Window
         Forget(SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page));
         SyncQuitKey();
         _menu.Refresh();
-        ShowHints();
     }
 
     /// <summary>Takes removed teams off the grid and out of the Work area.</summary>
@@ -704,7 +684,6 @@ public sealed class DashboardWindow : Window
         _expanded = index;
         for (var i = 0; i < _panes.Count; i++)
             _panes[i].Visible = index is null || index == i;
-        ShowHints();
         var selected = SelectedIndex();
         if (index is not null)
             ScrollTo(0);
