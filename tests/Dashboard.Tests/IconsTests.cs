@@ -56,6 +56,9 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.YourMove] = "✓",
                 [Icon.TheirMove] = "·",
                 [Icon.Warning] = "⚠",
+                [Icon.Pitch] = "◇",
+                [Icon.Task] = "‹›",
+                [Icon.PullRequest] = "PR",
             },
             Enum.GetValues<Icon>().ToDictionary(icon => icon, icon => Icons.Glyph(icon, IconStyle.Unicode)));
 
@@ -64,7 +67,33 @@ public class IconsTests : StaticConfigurationTest
     {
         Assert.All(
             Enum.GetValues<Icon>().Select(icon => Icons.Glyph(icon, IconStyle.NerdFont)),
-            glyph => Assert.InRange(char.ConvertToUtf32(glyph, 0), 0xF0001, 0xF1AF0));
+            glyph => Assert.True(char.ConvertToUtf32(glyph, 0) is >= 0xE000 and <= 0xF8FF or >= 0xF0001 and <= 0xF1AF0));
+    }
+
+    [Theory]
+    [InlineData(IconStyle.NerdFont)]
+    [InlineData(IconStyle.Unicode)]
+    public void A_cards_kind_and_its_PR_wear_glyphs_no_other_meaning_does(IconStyle style)
+    {
+        Icon[] kinds = [Icon.Pitch, Icon.Task, Icon.PullRequest];
+        var others = Enum.GetValues<Icon>().Except(kinds).Select(icon => Icons.Glyph(icon, style)).ToHashSet();
+
+        Assert.Equal(kinds.Length, kinds.Select(icon => Icons.Glyph(icon, style)).Distinct().Count());
+        Assert.All(kinds, icon => Assert.DoesNotContain(Icons.Glyph(icon, style), others));
+    }
+
+    [Fact]
+    public void Each_field_is_painted_in_turn_before_the_number()
+    {
+        BundledThemes.Load();
+        var row = new Attribute(StandardColor.White, StandardColor.Blue);
+        var cells = Row($"    {new Card(Mine, false).Text(0)}", row);
+
+        CardCells.Paint(cells, 0, "", new Card(Mine, false).Leads(IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
+
+        Assert.Equal("✓ ‹›#107  When the dashboard goes quiet", Text(cells));
+        Assert.Equal(SchemeManager.GetScheme(Priorities.Scheme("Urgent")).Normal.Foreground, cells[4].Attribute?.Foreground);
+        Assert.Equal(row.Foreground, cells[^1].Attribute?.Foreground);
     }
 
     [Fact]
@@ -166,7 +195,7 @@ public class IconsTests : StaticConfigurationTest
         var row = new Attribute(StandardColor.White, StandardColor.Blue);
         var cells = Row($"  {new Card(Mine, false).Text(0)}", row);
 
-        CardCells.Paint(cells, 0, "", Icons.For(Mine, IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
+        CardCells.Paint(cells, 0, "", [Icons.For(Mine, IconStyle.Unicode)], new PriorityMark(4, Priorities.Scheme("Urgent")));
 
         Assert.Equal("✓ #107  When the dashboard goes quiet", Text(cells));
         Assert.Equal(SchemeManager.GetScheme(LogSchemes.Success).Normal.Foreground, cells[0].Attribute?.Foreground);
@@ -181,7 +210,7 @@ public class IconsTests : StaticConfigurationTest
         var row = new Attribute(StandardColor.White, StandardColor.Blue);
         var cells = Row("dashboard goes quiet", row);
 
-        CardCells.Paint(cells, -3, "", Icons.For(Mine, IconStyle.Unicode), new PriorityMark(4, Priorities.Scheme("Urgent")));
+        CardCells.Paint(cells, -3, "", [Icons.For(Mine, IconStyle.Unicode)], new PriorityMark(4, Priorities.Scheme("Urgent")));
 
         Assert.Equal("dashboard goes quiet", Text(cells));
         Assert.All(cells, cell => Assert.Equal(row, cell.Attribute));
@@ -197,7 +226,7 @@ public class IconsTests : StaticConfigurationTest
         Assert.Equal("#157  A    appears on my comment", CardCells.LaidOut(text));
         var cells = Row($"  {CardCells.LaidOut(text)}", row);
 
-        CardCells.Paint(cells, 0, text, Icons.For(Mine, IconStyle.Unicode), default);
+        CardCells.Paint(cells, 0, text, [Icons.For(Mine, IconStyle.Unicode)], default);
 
         Assert.Equal($"✓ {text}", Text(cells));
     }

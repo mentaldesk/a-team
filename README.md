@@ -189,12 +189,12 @@ next time; a first run lands on Work.
 A swimlane per team, and four columns in each, left to right in the order work moves through
 them: **Triage** (the Ideas and pitches with no Priority set, which never get pitched or approved
 until you give them one), **Pitches** (waiting for you to approve), **Questions** (tasks the Dev
-handed back to ask you something) and **Review** (waiting for you to merge or accept), each headed
+handed back to ask you something, and pitches the Lead can't go ahead with until you answer) and **Review** (waiting for you to merge or accept), each headed
 by its count of items. A column with nothing in it is hidden, and the one you're on takes half its
 lane. A card's issue number is coloured by the
 item's Priority, in the colours GitHub gives that field's own options, and the PR that closes it
 hangs under it as a row of its own — `PR #149  The session log reads…`. Enter shows the issue's
-body as written, without leaving the app, or on a question the Dev's question; `g` opens whichever row you're on in your browser: the
+body as written, without leaving the app, or on a question just the question; `g` opens whichever row you're on in your browser: the
 issue on the card, the PR on the row under it. Reading a pitch that's waiting on you, `a` approves
 it: no confirmation, and the card leaves the column with nothing re-read. Reading every team's
 gates takes a moment, so a van drives across the empty area, framed off from the rest, until the
@@ -220,7 +220,11 @@ back — an unranked Idea is always yours, so Triage keeps nearly all of it; the
 right of that same line says which you're looking at — *All items* or *My items* — and it opens the
 way you left it.
 
-The two icons come from the same vocabulary the panes use (`✓` and `·`, or their Nerd Font
+After that icon, a second says what the card is: `◇` a pitch, `‹›` a task. With Nerd Font icons
+these are a presentation and a code review, and a PR row under a card wears a pull request glyph
+in place of the word `PR`.
+
+The turn icons come from the same vocabulary the panes use (`✓` and `·`, or their Nerd Font
 glyphs). No terminal reports its font, so the dashboard uses the Nerd Font one in kitty, WezTerm
 and Ghostty — which bundle such a font and fall back to it — and the plain one everywhere else. If
 that's the wrong answer for your terminal, pick a vocabulary under Settings → Dashboard.
@@ -269,7 +273,7 @@ q quits the app, from either area.
 
 Keys can be set by hand in that file too, which is the way out of a key your terminal or
 multiplexer swallows. A `keys` object maps a command's id — the ones Ctrl+E lists — to a key
-name, spelled as Terminal.Gui spells it (`PageUp`, not the `PgUp` the hint bar abbreviates it to):
+name, spelled as Terminal.Gui spells it (`PageUp`, not the `PgUp` Settings abbreviates it to):
 
 ```json
 { "theme": "Midnight", "keys": { "settings": "Ctrl+,", "log.toolCalls": "d" } }

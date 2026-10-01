@@ -10,12 +10,13 @@ public sealed class WorkView : View
 {
     /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
     /// Idea or a pitch that carries none is still to rank; by In review it's decided, and a PR waits for
-    /// acceptance whatever its rank. A Ready task here is one the Dev handed back with a question.</summary>
+    /// acceptance whatever its rank. A question, the Dev's on a Ready task or the Lead's on a pitch, waits in
+    /// Questions whatever its rank.</summary>
     internal static readonly (string Name, Func<WaitingItem, bool> Holds)[] Gates =
     [
-        ("Triage", item => item.Priority.Length == 0 && item.Status is "Idea" or "Pitched"),
-        ("Pitches", item => item.Status == "Pitched" && item.Priority.Length > 0),
-        ("Questions", item => item.Status == "Ready"),
+        ("Triage", item => item.Priority.Length == 0 && item.Question.Length == 0 && item.Status is "Idea" or "Pitched"),
+        ("Pitches", item => item.Status == "Pitched" && item.Priority.Length > 0 && item.Question.Length == 0),
+        ("Questions", item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0),
         ("Review", item => item.Status == "In review"),
     ];
 
@@ -434,8 +435,11 @@ public sealed class WorkColumn : FrameView
     /// <summary>The text of the rows as the tree draws them, their icons apart.</summary>
     internal IReadOnlyList<string> CardText { get; private set; } = [];
 
-    /// <summary>The icon each of those rows wears.</summary>
-    internal IReadOnlyList<TurnIcon> CardIcons { get; private set; } = [];
+    /// <summary>Every icon each of those rows wears, a card's kind after its turn.</summary>
+    internal IReadOnlyList<IReadOnlyList<TurnIcon>> CardLeads { get; private set; } = [];
+
+    /// <summary>The first of them: whose move it is, or the line a PR hangs from.</summary>
+    internal IReadOnlyList<TurnIcon> CardIcons => [.. CardLeads.Select(leads => leads[0])];
 
     /// <summary>The Priority colour each of those rows wears on its number.</summary>
     internal IReadOnlyList<PriorityMark> Marks { get; private set; } = [];
@@ -533,21 +537,21 @@ public sealed class WorkColumn : FrameView
         protected override bool OnKeyDown(Key key) => false;
     }
 
-    /// <summary>The row as the tree lays it out: the field the icon is painted into, then the card's own text.</summary>
-    private string Aspect(Card card) => new string(' ', Icons.Width) + CardCells.LaidOut(card.Text(Room(card)));
+    /// <summary>The row as the tree lays it out: the fields the icons are painted into, then the card's own text.</summary>
+    private string Aspect(Card card) => new string(' ', card.LeadWidth) + CardCells.LaidOut(card.Text(Room(card), _icons));
 
     /// <summary>What the card's text is left: the tree spends a cell on its symbol and another on a PR's indent,
-    /// and the icon has its field.</summary>
-    private int Room(Card card) => _cards.Viewport.Width - Icons.Width - (card.IsPr ? 2 : 1);
+    /// and the icons have their fields.</summary>
+    private int Room(Card card) => _cards.Viewport.Width - card.LeadWidth - (card.IsPr ? 2 : 1);
 
     private void Paint(DrawTreeViewLineEventArgs<Card> line)
     {
         if (line is not { Model: { } card, Cells: { } cells })
             return;
         var index = _nodes.IndexOf(card);
-        if (index < 0 || index >= CardIcons.Count)
+        if (index < 0 || index >= CardLeads.Count)
             return;
-        CardCells.Paint(cells, line.IndexOfModelText, CardText[index], CardIcons[index], Marks[index]);
+        CardCells.Paint(cells, line.IndexOfModelText, CardText[index], CardLeads[index], Marks[index]);
     }
 
     private void Fit()
@@ -556,8 +560,8 @@ public sealed class WorkColumn : FrameView
         if (_laidOutOver == width)
             return;
         _laidOutOver = width;
-        CardText = [.. _nodes.Select(card => card.Text(Room(card)))];
-        CardIcons = [.. _nodes.Select(card => card.Lead(_icons))];
+        CardText = [.. _nodes.Select(card => card.Text(Room(card), _icons))];
+        CardLeads = [.. _nodes.Select(card => card.Leads(_icons))];
         Marks = [.. _nodes.Select(card => card.Mark(Room(card)))];
     }
 }

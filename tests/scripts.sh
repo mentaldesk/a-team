@@ -660,6 +660,43 @@ same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
 
+case_ "a pitch that needs the reviewer's answer comes with that section as its question"
+gh_items <<'ITEMS'
+Pitched 257 Devs or worktrees
+Pitched 258 Only assumed
+Pitched 259 Heading only
+Pitched 260 Says none
+Pitched 261 Old format
+In_review 262 A finished pitch
+ITEMS
+edit_item 262 '.labels.nodes = [{name: "pitch"}]'
+gh_talk <<TALK
+257 body ${TODAY}T08:00:00Z demo-app[bot] ## Proposal\n\nIt.\n\n## Assumed\n\n1. **Squash.** Always.\n\n## Needs your answer\n\n1. **Devs or Worktrees?** I can't pick.\n\n---\n\n## Original idea\n\n> Hi\n\n<!-- a-team:lead -->
+258 body ${TODAY}T08:00:00Z demo-app[bot] ## Assumed\n\n1. **Squash.** Always.\n\n<!-- a-team:lead -->
+259 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\n## Original idea\n\n> Hi\n<!-- a-team:lead -->
+260 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\nNone.\n\n<!-- a-team:lead -->
+261 body ${TODAY}T08:00:00Z demo-app[bot] ## Open questions\n\n1. **Which?** I'd pick one.\n<!-- a-team:lead -->
+262 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\n1. **Which?** Still open.\n<!-- a-team:lead -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "question" '"## Needs your answer\n\n1. **Devs or Worktrees?** I can'"'"'t pick."' "$(jq -c '.[0].question' "$OUT")"
+same "turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
+same "reason" '"asked you since 08:00"' "$(jq -c '.[0].reason' "$OUT")"
+same "the others" '[[258,null],[259,null],[260,null],[261,null],[262,null]]' "$(jq -c '[.[1:][] | [.number, .question]]' "$OUT")"
+same "their reasons" '"awaiting your approval since 08:00"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "once the reviewer answers a pitch's question, it's the Lead's turn and still asks it"
+gh_talk <<TALK
+257 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\n1. **Devs or Worktrees?** I can't pick.\n<!-- a-team:lead -->
+257 comment ${TODAY}T10:50:00Z reviewer Devs.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
+same "reason" '"answering your feedback since 10:50"' "$(jq -c '.[0].reason' "$OUT")"
+same "question" '"## Needs your answer\n\n1. **Devs or Worktrees?** I can'"'"'t pick."' "$(jq -c '.[0].question' "$OUT")"
+
 case_ "a task the Dev handed back with a question waits on the reviewer, with the question"
 gh_items <<'ITEMS'
 In_review 115 I can change any of the keys

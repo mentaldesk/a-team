@@ -53,6 +53,20 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void A_pitch_the_Lead_needs_an_answer_on_waits_in_Questions_whatever_its_rank()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        WaitingItem Asking(int number, string priority) =>
+            new(number, "I wait on the team", "Pitched", $"https://github.com/x/{number}", "a-team", "you",
+                "asked you since 08:00", Priority: priority, Pitch: true, Question: "## Needs your answer\n\n1. Which?");
+
+        view.Show([.. Waiting, Asking(257, "High"), Asking(258, "")]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 2", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+    }
+
+    [Fact]
     public void The_columns_a_lane_shows_divide_its_width_between_them()
     {
         using var view = Open(["a-team", "tuicode"]);
@@ -77,7 +91,7 @@ public class WorkViewTests
 
         Assert.Equal([30, 60, 0, 30], view.Lanes[0].Columns.Select(column => column.Frame.Width));
         Assert.Equal([0, 30, 90], view.Lanes[0].Columns.Where(column => column.Visible).Select(column => column.Frame.X));
-        Assert.Equal(["#107  When the dashboard goes quiet, I can't tell why", "#108  lead · A misconfigured team looks like a worki…"],
+        Assert.Equal(["#107  When the dashboard goes quiet, I can't tell …", "#108  lead · A misconfigured team looks like a wor…"],
             view.Lanes[0].Columns[1].CardText);
     }
 
@@ -365,7 +379,7 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void A_cards_text_is_elided_to_leave_the_room_its_icon_and_its_indent_need()
+    public void A_cards_text_is_elided_to_leave_the_room_its_icons_and_its_indent_need()
     {
         using var view = Open(["a-team"]);
         LayOut(view, 90, 20);
@@ -373,7 +387,7 @@ public class WorkViewTests
         view.Show(Waiting);
 
         Assert.Equal(
-            ["#107  When the …", "#108  lead · A …"],
+            ["#107  When th…", "#108  lead · …"],
             view.Lanes[0].Columns[1].CardText);
     }
 
@@ -428,6 +442,23 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void Switching_the_icon_style_redraws_every_cards_kind_and_its_PRs_glyph()
+    {
+        using var view = Open(["a-team"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+        var review = view.Lanes[0].Columns[3];
+
+        view.ShowIcons(IconStyle.NerdFont);
+        Assert.Equal("\uEC37", review.CardLeads[0][1].Glyph);
+        Assert.StartsWith("\uE726 #122  ", review.CardText[1]);
+
+        view.ShowIcons(IconStyle.Unicode);
+        Assert.Equal("‹›", review.CardLeads[0][1].Glyph);
+        Assert.StartsWith("PR #122  ", review.CardText[1]);
+    }
+
+    [Fact]
     public void A_card_with_a_PR_draws_a_row_under_it_and_the_title_still_counts_items()
     {
         using var view = Open(["a-team"]);
@@ -439,7 +470,7 @@ public class WorkViewTests
         Assert.Equal(1, review.Count);
         Assert.Equal("Review · 1", review.Title);
         Assert.Equal(2, review.Nodes);
-        Assert.Equal(["#49  dev · I can't change any of…", "PR #122  I can't change any of …"], review.CardText);
+        Assert.Equal(["#49  dev · I can't change any …", "PR #122  I can't change any of …"], review.CardText);
     }
 
     [Fact]

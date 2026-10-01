@@ -3,8 +3,8 @@ using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The window's line for what just happened, below the status bar so it never takes the hints' row: no
-/// row at all while there's nothing to say.</summary>
+/// <summary>The line for what just happened: below a dialog's hints, so it never takes their row, or the left end of
+/// the window's status bar. No row at all while there's nothing to say.</summary>
 public sealed class MessageBar : Label
 {
     public MessageBar()

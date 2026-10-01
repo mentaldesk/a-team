@@ -2,26 +2,13 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
-[Flags]
-public enum Mode
-{
-    Grid = 1,
-    Expanded = 2,
-    Work = 4,
-    Both = Grid | Expanded,
-}
-
-/// <summary>How a command reads in the status bar, named by the key it's bound to. Commands sharing a hint are
-/// named once, like the four arrows.</summary>
-public sealed record Hint(string Text, Mode Modes = Mode.Both);
-
-/// <summary>One hint as the status bar draws it, and the command clicking it runs.</summary>
+/// <summary>One hint as a dialog's hint row draws it, and the command clicking it runs.</summary>
 public sealed record HintedCommand(string Id, string Text);
 
 /// <summary>A command as the registry holds it. <paramref name="OnCard"/> marks one that acts on the Work area's
 /// selected card, which is what puts it in the Cards menu. <paramref name="MenuLabel"/> is how it reads in the menu,
 /// where the title it sits under can say the rest.</summary>
-public sealed record CommandDescriptor(string Id, string Label, Key Key, Hint? Hint, bool OnCard = false, string? MenuLabel = null)
+public sealed record CommandDescriptor(string Id, string Label, Key Key, bool OnCard = false, string? MenuLabel = null)
 {
     public string MenuLabel { get; init; } = MenuLabel ?? Label;
 }
@@ -32,17 +19,16 @@ public sealed class CommandRegistry
     private readonly List<Entry> _entries = [];
 
     public IReadOnlyList<CommandDescriptor> Registered =>
-        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.Hint, entry.OnCard, entry.MenuLabel?.Invoke()))];
+        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.OnCard, entry.MenuLabel?.Invoke()))];
 
     public CommandRegistry Register(
         string id,
         string label,
         Action handler,
         Key? key = null,
-        Hint? hint = null,
         Func<bool>? isEnabled = null,
         bool onCard = false) =>
-        Register(id, () => label, handler, key, hint, isEnabled, onCard);
+        Register(id, () => label, handler, key, isEnabled, onCard);
 
     /// <summary>A command whose label depends on what it would do now, like pausing the selected team.</summary>
     public CommandRegistry Register(
@@ -50,13 +36,12 @@ public sealed class CommandRegistry
         Func<string> label,
         Action handler,
         Key? key = null,
-        Hint? hint = null,
         Func<bool>? isEnabled = null,
         bool onCard = false,
         Func<string>? menuLabel = null,
         Func<bool>? inMenu = null)
     {
-        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, hint, isEnabled, onCard, menuLabel, inMenu));
+        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, isEnabled, onCard, menuLabel, inMenu));
         return this;
     }
 
@@ -103,23 +88,7 @@ public sealed class CommandRegistry
         return true;
     }
 
-    /// <summary>The hint bar for <paramref name="mode"/>, in registration order, each hint once, and the command
-    /// each one runs. A hint with no bound key has nothing to name and is left out.</summary>
-    public IReadOnlyList<HintedCommand> HintBar(Mode mode) => [.. _entries
-        .Where(entry => entry.Hint is { } hint && hint.Modes.HasFlag(mode))
-        .GroupBy(entry => entry.Hint!)
-        .Select(hinted => (Named: hinted.Where(entry => entry.Key != Key.Empty).ToList(), hinted.Key.Text))
-        .Where(hinted => hinted.Named.Count > 0)
-        .Select(hinted => new HintedCommand(hinted.Named[0].Id, $"{Keys(hinted.Named)}: {hinted.Text}"))];
-
-    /// <summary>The same bar as one line, which is what it reads as.</summary>
-    public string Hints(Mode mode) => string.Join(" · ", HintBar(mode).Select(hint => hint.Text));
-
-    private static string Keys(IEnumerable<Entry> named) => string.Join('/', named
-        .Select(entry => KeyNames.Short(entry.Key))
-        .Distinct());
-
     private sealed record Entry(
-        string Id, Func<string> Label, Action Handler, Key Key, Hint? Hint, Func<bool>? IsEnabled, bool OnCard, Func<string>? MenuLabel,
+        string Id, Func<string> Label, Action Handler, Key Key, Func<bool>? IsEnabled, bool OnCard, Func<string>? MenuLabel,
         Func<bool>? InMenu);
 }

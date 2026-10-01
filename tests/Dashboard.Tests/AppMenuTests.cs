@@ -405,8 +405,6 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.DoesNotContain(window.Commands.Registered, command => command.Id == "menu");
-        Assert.DoesNotContain("menu", window.Commands.Hints(Mode.Grid));
-        Assert.DoesNotContain("menu", window.Commands.Hints(Mode.Work));
     }
 
     private static MenuItem Item(DashboardWindow window, string id) =>

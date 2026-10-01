@@ -182,24 +182,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_carries_the_Work_areas_keys_and_clicking_one_runs_it()
-    {
-        using var window = Open();
-        window.Refresh();
-        LayOut(window, 120, 30);
-
-        Assert.Equal(window.HintLine, window.Status.Says);
-        Assert.Contains("Enter: read", window.Status.Says);
-
-        Hint(window, "m: only mine").InvokeCommand(Command.Accept);
-
-        Assert.True(window.Work.OnlyMine);
-    }
-
-    /// <summary>The filter has moved to the status bar, so the message row is the message and nothing else: on the
-    /// Dashboard, where there's nothing to say, it takes no rows at all.</summary>
-    [Fact]
-    public void The_message_row_says_what_there_is_to_say_and_no_longer_the_filter()
+    public void The_status_bar_shows_the_selected_card_at_its_left_and_the_stamp_and_filter_at_its_right()
     {
         using var window = Open();
         window.Refresh();
@@ -207,13 +190,44 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
         Assert.Equal(window.Message.Says, window.Message.Text);
-        Assert.Equal(window.Viewport.Height - 2, window.Status.Frame.Y);
+        Assert.Equal(0, window.Message.Frame.X);
+        Assert.Equal("read <1m ago · All items", window.Status.State.Text);
+        Assert.Equal(window.Status.Viewport.Width, window.Status.State.Frame.Right);
+        Assert.True(window.Message.Frame.Right < window.Status.State.Frame.X);
+    }
+
+    [Fact]
+    public void A_message_takes_no_row_of_its_own_so_the_status_bar_stays_the_last_row()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(1, window.Message.Lines);
+        Assert.Equal(window.Viewport.Height - 1, window.Status.Frame.Y);
 
         window.NewKeyDownEvent(new Key('d'));
         LayOut(window, 120, 30);
 
         Assert.Equal(0, window.Message.Lines);
         Assert.Equal(window.Viewport.Height - 1, window.Status.Frame.Y);
+    }
+
+    [Fact]
+    public void A_message_longer_than_the_room_left_is_cut_short_before_the_stamp()
+    {
+        using var window = Open(run: _ => Task.FromResult<string?>("board.sh: " + new string('x', 200)), askPriority: (_, _) => Rank.High);
+        window.Refresh();
+        LayOut(window, 80, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        window.Refresh();
+        LayOut(window, 80, 30);
+
+        Assert.StartsWith("board.sh: xxx", window.Message.Says);
+        Assert.Equal(80 - window.Status.State.Text.Length - 1, window.Message.Frame.Width);
+        Assert.Equal(80, window.Status.State.Frame.Right);
     }
 
     [Fact]
@@ -543,6 +557,8 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("board.sh: API rate limit exceeded", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.True(window.Message.Frame.Right < window.Status.State.Frame.X);
         Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
@@ -645,6 +661,33 @@ public class WorkAreaTests : IDisposable
         Assert.Empty(read);
         Assert.Equal(192, shown?.Item.Number);
         Assert.Equal(new IssueBody("Which marker should it post?"), shown?.Body);
+    }
+
+    [Fact]
+    public void Enter_on_a_pitch_s_question_opens_the_reader_on_it_and_a_approves_the_pitch()
+    {
+        var calls = new List<string[]>();
+        IssueBody? shown = null;
+        using var window = Open(
+            read: _ => Task.FromResult(new Reading(PitchQuestion, null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            showBody: (_, body, _, approve) =>
+            {
+                shown = body;
+                approve!();
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal("Questions · team0", window.Work.Region);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+
+        Assert.Equal(new IssueBody("## Needs your answer\n\n1. Which?"), shown);
+        Assert.Equal(["board", "team0", "approve", "you", "257"], Assert.Single(calls));
     }
 
     [Fact]
@@ -760,14 +803,12 @@ public class WorkAreaTests : IDisposable
         var approve = window.Commands.Registered.Single(command => command.Id == "work.approve");
         Assert.Equal("Approve the pitch you're reading", approve.Label);
         Assert.Equal(new Key('a'), approve.Key);
-        Assert.Null(approve.Hint);
         Assert.False(window.Commands.IsEnabled("work.approve"));
 
         Assert.False(window.NewKeyDownEvent(new Key('a')));
         window.Refresh();
 
         Assert.Empty(calls);
-        Assert.DoesNotContain("approve", window.Status.Says);
         Assert.Equal("Pitches · 2", window.Work.Lanes[0].Columns[1].Title);
     }
 
@@ -1102,10 +1143,9 @@ public class WorkAreaTests : IDisposable
 
         LayOut(window, 120, 30);
 
+        Assert.Equal(1, window.Message.Lines);
         Assert.Equal(new Rectangle(0, 0, window.Viewport.Width, 1), window.Menu.Frame);
-        Assert.Equal(
-            new Rectangle(0, 1, window.Viewport.Width, window.Viewport.Height - 2 - window.Message.Lines),
-            window.Work.Frame);
+        Assert.Equal(new Rectangle(0, 1, window.Viewport.Width, window.Viewport.Height - 2), window.Work.Frame);
     }
 
     [Fact]
@@ -1144,16 +1184,14 @@ public class WorkAreaTests : IDisposable
 
 
     [Fact]
-    public void work_try_is_on_t_with_no_hint_and_the_Work_bar_is_unchanged()
+    public void work_try_is_on_t_and_acts_on_the_card()
     {
         using var window = Open();
 
         var command = window.Commands.Registered.Single(registered => registered.Id == "work.try");
 
         Assert.Equal(new Key('t'), command.Key);
-        Assert.Null(command.Hint);
         Assert.True(command.OnCard);
-        Assert.Equal("Enter: read · p: set priority · m: only mine · F5: refresh", window.Commands.Hints(Mode.Work));
     }
 
     [Fact]
@@ -1379,10 +1417,15 @@ public class WorkAreaTests : IDisposable
           "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"}]
         """;
 
-    private const string Body = """{"number": 6, "title": "t", "body": "## Opportunity"}""";
+    /// <summary>A pitch the Lead needs an answer on, and nothing else.</summary>
+    private const string PitchQuestion =
+        """
+        [{"number": 257, "title": "I wait on the team", "status": "Pitched", "pitch": true,
+          "url": "https://github.com/mentaldesk/team0/issues/257", "team": "team0", "priority": "High",
+          "turn": "you", "reason": "asked you since 08:00", "question": "## Needs your answer\n\n1. Which?"}]
+        """;
 
-    private static Button Hint(DashboardWindow window, string text) =>
-        window.Status.Hints.Single(hint => hint.Text == text);
+    private const string Body = """{"number": 6, "title": "t", "body": "## Opportunity"}""";
 
     private static IEnumerable<string> Titles(DashboardWindow window) =>
         window.Work.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Title);

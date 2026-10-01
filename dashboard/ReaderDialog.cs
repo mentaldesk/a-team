@@ -22,7 +22,7 @@ public sealed class ReaderDialog : Dialog
     {
         _onGitHub = onGitHub;
         _onApprove = onApprove;
-        Title = $"#{item.Number}  {item.Title}{(item.Question.Length > 0 ? " · the Dev's question" : "")}";
+        Title = $"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch ? " · the Lead's question" : " · the Dev's question")}";
         X = 0;
         Y = 0;
         Width = Dim.Fill();
