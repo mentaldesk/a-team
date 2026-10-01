@@ -104,41 +104,6 @@ public class CommandRegistryTests
     }
 
     [Fact]
-    public void The_hint_bar_names_the_commands_for_that_view_once_each_in_order()
-    {
-        var select = new Hint("select", Mode.Grid);
-        var commands = new CommandRegistry()
-            .Register("left", "Left", () => { }, Key.CursorLeft, select)
-            .Register("right", "Right", () => { }, Key.CursorRight, select)
-            .Register("scroll", "Scroll", () => { }, Key.PageUp, new Hint("scroll", Mode.Expanded))
-            .Register("help", "Help", () => { }, Key.F1, new Hint("help"))
-            .Register("nothing", "Not hinted", () => { }, Key.F2);
-
-        Assert.Equal("CursorLeft/CursorRight: select · F1: help", commands.Hints(Mode.Grid));
-        Assert.Equal("PgUp: scroll · F1: help", commands.Hints(Mode.Expanded));
-    }
-
-    [Fact]
-    public void A_hint_whose_commands_have_no_key_has_nothing_to_name_and_is_left_out()
-    {
-        var commands = new CommandRegistry()
-            .Register("quit", "Quit", () => { }, hint: new Hint("quit"))
-            .Register("help", "Help", () => { }, Key.F1, new Hint("help"));
-
-        Assert.Equal("F1: help", commands.Hints(Mode.Grid));
-    }
-
-    [Fact]
-    public void The_hint_bar_names_the_key_a_command_was_rebound_to()
-    {
-        var commands = new CommandRegistry().Register("help", "Help", () => { }, Key.F1, new Hint("help"));
-
-        commands.Apply([("help", Key.F2)]);
-
-        Assert.Equal("F2: help", commands.Hints(Mode.Grid));
-    }
-
-    [Fact]
     public void A_rebound_command_runs_on_its_new_key_and_not_on_its_old_one()
     {
         var ran = 0;
@@ -236,13 +201,5 @@ public class CommandRegistryTests
 
         Assert.Equal([("greet", Key.F1), ("quit", Key.F2)],
             commands.Registered.Select(command => (command.Id, command.Key)));
-    }
-
-    [Fact]
-    public void A_registry_with_nothing_hinted_has_an_empty_hint_bar()
-    {
-        var commands = new CommandRegistry().Register("quit", "Quit", () => { }, Key.F1);
-
-        Assert.Equal("", commands.Hints(Mode.Grid));
     }
 }

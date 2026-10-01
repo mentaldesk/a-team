@@ -1,9 +1,10 @@
 using System.Text;
+using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The last row of a window or a dialog: the keys you can press, each one clickable, and at its
-/// right end what the area is showing. Terminal.Gui's own StatusBar lays out Shortcuts with a border between
+/// <summary>The last row of a window or a dialog: the keys you can press, each one clickable, or what's going on,
+/// and at its right end what the area is showing. Terminal.Gui's own StatusBar lays out Shortcuts with a border between
 /// each, so the hints are laid out here instead.</summary>
 public sealed class StatusBar : View
 {
@@ -11,6 +12,7 @@ public sealed class StatusBar : View
     private const string Separator = " · ";
     private const int Gap = 1;
     private readonly View _hints;
+    private readonly MessageBar _message = new() { Y = 0 };
     private readonly Label _state = new() { X = Pos.AnchorEnd(), Y = 0, CanFocus = false };
 
     public StatusBar()
@@ -28,13 +30,16 @@ public sealed class StatusBar : View
             Height = 1,
             CanFocus = false,
         };
-        Add(_hints, _state);
+        _message.Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Room()), this);
+        Add(_hints, _message, _state);
     }
 
     /// <summary>The row as it's drawn from the left: the version, then each hint.</summary>
     internal string Says => string.Concat(_hints.SubViews.Select(view => view.Text));
 
     internal Label State => _state;
+
+    internal MessageBar Message => _message;
 
     internal IReadOnlyList<Button> Hints => [.. _hints.SubViews.OfType<Button>()];
 
@@ -82,6 +87,15 @@ public sealed class StatusBar : View
         SetNeedsDraw();
     }
 
+    /// <summary>The left end, in place of hints: what's selected, what's running or what just happened. Only an
+    /// error takes a colour of its own.</summary>
+    public void Say(string message, Schemes scheme)
+    {
+        _message.Show(message, scheme);
+        if (scheme != Schemes.Error)
+            _message.SchemeName = Scheme;
+    }
+
     /// <summary>The right end: when the area was last read, then what it's filtered to.</summary>
     public void ShowState(string stamp, string filter)
     {
@@ -93,6 +107,6 @@ public sealed class StatusBar : View
         SetNeedsDraw();
     }
 
-    /// <summary>What the right end leaves the hints, so a long hint bar is cut off rather than drawn over it.</summary>
+    /// <summary>What the right end leaves the left, so a long hint bar or message is cut off rather than drawn over it.</summary>
     private int Room() => _state.Text.Length == 0 ? 0 : _state.Text.Length + Gap;
 }
