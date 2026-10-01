@@ -727,7 +727,7 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
-    public void After_a_repair_the_team_is_checked_again_and_its_row_follows()
+    public async Task After_a_repair_the_team_is_checked_again_and_its_row_follows()
     {
         WriteTeam("goose", """{"repo": "aaif-goose/goose"}""");
         var checks = 0;
@@ -739,7 +739,7 @@ public class SettingsDialogTests : IDisposable
 
         var after = dialog.Repaired("goose");
 
-        Assert.Empty(after!.Result.Problems);
+        Assert.Empty((await after!).Problems);
         Assert.Equal(["goose  aaif-goose/goose  paused  ok"], TeamRows(dialog));
     }
 
