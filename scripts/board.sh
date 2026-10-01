@@ -55,13 +55,13 @@ PRIORITY=${PRIORITY:-Priority}
 STAKEHOLDERS=$(jq -c '.stakeholders // [.reviewer // empty]' "$CONFIG")
 [ -n "$NUMBER" ] || [ "$CMD" = check ] || die "project.number is not set in $CONFIG"
 
-# The labels setup creates, as "<name>|<colour>|<description>".
-LABELS="pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it
-a-team:dev|0e8a16|Claimed by the a-team Dev
-a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched
-a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running
-a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced
-blocked|fbca04|Waiting on another issue"
+# The labels setup creates, as "<name>|<colour>|<description>|<what goes wrong without it>".
+LABELS="pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it|the team can't tell its pitches from tasks
+a-team:dev|0e8a16|Claimed by the a-team Dev|the Dev can't claim tasks
+a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched|the Lead can't flag the ideas it finds for you
+a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running|the Lead can't pass over an idea, and keeps coming back to it
+a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced|the Lead tells you every time it bumps a pitch out of Pitched, not just the first
+blocked|fbca04|Waiting on another issue|the Dev can't mark a task that waits on your answer"
 
 # A stakeholder comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
 # older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
@@ -1096,9 +1096,8 @@ case "$CMD" in
       if ! have=$(gh label list -R "$REPO" --limit 500 --json name --jq '.[].name' 2>&1); then
         note labels "can't list $REPO's labels: ${have#gh: }"
       else
-        while IFS='|' read -r name _ meaning; do
-          grep -qxF -- "$name" <<<"$have" ||
-            note labels "$REPO has no '$name' label, which the team uses to mark: $(tr '[:upper:]' '[:lower:]' <<<"${meaning:0:1}")${meaning:1}"
+        while IFS='|' read -r name _ _ without; do
+          grep -qxF -- "$name" <<<"$have" || note labels "no '$name' label, so $without"
         done <<<"$LABELS"
       fi
     fi
@@ -1176,7 +1175,7 @@ case "$CMD" in
       echo "Status options set on $OWNER project $NUMBER"
     fi
     existing=$(gh label list -R "$REPO" --limit 500 --json name,color,description)
-    while IFS='|' read -r name color description; do
+    while IFS='|' read -r name color description _; do
       current=$(jq -c --arg n "$name" 'map(select(.name == $n)) | first' <<<"$existing")
       if [ "$current" = null ]; then
         $dry_run || gh label create "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null

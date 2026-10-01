@@ -479,12 +479,12 @@ public class TeamFormTests
         form.Watch(Task.FromResult(new TeamHealth(
         [
             new TeamProblem("project", "no single-select field 'Status' on aaif-goose project 2"),
-            new TeamProblem("labels", "mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch"),
+            new TeamProblem("labels", "no 'pitch' label, so the team can't tell its pitches from tasks"),
         ])));
 
         Assert.True(form.Problems.Visible);
         Assert.Equal(
-            ["project   no single-select field 'Status' on aaif-goose project 2", "labels    mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch"],
+            ["project   no single-select field 'Status' on aaif-goose project 2", "labels    no 'pitch' label, so the team can't tell its pitches from tasks"],
             ProblemRows(form));
         Assert.Equal(["Repair (F12)", "Save", "Cancel"], Buttons(form));
     }
@@ -534,7 +534,7 @@ public class TeamFormTests
                 return Task.FromResult(new TeamHealth([]));
             },
         };
-        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue")])));
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")])));
 
         form.SetFocus();
 
@@ -551,11 +551,11 @@ public class TeamFormTests
     public void A_repair_left_undone_keeps_the_problems()
     {
         using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
-        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue")])));
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")])));
 
         form.FootButtons.Single(button => button.Text == "Repair (F12)").InvokeCommand(Command.Accept);
 
-        Assert.Equal(["labels    mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue"], ProblemRows(form));
+        Assert.Equal(["labels    no 'blocked' label, so the Dev can't mark a task that waits on your answer"], ProblemRows(form));
     }
 
     [Theory]
@@ -569,6 +569,18 @@ public class TeamFormTests
     }
 
     private static IReadOnlyList<string> Buttons(TeamForm form) => [.. form.FootButtons.Select(button => button.Text)];
+
+    [Fact]
+    public void The_problems_sit_under_their_heading_after_a_blank_line()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null);
+        form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("app", "goose has no GitHub App")])));
+        form.Layout();
+
+        var heading = form.SubViews.SelectMany(view => view.SubViews).OfType<Label>().Single(label => label.Text == form.ProblemsTitle);
+        Assert.Equal(heading.Frame.X, form.Problems.Frame.X);
+        Assert.Equal(heading.Frame.Y + 2, form.Problems.Frame.Y);
+    }
 
     private static IReadOnlyList<string> ProblemRows(TeamForm form) =>
         [.. Enumerable.Range(0, form.Problems.Source?.Count ?? 0).Select(i => form.Problems.Source!.ToList()[i]?.ToString() ?? "")];

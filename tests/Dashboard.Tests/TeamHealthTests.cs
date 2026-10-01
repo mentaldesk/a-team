@@ -8,7 +8,7 @@ public class TeamHealthTests
         const string output = """
             ok: mentaldesk project 3, field 'Status'
             vision    docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR
-            labels    mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch
+            labels    no 'pitch' label, so the team can't tell its pitches from tasks
             identity: a-team-app[bot] · token ok · project 3 read+write ok · Priority readable · push access to mentaldesk/goose ok
             """;
 
@@ -17,7 +17,7 @@ public class TeamHealthTests
         Assert.Equal(
             [
                 new TeamProblem("vision", "docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR"),
-                new TeamProblem("labels", "mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch"),
+                new TeamProblem("labels", "no 'pitch' label, so the team can't tell its pitches from tasks"),
             ],
             health.Problems);
         Assert.Equal("2 problems", health.Column);

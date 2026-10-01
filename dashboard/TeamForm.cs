@@ -36,6 +36,7 @@ public sealed class TeamForm : Dialog
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
     private const string ProblemsHeading = "Problems";
     private const int BandPadding = 1;
+    private const int ProblemsTop = BandPadding + 2;
     private const string NoName = "the new team";
     private const int Inset = 1;
     private const int FieldX = 14;
@@ -199,10 +200,10 @@ public sealed class TeamForm : Dialog
         _problemsBand.X = 0;
         _problemsBand.Y = row;
         _problemsBand.Width = Dim.Fill();
-        _problemsBand.Height = Dim.Func(_ => Math.Max(1 + 2 * BandPadding,
-            Math.Min((_problems.Source?.Count ?? 0) + 2 * BandPadding, Viewport.Height - 2 - _message.Lines - row)), this);
-        _problems.X = FieldX;
-        _problems.Y = BandPadding;
+        _problemsBand.Height = Dim.Func(_ => Math.Max(ProblemsTop + 1 + BandPadding,
+            Math.Min((_problems.Source?.Count ?? 0) + ProblemsTop + BandPadding, Viewport.Height - 2 - _message.Lines - row)), this);
+        _problems.X = Inset;
+        _problems.Y = ProblemsTop;
         _problems.Width = Dim.Fill(Inset);
         _problems.Height = Dim.Fill(BandPadding);
         _problems.ViewportChanged += (_, _) =>

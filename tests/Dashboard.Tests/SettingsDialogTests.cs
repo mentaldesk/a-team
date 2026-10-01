@@ -742,7 +742,7 @@ public class SettingsDialogTests : IDisposable
         WriteTeam("goose", """{"repo": "aaif-goose/goose"}""");
         var checks = 0;
         using var dialog = Open(out _, out _, page: "Teams", check: _ => Task.FromResult(++checks == 1
-            ? new TeamHealth([new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue")])
+            ? new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")])
             : new TeamHealth([])));
         Assert.Equal(["goose  aaif-goose/goose  paused  1 problem"], TeamRows(dialog));
         dialog.RepairTeam = _ => true;
@@ -761,7 +761,7 @@ public class SettingsDialogTests : IDisposable
         using var dialog = Open(out _, out _, page: "Teams", check: _ =>
         {
             checks++;
-            return Task.FromResult(new TeamHealth([new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue")]));
+            return Task.FromResult(new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")]));
         });
         dialog.RepairTeam = _ => false;
 
