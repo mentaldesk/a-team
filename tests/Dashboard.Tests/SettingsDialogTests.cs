@@ -629,6 +629,16 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
+    public void The_Teams_page_heads_each_column_over_the_list()
+    {
+        WriteTeam("ai", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams", check: _ => Task.FromResult(new TeamHealth([])));
+
+        Assert.Equal("Team  Repo              Status   Health", dialog.TeamHeader);
+        Assert.Equal(["ai    mentaldesk/alpha  working  ok"], TeamRows(dialog));
+    }
+
+    [Fact]
     public void Selecting_a_team_whose_file_is_broken_says_which_line_and_why()
     {
         WriteTeam("alpha", """{"dispatch": {"enabled": true}}""");
@@ -722,7 +732,7 @@ public class SettingsDialogTests : IDisposable
             return Task.FromResult(new TeamHealth([]));
         });
 
-        Assert.Equal(["gamma    can't read this file  1 problem"], TeamRows(dialog));
+        Assert.Equal(["gamma        can't read this file  1 problem"], TeamRows(dialog));
         Assert.False(ran);
     }
 
