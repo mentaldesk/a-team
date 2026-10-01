@@ -33,7 +33,7 @@ public class TeamFormTests
         form.SetFocus();
 
         Assert.True(form.Repo.HasFocus);
-        Assert.Equal(TeamForm.RepoCaption, form.Message.Says);
+        Assert.Equal(TeamForm.RepoCaption, form.Hints.Message.Says);
     }
 
     [Fact]
@@ -43,21 +43,51 @@ public class TeamFormTests
         form.SetFocus();
 
         form.Workdir.SetFocus();
-        Assert.Equal("Where the agents work. They can't write outside it.", form.Message.Says);
+        Assert.Equal("Where the agents work. They can't write outside it.", form.Hints.Message.Says);
         form.Vision.SetFocus();
-        Assert.Equal("The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.", form.Message.Says);
+        Assert.Equal("The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.", form.Hints.Message.Says);
         form.Try.SetFocus();
-        Assert.Equal("What a-team try runs to let you try a change.", form.Message.Says);
+        Assert.Equal("What a-team try runs to let you try a change.", form.Hints.Message.Says);
         form.Worktrees.SetFocus();
-        Assert.Equal(TeamForm.WorktreesCaption, form.Message.Says);
+        Assert.Equal(TeamForm.WorktreesCaption, form.Hints.Message.Says);
     }
 
     [Fact]
-    public void The_hints_read_Enter_save_and_Esc_cancel()
+    public void The_foot_of_the_form_offers_Save_and_Cancel()
     {
         using var form = new TeamForm("a-team", Settings, _ => null);
 
-        Assert.Equal("Enter save · Esc cancel", form.Hints.Says);
+        Assert.Equal(["Save", "Cancel"], Buttons(form));
+    }
+
+    [Fact]
+    public void Cancel_closes_without_saving()
+    {
+        var saved = false;
+        using var form = new TeamForm("a-team", Settings, _ =>
+        {
+            saved = true;
+            return null;
+        });
+
+        form.FootButtons.Single(button => button.Text == "Cancel").InvokeCommand(Command.Accept);
+
+        Assert.False(saved);
+        Assert.Null(form.Saved);
+    }
+
+    [Fact]
+    public void A_field_s_caption_replaces_an_error_once_focus_moves_on()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => "Couldn't save a-team: Access denied.");
+        form.SetFocus();
+        form.FootButtons.Single(button => button.Text == "Save").InvokeCommand(Command.Accept);
+        Assert.Equal("Couldn't save a-team: Access denied.", form.Message.Says);
+
+        form.Workdir.SetFocus();
+
+        Assert.Equal("", form.Message.Says);
+        Assert.Equal(TeamForm.WorkdirCaption, form.Hints.Message.Says);
     }
 
     [Fact]
@@ -216,9 +246,9 @@ public class TeamFormTests
         form.SetFocus();
 
         form.StakeholdersRow.SetFocus();
-        Assert.Equal("Whose comments the team acts on. You, unless you add others.", form.Message.Says);
+        Assert.Equal("Whose comments the team acts on. You, unless you add others.", form.Hints.Message.Says);
         form.SkillsRow.SetFocus();
-        Assert.Equal("Skills the agents load. Must be installed on this machine.", form.Message.Says);
+        Assert.Equal("Skills the agents load. Must be installed on this machine.", form.Hints.Message.Says);
     }
 
     [Fact]
@@ -314,7 +344,7 @@ public class TeamFormTests
         Assert.Equal("New team", form.Title);
         Assert.True(form.NameField!.HasFocus);
         Assert.Null(form.Status);
-        Assert.Equal("Enter create · Esc cancel", form.Hints.Says);
+        Assert.Equal(["Create", "Cancel"], Buttons(form));
         Assert.Equal(
             ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
@@ -329,7 +359,7 @@ public class TeamFormTests
 
         form.NameField!.Text = "fretty";
 
-        Assert.Equal("Becomes ~/.config/a-team/teams/fretty.json", form.Message.Says);
+        Assert.Equal("Becomes ~/.config/a-team/teams/fretty.json", form.Hints.Message.Says);
         Assert.Equal("~/code/fretty", form.Workdir.Text);
         form.Workdir.Text = "~/src/fretty";
         form.NameField.Text = "frets";
@@ -438,11 +468,11 @@ public class TeamFormTests
         form.Watch(Task.FromResult(new TeamHealth([])));
 
         Assert.False(form.Problems.Visible);
-        Assert.Equal("Enter save · Esc cancel", form.Hints.Says);
+        Assert.Equal(["Save", "Cancel"], Buttons(form));
     }
 
     [Fact]
-    public void A_team_with_problems_lists_them_at_the_foot_of_the_form_and_offers_r_repair_where_setup_can()
+    public void A_team_with_problems_lists_them_at_the_foot_of_the_form_and_offers_Repair_where_setup_can()
     {
         using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
 
@@ -456,7 +486,7 @@ public class TeamFormTests
         Assert.Equal(
             ["project   no single-select field 'Status' on aaif-goose project 2", "labels    mentaldesk/goose has no 'pitch' label, which the team uses to mark: an a-team pitch"],
             ProblemRows(form));
-        Assert.Equal("r repair · Enter save · Esc cancel", form.Hints.Says);
+        Assert.Equal(["Repair (F12)", "Save", "Cancel"], Buttons(form));
     }
 
     [Fact]
@@ -473,9 +503,9 @@ public class TeamFormTests
         };
 
         form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("app", "goose has no GitHub App")])));
-        form.Problems.NewKeyDownEvent(new Key('r'));
+        form.NewKeyDownEvent(Key.F12);
 
-        Assert.Equal("Enter save · Esc cancel", form.Hints.Says);
+        Assert.Equal(["Save", "Cancel"], Buttons(form));
         Assert.False(repaired);
     }
 
@@ -493,7 +523,7 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void R_on_the_Problems_list_repairs_and_the_list_follows_the_check_after_it()
+    public void F12_from_any_field_repairs_and_the_list_follows_the_check_after_it()
     {
         var repairs = 0;
         using var form = new TeamForm("goose", Settings, _ => null)
@@ -506,11 +536,15 @@ public class TeamFormTests
         };
         form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue")])));
 
-        Assert.True(form.Problems.NewKeyDownEvent(new Key('r')));
+        form.SetFocus();
+
+        Assert.True(form.Repo.HasFocus);
+        Assert.True(form.NewKeyDownEvent(Key.F12));
 
         Assert.Equal(1, repairs);
+        Assert.Equal("mentaldesk/a-team", form.Repo.Text);
         Assert.False(form.Problems.Visible);
-        Assert.Equal("Enter save · Esc cancel", form.Hints.Says);
+        Assert.Equal(["Save", "Cancel"], Buttons(form));
     }
 
     [Fact]
@@ -519,7 +553,7 @@ public class TeamFormTests
         using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
         form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue")])));
 
-        form.Hints.Hints.Single(hint => hint.Text == "r repair").InvokeCommand(Command.Accept);
+        form.FootButtons.Single(button => button.Text == "Repair (F12)").InvokeCommand(Command.Accept);
 
         Assert.Equal(["labels    mentaldesk/goose has no 'blocked' label, which the team uses to mark: waiting on another issue"], ProblemRows(form));
     }
@@ -533,6 +567,8 @@ public class TeamFormTests
 
         Assert.Equal(heading, form.ProblemsTitle);
     }
+
+    private static IReadOnlyList<string> Buttons(TeamForm form) => [.. form.FootButtons.Select(button => button.Text)];
 
     private static IReadOnlyList<string> ProblemRows(TeamForm form) =>
         [.. Enumerable.Range(0, form.Problems.Source?.Count ?? 0).Select(i => form.Problems.Source!.ToList()[i]?.ToString() ?? "")];
