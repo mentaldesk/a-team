@@ -78,6 +78,16 @@ public class CardTests
         Assert.Equal(2 * Icons.Width, card.LeadWidth);
     }
 
+    [Theory]
+    [InlineData(IconStyle.NerdFont, "\U000F0428")]
+    [InlineData(IconStyle.Unicode, "◇")]
+    public void An_Idea_wears_the_pitch_icon(IconStyle style, string kind)
+    {
+        var card = new Card(Unranked, false);
+
+        Assert.Equal(new TurnIcon(kind, card.Lead(style).Scheme), card.Leads(style)[1]);
+    }
+
     [Fact]
     public void A_PRs_row_wears_only_the_line_it_hangs_from()
     {

@@ -136,7 +136,7 @@ public static class Icons
 
     /// <summary>What kind of thing the item is, in the colour of whose move it is.</summary>
     public static TurnIcon Kind(WaitingItem item, IconStyle style) =>
-        For(item, style) with { Glyph = Glyph(item.Pitch ? Icon.Pitch : Icon.Task, style) };
+        For(item, style) with { Glyph = Glyph(item.Pitch || item.Status == "Idea" ? Icon.Pitch : Icon.Task, style) };
 }
 
 /// <summary>A row wears its icon and its Priority in the cells the tree laid out in front of its text: drawn
