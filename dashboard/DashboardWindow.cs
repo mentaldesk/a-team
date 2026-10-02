@@ -46,8 +46,9 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
-    private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?> _showBody;
+    private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderCommand?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
+    private readonly Func<WaitingItem, Func<string, Task<string?>>, bool> _askComment;
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
     private readonly FrameView _loading;
@@ -82,7 +83,7 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
         Func<WaitingItem, IssueBody, Rank?> askPriority,
-        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?> showBody,
+        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderCommand?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -90,7 +91,8 @@ public sealed class DashboardWindow : Window
         TeamStart? start = null,
         Func<WaitingItem, Task<Reading>>? readConversation = null,
         Func<WaitingItem, bool>? confirmAccept = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        Func<WaitingItem, Func<string, Task<string?>>, bool>? askComment = null)
     {
         _start = start;
         _clock = clock ?? TimeProvider.System;
@@ -106,6 +108,7 @@ public sealed class DashboardWindow : Window
         _askPriority = askPriority;
         _showBody = showBody;
         _confirmAccept = confirmAccept ?? (_ => false);
+        _askComment = askComment ?? ((_, _) => false);
         _handOver = handOver;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
@@ -290,6 +293,7 @@ public sealed class DashboardWindow : Window
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
+            .Register("work.comment", "Comment on the item you're reading", () => Comment(), new Key('c'), isEnabled: () => _shown is not null)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
@@ -494,7 +498,8 @@ public sealed class DashboardWindow : Window
                 if (url is { Length: > 0 })
                     _openUrl(url);
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
-                item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unmergeable.Length == 0) : null);
+                item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unmergeable.Length == 0) : null,
+                new ReaderCommand(_commands.KeyFor("work.comment"), "comment", Comment));
             _approvable = null;
             _shown = null;
         }
@@ -543,6 +548,23 @@ public sealed class DashboardWindow : Window
         ShowMessage();
         _pending = _run(["board", item.Team, "accept", "you", item.Number.ToString()]);
         return true;
+    }
+
+    /// <summary>Asks for a comment on the item the reader is showing and posts it as you. True once it's posted.</summary>
+    private bool Comment() => _shown is { } item && _askComment(item, body => Post(item, body));
+
+    private async Task<string?> Post(WaitingItem item, string body)
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(file, body).ConfigureAwait(false);
+            return await _run(["board", item.Team, "comment", "you", item.Number.ToString(), file]).ConfigureAwait(false);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
     }
 
     private void Merged(WaitingItem item)

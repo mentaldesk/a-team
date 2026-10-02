@@ -165,6 +165,54 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void Comment_sits_after_approve_and_before_GitHub()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { }, () => { },
+            comment: new ReaderCommand(new Key('c'), "comment", () => false));
+        dialog.Layout(new Size(80, 20));
+
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · a approve · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Without_a_pitch_to_approve_comment_is_still_offered()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            comment: new ReaderCommand(new Key('c'), "comment", () => false));
+        dialog.Layout(new Size(80, 20));
+
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void A_posted_comment_leaves_the_reader_open_saying_so()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+            comment: new ReaderCommand(new Key('c'), "comment", () => true));
+        dialog.Layout(new Size(60, 10));
+        dialog.NewKeyDownEvent(Key.PageDown);
+        var top = dialog.Body.Top;
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
+
+        Assert.Equal("commented on #180", dialog.Message.Says);
+        Assert.Equal(top, dialog.Body.Top);
+    }
+
+    [Fact]
+    public void A_cancelled_comment_says_nothing()
+    {
+        var asked = 0;
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            comment: new ReaderCommand(new Key('c'), "comment", () => ++asked < 0));
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
+
+        Assert.Equal(1, asked);
+        Assert.Equal("", dialog.Message.Says);
+    }
+
+    [Fact]
     public void With_nothing_to_approve_a_does_nothing()
     {
         using var dialog = Open(Pitch);

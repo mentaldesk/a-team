@@ -1,3 +1,4 @@
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
@@ -13,6 +14,7 @@ public sealed class ReaderDialog : Dialog
     private const string ScrollHint = "scroll";
     private const string ApproveHint = "approve";
     private const string AcceptHint = "accept";
+    private const string CommentHint = "comment";
     private const string GitHubHint = "github";
     private const string CloseHint = "close";
     private const int Inset = 1;
@@ -20,23 +22,32 @@ public sealed class ReaderDialog : Dialog
     private readonly Action _onGitHub;
     private readonly Action? _onApprove;
     private readonly ReaderCommand? _accept;
+    private readonly ReaderCommand? _comment;
+    private readonly int _number;
     private readonly LogView _body;
     private readonly StatusBar _hints = new();
+    private readonly MessageBar _message = new();
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
-    public ReaderDialog(WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null)
+    /// <param name="comment">Commenting on the item; its Run says whether a comment was posted, and the reader stays
+    /// open either way.</param>
+    public ReaderDialog(
+        WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
+        ReaderCommand? comment = null)
     {
         _onGitHub = onGitHub;
         _onApprove = onApprove;
         _accept = accept;
+        _comment = comment;
+        _number = item.Number;
         Title = $"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch ? " · the Lead's question" : " · the Dev's question")}";
         X = 0;
         Y = 0;
         Width = Dim.Fill();
         Height = Dim.Fill();
 
-        int HintRow() => Math.Max(0, Viewport.Height - 1);
+        int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
 
         _body = new LogView
         {
@@ -57,17 +68,23 @@ public sealed class ReaderDialog : Dialog
             .. onApprove is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ApproveHint, "a approve")],
             .. accept is null ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(AcceptHint, $"{KeyNames.Short(accept.Key)} {accept.Hint}", accept.Enabled)],
+            .. comment is null ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(CommentHint, $"{KeyNames.Short(comment.Key)} {comment.Hint}")],
             new HintedCommand(GitHubHint, "g on GitHub"),
             new HintedCommand(CloseHint, "Esc close"),
         ], Run);
 
-        Add(_body, _hints);
+        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
+
+        Add(_body, _hints, _message);
         _body.SetFocus();
     }
 
     internal LogView Body => _body;
 
     internal StatusBar Hints => _hints;
+
+    internal MessageBar Message => _message;
 
     protected override bool OnKeyDown(Key key)
     {
@@ -79,13 +96,16 @@ public sealed class ReaderDialog : Dialog
             return Approve();
         if (_accept is not null && key == _accept.Key)
             return Accept();
+        if (_comment is not null && key == _comment.Key)
+            return Comment();
         return Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
     }
 
     public static void Show(
-        IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept)
+        IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
+        ReaderCommand? comment)
     {
-        using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept);
+        using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment);
         app.Run(dialog);
     }
 
@@ -119,6 +139,17 @@ public sealed class ReaderDialog : Dialog
 
     private bool Accept() => !_accept!.Run() || Close();
 
+    private bool Comment()
+    {
+        if (_comment!.Run())
+        {
+            _message.Show($"commented on #{_number}", Schemes.Accent);
+            SetNeedsLayout();
+            SetNeedsDraw();
+        }
+        return true;
+    }
+
     private bool Close()
     {
         RequestStop();
@@ -130,6 +161,7 @@ public sealed class ReaderDialog : Dialog
         ScrollHint => Scrolled(() => _body.Page(+1)),
         ApproveHint => Approve(),
         AcceptHint => Accept(),
+        CommentHint => Comment(),
         GitHubHint => OnGitHub(),
         _ => Close(),
     };
