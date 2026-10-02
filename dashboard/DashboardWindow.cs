@@ -40,6 +40,7 @@ public sealed class DashboardWindow : Window
     private readonly TeamStart? _start;
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
+    private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
     private readonly Action<WaitingItem, IssueBody, Action, Action?> _showBody;
@@ -54,7 +55,7 @@ public sealed class DashboardWindow : Window
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
-    private (WaitingItem Item, Task<Reading> Read, Action<WaitingItem, IssueBody> Then)? _readingBody;
+    private (WaitingItem Item, Task<IssueBody> Read, Action<WaitingItem, IssueBody> Then)? _readingBody;
     private DateTimeOffset? _readAt;
     private string? _failure;
     private string? _progress;
@@ -78,7 +79,8 @@ public sealed class DashboardWindow : Window
         IconStyle auto,
         Action<Handover>? handOver = null,
         Handover? resume = null,
-        TeamStart? start = null)
+        TeamStart? start = null,
+        Func<WaitingItem, Task<Reading>>? readConversation = null)
     {
         _start = start;
         BorderStyle = LineStyle.None;
@@ -88,6 +90,7 @@ public sealed class DashboardWindow : Window
         _run = run;
         _readWaiting = readWaiting;
         _readBody = readBody;
+        _readConversation = readConversation;
         _openUrl = openUrl;
         _askPriority = askPriority;
         _showBody = showBody;
@@ -417,17 +420,42 @@ public sealed class DashboardWindow : Window
         if (item.Question.Length > 0)
             ShowBody(item, new IssueBody(item.Question), url);
         else
-            ReadBody(item, (read, body) => ShowBody(read, body, url));
+            ReadBody(item, (read, body) => ShowBody(read, body, url), withConversation: true);
     }
 
-    private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then)
+    private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then, bool withConversation = false)
     {
         if (_pending is not null || _readingBody is not null)
             return;
         _failure = null;
         _progress = $"Reading #{item.Number}…";
         ShowMessage();
-        _readingBody = (item, _readBody(item), then);
+        _readingBody = (item, Read(item, withConversation ? _readConversation : null), then);
+    }
+
+    /// <summary>Both reads start at once; a conversation that won't read still leaves the body to show.</summary>
+    private async Task<IssueBody> Read(WaitingItem item, Func<WaitingItem, Task<Reading>>? readConversation)
+    {
+        var body = _readBody(item);
+        var conversation = readConversation?.Invoke(item);
+        var read = await Settled(body, reading => IssueBody.Of(reading, item.Number),
+            new IssueBody(Failure: $"couldn't read #{item.Number}")).ConfigureAwait(false);
+        if (conversation is null || read.Failure is not null)
+            return read;
+        return read.With(await Settled(conversation, reading => Conversation.Of(reading, item.Number),
+            new Conversation([], $"couldn't read the conversation on #{item.Number}")).ConfigureAwait(false));
+    }
+
+    private static async Task<T> Settled<T>(Task<Reading> reading, Func<Reading, T> of, T otherwise)
+    {
+        try
+        {
+            return of(await reading.ConfigureAwait(false));
+        }
+        catch (Exception)
+        {
+            return otherwise;
+        }
     }
 
     /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board.</summary>
@@ -522,9 +550,7 @@ public sealed class DashboardWindow : Window
         {
             _readingBody = null;
             _progress = null;
-            body.Then(body.Item, body.Read.Status == TaskStatus.RanToCompletion
-                ? IssueBody.Of(body.Read.Result, body.Item.Number)
-                : new IssueBody(Failure: $"couldn't read #{body.Item.Number}"));
+            body.Then(body.Item, body.Read.Result);
         }
 
         if (_reading is not { IsCompleted: true } read)

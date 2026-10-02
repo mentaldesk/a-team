@@ -12,6 +12,8 @@ public sealed record IssueBody(string Text = "", string? Failure = null)
         : Parse(reading.Output) is { } text ? new IssueBody(text)
         : new IssueBody(Failure: $"couldn't read #{number}");
 
+    public IssueBody With(Conversation conversation) => this with { Text = Text + conversation.Markdown() };
+
     /// <summary>The body's own lines, with no trailing carriage returns, to draw as written.</summary>
     public IReadOnlyList<LogLine> Lines => Markdown.Lines(Text);
 
