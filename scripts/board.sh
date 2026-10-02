@@ -832,8 +832,16 @@ case "$CMD" in
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a task to accept"
-    ! jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is a pitch, not a task"
     status=$(jq -r .status <<<"$it")
+    if jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
+      [ "$status" = "In review" ] || die "only a pitch In review can be accepted (#$n is in '$status')"
+      open=$(gh api --paginate "repos/$REPO/issues/$n/sub_issues" | jq -s 'add // [] | map(select(.state == "open")) | length')
+      [ "$open" -eq 0 ] || die "#$n has $open open task$([ "$open" -eq 1 ] || echo s)"
+      close() { { gh issue close "$1" -R "$REPO" --reason completed >/dev/null; } 2>&1; }
+      refused=$(write "close #$n as completed" close "$n") || die "can't close #$n ($(head -1 <<<"$refused"))"
+      say "#$n: closed as done"
+      exit 0
+    fi
     [ "$status" = "In review" ] || die "only a task In review can be accepted (#$n is in '$status')"
     pr=$(pr_for "$n" | jq -r '.number // empty')
     [ -n "$pr" ] || die "#$n has no open PR to merge"
@@ -851,12 +859,17 @@ case "$CMD" in
   comment)
     [ $# -eq 3 ] || die "usage: board.sh $TEAM comment <role> <n> <file>"
     role=$1 n=$2 file=$3
-    check_role "$role"
+    case "$role" in lead | dev | you) ;; *) die "unknown role '$role' (lead | dev | you)" ;; esac
     [ -f "$file" ] || die "no such file: $file"
-    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    # Your comment is feedback the roles still owe an answer: no marker, and no 👀.
+    if [ "$role" = you ]; then
+      body=$(cat "$file")
+    else
+      body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    fi
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
-    ack "$n"
+    [ "$role" = you ] || ack "$n"
     ;;
 
   skip)
