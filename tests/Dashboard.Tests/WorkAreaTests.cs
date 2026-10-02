@@ -4,6 +4,7 @@ using Terminal.Gui.Drawing;
 using Terminal.Gui;
 using Terminal.Gui.App;
 using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
@@ -42,7 +43,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_van_drives_in_the_Work_area_until_the_first_read_lands()
+    public void Work_says_Loading_until_the_first_read_lands()
     {
         var finish = new TaskCompletionSource<Reading>();
         using var window = Open(read: _ => finish.Task);
@@ -57,16 +58,18 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_van_is_a_frame_in_the_middle_of_the_Work_area_rather_than_filling_it()
+    public void Loading_is_a_still_untitled_frame_in_the_middle_of_the_Work_area_and_no_van()
     {
         using var window = Open(read: _ => new TaskCompletionSource<Reading>().Task);
 
         LayOut(window, 120, 40);
 
-        var van = window.Loading.Frame;
-        Assert.Equal(new Size(LoadingView.Cells + 2, LoadingView.Rows + 2), van.Size);
-        Assert.InRange(van.X - (120 - van.Right), -1, 1);
-        Assert.InRange(van.Y - 1 - (40 - 2 - van.Bottom), -1, 1);
+        var frame = window.Loading.Frame;
+        Assert.Equal("", window.Loading.Title);
+        Assert.Equal("Loading…", Assert.IsType<Label>(Assert.Single(window.Loading.SubViews)).Text);
+        Assert.InRange(frame.X - (120 - frame.Right), -1, 1);
+        Assert.InRange(frame.Y - 1 - (40 - 2 - frame.Bottom), -1, 1);
+        Assert.Empty(Descendants(window).OfType<LoadingView>());
     }
 
     [Fact]
@@ -82,7 +85,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Leaving_Work_while_it_is_still_reading_takes_the_van_with_it()
+    public void Leaving_Work_while_it_is_still_reading_takes_Loading_with_it()
     {
         var finish = new TaskCompletionSource<Reading>();
         using var window = Open(read: _ => finish.Task);
@@ -94,7 +97,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Opening_on_the_Dashboard_reads_nothing_and_shows_no_van()
+    public void Opening_on_the_Dashboard_reads_nothing_and_shows_no_Loading()
     {
         using var window = Open(area: Area.Dashboard, read: _ => new TaskCompletionSource<Reading>().Task);
 
@@ -1426,6 +1429,9 @@ public class WorkAreaTests : IDisposable
         """;
 
     private const string Body = """{"number": 6, "title": "t", "body": "## Opportunity"}""";
+
+    private static IEnumerable<View> Descendants(View view) =>
+        view.SubViews.SelectMany(child => Descendants(child).Prepend(child));
 
     private static IEnumerable<string> Titles(DashboardWindow window) =>
         window.Work.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Title);

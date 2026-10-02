@@ -17,14 +17,11 @@ internal sealed record Art(
 /// <summary>The surface outside the van, the dots on it, and the colour the exhaust is drawn in there.</summary>
 internal readonly record struct Road(Color Surface, Color Dots, Color Smoke);
 
-/// <summary>The van, driving, while the team writes one rank and fetches the next item or first reads the Work
-/// area: a solid body on a dotted road, framed and headed, sized to the picture for whoever shows it to centre.
-/// <see cref="SpinnerView"/> draws a single line in the view's own colour, so it can't show this. It draws its
-/// own frame because a border's title can only sit at the start of its edge.</summary>
+/// <summary>The van, driving, in About: a solid body on a dotted road, framed, sized to the picture for whoever
+/// shows it to centre. <see cref="SpinnerView"/> draws a single line in the view's own colour, so it can't show
+/// this.</summary>
 public sealed class LoadingView : View
 {
-    internal const string Heading = "Loading";
-
     private const string Resource = "loading.anim";
     private const string BodyBreak = "---BODY---";
     private const string RoadBreak = "---ROAD---";
@@ -95,8 +92,7 @@ public sealed class LoadingView : View
 
     internal int Travelled => _travelled;
 
-    /// <summary>Shows it, driving. One already up keeps rolling, so the write and the read that follows it
-    /// don't jog it back to the first frame between them.</summary>
+    /// <summary>Shows it, driving. One already up keeps rolling rather than going back to the first frame.</summary>
     public void Start()
     {
         if (!Visible)
@@ -116,7 +112,7 @@ public sealed class LoadingView : View
     }
 
     /// <summary>One shown before the application was running has no loop to drive it, so it picks one up
-    /// here: the Work area's first read starts before <c>Run</c> does.</summary>
+    /// here.</summary>
     public override void EndInit()
     {
         base.EndInit();
@@ -183,9 +179,6 @@ public sealed class LoadingView : View
         var height = Math.Min(Rows, room.Height);
         return new Rectangle((room.Width - width) / 2, (room.Height - height) / 2, width, height);
     }
-
-    /// <summary>Where the heading, brackets and all, starts along a top edge <paramref name="width"/> wide.</summary>
-    internal static int HeadingAt(int width) => (width - Heading.Length - 2) / 2;
 
     /// <summary>The glyph at <paramref name="column"/> of a row and the colour it's in: a space past the end.</summary>
     internal static (char Glyph, string Colour) At(IReadOnlyList<ArtSpan> row, int column)
@@ -314,8 +307,6 @@ public sealed class LoadingView : View
         SetAttributeForRole(VisualRole.Normal);
         foreach (var (at, rune) in canvas.GetMap())
             AddRune(at.X, at.Y, rune);
-        if (Heading.Length + 4 <= size.Width)
-            AddStr(HeadingAt(size.Width), 0, $"{Glyphs.RightTee}{Heading}{Glyphs.LeftTee}");
     }
 
     private static Art Read()

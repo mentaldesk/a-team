@@ -21,6 +21,9 @@ public sealed class DashboardWindow : Window
     private const int MinCellHeight = 5;
     private const string AllItems = "All items";
     private const string MyItems = "My items";
+    private const string LoadingText = "Loading…";
+    private const int LoadingPadding = 8;
+    private const int LoadingHeight = 5;
     private readonly List<AgentPane> _panes = [];
     private readonly CommandRegistry _commands = new();
     private readonly int _columns;
@@ -45,7 +48,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<WaitingItem, IssueBody, Action, Action?> _showBody;
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
-    private readonly LoadingView _loading;
+    private readonly FrameView _loading;
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
@@ -154,11 +157,16 @@ public sealed class DashboardWindow : Window
         _work.FocusChanged += ShowMessage;
         _work.ShowOnlyMine(settings.ReadOnlyMine());
         Add(_work);
-        _loading = new LoadingView
+        _loading = new FrameView
         {
             X = Pos.Center(),
-            Y = Pos.Func(_ => MenuLines + Math.Max(0, (WorkHeight() - _loading!.Frame.Height) / 2), this),
+            Y = Pos.Func(_ => MenuLines + Math.Max(0, (WorkHeight() - LoadingHeight) / 2), this),
+            Width = LoadingText.Length + (LoadingPadding * 2) + 2,
+            Height = LoadingHeight,
+            CanFocus = false,
+            Visible = false,
         };
+        _loading.Add(new Label { Text = LoadingText, X = Pos.Center(), Y = Pos.Center() });
         Add(_loading);
         ShowIcons(settings.ReadIcons());
 
@@ -205,7 +213,7 @@ public sealed class DashboardWindow : Window
 
     internal CommandRegistry Commands => _commands;
 
-    internal LoadingView Loading => _loading;
+    internal FrameView Loading => _loading;
 
     public void Refresh()
     {
@@ -330,16 +338,9 @@ public sealed class DashboardWindow : Window
         ShowLoading();
     }
 
-    /// <summary>The van drives in the middle of the Work area while the read that first fills it is still going:
-    /// there are no cards to look at until it lands. A later read leaves the ones already on screen where they
-    /// are.</summary>
-    private void ShowLoading()
-    {
-        if (_area == Area.Work && _reading is not null && _work.Unread)
-            _loading.Start();
-        else
-            _loading.Stop();
-    }
+    /// <summary>There are no cards to look at until the first read lands; a later read leaves the ones already
+    /// on screen where they are.</summary>
+    private void ShowLoading() => _loading.Visible = _area == Area.Work && _reading is not null && _work.Unread;
 
     private void ToggleOnlyMine()
     {

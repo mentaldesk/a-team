@@ -199,16 +199,6 @@ public class LoadingViewTests
     }
 
     [Fact]
-    public void Its_heading_sits_in_the_middle_of_the_top_edge()
-    {
-        var width = LoadingView.Cells + 2;
-        var start = LoadingView.HeadingAt(width);
-        var end = start + LoadingView.Heading.Length + 2;
-
-        Assert.InRange(start - (width - end), -1, 1);
-    }
-
-    [Fact]
     public void It_sits_in_the_middle_of_the_room_it_is_given()
     {
         var box = LoadingView.Box(new Size(LoadingView.Cells + 10, LoadingView.Rows + 4));
