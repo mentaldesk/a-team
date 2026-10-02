@@ -64,7 +64,7 @@ a-team board {{team}} move <role> <n> <STATUS>
 a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on the board
 a-team board {{team}} priority <role> <n> <value|none>  # stakeholder only: rank an item, or clear its rank
 a-team board {{team}} approve <role> <n>        # stakeholder only: move a Pitched pitch to Approved
-a-team board {{team}} accept <role> <n>         # stakeholder only: squash-merge task #<n>'s PR
+a-team board {{team}} accept <role> <n>         # stakeholder only: squash-merge task #<n>'s PR, or close validated pitch #<n>
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours
                                                 # (as `you`, stakeholder only: no marker, no 👀)
 a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass

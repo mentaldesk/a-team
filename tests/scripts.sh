@@ -186,6 +186,8 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"issue close"*) [ ! -e "$BIN/close-fails" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
+                   echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
   *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"; printf '%s' "\${@: -1}" >"$EDITED"; exit 0 ;;
   *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
@@ -1158,11 +1160,6 @@ failed "accept In progress"
 grep -q "is in 'In progress'" "$ERR" || fail "accept In progress: '$(cat "$ERR")'"
 run board demo accept you 404
 grep -q "#404 is not on the board" "$ERR" || fail "accept off the board: '$(cat "$ERR")'"
-edit_item 7 '.labels.nodes = [{name: "pitch"}]'
-run board demo accept you 7
-failed "accept a pitch"
-grep -q "#7 is a pitch, not a task" "$ERR" || fail "accept a pitch: '$(cat "$ERR")'"
-edit_item 7 '.labels.nodes = []'
 gh_pr
 run board demo accept you 7
 failed "accept with no PR"
@@ -1174,6 +1171,58 @@ grep -qF '"Bash(a-team board * accept *)"' "$ROOT/settings/agents.json" || fail 
 
 case_ "the agents' settings deny removing a label by hand, so blocked is cleared only through unblock"
 grep -qF '"Bash(gh issue edit *--remove-label*)"' "$ROOT/settings/agents.json" || fail "no remove-label deny rule"
+
+case_ "accept closes a validated pitch as done once every one of its tasks is closed"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+In_review 7 A validated pitch
+Building 8 A pitch still being built
+ITEMS
+edit_item 7 '.labels.nodes = [{name: "pitch"}]'
+edit_item 8 '.labels.nodes = [{name: "pitch"}]'
+echo '[{"number": 11, "state": "closed"}, {"number": 12, "state": "closed"}]' >"$SUBS"
+run board demo accept you 7
+same "exit" 0 "$STATUS"
+same "said" "#7: closed as done" "$(cat "$OUT")"
+same "writes" "CLOSE issue close 7 -R mentaldesk/demo --reason completed" "$(cat "$WRITES")"
+
+case_ "--dry-run says it would close the pitch and closes nothing"
+: >"$WRITES"
+run board --dry-run demo accept you 7
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+grep -q "would close #7 as completed" "$ERR" || fail "accept pitch dry run: '$(cat "$ERR")'"
+
+case_ "a close GitHub refuses says why in one line"
+touch "$BIN/close-fails"
+run board demo accept you 7
+failed "refused close"
+one_line "refused close"
+grep -q "can't close #7 (gh: Resource not accessible by integration (HTTP 403))" "$ERR" ||
+  fail "refused close: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+rm "$BIN/close-fails"
+
+case_ "a pitch with a task still open is refused, saying how many, and stays open"
+echo '[{"number": 11, "state": "closed"}, {"number": 12, "state": "open"}, {"number": 13, "state": "open"}]' >"$SUBS"
+run board demo accept you 7
+failed "open tasks"
+one_line "open tasks"
+grep -q "#7 has 2 open tasks" "$ERR" || fail "open tasks: '$(cat "$ERR")'"
+echo '[{"number": 11, "state": "closed"}, {"number": 12, "state": "open"}]' >"$SUBS"
+run board demo accept you 7
+grep -q "#7 has 1 open task$" "$ERR" || fail "one open task: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "a pitch is accepted only In review"
+echo '[]' >"$SUBS"
+run board demo accept you 8
+failed "accept a pitch Building"
+grep -q "only a pitch In review can be accepted (#8 is in 'Building')" "$ERR" ||
+  fail "accept a pitch Building: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
 
 case_ "the agents' settings deny approve, beside priority"
 grep -qF '"Bash(a-team board * approve *)"' "$ROOT/settings/agents.json" || fail "no approve deny rule"
