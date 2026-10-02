@@ -172,6 +172,8 @@ RUNS
   PRS="$BIN/prs.json" PULL="$BIN/pull.json"
   gh_pr
   echo '{"head": {"sha": "deadbeefcafe"}}' >"$PULL"
+  FILTERS="$BIN/filters"
+  : >"$FILTERS"
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
@@ -209,6 +211,19 @@ case " \$* " in
   *"/pulls/"[0-9]*) page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
   *) page="$ITEMS" ;;
+esac
+for arg in "\$@"; do
+  case \$arg in filter=*) printf '%s\n' "\${arg#filter=}" >>"$FILTERS" ;; esac
+done
+case " \$* " in
+  *checkSuites*)
+    jq --slurpfile runs "$RUNS" '(\$runs[0].check_runs | map({name, status: (.status | ascii_upcase),
+        conclusion: (.conclusion | if . == null then null else ascii_upcase end),
+        completedAt: .completed_at, url: .html_url})) as \$runs
+      | walk(if type == "object" and has("isDraft")
+             then . + {commits: {nodes: [{commit: {checkSuites: {nodes: [{checkRuns: {nodes: \$runs}}]}}}]}}
+             else . end)' "\$page" >"\$page.checked"
+    page="\$page.checked" ;;
 esac
 filter=
 while [ \$# -gt 0 ]; do
@@ -375,6 +390,9 @@ same "url" '"https://github.com/mentaldesk/demo/issues/106"' "$(jq -c '.[0].url'
 same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
 same "api calls" 2 "$(grep -c '' <"$CALLS")"
 
+case_ "waiting asks GitHub for the board without what's Done"
+same "filter" '-Status:"Done"' "$(cat "$FILTERS")"
+
 case_ "a gate nobody has answered is the reviewer's, since the item was opened"
 same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
 same "pitch reason" '"awaiting your approval since 19 Sep 08:14"' "$(jq -c '.[0].reason' "$OUT")"
@@ -436,7 +454,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
 
 case_ "so it is when GitHub hasn't linked that PR to the task, and only its body closes it"
 gh_talk false MERGEABLE unlinked <<TALK
@@ -450,7 +468,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "but a PR the Dev didn't open isn't taken for the task's on its word"
 gh_talk false MERGEABLE unlinked <<TALK
@@ -855,6 +873,28 @@ failed "lead"
 run board demo unblock dev 115
 failed "a task in review"
 same "writes" "" "$(cat "$WRITES")"
+
+case_ "a board whose Done is called something else has that left off instead"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1, "statusMap": { "Done": "Shipped" } } }
+JSON
+gh_items <<'ITEMS'
+Shipped 99 Already merged
+ITEMS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "filter" '-Status:"Shipped"' "$(cat "$FILTERS")"
+
+case_ "a status field whose name isn't one word is read whole, since a filter GitHub can't match finds nothing"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1, "statusField": "Work state" } }
+JSON
+gh_items <<'ITEMS'
+Done 99 Already merged
+ITEMS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "filter" '' "$(cat "$FILTERS")"
 
 case_ "body returns an issue's number, title and body, in one call"
 fixture <<'JSON'

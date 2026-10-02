@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Text.Json.Nodes;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui;
@@ -82,6 +83,59 @@ public class WorkAreaTests : IDisposable
         window.Commands.Execute("work.refresh");
 
         Assert.False(window.Loading.Visible);
+    }
+
+    [Fact]
+    public void A_later_read_leaves_the_selection_on_the_card_it_was_on_wherever_that_card_now_sits()
+    {
+        Func<string, string> page = Waiting;
+        using var window = Open(read: team => Task.FromResult(new Reading(page(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        page = team => ReadAgain(team, 6, 108, 107, 49);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void A_later_read_leaves_the_selection_on_the_PR_row_it_was_on()
+    {
+        Func<string, string> page = Waiting;
+        using var window = Open(read: team => Task.FromResult(new Reading(page(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
+
+        page = team => ReadAgain(team, 6, 107, 108, 49);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
+    }
+
+    [Fact]
+    public void A_later_read_without_the_selected_card_hands_the_selection_to_the_next_card_down()
+    {
+        Func<string, string> page = Waiting;
+        using var window = Open(read: team => Task.FromResult(new Reading(page(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        page = team => ReadAgain(team, 6, 108, 49);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Equal(108, window.Work.Selected?.Number);
     }
 
     [Fact]
@@ -1429,6 +1483,18 @@ public class WorkAreaTests : IDisposable
             "url": "https://github.com/mentaldesk/team1/issues/133", "team": "team1",
             "turn": "you", "reason": "awaiting your approval since 21:37", "priority": "Low", "pitch": true}]
           """;
+
+    /// <summary><see cref="Waiting"/> read again later, every reason moved on and team0's cards in
+    /// <paramref name="order"/>, any it leaves out gone.</summary>
+    private static string ReadAgain(string team, params int[] order)
+    {
+        var cards = JsonNode.Parse(Waiting(team))!.AsArray();
+        if (team == "team0")
+            cards = [.. order.Select(n => cards.Single(card => card!["number"]!.GetValue<int>() == n)!.DeepClone())];
+        foreach (var card in cards)
+            card!["reason"] = $"{card["reason"]}, and later";
+        return cards.ToJsonString();
+    }
 
     /// <summary>A pitch carrying no Priority, which waits in Triage until it's ranked.</summary>
     private const string Unranked =

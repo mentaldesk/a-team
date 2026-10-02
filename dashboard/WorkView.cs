@@ -70,11 +70,13 @@ public sealed class WorkView : View
     /// <summary>The vocabulary the cards wear their icons from.</summary>
     internal IconStyle Icons { get; private set; } = IconStyle.Unicode;
 
-    /// <summary>Lays the cards out again, hiding the columns a team has nothing in.</summary>
+    /// <summary>Lays the cards out again, hiding the columns a team has nothing in. A re-read brings the selected
+    /// card back with its reason moved on, so it's found again by team and number.</summary>
     public void Show(IReadOnlyList<WaitingItem> items)
     {
-        _items = items;
-        Lay();
+        var card = FocusedColumn()?.Selected;
+        var now = card is null ? null : items.FirstOrDefault(item => item.Team == card.Item.Team && item.Number == card.Item.Number);
+        Keep(items, now, card?.IsPr ?? false);
     }
 
     /// <summary>Drops the lanes and the cards of teams that have been removed.</summary>
@@ -173,18 +175,22 @@ public sealed class WorkView : View
     /// hands the selection to the next card down.</summary>
     internal void Approved(WaitingItem item) => Replace(item, null);
 
-    private void Replace(WaitingItem item, WaitingItem? now)
+    private void Replace(WaitingItem item, WaitingItem? now) =>
+        Keep(now is null ? [.. _items.Where(each => each != item)] : [.. _items.Select(each => each == item ? now : each)],
+            now, onPr: false);
+
+    /// <summary>Shows <paramref name="items"/>, keeping the selection on <paramref name="now"/> while its column still
+    /// shows it, and otherwise on the row it was on.</summary>
+    private void Keep(IReadOnlyList<WaitingItem> items, WaitingItem? now, bool onPr)
     {
         var at = At();
         var row = FocusedColumn()?.Index ?? 0;
-        _items = now is null
-            ? [.. _items.Where(each => each != item)]
-            : [.. _items.Select(each => each == item ? now : each)];
+        _items = items;
         Lay();
         if (at is not { } was)
             return;
         var column = _lanes[was.Lane].Columns[was.Gate];
-        if (now is not null && column.Select(now))
+        if (now is not null && (column.Select(now, onPr) || column.Select(now)))
             return;
         if (column.Visible)
             column.FocusCards(row);
