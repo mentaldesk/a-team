@@ -410,7 +410,7 @@ gated_talk() {
               comments(first: 50) { nodes { createdAt body author { __typename login } $seen } } } }"
   for n in $(jq -r '.[].number' <<<"$1"); do
     query+=" x$n: issueOrPullRequest(number: $n) {
-      ... on Issue { $said
+      ... on Issue { $said subIssuesSummary { total completed }
         timelineItems(last: 50, itemTypes: [LABELED_EVENT]) { nodes { ... on LabeledEvent { createdAt label { name } } } }
         closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { $reviewed } } }
       ... on PullRequest { $reviewed } }"
@@ -465,6 +465,15 @@ gated_prs() {
        | {n: $n, pr: .number, prUrl: .url, draft: .isDraft,
           conflicting: (.mergeable == "CONFLICTING"), base: .baseRefName,
           checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
+}
+
+# gated_tasks <talk>: how many tasks each of those items has, and how many are still open, as
+# {"<n>": {tasks, openTasks}}.
+gated_tasks() {
+  jq '[.data.repository | to_entries[].value | select(.subIssuesSummary? != null)
+       | {key: (.number | tostring),
+          value: {tasks: .subIssuesSummary.total, openTasks: (.subIssuesSummary.total - .subIssuesSummary.completed)}}]
+      | from_entries' <<<"$1"
 }
 
 # gated_blocked <talk>: when each of those items was last labelled `blocked`, as {"<n>": at}.
@@ -1013,6 +1022,8 @@ case "$CMD" in
     talk=$(gated_talk "$(jq -s add <<<"$gated$held")" checks)
     said=$(gated_comments "$talk")
     turns "$gated" "$said" "$(gated_prs "$talk")" |
+      jq --argjson tasks "$(gated_tasks "$talk")" \
+        'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
       jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
         --argjson unranked "$(unranked_ideas "$all")" '. + $asked + $unranked'
     ;;
