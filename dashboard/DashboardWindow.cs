@@ -280,7 +280,7 @@ public sealed class DashboardWindow : Window
             .Register("work.try", "Try PR", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Pr: > 0 }, onCard: true)
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
-            .Register("work.accept", "Accept", () => Accept(), new Key('A'), isEnabled: () => Acceptable() is not null, onCard: true)
+            .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,

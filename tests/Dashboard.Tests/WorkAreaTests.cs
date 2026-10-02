@@ -879,7 +879,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(49, window.Work.Selected?.Number);
         var before = reads;
 
-        Assert.True(window.NewKeyDownEvent(new Key('A')));
+        Assert.True(window.NewKeyDownEvent(new Key('a')));
         Assert.Equal("Merging PR #122…", window.Message.Says);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -906,7 +906,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(new Key('A'));
+        window.NewKeyDownEvent(new Key('a'));
         window.Refresh();
 
         Assert.Empty(calls);
@@ -923,7 +923,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(new Key('A'));
+        window.NewKeyDownEvent(new Key('a'));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -953,7 +953,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(new Key('A'));
+        window.NewKeyDownEvent(new Key('a'));
         window.Refresh();
 
         Assert.Equal(0, asked);
@@ -971,7 +971,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(new Key('A'));
+        window.NewKeyDownEvent(new Key('a'));
         window.Refresh();
 
         Assert.Equal(0, asked);
@@ -987,7 +987,7 @@ public class WorkAreaTests : IDisposable
 
         var accept = window.Commands.Registered.Single(command => command.Id == "work.accept");
         Assert.Equal("Accept", accept.Label);
-        Assert.Equal(new Key('A'), accept.Key);
+        Assert.Equal(new Key('a'), accept.Key);
         Assert.True(accept.OnCard);
         Assert.Equal(6, window.Work.Selected?.Number);
         Assert.False(window.Commands.IsEnabled("work.accept"));
@@ -1018,7 +1018,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.False(window.NewKeyDownEvent(new Key('A')));
+        Assert.False(window.NewKeyDownEvent(new Key('a')));
         window.NewKeyDownEvent(Key.Enter);
         window.Refresh();
 

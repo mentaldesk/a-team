@@ -198,8 +198,8 @@ body as written, without leaving the app, then everything said since on it and o
 headed by who said it and when, or on a question just the question; `g` opens whichever row you're on in your browser: the
 issue on the card, the PR on the row under it. Reading a pitch that's waiting on you, `a` approves
 it: no confirmation, and the card leaves the column with nothing re-read. On a task in Review, or
-reading one, `A` accepts it: once you confirm, its PR is squash-merged and its branch deleted, and
-the card leaves. While the PR is failing, conflicting, still running CI or still a draft, `A` only
+reading one, `a` accepts it: once you confirm, its PR is squash-merged and its branch deleted, and
+the card leaves. While the PR is failing, conflicting, still running CI or still a draft, `a` only
 says so. Reading every team's
 gates takes a moment, so a quiet `Loading…` sits in the middle of the empty area until the
 first cards land; `r` afterwards leaves the ones on screen where they are.
