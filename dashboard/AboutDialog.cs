@@ -24,8 +24,8 @@ public sealed class AboutDialog : Dialog
         _textTall = rows.Count + 2;
 
         Title = "About";
-        Width = Dim.Func(_ => Fits(Wanted().Width, SuperView?.Viewport.Width), this);
-        Height = Dim.Func(_ => Fits(Wanted().Height, SuperView?.Viewport.Height), this);
+        Width = Dim.Func(_ => Fits(Wanted().Width, Room()?.Width), this);
+        Height = Dim.Func(_ => Fits(Wanted().Height, Room()?.Height), this);
 
         _van = new LoadingView { X = Pos.Center(), Y = 0 };
         _about = new Label
@@ -87,8 +87,10 @@ public sealed class AboutDialog : Dialog
             LoadingView.Rows + 2 + 1 + _textTall + edges.Vertical);
     }
 
+    private Size? Room() => SuperView?.Viewport.Size ?? App?.Screen.Size;
+
     private bool Roomy() =>
-        SuperView?.Viewport.Size is not { } room || WithVan() is var wanted && wanted.Width <= room.Width && wanted.Height <= room.Height;
+        Room() is not { } room || WithVan() is var wanted && wanted.Width <= room.Width && wanted.Height <= room.Height;
 
     private Size Wanted()
     {

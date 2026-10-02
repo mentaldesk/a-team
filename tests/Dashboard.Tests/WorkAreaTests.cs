@@ -1,8 +1,10 @@
 using System.Drawing;
+using System.Text.Json.Nodes;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui;
 using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -82,6 +84,211 @@ public class WorkAreaTests : IDisposable
         window.Commands.Execute("work.refresh");
 
         Assert.False(window.Loading.Visible);
+    }
+
+    [Fact]
+    public void A_later_read_leaves_the_selection_on_the_card_it_was_on_wherever_that_card_now_sits()
+    {
+        Func<string, string> page = Waiting;
+        using var window = Open(read: team => Task.FromResult(new Reading(page(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        page = team => ReadAgain(team, 6, 108, 107, 49);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void A_later_read_leaves_the_selection_on_the_PR_row_it_was_on()
+    {
+        Func<string, string> page = Waiting;
+        using var window = Open(read: team => Task.FromResult(new Reading(page(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
+
+        page = team => ReadAgain(team, 6, 107, 108, 49);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
+    }
+
+    [Fact]
+    public void A_later_read_without_the_selected_card_hands_the_selection_to_the_next_card_down()
+    {
+        Func<string, string> page = Waiting;
+        using var window = Open(read: team => Task.FromResult(new Reading(page(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        page = team => ReadAgain(team, 6, 108, 49);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Equal(108, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void Work_reads_again_by_itself_once_its_last_read_began_five_minutes_ago()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        window.Refresh();
+
+        clock.Now += DashboardWindow.ReadEvery - TimeSpan.FromSeconds(1);
+        window.Refresh();
+        Assert.Equal(2, reads);
+
+        clock.Now += TimeSpan.FromSeconds(1);
+        window.Refresh();
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void Refreshing_by_hand_puts_off_the_next_read_by_itself()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        window.Refresh();
+        clock.Now += TimeSpan.FromMinutes(4);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        clock.Now += TimeSpan.FromMinutes(4);
+        window.Refresh();
+
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void A_read_that_failed_is_tried_again_by_itself_five_minutes_later_not_every_second()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: _ =>
+        {
+            reads++;
+            return Task.FromResult(new Reading("", "gh: API rate limit exceeded"));
+        }, clock: clock);
+        window.Refresh();
+
+        clock.Now += TimeSpan.FromSeconds(1);
+        window.Refresh();
+        Assert.Equal(2, reads);
+        Assert.Equal("gh: API rate limit exceeded", window.Message.Says);
+
+        clock.Now += DashboardWindow.ReadEvery;
+        window.Refresh();
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void The_Dashboard_reads_nothing_by_itself()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, area: Area.Dashboard, clock: clock);
+
+        clock.Now += DashboardWindow.ReadEvery * 2;
+        window.Refresh();
+
+        Assert.Equal(0, reads);
+    }
+
+    [Fact]
+    public void Work_waits_to_read_by_itself_until_the_dialog_over_it_closes()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        app.Begin(window);
+        window.Refresh();
+        using var dialog = new Dialog();
+        var over = app.Begin(dialog);
+
+        clock.Now += DashboardWindow.ReadEvery;
+        window.Refresh();
+        Assert.Equal(2, reads);
+
+        app.End(over!);
+        window.Refresh();
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void Work_waits_to_read_by_itself_until_the_menu_over_it_closes()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        app.Begin(window);
+        window.Refresh();
+        window.NewKeyDownEvent(new Key('c').WithAlt);
+        Assert.True(window.Menu.IsOpen());
+
+        clock.Now += DashboardWindow.ReadEvery;
+        window.Refresh();
+        Assert.Equal(2, reads);
+
+        window.Menus.Single(menu => menu.PopoverMenuOpen).PopoverMenu!.NewKeyDownEvent(Key.Esc);
+        Assert.False(window.Menu.IsOpen());
+        window.Refresh();
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void Back_from_a_try_Work_reads_by_itself_once_the_cards_it_brought_back_are_five_minutes_old()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        var items = WaitingItem.Parse(Waiting("team0"));
+        var tried = new TryHandover(items[2], true, items, clock.Now - TimeSpan.FromMinutes(4));
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, resume: tried, clock: clock);
+        window.Refresh();
+        Assert.Equal(0, reads);
+
+        clock.Now += TimeSpan.FromMinutes(1);
+        window.Refresh();
+        Assert.Equal(2, reads);
     }
 
     [Fact]
@@ -1689,6 +1896,18 @@ public class WorkAreaTests : IDisposable
             "unready": "{{unready}}"}]
           """;
 
+    /// <summary><see cref="Waiting"/> read again later, every reason moved on and team0's cards in
+    /// <paramref name="order"/>, any it leaves out gone.</summary>
+    private static string ReadAgain(string team, params int[] order)
+    {
+        var cards = JsonNode.Parse(Waiting(team))!.AsArray();
+        if (team == "team0")
+            cards = [.. order.Select(n => cards.Single(card => card!["number"]!.GetValue<int>() == n)!.DeepClone())];
+        foreach (var card in cards)
+            card!["reason"] = $"{card["reason"]}, and later";
+        return cards.ToJsonString();
+    }
+
     /// <summary>A pitch carrying no Priority, which waits in Triage until it's ranked.</summary>
     private const string Unranked =
         """
@@ -1838,7 +2057,8 @@ public class WorkAreaTests : IDisposable
         Action<Handover>? handOver = null,
         Handover? resume = null,
         Func<WaitingItem, Task<Reading>>? readConversation = null,
-        Func<WaitingItem, bool>? confirmAccept = null)
+        Func<WaitingItem, bool>? confirmAccept = null,
+        TimeProvider? clock = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -1857,7 +2077,16 @@ public class WorkAreaTests : IDisposable
             handOver,
             resume,
             readConversation: readConversation,
-            confirmAccept: confirmAccept);
+            confirmAccept: confirmAccept,
+            clock: clock);
+    }
+
+    /// <summary>A clock the test moves by hand.</summary>
+    private sealed class Clock : TimeProvider
+    {
+        internal DateTimeOffset Now { get; set; } = new(2026, 10, 2, 9, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 
     private string Config => Path.Combine(_root, "config");

@@ -124,6 +124,18 @@ CLOSES='def closes: if (.body // "") | contains("<!-- a-team:dev -->")
     then [.body | scan("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?[ \t]+#([0-9]+)\\b") | .[0] | tonumber]
     else [] end;'
 
+# checks: the CI verdict on a commit's check runs, shaped as REST gives them.
+CHECKS='def checks:
+    def failed: .conclusion as $c
+      | ["failure", "timed_out", "cancelled", "action_required", "startup_failure"] | index($c);
+    {
+      verdict: (if any(.[]; failed) then "fail"
+                elif length == 0 or any(.[]; .status != "completed") then "pending"
+                else "pass" end),
+      failing: map(select(failed) | {name, at: .completed_at, link: .html_url}),
+      pending: map(select(.status != "completed") | .name)
+    };'
+
 is_state() {
   local s
   for s in "${STATES[@]}"; do [ "$s" = "$1" ] && return 0; done
@@ -161,10 +173,11 @@ gql() {
   gh api graphql -F owner="$OWNER" -F number="$NUMBER" "$@" -f query="$query"
 }
 
+# items [<filter>]: the board's items, or only the ones a project filter such as `not_done` matches.
 items() {
-  gql "query(\$owner: String!, \$number: Int!, \$field: String!, \$endCursor: String) {
+  gql "query(\$owner: String!, \$number: Int!, \$field: String!, \$endCursor: String, \$filter: String) {
       $KIND(login: \$owner) { projectV2(number: \$number) {
-        items(first: 100, after: \$endCursor) {
+        items(first: 100, after: \$endCursor, query: \$filter) {
           pageInfo { hasNextPage endCursor }
           nodes {
             id
@@ -176,7 +189,7 @@ items() {
                              issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue {
                                name field { ... on IssueFieldSingleSelect { name } } } } } }
               ... on PullRequest { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
-            } } } } } }" -F field="$FIELD" --paginate |
+            } } } } } }" -F field="$FIELD" -f filter="${1:-}" --paginate |
     jq -s --arg kind "$KIND" --arg repo "$REPO" --arg priority "$PRIORITY" \
       --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" \
       --slurpfile cfg "$CONFIG" '
@@ -202,6 +215,15 @@ items() {
 
 item() {
   items | jq --argjson n "$1" 'map(select(.number == $n)) | first // empty'
+}
+
+# not_done: a filter leaving Done off the board, or none where the status field's name isn't one word:
+# GitHub returns no items at all for a field it doesn't recognise.
+not_done() {
+  local option
+  option=$(jq -r '.project.statusMap.Done // "Done"' "$CONFIG")
+  [[ $FIELD =~ ^[A-Za-z0-9]+$ && $option != *'"'* ]] && printf -- '-%s:"%s"' "$FIELD" "$option"
+  return 0
 }
 
 project_raw() {
@@ -324,21 +346,12 @@ pr_for() {
         // ((.pullRequests.nodes // []) | map(select(any(closes[]; . == $n))) | first | del(.body))'
 }
 
-# ci <pr> [sha]: the CI verdict for <pr>, reading its head commit where the caller already knows it.
+# ci <pr>: the CI verdict for <pr>'s head commit.
 ci() {
-  local sha=${2:-}
-  [ -n "$sha" ] || sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
+  local sha
+  sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
   gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]' |
-    jq -s '
-      def failed: .conclusion as $c
-        | ["failure", "timed_out", "cancelled", "action_required", "startup_failure"] | index($c);
-      {
-        verdict: (if any(.[]; failed) then "fail"
-                  elif length == 0 or any(.[]; .status != "completed") then "pending"
-                  else "pass" end),
-        failing: map(select(failed) | {name, at: .completed_at, link: .html_url}),
-        pending: map(select(.status != "completed") | .name)
-      }'
+    jq -s "$CHECKS checks"
 }
 
 # Conversation and line comments across the whole repo from the last day, as
@@ -383,13 +396,16 @@ awaiting() {
 # gated_talk <items>: one page holding the body, comments and open PR of every item, in one call
 # whatever the number of them, plus one more for any PR GitHub hasn't linked to its task. The open
 # PR that closes a task comes back nested under the task's own number: a stakeholder answers a task
-# on either. `waiting` reads whose turn it is off this page.
+# on either. `waiting` reads whose turn it is off this page. With `checks`, each PR carries its head
+# commit's check runs too.
 gated_talk() {
-  local said reviewed n pr page unlinked prs query=''
+  local said reviewed n pr page unlinked prs query='' runs=''
   local seen='reactions(content: EYES) { totalCount }'
+  [ "${2:-}" = checks ] && runs='commits(last: 1) { nodes { commit { checkSuites(first: 50) { nodes {
+    checkRuns(first: 100, filterBy: {checkType: LATEST}) { nodes { name status conclusion completedAt url } } } } } } }'
   said="number createdAt body author { __typename login }
         comments(last: 50) { nodes { createdAt body author { __typename login } $seen } }"
-  reviewed="$said"" url isDraft mergeable baseRefName headRefOid
+  reviewed="$said"" url isDraft mergeable baseRefName $runs
               reviews(last: 50) { nodes { createdAt body state author { __typename login } $seen
               comments(first: 50) { nodes { createdAt body author { __typename login } $seen } } } }"
   for n in $(jq -r '.[].number' <<<"$1"); do
@@ -438,13 +454,17 @@ gated_comments() {
 }
 
 # gated_prs <talk>: the open PR that closes each of those items, as {n, pr, prUrl, draft,
-# conflicting, base, sha}. UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING
-# counts as a conflict.
+# conflicting, base, checks, failedAt}, off a page read with `checks`. UNKNOWN means GitHub hasn't
+# finished computing it, so only CONFLICTING counts as a conflict.
 gated_prs() {
-  jq '[.data.repository | to_entries[].value | select(. != null) | .number as $n
+  jq "$CHECKS"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
        | .closedByPullRequestsReferences.nodes[]?
+       | ([.commits.nodes[0].commit.checkSuites.nodes[]?.checkRuns.nodes[]
+           | {name, status: (.status | ascii_downcase), conclusion: (.conclusion // "" | ascii_downcase),
+              completed_at: .completedAt, html_url: .url}] | checks) as $ci
        | {n: $n, pr: .number, prUrl: .url, draft: .isDraft,
-          conflicting: (.mergeable == "CONFLICTING"), base: .baseRefName, sha: .headRefOid}]' <<<"$1"
+          conflicting: (.mergeable == "CONFLICTING"), base: .baseRefName,
+          checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
 }
 
 # gated_blocked <talk>: when each of those items was last labelled `blocked`, as {"<n>": at}.
@@ -453,15 +473,6 @@ gated_blocked() {
        | {key: (.number | tostring),
           value: ([.timelineItems.nodes[]? | select(.label.name == "blocked") | .createdAt] | max)}
        | select(.value != null)] | from_entries' <<<"$1"
-}
-
-# pr_checks <prs>: each of them with the verdict `checks` gives it, and when a failing run finished.
-pr_checks() {
-  local row
-  while IFS= read -r row; do
-    jq -c --argjson ci "$(ci "$(jq -r .pr <<<"$row")" "$(jq -r .sha <<<"$row")")" \
-      '. + {checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}' <<<"$row"
-  done < <(jq -c '.[]' <<<"$1") | jq -s .
 }
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
@@ -993,15 +1004,15 @@ case "$CMD" in
 
   waiting)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
-    all=$(items)
+    all=$(items "$(not_done)")
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)})' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
-    talk=$(gated_talk "$(jq -s add <<<"$gated$held")")
+    talk=$(gated_talk "$(jq -s add <<<"$gated$held")" checks)
     said=$(gated_comments "$talk")
-    turns "$gated" "$said" "$(pr_checks "$(gated_prs "$talk")")" |
+    turns "$gated" "$said" "$(gated_prs "$talk")" |
       jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
         --argjson unranked "$(unranked_ideas "$all")" '. + $asked + $unranked'
     ;;
