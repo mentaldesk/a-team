@@ -11,13 +11,14 @@ public sealed class WorkView : View
     /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
     /// Idea or a pitch that carries none is still to rank; by In review it's decided, and a PR waits for
     /// acceptance whatever its rank. A question, the Dev's on a Ready task or the Lead's on a pitch, waits in
-    /// Questions whatever its rank.</summary>
-    internal static readonly (string Name, Func<WaitingItem, bool> Holds)[] Gates =
+    /// Questions whatever its rank. Triage and Pitches wear the kind they hold in their heading, and only a card
+    /// of another kind wears its own.</summary>
+    internal static readonly (string Name, Icon? Kind, Func<WaitingItem, bool> Holds)[] Gates =
     [
-        ("Triage", item => item.Priority.Length == 0 && item.Question.Length == 0 && item.Status is "Idea" or "Pitched"),
-        ("Pitches", item => item.Status == "Pitched" && item.Priority.Length > 0 && item.Question.Length == 0),
-        ("Questions", item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0),
-        ("Review", item => item.Status == "In review"),
+        ("Triage", Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && item.Status is "Idea" or "Pitched"),
+        ("Pitches", Icon.Pitch, item => item.Status == "Pitched" && item.Priority.Length > 0 && item.Question.Length == 0),
+        ("Questions", null, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0),
+        ("Review", null, item => item.Status == "In review"),
     ];
 
     private readonly List<WorkLane> _lanes = [];
@@ -307,7 +308,8 @@ public sealed class WorkLane : View
         for (var i = 0; i < WorkView.Gates.Length; i++)
         {
             var index = i;
-            var column = new WorkColumn(team, WorkView.Gates[i].Name, WorkView.Gates[i].Holds, focusChanged)
+            var (name, kind, holds) = WorkView.Gates[i];
+            var column = new WorkColumn(team, name, kind, holds, focusChanged)
             {
                 X = Pos.Func(_ => Left(index), this),
                 Y = 2,
@@ -404,13 +406,14 @@ public sealed class WorkColumn : FrameView
     private int _laidOutOver = -1;
     private IconStyle _icons = IconStyle.Unicode;
 
-    internal WorkColumn(string team, string gate, Func<WaitingItem, bool> holds, Action focusChanged)
+    internal WorkColumn(string team, string gate, Icon? kind, Func<WaitingItem, bool> holds, Action focusChanged)
     {
         Team = team;
         Gate = gate;
+        Kind = kind;
         _holds = holds;
         CanFocus = true;
-        Title = Heading(gate, 0);
+        Title = Heading(kind, gate, 0, _icons);
         _border = new FocusBorder(this);
         _cards.TreeBuilder = new DelegateTreeBuilder<Card>(card => card.Children, card => card.Children.Count > 0);
         _cards.AspectGetter = Aspect;
@@ -425,6 +428,9 @@ public sealed class WorkColumn : FrameView
     internal string Team { get; }
 
     internal string Gate { get; }
+
+    /// <summary>The kind of card the column's heading wears, or null where its cards each wear their own.</summary>
+    internal Icon? Kind { get; }
 
     /// <summary>How many items the column holds, which is what its title counts.</summary>
     internal int Count => _items.Count;
@@ -456,9 +462,9 @@ public sealed class WorkColumn : FrameView
     internal void Show(IReadOnlyList<WaitingItem> items)
     {
         _items = items;
-        var roots = Card.Roots(items);
+        var roots = Card.Roots(items, Kind);
         _nodes = [.. Card.Nodes(roots)];
-        Title = Heading(Gate, items.Count);
+        Title = Heading(Kind, Gate, items.Count, _icons);
         _cards.ClearObjects();
         _cards.AddObjects(roots);
         _cards.ExpandAll();
@@ -470,6 +476,7 @@ public sealed class WorkColumn : FrameView
     internal void ShowIcons(IconStyle style)
     {
         _icons = style;
+        Title = Heading(Kind, Gate, Count, style);
         _laidOutOver = -1;
         Fit();
         SetNeedsDraw();
@@ -506,7 +513,8 @@ public sealed class WorkColumn : FrameView
         _cards.SetFocus();
     }
 
-    internal static string Heading(string gate, int count) => $"{gate} · {count}";
+    internal static string Heading(Icon? kind, string gate, int count, IconStyle style) =>
+        $"{(kind is { } icon ? Icons.Field(icon, style) : "")}{gate} · {count}";
 
     /// <summary>Moves the selection onto <paramref name="item"/>'s own row, or its PR's, where this column is
     /// showing it.</summary>

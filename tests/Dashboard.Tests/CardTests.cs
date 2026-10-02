@@ -78,6 +78,36 @@ public class CardTests
         Assert.Equal(2 * Icons.Width, card.LeadWidth);
     }
 
+    [Theory]
+    [InlineData(IconStyle.NerdFont, false, "\uF400")]
+    [InlineData(IconStyle.NerdFont, true, "\uF400")]
+    [InlineData(IconStyle.Unicode, false, "\U0001F4A1")]
+    [InlineData(IconStyle.Unicode, true, "\U0001F4A1")]
+    public void An_Idea_wears_a_light_bulb(IconStyle style, bool pitch, string kind)
+    {
+        var card = new Card(Unranked with { Pitch = pitch }, false);
+
+        Assert.Equal(new TurnIcon(kind, card.Lead(style).Scheme), card.Leads(style)[1]);
+    }
+
+    [Fact]
+    public void A_card_leaves_its_kind_to_a_column_that_wears_it()
+    {
+        var card = new Card(Unranked, false, Icon.Idea);
+
+        Assert.Equal([card.Lead(IconStyle.Unicode)], card.Leads(IconStyle.Unicode));
+        Assert.Equal(Icons.Width, card.LeadWidth);
+    }
+
+    [Fact]
+    public void A_pitch_in_a_column_of_Ideas_still_wears_its_kind()
+    {
+        var card = new Card(Unranked with { Status = "Pitched", Pitch = true }, false, Icon.Idea);
+
+        Assert.Equal("◇", card.Leads(IconStyle.Unicode)[1].Glyph);
+        Assert.Equal(2 * Icons.Width, card.LeadWidth);
+    }
+
     [Fact]
     public void A_PRs_row_wears_only_the_line_it_hangs_from()
     {

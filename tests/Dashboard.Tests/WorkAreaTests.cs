@@ -37,7 +37,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(["team0", "team1"], teams);
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
     }
 
@@ -154,14 +154,14 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('m')));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Triage · 1", "Pitches · 1", "Questions · 0", "Review · 0", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(6, window.Work.Selected?.Number);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
     }
 
@@ -313,7 +313,7 @@ public class WorkAreaTests : IDisposable
         LayOut(reopened, 120, 30);
 
         Assert.True(reopened.Work.OnlyMine);
-        Assert.Equal(["Triage · 1", "Pitches · 1", "Questions · 0", "Review · 0", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(reopened));
     }
 
@@ -446,7 +446,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Triage · 0", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal("#6 · set to High", window.Message.Says);
         Assert.Equal(2, reads);
@@ -468,7 +468,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(26, window.Work.Selected?.Number);
-        Assert.Equal("Triage · 1", window.Work.Lanes[0].Columns[0].Title);
+        Assert.Equal("\U0001F4A1Triage · 1", window.Work.Lanes[0].Columns[0].Title);
     }
 
     [Fact]
@@ -509,7 +509,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal([["board", "team0", "priority", "you", "107", "none"]], calls);
-        Assert.Equal(["Triage · 2", "Pitches · 1", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 2", "◇ Pitches · 1", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(108, window.Work.Selected?.Number);
         Assert.Equal("#107 · set to None", window.Message.Says);
@@ -535,7 +535,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(["Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0", "Triage · 0", "Pitches · 0", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 0", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal("#107 · set to High", window.Message.Says);
         Assert.Equal(2, reads);
@@ -559,7 +559,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("board.sh: API rate limit exceeded", window.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
         Assert.True(window.Message.Frame.Right < window.Status.State.Frame.X);
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -721,7 +721,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal([["board", "team0", "approve", "you", "107"]], calls);
-        Assert.Equal("Pitches · 1", window.Work.Lanes[0].Columns[1].Title);
+        Assert.Equal("◇ Pitches · 1", window.Work.Lanes[0].Columns[1].Title);
         Assert.Equal(108, window.Work.Selected?.Number);
         Assert.Equal(before, reads);
         Assert.Equal("#107 approved", window.Message.Says);
@@ -742,7 +742,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         window.Refresh();
 
-        Assert.Equal("Pitches · 2", window.Work.Lanes[0].Columns[1].Title);
+        Assert.Equal("◇ Pitches · 2", window.Work.Lanes[0].Columns[1].Title);
         Assert.Equal(107, window.Work.Selected?.Number);
         Assert.Equal("board.sh: only a Pitched pitch can be approved (#107 is in 'Approved')", window.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
@@ -809,7 +809,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.Empty(calls);
-        Assert.Equal("Pitches · 2", window.Work.Lanes[0].Columns[1].Title);
+        Assert.Equal("◇ Pitches · 2", window.Work.Lanes[0].Columns[1].Title);
     }
 
     [Fact]
@@ -1000,7 +1000,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
-        Assert.Equal(["Triage · 1", "Pitches · 2", "Questions · 0", "Review · 1", "Triage · 0", "Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
