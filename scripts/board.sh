@@ -936,6 +936,26 @@ case "$CMD" in
     printf '%s\n' "$issue"
     ;;
 
+  conversation)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM conversation <n>"
+    trouble=$(mktemp)
+    talk=$(gated_talk "[{\"number\": $1}]" 2>"$trouble") ||
+      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read the conversation on #$1 ($reason)"; }
+    rm -f "$trouble"
+    jq --argjson stakeholders "$STAKEHOLDERS" --arg appFrom "$APP_FROM" --arg bot "$BOT" \
+      "def login: $LOGIN; $TEAM_SAID"'
+      def remark($pr): {at: .createdAt, author: (.author | login), body: (.body // ""), pr: $pr};
+      def who: if team("<!-- a-team:lead -->") then "lead" elif team("<!-- a-team:dev -->") then "dev"
+        elif .author | IN($stakeholders[]) then "you" else .author end;
+      [.data.repository | to_entries[].value | select(. != null)
+       | (.comments.nodes[]? | remark(null)),
+         (.closedByPullRequestsReferences.nodes[]? | .number as $pr
+          | (remark($pr) + {description: true}), (.comments.nodes[]? | remark($pr)))]
+      | sort_by(.at)
+      | map({who: who, at, pr, description: (.description // false),
+             body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
+    ;;
+
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |

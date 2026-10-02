@@ -893,6 +893,50 @@ failed "body with no issue"
 one_line "body with no issue"
 grep -q "usage: board.sh demo body <n>" "$ERR" || fail "body usage: '$(cat "$ERR")'"
 
+case_ "conversation merges the issue's comments with its PR's description and comments, oldest first, in one call"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+In_review 6 A task with a PR
+ITEMS
+gh_talk <<'TALK'
+6 body 2026-10-01T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+6 comment 2026-10-01T08:10:00Z demo-app[bot] Draft PR #906 is up.\n\n<!-- a-team:dev -->
+6 pr-body 2026-10-01T08:05:00Z demo-app[bot] Closes #6\n\n<!-- a-team:dev -->
+6 pr-comment 2026-10-01T09:00:00Z reviewer Does it scroll?
+6 comment 2026-10-01T09:30:00Z stranger +1
+6 pr-comment 2026-10-01T09:40:00Z demo-app[bot] It does. <!-- a-team:dev -->
+6 comment 2026-10-01T10:00:00Z demo-app[bot] Validated.\n<!-- a-team:lead -->
+TALK
+: >"$CALLS"
+run board demo conversation 6
+same "exit" 0 "$STATUS"
+same "who" '["dev","dev","you","stranger","dev","lead"]' "$(jq -c '[.[].who]' "$OUT")"
+same "bodies" '["Closes #6","Draft PR #906 is up.","Does it scroll?","+1","It does.","Validated."]' \
+  "$(jq -c '[.[].body]' "$OUT")"
+same "prs" '[906,null,906,null,906,null]' "$(jq -c '[.[].pr]' "$OUT")"
+same "description" '[true,false,false,false,false,false]' "$(jq -c '[.[].description]' "$OUT")"
+same "at" '"2026-10-01T08:05:00Z"' "$(jq -c '.[0].at' "$OUT")"
+same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "a card nobody has said anything on has an empty conversation"
+gh_talk <<'TALK'
+6 body 2026-10-01T08:00:00Z reviewer An Idea of my own
+TALK
+run board demo conversation 6
+same "exit" 0 "$STATUS"
+same "conversation" '[]' "$(jq -c . "$OUT")"
+
+case_ "a conversation that can't be read is refused in one line, naming the issue"
+DOWN=$(mktemp -d "$WORK/down.XXXXXX")
+printf '#!/usr/bin/env bash\necho "gh: HTTP 502" >&2\nexit 1\n' >"$DOWN/gh"
+chmod +x "$DOWN/gh"
+PATH="$DOWN:$PATH" run board demo conversation 6
+failed "unreadable conversation"
+one_line "unreadable conversation"
+grep -q "can't read the conversation on #6 (gh: HTTP 502)" "$ERR" || fail "unreadable conversation: '$(cat "$ERR")'"
+
 # Ranking: the one field the app writes, and the gate it is the reviewer's alone to clear.
 case_ "priority sets the field's own option on the issue, and nothing on the project"
 fixture <<'JSON'

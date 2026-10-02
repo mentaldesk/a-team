@@ -642,6 +642,43 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Enter_shows_the_conversation_under_the_body()
+    {
+        IssueBody? shown = null;
+        var at = new DateTimeOffset(2026, 9, 29, 4, 31, 0, TimeSpan.Zero);
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            readConversation: _ => Task.FromResult(new Reading(
+                $$"""[{"who": "dev", "at": "{{at:O}}", "body": "Done.", "pr": 239, "description": true}]""", null)),
+            showBody: (_, body, _, _) => shown = body);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        window.Refresh();
+
+        Assert.Equal(new IssueBody("## Opportunity").With(new Conversation([new Remark("dev", at, "Done.", 239, true)])),
+            shown);
+    }
+
+    [Fact]
+    public void A_conversation_that_wont_read_still_shows_the_body_with_the_reason_under_it()
+    {
+        IssueBody? shown = null;
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            readConversation: _ => Task.FromResult(new Reading("", "board.sh: can't read the conversation on #6 (gh: HTTP 502)")),
+            showBody: (_, body, _, _) => shown = body);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        window.Refresh();
+
+        Assert.Equal("## Opportunity\n\nboard.sh: can't read the conversation on #6 (gh: HTTP 502)", shown?.Text);
+    }
+
+    [Fact]
     public void Enter_on_a_question_opens_the_reader_on_the_Dev_s_question_with_nothing_read()
     {
         var read = new List<WaitingItem>();
@@ -1540,7 +1577,8 @@ public class WorkAreaTests : IDisposable
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
-        Handover? resume = null)
+        Handover? resume = null,
+        Func<WaitingItem, Task<Reading>>? readConversation = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -1557,7 +1595,8 @@ public class WorkAreaTests : IDisposable
             area,
             auto,
             handOver,
-            resume);
+            resume,
+            readConversation: readConversation);
     }
 
     private string Config => Path.Combine(_root, "config");

@@ -86,7 +86,8 @@ Handover? Show(Handover? back)
             app.RequestStop();
         },
         back is TeamsChanged ? null : back,
-        start);
+        start,
+        item => command.Read("board", item.Team, "conversation", item.Number.ToString()));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {
