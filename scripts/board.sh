@@ -499,7 +499,8 @@ turns() {
          elif $pr.draft then {trouble: "still a draft", at: ""}
          else null end) as $wrong
       | (if $pr == null then . else . + {pr: $pr.pr, prUrl: $pr.prUrl, checks: $pr.checks,
-                                         conflicting: $pr.conflicting, draft: $pr.draft} end)
+                                         conflicting: $pr.conflicting, draft: $pr.draft, base: $pr.base,
+                                         unready: ($wrong.trouble // "")} end)
       | (if $question == "" then . else . + {question: $question} end)
       | if $asked != ""
         then . + {turn: $role, reason: "answering your feedback\(since($asked))"}
@@ -809,6 +810,33 @@ case "$CMD" in
     [ "$status" = Pitched ] || die "only a Pitched pitch can be approved (#$n is in '$status')"
     set_status "$(jq -r .id <<<"$it")" Approved
     say "#$n: Pitched -> Approved"
+    ;;
+
+  accept)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM accept <role> <n>"
+    role=$1 n=$2
+    case "$role" in
+      lead | dev) die "$role may not accept a task; accepting is the stakeholders' own gate" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a task to accept"
+    ! jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is a pitch, not a task"
+    status=$(jq -r .status <<<"$it")
+    [ "$status" = "In review" ] || die "only a task In review can be accepted (#$n is in '$status')"
+    pr=$(pr_for "$n" | jq -r '.number // empty')
+    [ -n "$pr" ] || die "#$n has no open PR to merge"
+    head=$(gh api "repos/$REPO/pulls/$pr" --jq '{ref: .head.ref, repo: (.head.repo.full_name // "")}')
+    squash() { { gh api -X PUT "repos/$REPO/pulls/$1/merge" -f merge_method=squash >/dev/null; } 2>&1; }
+    refused=$(write "squash-merge PR #$pr" squash "$pr") || die "can't merge PR #$pr ($(head -1 <<<"$refused"))"
+    # A repo that deletes merged branches itself has already done it, so that refusal is no failure.
+    if [ "$(jq -r .repo <<<"$head")" = "$REPO" ]; then
+      ref=$(jq -r .ref <<<"$head")
+      write "delete branch $ref" gh api -X DELETE "repos/$REPO/git/refs/heads/$ref" >/dev/null 2>&1 || true
+    fi
+    say "#$n: merged PR #$pr"
     ;;
 
   comment)

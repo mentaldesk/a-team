@@ -834,7 +834,7 @@ public class WorkAreaTests : IDisposable
                 read.Add(item);
                 return Task.FromResult(new Reading(Body, null));
             },
-            showBody: (item, body, _, _) => shown = (item, body));
+            showBody: (item, body, _, _, _) => shown = (item, body));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -857,7 +857,7 @@ public class WorkAreaTests : IDisposable
             readBody: _ => Task.FromResult(new Reading(Body, null)),
             readConversation: _ => Task.FromResult(new Reading(
                 $$"""[{"who": "dev", "at": "{{at:O}}", "body": "Done.", "pr": 239, "description": true}]""", null)),
-            showBody: (_, body, _, _) => shown = body);
+            showBody: (_, body, _, _, _) => shown = body);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -875,7 +875,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading(Body, null)),
             readConversation: _ => Task.FromResult(new Reading("", "board.sh: can't read the conversation on #6 (gh: HTTP 502)")),
-            showBody: (_, body, _, _) => shown = body);
+            showBody: (_, body, _, _, _) => shown = body);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -897,7 +897,7 @@ public class WorkAreaTests : IDisposable
                 read.Add(item);
                 return Task.FromResult(new Reading(Body, null));
             },
-            showBody: (item, body, _, _) => shown = (item, body));
+            showBody: (item, body, _, _, _) => shown = (item, body));
         window.Refresh();
         LayOut(window, 120, 30);
         Assert.Equal("Questions · team0", window.Work.Region);
@@ -922,7 +922,7 @@ public class WorkAreaTests : IDisposable
                 calls.Add(arguments);
                 return Task.FromResult<string?>(null);
             },
-            showBody: (_, body, _, approve) =>
+            showBody: (_, body, _, approve, _) =>
             {
                 shown = body;
                 approve!();
@@ -954,7 +954,7 @@ public class WorkAreaTests : IDisposable
                 return Task.FromResult<string?>(null);
             },
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, onApprove) => onApprove!());
+            showBody: (_, _, _, onApprove, _) => onApprove!());
         window.Refresh();
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
@@ -980,7 +980,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(
             run: _ => Task.FromResult<string?>("board.sh: only a Pitched pitch can be approved (#107 is in 'Approved')"),
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, onApprove) => onApprove!());
+            showBody: (_, _, _, onApprove, _) => onApprove!());
         window.Refresh();
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
@@ -1003,7 +1003,7 @@ public class WorkAreaTests : IDisposable
         var offered = new List<bool>();
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, onApprove) => offered.Add(onApprove is not null));
+            showBody: (_, _, _, onApprove, _) => offered.Add(onApprove is not null));
         window.Refresh();
         LayOut(window, 120, 30);
         for (var i = 0; i < right; i++)
@@ -1024,7 +1024,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(
             read: team => Task.FromResult(new Reading(team == "team0" ? Unranked : "[]", null)),
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, onApprove) => offered.Add(onApprove is not null));
+            showBody: (_, _, _, onApprove, _) => offered.Add(onApprove is not null));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1060,13 +1060,262 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void A_on_a_Review_task_asks_then_merges_its_PR_and_the_card_leaves_with_no_re_read()
+    {
+        var asked = new List<WaitingItem>();
+        var calls = new List<string[]>();
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(team == "team0" ? Review() : "[]", null));
+            },
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            confirmAccept: item =>
+            {
+                asked.Add(item);
+                return true;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(49, window.Work.Selected?.Number);
+        var before = reads;
+
+        Assert.True(window.NewKeyDownEvent(new Key('a')));
+        Assert.Equal("Merging PR #122…", window.Message.Says);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal([49], asked.Select(item => item.Number));
+        Assert.Equal([["board", "team0", "accept", "you", "49"]], calls);
+        Assert.Equal(["Review · 0"], Titles(window).Take(4).Where(title => title.StartsWith("Review")));
+        Assert.Equal(before, reads);
+        Assert.Equal("merged PR #122", window.Message.Says);
+    }
+
+    [Fact]
+    public void Cancelling_the_confirmation_merges_nothing()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Review() : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            confirmAccept: _ => false);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.Refresh();
+
+        Assert.Empty(calls);
+        Assert.Equal(49, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void A_failed_merge_leaves_the_card_in_Review_and_says_why_in_the_error_colour()
+    {
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Review() : "[]", null)),
+            run: _ => Task.FromResult<string?>("board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))"),
+            confirmAccept: _ => true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Contains("Review · 1", Titles(window));
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.Equal("board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+    }
+
+    [Theory]
+    [InlineData("CI failing")]
+    [InlineData("conflicts with main")]
+    [InlineData("CI running")]
+    [InlineData("still a draft")]
+    public void A_on_a_PR_in_trouble_asks_nothing_and_says_what_the_card_says(string trouble)
+    {
+        var asked = 0;
+        var calls = new List<string[]>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Review(trouble) : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            confirmAccept: _ => ++asked > 0);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.Refresh();
+
+        Assert.Equal(0, asked);
+        Assert.Empty(calls);
+        Assert.Equal($"#49 · {trouble}", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_task_with_no_PR_has_nothing_to_merge()
+    {
+        var asked = 0;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Review(pr: 0) : "[]", null)),
+            confirmAccept: _ => ++asked > 0);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.Refresh();
+
+        Assert.Equal(0, asked);
+        Assert.Equal("#49 · no PR to merge", window.Message.Says);
+    }
+
+    [Fact]
+    public void work_accept_is_on_A_in_the_Cards_menu_and_enabled_only_on_a_Review_task()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        var accept = window.Commands.Registered.Single(command => command.Id == "work.accept");
+        Assert.Equal("Accept", accept.Label);
+        Assert.Equal(new Key('a'), accept.Key);
+        Assert.True(accept.OnCard);
+        Assert.Equal(6, window.Work.Selected?.Number);
+        Assert.False(window.Commands.IsEnabled("work.accept"));
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.False(window.Commands.IsEnabled("work.accept"));
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.True(window.Commands.IsEnabled("work.accept"));
+    }
+
+    [Fact]
+    public void Accept_can_be_rebound_and_the_reader_offers_it_on_the_new_key()
+    {
+        Directory.CreateDirectory(_root);
+        new DashboardSettings(Config).WriteKeys([("work.accept", new Key('z'))]);
+        var calls = new List<string[]>();
+        ReaderCommand? offered = null;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Review() : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, accept) => offered = accept,
+            confirmAccept: _ => true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.False(window.NewKeyDownEvent(new Key('a')));
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal(new Key('z'), offered?.Key);
+        Assert.Equal("accept", offered?.Hint);
+        Assert.True(offered?.Enabled);
+        Assert.Empty(calls);
+
+        window.NewKeyDownEvent(new Key('z'));
+
+        Assert.Equal([["board", "team0", "accept", "you", "49"]], calls);
+    }
+
+    [Fact]
+    public void Accepting_from_the_reader_merges_the_task_it_shows_and_the_reader_closes()
+    {
+        var calls = new List<string[]>();
+        var closes = new List<bool>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Review() : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, accept) => closes.Add(accept!.Run()),
+            confirmAccept: _ => true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal([true], closes);
+        Assert.Equal([["board", "team0", "accept", "you", "49"]], calls);
+        Assert.Equal("merged PR #122", window.Message.Says);
+    }
+
+    [Fact]
+    public void The_reader_greys_accept_on_a_PR_in_trouble_and_stays_open_saying_why()
+    {
+        var closes = new List<bool>();
+        ReaderCommand? offered = null;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Review("CI failing") : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, accept) =>
+            {
+                offered = accept;
+                closes.Add(accept!.Run());
+            },
+            confirmAccept: _ => true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.False(offered?.Enabled);
+        Assert.Equal([false], closes);
+        Assert.Equal("#49 · CI failing", window.Message.Says);
+    }
+
+    [Fact]
+    public void The_reader_offers_no_accept_on_a_pitch()
+    {
+        var offered = new List<bool>();
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, accept) => offered.Add(accept is not null));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([false], offered);
+    }
+
+    [Fact]
     public void o_in_the_reader_opens_what_o_on_the_board_would_have()
     {
         var opened = new List<string>();
         using var window = Open(
             openUrl: opened.Add,
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, onGitHub, _) => onGitHub());
+            showBody: (_, _, onGitHub, _, _) => onGitHub());
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1112,7 +1361,7 @@ public class WorkAreaTests : IDisposable
         var shown = false;
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading("", "board.sh: can't read #6 (gh: Not Found (HTTP 404))")),
-            showBody: (_, _, _, _) => shown = true);
+            showBody: (_, _, _, _, _) => shown = true);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1128,7 +1377,7 @@ public class WorkAreaTests : IDisposable
     public void A_card_with_no_body_opens_no_reader_and_says_so_in_the_error_colour()
     {
         var shown = false;
-        using var window = Open(showBody: (_, _, _, _) => shown = true);
+        using var window = Open(showBody: (_, _, _, _, _) => shown = true);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1403,7 +1652,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
+                "work.github", "work.accept", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "agent.expand", "log.toolCalls", "agent.collapse", "help", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
@@ -1637,6 +1886,16 @@ public class WorkAreaTests : IDisposable
             "turn": "you", "reason": "awaiting your approval since 21:37", "priority": "Low", "pitch": true}]
           """;
 
+    /// <summary>One task In review and nothing else, its PR in <paramref name="unready"/> trouble where there's any.</summary>
+    private static string Review(string unready = "", int pr = 122) =>
+        $$"""
+          [{"number": 49, "title": "I can't change any of the keys", "status": "In review",
+            "url": "https://github.com/mentaldesk/team0/issues/49", "team": "team0",
+            "turn": "you", "reason": "awaiting your acceptance since 10:15",
+            "pr": {{pr}}, "prUrl": "https://github.com/mentaldesk/team0/pull/{{pr}}", "base": "main",
+            "unready": "{{unready}}"}]
+          """;
+
     /// <summary><see cref="Waiting"/> read again later, every reason moved on and team0's cards in
     /// <paramref name="order"/>, any it leaves out gone.</summary>
     private static string ReadAgain(string team, params int[] order)
@@ -1792,12 +2051,13 @@ public class WorkAreaTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?>? askPriority = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
-        Action<WaitingItem, IssueBody, Action, Action?>? showBody = null,
+        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
         Handover? resume = null,
         Func<WaitingItem, Task<Reading>>? readConversation = null,
+        Func<WaitingItem, bool>? confirmAccept = null,
         TimeProvider? clock = null)
     {
         Directory.CreateDirectory(_root);
@@ -1811,12 +2071,13 @@ public class WorkAreaTests : IDisposable
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
             askPriority ?? ((_, _) => null),
-            showBody ?? ((_, _, _, _) => { }),
+            showBody ?? ((_, _, _, _, _) => { }),
             area,
             auto,
             handOver,
             resume,
             readConversation: readConversation,
+            confirmAccept: confirmAccept,
             clock: clock);
     }
 

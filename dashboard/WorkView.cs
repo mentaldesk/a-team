@@ -175,6 +175,9 @@ public sealed class WorkView : View
     /// hands the selection to the next card down.</summary>
     internal void Approved(WaitingItem item) => Replace(item, null);
 
+    /// <summary>What a merge leaves on screen, with no re-read: the task is done, so its card leaves.</summary>
+    internal void Leave(WaitingItem item) => Replace(item, null);
+
     private void Replace(WaitingItem item, WaitingItem? now) =>
         Keep(now is null ? [.. _items.Where(each => each != item)] : [.. _items.Select(each => each == item ? now : each)],
             now, onPr: false);

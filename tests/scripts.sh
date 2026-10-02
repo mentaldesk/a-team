@@ -207,6 +207,9 @@ case " \$* " in
   *dependencies/blocked_by*) page="$BLOCKED" ;;
   *"/issues/"*"/comments"*) page="$THREAD" ;;
   *"/pulls/"*"/comments"*) page="$LINE" ;;
+  *"-X PUT"*"/merge"*) [ ! -e "$BIN/merge-fails" ] || { echo "gh: Pull Request is not mergeable (HTTP 405)" >&2; exit 1; }
+                      echo "PUT \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
+  *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   *"/pulls/"[0-9]*) page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
@@ -517,7 +520,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "pitch fields" '["number","pitch","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "task fields" \
-  '["checks","conflicting","draft","number","pitch","pr","prUrl","priority","reason","status","team","title","turn","url"]' \
+  '["base","checks","conflicting","draft","number","pitch","pr","prUrl","priority","reason","status","team","title","turn","unready","url"]' \
   "$(jq -c '.[1] | keys' "$OUT")"
 same "pitch flags" '[true,false]' "$(jq -c '[.[].pitch]' "$OUT")"
 same "pr" 1015 "$(jq -c '.[1].pr' "$OUT")"
@@ -527,6 +530,8 @@ case_ "a green, mergeable, ready PR with nothing unanswered stays the reviewer's
 same "checks" '"pass"' "$(jq -c '.[1].checks' "$OUT")"
 same "conflicting" false "$(jq -c '.[1].conflicting' "$OUT")"
 same "draft" false "$(jq -c '.[1].draft' "$OUT")"
+same "base" '"main"' "$(jq -c '.[1].base' "$OUT")"
+same "unready" '""' "$(jq -c '.[1].unready' "$OUT")"
 same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"awaiting your acceptance since 08:25"' "$(jq -c '.[1].reason' "$OUT")"
 
@@ -553,6 +558,7 @@ same "exit" 0 "$STATUS"
 same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task trouble" null "$(jq -c '.[1].trouble' "$OUT")"
+same "still unready to merge" '"CI failing"' "$(jq -c '.[1].unready' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a PR that conflicts with its base is the Dev's turn"
@@ -1095,6 +1101,76 @@ run board demo approve you 7
 failed "approve a PR"
 grep -q "#7 is not an issue" "$ERR" || fail "approve a PR: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+# Accepting: the app's merge, the gate a task leaves by.
+case_ "accept squash-merges the task's PR and deletes its branch"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+In_review 7 A task in front of me
+In_progress 8 A task still being built
+ITEMS
+gh_pr 907 false
+echo '{"head": {"sha": "deadbeefcafe", "ref": "feat/task", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
+run board demo accept you 7
+same "exit" 0 "$STATUS"
+same "said" "#7: merged PR #907" "$(cat "$OUT")"
+same "writes" "PUT api -X PUT repos/mentaldesk/demo/pulls/907/merge -f merge_method=squash
+DELETE api -X DELETE repos/mentaldesk/demo/git/refs/heads/feat/task" "$(cat "$WRITES")"
+
+case_ "a branch on a fork is left where it is"
+: >"$WRITES"
+echo '{"head": {"sha": "deadbeefcafe", "ref": "feat/task", "repo": {"full_name": "someone/demo"}}}' >"$PULL"
+run board demo accept you 7
+same "exit" 0 "$STATUS"
+same "writes" "PUT api -X PUT repos/mentaldesk/demo/pulls/907/merge -f merge_method=squash" "$(cat "$WRITES")"
+
+case_ "a merge GitHub refuses says why in one line, and deletes nothing"
+: >"$WRITES"
+touch "$BIN/merge-fails"
+run board demo accept you 7
+failed "refused merge"
+one_line "refused merge"
+grep -q "can't merge PR #907 (gh: Pull Request is not mergeable (HTTP 405))" "$ERR" || fail "refused merge: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+rm "$BIN/merge-fails"
+
+case_ "--dry-run says what it would merge and merges nothing"
+run board --dry-run demo accept you 7
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+grep -q "would squash-merge PR #907" "$ERR" || fail "accept dry run: '$(cat "$ERR")'"
+
+case_ "neither agent may accept a task: that gate is the reviewer's own"
+for role in lead dev; do
+  run board demo accept "$role" 7
+  failed "$role accepting"
+  one_line "$role accepting"
+  grep -q "$role may not accept a task; accepting is the stakeholders' own gate" "$ERR" ||
+    fail "$role accepting: '$(cat "$ERR")'"
+done
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "accept is only for a task In review with an open PR"
+run board demo accept you 8
+failed "accept In progress"
+grep -q "is in 'In progress'" "$ERR" || fail "accept In progress: '$(cat "$ERR")'"
+run board demo accept you 404
+grep -q "#404 is not on the board" "$ERR" || fail "accept off the board: '$(cat "$ERR")'"
+edit_item 7 '.labels.nodes = [{name: "pitch"}]'
+run board demo accept you 7
+failed "accept a pitch"
+grep -q "#7 is a pitch, not a task" "$ERR" || fail "accept a pitch: '$(cat "$ERR")'"
+edit_item 7 '.labels.nodes = []'
+gh_pr
+run board demo accept you 7
+failed "accept with no PR"
+grep -q "#7 has no open PR to merge" "$ERR" || fail "accept with no PR: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "the agents' settings deny accept, beside approve"
+grep -qF '"Bash(a-team board * accept *)"' "$ROOT/settings/agents.json" || fail "no accept deny rule"
 
 case_ "the agents' settings deny removing a label by hand, so blocked is cleared only through unblock"
 grep -qF '"Bash(gh issue edit *--remove-label*)"' "$ROOT/settings/agents.json" || fail "no remove-label deny rule"
