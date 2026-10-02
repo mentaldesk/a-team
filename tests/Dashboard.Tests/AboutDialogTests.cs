@@ -1,4 +1,6 @@
 using System.Drawing;
+using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
@@ -69,5 +71,46 @@ public class AboutDialogTests
         host.Layout(new Size(30, 6));
 
         Assert.True(host.Viewport.Contains(dialog.Frame), $"{dialog.Frame} overhangs {host.Viewport}");
+    }
+
+    [Theory]
+    [InlineData(60, 18, false)]
+    [InlineData(80, 24, true)]
+    [InlineData(120, 40, true)]
+    public void Run_on_its_own_it_sizes_for_the_screen(int wide, int tall, bool van)
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(wide, tall);
+        using var dialog = new AboutDialog("1.2.3");
+        app.Begin(dialog);
+
+        dialog.Layout();
+
+        Assert.Null(dialog.SuperView);
+        Assert.Equal(van, dialog.Van.Visible);
+        Assert.True(app.Screen.Contains(dialog.Frame), $"{dialog.Frame} overhangs {app.Screen}");
+        Assert.True(dialog.Viewport.Contains(dialog.About.Frame), $"{dialog.About.Frame} overhangs {dialog.Viewport}");
+    }
+
+    [Fact]
+    public void Resizing_the_screen_while_it_is_open_switches_between_van_and_text()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(120, 40);
+        using var dialog = new AboutDialog("1.2.3");
+        app.Begin(dialog);
+        dialog.Layout();
+        Assert.True(dialog.Van.Visible);
+
+        app.Driver.SetScreenSize(60, 18);
+        dialog.Layout();
+
+        Assert.False(dialog.Van.Visible);
+        Assert.True(app.Screen.Contains(dialog.Frame), $"{dialog.Frame} overhangs {app.Screen}");
+
+        app.Driver.SetScreenSize(120, 40);
+        dialog.Layout();
+
+        Assert.True(dialog.Van.Visible);
     }
 }
