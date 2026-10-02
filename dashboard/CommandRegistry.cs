@@ -2,8 +2,9 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
-/// <summary>One hint as a dialog's hint row draws it, and the command clicking it runs.</summary>
-public sealed record HintedCommand(string Id, string Text);
+/// <summary>One hint as a dialog's hint row draws it, and the command clicking it runs. One that isn't
+/// <paramref name="Enabled"/> is drawn greyed.</summary>
+public sealed record HintedCommand(string Id, string Text, bool Enabled = true);
 
 /// <summary>A command as the registry holds it. <paramref name="OnCard"/> marks one that acts on the Work area's
 /// selected card, which is what puts it in the Cards menu. <paramref name="MenuLabel"/> is how it reads in the menu,

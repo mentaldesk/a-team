@@ -129,6 +129,42 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void A_task_to_accept_puts_its_key_after_scrolling()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            accept: new ReaderCommand(new Key('A'), "accept", () => true));
+        dialog.Layout(new Size(60, 20));
+
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · A accept · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.True(dialog.Hints.Hints.Single(hint => hint.Text == "A accept").Enabled);
+    }
+
+    [Fact]
+    public void Accept_on_a_PR_in_trouble_is_greyed_but_its_key_still_says_why()
+    {
+        var ran = 0;
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            accept: new ReaderCommand(new Key('A'), "accept", () => ++ran < 0, Enabled: false));
+        dialog.Layout(new Size(60, 20));
+
+        Assert.False(dialog.Hints.Hints.Single(hint => hint.Text == "A accept").Enabled);
+        Assert.True(dialog.NewKeyDownEvent(new Key('A')));
+        Assert.Equal(1, ran);
+    }
+
+    [Fact]
+    public void Accept_follows_its_key_not_a()
+    {
+        var ran = 0;
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            accept: new ReaderCommand(new Key('z'), "accept", () => ++ran > 0));
+
+        Assert.False(dialog.NewKeyDownEvent(new Key('A')));
+        Assert.True(dialog.NewKeyDownEvent(new Key('z')));
+        Assert.Equal(1, ran);
+    }
+
+    [Fact]
     public void With_nothing_to_approve_a_does_nothing()
     {
         using var dialog = Open(Pitch);

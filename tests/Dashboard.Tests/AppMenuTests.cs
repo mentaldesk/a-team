@@ -219,7 +219,7 @@ public class AppMenuTests : IDisposable
         Assert.Equal(
             window.Commands.Registered.Where(command => command.OnCard).Select(command => command.Id),
             Above(window, Cards(window)));
-        Assert.Equal(["work.read", "work.priority", "work.try", "work.github"], Above(window, Cards(window)));
+        Assert.Equal(["work.read", "work.priority", "work.try", "work.github", "work.accept"], Above(window, Cards(window)));
         Assert.All(Under(window, Cards(window)), id => Assert.Equal(window.Commands.KeyFor(id), Item(window, id).Key));
     }
 
@@ -229,7 +229,7 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            ["_Open", "Set _priority", "_Try PR", "Open on _GitHub", "_Refresh", "Show only _mine"],
+            ["_Open", "Set _priority", "_Try PR", "Open on _GitHub", "_Accept", "_Refresh", "Show only _mine"],
             Under(window, Cards(window)).Select(id => Item(window, id).Title));
     }
 
@@ -470,7 +470,7 @@ public class AppMenuTests : IDisposable
             _ => Task.FromResult(new Reading("{}", null)),
             _ => { },
             (_, _) => null,
-            (_, _, _, _) => { },
+            (_, _, _, _, _) => { },
             area,
             IconStyle.Unicode);
     }

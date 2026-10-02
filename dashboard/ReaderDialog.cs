@@ -3,25 +3,33 @@ using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
+/// <summary>A command the reader offers on its own key. <paramref name="Run"/> says whether the reader is done; one
+/// that isn't <paramref name="Enabled"/> still runs, to say why not, and its hint is greyed.</summary>
+public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool Enabled = true);
+
 /// <summary>An item's body as it was written, to read without leaving the board.</summary>
 public sealed class ReaderDialog : Dialog
 {
     private const string ScrollHint = "scroll";
     private const string ApproveHint = "approve";
+    private const string AcceptHint = "accept";
     private const string GitHubHint = "github";
     private const string CloseHint = "close";
     private const int Inset = 1;
 
     private readonly Action _onGitHub;
     private readonly Action? _onApprove;
+    private readonly ReaderCommand? _accept;
     private readonly LogView _body;
     private readonly StatusBar _hints = new();
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
-    public ReaderDialog(WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null)
+    /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
+    public ReaderDialog(WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null)
     {
         _onGitHub = onGitHub;
         _onApprove = onApprove;
+        _accept = accept;
         Title = $"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch ? " · the Lead's question" : " · the Dev's question")}";
         X = 0;
         Y = 0;
@@ -47,6 +55,8 @@ public sealed class ReaderDialog : Dialog
         _hints.Show("", [
             new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll"),
             .. onApprove is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ApproveHint, "a approve")],
+            .. accept is null ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(AcceptHint, $"{KeyNames.Short(accept.Key)} {accept.Hint}", accept.Enabled)],
             new HintedCommand(GitHubHint, "g on GitHub"),
             new HintedCommand(CloseHint, "Esc close"),
         ], Run);
@@ -67,12 +77,15 @@ public sealed class ReaderDialog : Dialog
             return OnGitHub();
         if (key == new Key('a') && _onApprove is not null)
             return Approve();
+        if (_accept is not null && key == _accept.Key)
+            return Accept();
         return Scroll(key) is { } scroll ? Scrolled(scroll) : base.OnKeyDown(key);
     }
 
-    public static void Show(IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove)
+    public static void Show(
+        IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept)
     {
-        using var dialog = new ReaderDialog(item, body, onGitHub, onApprove);
+        using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept);
         app.Run(dialog);
     }
 
@@ -104,6 +117,8 @@ public sealed class ReaderDialog : Dialog
         return Close();
     }
 
+    private bool Accept() => !_accept!.Run() || Close();
+
     private bool Close()
     {
         RequestStop();
@@ -114,6 +129,7 @@ public sealed class ReaderDialog : Dialog
     {
         ScrollHint => Scrolled(() => _body.Page(+1)),
         ApproveHint => Approve(),
+        AcceptHint => Accept(),
         GitHubHint => OnGitHub(),
         _ => Close(),
     };

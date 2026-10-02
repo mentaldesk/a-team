@@ -50,6 +50,7 @@
       "Bash(gh repo archive *)",
       "Bash(a-team board * priority *)",
       "Bash(a-team board * approve *)",
+      "Bash(a-team board * accept *)",
       "Bash(gh issue edit *--remove-label*)",
       "Bash(a-team dispatch*)",
       "Bash(a-team install*)",

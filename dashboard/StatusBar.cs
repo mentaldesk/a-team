@@ -78,6 +78,7 @@ public sealed class StatusBar : View
                 ShadowStyle = ShadowStyles.None,
                 HotKeySpecifier = (Rune)0xffff,
                 CanFocus = false,
+                Enabled = hint.Enabled,
             };
             button.Accepting += (_, args) => args.Handled = run(hint.Id);
             _hints.Add(button);

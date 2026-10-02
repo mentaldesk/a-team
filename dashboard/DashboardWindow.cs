@@ -46,7 +46,8 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
-    private readonly Action<WaitingItem, IssueBody, Action, Action?> _showBody;
+    private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?> _showBody;
+    private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
     private readonly FrameView _loading;
@@ -55,6 +56,8 @@ public sealed class DashboardWindow : Window
     private (WaitingItem Item, Rank Rank)? _ranking;
     private WaitingItem? _approvable;
     private WaitingItem? _approving;
+    private WaitingItem? _shown;
+    private WaitingItem? _accepting;
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
@@ -77,13 +80,14 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
         Func<WaitingItem, IssueBody, Rank?> askPriority,
-        Action<WaitingItem, IssueBody, Action, Action?> showBody,
+        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
         Handover? resume = null,
         TeamStart? start = null,
-        Func<WaitingItem, Task<Reading>>? readConversation = null)
+        Func<WaitingItem, Task<Reading>>? readConversation = null,
+        Func<WaitingItem, bool>? confirmAccept = null)
     {
         _start = start;
         BorderStyle = LineStyle.None;
@@ -97,6 +101,7 @@ public sealed class DashboardWindow : Window
         _openUrl = openUrl;
         _askPriority = askPriority;
         _showBody = showBody;
+        _confirmAccept = confirmAccept ?? (_ => false);
         _handOver = handOver;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
@@ -275,6 +280,7 @@ public sealed class DashboardWindow : Window
             .Register("work.try", "Try PR", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Pr: > 0 }, onCard: true)
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
+            .Register("work.accept", "Accept", () => Accept(), new Key('A'), isEnabled: () => Acceptable() is not null, onCard: true)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
@@ -469,12 +475,15 @@ public sealed class DashboardWindow : Window
         else
         {
             _approvable = item.Approvable ? item : null;
+            _shown = item;
             _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
                     _openUrl(url);
-            }, _approvable is null ? null : () => _commands.Execute("work.approve"));
+            }, _approvable is null ? null : () => _commands.Execute("work.approve"),
+                item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unmergeable.Length == 0) : null);
             _approvable = null;
+            _shown = null;
         }
     }
 
@@ -493,6 +502,40 @@ public sealed class DashboardWindow : Window
     {
         _work.Approved(item);
         _said = $"#{item.Number} approved";
+        _saidOn = _work.Selected;
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    /// <summary>The task the reader is showing, or else the one selected on the board, when it's In review.</summary>
+    private WaitingItem? Acceptable() =>
+        (_shown ?? (_area == Area.Work ? _work.Selected : null)) is { Acceptable: true } item ? item : null;
+
+    /// <summary>Merges the task's PR once you've said so, or says why it can't be merged yet. True once it's merging.</summary>
+    private bool Accept()
+    {
+        if (Acceptable() is not { } item || _pending is not null)
+            return false;
+        if (item.Unmergeable is { Length: > 0 } why)
+        {
+            _failure = $"#{item.Number} · {why}";
+            ShowMessage();
+            return false;
+        }
+        if (!_confirmAccept(item))
+            return false;
+        _accepting = item;
+        _failure = null;
+        _progress = $"Merging PR #{item.Pr}…";
+        ShowMessage();
+        _pending = _run(["board", item.Team, "accept", "you", item.Number.ToString()]);
+        return true;
+    }
+
+    private void Accepted(WaitingItem item)
+    {
+        _work.Leave(item);
+        _said = $"merged PR #{item.Pr}";
         _saidOn = _work.Selected;
         SetNeedsLayout();
         SetNeedsDraw();
@@ -544,6 +587,12 @@ public sealed class DashboardWindow : Window
                 _approving = null;
                 if (_failure is null or { Length: 0 })
                     Approved(approving);
+            }
+            if (_accepting is { } accepting)
+            {
+                _accepting = null;
+                if (_failure is null or { Length: 0 })
+                    Accepted(accepting);
             }
         }
 
