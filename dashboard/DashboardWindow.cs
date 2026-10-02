@@ -532,7 +532,7 @@ public sealed class DashboardWindow : Window
         return true;
     }
 
-    private void Accepted(WaitingItem item)
+    private void Merged(WaitingItem item)
     {
         _work.Leave(item);
         _said = $"merged PR #{item.Pr}";
@@ -592,7 +592,7 @@ public sealed class DashboardWindow : Window
             {
                 _accepting = null;
                 if (_failure is null or { Length: 0 })
-                    Accepted(accepting);
+                    Merged(accepting);
             }
         }
 
