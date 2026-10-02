@@ -4,6 +4,7 @@ using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui;
 using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -136,6 +137,158 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.Equal(108, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void Work_reads_again_by_itself_once_its_last_read_began_five_minutes_ago()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        window.Refresh();
+
+        clock.Now += DashboardWindow.ReadEvery - TimeSpan.FromSeconds(1);
+        window.Refresh();
+        Assert.Equal(2, reads);
+
+        clock.Now += TimeSpan.FromSeconds(1);
+        window.Refresh();
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void Refreshing_by_hand_puts_off_the_next_read_by_itself()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        window.Refresh();
+        clock.Now += TimeSpan.FromMinutes(4);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        clock.Now += TimeSpan.FromMinutes(4);
+        window.Refresh();
+
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void A_read_that_failed_is_tried_again_by_itself_five_minutes_later_not_every_second()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: _ =>
+        {
+            reads++;
+            return Task.FromResult(new Reading("", "gh: API rate limit exceeded"));
+        }, clock: clock);
+        window.Refresh();
+
+        clock.Now += TimeSpan.FromSeconds(1);
+        window.Refresh();
+        Assert.Equal(2, reads);
+        Assert.Equal("gh: API rate limit exceeded", window.Message.Says);
+
+        clock.Now += DashboardWindow.ReadEvery;
+        window.Refresh();
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void The_Dashboard_reads_nothing_by_itself()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, area: Area.Dashboard, clock: clock);
+
+        clock.Now += DashboardWindow.ReadEvery * 2;
+        window.Refresh();
+
+        Assert.Equal(0, reads);
+    }
+
+    [Fact]
+    public void Work_waits_to_read_by_itself_until_the_dialog_over_it_closes()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        app.Begin(window);
+        window.Refresh();
+        using var dialog = new Dialog();
+        var over = app.Begin(dialog);
+
+        clock.Now += DashboardWindow.ReadEvery;
+        window.Refresh();
+        Assert.Equal(2, reads);
+
+        app.End(over!);
+        window.Refresh();
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void Work_waits_to_read_by_itself_until_the_menu_over_it_closes()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        app.Begin(window);
+        window.Refresh();
+        window.NewKeyDownEvent(new Key('c').WithAlt);
+        Assert.True(window.Menu.IsOpen());
+
+        clock.Now += DashboardWindow.ReadEvery;
+        window.Refresh();
+        Assert.Equal(2, reads);
+
+        window.Menus.Single(menu => menu.PopoverMenuOpen).PopoverMenu!.NewKeyDownEvent(Key.Esc);
+        Assert.False(window.Menu.IsOpen());
+        window.Refresh();
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void Back_from_a_try_Work_reads_by_itself_once_the_cards_it_brought_back_are_five_minutes_old()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        var items = WaitingItem.Parse(Waiting("team0"));
+        var tried = new TryHandover(items[2], true, items, clock.Now - TimeSpan.FromMinutes(4));
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, resume: tried, clock: clock);
+        window.Refresh();
+        Assert.Equal(0, reads);
+
+        clock.Now += TimeSpan.FromMinutes(1);
+        window.Refresh();
+        Assert.Equal(2, reads);
     }
 
     [Fact]
@@ -1644,7 +1797,8 @@ public class WorkAreaTests : IDisposable
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
         Handover? resume = null,
-        Func<WaitingItem, Task<Reading>>? readConversation = null)
+        Func<WaitingItem, Task<Reading>>? readConversation = null,
+        TimeProvider? clock = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -1662,7 +1816,16 @@ public class WorkAreaTests : IDisposable
             auto,
             handOver,
             resume,
-            readConversation: readConversation);
+            readConversation: readConversation,
+            clock: clock);
+    }
+
+    /// <summary>A clock the test moves by hand.</summary>
+    private sealed class Clock : TimeProvider
+    {
+        internal DateTimeOffset Now { get; set; } = new(2026, 10, 2, 9, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 
     private string Config => Path.Combine(_root, "config");

@@ -50,6 +50,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
     private readonly FrameView _loading;
+    private readonly TimeProvider _clock;
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
@@ -60,6 +61,7 @@ public sealed class DashboardWindow : Window
     private Task<Reading[]>? _reading;
     private (WaitingItem Item, Task<IssueBody> Read, Action<WaitingItem, IssueBody> Then)? _readingBody;
     private DateTimeOffset? _readAt;
+    private DateTimeOffset? _askedAt;
     private string? _failure;
     private string? _progress;
     private int? _expanded;
@@ -83,9 +85,11 @@ public sealed class DashboardWindow : Window
         Action<Handover>? handOver = null,
         Handover? resume = null,
         TeamStart? start = null,
-        Func<WaitingItem, Task<Reading>>? readConversation = null)
+        Func<WaitingItem, Task<Reading>>? readConversation = null,
+        TimeProvider? clock = null)
     {
         _start = start;
+        _clock = clock ?? TimeProvider.System;
         BorderStyle = LineStyle.None;
         _settings = settings;
         _auto = auto;
@@ -218,10 +222,15 @@ public sealed class DashboardWindow : Window
 
     internal FrameView Loading => _loading;
 
+    /// <summary>How long Work, in front with nothing over it, goes before it reads again by itself.</summary>
+    internal static readonly TimeSpan ReadEvery = TimeSpan.FromMinutes(5);
+
     public void Refresh()
     {
         Settle();
-        var now = DateTimeOffset.UtcNow;
+        var now = _clock.GetUtcNow();
+        if (_area == Area.Work && Uncovered && (_askedAt is not { } asked || now - asked >= ReadEvery))
+            ReadWaiting();
         DateTimeOffset? nextCheck = long.TryParse(ReadText(_nextPass), out var seconds)
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : null;
@@ -333,9 +342,13 @@ public sealed class DashboardWindow : Window
         _pending = _run([pane.Held ? "resume" : "stop", pane.Team, pane.Role]);
     }
 
+    /// <summary>No dialog is on top of the window and no menu is open over it.</summary>
+    private bool Uncovered => (IsModal || !IsRunning) && !_menu.Bar.IsOpen();
+
     /// <summary>Reads every team's gates at once. A second go while one is running is refused, not queued.</summary>
     private void ReadWaiting()
     {
+        _askedAt = _clock.GetUtcNow();
         _reading ??= Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
         ShowMessage();
         ShowLoading();
@@ -370,7 +383,7 @@ public sealed class DashboardWindow : Window
         _failure = handover.Failure;
         if (handover is TryHandover tried)
         {
-            _readAt = tried.ReadAt;
+            _readAt = _askedAt = tried.ReadAt;
             _work.Show(tried.Items);
         }
         ShowMessage();
@@ -568,7 +581,7 @@ public sealed class DashboardWindow : Window
             return;
         }
         _failure = null;
-        _readAt = DateTimeOffset.UtcNow;
+        _readAt = _clock.GetUtcNow();
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
         if (_area == Area.Work && _work.Selected is null)
             _work.FocusFirstCard();
@@ -590,7 +603,7 @@ public sealed class DashboardWindow : Window
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : ("", Schemes.Base);
-        var stamp = _area == Area.Work ? Stamped(_readAt, DateTimeOffset.UtcNow) : "";
+        var stamp = _area == Area.Work ? Stamped(_readAt, _clock.GetUtcNow()) : "";
         var filter = _area == Area.Work ? _work.OnlyMine ? MyItems : AllItems : "";
         _status.ShowState(stamp, filter);
         if (_status.Message.Says == text)
