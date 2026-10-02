@@ -19,6 +19,18 @@ public class AcceptDialogTests
         Assert.Equal(["Enter accept", "Esc cancel"], dialog.Hints.Select(hint => hint.Text));
     }
 
+    [Theory]
+    [InlineData(3, "Closes #174 as done. Its 3 tasks are already merged.")]
+    [InlineData(1, "Closes #174 as done. Its 1 task is already merged.")]
+    public void It_names_a_pitch_and_counts_its_tasks(int tasks, string says)
+    {
+        using var dialog = new AcceptDialog(
+            new(174, "Accepting finished work", "In review", "https://github.com/x/174", "a-team", Pitch: true, Tasks: tasks));
+
+        Assert.Equal("Accept #174?", dialog.Title);
+        Assert.Equal(says, dialog.Body.Text);
+    }
+
     [Fact]
     public void Enter_accepts()
     {

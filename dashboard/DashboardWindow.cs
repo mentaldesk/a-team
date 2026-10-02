@@ -498,7 +498,7 @@ public sealed class DashboardWindow : Window
                 if (url is { Length: > 0 })
                     _openUrl(url);
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
-                item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unmergeable.Length == 0) : null,
+                item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderCommand(_commands.KeyFor("work.comment"), "comment", Comment));
             _approvable = null;
             _shown = null;
@@ -525,18 +525,19 @@ public sealed class DashboardWindow : Window
         SetNeedsDraw();
     }
 
-    /// <summary>The task the reader is showing, or else the one selected on the board, when it's In review.</summary>
+    /// <summary>The item the reader is showing, or else the one selected on the board, when it's In review.</summary>
     private WaitingItem? Acceptable() =>
         (_shown ?? (_area == Area.Work ? _work.Selected : null)) is { Acceptable: true } item ? item : null;
 
-    /// <summary>Merges the task's PR once you've said so, or says why it can't be merged yet. True once it's merging.</summary>
+    /// <summary>Merges the task's PR or closes the pitch once you've said so, or says why it can't yet. True once
+    /// it's under way.</summary>
     private bool Accept()
     {
         if (Acceptable() is not { } item || _pending is not null)
             return false;
-        if (item.Unmergeable is { Length: > 0 } why)
+        if (item.Unacceptable is { Length: > 0 } why)
         {
-            _failure = $"#{item.Number} · {why}";
+            _failure = why;
             ShowMessage();
             return false;
         }
@@ -544,7 +545,7 @@ public sealed class DashboardWindow : Window
             return false;
         _accepting = item;
         _failure = null;
-        _progress = $"Merging PR #{item.Pr}…";
+        _progress = item.Pitch ? $"Closing #{item.Number}…" : $"Merging PR #{item.Pr}…";
         ShowMessage();
         _pending = _run(["board", item.Team, "accept", "you", item.Number.ToString()]);
         return true;
@@ -570,7 +571,7 @@ public sealed class DashboardWindow : Window
     private void Merged(WaitingItem item)
     {
         _work.Leave(item);
-        _said = $"merged PR #{item.Pr}";
+        _said = item.Pitch ? $"accepted #{item.Number}" : $"merged PR #{item.Pr}";
         _saidOn = _work.Selected;
         SetNeedsLayout();
         SetNeedsDraw();

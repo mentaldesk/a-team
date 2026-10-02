@@ -1186,6 +1186,102 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void A_on_a_validated_pitch_asks_then_closes_it_and_the_card_leaves()
+    {
+        var asked = new List<WaitingItem>();
+        var calls = new List<string[]>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? ReviewPitch() : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            confirmAccept: item =>
+            {
+                asked.Add(item);
+                return true;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(174, window.Work.Selected?.Number);
+
+        Assert.True(window.NewKeyDownEvent(new Key('a')));
+        Assert.Equal("Closing #174…", window.Message.Says);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal([(174, 3)], asked.Select(item => (item.Number, item.Tasks)));
+        Assert.Equal([["board", "team0", "accept", "you", "174"]], calls);
+        Assert.DoesNotContain("Review · 1", Titles(window));
+        Assert.Equal("accepted #174", window.Message.Says);
+    }
+
+    [Theory]
+    [InlineData(2, "#174 has 2 open tasks")]
+    [InlineData(1, "#174 has 1 open task")]
+    public void A_on_a_pitch_with_open_tasks_asks_nothing_and_says_how_many(int open, string says)
+    {
+        var asked = 0;
+        var calls = new List<string[]>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? ReviewPitch(open) : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            confirmAccept: _ => ++asked > 0);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.Refresh();
+
+        Assert.Equal(0, asked);
+        Assert.Empty(calls);
+        Assert.Equal(says, window.Message.Says);
+    }
+
+    [Fact]
+    public void A_pitch_that_wont_close_stays_in_Review_and_says_why()
+    {
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? ReviewPitch() : "[]", null)),
+            run: _ => Task.FromResult<string?>("board.sh: can't close #174 (gh: Resource not accessible (HTTP 403))"),
+            confirmAccept: _ => true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Contains("Review · 1", Titles(window));
+        Assert.Equal(174, window.Work.Selected?.Number);
+        Assert.Equal("board.sh: can't close #174 (gh: Resource not accessible (HTTP 403))", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+    }
+
+    [Fact]
+    public void The_reader_greys_accept_on_a_pitch_with_open_tasks()
+    {
+        ReaderCommand? offered = null;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? ReviewPitch(2) : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, accept, _) => offered = accept,
+            confirmAccept: _ => true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.False(offered?.Enabled);
+    }
+
+    [Fact]
     public void work_accept_is_on_A_in_the_Cards_menu_and_enabled_only_on_a_Review_task()
     {
         using var window = Open();
@@ -1968,6 +2064,13 @@ public class WorkAreaTests : IDisposable
             "turn": "you", "reason": "awaiting your acceptance since 10:15",
             "pr": {{pr}}, "prUrl": "https://github.com/mentaldesk/team0/pull/{{pr}}", "base": "main",
             "unready": "{{unready}}"}]
+          """;
+
+    private static string ReviewPitch(int open = 0) =>
+        $$"""
+          [{"number": 174, "title": "Accepting finished work", "status": "In review",
+            "url": "https://github.com/mentaldesk/team0/issues/174", "team": "team0", "pitch": true,
+            "turn": "you", "reason": "awaiting your acceptance since 10:15", "tasks": 3, "openTasks": {{open}}}]
           """;
 
     /// <summary><see cref="Waiting"/> read again later, every reason moved on and team0's cards in

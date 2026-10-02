@@ -6,16 +6,21 @@ namespace ATeam.Dashboard;
 public sealed record WaitingItem(
     int Number, string Title, string Status, string Url, string Team, string Turn = "", string Reason = "",
     int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
-    string Question = "", string Unready = "", string Base = "")
+    string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0)
 {
     /// <summary>Whether this is a pitch the reviewer can approve now.</summary>
     public bool Approvable => Pitch && Status == "Pitched";
 
-    /// <summary>Whether this is a task whose PR the reviewer could merge, trouble or not.</summary>
-    public bool Acceptable => !Pitch && Status == "In review";
+    /// <summary>Whether this is a task whose PR the reviewer could merge, or a validated pitch they could close,
+    /// trouble or not.</summary>
+    public bool Acceptable => Status == "In review";
 
-    /// <summary>Why its PR can't be merged yet, in the words its card uses, or nothing when it can.</summary>
-    public string Unmergeable => Pr == 0 ? "no PR to merge" : Unready;
+    /// <summary>Why it can't be accepted yet, for the message bar, or nothing when it can.</summary>
+    public string Unacceptable =>
+        Pitch ? OpenTasks == 0 ? "" : $"#{Number} has {OpenTasks} open task{(OpenTasks == 1 ? "" : "s")}"
+        : Pr == 0 ? $"#{Number} · no PR to merge"
+        : Unready.Length > 0 ? $"#{Number} · {Unready}"
+        : "";
 
     /// <summary>Whether the next move is the reviewer's. An item the board said nothing about is theirs.</summary>
     public bool Mine => Turn.Length == 0 || Turn == "you";
@@ -42,7 +47,8 @@ public sealed record WaitingItem(
                         Text(item, "team"), Text(item, "turn"), Text(item, "reason"),
                         Numbered(item, "pr") ?? 0, Text(item, "prUrl"), Text(item, "trouble"),
                         Text(item, "priority"), Flag(item, "pitch"), Text(item, "question"),
-                        Text(item, "unready"), Text(item, "base")))
+                        Text(item, "unready"), Text(item, "base"),
+                        Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0))
             ];
         }
         catch (JsonException)

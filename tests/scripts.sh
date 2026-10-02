@@ -1166,6 +1166,23 @@ failed "accept with no PR"
 grep -q "#7 has no open PR to merge" "$ERR" || fail "accept with no PR: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
+case_ "waiting counts a pitch In review's tasks, and how many are still open"
+gh_items <<'ITEMS'
+In_review 7 A validated pitch
+In_review 8 A task in front of me
+ITEMS
+edit_item 7 '.labels.nodes = [{name: "pitch"}]'
+gh_talk <<TALK
+7 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+8 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+TALK
+jq '.data.repository |= with_entries(.value.subIssuesSummary = {total: 3, completed: 1})' "$TALK" >"$TALK.new" &&
+  mv "$TALK.new" "$TALK"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "pitch tasks" '[3,2]' "$(jq -c '.[] | select(.number == 7) | [.tasks, .openTasks]' "$OUT")"
+same "task tasks" '[null,null]' "$(jq -c '.[] | select(.number == 8) | [.tasks, .openTasks]' "$OUT")"
+
 case_ "the agents' settings deny accept, beside approve"
 grep -qF '"Bash(a-team board * accept *)"' "$ROOT/settings/agents.json" || fail "no accept deny rule"
 
