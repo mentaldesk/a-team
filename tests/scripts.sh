@@ -1178,6 +1178,50 @@ grep -qF '"Bash(gh issue edit *--remove-label*)"' "$ROOT/settings/agents.json" |
 case_ "the agents' settings deny approve, beside priority"
 grep -qF '"Bash(a-team board * approve *)"' "$ROOT/settings/agents.json" || fail "no approve deny rule"
 
+case_ "comment you posts your words as they are: no marker, and no 👀 on anything"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 7 A pitch in front of me
+ITEMS
+gh_thread <<TALK
+body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
+comment ${TODAY}T02:20:00Z reviewer 0 Needs a second option.
+TALK
+echo "Not yet: the second option is still missing." >"$WORK/mine"
+run board demo comment you 7 "$WORK/mine"
+same "exit" 0 "$STATUS"
+same "posted" "Not yet: the second option is still missing." "$(cat "$POSTED")"
+same "acked" "" "$(cat "$ACKED")"
+
+case_ "feedback reports it as yours and unanswered, so it starts a run"
+gh_thread <<TALK
+body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
+comment ${TODAY}T02:30:00Z reviewer 0 $(cat "$POSTED")
+TALK
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "unanswered" '["Not yet: the second option is still missing."]' "$(jq -c '[.[].body]' "$OUT")"
+
+case_ "comment still refuses a role it doesn't know"
+: >"$POSTED"
+run board demo comment reviewer 7 "$WORK/mine"
+failed "unknown role"
+one_line "unknown role"
+grep -q "unknown role 'reviewer' (lead | dev | you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "--dry-run shows the comment you'd post and posts nothing"
+run board --dry-run demo comment you 7 "$WORK/mine"
+same "exit" 0 "$STATUS"
+same "posted" "" "$(cat "$POSTED")"
+grep -qF "  | Not yet: the second option is still missing." "$ERR" || fail "comment you dry run: '$(cat "$ERR")'"
+grep -q "would comment on #7" "$ERR" || fail "comment you dry run: '$(cat "$ERR")'"
+
+case_ "the agents' settings deny comment you, beside accept"
+grep -qF '"Bash(a-team board * comment you *)"' "$ROOT/settings/agents.json" || fail "no comment you deny rule"
+
 # The 👀: a reviewer comment is answered once a run has left one on it, and a run leaves one only
 # on what it could have seen. The races replayed here are the ones in pitch #3. $TODAY is on or
 # after board.sh's ACK_FROM, so these cases see the 👀 rule and the dated ones below the old.

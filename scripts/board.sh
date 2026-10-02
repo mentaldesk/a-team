@@ -842,12 +842,17 @@ case "$CMD" in
   comment)
     [ $# -eq 3 ] || die "usage: board.sh $TEAM comment <role> <n> <file>"
     role=$1 n=$2 file=$3
-    check_role "$role"
+    case "$role" in lead | dev | you) ;; *) die "unknown role '$role' (lead | dev | you)" ;; esac
     [ -f "$file" ] || die "no such file: $file"
-    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    # Your comment is feedback the roles still owe an answer: no marker, and no 👀.
+    if [ "$role" = you ]; then
+      body=$(cat "$file")
+    else
+      body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    fi
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
-    ack "$n"
+    [ "$role" = you ] || ack "$n"
     ;;
 
   skip)
