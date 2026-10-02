@@ -199,7 +199,8 @@ headed by who said it and when, or on a question just the question; `g` opens wh
 issue on the card, the PR on the row under it. Reading a pitch that's waiting on you, `a` approves
 it: no confirmation, and the card leaves the column with nothing re-read. Reading every team's
 gates takes a moment, so a quiet `Loading…` sits in the middle of the empty area until the
-first cards land; `r` afterwards leaves the ones on screen where they are.
+first cards land; F5 afterwards leaves the ones on screen where they are, and you on the card
+you were on.
 
 `p` ranks the card you're on, or clears its rank with **None**, without leaving the app. It reads
 the item first, so what you're ranking is in front of you: the issue's own words fill the dialog
@@ -230,10 +231,11 @@ glyphs). No terminal reports its font, so the dashboard uses the Nerd Font one i
 and Ghostty — which bundle such a font and fall back to it — and the plain one everywhere else. If
 that's the wrong answer for your terminal, pick a vocabulary under Settings → Dashboard.
 
-The card list is read when the area opens and when you press `r`, never on a timer, so an app left
-open overnight costs nothing against the rate limit the agents share; the header says how long ago
-it read. A read that fails — offline, rate-limited — says so at the foot in red and leaves the
-cards and that stamp exactly as they were.
+The card list is read when the area opens, when you press F5, and by itself five minutes after the
+last read, while Work is in front with no dialog or menu over it. Left open on Work, the app costs
+about 250 of the 5,000 GraphQL points an hour GitHub allows; left on the Dashboard, it reads
+nothing. The foot says how long ago it read. A read that fails — offline, rate-limited — says so at
+the foot in red and leaves the cards and that stamp exactly as they were.
 
 ### Watching the team
 
