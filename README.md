@@ -200,7 +200,8 @@ issue on the card, the PR on the row under it. Reading a pitch that's waiting on
 it: no confirmation, and the card leaves the column with nothing re-read. On a task in Review, or
 reading one, `a` accepts it: once you confirm, its PR is squash-merged and its branch deleted, and
 the card leaves. While the PR is failing, conflicting, still running CI or still a draft, `a` only
-says so. Reading every team's
+says so. On a validated pitch in Review, `a` closes it as done, once every one of its tasks is
+closed. Reading every team's
 gates takes a moment, so a quiet `Loading…` sits in the middle of the empty area until the
 first cards land; F5 afterwards leaves the ones on screen where they are, and you on the card
 you were on.
