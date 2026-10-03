@@ -212,7 +212,10 @@ public class ReaderDialogTests
         var added = dialog.Body.Lines.Skip(before).Select(line => line.Text).ToList();
         Assert.Contains(Said.Heading, added);
         Assert.Equal("Shelve it until #150 lands.", added[^1]);
-        Assert.True(dialog.Body.Top > 0);
+        var top = dialog.Body.Top;
+        dialog.NewKeyDownEvent(Key.End);
+        dialog.Layout(new Size(60, 10));
+        Assert.Equal(dialog.Body.Top, top);
     }
 
     [Fact]
