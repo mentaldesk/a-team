@@ -8,7 +8,7 @@ public class TeamFormTests
 {
     private static readonly TeamSettings Settings =
         new("mentaldesk/a-team", "mentaldesk", 3, "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
-            2, 3, 4, 4, 2, "~/code/a-team/main", ["jamescrosswell"], ["a-team"]);
+            2, 1, 3, 4, 4, 2, "~/code/a-team/main", ["jamescrosswell"], ["a-team"]);
 
     [Fact]
     public void The_form_shows_the_team_s_current_values_under_its_name()
@@ -240,6 +240,23 @@ public class TeamFormTests
     }
 
     [Fact]
+    public void Devs_sits_directly_below_Worktrees_and_each_says_what_it_limits()
+    {
+        using var form = new TeamForm("a-team", Settings with { Devs = 3 }, _ => null);
+        form.SetFocus();
+        form.Layout();
+
+        Assert.Equal(3, form.Devs.Value);
+        Assert.Equal(form.Worktrees.Frame.X, form.Devs.Frame.X);
+        Assert.Equal(form.Worktrees.Frame.Y + 1, form.Devs.Frame.Y);
+        form.Worktrees.SetFocus();
+        Assert.Equal("How many tasks can be in flight, PRs included.", form.Hints.Message.Says);
+        form.Devs.SetFocus();
+        Assert.Equal("How many Dev runs build at once.", form.Hints.Message.Says);
+        Assert.Equal(Settings with { Devs = 3 }, form.Current());
+    }
+
+    [Fact]
     public void The_list_rows_say_what_they_change_as_they_take_focus()
     {
         using var form = new TeamForm("a-team", Settings, _ => null);
@@ -333,7 +350,7 @@ public class TeamFormTests
     }
 
     private static readonly TeamSettings Blank =
-        new("", "", null, "docs/vision.md", "", "", false, 3, 3, 6, 6, 3, null, ["jamescrosswell"], []);
+        new("", "", null, "docs/vision.md", "", "", false, 3, 2, 3, 6, 6, 3, null, ["jamescrosswell"], []);
 
     [Fact]
     public void A_new_team_s_form_starts_on_Name_with_no_Status_and_offers_Enter_create()

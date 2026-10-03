@@ -11,9 +11,16 @@ public class AgentPaneTests : IDisposable
     private static readonly string Error = SchemeManager.SchemesToSchemeName(Schemes.Error)!;
 
     private readonly string _dir = Path.Combine(Path.GetTempPath(), $"a-team-{Guid.NewGuid():n}");
+    private readonly List<System.Diagnostics.Process> _runs = [];
 
     public void Dispose()
     {
+        foreach (var run in _runs)
+        {
+            if (!run.HasExited)
+                run.Kill();
+            run.Dispose();
+        }
         if (Directory.Exists(_dir))
             Directory.Delete(_dir, recursive: true);
         GC.SuppressFinalize(this);
@@ -108,6 +115,72 @@ public class AgentPaneTests : IDisposable
         File.WriteAllText(Path.Combine(_dir, "task"), text);
 
         Assert.Null(AgentState.ReadTask(Path.Combine(_dir, "task")));
+    }
+
+    [Fact]
+    public void The_other_live_runs_are_listed_in_the_order_they_started_leaving_out_the_one_shown()
+    {
+        var shown = Run();
+        Write(_dir, shown, 300, 303);
+        Write(Path.Combine(_dir, "runs", "303"), shown, 300, 303);
+        Write(Path.Combine(_dir, "runs", "246"), Run(), 100, 246);
+        Write(Path.Combine(_dir, "runs", "192"), Run(), 200, 192);
+        Write(Path.Combine(_dir, "runs", "150"), Finished(), 50, 150);
+
+        var state = AgentState.Read(_dir);
+
+        Assert.Equal(303, state.Task!.Number);
+        Assert.Equal([246, 192], state.Others.Select(run => run.Task!.Number));
+        Assert.Equal([DateTimeOffset.FromUnixTimeSeconds(100), DateTimeOffset.FromUnixTimeSeconds(200)], state.Others.Select(run => run.Started));
+    }
+
+    [Fact]
+    public void With_one_run_or_none_there_are_no_other_runs()
+    {
+        var shown = Run();
+        Write(_dir, shown, 300, 303);
+        Write(Path.Combine(_dir, "runs", "303"), shown, 300, 303);
+        Write(Path.Combine(_dir, "runs", "150"), Finished(), 50, 150);
+
+        Assert.Empty(AgentState.Read(_dir).Others);
+        Assert.Empty(AgentState.Read(Path.Combine(_dir, "nothing")).Others);
+    }
+
+    [Fact]
+    public void Each_other_live_run_takes_one_line_above_the_status_row()
+    {
+        using var pane = Open("""{"type":"system","subtype":"init"}""");
+        pane.Frame = new System.Drawing.Rectangle(0, 0, 60, 20);
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
+        pane.Layout();
+        var status = pane.SubViews.OfType<Label>().First();
+        Assert.Equal(0, status.Frame.Y);
+
+        Write(Path.Combine(_dir, "runs", "246"), Run(), 100, 246);
+        Write(Path.Combine(_dir, "runs", "192"), Run(), 200, 192);
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
+        pane.Layout();
+
+        Assert.Equal(2, status.Frame.Y);
+    }
+
+    [Fact]
+    public void A_bar_shows_the_run_s_icon_its_task_and_how_long_it_has_run_at_the_right()
+    {
+        var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(1);
+        var bars = AgentPane.Bars(
+            [new OtherRun(new RunTask(246, "Remove a team"), now - TimeSpan.FromSeconds(400)),
+             new OtherRun(new RunTask(192, "Reply to a pitch without leaving the dashboard"), now - TimeSpan.FromSeconds(52))],
+            now, IconStyle.Unicode, 40);
+
+        var icon = Icons.Field(Icons.For(PaneStatus.Running), IconStyle.Unicode);
+        Assert.Equal(2, bars.Count);
+        Assert.All(bars, bar => Assert.Equal(40, bar.GetColumns()));
+        Assert.StartsWith(icon + "#246 Remove a team ", bars[0]);
+        Assert.EndsWith(" 6:40", bars[0]);
+        Assert.StartsWith(icon + "#192 Reply to a pitch", bars[1]);
+        Assert.EndsWith("… 0:52", bars[1]);
+        Assert.Empty(AgentPane.Bars([], now, IconStyle.Unicode, 40));
     }
 
     [Theory]
@@ -296,6 +369,29 @@ public class AgentPaneTests : IDisposable
         pane.ShowIcons(IconStyle.NerdFont);
 
         Assert.StartsWith(Icons.Field(Icon.Ok, IconStyle.NerdFont), pane.Title);
+    }
+
+    private int Run()
+    {
+        var run = System.Diagnostics.Process.Start("sleep", "60");
+        _runs.Add(run);
+        return run.Id;
+    }
+
+    private int Finished()
+    {
+        var run = System.Diagnostics.Process.Start("true");
+        _runs.Add(run);
+        run.WaitForExit();
+        return run.Id;
+    }
+
+    private static void Write(string dir, int pid, long started, int task)
+    {
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "pid"), pid.ToString());
+        File.WriteAllText(Path.Combine(dir, "last-start"), started.ToString());
+        File.WriteAllText(Path.Combine(dir, "task"), $$"""{"number":{{task}},"title":"Task {{task}}"}""");
     }
 
     private AgentPane Open(string session)

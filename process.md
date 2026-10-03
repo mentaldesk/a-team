@@ -125,6 +125,7 @@ tell what `$B` will run.
      either way, wait without taking a slot. While an unblocked Ready task is Urgent, one extra
      worktree is allowed, until it leaves Ready. The dispatcher claims a Ready task for a Dev run
      only while a slot is free, and each Dev run works on that one task.
+   - `devs`: how many Dev runs go at once, each on its own task. Only the stakeholder sets it.
    - `pitched`: pitches in front of the stakeholder
    - `exploring`: drafted pitches waiting for room in Pitched
    - `ideas`: the Lead's discoveries waiting for the stakeholder to prioritise or close them

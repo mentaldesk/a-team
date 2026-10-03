@@ -13,6 +13,7 @@ public sealed partial record TeamSettings(
     string Try,
     bool Working,
     int Worktrees,
+    int Devs,
     int Pitched,
     int Exploring,
     int Ideas,
@@ -39,6 +40,7 @@ public sealed partial record TeamSettings(
             Text(root, "try"),
             Find(root, "dispatch", "enabled") is { ValueKind: JsonValueKind.True },
             Number(root, "wip", "worktrees") ?? 0,
+            Number(root, "wip", "devs") ?? 1,
             Number(root, "wip", "pitched") ?? 0,
             Number(root, "wip", "exploring") ?? 0,
             Number(root, "wip", "ideas") ?? 0,
@@ -113,6 +115,7 @@ public sealed partial record TeamSettings(
             config = ConfigEdit.Set(config, ["skills"], Skills);
         SetFlag(Working, before.Working, "dispatch", "enabled");
         SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");
+        SetNumber(Devs, before.Devs, "wip", "devs");
         SetNumber(Pitched, before.Pitched, "wip", "pitched");
         SetNumber(Exploring, before.Exploring, "wip", "exploring");
         SetNumber(Ideas, before.Ideas, "wip", "ideas");

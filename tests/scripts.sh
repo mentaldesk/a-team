@@ -2714,6 +2714,137 @@ same "env" "task: 13" "$(sed -n 1p "$LAUNCHED")"
 grep -q '^This run is for #13 Something to start, and only that task.$' "$LAUNCHED" ||
   fail "prompt: '$(cat "$LAUNCHED")'"
 same "state" '{"number":13,"title":"Something to start"}' "$(cat "$A_TEAM_STATE/demo/dev/task")"
+
+# Claims hand out the tasks queued in $QUEUE one at a time, then refuse for want of a worktree;
+# claude stays up until killed, recording the task each run is for in $LAUNCHED.
+queued_dispatcher() {
+  dev_dispatcher
+  QUEUE="$DISPATCH/queue" LAUNCHED="$DISPATCH/launched"
+  : >"$QUEUE"
+  : >"$LAUNCHED"
+  cat >"$DISPATCH/bin/a-team" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" claim dev "*)
+    echo "\$*" >>"$CLAIMS"
+    n=\$(head -n 1 "$QUEUE")
+    [ -n "\$n" ] || { echo "board.sh: no free worktree for #99 (3 in use, wip.worktrees is 3)" >&2; exit 1; }
+    tail -n +2 "$QUEUE" >"$QUEUE.rest" && mv "$QUEUE.rest" "$QUEUE"
+    echo "{\"number\": \$n, \"title\": \"Task \$n\"}" ;;
+  *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
+  *" triggers lead"*) echo '{"reasons": [], "creative": false}' ;;
+  *" task-prompt "*) echo "Run one shift." ;;
+esac
+SH
+  cat >"$DISPATCH/bin/claude" <<SH
+#!/usr/bin/env bash
+echo "\$A_TEAM_RUN_TASK" >>"$LAUNCHED"
+exec sleep 60
+SH
+  chmod +x "$DISPATCH/bin/claude"
+}
+devs() { jq --argjson n "$1" '.wip.devs = $n' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"; }
+alive() { kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/$1/pid")" 2>/dev/null; }
+launched() { for _ in $(seq 50); do [ "$(grep -c '' "$LAUNCHED")" -ge "$1" ] && break; sleep 0.1; done; }
+stop_runs() { for pid in "$A_TEAM_STATE"/demo/dev/runs/*/pid; do kill "$(cat "$pid")" 2>/dev/null; done; }
+
+case_ "with devs at 3 and three Ready tasks, one pass starts three runs, each on its own task with its own state"
+queued_dispatcher
+devs 3
+printf '13\n14\n15\n16\n' >"$QUEUE"
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: ["PR #900 has merged: clean up its worktree"]}' >"$DEV_TRIGGERS"
+dispatch_dev
+launched 3
+same "claims" 3 "$(grep -c '' "$CLAIMS")"
+same "launched" "13 14 15" "$(sort "$LAUNCHED" | paste -sd ' ' -)"
+for n in 13 14 15; do
+  alive "$n" || fail "#$n: its run isn't going"
+  same "#$n task" "{\"number\":$n,\"title\":\"Task $n\"}" "$(cat "$A_TEAM_STATE/demo/dev/runs/$n/task")"
+  same "#$n log" "$n" "$(readlink "$A_TEAM_STATE/demo/dev/runs/$n/latest.jsonl" | sed 's/.*-\([0-9]*\)\.jsonl$/\1/')"
+done
+same "pids" 3 "$(cat "$A_TEAM_STATE"/demo/dev/runs/*/pid | sort -u | grep -c '')"
+same "chores ride with the first run" "Ready task #13 to build
+PR #900 has merged: clean up its worktree" "$(cat "$A_TEAM_STATE/demo/dev/runs/13/last-reasons")"
+same "the others' reasons" "Ready task #14 to build" "$(cat "$A_TEAM_STATE/demo/dev/runs/14/last-reasons")"
+same "the role follows the latest" '{"number":15,"title":"Task 15"}' "$(cat "$A_TEAM_STATE/demo/dev/task")"
+
+case_ "status lists each live Dev run with its task and how long it has run"
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/status.sh" >"$OUT"
+for n in 13 14 15; do
+  grep -q "^  #$n Task $n: running 0h00m (pid $(cat "$A_TEAM_STATE/demo/dev/runs/$n/pid"))$" "$OUT" ||
+    fail "status: no line for #$n in '$(cat "$OUT")'"
+done
+
+case_ "with every Dev slot taken, a pass claims nothing"
+dispatch_dev
+same "claims" 3 "$(grep -c '' "$CLAIMS")"
+
+case_ "a run for a task in hand starts while the others build, and never a second run for a task already going"
+devs 4
+jq -n '{reasons: [], creative: false, ready: null, chores: [],
+        tasks: [{number: 14, title: "Task 14", reasons: ["stakeholder feedback on #914 (2025-09-19T09:00:00Z)"]},
+                {number: 20, title: "Task 20", reasons: ["stakeholder feedback on #920 (2025-09-19T09:00:00Z)"]}]}' >"$DEV_TRIGGERS"
+dispatch_dev
+launched 4
+same "launched" "13 14 15 20" "$(sort -n "$LAUNCHED" | paste -sd ' ' -)"
+alive 20 || fail "#20: its run isn't going"
+
+case_ "an over-long run is killed, and the others are left alone"
+echo $(($(date +%s) - 3 * 3600)) >"$A_TEAM_STATE/demo/dev/runs/13/last-start"
+dispatch_dev
+for _ in $(seq 50); do alive 13 || break; sleep 0.1; done
+alive 13 && fail "the over-long run is still going"
+for n in 14 15 20; do alive "$n" || fail "#$n was stopped with it"; done
+grep -q "demo dev: killed run .* after 180 minutes" "$A_TEAM_STATE/dispatch.log" || fail "kill: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+
+case_ "a held Dev starts nothing new, and its runs go on"
+jq '.dispatch.hold = ["dev"]' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+printf '30\n' >"$QUEUE"
+jq -n '{reasons: [], creative: false, tasks: [], ready: 30, chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev
+same "claims" 3 "$(grep -c '' "$CLAIMS")"
+for n in 14 15 20; do alive "$n" || fail "#$n stopped when the Dev was held"; done
+stop_runs
+
+case_ "status with no Dev run going, and with one"
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/status.sh" >"$OUT"
+grep -q "^demo dev: idle, last started" "$OUT" || fail "none: '$(cat "$OUT")'"
+jq '.dispatch.hold = []' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+devs 1
+dispatch_dev
+launched 5
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/status.sh" >"$OUT"
+grep -q "^demo dev: running$" "$OUT" || fail "one: '$(cat "$OUT")'"
+same "one run" 1 "$(grep -c '^  #30 Task 30: running 0h00m' "$OUT")"
+stop_runs
+
+case_ "devs stops at the worktrees limit quietly, and a missing devs reads as 1"
+queued_dispatcher
+devs 5
+printf '13\n14\n' >"$QUEUE"
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev --dry-run
+same "would start" 2 "$(grep -c 'demo dev: would start' "$A_TEAM_STATE/dispatch.log")"
+grep -q 'claim failed' "$A_TEAM_STATE/dispatch.log" && fail "limit: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+jq 'del(.wip)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+printf '13\n14\n' >"$QUEUE"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+same "without devs" 1 "$(grep -c 'demo dev: would start' "$A_TEAM_STATE/dispatch.log")"
+
+case_ "stop ends every Dev run going"
+queued_dispatcher
+devs 2
+printf '13\n14\n' >"$QUEUE"
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev
+launched 2
+PIDS=$(cat "$A_TEAM_STATE"/demo/dev/runs/*/pid | sort -n | paste -sd ' ' -)
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/pause.sh" stop demo dev >"$OUT" 2>&1
+for _ in $(seq 50); do alive 13 || alive 14 || break; sleep 0.1; done
+alive 13 && fail "stop: #13 is still going"
+alive 14 && fail "stop: #14 is still going"
+grep -q "stopped demo dev's run (${PIDS// /, })" "$OUT" || fail "stop: '$(cat "$OUT")'"
 A_TEAM_STATE=$A_TEAM_STATE_WAS
 
 case_ "pause --dry-run <team> <role> says it would hold the role, and doesn't"

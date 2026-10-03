@@ -29,7 +29,8 @@ public sealed class TeamForm : Dialog
     internal const string TryCaption = "What a-team try runs to let you try a change.";
     internal const string CheckoutCaption = "Where the Dev looks for merged work to clean up. Change it in the file.";
     internal const string StatusCaption = "Whether the team picks up work. Paused lets a run in flight finish.";
-    internal const string WorktreesCaption = "How many tasks the Dev builds at once.";
+    internal const string WorktreesCaption = "How many tasks can be in flight, PRs included.";
+    internal const string DevsCaption = "How many Dev runs build at once.";
     internal const string PitchedCaption = "How many pitches wait on you at once.";
     internal const string ExploringCaption = "How many drafted pitches wait for room in Pitched.";
     internal const string IdeasCaption = "How many of the Lead's ideas wait for you to prioritise them.";
@@ -64,6 +65,7 @@ public sealed class TeamForm : Dialog
     private readonly TextField _try;
     private readonly OptionSelector<TeamStatus>? _status;
     private readonly NumericUpDown<int> _worktrees;
+    private readonly NumericUpDown<int> _devs;
     private readonly NumericUpDown<int> _pitched;
     private readonly NumericUpDown<int> _exploring;
     private readonly NumericUpDown<int> _ideas;
@@ -193,8 +195,9 @@ public sealed class TeamForm : Dialog
         _worktrees = Limit("Worktrees", settings.Worktrees, 0, row, WorktreesCaption);
         _pitched = Limit("Pitched", settings.Pitched, 1, row, PitchedCaption);
         _exploring = Limit("Exploring", settings.Exploring, 2, row++, ExploringCaption);
-        _ideas = Limit("Ideas", settings.Ideas, 0, row, IdeasCaption);
-        _readyFloor = Limit("Ready floor", settings.ReadyFloor, 1, row, ReadyFloorCaption);
+        _devs = Limit("Devs", settings.Devs, 0, row, DevsCaption, least: 1);
+        _ideas = Limit("Ideas", settings.Ideas, 1, row, IdeasCaption);
+        _readyFloor = Limit("Ready floor", settings.ReadyFloor, 2, row, ReadyFloorCaption);
         row += 2;
 
         _problemsBand.X = 0;
@@ -276,6 +279,8 @@ public sealed class TeamForm : Dialog
     internal OptionSelector<TeamStatus>? Status => _status;
 
     internal NumericUpDown<int> Worktrees => _worktrees;
+
+    internal NumericUpDown<int> Devs => _devs;
 
     internal StatusBar Hints => _hints;
 
@@ -374,6 +379,7 @@ public sealed class TeamForm : Dialog
             Skills = _skillNames,
             Working = _status is { } status ? status.Value == TeamStatus.Working : _before.Working,
             Worktrees = _worktrees.Value,
+            Devs = _devs.Value,
             Pitched = _pitched.Value,
             Exploring = _exploring.Value,
             Ideas = _ideas.Value,
@@ -583,12 +589,12 @@ public sealed class TeamForm : Dialog
         return names;
     }
 
-    private NumericUpDown<int> Limit(string label, int value, int column, int row, string caption)
+    private NumericUpDown<int> Limit(string label, int value, int column, int row, string caption, int least = 0)
     {
         const int columnWidth = 22;
         var name = new Label { Text = label, X = FieldX + column * columnWidth, Y = row };
         var limit = new NumericUpDown<int> { Value = value, X = FieldX + column * columnWidth + 12, Y = row, Width = LimitWidth };
-        limit.ValueChanging += (_, e) => e.Handled = e.NewValue < 0;
+        limit.ValueChanging += (_, e) => e.Handled = e.NewValue < least;
         Add(name, limit);
         Caption(limit, caption);
         return limit;

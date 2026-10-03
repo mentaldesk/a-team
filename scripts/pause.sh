@@ -52,14 +52,16 @@ UPDATED=$(jq -e --arg role "$ROLE" "if type == \"object\" then $FILTER else null
 DIR="$STATE/$TEAM/$ROLE"
 PID=''
 if [ "$CMD" = stop ]; then
-  PID=$(cat "$DIR/pid" 2>/dev/null || true)
-  kill -0 "$PID" 2>/dev/null || PID=''
+  # A Dev may have several runs going, each under runs/<task>.
+  PID=$(for file in "$DIR/pid" "$DIR"/runs/*/pid; do
+    pid=$(cat "$file" 2>/dev/null) && kill -0 "$pid" 2>/dev/null && echo "$pid"
+  done | sort -un | paste -sd ' ' -) || true
 fi
 
 if [ -n "$DRY_RUN" ]; then
   echo "(dry run) would $CHANGE in $CONFIG"
   if [ "$CMD" = stop ]; then
-    if [ -n "$PID" ]; then echo "(dry run) would stop run $PID"; else echo "(dry run) no run to stop"; fi
+    if [ -n "$PID" ]; then echo "(dry run) would stop run ${PID// /, }"; else echo "(dry run) no run to stop"; fi
   fi
   exit 0
 fi
@@ -74,8 +76,9 @@ case "$CMD $ROLE" in
     mkdir -p "$DIR"
     date +%s >"$DIR/stopped"
     if [ -n "$PID" ]; then
-      kill "$PID" 2>/dev/null || true
-      echo "stopped $TEAM $ROLE's run ($PID), and held $ROLE until: a-team resume $TEAM $ROLE"
+      # shellcheck disable=SC2086 # one pid per word
+      kill $PID 2>/dev/null || true
+      echo "stopped $TEAM $ROLE's run (${PID// /, }), and held $ROLE until: a-team resume $TEAM $ROLE"
     else
       echo "no run to stop; held $ROLE until: a-team resume $TEAM $ROLE"
     fi

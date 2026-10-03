@@ -59,7 +59,7 @@ public class TeamSettingsTests : IDisposable
         Assert.Equal(
             new TeamSettings(
                 "mentaldesk/a-team", "mentaldesk", 3, "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
-                2, 3, 4, 4, 2, "~/code/a-team/main", settings.Stakeholders, settings.Skills),
+                2, 1, 3, 4, 4, 2, "~/code/a-team/main", settings.Stakeholders, settings.Skills),
             settings);
         Assert.Equal(["jamescrosswell"], settings.Stakeholders);
         Assert.Equal(["a-team"], settings.Skills);
@@ -93,6 +93,17 @@ public class TeamSettingsTests : IDisposable
         Assert.Contains("\"hold\": [\"dev\"]", after);
         Assert.Contains("\"checkout\": \"~/code/a-team/main\"", after);
         Assert.Contains("\"later\": {\"a\": [1, 2]}", after);
+    }
+
+    [Fact]
+    public void A_team_without_devs_reads_as_one_and_keeps_its_file_until_devs_changes()
+    {
+        var before = TeamSettings.Read(Bytes(Config));
+
+        Assert.Equal(1, before.Devs);
+        Assert.Equal(Config, Text(before.Write(Bytes(Config), before)));
+        var after = (before with { Devs = 3 }).Write(Bytes(Config), before);
+        Assert.Equal(3, TeamSettings.Read(after).Devs);
     }
 
     [Fact]
@@ -313,7 +324,7 @@ public class TeamSettingsTests : IDisposable
         Assert.Null(ProjectChoice.Parse(new Reading(output, failure), "mentaldesk"));
 
     private static TeamSettings Settings() =>
-        new("o/r", "o", 1, "docs/vision.md", "~/code/demo", "", true, 3, 3, 6, 6, 3, null, [], []);
+        new("o/r", "o", 1, "docs/vision.md", "~/code/demo", "", true, 3, 1, 3, 6, 6, 3, null, [], []);
 
     private void Skill(params string[] path)
     {
