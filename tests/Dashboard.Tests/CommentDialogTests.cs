@@ -1,6 +1,8 @@
 using System.Drawing;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -134,5 +136,30 @@ public class CommentDialogTests
         dialog.Hints.Hints.Single(hint => hint.Text == "Ctrl+Enter post").InvokeCommand(Command.Accept);
 
         Assert.Equal(["Yes, but later."], posted);
+    }
+
+    [Fact]
+    public void A_post_that_finishes_while_the_dialog_is_open_inside_a_timer_settles_without_hanging()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posting = new TaskCompletionSource<string?>();
+        using var dialog = Open(_ => posting.Task);
+        app.Begin(dialog);
+        dialog.Field.Text = "Shelve it, please.";
+        var finished = false;
+        app.AddTimeout(TimeSpan.Zero, () =>
+        {
+            dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+            finished = Task.Run(() => posting.SetResult(null)).Wait(TimeSpan.FromSeconds(5));
+            return false;
+        });
+        app.TimedEvents!.RunTimers();
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (!dialog.Posted && DateTime.UtcNow < deadline)
+            app.TimedEvents.RunTimers();
+
+        Assert.True(finished);
+        Assert.True(dialog.Posted);
     }
 }

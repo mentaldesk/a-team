@@ -10,6 +10,7 @@ public sealed class CommentDialog : Dialog
     private const string PostHint = "post";
     private const string CancelHint = "cancel";
     private const int Inset = 1;
+    private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
     private readonly Func<string, Task<string?>> _post;
     private readonly TextView _field;
@@ -83,14 +84,20 @@ public sealed class CommentDialog : Dialog
         }
         _message.Show("Posting…", Schemes.Accent);
         SetNeedsLayout();
-        _posting = _post(_field.Text);
-        _posting.ContinueWith(done =>
+        var posting = _posting = _post(_field.Text);
+        if (posting.IsCompleted)
         {
-            if (App is { } app)
-                app.Invoke(() => Settle(done));
-            else
-                Settle(done);
-        }, TaskContinuationOptions.ExecuteSynchronously);
+            Settle(posting);
+            return true;
+        }
+        // Polled rather than Invoked: the reader opens inside a timer, and Invoke waits on that timer's lock.
+        App?.AddTimeout(PollEvery, () =>
+        {
+            if (!posting.IsCompleted)
+                return true;
+            Settle(posting);
+            return false;
+        });
         return true;
     }
 
