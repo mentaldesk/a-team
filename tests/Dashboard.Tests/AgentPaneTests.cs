@@ -118,7 +118,7 @@ public class AgentPaneTests : IDisposable
     }
 
     [Fact]
-    public void The_other_live_runs_are_listed_in_the_order_they_started_leaving_out_the_one_shown()
+    public void The_live_runs_are_listed_in_the_order_they_started()
     {
         var shown = Run();
         Write(_dir, shown, 300, 303);
@@ -130,20 +130,27 @@ public class AgentPaneTests : IDisposable
         var state = AgentState.Read(_dir);
 
         Assert.Equal(303, state.Task!.Number);
-        Assert.Equal([246, 192], state.Others.Select(run => run.Task!.Number));
-        Assert.Equal([DateTimeOffset.FromUnixTimeSeconds(100), DateTimeOffset.FromUnixTimeSeconds(200)], state.Others.Select(run => run.Started));
+        Assert.Equal([246, 192, 303], state.Runs.Select(run => run.Task!.Number));
+        Assert.Equal(
+            [100, 200, 300],
+            state.Runs.Select(run => run.Started!.Value.ToUnixTimeSeconds()));
+        Assert.Equal(303, state.Latest!.Task!.Number);
     }
 
     [Fact]
-    public void With_one_run_or_none_there_are_no_other_runs()
+    public void The_latest_run_is_kept_after_it_finishes_and_none_is_read_from_a_role_without_runs()
     {
-        var shown = Run();
+        var shown = Finished();
         Write(_dir, shown, 300, 303);
         Write(Path.Combine(_dir, "runs", "303"), shown, 300, 303);
-        Write(Path.Combine(_dir, "runs", "150"), Finished(), 50, 150);
 
-        Assert.Empty(AgentState.Read(_dir).Others);
-        Assert.Empty(AgentState.Read(Path.Combine(_dir, "nothing")).Others);
+        var state = AgentState.Read(_dir);
+        Assert.Empty(state.Runs);
+        Assert.Equal(303, state.Latest!.Task!.Number);
+
+        var nothing = AgentState.Read(Path.Combine(_dir, "nothing"));
+        Assert.Empty(nothing.Runs);
+        Assert.Null(nothing.Latest);
     }
 
     [Fact]
@@ -158,6 +165,7 @@ public class AgentPaneTests : IDisposable
 
         Write(Path.Combine(_dir, "runs", "246"), Run(), 100, 246);
         Write(Path.Combine(_dir, "runs", "192"), Run(), 200, 192);
+        Write(Path.Combine(_dir, "runs", "303"), Run(), 300, 303);
         pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
         pane.Layout();
 
@@ -165,12 +173,32 @@ public class AgentPaneTests : IDisposable
     }
 
     [Fact]
+    public void Choosing_another_run_shows_its_task_and_folds_the_one_that_was_showing_to_a_bar_below()
+    {
+        using var pane = Open("""{"type":"system","subtype":"init"}""");
+        pane.Frame = new System.Drawing.Rectangle(0, 0, 60, 20);
+        Write(Path.Combine(_dir, "runs", "246"), Run(), 100, 246);
+        Write(Path.Combine(_dir, "runs", "303"), Run(), 300, 303);
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
+        Assert.EndsWith("#303 Task 303", pane.Title);
+
+        Assert.True(pane.MoveRun(-1));
+        pane.Layout();
+
+        Assert.EndsWith("#246 Task 246", pane.Title);
+        var labels = pane.SubViews.OfType<Label>().ToList();
+        Assert.Equal(0, labels[0].Frame.Y);
+        Assert.Contains("#303 Task 303", labels.Last().Text);
+        Assert.False(pane.MoveRun(-1));
+    }
+
+    [Fact]
     public void A_bar_shows_the_run_s_icon_its_task_and_how_long_it_has_run_at_the_right()
     {
         var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(1);
         var bars = AgentPane.Bars(
-            [new OtherRun(new RunTask(246, "Remove a team"), now - TimeSpan.FromSeconds(400)),
-             new OtherRun(new RunTask(192, "Reply to a pitch without leaving the dashboard"), now - TimeSpan.FromSeconds(52))],
+            [new DevRun("246", new RunTask(246, "Remove a team"), now - TimeSpan.FromSeconds(400)),
+             new DevRun("192", new RunTask(192, "Reply to a pitch without leaving the dashboard"), now - TimeSpan.FromSeconds(52))],
             now, IconStyle.Unicode, 40);
 
         var icon = Icons.Field(Icons.For(PaneStatus.Running), IconStyle.Unicode);

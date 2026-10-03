@@ -36,15 +36,18 @@ public sealed class AgentPane : FrameView
     private readonly string _stateDir;
     private string _name;
     private readonly SessionLog _log = new();
-    private readonly Label _others;
+    private readonly Label _above;
+    private readonly Label _below;
     private readonly Label _statusRow;
     private readonly Label _why;
     private readonly LogView _body;
     private PaneStatus _status = PaneStatus.NeverRun;
     private IconStyle _icons = IconStyle.Unicode;
     private string _timing = "";
-    private IReadOnlyList<OtherRun> _otherRuns = [];
+    private readonly RunSelection _runs = new();
+    private string? _shownLog;
     private DateTimeOffset _now;
+    private (DateTimeOffset? NextCheck, bool Paused, bool Held) _refreshed;
 
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
     {
@@ -53,11 +56,12 @@ public sealed class AgentPane : FrameView
         _name = $"{team} · {role}";
         _stateDir = stateDir;
         CanFocus = true;
-        _others = new Label { X = 0, Y = 0, Width = Dim.Fill(), Height = 0 };
-        _statusRow = new Label { X = 0, Y = Pos.Bottom(_others), Width = Dim.Fill() };
+        _above = new Label { X = 0, Y = 0, Width = Dim.Fill(), Height = 0 };
+        _statusRow = new Label { X = 0, Y = Pos.Bottom(_above), Width = Dim.Fill() };
         _why = new Label { X = 0, Y = Pos.Bottom(_statusRow), Width = Dim.Fill() };
         _body = new LogView { X = 0, Y = Pos.Bottom(_why), Width = Dim.Fill(), Height = Dim.Fill(), Expanded = expandToolCalls };
-        Add(_statusRow, _why, _body, _others);
+        _below = new Label { X = 0, Y = Pos.Bottom(_body), Width = Dim.Fill(), Height = 0 };
+        Add(_statusRow, _why, _body, _above, _below);
         HasFocusChanged += (_, _) => UpdateHeader();
         FrameChanged += (_, _) => UpdateHeader();
         UpdateHeader();
@@ -111,22 +115,35 @@ public sealed class AgentPane : FrameView
 
     internal string? SessionId => _log.SessionId;
 
+    /// <summary>Shows the next run up or down; false past either end, so the selection can move on to the next pane.</summary>
+    public bool MoveRun(int step)
+    {
+        if (!_runs.Move(step))
+            return false;
+        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held);
+        return true;
+    }
+
     public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held)
     {
-        var state = AgentState.Read(_stateDir);
+        _refreshed = (nextCheck, paused, held);
+        var role = AgentState.Read(_stateDir);
+        _runs.Update(role.Runs, role.Latest);
+        var state = _runs.Current is { } run ? AgentState.Read(run.Dir) with { Stopped = role.Stopped } : role;
         Paused = paused;
-        Running = state.Running;
+        Running = role.Running;
         Held = held;
         _name = Name(Team, Role, state.Task);
 
-        if (_log.Refresh(state.LogPath))
+        var switched = state.LogPath != _shownLog;
+        _shownLog = state.LogPath;
+        if (_log.Refresh(state.LogPath) || switched)
             _body.Lines = _log.Lines.Count == 0
                 ? [new LogLine("(no session yet)", LogLineKind.Prose)]
                 : [.. _log.Lines];
 
         _status = Status(state, paused, held, _log.Verdict);
         _timing = Describe(state, now, nextCheck, _status, held);
-        _otherRuns = state.Others;
         _now = now;
         UpdateHeader();
 
@@ -142,19 +159,28 @@ public sealed class AgentPane : FrameView
             Title = title;
         if (_statusRow.Text != _timing)
             _statusRow.Text = _timing;
-        var others = string.Join("\n", Bars(_otherRuns, _now, _icons, Math.Max(0, Frame.Width - 2)));
-        if (_others.Text != others)
-        {
-            _others.Text = others;
-            _others.Height = _otherRuns.Count;
-        }
+        var shown = Math.Max(0, _runs.Shown);
+        Fill(_above, [.. _runs.Runs.Take(shown)]);
+        Fill(_below, [.. _runs.Runs.Skip(shown + 1)]);
 
         var schemes = SchemesFor(_status, _timing);
         Use(this, schemes.Frame);
-        Use(_others, schemes.Body);
+        Use(_above, schemes.Body);
+        Use(_below, schemes.Body);
         Use(_statusRow, schemes.Status);
         Use(_why, schemes.Why);
         Use(_body, schemes.Body);
+    }
+
+    private void Fill(Label label, IReadOnlyList<DevRun> runs)
+    {
+        var bars = string.Join("\n", Bars(runs, _now, _icons, Math.Max(0, Frame.Width - 2)));
+        if (label.Text == bars)
+            return;
+        label.Text = bars;
+        label.Height = runs.Count;
+        if (label == _below)
+            _body.Height = Dim.Fill(runs.Count);
     }
 
     private static void Use(View view, string scheme)
@@ -191,8 +217,8 @@ public sealed class AgentPane : FrameView
         return new(icons, Elide(name, width - icons.GetColumns() - markers.Length) + markers);
     }
 
-    /// <summary>One line per other live run: its icon, its task, and how long it has been running, at the right.</summary>
-    internal static IReadOnlyList<string> Bars(IReadOnlyList<OtherRun> others, DateTimeOffset now, IconStyle style, int width)
+    /// <summary>One line per live run not shown: its icon, its task, and how long it has been running, at the right.</summary>
+    internal static IReadOnlyList<string> Bars(IReadOnlyList<DevRun> others, DateTimeOffset now, IconStyle style, int width)
     {
         var icon = Icons.Field(Icons.For(PaneStatus.Running), style);
         return [.. others.Select(run =>
