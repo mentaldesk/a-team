@@ -34,6 +34,26 @@ nothing to restart.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
 
+## Layout
+
+| Path | What it is |
+|---|---|
+| `process.md` | The shared rules: board states, gates, markers, what agents never do |
+| `roles/lead.md`, `roles/dev.md` | What each role does on a run |
+| `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
+| `bin/gh` | `gh` as the team's App inside a run |
+| `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
+| `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
+| `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
+| `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
+| `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
+| `scripts/pause.sh` | `a-team pause` / `a-team resume` / `a-team stop`: turns a team's dispatch off and on, or holds one role |
+| `scripts/attach.sh` | `a-team attach`: stops and holds a role, then resumes its last run's conversation |
+| `dashboard/` | `a-team`: the app, with a Work area and the agent Dashboard |
+| `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
+| `settings/agents.json` | Permission rules for every run |
+| `examples/team.json` | A starting point for a team's config (see the README, *Starting a team*) |
+
 ## Dashboard UI
 
 `dashboard/` is a Terminal.Gui 2.1 app, the same stack as TuiCode.

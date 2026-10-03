@@ -90,7 +90,8 @@ Handover? Show(Handover? back)
         start,
         item => command.Read("board", item.Team, "conversation", item.Number.ToString()),
         item => AcceptDialog.Show(app, item),
-        askComment: (item, post) => CommentDialog.Show(app, item, post));
+        askComment: (item, post) => CommentDialog.Show(app, item, post),
+        showGuide: page => GuideDialog.Show(app, Path.Combine(root, "docs", "guide"), url => Link.OpenUrl(url), page));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

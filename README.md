@@ -31,41 +31,6 @@ Claude Code must be installed and logged in, and `gh` needs the `project` scope
 `a-team install` to start the dispatcher. `brew upgrade a-team` moves every team to the latest
 release.
 
-## Layout
-
-| Path | What it is |
-|---|---|
-| `process.md` | The shared rules: board states, gates, markers, what agents never do |
-| `roles/lead.md`, `roles/dev.md` | What each role does on a run |
-| `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
-| `bin/gh` | `gh` as the team's App inside a run |
-| `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
-| `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
-| `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
-| `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
-| `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
-| `scripts/pause.sh` | `a-team pause` / `a-team resume` / `a-team stop`: turns a team's dispatch off and on, or holds one role |
-| `scripts/attach.sh` | `a-team attach`: stops and holds a role, then resumes its last run's conversation |
-| `dashboard/` | `a-team`: the app, with a Work area and the agent Dashboard |
-| `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
-| `settings/agents.json` | Permission rules for every run |
-| `examples/team.json` | A starting point for a team's config (see *Starting a team*) |
-
-## Working with the team
-
-- **Seed an idea:** open an issue in the product repo and put it on the board in *Idea*.
-- **Steer the Lead:** give the Ideas you care about a Priority. The Lead alternates between
-  pitching the highest-priority Idea and discovering new ones. It files its discoveries in
-  *Idea* with the `a-team:idea` label. Ideas written by any agent (its own discoveries, or
-  suggestions another team's agents opened on this repo) are only pitched once you've given
-  them a priority. Close the ones you don't want.
-- **Give feedback:** comment on the pitch or PR. The agents pick up your comments on their next
-  run and reply. A 👀 on your comment means a run has read it — so don't 👀 your own comments;
-  every other reaction is yours to use. One you leave mid-run gets a run of its own.
-- **Approve a pitch:** move it to *Approved*.
-- **Accept work:** merge the PR, or close the pitch once you're happy with the Lead's validation.
-- **Your inbox:** a board view filtered to `status:Pitched,"In review"`.
-
 ## Starting a team
 
 In the app, open Settings → Teams and press `n` (or run **New team** from the palette). Fill in the
@@ -176,70 +141,8 @@ a-team                      the area you were last in
 a-team dashboard [team...]  straight to the agents
 ```
 
-The app has two areas: **Work**, everything waiting on you across every team, and **Dashboard**,
-what each agent is doing. `d` and `w` switch between them, Esc goes back to the Dashboard, and the
-menu across the top carries the same commands: View (Dashboard, Work, Settings, Quit), Agents
-(Pause this role, Interrupt) and Help (Keys, Commands, About). Each title and item underlines a letter:
-`Alt`+it opens a menu, and once one is open the bare letter picks from it — `Alt+H` `k` for Keys.
-Esc closes it, and F10 and the arrows still work. Whichever area you were in is what it opens in
-next time; a first run lands on Work.
-
-### What's waiting on you
-
-A swimlane per team, and four columns in each, left to right in the order work moves through
-them: **Triage** (the Ideas and pitches with no Priority set, which never get pitched or approved
-until you give them one), **Pitches** (waiting for you to approve), **Questions** (tasks the Dev
-handed back to ask you something, and pitches the Lead can't go ahead with until you answer) and **Review** (waiting for you to merge or accept), each headed
-by its count of items. A column with nothing in it is hidden, and the one you're on takes half its
-lane. A card's issue number is coloured by the
-item's Priority, in the colours GitHub gives that field's own options, and the PR that closes it
-hangs under it as a row of its own — `PR #149  The session log reads…`. Enter shows the issue's
-body as written, without leaving the app, then everything said since on it and on its PR, each
-headed by who said it and when, or on a question just the question; `g` opens whichever row you're on in your browser: the
-issue on the card, the PR on the row under it. Reading a pitch that's waiting on you, `a` approves
-it: no confirmation, and the card leaves the column with nothing re-read. On a task in Review, or
-reading one, `a` accepts it: once you confirm, its PR is squash-merged and its branch deleted, and
-the card leaves. While the PR is failing, conflicting, still running CI or still a draft, `a` only
-says so. On a validated pitch in Review, `a` closes it as done, once every one of its tasks is
-closed. Reading every team's
-gates takes a moment, so a quiet `Loading…` sits in the middle of the empty area until the
-first cards land; F5 afterwards leaves the ones on screen where they are, and you on the card
-you were on.
-
-`p` ranks the card you're on, or clears its rank with **None**, without leaving the app. It reads
-the item first, so what you're ranking is in front of you: the issue's own words fill the dialog
-above the ranks, as written, and `PgUp`/`PgDn` scroll them. The ranks sit in a band of their own
-below, **None** at the left up to **Urgent** at the right, each on the letter its name starts with.
-The card moves to the column its new Priority puts it in there and then, with nothing re-read: a
-pitch you unrank drops into Triage, one you rank leaves it, and an Idea you rank is off your queue
-for good.
-
-A gated column doesn't mean it's your turn: a card that's your move wears a green check, one an
-agent owes you an answer on a dimmed headset and names that role in front of its title, and the
-line at the foot says why — `#118 · lead · answering your feedback since 08:14`. It's theirs from
-the moment you comment — on the card's own issue or on the PR that closes it — until they answer,
-which is the same test the dispatcher makes when it decides what to start a run for. A PR that's
-failing CI, conflicting with its base, still running CI or still a draft is theirs too, and the card names which —
-`#124  dev · CI failing · A finished task` — so you never open one to find CI still running on it.
-`m` hides everything that isn't your move and `m` again brings it
-back — an unranked Idea is always yours, so Triage keeps nearly all of it; the counts follow, the
-right of that same line says which you're looking at — *All items* or *My items* — and it opens the
-way you left it.
-
-After that icon, a second says what the card is: `◇` a pitch, `‹›` a task. With Nerd Font icons
-these are a presentation and a code review, and a PR row under a card wears a pull request glyph
-in place of the word `PR`.
-
-The turn icons come from the same vocabulary the panes use (`✓` and `·`, or their Nerd Font
-glyphs). No terminal reports its font, so the dashboard uses the Nerd Font one in kitty, WezTerm
-and Ghostty — which bundle such a font and fall back to it — and the plain one everywhere else. If
-that's the wrong answer for your terminal, pick a vocabulary under Settings → Dashboard.
-
-The card list is read when the area opens, when you press F5, and by itself five minutes after the
-last read, while Work is in front with no dialog or menu over it. Left open on Work, the app costs
-about 250 of the 5,000 GraphQL points an hour GitHub allows; left on the Dashboard, it reads
-nothing. The foot says how long ago it read. A read that fails — offline, rate-limited — says so at
-the foot in red and leaves the cards and that stamp exactly as they were.
+The app has two areas: **Work**, everything waiting on you across every team, and **Dashboard**, what
+each agent is doing. **Help → Guide** explains them inside the app, and the same pages are in [`docs/guide`](docs/guide/index.md).
 
 ### Watching the team
 
