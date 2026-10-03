@@ -86,7 +86,8 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
 3. Pick it up from its worktree and branch if they exist. Otherwise fetch `origin` and create a
    fresh worktree from `origin/<default branch>` following the repo's conventions. Implement it.
    Stay inside the task's scope; note anything else you spot in the PR body instead of fixing it.
-   End every commit message with `Closes #<n>`.
+   A task that changes what the user sees or does updates the user guide page it affects, where
+   the repo has one, in the same PR. End every commit message with `Closes #<n>`.
 4. Build and run the tests locally until they pass.
 5. Push and open a **draft** PR. Body: a short summary of what the user can now do or see,
    `Closes #<n>`, any choice you made that changes what they see or do beyond what the task

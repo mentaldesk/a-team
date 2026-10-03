@@ -21,7 +21,7 @@ internal sealed class AppMenu
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
         (Cards, [Separator, "work.refresh", "work.mine"]),
         (Agents, ["agent.hold", "agent.interrupt", Separator, "agent.expand", "log.toolCalls", "agent.collapse"]),
-        ("_Help", ["help", "commands", "about"]),
+        ("_Help", ["help", "guide", "commands", "about"]),
     ];
 
     private readonly CommandRegistry _commands;
