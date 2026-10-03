@@ -17,10 +17,13 @@ public sealed record WaitingItem(
 
     /// <summary>Why it can't be accepted yet, for the message bar, or nothing when it can.</summary>
     public string Unacceptable =>
-        Pitch ? OpenTasks == 0 ? "" : $"#{Number} has {OpenTasks} open task{(OpenTasks == 1 ? "" : "s")}"
-        : Pr == 0 ? $"#{Number} · no PR to merge"
-        : Unready.Length > 0 ? $"#{Number} · {Unready}"
-        : "";
+        Holdup.Length == 0 ? "" : Pitch ? $"#{Number} {Holdup}" : $"#{Number} · {Holdup}";
+
+    /// <summary>What stands in the way of accepting it, without its number, or nothing when it can be.</summary>
+    public string Holdup =>
+        Pitch ? OpenTasks == 0 ? "" : $"has {OpenTasks} open task{(OpenTasks == 1 ? "" : "s")}"
+        : Pr == 0 ? "no PR to merge"
+        : Unready;
 
     /// <summary>Whether the next move is the reviewer's. An item the board said nothing about is theirs.</summary>
     public bool Mine => Turn.Length == 0 || Turn == "you";

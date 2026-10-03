@@ -11,14 +11,15 @@ public sealed class WorkView : View
     /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
     /// Idea or a pitch that carries none is still to rank; by In review it's decided, and a PR waits for
     /// acceptance whatever its rank. A question, the Dev's on a Ready task or the Lead's on a pitch, waits in
-    /// Questions whatever its rank. Triage and Pitches wear the kind they hold in their heading, and only a card
-    /// of another kind wears its own.</summary>
-    internal static readonly (string Name, Icon? Kind, Func<WaitingItem, bool> Holds)[] Gates =
+    /// Questions whatever its rank. Review holds only what Accept would take, and sums up the rest under its
+    /// cards. Triage and Pitches wear the kind they hold in their heading, and only a card of another kind wears
+    /// its own.</summary>
+    internal static readonly (string Name, Icon? Kind, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
     [
-        ("Triage", Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && item.Status is "Idea" or "Pitched"),
-        ("Pitches", Icon.Pitch, item => item.Status == "Pitched" && item.Priority.Length > 0 && item.Question.Length == 0),
-        ("Questions", null, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0),
-        ("Review", null, item => item.Status == "In review"),
+        ("Triage", Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && item.Status is "Idea" or "Pitched", null),
+        ("Pitches", Icon.Pitch, item => item.Status == "Pitched" && item.Priority.Length > 0 && item.Question.Length == 0, null),
+        ("Questions", null, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
+        ("Review", null, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
     ];
 
     private readonly List<WorkLane> _lanes = [];
@@ -124,7 +125,7 @@ public sealed class WorkView : View
         ShowFocus();
     }
 
-    /// <summary>Left and right step between the columns a lane shows, stopping at its edges.</summary>
+    /// <summary>Left and right step between the columns a lane has cards in, stopping at its edges.</summary>
     internal void MoveColumn(int step)
     {
         if (At() is not { } at)
@@ -134,7 +135,7 @@ public sealed class WorkView : View
         }
         var columns = _lanes[at.Lane].Columns;
         for (var gate = at.Gate + step; gate >= 0 && gate < columns.Count; gate += step)
-            if (columns[gate].Visible)
+            if (columns[gate].Count > 0)
             {
                 Land(at.Lane, gate, 0);
                 return;
@@ -195,7 +196,7 @@ public sealed class WorkView : View
         var column = _lanes[was.Lane].Columns[was.Gate];
         if (now is not null && (column.Select(now, onPr) || column.Select(now)))
             return;
-        if (column.Visible)
+        if (column.Count > 0)
             column.FocusCards(row);
         else if (_lanes[was.Lane].Nearest(was.Gate) is { } gate)
             _lanes[was.Lane].Columns[gate].FocusCards(0);
@@ -317,8 +318,8 @@ public sealed class WorkLane : View
         for (var i = 0; i < WorkView.Gates.Length; i++)
         {
             var index = i;
-            var (name, kind, holds) = WorkView.Gates[i];
-            var column = new WorkColumn(team, name, kind, holds, focusChanged)
+            var (name, kind, holds, aside) = WorkView.Gates[i];
+            var column = new WorkColumn(team, name, kind, holds, aside, focusChanged)
             {
                 X = Pos.Func(_ => Left(index), this),
                 Y = 2,
@@ -335,9 +336,9 @@ public sealed class WorkLane : View
 
     internal IReadOnlyList<WorkColumn> Columns => _columns;
 
-    /// <summary>How many rows the lane gives each column: enough for the fullest one's cards and their PRs, and
-    /// never none.</summary>
-    internal int Rows => Math.Max(1, _columns.Max(column => column.Nodes));
+    /// <summary>How many rows the lane gives each column: enough for the fullest one's cards, their PRs and its
+    /// summary, and never none.</summary>
+    internal int Rows => Math.Max(1, _columns.Max(column => column.Lines));
 
     /// <summary>How tall the lane is: just its name when it shows no column.</summary>
     internal int Lines => _columns.Any(column => column.Visible) ? Rows + Chrome : Chrome - 2;
@@ -348,8 +349,9 @@ public sealed class WorkLane : View
     {
         foreach (var column in _columns)
         {
-            column.Show([.. items.Where(item => item.Team == Team && column.Holds(item))]);
-            column.Visible = column.Count > 0;
+            var team = items.Where(item => item.Team == Team).ToList();
+            column.Show([.. team.Where(column.Holds)], [.. team.Where(column.SetsAside)]);
+            column.Visible = column.Lines > 0;
         }
         SetNeedsLayout();
     }
@@ -363,10 +365,10 @@ public sealed class WorkLane : View
         SetNeedsLayout();
     }
 
-    /// <summary>The column the lane shows nearest <paramref name="gate"/>, or null when it shows none.</summary>
+    /// <summary>The column with cards nearest <paramref name="gate"/>, or null when none has any.</summary>
     internal int? Nearest(int gate) =>
         Enumerable.Range(0, _columns.Count)
-            .Where(index => _columns[index].Visible)
+            .Where(index => _columns[index].Count > 0)
             .OrderBy(index => Math.Abs(index - gate))
             .Cast<int?>()
             .FirstOrDefault();
@@ -404,24 +406,35 @@ public sealed class WorkLane : View
 }
 
 /// <summary>One column's cards for one team: a frame titled with the count, holding a tree of them, each item's
-/// PR hanging under it.</summary>
+/// PR hanging under it, and a dimmed line under them summing up what it sets aside.</summary>
 public sealed class WorkColumn : FrameView
 {
     private readonly Func<WaitingItem, bool> _holds;
-    private readonly Cards _cards = new() { X = 1, Y = 0, Width = Dim.Fill(1), Height = Dim.Fill(), CanFocus = true };
+    private readonly Func<WaitingItem, bool>? _aside;
+    private readonly Cards _cards;
+    private readonly Label _summary;
     private readonly FocusBorder _border;
     private IReadOnlyList<WaitingItem> _items = [];
+    private IReadOnlyList<WaitingItem> _setAside = [];
     private List<Card> _nodes = [];
     private int _laidOutOver = -1;
     private IconStyle _icons = IconStyle.Unicode;
 
-    internal WorkColumn(string team, string gate, Icon? kind, Func<WaitingItem, bool> holds, Action focusChanged)
+    internal WorkColumn(
+        string team, string gate, Icon? kind, Func<WaitingItem, bool> holds, Func<WaitingItem, bool>? aside,
+        Action focusChanged)
     {
         Team = team;
         Gate = gate;
         Kind = kind;
         _holds = holds;
+        _aside = aside;
         CanFocus = true;
+        _cards = new() { X = 1, Y = 0, Width = Dim.Fill(1), Height = Dim.Func(_ => Nodes), CanFocus = true };
+        _summary = new Label
+        {
+            X = 1, Y = Pos.Func(_ => Nodes), Width = Dim.Fill(1), CanFocus = false, SchemeName = LogSchemes.Dimmed,
+        };
         Title = Heading(kind, gate, 0, _icons);
         _border = new FocusBorder(this);
         _cards.TreeBuilder = new DelegateTreeBuilder<Card>(card => card.Children, card => card.Children.Count > 0);
@@ -430,7 +443,7 @@ public sealed class WorkColumn : FrameView
         _cards.HasFocusChanged += (_, _) => focusChanged();
         // Moving within a column changes the tree's selection, not its focus, and the message bar follows both.
         _cards.SelectionChanged += (_, _) => focusChanged();
-        Add(_cards);
+        Add(_cards, _summary);
         SubViewsLaidOut += (_, _) => Fit();
     }
 
@@ -446,6 +459,12 @@ public sealed class WorkColumn : FrameView
 
     /// <summary>How many rows it draws them in: the items and the PRs under them.</summary>
     internal int Nodes => _nodes.Count;
+
+    /// <summary>How many rows it needs: those, and one more for the summary when it has one.</summary>
+    internal int Lines => Nodes + (_setAside.Count > 0 ? 1 : 0);
+
+    /// <summary>The summary line as it's drawn, or nothing when the column sets nothing aside.</summary>
+    internal string Summary => _summary.Text;
 
     /// <summary>The text of the rows as the tree draws them, their icons apart.</summary>
     internal IReadOnlyList<string> CardText { get; private set; } = [];
@@ -468,9 +487,11 @@ public sealed class WorkColumn : FrameView
 
     internal bool Shown => _border.Focused;
 
-    internal void Show(IReadOnlyList<WaitingItem> items)
+    internal void Show(IReadOnlyList<WaitingItem> items, IReadOnlyList<WaitingItem>? setAside = null)
     {
         _items = items;
+        _setAside = setAside ?? [];
+        _summary.Visible = _setAside.Count > 0;
         var roots = Card.Roots(items, Kind);
         _nodes = [.. Card.Nodes(roots)];
         Title = Heading(Kind, Gate, items.Count, _icons);
@@ -497,6 +518,14 @@ public sealed class WorkColumn : FrameView
 
     /// <summary>Whether this is the column <paramref name="item"/> belongs in.</summary>
     internal bool Holds(WaitingItem item) => _holds(item);
+
+    /// <summary>Whether <paramref name="item"/> is one this column sums up rather than shows.</summary>
+    internal bool SetsAside(WaitingItem item) => _aside?.Invoke(item) ?? false;
+
+    /// <summary>The Review column's summary of the tasks the Dev is still fixing, cut to fit.</summary>
+    internal static string Summarise(IReadOnlyList<WaitingItem> items, int width) =>
+        items.Count == 0 ? ""
+        : Card.Elide($"{items.Count} with the Dev: {string.Join(" · ", items.Select(item => $"#{item.Number} {item.Holdup}"))}", width);
 
     /// <summary>The row the selection is on, inside the frame.</summary>
     internal int Row => Index + 1;
@@ -577,6 +606,7 @@ public sealed class WorkColumn : FrameView
         if (_laidOutOver == width)
             return;
         _laidOutOver = width;
+        _summary.Text = Summarise(_setAside, width);
         CardText = [.. _nodes.Select(card => card.Text(Room(card), _icons))];
         CardLeads = [.. _nodes.Select(card => card.Leads(_icons))];
         Marks = [.. _nodes.Select(card => card.Mark(Room(card)))];
