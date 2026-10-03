@@ -62,12 +62,12 @@ public sealed class CommentDialog : Dialog
 
     protected override bool OnKeyDown(Key key) => Keyed(key) || base.OnKeyDown(key);
 
-    /// <summary>Asks for a comment and posts it, and says whether it was posted.</summary>
-    public static bool Show(IApplication app, WaitingItem item, Func<string, Task<string?>> post)
+    /// <summary>Asks for a comment and posts it, and returns what was posted, or null if nothing was.</summary>
+    public static string? Show(IApplication app, WaitingItem item, Func<string, Task<string?>> post)
     {
         using var dialog = new CommentDialog(item, post);
         app.Run(dialog);
-        return dialog.Posted;
+        return dialog.Posted ? dialog._field.Text : null;
     }
 
     private bool Keyed(Key key) => key == Key.Enter.WithCtrl ? Post() : key == Key.Esc && Cancel();

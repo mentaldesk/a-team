@@ -1421,8 +1421,8 @@ public class WorkAreaTests : IDisposable
         var calls = new List<string[]>();
         var bodies = new List<string>();
         var asked = new List<int>();
-        var posted = new List<bool>();
-        ReaderCommand? offered = null;
+        var posted = new List<Remark?>();
+        ReaderComment? offered = null;
         using var window = Open(
             run: arguments =>
             {
@@ -1439,7 +1439,7 @@ public class WorkAreaTests : IDisposable
             askComment: (item, post) =>
             {
                 asked.Add(item.Number);
-                return post("Not yet: shelve it.").Result is null;
+                return post("Not yet: shelve it.").Result is null ? "Not yet: shelve it." : null;
             });
         window.Refresh();
         LayOut(window, 120, 30);
@@ -1450,7 +1450,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(new Key('c'), offered?.Key);
         Assert.Equal("comment", offered?.Hint);
         var number = asked.Single();
-        Assert.Equal([true], posted);
+        Assert.Equal(("you", "Not yet: shelve it."), (posted.Single()?.Who, posted.Single()?.Body));
         Assert.Equal(["board", "team0", "comment", "you", number.ToString()], calls.Single()[..5]);
         Assert.Equal(["Not yet: shelve it."], bodies);
         Assert.False(File.Exists(calls.Single()[^1]));
@@ -1467,7 +1467,7 @@ public class WorkAreaTests : IDisposable
             askComment: (_, post) =>
             {
                 said = post("Shelve it.").Result;
-                return said is null;
+                return null;
             });
         window.Refresh();
         LayOut(window, 120, 30);
@@ -2228,7 +2228,7 @@ public class WorkAreaTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?>? askPriority = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
-        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderCommand?>? showBody = null,
+        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
@@ -2236,7 +2236,7 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, Task<Reading>>? readConversation = null,
         Func<WaitingItem, bool>? confirmAccept = null,
         TimeProvider? clock = null,
-        Func<WaitingItem, Func<string, Task<string?>>, bool>? askComment = null)
+        Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(

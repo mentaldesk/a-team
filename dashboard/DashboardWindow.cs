@@ -46,9 +46,9 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
-    private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderCommand?> _showBody;
+    private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
-    private readonly Func<WaitingItem, Func<string, Task<string?>>, bool> _askComment;
+    private readonly Func<WaitingItem, Func<string, Task<string?>>, string?> _askComment;
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
     private readonly FrameView _loading;
@@ -83,7 +83,7 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
         Func<WaitingItem, IssueBody, Rank?> askPriority,
-        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderCommand?> showBody,
+        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -92,7 +92,7 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>>? readConversation = null,
         Func<WaitingItem, bool>? confirmAccept = null,
         TimeProvider? clock = null,
-        Func<WaitingItem, Func<string, Task<string?>>, bool>? askComment = null)
+        Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null)
     {
         _start = start;
         _clock = clock ?? TimeProvider.System;
@@ -108,7 +108,7 @@ public sealed class DashboardWindow : Window
         _askPriority = askPriority;
         _showBody = showBody;
         _confirmAccept = confirmAccept ?? (_ => false);
-        _askComment = askComment ?? ((_, _) => false);
+        _askComment = askComment ?? ((_, _) => null);
         _handOver = handOver;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
@@ -499,7 +499,7 @@ public sealed class DashboardWindow : Window
                     _openUrl(url);
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
-                new ReaderCommand(_commands.KeyFor("work.comment"), "comment", Comment));
+                new ReaderComment(_commands.KeyFor("work.comment"), "comment", Comment));
             _approvable = null;
             _shown = null;
         }
@@ -551,8 +551,11 @@ public sealed class DashboardWindow : Window
         return true;
     }
 
-    /// <summary>Asks for a comment on the item the reader is showing and posts it as you. True once it's posted.</summary>
-    private bool Comment() => _shown is { } item && _askComment(item, body => Post(item, body));
+    /// <summary>Asks for a comment on the item the reader is showing and posts it as you. The remark, once it's posted.</summary>
+    private Remark? Comment() =>
+        _shown is { } item && _askComment(item, body => Post(item, body)) is { } posted
+            ? new Remark("you", _clock.GetUtcNow(), posted)
+            : null;
 
     private async Task<string?> Post(WaitingItem item, string body)
     {

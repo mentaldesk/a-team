@@ -8,6 +8,9 @@ namespace ATeam.Dashboard;
 /// that isn't <paramref name="Enabled"/> still runs, to say why not, and its hint is greyed.</summary>
 public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool Enabled = true);
 
+/// <summary>Commenting from the reader: Run is the remark it posted, or null if nothing was.</summary>
+public sealed record ReaderComment(Key Key, string Hint, Func<Remark?> Run);
+
 /// <summary>An item's body as it was written, to read without leaving the board.</summary>
 public sealed class ReaderDialog : Dialog
 {
@@ -22,25 +25,27 @@ public sealed class ReaderDialog : Dialog
     private readonly Action _onGitHub;
     private readonly Action? _onApprove;
     private readonly ReaderCommand? _accept;
-    private readonly ReaderCommand? _comment;
+    private readonly ReaderComment? _comment;
     private readonly int _number;
+    private IssueBody _text;
     private readonly LogView _body;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
-    /// <param name="comment">Commenting on the item; its Run says whether a comment was posted, and the reader stays
-    /// open either way.</param>
+    /// <param name="comment">Commenting on the item; a posted comment joins the end of the conversation, and the
+    /// reader stays open either way.</param>
     public ReaderDialog(
         WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
-        ReaderCommand? comment = null)
+        ReaderComment? comment = null)
     {
         _onGitHub = onGitHub;
         _onApprove = onApprove;
         _accept = accept;
         _comment = comment;
         _number = item.Number;
+        _text = body;
         Title = $"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch ? " · the Lead's question" : " · the Dev's question")}";
         X = 0;
         Y = 0;
@@ -103,7 +108,7 @@ public sealed class ReaderDialog : Dialog
 
     public static void Show(
         IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
-        ReaderCommand? comment)
+        ReaderComment? comment)
     {
         using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment);
         app.Run(dialog);
@@ -141,8 +146,11 @@ public sealed class ReaderDialog : Dialog
 
     private bool Comment()
     {
-        if (_comment!.Run())
+        if (_comment!.Run() is { } remark)
         {
+            _text = _text.With(new Conversation([remark]));
+            _body.Lines = _text.Lines;
+            _body.End();
             _message.Show($"commented on #{_number}", Schemes.Accent);
             SetNeedsLayout();
             SetNeedsDraw();
