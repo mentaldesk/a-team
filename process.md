@@ -59,6 +59,8 @@ a-team board {{team}} wip                       # counts per status: pitches, de
                                                 # the Dev's blocked tasks under dev.blocked
 a-team board {{team}} next                      # the next task Dev should take (or null):
                                                 # highest issue Priority first, unset last
+a-team board {{team}} claim dev [<n>]           # move `next` (or Ready task <n>) to In progress for
+                                                # a Dev run, if a worktree is free
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)
 a-team board {{team}} move <role> <n> <STATUS>
 a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on the board
@@ -121,14 +123,16 @@ tell what `$B` will run.
 3. Finish existing work before starting new work. Respect the WIP limits in the team config:
    - `worktrees`: the Dev's tasks In progress + In review, one worktree each. Blocked tasks,
      either way, wait without taking a slot. While an unblocked Ready task is Urgent, one extra
-     worktree is allowed, until it leaves Ready.
+     worktree is allowed, until it leaves Ready. The dispatcher claims a Ready task for a Dev run
+     only while a slot is free, and each Dev run works on that one task.
    - `pitched`: pitches in front of the stakeholder
    - `exploring`: drafted pitches waiting for room in Pitched
    - `ideas`: the Lead's discoveries waiting for the stakeholder to prioritise or close them
    - `readyFloor`: below this many Ready tasks the Dev can start now, the Lead warns that the
      Dev is running out of work
 4. Never wait for input. Nobody is watching the run. If you're stuck, write down why on the
-   item (`a-team board {{team}} comment`), move it back if your role can, and carry on with something else.
+   item (`a-team board {{team}} comment`), move it back if your role can, and carry on with
+   something else: for the Lead, the next step; for the Dev, end the run, and the next one takes the next task.
 5. End with a short summary: what moved, what's waiting on the stakeholder, and anything odd.
 
 ## Waiting and the GitHub API

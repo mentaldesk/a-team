@@ -46,6 +46,10 @@ $("$ROOT/bin/a-team" board "$TEAM" wip)
 \`\`\`
 
 EOF
+if [ -n "${A_TEAM_RUN_TASK:-}" ]; then
+  printf '## Your task\n\nThis run is for #%s and nothing else. The dispatcher picked it, and claimed it if it was Ready.\n\n' \
+    "$A_TEAM_RUN_TASK"
+fi
 sed "s/{{team}}/$TEAM/g" "$ROOT/process.md"
 echo
 sed "s/{{team}}/$TEAM/g" "$ROOT/roles/$ROLE.md"

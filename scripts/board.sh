@@ -617,6 +617,14 @@ depend_note() {
   printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
 }
 
+# own_task <role> <n>: a Dev run started for one task touches only that task and its PR.
+own_task() {
+  local task=${A_TEAM_RUN_TASK:-}
+  [ "$1" = dev ] && [ -n "$task" ] && [ "$2" != "$task" ] || return 0
+  [ "$(pr_for "$task" | jq -r '.number // empty')" = "$2" ] ||
+    die "this run is for #$task: leave #$2 to a run of its own"
+}
+
 BLOCKED='((.labels | index("blocked")) or .blockedBy > 0)'
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
@@ -658,6 +666,28 @@ case "$CMD" in
 
   next)
     items | jq "map(select($STARTABLE))" | by_priority | jq first
+    ;;
+
+  claim)
+    [ $# -ge 1 ] && [ $# -le 2 ] || die "usage: board.sh $TEAM claim dev [<n>]"
+    [ "$1" = dev ] || die "only dev claims a task"
+    all=$(items)
+    startable=$(jq "map(select($STARTABLE))" <<<"$all" | by_priority)
+    if [ $# -eq 2 ]; then
+      it=$(jq --argjson n "$2" 'map(select(.number == $n)) | first // empty' <<<"$startable")
+      [ -n "$it" ] || die "#$2 isn't a Ready task the Dev can start: it's claimed, blocked or not Ready"
+    else
+      it=$(jq 'first // empty' <<<"$startable")
+      [ -n "$it" ] || { echo null; exit 0; }
+    fi
+    used=$(jq "[.[] | select($WORKING)] | length" <<<"$all")
+    limit=$(cfg .wip.worktrees)
+    [ "$used" -lt "$limit" ] || { [ "$used" -lt $((limit + 1)) ] && [ "$(jq -r .priority <<<"$it")" = Urgent ]; } ||
+      die "no free worktree for #$(jq -r .number <<<"$it") ($used in use, wip.worktrees is $limit)"
+    n=$(jq -r .number <<<"$it")
+    write "label #$n a-team:dev" gh issue edit "$n" -R "$REPO" --add-label a-team:dev >/dev/null
+    set_status "$(jq -r .id <<<"$it")" "In progress"
+    jq -c '{number, title}' <<<"$it"
     ;;
 
   lead-next)
@@ -709,6 +739,7 @@ case "$CMD" in
     from=$(jq -r .status <<<"$it")
     label=$(own_label "$role")
     allowed "$role" "$from" "$to" || die "$role may not move #$n from '$from' to '$to'"
+    own_task "$role" "$n"
     if [ "$role" = dev ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       die "dev does not move pitches"
     fi
@@ -861,6 +892,7 @@ case "$CMD" in
     role=$1 n=$2 file=$3
     case "$role" in lead | dev | you) ;; *) die "unknown role '$role' (lead | dev | you)" ;; esac
     [ -f "$file" ] || die "no such file: $file"
+    own_task "$role" "$n"
     # Your comment is feedback the roles still owe an answer: no marker, and no 👀.
     if [ "$role" = you ]; then
       body=$(cat "$file")
@@ -911,6 +943,7 @@ case "$CMD" in
     [ $# -eq 4 ] || die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\""
     role=$1 task=$2 prereq=$3 why=$4
     check_role "$role"
+    own_task "$role" "$task"
     write "block #$task on #$prereq" gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" \
       -F "issue_id=$(gh api "repos/$REPO/issues/$prereq" --jq .id)" >/dev/null
     depend_note "$role" "$task" "Blocked by #$prereq: $why"
@@ -921,6 +954,7 @@ case "$CMD" in
     [ $# -eq 4 ] || die "usage: board.sh $TEAM undepend <role> <task> <prerequisite> \"<why>\""
     role=$1 task=$2 prereq=$3 why=$4
     check_role "$role"
+    own_task "$role" "$task"
     prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
       jq -r --argjson n "$prereq" '[.[] | select(.number == $n) | .id] | first // empty')
     [ -n "$prereq_id" ] || die "#$task is not blocked by #$prereq"
@@ -975,6 +1009,7 @@ case "$CMD" in
     role=$1 n=$2
     check_role "$role"
     [ "$role" = dev ] || die "only dev may unblock a task, and only one it handed back with a question"
+    own_task "$role" "$n"
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a Ready task labelled blocked"
@@ -1065,9 +1100,18 @@ case "$CMD" in
     all=$(items)
     reasons=()
     recent=$(recent_comments)
+    tasks='[]' chores=() ready=
+    # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
+    task_reason() {
+      reasons+=("$3")
+      tasks=$(jq -c --argjson n "$1" --arg title "$2" --arg why "$3" '
+        if any(.[]; .number == $n) then map(if .number == $n then .reasons += [$why] else . end)
+        else . + [{number: $n, title: $title, reasons: [$why]}] end' <<<"$tasks")
+    }
     if [ "$role" = dev ]; then
       while IFS= read -r row; do
         n=$(jq -r .number <<<"$row")
+        title=$(jq -r .title <<<"$row")
         status=$(jq -r .status <<<"$row")
         pr=$(pr_for "$n")
         numbers=("$n")
@@ -1079,28 +1123,28 @@ case "$CMD" in
           verdict=$(jq -r .verdict <<<"$checks")
           # Changes once the rest settle, so a run starts that can re-run a transient failure.
           running=$(jq -r 'if .pending == [] then "" else ", other checks still running" end' <<<"$checks")
-          [ "$verdict" = fail ] && reasons+=("CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')$running")
+          [ "$verdict" = fail ] && task_reason "$n" "$title" "CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')$running"
           [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ] &&
-            reasons+=("PR #$p is green but still a draft")
+            task_reason "$n" "$title" "PR #$p is green but still a draft"
           # UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING fires.
           [ "$(jq -r .mergeable <<<"$pr")" = CONFLICTING ] &&
-            reasons+=("PR #$p conflicts with its base: merge the base branch into it and resolve")
+            task_reason "$n" "$title" "PR #$p conflicts with its base: merge the base branch into it and resolve"
         elif [ "$status" = "In progress" ]; then
-          reasons+=("#$n is In progress but has no PR: an earlier run didn't finish")
+          task_reason "$n" "$title" "#$n is In progress but has no PR: an earlier run didn't finish"
         fi
         for x in "${numbers[@]}"; do
           at=$(feedback_at "$recent" dev "$x")
-          [ -n "$at" ] && reasons+=("stakeholder feedback on #$x ($at)")
+          [ -n "$at" ] && task_reason "$n" "$title" "stakeholder feedback on #$x ($at)"
         done
       done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
 
       held=$(jq -c "map(select($HELD))" <<<"$all")
       if [ "$held" != "[]" ]; then
         talk=$(gated_talk "$held")
-        while IFS=$'\t' read -r n at; do
-          reasons+=("stakeholder answered the Dev's question on #$n ($at)")
+        while IFS=$'\t' read -r n at title; do
+          task_reason "$n" "$title" "stakeholder answered the Dev's question on #$n ($at)"
         done < <(questions "$held" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" |
-          jq -r '.[] | select(.unread != "") | [.number, .unread] | @tsv')
+          jq -r '.[] | select(.unread != "") | [.number, .unread, .title] | @tsv')
       fi
 
       checkout=$(cfg .checkout)
@@ -1109,22 +1153,24 @@ case "$CMD" in
         while IFS= read -r branch; do
           merged=$(gh api "repos/$REPO/pulls?head=${REPO%/*}:$branch&state=closed&per_page=5" \
             --jq '[.[] | select(.merged_at != null and ((.body // "") | contains("<!-- a-team:dev -->")))][0].number // empty')
-          [ -n "$merged" ] && reasons+=("PR #$merged has merged: clean up its worktree")
+          [ -n "$merged" ] && chores+=("PR #$merged has merged: clean up its worktree")
         done < <(git -C "$checkout" worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
       fi
 
       used=$(jq "[.[] | select($WORKING)] | length" <<<"$all")
       limit=$(cfg .wip.worktrees)
       startable=$(jq "[.[] | select($STARTABLE)]" <<<"$all")
-      ready=$(jq -r '.[0].number // empty' <<<"$startable")
-      if [ -n "$ready" ]; then
+      first=$(jq -r '.[0].number // empty' <<<"$startable")
+      if [ -n "$first" ]; then
         if [ "$used" -lt "$limit" ]; then
+          ready=$first
           reasons+=("Ready task available (e.g. #$ready) and a free worktree")
         elif [ "$used" -lt $((limit + 1)) ]; then
-          urgent=$(by_priority <<<"$startable" | jq -r '[.[] | select(.priority == "Urgent")][0].number // empty')
-          [ -n "$urgent" ] && reasons+=("Ready task available (e.g. #$urgent, Urgent) and a fast-track worktree ($used in use, $((limit + 1)) allowed while an Urgent task is Ready)")
+          ready=$(by_priority <<<"$startable" | jq -r '[.[] | select(.priority == "Urgent")][0].number // empty')
+          [ -n "$ready" ] && reasons+=("Ready task available (e.g. #$ready, Urgent) and a fast-track worktree ($used in use, $((limit + 1)) allowed while an Urgent task is Ready)")
         fi
       fi
+      reasons+=(${chores[@]+"${chores[@]}"})
       creative=false
     else
       while IFS= read -r row; do
@@ -1159,7 +1205,12 @@ case "$CMD" in
       { [ "$exploring" -lt "$(cfg .wip.exploring)" ] && [ "$ideas" -gt 0 ]; } ||
         [ "$found" -lt "$(cfg .wip.ideas)" ] && creative=true
     fi
-    jq -n --argjson creative "$creative" '{reasons: $ARGS.positional, creative: $creative}' \
+    jq -n --argjson creative "$creative" --arg role "$role" --argjson tasks "$tasks" --arg ready "$ready" \
+      --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" '
+      {reasons: $ARGS.positional, creative: $creative}
+      + if $role == "dev"
+        then {tasks: $tasks, ready: (if $ready == "" then null else $ready | tonumber end), chores: $chores}
+        else {} end' \
       --args "${reasons[@]+"${reasons[@]}"}"
     ;;
 

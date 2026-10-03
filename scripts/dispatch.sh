@@ -21,8 +21,8 @@ log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
 
 dispatch() {
   local team=$1 role=$2 config=$3
-  local dir="$STATE/$team/$role" now pid started triggers reasons creative last fingerprint
-  local sweep='' prefix=''
+  local dir="$STATE/$team/$role" now pid started triggers reasons creative last what
+  local sweep='' prefix='' task='' number=''
   $DRY_RUN && prefix="dry-"
   mkdir -p "$dir/logs"
   now=$(date +%s)
@@ -46,28 +46,32 @@ dispatch() {
     return
   fi
   [ -z "$sweep" ] || echo "$now" >"$dir/${prefix}last-sweep"
-  reasons=$(jq -r '.reasons[]' <<<"$triggers")
-  creative=$(jq -r .creative <<<"$triggers")
   last=$(cat "$dir/${prefix}last-start" 2>/dev/null || echo 0)
 
-  if [ -z "$reasons" ]; then
-    [ "$creative" = true ] && [ $((now - last)) -ge $(($(cfg '.dispatch.creativeEvery // 180') * 60)) ] ||
-      return
-    reasons="it's been a while: time to pitch or discover"
-  fi
-
-  fingerprint=$(shasum <<<"$reasons" | cut -c1-12)
-  if [ "$fingerprint" = "$(cat "$dir/${prefix}fingerprint" 2>/dev/null)" ] &&
-    [ $((now - last)) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] &&
-    { $DRY_RUN || grep -q '"type":"result"' "$dir/latest.jsonl" 2>/dev/null; }; then
-    return
+  if [ "$role" = dev ]; then
+    task=$(pick_task "$team" "$dir" "$triggers") || return
+    [ -n "$task" ] || return
+    reasons=$(jq -r '.reasons[]' <<<"$task"; jq -r '.chores[]?' <<<"$triggers")
+    task=$(jq -c '{number, title}' <<<"$task")
+    number=$(jq -r .number <<<"$task")
+  else
+    reasons=$(jq -r '.reasons[]' <<<"$triggers")
+    creative=$(jq -r .creative <<<"$triggers")
+    if [ -z "$reasons" ]; then
+      [ "$creative" = true ] && [ $((now - last)) -ge $(($(cfg '.dispatch.creativeEvery // 180') * 60)) ] ||
+        return
+      reasons="it's been a while: time to pitch or discover"
+    fi
+    fresh "$dir/${prefix}fingerprint" "$reasons" || return
   fi
   echo "$now" >"$dir/${prefix}last-start"
-  echo "$fingerprint" >"$dir/${prefix}fingerprint"
   printf '%s\n' "$reasons" >"$dir/${prefix}last-reasons"
+  if [ -n "$task" ]; then echo "$task" >"$dir/${prefix}task"; else rm -f "$dir/${prefix}task"; fi
+  what=$(paste -sd ';' - <<<"$reasons")
+  [ -z "$number" ] || what="#$number: $what"
 
   if $DRY_RUN; then
-    log "$team $role: would start: $(paste -sd ';' - <<<"$reasons")"
+    log "$team $role: would start: $what"
     return
   fi
 
@@ -78,13 +82,15 @@ dispatch() {
   settings="$dir/settings.json"
   sed "s|{{root}}|/$ROOT|g" "$ROOT/settings/agents.json" >"$settings"
   prompt="$("$ROOT/bin/a-team" task-prompt "$team" "$role")
-
+${number:+
+This run is for #$number $(jq -r .title <<<"$task"), and only that task.
+}
 This run was started because:
 $(sed 's/^/- /' <<<"$reasons")"
 
   (
     cd "$workdir" || exit 1
-    PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM="$team" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
+    PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM="$team" A_TEAM_RUN_TASK="$number" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
       --permission-mode auto --permission-prompts none \
       --settings "$settings" \
       --name "a-team · $team · $role" \
@@ -93,7 +99,37 @@ $(sed 's/^/- /' <<<"$reasons")"
     echo $! >"$dir/pid"
   )
   ln -sf "$logfile" "$dir/latest.jsonl"
-  log "$team $role: started $(cat "$dir/pid"): $(paste -sd ';' - <<<"$reasons")"
+  log "$team $role: started $(cat "$dir/pid"): $what"
+}
+
+# fresh <file> <reasons>: whether these reasons are worth a run. The same ones as last time wait
+# retryAfter, unless that run died before finishing. <file> holds "<fingerprint> <started>".
+fresh() {
+  local fingerprint tried at
+  fingerprint=$(shasum <<<"$2" | cut -c1-12)
+  read -r tried at 2>/dev/null <"$1"
+  if [ "$fingerprint" = "${tried:-}" ] && [ $((now - ${at:-0})) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] &&
+    { $DRY_RUN || grep -q '"type":"result"' "$dir/latest.jsonl" 2>/dev/null; }; then
+    return 1
+  fi
+  echo "$fingerprint $now" >"$1"
+}
+
+# pick_task <team> <dir> <triggers>: the one task a Dev run is for, as {number, title, reasons}.
+# A task already in hand comes first; only then is a Ready task claimed, before the run starts.
+pick_task() {
+  local row claimed
+  mkdir -p "$2/${prefix}tried"
+  while IFS= read -r row; do
+    fresh "$2/${prefix}tried/$(jq -r .number <<<"$row")" "$(jq -r '.reasons[]' <<<"$row")" &&
+      { echo "$row"; return; }
+  done < <(jq -c '.tasks[]?' <<<"$3")
+  [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
+  if ! claimed=$("$ROOT/bin/a-team" board ${prefix:+--dry-run} "$1" claim dev 2>"$2/claim.err"); then
+    log "$1 dev: claim failed: $(tr '\n' ' ' <"$2/claim.err")"
+    return 1
+  fi
+  [ "$claimed" = null ] || jq -c '. + {reasons: ["Ready task #\(.number) to build"]}' <<<"$claimed"
 }
 
 # cannot_run <team> <config>: why the team can't run, if it can't. It runs only as its own App.

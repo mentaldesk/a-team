@@ -61,6 +61,55 @@ public class AgentPaneTests : IDisposable
                 AgentPane.Header("a-team · dev", true, status, true, false, style).Icons.GetColumns());
         });
 
+    [Fact]
+    public void A_dev_run_bound_to_a_task_names_it_and_any_other_run_keeps_the_bare_name()
+    {
+        Assert.Equal("a-team · dev · #244 Choose whose comments", AgentPane.Name("a-team", "dev", new RunTask(244, "Choose whose comments")));
+        Assert.Equal("a-team · dev", AgentPane.Name("a-team", "dev", null));
+        Assert.Equal("a-team · lead", AgentPane.Name("a-team", "lead", null));
+    }
+
+    [Fact]
+    public void A_title_too_long_for_its_pane_cuts_the_name_and_keeps_the_icons_and_markers()
+    {
+        var title = AgentPane.Header(
+            "a-team · dev · #244 Choose whose comments count", true, PaneStatus.Running, false, false, IconStyle.Unicode, 40);
+
+        Assert.Equal(40, title.ToString().GetColumns());
+        Assert.EndsWith("… [scrolled]", title.Name);
+        Assert.StartsWith("a-team · dev · #244 Choo", title.Name);
+        Assert.Equal(AgentPane.Header("a-team · dev", true, PaneStatus.Running, false, false, IconStyle.Unicode).Icons, title.Icons);
+    }
+
+    [Fact]
+    public void A_title_that_fits_is_left_whole() =>
+        Assert.Equal(
+            "a-team · dev · #244 Choose",
+            AgentPane.Header("a-team · dev · #244 Choose", false, PaneStatus.Ok, true, false, IconStyle.Unicode, 80).Name);
+
+    [Fact]
+    public void A_pane_names_the_task_its_run_was_started_for()
+    {
+        using var pane = Open("""{"type":"system","subtype":"init"}""");
+        File.WriteAllText(Path.Combine(_dir, "task"), """{"number":302,"title":"The Dev pane says which task the run is on"}""");
+
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
+
+        Assert.EndsWith("a-team · dev · #302 The Dev pane says which task the run is on", pane.Title);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not json")]
+    [InlineData("""{"title":"no number"}""")]
+    public void A_task_file_it_cant_read_leaves_the_run_without_one(string text)
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "task"), text);
+
+        Assert.Null(AgentState.ReadTask(Path.Combine(_dir, "task")));
+    }
+
     [Theory]
     [InlineData(true, true, RunVerdict.Error, PaneStatus.Paused)]
     [InlineData(true, false, RunVerdict.Error, PaneStatus.Paused)]
