@@ -192,7 +192,7 @@ case " \$* " in
   *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *sub_issues*) page="$SUBS" ;;
-  *"--remove-label"*) echo "\$*" >>"$WRITES"; exit 0 ;;
+  *"--remove-label"* | *"--add-label"*) echo "\$*" >>"$WRITES"; exit 0 ;;
   *"/labels -f labels[]="*) echo "\$*" >>"$WRITES"; echo '[]'; exit 0 ;;
   *"label list"*) page="$EMPTY" ;;
   *"label create"*) echo "\$*" >>"$WRITES"; exit 0 ;;
@@ -2071,6 +2071,117 @@ run board demo pr 12
 same "exit" 0 "$STATUS"
 same "pr" null "$(cat "$OUT")"
 
+case_ "triggers groups the Dev's reasons by task, and names the Ready task a run could claim"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 3 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 12 A task with its draft PR up
+Ready 13 Something to start
+ITEMS
+gh_pr 912 true
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "tasks" '[{"number":12,"title":"A task with its draft PR up","reasons":["CI failed on PR #912 at deadbee"]}]' \
+  "$(jq -c .tasks "$OUT")"
+same "ready" 13 "$(jq -c .ready "$OUT")"
+same "chores" '[]' "$(jq -c .chores "$OUT")"
+run board demo triggers lead
+same "lead has no tasks" null "$(jq -c .tasks "$OUT")"
+
+# A project whose Status field has the options a claim moves through.
+claimable() {
+  jq '.data.organization.projectV2.field.options += [{id: "OPT_ready", name: "Ready"}, {id: "OPT_progress", name: "In progress"}]' \
+    "$META" >"$META.new" && mv "$META.new" "$META"
+}
+
+case_ "claim moves the next Ready task to In progress and labels it before a run starts"
+gh_items 14 <<'ITEMS'
+Ready 13 Something to start
+Ready 14 Something more pressing
+ITEMS
+claimable
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":14,"title":"Something more pressing"}' "$(cat "$OUT")"
+grep -q 'issue edit 14 -R mentaldesk/demo --add-label a-team:dev' "$WRITES" || fail "claim: no label in '$(cat "$WRITES")'"
+grep -q 'item=PVTI_14 .*option=OPT_progress' "$WRITES" || fail "claim: no move in '$(cat "$WRITES")'"
+
+case_ "claim refuses a task that's already claimed, and claims nothing"
+gh_items <<'ITEMS'
+In_progress 12 Taken by another run
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo claim dev 12
+failed "already claimed"
+one_line "already claimed"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "claim refuses when every worktree is taken, and says null when nothing is Ready"
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+In_progress 15 Three
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo claim dev
+failed "no worktree"
+grep -q "no free worktree for #13" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+gh_items <<'ITEMS'
+In_progress 12 Two
+ITEMS
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "nothing" null "$(cat "$OUT")"
+
+case_ "claim --dry-run prints the claim instead of making it"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+run board --dry-run demo claim dev
+same "exit" 0 "$STATUS"
+same "would claim" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
+grep -q "would label #13 a-team:dev" "$ERR" || fail "dry run: no label in '$(cat "$ERR")'"
+grep -q "would set item PVTI_13 to 'In progress'" "$ERR" || fail "dry run: no move in '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "a run bound to a task can hand it back, and can't touch another"
+gh_items <<'ITEMS'
+In_progress 12 This run's task
+In_progress 16 Another run's task
+ITEMS
+claimable
+gh_pr
+echo 'Which marker?' >"$WORK/question"
+A_TEAM_RUN_TASK=12 run board demo move dev 12 Ready
+same "hand back" 0 "$STATUS"
+A_TEAM_RUN_TASK=12 run board demo depends dev 12 16 "both rewrite the same view"
+same "defer" 0 "$STATUS"
+A_TEAM_RUN_TASK=12 run board demo comment dev 12 "$WORK/question"
+same "ask" 0 "$STATUS"
+: >"$WRITES"
+: >"$POSTED"
+A_TEAM_RUN_TASK=12 run board demo move dev 16 Ready
+failed "other task"
+grep -q "this run is for #12: leave #16 to a run of its own" "$ERR" || fail "other task: '$(cat "$ERR")'"
+A_TEAM_RUN_TASK=12 run board demo comment dev 16 "$WORK/question"
+failed "other comment"
+A_TEAM_RUN_TASK=12 run board demo depends dev 16 12 "the other way round"
+failed "other depends"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+gh_pr 912 true
+A_TEAM_RUN_TASK=12 run board demo comment dev 912 "$WORK/question"
+same "its own PR" 0 "$STATUS"
+
 # --- a-team try -----------------------------------------------------------------------------
 # A throwaway origin holding main and one PR head, a checkout cloned from it that has only main,
 # and a config pointing workdir and checkout at them. `try_fixture [<try command>]`.
@@ -2507,6 +2618,102 @@ A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch: the lead wasn't started"
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the paused dev was started"
+A_TEAM_STATE=$A_TEAM_STATE_WAS
+
+# A dispatcher whose a-team answers `triggers dev` with $DEV_TRIGGERS, records each claim, and
+# claims $CLAIMED. `task-prompt` is one line, and the Lead never has anything to do.
+dev_dispatcher() {
+  DISPATCH=$(mktemp -d "$WORK/dispatch.XXXXXX")
+  mkdir -p "$DISPATCH/bin" "$DISPATCH/scripts"
+  cp "$ROOT"/scripts/*.sh "$DISPATCH/scripts/"
+  cp -R "$ROOT/settings" "$DISPATCH/"
+  CLAIMS="$DISPATCH/claims" DEV_TRIGGERS="$DISPATCH/triggers.json" CLAIMED="$DISPATCH/claimed.json"
+  : >"$CLAIMS"
+  echo null >"$CLAIMED"
+  cat >"$DISPATCH/bin/a-team" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" claim dev "*) echo "\$*" >>"$CLAIMS"; cat "$CLAIMED" ;;
+  *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
+  *" triggers lead"*) echo '{"reasons": [], "creative": false}' ;;
+  *" task-prompt "*) echo "Run one shift." ;;
+esac
+SH
+  chmod +x "$DISPATCH/bin/a-team"
+  A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+}
+dispatch_dev() { A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/dispatch.sh" "$@"; }
+
+case_ "a run for a task already in hand claims nothing new, and names its task"
+A_TEAM_STATE_WAS=$A_TEAM_STATE
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "dispatch": { "enabled": true } }
+JSON
+dev_dispatcher
+jq -n '{reasons: ["CI failed on PR #912 at deadbee", "Ready task available (e.g. #13) and a free worktree"], creative: false,
+        tasks: [{number: 12, title: "Fix the pane", reasons: ["CI failed on PR #912 at deadbee"]}],
+        ready: 13, chores: ["PR #900 has merged: clean up its worktree"]}' >"$DEV_TRIGGERS"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start: #12: CI failed on PR #912 at deadbee;PR #900 has merged: clean up its worktree' \
+  "$A_TEAM_STATE/dispatch.log" || fail "in hand: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "claims" "" "$(cat "$CLAIMS")"
+same "task" '{"number":12,"title":"Fix the pane"}' "$(cat "$A_TEAM_STATE/demo/dev/dry-task")"
+
+case_ "the same reasons again wait, and the next task with something new gets the run"
+jq '.tasks += [{number: 14, title: "Answer the review", reasons: ["stakeholder feedback on #914 (2025-09-19T09:00:00Z)"]}]' \
+  "$DEV_TRIGGERS" >"$DEV_TRIGGERS.new" && mv "$DEV_TRIGGERS.new" "$DEV_TRIGGERS"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start: #14: stakeholder feedback on #914' "$A_TEAM_STATE/dispatch.log" ||
+  fail "next task: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+grep -q 'claim dev' "$CLAIMS" || fail "with both waiting, the Ready task wasn't claimed"
+
+case_ "with nothing in hand, a Ready task is claimed before the run starts"
+dev_dispatcher
+jq -n '{reasons: ["Ready task available (e.g. #13) and a free worktree"], creative: false, tasks: [], ready: 13, chores: []}' \
+  >"$DEV_TRIGGERS"
+echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
+dispatch_dev --dry-run
+same "claims" "board --dry-run demo claim dev" "$(cat "$CLAIMS")"
+grep -q 'demo dev: would start: #13: Ready task #13 to build' "$A_TEAM_STATE/dispatch.log" ||
+  fail "claimed: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "why" "Ready task #13 to build" "$(cat "$A_TEAM_STATE/demo/dev/dry-last-reasons")"
+
+case_ "a claim that's refused starts nothing, and says why"
+sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: no free worktree for #13" >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+grep -q 'demo dev: claim failed: board.sh: no free worktree for #13' "$A_TEAM_STATE/dispatch.log" ||
+  fail "refused: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+grep -q 'would start' "$A_TEAM_STATE/dispatch.log" && fail "refused: a run started"
+
+case_ "merged worktrees alone start no Dev run"
+dev_dispatcher
+jq -n '{reasons: ["PR #900 has merged: clean up its worktree"], creative: false, tasks: [], ready: null,
+        chores: ["PR #900 has merged: clean up its worktree"]}' >"$DEV_TRIGGERS"
+dispatch_dev --dry-run
+grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" 2>/dev/null && fail "chores: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+
+case_ "the run's task reaches its prompt, its environment and the state the dashboard reads"
+WORKDIR=$(mktemp -d "$WORK/workdir.XXXXXX")
+jq --arg w "$WORKDIR" '.workdir = $w' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
+echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
+LAUNCHED="$DISPATCH/launched"
+cat >"$DISPATCH/bin/claude" <<SH
+#!/usr/bin/env bash
+{ echo "task: \$A_TEAM_RUN_TASK"; printf '%s\n' "\$2"; } >"$LAUNCHED"
+SH
+chmod +x "$DISPATCH/bin/claude"
+dispatch_dev
+for _ in $(seq 50); do [ -s "$LAUNCHED" ] && break; sleep 0.1; done
+same "claims" "board demo claim dev" "$(cat "$CLAIMS")"
+same "env" "task: 13" "$(sed -n 1p "$LAUNCHED")"
+grep -q '^This run is for #13 Something to start, and only that task.$' "$LAUNCHED" ||
+  fail "prompt: '$(cat "$LAUNCHED")'"
+same "state" '{"number":13,"title":"Something to start"}' "$(cat "$A_TEAM_STATE/demo/dev/task")"
 A_TEAM_STATE=$A_TEAM_STATE_WAS
 
 case_ "pause --dry-run <team> <role> says it would hold the role, and doesn't"

@@ -1,5 +1,6 @@
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
@@ -33,7 +34,7 @@ public sealed class AgentPane : FrameView
     private static readonly string ErrorScheme = SchemeManager.SchemesToSchemeName(Schemes.Error)!;
 
     private readonly string _stateDir;
-    private readonly string _name;
+    private string _name;
     private readonly SessionLog _log = new();
     private readonly Label _statusRow;
     private readonly Label _why;
@@ -54,6 +55,7 @@ public sealed class AgentPane : FrameView
         _body = new LogView { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(), Expanded = expandToolCalls };
         Add(_statusRow, _why, _body);
         HasFocusChanged += (_, _) => UpdateHeader();
+        FrameChanged += (_, _) => UpdateHeader();
         UpdateHeader();
     }
 
@@ -111,6 +113,7 @@ public sealed class AgentPane : FrameView
         Paused = paused;
         Running = state.Running;
         Held = held;
+        _name = Name(Team, Role, state.Task);
 
         if (_log.Refresh(state.LogPath))
             _body.Lines = _log.Lines.Count == 0
@@ -128,7 +131,7 @@ public sealed class AgentPane : FrameView
 
     private void UpdateHeader()
     {
-        var title = Header(_name, HasFocus, _status, _body.Following, _body.Expanded, _icons).ToString();
+        var title = Header(_name, HasFocus, _status, _body.Following, _body.Expanded, _icons, Frame.Width > 0 ? Frame.Width - TitleMargin : int.MaxValue).ToString();
         if (Title != title)
             Title = title;
         if (_statusRow.Text != _timing)
@@ -159,11 +162,24 @@ public sealed class AgentPane : FrameView
                 _ => state.LastStart is null ? PaneStatus.NeverRun : PaneStatus.CutShort,
             };
 
+    /// <summary>The border's corners and the space either side of the title.</summary>
+    private const int TitleMargin = 4;
+
+    internal static string Name(string team, string role, RunTask? task) =>
+        task is null ? $"{team} · {role}" : $"{team} · {role} · #{task.Number} {task.Title}";
+
+    /// <summary>The name gives way to fit <paramref name="width"/>; the icons and the view markers never do.</summary>
     internal static PaneTitle Header(
-        string name, bool selected, PaneStatus status, bool following, bool expanded, IconStyle style) =>
-        new(
-            (selected ? Icons.Field(Icon.Selected, style) : "") + Icons.Field(Icons.For(status), style),
-            $"{name}{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}");
+        string name, bool selected, PaneStatus status, bool following, bool expanded, IconStyle style,
+        int width = int.MaxValue)
+    {
+        var icons = (selected ? Icons.Field(Icon.Selected, style) : "") + Icons.Field(Icons.For(status), style);
+        var markers = $"{(expanded ? " [tool calls]" : "")}{(following ? "" : " [scrolled]")}";
+        return new(icons, Elide(name, width - icons.GetColumns() - markers.Length) + markers);
+    }
+
+    private static string Elide(string text, int width) =>
+        width < 1 ? "" : text.Length <= width ? text : string.Concat(text.AsSpan(0, width - 1), "…");
 
     /// <summary>A failed run reddens the frame and the status row; only the body is never red.</summary>
     internal static PaneSchemes SchemesFor(PaneStatus status, string timing)
