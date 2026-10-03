@@ -77,7 +77,8 @@ Handover? Show(Handover? back)
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
         (item, body) => PriorityDialog.Show(app, item, body),
-        (item, body, onGitHub, onApprove, accept) => ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept),
+        (item, body, onGitHub, onApprove, accept, comment) =>
+            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>
@@ -88,7 +89,8 @@ Handover? Show(Handover? back)
         back is TeamsChanged ? null : back,
         start,
         item => command.Read("board", item.Team, "conversation", item.Number.ToString()),
-        item => AcceptDialog.Show(app, item));
+        item => AcceptDialog.Show(app, item),
+        askComment: (item, post) => CommentDialog.Show(app, item, post));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

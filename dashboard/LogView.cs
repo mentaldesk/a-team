@@ -36,6 +36,9 @@ public sealed class LogView : View
         set
         {
             _lines = value;
+            // Before anything scrolls: a viewport past the old content gets clamped back, and stops following.
+            if (Viewport.Height > 0)
+                Fit();
             SetNeedsDraw();
         }
     }

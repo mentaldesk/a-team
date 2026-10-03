@@ -23,6 +23,8 @@ public class ReaderDialogTests
         | Reader | low  |
         """;
 
+    private static readonly Remark Said = new("you", DateTimeOffset.UnixEpoch, "Shelve it until #150 lands.");
+
     private static readonly WaitingItem Item =
         new(180, "The dashboard tells me a pitch needs me", "Pitched", "https://github.com/x/180", "a-team",
             "you", "awaiting your approval since 22:25");
@@ -162,6 +164,71 @@ public class ReaderDialogTests
         Assert.False(dialog.NewKeyDownEvent(new Key('A')));
         Assert.True(dialog.NewKeyDownEvent(new Key('z')));
         Assert.Equal(1, ran);
+    }
+
+    [Fact]
+    public void Comment_sits_after_approve_and_before_GitHub()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { }, () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => null));
+        dialog.Layout(new Size(80, 20));
+
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · a approve · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Without_a_pitch_to_approve_comment_is_still_offered()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => null));
+        dialog.Layout(new Size(80, 20));
+
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void A_posted_comment_leaves_the_reader_open_saying_so()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => Said));
+        dialog.Layout(new Size(60, 10));
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
+
+        Assert.Equal("commented on #180", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void A_posted_comment_joins_the_end_of_the_conversation_in_view()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => Said));
+        dialog.Layout(new Size(60, 10));
+        var before = dialog.Body.Lines.Count;
+
+        dialog.NewKeyDownEvent(new Key('c'));
+        dialog.Layout(new Size(60, 10));
+
+        var added = dialog.Body.Lines.Skip(before).Select(line => line.Text).ToList();
+        Assert.Contains(Said.Heading, added);
+        Assert.Equal("Shelve it until #150 lands.", added[^1]);
+        var top = dialog.Body.Top;
+        dialog.NewKeyDownEvent(Key.End);
+        dialog.Layout(new Size(60, 10));
+        Assert.Equal(dialog.Body.Top, top);
+    }
+
+    [Fact]
+    public void A_cancelled_comment_says_nothing()
+    {
+        var asked = 0;
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => ++asked < 0 ? Said : null));
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
+
+        Assert.Equal(1, asked);
+        Assert.Equal("", dialog.Message.Says);
     }
 
     [Fact]
