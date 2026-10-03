@@ -593,6 +593,163 @@ public class WorkViewTests
         Assert.Equal(view.Lanes[0].Frame.Bottom, view.Lanes[1].Frame.Y);
     }
 
+    [Theory]
+    [InlineData("conflicts with main", 122, false)]
+    [InlineData("CI failing", 122, false)]
+    [InlineData("CI running", 122, false)]
+    [InlineData("still a draft", 122, false)]
+    [InlineData("", 0, false)]
+    [InlineData("", 122, true)]
+    public void Review_holds_a_task_only_when_its_PR_can_be_merged(string unready, int pr, bool held)
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([Reviewing(244, unready, pr)]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[3];
+        Assert.Equal(held ? 1 : 0, review.Count);
+        Assert.Equal(held, review.Summary.Length == 0);
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(2, false)]
+    public void Review_holds_a_validated_pitch_only_once_its_tasks_are_closed(int open, bool held)
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new WaitingItem(174, "Accepting finished work", "In review", "https://github.com/x/174", "a-team",
+            "you", "awaiting your acceptance", Pitch: true, Tasks: 3, OpenTasks: open)]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(held ? 1 : 0, view.Lanes[0].Columns[3].Count);
+        Assert.Equal(held ? "" : "1 with the Dev: #174 has 2 open tasks", view.Lanes[0].Columns[3].Summary);
+    }
+
+    [Fact]
+    public void A_clean_card_the_Dev_owes_a_reply_on_stays_in_Review()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([Waiting[2]]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal("Review · 1", view.Lanes[0].Columns[3].Title);
+        Assert.Equal("", view.Lanes[0].Columns[3].Summary);
+    }
+
+    [Fact]
+    public void Review_sums_up_what_the_Dev_is_still_fixing_under_its_cards_and_counts_only_the_rest()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([Waiting[2], Reviewing(244, "conflicts with main"), Reviewing(246, "CI running")]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[3];
+        Assert.Equal("Review · 1", review.Title);
+        Assert.Equal("2 with the Dev: #244 conflicts with main · #246 CI running", review.Summary);
+        Assert.Equal(review.Nodes + 1, review.Lines);
+    }
+
+    [Theory]
+    [InlineData(1, 100, "1 with the Dev: #244 conflicts with main")]
+    [InlineData(2, 100, "2 with the Dev: #244 conflicts with main · #246 CI running")]
+    [InlineData(2, 30, "2 with the Dev: #244 conflict…")]
+    public void The_summary_names_each_one_and_is_cut_to_fit(int count, int width, string says)
+    {
+        WaitingItem[] aside = [Reviewing(244, "conflicts with main"), Reviewing(246, "CI running")];
+
+        Assert.Equal(says, WorkColumn.Summarise([.. aside.Take(count)], width));
+    }
+
+    [Fact]
+    public void The_summary_is_cut_to_the_column_it_is_drawn_in()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([Waiting[2], Reviewing(244, "conflicts with main"), Reviewing(246, "CI running"), Reviewing(247, "CI failing")]);
+        LayOut(view, 40, 20);
+
+        var summary = view.Lanes[0].Columns[3].Summary;
+        Assert.EndsWith("…", summary);
+        Assert.True(summary.Length <= 40);
+    }
+
+    [Fact]
+    public void A_team_with_only_tasks_the_Dev_is_fixing_still_shows_Review_holding_just_the_summary()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([Reviewing(244, "conflicts with main")]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[3];
+        Assert.True(review.Visible);
+        Assert.Equal("Review · 0", review.Title);
+        Assert.Equal(0, review.Nodes);
+        Assert.Equal(1, review.Lines);
+    }
+
+    [Fact]
+    public void The_keyboard_never_lands_on_the_summary()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show([Waiting[2], Reviewing(244, "conflicts with main"),
+            Reviewing(246, "CI running") with { Team = "tuicode" }, Waiting[3]]);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveColumn(1);
+        Assert.Equal(49, view.Selected?.Number);
+
+        view.MoveCard(1);
+        Assert.True(view.SelectedUrl?.EndsWith("/pull/122"));
+        view.MoveCard(1);
+        Assert.Equal(133, view.Selected?.Number);
+        Assert.Equal("Pitches · tuicode", view.Region);
+
+        view.MoveColumn(1);
+        Assert.Equal("Pitches · tuicode", view.Region);
+    }
+
+    [Fact]
+    public void Focus_skips_a_Review_column_holding_just_the_summary()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show([Reviewing(244, "conflicts with main"), Waiting[3]]);
+        LayOut(view, 120, 20);
+
+        view.FocusFirstCard();
+
+        Assert.Equal("Pitches · tuicode", view.Region);
+    }
+
+    [Fact]
+    public void Once_the_Dev_has_fixed_it_a_re_read_brings_the_card_back_and_keeps_the_selection()
+    {
+        using var view = Open(["a-team"]);
+        view.Show([Reviewing(244, "conflicts with main"), Reviewing(246, "")]);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        Assert.Equal(246, view.Selected?.Number);
+
+        view.Show([Reviewing(244, ""), Reviewing(246, "")]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[3];
+        Assert.Equal("Review · 2", review.Title);
+        Assert.Equal("", review.Summary);
+        Assert.Equal(review.Nodes, review.Lines);
+        Assert.Equal(246, view.Selected?.Number);
+    }
+
+    private static WaitingItem Reviewing(int number, string unready, int pr = 122) =>
+        new(number, $"Task {number}", "In review", $"https://github.com/x/{number}", "a-team",
+            unready.Length > 0 ? "dev" : "you", unready.Length > 0 ? unready : "awaiting your acceptance",
+            Pr: pr, PrUrl: pr == 0 ? "" : $"https://github.com/x/pull/{pr + number}", Trouble: unready,
+            Unready: unready);
+
     private static WorkView Open(string[] teams)
     {
         var view = new WorkView(teams);

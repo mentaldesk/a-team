@@ -49,7 +49,7 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null)
     }
 
     /// <summary>Cut a char earlier again rather than through a surrogate pair, which would leave half a rune.</summary>
-    private static string Elide(string text, int width)
+    internal static string Elide(string text, int width)
     {
         if (width <= 0 || text.Length <= width)
             return text;

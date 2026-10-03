@@ -1141,16 +1141,17 @@ public class WorkAreaTests : IDisposable
     }
 
     [Theory]
-    [InlineData("CI failing")]
-    [InlineData("conflicts with main")]
-    [InlineData("CI running")]
-    [InlineData("still a draft")]
-    public void A_on_a_PR_in_trouble_asks_nothing_and_says_what_the_card_says(string trouble)
+    [InlineData("CI failing", 122, "#49 CI failing")]
+    [InlineData("conflicts with main", 122, "#49 conflicts with main")]
+    [InlineData("CI running", 122, "#49 CI running")]
+    [InlineData("still a draft", 122, "#49 still a draft")]
+    [InlineData("", 0, "#49 no PR to merge")]
+    public void A_task_the_Dev_is_still_fixing_is_no_card_so_A_merges_nothing(string trouble, int pr, string says)
     {
         var asked = 0;
         var calls = new List<string[]>();
         using var window = Open(
-            read: team => Task.FromResult(new Reading(team == "team0" ? Review(trouble) : "[]", null)),
+            read: team => Task.FromResult(new Reading(team == "team0" ? Review(trouble, pr) : "[]", null)),
             run: arguments =>
             {
                 calls.Add(arguments);
@@ -1163,26 +1164,11 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(new Key('a'));
         window.Refresh();
 
+        Assert.Null(window.Work.Selected);
         Assert.Equal(0, asked);
         Assert.Empty(calls);
-        Assert.Equal($"#49 · {trouble}", window.Message.Says);
-    }
-
-    [Fact]
-    public void A_task_with_no_PR_has_nothing_to_merge()
-    {
-        var asked = 0;
-        using var window = Open(
-            read: team => Task.FromResult(new Reading(team == "team0" ? Review(pr: 0) : "[]", null)),
-            confirmAccept: _ => ++asked > 0);
-        window.Refresh();
-        LayOut(window, 120, 30);
-
-        window.NewKeyDownEvent(new Key('a'));
-        window.Refresh();
-
-        Assert.Equal(0, asked);
-        Assert.Equal("#49 · no PR to merge", window.Message.Says);
+        Assert.Contains("Review · 0", Titles(window));
+        Assert.Equal($"1 with the Dev: {says}", window.Work.Lanes[0].Columns[3].Summary);
     }
 
     [Fact]
@@ -1220,7 +1206,7 @@ public class WorkAreaTests : IDisposable
     [Theory]
     [InlineData(2, "#174 has 2 open tasks")]
     [InlineData(1, "#174 has 1 open task")]
-    public void A_on_a_pitch_with_open_tasks_asks_nothing_and_says_how_many(int open, string says)
+    public void A_pitch_with_open_tasks_is_no_card_so_A_closes_nothing(int open, string says)
     {
         var asked = 0;
         var calls = new List<string[]>();
@@ -1240,7 +1226,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(0, asked);
         Assert.Empty(calls);
-        Assert.Equal(says, window.Message.Says);
+        Assert.Equal($"1 with the Dev: {says}", window.Work.Lanes[0].Columns[3].Summary);
     }
 
     [Fact]
@@ -1261,24 +1247,6 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(174, window.Work.Selected?.Number);
         Assert.Equal("board.sh: can't close #174 (gh: Resource not accessible (HTTP 403))", window.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
-    }
-
-    [Fact]
-    public void The_reader_greys_accept_on_a_pitch_with_open_tasks()
-    {
-        ReaderCommand? offered = null;
-        using var window = Open(
-            read: team => Task.FromResult(new Reading(team == "team0" ? ReviewPitch(2) : "[]", null)),
-            readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, _, accept, _) => offered = accept,
-            confirmAccept: _ => true);
-        window.Refresh();
-        LayOut(window, 120, 30);
-
-        window.NewKeyDownEvent(Key.Enter);
-        window.Refresh();
-
-        Assert.False(offered?.Enabled);
     }
 
     [Fact]
@@ -1360,31 +1328,6 @@ public class WorkAreaTests : IDisposable
         Assert.Equal([true], closes);
         Assert.Equal([["board", "team0", "accept", "you", "49"]], calls);
         Assert.Equal("merged PR #122", window.Message.Says);
-    }
-
-    [Fact]
-    public void The_reader_greys_accept_on_a_PR_in_trouble_and_stays_open_saying_why()
-    {
-        var closes = new List<bool>();
-        ReaderCommand? offered = null;
-        using var window = Open(
-            read: team => Task.FromResult(new Reading(team == "team0" ? Review("CI failing") : "[]", null)),
-            readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, _, accept, _) =>
-            {
-                offered = accept;
-                closes.Add(accept!.Run());
-            },
-            confirmAccept: _ => true);
-        window.Refresh();
-        LayOut(window, 120, 30);
-
-        window.NewKeyDownEvent(Key.Enter);
-        window.Refresh();
-
-        Assert.False(offered?.Enabled);
-        Assert.Equal([false], closes);
-        Assert.Equal("#49 · CI failing", window.Message.Says);
     }
 
     [Fact]
