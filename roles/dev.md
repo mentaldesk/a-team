@@ -74,8 +74,8 @@ alone.
 Your task is In progress with no PR: either just claimed, or an earlier run didn't finish it.
 
 1. Judge whether it would make major changes to the same file or the same part of the code as
-   one of your open PRs; two unrelated changes that only brush a shared file run in parallel. If
-   it would collide, defer it behind that PR's task with
+   one of your open PRs, or another task the Dev has In progress; two unrelated changes that only
+   brush a shared file run in parallel. If it would collide, defer it behind that task with
    `a-team board {{team}} depends dev <n> <prerequisite> "<why>"`, move it back with
    `a-team board {{team}} move dev <n> Ready`, and end the run. The block clears itself when that
    PR merges, so there is nothing to undo and nothing to ask the stakeholder; if the deferral

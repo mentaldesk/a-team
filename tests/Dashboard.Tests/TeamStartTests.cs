@@ -40,7 +40,7 @@ public class TeamStartTests : IDisposable
 
         Assert.Equal(("", "", (int?)null, "", ""), (settings.Repo, settings.ProjectOwner, settings.ProjectNumber, settings.Workdir, settings.Try));
         Assert.Equal("docs/vision.md", settings.Vision);
-        Assert.Equal((3, 3, 6, 6, 3), (settings.Worktrees, settings.Pitched, settings.Exploring, settings.Ideas, settings.ReadyFloor));
+        Assert.Equal((3, 2, 3, 6, 6, 3), (settings.Worktrees, settings.Devs, settings.Pitched, settings.Exploring, settings.Ideas, settings.ReadyFloor));
         Assert.Equal(["jamescrosswell"], settings.Stakeholders);
         Assert.Empty(settings.Skills);
         Assert.False(settings.Working);

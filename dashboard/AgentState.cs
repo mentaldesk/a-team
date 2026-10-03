@@ -6,22 +6,44 @@ namespace ATeam.Dashboard;
 /// <summary>The one task a Dev run was started for.</summary>
 public sealed record RunTask(int Number, string Title);
 
+/// <summary>A Dev run still going besides the one the pane shows.</summary>
+public sealed record OtherRun(RunTask? Task, DateTimeOffset? Started);
+
 /// <summary>What the dispatcher has recorded about one role: see scripts/dispatch.sh.</summary>
 public sealed record AgentState(
     bool Running, DateTimeOffset? LastStart, IReadOnlyList<string> Reasons, string? LogPath, DateTimeOffset? Stopped = null,
     RunTask? Task = null)
 {
+    /// <summary>The role's other live runs, in the order they started.</summary>
+    public IReadOnlyList<OtherRun> Others { get; init; } = [];
+
     public static AgentState Read(string dir)
     {
-        var running = ReadText(Path.Combine(dir, "pid")) is { } pid && int.TryParse(pid, out var id) && IsAlive(id);
+        var latest = Pid(dir);
+        var running = latest is { } id && IsAlive(id);
         var lastStart = ReadTime(Path.Combine(dir, "last-start"));
         var reasons = (ReadText(Path.Combine(dir, "last-reasons")) ?? "")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var latest = Path.Combine(dir, "latest.jsonl");
-        var logPath = File.Exists(latest) ? new FileInfo(latest).ResolveLinkTarget(true)?.FullName ?? latest : null;
+        var log = Path.Combine(dir, "latest.jsonl");
+        var logPath = File.Exists(log) ? new FileInfo(log).ResolveLinkTarget(true)?.FullName ?? log : null;
         return new AgentState(
-            running, lastStart, reasons, logPath, ReadTime(Path.Combine(dir, "stopped")), ReadTask(Path.Combine(dir, "task")));
+            running, lastStart, reasons, logPath, ReadTime(Path.Combine(dir, "stopped")), ReadTask(Path.Combine(dir, "task")))
+        {
+            Others = LiveOthers(Path.Combine(dir, "runs"), latest),
+        };
     }
+
+    private static List<OtherRun> LiveOthers(string runs, int? shown)
+    {
+        if (!Directory.Exists(runs))
+            return [];
+        return [.. Directory.EnumerateDirectories(runs)
+            .Where(run => Pid(run) is { } pid && pid != shown && IsAlive(pid))
+            .Select(run => new OtherRun(ReadTask(Path.Combine(run, "task")), ReadTime(Path.Combine(run, "last-start"))))
+            .OrderBy(run => run.Started)];
+    }
+
+    private static int? Pid(string dir) => int.TryParse(ReadText(Path.Combine(dir, "pid")), out var pid) ? pid : null;
 
     internal static RunTask? ReadTask(string path)
     {
