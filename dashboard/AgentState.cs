@@ -6,16 +6,19 @@ namespace ATeam.Dashboard;
 /// <summary>The one task a Dev run was started for.</summary>
 public sealed record RunTask(int Number, string Title);
 
-/// <summary>A Dev run still going besides the one the pane shows.</summary>
-public sealed record OtherRun(RunTask? Task, DateTimeOffset? Started);
+/// <summary>A Dev run, and the directory under runs/ its state is kept in.</summary>
+public sealed record DevRun(string Dir, RunTask? Task, DateTimeOffset? Started);
 
 /// <summary>What the dispatcher has recorded about one role: see scripts/dispatch.sh.</summary>
 public sealed record AgentState(
     bool Running, DateTimeOffset? LastStart, IReadOnlyList<string> Reasons, string? LogPath, DateTimeOffset? Stopped = null,
     RunTask? Task = null)
 {
-    /// <summary>The role's other live runs, in the order they started.</summary>
-    public IReadOnlyList<OtherRun> Others { get; init; } = [];
+    /// <summary>The role's live runs under runs/, in the order they started.</summary>
+    public IReadOnlyList<DevRun> Runs { get; init; } = [];
+
+    /// <summary>The run under runs/ the role's own files follow, live or not.</summary>
+    public DevRun? Latest { get; init; }
 
     public static AgentState Read(string dir)
     {
@@ -29,19 +32,29 @@ public sealed record AgentState(
         return new AgentState(
             running, lastStart, reasons, logPath, ReadTime(Path.Combine(dir, "stopped")), ReadTask(Path.Combine(dir, "task")))
         {
-            Others = LiveOthers(Path.Combine(dir, "runs"), latest),
+            Runs = LiveRuns(Path.Combine(dir, "runs")),
+            Latest = RunOf(Path.Combine(dir, "runs"), latest),
         };
     }
 
-    private static List<OtherRun> LiveOthers(string runs, int? shown)
+    private static List<DevRun> LiveRuns(string runs)
     {
         if (!Directory.Exists(runs))
             return [];
         return [.. Directory.EnumerateDirectories(runs)
-            .Where(run => Pid(run) is { } pid && pid != shown && IsAlive(pid))
-            .Select(run => new OtherRun(ReadTask(Path.Combine(run, "task")), ReadTime(Path.Combine(run, "last-start"))))
-            .OrderBy(run => run.Started)];
+            .Where(run => Pid(run) is { } pid && IsAlive(pid))
+            .Select(DevRun)
+            .OrderBy(run => run.Started)
+            .ThenBy(run => run.Dir, StringComparer.Ordinal)];
     }
+
+    private static DevRun? RunOf(string runs, int? pid) =>
+        pid is null || !Directory.Exists(runs)
+            ? null
+            : Directory.EnumerateDirectories(runs).Where(run => Pid(run) == pid).Select(DevRun).FirstOrDefault();
+
+    private static DevRun DevRun(string run) =>
+        new(run, ReadTask(Path.Combine(run, "task")), ReadTime(Path.Combine(run, "last-start")));
 
     private static int? Pid(string dir) => int.TryParse(ReadText(Path.Combine(dir, "pid")), out var pid) ? pid : null;
 

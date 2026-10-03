@@ -248,6 +248,28 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void Up_and_down_step_through_a_panes_runs_before_moving_on_to_the_next_pane()
+    {
+        WriteRun("team0", "dev", 246, 100);
+        WriteRun("team0", "dev", 303, 300);
+        using var window = Open(agents: Agents(4));
+        window.Refresh();
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(Key.CursorUp);
+        Assert.Equal(1, Selected(window));
+        Assert.EndsWith("#246 Task 246", window.Panes[1].Title);
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(1, Selected(window));
+        Assert.EndsWith("#303 Task 303", window.Panes[1].Title);
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(3, Selected(window));
+    }
+
+    [Fact]
     public void An_odd_agent_out_stays_selectable_from_the_row_above()
     {
         using var window = Open(agents: Agents(3));
@@ -1184,6 +1206,15 @@ public class DashboardWindowTests : IDisposable
         var dir = Path.Combine(_root, team, role);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "pid"), Environment.ProcessId.ToString());
+    }
+
+    private void WriteRun(string team, string role, int task, long started)
+    {
+        var dir = Path.Combine(_root, team, role, "runs", task.ToString());
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "pid"), Environment.ProcessId.ToString());
+        File.WriteAllText(Path.Combine(dir, "last-start"), started.ToString());
+        File.WriteAllText(Path.Combine(dir, "task"), $$"""{"number":{{task}},"title":"Task {{task}}"}""");
     }
 
     private void WriteSession(string team, string role)
