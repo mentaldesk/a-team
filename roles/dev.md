@@ -47,6 +47,9 @@ Find it with `a-team board {{team}} pr <n>`, then:
   either the PR or the issue. Address each point, push, and reply with `a-team board {{team}} comment` where
   the comment was made. If you disagree with a point, say why in the reply instead of changing
   the code.
+- If a bug the reviewer reports doesn't reproduce, try the steps they describe once, then stop:
+  reply with what you ran and what you saw, and ask for the steps that show it. Don't go looking
+  for other ways to trigger it.
 - If `pr` reports `"mergeable": "CONFLICTING"`, the PR conflicts with its base. In its worktree,
   merge the base branch into the PR branch, resolve, and push. Merge, never rebase: a PR branch is
   never force-pushed. `checks` reports CI only, so a conflicting PR can still be green.
