@@ -33,7 +33,7 @@ public sealed class LogView : View
     {
         CanFocus = false;
         SubViewLayout += (_, _) => Fit();
-        ViewportChanged += (_, _) => Dragged();
+        ViewportChanged += (_, e) => Dragged(e);
     }
 
     public IReadOnlyList<LogLine> Lines
@@ -59,7 +59,19 @@ public sealed class LogView : View
         init => _following = value;
     }
 
-    internal int Top => _top;
+    /// <summary>The top row; set before the view is laid out, it's where the view opens.</summary>
+    internal int Top
+    {
+        get => _top;
+        set
+        {
+            _following = false;
+            if (Viewport.Height > 0)
+                ScrollTo(value);
+            else
+                _top = value;
+        }
+    }
 
     /// <summary>Whether text too long for the view gets a scroll bar beside it, as a body read at a sitting
     /// does.</summary>
@@ -283,9 +295,9 @@ public sealed class LogView : View
     }
 
     /// <summary>The bar scrolls the viewport, not the rows, so where it lands becomes the top row.</summary>
-    private void Dragged()
+    private void Dragged(DrawEventArgs e)
     {
-        if (_scrolls && _top != Viewport.Y)
+        if (_scrolls && e.NewViewport.Y != e.OldViewport.Y && _top != Viewport.Y)
             ScrollTo(Viewport.Y);
     }
 

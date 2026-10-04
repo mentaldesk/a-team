@@ -11,8 +11,9 @@ public abstract record Handover
 }
 
 /// <summary>What the Work area was showing when it handed the terminal to <c>a-team try</c>, so the window that
-/// takes it back opens on the same row, and says so if the try failed.</summary>
-public sealed record TryHandover(WaitingItem Item, bool OnPr, IReadOnlyList<WaitingItem> Items, DateTimeOffset? ReadAt)
+/// takes it back opens on the same row, or the same reader, and says so if the try failed.</summary>
+public sealed record TryHandover(
+    WaitingItem Item, bool OnPr, IReadOnlyList<WaitingItem> Items, DateTimeOffset? ReadAt, ReaderPlace? Reader = null)
     : Handover
 {
     public override string[] Arguments => ["try", Item.Team, Item.Pr.ToString()];
@@ -64,3 +65,6 @@ public sealed record EditorHandover(string Team, string Role, PanePlace Place, s
             : environment("EDITOR") is { Length: > 0 } editor ? editor
             : "less").Split(' ', StringSplitOptions.RemoveEmptyEntries);
 }
+
+/// <summary>The reader a try was started from: what it showed, its link, and the row it was scrolled to.</summary>
+public sealed record ReaderPlace(IssueBody Body, string? Url, int Top);

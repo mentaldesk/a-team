@@ -82,8 +82,8 @@ Handover? Show(Handover? back)
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
         (item, body) => PriorityDialog.Show(app, item, body),
-        (item, body, onGitHub, onApprove, accept, comment) =>
-            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment),
+        (item, body, onGitHub, onApprove, accept, comment, tryIt) =>
+            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>
