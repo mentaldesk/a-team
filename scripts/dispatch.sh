@@ -77,7 +77,7 @@ dispatch() {
     reasons=$(jq -r '.reasons[]' <<<"$task"; [ "$started" -gt 0 ] || printf '%s' "$chores")
     reasons=$(sed '/^$/d' <<<"$reasons")
     task=$(jq -c '{number, title}' <<<"$task")
-    launch
+    launch || return
     started=$((started + 1))
   done
 }
@@ -119,6 +119,12 @@ copy_release() {
 # of the release, so an upgrade mid-run can't change it.
 launch() {
   local what run logfile prompt settings workdir pid release version
+  workdir=$(cfg .workdir)
+  if ! $DRY_RUN && [ ! -d "${workdir/#\~/$HOME}" ]; then
+    log "$team $role: cannot start: workdir $workdir: no such directory"
+    return 1
+  fi
+  workdir=${workdir/#\~/$HOME}
   echo "$now" >"$dir/${prefix}last-start"
   printf '%s\n' "$reasons" >"$dir/${prefix}last-reasons"
   if [ -n "$task" ]; then echo "$task" >"$dir/${prefix}task"; else rm -f "$dir/${prefix}task"; fi
@@ -130,8 +136,6 @@ launch() {
     return
   fi
 
-  workdir=$(cfg .workdir)
-  workdir=${workdir/#\~/$HOME}
   logfile="$dir/logs/$(date -u +%Y%m%dT%H%M%SZ)${number:+-$number}.jsonl"
   release="$dir${number:+/runs/$number}/release"
   if ! copy_release "$release"; then

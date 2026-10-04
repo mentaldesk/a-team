@@ -2717,6 +2717,23 @@ grep -q '^This run is for #13 Something to start, and only that task.$' "$LAUNCH
   fail "prompt: '$(cat "$LAUNCHED")'"
 same "state" '{"number":13,"title":"Something to start"}' "$(cat "$A_TEAM_STATE/demo/dev/task")"
 
+case_ "a workdir that isn't there starts nothing, and says so rather than recording a start"
+STATE_DIR="$A_TEAM_STATE/demo/dev"
+rm -rf "$STATE_DIR"
+: >"$A_TEAM_STATE/dispatch.log"
+: >"$LAUNCHED"
+jq --arg w "$WORK/nope" '.workdir = $w' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+echo '{"number": 14, "title": "Something else"}' >"$CLAIMED"
+dispatch_dev
+grep -qF "demo dev: cannot start: workdir $WORK/nope: no such directory" "$A_TEAM_STATE/dispatch.log" ||
+  fail "cannot start: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+grep -q 'demo dev: started' "$A_TEAM_STATE/dispatch.log" && fail "logged a start: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+for file in last-start last-reasons pid latest.jsonl; do
+  [ -e "$STATE_DIR/$file" ] || [ -L "$STATE_DIR/$file" ] && fail "wrote $file"
+done
+[ -s "$LAUNCHED" ] && fail "claude was started"
+jq --arg w "$WORKDIR" '.workdir = $w' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
 # Claims hand out the tasks queued in $QUEUE one at a time, then refuse for want of a worktree;
 # claude stays up until killed, recording the task each run is for in $LAUNCHED.
 queued_dispatcher() {

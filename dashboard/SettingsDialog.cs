@@ -71,9 +71,8 @@ public sealed class SettingsDialog : Dialog
     private readonly Label _teamHeader = new();
     private readonly MessageBar _message = new();
     private readonly List<string> _removed = [];
-    private readonly Func<string, Task<TeamHealth>>? _check;
+    private readonly TeamChecks? _checks;
     private readonly Action<string> _showGuide;
-    private readonly Dictionary<string, Task<TeamHealth>> _health = [];
     private bool _capturing;
 
     public SettingsDialog(
@@ -87,7 +86,8 @@ public sealed class SettingsDialog : Dialog
         string? page = null,
         TeamStart? start = null,
         Func<string, Task<TeamHealth>>? check = null,
-        Action<string>? showGuide = null)
+        Action<string>? showGuide = null,
+        TeamChecks? checks = null)
     {
         _showGuide = showGuide ?? (_ => { });
         _commands = commands;
@@ -95,7 +95,8 @@ public sealed class SettingsDialog : Dialog
         _start = start;
         _icons = icons;
         _auto = auto;
-        _check = check ?? (start is null ? null : start.Check);
+        check ??= start is null ? null : start.Check;
+        _checks = checks ?? (check is null ? null : new TeamChecks(check, teams.Stamp));
         _teamRows = [.. teams.Names().Select(teams.Row)];
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
@@ -161,7 +162,7 @@ public sealed class SettingsDialog : Dialog
             StepDialog.Show(app, start.Repair(team, _teams.Settings(team))) == Answer.Done;
         EditTeam = (team, settings, save) =>
             App is { } app
-                ? TeamForm.Show(app, team, settings, save, ListProjects, _health.GetValueOrDefault(team),
+                ? TeamForm.Show(app, team, settings, save, ListProjects, _checks?.Latest(team),
                     () => Repaired(team), Icons.Resolve(_icons.Current, _auto))
                 : null;
         CreateTeam = (again, create) =>
@@ -301,12 +302,13 @@ public sealed class SettingsDialog : Dialog
         string? page = null,
         TeamStart? start = null,
         bool newTeam = false,
-        Action<string>? showGuide = null)
+        Action<string>? showGuide = null,
+        TeamChecks? checks = null)
     {
         var theme = ThemeSetting.Live(settings);
         var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
-            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start, showGuide: showGuide);
+            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start, showGuide: showGuide, checks: checks);
         if (newTeam)
             app.Invoke(() => dialog.NewTeam());
         app.Run(dialog);
@@ -582,7 +584,7 @@ public sealed class SettingsDialog : Dialog
 
     private (string Header, IReadOnlyList<string> Rows) TeamColumns()
     {
-        string[] headings = _check is null ? ["Team", "Repo", "Status"] : ["Team", "Repo", "Status", "Health"];
+        string[] headings = _checks is null ? ["Team", "Repo", "Status"] : ["Team", "Repo", "Status", "Health"];
         var cells = _teamRows.Select(team => new[] { team.Name, team.Repo, Status(team), Health(team) }).ToList();
         var widths = Enumerable.Range(0, headings.Length - 1)
             .Select(column => cells.Select(row => row[column].Length).Append(headings[column].Length).Max())
@@ -594,9 +596,9 @@ public sealed class SettingsDialog : Dialog
 
     /// <summary>The health column: nothing where there's no way to check, and <c>checking…</c> until the check answers.</summary>
     private string Health(TeamRow team) =>
-        _check is null ? ""
+        _checks is null ? ""
         : team.Problem is { } problem ? TeamHealth.Unreadable(problem).Column
-        : !_health.TryGetValue(team.Name, out var health) || !health.IsCompleted ? TeamHealth.Checking
+        : _checks.Latest(team.Name) is not { IsCompleted: true } health ? TeamHealth.Checking
         : health.Status == TaskStatus.RanToCompletion ? health.Result.Column
         : "check failed";
 
@@ -607,16 +609,16 @@ public sealed class SettingsDialog : Dialog
     /// <summary>Starts checking every readable team not checked yet, each filling its row in when it answers.</summary>
     private void CheckTeams()
     {
-        foreach (var team in _teamRows.Where(team => team.Problem is null && !_health.ContainsKey(team.Name)))
-            Check(team.Name);
+        if (_checks is null)
+            return;
+        foreach (var team in _teamRows.Where(team => team.Problem is null))
+            Follow(_checks.For(team.Name));
     }
 
-    private Task<TeamHealth>? Check(string team)
+    private Task<TeamHealth>? Check(string team) => _checks is null ? null : Follow(_checks.Check(team));
+
+    private Task<TeamHealth> Follow(Task<TeamHealth> health)
     {
-        if (_check is null)
-            return null;
-        var health = _check(team);
-        _health[team] = health;
         health.ContinueWith(_ => OnUi(ShowTeams), TaskContinuationOptions.ExecuteSynchronously);
         return health;
     }

@@ -31,6 +31,9 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
     /// <summary>What <c>board setup</c> puts right: the Status options and the labels.</summary>
     private static readonly string[] Repairable = ["status", "labels"];
 
+    /// <summary>What <c>check</c> reports that a team can still run with.</summary>
+    private static readonly string[] Notes = ["vision", "labels"];
+
     public bool CanRepair => Problems.Any(problem => Repairable.Contains(problem.Topic));
 
     /// <summary>The Teams page's health column.</summary>
@@ -40,6 +43,19 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
         1 => "1 problem",
         var count => $"{count} problems",
     };
+
+    /// <summary>The problems that stop the team running.</summary>
+    public IReadOnlyList<TeamProblem> Fatal => [.. Problems.Where(problem => !Notes.Contains(problem.Topic))];
+
+    /// <summary>The message bar's line for a team that can't run; null for one that can.</summary>
+    public string? Failed(string team)
+    {
+        var fatal = Fatal;
+        if (fatal.Count == 0)
+            return null;
+        var topics = string.Join(", ", fatal.Select(problem => problem.Topic).Distinct());
+        return $"{team}: {fatal.Count} {(fatal.Count == 1 ? "check" : "checks")} failed — {topics}";
+    }
 
     /// <summary>A file the Teams page couldn't read, which <c>check</c> would only say again.</summary>
     public static TeamHealth Unreadable(string problem) => new([new TeamProblem("config", problem)]);

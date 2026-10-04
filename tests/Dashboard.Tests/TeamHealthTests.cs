@@ -42,6 +42,33 @@ public class TeamHealthTests
         Assert.Equal("1 problem", health.Column);
     }
 
+    [Fact]
+    public void Only_problems_that_stop_the_team_running_are_fatal_and_notes_are_not()
+    {
+        var health = new TeamHealth(
+        [
+            new TeamProblem("vision", "docs/vision.md isn't in mentaldesk/goose yet"),
+            new TeamProblem("checkout", "~/code/goose/main isn't there"),
+            new TeamProblem("labels", "no 'pitch' label"),
+            new TeamProblem("status", "2 of 9 options missing"),
+        ]);
+
+        Assert.Equal(["checkout", "status"], health.Fatal.Select(problem => problem.Topic));
+        Assert.Equal("tuicode: 2 checks failed — checkout, status", health.Failed("tuicode"));
+    }
+
+    [Fact]
+    public void A_team_with_only_notes_or_one_fatal_problem_says_so_in_kind()
+    {
+        Assert.Null(new TeamHealth([new TeamProblem("labels", "no 'pitch' label")]).Failed("goose"));
+        Assert.Equal(
+            "goose: 1 check failed — app",
+            new TeamHealth([new TeamProblem("app", "no key")]).Failed("goose"));
+        Assert.Equal(
+            "goose: 2 checks failed — app",
+            new TeamHealth([new TeamProblem("app", "no key"), new TeamProblem("app", "no push")]).Failed("goose"));
+    }
+
     [Theory]
     [InlineData("status", true)]
     [InlineData("labels", true)]

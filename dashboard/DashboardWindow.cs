@@ -41,6 +41,7 @@ public sealed class DashboardWindow : Window
     private readonly TeamConfigs _teams;
     private readonly Func<string[], Task<string?>> _run;
     private readonly TeamStart? _start;
+    private readonly TeamChecks? _checks;
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
@@ -103,9 +104,11 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
         Action<string>? showGuide = null,
         Func<RunTask, bool>? confirmStop = null,
-        IClipboard? clipboard = null)
+        IClipboard? clipboard = null,
+        TeamChecks? checks = null)
     {
         _clipboard = clipboard;
+        _checks = checks ?? (start is null ? null : new TeamChecks(start.Check, teams.Stamp));
         _showGuide = showGuide ?? (_ => { });
         _start = start;
         _clock = clock ?? TimeProvider.System;
@@ -257,8 +260,11 @@ public sealed class DashboardWindow : Window
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : null;
         var paused = _panes.Select(pane => pane.Team).Distinct().ToDictionary(team => team, _teams.IsPaused);
+        _checks?.Follow(paused.Keys);
+        if (_checks?.Answered() is [.., var failed])
+            _failure = failed;
         foreach (var pane in _panes)
-            pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role));
+            pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role), _checks?.Fatal(pane.Team));
 
         var tail = ReadTail(_dispatchLog, DispatchLines);
         if (!_dispatch.Lines.SequenceEqual(tail))
@@ -876,7 +882,7 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         var before = _teams.Names();
-        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide);
+        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks);
         if (_teams.Names().Except(before).Any())
         {
             _handOver?.Invoke(new TeamsChanged(_area));
