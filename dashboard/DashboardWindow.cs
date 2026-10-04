@@ -74,6 +74,8 @@ public sealed class DashboardWindow : Window
     private AgentPane? _lastSelected;
     private Size _laidOutOver;
     private Handover? _resume;
+    private Place? _left;
+    private string[] _activityRead = [];
 
     public DashboardWindow(
         IReadOnlyList<(string Team, string Role)> agents,
@@ -374,10 +376,21 @@ public sealed class DashboardWindow : Window
     private void ReadWaiting()
     {
         _askedAt = _clock.GetUtcNow();
-        _reading ??= Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
+        if (_reading is null)
+        {
+            _activityRead = Activity();
+            _reading = Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
+        }
         ShowMessage();
         ShowLoading();
     }
+
+    private string[] Activity() => [.. _panes.Select(pane => pane.Activity)];
+
+    /// <summary>The last read landed, began under five minutes ago, and no run has started or finished since.</summary>
+    private bool UpToDate() =>
+        _askedAt is { } asked && _readAt >= asked && _clock.GetUtcNow() - asked < ReadEvery
+        && _activityRead.SequenceEqual(Activity());
 
     /// <summary>There are no cards to look at until the first read lands; a later read leaves the ones already
     /// on screen where they are.</summary>
@@ -728,6 +741,8 @@ public sealed class DashboardWindow : Window
     {
         if (_area == area)
             return;
+        if (_area == Area.Work)
+            _left = _work.Place;
         _area = area;
         _settings.WriteArea(area);
         _failure = null;
@@ -736,8 +751,10 @@ public sealed class DashboardWindow : Window
         _menu.Show(area);
         if (area == Area.Work)
         {
-            ReadWaiting();
-            _work.FocusFirstCard();
+            if (!UpToDate())
+                ReadWaiting();
+            if (_left is not { } left || !_work.Focus(left))
+                _work.FocusFirstCard();
         }
         else
             _panes.FirstOrDefault()?.SetFocus();

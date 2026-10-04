@@ -121,6 +121,16 @@ public sealed class AgentPane : FrameView
 
     internal bool RunHeld => _runs.Current?.Held is not null;
 
+    /// <summary>Changes whenever one of the role's runs starts or finishes.</summary>
+    internal string Activity
+    {
+        get
+        {
+            var role = AgentState.Read(_stateDir);
+            return $"{role.Running} {role.LastStart} {string.Join(' ', role.Runs.Select(run => run.Dir))}";
+        }
+    }
+
     /// <summary>Shows the next run up or down; false past either end, so the selection can move on to the next pane.</summary>
     public bool MoveRun(int step)
     {
