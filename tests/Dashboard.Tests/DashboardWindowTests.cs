@@ -1325,7 +1325,7 @@ public class DashboardWindowTests : IDisposable
             _ => Task.FromResult(new Reading("{}", null)),
             openUrl ?? (_ => { }),
             (_, _) => null,
-            (_, _, _, _, _, _) => { },
+            (_, _, _, _, _, _, _) => { },
             area,
             auto,
             handOver,
