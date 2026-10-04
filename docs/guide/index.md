@@ -1,13 +1,13 @@
 # Contents
 
-How to run a-team's agent teams from the app. Open it from **Help → Guide**, or **Guide** in Commands
+How to run A-Team's agent teams from the app. Open it from **Help → Guide**, or **Guide** in Commands
 (`Ctrl+E`).
 
 ## [How a team works](how-a-team-works.md)
 
-Who does what: the Lead, the Dev and you. The stages work moves through on the board, the two gates
-only you can open, what the 👀 on your comment means, and how Ideas and their priorities steer what
-the Lead does next.
+Who does what: you, the Lead and the Dev, and how your README and vision steer the team. The stages
+work moves through on the board, where you decide, what the 👀 on your comment means, and how Ideas
+and their priorities steer what the Lead does next.
 
 ## [Work](work.md)
 

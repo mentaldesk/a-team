@@ -5,11 +5,19 @@ Project board: if it isn't on the board, in an issue or in a PR, the team doesn'
 
 ## Who does what
 
-- **The Lead** finds work worth doing. It writes a pitch for an Idea, with a mockup, revises it on
-  your feedback, breaks an approved pitch into tasks, and checks the finished feature against the pitch.
+- **You describe the project.** The Lead judges every idea against the repo's README and its vision
+  document (`docs/vision.md` unless the team's settings say otherwise). The clearer they are about
+  who it's for and where it's headed, in the short and the long term, the better the team builds it.
+  Name the products you'd like it to learn from, competitors and inspiration alike: the Lead watches
+  what they ship. Say what it deliberately isn't, too. If there's no vision yet, the Lead drafts one
+  from the README and the code for you to edit and merge.
+- **The Lead** finds work worth doing: gaps against the vision, open issues, and what those other
+  products are doing. It writes a pitch for an Idea, with a mockup, revises it on your feedback,
+  breaks an approved pitch into tasks, and checks the finished feature against the pitch.
 - **The Dev** builds those tasks. It takes a Ready task, builds it in its own worktree with tests,
   opens a pull request and sees it through CI and your review.
-- **You** decide. Every gate is yours, and only you merge, approve, or close.
+- **You decide** which of the Lead's pitches get built, and you accept the finished work. Only you
+  approve, merge or close.
 
 Neither agent runs all the time. A dispatcher checks every couple of minutes whether a role has
 something to do, like your feedback, an approved pitch or failing CI, and starts a run for it when it
@@ -20,8 +28,8 @@ does. An idle team costs nothing.
 Every item on the board has a status, and moves through them left to right:
 
 ```
-Idea → Exploring → Pitched ⛔ → Approved → Building ─────────────→ In review ⛔ → Done
-                                              └─ tasks: Ready → In progress → In review ⛔ → Done
+Idea → Exploring → Pitched → Approved → Building ───────────→ In review → Done
+                                          └─ tasks: Ready → In progress → In review → Done
 ```
 
 | Status | What it means |
@@ -39,9 +47,9 @@ Idea → Exploring → Pitched ⛔ → Approved → Building ──────�
 A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. A task is one pull
 request that changes something you can see or do.
 
-## The two gates
+## Where you decide
 
-The ⛔ statuses are gates. An agent moves work into a gate and stops there: only you move it out.
+Work waits for you in two places, and no agent moves it on without you.
 
 - **Pitched.** You approve a pitch, or comment on it to have it changed. Nothing gets built until
   you approve.

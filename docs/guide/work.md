@@ -11,7 +11,7 @@ through them. A column with nothing in it is hidden, and the one you're on takes
 | Column | What it holds |
 |---|---|
 | Triage | Ideas and pitches with no Priority. Nothing here is pitched or approved until you give it one. |
-| Pitches | Pitches waiting for your approval, at [the first gate](how-a-team-works.md#the-two-gates). |
+| Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide). |
 | Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, or a pitch whose tasks are all closed. |
 

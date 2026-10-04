@@ -4,7 +4,7 @@ using MarkdownView = Terminal.Gui.Views.Markdown;
 
 namespace ATeam.Dashboard;
 
-/// <summary>a-team's own guide, the pages in <c>docs/guide</c>, read a page at a time and followed link to link.</summary>
+/// <summary>A-Team's own guide, the pages in <c>docs/guide</c>, read a page at a time and followed link to link.</summary>
 public sealed class GuideDialog : Dialog
 {
     internal const string Contents = "index.md";
