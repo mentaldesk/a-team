@@ -20,7 +20,7 @@ for arg in "$@"; do
     --replace) REPLACE=true ;;
     --uninstall)
       launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-      rm -f "$PLIST"
+      rm -f "$PLIST" "$STATE/dispatcher.json"
       echo "Uninstalled $LABEL"
       exit 0 ;;
     *) echo "install.sh: unknown option $arg" >&2; exit 2 ;;
@@ -32,7 +32,7 @@ for tool in claude gh jq git; do
 done
 bin=${A_TEAM_BIN:-$ROOT/bin/a-team}
 
-current=$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$PLIST" 2>/dev/null || true)
+current=$([ -f "$PLIST" ] && /usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$PLIST" 2>/dev/null || true)
 if [ -n "$current" ] && [ "$current" != "$bin" ] && ! $REPLACE; then
   echo "The dispatcher is currently installed from $current." >&2
   if [ -t 0 ]; then
@@ -75,4 +75,7 @@ PLIST
 
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$PLIST"
+jq -n --arg bin "$bin" --arg version "$("$bin" version 2>/dev/null || echo unknown)" --argjson dryRun "$DRY_RUN" \
+  --argjson interval "$INTERVAL" --arg log "$STATE/launchd.log" --argjson installedAt "$(date +%s)" \
+  '{$bin, $version, $dryRun, $interval, $log, $installedAt}' >"$STATE/dispatcher.json"
 echo "Installed $LABEL$($DRY_RUN && echo ' (dry run)'): runs $bin dispatch every $((INTERVAL / 60)) minutes. Watch it with: a-team status"

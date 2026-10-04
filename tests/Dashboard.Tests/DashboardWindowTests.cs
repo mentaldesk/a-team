@@ -893,6 +893,19 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void With_nothing_installed_the_dispatcher_frame_says_so_in_Error_and_its_lines_do_not()
+    {
+        using var window = Open(agents: Agents(4));
+        LayOut(window, 120, 30);
+
+        window.Refresh();
+
+        Assert.Equal("dispatcher · nothing installed · run: a-team install", window.Dispatcher.Title);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Dispatcher.SchemeName);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Base), window.DispatchLog.SchemeName);
+    }
+
+    [Fact]
     public void The_last_four_lines_fill_four_rows_of_the_panes_width_at_any_size()
     {
         WriteDispatchLog([.. Enumerable.Range(1, 6).Select(n =>
