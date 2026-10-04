@@ -20,6 +20,7 @@ public sealed class SettingsDialog : Dialog
     private const string FilterHint = "Type to filter";
     private const string KeepHint = "Ctrl+Enter keep";
     private const string CancelHint = "Esc cancel";
+    private const string GuideHint = "F1 guide";
     private const string PauseHint = "p pause";
     private const string ResumeHint = "p resume";
     private const string EditHint = "Enter edit";
@@ -71,6 +72,7 @@ public sealed class SettingsDialog : Dialog
     private readonly MessageBar _message = new();
     private readonly List<string> _removed = [];
     private readonly Func<string, Task<TeamHealth>>? _check;
+    private readonly Action<string> _showGuide;
     private readonly Dictionary<string, Task<TeamHealth>> _health = [];
     private bool _capturing;
 
@@ -84,8 +86,10 @@ public sealed class SettingsDialog : Dialog
         IconStyle auto,
         string? page = null,
         TeamStart? start = null,
-        Func<string, Task<TeamHealth>>? check = null)
+        Func<string, Task<TeamHealth>>? check = null,
+        Action<string>? showGuide = null)
     {
+        _showGuide = showGuide ?? (_ => { });
         _commands = commands;
         _teams = teams;
         _start = start;
@@ -280,6 +284,8 @@ public sealed class SettingsDialog : Dialog
             return Close(confirmed: true);
         if (key == Key.Esc)
             return Close(confirmed: false);
+        if (key == Key.F1)
+            return Guide();
         return base.OnKeyDown(key);
     }
 
@@ -294,12 +300,13 @@ public sealed class SettingsDialog : Dialog
         TeamConfigs teams,
         string? page = null,
         TeamStart? start = null,
-        bool newTeam = false)
+        bool newTeam = false,
+        Action<string>? showGuide = null)
     {
         var theme = ThemeSetting.Live(settings);
         var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
-            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start);
+            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start, showGuide: showGuide);
         if (newTeam)
             app.Invoke(() => dialog.NewTeam());
         app.Run(dialog);
@@ -333,6 +340,12 @@ public sealed class SettingsDialog : Dialog
         _capturing = true;
         Say("");
         ShowKeys();
+        return true;
+    }
+
+    internal bool Guide()
+    {
+        _showGuide(GuideDialog.Teams);
         return true;
     }
 
@@ -691,7 +704,7 @@ public sealed class SettingsDialog : Dialog
         _hints.Clear();
         var dialogRow = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
         _hints.AddRange(Hints(page, _keys.X, dialogRow - PageHintsAbove));
-        _hints.AddRange(Hints([KeepHint, CancelHint], Inset, dialogRow));
+        _hints.AddRange(Hints([KeepHint, CancelHint, GuideHint], Inset, dialogRow));
         foreach (var hint in _hints)
             Add(hint);
     }
@@ -759,6 +772,8 @@ public sealed class SettingsDialog : Dialog
                 return Unbind();
             case FilterHint:
                 return _filter.SetFocus();
+            case GuideHint:
+                return Guide();
             default:
                 return Close(confirmed: hint == KeepHint);
         }

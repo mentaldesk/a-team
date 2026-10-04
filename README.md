@@ -33,12 +33,8 @@ release.
 
 ## Starting a team
 
-In the app, open Settings → Teams and press `n` (or run **New team** from the palette). Fill in the
-form and press `Enter`: a-team writes the team's file, paused, then offers in turn to clone the repo,
-give the team its GitHub App, create its Project, set its board up and get it to work. Each step says
-what it will do and waits for `Enter`; `Esc` skips it. The last asks whether to get to work or keep the
-team paused, and there `Esc` cancels the new team. Make sure `gh` can manage projects first:
-`gh auth refresh -s project`.
+In the app, open **Settings → Teams** and press `n`: the [guide](docs/guide/teams.md#starting-a-team)
+takes it from there.
 
 The app opens only once there's a team, so your first one starts by hand:
 
@@ -143,71 +139,6 @@ a-team dashboard [team...]  straight to the agents
 
 The app has two areas: **Work**, everything waiting on you across every team, and **Dashboard**, what
 each agent is doing. **Help → Guide** explains them inside the app, and the same pages are in [`docs/guide`](docs/guide/index.md).
-
-### Watching the team
-
-One pane per agent. The title shows whether it's running (●) or paused (⏸), and when it's neither,
-how its last run went: ✓ clean, ✗ failed, ○ never run — or the Nerd Font glyph for each, where
-that's the vocabulary in effect. A failed run draws the pane's border, title
-and status row in the error colour until the next run clears it. A role you've held with `a-team stop`
-wears ⏸ and reads `stopped by you` (or how its last run went) `· held`. Under the title: how long the
-current run has been going, or when it last ran and the countdown to the dispatcher's next check;
-then why it was last started; then its latest session as it happens (what it said, the
-tools it called, any errors and how the run finished). The strip along the bottom is the
-dispatcher's recent decisions. With no arguments it shows every configured team, paused or not.
-
-Tab or the arrow keys select an agent (▶). Enter expands it over the whole agent area, wide
-enough to read a session without scrolling, and there Tab and Shift+Tab read the next and previous
-agent without leaving the expanded view; the dispatcher strip stays put. PgUp/PgDn/Home/End scroll
-the selected session in either view; scrolling up stops it following new output until you press End. A run of tool calls draws as one row so the
-agent's narration isn't pushed off the top; t shows every call in the selected pane again (the
-title says [tool calls]) and t again folds them back up. s opens Settings, a page at a time: the
-pages down the left, the one picked on the right, Tab into it and Tab back. Theme is one of
-Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode; Keyboard Shortcuts
-is a row per command with the key that runs it; Dashboard is whether panes start with every tool
-call showing, and which icons the panes, their sessions and the cards wear — *Automatic*, *Nerd Font* or *Unicode*,
-the last two drawn in their own glyphs so you pick the row that isn't boxes, previewing behind the
-dialog as you move. *Automatic* names what it decided for the terminal you're in, and decides
-again on every launch: a font belongs to a terminal, what's stored belongs to the machine. Teams is a row per
-team with its repo and whether it's `working` or `paused`; p starts or pauses the selected one there
-and then, and Ctrl+E → *Teams* opens Settings on that page. A team whose file doesn't parse reads
-`can't read this file`, and selecting it names the line that's wrong. Enter on a team opens its
-form — repo, project, vision, workdir, try, status and limits — and Enter there saves them into its
-file, leaving every other key as it was. Enter
-on a shortcut row takes the next key you press; a key another command already holds is refused,
-naming the one that holds it. Ctrl+Enter keeps what's picked on any page, Esc
-discards it. What you keep is written to `~/.config/a-team/dashboard.json` (`$A_TEAM_CONFIG/dashboard.json`) and is
-what the dashboard comes up in next time, with t still folding and unfolding a pane for the
-session. Esc goes back to the grid from an expanded agent and does nothing when there isn't one;
-q quits the app, from either area.
-
-Keys can be set by hand in that file too, which is the way out of a key your terminal or
-multiplexer swallows. A `keys` object maps a command's id — the ones Ctrl+E lists — to a key
-name, spelled as Terminal.Gui spells it (`PageUp`, not the `PgUp` Settings abbreviates it to):
-
-```json
-{ "theme": "Midnight", "keys": { "settings": "Ctrl+,", "log.toolCalls": "d" } }
-```
-
-A command named there is reached by that key instead of the one it ships with, and only by that
-key. An id nothing is registered under, a name that isn't a key, and a key another command already
-holds are each ignored on their own: that command keeps the key it had, and the rest of the file
-still applies.
-
-Ctrl+E opens Commands: everything the dashboard can do, with the key bound to it. Type to narrow
-the list, Up/Down (or PgUp/PgDn and Home/End) to pick, Enter to run it, Esc to close. Every key
-above is one of those commands, so anything you can press you can also run by name. `i` interrupts the selected agent's run: it runs `a-team attach` in
-the dashboard's place, so you're in that run's conversation, and quitting brings you back to the
-grid with the role free to start again. A run too new to have a session is just stopped and held,
-as `a-team stop` does. On a held role the same command reads *Let it start again* and runs
-`a-team resume <team> <role>`. `h` pauses the selected agent's role, as `a-team pause <team> <role>`
-does: a run already going finishes, its pane reading `running <time> · held`, and no new one starts
-until the same command, now *Let this role start again*, runs `a-team resume <team> <role>`. While
-any of these runs, a line at the foot of the window says so; if it
-fails, that line says why, in red.
-
-F1 opens Keys: the handful worth having in your fingers, the first of them Ctrl+E for everything
-else. Esc closes it.
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.

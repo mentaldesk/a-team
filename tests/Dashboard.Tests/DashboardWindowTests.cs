@@ -387,15 +387,17 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(Key.F1, window.Commands.Registered.Single(c => c.Id == "help").Key);
     }
 
-    [Fact]
-    public void Guide_opens_on_the_contents_page_and_has_no_key()
+    [Theory]
+    [InlineData(Area.Work, GuideDialog.Work)]
+    [InlineData(Area.Dashboard, GuideDialog.Dashboard)]
+    public void Guide_opens_on_the_page_for_the_area_and_has_no_key(Area area, string page)
     {
         var opened = new List<string>();
-        using var window = Open(agents: Agents(4), showGuide: opened.Add);
+        using var window = Open(agents: Agents(4), area: area, showGuide: opened.Add);
 
         window.Commands.Execute("guide");
 
-        Assert.Equal([GuideDialog.Contents], opened);
+        Assert.Equal([page], opened);
         Assert.Equal(Key.Empty, window.Commands.KeyFor("guide"));
     }
 
