@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace ATeam.Dashboard.Tests;
 
 public class SessionLogTests : IDisposable
@@ -16,6 +18,80 @@ public class SessionLogTests : IDisposable
         if (Directory.Exists(_dir))
             Directory.Delete(_dir, recursive: true);
         GC.SuppressFinalize(this);
+    }
+
+    [Fact]
+    public void A_clipped_tool_call_copies_its_whole_field_heredoc_and_all()
+    {
+        var command = "cd ~/code && cat > /tmp/x.py <<'PY'\n" + string.Join("\n", Enumerable.Repeat(new string('y', 60), 70)) + "\nPY";
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "assistant",
+            message = new { content = new[] { new { type = "tool_use", name = "Bash", input = new { command } } } },
+        });
+
+        var line = Assert.Single(SessionLog.Render(json));
+
+        Assert.Equal("Bash cd ~/code && cat > /tmp/x.py <<'PY'", line.Text);
+        Assert.Equal(command, line.Copied);
+        Assert.False(line.Capped);
+    }
+
+    [Fact]
+    public void A_clipped_tool_error_copies_the_whole_error()
+    {
+        var error = "first line\n" + new string('e', 300);
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "user",
+            message = new { content = new[] { new { type = "tool_result", is_error = true, content = error } } },
+        });
+
+        var line = Assert.Single(SessionLog.Render(json));
+
+        Assert.Equal("first line", line.Text);
+        Assert.Equal(error, line.Copied);
+    }
+
+    [Fact]
+    public void A_line_that_was_never_truncated_is_not_stored_twice()
+    {
+        Assert.Null(Assert.Single(SessionLog.Render(Broke)).Full);
+        Assert.All(SessionLog.Render(Prose), line => Assert.Null(line.Full));
+    }
+
+    [Fact]
+    public void A_field_longer_than_64_KB_is_cut_there_and_says_so()
+    {
+        var command = new string('x', SessionLog.MaxCopied + 10);
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "assistant",
+            message = new { content = new[] { new { type = "tool_use", name = "Bash", input = new { command } } } },
+        });
+
+        var line = Assert.Single(SessionLog.Render(json));
+
+        Assert.Equal(SessionLog.MaxCopied, line.Copied.Length);
+        Assert.True(line.Capped);
+        Assert.EndsWith("(line truncated)", LogCopy.Of([line]).Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Copying_says_how_many_lines_and_characters()
+    {
+        Assert.Equal("copied 3,914 characters", LogCopy.Of([new LogLine("x", LogLineKind.ToolCall, new string('y', 3914))]).Said);
+        Assert.Equal(
+            "copied 3 lines, 4,102 characters",
+            LogCopy.Of([new(new string('a', 1000), LogLineKind.Prose), new(new string('b', 2000), LogLineKind.Prose), new(new string('c', 1100), LogLineKind.Prose)]).Said);
+    }
+
+    [Fact]
+    public void Several_lines_are_joined_by_newlines_with_none_trailing()
+    {
+        var copied = LogCopy.Of([new("one", LogLineKind.Prose), new("Bash ls", LogLineKind.ToolCall, "ls -la")]);
+
+        Assert.Equal("one\nls -la", copied.Text);
     }
 
     [Fact]

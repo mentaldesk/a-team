@@ -20,7 +20,7 @@ internal sealed class AppMenu
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
         (Cards, [Separator, "work.refresh", "work.mine"]),
-        (Agents, ["agent.hold", "agent.interrupt", Separator, "agent.expand", "log.toolCalls", "agent.collapse"]),
+        (Agents, ["agent.hold", "agent.interrupt", Separator, "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll"]),
         ("_Help", ["help", "guide", "commands", "about"]),
     ];
 
@@ -170,11 +170,13 @@ internal sealed class AppMenu
     }
 
     /// <summary>The label with its command's own letter key marked as the hot one where the label has it, and its
-    /// first letter otherwise, past any mark in front of it.</summary>
+    /// first letter otherwise, past any mark in front of it. A shifted letter only matches its capital.</summary>
     private static string Hot(string label, Key key)
     {
         var at = key.IsKeyCodeAtoZ && !key.IsCtrl && !key.IsAlt
-            ? label.IndexOf((char)key.NoShift.KeyCode, StringComparison.OrdinalIgnoreCase)
+            ? key.IsShift
+                ? label.IndexOf((char)key.NoShift.KeyCode, StringComparison.Ordinal)
+                : label.IndexOf((char)key.NoShift.KeyCode, StringComparison.OrdinalIgnoreCase)
             : -1;
         return label.Insert(at < 0 ? Math.Max(0, label.ToList().FindIndex(char.IsLetterOrDigit)) : at, "_");
     }

@@ -100,7 +100,7 @@ public sealed class HelpDialog : Dialog
 
     public static void Show(IApplication app, CommandRegistry commands)
     {
-        using var dialog = new HelpDialog(commands.Registered);
+        using var dialog = new HelpDialog(commands.Enabled);
         app.Run(dialog);
     }
 }

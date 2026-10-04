@@ -85,6 +85,26 @@ public sealed class AgentPane : FrameView
         UpdateHeader();
     }
 
+    public bool Selects
+    {
+        get => _body.Selects;
+        set
+        {
+            _body.Selects = value;
+            UpdateHeader();
+        }
+    }
+
+    public void MoveLine(int step, bool extend)
+    {
+        _body.MoveSelection(step, extend);
+        UpdateHeader();
+    }
+
+    public LogCopy CopySelection() => _body.CopySelection();
+
+    public LogCopy CopyAll() => _body.CopyAll();
+
     /// <summary>Draws the title's and the session's icons from the vocabulary in effect.</summary>
     public void ShowIcons(IconStyle style)
     {
