@@ -76,6 +76,8 @@ public sealed class DashboardWindow : Window
     private Handover? _resume;
     private (IssueBody Body, int Top)? _triedFrom;
     private (WaitingItem Item, ReaderPlace Place, string? Failure)? _reopen;
+    private (string Text, Schemes Scheme)? _copied;
+    private readonly IClipboard? _clipboard;
 
     public DashboardWindow(
         IReadOnlyList<(string Team, string Role)> agents,
@@ -98,8 +100,10 @@ public sealed class DashboardWindow : Window
         TimeProvider? clock = null,
         Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
         Action<string>? showGuide = null,
-        Func<RunTask, bool>? confirmStop = null)
+        Func<RunTask, bool>? confirmStop = null,
+        IClipboard? clipboard = null)
     {
+        _clipboard = clipboard;
         _showGuide = showGuide ?? (_ => { });
         _start = start;
         _clock = clock ?? TimeProvider.System;
@@ -268,8 +272,15 @@ public sealed class DashboardWindow : Window
         at is { } read ? $"read {AgentPane.Ago(now - read)} ago" : "";
 
     /// <summary>While a menu is open it owns the keyboard: its own keys would otherwise run a command as well.</summary>
-    protected override bool OnKeyDown(Key key) =>
-        (!_menu.Bar.IsOpen() && _commands.Press(key)) || base.OnKeyDown(key);
+    protected override bool OnKeyDown(Key key)
+    {
+        if (_copied is not null)
+        {
+            _copied = null;
+            ShowMessage();
+        }
+        return (!_menu.Bar.IsOpen() && _commands.Press(key)) || base.OnKeyDown(key);
+    }
 
     private void RegisterCommands()
     {
@@ -277,13 +288,19 @@ public sealed class DashboardWindow : Window
         bool OnWork() => _area == Area.Work;
         bool AnyAgents() => OnDashboard() && _panes.Count > 0;
         bool Selection() => OnDashboard() && Selected() is not null;
+        bool OnGrid() => AnyAgents() && _expanded is null;
+        bool Reading() => Selection() && _expanded is not null;
         _commands
             .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents)
             .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents)
             .Register("agent.right", "Select the agent to the right", () => MoveSelection(0, +1), Key.CursorRight, isEnabled: AnyAgents)
             .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, isEnabled: AnyAgents)
-            .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: AnyAgents)
-            .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: AnyAgents)
+            .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: OnGrid)
+            .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: OnGrid)
+            .Register("log.lineDown", "Select the next line of the log", () => Selected()?.MoveLine(+1, extend: false), Key.CursorDown, isEnabled: Reading)
+            .Register("log.lineUp", "Select the line above in the log", () => Selected()?.MoveLine(-1, extend: false), Key.CursorUp, isEnabled: Reading)
+            .Register("log.extendDown", "Extend the selection down", () => Selected()?.MoveLine(+1, extend: true), Key.CursorDown.WithShift, isEnabled: Reading)
+            .Register("log.extendUp", "Extend the selection up", () => Selected()?.MoveLine(-1, extend: true), Key.CursorUp.WithShift, isEnabled: Reading)
             .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter, isEnabled: Selection,
                 menuLabel: () => "Expand", inMenu: () => _expanded is null)
             .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, isEnabled: Selection)
@@ -291,6 +308,10 @@ public sealed class DashboardWindow : Window
             .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
             .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
             .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
+            .Register("log.copyLines", () => "Copy the selected lines", () => Copy(pane => pane.CopySelection()), new Key('l'), isEnabled: Reading,
+                menuLabel: () => "Copy selected lines", inMenu: () => _expanded is not null)
+            .Register("log.copyAll", () => "Copy the whole log", () => Copy(pane => pane.CopyAll()), new Key('L'), isEnabled: Reading,
+                menuLabel: () => "Copy whole log", inMenu: () => _expanded is not null)
             .Register("work.right", "Select the column to the right", () => _work.MoveColumn(+1), Key.CursorRight, isEnabled: OnWork)
             .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
@@ -715,6 +736,7 @@ public sealed class DashboardWindow : Window
         }
         var (text, scheme) =
             _failure is { Length: > 0 } ? (_failure, Schemes.Error)
+            : _copied is { } copied ? copied
             : _reading is not null ? ("Reading…", Schemes.Accent)
             : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
             : _said is { Length: > 0 } ? (_said, Schemes.Accent)
@@ -773,6 +795,18 @@ public sealed class DashboardWindow : Window
         ShowLoading();
         SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    private void Copy(Func<AgentPane, LogCopy> copy)
+    {
+        if (Selected() is not { } pane)
+            return;
+        var copied = copy(pane);
+        var clipboard = _clipboard ?? App?.Clipboard;
+        _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(copied.Text)
+            ? (copied.Said, Schemes.Accent)
+            : ("there's no clipboard to copy to", Schemes.Error);
+        ShowMessage();
     }
 
     private void OpenCommands()
@@ -852,7 +886,10 @@ public sealed class DashboardWindow : Window
     {
         _expanded = index;
         for (var i = 0; i < _panes.Count; i++)
+        {
             _panes[i].Visible = index is null || index == i;
+            _panes[i].Selects = index == i;
+        }
         var selected = SelectedIndex();
         if (index is not null)
             ScrollTo(0);

@@ -63,6 +63,8 @@ public sealed class CommandRegistry
     /// <summary>What <paramref name="id"/> is bound to, or <see cref="Key.Empty"/> when nothing is.</summary>
     public Key KeyFor(string id) => _entries.Find(entry => entry.Id == id)?.Key ?? Key.Empty;
 
+    public IReadOnlyList<CommandDescriptor> Enabled => [.. Registered.Where(command => IsEnabled(command.Id))];
+
     /// <summary>Whether <paramref name="id"/> would run now. One with no test of its own always would.</summary>
     public bool IsEnabled(string id) => _entries.Find(entry => entry.Id == id)?.IsEnabled?.Invoke() != false;
 

@@ -15,6 +15,19 @@ public class CommandRegistryTests
     }
 
     [Fact]
+    public void Only_commands_that_would_run_now_are_offered()
+    {
+        var on = true;
+        var commands = new CommandRegistry()
+            .Register("greet", "Say hello", () => { })
+            .Register("wave", "Wave", () => { }, isEnabled: () => on);
+
+        Assert.Equal(["greet", "wave"], commands.Enabled.Select(command => command.Id));
+        on = false;
+        Assert.Equal(["greet"], commands.Enabled.Select(command => command.Id));
+    }
+
+    [Fact]
     public void A_name_nobody_registered_runs_nothing()
     {
         var commands = new CommandRegistry().Register("greet", "Say hello", () => { });
