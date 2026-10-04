@@ -7,8 +7,8 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
-/// <summary>One drawn row of a log line: the text alone, and whether it's the row the icon goes beside.</summary>
-public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false);
+/// <summary>One drawn row of a log line: the text alone, whether it's the row the icon goes beside, and which line drawn it's from.</summary>
+public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false, int Line = 0);
 
 /// <summary>Word-wrapped lines that follow the end until the user scrolls up, or an elided tail that never wraps.</summary>
 public sealed class LogView : View
@@ -22,6 +22,9 @@ public sealed class LogView : View
     private bool _following = true;
     private bool _expanded;
     private bool _scrolls;
+    private bool _selects;
+    private int _anchor;
+    private int _cursor;
 
     public LogView()
     {
@@ -35,6 +38,8 @@ public sealed class LogView : View
         get => _lines;
         set
         {
+            if (_selects && !_following)
+                Rebase(value);
             _lines = value;
             // Before anything scrolls: a viewport past the old content gets clamped back, and stops following.
             if (Viewport.Height > 0)
@@ -78,6 +83,19 @@ public sealed class LogView : View
     /// <summary>One row per line, elided in the middle rather than wrapped, for a tail nobody can scroll.</summary>
     public bool Elides { get; init; }
 
+    /// <summary>Whether whole lines are highlighted for copying, starting at the tail.</summary>
+    public bool Selects
+    {
+        get => _selects;
+        set
+        {
+            _selects = value;
+            if (value)
+                _following = true;
+            SetNeedsDraw();
+        }
+    }
+
     /// <summary>Draws the rows' icons from the vocabulary the reviewer picked.</summary>
     public void ShowIcons(IconStyle style)
     {
@@ -99,13 +117,143 @@ public sealed class LogView : View
             SetNeedsDraw();
         else
             ScrollTo(Anchor(before, after, _top));
+        if (_selects && !_following && _lines.Count > 0)
+            Reveal(Highlighted(Shown()));
     }
 
-    public void Page(int direction) => ScrollTo(_top + direction * Math.Max(1, Viewport.Height - 1));
+    public void Page(int direction)
+    {
+        var page = Math.Max(1, Viewport.Height - 1);
+        if (!_selects || _lines.Count == 0)
+        {
+            ScrollTo(_top + direction * page);
+            return;
+        }
+        var shown = Shown();
+        var rows = Rows(Math.Max(1, Viewport.Width));
+        var row = rows.FindIndex(row => row.Line == Highlighted(shown));
+        var target = rows[Math.Clamp(row + direction * page, 0, rows.Count - 1)].Line;
+        ScrollTo(Tail(rows) + direction * page);
+        if (_following)
+            return;
+        _anchor = _cursor = shown[target];
+        Reveal(target);
+    }
 
     public void Step(int direction) => ScrollTo(_top + direction);
 
-    public void Home() => ScrollTo(0);
+    public void Home()
+    {
+        ScrollTo(0);
+        if (_selects && _lines.Count > 0 && !_following)
+            _anchor = _cursor = Shown()[0];
+    }
+
+    public void MoveSelection(int step, bool extend)
+    {
+        if (!_selects || _lines.Count == 0)
+            return;
+        var shown = Shown();
+        if (_following)
+        {
+            _anchor = _cursor = shown[^1];
+            _top = Tail(Rows(Math.Max(1, Viewport.Width)));
+        }
+        var to = Math.Clamp(Highlighted(shown) + step, 0, shown.Count - 1);
+        _cursor = shown[to];
+        if (!extend)
+            _anchor = _cursor;
+        _following = false;
+        Reveal(to);
+    }
+
+    public LogCopy CopySelection()
+    {
+        if (_lines.Count == 0)
+            return LogCopy.Of([]);
+        var shown = Shown();
+        var (from, to) = Selection(shown);
+        return LogCopy.Of([.. shown[from..(to + 1)].Select(source => _lines[source])]);
+    }
+
+    public LogCopy CopyAll() => LogCopy.Of(_lines);
+
+    internal (int From, int To) Selection(IReadOnlyList<int> shown)
+    {
+        if (_following)
+            return (shown.Count - 1, shown.Count - 1);
+        var anchor = Position(shown, _anchor);
+        var cursor = Position(shown, _cursor);
+        return (Math.Min(anchor, cursor), Math.Max(anchor, cursor));
+    }
+
+    /// <summary>While following, the top row may not have been drawn yet.</summary>
+    private int Tail(IReadOnlyList<LogRow> rows) => _following ? Math.Max(0, rows.Count - Viewport.Height) : _top;
+
+    private int Highlighted(IReadOnlyList<int> shown) => _following ? shown.Count - 1 : Position(shown, _cursor);
+
+    /// <summary>Where a line falls among those drawn: a folded tool call counts as the line drawn before it.</summary>
+    private static int Position(IReadOnlyList<int> shown, int source)
+    {
+        var position = 0;
+        for (var i = 0; i < shown.Count && shown[i] <= source; i++)
+            position = i;
+        return position;
+    }
+
+    /// <summary>Which of <see cref="Lines"/> are drawn, in order.</summary>
+    internal List<int> Shown()
+    {
+        if (_expanded || Elides)
+            return [.. Enumerable.Range(0, _lines.Count)];
+        var newest = -1;
+        for (var i = 0; i < _lines.Count; i++)
+            if (_lines[i].Kind == LogLineKind.ToolCall)
+                newest = i;
+        return [.. Enumerable.Range(0, _lines.Count).Where(i => _lines[i].Kind != LogLineKind.ToolCall || i == newest)];
+    }
+
+    private void Reveal(int line)
+    {
+        var rows = Rows(Math.Max(1, Viewport.Width));
+        _maxTop = Math.Max(0, rows.Count - Viewport.Height);
+        var first = rows.FindIndex(row => row.Line == line);
+        var last = rows.FindLastIndex(row => row.Line == line);
+        if (first < _top)
+            _top = first;
+        else if (last >= _top + Viewport.Height)
+            _top = Math.Min(first, last - Viewport.Height + 1);
+        _top = Math.Clamp(_top, 0, _maxTop);
+        SetNeedsDraw();
+    }
+
+    /// <summary>Keeps the selection on its lines when the oldest are trimmed; a different log goes back to the tail.</summary>
+    private void Rebase(IReadOnlyList<LogLine> lines)
+    {
+        if (Dropped(_lines, lines) is not { } dropped)
+        {
+            _following = true;
+            return;
+        }
+        _anchor = Math.Max(0, _anchor - dropped);
+        _cursor = Math.Max(0, _cursor - dropped);
+    }
+
+    internal static int? Dropped(IReadOnlyList<LogLine> before, IReadOnlyList<LogLine> after)
+    {
+        for (var dropped = 0; dropped < before.Count; dropped++)
+        {
+            var kept = before.Count - dropped;
+            if (kept > after.Count)
+                continue;
+            var same = true;
+            for (var i = 0; i < kept && same; i++)
+                same = before[dropped + i] == after[i];
+            if (same)
+                return dropped;
+        }
+        return null;
+    }
 
     public void End() => ScrollTo(int.MaxValue);
 
@@ -149,10 +297,11 @@ public sealed class LogView : View
         var rows = Rows(width);
         _maxTop = Math.Max(0, rows.Count - height);
         _top = _following ? _maxTop : Math.Min(_top, _maxTop);
+        var (from, to) = _selects && _lines.Count > 0 ? Selection(Shown()) : (-1, -1);
         for (var row = 0; row < height; row++)
         {
-            var line = _top + row < rows.Count ? rows[_top + row] : new LogRow("", LogLineKind.Prose);
-            SetAttribute(AttributeFor(line.Kind));
+            var line = _top + row < rows.Count ? rows[_top + row] : new LogRow("", LogLineKind.Prose, Line: -1);
+            SetAttribute(AttributeFor(line.Kind, line.Line >= from && line.Line <= to));
             AddStr(0, row, Drawn(line, width));
             if (ReadsMarkdown)
                 DrawSpans(line, row);
@@ -179,6 +328,13 @@ public sealed class LogView : View
         }
     }
 
+    /// <summary>A highlighted row keeps its kind's colour, on the pane's focus background.</summary>
+    private Attribute AttributeFor(LogLineKind kind, bool selected)
+    {
+        var attribute = AttributeFor(kind);
+        return selected ? new Attribute(attribute.Foreground, GetAttributeForRole(VisualRole.Focus).Background) : attribute;
+    }
+
     private Attribute AttributeFor(LogLineKind kind)
     {
         var style = LogStyle.For(kind);
@@ -195,7 +351,7 @@ public sealed class LogView : View
         : Icons.Width + (kind == LogLineKind.ToolError ? ErrorIndent : 0);
 
     internal List<LogRow> Rows(int width) => Elides
-        ? [.. _lines.Select(line => new LogRow(Elide(line.Text, Room(width, line.Kind)), line.Kind))]
+        ? [.. _lines.Select((line, i) => new LogRow(Elide(line.Text, Room(width, line.Kind)), line.Kind, Line: i))]
         : Wrap(_expanded ? _lines : Collapse(_lines, width), width);
 
     /// <summary>The cells a line of this kind has left for its text, never fewer than one.</summary>
@@ -266,12 +422,13 @@ public sealed class LogView : View
     internal static List<LogRow> Wrap(IReadOnlyList<LogLine> lines, int width)
     {
         var rows = new List<LogRow>(lines.Count);
-        foreach (var line in lines)
+        for (var index = 0; index < lines.Count; index++)
         {
+            var line = lines[index];
             var room = Room(width, line.Kind);
             if (line.Text.Length <= room)
             {
-                rows.Add(new LogRow(line.Text, line.Kind));
+                rows.Add(new LogRow(line.Text, line.Kind, Line: index));
                 continue;
             }
             var rest = line.Text;
@@ -281,11 +438,11 @@ public sealed class LogView : View
                 var cut = rest.LastIndexOf(' ', room - 1);
                 if (cut <= 0)
                     cut = room;
-                rows.Add(new LogRow(rest[..cut], line.Kind, wrapped));
+                rows.Add(new LogRow(rest[..cut], line.Kind, wrapped, index));
                 rest = rest[cut..].TrimStart();
                 wrapped = true;
             }
-            rows.Add(new LogRow(rest, line.Kind, wrapped));
+            rows.Add(new LogRow(rest, line.Kind, wrapped, index));
         }
         return rows;
     }

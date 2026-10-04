@@ -211,6 +211,19 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
+    public void No_two_items_in_an_expanded_agent_s_menu_share_a_letter()
+    {
+        using var window = Open();
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+
+        window.Refresh();
+
+        var letters = Under(window, Agents(window)).Select(id => Letter(Item(window, id).HotKey)).ToList();
+        Assert.Equal(letters.Count, letters.Distinct().Count());
+    }
+
+    [Fact]
     public void Cards_sits_between_View_and_Agents_holding_the_card_commands_in_registration_order_with_their_keys()
     {
         using var window = Open();
@@ -335,9 +348,11 @@ public class AppMenuTests : IDisposable
 
         window.Refresh();
 
-        Assert.Equal(["log.toolCalls", "agent.collapse"], Below(window, Agents(window)));
+        Assert.Equal(["log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll"], Below(window, Agents(window)));
         Assert.Equal("_Back to all agents", Item(window, "agent.collapse").Title);
         Assert.Equal(Key.Esc, Item(window, "agent.collapse").Key);
+        Assert.Equal(["Copy selected lines", "Copy whole log"], new[] { "log.copyLines", "log.copyAll" }.Select(id => Item(window, id).Title.Replace("_", "")));
+        Assert.Equal([new Key('l'), new Key('L')], new[] { "log.copyLines", "log.copyAll" }.Select(id => Item(window, id).Key));
     }
 
     [Fact]

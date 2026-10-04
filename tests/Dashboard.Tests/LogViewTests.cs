@@ -404,6 +404,118 @@ public class LogViewTests
         Assert.All(rows, row => Assert.Equal(80, row.Text.Length));
     }
 
+    [Fact]
+    public void The_highlight_starts_on_the_last_line_and_moves_a_whole_wrapped_line_at_a_time()
+    {
+        var view = Selecting(20, 10, new("first", LogLineKind.Prose), new(string.Join(' ', Enumerable.Repeat("long", 12)), LogLineKind.Prose), new("last", LogLineKind.Prose));
+
+        Assert.Equal((2, 2), view.Selection(view.Shown()));
+        view.MoveSelection(-1, extend: false);
+        Assert.Equal((1, 1), view.Selection(view.Shown()));
+        view.MoveSelection(-1, extend: false);
+        Assert.Equal((0, 0), view.Selection(view.Shown()));
+        view.MoveSelection(-1, extend: false);
+        Assert.Equal((0, 0), view.Selection(view.Shown()));
+    }
+
+    [Fact]
+    public void A_folded_run_is_one_stop_and_copies_the_call_it_draws()
+    {
+        var view = Selecting(40, 10,
+            new("first", LogLineKind.Prose),
+            new("Bash one", LogLineKind.ToolCall, "one"),
+            new("Bash two", LogLineKind.ToolCall, "two\nmore"),
+            new("last", LogLineKind.Prose));
+
+        view.MoveSelection(-1, extend: false);
+
+        Assert.Equal("two\nmore", view.CopySelection().Text);
+        view.MoveSelection(-1, extend: false);
+        Assert.Equal("first", view.CopySelection().Text);
+    }
+
+    [Fact]
+    public void Extending_grows_and_shrinks_from_where_it_started_and_a_plain_move_goes_back_to_one_line()
+    {
+        var view = Selecting(40, 10, [.. Enumerable.Range(0, 5).Select(n => new LogLine($"line {n}", LogLineKind.Prose))]);
+
+        view.MoveSelection(-1, extend: false);
+        view.MoveSelection(-1, extend: true);
+        view.MoveSelection(-1, extend: true);
+        Assert.Equal((1, 3), view.Selection(view.Shown()));
+        Assert.Equal("line 1\nline 2\nline 3", view.CopySelection().Text);
+        view.MoveSelection(+1, extend: true);
+        Assert.Equal((2, 3), view.Selection(view.Shown()));
+
+        view.MoveSelection(+1, extend: false);
+        Assert.Equal((3, 3), view.Selection(view.Shown()));
+    }
+
+    [Fact]
+    public void Moving_the_highlight_stops_following_and_End_follows_again_on_the_last_line()
+    {
+        var view = Selecting(40, 3, [.. Enumerable.Range(0, 10).Select(n => new LogLine($"line {n}", LogLineKind.Prose))]);
+
+        view.MoveSelection(-1, extend: false);
+        Assert.False(view.Following);
+        view.Lines = [.. view.Lines, new LogLine("new", LogLineKind.Prose)];
+        Assert.Equal("line 8", view.CopySelection().Text);
+
+        view.End();
+
+        Assert.True(view.Following);
+        Assert.Equal("new", view.CopySelection().Text);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(+1)]
+    public void Paging_brings_the_highlight_with_it(int direction)
+    {
+        var view = Selecting(40, 5, [.. Enumerable.Range(0, 40).Select(n => new LogLine($"line {n}", LogLineKind.Prose))]);
+        view.MoveSelection(-20, extend: false);
+
+        view.Page(direction);
+        view.Page(direction);
+
+        var (from, _) = view.Selection(view.Shown());
+        Assert.InRange(from, view.Top, view.Top + 4);
+        Assert.Equal(direction < 0 ? 11 : 27, from);
+    }
+
+    [Fact]
+    public void The_highlight_stays_on_its_line_when_the_oldest_lines_are_trimmed()
+    {
+        var view = Selecting(40, 5, [.. Enumerable.Range(0, 10).Select(n => new LogLine($"line {n}", LogLineKind.Prose))]);
+        view.MoveSelection(-3, extend: false);
+
+        view.Lines = [.. view.Lines.Skip(2), new LogLine("line 10", LogLineKind.Prose), new LogLine("line 11", LogLineKind.Prose)];
+
+        Assert.Equal("line 6", view.CopySelection().Text);
+    }
+
+    [Fact]
+    public void Copying_the_whole_log_takes_every_line_folded_calls_included()
+    {
+        var view = Selecting(40, 10,
+            new("first", LogLineKind.Prose),
+            new("Bash one", LogLineKind.ToolCall, "one"),
+            new("Bash two", LogLineKind.ToolCall, "two"));
+
+        var copied = view.CopyAll();
+
+        Assert.Equal("first\none\ntwo", copied.Text);
+        Assert.Equal(3, copied.Lines);
+    }
+
+    private static LogView Selecting(int width, int height, params LogLine[] lines)
+    {
+        var view = new LogView { Lines = lines };
+        view.Frame = new System.Drawing.Rectangle(0, 0, width, height);
+        view.Selects = true;
+        return view;
+    }
+
     private static List<LogLine> Fixture() =>
         File.ReadLines(Path.Combine(AppContext.BaseDirectory, "fixtures", "pane.jsonl"))
             .SelectMany(SessionLog.Render)

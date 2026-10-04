@@ -22,7 +22,9 @@ Under the title is how long the current run has been going, or when the role las
 countdown to the dispatcher's next check. Then why the run was started, and then the run's log as
 it happens: what the agent said, the tools it called, any errors, and how the run finished.
 
-The strip along the bottom is the dispatcher's recent decisions.
+The strip along the bottom is the dispatcher's recent decisions. Each run it starts names the
+release it's on, as in `09:51 a-team lead: started 81834 on 0.1.7: #232 was approved`, and keeps
+that release to its end, even if you upgrade a-team meanwhile.
 
 ## Reading a log
 
@@ -33,6 +35,16 @@ The strip along the bottom is the dispatcher's recent decisions.
 | `Tab`, `Shift+Tab` | In the expanded view, read the next or previous agent without leaving it |
 | `Esc` | Back to every agent |
 | `PgUp`, `PgDn`, `Home`, `End` | Scroll the selected log. Scrolling up stops it following new output until you press `End` |
+
+## Copying from a log
+
+In the expanded view one line of the log is highlighted, starting on the last. `Up` and `Down` move
+it a line at a time, and `Shift+Up`, `Shift+Down` take in more. Moving it stops the log following
+new output until you press `End`, and paging brings it with you.
+
+`l` copies the highlighted lines and `L` the whole log, each line in full: the whole command or error,
+not the clipped row on screen. A folded run of tool calls copies the one it shows. The status bar
+says how much went.
 
 ## Tool calls
 
