@@ -1,4 +1,6 @@
 using System.Drawing;
+using Terminal.Gui.Configuration;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.Views;
 
@@ -289,6 +291,55 @@ public class ReaderDialogTests
         using var dialog = Open(Pitch);
 
         Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+    }
+
+    [Fact]
+    public void A_task_with_a_PR_puts_try_between_scrolling_and_accept()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            accept: new ReaderCommand(new Key('a'), "accept", () => true),
+            tryIt: new ReaderTry(new Key('t'), (_, _) => { }));
+        dialog.Layout(new Size(60, 20));
+
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · t try · a accept · g on GitHub · Esc close", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Without_a_PR_t_is_neither_hinted_nor_handled()
+    {
+        using var dialog = Open(Pitch);
+
+        Assert.DoesNotContain("try", dialog.Hints.Says);
+        Assert.False(dialog.NewKeyDownEvent(new Key('t')));
+    }
+
+    [Fact]
+    public void Try_hands_over_what_the_reader_shows_and_where_it_s_scrolled_to()
+    {
+        var tried = new List<(IssueBody Body, int Top)>();
+        var body = new IssueBody(Long());
+        using var dialog = new ReaderDialog(Item, body, () => { },
+            tryIt: new ReaderTry(new Key('T'), (shown, top) => tried.Add((shown, top))));
+        dialog.Layout(new Size(60, 10));
+        dialog.NewKeyDownEvent(Key.PageDown);
+        var top = dialog.Body.Top;
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('T')));
+
+        Assert.True(top > 0);
+        Assert.Equal([(body, top)], tried);
+    }
+
+    [Fact]
+    public void Reopened_after_a_try_it_opens_where_it_was_saying_what_went_wrong()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+            tryIt: new ReaderTry(new Key('t'), (_, _) => { }, Top: 12, Failure: "try team0 122 exited 1"));
+        dialog.Layout(new Size(60, 10));
+
+        Assert.Equal(12, dialog.Body.Top);
+        Assert.Equal("try team0 122 exited 1", dialog.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), dialog.Message.SchemeName);
     }
 
     private static string Long() =>
