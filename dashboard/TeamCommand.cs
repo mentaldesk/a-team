@@ -55,9 +55,9 @@ public sealed class TeamCommand(string executable)
 
     /// <summary>Runs a command that owns the terminal until it quits, Ctrl+C included. Null once it has run;
     /// otherwise how it failed, once the user has read what it printed.</summary>
-    public string? Hand(params string[] arguments)
+    public string? Hand(string[] arguments, string? said = null)
     {
-        var said = string.Join(' ', arguments);
+        said ??= string.Join(' ', arguments);
         var start = new ProcessStartInfo(executable);
         foreach (var argument in arguments)
             start.ArgumentList.Add(argument);
@@ -72,7 +72,11 @@ public sealed class TeamCommand(string executable)
                 : process.ExitCode == 0 ? null
                 : $"{said} exited {process.ExitCode}";
         }
-        catch (Exception e) when (e is IOException or Win32Exception or InvalidOperationException)
+        catch (Win32Exception)
+        {
+            failure = $"couldn't start {Path.GetFileName(executable)}";
+        }
+        catch (Exception e) when (e is IOException or InvalidOperationException)
         {
             failure = e.Message;
         }

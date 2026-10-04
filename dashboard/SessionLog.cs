@@ -82,6 +82,18 @@ public sealed class SessionLog
         return true;
     }
 
+    /// <summary>Every line of the session at <paramref name="path"/>, none trimmed, each as <see cref="LogLine.Written"/>.</summary>
+    public static IEnumerable<string> Whole(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        var text = reader.ReadToEnd();
+        var end = text.LastIndexOf('\n');
+        return end < 0
+            ? []
+            : [.. text[..end].Split('\n', StringSplitOptions.RemoveEmptyEntries).SelectMany(Render).Select(line => line.Written)];
+    }
+
     private static string? SessionIdOf(string json)
     {
         if (!json.Contains("\"init\""))

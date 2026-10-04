@@ -10,6 +10,9 @@ namespace ATeam.Dashboard;
 /// <summary>One drawn row of a log line: the text alone, whether it's the row the icon goes beside, and which line drawn it's from.</summary>
 public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false, int Line = 0);
 
+/// <summary>Where a log view was: its lines, scroll, selection and whether tool calls were shown.</summary>
+public sealed record LogPlace(IReadOnlyList<LogLine> Lines, int Top, bool Following, int Anchor, int Cursor, bool Expanded);
+
 /// <summary>Word-wrapped lines that follow the end until the user scrolls up, or an elided tail that never wraps.</summary>
 public sealed class LogView : View
 {
@@ -189,6 +192,17 @@ public sealed class LogView : View
     }
 
     public LogCopy CopyAll() => LogCopy.Of(_lines);
+
+    internal LogPlace Place => new(_lines, _top, _following, _anchor, _cursor, _expanded);
+
+    /// <summary>Back where <paramref name="place"/> was, then on to <paramref name="lines"/> as if they'd arrived
+    /// while you watched.</summary>
+    internal void Restore(LogPlace place, IReadOnlyList<LogLine> lines)
+    {
+        _lines = place.Lines;
+        (_top, _following, _anchor, _cursor, _expanded) = (place.Top, place.Following, place.Anchor, place.Cursor, place.Expanded);
+        Lines = lines;
+    }
 
     internal (int From, int To) Selection(IReadOnlyList<int> shown)
     {

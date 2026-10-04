@@ -348,7 +348,9 @@ public class AppMenuTests : IDisposable
 
         window.Refresh();
 
-        Assert.Equal(["log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll"], Below(window, Agents(window)));
+        Assert.Equal(["log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"], Below(window, Agents(window)));
+        Assert.Equal("Open whole log in editor", Item(window, "log.editor").Title.Replace("_", ""));
+        Assert.Equal(new Key('e'), Item(window, "log.editor").Key);
         Assert.Equal("_Back to all agents", Item(window, "agent.collapse").Title);
         Assert.Equal(Key.Esc, Item(window, "agent.collapse").Key);
         Assert.Equal(["Copy selected lines", "Copy whole log"], new[] { "log.copyLines", "log.copyAll" }.Select(id => Item(window, id).Title.Replace("_", "")));
