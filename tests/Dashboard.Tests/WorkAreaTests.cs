@@ -2092,6 +2092,106 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(["try", "team0", "122"], Assert.Single(handed).Arguments);
     }
 
+    [Fact]
+    public void t_on_a_validated_pitch_hands_over_to_try_the_team_s_default_branch()
+    {
+        var handed = new List<Handover>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? ReviewPitch() : "[]", null)),
+            handOver: handed.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(174, window.Work.Selected?.Number);
+
+        Assert.True(window.NewKeyDownEvent(new Key('t')));
+
+        var handover = Assert.IsType<TryHandover>(Assert.Single(handed));
+        Assert.Equal(["try", "team0"], handover.Arguments);
+        Assert.Equal(174, handover.Item.Number);
+        Assert.Null(handover.Reader);
+    }
+
+    [Fact]
+    public void t_in_a_validated_pitch_s_reader_hands_over_to_try_the_default_branch_and_reopens_it_after()
+    {
+        var handed = new List<Handover>();
+        var shown = new IssueBody("## Opportunity");
+        using var first = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? ReviewPitch() : "[]", null)),
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, _, tryIt) => tryIt!.Run(shown, 5));
+        first.Refresh();
+        LayOut(first, 120, 30);
+        first.NewKeyDownEvent(Key.Enter);
+        first.Refresh();
+        var handover = Assert.IsType<TryHandover>(Assert.Single(handed));
+        Assert.Equal(["try", "team0"], handover.Arguments);
+        var reopened = new List<(WaitingItem Item, IssueBody Body, ReaderTry? Try)>();
+
+        using var back = Open(
+            showBody: (item, body, _, _, _, _, tryIt) => reopened.Add((item, body, tryIt)),
+            resume: handover with { Failure = "try team0 exited 1" });
+        back.Refresh();
+        LayOut(back, 120, 30);
+        back.FocusResumed();
+        back.ReopenReader();
+
+        var (item, body, again) = Assert.Single(reopened);
+        Assert.Equal(174, item.Number);
+        Assert.Same(shown, body);
+        Assert.Equal(5, again?.Top);
+        Assert.Equal("try team0 exited 1", again?.Failure);
+    }
+
+    [Fact]
+    public void A_try_from_a_validated_pitch_s_card_that_failed_says_so_on_the_message_line()
+    {
+        var handed = new List<Handover>();
+        using var first = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? ReviewPitch() : "[]", null)),
+            handOver: handed.Add);
+        first.Refresh();
+        LayOut(first, 120, 30);
+        first.NewKeyDownEvent(new Key('t'));
+
+        using var back = Open(resume: handed.Single() with { Failure = "try team0 exited 1" });
+        back.Refresh();
+        LayOut(back, 120, 30);
+        back.FocusResumed();
+
+        Assert.Equal("try team0 exited 1", back.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), back.Message.SchemeName);
+    }
+
+    [Theory]
+    [InlineData("Idea", true, "")]
+    [InlineData("Pitched", true, "")]
+    [InlineData("Pitched", true, "High")]
+    [InlineData("Idea", false, "")]
+    public void A_pitch_short_of_Review_or_an_Idea_has_no_try_on_its_card_or_in_its_reader(
+        string status, bool pitch, string priority)
+    {
+        var handed = new List<Handover>();
+        var offered = new List<bool>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Unvalidated(status, pitch, priority) : "[]", null)),
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, _, tryIt) => offered.Add(tryIt is not null));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(174, window.Work.Selected?.Number);
+
+        Assert.False(window.Commands.IsEnabled("work.try"));
+        window.NewKeyDownEvent(new Key('t'));
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Empty(handed);
+        Assert.Equal([false], offered);
+    }
+
     private static void OpenTheTaskInReview(DashboardWindow window)
     {
         window.Refresh();
@@ -2143,6 +2243,13 @@ public class WorkAreaTests : IDisposable
           [{"number": 174, "title": "Accepting finished work", "status": "In review",
             "url": "https://github.com/mentaldesk/team0/issues/174", "team": "team0", "pitch": true,
             "turn": "you", "reason": "awaiting your acceptance since 10:15", "tasks": 3, "openTasks": {{open}}}]
+          """;
+
+    private static string Unvalidated(string status, bool pitch, string priority) =>
+        $$"""
+          [{"number": 174, "title": "Accepting finished work", "status": "{{status}}",
+            "url": "https://github.com/mentaldesk/team0/issues/174", "team": "team0", "pitch": {{(pitch ? "true" : "false")}},
+            "turn": "you", "reason": "waiting", "priority": "{{priority}}"}]
           """;
 
     /// <summary><see cref="Waiting"/> read again later, every reason moved on and team0's cards in

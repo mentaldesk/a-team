@@ -15,6 +15,9 @@ public sealed record WaitingItem(
     /// trouble or not.</summary>
     public bool Acceptable => Status == "In review";
 
+    /// <summary>Whether there's something to try: a task's PR, or the default branch for a validated pitch.</summary>
+    public bool Triable => Pr > 0 || Pitch && Acceptable;
+
     /// <summary>Why it can't be accepted yet, for the message bar, or nothing when it can.</summary>
     public string Unacceptable =>
         Holdup.Length == 0 ? "" : Pitch ? $"#{Number} {Holdup}" : $"#{Number} · {Holdup}";
