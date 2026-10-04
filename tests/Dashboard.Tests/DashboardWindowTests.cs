@@ -1116,6 +1116,129 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
     }
 
+    [Fact]
+    public void With_two_runs_i_asks_to_stop_the_shown_run_by_its_task_and_stops_only_that_one()
+    {
+        var calls = new List<string[]>();
+        var asked = new List<RunTask>();
+        WriteRun("team0", "dev", 246, 100);
+        WriteRun("team0", "dev", 303, 300);
+        using var window = Open(agents: Agents(2), confirmStop: task =>
+        {
+            asked.Add(task);
+            return true;
+        }, run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+        window.NewKeyDownEvent(Key.CursorUp);
+
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        Assert.Equal(246, Assert.Single(asked).Number);
+        Assert.Equal([["stop", "team0", "dev", "246"]], calls);
+    }
+
+    [Fact]
+    public void Declining_the_stop_leaves_the_run_going()
+    {
+        var calls = 0;
+        WriteRun("team0", "dev", 246, 100);
+        WriteRun("team0", "dev", 303, 300);
+        using var window = Open(agents: Agents(2), confirmStop: _ => false, run: _ =>
+        {
+            calls++;
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        window.Commands.Execute("agent.interrupt");
+
+        Assert.Equal(0, calls);
+        Assert.Equal("", window.Message.Says);
+    }
+
+    [Fact]
+    public void With_two_runs_i_steps_into_the_shown_run_alone()
+    {
+        var handed = new List<Handover>();
+        WriteRun("team0", "dev", 246, 100);
+        WriteRun("team0", "dev", 303, 300);
+        WriteSession("team0", "dev", 303);
+        using var window = Open(agents: Agents(2), handOver: handed.Add, confirmStop: _ => throw new InvalidOperationException());
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        Assert.Equal(["attach", "team0", "dev", "303"], Assert.IsType<AttachHandover>(Assert.Single(handed)).Arguments);
+    }
+
+    [Fact]
+    public void A_run_stopped_by_task_is_offered_Let_it_start_again_which_lets_only_that_task_go()
+    {
+        var calls = new List<string[]>();
+        WriteRun("team0", "dev", 246, 100);
+        WriteRun("team0", "dev", 303, 300);
+        WriteRunHeld("team0", "dev", 303);
+        using var window = Open(agents: Agents(2), run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        Assert.False(window.Panes[1].Held);
+        Assert.Equal("Let selected agent start again", Label(window, "agent.interrupt"));
+        Assert.Equal("Pause selected agent's role", Label(window, "agent.hold"));
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        Assert.Equal([["resume", "team0", "dev", "303"]], calls);
+    }
+
+    [Fact]
+    public void h_still_holds_the_whole_role_with_two_runs_going()
+    {
+        var calls = new List<string[]>();
+        WriteRun("team0", "dev", 246, 100);
+        WriteRun("team0", "dev", 303, 300);
+        using var window = Open(agents: Agents(2), run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+        window.NewKeyDownEvent(Key.CursorUp);
+
+        window.Commands.Execute("agent.hold");
+
+        Assert.Equal([["pause", "team0", "dev"]], calls);
+    }
+
+    [Fact]
+    public void With_one_run_i_stops_the_role_as_before_without_asking()
+    {
+        var calls = new List<string[]>();
+        WriteRun("team0", "dev", 246, 100);
+        using var window = Open(agents: Agents(2), confirmStop: _ => throw new InvalidOperationException(), run: arguments =>
+        {
+            calls.Add(arguments);
+            return Task.FromResult<string?>(null);
+        });
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        window.Commands.Execute("agent.interrupt");
+
+        Assert.Equal([["stop", "team0", "dev"]], calls);
+    }
+
     private static string Label(DashboardWindow window, string id) =>
         window.Commands.Registered.Single(command => command.Id == id).Label;
 
@@ -1180,7 +1303,8 @@ public class DashboardWindowTests : IDisposable
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
         Handover? resume = null,
-        Action<string>? showGuide = null)
+        Action<string>? showGuide = null,
+        Func<RunTask, bool>? confirmStop = null)
     {
         Directory.CreateDirectory(_root);
         if (keys is not null)
@@ -1206,7 +1330,8 @@ public class DashboardWindowTests : IDisposable
             auto,
             handOver,
             resume,
-            showGuide: showGuide);
+            showGuide: showGuide,
+            confirmStop: confirmStop);
     }
 
     private string Config => Path.Combine(_root, "config");
@@ -1233,13 +1358,20 @@ public class DashboardWindowTests : IDisposable
         File.WriteAllText(Path.Combine(dir, "task"), $$"""{"number":{{task}},"title":"Task {{task}}"}""");
     }
 
-    private void WriteSession(string team, string role)
+    private void WriteSession(string team, string role, int? task = null)
     {
-        var dir = Path.Combine(_root, team, role);
+        var dir = task is { } n ? Path.Combine(_root, team, role, "runs", n.ToString()) : Path.Combine(_root, team, role);
         Directory.CreateDirectory(dir);
         File.WriteAllText(
             Path.Combine(dir, "latest.jsonl"),
             "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"sess-" + team + role + "\"}\n");
+    }
+
+    private void WriteRunHeld(string team, string role, int task)
+    {
+        var dir = Path.Combine(_root, team, role, "runs", task.ToString());
+        File.WriteAllText(Path.Combine(dir, "pid"), "999999");
+        File.WriteAllText(Path.Combine(dir, "held"), "100");
     }
 
     private void WriteHold(string team, string role)
