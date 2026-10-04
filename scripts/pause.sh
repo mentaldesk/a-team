@@ -3,6 +3,8 @@
 # pause.sh <pause|resume|stop> [--dry-run] <team> [<role>] — turns a team's dispatch off or on,
 # or holds a role until `resume <team> <role>`: `pause` lets its run finish, `stop` ends it. The
 # dispatcher reads the config on every pass, so there is nothing to restart either way.
+# `stop <team> dev <task>` ends only that task's run and holds only that task, until
+# `resume <team> dev <task>`.
 #
 set -euo pipefail
 
@@ -23,21 +25,50 @@ if [ "${1:-}" = --dry-run ]; then
   shift
 fi
 case "$CMD $#" in
-  "pause 1" | "pause 2" | "resume 1" | "resume 2" | "stop 2") ;;
-  stop*) die "usage: a-team stop [--dry-run] <team> <role>" ;;
-  resume*) die "usage: a-team resume [--dry-run] <team> [<role>]" ;;
+  "pause 1" | "pause 2" | "resume 1" | "resume 2" | "resume 3" | "stop 2" | "stop 3") ;;
+  stop*) die "usage: a-team stop [--dry-run] <team> <role> [<task>]" ;;
+  resume*) die "usage: a-team resume [--dry-run] <team> [<role> [<task>]]" ;;
   *) die "usage: a-team pause [--dry-run] <team> [<role>]" ;;
 esac
 
 source "$ROOT/scripts/common.sh"
 TEAM=$1
 ROLE=${2:-}
+TASK=${3:-}
 case "$ROLE" in
   '' | lead | dev) ;;
   *) die "unknown role '$ROLE': expected lead or dev" ;;
 esac
 CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG"
+
+if [ -n "$TASK" ]; then
+  [ "$ROLE" = dev ] || die "only a Dev run is for a task"
+  [[ $TASK =~ ^[0-9]+$ ]] || die "expected a task number, not '$TASK'"
+  RUN="$STATE/$TEAM/dev/runs/$TASK"
+  if [ "$CMD" = resume ]; then
+    if [ -n "$DRY_RUN" ]; then echo "(dry run) would let #$TASK start again"; exit 0; fi
+    rm -f "$RUN/held"
+    echo "let $TEAM dev start #$TASK again"
+    exit 0
+  fi
+  PID=$(cat "$RUN/pid" 2>/dev/null) && kill -0 "$PID" 2>/dev/null || PID=''
+  if [ -n "$DRY_RUN" ]; then
+    if [ -n "$PID" ]; then echo "(dry run) would stop run $PID on #$TASK"; else echo "(dry run) no run to stop on #$TASK"; fi
+    echo "(dry run) would hold #$TASK"
+    exit 0
+  fi
+  mkdir -p "$RUN"
+  date +%s >"$RUN/held"
+  if [ -n "$PID" ]; then
+    kill "$PID" 2>/dev/null || true
+    echo "stopped $TEAM dev's run on #$TASK ($PID)"
+  else
+    echo "no run to stop on #$TASK"
+  fi
+  echo "#$TASK stays where it is, and no run starts on it until: a-team resume $TEAM dev $TASK"
+  exit 0
+fi
 
 case "$CMD $ROLE" in
   "pause ") FILTER='.dispatch.enabled = false' CHANGE="set dispatch.enabled to false" ;;

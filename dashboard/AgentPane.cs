@@ -135,6 +135,12 @@ public sealed class AgentPane : FrameView
 
     internal string? SessionId => _log.SessionId;
 
+    /// <summary>The task of the run <c>i</c> acts on alone: the shown one, once there's more than one or it's held.</summary>
+    internal RunTask? RunTask =>
+        _runs.Current is { } run && (run.Held is not null || _runs.Runs.Count(_runs.IsLive) > 1) ? run.Task : null;
+
+    internal bool RunHeld => _runs.Current?.Held is not null;
+
     /// <summary>Shows the next run up or down; false past either end, so the selection can move on to the next pane.</summary>
     public bool MoveRun(int step)
     {
@@ -149,10 +155,11 @@ public sealed class AgentPane : FrameView
         _refreshed = (nextCheck, paused, held);
         var role = AgentState.Read(_stateDir);
         _runs.Update(role.Runs, role.Latest);
-        var state = _runs.Current is { } run ? AgentState.Read(run.Dir) with { Stopped = role.Stopped } : role;
+        var state = _runs.Current is { } run ? AgentState.Read(run.Dir) with { Stopped = run.Held ?? role.Stopped } : role;
         Paused = paused;
-        Running = role.Running;
+        Running = state.Running;
         Held = held;
+        var stopped = held || RunHeld;
         _name = Name(Team, Role, state.Task);
 
         var switched = state.LogPath != _shownLog;
@@ -162,8 +169,8 @@ public sealed class AgentPane : FrameView
                 ? [new LogLine("(no session yet)", LogLineKind.Prose)]
                 : [.. _log.Lines];
 
-        _status = Status(state, paused, held, _log.Verdict);
-        _timing = Describe(state, now, nextCheck, _status, held);
+        _status = Status(state, paused, stopped, _log.Verdict);
+        _timing = Describe(state, now, nextCheck, _status, stopped);
         _now = now;
         UpdateHeader();
 
@@ -237,19 +244,18 @@ public sealed class AgentPane : FrameView
         return new(icons, Elide(name, width - icons.GetColumns() - markers.Length) + markers);
     }
 
-    /// <summary>One line per live run not shown: its icon, its task, and how long it has been running, at the right.</summary>
-    internal static IReadOnlyList<string> Bars(IReadOnlyList<DevRun> others, DateTimeOffset now, IconStyle style, int width)
-    {
-        var icon = Icons.Field(Icons.For(PaneStatus.Running), style);
-        return [.. others.Select(run =>
+    /// <summary>One line per run not shown: its icon, its task, and how long it has been running, or that it's held, at
+    /// the right.</summary>
+    internal static IReadOnlyList<string> Bars(IReadOnlyList<DevRun> others, DateTimeOffset now, IconStyle style, int width) =>
+        [.. others.Select(run =>
         {
+            var icon = Icons.Field(Icons.For(run.Held is null ? PaneStatus.Running : PaneStatus.StoppedByYou), style);
             var task = run.Task is { } t ? $"#{t.Number} {t.Title}" : "a run";
-            var elapsed = run.Started is { } started ? Clock(now - started) : "";
+            var elapsed = run.Held is not null ? "held" : run.Started is { } started ? Clock(now - started) : "";
             var room = width - icon.GetColumns() - elapsed.Length - 1;
             var name = Elide(task, room);
             return $"{icon}{name}{new string(' ', Math.Max(1, room - name.Length + 1))}{elapsed}";
         })];
-    }
 
     private static string Elide(string text, int width) =>
         width < 1 ? "" : text.Length <= width ? text : string.Concat(text.AsSpan(0, width - 1), "…");

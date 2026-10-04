@@ -211,6 +211,18 @@ public class AgentPaneTests : IDisposable
         Assert.Empty(AgentPane.Bars([], now, IconStyle.Unicode, 40));
     }
 
+    [Fact]
+    public void A_run_stopped_by_task_shows_as_held_in_its_bar()
+    {
+        var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(1);
+        var bars = AgentPane.Bars(
+            [new DevRun("246", new RunTask(246, "Remove a team"), now - TimeSpan.FromSeconds(400)) { Held = now }],
+            now, IconStyle.Unicode, 40);
+
+        Assert.StartsWith(Icons.Field(Icons.For(PaneStatus.StoppedByYou), IconStyle.Unicode) + "#246 Remove a team ", bars[0]);
+        Assert.EndsWith(" held", bars[0]);
+    }
+
     [Theory]
     [InlineData(true, true, RunVerdict.Error, PaneStatus.Paused)]
     [InlineData(true, false, RunVerdict.Error, PaneStatus.Paused)]

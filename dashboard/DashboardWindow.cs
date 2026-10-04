@@ -48,6 +48,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
     private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
+    private readonly Func<RunTask, bool> _confirmStop;
     private readonly Func<WaitingItem, Func<string, Task<string?>>, string?> _askComment;
     private readonly Action<string> _showGuide;
     private readonly Action<Handover>? _handOver;
@@ -97,6 +98,7 @@ public sealed class DashboardWindow : Window
         TimeProvider? clock = null,
         Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
         Action<string>? showGuide = null,
+        Func<RunTask, bool>? confirmStop = null,
         IClipboard? clipboard = null)
     {
         _clipboard = clipboard;
@@ -115,6 +117,7 @@ public sealed class DashboardWindow : Window
         _askPriority = askPriority;
         _showBody = showBody;
         _confirmAccept = confirmAccept ?? (_ => false);
+        _confirmStop = confirmStop ?? (_ => false);
         _askComment = askComment ?? ((_, _) => null);
         _handOver = handOver;
         _area = area;
@@ -327,9 +330,9 @@ public sealed class DashboardWindow : Window
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
                 isEnabled: () => OnDashboard() && Selected() is not null,
                 menuLabel: () => UnlessHeld("Pause this role", "Let this role start again"))
-            .Register("agent.interrupt", () => UnlessHeld("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
-                isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true },
-                menuLabel: () => UnlessHeld("Interrupt", "Let it start again"))
+            .Register("agent.interrupt", () => UnlessStopped("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
+                isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true } or { RunHeld: true },
+                menuLabel: () => UnlessStopped("Interrupt", "Let it start again"))
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", () => OpenSettings(), new Key('s'), isEnabled: HasApp)
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
@@ -363,18 +366,26 @@ public sealed class DashboardWindow : Window
 
     private string UnlessHeld(string label, string resume) => Selected() is { Held: true } ? resume : label;
 
+    private string UnlessStopped(string label, string resume) => Selected() is { Held: true } or { RunHeld: true } ? resume : label;
+
+    /// <summary>With several Dev runs, acts on the shown run's task alone; otherwise on the role, as with one run.</summary>
     private void ToggleInterrupt()
     {
-        if (_pending is not null || Selected() is not { } pane || !(pane.Running || pane.Held))
+        if (_pending is not null || Selected() is not { } pane || !(pane.Running || pane.Held || pane.RunHeld))
             return;
-        if (pane is { Held: false, SessionId: not null })
+        var task = pane is { Held: true, RunHeld: false } ? null : pane.RunTask;
+        var resume = pane.Held || pane.RunHeld;
+        if (!resume && pane.SessionId is not null)
         {
-            _handOver?.Invoke(new AttachHandover(pane.Team, pane.Role));
+            _handOver?.Invoke(new AttachHandover(pane.Team, pane.Role, task?.Number));
             return;
         }
-        _progress = pane.Held ? "Letting it start again…" : "Interrupting…";
+        if (!resume && task is not null && !_confirmStop(task))
+            return;
+        _progress = resume ? "Letting it start again…" : "Interrupting…";
         ShowMessage();
-        _pending = _run([pane.Held ? "resume" : "stop", pane.Team, pane.Role]);
+        string[] target = task is null ? [pane.Team, pane.Role] : [pane.Team, pane.Role, task.Number.ToString()];
+        _pending = _run([resume ? "resume" : "stop", .. target]);
     }
 
     /// <summary>No dialog is on top of the window and no menu is open over it.</summary>

@@ -7,14 +7,18 @@ namespace ATeam.Dashboard;
 public sealed record RunTask(int Number, string Title);
 
 /// <summary>A Dev run, and the directory under runs/ its state is kept in.</summary>
-public sealed record DevRun(string Dir, RunTask? Task, DateTimeOffset? Started);
+public sealed record DevRun(string Dir, RunTask? Task, DateTimeOffset? Started)
+{
+    /// <summary>When it was stopped on its own, by task; no run starts on that task until it's let go.</summary>
+    public DateTimeOffset? Held { get; init; }
+}
 
 /// <summary>What the dispatcher has recorded about one role: see scripts/dispatch.sh.</summary>
 public sealed record AgentState(
     bool Running, DateTimeOffset? LastStart, IReadOnlyList<string> Reasons, string? LogPath, DateTimeOffset? Stopped = null,
     RunTask? Task = null)
 {
-    /// <summary>The role's live runs under runs/, in the order they started.</summary>
+    /// <summary>The role's runs under runs/ that are live or stopped by task, in the order they started.</summary>
     public IReadOnlyList<DevRun> Runs { get; init; } = [];
 
     /// <summary>The run under runs/ the role's own files follow, live or not.</summary>
@@ -42,8 +46,8 @@ public sealed record AgentState(
         if (!Directory.Exists(runs))
             return [];
         return [.. Directory.EnumerateDirectories(runs)
-            .Where(run => Pid(run) is { } pid && IsAlive(pid))
             .Select(DevRun)
+            .Where(run => run.Held is not null || Pid(run.Dir) is { } pid && IsAlive(pid))
             .OrderBy(run => run.Started)
             .ThenBy(run => run.Dir, StringComparer.Ordinal)];
     }
@@ -54,7 +58,10 @@ public sealed record AgentState(
             : Directory.EnumerateDirectories(runs).Where(run => Pid(run) == pid).Select(DevRun).FirstOrDefault();
 
     private static DevRun DevRun(string run) =>
-        new(run, ReadTask(Path.Combine(run, "task")), ReadTime(Path.Combine(run, "last-start")));
+        new(run, ReadTask(Path.Combine(run, "task")), ReadTime(Path.Combine(run, "last-start")))
+        {
+            Held = ReadTime(Path.Combine(run, "held")),
+        };
 
     private static int? Pid(string dir) => int.TryParse(ReadText(Path.Combine(dir, "pid")), out var pid) ? pid : null;
 

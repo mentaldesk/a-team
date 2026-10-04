@@ -68,8 +68,13 @@ you quit that conversation you're back on the Dashboard, and the role is free to
 A run too new to have a conversation yet is just stopped, and the role held. On a held role the same
 key reads *Let it start again*.
 
+With several Dev runs going, `i` acts on the run the Dev pane shows, and the others keep going.
+Stopping one asks first, naming its task. Its task stays where it is on the board and no run starts
+on it until you let it start again, while new tasks still start. `h` still pauses the whole role.
+
 From a shell, `a-team stop <team> <role>` stops a run and holds the role, and
-`a-team attach <team> <role>` steps into its last run.
+`a-team attach <team> <role>` steps into its last run. Add a task number to either, and to
+`a-team resume`, to act on that one Dev run alone.
 
 While any of these is going, a line at the foot of the window says so. If one fails, the line says
 why, in red.
