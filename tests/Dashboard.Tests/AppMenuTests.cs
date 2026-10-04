@@ -242,7 +242,7 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            ["_Open", "Set _priority", "_Try PR", "Open on _GitHub", "_Accept", "_Refresh", "Show only _mine"],
+            ["_Open", "Set _priority", "_Try", "Open on _GitHub", "_Accept", "_Refresh", "Show only _mine"],
             Under(window, Cards(window)).Select(id => Item(window, id).Title));
     }
 

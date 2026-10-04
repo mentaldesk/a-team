@@ -40,6 +40,21 @@ public class WaitingItemTests
         Assert.Equal(approvable, new WaitingItem(1, "", status, "", "", Pitch: pitch).Approvable);
     }
 
+    [Theory]
+    [InlineData(true, "In review", 0, true)]
+    [InlineData(true, "Idea", 0, false)]
+    [InlineData(true, "Exploring", 0, false)]
+    [InlineData(true, "Pitched", 0, false)]
+    [InlineData(true, "Approved", 0, false)]
+    [InlineData(true, "Building", 0, false)]
+    [InlineData(false, "Idea", 0, false)]
+    [InlineData(false, "In review", 0, false)]
+    [InlineData(false, "In review", 131, true)]
+    public void Only_a_task_with_a_PR_or_a_pitch_in_Review_can_be_tried(bool pitch, string status, int pr, bool triable)
+    {
+        Assert.Equal(triable, new WaitingItem(1, "", status, "", "", Pr: pr, Pitch: pitch).Triable);
+    }
+
     [Fact]
     public void An_item_whose_PR_is_in_trouble_brings_the_PR_with_it()
     {

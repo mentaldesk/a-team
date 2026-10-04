@@ -42,7 +42,7 @@ public sealed class ReaderDialog : Dialog
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
     /// <param name="comment">Commenting on the item; a posted comment joins the end of the conversation, and the
     /// reader stays open either way.</param>
-    /// <param name="tryIt">Trying the item's PR, or null where there's no PR.</param>
+    /// <param name="tryIt">Trying the item's PR or, for a validated pitch, the default branch; null where neither.</param>
     public ReaderDialog(
         WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null)

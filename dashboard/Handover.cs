@@ -16,7 +16,7 @@ public sealed record TryHandover(
     WaitingItem Item, bool OnPr, IReadOnlyList<WaitingItem> Items, DateTimeOffset? ReadAt, ReaderPlace? Reader = null)
     : Handover
 {
-    public override string[] Arguments => ["try", Item.Team, Item.Pr.ToString()];
+    public override string[] Arguments => Item.Pr > 0 ? ["try", Item.Team, Item.Pr.ToString()] : ["try", Item.Team];
 
     public override Area Area => Area.Work;
 }

@@ -79,7 +79,8 @@ and `PgUp`/`PgDn` scroll, `g` opens it on GitHub, and `Esc` closes it.
   to the column its new Priority puts it in.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,
   with its acceptance criteria printed first; quit it to come back. If you were reading the task,
-  it opens again where you left it, ready for `a` or `c`, and says there if the try failed.
+  it opens again where you left it, ready for `a` or `c`, and says there if the try failed. On a
+  pitch in Review, `t` runs the default branch instead, where its tasks have landed.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. For a task, once you
   confirm, its PR is squash-merged and its branch deleted. For a pitch, it's closed as done. If it
   isn't ready yet, `a` says why instead.

@@ -564,7 +564,7 @@ public class DashboardWindowTests : IDisposable
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
-                "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
+                "Select the card above", "Open", "Set priority", "Try", "Open on GitHub",
                 "Approve the pitch you're reading", "Accept", "Comment on the item you're reading",
                 "Show only what's your move", "Read what's waiting again", "Dashboard", "Work",
                 "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Back to the agent grid", "Quit",
