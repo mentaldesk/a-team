@@ -374,7 +374,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Accept", "Comment on the item you're reading",
                 "Show only what's your move", "Read what's waiting again", "Dashboard", "Work",
-                "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Teams", "New team", "Keys", "About", "Back to the agent grid", "Quit",
+                "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -385,6 +385,18 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(4));
 
         Assert.Equal(Key.F1, window.Commands.Registered.Single(c => c.Id == "help").Key);
+    }
+
+    [Fact]
+    public void Guide_opens_on_the_contents_page_and_has_no_key()
+    {
+        var opened = new List<string>();
+        using var window = Open(agents: Agents(4), showGuide: opened.Add);
+
+        window.Commands.Execute("guide");
+
+        Assert.Equal([GuideDialog.Contents], opened);
+        Assert.Equal(Key.Empty, window.Commands.KeyFor("guide"));
     }
 
     [Fact]
@@ -1143,7 +1155,8 @@ public class DashboardWindowTests : IDisposable
         Area area = Area.Dashboard,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
-        Handover? resume = null)
+        Handover? resume = null,
+        Action<string>? showGuide = null)
     {
         Directory.CreateDirectory(_root);
         if (keys is not null)
@@ -1168,7 +1181,8 @@ public class DashboardWindowTests : IDisposable
             area,
             auto,
             handOver,
-            resume);
+            resume,
+            showGuide: showGuide);
     }
 
     private string Config => Path.Combine(_root, "config");

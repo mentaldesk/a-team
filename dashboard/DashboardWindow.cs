@@ -49,6 +49,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<WaitingItem, Func<string, Task<string?>>, string?> _askComment;
+    private readonly Action<string> _showGuide;
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
     private readonly FrameView _loading;
@@ -92,8 +93,10 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>>? readConversation = null,
         Func<WaitingItem, bool>? confirmAccept = null,
         TimeProvider? clock = null,
-        Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null)
+        Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
+        Action<string>? showGuide = null)
     {
+        _showGuide = showGuide ?? (_ => { });
         _start = start;
         _clock = clock ?? TimeProvider.System;
         BorderStyle = LineStyle.None;
@@ -311,6 +314,7 @@ public sealed class DashboardWindow : Window
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("teams.new", "New team", () => OpenSettings(SettingsDialog.TeamsPage, newTeam: true), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
+            .Register("guide", "Guide", () => _showGuide(GuideDialog.Contents))
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("agent.collapse", () => "Back to the agent grid", () => SetExpanded(null), Key.Esc,
                 isEnabled: () => OnDashboard() && _expanded is not null, menuLabel: () => "Back to all agents", inMenu: () => _expanded is not null)
