@@ -889,6 +889,8 @@ public sealed class DashboardWindow : Window
 
     private void MoveSelection(int rowStep, int columnStep)
     {
+        if (rowStep != 0 && Selected() is { } pane && pane.MoveRun(rowStep))
+            return;
         if (_expanded is not null)
             return;
         var current = SelectedIndex();
