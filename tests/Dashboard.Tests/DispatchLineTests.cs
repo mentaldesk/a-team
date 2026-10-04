@@ -3,7 +3,7 @@ namespace ATeam.Dashboard.Tests;
 public class DispatchLineTests
 {
     [Theory]
-    [InlineData("2026-09-20T17:01:17Z tuicode dev: started 41234: 1 task Ready", LogLineKind.Prose)]
+    [InlineData("2026-09-20T17:01:17Z tuicode dev: started 41234 on 0.1.7: 1 task Ready", LogLineKind.Prose)]
     [InlineData("2026-09-20T17:01:17Z a-team lead: would start: 3 Ideas to shape", LogLineKind.DispatchSkipped)]
     [InlineData("2026-09-20T17:01:17Z tuicode dev: triggers failed: gh: Not Found (HTTP 404)", LogLineKind.DispatchFailed)]
     [InlineData("2026-09-20T17:01:17Z a-team dev: killed run 41234 after 121 minutes", LogLineKind.DispatchFailed)]
@@ -14,8 +14,8 @@ public class DispatchLineTests
     [Fact]
     public void The_timestamp_is_cut_to_the_hour_and_minute_it_already_says() =>
         Assert.Equal(
-            "17:01 tuicode dev: started 41234: 1 task Ready",
-            DispatchLine.Shorten("2026-09-20T17:01:17Z tuicode dev: started 41234: 1 task Ready"));
+            "17:01 tuicode dev: started 41234 on 0.1.7: 1 task Ready",
+            DispatchLine.Shorten("2026-09-20T17:01:17Z tuicode dev: started 41234 on 0.1.7: 1 task Ready"));
 
     [Theory]
     [InlineData("not a timestamp at all")]

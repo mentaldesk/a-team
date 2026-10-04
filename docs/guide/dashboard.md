@@ -22,7 +22,9 @@ Under the title is how long the current run has been going, or when the role las
 countdown to the dispatcher's next check. Then why the run was started, and then the run's log as
 it happens: what the agent said, the tools it called, any errors, and how the run finished.
 
-The strip along the bottom is the dispatcher's recent decisions.
+The strip along the bottom is the dispatcher's recent decisions. Each run it starts names the
+release it's on, as in `09:51 a-team lead: started 81834 on 0.1.7: #232 was approved`, and keeps
+that release to its end, even if you upgrade a-team meanwhile.
 
 ## Reading a log
 

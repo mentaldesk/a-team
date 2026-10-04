@@ -2627,6 +2627,7 @@ dev_dispatcher() {
   mkdir -p "$DISPATCH/bin" "$DISPATCH/scripts"
   cp "$ROOT"/scripts/*.sh "$DISPATCH/scripts/"
   cp -R "$ROOT/settings" "$DISPATCH/"
+  echo 0.1.7 >"$DISPATCH/VERSION"
   CLAIMS="$DISPATCH/claims" DEV_TRIGGERS="$DISPATCH/triggers.json" CLAIMED="$DISPATCH/claimed.json"
   : >"$CLAIMS"
   echo null >"$CLAIMED"
@@ -2637,6 +2638,7 @@ case " \$* " in
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
   *" triggers lead"*) echo '{"reasons": [], "creative": false}' ;;
   *" task-prompt "*) echo "Run one shift." ;;
+  *" version "*) cat "\$(dirname "\$0")/../VERSION" ;;
 esac
 SH
   chmod +x "$DISPATCH/bin/a-team"
@@ -2734,6 +2736,7 @@ case " \$* " in
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
   *" triggers lead"*) echo '{"reasons": [], "creative": false}' ;;
   *" task-prompt "*) echo "Run one shift." ;;
+  *" version "*) cat "\$(dirname "\$0")/../VERSION" ;;
 esac
 SH
   cat >"$DISPATCH/bin/claude" <<SH
@@ -2845,6 +2848,77 @@ for _ in $(seq 50); do alive 13 || alive 14 || break; sleep 0.1; done
 alive 13 && fail "stop: #13 is still going"
 alive 14 && fail "stop: #14 is still going"
 grep -q "stopped demo dev's run (${PIDS// /, })" "$OUT" || fail "stop: '$(cat "$OUT")'"
+
+# claude records where its a-team is, its settings, and its version before and after $GO appears.
+pinned_claude() {
+  SEEN=$(mktemp -d "$WORK/seen.XXXXXX") GO="$WORK/go.$RANDOM"
+  cat >"$DISPATCH/bin/claude" <<SH
+#!/usr/bin/env bash
+seen="$SEEN/\${A_TEAM_RUN_TASK:-lead}"
+while [ \$# -gt 0 ]; do [ "\$1" = --settings ] && echo "\$2" >"\$seen.settings"; shift; done
+command -v a-team >"\$seen.bin"
+a-team version >"\$seen.before"
+while [ ! -e "$GO" ]; do sleep 0.1; done
+a-team version >"\$seen.after"
+echo "\${A_TEAM_RUN_TASK:-lead}" >>"$LAUNCHED"
+exec sleep 60
+SH
+  chmod +x "$DISPATCH/bin/claude"
+}
+seen() { for _ in $(seq 50); do [ -s "$SEEN/$1" ] && break; sleep 0.1; done; cat "$SEEN/$1" 2>/dev/null; }
+
+case_ "each Dev run keeps the release it started on, even once an upgrade removes it"
+jq '.dispatch.hold = []' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+queued_dispatcher
+pinned_claude
+devs 2
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
+printf '13\n' >"$QUEUE"
+dispatch_dev
+seen 13.before >/dev/null
+echo 0.1.8 >"$DISPATCH/VERSION"
+printf '14\n' >"$QUEUE"
+dispatch_dev
+RUNS="$A_TEAM_STATE/demo/dev/runs"
+same "#13 a-team" "$RUNS/13/release/bin/a-team" "$(seen 13.bin)"
+same "#14 a-team" "$RUNS/14/release/bin/a-team" "$(seen 14.bin)"
+same "#13 copy" 0.1.7 "$(cat "$RUNS/13/release/VERSION")"
+same "#14 copy" 0.1.8 "$(cat "$RUNS/14/release/VERSION")"
+same "#13 settings" "$RUNS/13/release/settings.json" "$(seen 13.settings)"
+grep -qF "\"Edit(/$RUNS/13/release/**)\"" "$RUNS/13/release/settings.json" ||
+  fail "settings: '$(grep Edit "$RUNS/13/release/settings.json")'"
+grep -qF "$DISPATCH/" "$RUNS/13/release/settings.json" && fail "settings name the original release"
+grep -qE "demo dev: started [0-9]+ on 0\.1\.7: #13: " "$A_TEAM_STATE/dispatch.log" || fail "log: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+grep -qE "demo dev: started [0-9]+ on 0\.1\.8: #14: " "$A_TEAM_STATE/dispatch.log" || fail "log: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+mv "$DISPATCH" "$DISPATCH.gone"
+touch "$GO"
+same "#13 after the upgrade" 0.1.7 "$(seen 13.after)"
+same "#14 after the upgrade" 0.1.8 "$(seen 14.after)"
+mv "$DISPATCH.gone" "$DISPATCH"
+
+case_ "a finished run's copy is removed, and a live run's is left alone"
+kill "$(cat "$RUNS/13/pid")"
+for _ in $(seq 50); do alive 13 || break; sleep 0.1; done
+dispatch_dev
+[ -e "$RUNS/13/release" ] && fail "#13's copy is still there"
+[ -x "$RUNS/14/release/bin/a-team" ] || fail "#14's copy was removed while it ran"
+stop_runs
+
+case_ "the Lead's run keeps its copy in the role's folder"
+sed -i.bak 's|^  \*" triggers lead"\*).*|  *" triggers lead"*) echo '"'"'{"reasons": ["#232 was approved"], "creative": false}'"'"' ;;|' "$DISPATCH/bin/a-team"
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev
+same "lead a-team" "$A_TEAM_STATE/demo/lead/release/bin/a-team" "$(seen lead.bin)"
+same "lead settings" "$A_TEAM_STATE/demo/lead/release/settings.json" "$(seen lead.settings)"
+kill "$(cat "$A_TEAM_STATE/demo/lead/pid")"
+
+case_ "a dry run copies no release"
+dev_dispatcher
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
+echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start' "$A_TEAM_STATE/dispatch.log" || fail "dry run: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "copies" "" "$(find "$A_TEAM_STATE" -name release)"
 A_TEAM_STATE=$A_TEAM_STATE_WAS
 
 case_ "pause --dry-run <team> <role> says it would hold the role, and doesn't"

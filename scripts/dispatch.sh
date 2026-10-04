@@ -28,6 +28,7 @@ dispatch() {
   now=$(date +%s)
   cfg() { jq -r "$1" "$config"; }
 
+  $DRY_RUN || prune_releases "$dir"
   live=$(live_runs "$dir")
   while read -r pid at _; do
     [ -n "$pid" ] || continue
@@ -93,10 +94,31 @@ live_runs() {
   done | sort -k2n
 }
 
+# prune_releases <dir>: removes the release copy of each of the role's runs that has finished.
+prune_releases() {
+  local release
+  for release in "$1/release" "$1"/runs/*/release; do
+    [ -d "$release" ] || continue
+    kill -0 "$(cat "$(dirname "$release")/pid" 2>/dev/null)" 2>/dev/null || rm -rf "$release"
+  done
+}
+
+# copy_release <dest>: this release, without the dashboard, for one run to keep to its end.
+copy_release() {
+  local item
+  rm -rf "$1"
+  mkdir -p "$1" || return
+  for item in bin scripts roles tasks settings examples process.md; do
+    [ ! -e "$ROOT/$item" ] || cp -R "$ROOT/$item" "$1/" || return
+  done
+  "$ROOT/bin/a-team" version >"$1/VERSION"
+}
+
 # launch: starts a run for $reasons (and $task, for the Dev). A Dev run keeps its state under
-# runs/<task>, and the role's own files follow the run started last.
+# runs/<task>, and the role's own files follow the run started last. Each run runs on its own copy
+# of the release, so an upgrade mid-run can't change it.
 launch() {
-  local what run logfile prompt settings workdir pid
+  local what run logfile prompt settings workdir pid release version
   echo "$now" >"$dir/${prefix}last-start"
   printf '%s\n' "$reasons" >"$dir/${prefix}last-reasons"
   if [ -n "$task" ]; then echo "$task" >"$dir/${prefix}task"; else rm -f "$dir/${prefix}task"; fi
@@ -111,9 +133,15 @@ launch() {
   workdir=$(cfg .workdir)
   workdir=${workdir/#\~/$HOME}
   logfile="$dir/logs/$(date -u +%Y%m%dT%H%M%SZ)${number:+-$number}.jsonl"
-  settings="$dir/settings.json"
-  sed "s|{{root}}|/$ROOT|g" "$ROOT/settings/agents.json" >"$settings"
-  prompt="$("$ROOT/bin/a-team" task-prompt "$team" "$role")
+  release="$dir${number:+/runs/$number}/release"
+  if ! copy_release "$release"; then
+    log "$team $role: couldn't copy the release to $release"
+    return
+  fi
+  version=$(cat "$release/VERSION")
+  settings="$release/settings.json"
+  sed "s|{{root}}|/$release|g" "$release/settings/agents.json" >"$settings"
+  prompt="$("$release/bin/a-team" task-prompt "$team" "$role")
 ${number:+
 This run is for #$number $(jq -r .title <<<"$task"), and only that task.
 }
@@ -122,7 +150,7 @@ $(sed 's/^/- /' <<<"$reasons")"
 
   pid=$(
     cd "$workdir" || exit 1
-    PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM="$team" A_TEAM_RUN_TASK="$number" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
+    PATH="$release/bin:$PATH" A_TEAM_RUN_TEAM="$team" A_TEAM_RUN_TASK="$number" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
       --permission-mode auto --permission-prompts none \
       --settings "$settings" \
       --name "a-team · $team · $role${number:+ · #$number}" \
@@ -138,7 +166,7 @@ $(sed 's/^/- /' <<<"$reasons")"
     cp "$dir/pid" "$dir/last-start" "$dir/last-reasons" "$dir/task" "$run/"
     ln -sf "$logfile" "$run/latest.jsonl"
   fi
-  log "$team $role: started $pid: $what"
+  log "$team $role: started $pid on $version: $what"
 }
 
 # fresh <file> <reasons> <log>: whether these reasons are worth a run. The same ones as last time
