@@ -58,8 +58,9 @@ The line at the foot says why the card you're on is where it is, like
 | `F5` | Read what's waiting again |
 
 The cards are read when you open Work, when you press `F5`, and by themselves every five minutes
-while Work is in front. That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the
-Dashboard reads nothing. If a read fails, the foot says so in red and the cards stay as they were.
+while Work is in front. Coming back from the Dashboard puts you on the card you left, and reads again
+only if an agent has started or finished a run, or five minutes have passed, since the last read.
+That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dashboard reads nothing. If a read fails, the foot says so in red and the cards stay as they were.
 
 ## Reading a card
 

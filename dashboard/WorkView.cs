@@ -73,12 +73,14 @@ public sealed class WorkView : View
     internal IconStyle Icons { get; private set; } = IconStyle.Unicode;
 
     /// <summary>Lays the cards out again, hiding the columns a team has nothing in. A re-read brings the selected
-    /// card back with its reason moved on, so it's found again by team and number.</summary>
+    /// card back with its reason moved on, so it's found again by team and number, in whichever column it's now in.</summary>
     public void Show(IReadOnlyList<WaitingItem> items)
     {
         var card = FocusedColumn()?.Selected;
         var now = card is null ? null : items.FirstOrDefault(item => item.Team == card.Item.Team && item.Number == card.Item.Number);
         Keep(items, now, card?.IsPr ?? false);
+        if (now is not null && Selected != now)
+            _ = Focus(now, card!.IsPr) || Focus(now, false);
     }
 
     /// <summary>Drops the lanes and the cards of teams that have been removed.</summary>
@@ -217,12 +219,24 @@ public sealed class WorkView : View
     /// <summary>Gives the keyboard to <paramref name="item"/>'s own row, or its PR's, wherever it's shown.</summary>
     internal bool Focus(WaitingItem item, bool onPr)
     {
-        if (_lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Select(item, onPr)) is not { } found)
-            return false;
-        found.FocusCards();
-        ShowFocus();
-        return true;
+        for (var lane = 0; lane < _lanes.Count; lane++)
+            for (var gate = 0; gate < _lanes[lane].Columns.Count; gate++)
+                if (_lanes[lane].Columns[gate].Select(item, onPr))
+                {
+                    Land(lane, gate, 0);
+                    ShowFocus();
+                    return true;
+                }
+        return false;
     }
+
+    /// <summary>The card or PR row the keyboard is on, by team and number, so it can be found again after a read.</summary>
+    internal Place? Place => SelectedColumn()?.Selected is { } row ? new(row.Item.Team, row.Item.Number, row.IsPr) : null;
+
+    /// <summary>Gives the keyboard back to <paramref name="place"/>, or to its card where its PR row has gone.</summary>
+    internal bool Focus(Place place) =>
+        _items.FirstOrDefault(item => item.Team == place.Team && item.Number == place.Number) is { } item
+        && (Focus(item, place.OnPr) || Focus(item, false));
 
     /// <summary>Puts the selection back on a card, where the column it was in still has it.</summary>
     private bool Reselect(WaitingItem item) =>
@@ -297,6 +311,9 @@ public sealed class WorkView : View
 
     private Size Content() => Viewport.Size with { Height = Math.Max(Viewport.Height, Total()) };
 }
+
+/// <summary>Where the keyboard was in Work: an item's own row, or its PR's.</summary>
+public readonly record struct Place(string Team, int Number, bool OnPr);
 
 /// <summary>One team's swimlane: the team's name, and a column per gate under it that has anything in it.</summary>
 public sealed class WorkLane : View

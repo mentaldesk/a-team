@@ -1654,7 +1654,155 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Leaving_the_area_and_coming_back_reads_again()
+    public void Coming_back_with_nothing_changed_reads_nothing_and_keeps_the_card()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        window.NewKeyDownEvent(new Key('d'));
+        clock.Now += DashboardWindow.ReadEvery - TimeSpan.FromSeconds(1);
+        window.Refresh();
+        window.NewKeyDownEvent(new Key('w'));
+
+        Assert.Equal(2, reads);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.NotNull(window.Work.SelectedCard);
+        Assert.StartsWith("read 4m ago", window.Status.State.Text);
+    }
+
+    [Fact]
+    public void Coming_back_keeps_the_PR_row()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
+
+        window.NewKeyDownEvent(new Key('d'));
+        window.NewKeyDownEvent(new Key('w'));
+
+        Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
+    }
+
+    [Fact]
+    public void Coming_back_after_a_run_started_reads_again_and_keeps_the_card()
+    {
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(new Key('d'));
+        WriteRun("team1", "lead", Environment.ProcessId);
+        window.NewKeyDownEvent(new Key('w'));
+        window.Refresh();
+
+        Assert.Equal(4, reads);
+        Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void Coming_back_after_a_run_finished_reads_again_and_keeps_the_card()
+    {
+        WriteRun("team0", "dev", Environment.ProcessId);
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(new Key('d'));
+        WriteRun("team0", "dev", 999999);
+        window.NewKeyDownEvent(new Key('w'));
+        window.Refresh();
+
+        Assert.Equal(4, reads);
+        Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void Coming_back_five_minutes_after_the_last_read_reads_again_and_keeps_the_card()
+    {
+        var clock = new Clock();
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        }, clock: clock);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(new Key('d'));
+        clock.Now += DashboardWindow.ReadEvery;
+        window.NewKeyDownEvent(new Key('w'));
+        window.Refresh();
+
+        Assert.Equal(4, reads);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.StartsWith("read <1m ago", window.Status.State.Text);
+    }
+
+    [Fact]
+    public void Coming_back_after_a_read_that_failed_reads_again()
+    {
+        var reads = 0;
+        using var window = Open(read: _ =>
+        {
+            reads++;
+            return Task.FromResult(new Reading("", "gh: API rate limit exceeded"));
+        });
+        window.Refresh();
+
+        window.NewKeyDownEvent(new Key('d'));
+        window.NewKeyDownEvent(new Key('w'));
+
+        Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void A_read_that_moves_the_card_to_another_column_takes_the_selection_with_it()
+    {
+        var waiting = Waiting("team0");
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? waiting : Waiting(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        waiting = waiting.Replace("\"priority\": \"High\", ", "");
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.Equal("Triage · team0", window.Work.Region);
+    }
+
+    [Fact]
+    public void F5_reads_now()
     {
         var reads = 0;
         using var window = Open(read: team =>
@@ -1664,10 +1812,25 @@ public class WorkAreaTests : IDisposable
         });
         window.Refresh();
 
-        window.NewKeyDownEvent(new Key('d'));
-        window.NewKeyDownEvent(new Key('w'));
+        window.NewKeyDownEvent(Key.F5);
+        window.Refresh();
 
         Assert.Equal(4, reads);
+    }
+
+    [Fact]
+    public void Starting_in_Work_reads_and_lands_on_the_first_card()
+    {
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+
+        Assert.Equal(2, reads);
+        Assert.Equal(6, window.Work.Selected?.Number);
     }
 
     [Fact]
@@ -2330,6 +2493,14 @@ public class WorkAreaTests : IDisposable
             confirmAccept: confirmAccept,
             clock: clock,
             askComment: askComment);
+    }
+
+    private void WriteRun(string team, string role, int pid)
+    {
+        var dir = Path.Combine(_root, team, role);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "pid"), pid.ToString());
+        File.WriteAllText(Path.Combine(dir, "last-start"), "100");
     }
 
     /// <summary>A clock the test moves by hand.</summary>
