@@ -834,7 +834,7 @@ public class WorkAreaTests : IDisposable
                 read.Add(item);
                 return Task.FromResult(new Reading(Body, null));
             },
-            showBody: (item, body, _, _, _, _) => shown = (item, body));
+            showBody: (item, body, _, _, _, _, _) => shown = (item, body));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -857,7 +857,7 @@ public class WorkAreaTests : IDisposable
             readBody: _ => Task.FromResult(new Reading(Body, null)),
             readConversation: _ => Task.FromResult(new Reading(
                 $$"""[{"who": "dev", "at": "{{at:O}}", "body": "Done.", "pr": 239, "description": true}]""", null)),
-            showBody: (_, body, _, _, _, _) => shown = body);
+            showBody: (_, body, _, _, _, _, _) => shown = body);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -875,7 +875,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading(Body, null)),
             readConversation: _ => Task.FromResult(new Reading("", "board.sh: can't read the conversation on #6 (gh: HTTP 502)")),
-            showBody: (_, body, _, _, _, _) => shown = body);
+            showBody: (_, body, _, _, _, _, _) => shown = body);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -897,7 +897,7 @@ public class WorkAreaTests : IDisposable
                 read.Add(item);
                 return Task.FromResult(new Reading(Body, null));
             },
-            showBody: (item, body, _, _, _, _) => shown = (item, body));
+            showBody: (item, body, _, _, _, _, _) => shown = (item, body));
         window.Refresh();
         LayOut(window, 120, 30);
         Assert.Equal("Questions · team0", window.Work.Region);
@@ -922,7 +922,7 @@ public class WorkAreaTests : IDisposable
                 calls.Add(arguments);
                 return Task.FromResult<string?>(null);
             },
-            showBody: (_, body, _, approve, _, _) =>
+            showBody: (_, body, _, approve, _, _, _) =>
             {
                 shown = body;
                 approve!();
@@ -954,7 +954,7 @@ public class WorkAreaTests : IDisposable
                 return Task.FromResult<string?>(null);
             },
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, onApprove, _, _) => onApprove!());
+            showBody: (_, _, _, onApprove, _, _, _) => onApprove!());
         window.Refresh();
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
@@ -980,7 +980,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(
             run: _ => Task.FromResult<string?>("board.sh: only a Pitched pitch can be approved (#107 is in 'Approved')"),
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, onApprove, _, _) => onApprove!());
+            showBody: (_, _, _, onApprove, _, _, _) => onApprove!());
         window.Refresh();
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
@@ -1003,7 +1003,7 @@ public class WorkAreaTests : IDisposable
         var offered = new List<bool>();
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, onApprove, _, _) => offered.Add(onApprove is not null));
+            showBody: (_, _, _, onApprove, _, _, _) => offered.Add(onApprove is not null));
         window.Refresh();
         LayOut(window, 120, 30);
         for (var i = 0; i < right; i++)
@@ -1024,7 +1024,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(
             read: team => Task.FromResult(new Reading(team == "team0" ? Unranked : "[]", null)),
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, onApprove, _, _) => offered.Add(onApprove is not null));
+            showBody: (_, _, _, onApprove, _, _, _) => offered.Add(onApprove is not null));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1284,7 +1284,7 @@ public class WorkAreaTests : IDisposable
                 return Task.FromResult<string?>(null);
             },
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, _, accept, _) => offered = accept,
+            showBody: (_, _, _, _, accept, _, _) => offered = accept,
             confirmAccept: _ => true);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -1316,7 +1316,7 @@ public class WorkAreaTests : IDisposable
                 return Task.FromResult<string?>(null);
             },
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, _, accept, _) => closes.Add(accept!.Run()),
+            showBody: (_, _, _, _, accept, _, _) => closes.Add(accept!.Run()),
             confirmAccept: _ => true);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -1336,7 +1336,7 @@ public class WorkAreaTests : IDisposable
         var offered = new List<bool>();
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, _, accept, _) => offered.Add(accept is not null));
+            showBody: (_, _, _, _, accept, _, _) => offered.Add(accept is not null));
         window.Refresh();
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
@@ -1374,7 +1374,7 @@ public class WorkAreaTests : IDisposable
                 return Task.FromResult<string?>(null);
             },
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, _, _, comment) =>
+            showBody: (_, _, _, _, _, comment, _) =>
             {
                 offered = comment;
                 posted.Add(comment!.Run());
@@ -1406,7 +1406,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(
             run: _ => Task.FromResult<string?>("gh: HTTP 502"),
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, _, _, comment) => comment!.Run(),
+            showBody: (_, _, _, _, _, comment, _) => comment!.Run(),
             askComment: (_, post) =>
             {
                 said = post("Shelve it.").Result;
@@ -1428,7 +1428,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(
             openUrl: opened.Add,
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, onGitHub, _, _, _) => onGitHub());
+            showBody: (_, _, onGitHub, _, _, _, _) => onGitHub());
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1474,7 +1474,7 @@ public class WorkAreaTests : IDisposable
         var shown = false;
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading("", "board.sh: can't read #6 (gh: Not Found (HTTP 404))")),
-            showBody: (_, _, _, _, _, _) => shown = true);
+            showBody: (_, _, _, _, _, _, _) => shown = true);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1490,7 +1490,7 @@ public class WorkAreaTests : IDisposable
     public void A_card_with_no_body_opens_no_reader_and_says_so_in_the_error_colour()
     {
         var shown = false;
-        using var window = Open(showBody: (_, _, _, _, _, _) => shown = true);
+        using var window = Open(showBody: (_, _, _, _, _, _, _) => shown = true);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -2137,6 +2137,135 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), back.Message.SchemeName);
     }
 
+    [Fact]
+    public void t_in_the_reader_hands_over_to_try_with_the_team_PR_and_where_the_reader_was()
+    {
+        var handed = new List<Handover>();
+        var shown = new IssueBody("## Opportunity");
+        using var window = Open(
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, _, tryIt) => tryIt!.Run(shown, 7));
+        OpenTheTaskInReview(window);
+
+        var handover = Assert.IsType<TryHandover>(Assert.Single(handed));
+        Assert.Equal(["try", "team0", "122"], handover.Arguments);
+        Assert.Equal(49, handover.Item.Number);
+        Assert.Equal(new ReaderPlace(shown, "https://github.com/mentaldesk/team0/issues/49", 7), handover.Reader);
+    }
+
+    [Fact]
+    public void Back_from_a_try_in_the_reader_it_reopens_on_that_item_where_it_was_with_no_read()
+    {
+        var handed = new List<Handover>();
+        var shown = new IssueBody("## Opportunity");
+        using var first = Open(
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, _, tryIt) => tryIt!.Run(shown, 7));
+        OpenTheTaskInReview(first);
+        var reads = 0;
+        var reopened = new List<(WaitingItem Item, IssueBody Body, ReaderTry? Try)>();
+
+        using var back = Open(
+            read: _ =>
+            {
+                reads++;
+                return Task.FromResult(new Reading("[]", null));
+            },
+            readBody: _ =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(Body, null));
+            },
+            showBody: (item, body, _, _, _, _, tryIt) => reopened.Add((item, body, tryIt)),
+            resume: handed.Single());
+        back.Refresh();
+        LayOut(back, 120, 30);
+        back.FocusResumed();
+        back.ReopenReader();
+
+        Assert.Equal(0, reads);
+        var (item, body, again) = Assert.Single(reopened);
+        Assert.Equal(49, item.Number);
+        Assert.Same(shown, body);
+        Assert.Equal(7, again?.Top);
+        Assert.Null(again?.Failure);
+        Assert.Equal(49, back.Work.Selected?.Number);
+        Assert.NotNull(back.Work.SelectedCard);
+    }
+
+    [Fact]
+    public void A_try_from_the_reader_that_failed_says_so_in_the_reopened_reader()
+    {
+        var handed = new List<Handover>();
+        using var first = Open(
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, body, _, _, _, _, tryIt) => tryIt!.Run(body, 0));
+        OpenTheTaskInReview(first);
+        ReaderTry? reopened = null;
+
+        using var back = Open(
+            showBody: (_, _, _, _, _, _, tryIt) => reopened = tryIt,
+            resume: handed.Single() with { Failure = "try team0 122 exited 1" });
+        back.Refresh();
+        LayOut(back, 120, 30);
+        back.FocusResumed();
+        back.ReopenReader();
+
+        Assert.Equal("try team0 122 exited 1", reopened?.Failure);
+        Assert.NotEqual("try team0 122 exited 1", back.Message.Says);
+    }
+
+    [Fact]
+    public void The_reader_offers_no_try_on_an_item_with_no_PR()
+    {
+        var offered = new List<bool>();
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, _, tryIt) => offered.Add(tryIt is not null));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([false], offered);
+    }
+
+    [Fact]
+    public void Try_can_be_rebound_and_the_card_and_the_reader_share_the_new_key()
+    {
+        Directory.CreateDirectory(_root);
+        new DashboardSettings(Config).WriteKeys([("work.try", new Key('y'))]);
+        var handed = new List<Handover>();
+        ReaderTry? offered = null;
+        using var window = Open(
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, _, tryIt) => offered = tryIt);
+        OpenTheTaskInReview(window);
+
+        Assert.Equal(new Key('y'), offered?.Key);
+        Assert.Empty(handed);
+
+        Assert.True(window.NewKeyDownEvent(new Key('y')));
+
+        Assert.Equal(["try", "team0", "122"], Assert.Single(handed).Arguments);
+    }
+
+    private static void OpenTheTaskInReview(DashboardWindow window)
+    {
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+    }
+
     /// <summary>Two gated items and an unranked Idea for the first team, one gated item for the second, so
     /// columns come back empty. One of the first team's is the Lead's move, so the filter has something to hide.</summary>
     private static string Waiting(string team) => team == "team0"
@@ -2334,7 +2463,7 @@ public class WorkAreaTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?>? askPriority = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
-        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?>? showBody = null,
+        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
@@ -2355,7 +2484,7 @@ public class WorkAreaTests : IDisposable
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
             askPriority ?? ((_, _) => null),
-            showBody ?? ((_, _, _, _, _, _) => { }),
+            showBody ?? ((_, _, _, _, _, _, _) => { }),
             area,
             auto,
             handOver,

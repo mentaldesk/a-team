@@ -46,7 +46,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
-    private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?> _showBody;
+    private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Func<WaitingItem, Func<string, Task<string?>>, string?> _askComment;
@@ -76,6 +76,8 @@ public sealed class DashboardWindow : Window
     private Handover? _resume;
     private Place? _left;
     private string[] _activityRead = [];
+    private (IssueBody Body, int Top)? _triedFrom;
+    private (WaitingItem Item, ReaderPlace Place, string? Failure)? _reopen;
     private (string Text, Schemes Scheme)? _copied;
     private readonly IClipboard? _clipboard;
 
@@ -89,7 +91,7 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
         Func<WaitingItem, IssueBody, Rank?> askPriority,
-        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?> showBody,
+        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -431,8 +433,11 @@ public sealed class DashboardWindow : Window
     private void Try()
     {
         if (_work.Selected is { Pr: > 0 } item)
-            _handOver?.Invoke(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt));
+            HandOverTry(item);
     }
+
+    private void HandOverTry(WaitingItem item, ReaderPlace? reader = null) =>
+        _handOver?.Invoke(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader));
 
     /// <summary>Back from a try, the cards as they were with no re-read; from an attach, the grid. Either way, what
     /// went wrong if it failed.</summary>
@@ -444,6 +449,11 @@ public sealed class DashboardWindow : Window
         {
             _readAt = _askedAt = tried.ReadAt;
             _work.Show(tried.Items);
+            if (tried.Reader is { } place)
+            {
+                _reopen = (tried.Item, place, _failure);
+                _failure = null;
+            }
         }
         ShowMessage();
     }
@@ -452,7 +462,19 @@ public sealed class DashboardWindow : Window
     {
         base.OnIsRunningChanged(newIsRunning);
         if (newIsRunning)
+        {
             FocusResumed();
+            App?.Invoke(ReopenReader);
+        }
+    }
+
+    /// <summary>Back from a try started in the reader, the same reader, where it was.</summary>
+    internal void ReopenReader()
+    {
+        if (_reopen is not { } reopen)
+            return;
+        _reopen = null;
+        ShowBody(reopen.Item, reopen.Place.Body, reopen.Place.Url, reopen.Place.Top, reopen.Failure);
     }
 
     internal void FocusResumed()
@@ -532,10 +554,10 @@ public sealed class DashboardWindow : Window
     }
 
     /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board.</summary>
-    private void ShowBody(WaitingItem item, IssueBody body, string? url)
+    private void ShowBody(WaitingItem item, IssueBody body, string? url, int top = 0, string? failure = null)
     {
-        if (body.Failure is { Length: > 0 } failure)
-            _failure = failure;
+        if (body.Failure is { Length: > 0 } unread)
+            _failure = unread;
         else if (string.IsNullOrWhiteSpace(body.Text))
             _failure = $"#{item.Number} has no description";
         else
@@ -548,9 +570,15 @@ public sealed class DashboardWindow : Window
                     _openUrl(url);
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
-                new ReaderComment(_commands.KeyFor("work.comment"), "comment", Comment));
+                new ReaderComment(_commands.KeyFor("work.comment"), "comment", Comment),
+                item.Pr > 0 ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null);
             _approvable = null;
             _shown = null;
+            if (_triedFrom is { } from)
+            {
+                _triedFrom = null;
+                HandOverTry(item, new ReaderPlace(from.Body, url, from.Top));
+            }
         }
     }
 
