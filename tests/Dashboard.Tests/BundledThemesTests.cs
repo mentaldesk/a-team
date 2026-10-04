@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Views;

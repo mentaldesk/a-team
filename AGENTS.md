@@ -60,7 +60,10 @@ nothing to restart.
 
 Styles and conventions for how we build TUI apps live in the [MentalDesk TUI style guide](https://github.com/mentaldesk/tui-style-guide). Read it before describing UI in an issue or PR, and before building one. 
 
-Each rule is built once in the guide's shared library, `MentalDesk.Tui`, and shown working in its reference app, Swatch. 
+Each rule is built once in the guide's shared library, `MentalDesk.Tui`, and shown working in its reference app, Swatch.
+The dashboard references it as the [`MentalDesk.Tui`](https://www.nuget.org/packages/MentalDesk.Tui) package. Where the
+library has a type, use it rather than a dashboard copy; a change it needs goes to the style guide first, as its own PR.
+Dependabot opens a PR here for each new version.
 
 The dashboard has two custom views, each for a reason the built-ins can't cover: `LogView`, because
 `TextView` can't scroll without moving its cursor, and `LoadingView`, because `SpinnerView` draws a

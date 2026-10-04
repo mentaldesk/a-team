@@ -1,4 +1,5 @@
 using ATeam.Dashboard;
+using MentalDesk.Tui.Theming;
 
 var root = FindRepoRoot(AppContext.BaseDirectory) ?? FindRepoRoot(Environment.CurrentDirectory);
 if (root is null)
