@@ -22,6 +22,41 @@ runs() {
   done | sort -n
 }
 
+# short <seconds>: as the dashboard says how long ago: 14m, 1h05m, 2d3h.
+short() {
+  if [ "$1" -lt 3600 ]; then echo "$(($1 / 60))m"
+  elif [ "$1" -lt 86400 ]; then printf '%dh%02dm\n' $(($1 / 3600)) $(($1 % 3600 / 60))
+  else echo "$(($1 / 86400))d$(($1 % 86400 / 3600))h"
+  fi
+}
+
+# The dashboard's dispatcher title, from install.sh's record and the pass's next-pass: see DispatcherState.
+dispatcher() {
+  local record="$STATE/dispatcher.json" now due last interval left
+  now=$(date +%s)
+  if [ ! -f "$record" ]; then
+    due=$(cat "$STATE/next-pass" 2>/dev/null) && [ $((now - due)) -le 60 ] && echo dispatcher && return
+    echo "dispatcher · nothing installed · run: a-team install"
+    return
+  fi
+  interval=$(jq -r '.interval // 120' "$record")
+  last=$(jq -r '.installedAt // 0' "$record")
+  due=$(cat "$STATE/$(jq -r 'if .dryRun then "dry-" else "" end' "$record")next-pass" 2>/dev/null) &&
+    [ $((due - interval)) -gt "$last" ] && last=$((due - interval))
+  if [ $((now - last)) -gt $((interval + 60)) ]; then
+    echo "dispatcher · stopped $(short $((now - last))) ago"
+    return
+  fi
+  left=$((last + interval - now))
+  [ "$left" -ge 0 ] || left=0
+  jq -r --arg next "next pass $((left / 60)):$(printf %02d $((left % 60)))" --arg home "$HOME/" '
+    if .dryRun then "dispatcher · dry run: nothing will actually start · \($next)"
+    else "dispatcher · \(if .bin | startswith($home) then "~/" + .bin[($home | length):] else .bin end) \(.version) · \($next)"
+    end' "$record"
+}
+
+dispatcher
+
 for team in $(team_names); do
   if [ -f "$STATE/$team/cannot-run" ]; then
     printf '\n%s: stopped: %s\n' "$team" "$(cat "$STATE/$team/cannot-run")"

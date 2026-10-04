@@ -26,6 +26,13 @@ The strip along the bottom is the dispatcher's recent decisions. Each run it sta
 release it's on, as in `09:51 a-team lead: started 81834 on 0.1.7: #232 was approved`, and keeps
 that release to its end, even if you upgrade a-team meanwhile.
 
+Its title says what is driving the teams: the a-team the dispatcher runs and its version, with the
+countdown to its next pass, as in `dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12`.
+It turns red when nothing will start: `dry run: nothing will actually start`, `stopped 14m ago`,
+or `nothing installed · run: a-team install`. A dispatcher installed before this title existed
+shows plain `dispatcher` until you next run `a-team install`. `a-team status` opens with the same
+line.
+
 ## Reading a log
 
 | Key | Does |

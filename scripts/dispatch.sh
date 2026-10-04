@@ -15,7 +15,7 @@ source "$ROOT/scripts/common.sh"
 DRY_RUN=false
 [ "${1:-}" = --dry-run ] && DRY_RUN=true
 mkdir -p "$STATE"
-$DRY_RUN || echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$STATE/next-pass"
+echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$STATE/$($DRY_RUN && echo dry-)next-pass"
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
 

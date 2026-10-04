@@ -322,7 +322,7 @@ public sealed class AgentPane : FrameView
         _ => Stopped,
     };
 
-    private static string Clock(TimeSpan span) => span.TotalHours >= 1
+    internal static string Clock(TimeSpan span) => span.TotalHours >= 1
         ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
         : $"{span.Minutes}:{span.Seconds:00}";
 
