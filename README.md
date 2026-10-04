@@ -118,10 +118,12 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   (`dispatch.hold` in the team config), so the dispatcher starts no replacement until
   `a-team resume <team> <role>`. It lists anything the run left claimed In progress; the next run
   picks that up. The other role carries on as normal. `a-team pause <team> <role>` holds the role
-  the same way but lets a run already going finish.
+  the same way but lets a run already going finish. `a-team stop <team> dev <task>` ends only
+  that task's run and holds only that task, until `a-team resume <team> dev <task>`.
 - **Stepping into a run.** `a-team attach <team> <role>` does what `a-team stop` does, then runs
   `claude --resume` on the latest run's session in the team's `workdir`, so you pick up the
-  conversation with everything it had worked out. Quitting lets the role start again.
+  conversation with everything it had worked out. Quitting lets the role start again. With a
+  `<task>`, it does the same for that one Dev run.
 - **Permissions** come from `settings/agents.json` and the task prompt in `tasks/`. Runs use
   auto mode, and anything that would ask for permission is refused rather than waiting for
   someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,

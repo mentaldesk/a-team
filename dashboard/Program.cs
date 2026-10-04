@@ -91,7 +91,8 @@ Handover? Show(Handover? back)
         item => command.Read("board", item.Team, "conversation", item.Number.ToString()),
         item => AcceptDialog.Show(app, item),
         askComment: (item, post) => CommentDialog.Show(app, item, post),
-        showGuide: page => GuideDialog.Show(app, Path.Combine(root, "docs", "guide"), url => Link.OpenUrl(url), page));
+        showGuide: page => GuideDialog.Show(app, Path.Combine(root, "docs", "guide"), url => Link.OpenUrl(url), page),
+        confirmStop: task => StopRunDialog.Show(app, task));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

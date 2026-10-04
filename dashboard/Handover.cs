@@ -20,10 +20,11 @@ public sealed record TryHandover(WaitingItem Item, bool OnPr, IReadOnlyList<Wait
     public override Area Area => Area.Work;
 }
 
-/// <summary>The agent handed to <c>a-team attach</c>, selected again on the grid once you quit.</summary>
-public sealed record AttachHandover(string Team, string Role) : Handover
+/// <summary>The agent handed to <c>a-team attach</c>, or just its run on <paramref name="Task"/>, selected again on
+/// the grid once you quit.</summary>
+public sealed record AttachHandover(string Team, string Role, int? Task = null) : Handover
 {
-    public override string[] Arguments => ["attach", Team, Role];
+    public override string[] Arguments => Task is { } task ? ["attach", Team, Role, task.ToString()] : ["attach", Team, Role];
 
     public override Area Area => Area.Dashboard;
 }

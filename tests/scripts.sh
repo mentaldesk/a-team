@@ -2845,6 +2845,45 @@ for _ in $(seq 50); do alive 13 || alive 14 || break; sleep 0.1; done
 alive 13 && fail "stop: #13 is still going"
 alive 14 && fail "stop: #14 is still going"
 grep -q "stopped demo dev's run (${PIDS// /, })" "$OUT" || fail "stop: '$(cat "$OUT")'"
+
+case_ "stop <team> dev <task> ends only that task's run, and holds that task but not the role"
+jq '.dispatch.hold = []' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+queued_dispatcher
+devs 2
+printf '13\n14\n' >"$QUEUE"
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev
+launched 2
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/pause.sh" stop demo dev 13 >"$OUT" 2>&1
+for _ in $(seq 50); do alive 13 || break; sleep 0.1; done
+alive 13 && fail "stop by task: #13 is still going"
+alive 14 || fail "stop by task: #14 was stopped too"
+[ -f "$A_TEAM_STATE/demo/dev/runs/13/held" ] || fail "stop by task: #13 isn't held"
+same "hold" '[]' "$(jq -c .dispatch.hold "$TEAM")"
+grep -q "stopped demo dev's run on #13" "$OUT" || fail "stop by task: '$(cat "$OUT")'"
+
+case_ "a pass starts no run on a task stopped by task, and still starts a new one"
+printf '15\n' >"$QUEUE"
+: >"$LAUNCHED"
+jq -n '{reasons: [], creative: false, tasks: [{number: 13, title: "Task 13", reasons: ["CI failed on PR #913"]}], ready: 15,
+        chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev
+launched 1
+same "launched" "15" "$(cat "$LAUNCHED")"
+
+case_ "resume <team> dev <task> lets that task start again"
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/pause.sh" resume demo dev 13 >"$OUT" 2>&1
+[ -f "$A_TEAM_STATE/demo/dev/runs/13/held" ] && fail "resume by task: #13 is still held"
+devs 3
+: >"$LAUNCHED"
+dispatch_dev
+launched 1
+same "launched" "13" "$(cat "$LAUNCHED")"
+stop_runs
+
+case_ "stop by task needs a Dev task number"
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/pause.sh" stop demo lead 13 >"$OUT" 2>&1 && fail "lead task: accepted"
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/pause.sh" stop demo dev x >"$OUT" 2>&1 && fail "bad task: accepted"
 A_TEAM_STATE=$A_TEAM_STATE_WAS
 
 case_ "pause --dry-run <team> <role> says it would hold the role, and doesn't"
@@ -2944,6 +2983,25 @@ one_line "no session"
 grep -q "demo dev has no run with a session to resume" "$ERR" || fail "no session: '$(cat "$ERR")'"
 same "hold" '[]' "$(held)"
 same "resumed" "" "$(cat "$RESUMED")"
+
+case_ "attach <team> dev <task> stops and holds only that run while you resume its session, then lets it go"
+run resume demo dev
+for n in 21 22; do
+  mkdir -p "$A_TEAM_STATE/demo/dev/runs/$n"
+  bash -c "trap 'echo $n >>\"$SIGNALS\"; exit' TERM; while :; do sleep 0.1; done" &
+  echo $! >"$A_TEAM_STATE/demo/dev/runs/$n/pid"
+done
+: >"$SIGNALS"
+echo '{"type":"system","subtype":"init","session_id":"sess-21"}' >"$A_TEAM_STATE/demo/dev/runs/21/latest.jsonl"
+fake_claude
+run attach demo dev 21
+same "exit" 0 "$STATUS"
+same "resumed" "args: --resume sess-21" "$(sed -n 1p "$RESUMED")"
+same "role not held" 'hold: []' "$(sed -n 3p "$RESUMED")"
+same "stopped" "21" "$(cat "$SIGNALS")"
+kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/22/pid")" 2>/dev/null || fail "attach by task: #22 was stopped"
+[ -f "$A_TEAM_STATE/demo/dev/runs/21/held" ] && fail "attach by task: #21 is still held"
+kill "$(cat "$A_TEAM_STATE/demo/dev/runs/22/pid")" 2>/dev/null
 
 case_ "attach is in the usage text"
 run help
