@@ -15,6 +15,7 @@ public enum PaneStatus
     Paused,
     Held,
     StoppedByYou,
+    Misconfigured,
 }
 
 /// <summary>The scheme each part of a pane draws from.</summary>
@@ -50,7 +51,7 @@ public sealed class AgentPane : FrameView
     private readonly RunSelection _runs = new();
     private string? _shownLog;
     private DateTimeOffset _now;
-    private (DateTimeOffset? NextCheck, bool Paused, bool Held) _refreshed;
+    private (DateTimeOffset? NextCheck, bool Paused, bool Held, TeamProblem? Misconfigured) _refreshed;
 
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
     {
@@ -115,7 +116,7 @@ public sealed class AgentPane : FrameView
     public void Restore(PanePlace place)
     {
         _runs.Chosen = place.Run;
-        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held);
+        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held, _refreshed.Misconfigured);
         _body.Restore(place.Log, _body.Lines);
         UpdateHeader();
     }
@@ -171,13 +172,14 @@ public sealed class AgentPane : FrameView
     {
         if (!_runs.Move(step))
             return false;
-        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held);
+        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held, _refreshed.Misconfigured);
         return true;
     }
 
-    public void Refresh(DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held)
+    public void Refresh(
+        DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held, TeamProblem? misconfigured = null)
     {
-        _refreshed = (nextCheck, paused, held);
+        _refreshed = (nextCheck, paused, held, misconfigured);
         var role = AgentState.Read(_stateDir);
         _runs.Update(role.Runs, role.Latest);
         var state = _runs.Current is { } run ? AgentState.Read(run.Dir) with { Stopped = run.Held ?? role.Stopped } : role;
@@ -194,8 +196,8 @@ public sealed class AgentPane : FrameView
                 ? [new LogLine("(no session yet)", LogLineKind.Prose)]
                 : [.. _log.Lines];
 
-        _status = Status(state, paused, stopped, _log.Verdict);
-        _timing = Describe(state, now, nextCheck, _status, stopped);
+        _status = Status(state, paused, stopped, _log.Verdict, misconfigured is not null);
+        _timing = misconfigured is null ? Describe(state, now, nextCheck, _status, stopped) : Misconfigured(misconfigured);
         _now = now;
         UpdateHeader();
 
@@ -241,9 +243,13 @@ public sealed class AgentPane : FrameView
             view.SchemeName = scheme;
     }
 
-    /// <summary>A held role that isn't running wins, then pause, then running, then how the last run went.</summary>
-    internal static PaneStatus Status(AgentState state, bool paused, bool held, RunVerdict verdict) =>
-        held && !state.Running ? (verdict == RunVerdict.None ? PaneStatus.StoppedByYou : PaneStatus.Held)
+    internal static string Misconfigured(TeamProblem problem) => $"misconfigured: {problem.Topic} {problem.Detail}";
+
+    /// <summary>A misconfigured team wins, then a held role that isn't running, then pause, then running, then how the
+    /// last run went.</summary>
+    internal static PaneStatus Status(AgentState state, bool paused, bool held, RunVerdict verdict, bool misconfigured = false) =>
+        misconfigured ? PaneStatus.Misconfigured
+            : held && !state.Running ? (verdict == RunVerdict.None ? PaneStatus.StoppedByYou : PaneStatus.Held)
             : paused ? PaneStatus.Paused
             : state.Running ? PaneStatus.Running
             : verdict switch
@@ -285,10 +291,10 @@ public sealed class AgentPane : FrameView
     private static string Elide(string text, int width) =>
         width < 1 ? "" : text.Length <= width ? text : string.Concat(text.AsSpan(0, width - 1), "…");
 
-    /// <summary>A failed run reddens the frame and the status row; only the body is never red.</summary>
+    /// <summary>A failed run or a misconfigured team reddens the frame and the status row; only the body is never red.</summary>
     internal static PaneSchemes SchemesFor(PaneStatus status, string timing)
     {
-        var failed = status is PaneStatus.Failed or PaneStatus.CutShort;
+        var failed = status is PaneStatus.Failed or PaneStatus.CutShort or PaneStatus.Misconfigured;
         return new PaneSchemes(
             failed ? ErrorScheme : BaseScheme,
             failed || timing.EndsWith(Stopped, StringComparison.Ordinal) ? ErrorScheme : BaseScheme,

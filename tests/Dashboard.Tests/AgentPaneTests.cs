@@ -400,6 +400,57 @@ public class AgentPaneTests : IDisposable
         Assert.Equal("stopped by you <1m ago · held", pane.SubViews.OfType<Label>().First().Text);
     }
 
+    [Theory]
+    [InlineData(false, false, false, RunVerdict.Ok)]
+    [InlineData(false, false, false, RunVerdict.Error)]
+    [InlineData(false, false, false, RunVerdict.None)]
+    [InlineData(true, false, false, RunVerdict.Ok)]
+    [InlineData(false, true, false, RunVerdict.Ok)]
+    [InlineData(false, false, true, RunVerdict.None)]
+    [InlineData(true, true, true, RunVerdict.Error)]
+    public void A_misconfigured_team_outranks_every_other_state(bool paused, bool running, bool held, RunVerdict verdict)
+    {
+        var state = new AgentState(running, DateTimeOffset.UnixEpoch, [], null);
+
+        Assert.Equal(PaneStatus.Misconfigured, AgentPane.Status(state, paused, held, verdict, misconfigured: true));
+    }
+
+    [Fact]
+    public void A_misconfigured_pane_wears_the_warning_reddens_its_frame_and_says_what_is_wrong_above_an_unchanged_why()
+    {
+        using var pane = Open("""{"type":"result","num_turns":2,"total_cost_usd":0.1}""");
+        File.WriteAllText(Path.Combine(_dir, "last-reasons"), "work to do\n");
+
+        pane.Refresh(
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: true, held: false,
+            new TeamProblem("checkout", "~/code/TuiCode/main isn't there: gh repo clone mentaldesk/TuiCode ~/code/TuiCode/main"));
+
+        Assert.StartsWith(Icons.Field(Icon.Misconfigured, IconStyle.Unicode), pane.Title);
+        Assert.Equal("⚠", Icons.Glyph(Icons.For(PaneStatus.Misconfigured), IconStyle.Unicode));
+        Assert.Equal(Error, pane.SchemeName);
+        var labels = pane.SubViews.OfType<Label>().ToList();
+        Assert.Equal(
+            "misconfigured: checkout ~/code/TuiCode/main isn't there: gh repo clone mentaldesk/TuiCode ~/code/TuiCode/main",
+            labels[0].Text);
+        Assert.Equal(Error, labels[0].SchemeName);
+        Assert.Equal("why: work to do", labels[1].Text);
+        Assert.Equal(LogSchemes.Dimmed, labels[1].SchemeName);
+        Assert.Equal(Base, pane.SubViews.OfType<LogView>().Single().SchemeName);
+    }
+
+    [Fact]
+    public void A_pane_whose_team_is_fixed_again_goes_back_to_how_its_last_run_went()
+    {
+        using var pane = Open("""{"type":"result","num_turns":2,"total_cost_usd":0.1}""");
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false, new TeamProblem("app", "no key"));
+
+        pane.Refresh(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), paused: false, held: false);
+
+        Assert.StartsWith(Icons.Field(Icon.Ok, IconStyle.Unicode), pane.Title);
+        Assert.Equal(Base, pane.SchemeName);
+        Assert.StartsWith("ran <1m ago", pane.SubViews.OfType<Label>().First().Text);
+    }
+
     [Fact]
     public void A_pane_wears_its_title_icons_in_the_style_it_is_shown()
     {

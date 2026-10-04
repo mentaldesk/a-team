@@ -10,6 +10,7 @@ The pane's title names the agent and says how it's doing:
 
 | Icon | Means |
 |---|---|
+| `⚠` | The team is misconfigured and can't run. This wins over every other icon |
 | `●` | Running now |
 | `⏸` | Paused, or held by you |
 | `✓` | Its last run finished cleanly |
@@ -21,6 +22,13 @@ Where a Nerd Font is in effect, the pane wears that font's glyph for each instea
 Under the title is how long the current run has been going, or when the role last ran and the
 countdown to the dispatcher's next check. Then why the run was started, and then the run's log as
 it happens: what the agent said, the tools it called, any errors, and how the run finished.
+
+The dashboard checks each team when it starts and again whenever the team's file changes, the same
+check **Settings → Teams** shows. If something stops the team running, both its panes wear `⚠` in
+the error colour, their status row says what's wrong (as in `misconfigured: checkout
+~/code/TuiCode/main isn't there: …`), and the message bar says which checks failed. Fix it in
+**Settings → Teams** or in the file, and the `⚠` clears. A missing vision or label is only a note,
+and changes nothing here.
 
 The strip along the bottom is the dispatcher's recent decisions. Each run it starts names the
 release it's on, as in `09:51 a-team lead: started 81834 on 0.1.7: #232 was approved`, and keeps
