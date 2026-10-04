@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Text;
+using MentalDesk.Tui.Focus;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
