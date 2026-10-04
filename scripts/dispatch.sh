@@ -184,14 +184,15 @@ fresh() {
 }
 
 # pick_task <team> <dir> <triggers>: the next task a Dev run is for, as {number, title, reasons},
-# passing over the tasks in $picked. A task already in hand comes first; only then is a Ready task
-# claimed, before the run starts.
+# passing over the tasks in $picked and any stopped by task. A task already in hand comes first;
+# only then is a Ready task claimed, before the run starts.
 pick_task() {
   local row n claimed
   mkdir -p "$2/${prefix}tried"
   while IFS= read -r row; do
     n=$(jq -r .number <<<"$row")
     [[ $picked == *" $n "* ]] && continue
+    [ -e "$2/runs/$n/held" ] && continue
     fresh "$2/${prefix}tried/$n" "$(jq -r '.reasons[]' <<<"$row")" "$2/runs/$n/latest.jsonl" &&
       { echo "$row"; return; }
   done < <(jq -c '.tasks[]?' <<<"$3")
