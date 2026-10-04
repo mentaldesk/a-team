@@ -314,7 +314,7 @@ public sealed class DashboardWindow : Window
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("teams.new", "New team", () => OpenSettings(SettingsDialog.TeamsPage, newTeam: true), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
-            .Register("guide", "Guide", () => _showGuide(GuideDialog.Contents))
+            .Register("guide", "Guide", () => _showGuide(OnWork() ? GuideDialog.Work : GuideDialog.Dashboard))
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("agent.collapse", () => "Back to the agent grid", () => SetExpanded(null), Key.Esc,
                 isEnabled: () => OnDashboard() && _expanded is not null, menuLabel: () => "Back to all agents", inMenu: () => _expanded is not null)
@@ -759,7 +759,7 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         var before = _teams.Names();
-        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam);
+        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide);
         if (_teams.Names().Except(before).Any())
         {
             _handOver?.Invoke(new TeamsChanged(_area));

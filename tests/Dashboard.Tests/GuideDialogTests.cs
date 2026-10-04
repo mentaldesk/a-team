@@ -115,6 +115,19 @@ public partial class GuideDialogTests : IDisposable
     }
 
     [Fact]
+    public void Opened_on_a_page_Backspace_goes_to_the_contents_page()
+    {
+        using var dialog = new GuideDialog(_folder, _ => { }, "work.md");
+        dialog.Layout(new Size(60, 12));
+
+        Assert.Equal("Guide · Work", dialog.Title);
+        dialog.NewKeyDownEvent(Key.Backspace);
+
+        Assert.Equal("index.md", dialog.Page);
+        Assert.False(dialog.Closed);
+    }
+
+    [Fact]
     public void Backspace_on_the_first_page_stays_there()
     {
         using var dialog = Open();
@@ -191,6 +204,20 @@ public partial class GuideDialogTests : IDisposable
     {
         Assert.Contains(("index.md", "how-a-team-works.md"), GuideLinks());
         Assert.Contains(("index.md", "work.md"), GuideLinks());
+        Assert.Contains(("index.md", "dashboard.md"), GuideLinks());
+        Assert.Contains(("index.md", "teams.md"), GuideLinks());
+    }
+
+    [Theory]
+    [InlineData(GuideDialog.Work)]
+    [InlineData(GuideDialog.Dashboard)]
+    [InlineData(GuideDialog.Teams)]
+    public void Every_page_the_app_opens_the_guide_on_is_there(string page)
+    {
+        using var dialog = new GuideDialog(Guide(), _ => { }, page);
+
+        Assert.Equal(page, dialog.Page);
+        Assert.Equal("", dialog.Message.Says);
     }
 
     private GuideDialog Open(Action<string>? openUrl = null)
@@ -201,10 +228,10 @@ public partial class GuideDialogTests : IDisposable
     }
 
     private static IEnumerable<(string Page, string Link)> GuideLinks() =>
-        from page in Directory.GetFiles(Guide(), "*.md")
+        (from page in Directory.GetFiles(Guide(), "*.md")
         from Match link in Link().Matches(File.ReadAllText(page))
         where !GuideDialog.IsWeb(link.Groups[1].Value)
-        select (Path.GetFileName(page), link.Groups[1].Value);
+        select (Path.GetFileName(page), link.Groups[1].Value)).Distinct();
 
     private static string Guide()
     {

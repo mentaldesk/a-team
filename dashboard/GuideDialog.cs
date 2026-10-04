@@ -8,6 +8,9 @@ namespace ATeam.Dashboard;
 public sealed class GuideDialog : Dialog
 {
     internal const string Contents = "index.md";
+    internal const string Work = "work.md";
+    internal const string Dashboard = "dashboard.md";
+    internal const string Teams = "teams.md";
 
     private const string NextHint = "next";
     private const string FollowHint = "follow";
@@ -70,6 +73,8 @@ public sealed class GuideDialog : Dialog
         Add(_page, _hints, _message);
         if (!Open(page))
             Title = "Guide";
+        else if (page != Contents)
+            _back.Push((Contents, 0));
         _page.SetFocus();
     }
 

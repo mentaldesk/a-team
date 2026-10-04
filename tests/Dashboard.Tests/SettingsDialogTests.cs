@@ -53,7 +53,7 @@ public class SettingsDialogTests : IDisposable
     {
         using var dialog = Laid(Registry(), 80, 24);
 
-        Assert.Equal(["Enter rebind · Delete remove · Type to filter", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["Enter rebind · Delete remove · Type to filter", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
     }
 
     [Fact]
@@ -297,13 +297,13 @@ public class SettingsDialogTests : IDisposable
         using var dialog = Laid(Registry(), 80, 24);
 
         OpenPage(dialog, "Theme");
-        Assert.Equal(["Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
 
         OpenPage(dialog, "Keyboard Shortcuts");
         Assert.Equal(2, HintRows(dialog).Count);
 
         OpenPage(dialog, "Dashboard");
-        Assert.Equal(["Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
     }
 
     [Fact]
@@ -658,13 +658,13 @@ public class SettingsDialogTests : IDisposable
     {
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
         using var dialog = Open(out _, out _, page: "Teams");
-        Assert.Equal(["p pause · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p pause · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
 
         Assert.True(dialog.Teams.NewKeyDownEvent(new Key('p')));
 
         Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
         Assert.True(new TeamConfigs(_configRoot).IsPaused("alpha"));
-        Assert.Equal(["p resume · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p resume · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
 
         Hint(dialog, "p resume").InvokeCommand(Command.Accept);
 
@@ -1009,13 +1009,13 @@ public class SettingsDialogTests : IDisposable
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
         using var dialog = Open(out _, out _, page: "Teams");
         dialog.ConfirmRemove = (_, _, _) => true;
-        Assert.Equal(["p pause · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["p pause · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
 
         dialog.Teams.NewKeyDownEvent(new Key('x'));
 
         Assert.Empty(TeamRows(dialog));
         Assert.Null(dialog.Teams.Value);
-        Assert.Equal(["n new", "Ctrl+Enter keep · Esc cancel"], HintRows(dialog));
+        Assert.Equal(["n new", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
     }
 
     private void WriteTeam(string team, string config)
@@ -1094,6 +1094,19 @@ public class SettingsDialogTests : IDisposable
             .Select(row => string.Concat(row.OrderBy(view => view.Frame.X).Select(view => view.Text)))];
     }
 
+    [Fact]
+    public void F1_opens_the_guide_on_the_Teams_page_from_any_page()
+    {
+        var opened = new List<string>();
+        using var dialog = Open(out _, out _, showGuide: opened.Add);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.F1));
+        Hint(dialog, "F1 guide").InvokeCommand(Command.Accept);
+
+        Assert.Equal([GuideDialog.Teams, GuideDialog.Teams], opened);
+        Assert.False(dialog.Confirmed);
+    }
+
     private static CommandRegistry Registry() => new CommandRegistry()
         .Register("commands", "Commands", () => { }, Key.E.WithCtrl)
         .Register("settings", "Settings", () => { }, new Key('s'))
@@ -1109,12 +1122,13 @@ public class SettingsDialogTests : IDisposable
         CommandRegistry? commands = null,
         IconStyle auto = IconStyle.Unicode,
         string? page = null,
-        Func<string, Task<TeamHealth>>? check = null)
+        Func<string, Task<TeamHealth>>? check = null,
+        Action<string>? showGuide = null)
     {
         theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, keep ?? (_ => { }));
         icons = new IconSetting(iconStyle, apply ?? (_ => { }), new DashboardSettings(_configRoot).WriteIcons);
         var dialog = new SettingsDialog(
-            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check);
+            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check, showGuide: showGuide);
         dialog.SetFocus();
         return dialog;
     }
