@@ -41,6 +41,11 @@ or `nothing installed · run: a-team install`. A dispatcher installed before thi
 shows plain `dispatcher` until you next run `a-team install`. `a-team status` opens with the same
 line.
 
+Answered something a team was waiting on? **Run a dispatch pass now**, in the Commands palette
+(`Ctrl+E`) or under **Agents**, has that dispatcher check for work straight away instead of at its
+next pass. It starts only what that pass would have, within the same limits, and leaves the
+countdown alone. The message bar says what it started, or `Pass done: nothing to start.`
+
 ## Reading a log
 
 | Key | Does |

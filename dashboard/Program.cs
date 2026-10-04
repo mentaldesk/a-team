@@ -98,7 +98,8 @@ Handover? Show(Handover? back)
         item => AcceptDialog.Show(app, item),
         askComment: (item, post) => CommentDialog.Show(app, item, post),
         showGuide: page => GuideDialog.Show(app, Path.Combine(root, "docs", "guide"), url => Link.OpenUrl(url), page),
-        confirmStop: task => StopRunDialog.Show(app, task));
+        confirmStop: task => StopRunDialog.Show(app, task),
+        pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

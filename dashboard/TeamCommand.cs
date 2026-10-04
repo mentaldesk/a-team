@@ -7,7 +7,7 @@ namespace ATeam.Dashboard;
 public sealed record Reading(string Output, string? Failure);
 
 /// <summary>Runs one of a-team's own commands for the dashboard, and reports what went wrong in a line.</summary>
-public sealed class TeamCommand(string executable)
+public sealed class TeamCommand(string executable, IReadOnlyDictionary<string, string>? environment = null)
 {
     /// <summary>Null once it has run; otherwise the first line of its stderr.</summary>
     public Task<string?> Run(params string[] arguments) => Task.Run(() => Invoke(arguments).Failure);
@@ -96,6 +96,8 @@ public sealed class TeamCommand(string executable)
         var start = new ProcessStartInfo(executable) { RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var argument in arguments)
             start.ArgumentList.Add(argument);
+        foreach (var (name, value) in environment ?? new Dictionary<string, string>())
+            start.Environment[name] = value;
         var said = string.Join(' ', arguments);
         try
         {
