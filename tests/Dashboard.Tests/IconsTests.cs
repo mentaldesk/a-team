@@ -49,6 +49,7 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.Ok] = "✓",
                 [Icon.Failed] = "✗",
                 [Icon.CutShort] = "✗",
+                [Icon.Misconfigured] = "⚠",
                 [Icon.Selected] = "▶",
                 [Icon.ToolCall] = "▸",
                 [Icon.ToolError] = "✗",

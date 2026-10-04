@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ATeam.Dashboard;
 
@@ -65,6 +66,30 @@ public sealed class TeamConfigs
     {
         var path = PathOf(team);
         File.WriteAllBytes(path, ConfigEdit.SetEnabled(File.ReadAllBytes(path), working));
+    }
+
+    /// <summary>What the team's check depends on: its file without <c>dispatch</c>, which pausing and holding change.</summary>
+    public string? Stamp(string team)
+    {
+        string text;
+        try
+        {
+            text = File.ReadAllText(PathOf(team));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+        try
+        {
+            if (JsonNode.Parse(text) is JsonObject config)
+            {
+                config.Remove("dispatch");
+                return config.ToJsonString();
+            }
+        }
+        catch (JsonException) { }
+        return text;
     }
 
     /// <summary>What the team form shows for <paramref name="team"/>, read from its file as it is now.</summary>

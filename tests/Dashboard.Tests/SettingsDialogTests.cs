@@ -722,6 +722,26 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
+    public async Task The_Teams_page_shows_the_check_the_panes_already_ran_and_a_repair_reaches_them()
+    {
+        WriteTeam("goose", """{"repo": "aaif-goose/goose"}""");
+        var ran = 0;
+        var shared = new TeamChecks(
+            _ => Task.FromResult(++ran == 1 ? new TeamHealth([new TeamProblem("status", "missing")]) : new TeamHealth([])),
+            new TeamConfigs(_configRoot).Stamp);
+        shared.Follow(["goose"]);
+        using var dialog = Open(out _, out _, page: "Teams", checks: shared);
+
+        Assert.Equal(["goose  aaif-goose/goose  paused  1 problem"], TeamRows(dialog));
+        Assert.Equal(1, ran);
+
+        dialog.RepairTeam = _ => true;
+        await dialog.Repaired("goose")!;
+
+        Assert.Null(shared.Fatal("goose"));
+    }
+
+    [Fact]
     public void A_file_that_can_t_be_read_is_one_problem_without_running_a_check()
     {
         WriteTeam("gamma", "{\"repo\": ");
@@ -1123,12 +1143,13 @@ public class SettingsDialogTests : IDisposable
         IconStyle auto = IconStyle.Unicode,
         string? page = null,
         Func<string, Task<TeamHealth>>? check = null,
-        Action<string>? showGuide = null)
+        Action<string>? showGuide = null,
+        TeamChecks? checks = null)
     {
         theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, keep ?? (_ => { }));
         icons = new IconSetting(iconStyle, apply ?? (_ => { }), new DashboardSettings(_configRoot).WriteIcons);
         var dialog = new SettingsDialog(
-            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check, showGuide: showGuide);
+            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check, showGuide: showGuide, checks: checks);
         dialog.SetFocus();
         return dialog;
     }

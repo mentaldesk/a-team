@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Reflection;
 using Terminal.Gui;
+using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 
@@ -18,6 +19,7 @@ public sealed class DashboardWindow : Window
     private const int MenuLines = 1;
     private const int StatusLines = 1;
     private const int DispatchLines = 4;
+    private const int TitleMargin = 4;
     private const int MinCellHeight = 5;
     private const string AllItems = "All items";
     private const string MyItems = "My items";
@@ -37,10 +39,15 @@ public sealed class DashboardWindow : Window
     private readonly List<string> _teamNames;
     private readonly string _dispatchLog;
     private readonly string _nextPass;
+    private readonly string _stateRoot;
+    private static readonly string BaseScheme = SchemeManager.SchemesToSchemeName(Schemes.Base)!;
+    private static readonly string ErrorScheme = SchemeManager.SchemesToSchemeName(Schemes.Error)!;
+    private readonly string _home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private readonly DashboardSettings _settings;
     private readonly TeamConfigs _teams;
     private readonly Func<string[], Task<string?>> _run;
     private readonly TeamStart? _start;
+    private readonly TeamChecks? _checks;
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
@@ -105,10 +112,12 @@ public sealed class DashboardWindow : Window
         Action<string>? showGuide = null,
         Func<RunTask, bool>? confirmStop = null,
         IClipboard? clipboard = null,
-        Func<WaitingItem, Task<Reading>>? readHistory = null)
+        Func<WaitingItem, Task<Reading>>? readHistory = null,
+        TeamChecks? checks = null)
     {
         _clipboard = clipboard;
         _readHistory = readHistory;
+        _checks = checks ?? (start is null ? null : new TeamChecks(start.Check, teams.Stamp));
         _showGuide = showGuide ?? (_ => { });
         _start = start;
         _clock = clock ?? TimeProvider.System;
@@ -130,6 +139,7 @@ public sealed class DashboardWindow : Window
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
         _nextPass = Path.Combine(stateRoot, "next-pass");
+        _stateRoot = stateRoot;
         _teamNames = [.. agents.Select(agent => agent.Team).Distinct()];
 
         _columns = AgentGrid.Columns(agents);
@@ -174,7 +184,7 @@ public sealed class DashboardWindow : Window
             CanFocus = false,
             Visible = area == Area.Dashboard,
         };
-        _dispatch = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true };
+        _dispatch = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true, SchemeName = BaseScheme };
         _dispatchFrame.Add(_dispatch);
         Add(_dispatchFrame);
 
@@ -260,16 +270,31 @@ public sealed class DashboardWindow : Window
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : null;
         var paused = _panes.Select(pane => pane.Team).Distinct().ToDictionary(team => team, _teams.IsPaused);
+        _checks?.Follow(paused.Keys);
+        if (_checks?.Answered() is [.., var failed])
+            _failure = failed;
         foreach (var pane in _panes)
-            pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role));
+            pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role), _checks?.Fatal(pane.Team));
 
         var tail = ReadTail(_dispatchLog, DispatchLines);
         if (!_dispatch.Lines.SequenceEqual(tail))
             _dispatch.Lines = tail;
+        ShowDispatcher(now);
 
         _menu.Refresh();
         ShowMessage();
         ShowLoading();
+    }
+
+    private void ShowDispatcher(DateTimeOffset now)
+    {
+        var state = DispatcherState.Read(_stateRoot, now, _home);
+        var title = state.Title(_dispatchFrame.Frame.Width > 0 ? _dispatchFrame.Frame.Width - TitleMargin : int.MaxValue);
+        if (_dispatchFrame.Title != title)
+            _dispatchFrame.Title = title;
+        var scheme = state.Error ? ErrorScheme : BaseScheme;
+        if (_dispatchFrame.SchemeName != scheme)
+            _dispatchFrame.SchemeName = scheme;
     }
 
     /// <summary>When the Work area was last read, for the status bar.</summary>
@@ -888,7 +913,7 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         var before = _teams.Names();
-        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide);
+        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks);
         if (_teams.Names().Except(before).Any())
         {
             _handOver?.Invoke(new TeamsChanged(_area));

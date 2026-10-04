@@ -26,6 +26,26 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void A_team_whose_check_fails_says_so_on_its_panes_and_once_in_the_message_bar()
+    {
+        var answer = new TaskCompletionSource<TeamHealth>();
+        var ran = 0;
+        var checks = new TeamChecks(_ => { ran++; return answer.Task; }, _ => "{}");
+        using var window = Open(checks: checks);
+        window.Refresh();
+        Assert.All(window.Panes, pane => Assert.DoesNotContain("⚠", pane.Title));
+
+        answer.SetResult(new TeamHealth([new TeamProblem("checkout", "~/code/a-team/main isn't there"), new TeamProblem("status", "missing")]));
+        window.Refresh();
+
+        Assert.All(window.Panes, pane => Assert.StartsWith(Icons.Field(Icon.Misconfigured, IconStyle.Unicode), pane.Title));
+        Assert.Equal("a-team: 2 checks failed — checkout, status", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        window.Refresh();
+        Assert.Equal(1, ran);
+    }
+
+    [Fact]
     public void The_apps_own_quit_binding_moves_to_the_quit_key_so_Esc_only_goes_back()
     {
         using var window = Open();
@@ -873,6 +893,19 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void With_nothing_installed_the_dispatcher_frame_says_so_in_Error_and_its_lines_do_not()
+    {
+        using var window = Open(agents: Agents(4));
+        LayOut(window, 120, 30);
+
+        window.Refresh();
+
+        Assert.Equal("dispatcher · nothing installed · run: a-team install", window.Dispatcher.Title);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Dispatcher.SchemeName);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Base), window.DispatchLog.SchemeName);
+    }
+
+    [Fact]
     public void The_last_four_lines_fill_four_rows_of_the_panes_width_at_any_size()
     {
         WriteDispatchLog([.. Enumerable.Range(1, 6).Select(n =>
@@ -1476,7 +1509,8 @@ public class DashboardWindowTests : IDisposable
         Handover? resume = null,
         Action<string>? showGuide = null,
         Func<RunTask, bool>? confirmStop = null,
-        IClipboard? clipboard = null)
+        IClipboard? clipboard = null,
+        TeamChecks? checks = null)
     {
         Directory.CreateDirectory(_root);
         if (keys is not null)
@@ -1504,7 +1538,8 @@ public class DashboardWindowTests : IDisposable
             resume,
             showGuide: showGuide,
             confirmStop: confirmStop,
-            clipboard: clipboard);
+            clipboard: clipboard,
+            checks: checks);
     }
 
     private string Config => Path.Combine(_root, "config");

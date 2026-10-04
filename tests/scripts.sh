@@ -2719,6 +2719,23 @@ grep -q '^This run is for #13 Something to start, and only that task.$' "$LAUNCH
   fail "prompt: '$(cat "$LAUNCHED")'"
 same "state" '{"number":13,"title":"Something to start"}' "$(cat "$A_TEAM_STATE/demo/dev/task")"
 
+case_ "a workdir that isn't there starts nothing, and says so rather than recording a start"
+STATE_DIR="$A_TEAM_STATE/demo/dev"
+rm -rf "$STATE_DIR"
+: >"$A_TEAM_STATE/dispatch.log"
+: >"$LAUNCHED"
+jq --arg w "$WORK/nope" '.workdir = $w' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+echo '{"number": 14, "title": "Something else"}' >"$CLAIMED"
+dispatch_dev
+grep -qF "demo dev: cannot start: workdir $WORK/nope: no such directory" "$A_TEAM_STATE/dispatch.log" ||
+  fail "cannot start: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+grep -q 'demo dev: started' "$A_TEAM_STATE/dispatch.log" && fail "logged a start: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+for file in last-start last-reasons pid latest.jsonl; do
+  [ -e "$STATE_DIR/$file" ] || [ -L "$STATE_DIR/$file" ] && fail "wrote $file"
+done
+[ -s "$LAUNCHED" ] && fail "claude was started"
+jq --arg w "$WORKDIR" '.workdir = $w' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
 # Claims hand out the tasks queued in $QUEUE one at a time, then refuse for want of a worktree;
 # claude stays up until killed, recording the task each run is for in $LAUNCHED.
 queued_dispatcher() {
@@ -3709,6 +3726,59 @@ same "other team" "dev commented" \
 run board demo history 7
 same "since" "$(jq -r '.events[-1].at' "$OUT")" "$(jq -r .since "$OUT")"
 unset A_TEAM_STATE
+
+# install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.
+install_dispatcher() {
+  HOME="$INSTALL_HOME" A_TEAM_STATE="$INSTALL_STATE" A_TEAM_BIN="$INSTALL_STUBS/a-team" PATH="$INSTALL_STUBS:$PATH" \
+    bash "$ROOT/scripts/install.sh" "$@" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+INSTALL_HOME=$(mktemp -d "$WORK/home.XXXXXX") INSTALL_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+INSTALL_STUBS=$(mktemp -d "$WORK/stubs.XXXXXX")
+for tool in launchctl claude gh; do printf '#!/usr/bin/env bash\n' >"$INSTALL_STUBS/$tool"; done
+printf '#!/usr/bin/env bash\n[ "$1" = version ] && echo 0.1.13-alpha.0.7\n' >"$INSTALL_STUBS/a-team"
+chmod +x "$INSTALL_STUBS"/*
+
+case_ "install records the binary, its version, the interval and the log beside the state"
+install_dispatcher
+same "exit" 0 "$STATUS"
+same "record" "{\"bin\":\"$INSTALL_STUBS/a-team\",\"version\":\"0.1.13-alpha.0.7\",\"dryRun\":false,\"interval\":120,\"log\":\"$INSTALL_STATE/launchd.log\"}" \
+  "$(jq -c 'del(.installedAt)' "$INSTALL_STATE/dispatcher.json")"
+[ $(($(date +%s) - $(jq .installedAt "$INSTALL_STATE/dispatcher.json"))) -le 5 ] || fail "installedAt: $(jq .installedAt "$INSTALL_STATE/dispatcher.json")"
+
+case_ "install --dry-run says so in the record"
+install_dispatcher --dry-run
+same "dry run" true "$(jq .dryRun "$INSTALL_STATE/dispatcher.json")"
+
+case_ "install --uninstall removes the record"
+install_dispatcher --uninstall
+same "exit" 0 "$STATUS"
+[ -e "$INSTALL_STATE/dispatcher.json" ] && fail "uninstall: the record is still there"
+
+case_ "a dry-run pass says when the next one is due, without claiming a live dispatcher's next-pass"
+A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") A_TEAM_STATE="$INSTALL_STATE" bash "$ROOT/scripts/dispatch.sh" --dry-run
+[ -f "$INSTALL_STATE/dry-next-pass" ] || fail "dry pass: no dry-next-pass"
+[ -e "$INSTALL_STATE/next-pass" ] && fail "dry pass: wrote next-pass"
+
+# status.sh's first line, for a state directory holding $1 as dispatcher.json (or none) and next-pass $2 seconds from now.
+dispatcher_line() {
+  local state
+  state=$(mktemp -d "$WORK/state.XXXXXX")
+  [ -n "$1" ] && echo "$1" >"$state/dispatcher.json"
+  [ -n "${2:-}" ] && echo $(($(date +%s) + $2)) >"$state/${3:-}next-pass"
+  A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") A_TEAM_STATE="$state" HOME=/Users/me bash "$ROOT/scripts/status.sh" | head -n 1
+}
+installed() { jq -nc --argjson dry "$1" --argjson at $(($(date +%s) - $2)) \
+  '{bin: "/Users/me/code/a-team/palette/bin/a-team", version: "0.1.13", dryRun: $dry, interval: 120, installedAt: $at}'; }
+
+case_ "status opens with what's driving the teams"
+same "live" "dispatcher · ~/code/a-team/palette/bin/a-team 0.1.13 · next pass 1:12" "$(dispatcher_line "$(installed false 600)" 72)"
+same "dry run" "dispatcher · dry run: nothing will actually start · next pass 0:48" \
+  "$(dispatcher_line "$(installed true 600)" 48 dry-)"
+same "stopped" "dispatcher · stopped 14m ago" "$(dispatcher_line "$(installed false 3600)" $((120 - 14 * 60)))"
+same "never installed" "dispatcher · nothing installed · run: a-team install" "$(dispatcher_line '')"
+same "unrecorded" "dispatcher" "$(dispatcher_line '' 30)"
+same "unrecorded, stale" "dispatcher · nothing installed · run: a-team install" "$(dispatcher_line '' -600)"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"
