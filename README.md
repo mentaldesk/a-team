@@ -29,7 +29,7 @@ brew install mentaldesk/tap/a-team
 Claude Code must be installed and logged in, and `gh` needs the `project` scope
 (`gh auth refresh -s project`). Then add a team (see *Starting a team*) and run
 `a-team install` to start the dispatcher. `brew upgrade a-team` moves every team to the latest
-release.
+release, whenever you like: a run already going finishes on the release it started on.
 
 ## Starting a team
 
