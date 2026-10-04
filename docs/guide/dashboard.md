@@ -46,6 +46,14 @@ new output until you press `End`, and paging brings it with you.
 not the clipped row on screen. A folded run of tool calls copies the one it shows. The status bar
 says how much went.
 
+## Reading the whole session
+
+The pane keeps only the last 500 lines. `e`, in the expanded view, opens the whole session as text
+in your editor: every line from the start, each command and error in full. It uses `$VISUAL`, or
+`$EDITOR` if that isn't set, or `less` if neither is; set `EDITOR` to `tuicode` to read it there.
+Quit the editor and you're back in the pane where you left it. If the editor can't start or exits
+with an error, the status bar says so.
+
 ## Tool calls
 
 A run of tool calls draws as a single row, so the agent's own words aren't pushed off the top. `t`

@@ -12,6 +12,13 @@ internal sealed class RunSelection
     /// <summary>The run whose log fills the pane, or -1 with no runs.</summary>
     public int Shown => _chosen is { } dir ? IndexOf(dir) : Runs.Count - 1;
 
+    /// <summary>The run picked with ↑/↓, or null while the newest is shown.</summary>
+    public string? Chosen
+    {
+        get => _chosen;
+        set => _chosen = value;
+    }
+
     public DevRun? Current => Shown >= 0 ? Runs[Shown] : null;
 
     public bool IsLive(DevRun run) => _live.Any(live => live.Dir == run.Dir);

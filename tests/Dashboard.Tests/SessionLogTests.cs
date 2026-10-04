@@ -21,6 +21,41 @@ public class SessionLogTests : IDisposable
     }
 
     [Fact]
+    public void The_whole_session_has_every_line_past_the_last_500_each_in_full()
+    {
+        var command = "echo one\necho two";
+        var call = JsonSerializer.Serialize(new
+        {
+            type = "assistant",
+            message = new { content = new[] { new { type = "tool_use", name = "Bash", input = new { command } } } },
+        });
+        var huge = JsonSerializer.Serialize(new
+        {
+            type = "assistant",
+            message = new { content = new[] { new { type = "tool_use", name = "Bash", input = new { command = new string('x', SessionLog.MaxCopied + 10) } } } },
+        });
+        var path = Write([Init, call, .. Enumerable.Repeat(Broke, 600), huge, Ok]);
+
+        var lines = SessionLog.Whole(path).ToList();
+
+        Assert.Equal(604, lines.Count);
+        Assert.Equal("── session started (claude) ──", lines[0]);
+        Assert.Equal("Bash " + command, lines[1]);
+        Assert.Equal("boom", lines[2]);
+        Assert.Equal("Bash " + new string('x', SessionLog.MaxCopied), lines[602]);
+        Assert.Equal("finished: ok, 1 turns, $0.10", lines[603]);
+    }
+
+    [Fact]
+    public void The_whole_session_leaves_out_a_line_still_being_written()
+    {
+        var path = Write(Prose);
+        File.AppendAllText(path, "{\"type\":\"assist");
+
+        Assert.Equal(["still going", ""], SessionLog.Whole(path));
+    }
+
+    [Fact]
     public void A_clipped_tool_call_copies_its_whole_field_heredoc_and_all()
     {
         var command = "cd ~/code && cat > /tmp/x.py <<'PY'\n" + string.Join("\n", Enumerable.Repeat(new string('y', 60), 70)) + "\nPY";

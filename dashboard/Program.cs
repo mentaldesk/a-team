@@ -51,7 +51,12 @@ int Run()
     {
         BundledThemes.Cursor.Restore();
         terminal.Restore();
-        back = handover is TeamsChanged ? handover : handover with { Failure = command.Hand(handover.Arguments) };
+        back = handover switch
+        {
+            TeamsChanged => handover,
+            EditorHandover editor => editor with { Failure = editor.Open() },
+            _ => handover with { Failure = command.Hand(handover.Arguments) },
+        };
     }
     BundledThemes.Cursor.Restore();
     terminal.Restore();

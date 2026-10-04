@@ -414,6 +414,77 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void e_writes_the_whole_session_to_a_file_and_hands_it_to_the_editor()
+    {
+        var handed = new List<Handover>();
+        WriteLog("a-team", "dev",
+            """{"type":"assistant","message":{"content":[{"type":"text","text":"reading"}]}}""",
+            """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cat <<'PY'\nprint(1)\nPY"}}]}}""");
+        using var window = Open(handOver: handed.Add);
+        window.Refresh();
+        SelectAgent(window, 1);
+
+        Assert.False(window.Commands.IsEnabled("log.editor"));
+        window.NewKeyDownEvent(Key.Enter);
+        Assert.True(window.NewKeyDownEvent(new Key('e')));
+
+        var handover = Assert.IsType<EditorHandover>(Assert.Single(handed));
+        try
+        {
+            Assert.Equal(("a-team", "dev", Area.Dashboard), (handover.Team, handover.Role, handover.Area));
+            Assert.Equal(handover.File, handover.Arguments[^1]);
+            Assert.Equal(["reading", "", "Bash cat <<'PY'", "print(1)", "PY"], File.ReadAllLines(handover.File));
+        }
+        finally
+        {
+            File.Delete(handover.File);
+        }
+    }
+
+    [Fact]
+    public void Back_from_the_editor_the_pane_is_expanded_where_you_left_it()
+    {
+        var handed = new List<Handover>();
+        WriteLog("a-team", "dev", """{"type":"assistant","message":{"content":[{"type":"text","text":"one\ntwo\nthree"}]}}""");
+        using (var window = Open(handOver: handed.Add))
+        {
+            window.Refresh();
+            SelectAgent(window, 1);
+            window.NewKeyDownEvent(Key.Enter);
+            window.NewKeyDownEvent(Key.CursorUp);
+            window.NewKeyDownEvent(Key.CursorUp);
+            window.NewKeyDownEvent(Key.CursorUp.WithShift);
+            window.NewKeyDownEvent(new Key('e'));
+        }
+        var handover = Assert.IsType<EditorHandover>(Assert.Single(handed));
+        File.Delete(handover.File);
+
+        using var back = Open(resume: handover);
+        back.Refresh();
+        LayOut(back, 120, 40);
+        back.FocusResumed();
+
+        Assert.Equal(1, back.ExpandedAgent);
+        Assert.Equal(1, Selected(back));
+        Assert.Equal("one\ntwo", back.Panes[1].CopySelection().Text);
+        Assert.Contains("[scrolled]", back.Panes[1].Title, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_editor_that_failed_says_so_in_red_once_you_re_back()
+    {
+        var place = new PanePlace(null, new LogPlace([], 0, true, 0, 0, false));
+        using var window = Open(resume: new EditorHandover("a-team", "dev", place, "x.log", ["vim"]) { Failure = "vim exited 1" });
+        window.Refresh();
+        LayOut(window, 120, 40);
+        window.FocusResumed();
+
+        Assert.Equal(1, window.ExpandedAgent);
+        Assert.Equal("vim exited 1", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+    }
+
+    [Fact]
     public void With_no_clipboard_copying_says_so_in_red_and_nothing_moves()
     {
         WriteLog("a-team", "dev", """{"type":"assistant","message":{"content":[{"type":"text","text":"one\ntwo"}]}}""");
@@ -491,7 +562,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the next line of the log", "Select the line above in the log", "Extend the selection down",
                 "Extend the selection up", "Expand the selected agent", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
-                "Copy the selected lines", "Copy the whole log",
+                "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Accept", "Comment on the item you're reading",

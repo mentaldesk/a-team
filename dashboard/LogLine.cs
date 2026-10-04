@@ -26,6 +26,9 @@ public enum LogLineKind
 public readonly record struct LogLine(string Text, LogLineKind Kind, string? Full = null, bool Capped = false)
 {
     public string Copied => Full ?? Text;
+
+    /// <summary>The line as the whole-session file has it: a tool call keeps its tool's name in front.</summary>
+    public string Written => Kind == LogLineKind.ToolCall && Full is not null ? $"{Text.Split(' ', 2)[0]} {Full}" : Copied;
 }
 
 

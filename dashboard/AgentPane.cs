@@ -26,6 +26,9 @@ public readonly record struct PaneTitle(string Icons, string Name)
     public override string ToString() => Icons + Name;
 }
 
+/// <summary>Where an expanded pane was: the run it showed and its place in that run's log.</summary>
+public sealed record PanePlace(string? Run, LogPlace Log);
+
 /// <summary>One agent: how its last run went and its timing, why it last started, and a tail of its latest session.</summary>
 public sealed class AgentPane : FrameView
 {
@@ -104,6 +107,18 @@ public sealed class AgentPane : FrameView
     public LogCopy CopySelection() => _body.CopySelection();
 
     public LogCopy CopyAll() => _body.CopyAll();
+
+    internal string? LogPath => _shownLog;
+
+    internal PanePlace Place => new(_runs.Chosen, _body.Place);
+
+    public void Restore(PanePlace place)
+    {
+        _runs.Chosen = place.Run;
+        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held);
+        _body.Restore(place.Log, _body.Lines);
+        UpdateHeader();
+    }
 
     /// <summary>Draws the title's and the session's icons from the vocabulary in effect.</summary>
     public void ShowIcons(IconStyle style)

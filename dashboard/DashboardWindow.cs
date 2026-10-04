@@ -310,6 +310,8 @@ public sealed class DashboardWindow : Window
                 menuLabel: () => "Copy selected lines", inMenu: () => _expanded is not null)
             .Register("log.copyAll", () => "Copy the whole log", () => Copy(pane => pane.CopyAll()), new Key('L'), isEnabled: Reading,
                 menuLabel: () => "Copy whole log", inMenu: () => _expanded is not null)
+            .Register("log.editor", () => "Open the whole log in your editor", OpenInEditor, new Key('e'), isEnabled: Reading,
+                menuLabel: () => "Open whole log in editor", inMenu: () => _expanded is not null)
             .Register("work.right", "Select the column to the right", () => _work.MoveColumn(+1), Key.CursorRight, isEnabled: OnWork)
             .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
             .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
@@ -388,6 +390,26 @@ public sealed class DashboardWindow : Window
         _pending = _run([resume ? "resume" : "stop", .. target]);
     }
 
+    /// <summary>Writes every line of the shown session to a file and hands the terminal to your editor with it.</summary>
+    private void OpenInEditor()
+    {
+        if (Selected() is not { LogPath: { } log } pane)
+            return;
+        var file = Path.Combine(Path.GetTempPath(), $"a-team-{pane.Team}-{pane.Role}-{_clock.GetUtcNow():yyyyMMddHHmmss}.log");
+        try
+        {
+            File.WriteAllLines(file, SessionLog.Whole(log));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _failure = $"couldn't write the log for your editor: {e.Message}";
+            ShowMessage();
+            return;
+        }
+        _handOver?.Invoke(new EditorHandover(
+            pane.Team, pane.Role, pane.Place, file, EditorHandover.Command(Environment.GetEnvironmentVariable)));
+    }
+
     /// <summary>No dialog is on top of the window and no menu is open over it.</summary>
     private bool Uncovered => (IsModal || !IsRunning) && !_menu.Bar.IsOpen();
 
@@ -451,6 +473,11 @@ public sealed class DashboardWindow : Window
         {
             case TryHandover tried when !_work.Focus(tried.Item, tried.OnPr):
                 _work.FocusFirstCard();
+                break;
+            case EditorHandover edited when _panes.FindIndex(pane => pane.Team == edited.Team && pane.Role == edited.Role) is >= 0 and var index:
+                SetExpanded(index);
+                _panes[index].SetFocus();
+                _panes[index].Restore(edited.Place);
                 break;
             case AttachHandover attached when _panes.FindIndex(pane => pane.Team == attached.Team && pane.Role == attached.Role) is >= 0 and var index:
                 Select(index);
