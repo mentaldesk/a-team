@@ -3,8 +3,8 @@ using System.Text.Json;
 namespace ATeam.Dashboard;
 
 /// <summary>An issue's body as <c>a-team board &lt;team&gt; body &lt;n&gt;</c> reports it, or the one line saying
-/// why it couldn't be read.</summary>
-public sealed record IssueBody(string Text = "", string? Failure = null)
+/// why it couldn't be read, and its <paramref name="History"/> where that was read too.</summary>
+public sealed record IssueBody(string Text = "", string? Failure = null, History? History = null)
 {
     /// <summary>What the command printed, or its own first line of stderr, which says what failed in its terms.</summary>
     public static IssueBody Of(Reading reading, int number) =>

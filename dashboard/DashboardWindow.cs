@@ -44,6 +44,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
+    private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
     private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?> _showBody;
@@ -103,9 +104,11 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
         Action<string>? showGuide = null,
         Func<RunTask, bool>? confirmStop = null,
-        IClipboard? clipboard = null)
+        IClipboard? clipboard = null,
+        Func<WaitingItem, Task<Reading>>? readHistory = null)
     {
         _clipboard = clipboard;
+        _readHistory = readHistory;
         _showGuide = showGuide ?? (_ => { });
         _start = start;
         _clock = clock ?? TimeProvider.System;
@@ -539,33 +542,42 @@ public sealed class DashboardWindow : Window
         if (_work.Selected is not { } item)
             return;
         var url = _work.SelectedUrl;
-        if (item.Question.Length > 0)
-            ShowBody(item, new IssueBody(item.Question), url);
-        else
-            ReadBody(item, (read, body) => ShowBody(read, body, url), withConversation: true);
+        ReadBody(item, (read, body) => ShowBody(read, body, url), forReader: true);
     }
 
-    private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then, bool withConversation = false)
+    private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then, bool forReader = false)
     {
         if (_pending is not null || _readingBody is not null)
             return;
         _failure = null;
         _progress = $"Reading #{item.Number}…";
         ShowMessage();
-        _readingBody = (item, Read(item, withConversation ? _readConversation : null), then);
+        _readingBody = (item, Read(item, forReader), then);
     }
 
-    /// <summary>Both reads start at once; a conversation that won't read still leaves the body to show.</summary>
-    private async Task<IssueBody> Read(WaitingItem item, Func<WaitingItem, Task<Reading>>? readConversation)
+    /// <summary>The reads start at once; a conversation or history that won't read still leaves the body to show.
+    /// A question is shown as asked, so only its history is read.</summary>
+    private async Task<IssueBody> Read(WaitingItem item, bool forReader)
     {
-        var body = _readBody(item);
-        var conversation = readConversation?.Invoke(item);
-        var read = await Settled(body, reading => IssueBody.Of(reading, item.Number),
-            new IssueBody(Failure: $"couldn't read #{item.Number}")).ConfigureAwait(false);
-        if (conversation is null || read.Failure is not null)
+        var question = forReader && item.Question.Length > 0;
+        var body = question ? null : _readBody(item);
+        var conversation = forReader && !question ? _readConversation?.Invoke(item) : null;
+        var history = forReader ? _readHistory?.Invoke(item) : null;
+        var read = body is null ? new IssueBody(item.Question)
+            : await Settled(body, reading => IssueBody.Of(reading, item.Number),
+                new IssueBody(Failure: $"couldn't read #{item.Number}")).ConfigureAwait(false);
+        if (read.Failure is not null)
             return read;
-        return read.With(await Settled(conversation, reading => Conversation.Of(reading, item.Number),
-            new Conversation([], $"couldn't read the conversation on #{item.Number}")).ConfigureAwait(false));
+        if (conversation is not null)
+            read = read.With(await Settled(conversation, reading => Conversation.Of(reading, item.Number),
+                new Conversation([], $"couldn't read the conversation on #{item.Number}")).ConfigureAwait(false));
+        if (history is not null)
+            read = read with
+            {
+                History = await Settled(history, reading => History.Of(reading, item.Number),
+                    new History([], Failure: $"couldn't read #{item.Number}'s history")).ConfigureAwait(false),
+            };
+        return read;
     }
 
     private static async Task<T> Settled<T>(Task<Reading> reading, Func<Reading, T> of, T otherwise)

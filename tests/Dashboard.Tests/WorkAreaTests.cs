@@ -869,6 +869,70 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Enter_reads_the_card_s_history_for_the_reader_to_show_beside_the_body()
+    {
+        IssueBody? shown = null;
+        var at = new DateTimeOffset(2026, 10, 3, 10, 41, 0, TimeSpan.Zero);
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            readHistory: item => Task.FromResult(new Reading(
+                $$"""{"since": "{{at:O}}", "events": [{"at": "{{at:O}}", "who": "lead", "what": "added as Ready #{{item.Number}}"}]}""",
+                null)),
+            showBody: (_, body, _, _, _, _, _) => shown = body);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        window.Refresh();
+
+        Assert.Equal("## Opportunity", shown?.Text);
+        Assert.Equal([new HistoryEvent(at, "lead", "added as Ready #6")], shown?.History?.Events);
+    }
+
+    [Fact]
+    public void A_history_that_wont_read_still_shows_the_body()
+    {
+        IssueBody? shown = null;
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            readHistory: _ => Task.FromResult(new Reading("", "board.sh: can't read the record")),
+            showBody: (_, body, _, _, _, _, _) => shown = body);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        window.Refresh();
+
+        Assert.Equal("## Opportunity", shown?.Text);
+        Assert.Equal("board.sh: can't read the record", shown?.History?.Failure);
+    }
+
+    [Fact]
+    public void A_question_reads_only_its_history()
+    {
+        var bodies = 0;
+        IssueBody? shown = null;
+        using var window = Open(
+            read: _ => Task.FromResult(new Reading(Question, null)),
+            readBody: _ =>
+            {
+                bodies++;
+                return Task.FromResult(new Reading(Body, null));
+            },
+            readHistory: _ => Task.FromResult(new Reading("""{"since": null, "events": []}""", null)),
+            showBody: (_, body, _, _, _, _, _) => shown = body);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        window.Refresh();
+
+        Assert.Equal(0, bodies);
+        Assert.Equal("Which marker should it post?", shown?.Text);
+        Assert.NotNull(shown?.History);
+    }
+
+    [Fact]
     public void A_conversation_that_wont_read_still_shows_the_body_with_the_reason_under_it()
     {
         IssueBody? shown = null;
@@ -904,6 +968,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("#192 · asked you since 08:23", window.Work.Selected?.Line);
 
         Assert.True(window.NewKeyDownEvent(Key.Enter));
+        window.Refresh();
 
         Assert.Empty(read);
         Assert.Equal(192, shown?.Item.Number);
@@ -932,6 +997,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("Questions · team0", window.Work.Region);
 
         Assert.True(window.NewKeyDownEvent(Key.Enter));
+        window.Refresh();
 
         Assert.Equal(new IssueBody("## Needs your answer\n\n1. Which?"), shown);
         Assert.Equal(["board", "team0", "approve", "you", "257"], Assert.Single(calls));
@@ -2578,7 +2644,8 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, Task<Reading>>? readConversation = null,
         Func<WaitingItem, bool>? confirmAccept = null,
         TimeProvider? clock = null,
-        Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null)
+        Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
+        Func<WaitingItem, Task<Reading>>? readHistory = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -2599,7 +2666,8 @@ public class WorkAreaTests : IDisposable
             readConversation: readConversation,
             confirmAccept: confirmAccept,
             clock: clock,
-            askComment: askComment);
+            askComment: askComment,
+            readHistory: readHistory);
     }
 
     private void WriteRun(string team, string role, int pid)
