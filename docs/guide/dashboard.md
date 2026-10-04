@@ -34,6 +34,16 @@ The strip along the bottom is the dispatcher's recent decisions.
 | `Esc` | Back to every agent |
 | `PgUp`, `PgDn`, `Home`, `End` | Scroll the selected log. Scrolling up stops it following new output until you press `End` |
 
+## Copying from a log
+
+In the expanded view one line of the log is highlighted, starting on the last. `Up` and `Down` move
+it a line at a time, and `Shift+Up`, `Shift+Down` take in more. Moving it stops the log following
+new output until you press `End`, and paging brings it with you.
+
+`l` copies the highlighted lines and `L` the whole log, each line in full: the whole command or error,
+not the clipped row on screen. A folded run of tool calls copies the one it shows. The status bar
+says how much went.
+
 ## Tool calls
 
 A run of tool calls draws as a single row, so the agent's own words aren't pushed off the top. `t`

@@ -1766,7 +1766,7 @@ public class WorkAreaTests : IDisposable
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
                 "work.github", "work.accept", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
-                "agent.expand", "log.toolCalls", "agent.collapse", "help", "guide", "commands", "about",
+                "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "help", "guide", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>

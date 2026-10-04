@@ -15,6 +15,7 @@ public enum RunVerdict
 public sealed class SessionLog
 {
     private const int MaxLines = 500;
+    internal const int MaxCopied = 64 * 1024;
     private readonly List<LogLine> _lines = [];
     private string? _path;
     private long _offset;
@@ -130,7 +131,10 @@ public sealed class SessionLog
                     lines.Add(new LogLine("", LogLineKind.Prose));
                     break;
                 case "tool_use":
-                    lines.Add(new LogLine($"{Str(part, "name")} {ToolSummary(part)}".TrimEnd(), LogLineKind.ToolCall));
+                    var field = ToolField(part);
+                    var (full, capped) = Capped(field);
+                    lines.Add(new LogLine($"{Str(part, "name")} {Clip(FirstLine(field), 160)}".TrimEnd(), LogLineKind.ToolCall,
+                        field.Length > 0 ? full : null, capped));
                     break;
             }
         }
@@ -148,7 +152,9 @@ public sealed class SessionLog
             var text = content.ValueKind == JsonValueKind.String
                 ? content.GetString() ?? ""
                 : string.Join(" ", content.EnumerateArray().Select(c => Str(c, "text")));
-            yield return new LogLine(Clip(FirstLine(text), 200), LogLineKind.ToolError);
+            var shown = Clip(FirstLine(text), 200);
+            var (full, capped) = Capped(text);
+            yield return new LogLine(shown, LogLineKind.ToolError, full == shown ? null : full, capped);
         }
     }
 
@@ -161,7 +167,7 @@ public sealed class SessionLog
         return new LogLine(text, failed ? LogLineKind.ResultError : LogLineKind.ResultOk);
     }
 
-    private static string ToolSummary(JsonElement tool)
+    private static string ToolField(JsonElement tool)
     {
         if (!tool.TryGetProperty("input", out var input) || input.ValueKind != JsonValueKind.Object)
             return "";
@@ -169,10 +175,13 @@ public sealed class SessionLog
         {
             var value = Str(input, key);
             if (value.Length > 0)
-                return Clip(FirstLine(value), 160);
+                return value;
         }
         return "";
     }
+
+    private static (string Text, bool Capped) Capped(string text) =>
+        text.Length > MaxCopied ? (text[..MaxCopied], true) : (text, false);
 
     private static IEnumerable<JsonElement> Content(JsonElement root) =>
         root.TryGetProperty("message", out var message) && message.TryGetProperty("content", out var content) &&

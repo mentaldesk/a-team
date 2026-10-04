@@ -4,6 +4,7 @@ using Terminal.Gui;
 using Terminal.Gui.App;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -352,6 +353,103 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void Up_and_down_select_agents_on_the_grid_and_log_lines_while_expanded()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+
+        Assert.True(window.Commands.IsEnabled("agent.up"));
+        Assert.True(window.Commands.IsEnabled("agent.down"));
+        Assert.False(window.Commands.IsEnabled("log.lineUp"));
+        Assert.False(window.Commands.IsEnabled("log.copyLines"));
+
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.False(window.Commands.IsEnabled("agent.up"));
+        Assert.False(window.Commands.IsEnabled("agent.down"));
+        Assert.DoesNotContain(window.Commands.Enabled, command => command.Id is "agent.up" or "agent.down");
+        Assert.All(
+            new[] { "log.lineUp", "log.lineDown", "log.extendUp", "log.extendDown", "log.copyLines", "log.copyAll" },
+            id => Assert.True(window.Commands.IsEnabled(id), id));
+    }
+
+    [Fact]
+    public void l_copies_the_highlighted_lines_in_full_and_says_so()
+    {
+        var clipboard = new FakeClipboard();
+        WriteLog("a-team", "dev",
+            """{"type":"assistant","message":{"content":[{"type":"text","text":"reading"}]}}""",
+            """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cat <<'PY'\nprint(1)\nPY"}}]}}""");
+        using var window = Open(clipboard: clipboard);
+        window.Refresh();
+        SelectAgent(window, 1);
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.True(window.NewKeyDownEvent(new Key('l')));
+
+        Assert.Equal("cat <<'PY'\nprint(1)\nPY", clipboard.GetClipboardData());
+        Assert.Equal("copied 22 characters", window.Message.Says);
+
+        window.NewKeyDownEvent(Key.CursorUp);
+        window.NewKeyDownEvent(Key.CursorUp.WithShift);
+        window.NewKeyDownEvent(new Key('l'));
+        Assert.Equal("reading\n", clipboard.GetClipboardData());
+        Assert.Equal("copied 2 lines, 8 characters", window.Message.Says);
+    }
+
+    [Fact]
+    public void L_copies_the_whole_log()
+    {
+        var clipboard = new FakeClipboard();
+        WriteLog("a-team", "dev",
+            """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"a"}},{"type":"tool_use","name":"Read","input":{"file_path":"b"}}]}}""");
+        using var window = Open(clipboard: clipboard);
+        window.Refresh();
+        SelectAgent(window, 1);
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.True(window.NewKeyDownEvent(new Key('L')));
+
+        Assert.Equal("a\nb", clipboard.GetClipboardData());
+    }
+
+    [Fact]
+    public void With_no_clipboard_copying_says_so_in_red_and_nothing_moves()
+    {
+        WriteLog("a-team", "dev", """{"type":"assistant","message":{"content":[{"type":"text","text":"one\ntwo"}]}}""");
+        using var window = Open(clipboard: new FakeClipboard(isSupportedAlwaysFalse: true));
+        window.Refresh();
+        SelectAgent(window, 1);
+        window.NewKeyDownEvent(Key.Enter);
+        window.NewKeyDownEvent(Key.CursorUp);
+
+        window.NewKeyDownEvent(new Key('l'));
+
+        Assert.Equal("there's no clipboard to copy to", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("two", window.Panes[1].CopySelection().Text);
+    }
+
+    [Fact]
+    public void Expanding_again_starts_at_the_tail_following()
+    {
+        WriteLog("a-team", "dev", """{"type":"assistant","message":{"content":[{"type":"text","text":"one\ntwo\nthree"}]}}""");
+        using var window = Open();
+        window.Refresh();
+        SelectAgent(window, 1);
+        window.NewKeyDownEvent(Key.Enter);
+        window.NewKeyDownEvent(Key.CursorUp);
+        window.NewKeyDownEvent(Key.CursorUp);
+
+        window.NewKeyDownEvent(Key.Esc);
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.DoesNotContain("[scrolled]", window.Panes[1].Title, StringComparison.Ordinal);
+        window.NewKeyDownEvent(Key.CursorUp);
+        Assert.Equal("three", window.Panes[1].CopySelection().Text);
+    }
+
+    [Fact]
     public void Scrolling_and_t_still_reach_the_expanded_agent()
     {
         using var window = Open(agents: Agents(4));
@@ -390,8 +488,10 @@ public class DashboardWindowTests : IDisposable
             [
                 "Select the next agent", "Select the previous agent", "Select the agent to the right",
                 "Select the agent to the left", "Select the agent below", "Select the agent above",
-                "Expand the selected agent", "Scroll the log up", "Scroll the log down",
+                "Select the next line of the log", "Select the line above in the log", "Extend the selection down",
+                "Extend the selection up", "Expand the selected agent", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
+                "Copy the selected lines", "Copy the whole log",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Open", "Set priority", "Try PR", "Open on GitHub",
                 "Approve the pitch you're reading", "Accept", "Comment on the item you're reading",
@@ -1180,7 +1280,8 @@ public class DashboardWindowTests : IDisposable
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
         Handover? resume = null,
-        Action<string>? showGuide = null)
+        Action<string>? showGuide = null,
+        IClipboard? clipboard = null)
     {
         Directory.CreateDirectory(_root);
         if (keys is not null)
@@ -1206,7 +1307,8 @@ public class DashboardWindowTests : IDisposable
             auto,
             handOver,
             resume,
-            showGuide: showGuide);
+            showGuide: showGuide,
+            clipboard: clipboard);
     }
 
     private string Config => Path.Combine(_root, "config");
@@ -1240,6 +1342,13 @@ public class DashboardWindowTests : IDisposable
         File.WriteAllText(
             Path.Combine(dir, "latest.jsonl"),
             "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"sess-" + team + role + "\"}\n");
+    }
+
+    private void WriteLog(string team, string role, params string[] events)
+    {
+        var dir = Path.Combine(_root, team, role);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "latest.jsonl"), string.Join("\n", events) + "\n");
     }
 
     private void WriteHold(string team, string role)
