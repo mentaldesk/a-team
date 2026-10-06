@@ -3633,6 +3633,12 @@ A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") A_TEAM_STATE="$INSTALL_STATE" b
 [ -f "$INSTALL_STATE/dry-next-pass" ] || fail "dry pass: no dry-next-pass"
 [ -e "$INSTALL_STATE/next-pass" ] && fail "dry pass: wrote next-pass"
 
+case_ "a pass run off schedule leaves the scheduled pass's countdown alone"
+echo 1800000000 >"$INSTALL_STATE/next-pass"
+A_TEAM_UNSCHEDULED=1 A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") A_TEAM_STATE="$INSTALL_STATE" bash "$ROOT/scripts/dispatch.sh"
+same "next-pass" 1800000000 "$(cat "$INSTALL_STATE/next-pass")"
+rm "$INSTALL_STATE/next-pass"
+
 # status.sh's first line, for a state directory holding $1 as dispatcher.json (or none) and next-pass $2 seconds from now.
 dispatcher_line() {
   local state

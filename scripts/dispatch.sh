@@ -15,7 +15,9 @@ source "$ROOT/scripts/common.sh"
 DRY_RUN=false
 [ "${1:-}" = --dry-run ] && DRY_RUN=true
 mkdir -p "$STATE"
-echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$STATE/$($DRY_RUN && echo dry-)next-pass"
+# A pass run off schedule, from the app, leaves the scheduled one's countdown alone.
+[ -n "${A_TEAM_UNSCHEDULED:-}" ] ||
+  echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$STATE/$($DRY_RUN && echo dry-)next-pass"
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
 

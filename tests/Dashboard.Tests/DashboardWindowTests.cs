@@ -719,7 +719,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open", "Set priority", "Try", "Open on GitHub",
                 "Approve the pitch you're reading", "Accept", "Comment on the item you're reading",
                 "Show only what's your move", "Read what's waiting again", "Dashboard", "Work",
-                "Pause selected agent's role", "Interrupt selected agent", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Back to the agent grid", "Quit",
+                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }
@@ -1118,6 +1118,63 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
         Assert.Equal(before, after);
         AssertTiles(AgentArea(window), after);
+    }
+
+    [Fact]
+    public void Typing_pass_in_the_Commands_palette_finds_running_one_now()
+    {
+        using var window = Open();
+
+        Assert.Equal(["dispatch.pass"], window.Commands.Enabled
+            .Where(command => command.Label.Contains("pass", StringComparison.OrdinalIgnoreCase)).Select(command => command.Id));
+    }
+
+    [Fact]
+    public void A_pass_now_says_it_is_running_in_Accent_then_what_it_started()
+    {
+        var finish = new TaskCompletionSource<Reading>();
+        using var window = Open(pass: new DispatchPass(_root, "a-team", (_, _) => finish.Task));
+
+        window.Commands.Execute("dispatch.pass");
+
+        Assert.Equal("Running a pass…", window.Message.Says);
+        Assert.Equal(StatusBar.Scheme, window.Message.SchemeName);
+
+        WriteDispatchLog("2026-10-04T10:02:00Z a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build");
+        finish.SetResult(new Reading("", null));
+        window.Refresh();
+
+        Assert.Equal("Pass done: started 1 run.", window.Message.Says);
+        Assert.Equal("10:02 a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build", Assert.Single(window.DispatchLog.Lines).Text);
+    }
+
+    [Fact]
+    public void A_pass_now_that_failed_says_its_first_line_in_Error()
+    {
+        using var window = Open(pass: new DispatchPass(_root, "a-team", (_, _) => Task.FromResult(new Reading("", "a-team: no such command"))));
+
+        window.Commands.Execute("dispatch.pass");
+        window.Refresh();
+
+        Assert.Equal("a-team: no such command", window.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+    }
+
+    [Fact]
+    public void A_second_pass_now_while_one_runs_only_says_one_is_already_running()
+    {
+        var calls = 0;
+        using var window = Open(pass: new DispatchPass(_root, "a-team", (_, _) =>
+        {
+            calls++;
+            return new TaskCompletionSource<Reading>().Task;
+        }));
+
+        window.Commands.Execute("dispatch.pass");
+        window.Commands.Execute("dispatch.pass");
+
+        Assert.Equal(1, calls);
+        Assert.Equal("A pass is already running.", window.Message.Says);
     }
 
     [Fact]
@@ -1646,7 +1703,8 @@ public class DashboardWindowTests : IDisposable
         Action<string>? showGuide = null,
         Func<RunTask, bool>? confirmStop = null,
         IClipboard? clipboard = null,
-        TeamChecks? checks = null)
+        TeamChecks? checks = null,
+        DispatchPass? pass = null)
     {
         Directory.CreateDirectory(_root);
         if (keys is not null)
@@ -1675,7 +1733,8 @@ public class DashboardWindowTests : IDisposable
             showGuide: showGuide,
             confirmStop: confirmStop,
             clipboard: clipboard,
-            checks: checks);
+            checks: checks,
+            pass: pass);
     }
 
     private string Config => Path.Combine(_root, "config");

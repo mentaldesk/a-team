@@ -36,7 +36,7 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
     /// broke before it could log why.</summary>
     public static IReadOnlyList<string> Broke(string stateRoot, int count)
     {
-        var output = new FileInfo(Record(Path.Combine(stateRoot, "dispatcher.json"))?.Log is { Length: > 0 } log
+        var output = new FileInfo(Record(stateRoot)?.Log is { Length: > 0 } log
             ? log
             : Path.Combine(stateRoot, "launchd.log"));
         var logged = new FileInfo(Path.Combine(stateRoot, "dispatch.log"));
@@ -52,7 +52,7 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
 
     public static DispatcherState Read(string stateRoot, DateTimeOffset now, string home)
     {
-        var record = Record(Path.Combine(stateRoot, "dispatcher.json"));
+        var record = Record(stateRoot);
         if (record is null)
             return Time(Path.Combine(stateRoot, "next-pass")) is { } due && now - due <= Grace ? Unrecorded : NotInstalled;
 
@@ -70,13 +70,14 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
 
     private static readonly TimeSpan Grace = TimeSpan.FromMinutes(1);
 
-    private sealed record Installed(string Bin, string Version, bool DryRun, int Interval, DateTimeOffset InstalledAt, string Log);
+    internal sealed record Installed(string Bin, string Version, bool DryRun, int Interval, DateTimeOffset InstalledAt, string Log);
 
-    private static Installed? Record(string path)
+    /// <summary>What the installer recorded in dispatcher.json, or null when there's no record it can read.</summary>
+    internal static Installed? Record(string stateRoot)
     {
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(stateRoot, "dispatcher.json")));
             var root = document.RootElement;
             return new Installed(
                 root.GetProperty("bin").GetString() ?? "",

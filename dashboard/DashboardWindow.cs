@@ -52,6 +52,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<string[], Task<string?>> _run;
     private readonly TeamStart? _start;
     private readonly TeamChecks? _checks;
+    private readonly DispatchPass _pass;
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
@@ -121,9 +122,11 @@ public sealed class DashboardWindow : Window
         Action<string>? showGuide = null,
         Func<RunTask, bool>? confirmStop = null,
         IClipboard? clipboard = null,
-        TeamChecks? checks = null)
+        TeamChecks? checks = null,
+        DispatchPass? pass = null)
     {
         _clipboard = clipboard;
+        _pass = pass ?? new DispatchPass(stateRoot, "a-team");
         _checks = checks ?? (start is null ? null : new TeamChecks(start.Check, teams.Stamp));
         _showGuide = showGuide ?? (_ => { });
         _start = start;
@@ -421,6 +424,7 @@ public sealed class DashboardWindow : Window
             .Register("agent.interrupt", () => UnlessStopped("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
                 isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true } or { RunHeld: true },
                 menuLabel: () => UnlessStopped("Interrupt", "Let it start again"))
+            .Register("dispatch.pass", "Run a dispatch pass now", PassNow)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", () => OpenSettings(), new Key('s'), isEnabled: HasApp)
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
@@ -451,6 +455,14 @@ public sealed class DashboardWindow : Window
         _progress = pane.Held ? "Letting it start again…" : "Pausing this role…";
         ShowMessage();
         _pending = _run([pane.Held ? "resume" : "pause", pane.Team, pane.Role]);
+    }
+
+    private void PassNow()
+    {
+        _failure = null;
+        _said = null;
+        _pass.Start();
+        ShowMessage();
     }
 
     private string UnlessHeld(string label, string resume) => Selected() is { Held: true } ? resume : label;
@@ -822,6 +834,17 @@ public sealed class DashboardWindow : Window
             }
         }
 
+        if (_pass.Finished() is { } passed)
+        {
+            if (passed.Scheme == Schemes.Error)
+                _failure = passed.Text;
+            else
+            {
+                _said = passed.Text;
+                _saidOn = _work.Selected;
+            }
+        }
+
         if (_readingBody is { Read.IsCompleted: true } body)
         {
             _readingBody = null;
@@ -862,6 +885,7 @@ public sealed class DashboardWindow : Window
             : _copied is { } copied ? copied
             : _reading is not null ? ("Reading…", Schemes.Accent)
             : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
+            : _pass.Progress is { } passing ? (passing, Schemes.Accent)
             : _said is { Length: > 0 } ? (_said, Schemes.Accent)
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)

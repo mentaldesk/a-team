@@ -50,6 +50,11 @@ goes to its own output instead. If that is newer than the log's last line, the t
 pass failed` in red, and the expanded log ends with the last of that output under `── the
 dispatcher's own output since then ──`.
 
+Answered something a team was waiting on? **Run a dispatch pass now**, in the Commands palette
+(`Ctrl+E`) or under **Agents**, has that dispatcher check for work straight away instead of at its
+next pass. It starts only what that pass would have, within the same limits, and leaves the
+countdown alone. The message bar says what it started, or `Pass done: nothing to start.`
+
 ## Reading a log
 
 | Key | Does |

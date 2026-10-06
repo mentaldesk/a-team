@@ -20,7 +20,7 @@ internal sealed class AppMenu
     [
         ("_View", ["view.dashboard", "view.work", "settings", "quit"]),
         (Cards, [Separator, "work.refresh", "work.mine"]),
-        (Agents, ["agent.hold", "agent.interrupt", Separator, "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
+        (Agents, ["agent.hold", "agent.interrupt", "dispatch.pass", Separator, "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
         ("_Help", ["help", "guide", "commands", "about"]),
     ];
 

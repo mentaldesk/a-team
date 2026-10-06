@@ -307,12 +307,13 @@ public class AppMenuTests : IDisposable
 
 
     [Fact]
-    public void Agents_holds_pause_this_role_then_interrupt_which_shows_its_key()
+    public void Agents_holds_pause_this_role_then_interrupt_which_shows_its_key_then_a_pass_now()
     {
         using var window = Open();
         var agents = window.Menus.Single(menu => menu.Title == "_Agents");
 
-        Assert.Equal(["agent.hold", "agent.interrupt"], Above(window, agents));
+        Assert.Equal(["agent.hold", "agent.interrupt", "dispatch.pass"], Above(window, agents));
+        Assert.Equal("_Run a dispatch pass now", Item(window, "dispatch.pass").Title);
         Assert.Equal("Pause t_his role", Item(window, "agent.hold").Title);
         Assert.Equal("_Interrupt", Item(window, "agent.interrupt").Title);
         Assert.Equal(new Key('i'), Item(window, "agent.interrupt").Key);
