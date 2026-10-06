@@ -304,8 +304,9 @@ public sealed class DashboardWindow : Window
         _checks?.Follow(paused.Keys);
         if (_checks?.Answered() is [.., var failed])
             _failure = failed;
+        var passing = DispatcherState.Passing(_stateRoot);
         foreach (var pane in _panes)
-            pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role), _checks?.Fatal(pane.Team));
+            pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role), _checks?.Fatal(pane.Team), passing);
 
         var tail = ReadTail(_dispatchLog, DispatchLines);
         if (!_dispatch.Lines.SequenceEqual(tail))

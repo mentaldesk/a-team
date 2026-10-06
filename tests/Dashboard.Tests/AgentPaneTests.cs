@@ -299,6 +299,17 @@ public class AgentPaneTests : IDisposable
     }
 
     [Fact]
+    public void A_pass_overdue_but_still_going_is_checking_not_a_stopped_dispatcher()
+    {
+        var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(1);
+        var idle = new AgentState(Running: false, now - TimeSpan.FromMinutes(5), [], null);
+        var overdue = now - TimeSpan.FromMinutes(3);
+
+        Assert.Equal("ran 5m ago · checking now", AgentPane.Describe(idle, now, overdue, PaneStatus.Ok, passing: true));
+        Assert.Equal("ran 5m ago · dispatcher not running", AgentPane.Describe(idle, now, overdue, PaneStatus.Ok));
+    }
+
+    [Fact]
     public void A_run_that_never_reported_a_result_was_cut_short()
     {
         var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(1);

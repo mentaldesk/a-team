@@ -51,7 +51,7 @@ public sealed class AgentPane : FrameView
     private readonly RunSelection _runs = new();
     private string? _shownLog;
     private DateTimeOffset _now;
-    private (DateTimeOffset? NextCheck, bool Paused, bool Held, TeamProblem? Misconfigured) _refreshed;
+    private (DateTimeOffset? NextCheck, bool Paused, bool Held, TeamProblem? Misconfigured, bool Passing) _refreshed;
 
     public AgentPane(string team, string role, string stateDir, bool expandToolCalls)
     {
@@ -116,7 +116,7 @@ public sealed class AgentPane : FrameView
     public void Restore(PanePlace place)
     {
         _runs.Chosen = place.Run;
-        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held, _refreshed.Misconfigured);
+        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held, _refreshed.Misconfigured, _refreshed.Passing);
         _body.Restore(place.Log, _body.Lines);
         UpdateHeader();
     }
@@ -172,14 +172,14 @@ public sealed class AgentPane : FrameView
     {
         if (!_runs.Move(step))
             return false;
-        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held, _refreshed.Misconfigured);
+        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held, _refreshed.Misconfigured, _refreshed.Passing);
         return true;
     }
 
     public void Refresh(
-        DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held, TeamProblem? misconfigured = null)
+        DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held, TeamProblem? misconfigured = null, bool passing = false)
     {
-        _refreshed = (nextCheck, paused, held, misconfigured);
+        _refreshed = (nextCheck, paused, held, misconfigured, passing);
         var role = AgentState.Read(_stateDir);
         _runs.Update(role.Runs, role.Latest);
         var state = _runs.Current is { } run ? AgentState.Read(run.Dir) with { Stopped = run.Held ?? role.Stopped } : role;
@@ -197,7 +197,7 @@ public sealed class AgentPane : FrameView
                 : [.. _log.Lines];
 
         _status = Status(state, paused, stopped, _log.Verdict, misconfigured is not null);
-        _timing = misconfigured is null ? Describe(state, now, nextCheck, _status, stopped) : Misconfigured(misconfigured);
+        _timing = misconfigured is null ? Describe(state, now, nextCheck, _status, stopped, passing) : Misconfigured(misconfigured);
         _now = now;
         UpdateHeader();
 
@@ -303,7 +303,7 @@ public sealed class AgentPane : FrameView
     }
 
     internal static string Describe(
-        AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck, PaneStatus status, bool held = false)
+        AgentState state, DateTimeOffset now, DateTimeOffset? nextCheck, PaneStatus status, bool held = false, bool passing = false)
     {
         if (state.Running)
             return (state.LastStart is { } started ? $"running {Clock(now - started)}" : "running") + (held ? " · held" : "");
@@ -315,16 +315,16 @@ public sealed class AgentPane : FrameView
         {
             PaneStatus.Paused => "paused",
             PaneStatus.Held => "held",
-            _ => NextCheck(now, nextCheck),
+            _ => NextCheck(now, nextCheck, passing),
         };
         return $"{ran}{cut} · {next}";
     }
 
-    private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck) => nextCheck switch
+    private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck, bool passing) => nextCheck switch
     {
         null => "dispatcher hasn't run",
         { } next when next - now >= TimeSpan.Zero => $"next check {Clock(next - now)}",
-        { } next when now - next < TimeSpan.FromMinutes(1) => "checking now",
+        { } next when passing || now - next < TimeSpan.FromMinutes(1) => "checking now",
         _ => Stopped,
     };
 

@@ -3639,12 +3639,14 @@ A_TEAM_UNSCHEDULED=1 A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") A_TEAM_STA
 same "next-pass" 1800000000 "$(cat "$INSTALL_STATE/next-pass")"
 rm "$INSTALL_STATE/next-pass"
 
-# status.sh's first line, for a state directory holding $1 as dispatcher.json (or none) and next-pass $2 seconds from now.
+# status.sh's first line, for a state directory holding $1 as dispatcher.json (or none), next-pass $2 seconds from now
+# (with prefix $3) and a pass in progress as pid $4.
 dispatcher_line() {
   local state
   state=$(mktemp -d "$WORK/state.XXXXXX")
   [ -n "$1" ] && echo "$1" >"$state/dispatcher.json"
   [ -n "${2:-}" ] && echo $(($(date +%s) + $2)) >"$state/${3:-}next-pass"
+  [ -n "${4:-}" ] && echo "$4" >"$state/${3:-}pass"
   A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") A_TEAM_STATE="$state" HOME=/Users/me bash "$ROOT/scripts/status.sh" | head -n 1
 }
 installed() { jq -nc --argjson dry "$1" --argjson at $(($(date +%s) - $2)) \
@@ -3658,6 +3660,25 @@ same "stopped" "dispatcher · stopped 14m ago" "$(dispatcher_line "$(installed f
 same "never installed" "dispatcher · nothing installed · run: a-team install" "$(dispatcher_line '')"
 same "unrecorded" "dispatcher" "$(dispatcher_line '' 30)"
 same "unrecorded, stale" "dispatcher · nothing installed · run: a-team install" "$(dispatcher_line '' -600)"
+
+case_ "status counts an overdue pass as live while its process is, and stopped once it's gone"
+same "busy pass" "dispatcher · ~/code/a-team/palette/bin/a-team 0.1.13 · next pass 0:00" \
+  "$(dispatcher_line "$(installed false 3600)" -180 '' $$)"
+same "gone" "dispatcher · stopped 5m ago" "$(dispatcher_line "$(installed false 3600)" -180 '' 999999)"
+same "unrecorded, busy" "dispatcher" "$(dispatcher_line '' -180 '' $$)"
+
+case_ "a scheduled pass marks itself in progress with its pid, and clears that when it ends"
+PASS_STATE=$(mktemp -d "$WORK/state.XXXXXX") PASS_CONFIG=$(mktemp -d "$WORK/config.XXXXXX")
+PASS_STUBS=$(mktemp -d "$WORK/stubs.XXXXXX")
+mkdir -p "$PASS_CONFIG/teams"
+echo '{}' >"$PASS_CONFIG/teams/t.json"
+printf '#!/usr/bin/env bash\ncat "%s/pass" >"%s/seen"\nexec %s "$@"\n' "$PASS_STATE" "$PASS_STUBS" "$(command -v jq)" >"$PASS_STUBS/jq"
+chmod +x "$PASS_STUBS/jq"
+PATH="$PASS_STUBS:$PATH" A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" &
+pass_pid=$!
+wait "$pass_pid"
+same "pid during the pass" "$pass_pid" "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
+[ -e "$PASS_STATE/pass" ] && fail "pass: still marked in progress after it ended"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"
