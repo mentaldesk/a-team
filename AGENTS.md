@@ -56,7 +56,7 @@ nothing to restart.
 
 ## Dashboard UI
 
-`dashboard/` is a Terminal.Gui 2.1 app, the same stack as TuiCode.
+`dashboard/` is a Terminal.Gui 2.5 app, the same stack as TuiCode.
 
 Styles and conventions for how we build TUI apps live in the [MentalDesk TUI style guide](https://github.com/mentaldesk/tui-style-guide). Read it before describing UI in an issue or PR, and before building one. 
 

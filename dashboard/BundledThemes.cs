@@ -26,9 +26,8 @@ public static class BundledThemes
     /// <summary>Registers the bundled themes and applies <paramref name="theme"/>. Call before the application starts.</summary>
     public static void Load(string theme = Default)
     {
-        ConfigurationManager.RuntimeConfig = Config;
-        // a-team keeps its own config, so ~/.tui and TUI_CONFIG are left out.
-        ConfigurationManager.Enable(ConfigLocations.HardCoded | ConfigLocations.LibraryResources | ConfigLocations.Runtime);
+        TuiConfigurationBuilder.Shared.RuntimeConfig = Config;
+        TuiConfigurationBuilder.Shared.ApplyToStaticFacades();
         Apply(theme);
     }
 
@@ -36,7 +35,6 @@ public static class BundledThemes
     public static void Apply(string theme)
     {
         ThemeManager.Theme = Names.Contains(theme) ? theme : Default;
-        ConfigurationManager.Apply();
         LogSchemes.Register();
         if (CursorColour(ThemeManager.Theme) is { } colour)
             Cursor.Colour(colour);
@@ -44,12 +42,8 @@ public static class BundledThemes
 
     /// <summary>The colour of <paramref name="theme"/>'s caret: its <c>Cursor</c> scheme, which nothing draws with.</summary>
     public static Color? CursorColour(string theme) =>
-        ThemeManager.Themes?.TryGetValue(theme, out var scope) == true
-        && scope.TryGetValue("Schemes", out var property)
-        && property.PropertyValue is Dictionary<string, Scheme?> schemes
-        && schemes.TryGetValue("Cursor", out var cursor)
-        && cursor is not null
-            ? cursor.Normal.Foreground
+        TuiConfigurationBuilder.Shared.Configuration[$"Themes:{theme}:Schemes:Cursor:Normal:Foreground"] is { } colour
+            ? Color.Parse(colour)
             : null;
 
     private static string ReadConfig()

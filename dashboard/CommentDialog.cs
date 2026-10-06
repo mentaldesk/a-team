@@ -2,6 +2,9 @@ using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
+// Terminal.Gui 2.5 obsoletes TextView in favour of Terminal.Gui.Editor; moving to it is a change of its own.
+#pragma warning disable CS0618
+
 namespace ATeam.Dashboard;
 
 /// <summary>A comment to post on an item as you, written without leaving the reader.</summary>

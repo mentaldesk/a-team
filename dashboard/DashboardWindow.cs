@@ -4,6 +4,7 @@ using Terminal.Gui;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
@@ -19,6 +20,8 @@ public sealed class DashboardWindow : Window
     private const int MenuLines = 1;
     private const int StatusLines = 1;
     private const int DispatchLines = 4;
+    private const int BrokeLines = 20;
+    private const string BrokeRule = "── the dispatcher's own output since then ──";
     private const int TitleMargin = 4;
     private const int MinCellHeight = 5;
     private const string AllItems = "All items";
@@ -35,6 +38,7 @@ public sealed class DashboardWindow : Window
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
     private readonly LogView _dispatch;
+    private readonly LogView _dispatchAll;
     private readonly WorkView _work;
     private readonly List<string> _teamNames;
     private readonly string _dispatchLog;
@@ -79,6 +83,12 @@ public sealed class DashboardWindow : Window
     private string? _failure;
     private string? _progress;
     private int? _expanded;
+    private bool _onDispatcher;
+    private bool _dispatcherExpanded;
+    private IReadOnlyList<string> _broke = [];
+    private (long Length, DateTime Written) _wholeRead;
+    private IReadOnlyList<LogLine> _whole = [];
+    private IconStyle _drawn = IconStyle.Unicode;
     private AgentPane? _lastSelected;
     private Size _laidOutOver;
     private Handover? _resume;
@@ -167,8 +177,14 @@ public sealed class DashboardWindow : Window
             pane.Height = Dim.Func(_ => Cell(_panes.IndexOf(pane)).Height, this);
             pane.HasFocusChanged += (_, e) =>
             {
-                if (e.NewValue)
-                    _lastSelected = pane;
+                if (!e.NewValue)
+                    return;
+                _lastSelected = pane;
+                if (_onDispatcher)
+                {
+                    _onDispatcher = false;
+                    ShowDispatcher(_clock.GetUtcNow());
+                }
             };
             _panes.Add(pane);
             _agents.Add(pane);
@@ -178,14 +194,23 @@ public sealed class DashboardWindow : Window
         {
             Title = "dispatcher",
             X = 0,
-            Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Foot()), this),
+            Y = Pos.Func(_ => _dispatcherExpanded ? MenuLines : Math.Max(0, Viewport.Height - Foot()), this),
             Width = Dim.Fill(),
-            Height = DispatchLines + 2,
-            CanFocus = false,
+            Height = Dim.Func(_ => _dispatcherExpanded ? Math.Max(0, Viewport.Height - MenuLines - StatusLines) : DispatchLines + 2, this),
+            CanFocus = true,
             Visible = area == Area.Dashboard,
         };
+        _dispatchFrame.HasFocusChanged += (_, e) =>
+        {
+            if (e.NewValue && !_onDispatcher)
+            {
+                _onDispatcher = true;
+                ShowDispatcher(_clock.GetUtcNow());
+            }
+        };
         _dispatch = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true, SchemeName = BaseScheme };
-        _dispatchFrame.Add(_dispatch);
+        _dispatchAll = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true, Scrolls = true, SchemeName = BaseScheme, Visible = false };
+        _dispatchFrame.Add(_dispatch, _dispatchAll);
         Add(_dispatchFrame);
 
         _work = new WorkView(_teamNames)
@@ -235,6 +260,12 @@ public sealed class DashboardWindow : Window
 
     internal LogView DispatchLog => _dispatch;
 
+    internal LogView WholeDispatchLog => _dispatchAll;
+
+    internal bool DispatcherSelected => _onDispatcher;
+
+    internal bool DispatcherExpanded => _dispatcherExpanded;
+
     internal View Agents => _agents;
 
     internal WorkView Work => _work;
@@ -279,6 +310,9 @@ public sealed class DashboardWindow : Window
         var tail = ReadTail(_dispatchLog, DispatchLines);
         if (!_dispatch.Lines.SequenceEqual(tail))
             _dispatch.Lines = tail;
+        _broke = DispatcherState.Broke(_stateRoot, BrokeLines);
+        if (_dispatcherExpanded)
+            ShowWholeLog();
         ShowDispatcher(now);
 
         _menu.Refresh();
@@ -289,12 +323,33 @@ public sealed class DashboardWindow : Window
     private void ShowDispatcher(DateTimeOffset now)
     {
         var state = DispatcherState.Read(_stateRoot, now, _home);
-        var title = state.Title(_dispatchFrame.Frame.Width > 0 ? _dispatchFrame.Frame.Width - TitleMargin : int.MaxValue);
+        if (_broke.Count > 0 && !_dispatcherExpanded)
+            state = state.Failed();
+        var marker = _onDispatcher ? Icons.Field(Icon.Selected, _drawn) : "";
+        var width = _dispatchFrame.Frame.Width > 0 ? _dispatchFrame.Frame.Width - TitleMargin - marker.GetColumns() : int.MaxValue;
+        var title = marker + state.Title(width);
         if (_dispatchFrame.Title != title)
             _dispatchFrame.Title = title;
         var scheme = state.Error ? ErrorScheme : BaseScheme;
         if (_dispatchFrame.SchemeName != scheme)
             _dispatchFrame.SchemeName = scheme;
+    }
+
+    /// <summary>Reads dispatch.log afresh only when it has changed: it is never trimmed.</summary>
+    private void ShowWholeLog()
+    {
+        var file = new FileInfo(_dispatchLog);
+        var stamp = file.Exists ? (file.Length, file.LastWriteTimeUtc) : default;
+        if (stamp != _wholeRead || _whole.Count == 0)
+        {
+            _wholeRead = stamp;
+            _whole = ReadTail(_dispatchLog, int.MaxValue);
+        }
+        IReadOnlyList<LogLine> lines = _broke.Count == 0
+            ? _whole
+            : [.. _whole, new LogLine(BrokeRule, LogLineKind.DispatchFailed), .. _broke.Select(line => new LogLine(line, LogLineKind.DispatchFailed))];
+        if (!_dispatchAll.Lines.SequenceEqual(lines))
+            _dispatchAll.Lines = lines;
     }
 
     /// <summary>When the Work area was last read, for the status bar.</summary>
@@ -318,6 +373,7 @@ public sealed class DashboardWindow : Window
         bool OnWork() => _area == Area.Work;
         bool AnyAgents() => OnDashboard() && _panes.Count > 0;
         bool Selection() => OnDashboard() && Selected() is not null;
+        bool Scrollable() => Selection() || (OnDashboard() && _dispatcherExpanded);
         bool OnGrid() => AnyAgents() && _expanded is null;
         bool Reading() => Selection() && _expanded is not null;
         _commands
@@ -331,12 +387,13 @@ public sealed class DashboardWindow : Window
             .Register("log.lineUp", "Select the line above in the log", () => Selected()?.MoveLine(-1, extend: false), Key.CursorUp, isEnabled: Reading)
             .Register("log.extendDown", "Extend the selection down", () => Selected()?.MoveLine(+1, extend: true), Key.CursorDown.WithShift, isEnabled: Reading)
             .Register("log.extendUp", "Extend the selection up", () => Selected()?.MoveLine(-1, extend: true), Key.CursorUp.WithShift, isEnabled: Reading)
-            .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter, isEnabled: Selection,
-                menuLabel: () => "Expand", inMenu: () => _expanded is null)
-            .Register("log.pageUp", "Scroll the log up", () => Selected()?.Page(-1), Key.PageUp, isEnabled: Selection)
-            .Register("log.pageDown", "Scroll the log down", () => Selected()?.Page(+1), Key.PageDown, isEnabled: Selection)
-            .Register("log.top", "Jump to the top of the log", () => Selected()?.Home(), Key.Home, isEnabled: Selection)
-            .Register("log.bottom", "Jump to the bottom of the log", () => Selected()?.End(), Key.End, isEnabled: Selection)
+            .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter,
+                isEnabled: () => Selection() || (OnDashboard() && _onDispatcher && !_dispatcherExpanded),
+                menuLabel: () => "Expand", inMenu: () => _expanded is null && !_dispatcherExpanded)
+            .Register("log.pageUp", "Scroll the log up", () => Scroll(pane => pane.Page(-1), log => log.Page(-1)), Key.PageUp, isEnabled: Scrollable)
+            .Register("log.pageDown", "Scroll the log down", () => Scroll(pane => pane.Page(+1), log => log.Page(+1)), Key.PageDown, isEnabled: Scrollable)
+            .Register("log.top", "Jump to the top of the log", () => Scroll(pane => pane.Home(), log => log.Home()), Key.Home, isEnabled: Scrollable)
+            .Register("log.bottom", "Jump to the bottom of the log", () => Scroll(pane => pane.End(), log => log.End()), Key.End, isEnabled: Scrollable)
             .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
             .Register("log.copyLines", () => "Copy the selected lines", () => Copy(pane => pane.CopySelection()), new Key('l'), isEnabled: Reading,
                 menuLabel: () => "Copy selected lines", inMenu: () => _expanded is not null)
@@ -375,8 +432,9 @@ public sealed class DashboardWindow : Window
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
             .Register("guide", "Guide", () => _showGuide(OnWork() ? GuideDialog.Work : GuideDialog.Dashboard))
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
-            .Register("agent.collapse", () => "Back to the agent grid", () => SetExpanded(null), Key.Esc,
-                isEnabled: () => OnDashboard() && _expanded is not null, menuLabel: () => "Back to all agents", inMenu: () => _expanded is not null)
+            .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
+                isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
+                inMenu: () => _expanded is not null || _dispatcherExpanded)
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
     }
 
@@ -872,6 +930,8 @@ public sealed class DashboardWindow : Window
         _area = area;
         _settings.WriteArea(area);
         _failure = null;
+        if (_dispatcherExpanded)
+            SetDispatcherExpanded(false);
         _agents.Visible = _dispatchFrame.Visible = area == Area.Dashboard;
         _work.Visible = area == Area.Work;
         _menu.Show(area);
@@ -963,6 +1023,7 @@ public sealed class DashboardWindow : Window
     private void ShowIcons(IconStyle style)
     {
         var drawn = Icons.Resolve(style, _auto);
+        _drawn = drawn;
         _work.ShowIcons(drawn);
         foreach (var pane in _panes)
             pane.ShowIcons(drawn);
@@ -970,9 +1031,55 @@ public sealed class DashboardWindow : Window
 
     private void Expand()
     {
+        if (_onDispatcher)
+        {
+            SetDispatcherExpanded(true);
+            return;
+        }
         var index = SelectedIndex();
         if (index >= 0 && _expanded is null)
             SetExpanded(index);
+    }
+
+    private void Collapse()
+    {
+        if (_dispatcherExpanded)
+            SetDispatcherExpanded(false);
+        else
+            SetExpanded(null);
+    }
+
+    private void SetDispatcherExpanded(bool expanded)
+    {
+        _dispatcherExpanded = expanded;
+        _dispatch.Visible = !expanded;
+        _dispatchAll.Visible = expanded;
+        _agents.Visible = _area == Area.Dashboard && !expanded;
+        if (expanded)
+            ShowWholeLog();
+        ShowDispatcher(_clock.GetUtcNow());
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    /// <summary>Scrolls the selected pane, or the dispatcher's whole log when that is what's expanded.</summary>
+    private void Scroll(Action<AgentPane> pane, Action<LogView> log)
+    {
+        if (_dispatcherExpanded)
+            log(_dispatchAll);
+        else if (Selected() is { } selected)
+            pane(selected);
+    }
+
+    /// <summary>Takes the frame from wherever the reader was, expanded in place of an expanded agent.</summary>
+    private void SelectDispatcher()
+    {
+        var expanded = _expanded is not null;
+        if (expanded)
+            SetExpanded(null);
+        _dispatchFrame.SetFocus();
+        if (expanded)
+            SetDispatcherExpanded(true);
     }
 
     private void SetExpanded(int? index)
@@ -992,17 +1099,28 @@ public sealed class DashboardWindow : Window
         SetNeedsDraw();
     }
 
+    /// <summary>Through every agent, then the dispatcher frame as the last stop, and round again.</summary>
     private void Step(int step)
     {
-        var current = SelectedIndex();
-        Select(current < 0
-            ? step > 0 ? 0 : _panes.Count - 1
-            : (current + step + _panes.Count) % _panes.Count);
+        var stops = _panes.Count + 1;
+        var current = _onDispatcher ? _panes.Count : SelectedIndex();
+        var next = current < 0
+            ? step > 0 ? 0 : _panes.Count
+            : (current + step + stops) % stops;
+        if (next == _panes.Count)
+            SelectDispatcher();
+        else
+            Select(next);
     }
 
     private void Select(int index)
     {
-        if (_expanded is not null)
+        if (_dispatcherExpanded)
+        {
+            SetDispatcherExpanded(false);
+            SetExpanded(index);
+        }
+        else if (_expanded is not null)
             SetExpanded(index);
         else
             ScrollIntoView(index);
@@ -1058,6 +1176,12 @@ public sealed class DashboardWindow : Window
 
     private void MoveSelection(int rowStep, int columnStep)
     {
+        if (_onDispatcher)
+        {
+            if (rowStep < 0 && !_dispatcherExpanded)
+                Select(_lastSelected is { } last && _panes.IndexOf(last) is >= 0 and var index ? index : _panes.Count - 1);
+            return;
+        }
         if (rowStep != 0 && Selected() is { } pane && pane.MoveRun(rowStep))
             return;
         if (_expanded is not null)
@@ -1069,6 +1193,11 @@ public sealed class DashboardWindow : Window
             return;
         }
         var rows = (_panes.Count + _columns - 1) / _columns;
+        if (rowStep > 0 && current / _columns == rows - 1)
+        {
+            SelectDispatcher();
+            return;
+        }
         var row = Math.Clamp(current / _columns + rowStep, 0, rows - 1);
         var column = Math.Clamp(current % _columns + columnStep, 0, _columns - 1);
         Select(Math.Min(row * _columns + column, _panes.Count - 1));
@@ -1077,7 +1206,9 @@ public sealed class DashboardWindow : Window
     private int SelectedIndex() => Selected() is { } pane ? _panes.IndexOf(pane) : -1;
 
     /// <summary>The focused pane, or the last one focused while something else, like an open menu, has focus.</summary>
-    private AgentPane? Selected() => _panes.FirstOrDefault(pane => pane.HasFocus) ?? (_area == Area.Dashboard ? _lastSelected : null);
+    private AgentPane? Selected() => _onDispatcher
+        ? null
+        : _panes.FirstOrDefault(pane => pane.HasFocus) ?? (_area == Area.Dashboard ? _lastSelected : null);
 
     private static string Version() =>
         typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?

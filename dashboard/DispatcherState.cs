@@ -8,6 +8,7 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
 {
     private const string Name = "dispatcher";
     private const string Separator = " · ";
+    private const string LastPassFailed = "last pass failed";
 
     /// <summary>A dispatcher installed before dispatcher.json existed, still passing: titled as it always was.</summary>
     private static readonly DispatcherState Unrecorded = new(null, "", false);
@@ -26,6 +27,27 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
         return room >= Binary.Length ? Name + Separator + Binary + tail
             : room >= 2 ? Name + Separator + "…" + Binary[^(room - 1)..] + tail
             : Name + tail;
+    }
+
+    public DispatcherState Failed() =>
+        this with { State = State.Length == 0 ? LastPassFailed : State + Separator + LastPassFailed, Error = true };
+
+    /// <summary>The tail of the dispatcher's own output when it was written after dispatch.log last was: a pass that
+    /// broke before it could log why.</summary>
+    public static IReadOnlyList<string> Broke(string stateRoot, int count)
+    {
+        var output = new FileInfo(Record(stateRoot)?.Log is { Length: > 0 } log
+            ? log
+            : Path.Combine(stateRoot, "launchd.log"));
+        var logged = new FileInfo(Path.Combine(stateRoot, "dispatch.log"));
+        if (!output.Exists || (logged.Exists && output.LastWriteTimeUtc <= logged.LastWriteTimeUtc))
+            return [];
+        try
+        {
+            return [.. File.ReadLines(output.FullName).TakeLast(count)];
+        }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
     }
 
     public static DispatcherState Read(string stateRoot, DateTimeOffset now, string home)
@@ -48,7 +70,7 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
 
     private static readonly TimeSpan Grace = TimeSpan.FromMinutes(1);
 
-    internal sealed record Installed(string Bin, string Version, bool DryRun, int Interval, DateTimeOffset InstalledAt);
+    internal sealed record Installed(string Bin, string Version, bool DryRun, int Interval, DateTimeOffset InstalledAt, string Log);
 
     /// <summary>What the installer recorded in dispatcher.json, or null when there's no record it can read.</summary>
     internal static Installed? Record(string stateRoot)
@@ -62,7 +84,8 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
                 root.TryGetProperty("version", out var version) ? version.GetString() ?? "" : "",
                 root.TryGetProperty("dryRun", out var dryRun) && dryRun.GetBoolean(),
                 root.TryGetProperty("interval", out var interval) ? interval.GetInt32() : 120,
-                DateTimeOffset.FromUnixTimeSeconds(root.TryGetProperty("installedAt", out var at) ? at.GetInt64() : 0));
+                DateTimeOffset.FromUnixTimeSeconds(root.TryGetProperty("installedAt", out var at) ? at.GetInt64() : 0),
+                root.TryGetProperty("log", out var log) ? log.GetString() ?? "" : "");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException
                                       or KeyNotFoundException or InvalidOperationException or FormatException)
