@@ -14,8 +14,7 @@ public abstract class StaticConfigurationTest : IDisposable
     public void Dispose()
     {
         ThemeManager.Theme = _theme;
-        if (ConfigurationManager.IsEnabled)
-            ConfigurationManager.Apply();
+        TuiConfigurationBuilder.Shared.ApplyActiveThemeOverlays();
         GC.SuppressFinalize(this);
     }
 }

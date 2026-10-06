@@ -12,7 +12,7 @@ public class BundledThemesTests : StaticConfigurationTest
     {
         BundledThemes.Load();
 
-        Assert.All(BundledThemes.Names, name => Assert.True(ThemeManager.Themes?.ContainsKey(name), name));
+        Assert.All(BundledThemes.Names, name => Assert.Contains(name, ThemeManager.GetThemeNames()));
     }
 
     [Fact]

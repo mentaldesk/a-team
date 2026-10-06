@@ -427,10 +427,12 @@ public class AppMenuTests : IDisposable
     private static MenuItem Item(DashboardWindow window, string id) =>
         window.MenuItems.Single(item => item.Id == id).Item;
 
-    /// <summary>The item, with the menu holding it enabled, which is what the framework does as it shows it.</summary>
+    /// <summary>The item, with the menu holding it enabled and visible, which is what the framework does as it shows it.</summary>
     private static MenuItem InOpenMenu(DashboardWindow window, string id)
     {
-        window.Menus.Single(menu => Under(window, menu).Contains(id)).PopoverMenu!.Enabled = true;
+        var popover = window.Menus.Single(menu => Under(window, menu).Contains(id)).PopoverMenu!;
+        popover.Enabled = true;
+        popover.Visible = true;
         return Item(window, id);
     }
 
