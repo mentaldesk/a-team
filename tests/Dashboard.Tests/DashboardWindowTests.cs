@@ -208,17 +208,17 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Tab_steps_through_every_agent_in_reading_order_and_wraps()
+    public void Tab_steps_through_every_agent_in_reading_order_then_the_dispatcher_and_wraps()
     {
         using var window = Open(agents: Agents(4));
 
-        var visited = Enumerable.Range(0, 5).Select(_ =>
+        var visited = Enumerable.Range(0, 6).Select(_ =>
         {
             window.NewKeyDownEvent(Key.Tab);
-            return Selected(window);
+            return Stop(window);
         });
 
-        Assert.Equal([0, 1, 2, 3, 0], visited);
+        Assert.Equal([0, 1, 2, 3, Dispatcher, 0], visited);
     }
 
     [Fact]
@@ -226,13 +226,13 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open(agents: Agents(4));
 
-        var visited = Enumerable.Range(0, 5).Select(_ =>
+        var visited = Enumerable.Range(0, 6).Select(_ =>
         {
             window.NewKeyDownEvent(Key.Tab.WithShift);
-            return Selected(window);
+            return Stop(window);
         });
 
-        Assert.Equal([3, 2, 1, 0, 3], visited);
+        Assert.Equal([Dispatcher, 3, 2, 1, 0, Dispatcher], visited);
     }
 
     [Fact]
@@ -263,9 +263,141 @@ public class DashboardWindowTests : IDisposable
 
         window.NewKeyDownEvent(Key.CursorDown);
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.True(window.NewKeyDownEvent(Key.CursorDown));
         Assert.True(window.NewKeyDownEvent(Key.CursorRight));
         Assert.Equal(3, Selected(window));
+    }
+
+    [Fact]
+    public void Down_from_the_bottom_row_selects_the_dispatcher_and_Up_goes_back()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        Assert.True(window.NewKeyDownEvent(Key.CursorDown));
+        Assert.Equal(Dispatcher, Stop(window));
+        Assert.StartsWith(Icons.Field(Icon.Selected, IconStyle.Unicode), window.Dispatcher.Title);
+        Assert.True(window.NewKeyDownEvent(Key.CursorDown));
+        Assert.Equal(Dispatcher, Stop(window));
+
+        window.NewKeyDownEvent(Key.CursorUp);
+        Assert.Equal(3, Stop(window));
+        Assert.DoesNotContain(Icons.Field(Icon.Selected, IconStyle.Unicode), window.Dispatcher.Title);
+    }
+
+    [Fact]
+    public void Enter_on_the_dispatcher_expands_it_over_the_agents_and_Esc_collapses_it()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab.WithShift);
+        LayOut(window, 120, 30);
+        var collapsed = window.Dispatcher.Frame;
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+        LayOut(window, 120, 30);
+
+        Assert.True(window.DispatcherExpanded);
+        Assert.False(window.Agents.Visible);
+        Assert.Equal(new Rectangle(0, 1, window.Viewport.Width, window.Viewport.Height - 2), window.Dispatcher.Frame);
+        Assert.True(window.WholeDispatchLog.Visible);
+
+        Assert.True(window.NewKeyDownEvent(Key.Esc));
+        LayOut(window, 120, 30);
+
+        Assert.False(window.DispatcherExpanded);
+        Assert.True(window.Agents.Visible);
+        Assert.Equal(collapsed, window.Dispatcher.Frame);
+        Assert.Equal(Dispatcher, Stop(window));
+    }
+
+    [Fact]
+    public void The_dispatcher_opens_collapsed_and_unselected()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.False(window.DispatcherExpanded);
+        Assert.False(window.DispatcherSelected);
+        Assert.False(window.Commands.IsEnabled("agent.collapse"));
+    }
+
+    [Fact]
+    public void Expanded_the_dispatcher_shows_the_whole_log_and_scrolls_it()
+    {
+        WriteDispatchLog([.. Enumerable.Range(1, 100).Select(n => $"2026-10-04T10:00:00Z a-team dev: line {n}")]);
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab.WithShift);
+        window.NewKeyDownEvent(Key.Enter);
+        LayOut(window, 120, 30);
+        window.Refresh();
+
+        Assert.Equal(100, window.WholeDispatchLog.Lines.Count);
+        Assert.Equal(ScrollBarVisibilityMode.Auto, window.WholeDispatchLog.VerticalScrollBar.VisibilityMode);
+        Assert.True(window.WholeDispatchLog.Following);
+
+        Assert.True(window.NewKeyDownEvent(Key.Home));
+        Assert.False(window.WholeDispatchLog.Following);
+        Assert.True(window.NewKeyDownEvent(Key.PageDown));
+        Assert.True(window.NewKeyDownEvent(Key.End));
+        Assert.True(window.WholeDispatchLog.Following);
+    }
+
+    [Fact]
+    public void Tab_from_an_expanded_agent_reads_the_dispatcher_expanded_and_on_round_to_the_first_agent()
+    {
+        using var window = Open(agents: Agents(2));
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Tab);
+        window.NewKeyDownEvent(Key.Enter);
+
+        window.NewKeyDownEvent(Key.Tab);
+        Assert.Null(window.ExpandedAgent);
+        Assert.True(window.DispatcherExpanded);
+
+        window.NewKeyDownEvent(Key.Tab);
+        Assert.False(window.DispatcherExpanded);
+        Assert.Equal(0, window.ExpandedAgent);
+    }
+
+    [Fact]
+    public void Output_newer_than_the_last_dispatch_line_fails_the_title_and_shows_at_the_foot_of_the_whole_log()
+    {
+        WriteDispatchLog("2026-10-04T10:00:00Z a-team dev: started 1 on 0.1.12");
+        File.SetLastWriteTimeUtc(Path.Combine(_root, "dispatch.log"), DateTime.UtcNow.AddMinutes(-3));
+        File.WriteAllLines(Path.Combine(_root, "launchd.log"), ["jq: parse error"]);
+        using var window = Open(agents: Agents(2));
+        window.Refresh();
+
+        Assert.EndsWith(" · last pass failed", window.Dispatcher.Title);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Dispatcher.SchemeName);
+
+        window.NewKeyDownEvent(Key.Tab.WithShift);
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.DoesNotContain("last pass failed", window.Dispatcher.Title);
+        Assert.Equal(
+            [
+                new LogLine("10:00 a-team dev: started 1 on 0.1.12", LogLineKind.Prose),
+                new LogLine("── the dispatcher's own output since then ──", LogLineKind.DispatchFailed),
+                new LogLine("jq: parse error", LogLineKind.DispatchFailed),
+            ],
+            window.WholeDispatchLog.Lines);
+    }
+
+    [Fact]
+    public void Output_older_than_the_last_dispatch_line_shows_neither()
+    {
+        Directory.CreateDirectory(_root);
+        File.WriteAllLines(Path.Combine(_root, "launchd.log"), ["jq: parse error"]);
+        File.SetLastWriteTimeUtc(Path.Combine(_root, "launchd.log"), DateTime.UtcNow.AddMinutes(-3));
+        WriteDispatchLog("2026-10-04T10:00:00Z a-team dev: started 1 on 0.1.12");
+        using var window = Open(agents: Agents(2));
+        window.Refresh();
+
+        Assert.DoesNotContain("last pass failed", window.Dispatcher.Title);
+        window.NewKeyDownEvent(Key.Tab.WithShift);
+        window.NewKeyDownEvent(Key.Enter);
+        Assert.Single(window.WholeDispatchLog.Lines);
     }
 
     [Fact]
@@ -1479,6 +1611,10 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal("", window.Status.Says);
         Assert.DoesNotContain("a-team", window.Message.Says);
     }
+
+    private const int Dispatcher = -2;
+
+    private static int Stop(DashboardWindow window) => window.DispatcherSelected ? Dispatcher : Selected(window);
 
     private static int Selected(DashboardWindow window) =>
         window.Panes.ToList().FindIndex(pane => pane.HasFocus);

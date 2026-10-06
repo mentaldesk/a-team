@@ -41,6 +41,15 @@ or `nothing installed · run: a-team install`. A dispatcher installed before thi
 shows plain `dispatcher` until you next run `a-team install`. `a-team status` opens with the same
 line.
 
+The strip is the last stop after the agents: `Tab` past the last agent, or `Down` from the bottom
+row, selects it, and `Up` goes back. `Enter` expands it over the agents to show the whole log, and
+the scroll keys below work on it as on a pane. `Esc` puts it back.
+
+When a pass breaks before it can log anything, as with a syntax error, what the dispatcher printed
+goes to its own output instead. If that is newer than the log's last line, the title ends `· last
+pass failed` in red, and the expanded log ends with the last of that output under `── the
+dispatcher's own output since then ──`.
+
 ## Reading a log
 
 | Key | Does |
