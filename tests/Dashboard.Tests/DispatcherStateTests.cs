@@ -123,6 +123,58 @@ public class DispatcherStateTests : IDisposable
         Assert.Equal("dispatcher · next pass 1:12", Read().Title(30));
     }
 
+    [Fact]
+    public void Output_written_after_the_last_dispatch_line_is_its_tail()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12");
+        Written("dispatch.log", Now - TimeSpan.FromMinutes(3), "2026-10-04T10:00:00Z a-team dev: started 1 on 0.1.12");
+        Written("launchd.log", Now, [.. Enumerable.Range(1, 30).Select(n => $"jq: parse error {n}")]);
+
+        var broke = DispatcherState.Broke(_root, 20);
+
+        Assert.Equal([.. Enumerable.Range(11, 20).Select(n => $"jq: parse error {n}")], broke);
+    }
+
+    [Fact]
+    public void Output_older_than_the_last_dispatch_line_is_not_shown()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12");
+        Written("launchd.log", Now - TimeSpan.FromMinutes(3), "jq: parse error");
+        Written("dispatch.log", Now, "2026-10-04T10:00:00Z a-team dev: started 1 on 0.1.12");
+
+        Assert.Empty(DispatcherState.Broke(_root, 20));
+    }
+
+    [Fact]
+    public void No_output_file_shows_nothing()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12");
+        Written("dispatch.log", Now, "2026-10-04T10:00:00Z a-team dev: started 1 on 0.1.12");
+
+        Assert.Empty(DispatcherState.Broke(_root, 20));
+    }
+
+    [Fact]
+    public void Without_a_record_the_output_is_read_from_the_installers_usual_place()
+    {
+        Written("dispatch.log", Now - TimeSpan.FromMinutes(3), "2026-10-04T10:00:00Z a-team dev: started 1 on 0.1.12");
+        Written("launchd.log", Now, "syntax error near unexpected token");
+
+        Assert.Equal(["syntax error near unexpected token"], DispatcherState.Broke(_root, 20));
+    }
+
+    [Fact]
+    public void A_failed_pass_ends_the_title_and_turns_it_to_Error()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12");
+        NextPass(TimeSpan.FromSeconds(72));
+
+        var failed = Read().Failed();
+
+        Assert.Equal("dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12 · last pass failed", failed.Title());
+        Assert.True(failed.Error);
+    }
+
     private DispatcherState Read() => DispatcherState.Read(_root, Now, Home);
 
     private void Install(string bin, string version, bool dryRun = false, DateTimeOffset? installedAt = null) =>
@@ -130,6 +182,13 @@ public class DispatcherStateTests : IDisposable
             { "bin": "{{bin}}", "version": "{{version}}", "dryRun": {{(dryRun ? "true" : "false")}}, "interval": 120,
               "log": "{{_root}}/launchd.log", "installedAt": {{(installedAt ?? Now - TimeSpan.FromMinutes(5)).ToUnixTimeSeconds()}} }
             """);
+
+    private void Written(string file, DateTimeOffset at, params string[] lines)
+    {
+        var path = Path.Combine(_root, file);
+        File.WriteAllLines(path, lines);
+        File.SetLastWriteTimeUtc(path, at.UtcDateTime);
+    }
 
     private void NextPass(TimeSpan fromNow, string file = "next-pass") =>
         File.WriteAllText(Path.Combine(_root, file), (Now + fromNow).ToUnixTimeSeconds().ToString());

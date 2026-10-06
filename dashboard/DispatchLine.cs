@@ -30,6 +30,13 @@ public static class DispatchLine
             : LogLineKind.Prose;
     }
 
+    /// <summary>Whether the line says a pass started a run, or would have in a dry run.</summary>
+    internal static bool Starts(string line)
+    {
+        var said = Said(line);
+        return said.StartsWith("started ", StringComparison.Ordinal) || said.StartsWith("would start:", StringComparison.Ordinal);
+    }
+
     /// <summary>What dispatch.sh wrote, past the timestamp and the "team role: " it prefixes every line with.</summary>
     private static string Said(string line)
     {

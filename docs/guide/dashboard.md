@@ -41,6 +41,20 @@ or `nothing installed · run: a-team install`. A dispatcher installed before thi
 shows plain `dispatcher` until you next run `a-team install`. `a-team status` opens with the same
 line.
 
+The strip is the last stop after the agents: `Tab` past the last agent, or `Down` from the bottom
+row, selects it, and `Up` goes back. `Enter` expands it over the agents to show the whole log, and
+the scroll keys below work on it as on a pane. `Esc` puts it back.
+
+When a pass breaks before it can log anything, as with a syntax error, what the dispatcher printed
+goes to its own output instead. If that is newer than the log's last line, the title ends `· last
+pass failed` in red, and the expanded log ends with the last of that output under `── the
+dispatcher's own output since then ──`.
+
+Answered something a team was waiting on? **Run a dispatch pass now**, in the Commands palette
+(`Ctrl+E`) or under **Agents**, has that dispatcher check for work straight away instead of at its
+next pass. It starts only what that pass would have, within the same limits, and leaves the
+countdown alone. The message bar says what it started, or `Pass done: nothing to start.`
+
 ## Reading a log
 
 | Key | Does |

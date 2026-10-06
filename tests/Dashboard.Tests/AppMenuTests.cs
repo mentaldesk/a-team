@@ -307,12 +307,13 @@ public class AppMenuTests : IDisposable
 
 
     [Fact]
-    public void Agents_holds_pause_this_role_then_interrupt_which_shows_its_key()
+    public void Agents_holds_pause_this_role_then_interrupt_which_shows_its_key_then_a_pass_now()
     {
         using var window = Open();
         var agents = window.Menus.Single(menu => menu.Title == "_Agents");
 
-        Assert.Equal(["agent.hold", "agent.interrupt"], Above(window, agents));
+        Assert.Equal(["agent.hold", "agent.interrupt", "dispatch.pass"], Above(window, agents));
+        Assert.Equal("_Run a dispatch pass now", Item(window, "dispatch.pass").Title);
         Assert.Equal("Pause t_his role", Item(window, "agent.hold").Title);
         Assert.Equal("_Interrupt", Item(window, "agent.interrupt").Title);
         Assert.Equal(new Key('i'), Item(window, "agent.interrupt").Key);
@@ -427,10 +428,12 @@ public class AppMenuTests : IDisposable
     private static MenuItem Item(DashboardWindow window, string id) =>
         window.MenuItems.Single(item => item.Id == id).Item;
 
-    /// <summary>The item, with the menu holding it enabled, which is what the framework does as it shows it.</summary>
+    /// <summary>The item, with the menu holding it enabled and visible, which is what the framework does as it shows it.</summary>
     private static MenuItem InOpenMenu(DashboardWindow window, string id)
     {
-        window.Menus.Single(menu => Under(window, menu).Contains(id)).PopoverMenu!.Enabled = true;
+        var popover = window.Menus.Single(menu => Under(window, menu).Contains(id)).PopoverMenu!;
+        popover.Enabled = true;
+        popover.Visible = true;
         return Item(window, id);
     }
 
