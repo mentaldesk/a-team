@@ -256,10 +256,10 @@ gh_caught() {
       | {n: ($f[0] | tonumber), id: "EV_\($i)", createdAt: $f[2], kind: $f[1], who: who($f[3]), detail: ($f[4] // "")}
       | if .kind == "comment" then {n, node: {__typename: "IssueComment", id, createdAt, author: .who}}
         elif .kind == "merged" then {n, pull: true, node: {__typename: "MergedEvent", id, createdAt, actor: .who}}
-        elif .kind == "closed" then {n, node: {__typename: "ClosedEvent", id, createdAt, actor: .who}
+        elif .kind == "closed" then {n, node: ({__typename: "ClosedEvent", id, createdAt, actor: .who}
           + if .detail | test("^[0-9]+$") then {stateReason: "COMPLETED",
               closer: {__typename: "PullRequest", number: (.detail | tonumber)}}
-            else {stateReason: (if .detail == "" then null else .detail end), closer: null} end}
+            else {stateReason: (if .detail == "" then null else .detail end), closer: null} end)}
         else (.detail | split(">") | map(gsub("_"; " "))) as $move | ($f[5] // "mentaldesk/1" | split("/")) as $p
           | {n, node: {__typename: "ProjectV2ItemStatusChangedEvent", id, createdAt, actor: .who,
               previousStatus: $move[0], status: $move[1],
