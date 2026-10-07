@@ -4,10 +4,27 @@ using System.Text.Json;
 namespace ATeam.Dashboard;
 
 /// <summary>One thing a-team did to an item, as <c>a-team board &lt;team&gt; history &lt;n&gt;</c> reports it.</summary>
-public sealed record HistoryEvent(DateTimeOffset At, string Who, string What)
+public sealed record HistoryEvent(DateTimeOffset At, string Who, string What, Run? Run = null)
 {
     public string Line =>
-        $"{At.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.InvariantCulture),-12} {Who,-4}  {What}";
+        $"{At.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.InvariantCulture),-12} {Who,-4}  {Run?.Describe(At) ?? What}";
+}
+
+/// <summary>A run started at an event's time: still going while <paramref name="Ended"/> is null.</summary>
+public sealed record Run(DateTimeOffset? Ended, decimal? Cost, string? Outcome)
+{
+    public string Describe(DateTimeOffset started)
+    {
+        if (Ended is not { } ended)
+            return $"running since {started.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture)}";
+        var minutes = Math.Max(1, (int)Math.Round((ended - started).TotalMinutes));
+        return string.Join(" · ", new[]
+        {
+            $"run {minutes} min",
+            Cost is { } cost ? $"${cost.ToString("0.00", CultureInfo.InvariantCulture)}" : null,
+            Outcome,
+        }.Where(part => !string.IsNullOrEmpty(part)));
+    }
 }
 
 /// <summary>What a-team recorded on an item, newest first, from <paramref name="Since"/> when it began recording, or
@@ -42,13 +59,19 @@ public sealed record History(IReadOnlyList<HistoryEvent> Events, DateTimeOffset?
             return new History([.. root.GetProperty("events").EnumerateArray().Select(e => new HistoryEvent(
                 e.GetProperty("at").GetDateTimeOffset(),
                 e.GetProperty("who").GetString() ?? "",
-                e.GetProperty("what").GetString() ?? ""))], since);
+                e.GetProperty("what").GetString() ?? "",
+                e.TryGetProperty("run", out var run) && run.ValueKind == JsonValueKind.Object ? ParseRun(run) : null))], since);
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
         {
             return null;
         }
     }
+
+    private static Run ParseRun(JsonElement run) => new(
+        run.TryGetProperty("ended", out var ended) && ended.ValueKind == JsonValueKind.String ? ended.GetDateTimeOffset() : null,
+        run.TryGetProperty("cost", out var cost) && cost.ValueKind == JsonValueKind.Number ? cost.GetDecimal() : null,
+        run.TryGetProperty("outcome", out var outcome) && outcome.ValueKind == JsonValueKind.String ? outcome.GetString() : null);
 }
 
 /// <summary>Whether the reader shows History beside the body: as you last left it, until the dashboard restarts.</summary>

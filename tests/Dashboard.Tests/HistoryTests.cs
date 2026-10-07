@@ -22,6 +22,29 @@ public class HistoryTests
     }
 
     [Fact]
+    public void A_run_says_how_long_it_took_what_it_cost_and_how_it_ended_unless_it_finished()
+    {
+        string At(DateTimeOffset at) => $"\"{at.ToUniversalTime():O}\"";
+        var history = Read($$$"""
+            {"since": null, "events": [
+              {"at": {{{At(Moved)}}}, "who": "dev", "what": "run", "run": {"ended": null, "cost": null, "outcome": null}},
+              {"at": {{{At(Added)}}}, "who": "dev", "what": "run", "run": {"ended": {{{At(Added.AddMinutes(38))}}}, "cost": 4.12, "outcome": null}},
+              {"at": {{{At(Added)}}}, "who": "dev", "what": "run", "run": {"ended": {{{At(Added.AddMinutes(120))}}}, "cost": 9.8, "outcome": "killed"}},
+              {"at": {{{At(Added)}}}, "who": "lead", "what": "run", "run": {"ended": {{{At(Added.AddMinutes(3))}}}, "cost": 0.5, "outcome": "error"}},
+              {"at": {{{At(Added)}}}, "who": "dev", "what": "run", "run": {"ended": {{{At(Added.AddSeconds(10))}}}, "cost": null, "outcome": "died"}}]}
+            """);
+
+        Assert.Equal(
+        [
+            "3 Oct 13:40  dev   running since 13:40",
+            "3 Oct 10:41  dev   run 38 min · $4.12",
+            "3 Oct 10:41  dev   run 120 min · $9.80 · killed",
+            "3 Oct 10:41  lead  run 3 min · $0.50 · error",
+            "3 Oct 10:41  dev   run 1 min · died",
+        ], history.Lines.Select(line => line.Text));
+    }
+
+    [Fact]
     public void A_card_with_nothing_recorded_says_since_when_a_team_has_kept_history()
     {
         var history = Read($$"""{"since": "{{Added.ToUniversalTime():O}}", "events": []}""");
