@@ -25,6 +25,9 @@ public sealed partial record TeamSettings(
     /// <summary>The file names its one stakeholder under the old <c>reviewer</c> key, which saving replaces.</summary>
     public bool SaysReviewer { get; init; }
 
+    /// <summary>Whether the team runs a Customer lead beside its Lead and Dev: <c>roles.customer</c>.</summary>
+    public bool Customer { get; init; }
+
     public static TeamSettings Read(byte[] config)
     {
         using var document = JsonDocument.Parse(config);
@@ -52,6 +55,7 @@ public sealed partial record TeamSettings(
             Names(root, "skills"))
         {
             SaysReviewer = Find(root, "stakeholders") is null && Text(root, "reviewer").Length > 0,
+            Customer = Find(root, "roles", "customer") is { ValueKind: JsonValueKind.True },
         };
     }
 
@@ -114,6 +118,7 @@ public sealed partial record TeamSettings(
         if (!Skills.SequenceEqual(before.Skills))
             config = ConfigEdit.Set(config, ["skills"], Skills);
         SetFlag(Working, before.Working, "dispatch", "enabled");
+        SetFlag(Customer, before.Customer, "roles", "customer");
         SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");
         SetNumber(Devs, before.Devs, "wip", "devs");
         SetNumber(Pitched, before.Pitched, "wip", "pitched");

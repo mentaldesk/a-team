@@ -23,7 +23,8 @@ nothing to restart.
 - **Anything a role is allowed to do goes in its task prompt (`tasks/<role>.md`).** Auto mode
   treats the prompt as the reviewer's intent and the brief `run.sh` prints as command output,
   so authorisation that only lives in a role file doesn't count.
-- **Hard limits go in `settings/agents.json` as deny rules**, not only in prose.
+- **Hard limits go in `settings/agents.json` as deny rules**, or in a role's own
+  `settings/<role>.json`, not only in prose.
 - **Keep triggers cheap and deterministic.** `a-team board <team> triggers` runs every 2 minutes per role:
   no per-item API calls where one call for the whole repo will do.
 - **Try board changes against a real board, without changing it.** `list`, `wip`, `triggers`
@@ -39,7 +40,7 @@ nothing to restart.
 | Path | What it is |
 |---|---|
 | `process.md` | The shared rules: board states, gates, markers, what agents never do |
-| `roles/lead.md`, `roles/dev.md` | What each role does on a run |
+| `roles/lead.md`, `roles/dev.md`, `roles/customer.md` | What each role does on a run; the Customer lead only runs where `roles.customer` turns it on |
 | `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
 | `bin/gh` | `gh` as the team's App inside a run |
 | `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
@@ -52,6 +53,7 @@ nothing to restart.
 | `dashboard/` | `a-team`: the app, with a Work area and the agent Dashboard |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
+| `settings/<role>.json` | Rules one role's runs add to those |
 | `examples/team.json` | A starting point for a team's config (see the README, *Starting a team*) |
 
 ## Dashboard UI

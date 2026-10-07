@@ -1304,7 +1304,7 @@ case_ "comment still refuses a role it doesn't know"
 run board demo comment reviewer 7 "$WORK/mine"
 failed "unknown role"
 one_line "unknown role"
-grep -q "unknown role 'reviewer' (lead | dev | you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
+grep -q "unknown role 'reviewer' (lead | dev | customer | you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
 same "posted" "" "$(cat "$POSTED")"
 
 case_ "--dry-run shows the comment you'd post and posts nothing"
@@ -1797,11 +1797,11 @@ case_ "an unknown role is refused, in one line, by both verbs"
 run board demo depends nobody 11 21 "why"
 failed "depends role"
 one_line "depends role"
-grep -q "unknown role 'nobody' (lead | dev)" "$ERR" || fail "depends role: '$(cat "$ERR")'"
+grep -q "unknown role 'nobody' (lead | dev | customer)" "$ERR" || fail "depends role: '$(cat "$ERR")'"
 run board demo undepend nobody 11 21 "why"
 failed "undepend role"
 one_line "undepend role"
-grep -q "unknown role 'nobody' (lead | dev)" "$ERR" || fail "undepend role: '$(cat "$ERR")'"
+grep -q "unknown role 'nobody' (lead | dev | customer)" "$ERR" || fail "undepend role: '$(cat "$ERR")'"
 
 case_ "undepend on a pair that isn't linked is refused, in one line"
 gh_blocked </dev/null
@@ -2210,6 +2210,168 @@ same "posted" "" "$(cat "$POSTED")"
 gh_pr 912 true
 A_TEAM_RUN_TASK=12 run board demo comment dev 912 "$WORK/question"
 same "its own PR" 0 "$STATUS"
+
+# The Customer lead: a third role a team can turn on, which touches only its own docs PR.
+# `docs_pr <n>`: #<n> on the page gh_items wrote is the Customer lead's PR. `accepted <n> [<reason>]`:
+# pitch #<n> is Done, closed as <reason> (COMPLETED unless given).
+docs_pr() {
+  edit_item "$1" '.__typename = "PullRequest" | .labels.nodes = [{name: "a-team:customer"}]
+    | del(.issueDependenciesSummary, .issueFieldValues)'
+}
+accepted() {
+  edit_item "$1" ".labels.nodes = [{name: \"pitch\"}] | .stateReason = \"${2:-COMPLETED}\""
+}
+customer_on() { jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"; }
+
+case_ "the Customer lead never triggers for a team that hasn't turned it on"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Done 5 A pitch accepted long ago
+ITEMS
+accepted 5
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+[ -e "$A_TEAM_STATE/demo/customer/covered" ] && fail "off: it started counting what's covered"
+
+case_ "turned on, it starts from the pitches accepted after that, one reason each, and never for a shelved one"
+customer_on
+run board demo triggers customer
+same "first pass" '[]' "$(jq -c .reasons "$OUT")"
+same "creative" false "$(jq -c .creative "$OUT")"
+gh_items <<'ITEMS'
+Done 5 A pitch accepted long ago
+Done 6 A pitch just accepted
+Done 8 A pitch closed as not planned
+In_review 7 A pitch being validated
+ITEMS
+accepted 5
+accepted 6
+accepted 8 NOT_PLANNED
+edit_item 7 '.labels.nodes = [{name: "pitch"}]'
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" '["pitch #6 was accepted: check the docs cover what it shipped"]' "$(jq -c .reasons "$OUT")"
+same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "covered stops a pitch triggering again, and goes in its history"
+run board demo covered customer 6
+same "exit" 0 "$STATUS"
+same "said" "#6: docs checked" "$(cat "$OUT")"
+run board demo triggers customer
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+run board demo history 6
+same "history" '"customer docs checked"' "$(jq -c '.events[0] | "\(.who) \(.what)"' "$OUT")"
+
+case_ "covered is the Customer lead's alone, and only for an accepted pitch"
+run board demo covered dev 6
+failed "dev covering"
+grep -q "only customer checks the docs" "$ERR" || fail "dev covering: '$(cat "$ERR")'"
+run board demo covered customer 7
+failed "covering a pitch In review"
+grep -q "#7 isn't an accepted pitch" "$ERR" || fail "covering In review: '$(cat "$ERR")'"
+
+case_ "the Customer lead adds its own open docs PR to In review, labelled as its"
+gh_items <<'ITEMS'
+In_progress 7 A task being built
+In_review 9 Docs: what's changed since 28 Sep
+ITEMS
+docs_pr 9
+jq '(.data.organization.projectV2.items.nodes[] | select(.content.number == 9)) |= (.fieldValueByName = null)' \
+  "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
+  "$META" >"$META.new" && mv "$META.new" "$META"
+jq -n '{node_id: "PR_9", number: 9, state: "open", pull_request: {},
+        body: "- Help → Guide covers the Customer lead (#48)\n\n<!-- a-team:customer -->"}' >"$ISSUE"
+run board demo add customer 9 "In review"
+same "exit" 0 "$STATUS"
+grep -q 'issues/9/labels -f labels\[\]=a-team:customer' "$WRITES" || fail "add: no label in '$(cat "$WRITES")'"
+grep -q 'item=PVTI_9 .*option=OPT_review' "$WRITES" || fail "add: no move in '$(cat "$WRITES")'"
+
+case_ "it may add nothing but its own open docs PR, and only one at a time"
+: >"$WRITES"
+jq '.body = "Closes #7\n\n<!-- a-team:dev -->"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"
+run board demo add customer 9 "In review"
+failed "someone else's PR"
+grep -q "customer may only add its own open docs PR (#9 isn't one)" "$ERR" || fail "someone else's PR: '$(cat "$ERR")'"
+gh_items <<'ITEMS'
+In_review 9 Docs: what's changed since 28 Sep
+In_review 10 Docs: what's changed since 1 Oct
+ITEMS
+docs_pr 9
+jq -n '{node_id: "PR_10", number: 10, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
+run board demo add customer 10 "In review"
+failed "a second docs PR"
+grep -q "customer's docs PR #9 is still open: add to it rather than opening another" "$ERR" ||
+  fail "a second docs PR: '$(cat "$ERR")'"
+run board demo add customer 10 Ready
+failed "adding to Ready"
+grep -q "customer may not add items as 'Ready'" "$ERR" || fail "adding to Ready: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "the Customer lead can't move pitches or tasks, change what a task waits on, or clear a gate"
+gh_items <<'ITEMS'
+In_progress 7 A task being built
+Approved 11 A pitch to break down
+In_review 9 Docs: what's changed since 28 Sep
+ITEMS
+docs_pr 9
+for args in "move customer 7 Ready" "move customer 11 Building" "approve customer 11" "accept customer 9" \
+  "priority customer 7 High" "depends customer 7 11 why" "claim customer" "skip customer 7 $WORK/none"; do
+  # shellcheck disable=SC2086 # one argument per word
+  run board demo $args
+  failed "customer: $args"
+done
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "the Customer lead comments only on its docs PR, with its own marker"
+printf "Added the Customer lead to Help → Guide." >"$WORK/said"
+gh_thread pull <<'THREAD'
+body 2025-09-19T08:00:00Z demo-app[bot] 0 Docs\n<!-- a-team:customer -->
+THREAD
+run board demo comment customer 9 "$WORK/said"
+same "exit" 0 "$STATUS"
+same "posted" "Added the Customer lead to Help → Guide.
+
+<!-- a-team:customer -->" "$(cat "$POSTED")"
+: >"$POSTED"
+run board demo comment customer 7 "$WORK/said"
+failed "commenting on a task"
+grep -q "customer only touches its own docs PR (#7 isn't it)" "$ERR" || fail "commenting on a task: '$(cat "$ERR")'"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "accepting the docs PR squash-merges it, deletes its branch and moves it to Done"
+: >"$WRITES"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+echo '{"head": {"sha": "deadbeefcafe", "ref": "docs/customer-lead", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
+run board demo accept you 9
+same "exit" 0 "$STATUS"
+same "said" "#9: merged docs PR #9" "$(cat "$OUT")"
+grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/9/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
+grep -q 'DELETE api -X DELETE repos/mentaldesk/demo/git/refs/heads/docs/customer-lead' "$WRITES" || fail "branch: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_9 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+
+case_ "waiting shows the docs PR as the Customer lead's, with itself as the PR to merge"
+gh_talk <<TALK
+9 body ${TODAY}T08:14:00Z demo-app[bot] Docs\n<!-- a-team:customer -->
+TALK
+jq '.data.repository.x9 += {url: "https://github.com/mentaldesk/demo/pull/9", isDraft: false, mergeable: "MERGEABLE",
+      baseRefName: "main"} | del(.data.repository.x9.closedByPullRequestsReferences)' "$TALK" >"$TALK.new" &&
+  mv "$TALK.new" "$TALK"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "docs PR" '{"number":9,"role":"customer","pr":9,"turn":"you","unready":""}' \
+  "$(jq -c '.[] | select(.number == 9) | {number, role, pr, turn, unready}' "$OUT")"
+
+case_ "conversation tells the Customer lead's words apart from the Lead's and the Dev's"
+gh_talk <<TALK
+9 body ${TODAY}T08:14:00Z demo-app[bot] Docs\n<!-- a-team:customer -->
+9 comment ${TODAY}T08:20:00Z demo-app[bot] Covered #48\n<!-- a-team:customer -->
+TALK
+run board demo conversation 9
+same "who" '[{"who":"customer","body":"Covered #48"}]' "$(jq -c 'map({who, body})' "$OUT")"
 
 # --- a-team try -----------------------------------------------------------------------------
 # A throwaway origin holding main and one PR head, a checkout cloned from it that has only main,
@@ -2628,6 +2790,25 @@ failed "no role"
 run stop demo tester
 failed "unknown role"
 
+case_ "pause, stop, resume and attach take the Customer lead only on a team that has it on"
+for cmd in "pause demo customer" "stop demo customer" "resume demo customer" "attach demo customer"; do
+  # shellcheck disable=SC2086 # one argument per word
+  run $cmd
+  failed "$cmd while off"
+  grep -q "demo has no Customer lead" "$ERR" || fail "$cmd while off: '$(cat "$ERR")'"
+done
+jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+run pause demo customer
+same "exit" 0 "$STATUS"
+same "hold" '["customer"]' "$(held)"
+A_TEAM_CONFIG="$CONFIG" bash "$ROOT/scripts/status.sh" >"$OUT"
+grep -q '^demo customer: never run$' "$OUT" || fail "status: '$(cat "$OUT")'"
+run resume demo customer
+same "hold" '[]' "$(held)"
+jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+A_TEAM_CONFIG="$CONFIG" bash "$ROOT/scripts/status.sh" >"$OUT"
+grep -q 'customer' "$OUT" && fail "status while off: '$(cat "$OUT")'"
+
 case_ "pause <team> <role> holds the role and lets its run finish"
 jq '.dispatch.enabled = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 fake_run
@@ -2658,14 +2839,17 @@ dev_dispatcher() {
   cp -R "$ROOT/settings" "$DISPATCH/"
   echo 0.1.7 >"$DISPATCH/VERSION"
   CLAIMS="$DISPATCH/claims" DEV_TRIGGERS="$DISPATCH/triggers.json" CLAIMED="$DISPATCH/claimed.json"
+  CUSTOMER_TRIGGERS="$DISPATCH/customer.json"
   : >"$CLAIMS"
   echo null >"$CLAIMED"
+  echo '{"reasons": [], "creative": false}' >"$CUSTOMER_TRIGGERS"
   cat >"$DISPATCH/bin/a-team" <<SH
 #!/usr/bin/env bash
 case " \$* " in
   *" claim dev "*) echo "\$*" >>"$CLAIMS"; cat "$CLAIMED" ;;
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
   *" triggers lead"*) echo '{"reasons": [], "creative": false}' ;;
+  *" triggers customer"*) echo "\$*" >>"$CLAIMS"; cat "$CUSTOMER_TRIGGERS" ;;
   *" task-prompt "*) echo "Run one shift." ;;
   *" version "*) cat "\$(dirname "\$0")/../VERSION" ;;
 esac
@@ -2762,6 +2946,26 @@ for file in last-start last-reasons pid latest.jsonl; do
 done
 [ -s "$LAUNCHED" ] && fail "claude was started"
 jq --arg w "$WORKDIR" '.workdir = $w' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "only a team with the Customer lead on asks it for work, and its run gets its own rules too"
+dev_dispatcher
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+jq -n '{reasons: ["pitch #5 was accepted: check the docs cover what it shipped"], creative: false}' >"$CUSTOMER_TRIGGERS"
+printf '#!/usr/bin/env bash\n' >"$DISPATCH/bin/claude"
+chmod +x "$DISPATCH/bin/claude"
+dispatch_dev --dry-run
+same "asked while off" "" "$(cat "$CLAIMS")"
+jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+dispatch_dev
+same "asked" "board demo triggers customer --sweep" "$(cat "$CLAIMS")"
+grep -qE 'demo customer: started [0-9]+ on 0\.1\.7: pitch #5 was accepted' "$A_TEAM_STATE/dispatch.log" ||
+  fail "customer: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+SETTINGS="$A_TEAM_STATE/demo/customer/release/settings.json"
+jq -e '.permissions.deny | index("Edit(**/*.cs)") and index("Bash(gh pr merge *)")' "$SETTINGS" >/dev/null ||
+  fail "customer settings: '$(jq -c .permissions.deny "$SETTINGS")'"
+jq -e '.permissions.allow | index("Bash(gh pr edit *)")' "$SETTINGS" >/dev/null ||
+  fail "customer allow: '$(jq -c .permissions.allow "$SETTINGS")'"
+jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 # Claims hand out the tasks queued in $QUEUE one at a time, then refuse for want of a worktree;
 # claude stays up until killed, recording the task each run is for in $LAUNCHED.

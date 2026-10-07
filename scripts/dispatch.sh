@@ -125,7 +125,7 @@ copy_release() {
 # runs/<task>, and the role's own files follow the run started last. Each run runs on its own copy
 # of the release, so an upgrade mid-run can't change it.
 launch() {
-  local what run logfile prompt settings workdir pid release version
+  local what run logfile prompt settings workdir pid release version own
   workdir=$(cfg .workdir)
   if ! $DRY_RUN && [ ! -d "${workdir/#\~/$HOME}" ]; then
     log "$team $role: cannot start: workdir $workdir: no such directory"
@@ -151,7 +151,12 @@ launch() {
   fi
   version=$(cat "$release/VERSION")
   settings="$release/settings.json"
-  sed "s|{{root}}|/$release|g" "$release/settings/agents.json" >"$settings"
+  # A role's own settings/<role>.json adds to the rules every run has.
+  own="$release/settings/$role.json"
+  [ -f "$own" ] || own=/dev/null
+  jq -s '(.[1].permissions // {}) as $own | .[0]
+    | .permissions.allow += ($own.allow // []) | .permissions.deny += ($own.deny // [])' \
+    "$release/settings/agents.json" "$own" | sed "s|{{root}}|/$release|g" >"$settings"
   prompt="$("$release/bin/a-team" task-prompt "$team" "$role")
 ${number:+
 This run is for #$number $(jq -r .title <<<"$task"), and only that task.
@@ -236,7 +241,7 @@ for team in $(team_names); do
     continue
   fi
   rm -f "$STATE/$team/cannot-run"
-  for role in lead dev; do
+  for role in $(team_roles "$config"); do
     dispatch "$team" "$role" "$config"
   done
 done

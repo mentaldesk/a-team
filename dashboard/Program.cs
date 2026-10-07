@@ -75,7 +75,7 @@ Handover? Show(Handover? back)
     Handover? handedOver = null;
     var named = wanted.Length > 0 ? wanted : teams.Names();
     using var window = new DashboardWindow(
-        [.. named.SelectMany(team => new[] { (team, "lead"), (team, "dev") })],
+        [.. named.SelectMany(team => teams.Roles(team).Select(role => (team, role)))],
         stateRoot,
         settings,
         teams,

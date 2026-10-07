@@ -32,6 +32,17 @@ public class AcceptDialogTests
     }
 
     [Fact]
+    public void It_says_accepting_the_docs_PR_merges_it_and_the_next_pitch_starts_another()
+    {
+        using var dialog = new AcceptDialog(new(352, "Docs: what's changed since 28 Sep", "In review",
+            "https://github.com/x/pull/352", "a-team", Pr: 352, Base: "main", Role: "customer"));
+
+        Assert.Equal(
+            "Merges the Customer lead's docs PR #352 into main, squashed. The next pitch you accept starts a new one.",
+            dialog.Body.Text);
+    }
+
+    [Fact]
     public void Enter_accepts()
     {
         using var dialog = new AcceptDialog(Task);

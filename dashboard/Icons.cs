@@ -149,7 +149,7 @@ public static class Icons
         For(item, style) with { Glyph = Glyph(KindOf(item), style) };
 
     internal static Icon KindOf(WaitingItem item) =>
-        item.Status == "Idea" ? Icon.Idea : item.Pitch ? Icon.Pitch : Icon.Task;
+        item.Status == "Idea" ? Icon.Idea : item.Pitch ? Icon.Pitch : item.Docs ? Icon.PullRequest : Icon.Task;
 }
 
 /// <summary>A row wears its icon and its Priority in the cells the tree laid out in front of its text: drawn

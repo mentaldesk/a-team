@@ -5,7 +5,7 @@ How to run A-Team's agent teams from the app. Open it from **Help → Guide**, o
 
 ## [How a team works](how-a-team-works.md)
 
-Who does what: you, the Lead and the Dev, and how your README and vision steer the team. The stages
+Who does what: you, the Lead, the Dev and the Customer lead, and how your README and vision steer the team. The stages
 work moves through on the board, where you decide, what the 👀 on your comment means, and how Ideas
 and their priorities steer what the Lead does next.
 
@@ -22,5 +22,5 @@ step into it.
 
 ## [Teams](teams.md)
 
-Starting a team from inside A-Team, a team's settings, pausing or removing one, what Settings says
+Starting a team from inside A-Team, a team's settings and roles, pausing or removing one, what Settings says
 when a team can't run, and the rest of Settings.

@@ -163,6 +163,21 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void The_Customer_lead_is_off_until_roles_customer_turns_it_on_and_is_saved_there()
+    {
+        var before = TeamSettings.Read(Bytes(Config));
+
+        var on = (before with { Customer = true }).Write(Bytes(Config), before);
+        var off = (TeamSettings.Read(on) with { Customer = false }).Write(on, TeamSettings.Read(on));
+
+        Assert.False(before.Customer);
+        Assert.True(TeamSettings.Read(on).Customer);
+        Assert.Contains("\"roles\": {\"customer\": true}", Text(on));
+        Assert.Contains("\"roles\": {\"customer\": false}", Text(off));
+        Assert.False(TeamSettings.Read(off).Customer);
+    }
+
+    [Fact]
     public void A_setting_the_file_has_not_got_is_added_with_the_objects_on_the_way_to_it()
     {
         const string config = """{"repo": "o/r"}""";

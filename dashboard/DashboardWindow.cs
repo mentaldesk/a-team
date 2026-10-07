@@ -31,7 +31,6 @@ public sealed class DashboardWindow : Window
     private const int LoadingHeight = 5;
     private readonly List<AgentPane> _panes = [];
     private readonly CommandRegistry _commands = new();
-    private readonly int _columns;
     private readonly string _version = Version();
     private readonly AppMenu _menu;
     private readonly StatusBar _status = new();
@@ -152,7 +151,6 @@ public sealed class DashboardWindow : Window
         _stateRoot = stateRoot;
         _teamNames = [.. agents.Select(agent => agent.Team).Distinct()];
 
-        _columns = AgentGrid.Columns(agents);
         _agents = new View
         {
             X = 0,
@@ -1011,7 +1009,7 @@ public sealed class DashboardWindow : Window
             return;
         var before = _teams.Names();
         var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks);
-        if (_teams.Names().Except(before).Any())
+        if (_teams.Names().Except(before).Any() || RolesChanged())
         {
             _handOver?.Invoke(new TeamsChanged(_area));
             return;
@@ -1020,6 +1018,11 @@ public sealed class DashboardWindow : Window
         SyncQuitKey();
         _menu.Refresh();
     }
+
+    /// <summary>Whether a team on the grid now runs other roles than the panes it has.</summary>
+    private bool RolesChanged() =>
+        _teamNames.Intersect(_teams.Names()).Any(team =>
+            !_teams.Roles(team).SequenceEqual(_panes.Where(pane => pane.Team == team).Select(pane => pane.Role)));
 
     /// <summary>Takes removed teams off the grid and out of the Work area.</summary>
     internal void Forget(IReadOnlyList<string> teams)
@@ -1154,7 +1157,9 @@ public sealed class DashboardWindow : Window
 
     private Rectangle Cell(int index) => _expanded is { } only
         ? only == index ? new Rectangle(Point.Empty, _agents.Viewport.Size) : Rectangle.Empty
-        : AgentGrid.Cell(index, _panes.Count, _columns, GridContent());
+        : AgentGrid.Cell(Grid, index, GridContent());
+
+    private (string Team, string Role)[] Grid => [.. _panes.Select(pane => (pane.Team, pane.Role))];
 
     /// <summary>The grid tiles a content area tall enough for every cell's floor; the agent area scrolls over it.</summary>
     private Size GridContent()
@@ -1162,8 +1167,7 @@ public sealed class DashboardWindow : Window
         var area = _agents.Viewport.Size;
         if (_expanded is not null)
             return area;
-        var rows = (_panes.Count + _columns - 1) / _columns;
-        return area with { Height = Math.Max(area.Height, rows * MinCellHeight) };
+        return area with { Height = Math.Max(area.Height, AgentGrid.Rows(Grid) * MinCellHeight) };
     }
 
     private void FitGrid()
@@ -1217,15 +1221,15 @@ public sealed class DashboardWindow : Window
             _panes[0].SetFocus();
             return;
         }
-        var rows = (_panes.Count + _columns - 1) / _columns;
-        if (rowStep > 0 && current / _columns == rows - 1)
+        var grid = Grid;
+        var rows = AgentGrid.Rows(grid);
+        var slot = AgentGrid.Slot(grid, current);
+        if (rowStep > 0 && slot.Y == rows - 1)
         {
             SelectDispatcher();
             return;
         }
-        var row = Math.Clamp(current / _columns + rowStep, 0, rows - 1);
-        var column = Math.Clamp(current % _columns + columnStep, 0, _columns - 1);
-        Select(Math.Min(row * _columns + column, _panes.Count - 1));
+        Select(AgentGrid.At(grid, Math.Clamp(slot.Y + rowStep, 0, rows - 1), slot.X + columnStep));
     }
 
     private int SelectedIndex() => Selected() is { } pane ? _panes.IndexOf(pane) : -1;

@@ -81,6 +81,7 @@ STAKEHOLDERS=$(jq -c '.stakeholders // [.reviewer // empty]' "$CONFIG")
 # The labels setup creates, as "<name>|<colour>|<description>|<what goes wrong without it>".
 LABELS="pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it|the team can't tell its pitches from tasks
 a-team:dev|0e8a16|Claimed by the a-team Dev|the Dev can't claim tasks
+a-team:customer|1d76db|The a-team Customer lead's docs PR|the Customer lead can't put its docs PR in front of you
 a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched|the Lead can't flag the ideas it finds for you
 a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running|the Lead can't pass over an idea, and keeps coming back to it
 a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced|the Lead tells you every time it bumps a pitch out of Pitched, not just the first
@@ -173,19 +174,25 @@ allowed() {
     "lead:Pitched>Idea" | "lead:Pitched>Exploring" | \
     "lead:Approved>Building" | "lead:Building>In review" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
-    "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready")
+    "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
+    "customer:None>In review")
       return 0 ;;
   esac
   return 1
 }
 
 check_role() {
-  case "$1" in lead | dev) ;; *) die "unknown role '$1' (lead | dev)" ;; esac
+  case "$1" in lead | dev | customer) ;; *) die "unknown role '$1' (lead | dev | customer)" ;; esac
 }
 
 own_label() {
-  case "$1" in lead) echo pitch ;; dev) echo a-team:dev ;; esac
+  case "$1" in lead) echo pitch ;; dev) echo a-team:dev ;; customer) echo a-team:customer ;; esac
 }
+
+customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
+
+# The accepted pitches the Customer lead has already checked the docs against, one number a line.
+COVERED="$STATE/$TEAM/customer/covered"
 
 KIND=$(cfg .project.ownerType)
 KIND=${KIND:-organization}
@@ -207,7 +214,7 @@ items() {
             fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
             content {
               __typename
-              ... on Issue { id number title url repository { nameWithOwner } labels(first: 20) { nodes { name } }
+              ... on Issue { id number title url stateReason repository { nameWithOwner } labels(first: 20) { nodes { name } }
                              issueDependenciesSummary { blockedBy }
                              issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue {
                                name field { ... on IssueFieldSingleSelect { name } } } } } }
@@ -234,7 +241,7 @@ items() {
                       elif $rev[$raw] then $rev[$raw]
                       elif ($states | index($raw)) then $raw
                       else "?" + $raw end)
-           }]'
+           } + (if .content.stateReason then {closed: .content.stateReason} else {} end)]'
 }
 
 item() {
@@ -382,7 +389,7 @@ by_priority() {
 
 # An issue an agent wrote, from any team, carries its marker in the body.
 agent_written() {
-  gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev) -->'
+  gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev|customer) -->'
 }
 
 # The number of the issue #1 is a sub-issue of, or nothing.
@@ -560,16 +567,16 @@ gated_comments() {
        | . + {n: $n}]' <<<"$1"
 }
 
-# gated_prs <talk>: the open PR that closes each of those items, as {n, pr, prUrl, draft,
-# conflicting, base, checks, failedAt}, off a page read with `checks`. UNKNOWN means GitHub hasn't
-# finished computing it, so only CONFLICTING counts as a conflict.
+# gated_prs <talk>: the open PR that closes each of those items, or that is the item, as {n, pr, prUrl,
+# draft, conflicting, base, checks, failedAt, self}, off a page read with `checks`. UNKNOWN means GitHub
+# hasn't finished computing it, so only CONFLICTING counts as a conflict.
 gated_prs() {
   jq "$CHECKS"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
-       | .closedByPullRequestsReferences.nodes[]?
+       | (if has("isDraft") then . else .closedByPullRequestsReferences.nodes[]? end)
        | ([.commits.nodes[0].commit.checkSuites.nodes[]?.checkRuns.nodes[]
            | {name, status: (.status | ascii_downcase), conclusion: (.conclusion // "" | ascii_downcase),
               completed_at: .completedAt, html_url: .url}] | checks) as $ci
-       | {n: $n, pr: .number, prUrl: .url, draft: .isDraft,
+       | {n: $n, pr: .number, prUrl: .url, draft: .isDraft, self: (.number == $n),
           conflicting: (.mergeable == "CONFLICTING"), base: .baseRefName,
           checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
 }
@@ -600,9 +607,9 @@ turns() {
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE$NEEDS"'
     $items | map(
       . as $item
-      | (if .status == "Pitched" then "lead" else "dev" end) as $role
+      | (.role // if .status == "Pitched" then "lead" else "dev" end) as $role
       | ($comments | map(select(.n == $item.number))) as $theirs
-      | ($prs | map(select(.n == $item.number)) | first) as $pr
+      | ($prs | map(select(.n == $item.number and ((.self | not) or $item.role == "customer"))) | first) as $pr
       | ($theirs | said("<!-- a-team:\($role) -->")) as $said
       | ($theirs | unanswered($said) | map(.at) | max // "") as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
@@ -732,6 +739,26 @@ own_task() {
     die "this run is for #$task: leave #$2 to a run of its own"
 }
 
+# own_docs <role> <n>: the Customer lead touches only its own docs PR.
+own_docs() {
+  [ "$1" = customer ] || return 0
+  item "$2" | jq -e '.labels | index("a-team:customer")' >/dev/null ||
+    die "customer only touches its own docs PR (#$2 isn't it)"
+}
+
+# merge <pr>: squash-merges <pr> and deletes its branch.
+merge() {
+  local head refused ref
+  head=$(gh api "repos/$REPO/pulls/$1" --jq '{ref: .head.ref, repo: (.head.repo.full_name // "")}')
+  squash() { { gh api -X PUT "repos/$REPO/pulls/$1/merge" -f merge_method=squash >/dev/null; } 2>&1; }
+  refused=$(write "squash-merge PR #$1" squash "$1") || die "can't merge PR #$1 ($(head -1 <<<"$refused"))"
+  # A repo that deletes merged branches itself has already done it, so that refusal is no failure.
+  if [ "$(jq -r .repo <<<"$head")" = "$REPO" ]; then
+    ref=$(jq -r .ref <<<"$head")
+    write "delete branch $ref" gh api -X DELETE "repos/$REPO/git/refs/heads/$ref" >/dev/null 2>&1 || true
+  fi
+}
+
 BLOCKED='((.labels | index("blocked")) or .blockedBy > 0)'
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
@@ -768,7 +795,8 @@ case "$CMD" in
       {pitches: map(select(.labels | index("pitch"))) | counts,
        dev: (map(select(.labels | index("a-team:dev")))
          | (map(select(open_blocked | not)) | counts) + {blocked: map(select(open_blocked)) | length}),
-       stakeholders: map(select((.labels | index("pitch") or index("a-team:dev")) | not)) | counts}'
+       stakeholders: map(select((.labels | index("pitch") or index("a-team:dev") or index("a-team:customer")) | not))
+         | counts}'
     ;;
 
   next)
@@ -848,6 +876,7 @@ case "$CMD" in
     label=$(own_label "$role")
     allowed "$role" "$from" "$to" || die "$role may not move #$n from '$from' to '$to'"
     own_task "$role" "$n"
+    own_docs "$role" "$n"
     if [ "$role" = dev ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       die "dev does not move pitches"
     fi
@@ -881,6 +910,15 @@ case "$CMD" in
     check_role "$role"
     is_state "$to" || die "unknown status '$to'"
     allowed "$role" None "$to" || die "$role may not add items as '$to'"
+    if [ "$role" = customer ]; then
+      customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
+      gh api "repos/$REPO/issues/$n" --jq '.pull_request != null and .state == "open"
+          and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
+        die "customer may only add its own open docs PR (#$n isn't one)"
+      other=$(items | jq -r --argjson n "$n" '[.[] | select((.labels | index("a-team:customer"))
+        and .status == "In review" and .number != $n) | .number] | first // empty')
+      [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
+    fi
     existing=$(item "$n")
     if [ -n "$existing" ]; then
       # The project's auto-add workflow may already have put a new issue on the board.
@@ -895,6 +933,8 @@ case "$CMD" in
         Exploring | Pitched) write "label #$n pitch" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
       esac
     fi
+    [ "$role" != customer ] ||
+      write "label #$n a-team:customer" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:customer' >/dev/null
     if [ -n "$existing" ]; then
       set_status "$(jq -r .id <<<"$existing")" "$to"
       record "$role" "$n" "added as $to"
@@ -915,7 +955,7 @@ case "$CMD" in
     [ $# -eq 3 ] || die "usage: board.sh $TEAM priority <role> <n> <value|none>"
     role=$1 n=$2 value=$3
     case "$role" in
-      lead | dev) die "$role may not set a $PRIORITY; ranking an item is the stakeholders' own gate" ;;
+      lead | dev | customer) die "$role may not set a $PRIORITY; ranking an item is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
@@ -951,7 +991,7 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM approve <role> <n>"
     role=$1 n=$2
     case "$role" in
-      lead | dev) die "$role may not approve a pitch; approving is the stakeholders' own gate" ;;
+      lead | dev | customer) die "$role may not approve a pitch; approving is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
@@ -970,14 +1010,22 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM accept <role> <n>"
     role=$1 n=$2
     case "$role" in
-      lead | dev) die "$role may not accept a task; accepting is the stakeholders' own gate" ;;
+      lead | dev | customer) die "$role may not accept a task; accepting is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
-    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a task to accept"
     status=$(jq -r .status <<<"$it")
+    if [ "$(jq -r .type <<<"$it")" = PullRequest ] && jq -e '.labels | index("a-team:customer")' <<<"$it" >/dev/null; then
+      [ "$status" = "In review" ] || die "only a docs PR In review can be accepted (#$n is in '$status')"
+      merge "$n"
+      set_status "$(jq -r .id <<<"$it")" Done
+      record "$role" "$n" "accepted · PR #$n merged"
+      say "#$n: merged docs PR #$n"
+      exit 0
+    fi
+    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a task to accept"
     if jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       [ "$status" = "In review" ] || die "only a pitch In review can be accepted (#$n is in '$status')"
       open=$(gh api --paginate "repos/$REPO/issues/$n/sub_issues" | jq -s 'add // [] | map(select(.state == "open")) | length')
@@ -991,14 +1039,7 @@ case "$CMD" in
     [ "$status" = "In review" ] || die "only a task In review can be accepted (#$n is in '$status')"
     pr=$(pr_for "$n" | jq -r '.number // empty')
     [ -n "$pr" ] || die "#$n has no open PR to merge"
-    head=$(gh api "repos/$REPO/pulls/$pr" --jq '{ref: .head.ref, repo: (.head.repo.full_name // "")}')
-    squash() { { gh api -X PUT "repos/$REPO/pulls/$1/merge" -f merge_method=squash >/dev/null; } 2>&1; }
-    refused=$(write "squash-merge PR #$pr" squash "$pr") || die "can't merge PR #$pr ($(head -1 <<<"$refused"))"
-    # A repo that deletes merged branches itself has already done it, so that refusal is no failure.
-    if [ "$(jq -r .repo <<<"$head")" = "$REPO" ]; then
-      ref=$(jq -r .ref <<<"$head")
-      write "delete branch $ref" gh api -X DELETE "repos/$REPO/git/refs/heads/$ref" >/dev/null 2>&1 || true
-    fi
+    merge "$pr"
     record "$role" "$n" "accepted · PR #$pr merged"
     say "#$n: merged PR #$pr"
     ;;
@@ -1006,9 +1047,10 @@ case "$CMD" in
   comment)
     [ $# -eq 3 ] || die "usage: board.sh $TEAM comment <role> <n> <file>"
     role=$1 n=$2 file=$3
-    case "$role" in lead | dev | you) ;; *) die "unknown role '$role' (lead | dev | you)" ;; esac
+    case "$role" in lead | dev | customer | you) ;; *) die "unknown role '$role' (lead | dev | customer | you)" ;; esac
     [ -f "$file" ] || die "no such file: $file"
     own_task "$role" "$n"
+    own_docs "$role" "$n"
     # Your comment is feedback the roles still owe an answer: no marker, and no 👀.
     if [ "$role" = you ]; then
       body=$(cat "$file")
@@ -1063,6 +1105,7 @@ case "$CMD" in
     [ $# -eq 4 ] || die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\""
     role=$1 task=$2 prereq=$3 why=$4
     check_role "$role"
+    [ "$role" != customer ] || die "customer may not change what a task waits on"
     own_task "$role" "$task"
     write "block #$task on #$prereq" gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" \
       -F "issue_id=$(gh api "repos/$REPO/issues/$prereq" --jq .id)" >/dev/null
@@ -1075,6 +1118,7 @@ case "$CMD" in
     [ $# -eq 4 ] || die "usage: board.sh $TEAM undepend <role> <task> <prerequisite> \"<why>\""
     role=$1 task=$2 prereq=$3 why=$4
     check_role "$role"
+    [ "$role" != customer ] || die "customer may not change what a task waits on"
     own_task "$role" "$task"
     prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
       jq -r --argjson n "$prereq" '[.[] | select(.number == $n) | .id] | first // empty')
@@ -1145,6 +1189,20 @@ case "$CMD" in
     say "#$n: no longer blocked"
     ;;
 
+  covered)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM covered <role> <pitch>"
+    role=$1 n=$2
+    [ "$role" = customer ] || die "only customer checks the docs against an accepted pitch"
+    item "$n" | jq -e '(.labels | index("pitch")) and .status == "Done"' >/dev/null ||
+      die "#$n isn't an accepted pitch"
+    if [ -z "$DRY_RUN" ]; then
+      mkdir -p "$(dirname "$COVERED")"
+      grep -qx "$n" "$COVERED" 2>/dev/null || echo "$n" >>"$COVERED"
+    fi
+    record "$role" "$n" "docs checked"
+    say "#$n: docs checked"
+    ;;
+
   body)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM body <n>"
     # gh puts the error's own body on stdout, so its one-line reason is read from stderr alone.
@@ -1165,6 +1223,7 @@ case "$CMD" in
       "def login: $LOGIN; $TEAM_SAID"'
       def remark($pr): {at: .createdAt, author: (.author | login), body: (.body // ""), pr: $pr};
       def who: if team("<!-- a-team:lead -->") then "lead" elif team("<!-- a-team:dev -->") then "dev"
+        elif team("<!-- a-team:customer -->") then "customer"
         elif .author | IN($stakeholders[]) then "you" else .author end;
       [.data.repository | to_entries[].value | select(. != null)
        | (.comments.nodes[]? | remark(null)),
@@ -1172,7 +1231,7 @@ case "$CMD" in
           | (remark($pr) + {description: true}), (.comments.nodes[]? | remark($pr)))]
       | sort_by(.at)
       | map({who: who, at, pr, description: (.description // false),
-             body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
+             body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev|customer) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
     ;;
 
   children)
@@ -1188,7 +1247,8 @@ case "$CMD" in
     catch_up "$all"
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
-         pitch: (.type == "Issue" and (.labels | index("pitch")) != null)})' <<<"$all")
+         pitch: (.type == "Issue" and (.labels | index("pitch")) != null)}
+        + if .labels | index("a-team:customer") then {role: "customer"} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
     talk=$(gated_talk "$(jq -s add <<<"$gated$held")" checks)
@@ -1237,7 +1297,8 @@ case "$CMD" in
     check_role "$role"
     all=$(items)
     reasons=()
-    recent=$(recent_comments)
+    recent='[]'
+    [ "$role" = customer ] || recent=$(recent_comments)
     tasks='[]' chores=() ready=
     # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
     task_reason() {
@@ -1309,6 +1370,21 @@ case "$CMD" in
         fi
       fi
       reasons+=(${chores[@]+"${chores[@]}"})
+      creative=false
+    elif [ "$role" = customer ]; then
+      if customer_on; then
+        accepted=$(jq -r '.[] | select((.labels | index("pitch")) and .status == "Done" and .closed == "COMPLETED")
+          | .number' <<<"$all")
+        # Turned on, it starts from the pitches accepted after that, not from every one before.
+        if [ ! -f "$COVERED" ]; then
+          mkdir -p "$(dirname "$COVERED")"
+          printf '%s\n' "$accepted" >"$COVERED"
+        else
+          for n in $accepted; do
+            grep -qx "$n" "$COVERED" || reasons+=("pitch #$n was accepted: check the docs cover what it shipped")
+          done
+        fi
+      fi
       creative=false
     else
       while IFS= read -r row; do
@@ -1411,6 +1487,7 @@ case "$CMD" in
         note labels "can't list $REPO's labels: ${have#gh: }"
       else
         while IFS='|' read -r name _ _ without; do
+          [ "$name" != a-team:customer ] || customer_on || continue
           grep -qxF -- "$name" <<<"$have" || note labels "no '$name' label, so $without"
         done <<<"$LABELS"
       fi

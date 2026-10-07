@@ -236,6 +236,39 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void A_team_with_a_Customer_lead_has_a_third_column_and_one_without_keeps_its_own_row()
+    {
+        using var window = Open(agents:
+            [("alpha", "lead"), ("alpha", "dev"), ("beta", "lead"), ("beta", "dev"), ("beta", "customer")]);
+
+        var cells = LayOut(window, 120, 30);
+
+        Assert.Equal(["alpha · lead", "alpha · dev", "beta · lead", "beta · dev", "beta · customer"],
+            window.Panes.Select(pane => $"{pane.Team} · {pane.Role}"));
+        Assert.Equal(cells[0].Y, cells[1].Y);
+        Assert.Equal([cells[2].Y, cells[2].Y], [cells[3].Y, cells[4].Y]);
+        Assert.Equal(3, cells.Skip(2).Select(cell => cell.X).Distinct().Count());
+        Assert.Equal([cells[2].X, cells[3].X], [cells[0].X, cells[1].X]);
+        Assert.Equal(cells[4].Right, cells[1].Right);
+        AssertTiles(AgentArea(window), cells);
+    }
+
+    [Fact]
+    public void The_arrows_keep_to_a_team_s_row_when_rows_differ_in_length()
+    {
+        using var window = Open(agents:
+            [("alpha", "lead"), ("alpha", "dev"), ("beta", "lead"), ("beta", "dev"), ("beta", "customer")]);
+        window.NewKeyDownEvent(Key.Tab);
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(4, Selected(window));
+        window.NewKeyDownEvent(Key.CursorUp);
+        Assert.Equal(1, Selected(window));
+    }
+
+    [Fact]
     public void The_arrows_move_by_row_and_by_column()
     {
         using var window = Open(agents: Agents(4));

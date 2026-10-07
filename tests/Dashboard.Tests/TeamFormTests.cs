@@ -234,9 +234,44 @@ public class TeamFormTests
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Limits"],
+            ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
+    }
+
+    [Fact]
+    public void Roles_shows_Lead_and_Dev_always_on_and_the_Customer_lead_as_the_team_has_it()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+
+        var roles = form.SubViews.OfType<CheckBox>().ToList();
+
+        Assert.Equal(["Lead", "Dev", "Customer lead"], roles.Select(role => role.Text));
+        Assert.Equal([CheckState.Checked, CheckState.Checked, CheckState.UnChecked], roles.Select(role => role.Value));
+        Assert.Equal([false, false, true], roles.Select(role => role.Enabled));
+        Assert.All(roles, role => Assert.Equal(roles[0].Frame.Y, role.Frame.Y));
+    }
+
+    [Fact]
+    public void Ticking_the_Customer_lead_is_what_the_form_saves_and_says_what_it_does()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.SetFocus();
+
+        form.CustomerLead.SetFocus();
+        form.CustomerLead.Value = CheckState.Checked;
+
+        Assert.Equal(TeamForm.CustomerCaption, form.Hints.Message.Says);
+        Assert.Equal(Settings with { Customer = true }, form.Current());
+    }
+
+    [Fact]
+    public void A_team_with_the_Customer_lead_on_shows_it_ticked()
+    {
+        using var form = new TeamForm("a-team", Settings with { Customer = true }, _ => null);
+
+        Assert.Equal(CheckState.Checked, form.CustomerLead.Value);
+        Assert.True(form.Current().Customer);
     }
 
     [Fact]
@@ -363,7 +398,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Create", "Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }

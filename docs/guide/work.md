@@ -13,7 +13,7 @@ through them. A column with nothing in it is hidden, and the one you're on takes
 | Triage | Ideas and pitches with no Priority. Nothing here is pitched or approved until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide). |
 | Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. |
-| Review | Finished work you can accept now: a task whose PR is ready to merge, or a pitch whose tasks are all closed. |
+| Review | Finished work you can accept now: a task whose PR is ready to merge, a pitch whose tasks are all closed, or the Customer lead's docs PR. |
 
 Each column's heading counts its cards. Under the Review cards, a line sums up the work that's in
 review but not ready for you yet, like `2 with the Dev: #12 CI failing · #14 still a draft`.
@@ -96,5 +96,6 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
   it opens again where you left it, ready for `a` or `c`, and says there if the try failed. On a
   pitch in Review, `t` runs the default branch instead, where its tasks have landed.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. For a task, once you
-  confirm, its PR is squash-merged and its branch deleted. For a pitch, it's closed as done. If it
+  confirm, its PR is squash-merged and its branch deleted. For a pitch, it's closed as done. The
+  Customer lead's docs PR is merged the same way. If it
   isn't ready yet, `a` says why instead.
