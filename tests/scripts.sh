@@ -3472,6 +3472,25 @@ failed "unreadable wip"
 same "unreadable wip" "board.sh: demo.json isn't a JSON object" "$(cat "$ERR")"
 echo "$before" >"$TEAM"
 
+case_ "run brings the product checkout up to date before it prints the brief"
+try_fixture
+app_fixture
+jq --arg c "$CHECKOUT" '.checkout = $c' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+cached ghs_cached 3600
+land main
+PATH="$APP_BIN/board:$PATH" run run demo lead
+same "exit" 0 "$STATUS"
+same "checkout" "$TRY_LANDED" "$(git -C "$CHECKOUT" rev-parse HEAD)"
+grep -q '^## Product checkout' "$OUT" && fail "up to date: told to read around the checkout"
+
+case_ "run says to read the default branch when the checkout can't be fast-forwarded to it"
+git -C "$CHECKOUT" -c user.email=test@example.com -c user.name=Test commit -q --allow-empty -m local
+land main
+PATH="$APP_BIN/board:$PATH" run run demo lead
+same "exit" 0 "$STATUS"
+grep -q "^$CHECKOUT could not be brought up to date with origin/main, so read the product repo from origin/main" "$OUT" ||
+  fail "diverged: '$(cat "$OUT")'"
+
 case_ "examples/team.json carries the app key and stays valid"
 jq -e 'has("app")' "$ROOT/examples/team.json" >/dev/null || fail "example: no app key"
 

@@ -9,7 +9,7 @@ Your marker is `<!-- a-team:lead -->`.
 ## Context
 
 - The product vision lives in the product repo at the path in the team config's `vision`. Read
-  it at the start of every run. It's the yardstick for every pitch. If it doesn't exist yet,
+  it from the `checkout` at the start of every run. It's the yardstick for every pitch. If it doesn't exist yet,
   see *Vision* below.
 - Read the repo's `README.md` and contributor docs (`AGENTS.md`, `CONTRIBUTING.md`) as needed.
   Load any skills listed in the team config's `skills`.
