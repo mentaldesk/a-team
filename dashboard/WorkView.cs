@@ -57,6 +57,9 @@ public sealed class WorkView : View
     internal WaitingItem? SelectedCard =>
         SelectedColumn()?.Selected is { IsPr: false } card ? card.Item : null;
 
+    /// <summary>Whether the selection is a card in Triage, waiting for a rank.</summary>
+    internal bool InTriage => SelectedColumn()?.Gate == Gates[0].Name;
+
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
 

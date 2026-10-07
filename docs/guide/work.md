@@ -51,9 +51,9 @@ The line at the foot says why the card you're on is where it is, like
 | Key | Does |
 |---|---|
 | Arrows | Move between cards and columns, and on into the lanes above and below |
-| `Enter` | Read the card |
+| `Enter` | Read the card, and on a card in Triage, rank it |
 | `g` | Open the card, or the PR row you're on, on GitHub |
-| `p` | Set the card's Priority |
+| `p` | Read the card and set its Priority |
 | `m` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `F5` | Read what's waiting again |
 
@@ -83,8 +83,12 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 - **Reply.** Reading any card, press `c` to write a comment. It's posted as you, joins the end of
   what you're reading, and the agent picks it up on its next run.
 - **Answer a question.** Read it in Questions, and reply with `c`.
-- **Rank it.** `p` shows the issue with the ranks under it, **None** to **Urgent**. The card moves
-  to the column its new Priority puts it in.
+- **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
+  ranks under it, **None** to **Urgent**, starting on the card's own. `←`/`→` or a rank's initial
+  moves between them, and `Enter` sets it: the reader closes and the card moves to the column its
+  new Priority puts it in. `Esc` closes without changing it. You can still scroll, comment with
+  `c`, approve with `a` and open it with `g` while the ranks show; there, `h` picks **High**
+  rather than hiding History.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,
   with its acceptance criteria printed first; quit it to come back. If you were reading the task,
   it opens again where you left it, ready for `a` or `c`, and says there if the try failed. On a

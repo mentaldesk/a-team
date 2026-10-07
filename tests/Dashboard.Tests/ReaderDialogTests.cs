@@ -2,6 +2,7 @@ using System.Drawing;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
@@ -451,6 +452,220 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(new Key('h'));
 
         Assert.True(dialog.Body.HasFocus);
+    }
+
+    private static ReaderDialog Ranking(
+        string body = Pitch, Rank rank = Rank.None, int width = 60, int height = 20, Action? onApprove = null,
+        ReaderComment? comment = null, Action? onGitHub = null, IssueBody? read = null)
+    {
+        var dialog = new ReaderDialog(Item, read ?? new IssueBody(body), onGitHub ?? (() => { }), onApprove,
+            comment: comment, width: width, rank: rank);
+        dialog.Layout(new Size(width, height));
+        return dialog;
+    }
+
+    [Fact]
+    public void Without_a_rank_there_is_no_row_of_ranks()
+    {
+        using var dialog = Open(Pitch);
+
+        Assert.Null(dialog.Ranks);
+        Assert.DoesNotContain("Enter set", dialog.Hints.Says);
+        Assert.DoesNotContain("rank", dialog.Hints.Says);
+    }
+
+    [Theory]
+    [InlineData(Rank.None)]
+    [InlineData(Rank.Medium)]
+    public void The_ranks_open_on_the_rank_given_with_the_keyboard_already_there(Rank rank)
+    {
+        using var dialog = Ranking(rank: rank);
+
+        Assert.Equal(rank, dialog.Ranks!.Value);
+        Assert.True(dialog.Ranks.HasFocus);
+        Assert.Equal((int)rank, dialog.Ranks.FocusedItem);
+    }
+
+    [Fact]
+    public void The_ranks_are_the_Priority_field_s_options_and_None_in_its_colours()
+    {
+        using var dialog = Ranking();
+
+        Assert.Equal(["None", "Low", "Medium", "High", "Urgent"], dialog.Ranks!.Labels);
+        Assert.Equal(Orientation.Horizontal, dialog.Ranks.Orientation);
+        Assert.Equal(
+            ["", "Priority.Low.Form", "Priority.Medium.Form", "Priority.High.Form", "Priority.Urgent.Form"],
+            dialog.Ranks.SubViews.Select(row => row.SchemeName ?? ""));
+    }
+
+    [Theory]
+    [InlineData("n", Rank.None)]
+    [InlineData("l", Rank.Low)]
+    [InlineData("m", Rank.Medium)]
+    [InlineData("h", Rank.High)]
+    [InlineData("u", Rank.Urgent)]
+    public void A_rank_s_initial_puts_the_keyboard_on_it_without_setting_it(string key, Rank rank)
+    {
+        using var dialog = Ranking(rank: Rank.Low);
+
+        dialog.NewKeyDownEvent(new Key(key[0]));
+
+        Assert.Equal(rank, dialog.Ranks!.Value);
+        Assert.Equal((int)rank, dialog.Ranks.FocusedItem);
+        Assert.Null(dialog.Chosen);
+    }
+
+    [Fact]
+    public void Left_and_Right_move_between_the_ranks_and_leave_the_body_where_it_was()
+    {
+        using var dialog = Ranking(Long(), Rank.Medium, height: 12);
+
+        dialog.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal((int)Rank.High, dialog.Ranks!.FocusedItem);
+
+        dialog.NewKeyDownEvent(Key.CursorLeft);
+        Assert.Equal((int)Rank.Medium, dialog.Ranks.FocusedItem);
+        Assert.Equal(0, dialog.Body.Top);
+    }
+
+    [Fact]
+    public void Enter_sets_the_rank_the_keyboard_is_on_and_closes()
+    {
+        using var dialog = Ranking(rank: Rank.Medium);
+
+        dialog.NewKeyDownEvent(Key.CursorRight);
+        dialog.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal(Rank.High, dialog.Chosen);
+    }
+
+    [Fact]
+    public void Esc_closes_it_and_sets_nothing()
+    {
+        using var dialog = Ranking(rank: Rank.Medium);
+
+        dialog.NewKeyDownEvent(Key.CursorRight);
+        Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+
+        Assert.Null(dialog.Chosen);
+    }
+
+    [Fact]
+    public void The_scrolling_keys_still_scroll_the_body_with_the_ranks_showing()
+    {
+        using var dialog = Ranking(Long(), Rank.Low, height: 12);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.CursorDown));
+        Assert.Equal(1, dialog.Body.Top);
+        Assert.True(dialog.NewKeyDownEvent(Key.CursorUp));
+        Assert.Equal(0, dialog.Body.Top);
+        Assert.True(dialog.NewKeyDownEvent(Key.PageDown));
+        var page = dialog.Body.Top;
+        Assert.True(page > 1);
+        Assert.True(dialog.NewKeyDownEvent(Key.PageUp));
+        Assert.Equal(0, dialog.Body.Top);
+        Assert.True(dialog.NewKeyDownEvent(Key.End));
+        Assert.True(dialog.Body.Top > page);
+        Assert.True(dialog.NewKeyDownEvent(Key.Home));
+        Assert.Equal(0, dialog.Body.Top);
+        Assert.Equal(Rank.Low, dialog.Ranks!.Value);
+    }
+
+    [Fact]
+    public void Tab_with_the_ranks_showing_scrolls_History_and_leaves_the_keyboard_on_the_ranks()
+    {
+        using var dialog = Ranking(Long(), Rank.Low, width: 120, height: 12, read: new IssueBody(Long())
+        {
+            History = new History([.. Enumerable.Range(1, 30).Select(day => new HistoryEvent(
+                DateTimeOffset.UnixEpoch.AddDays(day), "lead", "moved"))]),
+        });
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Tab));
+        dialog.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.Equal(1, dialog.HistoryLog.Top);
+        Assert.Equal(0, dialog.Body.Top);
+        Assert.True(dialog.Ranks!.HasFocus);
+    }
+
+    [Fact]
+    public void The_hints_add_rank_and_set_and_leave_h_to_High()
+    {
+        using var dialog = Ranking(onApprove: () => { }, comment: new ReaderComment(new Key('c'), "comment", () => null),
+            width: 120);
+
+        Assert.Equal(
+            "Up/Down/PgUp/PgDn scroll · Tab switch pane · ←/→ rank · Enter set · a approve · c comment · g on GitHub · Esc close",
+            dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Clicking_set_sets_the_rank_and_clicking_rank_moves_to_the_next()
+    {
+        using var dialog = Ranking(rank: Rank.Low);
+
+        dialog.Hints.Hints.Single(hint => hint.Text == "←/→ rank").InvokeCommand(Command.Accept);
+        Assert.Equal(Rank.Medium, dialog.Ranks!.Value);
+        dialog.Hints.Hints.Single(hint => hint.Text == "Enter set").InvokeCommand(Command.Accept);
+
+        Assert.Equal(Rank.Medium, dialog.Chosen);
+    }
+
+    [Fact]
+    public void Commenting_keeps_the_reader_open_with_the_rank_chosen_and_Enter_still_sets_it()
+    {
+        using var dialog = Ranking(Long(), Rank.None, height: 12,
+            comment: new ReaderComment(new Key('c'), "comment", () => Said));
+
+        dialog.NewKeyDownEvent(new Key('m'));
+        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
+
+        Assert.Equal("commented on #180", dialog.Message.Says);
+        Assert.Equal("Shelve it until #150 lands.", dialog.Body.Lines[^1].Text);
+        Assert.Equal(Rank.Medium, dialog.Ranks!.Value);
+        Assert.Null(dialog.Chosen);
+
+        dialog.NewKeyDownEvent(Key.Enter);
+        Assert.Equal(Rank.Medium, dialog.Chosen);
+    }
+
+    [Fact]
+    public void g_and_a_still_work_with_the_ranks_showing()
+    {
+        var opened = 0;
+        var approved = 0;
+        using var dialog = Ranking(onGitHub: () => opened++, onApprove: () => approved++);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('g')));
+        Assert.True(dialog.NewKeyDownEvent(new Key('a')));
+
+        Assert.Equal(1, opened);
+        Assert.Equal(1, approved);
+        Assert.Null(dialog.Chosen);
+    }
+
+    [Fact]
+    public void The_ranks_sit_in_a_band_of_their_own_between_the_panes_and_the_hints()
+    {
+        using var dialog = Ranking();
+
+        Assert.Equal(LogSchemes.Form, dialog.Band!.SchemeName);
+        Assert.Equal(new Rectangle(0, dialog.Hints.Frame.Y - 3, dialog.Viewport.Width, 3), dialog.Band.Frame);
+        Assert.Equal(dialog.Band.Frame.Y, dialog.Body.SuperView!.Frame.Bottom);
+        Assert.Equal(1, dialog.Ranks!.Frame.Y);
+        Assert.Equal(dialog.Band.Viewport.Width - dialog.Ranks.Frame.Right, dialog.Ranks.Frame.X);
+    }
+
+    [Fact]
+    public void A_body_that_would_not_read_still_lets_you_rank_and_says_why()
+    {
+        using var dialog = Ranking(read: new IssueBody(Failure: "board.sh: can't read #180"));
+
+        Assert.Equal("board.sh: can't read #180", dialog.Message.Says);
+        dialog.NewKeyDownEvent(new Key('l'));
+        dialog.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal(Rank.Low, dialog.Chosen);
     }
 
     private static string Long() =>

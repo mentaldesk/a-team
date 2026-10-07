@@ -426,7 +426,7 @@ public class WorkAreaTests : IDisposable
     [Fact]
     public void A_message_longer_than_the_room_left_is_cut_short_before_the_stamp()
     {
-        using var window = Open(run: _ => Task.FromResult<string?>("board.sh: " + new string('x', 200)), askPriority: (_, _) => Rank.High);
+        using var window = Open(run: _ => Task.FromResult<string?>("board.sh: " + new string('x', 200)), chooseRank: (_, _, _) => Rank.High);
         window.Refresh();
         LayOut(window, 80, 30);
 
@@ -616,6 +616,119 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Enter_on_a_Triage_card_opens_the_reader_with_the_ranks_on_None_and_elsewhere_without_them()
+    {
+        var offered = new List<(int Number, Rank? Rank)>();
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            chooseRank: (item, _, rank) =>
+            {
+                offered.Add((item.Number, rank));
+                return null;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([(6, Rank.None), (107, null)], offered);
+    }
+
+    [Fact]
+    public void Enter_on_a_question_opens_the_reader_without_the_ranks()
+    {
+        Rank? offered = Rank.Low;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Question : "[]", null)),
+            chooseRank: (_, _, rank) => offered = rank);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Null(offered);
+    }
+
+    [Fact]
+    public void p_opens_the_same_reader_on_the_card_s_own_rank_with_its_conversation()
+    {
+        (Rank? Rank, IssueBody Body)? offered = null;
+        var at = new DateTimeOffset(2026, 9, 29, 4, 31, 0, TimeSpan.Zero);
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            readConversation: _ => Task.FromResult(new Reading(
+                $$"""[{"who": "dev", "at": "{{at:O}}", "body": "Done."}]""", null)),
+            chooseRank: (_, body, rank) =>
+            {
+                offered = (rank, body);
+                return null;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+
+        Assert.Equal(Rank.High, offered?.Rank);
+        Assert.Equal(new IssueBody("## Opportunity").With(new Conversation([new Remark("dev", at, "Done.")])),
+            offered?.Body);
+    }
+
+    [Fact]
+    public void Setting_the_rank_a_card_already_has_writes_nothing()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            chooseRank: (_, _, rank) => rank);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Empty(calls);
+        Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void Enter_on_a_Triage_card_and_a_rank_set_moves_the_card_where_its_rank_puts_it()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            chooseRank: (_, _, _) => Rank.Low);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal([["board", "team0", "priority", "you", "6", "Low"]], calls);
+        Assert.Equal("\U0001F4A1Triage · 0", window.Work.Lanes[0].Columns[0].Title);
+        Assert.Equal("#6 · set to Low", window.Message.Says);
+    }
+
+    [Fact]
     public void Ranking_an_Idea_asks_the_board_to_set_it_and_says_so_while_it_runs()
     {
         var calls = new List<string[]>();
@@ -624,7 +737,7 @@ public class WorkAreaTests : IDisposable
         {
             calls.Add(arguments);
             return finish.Task;
-        }, askPriority: (_, _) => Rank.High);
+        }, chooseRank: (_, _, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -647,7 +760,7 @@ public class WorkAreaTests : IDisposable
                 reads++;
                 return Task.FromResult(new Reading(Waiting(team), null));
             },
-            askPriority: (_, _) => Rank.High);
+            chooseRank: (_, _, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -667,7 +780,7 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open(
             read: team => Task.FromResult(new Reading(team == "team0" ? Queue : "[]", null)),
-            askPriority: (_, _) => Rank.High);
+            chooseRank: (_, _, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -684,7 +797,7 @@ public class WorkAreaTests : IDisposable
     [Fact]
     public void The_message_goes_as_soon_as_the_selection_does()
     {
-        using var window = Open(askPriority: (_, _) => Rank.High);
+        using var window = Open(chooseRank: (_, _, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -707,7 +820,7 @@ public class WorkAreaTests : IDisposable
                 calls.Add(arguments);
                 return Task.FromResult<string?>(null);
             },
-            askPriority: (_, _) => Rank.None);
+            chooseRank: (_, _, _) => Rank.None);
         window.Refresh();
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
@@ -735,7 +848,7 @@ public class WorkAreaTests : IDisposable
                 reads++;
                 return Task.FromResult(new Reading(team == "team0" ? Unranked : "[]", null));
             },
-            askPriority: (_, _) => Rank.High);
+            chooseRank: (_, _, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
         Assert.Equal("Triage · team0", window.Work.Region);
@@ -756,7 +869,7 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open(
             run: _ => Task.FromResult<string?>("board.sh: API rate limit exceeded\nand a second line"),
-            askPriority: (_, _) => Rank.High);
+            chooseRank: (_, _, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
         var stamp = window.Status.State.Text;
@@ -786,7 +899,7 @@ public class WorkAreaTests : IDisposable
                 read.Add(item);
                 return Task.FromResult(new Reading(Body, null));
             },
-            askPriority: (_, body) =>
+            chooseRank: (_, body, _) =>
             {
                 asked = body;
                 return null;
@@ -809,7 +922,7 @@ public class WorkAreaTests : IDisposable
         IssueBody? asked = null;
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading("", "board.sh: can't read #6 (gh: Not Found (HTTP 404))")),
-            askPriority: (_, body) =>
+            chooseRank: (_, body, _) =>
             {
                 asked = body;
                 return null;
@@ -1543,6 +1656,7 @@ public class WorkAreaTests : IDisposable
             showBody: (_, _, _, _, _, _, _) => shown = true);
         window.Refresh();
         LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
 
         window.NewKeyDownEvent(Key.Enter);
         window.Refresh();
@@ -1559,12 +1673,13 @@ public class WorkAreaTests : IDisposable
         using var window = Open(showBody: (_, _, _, _, _, _, _) => shown = true);
         window.Refresh();
         LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
 
         window.NewKeyDownEvent(Key.Enter);
         window.Refresh();
 
         Assert.False(shown);
-        Assert.Equal("#6 has no description", window.Message.Says);
+        Assert.Equal("#107 has no description", window.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
     }
 
@@ -2634,7 +2749,7 @@ public class WorkAreaTests : IDisposable
         Func<string, Task<Reading>>? read = null,
         Action<string>? openUrl = null,
         Func<string[], Task<string?>>? run = null,
-        Func<WaitingItem, IssueBody, Rank?>? askPriority = null,
+        Func<WaitingItem, IssueBody, Rank?, Rank?>? chooseRank = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
         Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
         Area area = Area.Work,
@@ -2657,8 +2772,11 @@ public class WorkAreaTests : IDisposable
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
-            askPriority ?? ((_, _) => null),
-            showBody ?? ((_, _, _, _, _, _, _) => { }),
+            (item, body, onGitHub, onApprove, accept, comment, tryIt, rank) =>
+            {
+                showBody?.Invoke(item, body, onGitHub, onApprove, accept, comment, tryIt);
+                return chooseRank?.Invoke(item, body, rank);
+            },
             area,
             auto,
             handOver,
