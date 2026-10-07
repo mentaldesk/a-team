@@ -46,8 +46,8 @@ public sealed class ReaderDialog : Dialog
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
-    /// <param name="comment">Commenting on the item; a posted comment joins the end of the conversation, and the
-    /// reader stays open either way.</param>
+    /// <param name="comment">Commenting on the item; a posted comment joins the end of the conversation and the top
+    /// of History, and the reader stays open either way.</param>
     /// <param name="tryIt">Trying the item's PR or, for a validated pitch, the default branch; null where neither.</param>
     /// <param name="panes">Whether History was last shown; a terminal narrower than <paramref name="width"/> needs for
     /// both opens without it.</param>
@@ -245,6 +245,12 @@ public sealed class ReaderDialog : Dialog
             _text = _text.With(new Conversation([remark]));
             _body.Lines = _text.Lines;
             _body.End();
+            if (_text.History is { Failure: null } history)
+            {
+                _text = _text with { History = history.With(new HistoryEvent(remark.At, remark.Who, "commented")) };
+                _history.Lines = _text.History.Lines;
+                _history.Home();
+            }
             _message.Show($"commented on #{_number}", Schemes.Accent);
             SetNeedsLayout();
             SetNeedsDraw();

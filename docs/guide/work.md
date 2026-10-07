@@ -70,7 +70,8 @@ and `PgUp`/`PgDn` scroll, `g` opens it on GitHub, and `Esc` closes it.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
 accept, comment, Priority, link and dependency, with when and who (`you`, `lead` or `dev`). It
-records what goes through A-Team from the day it's installed, not what you do on GitHub directly.
+records what goes through A-Team from the day it's installed, not what you do on GitHub directly. A
+comment you post from the reader appears there straight away.
 `Tab` moves between the body and History, and the arrows scroll whichever has focus. `h` hides
 History to give the body the full width, and shows it again; it stays as you left it until you
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.

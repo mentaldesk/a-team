@@ -18,6 +18,9 @@ public sealed record History(IReadOnlyList<HistoryEvent> Events, DateTimeOffset?
         reading.Failure is { Length: > 0 } failure ? new History([], Failure: failure)
         : Parse(reading.Output) ?? new History([], Failure: $"couldn't read #{number}'s history");
 
+    /// <summary>With <paramref name="happened"/> at the top, as the next read will show it.</summary>
+    public History With(HistoryEvent happened) => this with { Events = [happened, .. Events] };
+
     public IReadOnlyList<LogLine> Lines =>
         Failure is { Length: > 0 } failure ? [new LogLine(failure, LogLineKind.Prose)]
         : Events.Count == 0 ? [new LogLine(Since is { } since

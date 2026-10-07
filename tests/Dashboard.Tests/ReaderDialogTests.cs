@@ -357,6 +357,31 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void A_posted_comment_tops_History_without_reopening_the_reader()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => Said), width: 120);
+        dialog.Layout(new Size(120, 20));
+
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        Assert.EndsWith("you   commented", dialog.HistoryLog.Lines[0].Text);
+        Assert.Equal(Recorded.Events.Count + 1, dialog.HistoryLog.Lines.Count);
+    }
+
+    [Fact]
+    public void A_posted_comment_leaves_a_History_that_wouldnt_read_saying_so()
+    {
+        using var dialog = new ReaderDialog(Item,
+            new IssueBody(Long(), History: new History([], Failure: "couldn't read #180's history")), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => Said), width: 120);
+
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        Assert.Equal(["couldn't read #180's history"], dialog.HistoryLog.Lines.Select(line => line.Text));
+    }
+
+    [Fact]
     public void A_wide_reader_shows_History_beside_the_body_newest_first()
     {
         using var dialog = Wide();
