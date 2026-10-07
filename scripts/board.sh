@@ -45,7 +45,12 @@ sql() { printf "'%s'" "${1//\'/\'\'}"; }
 history_sql() {
   sqlite3 -cmd '.timeout 5000' "${@:1:$#-1}" "$STATE/history.db" "CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL, at TEXT NOT NULL,
-    who TEXT NOT NULL, what TEXT NOT NULL); ${*: -1}"
+    who TEXT NOT NULL, what TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS caught_up (team TEXT PRIMARY KEY, started TEXT NOT NULL, at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS seen (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL,
+      status TEXT NOT NULL, PRIMARY KEY (team, item));
+    CREATE TABLE IF NOT EXISTS github (team TEXT NOT NULL, id TEXT NOT NULL, event INTEGER,
+      PRIMARY KEY (team, id)); ${*: -1}"
 }
 
 [ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
@@ -202,11 +207,11 @@ items() {
             fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
             content {
               __typename
-              ... on Issue { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } }
+              ... on Issue { id number title url repository { nameWithOwner } labels(first: 20) { nodes { name } }
                              issueDependenciesSummary { blockedBy }
                              issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue {
                                name field { ... on IssueFieldSingleSelect { name } } } } } }
-              ... on PullRequest { number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
+              ... on PullRequest { id number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
             } } } } } }" -F field="$FIELD" -f filter="${1:-}" --paginate |
     jq -s --arg kind "$KIND" --arg repo "$REPO" --arg priority "$PRIORITY" \
       --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" \
@@ -218,6 +223,7 @@ items() {
          | {
              id,
              number: .content.number,
+             node: (.content.id // ""),
              type: .content.__typename,
              title: .content.title,
              url: .content.url,
@@ -242,6 +248,89 @@ not_done() {
   option=$(jq -r '.project.statusMap.Done // "Done"' "$CONFIG")
   [[ $FIELD =~ ^[A-Za-z0-9]+$ && $option != *'"'* ]] && printf -- '-%s:"%s"' "$FIELD" "$option"
   return 0
+}
+
+# The comments, closes, merges and Status changes on an issue or PR that catch_up reads from GitHub.
+CATCH_UP='
+  fragment IssueEvents on Issue { number timelineItems(since: $since, first: 100,
+      itemTypes: [ISSUE_COMMENT, CLOSED_EVENT, PROJECT_V2_ITEM_STATUS_CHANGED_EVENT]) {
+    nodes { __typename ...Commented ...Closed ...Moved } } }
+  fragment PullEvents on PullRequest { number merged timelineItems(since: $since, first: 100,
+      itemTypes: [ISSUE_COMMENT, CLOSED_EVENT, MERGED_EVENT, PROJECT_V2_ITEM_STATUS_CHANGED_EVENT]) {
+    nodes { __typename ...Commented ...Closed ...Merged ...Moved } } }
+  fragment Who on Actor { __typename login }
+  fragment Commented on IssueComment { id createdAt author { ...Who } }
+  fragment Closed on ClosedEvent { id createdAt stateReason actor { ...Who }
+    closer { __typename ... on PullRequest { number } } }
+  fragment Merged on MergedEvent { id createdAt actor { ...Who } }
+  fragment Moved on ProjectV2ItemStatusChangedEvent { id createdAt previousStatus status actor { ...Who }
+    project { number owner { ... on Organization { login } ... on User { login } } } }'
+
+# catch_up <items>: records what people did on GitHub directly since the last catch-up, in one query.
+catch_up() {
+  [ -z "$DRY_RUN" ] || return 0
+  mkdir -p "$STATE"
+  local now state plan found
+  now=$(date -u +%FT%TZ)
+  state=$(history_sql -json "SELECT (SELECT started FROM caught_up WHERE team = $(sql "$TEAM")) AS started,
+      (SELECT at FROM caught_up WHERE team = $(sql "$TEAM")) AS at,
+      (SELECT MIN(at) FROM events WHERE team = $(sql "$TEAM")) AS first,
+      (SELECT json_group_array(json_object('item', item, 'node', node, 'status', status))
+        FROM seen WHERE team = $(sql "$TEAM")) AS seen;") || return 0
+  plan=$(jq -n --argjson state "$state" --argjson all "$1" --arg now "$now" '
+    $state[0] as $s | ($s.started // $s.first // $now) as $started
+    | ([$started, ((($s.at // $started) | fromdateiso8601) - 600 | todateiso8601)] | max) as $since
+    | {started: $started, since: $since, query: ($s.at != null or $s.first != null),
+       ids: [($s.seen // "[]" | fromjson)[] | . as $was | select(.node != ""
+              and ([$all[] | select(.number == $was.item and .status == $was.status)] | length) == 0) | .node]}')
+  if [ "$(jq .query <<<"$plan")" = true ]; then
+    found=$(gh api graphql -f q="repo:$REPO updated:>=$(jq -r .since <<<"$plan")" -f since="$(jq -r .since <<<"$plan")" \
+      -f query="query(\$q: String!, \$since: DateTime!) {
+        search(query: \$q, type: ISSUE, first: 100) { nodes { ...IssueEvents ...PullEvents } }
+        nodes(ids: $(jq -c .ids <<<"$plan")) { ...IssueEvents ...PullEvents } } $CATCH_UP") ||
+      { echo "board.sh: couldn't catch up on what happened on GitHub" >&2; return 0; }
+  else
+    found='{}'
+  fi
+  history_sql "BEGIN; $(jq -r -n --argjson found "$found" --argjson plan "$plan" --argjson all "$1" \
+      --arg team "$TEAM" --arg now "$now" --arg owner "$OWNER" --arg sq "'" --argjson number "$NUMBER" \
+      --argjson stakeholders "$STAKEHOLDERS" --slurpfile cfg "$CONFIG" '
+    def q: $sq + (tostring | gsub($sq; $sq + $sq)) + $sq;
+    ($cfg[0].project.statusMap // {} | to_entries | map({key: .value, value: .key}) | from_entries) as $rev
+    | def status: if . == null or . == "" then "" else $rev[.] // . end;
+    [[$found.data.search.nodes[]?, $found.data.nodes[]?] | map(select(.number != null)) | unique_by(.number)[]
+     | .number as $n | .merged as $merged | .timelineItems.nodes[]
+     | (.author // .actor) as $actor
+     | select($actor != null and $actor.__typename != "Bot" and .createdAt >= $plan.started)
+     | {id, item: $n, at: .createdAt, who: (if $stakeholders | index($actor.login) then "you" else $actor.login end),
+        what: (if .__typename == "IssueComment" then "commented"
+               elif .__typename == "MergedEvent" then "accepted · PR #\($n) merged"
+               elif .__typename == "ClosedEvent" then
+                 if $merged == true then empty
+                 elif .closer.__typename == "PullRequest" then "accepted · PR #\(.closer.number) merged"
+                 elif .stateReason == "COMPLETED" then "accepted · closed"
+                 elif .stateReason == "NOT_PLANNED" then "closed as not planned"
+                 elif .stateReason == "DUPLICATE" then "closed as a duplicate"
+                 else "closed" end
+               elif .project.number == $number and .project.owner.login == $owner then
+                 (.previousStatus | status) as $from
+                 | if $from == "" then "added as \(.status | status)" else "\($from) → \(.status | status)" end
+               else empty end)}]
+    | map(
+        "INSERT OR IGNORE INTO github (team, id, event) SELECT \($team | q), \(.id | q), (SELECT e.id FROM events e
+           WHERE e.team = \($team | q) AND e.item = \(.item) AND e.who = \(.who | q) AND e.what = \(.what | q)
+             AND abs(julianday(e.at) - julianday(\(.at | q))) * 1440 <= 5
+             AND NOT EXISTS (SELECT 1 FROM github g WHERE g.team = e.team AND g.event = e.id)
+           ORDER BY abs(julianday(e.at) - julianday(\(.at | q))) LIMIT 1);
+         INSERT INTO events (team, item, at, who, what) SELECT \($team | q), \(.item), \(.at | q), \(.who | q), \(.what | q)
+           WHERE EXISTS (SELECT 1 FROM github WHERE team = \($team | q) AND id = \(.id | q) AND event IS NULL);
+         UPDATE github SET event = last_insert_rowid() WHERE team = \($team | q) AND id = \(.id | q) AND event IS NULL;")
+    + ["DELETE FROM seen WHERE team = \($team | q);"]
+    + [$all[] | select(.node != "")
+       | "INSERT INTO seen (team, item, node, status) VALUES (\($team | q), \(.number), \(.node | q), \(.status | q));"]
+    + ["INSERT INTO caught_up (team, started, at) VALUES (\($team | q), \($plan.started | q), \($now | q))
+          ON CONFLICT (team) DO UPDATE SET at = excluded.at;"]
+    | join("\n")') COMMIT;" >/dev/null || echo "board.sh: couldn't record what happened on GitHub" >&2
 }
 
 project_raw() {
@@ -1096,6 +1185,7 @@ case "$CMD" in
   waiting)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
     all=$(items "$(not_done)")
+    catch_up "$all"
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)})' <<<"$all")
