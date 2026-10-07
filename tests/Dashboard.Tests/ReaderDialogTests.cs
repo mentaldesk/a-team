@@ -98,7 +98,7 @@ public class ReaderDialogTests
     {
         using var dialog = Open(Pitch);
 
-        Assert.Equal("Up/Down/PgUp/PgDn scroll · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · g on GitHub · Esc close", dialog.Hints.Says);
         Assert.Equal(dialog.Viewport.Height - 1, dialog.Hints.Frame.Y);
     }
 
@@ -107,7 +107,7 @@ public class ReaderDialogTests
     {
         using var dialog = Open(Pitch, onApprove: () => { });
 
-        Assert.Equal("Up/Down/PgUp/PgDn scroll · a approve · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · a approve · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public class ReaderDialogTests
             accept: new ReaderCommand(new Key('A'), "accept", () => true));
         dialog.Layout(new Size(60, 20));
 
-        Assert.Equal("Up/Down/PgUp/PgDn scroll · A accept · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · A accept · g on GitHub · Esc close", dialog.Hints.Says);
         Assert.True(dialog.Hints.Hints.Single(hint => hint.Text == "A accept").Enabled);
     }
 
@@ -175,7 +175,7 @@ public class ReaderDialogTests
             comment: new ReaderComment(new Key('c'), "comment", () => null));
         dialog.Layout(new Size(80, 20));
 
-        Assert.Equal("Up/Down/PgUp/PgDn scroll · a approve · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · a approve · c comment · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public class ReaderDialogTests
             comment: new ReaderComment(new Key('c'), "comment", () => null));
         dialog.Layout(new Size(80, 20));
 
-        Assert.Equal("Up/Down/PgUp/PgDn scroll · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · c comment · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -301,7 +301,7 @@ public class ReaderDialogTests
             tryIt: new ReaderTry(new Key('t'), (_, _) => { }));
         dialog.Layout(new Size(60, 20));
 
-        Assert.Equal("Up/Down/PgUp/PgDn scroll · t try · a accept · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · t try · a accept · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -340,6 +340,117 @@ public class ReaderDialogTests
         Assert.Equal(12, dialog.Body.Top);
         Assert.Equal("try team0 122 exited 1", dialog.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), dialog.Message.SchemeName);
+    }
+
+    private static readonly History Recorded = new([
+        new HistoryEvent(new(new DateTime(2026, 10, 3, 13, 40, 0, DateTimeKind.Local)), "dev", "In progress → In review"),
+        .. Enumerable.Range(1, 40).Select(n =>
+            new HistoryEvent(new(new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Local)), "lead", $"commented {n}")),
+    ]);
+
+    private static ReaderDialog Wide(ReaderPanes? panes = null, int width = 120)
+    {
+        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { }, panes: panes,
+            width: width);
+        dialog.Layout(new Size(width, 20));
+        return dialog;
+    }
+
+    [Fact]
+    public void A_posted_comment_tops_History_without_reopening_the_reader()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => Said), width: 120);
+        dialog.Layout(new Size(120, 20));
+
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        Assert.EndsWith("you   commented", dialog.HistoryLog.Lines[0].Text);
+        Assert.Equal(Recorded.Events.Count + 1, dialog.HistoryLog.Lines.Count);
+    }
+
+    [Fact]
+    public void A_posted_comment_leaves_a_History_that_wouldnt_read_saying_so()
+    {
+        using var dialog = new ReaderDialog(Item,
+            new IssueBody(Long(), History: new History([], Failure: "couldn't read #180's history")), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", () => Said), width: 120);
+
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        Assert.Equal(["couldn't read #180's history"], dialog.HistoryLog.Lines.Select(line => line.Text));
+    }
+
+    [Fact]
+    public void A_wide_reader_shows_History_beside_the_body_newest_first()
+    {
+        using var dialog = Wide();
+
+        Assert.True(dialog.HistoryShown);
+        Assert.Equal("3 Oct 13:40  dev   In progress → In review", dialog.HistoryLog.Lines[0].Text);
+        Assert.Equal(dialog.Viewport.Width - ReaderPanes.HistoryWidth, dialog.Body.SuperView!.Frame.Width);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · Tab switch pane · h hide history · g on GitHub · Esc close",
+            dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void h_hides_History_for_every_reader_after_and_the_body_takes_the_full_width()
+    {
+        var panes = new ReaderPanes();
+        using (var dialog = Wide(panes))
+        {
+            Assert.True(dialog.NewKeyDownEvent(new Key('h')));
+            dialog.Layout(new Size(120, 20));
+
+            Assert.False(dialog.HistoryShown);
+            Assert.Equal(dialog.Viewport.Width, dialog.Body.SuperView!.Frame.Width);
+            Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · g on GitHub · Esc close", dialog.Hints.Says);
+        }
+
+        using var next = Wide(panes);
+        Assert.False(next.HistoryShown);
+        Assert.True(next.NewKeyDownEvent(new Key('h')));
+        Assert.True(next.HistoryShown);
+        Assert.True(panes.HistoryShown);
+    }
+
+    [Fact]
+    public void A_narrow_terminal_opens_without_History_and_leaves_the_choice_as_it_was()
+    {
+        var panes = new ReaderPanes();
+        using var dialog = Wide(panes, width: 80);
+
+        Assert.False(dialog.HistoryShown);
+        Assert.True(panes.HistoryShown);
+    }
+
+    [Fact]
+    public void Tab_moves_between_the_panes_and_the_arrows_scroll_the_one_with_focus()
+    {
+        using var dialog = Wide();
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Tab));
+        Assert.True(dialog.HistoryLog.HasFocus);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(1, dialog.HistoryLog.Top);
+        Assert.Equal(0, dialog.Body.Top);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Tab));
+        Assert.True(dialog.Body.HasFocus);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(1, dialog.Body.Top);
+        Assert.Equal(1, dialog.HistoryLog.Top);
+    }
+
+    [Fact]
+    public void Hiding_History_while_it_has_focus_gives_focus_back_to_the_body()
+    {
+        using var dialog = Wide();
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(new Key('h'));
+
+        Assert.True(dialog.Body.HasFocus);
     }
 
     private static string Long() =>

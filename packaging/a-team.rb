@@ -5,6 +5,7 @@ class ATeam < Formula
 
   depends_on "gh"
   depends_on "jq"
+  uses_from_macos "sqlite"
 
   on_macos do
     on_arm do

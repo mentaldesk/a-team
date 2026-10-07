@@ -30,6 +30,24 @@ write() {
 
 say() { echo "${DRY_RUN:+(dry run) }$*"; }
 
+# record <who> <n> <what>: one line of #<n>'s history, after the change it describes has been made.
+record() {
+  [ -z "$DRY_RUN" ] || return 0
+  mkdir -p "$STATE"
+  history_sql "INSERT INTO events (team, item, at, who, what) VALUES
+    ($(sql "$TEAM"), $(sql "$2"), $(sql "$(date -u +%FT%TZ)"), $(sql "$1"), $(sql "$3"));" >/dev/null ||
+    echo "board.sh: couldn't record '$3' in #$2's history" >&2
+}
+
+sql() { printf "'%s'" "${1//\'/\'\'}"; }
+
+# history_sql [sqlite3 options...] <statement>: the record, created on first use.
+history_sql() {
+  sqlite3 -cmd '.timeout 5000' "${@:1:$#-1}" "$STATE/history.db" "CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL, at TEXT NOT NULL,
+    who TEXT NOT NULL, what TEXT NOT NULL); ${*: -1}"
+}
+
 [ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
 TEAM=$1 CMD=$2
 shift 2
@@ -687,6 +705,7 @@ case "$CMD" in
     n=$(jq -r .number <<<"$it")
     write "label #$n a-team:dev" gh issue edit "$n" -R "$REPO" --add-label a-team:dev >/dev/null
     set_status "$(jq -r .id <<<"$it")" "In progress"
+    record dev "$n" "Ready → In progress"
     jq -c '{number, title}' <<<"$it"
     ;;
 
@@ -763,6 +782,7 @@ case "$CMD" in
       write "label #$n a-team:displaced" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:displaced' >/dev/null
     fi
     set_status "$(jq -r .id <<<"$it")" "$to"
+    record "$role" "$n" "$from → $to"
     say "#$n: $from -> $to"
     ;;
 
@@ -788,6 +808,7 @@ case "$CMD" in
     fi
     if [ -n "$existing" ]; then
       set_status "$(jq -r .id <<<"$existing")" "$to"
+      record "$role" "$n" "added as $to"
       say "#$n: added as $to"
       exit 0
     fi
@@ -797,6 +818,7 @@ case "$CMD" in
         addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } } }' \
       --jq .data.addProjectV2ItemById.item.id)
     set_status "${id:-new-item}" "$to"
+    record "$role" "$n" "added as $to"
     say "#$n: added as $to"
     ;;
 
@@ -823,6 +845,7 @@ case "$CMD" in
         mutation($issue: ID!, $field: ID!) {
           updateIssueFieldValue(input: {issueId: $issue, issueField: {fieldId: $field, delete: true}}) {
             clientMutationId } }' >/dev/null
+      record "$role" "$n" "$PRIORITY cleared"
       say "#$n: $PRIORITY cleared"
     else
       write "set $PRIORITY on #$n to '$value'" gh api graphql -F issue="$issue" \
@@ -830,6 +853,7 @@ case "$CMD" in
         mutation($issue: ID!, $field: ID!, $option: ID!) {
           updateIssueFieldValue(input: {issueId: $issue, issueField: {fieldId: $field,
                                         singleSelectOptionId: $option}}) { clientMutationId } }' >/dev/null
+      record "$role" "$n" "$PRIORITY set to $value"
       say "#$n: $PRIORITY set to '$value'"
     fi
     ;;
@@ -849,6 +873,7 @@ case "$CMD" in
     status=$(jq -r .status <<<"$it")
     [ "$status" = Pitched ] || die "only a Pitched pitch can be approved (#$n is in '$status')"
     set_status "$(jq -r .id <<<"$it")" Approved
+    record "$role" "$n" "Pitched → Approved"
     say "#$n: Pitched -> Approved"
     ;;
 
@@ -870,6 +895,7 @@ case "$CMD" in
       [ "$open" -eq 0 ] || die "#$n has $open open task$([ "$open" -eq 1 ] || echo s)"
       close() { { gh issue close "$1" -R "$REPO" --reason completed >/dev/null; } 2>&1; }
       refused=$(write "close #$n as completed" close "$n") || die "can't close #$n ($(head -1 <<<"$refused"))"
+      record "$role" "$n" "accepted · closed"
       say "#$n: closed as done"
       exit 0
     fi
@@ -884,6 +910,7 @@ case "$CMD" in
       ref=$(jq -r .ref <<<"$head")
       write "delete branch $ref" gh api -X DELETE "repos/$REPO/git/refs/heads/$ref" >/dev/null 2>&1 || true
     fi
+    record "$role" "$n" "accepted · PR #$pr merged"
     say "#$n: merged PR #$pr"
     ;;
 
@@ -902,6 +929,7 @@ case "$CMD" in
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     [ "$role" = you ] || ack "$n"
+    record "$role" "$n" "commented"
     ;;
 
   skip)
@@ -919,6 +947,7 @@ case "$CMD" in
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     ack "$n"
     write "label #$n a-team:skipped" gh issue edit "$n" -R "$REPO" --add-label a-team:skipped >/dev/null
+    record "$role" "$n" "skipped"
     say "#$n: skipped; a comment there, or removing the 'a-team:skipped' label, puts it back"
     ;;
 
@@ -936,6 +965,8 @@ case "$CMD" in
     idea "$child" "$(item "$2" | jq -r '.status // empty')" &&
       die "#$2 is an idea, not a task: say \"Follow-up from #$1\" in its body instead of linking it"
     write "make #$2 a sub-issue of #$1" gh api -X POST "repos/$REPO/issues/$1/sub_issues" -F "sub_issue_id=$child_id" >/dev/null
+    # Only the Lead draws breakdowns, and link names no role.
+    record lead "$2" "made a sub-issue of #$1"
     say "#$2 is now a sub-issue of #$1"
     ;;
 
@@ -947,6 +978,7 @@ case "$CMD" in
     write "block #$task on #$prereq" gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" \
       -F "issue_id=$(gh api "repos/$REPO/issues/$prereq" --jq .id)" >/dev/null
     depend_note "$role" "$task" "Blocked by #$prereq: $why"
+    record "$role" "$task" "blocked by #$prereq"
     say "#$task is now blocked by #$prereq, and said why on #$task"
     ;;
 
@@ -961,6 +993,7 @@ case "$CMD" in
     write "unblock #$task from #$prereq" \
       gh api -X DELETE "repos/$REPO/issues/$task/dependencies/blocked_by/$prereq_id" >/dev/null
     depend_note "$role" "$task" "No longer blocked by #$prereq: $why"
+    record "$role" "$task" "no longer blocked by #$prereq"
     say "#$task is no longer blocked by #$prereq, and said why on #$task"
     ;;
 
@@ -989,6 +1022,7 @@ case "$CMD" in
     [ "$(parent_of "$child")" = "$parent" ] || die "#$child is not a sub-issue of #$parent"
     write "take #$child off #$parent" gh api -X DELETE "repos/$REPO/issues/$parent/sub_issue" \
       -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
+    record "$role" "$child" "taken off #$parent"
     if [ -z "$followup" ]; then
       say "#$child is no longer a sub-issue of #$parent"
       exit 0
@@ -1074,6 +1108,20 @@ case "$CMD" in
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
       jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
         --argjson unranked "$(unranked_ideas "$all")" '. + $asked + $unranked'
+    ;;
+
+  history)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM history <n>"
+    [[ $1 =~ ^[0-9]+$ ]] || die "#$1 isn't an item number"
+    if [ ! -f "$STATE/history.db" ]; then
+      echo '{"since": null, "events": []}'
+      exit 0
+    fi
+    events=$(history_sql -json "SELECT at, who, what FROM events WHERE team = $(sql "$TEAM") AND item = $1
+      ORDER BY at DESC, id DESC;")
+    since=$(history_sql "SELECT MIN(at) FROM events WHERE team = $(sql "$TEAM");")
+    jq -n --argjson events "${events:-[]}" --arg since "$since" \
+      '{since: (if $since == "" then null else $since end), events: $events}'
     ;;
 
   pr)

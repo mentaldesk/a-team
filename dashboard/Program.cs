@@ -34,6 +34,7 @@ if ((wanted.Length > 0 ? wanted : teams.Names()).Length == 0)
 
 var settings = new DashboardSettings(configRoot);
 var command = new TeamCommand(Path.Combine(root, "bin", "a-team"));
+var readerPanes = new ReaderPanes();
 var start = new TeamStart(
     Path.Combine(root, "examples", "team.json"),
     command,
@@ -84,7 +85,7 @@ Handover? Show(Handover? back)
         url => Link.OpenUrl(url),
         (item, body) => PriorityDialog.Show(app, item, body),
         (item, body, onGitHub, onApprove, accept, comment, tryIt) =>
-            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt),
+            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, readerPanes),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>
@@ -99,6 +100,7 @@ Handover? Show(Handover? back)
         askComment: (item, post) => CommentDialog.Show(app, item, post),
         showGuide: page => GuideDialog.Show(app, Path.Combine(root, "docs", "guide"), url => Link.OpenUrl(url), page),
         confirmStop: task => StopRunDialog.Show(app, task),
+        readHistory: item => command.Read("board", item.Team, "history", item.Number.ToString()),
         pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>

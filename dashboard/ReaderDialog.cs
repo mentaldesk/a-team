@@ -15,17 +15,18 @@ public sealed record ReaderComment(Key Key, string Hint, Func<Remark?> Run);
 /// try, it opens at <paramref name="Top"/>, saying <paramref name="Failure"/> if it failed.</summary>
 public sealed record ReaderTry(Key Key, Action<IssueBody, int> Run, int Top = 0, string? Failure = null);
 
-/// <summary>An item's body as it was written, to read without leaving the board.</summary>
+/// <summary>An item's body as it was written, and its History beside it, to read without leaving the board.</summary>
 public sealed class ReaderDialog : Dialog
 {
     private const string ScrollHint = "scroll";
+    private const string SwitchHint = "switch";
+    private const string HistoryHint = "history";
     private const string TryHint = "try";
     private const string ApproveHint = "approve";
     private const string AcceptHint = "accept";
     private const string CommentHint = "comment";
     private const string GitHubHint = "github";
     private const string CloseHint = "close";
-    private const int Inset = 1;
 
     private readonly Action _onGitHub;
     private readonly Action? _onApprove;
@@ -35,18 +36,26 @@ public sealed class ReaderDialog : Dialog
     private readonly int _number;
     private IssueBody _text;
     private readonly LogView _body;
+    private readonly FrameView _bodyFrame;
+    private readonly LogView _history;
+    private readonly FrameView _historyFrame;
+    private readonly ReaderPanes _panes;
+    private readonly IReadOnlyList<HintedCommand> _commands;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
-    /// <param name="comment">Commenting on the item; a posted comment joins the end of the conversation, and the
-    /// reader stays open either way.</param>
+    /// <param name="comment">Commenting on the item; a posted comment joins the end of the conversation and the top
+    /// of History, and the reader stays open either way.</param>
     /// <param name="tryIt">Trying the item's PR or, for a validated pitch, the default branch; null where neither.</param>
+    /// <param name="panes">Whether History was last shown; a terminal narrower than <paramref name="width"/> needs for
+    /// both opens without it.</param>
     public ReaderDialog(
         WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
-        ReaderComment? comment = null, ReaderTry? tryIt = null)
+        ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0)
     {
+        _panes = panes ?? new ReaderPanes();
         _onGitHub = onGitHub;
         _onApprove = onApprove;
         _accept = accept;
@@ -62,12 +71,11 @@ public sealed class ReaderDialog : Dialog
 
         int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
 
+        _bodyFrame = new FrameView { Title = "Body", X = 0, Y = 0, Height = Dim.Func(_ => HintRow(), this) };
         _body = new LogView
         {
-            X = Inset,
-            Y = 0,
-            Width = Dim.Fill(Inset),
-            Height = Dim.Func(_ => HintRow(), this),
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
             CanFocus = true,
             Following = false,
             Scrolls = true,
@@ -75,10 +83,29 @@ public sealed class ReaderDialog : Dialog
             SchemeName = LogSchemes.Reader,
             Lines = body.Lines,
         };
+        _bodyFrame.Add(_body);
+        _historyFrame = new FrameView
+        {
+            Title = "History",
+            X = Pos.AnchorEnd(ReaderPanes.HistoryWidth),
+            Y = 0,
+            Width = ReaderPanes.HistoryWidth,
+            Height = Dim.Func(_ => HintRow(), this),
+        };
+        _history = new LogView
+        {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+            CanFocus = true,
+            Following = false,
+            Scrolls = true,
+            Lines = (body.History ?? new History([])).Lines,
+        };
+        _historyFrame.Add(_history);
         if (tryIt is not null)
             _body.Top = tryIt.Top;
         _hints.Y = Pos.Func(_ => HintRow(), this);
-        _hints.Show("", [
+        _commands = [
             new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll"),
             .. tryIt is null ? Array.Empty<HintedCommand>() : [new HintedCommand(TryHint, $"{KeyNames.Short(tryIt.Key)} try")],
             .. onApprove is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ApproveHint, "a approve")],
@@ -88,17 +115,22 @@ public sealed class ReaderDialog : Dialog
                 : [new HintedCommand(CommentHint, $"{KeyNames.Short(comment.Key)} {comment.Hint}")],
             new HintedCommand(GitHubHint, "g on GitHub"),
             new HintedCommand(CloseHint, "Esc close"),
-        ], Run);
+        ];
 
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
-        Add(_body, _hints, _message);
+        Add(_bodyFrame, _historyFrame, _hints, _message);
+        ShowHistory(_panes.OpensWithHistory(width));
         if (tryIt?.Failure is { Length: > 0 } failure)
             _message.Show(failure, Schemes.Error);
         _body.SetFocus();
     }
 
     internal LogView Body => _body;
+
+    internal LogView HistoryLog => _history;
+
+    internal bool HistoryShown => _historyFrame.Visible;
 
     internal StatusBar Hints => _hints;
 
@@ -108,6 +140,10 @@ public sealed class ReaderDialog : Dialog
     {
         if (key == Key.Esc)
             return Close();
+        if (key == new Key('h'))
+            return ToggleHistory();
+        if (key == Key.Tab || key == Key.Tab.WithShift)
+            return SwitchPane();
         if (key == new Key('g'))
             return OnGitHub();
         if (_try is not null && key == _try.Key)
@@ -123,11 +159,45 @@ public sealed class ReaderDialog : Dialog
 
     public static void Show(
         IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
-        ReaderComment? comment, ReaderTry? tryIt)
+        ReaderComment? comment, ReaderTry? tryIt, ReaderPanes panes)
     {
-        using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment, tryIt);
+        using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment, tryIt, panes,
+            app.Screen.Width);
         app.Run(dialog);
     }
+
+    private void ShowHistory(bool shown)
+    {
+        _historyFrame.Visible = shown;
+        _bodyFrame.Width = shown ? Dim.Fill(ReaderPanes.HistoryWidth) : Dim.Fill();
+        if (!shown && _history.HasFocus)
+            _body.SetFocus();
+        var at = _commands.ToList();
+        at.InsertRange(1, [
+            .. shown ? [new HintedCommand(SwitchHint, "Tab switch pane")] : Array.Empty<HintedCommand>(),
+            new HintedCommand(HistoryHint, shown ? "h hide history" : "h show history"),
+        ]);
+        _hints.Show("", at, Run);
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private bool ToggleHistory()
+    {
+        _panes.HistoryShown = !_historyFrame.Visible;
+        ShowHistory(_panes.HistoryShown);
+        return true;
+    }
+
+    private bool SwitchPane()
+    {
+        if (!_historyFrame.Visible)
+            return true;
+        (_history.HasFocus ? _body : _history).SetFocus();
+        return true;
+    }
+
+    private LogView FocusedPane() => _history.HasFocus ? _history : _body;
 
     private bool Scrolled(Action scroll)
     {
@@ -136,14 +206,17 @@ public sealed class ReaderDialog : Dialog
         return true;
     }
 
-    private Action? Scroll(Key key) =>
-        key == Key.CursorUp ? () => _body.Step(-1)
-        : key == Key.CursorDown ? () => _body.Step(+1)
-        : key == Key.PageUp ? () => _body.Page(-1)
-        : key == Key.PageDown ? () => _body.Page(+1)
-        : key == Key.Home ? _body.Home
-        : key == Key.End ? _body.End
-        : null;
+    private Action? Scroll(Key key)
+    {
+        var pane = FocusedPane();
+        return key == Key.CursorUp ? () => pane.Step(-1)
+            : key == Key.CursorDown ? () => pane.Step(+1)
+            : key == Key.PageUp ? () => pane.Page(-1)
+            : key == Key.PageDown ? () => pane.Page(+1)
+            : key == Key.Home ? pane.Home
+            : key == Key.End ? pane.End
+            : null;
+    }
 
     private bool OnGitHub()
     {
@@ -172,6 +245,12 @@ public sealed class ReaderDialog : Dialog
             _text = _text.With(new Conversation([remark]));
             _body.Lines = _text.Lines;
             _body.End();
+            if (_text.History is { Failure: null } history)
+            {
+                _text = _text with { History = history.With(new HistoryEvent(remark.At, remark.Who, "commented")) };
+                _history.Lines = _text.History.Lines;
+                _history.Home();
+            }
             _message.Show($"commented on #{_number}", Schemes.Accent);
             SetNeedsLayout();
             SetNeedsDraw();
@@ -187,7 +266,9 @@ public sealed class ReaderDialog : Dialog
 
     private bool Run(string hint) => hint switch
     {
-        ScrollHint => Scrolled(() => _body.Page(+1)),
+        ScrollHint => Scrolled(() => FocusedPane().Page(+1)),
+        SwitchHint => SwitchPane(),
+        HistoryHint => ToggleHistory(),
         TryHint => Try(),
         ApproveHint => Approve(),
         AcceptHint => Accept(),

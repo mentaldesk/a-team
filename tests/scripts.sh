@@ -11,6 +11,8 @@ A_TEAM="$ROOT/bin/a-team"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 OUT="$WORK/out" ERR="$WORK/err"
+# Board writes record history in the state folder, which mustn't be the real one.
+export A_TEAM_STATE="$WORK/state"
 CONFIG=$WORK TEAM='' STATUS=0
 failures=0
 
@@ -3598,6 +3600,131 @@ same "helpers" '' "$(cat "$OUT")"
 A_TEAM_RUN_TEAM=demo run_git commit -q --allow-empty -m no-app
 same "no app" 'Reviewer <reviewer@example.com> / Reviewer <reviewer@example.com>' "$(last_commit)"
 unset GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
+unset A_TEAM_STATE
+
+# History: what `a-team board` did to each item, in $A_TEAM_STATE/history.db.
+history_of() {
+  A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history "$1" | jq -r '.events[] | "\(.who) \(.what)"'
+}
+recorded() {
+  same "$1 exit" 0 "$STATUS"
+  same "$1 history" "$3" "$(history_of "$2")"
+  rm -f "$A_TEAM_STATE/history.db"
+}
+unrecorded() {
+  [ ! -e "$A_TEAM_STATE/history.db" ] || fail "$1: recorded '$(sqlite3 "$A_TEAM_STATE/history.db" 'SELECT * FROM events')'"
+}
+
+export A_TEAM_STATE
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 2 } }
+JSON
+
+case_ "a card with nothing recorded reads as empty, with no record file to read"
+run board demo history 7
+same "exit" 0 "$STATUS"
+same "empty" '{"since":null,"events":[]}' "$(jq -c . "$OUT")"
+unrecorded "history"
+
+case_ "each move the board makes is one event, saying who and from where to where"
+gh_items <<'ITEMS'
+Ready 12 A task
+Pitched 7 A pitch
+In_review 8 A task in front of me
+Idea 6 An idea
+ITEMS
+claimable
+jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+run board demo move dev 12 "In progress"
+recorded "move" 12 "dev Ready → In progress"
+run board demo claim dev 12
+recorded "claim" 12 "dev Ready → In progress"
+run board demo approve you 7
+recorded "approve" 7 "you Pitched → Approved"
+run board demo priority you 6 High
+recorded "priority" 6 "you Priority set to High"
+run board demo priority you 6 none
+recorded "priority cleared" 6 "you Priority cleared"
+gh_pr 908 false
+echo '{"head": {"sha": "deadbeefcafe", "ref": "feat/task", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
+run board demo accept you 8
+recorded "accept" 8 "you accepted · PR #908 merged"
+
+case_ "putting an item on the board reads as added as its status"
+gh_child 41 - -
+run board demo add lead 41 Ready
+recorded "add" 41 "lead added as Ready"
+
+case_ "comments, skips, links and dependencies are each one event"
+echo "A reply." >"$WORK/reply"
+run board demo comment lead 7 "$WORK/reply"
+recorded "comment" 7 "lead commented"
+run board demo comment you 7 "$WORK/reply"
+recorded "comment you" 7 "you commented"
+run board demo skip lead 6 "$WORK/reply"
+recorded "skip" 6 "lead skipped"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Ready 40 A task
+ITEMS
+gh_child 40 - -
+run board demo link 10 40
+recorded "link" 40 "lead made a sub-issue of #10"
+gh_child 40 10 -
+run board demo unlink lead 10 40
+recorded "unlink" 40 "lead taken off #10"
+run board demo depends lead 40 10 "same view"
+recorded "depends" 40 "lead blocked by #10"
+gh_blocked <<'DEPS'
+10
+DEPS
+run board demo undepend lead 40 10 "not after all"
+recorded "undepend" 40 "lead no longer blocked by #10"
+
+case_ "reads, refusals, failures and --dry-run record nothing"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+Exploring 8 A draft
+ITEMS
+for read in "list" "wip" "next" "body 7" "children 7" "pr 7" "feedback lead 7"; do
+  # shellcheck disable=SC2086 # each read is its own words
+  run board demo $read
+  unrecorded "$read"
+done
+run board demo approve you 8
+failed "approve a draft"
+unrecorded "refused"
+run board demo approve lead 7
+unrecorded "lead approving"
+gh_items <<'ITEMS'
+In_review 8 A task in front of me
+ITEMS
+gh_pr 908 false
+touch "$BIN/merge-fails"
+run board demo accept you 8
+failed "merge fails"
+unrecorded "failed merge"
+rm "$BIN/merge-fails"
+run board --dry-run demo accept you 8
+same "dry-run exit" 0 "$STATUS"
+unrecorded "dry run"
+
+case_ "history is newest first, and kept per team"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+ITEMS
+run board demo comment lead 7 "$WORK/reply"
+run board demo approve you 7
+cp "$TEAM" "$CONFIG/teams/other.json"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board other comment dev 7 "$WORK/reply" >/dev/null 2>&1
+same "order" "you Pitched → Approved
+lead commented" "$(history_of 7)"
+same "other team" "dev commented" \
+  "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board other history 7 | jq -r '.events[] | "\(.who) \(.what)"')"
+run board demo history 7
+same "since" "$(jq -r '.events[-1].at' "$OUT")" "$(jq -r .since "$OUT")"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.

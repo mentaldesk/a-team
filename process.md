@@ -83,6 +83,7 @@ a-team board {{team}} undepend <role> <task> <prereq> "<why>"
 a-team board {{team}} unblock <role> <n>        # Dev only: clear `blocked` on a task it handed back,
                                                 # once a stakeholder has replied to its question
 a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON
+a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON
 a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
