@@ -45,6 +45,44 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Work_s_title_counts_every_card_and_reads_the_record_after_the_cards()
+    {
+        var order = new List<string>();
+        using var window = Open(
+            read: team =>
+            {
+                order.Add($"waiting {team}");
+                return Task.FromResult(new Reading(Waiting(team), null));
+            },
+            readTrend: team =>
+            {
+                order.Add($"trend {team}");
+                return Task.FromResult(new Reading(team == "team0"
+                    ? """{"since": "2026-09-01T00:00:00Z", "weekAgo": 9, "accepted": 17}"""
+                    : """{"since": "2026-09-20T00:00:00Z", "weekAgo": 3, "accepted": 6}""", null));
+            },
+            clock: new Clock());
+
+        Assert.Equal("Work", window.WorkTitle);
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal(["waiting team0", "waiting team1", "trend team0", "trend team1"], order);
+        Assert.Equal($"Work · {window.Work.Items.Count} waiting on you (12 a week ago) · 23 accepted in 7 days", window.WorkTitle);
+    }
+
+    [Fact]
+    public void A_record_that_can_t_be_read_leaves_the_title_with_what_s_waiting_now()
+    {
+        using var window = Open(readTrend: _ => Task.FromResult(new Reading("", "no record")));
+
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal($"Work · {window.Work.Items.Count} waiting on you", window.WorkTitle);
+    }
+
+    [Fact]
     public void Work_says_Loading_until_the_first_read_lands()
     {
         var finish = new TaskCompletionSource<Reading>();
@@ -70,7 +108,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("", window.Loading.Title);
         Assert.Equal("Loading…", Assert.IsType<Label>(Assert.Single(window.Loading.SubViews)).Text);
         Assert.InRange(frame.X - (120 - frame.Right), -1, 1);
-        Assert.InRange(frame.Y - 1 - (40 - 2 - frame.Bottom), -1, 1);
+        Assert.InRange(frame.Y - 2 - (40 - 1 - frame.Bottom), -1, 1);
         Assert.Empty(Descendants(window).OfType<LoadingView>());
     }
 
@@ -2089,7 +2127,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_work_area_fills_the_window_under_the_menu()
+    public void The_work_area_fills_the_window_under_the_menu_and_its_title()
     {
         using var window = Open();
         window.Refresh();
@@ -2098,7 +2136,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(1, window.Message.Lines);
         Assert.Equal(new Rectangle(0, 0, window.Viewport.Width, 1), window.Menu.Frame);
-        Assert.Equal(new Rectangle(0, 1, window.Viewport.Width, window.Viewport.Height - 2), window.Work.Frame);
+        Assert.Equal(new Rectangle(0, 2, window.Viewport.Width, window.Viewport.Height - 3), window.Work.Frame);
     }
 
     [Fact]
@@ -2760,7 +2798,8 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, bool>? confirmAccept = null,
         TimeProvider? clock = null,
         Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
-        Func<WaitingItem, Task<Reading>>? readHistory = null)
+        Func<WaitingItem, Task<Reading>>? readHistory = null,
+        Func<string, Task<Reading>>? readTrend = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -2785,7 +2824,8 @@ public class WorkAreaTests : IDisposable
             confirmAccept: confirmAccept,
             clock: clock,
             askComment: askComment,
-            readHistory: readHistory);
+            readHistory: readHistory,
+            readTrend: readTrend);
     }
 
     private void WriteRun(string team, string role, int pid)

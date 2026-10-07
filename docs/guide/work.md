@@ -3,6 +3,17 @@
 Everything waiting on you, across every team. `w` opens it, and `d` goes to the Dashboard. The app
 opens in whichever area you were in last, and on Work the first time.
 
+Work's title says whether the queue is shrinking and how much you've accepted, across every team:
+
+```
+Work · 7 waiting on you (12 a week ago) · 23 accepted in 7 days
+```
+
+*Waiting on you* counts every card in Work, including those `m` hides. *Accepted* counts the task
+PRs merged and the pitches accepted, whether from here or on GitHub. a-team counts from the day it's
+installed: until it has a week's record the comparison is left out and *accepted* covers the days it
+has, and with nothing recorded yet the title shows only what's waiting.
+
 Each team has a lane, and each lane has up to four columns, left to right in the order work moves
 through them. A column with nothing in it is hidden, and the one you're on takes half its lane.
 
