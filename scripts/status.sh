@@ -30,12 +30,15 @@ short() {
   fi
 }
 
+# passing [dry-]: a scheduled pass is still going, however overdue its next-pass.
+passing() { local pid; pid=$(cat "$STATE/${1:-}pass" 2>/dev/null) && kill -0 "$pid" 2>/dev/null; }
+
 # The dashboard's dispatcher title, from install.sh's record and the pass's next-pass: see DispatcherState.
 dispatcher() {
   local record="$STATE/dispatcher.json" now due last interval left
   now=$(date +%s)
   if [ ! -f "$record" ]; then
-    due=$(cat "$STATE/next-pass" 2>/dev/null) && [ $((now - due)) -le 60 ] && echo dispatcher && return
+    due=$(cat "$STATE/next-pass" 2>/dev/null) && { [ $((now - due)) -le 60 ] || passing; } && echo dispatcher && return
     echo "dispatcher · nothing installed · run: a-team install"
     return
   fi
@@ -43,7 +46,7 @@ dispatcher() {
   last=$(jq -r '.installedAt // 0' "$record")
   due=$(cat "$STATE/$(jq -r 'if .dryRun then "dry-" else "" end' "$record")next-pass" 2>/dev/null) &&
     [ $((due - interval)) -gt "$last" ] && last=$((due - interval))
-  if [ $((now - last)) -gt $((interval + 60)) ]; then
+  if [ $((now - last)) -gt $((interval + 60)) ] && ! passing "$(jq -r 'if .dryRun then "dry-" else "" end' "$record")"; then
     echo "dispatcher · stopped $(short $((now - last))) ago"
     return
   fi

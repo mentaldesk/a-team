@@ -54,12 +54,14 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
     {
         var record = Record(stateRoot);
         if (record is null)
-            return Time(Path.Combine(stateRoot, "next-pass")) is { } due && now - due <= Grace ? Unrecorded : NotInstalled;
+            return Time(Path.Combine(stateRoot, "next-pass")) is { } due && (now - due <= Grace || Passing(stateRoot))
+                ? Unrecorded
+                : NotInstalled;
 
         var interval = TimeSpan.FromSeconds(record.Interval);
         var passed = Time(Path.Combine(stateRoot, record.DryRun ? "dry-next-pass" : "next-pass")) - interval;
         var last = passed is { } pass && pass > record.InstalledAt ? pass : record.InstalledAt;
-        if (now - last > interval + Grace)
+        if (now - last > interval + Grace && !Passing(stateRoot, record.DryRun))
             return new(null, $"stopped {AgentPane.Ago(now - last)} ago", true);
 
         var next = $"next pass {AgentPane.Clock(Max(last + interval - now, TimeSpan.Zero))}";
@@ -69,6 +71,18 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
     }
 
     private static readonly TimeSpan Grace = TimeSpan.FromMinutes(1);
+
+    /// <summary>A scheduled pass is still going, however overdue its next-pass: see scripts/dispatch.sh.</summary>
+    internal static bool Passing(string stateRoot, bool dryRun = false)
+    {
+        try
+        {
+            return int.TryParse(File.ReadAllText(Path.Combine(stateRoot, dryRun ? "dry-pass" : "pass")).Trim(), out var pid)
+                && AgentState.IsAlive(pid);
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
 
     internal sealed record Installed(string Bin, string Version, bool DryRun, int Interval, DateTimeOffset InstalledAt, string Log);
 

@@ -78,6 +78,48 @@ public class DispatcherStateTests : IDisposable
     }
 
     [Fact]
+    public void A_pass_overdue_but_still_going_is_not_stopped()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12", installedAt: Now - TimeSpan.FromHours(1));
+        NextPass(-TimeSpan.FromMinutes(3));
+        Pass(Environment.ProcessId);
+
+        var state = Read();
+
+        Assert.Equal("dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 0:00", state.Title());
+        Assert.False(state.Error);
+    }
+
+    [Fact]
+    public void A_pass_overdue_whose_process_has_gone_has_stopped()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12", installedAt: Now - TimeSpan.FromHours(1));
+        NextPass(-TimeSpan.FromMinutes(3));
+        Pass(int.MaxValue);
+
+        Assert.Equal("dispatcher · stopped 5m ago", Read().Title());
+    }
+
+    [Fact]
+    public void A_live_pass_says_nothing_for_a_dry_run_dispatcher_whose_own_pass_has_stopped()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12", dryRun: true, installedAt: Now - TimeSpan.FromHours(1));
+        NextPass(-TimeSpan.FromMinutes(3), "dry-next-pass");
+        Pass(Environment.ProcessId);
+
+        Assert.Equal("dispatcher · stopped 5m ago", Read().Title());
+    }
+
+    [Fact]
+    public void Without_a_record_an_overdue_pass_still_going_keeps_the_plain_title()
+    {
+        NextPass(-TimeSpan.FromMinutes(3));
+        Pass(Environment.ProcessId);
+
+        Assert.Equal("dispatcher", Read().Title());
+    }
+
+    [Fact]
     public void Nothing_installed_says_how_to_install_it_in_the_Error_scheme()
     {
         var state = Read();
@@ -189,6 +231,8 @@ public class DispatcherStateTests : IDisposable
         File.WriteAllLines(path, lines);
         File.SetLastWriteTimeUtc(path, at.UtcDateTime);
     }
+
+    private void Pass(int pid, string file = "pass") => File.WriteAllText(Path.Combine(_root, file), pid.ToString());
 
     private void NextPass(TimeSpan fromNow, string file = "next-pass") =>
         File.WriteAllText(Path.Combine(_root, file), (Now + fromNow).ToUnixTimeSeconds().ToString());
