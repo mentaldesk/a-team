@@ -186,7 +186,7 @@ $(sed 's/^/- /' <<<"$reasons")"
 # record_run <pid> <log>: the run in the history record, on each of $items.
 record_run() {
   local values='' item
-  for item in $items; do values+="${values:+, }((SELECT id FROM runs WHERE log = $(sql "$2")), $item)"; done
+  for item in $items; do values+="${values:+, }((SELECT MAX(id) FROM runs WHERE log = $(sql "$2")), $item)"; done
   history_sql "INSERT INTO runs (team, role, pid, log, started) VALUES
     ($(sql "$team"), $(sql "$role"), $1, $(sql "$2"), $(sql "$(iso "$now")"));
     ${values:+INSERT INTO run_items (run, item) VALUES $values;}" >/dev/null ||
