@@ -2070,6 +2070,38 @@ same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
 same "edited" "" "$(cat "$EDITED")"
 
+case_ "the Dev puts a follow-up it opened on the board as an Idea, without the Lead's label"
+gh_items <<'ITEMS'
+In_progress 12 A task
+ITEMS
+jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+gh_child 41 - - "Follow-up from #12.
+
+<!-- a-team:dev -->"
+A_TEAM_RUN_TASK=12 run board demo add dev 41 Idea
+same "exit" 0 "$STATUS"
+grep -q "OPT_idea" "$WRITES" || fail "no move to Idea in '$(cat "$WRITES")'"
+grep -q "a-team:idea" "$WRITES" && fail "labelled as the Lead's discovery: '$(cat "$WRITES")'"
+
+case_ "the Dev adds no issue it didn't open, and nothing but an Idea"
+gh_child 41 - - "Follow-up from #12.
+
+<!-- a-team:lead -->"
+run board demo add dev 41 Idea
+failed "someone else's issue"
+one_line "someone else's issue"
+grep -qF "#41 has no dev marker: dev adds only the follow-ups it opened" "$ERR" ||
+  fail "someone else's issue: '$(cat "$ERR")'"
+gh_child 41 - - "Follow-up from #12.
+
+<!-- a-team:dev -->"
+for to in Ready Exploring; do
+  run board demo add dev 41 "$to"
+  failed "add as $to"
+  grep -qF "dev may not add items as '$to'" "$ERR" || fail "add as $to: '$(cat "$ERR")'"
+done
+same "writes" "" "$(cat "$WRITES")"
+
 case_ "with every worktree taken, the Dev isn't woken for a Ready task"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
