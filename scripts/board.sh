@@ -561,8 +561,8 @@ gated_comments() {
 }
 
 # gated_prs <talk>: the open PR that closes each of those items, as {n, pr, prUrl, draft,
-# conflicting, base, checks, failedAt}, off a page read with `checks`. UNKNOWN means GitHub hasn't
-# finished computing it, so only CONFLICTING counts as a conflict.
+# conflicting, resolving, base, checks, failedAt}, off a page read with `checks`. UNKNOWN means
+# GitHub hasn't finished computing it, so it's `resolving` rather than a conflict.
 gated_prs() {
   jq "$CHECKS"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
        | .closedByPullRequestsReferences.nodes[]?
@@ -570,7 +570,7 @@ gated_prs() {
            | {name, status: (.status | ascii_downcase), conclusion: (.conclusion // "" | ascii_downcase),
               completed_at: .completedAt, html_url: .url}] | checks) as $ci
        | {n: $n, pr: .number, prUrl: .url, draft: .isDraft,
-          conflicting: (.mergeable == "CONFLICTING"), base: .baseRefName,
+          conflicting: (.mergeable == "CONFLICTING"), resolving: (.mergeable == "UNKNOWN"), base: .baseRefName,
           checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
 }
 
@@ -593,8 +593,9 @@ gated_blocked() {
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
 # stakeholders' until one comments; from then it is the role's, the same test `unanswered_feedback`
-# makes. A PR that is failing, conflicting, still running CI or still a draft is the Dev's too, but
-# an unanswered comment outranks them all: the answer is owed before a green build means anything.
+# makes. A PR that is failing, conflicting, not yet known to merge, still running CI or still a draft
+# is the Dev's too, but an unanswered comment outranks them all: the answer is owed before a green
+# build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --argjson stakeholders "$STAKEHOLDERS" \
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE$NEEDS"'
@@ -611,6 +612,7 @@ turns() {
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
+         elif $pr.resolving then {trouble: "resolving mergeable status", at: ""}
          elif $pr.checks == "pending" then {trouble: "CI running", at: ""}
          elif $pr.draft then {trouble: "still a draft", at: ""}
          else null end) as $wrong

@@ -607,7 +607,7 @@ same "conflicting" true "$(jq -c '.[1].conflicting' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"conflicts with main"' "$(jq -c '.[1].reason' "$OUT")"
 
-case_ "a PR GitHub hasn't worked the conflict out for yet is nobody's fault"
+case_ "a PR GitHub hasn't worked the conflict out for yet isn't ready to accept"
 gh_talk false UNKNOWN <<TALK
 106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
@@ -616,7 +616,9 @@ TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "conflicting" false "$(jq -c '.[1].conflicting' "$OUT")"
-same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "unready" '"resolving mergeable status"' "$(jq -c '.[1].unready' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"resolving mergeable status"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a PR still in draft is the Dev's turn"
 gh_talk true <<TALK
