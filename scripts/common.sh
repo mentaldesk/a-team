@@ -7,6 +7,13 @@ CONFIG_DIR="${A_TEAM_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/a-team}"
 
 team_config() { echo "$CONFIG_DIR/teams/$1.json"; }
 
+# team_roles <config>: the roles a team runs, the Customer lead only where it's turned on.
+team_roles() {
+  printf '%s\n' lead dev
+  jq -e '.roles.customer == true' "$1" >/dev/null 2>&1 && echo customer
+  return 0
+}
+
 team_names() {
   local config
   for config in "$CONFIG_DIR"/teams/*.json; do

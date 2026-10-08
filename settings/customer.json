@@ -1,0 +1,51 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr edit *)"
+    ],
+    "deny": [
+      "Bash(a-team board * move *)",
+      "Bash(a-team board * claim *)",
+      "Bash(a-team board * link *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue edit *)",
+      "Bash(gh pr ready *)",
+      "Edit(**/*.cs)",
+      "Write(**/*.cs)",
+      "Edit(**/*.csproj)",
+      "Write(**/*.csproj)",
+      "Edit(**/*.sh)",
+      "Write(**/*.sh)",
+      "Edit(**/bin/**)",
+      "Write(**/bin/**)",
+      "Edit(**/*.json)",
+      "Write(**/*.json)",
+      "Edit(**/*.yml)",
+      "Write(**/*.yml)",
+      "Edit(**/*.yaml)",
+      "Write(**/*.yaml)",
+      "Edit(**/*.js)",
+      "Write(**/*.js)",
+      "Edit(**/*.ts)",
+      "Write(**/*.ts)",
+      "Edit(**/*.py)",
+      "Write(**/*.py)",
+      "Edit(**/*.go)",
+      "Write(**/*.go)",
+      "Edit(**/*.rs)",
+      "Write(**/*.rs)",
+      "Edit(**/*.rb)",
+      "Write(**/*.rb)",
+      "Edit(**/roles/**)",
+      "Write(**/roles/**)",
+      "Edit(**/tasks/**)",
+      "Write(**/tasks/**)",
+      "Edit(**/process.md)",
+      "Write(**/process.md)",
+      "Edit(**/AGENTS.md)",
+      "Write(**/AGENTS.md)",
+      "Edit(**/CLAUDE.md)",
+      "Write(**/CLAUDE.md)"
+    ]
+  }
+}

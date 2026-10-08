@@ -1,6 +1,7 @@
 # How a team works
 
-A team is two agents working on one GitHub repository, and you. They coordinate through that repo's
+A team is two agents working on one GitHub repository, and you. You can add a third, the
+[Customer lead](#the-customer-lead). They coordinate through that repo's
 Project board: if it isn't on the board, in an issue or in a PR, the team doesn't know about it.
 
 ## Who does what
@@ -70,6 +71,23 @@ is missed.
 
 When the Dev can't go on without you, it hands its task back with a question and the `blocked` label.
 The Lead does the same on a pitch. Both wait in **Questions** in the Work area until you answer.
+
+## The Customer lead
+
+The Customer lead makes sure what the team ships is documented, so someone who didn't watch it being
+built can find it and learn it. It's off until you turn it on: tick **Customer lead** under **Roles**
+in the team's settings ([Teams](teams.md#a-teams-settings)), and its pane joins the team's on the
+Dashboard.
+
+- **When a pitch is done**, it reads what the pitch shipped and checks the user docs cover it:
+  the README, guides and in-app help written as text.
+- **If they don't**, it writes what's missing into one docs PR, `Docs: what's changed since <date>`,
+  whose description lists each change in a line. While that PR is open, the next pitch that's done adds
+  to it rather than opening another.
+- **If they already do**, it changes nothing.
+
+Its PR waits in Review in the [Work](work.md) area, marked as the Customer lead's. Accept it like a
+task, and the next change starts a new one. It never changes code, pitches or tasks.
 
 ## Ideas and priorities
 

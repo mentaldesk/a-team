@@ -1278,6 +1278,36 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void The_Customer_lead_s_docs_PR_waits_in_Review_and_A_merges_it()
+    {
+        var calls = new List<string[]>();
+        const string docs = """
+            [{"number": 352, "title": "Docs: what's changed since 28 Sep", "status": "In review",
+              "url": "https://github.com/mentaldesk/team0/pull/352", "team": "team0", "turn": "you",
+              "reason": "awaiting your acceptance since 10:15", "role": "customer",
+              "pr": 352, "prUrl": "https://github.com/mentaldesk/team0/pull/352", "base": "main", "unready": ""}]
+            """;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? docs : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            confirmAccept: _ => true);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal("Review · 1", window.Work.Lanes[0].Columns[3].Title);
+        Assert.Equal(352, window.Work.Selected?.Number);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.Refresh();
+
+        Assert.Equal([["board", "team0", "accept", "you", "352"]], calls);
+        Assert.Equal("merged PR #352", window.Message.Says);
+    }
+
+    [Fact]
     public void Cancelling_the_confirmation_merges_nothing()
     {
         var calls = new List<string[]>();

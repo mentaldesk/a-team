@@ -64,7 +64,7 @@ for team in $(team_names); do
   if [ -f "$STATE/$team/cannot-run" ]; then
     printf '\n%s: stopped: %s\n' "$team" "$(cat "$STATE/$team/cannot-run")"
   fi
-  for role in lead dev; do
+  for role in $(team_roles "$(team_config "$team")"); do
     dir="$STATE/$team/$role"
     printf '\n%s %s: ' "$team" "$role"
     live=$([ "$role" = lead ] || runs "$dir")

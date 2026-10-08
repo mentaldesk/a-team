@@ -35,6 +35,9 @@ public sealed partial record TeamSettings(
 
     public TeamRelease Release { get; init; }
 
+    /// <summary>Whether the team runs a Customer lead beside its Lead and Dev: <c>roles.customer</c>.</summary>
+    public bool Customer { get; init; }
+
     public static TeamSettings Read(byte[] config)
     {
         using var document = JsonDocument.Parse(config);
@@ -68,6 +71,7 @@ public sealed partial record TeamSettings(
                 "continuous" => TeamRelease.Continuous,
                 _ => TeamRelease.Never,
             },
+            Customer = Find(root, "roles", "customer") is { ValueKind: JsonValueKind.True },
         };
     }
 
@@ -132,6 +136,7 @@ public sealed partial record TeamSettings(
         SetFlag(Working, before.Working, "dispatch", "enabled");
         if (Release != before.Release)
             config = ConfigEdit.Set(config, ["release"], Release.ToString().ToLowerInvariant());
+        SetFlag(Customer, before.Customer, "roles", "customer");
         SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");
         SetNumber(Devs, before.Devs, "wip", "devs");
         SetNumber(Pitched, before.Pitched, "wip", "pitched");

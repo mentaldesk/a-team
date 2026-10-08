@@ -6,8 +6,11 @@ namespace ATeam.Dashboard;
 public sealed record WaitingItem(
     int Number, string Title, string Status, string Url, string Team, string Turn = "", string Reason = "",
     int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
-    string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0)
+    string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0, string Role = "")
 {
+    /// <summary>Whether this is the Customer lead's docs PR, which is its own PR to merge.</summary>
+    public bool Docs => Role == "customer";
+
     /// <summary>Whether this is a pitch the reviewer can approve now.</summary>
     public bool Approvable => Pitch && Status == "Pitched";
 
@@ -54,7 +57,7 @@ public sealed record WaitingItem(
                         Numbered(item, "pr") ?? 0, Text(item, "prUrl"), Text(item, "trouble"),
                         Text(item, "priority"), Flag(item, "pitch"), Text(item, "question"),
                         Text(item, "unready"), Text(item, "base"),
-                        Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0))
+                        Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0, Text(item, "role")))
             ];
         }
         catch (JsonException)

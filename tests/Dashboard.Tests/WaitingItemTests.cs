@@ -83,6 +83,21 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void The_Customer_lead_s_docs_PR_is_its_own_PR_and_is_marked_as_its()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 352, "title": "Docs: what's changed since 28 Sep", "status": "In review", "turn": "you",
+              "role": "customer", "pr": 352, "prUrl": "https://github.com/x/pull/352"}]
+            """));
+
+        Assert.True(item.Docs);
+        Assert.Equal(352, item.Pr);
+        Assert.True(item.Acceptable);
+        Assert.Equal("", item.Unacceptable);
+        Assert.False(Assert.Single(WaitingItem.Parse("""[{"number": 107}]""")).Docs);
+    }
+
+    [Fact]
     public void A_team_with_nothing_at_a_gate_has_no_cards()
     {
         Assert.Empty(WaitingItem.Parse("[]"));

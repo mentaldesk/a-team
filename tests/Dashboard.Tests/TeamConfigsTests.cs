@@ -52,6 +52,18 @@ public class TeamConfigsTests : IDisposable
         Assert.Equal(held, new TeamConfigs(_root).IsHeld("demo", role));
     }
 
+    [Theory]
+    [InlineData("""{"roles": {"customer": true}}""", new[] { "lead", "dev", "customer" })]
+    [InlineData("""{"roles": {"customer": false}}""", new[] { "lead", "dev" })]
+    [InlineData("{}", new[] { "lead", "dev" })]
+    [InlineData("{ not json", new[] { "lead", "dev" })]
+    public void A_team_runs_a_Lead_and_a_Dev_and_a_Customer_lead_only_where_it_is_on(string config, string[] roles)
+    {
+        Write("demo", config);
+
+        Assert.Equal(roles, new TeamConfigs(_root).Roles("demo"));
+    }
+
     [Fact]
     public void A_team_with_no_config_at_all_reads_as_paused() =>
         Assert.True(new TeamConfigs(_root).IsPaused("demo"));

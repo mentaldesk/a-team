@@ -15,7 +15,7 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null)
         [.. roots.SelectMany(root => root.Children.Prepend(root))];
 
     /// <summary>The one PR under a card, where its item has one.</summary>
-    internal IReadOnlyList<Card> Children => IsPr || Item.Pr == 0 ? [] : [this with { IsPr = true }];
+    internal IReadOnlyList<Card> Children => IsPr || Item.Pr == 0 || Item.Docs ? [] : [this with { IsPr = true }];
 
     /// <summary>The page Enter opens on this row, or nothing where it has none.</summary>
     internal string Url => IsPr ? Item.PrUrl : Item.Url;
@@ -44,7 +44,8 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null)
     {
         if (IsPr)
             return Elide($"{Icons.Glyph(Icon.PullRequest, style)} #{Item.Pr}  {Item.Title}", width);
-        var said = new[] { Item.Mine ? "" : Item.Turn, Item.Trouble, Item.Title }.Where(part => part.Length > 0);
+        var said = new[] { Item.Mine ? "" : Item.Turn, Item.Trouble, Item.Docs ? "Customer lead" : "", Item.Title }
+            .Where(part => part.Length > 0);
         return Elide($"#{Item.Number}  {string.Join(" · ", said)}", width);
     }
 

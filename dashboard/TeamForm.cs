@@ -30,6 +30,7 @@ public sealed class TeamForm : Dialog
     internal const string CheckoutCaption = "Where the Dev looks for merged work to clean up. Change it in the file.";
     internal const string StatusCaption = "Whether the team picks up work. Paused lets a run in flight finish.";
     internal const string ReleaseCaption = "When a-team runs the repo's release.yml. Never suits a repo that deploys itself on merge.";
+    internal const string CustomerCaption = "Keeps the user docs right: a docs PR for you after each pitch is done.";
     internal const string WorktreesCaption = "How many tasks can be in flight, PRs included.";
     internal const string DevsCaption = "How many Dev runs build at once.";
     internal const string PitchedCaption = "How many pitches wait on you at once.";
@@ -66,6 +67,7 @@ public sealed class TeamForm : Dialog
     private readonly TextField _try;
     private readonly OptionSelector<TeamStatus>? _status;
     private readonly OptionSelector<TeamRelease> _release;
+    private readonly CheckBox _customer;
     private readonly NumericUpDown<int> _worktrees;
     private readonly NumericUpDown<int> _devs;
     private readonly NumericUpDown<int> _pitched;
@@ -205,6 +207,13 @@ public sealed class TeamForm : Dialog
         Add(_release);
         Caption(_release, ReleaseCaption);
 
+        Add(new Label { Text = "Roles", X = Inset, Y = row });
+        var lead = Role("Lead", CheckState.Checked, FieldX, row);
+        var dev = Role("Dev", CheckState.Checked, Pos.Right(lead) + 2, row);
+        lead.Enabled = dev.Enabled = false;
+        _customer = Role("Customer lead", settings.Customer ? CheckState.Checked : CheckState.UnChecked, Pos.Right(dev) + 2, row++);
+        Caption(_customer, CustomerCaption);
+
         Add(new Label { Text = "Limits", X = Inset, Y = row });
         _worktrees = Limit("Worktrees", settings.Worktrees, 0, row, WorktreesCaption);
         _pitched = Limit("Pitched", settings.Pitched, 1, row, PitchedCaption);
@@ -293,6 +302,7 @@ public sealed class TeamForm : Dialog
     internal OptionSelector<TeamStatus>? Status => _status;
 
     internal OptionSelector<TeamRelease> Releases => _release;
+    internal CheckBox CustomerLead => _customer;
 
     internal NumericUpDown<int> Worktrees => _worktrees;
 
@@ -395,6 +405,7 @@ public sealed class TeamForm : Dialog
             Skills = _skillNames,
             Working = _status is { } status ? status.Value == TeamStatus.Working : _before.Working,
             Release = _release.Value ?? _before.Release,
+            Customer = _customer.Value == CheckState.Checked,
             Worktrees = _worktrees.Value,
             Devs = _devs.Value,
             Pitched = _pitched.Value,
@@ -604,6 +615,13 @@ public sealed class TeamForm : Dialog
     {
         row.Text = names.Count == 0 ? "none" : string.Join(", ", names);
         return names;
+    }
+
+    private CheckBox Role(string name, CheckState state, Pos x, int row)
+    {
+        var role = new CheckBox { Text = name, Value = state, X = x, Y = row };
+        Add(role);
+        return role;
     }
 
     private NumericUpDown<int> Limit(string label, int value, int column, int row, string caption, int least = 0)

@@ -14,7 +14,7 @@ highlights its card, the one your keys act on; the others keep their place for w
 | Triage | Ideas and pitches with no Priority. Nothing here is pitched or approved until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide). |
 | Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. |
-| Review | Finished work you can accept now: a task whose PR is ready to merge. |
+| Review | Finished work you can accept now: a task whose PR is ready to merge, or the Customer lead's docs PR. |
 
 Each column's heading counts its cards. Under the Review cards, a line sums up the work that's in
 review but not ready for you yet, like `2 with the Dev: #12 CI failing · #14 still a draft`.
@@ -31,8 +31,8 @@ A card reads as the issue's number, then its title:
 - **Whose move it is.** A green `✓` means it's yours. A dimmed `·` means an agent owes you an
   answer, and the card names the role in front of its title, like `#118  lead · ...`. It's theirs
   from the moment you comment on the issue or its PR until they reply.
-- **What it is.** 💡 an Idea, `◇` a pitch, `‹›` a task. Triage and Pitches show the kind in their
-  heading instead, so only a card of another kind wears its own.
+- **What it is.** 💡 an Idea, `◇` a pitch, `‹›` a task, 📄 the Customer lead's docs PR. Triage
+  and Pitches show the kind in their heading instead, so only a card of another kind wears its own.
 - **Its Priority.** The issue number is coloured by Priority, in the colours GitHub gives them:
   green for Low, amber for Medium, red for High and pink for Urgent. An unranked card's number is
   plain.
@@ -101,5 +101,5 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
   with its acceptance criteria printed first; quit it to come back. If you were reading the task,
   it opens again where you left it, ready for `a` or `c`, and says there if the try failed.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. For a task, once you
-  confirm, its PR is squash-merged and its branch deleted. If it isn't ready yet, `a` says why
-  instead.
+  confirm, its PR is squash-merged and its branch deleted. The Customer lead's docs PR is merged
+  the same way. If it isn't ready yet, `a` says why instead.
