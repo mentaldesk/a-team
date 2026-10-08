@@ -29,18 +29,18 @@ log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
 dispatch() {
   local team=$1 role=$2 config=$3
   local dir="$STATE/$team/$role" now triggers reasons creative last live limit pid at
-  local sweep='' prefix='' task='' number='' started=0 picked=' ' chores=''
+  local sweep='' prefix='' task='' number='' started=0 picked=' ' chores='' items=''
   $DRY_RUN && prefix="dry-"
   mkdir -p "$dir/logs"
   now=$(date +%s)
   cfg() { jq -r "$1" "$config"; }
 
-  $DRY_RUN || prune_releases "$dir"
+  $DRY_RUN || { prune_releases "$dir"; settle_runs; }
   live=$(live_runs "$dir")
   while read -r pid at _; do
     [ -n "$pid" ] || continue
-    [ $((now - at)) -gt $(($(cfg '.dispatch.maxRuntime // 120') * 60)) ] &&
-      kill "$pid" && log "$team $role: killed run $pid after $(((now - at) / 60)) minutes"
+    [ $((now - at)) -gt $(($(cfg '.dispatch.maxRuntime // 120') * 60)) ] && kill "$pid" &&
+      log "$team $role: killed run $pid after $(((now - at) / 60)) minutes" && run_outcome "$team" "$role" "$pid" killed
   done <<<"$live"
   limit=1
   [ "$role" = dev ] && limit=$(cfg '.wip.devs // 1')
@@ -67,6 +67,7 @@ dispatch() {
       reasons="it's been a while: time to pitch or discover"
     fi
     fresh "$dir/${prefix}fingerprint" "$reasons" "$dir/latest.jsonl" || return
+    items=$(jq -r '.items[]?' <<<"$triggers")
     launch
     return
   fi
@@ -84,6 +85,7 @@ dispatch() {
     reasons=$(jq -r '.reasons[]' <<<"$task"; [ "$started" -gt 0 ] || printf '%s' "$chores")
     reasons=$(sed '/^$/d' <<<"$reasons")
     task=$(jq -c '{number, title}' <<<"$task")
+    items=$number
     launch || return
     started=$((started + 1))
   done
@@ -171,6 +173,7 @@ $(sed 's/^/- /' <<<"$reasons")"
   )
   echo "$pid" >"$dir/pid"
   ln -sf "$logfile" "$dir/latest.jsonl"
+  record_run "$pid" "$logfile"
   if [ -n "$number" ]; then
     run="$dir/runs/$number"
     mkdir -p "$run"
@@ -178,6 +181,37 @@ $(sed 's/^/- /' <<<"$reasons")"
     ln -sf "$logfile" "$run/latest.jsonl"
   fi
   log "$team $role: started $pid on $version: $what"
+}
+
+# record_run <pid> <log>: the run in the history record, on each of $items.
+record_run() {
+  local values='' item
+  for item in $items; do values+="${values:+, }((SELECT MAX(id) FROM runs WHERE log = $(sql "$2")), $item)"; done
+  history_sql "INSERT INTO runs (team, role, pid, log, started) VALUES
+    ($(sql "$team"), $(sql "$role"), $1, $(sql "$2"), $(sql "$(iso "$now")"));
+    ${values:+INSERT INTO run_items (run, item) VALUES $values;}" >/dev/null ||
+    log "$team $role: couldn't record run $1 in the history"
+}
+
+# settle_runs: records the end of each of the role's runs that has finished since the last pass, with
+# its cost if its log got as far as a result.
+settle_runs() {
+  local id pid log result ended cost outcome
+  [ -f "$STATE/history.db" ] || return 0
+  while IFS='|' read -r id pid log; do
+    kill -0 "$pid" 2>/dev/null && continue
+    result=$(jq -cR 'fromjson? | select(.type == "result")' "$log" 2>/dev/null | tail -n 1)
+    ended=$(stat -c %Y "$log" 2>/dev/null || stat -f %m "$log" 2>/dev/null || echo "$now")
+    if [ -n "$result" ]; then
+      cost=$(jq -r '.total_cost_usd // "NULL"' <<<"$result")
+      outcome=$(jq -r 'if .is_error == true then "error" else "" end' <<<"$result")
+    else
+      cost=NULL outcome=died
+    fi
+    history_sql "UPDATE runs SET ended = $(sql "$(iso "$ended")"), cost = $cost,
+      outcome = COALESCE(outcome, $([ -n "$outcome" ] && sql "$outcome" || echo NULL)) WHERE id = $id;" >/dev/null
+  done < <(history_sql "SELECT id, pid, log FROM runs WHERE team = $(sql "$team") AND role = $(sql "$role")
+    AND ended IS NULL;")
 }
 
 # fresh <file> <reasons> <log>: whether these reasons are worth a run. The same ones as last time
