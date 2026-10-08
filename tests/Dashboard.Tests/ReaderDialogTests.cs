@@ -521,11 +521,48 @@ public class ReaderDialogTests
         using var dialog = Ranking(Long(), Rank.Medium, height: 12);
 
         dialog.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal((int)Rank.High, dialog.Ranks!.FocusedItem);
+        Assert.Equal(Rank.High, dialog.Ranks!.Value);
+        Assert.Equal((int)Rank.High, dialog.Ranks.FocusedItem);
 
         dialog.NewKeyDownEvent(Key.CursorLeft);
+        Assert.Equal(Rank.Medium, dialog.Ranks.Value);
         Assert.Equal((int)Rank.Medium, dialog.Ranks.FocusedItem);
         Assert.Equal(0, dialog.Body.Top);
+    }
+
+    [Theory]
+    [InlineData(Rank.Urgent, "Right", Rank.None)]
+    [InlineData(Rank.None, "Left", Rank.Urgent)]
+    public void Left_and_Right_wrap_at_the_ends(Rank start, string arrow, Rank rank)
+    {
+        using var dialog = Ranking(rank: start);
+
+        dialog.NewKeyDownEvent(arrow == "Right" ? Key.CursorRight : Key.CursorLeft);
+
+        Assert.Equal(rank, dialog.Ranks!.Value);
+        Assert.Equal((int)rank, dialog.Ranks.FocusedItem);
+    }
+
+    [Fact]
+    public void Arrows_initials_and_the_rank_hint_all_keep_the_mark_on_the_highlighted_rank()
+    {
+        using var dialog = Ranking(rank: Rank.None);
+        var rankHint = dialog.Hints.Hints.Single(hint => hint.Text == "←/→ rank");
+
+        foreach (var move in new Action[]
+        {
+            () => dialog.NewKeyDownEvent(Key.CursorRight),
+            () => dialog.NewKeyDownEvent(new Key('h')),
+            () => rankHint.InvokeCommand(Command.Accept),
+            () => dialog.NewKeyDownEvent(Key.CursorLeft),
+            () => dialog.NewKeyDownEvent(new Key('l')),
+            () => dialog.NewKeyDownEvent(Key.CursorLeft),
+        })
+        {
+            move();
+            Assert.Equal(dialog.Ranks!.FocusedItem, (int)dialog.Ranks.Value!);
+        }
+        Assert.Equal(Rank.None, dialog.Ranks!.Value);
     }
 
     [Fact]
@@ -534,6 +571,7 @@ public class ReaderDialogTests
         using var dialog = Ranking(rank: Rank.Medium);
 
         dialog.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(Rank.High, dialog.Ranks!.Value);
         dialog.NewKeyDownEvent(Key.Enter);
 
         Assert.Equal(Rank.High, dialog.Chosen);

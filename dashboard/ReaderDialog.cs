@@ -128,6 +128,8 @@ public sealed class ReaderDialog : Dialog
             foreach (var (row, each) in _ranks.SubViews.Zip(Enum.GetValues<Rank>()))
                 if (Priorities.FormScheme(each.ToString()) is { Length: > 0 } scheme)
                     row.SchemeName = scheme;
+            _ranks.KeyDown += (_, key) =>
+                key.Handled = key == Key.CursorRight ? Step(+1) : key == Key.CursorLeft && Step(-1);
             _band = new View
             {
                 X = 0,
