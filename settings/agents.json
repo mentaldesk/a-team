@@ -24,6 +24,8 @@
       "Bash(dotnet build *)",
       "Bash(dotnet test *)",
       "Bash(dotnet restore *)",
+      "Bash(tuirec snapshot *)",
+      "Bash(tuirec record *)",
       "WebSearch",
       "WebFetch"
     ],
