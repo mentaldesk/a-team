@@ -30,7 +30,16 @@ While it's open, add to it: commit to its branch, and add a line to its descript
 If a worktree on `docs/customer-lead` is left over from a docs PR that has merged, remove it and
 its local branch first, untracked files and all.
 
-Your prompt names the done pitches to check, the weekly audit, or both. Check each pitch first:
+If your prompt names stakeholder feedback on your docs PR, answer it first. Read it with
+`a-team board {{team}} feedback customer <pr>`, then for each comment:
+
+- If it asks for a docs change, make it in the PR's worktree, push, and update the PR's
+  description so its lines still say what the PR changes.
+- If it asks for anything but user docs (product code, say), change nothing for it.
+- Reply on the PR with `a-team board {{team}} comment customer <pr> <file>`: what you changed, or
+  why you didn't. File anything only a product change would fix as an Idea, as below.
+
+Your prompt may also name done pitches to check, the weekly audit, or both. Check each pitch first:
 
 1. Read the pitch (`a-team board {{team}} body <n>`) and its tasks
    (`a-team board {{team}} children <n>`), and what their PRs changed.
@@ -47,8 +56,8 @@ Your prompt names the done pitches to check, the weekly audit, or both. Check ea
 
 ### The weekly audit
 
-1. Read all the user docs from your open PR's branch, or a fresh `origin/<default branch>`, and the
-   product as it is on that branch.
+1. Read all the user docs from your open PR's branch, or a fresh `origin/<default branch>` if none
+   is open, and the product from a fresh `origin/<default branch>`.
 2. Look for what's wrong against the current product, what a shipped feature is missing, and pages
    that aren't organised the way a newcomer would look for things.
 3. Fix what you find as in step 4 above, one description line per fix. If you find nothing, change

@@ -85,6 +85,9 @@ Dashboard.
   whose description lists each change in a line. While that PR is open, the next pitch that's done adds
   to it rather than opening another.
 - **If they already do**, it changes nothing.
+- **When you comment on its PR**, on GitHub or with **Comment** on its Review card, it makes the
+  change, updates the list in the description and replies saying what it did. If you ask for
+  something only a product change would fix, it files that as an Idea rather than touching code.
 - **If only the product can fix it**, say a feature is hard to find, it files an Idea written as your
   user's problem ("I can't find how to…"), with what it looked at. It waits in Triage with the Lead's
   discoveries, and counts towards the same limit.

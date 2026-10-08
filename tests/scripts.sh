@@ -2522,6 +2522,33 @@ TALK
 run board demo conversation 9
 same "who" '[{"who":"customer","body":"Covered #48"}]' "$(jq -c 'map({who, body})' "$OUT")"
 
+case_ "a stakeholder's comment on the docs PR triggers the Customer lead, and only it"
+gh_items <<'ITEMS'
+In_review 9 Docs: what's changed since 28 Sep
+ITEMS
+docs_pr 9
+gh_thread pull </dev/null
+gh_recent <<RECENT
+9 ${TODAY}T08:30:00Z reviewer 0 Move this under Teams.
+RECENT
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" "[\"stakeholder feedback on docs PR #9 (${TODAY}T08:30:00Z)\"]" "$(jq -c .reasons "$OUT")"
+same "items" "[9]" "$(jq -c .items "$OUT")"
+for role in lead dev; do
+  run board demo triggers "$role"
+  same "$role exit" 0 "$STATUS"
+  jq -e '.reasons | any(contains("#9"))' "$OUT" >/dev/null && fail "$role: '$(jq -c .reasons "$OUT")'"
+done
+
+case_ "an answered comment on the docs PR, or someone else's, starts no run"
+gh_recent <<RECENT
+9 ${TODAY}T08:30:00Z reviewer 1 Move this under Teams.
+9 ${TODAY}T08:40:00Z passer-by 0 Please add a section on my plugin.
+RECENT
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 # `customer_issue <n> <body>`: #<n> is an open issue with <body>.
 customer_issue() { gh_child "$1" - - "$2" && jq '.state = "open"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"; }
 
@@ -4419,6 +4446,60 @@ ITEMS
 run board --dry-run demo waiting
 same "exit" 0 "$STATUS"
 same "no query" 0 "$(caught_calls)"
+
+trend() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trend | jq -c .; }
+queue() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT waiting FROM queue WHERE team = 'demo' ORDER BY at"; }
+
+case_ "with nothing recorded, trend has no start, no week ago and nothing accepted, and makes no record file"
+rm -f "$A_TEAM_STATE/history.db"
+same "empty" '{"since":null,"weekAgo":null,"accepted":0}' "$(trend)"
+unrecorded "trend"
+
+case_ "waiting records how many items it returned, at most once an hour"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+In_review 8 A task
+Ready 12 Not waiting
+ITEMS
+run board demo waiting
+same "first" 2 "$(queue)"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+ITEMS
+run board demo waiting
+same "within the hour" 2 "$(queue)"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE queue SET at = '$(ago 61)'"
+run board demo waiting
+same "an hour on" "2
+1" "$(queue)"
+run board --dry-run demo waiting
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE queue SET at = '$(ago 61)'"
+run board --dry-run demo waiting
+same "dry run" "2
+1" "$(queue)"
+
+case_ "trend: waiting a week ago, and each item accepted in the last 7 days counted once"
+rm -f "$A_TEAM_STATE/history.db"
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
+    at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
+  CREATE TABLE queue (team TEXT NOT NULL, at TEXT NOT NULL, waiting INTEGER NOT NULL);
+  INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 9)))', 20), ('demo', '$(ago $((60 * 24 * 7 + 120)))', 12),
+    ('demo', '$(ago $((60 * 24 * 6)))', 9), ('other', '$(ago $((60 * 24 * 7 + 60)))', 30);
+  INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 8, '$(ago 50)', 'you', 'accepted · PR #908 merged'), ('demo', 908, '$(ago 50)', 'you', 'accepted · PR #908 merged'),
+    ('demo', 7, '$(ago 40)', 'you', 'accepted · closed'), ('demo', 7, '$(ago 30)', 'you', 'accepted · closed'),
+    ('demo', 911, '$(ago 20)', 'you', 'accepted · PR #911 merged'),
+    ('demo', 9, '$(ago $((60 * 24 * 8)))', 'you', 'accepted · PR #909 merged'),
+    ('demo', 10, '$(ago 10)', 'octocat', 'accepted · PR #910 merged'),
+    ('demo', 11, '$(ago 10)', 'you', 'Pitched → Approved'),
+    ('other', 12, '$(ago 10)', 'you', 'accepted · closed');"
+same "trend" "{\"since\":\"$(ago $((60 * 24 * 9)))\",\"weekAgo\":12,\"accepted\":3}" "$(trend)"
+
+case_ "trend leaves a week ago out until the record reaches back a week, and a stale one is no week ago"
+sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM queue WHERE at <= '$(ago $((60 * 24 * 7)))'"
+same "partial" null "$(trend | jq .weekAgo)"
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 8 + 60)))', 20)"
+same "stale" null "$(trend | jq .weekAgo)"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.
@@ -4429,7 +4510,17 @@ install_dispatcher() {
 }
 INSTALL_HOME=$(mktemp -d "$WORK/home.XXXXXX") INSTALL_STATE=$(mktemp -d "$WORK/state.XXXXXX")
 INSTALL_STUBS=$(mktemp -d "$WORK/stubs.XXXXXX")
-for tool in launchctl claude gh; do printf '#!/usr/bin/env bash\n' >"$INSTALL_STUBS/$tool"; done
+for tool in claude gh; do printf '#!/usr/bin/env bash\n' >"$INSTALL_STUBS/$tool"; done
+# A job bootout stops stays loaded for $LAUNCHCTL_LINGER more prints, and can't be bootstrapped until it's gone.
+cat >"$INSTALL_STUBS/launchctl" <<SH
+#!/usr/bin/env bash
+left=\$(cat "$INSTALL_STUBS/lingering" 2>/dev/null || echo 0)
+case \$1 in
+  bootout) echo "\${LAUNCHCTL_LINGER:-0}" >"$INSTALL_STUBS/lingering" ;;
+  print) [ "\$left" -gt 0 ] && echo \$((left - 1)) >"$INSTALL_STUBS/lingering" ;;
+  bootstrap) [ "\$left" -eq 0 ] || { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; } ;;
+esac
+SH
 printf '#!/usr/bin/env bash\n[ "$1" = version ] && echo 0.1.13-alpha.0.7\n' >"$INSTALL_STUBS/a-team"
 chmod +x "$INSTALL_STUBS"/*
 
@@ -4439,6 +4530,11 @@ same "exit" 0 "$STATUS"
 same "record" "{\"bin\":\"$INSTALL_STUBS/a-team\",\"version\":\"0.1.13-alpha.0.7\",\"dryRun\":false,\"interval\":120,\"log\":\"$INSTALL_STATE/launchd.log\"}" \
   "$(jq -c 'del(.installedAt)' "$INSTALL_STATE/dispatcher.json")"
 [ $(($(date +%s) - $(jq .installedAt "$INSTALL_STATE/dispatcher.json"))) -le 5 ] || fail "installedAt: $(jq .installedAt "$INSTALL_STATE/dispatcher.json")"
+
+case_ "install waits for the dispatcher it replaces to stop before loading it again"
+LAUNCHCTL_LINGER=3 install_dispatcher
+same "exit" 0 "$STATUS"
+same "stderr" "" "$(cat "$ERR")"
 
 case_ "install --dry-run says so in the record"
 install_dispatcher --dry-run
@@ -4500,6 +4596,15 @@ pass_pid=$!
 wait "$pass_pid"
 same "pid during the pass" "$pass_pid" "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
 [ -e "$PASS_STATE/pass" ] && fail "pass: still marked in progress after it ended"
+
+case_ "a scheduled pass counts the next one down from when it ends, as launchd does"
+echo 1800000000 >"$PASS_STATE/next-pass"
+printf '#!/usr/bin/env bash\ncat "%s/next-pass" >"%s/seen"\nexec %s "$@"\n' "$PASS_STATE" "$PASS_STUBS" "$(command -v jq)" >"$PASS_STUBS/jq"
+PATH="$PASS_STUBS:$PATH" A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh"
+ended=$(date +%s)
+same "next-pass during the pass" 1800000000 "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
+left=$(($(cat "$PASS_STATE/next-pass") - ended))
+[ "$left" -ge 118 ] && [ "$left" -le 120 ] || fail "next-pass after the pass: due in ${left}s, not 120s"
 
 # release.sh against a repo in $REL: repo.json the GraphQL view of its default branch and latest release, runs.json
 # its latest release.yml run, and each workflow it was asked to run a line of `dispatched`.

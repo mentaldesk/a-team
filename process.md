@@ -94,14 +94,16 @@ a-team board {{team}} history <n>               # what a-team has recorded on #<
 a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
                                                 # done pitch #<n>
+a-team board {{team}} audited customer          # Customer lead only: the docs as a whole are
+                                                # audited, so the next audit is a week later
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
 a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a run for;
                                                 # --sweep also reads old feedback on your items
 ```
 
-`setup` and `check` are for the stakeholder when starting a team, and `waiting` and `conversation`
-are what the app's Work area reads. Don't run them.
+`setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`
+and `trend` are what the app's Work area reads. Don't run them.
 
 Run it exactly as written here, one command per call. Don't put it in a shell variable or
 chain it with other commands: the permission check approves what it can read, and it can't

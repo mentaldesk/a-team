@@ -329,6 +329,18 @@ catch_up() {
     | join("\n")') COMMIT;" >/dev/null || echo "board.sh: couldn't record what happened on GitHub" >&2
 }
 
+# sql_now <modifier>: now, moved by an SQLite date modifier, in the record's own format.
+sql_now() { printf "strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ', 'now', '%s')" "$1"; }
+
+# snapshot <count>: how many items are waiting on the stakeholders now, at most once an hour.
+snapshot() {
+  [ -z "$DRY_RUN" ] || return 0
+  mkdir -p "$STATE"
+  history_sql "INSERT INTO queue (team, at, waiting) SELECT $(sql "$TEAM"), $(sql "$(date -u +%FT%TZ)"), $1
+    WHERE NOT EXISTS (SELECT 1 FROM queue WHERE team = $(sql "$TEAM") AND at > $(sql_now '-1 hour'));" >/dev/null ||
+    echo "board.sh: couldn't record how much is waiting" >&2
+}
+
 project_raw() {
   gql "query(\$owner: String!, \$number: Int!, \$field: String!) {
       $KIND(login: \$owner) { projectV2(number: \$number) { id
@@ -1293,11 +1305,30 @@ case "$CMD" in
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
     talk=$(gated_talk "$(jq -s add <<<"$gated$held")" checks)
     said=$(gated_comments "$talk")
-    turns "$gated" "$said" "$(gated_prs "$talk")" |
+    waiting=$(turns "$gated" "$said" "$(gated_prs "$talk")" |
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
       jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
-        --argjson unranked "$(unranked_ideas "$all")" '. + $asked + $unranked'
+        --argjson unranked "$(unranked_ideas "$all")" '. + $asked + $unranked')
+    snapshot "$(jq length <<<"$waiting")"
+    printf '%s\n' "$waiting"
+    ;;
+
+  trend)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM trend"
+    if [ ! -f "$STATE/history.db" ]; then
+      echo '{"since": null, "weekAgo": null, "accepted": 0}'
+      exit 0
+    fi
+    team=$(sql "$TEAM")
+    history_sql -json "SELECT
+        (SELECT MIN(at) FROM (SELECT at FROM events WHERE team = $team UNION ALL
+          SELECT started FROM caught_up WHERE team = $team UNION ALL SELECT at FROM queue WHERE team = $team)) AS since,
+        (SELECT waiting FROM queue WHERE team = $team AND at <= $(sql_now '-7 days') AND at > $(sql_now '-8 days')
+          ORDER BY at DESC LIMIT 1) AS weekAgo,
+        (SELECT COUNT(DISTINCT CASE WHEN what LIKE 'accepted · PR #%' THEN what ELSE item END) FROM events
+          WHERE team = $team AND who = 'you' AND what LIKE 'accepted · %' AND at > $(sql_now '-7 days')) AS accepted;" |
+      jq '.[0]'
     ;;
 
   history)
@@ -1431,6 +1462,13 @@ case "$CMD" in
         fi
         [ $(($(date +%s) - $(cat "$AUDITED" 2>/dev/null || echo 0))) -lt "$AUDIT_EVERY" ] ||
           reasons+=("weekly docs audit: check the docs as a whole")
+        docs=$(jq -r '[.[] | select((.labels | index("a-team:customer")) and .status == "In review") | .number]
+          | first // empty' <<<"$all")
+        if [ -n "$docs" ]; then
+          recent=$(jq -s 'add' <(recent_comments) <(pr_reviews "$docs"))
+          at=$(feedback_at "$recent" customer "$docs")
+          [ -n "$at" ] && reasons+=("stakeholder feedback on docs PR #$docs ($at)") && items+=("$docs")
+        fi
       fi
       creative=false
     else
