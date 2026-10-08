@@ -607,7 +607,7 @@ same "conflicting" true "$(jq -c '.[1].conflicting' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"conflicts with main"' "$(jq -c '.[1].reason' "$OUT")"
 
-case_ "a PR GitHub hasn't worked the conflict out for yet is nobody's fault"
+case_ "a PR GitHub hasn't worked the conflict out for yet isn't ready to accept"
 gh_talk false UNKNOWN <<TALK
 106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
@@ -616,7 +616,9 @@ TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "conflicting" false "$(jq -c '.[1].conflicting' "$OUT")"
-same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
+same "unready" '"resolving mergeable status"' "$(jq -c '.[1].unready' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"resolving mergeable status"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a PR still in draft is the Dev's turn"
 gh_talk true <<TALK
@@ -1353,7 +1355,7 @@ run board demo feedback lead 7
 same "exit" 0 "$STATUS"
 same "unanswered" '["And do the same for subissue links."]' "$(jq -c '[.[].body]' "$OUT")"
 
-case_ "triggers names it too, so it gets a run of its own"
+case_ "triggers names it too, so it gets a run of its own, recorded on #7"
 gh_recent <<RECENT
 7 ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
 7 ${TODAY}T02:28:46Z reviewer 0 And do the same for subissue links.
@@ -1362,6 +1364,7 @@ RECENT
 run board demo triggers lead
 same "exit" 0 "$STATUS"
 same "reasons" "[\"stakeholder feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .reasons "$OUT")"
+same "items" "[7]" "$(jq -c .items "$OUT")"
 
 case_ "waiting says the same: the gate is the Lead's until the 👀 is there"
 gh_talk <<TALK
@@ -2501,6 +2504,12 @@ fake_run() {
   echo "$RUN_PID" >"$A_TEAM_STATE/demo/dev/pid"
 }
 held() { jq -c '.dispatch.hold' "$TEAM"; }
+history_db() { (source "$ROOT/scripts/common.sh" && history_sql "$@"); }
+# runs_recorded: "<role> <item or -> <ended?> <cost or -> <outcome or ->" for each run and item it was for.
+runs_recorded() {
+  history_db -separator ' ' "SELECT role, COALESCE(item, '-'), ended IS NOT NULL, COALESCE(cost, '-'),
+    COALESCE(outcome, '-') FROM runs LEFT JOIN run_items ON run_items.run = runs.id ORDER BY runs.id, item;"
+}
 
 export A_TEAM_STATE
 A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
@@ -2515,10 +2524,12 @@ In_progress 12 A task left half done
 Ready 13 A task nobody has claimed
 ITEMS
 fake_run
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'dev', $RUN_PID, 'a.jsonl', '2026-10-07T09:00:00Z');"
 run stop demo dev
 wait "$RUN_PID"
 same "exit" 0 "$STATUS"
 same "signals" 1 "$(grep -c TERM "$SIGNALS")"
+same "recorded" "dev - 0 - stopped" "$(runs_recorded)"
 same "hold" '["dev"]' "$(held)"
 same "enabled" true "$(enabled)"
 grep -q "stopped demo dev's run ($RUN_PID)" "$OUT" || fail "stop: no word of the run in '$(cat "$OUT")'"
@@ -2845,6 +2856,7 @@ for _ in $(seq 50); do alive 13 || break; sleep 0.1; done
 alive 13 && fail "the over-long run is still going"
 for n in 14 15 20; do alive "$n" || fail "#$n was stopped with it"; done
 grep -q "demo dev: killed run .* after 180 minutes" "$A_TEAM_STATE/dispatch.log" || fail "kill: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "killed, until a pass sees it end" "dev 13 0 - killed" "$(runs_recorded | grep ' 13 ')"
 
 case_ "a held Dev starts nothing new, and its runs go on"
 jq '.dispatch.hold = ["dev"]' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
@@ -2853,7 +2865,12 @@ jq -n '{reasons: [], creative: false, tasks: [], ready: 30, chores: []}' >"$DEV_
 dispatch_dev
 same "claims" 3 "$(grep -c '' "$CLAIMS")"
 for n in 14 15 20; do alive "$n" || fail "#$n stopped when the Dev was held"; done
+same "killed, once it ended, with no cost" "dev 13 1 - killed" "$(runs_recorded | grep ' 13 ')"
+same "the others still running" "dev 14 0 - -
+dev 15 0 - -
+dev 20 0 - -" "$(runs_recorded | grep -v ' 13 ')"
 stop_runs
+
 
 case_ "status with no Dev run going, and with one"
 A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/status.sh" >"$OUT"
@@ -2866,6 +2883,74 @@ A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/status.sh" >"$OUT"
 grep -q "^demo dev: running$" "$OUT" || fail "one: '$(cat "$OUT")'"
 same "one run" 1 "$(grep -c '^  #30 Task 30: running 0h00m' "$OUT")"
 stop_runs
+
+case_ "a dry-run dispatch records no runs"
+dev_dispatcher
+jq '.project = {owner: "mentaldesk", number: 1}' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
+echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
+dispatch_dev --dry-run
+grep -q 'would start' "$A_TEAM_STATE/dispatch.log" || fail "dry run: nothing would start"
+[ -e "$A_TEAM_STATE/history.db" ] && fail "dry run: recorded '$(runs_recorded)'"
+
+case_ "a run that ends with a result records how long it took, its cost and whether it erred"
+# claude waits for $DISPATCH/finish, then prints $DISPATCH/result, if there is one, as its log's last line.
+cat >"$DISPATCH/bin/claude" <<SH
+#!/usr/bin/env bash
+while [ ! -e "$DISPATCH/finish" ]; do sleep 0.1; done
+cat "$DISPATCH/result" 2>/dev/null
+SH
+chmod +x "$DISPATCH/bin/claude"
+run_gone() { for _ in $(seq 50); do kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/$1/pid")" 2>/dev/null || return; sleep 0.1; done; }
+dispatch_dev
+same "running" "dev 13 0 - -" "$(runs_recorded)"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 13 >"$OUT"
+same "history while running" '{"who":"dev","what":"run","run":{"ended":null,"cost":null,"outcome":null}}' \
+  "$(jq -c '.events[0] | del(.at)' "$OUT")"
+echo '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":4.12}' >"$DISPATCH/result"
+touch "$DISPATCH/finish"
+run_gone 13
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev
+same "finished" "dev 13 1 4.12 -" "$(runs_recorded)"
+
+case_ "a retried run is a second line, and one that dies without a result has no cost"
+rm "$DISPATCH/result"
+jq -n '{reasons: [], creative: false, ready: null, chores: [], tasks: [{number: 13, title: "Something to start", reasons: ["CI failed on PR #913 at deadbee"]}]}' >"$DEV_TRIGGERS"
+dispatch_dev
+run_gone 13
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev
+same "two runs" "dev 13 1 4.12 -
+dev 13 1 - died" "$(runs_recorded)"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 13 >"$OUT"
+same "history" "died -" "$(jq -r '[.events[] | .run.outcome // "-"] | join(" ")' "$OUT")"
+
+case_ "an errored run says so"
+echo '{"type":"result","subtype":"error_during_execution","is_error":true,"total_cost_usd":0.5}' >"$DISPATCH/result"
+jq -n '{reasons: [], creative: false, ready: null, chores: [], tasks: [{number: 14, title: "Another", reasons: ["CI failed on PR #914 at deadbee"]}]}' >"$DEV_TRIGGERS"
+dispatch_dev
+run_gone 14
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+dispatch_dev
+same "errored" "dev 14 1 0.5 error" "$(runs_recorded | grep ' 14 ')"
+
+case_ "a Lead run is recorded on each item it was started for, and a discovery run on none"
+sed -i.bak "s|^  \*\" triggers lead\"\*).*|  *\" triggers lead\"*) cat \"$DISPATCH/lead.json\" ;;|" "$DISPATCH/bin/a-team"
+jq -n '{reasons: ["stakeholder feedback on #7 (2026-10-07T09:00:00Z)", "#9 was approved: break it down"], creative: false, items: [7, 9]}' \
+  >"$DISPATCH/lead.json"
+history_db "DELETE FROM runs; DELETE FROM run_items;"
+rm "$DISPATCH/result"
+dispatch_dev
+for _ in $(seq 50); do kill -0 "$(cat "$A_TEAM_STATE/demo/lead/pid")" 2>/dev/null || break; sleep 0.1; done
+jq -n '{reasons: [], creative: true, items: []}' >"$DISPATCH/lead.json"
+jq '.dispatch.creativeEvery = 0' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+dispatch_dev
+same "lead runs" "lead 7 1 - died
+lead 9 1 - died
+lead - 0 - -" "$(runs_recorded | sed -n '1,3p')"
+for _ in $(seq 50); do kill -0 "$(cat "$A_TEAM_STATE/demo/lead/pid")" 2>/dev/null || break; sleep 0.1; done
+jq 'del(.dispatch.creativeEvery)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 case_ "devs stops at the worktrees limit quietly, and a missing devs reads as 1"
 queued_dispatcher

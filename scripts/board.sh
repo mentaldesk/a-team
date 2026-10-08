@@ -39,21 +39,6 @@ record() {
     echo "board.sh: couldn't record '$3' in #$2's history" >&2
 }
 
-sql() { printf "'%s'" "${1//\'/\'\'}"; }
-
-# history_sql [sqlite3 options...] <statement>: the record, created on first use.
-history_sql() {
-  sqlite3 -cmd '.timeout 5000' "${@:1:$#-1}" "$STATE/history.db" "CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL, at TEXT NOT NULL,
-    who TEXT NOT NULL, what TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS caught_up (team TEXT PRIMARY KEY, started TEXT NOT NULL, at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS seen (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL,
-      status TEXT NOT NULL, PRIMARY KEY (team, item));
-    CREATE TABLE IF NOT EXISTS github (team TEXT NOT NULL, id TEXT NOT NULL, event INTEGER,
-      PRIMARY KEY (team, id));
-    CREATE TABLE IF NOT EXISTS queue (team TEXT NOT NULL, at TEXT NOT NULL, waiting INTEGER NOT NULL); ${*: -1}"
-}
-
 [ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
 TEAM=$1 CMD=$2
 shift 2
@@ -574,8 +559,8 @@ gated_comments() {
 }
 
 # gated_prs <talk>: the open PR that closes each of those items, as {n, pr, prUrl, draft,
-# conflicting, base, checks, failedAt}, off a page read with `checks`. UNKNOWN means GitHub hasn't
-# finished computing it, so only CONFLICTING counts as a conflict.
+# conflicting, resolving, base, checks, failedAt}, off a page read with `checks`. UNKNOWN means
+# GitHub hasn't finished computing it, so it's `resolving` rather than a conflict.
 gated_prs() {
   jq "$CHECKS"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
        | .closedByPullRequestsReferences.nodes[]?
@@ -583,7 +568,7 @@ gated_prs() {
            | {name, status: (.status | ascii_downcase), conclusion: (.conclusion // "" | ascii_downcase),
               completed_at: .completedAt, html_url: .url}] | checks) as $ci
        | {n: $n, pr: .number, prUrl: .url, draft: .isDraft,
-          conflicting: (.mergeable == "CONFLICTING"), base: .baseRefName,
+          conflicting: (.mergeable == "CONFLICTING"), resolving: (.mergeable == "UNKNOWN"), base: .baseRefName,
           checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
 }
 
@@ -606,8 +591,9 @@ gated_blocked() {
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
 # stakeholders' until one comments; from then it is the role's, the same test `unanswered_feedback`
-# makes. A PR that is failing, conflicting, still running CI or still a draft is the Dev's too, but
-# an unanswered comment outranks them all: the answer is owed before a green build means anything.
+# makes. A PR that is failing, conflicting, not yet known to merge, still running CI or still a draft
+# is the Dev's too, but an unanswered comment outranks them all: the answer is owed before a green
+# build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --argjson stakeholders "$STAKEHOLDERS" \
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE$NEEDS"'
@@ -624,6 +610,7 @@ turns() {
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
+         elif $pr.resolving then {trouble: "resolving mergeable status", at: ""}
          elif $pr.checks == "pending" then {trouble: "CI running", at: ""}
          elif $pr.draft then {trouble: "still a draft", at: ""}
          else null end) as $wrong
@@ -1239,11 +1226,16 @@ case "$CMD" in
       echo '{"since": null, "events": []}'
       exit 0
     fi
-    events=$(history_sql -json "SELECT at, who, what FROM events WHERE team = $(sql "$TEAM") AND item = $1
-      ORDER BY at DESC, id DESC;")
-    since=$(history_sql "SELECT MIN(at) FROM events WHERE team = $(sql "$TEAM");")
-    jq -n --argjson events "${events:-[]}" --arg since "$since" \
-      '{since: (if $since == "" then null else $since end), events: $events}'
+    events=$(history_sql -json "SELECT at, who, what, 0 AS run, NULL AS ended, NULL AS cost, NULL AS outcome, id
+        FROM events WHERE team = $(sql "$TEAM") AND item = $1
+      UNION ALL SELECT started, role, 'run', 1, ended, cost, outcome, runs.id
+        FROM runs JOIN run_items ON run_items.run = runs.id WHERE team = $(sql "$TEAM") AND item = $1
+      ORDER BY at DESC, run DESC, id DESC;")
+    since=$(history_sql "SELECT MIN(at) FROM (SELECT at FROM events WHERE team = $(sql "$TEAM")
+      UNION ALL SELECT started FROM runs WHERE team = $(sql "$TEAM"));")
+    jq -n --argjson events "${events:-[]}" --arg since "$since" '{
+      since: (if $since == "" then null else $since end),
+      events: [$events[] | {at, who, what} + if .run == 1 then {run: {ended, cost, outcome}} else {} end]}'
     ;;
 
   pr)
@@ -1270,7 +1262,7 @@ case "$CMD" in
     all=$(items)
     reasons=()
     recent=$(recent_comments)
-    tasks='[]' chores=() ready=
+    tasks='[]' chores=() ready='' items=()
     # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
     task_reason() {
       reasons+=("$3")
@@ -1346,6 +1338,7 @@ case "$CMD" in
       while IFS= read -r row; do
         n=$(jq -r .number <<<"$row")
         status=$(jq -r .status <<<"$row")
+        had=${#reasons[@]}
         at=$(feedback_at "$recent" lead "$n")
         [ -n "$at" ] && reasons+=("stakeholder feedback on #$n ($at)")
         [ "$status" = Approved ] && reasons+=("#$n was approved: break it down")
@@ -1354,6 +1347,7 @@ case "$CMD" in
           [ "${open%%$'\t'*}" -gt 0 ] && [ "${open##*$'\t'}" -eq 0 ] &&
             reasons+=("all of #$n's tasks are closed: validate it")
         fi
+        [ "${#reasons[@]}" -eq "$had" ] || items+=("$n")
       done < <(jq -c '.[] | select((.labels | index("pitch")) and .status != "Idea" and .status != "Done")' <<<"$all")
 
       pitched=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Pitched")] | length' <<<"$all")
@@ -1376,11 +1370,12 @@ case "$CMD" in
         [ "$found" -lt "$(cfg .wip.ideas)" ] && creative=true
     fi
     jq -n --argjson creative "$creative" --arg role "$role" --argjson tasks "$tasks" --arg ready "$ready" \
-      --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" '
+      --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" \
+      --argjson items "$(jq -n '$ARGS.positional | map(tonumber)' --args ${items[@]+"${items[@]}"})" '
       {reasons: $ARGS.positional, creative: $creative}
       + if $role == "dev"
         then {tasks: $tasks, ready: (if $ready == "" then null else $ready | tonumber end), chores: $chores}
-        else {} end' \
+        else {items: $items} end' \
       --args "${reasons[@]+"${reasons[@]}"}"
     ;;
 

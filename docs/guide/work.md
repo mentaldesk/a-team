@@ -48,7 +48,9 @@ A card reads as the issue's number, then its title:
   plain.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
 - **Trouble.** A PR that's failing CI, conflicts with its base, is still running CI or is still a
-  draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`.
+  draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. A PR
+  whose base just moved shows `resolving mergeable status` until GitHub has worked out whether it
+  still merges.
 
 In kitty, WezTerm and Ghostty, which bundle a Nerd Font, the icons are that font's glyphs instead,
 and a PR row wears a pull request glyph in place of `PR`. No terminal says which font it has, so if
@@ -85,6 +87,9 @@ you or anyone else does on GitHub directly (a merge, a close, a comment, a move 
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
+Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
+how long it took and what it cost, like `run 38 min · $4.12`. One that didn't finish says why:
+`stopped` by you, `killed` at the time limit, `error`, or `died` with no result, and no cost.
 `Tab` moves between the body and History, and the arrows scroll whichever has focus. `h` hides
 History to give the body the full width, and shows it again; it stays as you left it until you
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.
