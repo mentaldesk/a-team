@@ -92,7 +92,9 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
    Stay inside the task's scope; note anything else you spot in the PR body instead of fixing it.
    A task that changes what the user sees or does updates the user guide page it affects, where
    the repo has one, in the same PR. End every commit message with `Closes #<n>`.
-4. Build and run the tests locally until they pass.
+4. Build and run the tests locally until they pass. If the task changes what the user sees, run the
+   product, look at each screen it changes and check it against the acceptance criteria. The
+   team's skills say how.
 5. Push and open a **draft** PR. Body: a short summary of what the user can now do or see,
    `Closes #<n>`, any choice you made that changes what they see or do beyond what the task
    says, and your marker. How you built it goes in the commit messages, not the body. No
