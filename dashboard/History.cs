@@ -82,6 +82,11 @@ public sealed class ReaderPanes
     /// <summary>Narrower than this, the body would be too cramped beside History.</summary>
     public const int NarrowestSplit = 100;
 
+    public const int CommentWidth = 36;
+
+    /// <summary>Narrower than this, the comment, the body and History can't all fit.</summary>
+    public const int NarrowestThree = 120;
+
     public bool HistoryShown { get; set; } = true;
 
     public bool OpensWithHistory(int width) => HistoryShown && width >= NarrowestSplit;

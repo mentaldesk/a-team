@@ -88,8 +88,17 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 
 - **Approve a pitch.** Reading a pitch in Pitches, press `a`. It's approved there and then, and
   the card leaves.
-- **Reply.** Reading any card, press `c` to write a comment. It's posted as you, joins the end of
-  what you're reading, and the agent picks it up on its next run.
+- **Reply.** Reading any card, press `c` to write a comment. It opens in a **Comment** pane on the
+  left, with the body and History still beside it. `Tab` and `Shift+Tab` move between the panes,
+  `Esc` in the comment goes back to the pane you came from, and `c` comes back to what you'd written.
+  `Ctrl+Enter` posts it from any pane: it's posted as you, joins the end of what you're reading, and
+  the agent picks it up on its next run. On a terminal too narrow for three panes, History hides
+  while you write; `h` still shows it.
+- **Quote what you're answering.** With the comment open, `Shift+↓`/`Shift+↑` in the body or History
+  marks the top line in view and extends the mark a line at a time. `q` quotes the marked lines into
+  the comment where its cursor is, as `> ` lines the agents read just as they read a quote reply
+  on GitHub, and leaves you where you were to mark the next part. `Esc` clears a mark. Closing the
+  reader with something unposted in the comment asks before throwing it away.
 - **Answer a question.** Read it in Questions, and reply with `c`.
 - **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
   ranks under it, **None** to **Urgent**, starting on the card's own. `←`/`→` or a rank's initial

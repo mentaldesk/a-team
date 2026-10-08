@@ -60,7 +60,6 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<RunTask, bool> _confirmStop;
-    private readonly Func<WaitingItem, Func<string, Task<string?>>, string?> _askComment;
     private readonly Action<string> _showGuide;
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
@@ -116,7 +115,6 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>>? readConversation = null,
         Func<WaitingItem, bool>? confirmAccept = null,
         TimeProvider? clock = null,
-        Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
         Action<string>? showGuide = null,
         Func<RunTask, bool>? confirmStop = null,
         IClipboard? clipboard = null,
@@ -143,7 +141,6 @@ public sealed class DashboardWindow : Window
         _showBody = showBody;
         _confirmAccept = confirmAccept ?? (_ => false);
         _confirmStop = confirmStop ?? (_ => false);
-        _askComment = askComment ?? ((_, _) => null);
         _handOver = handOver;
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
@@ -410,7 +407,7 @@ public sealed class DashboardWindow : Window
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
-            .Register("work.comment", "Comment on the item you're reading", () => Comment(), new Key('c'), isEnabled: () => _shown is not null)
+            .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
@@ -713,7 +710,7 @@ public sealed class DashboardWindow : Window
                     _openUrl(url);
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
-                new ReaderComment(_commands.KeyFor("work.comment"), "comment", Comment),
+                new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 rank);
             _approvable = null;
@@ -773,12 +770,6 @@ public sealed class DashboardWindow : Window
         _pending = _run(["board", item.Team, "accept", "you", item.Number.ToString()]);
         return true;
     }
-
-    /// <summary>Asks for a comment on the item the reader is showing and posts it as you. The remark, once it's posted.</summary>
-    private Remark? Comment() =>
-        _shown is { } item && _askComment(item, body => Post(item, body)) is { } posted
-            ? new Remark("you", _clock.GetUtcNow(), posted)
-            : null;
 
     private async Task<string?> Post(WaitingItem item, string body)
     {

@@ -23,11 +23,13 @@ public sealed class LogView : View
     private int _top;
     private int _maxTop;
     private bool _following = true;
+    private readonly bool _follows = true;
     private bool _expanded;
     private bool _scrolls;
     private bool _selects;
     private int _anchor;
     private int _cursor;
+    private (int Anchor, int Cursor)? _marked;
 
     public LogView()
     {
@@ -44,6 +46,7 @@ public sealed class LogView : View
             if (_selects && !_following)
                 Rebase(value);
             _lines = value;
+            _marked = null;
             // Before anything scrolls: a viewport past the old content gets clamped back, and stops following.
             if (Viewport.Height > 0)
                 Fit();
@@ -56,7 +59,7 @@ public sealed class LogView : View
     public bool Following
     {
         get => _following;
-        init => _following = value;
+        init => _following = _follows = value;
     }
 
     /// <summary>The top row; set before the view is laid out, it's where the view opens.</summary>
@@ -193,6 +196,47 @@ public sealed class LogView : View
 
     public LogCopy CopyAll() => LogCopy.Of(_lines);
 
+    /// <summary>How many lines are marked for quoting, if any.</summary>
+    public int Marked => _marked is (var anchor, var cursor) ? Math.Abs(cursor - anchor) + 1 : 0;
+
+    /// <summary>Marks the top line in view, or moves the marked end <paramref name="step"/> lines.</summary>
+    public void Mark(int step)
+    {
+        var rows = Rows(Math.Max(1, Viewport.Width));
+        if (rows.Count == 0)
+            return;
+        if (_marked is (var anchor, var cursor))
+            _marked = (anchor, Math.Clamp(cursor + step, 0, Shown().Count - 1));
+        else
+        {
+            var top = rows[Math.Min(_top, rows.Count - 1)].Line;
+            _marked = (top, top);
+        }
+        var end = _marked.Value.Cursor;
+        var first = rows.FindIndex(row => row.Line == end);
+        var last = rows.FindLastIndex(row => row.Line == end);
+        if (first < _top)
+            ScrollTo(first);
+        else if (last >= _top + Viewport.Height)
+            ScrollTo(Math.Min(first, last - Viewport.Height + 1));
+        SetNeedsDraw();
+    }
+
+    public void Unmark()
+    {
+        _marked = null;
+        SetNeedsDraw();
+    }
+
+    /// <summary>The marked lines' text as written, top to bottom.</summary>
+    public IReadOnlyList<string> MarkedText()
+    {
+        if (_marked is not (var anchor, var cursor))
+            return [];
+        var shown = Shown();
+        return [.. shown[Math.Min(anchor, cursor)..(Math.Max(anchor, cursor) + 1)].Select(line => _lines[line].Text)];
+    }
+
     internal LogPlace Place => new(_lines, _top, _following, _anchor, _cursor, _expanded);
 
     /// <summary>Back where <paramref name="place"/> was, then on to <paramref name="lines"/> as if they'd arrived
@@ -281,14 +325,19 @@ public sealed class LogView : View
         return null;
     }
 
-    public void End() => ScrollTo(int.MaxValue);
+    /// <summary>Stays at the end, as the view is laid out again, until it's scrolled.</summary>
+    public void End()
+    {
+        ScrollTo(int.MaxValue);
+        _following = true;
+    }
 
     private void ScrollTo(int top)
     {
         if (Viewport.Height > 0)
             _maxTop = Math.Max(0, Rows(Math.Max(1, Viewport.Width)).Count - Viewport.Height);
         _top = Math.Clamp(top, 0, _maxTop);
-        _following = _top >= _maxTop;
+        _following = _follows && _top >= _maxTop;
         if (_scrolls)
             Viewport = Viewport with { Y = _top };
         SetNeedsDraw();
@@ -323,7 +372,9 @@ public sealed class LogView : View
         var rows = Rows(width);
         _maxTop = Math.Max(0, rows.Count - height);
         _top = _following ? _maxTop : Math.Min(_top, _maxTop);
-        var (from, to) = _selects && _lines.Count > 0 ? Selection(Shown()) : (-1, -1);
+        var (from, to) = _selects && _lines.Count > 0 ? Selection(Shown())
+            : _marked is (var anchor, var cursor) ? (Math.Min(anchor, cursor), Math.Max(anchor, cursor))
+            : (0, -1);
         for (var row = 0; row < height; row++)
         {
             var line = _top + row < rows.Count ? rows[_top + row] : new LogRow("", LogLineKind.Prose, Line: -1);
