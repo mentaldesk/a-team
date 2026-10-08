@@ -18,7 +18,8 @@ Your marker is `<!-- a-team:customer -->`.
 All your work goes into **one open docs PR** at a time, on the branch `docs/customer-lead`:
 
 - Title: `Docs: what's changed since <date>`, the date you opened it, like `28 Sep`.
-- Description: one line per change, `- <what changed> (#<pitch>)`, then your marker.
+- Description: one line per change, `- <what changed> (#<pitch>)`, or `- <what changed> (audit)` for
+  one the weekly audit found, then your marker.
 - `a-team board {{team}} mine customer` lists it, In review, once it's on the board.
 
 While it's open, add to it: commit to its branch, and add a line to its description with
@@ -29,7 +30,7 @@ While it's open, add to it: commit to its branch, and add a line to its descript
 If a worktree on `docs/customer-lead` is left over from a docs PR that has merged, remove it and
 its local branch first, untracked files and all.
 
-Your prompt names the done pitches to check. For each:
+Your prompt names the done pitches to check, the weekly audit, or both. Check each pitch first:
 
 1. Read the pitch (`a-team board {{team}} body <n>`) and its tasks
    (`a-team board {{team}} children <n>`), and what their PRs changed.
@@ -44,7 +45,18 @@ Your prompt names the done pitches to check. For each:
 5. `a-team board {{team}} covered customer <n>`, whether or not you changed anything, so the
    pitch doesn't trigger another run.
 
+### The weekly audit
+
+1. Read all the user docs from your open PR's branch, or a fresh `origin/<default branch>`, and the
+   product as it is on that branch.
+2. Look for what's wrong against the current product, what a shipped feature is missing, and pages
+   that aren't organised the way a newcomer would look for things.
+3. Fix what you find as in step 4 above, one description line per fix. If you find nothing, change
+   nothing and open no PR.
+4. `a-team board {{team}} audited customer`, whether or not you changed anything, so the next audit
+   is a week later.
+
 Something only a product change would fix (a feature nobody could find) goes in your summary,
 not in the docs.
 
-End with a short summary: which pitches you checked, what you changed, and the PR.
+End with a short summary: which pitches you checked, whether you audited, what you changed, and the PR.

@@ -179,6 +179,9 @@ customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
 
 # The done pitches the Customer lead has already checked the docs against, one number a line.
 COVERED="$STATE/$TEAM/customer/covered"
+# When the Customer lead last finished auditing the docs as a whole, in seconds since the epoch.
+AUDITED="$STATE/$TEAM/customer/audited"
+AUDIT_EVERY=$((7 * 24 * 60 * 60))
 
 KIND=$(cfg .project.ownerType)
 KIND=${KIND:-organization}
@@ -1222,6 +1225,17 @@ case "$CMD" in
     say "#$n: docs checked"
     ;;
 
+  audited)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM audited <role>"
+    [ "$1" = customer ] || die "only customer audits the docs"
+    customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
+    if [ -z "$DRY_RUN" ]; then
+      mkdir -p "$(dirname "$AUDITED")"
+      date +%s >"$AUDITED"
+    fi
+    say "docs audited: the next audit is in a week"
+    ;;
+
   body)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM body <n>"
     # gh puts the error's own body on stdout, so its one-line reason is read from stderr alone.
@@ -1408,6 +1422,8 @@ case "$CMD" in
             grep -qx "$n" "$COVERED" || reasons+=("pitch #$n is done: check the docs cover what it shipped")
           done
         fi
+        [ $(($(date +%s) - $(cat "$AUDITED" 2>/dev/null || echo 0))) -lt "$AUDIT_EVERY" ] ||
+          reasons+=("weekly docs audit: check the docs as a whole")
       fi
       creative=false
     else
