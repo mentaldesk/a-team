@@ -752,7 +752,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the card above", "Open", "Set priority", "Try", "Open on GitHub",
                 "Approve the pitch you're reading", "Accept", "Comment on the item you're reading",
                 "Show only what's your move", "Read what's waiting again", "Dashboard", "Work",
-                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Back to the agent grid", "Quit",
+                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Trends", "Back to the agent grid", "Quit",
             ],
             window.Commands.Registered.Select(command => command.Label));
     }

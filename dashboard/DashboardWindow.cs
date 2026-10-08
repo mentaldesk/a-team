@@ -58,6 +58,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
+    private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
@@ -128,11 +129,13 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, Task<Reading>>? readHistory = null,
         TeamChecks? checks = null,
         DispatchPass? pass = null,
-        Func<string, Task<Reading>>? readTrend = null)
+        Func<string, Task<Reading>>? readTrend = null,
+        Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null)
     {
         _clipboard = clipboard;
         _readHistory = readHistory;
         _readTrend = readTrend;
+        _showTrends = showTrends;
         _pass = pass ?? new DispatchPass(stateRoot, "a-team");
         _checks = checks ?? (start is null ? null : new TeamChecks(start.Check, teams.Stamp));
         _showGuide = showGuide ?? (_ => { });
@@ -442,6 +445,7 @@ public sealed class DashboardWindow : Window
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
             .Register("guide", "Guide", () => _showGuide(OnWork() ? GuideDialog.Work : GuideDialog.Dashboard))
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
+            .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
             .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
                 inMenu: () => _expanded is not null || _dispatcherExpanded)
@@ -1041,6 +1045,10 @@ public sealed class DashboardWindow : Window
         if (App is { } app)
             AboutDialog.Show(app, _version);
     }
+
+    /// <summary>What's waiting now is Work's count, once it has read one.</summary>
+    private void OpenTrends() =>
+        _showTrends?.Invoke([.. _teamNames.Select(team => (team, _readAt is null ? (int?)null : _work.Items.Count(item => item.Team == team)))]);
 
     private void OpenSettings(string? page = null, bool newTeam = false)
     {

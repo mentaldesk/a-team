@@ -14,6 +14,12 @@ PRs merged and the pitches accepted, whether from here or on GitHub. a-team coun
 installed: until it has a week's record the comparison is left out and *accepted* covers the days it
 has, and with nothing recorded yet the title shows only what's waiting.
 
+To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It charts the last 14 days,
+one line per team, for either what was waiting on you or what you accepted each day: `Left`/`Right`
+and `Space` switch between them. Days before a team's record began are left blank. Underneath, a
+table lists each team's waiting now and a week ago, what you accepted in the last 7 days, and what its
+runs cost in that time, with a total for all the teams at the bottom. `Esc` closes it.
+
 Each team has a lane, and each lane has up to four columns, left to right in the order work moves
 through them. A column with nothing in it is hidden, and the one you're on takes half its lane. Only that column
 highlights its card, the one your keys act on; the others keep their place for when you come back.

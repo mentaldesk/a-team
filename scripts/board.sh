@@ -1317,6 +1317,25 @@ case "$CMD" in
       jq '.[0]'
     ;;
 
+  trends)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM trends"
+    if [ ! -f "$STATE/history.db" ]; then
+      echo '{"since": null, "queue": [], "accepted": [], "cost": 0}'
+      exit 0
+    fi
+    team=$(sql "$TEAM")
+    history_sql -json "SELECT
+        (SELECT MIN(at) FROM (SELECT at FROM events WHERE team = $team UNION ALL
+          SELECT started FROM caught_up WHERE team = $team UNION ALL SELECT at FROM queue WHERE team = $team)) AS since,
+        (SELECT json_group_array(json_object('at', at, 'waiting', waiting)) FROM (SELECT at, waiting FROM queue
+          WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS queue,
+        (SELECT json_group_array(at) FROM (SELECT MAX(at) AS at FROM events
+          WHERE team = $team AND who = 'you' AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')
+          GROUP BY CASE WHEN what LIKE 'accepted · PR #%' THEN what ELSE item END ORDER BY at)) AS accepted,
+        (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost;" |
+      jq '.[0] | .queue |= fromjson | .accepted |= fromjson'
+    ;;
+
   history)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM history <n>"
     [[ $1 =~ ^[0-9]+$ ]] || die "#$1 isn't an item number"
