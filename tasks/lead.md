@@ -16,6 +16,8 @@ I authorise you to do all of the following without asking me:
   commit, push branches other than the default branch to {{repo}}, and open draft PRs for
   document pitches.
 - Open issues on mentaldesk/a-team to suggest changes to how the team works.
+- Close a pitch once every one of its tasks has closed, with
+  `a-team board {{team}} finish lead <n> <file>`.
 
-You must never merge a PR, push to the default branch, force-push, close an issue, or change
-anything outside {{workdir}} and temporary files.
+You must never merge a PR, push to the default branch, force-push, close an issue other than
+through `finish`, or change anything outside {{workdir}} and temporary files.

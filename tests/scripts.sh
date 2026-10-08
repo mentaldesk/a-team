@@ -1272,6 +1272,65 @@ grep -q "only a pitch In review can be accepted (#8 is in 'Building')" "$ERR" ||
   fail "accept a pitch Building: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
+case_ "finish closes a pitch in Building once every one of its tasks is closed, saying what the Lead tried"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Building 7 A pitch whose tasks have all merged
+In_review 8 A pitch waiting on acceptance
+Ready 9 A task
+ITEMS
+edit_item 8 '.labels.nodes = [{name: "pitch"}]'
+echo '[{"number": 11, "state": "closed"}, {"number": 12, "state": "closed"}]' >"$SUBS"
+echo "Tried both cases on main: they work." >"$WORK/checked"
+run board demo finish lead 7 "$WORK/checked"
+same "exit" 0 "$STATUS"
+same "said" "#7: closed as done" "$(cat "$OUT")"
+same "writes" "CLOSE issue close 7 -R mentaldesk/demo --reason completed" "$(cat "$WRITES")"
+same "posted" "Tried both cases on main: they work." "$(head -1 "$POSTED")"
+same "marker" "<!-- a-team:lead -->" "$(tail -1 "$POSTED")"
+
+case_ "finish --dry-run says it would close the pitch and comment, and does neither"
+: >"$WRITES"
+: >"$POSTED"
+run board --dry-run demo finish lead 7 "$WORK/checked"
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+grep -q "would close #7 as completed" "$ERR" || fail "finish dry run: no close in '$(cat "$ERR")'"
+grep -q "would comment on #7" "$ERR" || fail "finish dry run: no comment in '$(cat "$ERR")'"
+
+case_ "finish is the Lead's alone, for a pitch in Building with tasks, all of them closed"
+run board demo finish dev 7 "$WORK/checked"
+failed "finish as dev"
+grep -q "only lead may close a pitch as done" "$ERR" || fail "finish as dev: '$(cat "$ERR")'"
+run board demo finish lead 8 "$WORK/checked"
+failed "finish In review"
+grep -q "only a pitch in Building can be closed as done (#8 is in 'In review')" "$ERR" ||
+  fail "finish In review: '$(cat "$ERR")'"
+run board demo finish lead 9 "$WORK/checked"
+failed "finish a task"
+grep -q "#9 is not a pitch" "$ERR" || fail "finish a task: '$(cat "$ERR")'"
+echo '[{"number": 11, "state": "closed"}, {"number": 12, "state": "open"}]' >"$SUBS"
+run board demo finish lead 7 "$WORK/checked"
+failed "finish with a task open"
+one_line "finish with a task open"
+grep -q "#7 has 1 open task$" "$ERR" || fail "finish with a task open: '$(cat "$ERR")'"
+echo '[]' >"$SUBS"
+run board demo finish lead 7 "$WORK/checked"
+failed "finish with no tasks"
+grep -q "#7 has no tasks, so nothing was built" "$ERR" || fail "finish with no tasks: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "the Lead closes a finished pitch itself rather than moving it to In review"
+run board demo move lead 7 "In review"
+failed "Building to In review"
+grep -q "lead may not move #7 from 'Building' to 'In review'" "$ERR" ||
+  fail "Building to In review: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
 case_ "the agents' settings deny approve, beside priority"
 grep -qF '"Bash(a-team board * approve *)"' "$ROOT/settings/agents.json" || fail "no approve deny rule"
 
@@ -3713,6 +3772,12 @@ run board demo comment you 7 "$WORK/reply"
 recorded "comment you" 7 "you commented"
 run board demo skip lead 6 "$WORK/reply"
 recorded "skip" 6 "lead skipped"
+gh_items <<'ITEMS'
+Building 7 A pitch whose tasks have all merged
+ITEMS
+echo '[{"number": 11, "state": "closed"}]' >"$SUBS"
+run board demo finish lead 7 "$WORK/reply"
+recorded "finish" 7 "lead closed as done"
 gh_items <<'ITEMS'
 Building 10 A pitch
 Ready 40 A task

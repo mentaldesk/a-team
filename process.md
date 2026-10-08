@@ -20,8 +20,8 @@ Every item's Status is one of:
 | Building | Broken into tasks; tasks are in flight | Lead |
 | Ready | A task Dev can pick up | Lead (or stakeholder) |
 | In progress | Dev is working on it | Dev |
-| In review ⛔ | A PR (task) or a finished pitch (validation) is waiting on the stakeholder | Dev or Lead |
-| Done | Merged / accepted | **Stakeholder only** (closing the issue) |
+| In review ⛔ | A task's PR is waiting on the stakeholder | Dev |
+| Done | Merged, or a pitch whose tasks have all closed | **Stakeholder**, or the Lead for a pitch (`finish`) |
 
 ⛔ marks a gate. Agents move work *into* a gate and stop. Only the stakeholder moves it out. Pitched
 has two exceptions and no others: the Lead moves a pitch back to **Idea** when the stakeholder
@@ -32,7 +32,8 @@ the second only for a pitch `lead-next` names in `demote`.
 Two kinds of item share the board:
 
 - A **pitch** carries the `pitch` label and travels Idea → Exploring → Pitched → Approved →
-  Building → In review → Done. Its tasks are GitHub sub-issues of it.
+  Building → Done. Its tasks are GitHub sub-issues of it, and the Lead closes it once they've
+  all closed.
 - A **document pitch** is a proposal that is itself a document, like the product vision. It's a
   draft PR with the `pitch` label that goes straight to Pitched. The stakeholder approves it by
   merging, which moves it to Done.
@@ -67,6 +68,8 @@ a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on
 a-team board {{team}} priority <role> <n> <value|none>  # stakeholder only: rank an item, or clear its rank
 a-team board {{team}} approve <role> <n>        # stakeholder only: move a Pitched pitch to Approved
 a-team board {{team}} accept <role> <n>         # stakeholder only: squash-merge task #<n>'s PR, or close validated pitch #<n>
+a-team board {{team}} finish <role> <n> <file>  # Lead only: once every task of pitch #<n> has closed,
+                                                # comment <file> on it and close it as done
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours
                                                 # (as `you`, stakeholder only: no marker, no 👀)
 a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass
@@ -150,7 +153,8 @@ out stops everyone.
 
 ## Never
 
-- Merge a PR, close an issue, or move anything to Approved or Done.
+- Merge a PR, close an issue, or move anything to Approved or Done. The one exception is the
+  Lead closing a pitch whose tasks have all closed, with `finish`.
 - Mark a PR ready for review, except the Dev's own green PRs, as its role describes.
 - Push to the default branch, or force-push anything.
 - Change the a-team you run from, or how your team works, on your own initiative. If the process
