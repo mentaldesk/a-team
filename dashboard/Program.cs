@@ -99,7 +99,8 @@ Handover? Show(Handover? back)
         showGuide: page => GuideDialog.Show(app, Path.Combine(root, "docs", "guide"), url => Link.OpenUrl(url), page),
         confirmStop: task => StopRunDialog.Show(app, task),
         readHistory: item => command.Read("board", item.Team, "history", item.Number.ToString()),
-        pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")));
+        pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),
+        readTrend: team => command.Read("board", team, "trend"));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

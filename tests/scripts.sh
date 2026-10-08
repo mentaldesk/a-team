@@ -4374,6 +4374,60 @@ ITEMS
 run board --dry-run demo waiting
 same "exit" 0 "$STATUS"
 same "no query" 0 "$(caught_calls)"
+
+trend() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trend | jq -c .; }
+queue() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT waiting FROM queue WHERE team = 'demo' ORDER BY at"; }
+
+case_ "with nothing recorded, trend has no start, no week ago and nothing accepted, and makes no record file"
+rm -f "$A_TEAM_STATE/history.db"
+same "empty" '{"since":null,"weekAgo":null,"accepted":0}' "$(trend)"
+unrecorded "trend"
+
+case_ "waiting records how many items it returned, at most once an hour"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+In_review 8 A task
+Ready 12 Not waiting
+ITEMS
+run board demo waiting
+same "first" 2 "$(queue)"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+ITEMS
+run board demo waiting
+same "within the hour" 2 "$(queue)"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE queue SET at = '$(ago 61)'"
+run board demo waiting
+same "an hour on" "2
+1" "$(queue)"
+run board --dry-run demo waiting
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE queue SET at = '$(ago 61)'"
+run board --dry-run demo waiting
+same "dry run" "2
+1" "$(queue)"
+
+case_ "trend: waiting a week ago, and each item accepted in the last 7 days counted once"
+rm -f "$A_TEAM_STATE/history.db"
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
+    at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
+  CREATE TABLE queue (team TEXT NOT NULL, at TEXT NOT NULL, waiting INTEGER NOT NULL);
+  INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 9)))', 20), ('demo', '$(ago $((60 * 24 * 7 + 120)))', 12),
+    ('demo', '$(ago $((60 * 24 * 6)))', 9), ('other', '$(ago $((60 * 24 * 7 + 60)))', 30);
+  INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 8, '$(ago 50)', 'you', 'accepted · PR #908 merged'), ('demo', 908, '$(ago 50)', 'you', 'accepted · PR #908 merged'),
+    ('demo', 7, '$(ago 40)', 'you', 'accepted · closed'), ('demo', 7, '$(ago 30)', 'you', 'accepted · closed'),
+    ('demo', 911, '$(ago 20)', 'you', 'accepted · PR #911 merged'),
+    ('demo', 9, '$(ago $((60 * 24 * 8)))', 'you', 'accepted · PR #909 merged'),
+    ('demo', 10, '$(ago 10)', 'octocat', 'accepted · PR #910 merged'),
+    ('demo', 11, '$(ago 10)', 'you', 'Pitched → Approved'),
+    ('other', 12, '$(ago 10)', 'you', 'accepted · closed');"
+same "trend" "{\"since\":\"$(ago $((60 * 24 * 9)))\",\"weekAgo\":12,\"accepted\":3}" "$(trend)"
+
+case_ "trend leaves a week ago out until the record reaches back a week, and a stale one is no week ago"
+sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM queue WHERE at <= '$(ago $((60 * 24 * 7)))'"
+same "partial" null "$(trend | jq .weekAgo)"
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 8 + 60)))', 20)"
+same "stale" null "$(trend | jq .weekAgo)"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.
