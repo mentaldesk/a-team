@@ -961,7 +961,7 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void q_quotes_the_selection_into_the_comment_and_leaves_the_keyboard_in_the_body()
+    public void q_quotes_the_selection_into_the_comment_and_takes_the_keyboard_below_it()
     {
         using var dialog = Replying();
         Open(dialog);
@@ -972,9 +972,14 @@ public class ReaderDialogTests
         Assert.True(dialog.NewKeyDownEvent(new Key('q')));
 
         Assert.Equal("> line 1\n> line 2\n\n", dialog.Field.Text);
-        Assert.True(dialog.Body.HasFocus);
+        Assert.True(dialog.Field.HasFocus);
+        dialog.Field.InsertText("Yes.");
+        Assert.Equal("> line 1\n> line 2\n\nYes.", dialog.Field.Text);
         Assert.Equal(0, dialog.Body.Marked);
         Assert.DoesNotContain("quote", dialog.Hints.Says);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+        Assert.True(dialog.Body.HasFocus);
     }
 
     [Fact]
@@ -988,10 +993,10 @@ public class ReaderDialogTests
 
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
         dialog.NewKeyDownEvent(new Key('q'));
+        dialog.NewKeyDownEvent(Key.Esc);
         dialog.NewKeyDownEvent(Key.CursorDown);
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
         dialog.NewKeyDownEvent(new Key('q'));
-        dialog.NewKeyDownEvent(new Key('c'));
         dialog.Field.InsertText("But not this.");
 
         Assert.Equal("Agreed.\n> line 1\n\n> line 3\n\nBut not this.", dialog.Field.Text);

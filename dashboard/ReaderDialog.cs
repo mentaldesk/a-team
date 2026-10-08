@@ -425,7 +425,7 @@ public sealed class ReaderDialog : Dialog
         return true;
     }
 
-    /// <summary>The selected text goes in at the comment's cursor, and the keyboard stays where it was for the next.</summary>
+    /// <summary>The selected text goes in at the comment's cursor, and the keyboard follows it there to answer it.</summary>
     private bool Quote()
     {
         var pane = FocusedPane();
@@ -437,6 +437,7 @@ public sealed class ReaderDialog : Dialog
         _field.DeleteCharLeft();
         Type(Quote(lines, at > 0 && _field.Text[at - 1] != '\n'));
         pane.Unmark();
+        ToComment();
         return true;
     }
 

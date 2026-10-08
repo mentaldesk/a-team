@@ -108,8 +108,9 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 - **Quote what you're answering.** With the comment open, the body and History each have a cursor,
   starting on the top line in view. Move it with the arrows, `Home`, `End`, `PgUp` and `PgDn`, and
   hold `Shift` to select, as in any editor. `q` quotes the selection into the comment where its
-  cursor is, as `> ` lines the agents read just as they read a quote reply on GitHub, and leaves you
-  where you were to select the next part. `Esc` clears a selection. Closing the reader with
+  cursor is, as `> ` lines the agents read just as they read a quote reply on GitHub, and takes you
+  to the comment below it to write your answer; `Esc` goes back for the next part. `Esc` also clears
+  a selection. Closing the reader with
   something unposted in the comment asks before throwing it away.
 - **Answer a question.** Read it in Questions, and reply with `c`.
 - **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
