@@ -157,7 +157,7 @@ allowed() {
   case "$1:$2>$3" in
     "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
     "lead:Pitched>Idea" | "lead:Pitched>Exploring" | \
-    "lead:Approved>Building" | "lead:Building>In review" | \
+    "lead:Approved>Building" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready")
       return 0 ;;
@@ -712,6 +712,17 @@ depend_note() {
   printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
 }
 
+# close_pitch <n> [built]: closes pitch #n once all its tasks are closed; `built` also needs it to have some.
+close_pitch() {
+  local subs open refused
+  subs=$(gh api --paginate "repos/$REPO/issues/$1/sub_issues" | jq -s 'add // []')
+  [ "${2:-}" != built ] || [ "$(jq length <<<"$subs")" -gt 0 ] || die "#$1 has no tasks, so nothing was built"
+  open=$(jq 'map(select(.state == "open")) | length' <<<"$subs")
+  [ "$open" -eq 0 ] || die "#$1 has $open open task$([ "$open" -eq 1 ] || echo s)"
+  close() { { gh issue close "$1" -R "$REPO" --reason completed >/dev/null; } 2>&1; }
+  refused=$(write "close #$1 as completed" close "$1") || die "can't close #$1 ($(head -1 <<<"$refused"))"
+}
+
 # own_task <role> <n>: a Dev run started for one task touches only that task and its PR.
 own_task() {
   local task=${A_TEAM_RUN_TASK:-}
@@ -968,10 +979,7 @@ case "$CMD" in
     status=$(jq -r .status <<<"$it")
     if jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       [ "$status" = "In review" ] || die "only a pitch In review can be accepted (#$n is in '$status')"
-      open=$(gh api --paginate "repos/$REPO/issues/$n/sub_issues" | jq -s 'add // [] | map(select(.state == "open")) | length')
-      [ "$open" -eq 0 ] || die "#$n has $open open task$([ "$open" -eq 1 ] || echo s)"
-      close() { { gh issue close "$1" -R "$REPO" --reason completed >/dev/null; } 2>&1; }
-      refused=$(write "close #$n as completed" close "$n") || die "can't close #$n ($(head -1 <<<"$refused"))"
+      close_pitch "$n"
       record "$role" "$n" "accepted · closed"
       say "#$n: closed as done"
       exit 0
@@ -989,6 +997,26 @@ case "$CMD" in
     fi
     record "$role" "$n" "accepted · PR #$pr merged"
     say "#$n: merged PR #$pr"
+    ;;
+
+  finish)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM finish <role> <n> <file>"
+    role=$1 n=$2 file=$3
+    check_role "$role"
+    [ "$role" = lead ] || die "only lead may close a pitch as done"
+    [ -f "$file" ] || die "no such file: $file"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
+    status=$(jq -r .status <<<"$it")
+    [ "$status" = Building ] || die "only a pitch in Building can be closed as done (#$n is in '$status')"
+    close_pitch "$n" built
+    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    ack "$n"
+    record "$role" "$n" "closed as done"
+    say "#$n: closed as done"
     ;;
 
   comment)
@@ -1314,7 +1342,7 @@ case "$CMD" in
         if [ "$status" = Building ]; then
           open=$(gh api "repos/$REPO/issues/$n/sub_issues" --jq '[length, (map(select(.state == "open")) | length)] | @tsv')
           [ "${open%%$'\t'*}" -gt 0 ] && [ "${open##*$'\t'}" -eq 0 ] &&
-            reasons+=("all of #$n's tasks are closed: validate it")
+            reasons+=("all of #$n's tasks are closed: check it and close it")
         fi
         [ "${#reasons[@]}" -eq "$had" ] || items+=("$n")
       done < <(jq -c '.[] | select((.labels | index("pitch")) and .status != "Idea" and .status != "Done")' <<<"$all")

@@ -4,13 +4,13 @@ A small team of Claude agents that works on one GitHub repository and coordinate
 that repo's Project board:
 
 - **Lead** researches opportunities, pitches them to you with a mockup, revises them on your
-  feedback, breaks approved pitches into tasks, and validates the finished feature.
+  feedback, breaks approved pitches into tasks, and checks the finished feature.
 - **Dev** picks up Ready tasks, builds each one in its own worktree with tests, opens a draft PR
   and sees it through CI and your review.
-- **You** own the two gates: approving a pitch, and merging a PR or accepting a finished pitch.
+- **You** own the two gates: approving a pitch, and merging a task's PR.
 
 ```
-Idea → Exploring → Pitched ⛔ → Approved → Building ─────────────→ In review ⛔ → Done
+Idea → Exploring → Pitched ⛔ → Approved → Building ──────────────────────────────────→ Done
                                               └─ tasks: Ready → In progress → In review ⛔ → Done
 ```
 
@@ -152,7 +152,7 @@ risk, and takes it away again when you quit:
 
 ```
 a-team try a-team 97     # PR #97
-a-team try a-team        # main as it is now, to accept a finished pitch
+a-team try a-team        # main as it is now
 ```
 
 It fetches the PR's head into a scratch worktree at `<workdir>/.try/<pr>`, exports
@@ -168,7 +168,7 @@ keeps the worktree and tells you, and `a-team try <team> <pr> --clean` removes i
 `try` runs the PR's code on purpose, so it asks before running a branch from a repo that isn't the
 team's own.
 
-To accept a finished pitch, leave the PR out: `a-team try <team>` fetches the default branch and
+To try what has landed, leave the PR out: `a-team try <team>` fetches the default branch and
 runs it as it is on origin now, at `<workdir>/.try/main`, the same way. Its first lines name the
 branch and commit, and `a-team try <team> --clean` removes it.
 
