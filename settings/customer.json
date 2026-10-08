@@ -7,7 +7,6 @@
       "Bash(a-team board * move *)",
       "Bash(a-team board * claim *)",
       "Bash(a-team board * link *)",
-      "Bash(gh issue create *)",
       "Bash(gh issue edit *)",
       "Bash(gh pr ready *)",
       "Edit(**/*.cs)",

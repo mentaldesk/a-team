@@ -2512,6 +2512,72 @@ RECENT
 run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+# `customer_issue <n> <body>`: #<n> is an open issue with <body>.
+customer_issue() { gh_child "$1" - - "$2" && jq '.state = "open"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"; }
+
+case_ "the Customer lead files a feature nobody can find as an Idea, labelled as a discovery"
+jq '.wip = {pitched: 2, exploring: 4, ideas: 2}' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+gh_items <<'ITEMS'
+Idea 41 I can't find how to pause one role
+ITEMS
+jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+customer_issue 41 "**Evidence**: the guide's Dashboard page doesn't say.
+
+<!-- a-team:customer -->"
+run board demo add customer 41 Idea
+same "exit" 0 "$STATUS"
+grep -q 'issues/41/labels -f labels\[\]=a-team:idea' "$WRITES" || fail "no discovery label in '$(cat "$WRITES")'"
+grep -q 'a-team:customer' "$WRITES" && fail "labelled as the docs PR: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_41 .*option=OPT_idea' "$WRITES" || fail "no move to Idea in '$(cat "$WRITES")'"
+
+case_ "the Customer lead adds nothing past Idea, and no issue it didn't open"
+for to in Exploring Pitched Ready; do
+  run board demo add customer 41 "$to"
+  failed "add as $to"
+  grep -qF "customer may not add items as '$to'" "$ERR" || fail "add as $to: '$(cat "$ERR")'"
+done
+customer_issue 41 "Seen in the wild.
+
+<!-- a-team:lead -->"
+run board demo add customer 41 Idea
+failed "someone else's issue"
+one_line "someone else's issue"
+grep -qF "customer may only add an open issue it opened as an Idea (#41 isn't one)" "$ERR" ||
+  fail "someone else's issue: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "the Customer lead's Ideas count towards wip.ideas, and a full queue refuses one more"
+gh_items <<'ITEMS'
+Idea 41 I can't find how to pause one role
+Idea 42 I can't tell which team a card is from
+Idea 43 I can't find where the logs are
+ITEMS
+edit_item 41 '.labels.nodes = [{name: "a-team:idea"}]'
+edit_item 42 '.labels.nodes = [{name: "a-team:idea"}]'
+customer_issue 43 "<!-- a-team:customer -->"
+run board demo add customer 43 Idea
+failed "full queue"
+one_line "full queue"
+grep -qF "2 discovered Ideas are waiting for triage (wip.ideas is 2): leave #43 off the board" "$ERR" ||
+  fail "full queue: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "lead-next" '{"turn":"none","room":null}' "$(jq -c '{turn, room}' "$OUT")"
+
+case_ "the Lead pitches a Customer lead's Idea once it's ranked, like its own discoveries"
+gh_items 41 <<'ITEMS'
+Idea 41 I can't find how to pause one role
+Idea 42 I can't tell which team a card is from
+ITEMS
+edit_item 41 '.labels.nodes = [{name: "a-team:idea"}]'
+edit_item 42 '.labels.nodes = [{name: "a-team:idea"}]'
+customer_issue 41 "<!-- a-team:customer -->"
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "lead-next" '{"turn":"pitch","item":41}' "$(jq -c '{turn, item: .item.number}' "$OUT")"
+run board demo waiting
+same "triage" '[42]' "$(jq -c 'map(select(.reason == "waiting to be ranked") | .number)' "$OUT")"
 
 # --- a-team try -----------------------------------------------------------------------------
 # A throwaway origin holding main and one PR head, a checkout cloned from it that has only main,
@@ -3113,6 +3179,9 @@ jq -e '.permissions.deny | index("Edit(**/*.cs)") and index("Bash(gh pr merge *)
   fail "customer settings: '$(jq -c .permissions.deny "$SETTINGS")'"
 jq -e '.permissions.allow | index("Bash(gh pr edit *)")' "$SETTINGS" >/dev/null ||
   fail "customer allow: '$(jq -c .permissions.allow "$SETTINGS")'"
+jq -e '.permissions | (.allow | index("Bash(gh issue create *)")) and (.deny | index("Bash(gh issue create *)") | not)' \
+  "$SETTINGS" >/dev/null ||
+  fail "customer can't file an Idea: '$(jq -c .permissions "$SETTINGS")'"
 jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 # Claims hand out the tasks queued in $QUEUE one at a time, then refuse for want of a worktree;

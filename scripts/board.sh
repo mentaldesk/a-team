@@ -161,7 +161,7 @@ allowed() {
     "lead:Approved>Building" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:None>Idea" | "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
-    "customer:None>In review")
+    "customer:None>Idea" | "customer:None>In review")
       return 0 ;;
   esac
   return 1
@@ -909,7 +909,7 @@ case "$CMD" in
     check_role "$role"
     is_state "$to" || die "unknown status '$to'"
     allowed "$role" None "$to" || die "$role may not add items as '$to'"
-    if [ "$role" = customer ]; then
+    if [ "$role:$to" = "customer:In review" ]; then
       customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
       gh api "repos/$REPO/issues/$n" --jq '.pull_request != null and .state == "open"
           and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
@@ -917,6 +917,16 @@ case "$CMD" in
       other=$(items | jq -r --argjson n "$n" '[.[] | select((.labels | index("a-team:customer"))
         and .status == "In review" and .number != $n) | .number] | first // empty')
       [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
+    elif [ "$role:$to" = "customer:Idea" ]; then
+      customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
+      gh api "repos/$REPO/issues/$n" --jq '.pull_request == null and .state == "open"
+          and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
+        die "customer may only add an open issue it opened as an Idea (#$n isn't one)"
+      found=$(items | jq --argjson n "$n" '[.[] | select((.labels | index("a-team:idea"))
+        and .status == "Idea" and .number != $n)] | length')
+      limit=$(cfg '.wip.ideas // 0')
+      [ "$found" -lt "$limit" ] ||
+        die "$found discovered Ideas are waiting for triage (wip.ideas is $limit): leave #$n off the board"
     fi
     existing=$(item "$n")
     if [ -n "$existing" ]; then
@@ -929,14 +939,11 @@ case "$CMD" in
         die "#$n has no dev marker: dev adds only the follow-ups it opened"
     fi
     content=$(gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pulls" else "issues" end')
-    if [ "$role" = lead ]; then
-      case "$to" in
-        Idea) write "label #$n a-team:idea" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:idea' >/dev/null ;;
-        Exploring | Pitched) write "label #$n pitch" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
-      esac
-    fi
-    [ "$role" != customer ] ||
-      write "label #$n a-team:customer" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:customer' >/dev/null
+    case "$role:$to" in
+      lead:Idea | customer:Idea) write "label #$n a-team:idea" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:idea' >/dev/null ;;
+      lead:Exploring | lead:Pitched) write "label #$n pitch" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
+      "customer:In review") write "label #$n a-team:customer" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:customer' >/dev/null ;;
+    esac
     if [ -n "$existing" ]; then
       set_status "$(jq -r .id <<<"$existing")" "$to"
       record "$role" "$n" "added as $to"

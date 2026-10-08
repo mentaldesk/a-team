@@ -36,7 +36,7 @@ If your prompt names stakeholder feedback on your docs PR, answer it first. Read
   description so its lines still say what the PR changes.
 - If it asks for anything but user docs (product code, say), change nothing for it.
 - Reply on the PR with `a-team board {{team}} comment customer <pr> <file>`: what you changed, or
-  why you didn't. Put anything only a product change would fix in your summary.
+  why you didn't. File anything only a product change would fix as an Idea, as below.
 
 Your prompt may also name done pitches to check. For each:
 
@@ -53,7 +53,17 @@ Your prompt may also name done pitches to check. For each:
 5. `a-team board {{team}} covered customer <n>`, whether or not you changed anything, so the
    pitch doesn't trigger another run.
 
-Something only a product change would fix (a feature nobody could find) goes in your summary,
-not in the docs.
+### Something only the product can fix
 
-End with a short summary: which pitches you checked, what you changed, and the PR.
+When the docs aren't the problem (a feature is hard to find in the product, or help text inside code
+is wrong), file it as an Idea instead of changing anything:
+
+1. Check it isn't filed already: `a-team board {{team}} list Idea`, and
+   `gh issue list --search "<words from it>" --state all`. If it is, mention it in your summary and stop.
+2. `gh issue create`, titled as the user's problem ("I can't find how to…"). Body: the
+   **Problem**, as a user meets it; the **Evidence**, the screens, docs and code you looked at, with
+   links; then your marker.
+3. `a-team board {{team}} add customer <n> Idea`. If it's refused because the queue is full, leave
+   the issue as it is and say so in your summary. The stakeholder ranks it or closes it; don't pitch it.
+
+End with a short summary: which pitches you checked, what you changed, the PR, and any Idea you filed.

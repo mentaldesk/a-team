@@ -14,7 +14,7 @@ Every item's Status is one of:
 
 | Status | Meaning | Who moves it here |
 |---|---|---|
-| Idea | A seed: a problem or opportunity worth a look | Stakeholder or Lead, or Dev for a follow-up the stakeholder asked for |
+| Idea | A seed: a problem or opportunity worth a look | Stakeholder or Lead, Dev for a follow-up the stakeholder asked for, or Customer lead for a feature users can't find |
 | Exploring | Lead has drafted the pitch, or a higher-priority one displaced it; it waits here for room in Pitched | Lead |
 | Pitched ⛔ | Pitch is in front of the stakeholder, a few at a time | Lead |
 | Approved | Stakeholder agreed; Lead to break it down | **Stakeholder only** |
@@ -138,7 +138,7 @@ tell what `$B` will run.
    - `devs`: how many Dev runs go at once, each on its own task. Only the stakeholder sets it.
    - `pitched`: pitches in front of the stakeholder
    - `exploring`: drafted pitches waiting for room in Pitched
-   - `ideas`: the Lead's discoveries waiting for the stakeholder to prioritise or close them
+   - `ideas`: the Lead's and the Customer lead's discoveries waiting for the stakeholder to prioritise or close them
    - `readyFloor`: below this many Ready tasks the Dev can start now, the Lead warns that the
      Dev is running out of work
 4. Never wait for input. Nobody is watching the run. If you're stuck, write down why on the
