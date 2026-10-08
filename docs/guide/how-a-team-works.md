@@ -85,6 +85,9 @@ Dashboard.
   whose description lists each change in a line. While that PR is open, the next pitch that's done adds
   to it rather than opening another.
 - **If they already do**, it changes nothing.
+- **If only the product can fix it**, say a feature is hard to find, it files an Idea written as your
+  user's problem ("I can't find how to…"), with what it looked at. It waits in Triage with the Lead's
+  discoveries, and counts towards the same limit.
 - **Once a week**, and within a few minutes of being turned on, it audits the docs as a whole: what's
   wrong against the product as it is now, what a shipped feature is missing, and whether pages are
   where a newcomer would look. Each fix is a line in the same docs PR. If it finds nothing, it
@@ -99,7 +102,7 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
 
 - **Seed an idea** by opening an issue in the product repo and putting it on the board in Idea.
 - **The Lead pitches the highest-priority Idea**, and between pitches it discovers new ones. Its own
-  discoveries carry the `a-team:idea` label.
+  discoveries, and the Customer lead's, carry the `a-team:idea` label.
 - **An Idea any agent wrote is only pitched once you give it a priority.** Until then it waits in
   Triage. Close the ones you don't want.
 - **Only a few pitches are in front of you at once,** highest priority first. A higher-priority

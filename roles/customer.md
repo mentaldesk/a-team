@@ -56,7 +56,21 @@ Your prompt names the done pitches to check, the weekly audit, or both. Check ea
 4. `a-team board {{team}} audited customer`, whether or not you changed anything, so the next audit
    is a week later.
 
-Something only a product change would fix (a feature nobody could find) goes in your summary,
-not in the docs.
+Something only a product change would fix (a feature nobody could find) is filed as below, not
+fixed in the docs.
 
-End with a short summary: which pitches you checked, whether you audited, what you changed, and the PR.
+### Something only the product can fix
+
+When the docs aren't the problem (a feature is hard to find in the product, or help text inside code
+is wrong), file it as an Idea instead of changing anything:
+
+1. Check it isn't filed already: `a-team board {{team}} list Idea`, and
+   `gh issue list --search "<words from it>" --state all`. If it is, mention it in your summary and stop.
+2. `gh issue create`, titled as the user's problem ("I can't find how to…"). Body: the
+   **Problem**, as a user meets it; the **Evidence**, the screens, docs and code you looked at, with
+   links; then your marker.
+3. `a-team board {{team}} add customer <n> Idea`. If it's refused because the queue is full, leave
+   the issue as it is and say so in your summary. The stakeholder ranks it or closes it; don't pitch it.
+
+End with a short summary: which pitches you checked, whether you audited, what you changed, the PR,
+and any Idea you filed.
