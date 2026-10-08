@@ -5,6 +5,17 @@
 STATE="${A_TEAM_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/a-team}"
 CONFIG_DIR="${A_TEAM_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/a-team}"
 
+LABEL=com.a-team.dispatch
+# shellcheck disable=SC2034 # used by the scripts that source this
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+
+# dispatcher_record <bin> <dry-run> <interval> <installed-at>: dispatcher.json, what's driving the teams.
+dispatcher_record() {
+  jq -n --arg bin "$1" --arg version "$("$1" version 2>/dev/null || echo unknown)" --argjson dryRun "$2" \
+    --argjson interval "$3" --arg log "$STATE/launchd.log" --argjson installedAt "$4" \
+    '{$bin, $version, $dryRun, $interval, $log, $installedAt}'
+}
+
 team_config() { echo "$CONFIG_DIR/teams/$1.json"; }
 
 # team_roles <config>: the roles a team runs, the Customer lead only where it's turned on.
