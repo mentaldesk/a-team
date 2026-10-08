@@ -4384,7 +4384,17 @@ install_dispatcher() {
 }
 INSTALL_HOME=$(mktemp -d "$WORK/home.XXXXXX") INSTALL_STATE=$(mktemp -d "$WORK/state.XXXXXX")
 INSTALL_STUBS=$(mktemp -d "$WORK/stubs.XXXXXX")
-for tool in launchctl claude gh; do printf '#!/usr/bin/env bash\n' >"$INSTALL_STUBS/$tool"; done
+for tool in claude gh; do printf '#!/usr/bin/env bash\n' >"$INSTALL_STUBS/$tool"; done
+# A job bootout stops stays loaded for $LAUNCHCTL_LINGER more prints, and can't be bootstrapped until it's gone.
+cat >"$INSTALL_STUBS/launchctl" <<SH
+#!/usr/bin/env bash
+left=\$(cat "$INSTALL_STUBS/lingering" 2>/dev/null || echo 0)
+case \$1 in
+  bootout) echo "\${LAUNCHCTL_LINGER:-0}" >"$INSTALL_STUBS/lingering" ;;
+  print) [ "\$left" -gt 0 ] && echo \$((left - 1)) >"$INSTALL_STUBS/lingering" ;;
+  bootstrap) [ "\$left" -eq 0 ] || { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; } ;;
+esac
+SH
 printf '#!/usr/bin/env bash\n[ "$1" = version ] && echo 0.1.13-alpha.0.7\n' >"$INSTALL_STUBS/a-team"
 chmod +x "$INSTALL_STUBS"/*
 
@@ -4394,6 +4404,11 @@ same "exit" 0 "$STATUS"
 same "record" "{\"bin\":\"$INSTALL_STUBS/a-team\",\"version\":\"0.1.13-alpha.0.7\",\"dryRun\":false,\"interval\":120,\"log\":\"$INSTALL_STATE/launchd.log\"}" \
   "$(jq -c 'del(.installedAt)' "$INSTALL_STATE/dispatcher.json")"
 [ $(($(date +%s) - $(jq .installedAt "$INSTALL_STATE/dispatcher.json"))) -le 5 ] || fail "installedAt: $(jq .installedAt "$INSTALL_STATE/dispatcher.json")"
+
+case_ "install waits for the dispatcher it replaces to stop before loading it again"
+LAUNCHCTL_LINGER=3 install_dispatcher
+same "exit" 0 "$STATUS"
+same "stderr" "" "$(cat "$ERR")"
 
 case_ "install --dry-run says so in the record"
 install_dispatcher --dry-run

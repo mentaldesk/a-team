@@ -74,6 +74,8 @@ cat >"$PLIST" <<PLIST
 PLIST
 
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+# bootout returns before a pass it stops has exited, and bootstrap fails with an I/O error until it has.
+for _ in $(seq 20); do launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break; sleep 0.5; done
 launchctl bootstrap "$DOMAIN" "$PLIST"
 jq -n --arg bin "$bin" --arg version "$("$bin" version 2>/dev/null || echo unknown)" --argjson dryRun "$DRY_RUN" \
   --argjson interval "$INTERVAL" --arg log "$STATE/launchd.log" --argjson installedAt "$(date +%s)" \
