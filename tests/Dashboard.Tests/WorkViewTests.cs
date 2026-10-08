@@ -1,4 +1,6 @@
 using System.Drawing;
+using Terminal.Gui.ViewBase;
+using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -744,6 +746,87 @@ public class WorkViewTests
         Assert.Equal(246, view.Selected?.Number);
     }
 
+    [Fact]
+    public void Only_the_focused_column_shows_its_selection_as_focus_moves_between_columns_and_lanes()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+
+        Assert.Equal([false, false, false, false, false, false, false, false], ShowingSelection(view));
+
+        view.FocusFirstCard();
+        Assert.Equal([true, false, false, false, false, false, false, false], ShowingSelection(view));
+
+        view.MoveColumn(+1);
+        Assert.Equal([false, true, false, false, false, false, false, false], ShowingSelection(view));
+
+        view.MoveCard(+1);
+        view.MoveCard(+1);
+        Assert.Equal("Pitches · tuicode", view.Region);
+        Assert.Equal([false, false, false, false, false, true, false, false], ShowingSelection(view));
+    }
+
+    [Fact]
+    public void A_column_left_behind_keeps_its_card_and_shows_it_again_when_focus_comes_back()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+        view.MoveCard(+1);
+
+        view.MoveColumn(+1);
+        var pitches = view.Lanes[0].Columns[1];
+        Assert.False(pitches.ShowsSelection);
+        Assert.Equal(108, pitches.SelectedItem?.Number);
+
+        view.MoveColumn(-1);
+        Assert.True(pitches.ShowsSelection);
+        Assert.Equal(108, view.Selected?.Number);
+        Assert.Equal([false, true, false, false, false, false, false, false], ShowingSelection(view));
+    }
+
+    [Fact]
+    public void With_focus_outside_the_cards_the_column_it_left_still_shows_its_selection()
+    {
+        using var host = new View { CanFocus = true };
+        var view = new WorkView(["a-team", "tuicode"]) { Width = 120, Height = 20 };
+        var outside = new Button { Y = 20, Text = "Commands" };
+        host.Add(view, outside);
+        host.Layout(new Size(120, 22));
+        view.Show(Waiting);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+
+        outside.SetFocus();
+
+        Assert.Null(view.Region);
+        Assert.Equal(107, view.Selected?.Number);
+        Assert.Equal([false, true, false, false, false, false, false, false], ShowingSelection(view));
+    }
+
+    [Fact]
+    public void A_re_read_or_a_filter_leaves_one_column_showing_its_selection_on_the_card_that_had_focus()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+
+        view.Show(Waiting);
+        LayOut(view, 120, 20);
+        Assert.Equal(107, view.Selected?.Number);
+        Assert.Equal([false, true, false, false, false, false, false, false], ShowingSelection(view));
+
+        view.ShowOnlyMine(true);
+        LayOut(view, 120, 20);
+        Assert.Equal(107, view.Selected?.Number);
+        Assert.Equal([false, true, false, false, false, false, false, false], ShowingSelection(view));
+    }
+
     private static WaitingItem Reviewing(int number, string unready, int pr = 122) =>
         new(number, $"Task {number}", "In review", $"https://github.com/x/{number}", "a-team",
             unready.Length > 0 ? "dev" : "you", unready.Length > 0 ? unready : "awaiting your acceptance",
@@ -768,6 +851,9 @@ public class WorkViewTests
 
     private static IEnumerable<bool> Visible(WorkView view) =>
         view.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Visible);
+
+    private static IEnumerable<bool> ShowingSelection(WorkView view) =>
+        view.Lanes.SelectMany(lane => lane.Columns).Select(column => column.ShowsSelection);
 
     private static IReadOnlyList<Rectangle> Cells(WorkView view) =>
         [.. view.Lanes.SelectMany(lane => lane.Columns).Select(column => column.Frame)];
