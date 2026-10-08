@@ -17,11 +17,12 @@ DRY_RUN=false
 mkdir -p "$STATE"
 # A pass run off schedule, from the app, leaves the scheduled one's countdown alone.
 if [ -z "${A_TEAM_UNSCHEDULED:-}" ]; then
-  echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$STATE/$($DRY_RUN && echo dry-)next-pass"
   # While this holds a live pid, an overdue next-pass is a slow pass, not a stopped dispatcher.
   PASS="$STATE/$($DRY_RUN && echo dry-)pass"
+  NEXT="$STATE/$($DRY_RUN && echo dry-)next-pass"
   echo $$ >"$PASS"
-  trap '[ "$(cat "$PASS" 2>/dev/null)" = $$ ] && rm -f "$PASS"' EXIT
+  # launchd counts StartInterval from when a pass ends, not from when it started.
+  trap '[ "$(cat "$PASS" 2>/dev/null)" = $$ ] && rm -f "$PASS"; echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$NEXT"' EXIT
 fi
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }

@@ -4456,6 +4456,15 @@ wait "$pass_pid"
 same "pid during the pass" "$pass_pid" "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
 [ -e "$PASS_STATE/pass" ] && fail "pass: still marked in progress after it ended"
 
+case_ "a scheduled pass counts the next one down from when it ends, as launchd does"
+echo 1800000000 >"$PASS_STATE/next-pass"
+printf '#!/usr/bin/env bash\ncat "%s/next-pass" >"%s/seen"\nexec %s "$@"\n' "$PASS_STATE" "$PASS_STUBS" "$(command -v jq)" >"$PASS_STUBS/jq"
+PATH="$PASS_STUBS:$PATH" A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh"
+ended=$(date +%s)
+same "next-pass during the pass" 1800000000 "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
+left=$(($(cat "$PASS_STATE/next-pass") - ended))
+[ "$left" -ge 118 ] && [ "$left" -le 120 ] || fail "next-pass after the pass: due in ${left}s, not 120s"
+
 # release.sh against a repo in $REL: repo.json the GraphQL view of its default branch and latest release, runs.json
 # its latest release.yml run, and each workflow it was asked to run a line of `dispatched`.
 REL=$(mktemp -d "$WORK/release.XXXXXX")
