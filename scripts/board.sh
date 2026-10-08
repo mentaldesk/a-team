@@ -1350,6 +1350,14 @@ case "$CMD" in
         [ "${#reasons[@]}" -eq "$had" ] || items+=("$n")
       done < <(jq -c '.[] | select((.labels | index("pitch")) and .status != "Idea" and .status != "Done")' <<<"$all")
 
+      updates=$(gh pr list -R "$REPO" --author app/dependabot --state open --json number,title,comments)
+      while IFS=$'\t' read -r n title; do
+        reasons+=("Dependabot opened PR #$n ($title): see what the update brings")
+        items+=("$n")
+      done < <(jq -r --arg bot "$(cfg .app.slug)" '.[]
+        | select(any(.comments[]; .author.login == $bot and (.body | contains("<!-- a-team:lead -->"))) | not)
+        | [.number, .title] | @tsv' <<<"$updates")
+
       pitched=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Pitched")] | length' <<<"$all")
       exploring=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")] | length' <<<"$all")
       found=$(jq '[.[] | select((.labels | index("a-team:idea")) and .status == "Idea")] | length' <<<"$all")

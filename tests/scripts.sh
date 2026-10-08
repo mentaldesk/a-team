@@ -178,6 +178,8 @@ RUNS
   : >"$FILTERS"
   CAUGHT="$BIN/caught.json"
   gh_caught </dev/null
+  UPDATES="$BIN/updates.json"
+  echo '[]' >"$UPDATES"
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
@@ -185,6 +187,7 @@ case " \$* " in
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
   *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
   *updateProjectV2ItemFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
+  *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
   *ProjectV2SingleSelectField*) page="$META" ;;
   *issueFields*) page="$FIELDS" ;;
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
@@ -2215,6 +2218,21 @@ same "ready" 13 "$(jq -c .ready "$OUT")"
 same "chores" '[]' "$(jq -c .chores "$OUT")"
 run board demo triggers lead
 same "lead has no tasks" null "$(jq -c .tasks "$OUT")"
+
+case_ "triggers starts the Lead for each Dependabot PR it hasn't commented on yet"
+cat >"$UPDATES" <<'JSON'
+[{"number": 440, "title": "Bump MentalDesk.Tui", "comments": []},
+ {"number": 441, "title": "Bump Terminal.Gui", "comments": [
+   {"author": {"login": "demo-app"}, "body": "Nothing to adopt.\n\n<!-- a-team:lead -->"}]},
+ {"number": 442, "title": "Bump Spectre.Console", "comments": [
+   {"author": {"login": "stranger"}, "body": "<!-- a-team:lead -->"}]}]
+JSON
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '["Dependabot opened PR #440 (Bump MentalDesk.Tui): see what the update brings","Dependabot opened PR #442 (Bump Spectre.Console): see what the update brings"]' \
+  "$(jq -c .reasons "$OUT")"
+same "items" '[440,442]' "$(jq -c .items "$OUT")"
+echo '[]' >"$UPDATES"
 
 # A project whose Status field has the options a claim moves through.
 claimable() {

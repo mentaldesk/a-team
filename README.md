@@ -105,6 +105,9 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   starts within a couple of minutes. Pitching and discovering happen at most every
   `dispatch.creativeEvery` minutes, except that the Lead pitches straight away when nothing is
   Pitched or Exploring, so the stakeholder always has a pitch to decide on.
+- **Dependency updates.** A Dependabot PR the Lead hasn't commented on starts a Lead run. It
+  reads what the new version brings, files an Idea for each change the product should adopt (a
+  style guide's new rule, say), and lists them on the PR. Merging the PR stays yours.
 - **Feedback is never too old to start a run.** The two-minute check reads the last day of
   comments repo-wide, so every `dispatch.sweepEvery` minutes (30 by default) a role's own items
   are read in full instead, however old the comments on them are. The gap is elapsed time, not
