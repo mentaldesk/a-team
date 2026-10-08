@@ -29,6 +29,7 @@ public class TrendsDialogTests
         Assert.True(dialog.Graph.Visible);
         Assert.False(dialog.Message.Visible);
         Assert.Equal([new TeamTrendRow("a-team", 4, 12, 2, 212.4m), new TeamTrendRow("tuicode", null, null, 0, 0)], dialog.Rows);
+        Assert.Equal(new TeamTrendRow("Total", 4, 12, 2, 212.4m), dialog.Total);
         Assert.Equal(9, dialog.Series[0][^1]);
         Assert.All(dialog.Series[1], Assert.Null);
     }

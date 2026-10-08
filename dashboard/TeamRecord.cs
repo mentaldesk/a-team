@@ -77,4 +77,11 @@ public sealed record TeamTrendRow(string Team, int? WaitingNow, int? WeekAgo, in
 {
     public static TeamTrendRow Of(string team, int? waitingNow, TeamRecord record, DateTimeOffset now) =>
         new(team, waitingNow ?? record.Queue.LastOrDefault()?.Waiting, record.WeekAgo(now), record.AcceptedInWeek(now), record.Cost);
+
+    /// <summary>The teams summed; a count none of them has stays blank.</summary>
+    public static TeamTrendRow Total(IReadOnlyList<TeamTrendRow> rows) =>
+        new("Total", Sum(rows.Select(row => row.WaitingNow)), Sum(rows.Select(row => row.WeekAgo)),
+            rows.Sum(row => row.Accepted), rows.Sum(row => row.Cost));
+
+    private static int? Sum(IEnumerable<int?> values) => values.Aggregate((int?)null, (sum, value) => value is null ? sum : (sum ?? 0) + value);
 }

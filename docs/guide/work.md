@@ -18,7 +18,7 @@ To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It char
 one line per team, for either what was waiting on you or what you accepted each day: `Left`/`Right`
 and `Space` switch between them. Days before a team's record began are left blank. Underneath, a
 table lists each team's waiting now and a week ago, what you accepted in the last 7 days, and what its
-runs cost in that time. `Esc` closes it.
+runs cost in that time, with a total for all the teams at the bottom. `Esc` closes it.
 
 Each team has a lane, and each lane has up to four columns, left to right in the order work moves
 through them. A column with nothing in it is hidden, and the one you're on takes half its lane. Only that column

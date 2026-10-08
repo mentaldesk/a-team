@@ -62,6 +62,14 @@ public class TeamRecordTests
     }
 
     [Fact]
+    public void The_total_sums_the_teams_and_leaves_a_count_none_has_blank()
+    {
+        TeamTrendRow[] rows = [new("a", 3, null, 2, 1.5m), new("b", null, null, 1, 2.25m), new("c", 4, null, 0, 0)];
+
+        Assert.Equal(new TeamTrendRow("Total", 7, null, 3, 3.75m), TeamTrendRow.Total(rows));
+    }
+
+    [Fact]
     public void Reads_what_the_board_reports()
     {
         var record = Read("""

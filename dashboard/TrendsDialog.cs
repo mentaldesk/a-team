@@ -46,7 +46,7 @@ public sealed class TrendsDialog : Dialog
         _dates = TeamRecord.Dates(now, _zone);
 
         Title = "Trends";
-        var tableRows = teams.Count + 1;
+        var tableRows = teams.Count + 2;
         Width = Dim.Func(_ => Fits(76 + GetAdornmentsThickness().Horizontal, Room()?.Width), this);
         Height = Dim.Func(_ => Fits(2 + GraphRows + AxisRows + 1 + tableRows + 2 + GetAdornmentsThickness().Vertical, Room()?.Height), this);
 
@@ -122,6 +122,8 @@ public sealed class TrendsDialog : Dialog
 
     internal IReadOnlyList<TeamTrendRow> Rows { get; private set; } = [];
 
+    internal TeamTrendRow? Total { get; private set; }
+
     internal bool Closed { get; private set; }
 
     internal IReadOnlyList<IReadOnlyList<int?>> Series =>
@@ -153,7 +155,8 @@ public sealed class TrendsDialog : Dialog
             return;
         }
         Rows = [.. _teams.Select((team, i) => TeamTrendRow.Of(team.Team, team.Waiting, _records[i], _now))];
-        _table.Table = new EnumerableTableSource<TeamTrendRow>(Rows, new Dictionary<string, Func<TeamTrendRow, object>>
+        Total = TeamTrendRow.Total(Rows);
+        _table.Table = new EnumerableTableSource<TeamTrendRow>([.. Rows, Total], new Dictionary<string, Func<TeamTrendRow, object>>
         {
             ["Team"] = row => row.Team,
             ["Waiting now"] = row => Number(row.WaitingNow),
