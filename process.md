@@ -14,7 +14,7 @@ Every item's Status is one of:
 
 | Status | Meaning | Who moves it here |
 |---|---|---|
-| Idea | A seed: a problem or opportunity worth a look | Stakeholder or Lead |
+| Idea | A seed: a problem or opportunity worth a look | Stakeholder or Lead, or Dev for a follow-up the stakeholder asked for |
 | Exploring | Lead has drafted the pitch, or a higher-priority one displaced it; it waits here for room in Pitched | Lead |
 | Pitched ⛔ | Pitch is in front of the stakeholder, a few at a time | Lead |
 | Approved | Stakeholder agreed; Lead to break it down | **Stakeholder only** |

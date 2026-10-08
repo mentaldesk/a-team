@@ -4,7 +4,8 @@ Everything waiting on you, across every team. `w` opens it, and `d` goes to the 
 opens in whichever area you were in last, and on Work the first time.
 
 Each team has a lane, and each lane has up to four columns, left to right in the order work moves
-through them. A column with nothing in it is hidden, and the one you're on takes half its lane.
+through them. A column with nothing in it is hidden, and the one you're on takes half its lane. Only that column
+highlights its card, the one your keys act on; the others keep their place for when you come back.
 
 ## Columns
 

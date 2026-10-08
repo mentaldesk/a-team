@@ -1,7 +1,9 @@
 using System.Drawing;
 using System.Text;
 using MentalDesk.Tui.Focus;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
@@ -259,8 +261,12 @@ public sealed class WorkView : View
     internal void ShowFocus()
     {
         var focused = FocusedColumn();
+        var selected = SelectedColumn();
         foreach (var column in _lanes.SelectMany(lane => lane.Columns))
+        {
             column.ShowFocus(column == focused);
+            column.ShowSelection(column == selected);
+        }
     }
 
     /// <summary>Lands on a column: coming from above on its first card, from below on its last.</summary>
@@ -508,6 +514,9 @@ public sealed class WorkColumn : FrameView
 
     internal bool Shown => _border.Focused;
 
+    /// <summary>Whether the column draws its selected row's bar: only the one the keys act on does.</summary>
+    internal bool ShowsSelection => _cards.ShowsSelection;
+
     internal void Show(IReadOnlyList<WaitingItem> items, IReadOnlyList<WaitingItem>? setAside = null)
     {
         _items = items;
@@ -534,6 +543,14 @@ public sealed class WorkColumn : FrameView
     }
 
     internal void ShowFocus(bool focused) => _border.Show(focused);
+
+    internal void ShowSelection(bool shown)
+    {
+        if (_cards.ShowsSelection == shown)
+            return;
+        _cards.ShowsSelection = shown;
+        _cards.SetNeedsDraw();
+    }
 
     internal bool Holds(View view) => view == _cards || view == this;
 
@@ -589,9 +606,12 @@ public sealed class WorkColumn : FrameView
     /// <summary>Terminal.Gui's own TreeView answers the arrows and the letters itself: left and right would collapse
     /// the PR this view keeps expanded, and down would stop at the last row rather than carry on into the next lane.
     /// The Work area moves the selection itself, so the tree is left handling no key at all. Its expand and collapse
-    /// symbols are a blank cell rather than hidden, so every row starts in the same column, PR or no PR.</summary>
+    /// symbols are a blank cell rather than hidden, so every row starts in the same column, PR or no PR. A column
+    /// that isn't the one the keys act on draws its selected row like any other, keeping the selection unseen.</summary>
     private sealed class Cards : TreeView<Card>
     {
+        internal bool ShowsSelection { get; set; }
+
         internal Cards()
         {
             MultiSelect = false;
@@ -602,6 +622,14 @@ public sealed class WorkColumn : FrameView
         }
 
         protected override bool OnKeyDown(Key key) => false;
+
+        protected override bool OnGettingAttributeForRole(in VisualRole role, ref Attribute currentAttribute)
+        {
+            if (ShowsSelection || role is not (VisualRole.Focus or VisualRole.Active))
+                return false;
+            currentAttribute = GetAttributeForRole(VisualRole.Normal);
+            return true;
+        }
     }
 
     /// <summary>The row as the tree lays it out: the fields the icons are painted into, then the card's own text.</summary>
