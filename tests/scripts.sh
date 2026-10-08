@@ -2485,6 +2485,33 @@ TALK
 run board demo conversation 9
 same "who" '[{"who":"customer","body":"Covered #48"}]' "$(jq -c 'map({who, body})' "$OUT")"
 
+case_ "a stakeholder's comment on the docs PR triggers the Customer lead, and only it"
+gh_items <<'ITEMS'
+In_review 9 Docs: what's changed since 28 Sep
+ITEMS
+docs_pr 9
+gh_thread pull </dev/null
+gh_recent <<RECENT
+9 ${TODAY}T08:30:00Z reviewer 0 Move this under Teams.
+RECENT
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" "[\"stakeholder feedback on docs PR #9 (${TODAY}T08:30:00Z)\"]" "$(jq -c .reasons "$OUT")"
+same "items" "[9]" "$(jq -c .items "$OUT")"
+for role in lead dev; do
+  run board demo triggers "$role"
+  same "$role exit" 0 "$STATUS"
+  jq -e '.reasons | any(contains("#9"))' "$OUT" >/dev/null && fail "$role: '$(jq -c .reasons "$OUT")'"
+done
+
+case_ "an answered comment on the docs PR, or someone else's, starts no run"
+gh_recent <<RECENT
+9 ${TODAY}T08:30:00Z reviewer 1 Move this under Teams.
+9 ${TODAY}T08:40:00Z passer-by 0 Please add a section on my plugin.
+RECENT
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 # `customer_issue <n> <body>`: #<n> is an open issue with <body>.
 customer_issue() { gh_child "$1" - - "$2" && jq '.state = "open"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"; }
 
@@ -3998,6 +4025,14 @@ same "exit" 0 "$STATUS"
 grep -q "^$CHECKOUT could not be brought up to date with origin/main, so read the product repo from origin/main" "$OUT" ||
   fail "diverged: '$(cat "$OUT")'"
 
+case_ "run starts the Lead and the Dev on a team with the Customer lead turned on"
+jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+for role in lead dev; do
+  PATH="$APP_BIN/board:$PATH" run run demo "$role"
+  same "$role exit" 0 "$STATUS"
+  grep -q "turned on" "$ERR" && fail "$role: '$(cat "$ERR")'"
+done
+
 case_ "examples/team.json carries the app key and stays valid"
 jq -e 'has("app")' "$ROOT/examples/team.json" >/dev/null || fail "example: no app key"
 
@@ -4258,11 +4293,11 @@ same "other team" "dev commented" \
 run board demo history 7
 same "since" "$(jq -r '.events[-1].at' "$OUT")" "$(jq -r .since "$OUT")"
 
-# A record begun $1 minutes ago by the Lead commenting on #7.
+# A record begun at $1 by the Lead commenting on #7.
 record_from() {
   rm -f "$A_TEAM_STATE/history.db"
   run board demo comment lead 7 "$WORK/reply"
-  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE events SET at = '$(ago "$1")'"
+  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE events SET at = '$1'"
 }
 caught_calls() { if [ -f "$BIN/caught-calls" ]; then grep -c '' "$BIN/caught-calls"; else echo 0; fi; }
 caught_arg() { sed -n "s/^$1=//p" "$BIN/caught-args"; }
@@ -4272,7 +4307,7 @@ gh_items <<'ITEMS'
 Pitched 7 A pitch
 In_review 8 A task
 ITEMS
-record_from 120
+record_from "$(ago 120)"
 said=$(ago 40)
 gh_caught <<CAUGHT
 8 closed $(ago 50) reviewer 908
@@ -4304,7 +4339,7 @@ same "exit" 0 "$STATUS"
 same "twice" 5 "$(history_of 7 | grep -c '')"
 
 case_ "the catch-up leaves out bots, other projects, and what happened before the record began"
-record_from 120
+record_from "$(ago 120)"
 gh_caught <<CAUGHT
 7 comment $(ago 40) demo-app[bot]
 7 moved $(ago 39) github-project-automation[bot] In_review>Done
@@ -4317,7 +4352,7 @@ same "exit" 0 "$STATUS"
 same "left out" "lead commented" "$(history_of 7)"
 
 case_ "what you did from the dashboard isn't recorded twice when the catch-up sees it on GitHub"
-record_from 120
+record_from "$(ago 120)"
 run board demo approve you 7
 run board demo comment you 7 "$WORK/reply"
 gh_pr 908 false
@@ -4343,8 +4378,8 @@ Pitched 7 A pitch
 In_review 8 A task
 Ready 12 A task
 ITEMS
-record_from 120
-start=$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT at FROM events LIMIT 1")
+start=$(ago 120)
+record_from "$start"
 run board demo waiting
 same "from the start" "$start" "$(caught_arg since)"
 same "search" "repo:mentaldesk/demo updated:>=$start" "$(caught_arg q)"
@@ -4408,10 +4443,11 @@ same "dry run" "2
 
 case_ "trend: waiting a week ago, and each item accepted in the last 7 days counted once"
 rm -f "$A_TEAM_STATE/history.db"
+since=$(ago $((60 * 24 * 9)))
 sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
     at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
   CREATE TABLE queue (team TEXT NOT NULL, at TEXT NOT NULL, waiting INTEGER NOT NULL);
-  INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 9)))', 20), ('demo', '$(ago $((60 * 24 * 7 + 120)))', 12),
+  INSERT INTO queue VALUES ('demo', '$since', 20), ('demo', '$(ago $((60 * 24 * 7 + 120)))', 12),
     ('demo', '$(ago $((60 * 24 * 6)))', 9), ('other', '$(ago $((60 * 24 * 7 + 60)))', 30);
   INSERT INTO events (team, item, at, who, what) VALUES
     ('demo', 8, '$(ago 50)', 'you', 'accepted · PR #908 merged'), ('demo', 908, '$(ago 50)', 'you', 'accepted · PR #908 merged'),
@@ -4421,7 +4457,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
     ('demo', 10, '$(ago 10)', 'octocat', 'accepted · PR #910 merged'),
     ('demo', 11, '$(ago 10)', 'you', 'Pitched → Approved'),
     ('other', 12, '$(ago 10)', 'you', 'accepted · closed');"
-same "trend" "{\"since\":\"$(ago $((60 * 24 * 9)))\",\"weekAgo\":12,\"accepted\":3}" "$(trend)"
+same "trend" "{\"since\":\"$since\",\"weekAgo\":12,\"accepted\":3}" "$(trend)"
 
 case_ "trend leaves a week ago out until the record reaches back a week, and a stale one is no week ago"
 sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM queue WHERE at <= '$(ago $((60 * 24 * 7)))'"
@@ -4511,6 +4547,41 @@ echo 1800000000 >"$INSTALL_STATE/next-pass"
 A_TEAM_UNSCHEDULED=1 A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") A_TEAM_STATE="$INSTALL_STATE" bash "$ROOT/scripts/dispatch.sh"
 same "next-pass" 1800000000 "$(cat "$INSTALL_STATE/next-pass")"
 rm "$INSTALL_STATE/next-pass"
+
+# A pass as launchd runs the dispatcher install_dispatcher installed, from $PASS_BIN if that's set.
+installed_pass() {
+  HOME="$INSTALL_HOME" A_TEAM_STATE="$INSTALL_STATE" A_TEAM_BIN="${PASS_BIN:-$INSTALL_STUBS/a-team}" \
+    A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") bash "$ROOT/scripts/dispatch.sh" "$@"
+}
+in_record() { jq -r "$1" "$INSTALL_STATE/dispatcher.json"; }
+record_version() { jq ".version = \"$1\" | .installedAt = 1700000000" "$INSTALL_STATE/dispatcher.json" >"$WORK/record" &&
+  mv "$WORK/record" "$INSTALL_STATE/dispatcher.json"; }
+
+case_ "launchd's pass writes the record for a dispatcher installed before there was one"
+install_dispatcher
+rm "$INSTALL_STATE/dispatcher.json"
+installed_pass
+same "record" "{\"bin\":\"$INSTALL_STUBS/a-team\",\"version\":\"0.1.13-alpha.0.7\",\"dryRun\":false,\"interval\":120,\"log\":\"$INSTALL_STATE/launchd.log\"}" \
+  "$(jq -c 'del(.installedAt)' "$INSTALL_STATE/dispatcher.json")"
+
+case_ "launchd's pass brings the record's version up to date, and keeps when it was installed"
+record_version 0.1.12
+installed_pass
+same "version" 0.1.13-alpha.0.7 "$(in_record .version)"
+same "installedAt" 1700000000 "$(in_record .installedAt)"
+
+case_ "a pass launchd doesn't run leaves the record alone"
+record_version 0.1.12
+PASS_BIN=/elsewhere/bin/a-team installed_pass
+same "another binary" 0.1.12 "$(in_record .version)"
+installed_pass --dry-run
+same "another mode" 0.1.12 "$(in_record .version)"
+A_TEAM_UNSCHEDULED=1 installed_pass
+same "off schedule" 0.1.12 "$(in_record .version)"
+install_dispatcher --uninstall
+installed_pass
+[ -e "$INSTALL_STATE/dispatcher.json" ] && fail "uninstalled: a pass wrote the record"
+rm -f "$INSTALL_STATE"/*next-pass
 
 # status.sh's first line, for a state directory holding $1 as dispatcher.json (or none), next-pass $2 seconds from now
 # (with prefix $3) and a pass in progress as pid $4.

@@ -278,6 +278,19 @@ cannot_run() {
   why=$("$ROOT/bin/a-team" token "$1" 2>&1 >/dev/null) || echo "${why#a-team token: }"
 }
 
+# keep_record: launchd's own pass keeps dispatcher.json true: its version after an upgrade, and all of it for a
+# dispatcher installed before there was one.
+keep_record() {
+  local bin=${A_TEAM_BIN:-$ROOT/bin/a-team} record="$STATE/dispatcher.json" at want
+  grep -qF "<array><string>$bin</string><string>dispatch</string>$($DRY_RUN && echo '<string>--dry-run</string>')</array>" \
+    "$PLIST" 2>/dev/null || return 0
+  at=$(jq -e .installedAt "$record" 2>/dev/null) || at=$(date +%s)
+  want=$(dispatcher_record "$bin" "$DRY_RUN" "${A_TEAM_INTERVAL:-120}" "$at" | jq -c .)
+  [ "$want" = "$(jq -c . "$record" 2>/dev/null)" ] || { jq . <<<"$want" >"$record.$$" && mv "$record.$$" "$record"; }
+}
+
+[ -n "${A_TEAM_UNSCHEDULED:-}" ] || keep_record
+
 for team in $(team_names); do
   config=$(team_config "$team")
   run_release "$team" "$config"

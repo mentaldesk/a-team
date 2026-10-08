@@ -1465,6 +1465,13 @@ case "$CMD" in
             grep -qx "$n" "$COVERED" || reasons+=("pitch #$n is done: check the docs cover what it shipped")
           done
         fi
+        docs=$(jq -r '[.[] | select((.labels | index("a-team:customer")) and .status == "In review") | .number]
+          | first // empty' <<<"$all")
+        if [ -n "$docs" ]; then
+          recent=$(jq -s 'add' <(recent_comments) <(pr_reviews "$docs"))
+          at=$(feedback_at "$recent" customer "$docs")
+          [ -n "$at" ] && reasons+=("stakeholder feedback on docs PR #$docs ($at)") && items+=("$docs")
+        fi
       fi
       creative=false
     else
