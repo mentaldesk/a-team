@@ -3,6 +3,14 @@ using System.Text.RegularExpressions;
 
 namespace ATeam.Dashboard;
 
+/// <summary>When the dispatcher runs the team repo's release.yml: never, at most once a day, or after every merge.</summary>
+public enum TeamRelease
+{
+    Never,
+    Daily,
+    Continuous,
+}
+
 /// <summary>What the team form shows and changes. Every other key in the file is left as it is.</summary>
 public sealed partial record TeamSettings(
     string Repo,
@@ -24,6 +32,8 @@ public sealed partial record TeamSettings(
 {
     /// <summary>The file names its one stakeholder under the old <c>reviewer</c> key, which saving replaces.</summary>
     public bool SaysReviewer { get; init; }
+
+    public TeamRelease Release { get; init; }
 
     /// <summary>Whether the team runs a Customer lead beside its Lead and Dev: <c>roles.customer</c>.</summary>
     public bool Customer { get; init; }
@@ -55,6 +65,12 @@ public sealed partial record TeamSettings(
             Names(root, "skills"))
         {
             SaysReviewer = Find(root, "stakeholders") is null && Text(root, "reviewer").Length > 0,
+            Release = Text(root, "release") switch
+            {
+                "daily" => TeamRelease.Daily,
+                "continuous" => TeamRelease.Continuous,
+                _ => TeamRelease.Never,
+            },
             Customer = Find(root, "roles", "customer") is { ValueKind: JsonValueKind.True },
         };
     }
@@ -118,6 +134,8 @@ public sealed partial record TeamSettings(
         if (!Skills.SequenceEqual(before.Skills))
             config = ConfigEdit.Set(config, ["skills"], Skills);
         SetFlag(Working, before.Working, "dispatch", "enabled");
+        if (Release != before.Release)
+            config = ConfigEdit.Set(config, ["release"], Release.ToString().ToLowerInvariant());
         SetFlag(Customer, before.Customer, "roles", "customer");
         SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");
         SetNumber(Devs, before.Devs, "wip", "devs");

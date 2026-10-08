@@ -23,7 +23,8 @@ public static class DispatchLine
     internal static LogLineKind KindOf(string line)
     {
         var said = Said(line);
-        if (said.StartsWith("triggers failed:", StringComparison.Ordinal) || said.StartsWith("killed run", StringComparison.Ordinal))
+        if (said.StartsWith("triggers failed:", StringComparison.Ordinal) || said.StartsWith("killed run", StringComparison.Ordinal)
+            || said.StartsWith("failed:", StringComparison.Ordinal))
             return LogLineKind.DispatchFailed;
         return said.StartsWith("would start:", StringComparison.Ordinal)
             ? LogLineKind.DispatchSkipped

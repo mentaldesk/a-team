@@ -178,6 +178,8 @@ RUNS
   : >"$FILTERS"
   CAUGHT="$BIN/caught.json"
   gh_caught </dev/null
+  UPDATES="$BIN/updates.json"
+  echo '[]' >"$UPDATES"
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
@@ -185,6 +187,7 @@ case " \$* " in
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
   *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
   *updateProjectV2ItemFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
+  *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
   *ProjectV2SingleSelectField*) page="$META" ;;
   *issueFields*) page="$FIELDS" ;;
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
@@ -2216,6 +2219,21 @@ same "chores" '[]' "$(jq -c .chores "$OUT")"
 run board demo triggers lead
 same "lead has no tasks" null "$(jq -c .tasks "$OUT")"
 
+case_ "triggers starts the Lead for each Dependabot PR it hasn't commented on yet"
+cat >"$UPDATES" <<'JSON'
+[{"number": 440, "title": "Bump MentalDesk.Tui", "comments": []},
+ {"number": 441, "title": "Bump Terminal.Gui", "comments": [
+   {"author": {"login": "demo-app"}, "body": "Nothing to adopt.\n\n<!-- a-team:lead -->"}]},
+ {"number": 442, "title": "Bump Spectre.Console", "comments": [
+   {"author": {"login": "stranger"}, "body": "<!-- a-team:lead -->"}]}]
+JSON
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '["Dependabot opened PR #440 (Bump MentalDesk.Tui): see what the update brings","Dependabot opened PR #442 (Bump Spectre.Console): see what the update brings"]' \
+  "$(jq -c .reasons "$OUT")"
+same "items" '[440,442]' "$(jq -c .items "$OUT")"
+echo '[]' >"$UPDATES"
+
 # A project whose Status field has the options a claim moves through.
 claimable() {
   jq '.data.organization.projectV2.field.options += [{id: "OPT_ready", name: "Ready"}, {id: "OPT_progress", name: "In progress"}]' \
@@ -3745,6 +3763,7 @@ refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
 case " \$* " in
   *" repos/mentaldesk/demo/contents/"*) [ -z "\${NO_VISION:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *" repos/mentaldesk/demo "*) [ -z "\${REPO_GONE:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *"/actions/workflows/release.yml "*) [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"label list"*) page="$APP_BIN/board/labels.json" ;;
   *ProjectV2SingleSelectField*)
     [ -z "\${NO_PROJECT:-}" ] || { echo '{"data": {"organization": {"projectV2": null}}}'
@@ -3847,6 +3866,17 @@ says 2 "labels    no 'a-team:idea' label, so the Lead can't flag the ideas it fi
 labels    no 'a-team:skipped' label, so the Lead can't pass over an idea, and keeps coming back to it
 labels    no 'a-team:displaced' label, so the Lead tells you every time it bumps a pitch out of Pitched, not just the first"
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+
+case_ "a release setting check can't act on is a problem the team can still run with"
+jq '.release = "continuous"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+checked
+says 0 ""
+NO_RELEASE_WORKFLOW=1 checked
+says 2 "release   release is continuous, but mentaldesk/demo has no release.yml workflow for it to run"
+jq '.release = "weekly"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+checked
+says 2 "release   release is 'weekly': expected never, daily or continuous"
+jq 'del(.release)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 case_ "check reports every problem it finds, not just the first"
 board_labels pitch a-team:dev a-team:idea a-team:skipped blocked
@@ -4355,6 +4385,136 @@ pass_pid=$!
 wait "$pass_pid"
 same "pid during the pass" "$pass_pid" "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
 [ -e "$PASS_STATE/pass" ] && fail "pass: still marked in progress after it ended"
+
+# release.sh against a repo in $REL: repo.json the GraphQL view of its default branch and latest release, runs.json
+# its latest release.yml run, and each workflow it was asked to run a line of `dispatched`.
+REL=$(mktemp -d "$WORK/release.XXXXXX")
+mkdir -p "$REL/bin"
+cat >"$REL/bin/gh" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *"-X POST"*"/dispatches"*) printf '%s\n' "\$*" >>"$REL/dispatched"; exit 0 ;;
+  *graphql*) page="$REL/repo.json" ;;
+  *"/actions/workflows/release.yml/runs?"*) page="$REL/runs.json" ;;
+  *) echo "gh: not faked: \$*" >&2; exit 1 ;;
+esac
+filter=
+while [ \$# -gt 0 ]; do
+  [ "\$1" = --jq ] && { filter=\$2; break; }
+  shift
+done
+if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
+SH
+chmod +x "$REL/bin/gh"
+# released <head> [<tag commit> <seconds ago>]: main at <head>, and v1.2.0 at <tag commit>, released that long ago.
+released() {
+  jq -n --arg head "$1" --arg tag "${2:-}" --argjson ago "${3:-0}" '{data: {repository: {
+    defaultBranchRef: {name: "main", target: {oid: $head}},
+    latestRelease: (if $tag == "" then null
+      else {tagName: "v1.2.0", createdAt: (now - $ago | todate), tagCommit: {oid: $tag}} end)}}}' >"$REL/repo.json"
+}
+# release_run [<status>]: the latest release.yml run, with that status; none without one.
+release_run() {
+  jq -n --arg status "${1:-}" '{workflow_runs: (if $status == "" then []
+    else [{status: $status, html_url: "https://github.com/mentaldesk/demo/actions/runs/9"}] end)}' >"$REL/runs.json"
+}
+released_by() { : >"$REL/dispatched"; PATH="$REL/bin:$PATH" run release "$@"; }
+dispatches() { grep -c . "$REL/dispatched"; }
+export A_TEAM_STATE
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+
+case_ "continuous runs release.yml on main once it has moved past the latest release, and once only"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "release": "continuous" }
+JSON
+released 1111111aaaa 2222222bbbb 60
+release_run completed
+released_by demo
+same "exit" 0 "$STATUS"
+same "said" "ran release.yml on main at 1111111 (latest release: v1.2.0)" "$(cat "$OUT")"
+same "dispatched" "api -X POST repos/mentaldesk/demo/actions/workflows/release.yml/dispatches -f ref=main" "$(cat "$REL/dispatched")"
+released_by demo
+same "again" "ran release.yml for main at 1111111 already: if no release follows, see https://github.com/mentaldesk/demo/actions/workflows/release.yml" "$(cat "$OUT")"
+same "dispatched again" 0 "$(dispatches)"
+
+case_ "a main that's at the latest release has nothing to release"
+released 3333333cccc 3333333cccc 60
+released_by demo
+same "said" "nothing to release: main is at v1.2.0" "$(cat "$OUT")"
+same "dispatched" 0 "$(dispatches)"
+
+case_ "a repo that has never released is due"
+released 4444444dddd
+released_by demo
+same "said" "ran release.yml on main at 4444444 (latest release: none)" "$(cat "$OUT")"
+
+case_ "a release.yml run still going is left to finish first"
+released 5555555eeee 3333333cccc 60
+release_run in_progress
+released_by demo
+same "said" "waiting for the release.yml run going now to finish: https://github.com/mentaldesk/demo/actions/runs/9" "$(cat "$OUT")"
+same "dispatched" 0 "$(dispatches)"
+release_run completed
+
+case_ "daily waits until the latest release is a day old"
+jq '.release = "daily"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+released 6666666ffff 3333333cccc 3600
+released_by demo
+same "exit" 0 "$STATUS"
+grep -q '^next release due at 20[0-9-]*T[0-9:]*Z: v1.2.0 is under a day old$' "$OUT" || fail "daily: '$(cat "$OUT")'"
+same "dispatched" 0 "$(dispatches)"
+released 6666666ffff 3333333cccc 90000
+released_by demo
+same "a day on" "ran release.yml on main at 6666666 (latest release: v1.2.0)" "$(cat "$OUT")"
+
+case_ "--dry-run says what it would run, runs nothing, and leaves the next real pass to run it"
+released 7777777aaaa 3333333cccc 90000
+released_by --dry-run demo
+same "said" "would run release.yml on main at 7777777 (latest release: v1.2.0)" "$(cat "$OUT")"
+same "dispatched" 0 "$(dispatches)"
+released_by demo
+same "for real" 1 "$(dispatches)"
+
+case_ "never, the default, asks GitHub nothing; anything else is refused in one line"
+jq 'del(.release)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+released_by demo
+same "exit" 0 "$STATUS"
+same "said" "release is never: nothing to do" "$(cat "$OUT")"
+jq '.release = "weekly"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+released_by demo
+failed "weekly"
+one_line "weekly"
+same "refused" "a-team release: release is 'weekly' in demo.json: expected never, daily or continuous" "$(cat "$ERR")"
+
+case_ "a dispatcher pass logs what release says when it changes, paused or not, and nothing for never"
+APP=$(mktemp -d "$WORK/dispatch.XXXXXX")
+mkdir -p "$APP/bin" "$APP/scripts"
+cp "$ROOT"/scripts/*.sh "$APP/scripts/"
+cat >"$APP/bin/a-team" <<SH
+#!/usr/bin/env bash
+[ "\$1" = release ] || exit 1
+printf '%s\n' "\$*" >>"$APP/release-args"
+cat "$APP/said"
+exit "\$(cat "$APP/code" 2>/dev/null || echo 0)"
+SH
+chmod +x "$APP/bin/a-team"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "release": "continuous", "dispatch": { "enabled": false } }
+JSON
+echo '{ "repo": "mentaldesk/other", "dispatch": { "enabled": false } }' >"$CONFIG/teams/other.json"
+echo "nothing to release: main is at v1.2.0" >"$APP/said"
+pass() { A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run; }
+pass
+pass
+echo "would run release.yml on main at 1111111 (latest release: v1.2.0)" >"$APP/said"
+pass
+echo "a-team release: can't read mentaldesk/demo: Not Found (HTTP 404)" >"$APP/said"
+echo 1 >"$APP/code"
+pass
+same "logged" "demo release: nothing to release: main is at v1.2.0
+demo release: would run release.yml on main at 1111111 (latest release: v1.2.0)
+demo release: failed: can't read mentaldesk/demo: Not Found (HTTP 404)" "$(cut -d' ' -f2- "$A_TEAM_STATE/dispatch.log")"
+same "asked" "release --dry-run demo" "$(sort -u "$APP/release-args")"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

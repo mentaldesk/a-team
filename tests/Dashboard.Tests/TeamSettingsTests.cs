@@ -95,6 +95,27 @@ public class TeamSettingsTests : IDisposable
         Assert.Contains("\"later\": {\"a\": [1, 2]}", after);
     }
 
+    [Theory]
+    [InlineData(null, TeamRelease.Never)]
+    [InlineData("\"never\"", TeamRelease.Never)]
+    [InlineData("\"daily\"", TeamRelease.Daily)]
+    [InlineData("\"continuous\"", TeamRelease.Continuous)]
+    [InlineData("\"weekly\"", TeamRelease.Never)]
+    public void Release_reads_as_never_unless_the_file_says_daily_or_continuous(string? value, TeamRelease release) =>
+        Assert.Equal(release, TeamSettings.Read(Bytes(value is null ? """{"repo": "o/r"}""" : $$"""{"release": {{value}}}""")).Release);
+
+    [Fact]
+    public void A_changed_release_is_written_in_lower_case_and_an_unchanged_one_is_left_as_it_was()
+    {
+        const string config = """{"release": "weekly","repo": "o/r"}""";
+        var before = TeamSettings.Read(Bytes(config));
+
+        Assert.Equal(config, Text(before.Write(Bytes(config), before)));
+        Assert.Equal(
+            """{"release": "continuous","repo": "o/r"}""",
+            Text((before with { Release = TeamRelease.Continuous }).Write(Bytes(config), before)));
+    }
+
     [Fact]
     public void A_team_without_devs_reads_as_one_and_keeps_its_file_until_devs_changes()
     {

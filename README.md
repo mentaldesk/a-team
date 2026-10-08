@@ -105,6 +105,9 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   starts within a couple of minutes. Pitching and discovering happen at most every
   `dispatch.creativeEvery` minutes, except that the Lead pitches straight away when nothing is
   Pitched or Exploring, so the stakeholder always has a pitch to decide on.
+- **Dependency updates.** A Dependabot PR the Lead hasn't commented on starts a Lead run. It
+  reads what the new version brings, files an Idea for each change the product should adopt (a
+  style guide's new rule, say), and lists them on the PR. Merging the PR stays yours.
 - **Feedback is never too old to start a run.** The two-minute check reads the last day of
   comments repo-wide, so every `dispatch.sweepEvery` minutes (30 by default) a role's own items
   are read in full instead, however old the comments on them are. The gap is elapsed time, not
@@ -131,6 +134,21 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
 - **Logs** are under `~/.local/state/a-team/` (or `$A_TEAM_STATE`). `a-team status` shows what each role is
   doing and how its last run went. A dashboard that crashes says so in one line and leaves the whole
   of it in a `crash-<time>.log` there.
+
+## Releasing by itself
+
+A team's `release` setting (*Releases* in its form in the app) says when the dispatcher runs the
+repo's `release.yml` workflow:
+
+- `never`, the default: you run it yourself, or the repo deploys itself on every merge (as
+  Vercel does) and there's nothing for a-team to run.
+- `daily`: at most once a day, once the default branch has moved past the latest release.
+- `continuous`: on the next pass after anything merges to the default branch.
+
+The workflow needs a `workflow_dispatch` trigger. It runs as your own `gh` login, so GitHub tells
+you when one fails, and a failed one isn't retried until the next merge. Releasing carries on while
+the team is paused, but only while this Mac is awake. `a-team release --dry-run <team>` says what
+the next pass would do, and `dispatch.log` records each change in what it says.
 
 ## The app
 

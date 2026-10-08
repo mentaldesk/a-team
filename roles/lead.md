@@ -101,7 +101,20 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
     two what you tried. The stakeholder has already tried and merged every task, so the pitch
     doesn't come back to them.
 
-### 4. Swap Pitched, then pitch or discover
+### 4. Read dependency updates
+
+For each Dependabot PR your prompt names:
+
+- Read what the new version brings: the release notes in the PR, and the changes they link to.
+  Where the contributor docs say the dependency carries the product's conventions, like a style
+  guide's library, look for rules that are new or changed.
+- For each change the product should adopt and doesn't follow yet, file an Idea as in `discover`
+  below, naming the PR under **Evidence**. If the update needs code changes before it builds, say
+  so in the Idea: that work ships inside it.
+- Then `a-team board {{team}} comment lead <pr> <file>`, listing the Ideas you filed, or saying
+  there's nothing to adopt. Leave the PR itself to the stakeholder.
+
+### 5. Swap Pitched, then pitch or discover
 
 Run `a-team board {{team}} lead-next` once. It returns the pitches to show the stakeholder now, and whether
 this run's new work is a pitch or a discovery. It alternates between the two so the stakeholder
@@ -194,5 +207,5 @@ the README, the open issues and the code: who it's for, what it's trying to be, 
 deliberately isn't, the products it learns from, and the next few themes. Open it as a draft
 PR from `a-team/vision` with your marker in the body, then `a-team board {{team}} add lead <pr> Pitched`.
 
-Until the stakeholder merges it, only do steps 1 to 3. If the PR is open, answer the stakeholder's
+Until the stakeholder merges it, only do steps 1 to 4. If the PR is open, answer the stakeholder's
 feedback on it (`a-team board {{team}} feedback lead <pr>`) by pushing to the branch and replying.
