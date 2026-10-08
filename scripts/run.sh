@@ -23,6 +23,19 @@ if [ "${healthy:-0}" -ne 0 ] && [ "$healthy" -ne 2 ]; then
   exit 3
 fi
 
+# Nothing else updates the product checkout, and a run reads the vision and the code from it.
+CHECKOUT=$(jq -r '.checkout // ((.workdir // "" | rtrimstr("/")) + "/main")' "$CONFIG")
+CHECKOUT=${CHECKOUT/#\~/$HOME}
+DEFAULT=origin/main
+stale=1
+if git -C "$CHECKOUT" fetch --quiet origin 2>/dev/null; then
+  DEFAULT=$(git -C "$CHECKOUT" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEFAULT=origin/main
+  if [ "origin/$(git -C "$CHECKOUT" branch --show-current)" = "$DEFAULT" ] &&
+    git -C "$CHECKOUT" merge --ff-only --quiet "$DEFAULT" >/dev/null 2>&1; then
+    stale=''
+  fi
+fi
+
 cat <<EOF
 # a-team run: $ROLE for team '$TEAM'
 
@@ -46,6 +59,10 @@ $("$ROOT/bin/a-team" board "$TEAM" wip)
 \`\`\`
 
 EOF
+if [ -n "$stale" ]; then
+  printf '## Product checkout\n\n%s could not be brought up to date with %s, so read the product repo from %s (`git -C %s show %s:<path>`), not from its files.\n\n' \
+    "$CHECKOUT" "$DEFAULT" "$DEFAULT" "$CHECKOUT" "$DEFAULT"
+fi
 if [ -n "${A_TEAM_RUN_TASK:-}" ]; then
   printf '## Your task\n\nThis run is for #%s and nothing else. The dispatcher picked it, and claimed it if it was Ready.\n\n' \
     "$A_TEAM_RUN_TASK"

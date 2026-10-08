@@ -58,8 +58,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Action<string> _openUrl;
-    private readonly Func<WaitingItem, IssueBody, Rank?> _askPriority;
-    private readonly Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?> _showBody;
+    private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Func<WaitingItem, Func<string, Task<string?>>, string?> _askComment;
@@ -109,8 +108,7 @@ public sealed class DashboardWindow : Window
         Func<string, Task<Reading>> readWaiting,
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
-        Func<WaitingItem, IssueBody, Rank?> askPriority,
-        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?> showBody,
+        Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -143,7 +141,6 @@ public sealed class DashboardWindow : Window
         _readBody = readBody;
         _readConversation = readConversation;
         _openUrl = openUrl;
-        _askPriority = askPriority;
         _showBody = showBody;
         _confirmAccept = confirmAccept ?? (_ => false);
         _confirmStop = confirmStop ?? (_ => false);
@@ -625,20 +622,31 @@ public sealed class DashboardWindow : Window
             _openUrl(url);
     }
 
-    /// <summary>Reads what the item is about first, off the draw loop, so the dialog opens on something worth
-    /// ranking.</summary>
+    /// <summary>Opens the reader with the ranks under it, starting on the card's own.</summary>
     private void SetPriority()
     {
         if (_work.SelectedCard is { } item)
-            ReadBody(item, Ask);
+            ReadRanking(item);
     }
 
+    /// <summary>A card in Triage is waiting for a rank, so it opens with the ranks under it.</summary>
     private void ReadSelected()
     {
         if (_work.Selected is not { } item)
             return;
+        if (_work.InTriage && _work.SelectedCard is { } card)
+        {
+            ReadRanking(card);
+            return;
+        }
         var url = _work.SelectedUrl;
         ReadBody(item, (read, body) => ShowBody(read, body, url), forReader: true);
+    }
+
+    private void ReadRanking(WaitingItem item)
+    {
+        var url = _work.SelectedUrl;
+        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Of(read)), forReader: true);
     }
 
     private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then, bool forReader = false)
@@ -688,27 +696,32 @@ public sealed class DashboardWindow : Window
         }
     }
 
-    /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board.</summary>
-    private void ShowBody(WaitingItem item, IssueBody body, string? url, int top = 0, string? failure = null)
+    /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board. With
+    /// <paramref name="rank"/> it opens anyway, saying why, since you came to rank it.</summary>
+    private void ShowBody(WaitingItem item, IssueBody body, string? url, int top = 0, string? failure = null,
+        Rank? rank = null)
     {
-        if (body.Failure is { Length: > 0 } unread)
+        if (rank is null && body.Failure is { Length: > 0 } unread)
             _failure = unread;
-        else if (string.IsNullOrWhiteSpace(body.Text))
+        else if (rank is null && string.IsNullOrWhiteSpace(body.Text))
             _failure = $"#{item.Number} has no description";
         else
         {
             _approvable = item.Approvable ? item : null;
             _shown = item;
-            _showBody(item, body, () =>
+            var chosen = _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
                     _openUrl(url);
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", Comment),
-                item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null);
+                item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
+                rank);
             _approvable = null;
             _shown = null;
+            if (chosen is { } ranked && ranked != Priorities.Of(item))
+                SetRank(item, ranked);
             if (_triedFrom is { } from)
             {
                 _triedFrom = null;
@@ -792,12 +805,11 @@ public sealed class DashboardWindow : Window
         SetNeedsDraw();
     }
 
-    /// <summary>Asks for a rank and writes it. The board decides what the field will take, so an unknown value
-    /// comes back as a refusal rather than being guessed at here. A body that wouldn't read still asks: you
-    /// pressed the key to rank, not to read.</summary>
-    private void Ask(WaitingItem item, IssueBody body)
+    /// <summary>Writes the rank. The board decides what the field will take, so an unknown value comes back as a
+    /// refusal rather than being guessed at here.</summary>
+    private void SetRank(WaitingItem item, Rank rank)
     {
-        if (_askPriority(item, body) is not { } rank)
+        if (_pending is not null)
             return;
         _ranking = (item, rank);
         _progress = "Setting…";

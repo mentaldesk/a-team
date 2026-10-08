@@ -130,7 +130,7 @@ gh_items() {
     split("\n") | map(select(length > 0)) | map(split(" ") as $f | {
       id: "PVTI_\($f[1])",
       fieldValueByName: {name: ($f[0] | gsub("_"; " "))},
-      content: {__typename: "Issue", number: ($f[1] | tonumber), title: ($f[2:] | join(" ")),
+      content: {__typename: "Issue", id: "I_\($f[1])", number: ($f[1] | tonumber), title: ($f[2:] | join(" ")),
                 url: "https://github.com/\($repo)/issues/\($f[1])",
                 repository: {nameWithOwner: $repo},
                 labels: {nodes: (($f[0] | gsub("_"; " ")) as $s
@@ -176,6 +176,8 @@ RUNS
   echo '{"head": {"sha": "deadbeefcafe"}}' >"$PULL"
   FILTERS="$BIN/filters"
   : >"$FILTERS"
+  CAUGHT="$BIN/caught.json"
+  gh_caught </dev/null
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
@@ -200,6 +202,7 @@ case " \$* " in
   *"label create"*) echo "\$*" >>"$WRITES"; exit 0 ;;
   *"--input -"*) cat >"$BIN/mutation.json"; echo '{}'; exit 0 ;;
   *check-runs*) page="$RUNS" ;;
+  *IssueEvents*) printf '%s\n' "\$@" >"$BIN/caught-args"; echo >>"$BIN/caught-calls"; page="$CAUGHT" ;;
   *issueOrPullRequest*) page="$TALK" ;;
   *": pullRequest(number"*) page="$UNLINKED" ;;
   *closedByPullRequestsReferences*) page="$PRS" ;;
@@ -241,6 +244,29 @@ if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
   chmod +x "$BIN/gh"
   PATH="$BIN:$PATH"
+}
+
+# What the catch-up finds on GitHub, from lines of "<n> <kind> <timestamp> <login> [<detail>]": kinds
+# comment, merged, closed (<detail> the PR that closed it, or the reason) and moved (<detail> "<from>><to>",
+# with _ for a space, on project <owner>/<number> if a third field follows). A login ending [bot] is a Bot.
+gh_caught() {
+  jq -R -s 'def who($login): if $login | endswith("[bot]")
+      then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))} else {__typename: "User", login: $login} end;
+    split("\n") | map(select(length > 0)) | to_entries | map(.key as $i | .value | split(" ") as $f
+      | {n: ($f[0] | tonumber), id: "EV_\($i)", createdAt: $f[2], kind: $f[1], who: who($f[3]), detail: ($f[4] // "")}
+      | if .kind == "comment" then {n, node: {__typename: "IssueComment", id, createdAt, author: .who}}
+        elif .kind == "merged" then {n, pull: true, node: {__typename: "MergedEvent", id, createdAt, actor: .who}}
+        elif .kind == "closed" then {n, node: ({__typename: "ClosedEvent", id, createdAt, actor: .who}
+          + if .detail | test("^[0-9]+$") then {stateReason: "COMPLETED",
+              closer: {__typename: "PullRequest", number: (.detail | tonumber)}}
+            else {stateReason: (if .detail == "" then null else .detail end), closer: null} end)}
+        else (.detail | split(">") | map(gsub("_"; " "))) as $move | ($f[5] // "mentaldesk/1" | split("/")) as $p
+          | {n, node: {__typename: "ProjectV2ItemStatusChangedEvent", id, createdAt, actor: .who,
+              previousStatus: $move[0], status: $move[1],
+              project: {number: ($p[1] | tonumber), owner: {login: $p[0]}}}} end)
+    | group_by(.n) | map({number: .[0].n} + (if any(.[]; .pull) then {merged: true} else {} end)
+        + {timelineItems: {nodes: map(.node)}})
+    | {data: {search: {nodes: .}, nodes: []}}' >"$CAUGHT"
 }
 
 # Applies a jq update to the content of #<n> on the page gh_items wrote.
@@ -397,6 +423,7 @@ same "url" '"https://github.com/mentaldesk/demo/issues/106"' "$(jq -c '.[0].url'
 same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
 same "api calls" 2 "$(grep -c '' <"$CALLS")"
 
+# The read above began the record, so every read from here also catches up from GitHub: one call more.
 case_ "waiting asks GitHub for the board without what's Done"
 same "filter" '-Status:"Done"' "$(cat "$FILTERS")"
 
@@ -461,7 +488,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 2 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "so it is when GitHub hasn't linked that PR to the task, and only its body closes it"
 gh_talk false MERGEABLE unlinked <<TALK
@@ -475,7 +502,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "but a PR the Dev didn't open isn't taken for the task's on its word"
 gh_talk false MERGEABLE unlinked <<TALK
@@ -647,7 +674,7 @@ ITEMS
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
-same "api calls" 1 "$(grep -c '' <"$CALLS")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
 
 case_ "a gated item carries the Priority the cards colour its number by"
 gh_items 106 <<'ITEMS'
@@ -682,7 +709,7 @@ same "idea turn" '"you"' "$(jq -c '.[2].turn' "$OUT")"
 same "idea reason" '"waiting to be ranked"' "$(jq -c '.[2].reason' "$OUT")"
 same "idea fields" '["number","reason","status","team","title","turn","url"]' "$(jq -c '.[2] | keys' "$OUT")"
 same "idea url" '"https://github.com/mentaldesk/demo/issues/6"' "$(jq -c '.[2].url' "$OUT")"
-same "api calls" 2 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a team whose every Idea is ranked has none of them waiting"
 gh_items 6 26 <<'ITEMS'
@@ -692,7 +719,7 @@ ITEMS
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
-same "api calls" 1 "$(grep -c '' <"$CALLS")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
 
 case_ "a pitch that needs the reviewer's answer comes with that section as its question"
 gh_items <<'ITEMS'
@@ -778,7 +805,7 @@ same "status" '"Ready"' "$(jq -c '.[1].status' "$OUT")"
 same "turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "reason" '"asked you since 08:23"' "$(jq -c '.[1].reason' "$OUT")"
 same "question" '"Which marker should it post?"' "$(jq -c '.[1].question' "$OUT")"
-same "api calls" 2 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "once the reviewer replies to the question, it's the Dev's turn"
 gh_talk <<TALK
@@ -3555,6 +3582,25 @@ failed "unreadable wip"
 same "unreadable wip" "board.sh: demo.json isn't a JSON object" "$(cat "$ERR")"
 echo "$before" >"$TEAM"
 
+case_ "run brings the product checkout up to date before it prints the brief"
+try_fixture
+app_fixture
+jq --arg c "$CHECKOUT" '.checkout = $c' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+cached ghs_cached 3600
+land main
+PATH="$APP_BIN/board:$PATH" run run demo lead
+same "exit" 0 "$STATUS"
+same "checkout" "$TRY_LANDED" "$(git -C "$CHECKOUT" rev-parse HEAD)"
+grep -q '^## Product checkout' "$OUT" && fail "up to date: told to read around the checkout"
+
+case_ "run says to read the default branch when the checkout can't be fast-forwarded to it"
+git -C "$CHECKOUT" -c user.email=test@example.com -c user.name=Test commit -q --allow-empty -m local
+land main
+PATH="$APP_BIN/board:$PATH" run run demo lead
+same "exit" 0 "$STATUS"
+grep -q "^$CHECKOUT could not be brought up to date with origin/main, so read the product repo from origin/main" "$OUT" ||
+  fail "diverged: '$(cat "$OUT")'"
+
 case_ "examples/team.json carries the app key and stays valid"
 jq -e 'has("app")' "$ROOT/examples/team.json" >/dev/null || fail "example: no app key"
 
@@ -3808,6 +3854,123 @@ same "other team" "dev commented" \
   "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board other history 7 | jq -r '.events[] | "\(.who) \(.what)"')"
 run board demo history 7
 same "since" "$(jq -r '.events[-1].at' "$OUT")" "$(jq -r .since "$OUT")"
+
+# A record begun $1 minutes ago by the Lead commenting on #7.
+record_from() {
+  rm -f "$A_TEAM_STATE/history.db"
+  run board demo comment lead 7 "$WORK/reply"
+  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE events SET at = '$(ago "$1")'"
+}
+caught_calls() { if [ -f "$BIN/caught-calls" ]; then grep -c '' "$BIN/caught-calls"; else echo 0; fi; }
+caught_arg() { sed -n "s/^$1=//p" "$BIN/caught-args"; }
+
+case_ "the read catches up on what was done on GitHub directly, each as its own kind of event, in one query"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+In_review 8 A task
+ITEMS
+record_from 120
+said=$(ago 40)
+gh_caught <<CAUGHT
+8 closed $(ago 50) reviewer 908
+9 closed $(ago 49) reviewer COMPLETED
+10 closed $(ago 48) reviewer NOT_PLANNED
+7 comment $said reviewer
+7 moved $(ago 30) reviewer Pitched>Approved
+7 moved $(ago 29) reviewer >Idea
+7 comment $(ago 20) octocat
+911 merged $(ago 10) reviewer
+CAUGHT
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "one query" 1 "$(caught_calls)"
+same "comments and moves" "octocat commented
+you added as Idea
+you Pitched → Approved
+you commented
+lead commented" "$(history_of 7)"
+same "merged" "you accepted · PR #908 merged" "$(history_of 8)"
+same "closed" "you accepted · closed" "$(history_of 9)"
+same "not planned" "you closed as not planned" "$(history_of 10)"
+same "merged PR" "you accepted · PR #911 merged" "$(history_of 911)"
+same "when" "$said" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 7 | jq -r '.events[-2].at')"
+
+case_ "catching up again records nothing new"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "twice" 5 "$(history_of 7 | grep -c '')"
+
+case_ "the catch-up leaves out bots, other projects, and what happened before the record began"
+record_from 120
+gh_caught <<CAUGHT
+7 comment $(ago 40) demo-app[bot]
+7 moved $(ago 39) github-project-automation[bot] In_review>Done
+7 moved $(ago 38) reviewer Idea>Ready elsewhere/1
+7 moved $(ago 37) reviewer Idea>Ready mentaldesk/2
+7 comment $(ago 200) reviewer
+CAUGHT
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "left out" "lead commented" "$(history_of 7)"
+
+case_ "what you did from the dashboard isn't recorded twice when the catch-up sees it on GitHub"
+record_from 120
+run board demo approve you 7
+run board demo comment you 7 "$WORK/reply"
+gh_pr 908 false
+echo '{"head": {"sha": "deadbeefcafe", "ref": "feat/task", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
+run board demo accept you 8
+gh_caught <<CAUGHT
+7 moved $(ago 0) reviewer Pitched>Approved
+7 comment $(ago 0) reviewer
+7 comment $(ago 1) reviewer
+8 closed $(ago 0) reviewer 908
+CAUGHT
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "once each" "you commented
+you Pitched → Approved
+you commented
+lead commented" "$(history_of 7)"
+same "accepted once" "you accepted · PR #908 merged" "$(history_of 8)"
+
+case_ "the catch-up reaches back to the start of the record, then asks after the items whose Status moved"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+In_review 8 A task
+Ready 12 A task
+ITEMS
+record_from 120
+start=$(ago 120)
+run board demo waiting
+same "from the start" "$start" "$(caught_arg since)"
+same "search" "repo:mentaldesk/demo updated:>=$start" "$(caught_arg q)"
+gh_items <<'ITEMS'
+Approved 7 A pitch
+Ready 12 A task
+ITEMS
+run board demo waiting
+grep -q 'nodes(ids: \["I_7","I_8"\])' "$BIN/caught-args" || fail "moved: $(grep 'nodes(ids' "$BIN/caught-args")"
+[[ $(caught_arg since) > $start ]] || fail "since: $(caught_arg since) is still the start of the record"
+
+case_ "a fresh install begins its record on its first read, without asking GitHub"
+rm -f "$A_TEAM_STATE/history.db"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+ITEMS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "no query" 0 "$(caught_calls)"
+run board demo waiting
+same "then one" 1 "$(caught_calls)"
+
+case_ "--dry-run doesn't catch up"
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+ITEMS
+run board --dry-run demo waiting
+same "exit" 0 "$STATUS"
+same "no query" 0 "$(caught_calls)"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.

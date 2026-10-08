@@ -27,7 +27,12 @@ history_sql() {
     who TEXT NOT NULL, what TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY, team TEXT NOT NULL, role TEXT NOT NULL,
     pid INTEGER NOT NULL, log TEXT NOT NULL, started TEXT NOT NULL, ended TEXT, cost REAL, outcome TEXT);
-  CREATE TABLE IF NOT EXISTS run_items (run INTEGER NOT NULL, item INTEGER NOT NULL); ${*: -1}"
+  CREATE TABLE IF NOT EXISTS run_items (run INTEGER NOT NULL, item INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS caught_up (team TEXT PRIMARY KEY, started TEXT NOT NULL, at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS seen (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL,
+    status TEXT NOT NULL, PRIMARY KEY (team, item));
+  CREATE TABLE IF NOT EXISTS github (team TEXT NOT NULL, id TEXT NOT NULL, event INTEGER,
+    PRIMARY KEY (team, id)); ${*: -1}"
 }
 
 # run_outcome <team> <role> <pid> <outcome>: why that run, still going, will have ended.
