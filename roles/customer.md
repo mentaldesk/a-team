@@ -29,7 +29,7 @@ While it's open, add to it: commit to its branch, and add a line to its descript
 If a worktree on `docs/customer-lead` is left over from a docs PR that has merged, remove it and
 its local branch first, untracked files and all.
 
-Your prompt names the accepted pitches to check. For each:
+Your prompt names the done pitches to check. For each:
 
 1. Read the pitch (`a-team board {{team}} body <n>`) and its tasks
    (`a-team board {{team}} children <n>`), and what their PRs changed.

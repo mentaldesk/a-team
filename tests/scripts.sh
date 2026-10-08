@@ -2298,7 +2298,7 @@ same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 [ -e "$A_TEAM_STATE/demo/customer/covered" ] && fail "off: it started counting what's covered"
 
-case_ "turned on, it starts from the pitches accepted after that, one reason each, and never for a shelved one"
+case_ "turned on, it starts from the pitches done after that, one reason each, and never for a shelved one"
 customer_on
 run board demo triggers customer
 same "first pass" '[]' "$(jq -c .reasons "$OUT")"
@@ -2315,7 +2315,7 @@ accepted 8 NOT_PLANNED
 edit_item 7 '.labels.nodes = [{name: "pitch"}]'
 run board demo triggers customer
 same "exit" 0 "$STATUS"
-same "reasons" '["pitch #6 was accepted: check the docs cover what it shipped"]' "$(jq -c .reasons "$OUT")"
+same "reasons" '["pitch #6 is done: check the docs cover what it shipped"]' "$(jq -c .reasons "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
 
 case_ "covered stops a pitch triggering again, and goes in its history"
@@ -2327,13 +2327,13 @@ same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 run board demo history 6
 same "history" '"customer docs checked"' "$(jq -c '.events[0] | "\(.who) \(.what)"' "$OUT")"
 
-case_ "covered is the Customer lead's alone, and only for an accepted pitch"
+case_ "covered is the Customer lead's alone, and only for a done pitch"
 run board demo covered dev 6
 failed "dev covering"
 grep -q "only customer checks the docs" "$ERR" || fail "dev covering: '$(cat "$ERR")'"
 run board demo covered customer 7
 failed "covering a pitch In review"
-grep -q "#7 isn't an accepted pitch" "$ERR" || fail "covering In review: '$(cat "$ERR")'"
+grep -q "#7 isn't a done pitch" "$ERR" || fail "covering In review: '$(cat "$ERR")'"
 
 case_ "the Customer lead adds its own open docs PR to In review, labelled as its"
 gh_items <<'ITEMS'
@@ -3020,7 +3020,7 @@ jq --arg w "$WORKDIR" '.workdir = $w' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$T
 case_ "only a team with the Customer lead on asks it for work, and its run gets its own rules too"
 dev_dispatcher
 jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
-jq -n '{reasons: ["pitch #5 was accepted: check the docs cover what it shipped"], creative: false}' >"$CUSTOMER_TRIGGERS"
+jq -n '{reasons: ["pitch #5 is done: check the docs cover what it shipped"], creative: false}' >"$CUSTOMER_TRIGGERS"
 printf '#!/usr/bin/env bash\n' >"$DISPATCH/bin/claude"
 chmod +x "$DISPATCH/bin/claude"
 dispatch_dev --dry-run
@@ -3028,7 +3028,7 @@ same "asked while off" "" "$(cat "$CLAIMS")"
 jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 dispatch_dev
 same "asked" "board demo triggers customer --sweep" "$(cat "$CLAIMS")"
-grep -qE 'demo customer: started [0-9]+ on 0\.1\.7: pitch #5 was accepted' "$A_TEAM_STATE/dispatch.log" ||
+grep -qE 'demo customer: started [0-9]+ on 0\.1\.7: pitch #5 is done' "$A_TEAM_STATE/dispatch.log" ||
   fail "customer: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 SETTINGS="$A_TEAM_STATE/demo/customer/release/settings.json"
 jq -e '.permissions.deny | index("Edit(**/*.cs)") and index("Bash(gh pr merge *)")' "$SETTINGS" >/dev/null ||

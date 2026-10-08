@@ -38,7 +38,7 @@ public class AcceptDialogTests
             "https://github.com/x/pull/352", "a-team", Pr: 352, Base: "main", Role: "customer"));
 
         Assert.Equal(
-            "Merges the Customer lead's docs PR #352 into main, squashed. The next pitch you accept starts a new one.",
+            "Merges the Customer lead's docs PR #352 into main, squashed. The next pitch that's done starts a new one.",
             dialog.Body.Text);
     }
 

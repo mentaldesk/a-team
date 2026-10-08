@@ -78,10 +78,10 @@ built can find it and learn it. It's off until you turn it on: tick **Customer l
 in the team's settings ([Teams](teams.md#a-teams-settings)), and its pane joins the team's on the
 Dashboard.
 
-- **When you accept a pitch**, it reads what the pitch shipped and checks the user docs cover it:
+- **When a pitch is done**, it reads what the pitch shipped and checks the user docs cover it:
   the README, guides and in-app help written as text.
 - **If they don't**, it writes what's missing into one docs PR, `Docs: what's changed since <date>`,
-  whose description lists each change in a line. While that PR is open, the next accepted pitch adds
+  whose description lists each change in a line. While that PR is open, the next pitch that's done adds
   to it rather than opening another.
 - **If they already do**, it changes nothing.
 

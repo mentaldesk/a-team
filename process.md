@@ -44,7 +44,7 @@ Two kinds of item share the board:
   dependency, and becomes available by itself when that one closes. The `blocked` label is
   for a task waiting on the stakeholder: for an answer, or because they're holding it.
 - A **docs PR** is the Customer lead's, labelled `a-team:customer`: one open at a time, which it
-  adds to after each accepted pitch. It goes straight to In review, and accepting it merges it.
+  adds to after each pitch is done. It goes straight to In review, and accepting it merges it.
 
 The stakeholder uses the same board for their own work. Pitches carry the `pitch` label, tasks
 the Dev has claimed carry `a-team:dev`, and the docs PR `a-team:customer`; anything else past Ready
@@ -93,7 +93,7 @@ a-team board {{team}} body <n>                  # an issue's number, title and b
 a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON
 a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
-                                                # accepted pitch #<n>
+                                                # done pitch #<n>
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
 a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a run for;

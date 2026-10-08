@@ -177,7 +177,7 @@ own_label() {
 
 customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
 
-# The accepted pitches the Customer lead has already checked the docs against, one number a line.
+# The done pitches the Customer lead has already checked the docs against, one number a line.
 COVERED="$STATE/$TEAM/customer/covered"
 
 KIND=$(cfg .project.ownerType)
@@ -1208,9 +1208,9 @@ case "$CMD" in
   covered)
     [ $# -eq 2 ] || die "usage: board.sh $TEAM covered <role> <pitch>"
     role=$1 n=$2
-    [ "$role" = customer ] || die "only customer checks the docs against an accepted pitch"
+    [ "$role" = customer ] || die "only customer checks the docs against a done pitch"
     item "$n" | jq -e '(.labels | index("pitch")) and .status == "Done"' >/dev/null ||
-      die "#$n isn't an accepted pitch"
+      die "#$n isn't a done pitch"
     if [ -z "$DRY_RUN" ]; then
       mkdir -p "$(dirname "$COVERED")"
       grep -qx "$n" "$COVERED" 2>/dev/null || echo "$n" >>"$COVERED"
@@ -1396,13 +1396,13 @@ case "$CMD" in
       if customer_on; then
         accepted=$(jq -r '.[] | select((.labels | index("pitch")) and .status == "Done" and .closed == "COMPLETED")
           | .number' <<<"$all")
-        # Turned on, it starts from the pitches accepted after that, not from every one before.
+        # Turned on, it starts from the pitches done after that, not from every one before.
         if [ ! -f "$COVERED" ]; then
           mkdir -p "$(dirname "$COVERED")"
           printf '%s\n' "$accepted" >"$COVERED"
         else
           for n in $accepted; do
-            grep -qx "$n" "$COVERED" || reasons+=("pitch #$n was accepted: check the docs cover what it shipped")
+            grep -qx "$n" "$COVERED" || reasons+=("pitch #$n is done: check the docs cover what it shipped")
           done
         fi
       fi
