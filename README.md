@@ -135,6 +135,21 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   doing and how its last run went. A dashboard that crashes says so in one line and leaves the whole
   of it in a `crash-<time>.log` there.
 
+## Releasing by itself
+
+A team's `release` setting (*Releases* in its form in the app) says when the dispatcher runs the
+repo's `release.yml` workflow:
+
+- `never`, the default: you run it yourself, or the repo deploys itself on every merge (as
+  Vercel does) and there's nothing for a-team to run.
+- `daily`: at most once a day, once the default branch has moved past the latest release.
+- `continuous`: on the next pass after anything merges to the default branch.
+
+The workflow needs a `workflow_dispatch` trigger. It runs as your own `gh` login, so GitHub tells
+you when one fails, and a failed one isn't retried until the next merge. Releasing carries on while
+the team is paused, but only while this Mac is awake. `a-team release --dry-run <team>` says what
+the next pass would do, and `dispatch.log` records each change in what it says.
+
 ## The app
 
 ```

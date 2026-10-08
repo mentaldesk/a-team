@@ -251,6 +251,19 @@ pick_task() {
   [ "$claimed" = null ] || jq -c '. + {reasons: ["Ready task #\(.number) to build"]}' <<<"$claimed"
 }
 
+# run_release <team> <config>: release.sh, for a team that releases by itself, logging what it says when that
+# changes.
+run_release() {
+  local said file="$STATE/$1/release-said" args=(release)
+  jq -e '(.release // "never") != "never"' "$2" >/dev/null 2>&1 || return 0
+  $DRY_RUN && args+=(--dry-run) && file="$STATE/$1/dry-release-said"
+  said=$("$ROOT/bin/a-team" "${args[@]}" "$1" 2>&1) || said="failed: ${said#a-team release: }"
+  [ "$said" = "$(cat "$file" 2>/dev/null)" ] && return
+  log "$1 release: $said"
+  mkdir -p "$STATE/$1"
+  printf '%s\n' "$said" >"$file"
+}
+
 # cannot_run <team> <config>: why the team can't run, if it can't. It runs only as its own App.
 cannot_run() {
   local why
@@ -261,6 +274,7 @@ cannot_run() {
 
 for team in $(team_names); do
   config=$(team_config "$team")
+  run_release "$team" "$config"
   jq -e '.dispatch.enabled == true' "$config" >/dev/null 2>&1 || continue
   why=$(cannot_run "$team" "$config")
   if [ -n "$why" ]; then
