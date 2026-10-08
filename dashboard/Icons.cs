@@ -36,6 +36,7 @@ public enum Icon
     Pitch,
     Task,
     PullRequest,
+    Docs,
 }
 
 /// <summary>A card's icon for whose move it is, and the scheme its colour comes from.</summary>
@@ -70,6 +71,7 @@ public static class Icons
         [Icon.Pitch] = "\U000F0428",    // nf-md-presentation
         [Icon.Task] = "\uEC37",         // nf-cod-code_review
         [Icon.PullRequest] = "\uE726",  // nf-dev-git_pull_request
+        [Icon.Docs] = "\U000F0219",    // nf-md-file_document
     };
 
     private static readonly Dictionary<Icon, string> UnicodeGlyphs = new()
@@ -94,6 +96,7 @@ public static class Icons
         [Icon.Pitch] = "◇",
         [Icon.Task] = "‹›",
         [Icon.PullRequest] = "PR",
+        [Icon.Docs] = "\U0001F4C4",
     };
 
     /// <summary>The meanings a style's sample shows, in the order Settings names them underneath.</summary>
@@ -149,7 +152,7 @@ public static class Icons
         For(item, style) with { Glyph = Glyph(KindOf(item), style) };
 
     internal static Icon KindOf(WaitingItem item) =>
-        item.Status == "Idea" ? Icon.Idea : item.Pitch ? Icon.Pitch : item.Docs ? Icon.PullRequest : Icon.Task;
+        item.Status == "Idea" ? Icon.Idea : item.Pitch ? Icon.Pitch : item.Docs ? Icon.Docs : Icon.Task;
 }
 
 /// <summary>A row wears its icon and its Priority in the cells the tree laid out in front of its text: drawn

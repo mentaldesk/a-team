@@ -21,14 +21,14 @@ public class CardTests
     }
 
     [Fact]
-    public void The_Customer_lead_s_docs_PR_is_one_row_that_says_whose_it_is_and_wears_the_PR_glyph()
+    public void The_Customer_lead_s_docs_PR_is_one_row_that_says_whose_it_is_and_wears_the_docs_glyph()
     {
         var docs = new Card(new WaitingItem(352, "Docs: what's changed since 28 Sep", "In review", "https://github.com/x/pull/352",
             "a-team", "you", Pr: 352, PrUrl: "https://github.com/x/pull/352", Role: "customer"), false);
 
         Assert.Empty(docs.Children);
         Assert.Equal("#352  Customer lead · Docs: what's changed since 28 Sep", docs.Text(0));
-        Assert.Equal(Icons.Glyph(Icon.PullRequest, IconStyle.Unicode), docs.Leads(IconStyle.Unicode)[1].Glyph);
+        Assert.Equal(Icons.Glyph(Icon.Docs, IconStyle.Unicode), docs.Leads(IconStyle.Unicode)[1].Glyph);
     }
 
     [Fact]

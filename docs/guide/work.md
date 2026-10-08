@@ -31,8 +31,8 @@ A card reads as the issue's number, then its title:
 - **Whose move it is.** A green `✓` means it's yours. A dimmed `·` means an agent owes you an
   answer, and the card names the role in front of its title, like `#118  lead · ...`. It's theirs
   from the moment you comment on the issue or its PR until they reply.
-- **What it is.** 💡 an Idea, `◇` a pitch, `‹›` a task. Triage and Pitches show the kind in their
-  heading instead, so only a card of another kind wears its own.
+- **What it is.** 💡 an Idea, `◇` a pitch, `‹›` a task, 📄 the Customer lead's docs PR. Triage
+  and Pitches show the kind in their heading instead, so only a card of another kind wears its own.
 - **Its Priority.** The issue number is coloured by Priority, in the colours GitHub gives them:
   green for Low, amber for Medium, red for High and pink for Urgent. An unranked card's number is
   plain.
