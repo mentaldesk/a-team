@@ -101,7 +101,8 @@ Handover? Show(Handover? back)
         confirmStop: task => StopRunDialog.Show(app, task),
         readHistory: item => command.Read("board", item.Team, "history", item.Number.ToString()),
         pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),
-        readTrend: team => command.Read("board", team, "trend"));
+        readTrend: team => command.Read("board", team, "trend"),
+        showTrends: teams => TrendsDialog.Show(app, teams, team => command.Read("board", team, "trends")));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

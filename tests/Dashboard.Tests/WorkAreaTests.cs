@@ -72,6 +72,23 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Trends_is_in_the_palette_and_opens_with_each_team_s_cards_once_Work_has_read_them()
+    {
+        var opened = new List<IReadOnlyList<(string Team, int? Waiting)>>();
+        using var window = Open(showTrends: opened.Add);
+
+        Assert.Contains(window.Commands.Enabled, command => command is { Id: "trends", Label: "Trends" });
+        window.Commands.Execute("trends");
+        window.Refresh();
+        window.Commands.Execute("trends");
+
+        Assert.Equal([("team0", null), ("team1", null)], opened[0]);
+        Assert.Equal(
+            [("team0", window.Work.Items.Count(item => item.Team == "team0")), ("team1", window.Work.Items.Count(item => item.Team == "team1"))],
+            opened[1]);
+    }
+
+    [Fact]
     public void A_record_that_can_t_be_read_leaves_the_title_with_what_s_waiting_now()
     {
         using var window = Open(readTrend: _ => Task.FromResult(new Reading("", "no record")));
@@ -2829,7 +2846,8 @@ public class WorkAreaTests : IDisposable
         TimeProvider? clock = null,
         Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
         Func<WaitingItem, Task<Reading>>? readHistory = null,
-        Func<string, Task<Reading>>? readTrend = null)
+        Func<string, Task<Reading>>? readTrend = null,
+        Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -2855,7 +2873,8 @@ public class WorkAreaTests : IDisposable
             clock: clock,
             askComment: askComment,
             readHistory: readHistory,
-            readTrend: readTrend);
+            readTrend: readTrend,
+            showTrends: showTrends);
     }
 
     private void WriteRun(string team, string role, int pid)

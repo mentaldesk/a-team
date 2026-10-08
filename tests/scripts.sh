@@ -4428,6 +4428,33 @@ sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM queue WHERE at <= '$(ago $((60 *
 same "partial" null "$(trend | jq .weekAgo)"
 sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 8 + 60)))', 20)"
 same "stale" null "$(trend | jq .weekAgo)"
+
+trends() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trends | jq -c .; }
+
+case_ "with nothing recorded, trends has no start, no points and no cost, and makes no record file"
+rm -f "$A_TEAM_STATE/history.db"
+same "empty" '{"since":null,"queue":[],"accepted":[],"cost":0}' "$(trends)"
+unrecorded "trends"
+
+case_ "trends: the last 15 days of the queue, each item accepted once at its latest, and runs' cost in 7 days"
+rm -f "$A_TEAM_STATE/history.db"
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
+    at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
+  CREATE TABLE queue (team TEXT NOT NULL, at TEXT NOT NULL, waiting INTEGER NOT NULL);
+  CREATE TABLE runs (id INTEGER PRIMARY KEY, team TEXT NOT NULL, role TEXT NOT NULL,
+    pid INTEGER NOT NULL, log TEXT NOT NULL, started TEXT NOT NULL, ended TEXT, cost REAL, outcome TEXT);
+  INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 16)))', 20), ('demo', '$(ago $((60 * 24 * 3)))', 12),
+    ('demo', '$(ago 90)', 9), ('other', '$(ago 60)', 30);
+  INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 8, '$(ago 50)', 'you', 'accepted · PR #908 merged'), ('demo', 908, '$(ago 50)', 'you', 'accepted · PR #908 merged'),
+    ('demo', 7, '$(ago 40)', 'you', 'accepted · closed'), ('demo', 7, '$(ago 30)', 'you', 'accepted · closed'),
+    ('demo', 9, '$(ago $((60 * 24 * 20)))', 'you', 'accepted · PR #909 merged'),
+    ('demo', 10, '$(ago 10)', 'octocat', 'accepted · PR #910 merged'),
+    ('other', 12, '$(ago 10)', 'you', 'accepted · closed');
+  INSERT INTO runs (team, role, pid, log, started, cost) VALUES ('demo', 'dev', 1, 'a', '$(ago 100)', 1.25),
+    ('demo', 'lead', 2, 'b', '$(ago 200)', NULL), ('demo', 'dev', 3, 'c', '$(ago $((60 * 24 * 8)))', 9),
+    ('other', 'dev', 4, 'd', '$(ago 100)', 4);"
+same "trends" "{\"since\":\"$(ago $((60 * 24 * 20)))\",\"queue\":[{\"at\":\"$(ago $((60 * 24 * 3)))\",\"waiting\":12},{\"at\":\"$(ago 90)\",\"waiting\":9}],\"accepted\":[\"$(ago 50)\",\"$(ago 30)\"],\"cost\":1.25}" "$(trends)"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.
