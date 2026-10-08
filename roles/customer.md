@@ -26,8 +26,27 @@ While it's open, add to it: commit to its branch, and add a line to its descript
 
 ## Each run
 
-If a worktree on `docs/customer-lead` is left over from a docs PR that has merged, remove it and
-its local branch first, untracked files and all.
+If a worktree on `docs/customer-lead` or `docs/customer-lead-proposal` is left over from a PR that
+has merged, remove it and its local branch first, untracked files and all.
+
+### A product with no user docs
+
+If the product's user docs say no more than how to install and run it, and no docs proposal has
+merged, propose them before writing any:
+
+1. If your docs proposal is open, answer the stakeholder's feedback on it as below for the docs PR,
+   then end the run.
+2. Otherwise fetch `origin` and create a fresh worktree on `docs/customer-lead-proposal` from
+   `origin/<default branch>`. Decide where the docs will live, judged by where this product's users
+   would look. Commit their outline as the docs' first page there: a heading for each page with a
+   line on what it covers and who it's for.
+3. Open it as a **draft** PR titled `Docs proposal: where <product>'s user docs live`. Body: where
+   and why, in a few lines, then your marker. `a-team board {{team}} add customer <pr> Pitched`.
+4. End the run. Don't run `covered` for any pitch in your prompt: done pitches come back once the
+   proposal merges.
+
+When your prompt says the proposal merged, write the docs it outlines into your docs PR, as in
+step 4 below, one description line per page `(#<proposal>)`.
 
 If your prompt names stakeholder feedback on your docs PR, answer it first. Read it with
 `a-team board {{team}} feedback customer <pr>`, then for each comment:

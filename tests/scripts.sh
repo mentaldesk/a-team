@@ -2512,6 +2512,133 @@ RECENT
 run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+# The Customer lead's docs proposal: for a product with no user docs, a draft PR saying where they'll live.
+PROPOSED="$A_TEAM_STATE/demo/customer/proposal"
+proposal_pr() {
+  jq -n --argjson n "$1" --arg state "${2:-open}" --argjson draft "${3:-true}" --arg merged "${4:-}" \
+    '{node_id: "PR_\($n)", number: $n, state: $state, draft: $draft,
+      merged_at: (if $merged == "" then null else $merged end),
+      body: "Where the docs live, and their outline.\n\n<!-- a-team:customer -->"}' >"$PULL"
+  jq -n --argjson n "$1" '{node_id: "PR_\($n)", number: $n, state: "open", pull_request: {},
+      body: "<!-- a-team:customer -->"}' >"$ISSUE"
+}
+
+case_ "the Customer lead puts its own draft docs proposal in Pitched, labelled as its"
+gh_items <<'ITEMS'
+Pitched 12 Docs proposal: where the user docs live
+ITEMS
+docs_pr 12
+jq '(.data.organization.projectV2.items.nodes[] | select(.content.number == 12)) |= (.fieldValueByName = null)
+    | (.data.organization.projectV2.items.nodes[].content.labels.nodes) = []' "$ITEMS" >"$ITEMS.new" &&
+  mv "$ITEMS.new" "$ITEMS"
+proposal_pr 12
+run board demo add customer 12 Pitched
+same "exit" 0 "$STATUS"
+same "said" "#12: added as Pitched" "$(cat "$OUT")"
+grep -q 'issues/12/labels -f labels\[\]=a-team:customer' "$WRITES" || fail "propose: no label in '$(cat "$WRITES")'"
+grep -q 'labels\[\]=pitch' "$WRITES" && fail "propose: labelled a pitch, which is the Lead's"
+grep -q 'item=PVTI_12 .*option=OPT_pitched' "$WRITES" || fail "propose: no move in '$(cat "$WRITES")'"
+same "remembered" 12 "$(cat "$PROPOSED")"
+
+case_ "it proposes only with its own open draft PR, one at a time, and never on dry run"
+rm -f "$PROPOSED"
+: >"$WRITES"
+proposal_pr 12 open false
+run board demo add customer 12 Pitched
+failed "a PR that isn't a draft"
+grep -q "customer may only put its own open draft docs proposal in Pitched (#12 isn't one)" "$ERR" ||
+  fail "not a draft: '$(cat "$ERR")'"
+proposal_pr 12
+jq '.body = "Closes #7\n\n<!-- a-team:dev -->"' "$PULL" >"$PULL.new" && mv "$PULL.new" "$PULL"
+run board demo add customer 12 Pitched
+failed "someone else's PR"
+gh_items <<'ITEMS'
+Pitched 12 Docs proposal: where the user docs live
+ITEMS
+docs_pr 12
+proposal_pr 13
+run board demo add customer 13 Pitched
+failed "a second proposal"
+grep -q "customer's #12 is still open: no docs proposal beside it" "$ERR" || fail "a second proposal: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+proposal_pr 14
+gh_items </dev/null
+proposal_pr 14
+run board --dry-run demo add customer 14 Pitched
+same "dry run" 0 "$STATUS"
+[ -e "$PROPOSED" ] && fail "dry run remembered the proposal"
+
+case_ "while the proposal is open, no docs PR goes up and done pitches wait"
+gh_items <<'ITEMS'
+Pitched 12 Docs proposal: where the user docs live
+Done 16 A pitch just accepted
+ITEMS
+docs_pr 12
+accepted 16
+echo 12 >"$PROPOSED"
+proposal_pr 12
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
+run board demo add customer 15 "In review"
+failed "a docs PR before the proposal merges"
+grep -q "customer's docs proposal #12 isn't merged yet: no docs PR until it is" "$ERR" ||
+  fail "docs PR too soon: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "a stakeholder's comment on the proposal triggers the Customer lead, not the Lead"
+gh_recent <<RECENT
+12 ${TODAY}T09:00:00Z reviewer 0 Put them under docs/ instead.
+RECENT
+run board demo triggers customer
+same "reasons" "[\"stakeholder feedback on docs proposal #12 (${TODAY}T09:00:00Z)\"]" "$(jq -c .reasons "$OUT")"
+same "items" "[12]" "$(jq -c .items "$OUT")"
+for role in lead dev; do
+  run board demo triggers "$role"
+  same "$role exit" 0 "$STATUS"
+  jq -e '.reasons | any(contains("#12"))' "$OUT" >/dev/null && fail "$role: '$(jq -c .reasons "$OUT")'"
+done
+gh_recent </dev/null
+
+case_ "the Customer lead can't merge, approve or move its proposal"
+for args in "accept customer 12" "approve customer 12" "move customer 12 Approved" "move customer 12 Done"; do
+  # shellcheck disable=SC2086 # one argument per word
+  run board demo $args
+  failed "customer: $args"
+done
+run board demo accept you 12
+failed "accepting a proposal"
+grep -q "only a docs PR In review can be accepted" "$ERR" || fail "accepting a proposal: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "once the proposal merges, the Customer lead writes the docs, until its docs PR is up"
+gh_items <<'ITEMS'
+Done 12 Docs proposal: where the user docs live
+Done 16 A pitch just accepted
+ITEMS
+docs_pr 12
+accepted 16
+proposal_pr 12 closed false "${TODAY}T10:00:00Z"
+run board demo triggers customer
+same "reasons" '["docs proposal #12 merged: write the docs it outlines","pitch #16 is done: check the docs cover what it shipped"]' \
+  "$(jq -c .reasons "$OUT")"
+jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+  mv "$META.new" "$META"
+run board demo add customer 15 "In review"
+same "docs PR" 0 "$STATUS"
+[ -e "$PROPOSED" ] && fail "the proposal is still remembered after the docs PR went up"
+run board demo covered customer 16
+run board demo triggers customer
+same "written" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "a proposal closed without merging is forgotten"
+echo 12 >"$PROPOSED"
+proposal_pr 12 closed false
+run board demo triggers customer
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+[ -e "$PROPOSED" ] && fail "a closed proposal is still remembered"
 # `customer_issue <n> <body>`: #<n> is an open issue with <body>.
 customer_issue() { gh_child "$1" - - "$2" && jq '.state = "open"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"; }
 
@@ -2530,12 +2657,16 @@ grep -q 'issues/41/labels -f labels\[\]=a-team:idea' "$WRITES" || fail "no disco
 grep -q 'a-team:customer' "$WRITES" && fail "labelled as the docs PR: '$(cat "$WRITES")'"
 grep -q 'item=PVTI_41 .*option=OPT_idea' "$WRITES" || fail "no move to Idea in '$(cat "$WRITES")'"
 
-case_ "the Customer lead adds nothing past Idea, and no issue it didn't open"
-for to in Exploring Pitched Ready; do
+case_ "the Customer lead adds nothing past Idea but its docs proposal, and no issue it didn't open"
+for to in Exploring Ready; do
   run board demo add customer 41 "$to"
   failed "add as $to"
   grep -qF "customer may not add items as '$to'" "$ERR" || fail "add as $to: '$(cat "$ERR")'"
 done
+run board demo add customer 41 Pitched
+failed "an issue as Pitched"
+grep -qF "customer may only put its own open draft docs proposal in Pitched (#41 isn't one)" "$ERR" ||
+  fail "an issue as Pitched: '$(cat "$ERR")'"
 customer_issue 41 "Seen in the wild.
 
 <!-- a-team:lead -->"

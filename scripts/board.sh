@@ -161,7 +161,7 @@ allowed() {
     "lead:Approved>Building" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:None>Idea" | "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
-    "customer:None>Idea" | "customer:None>In review")
+    "customer:None>Idea" | "customer:None>Pitched" | "customer:None>In review")
       return 0 ;;
   esac
   return 1
@@ -179,6 +179,8 @@ customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
 
 # The done pitches the Customer lead has already checked the docs against, one number a line.
 COVERED="$STATE/$TEAM/customer/covered"
+# The Customer lead's docs proposal, until a docs PR follows it.
+PROPOSAL="$STATE/$TEAM/customer/proposal"
 
 KIND=$(cfg .project.ownerType)
 KIND=${KIND:-organization}
@@ -927,8 +929,19 @@ case "$CMD" in
           and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
         die "customer may only add its own open docs PR (#$n isn't one)"
       other=$(items | jq -r --argjson n "$n" '[.[] | select((.labels | index("a-team:customer"))
-        and .status == "In review" and .number != $n) | .number] | first // empty')
-      [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
+        and (.status == "In review" or .status == "Pitched") and .number != $n) | "\(.status)\t\(.number)"]
+        | first // empty')
+      [ "${other%%$'\t'*}" != Pitched ] ||
+        die "customer's docs proposal #${other##*$'\t'} isn't merged yet: no docs PR until it is"
+      [ -z "$other" ] || die "customer's docs PR #${other##*$'\t'} is still open: add to it rather than opening another"
+    elif [ "$role:$to" = "customer:Pitched" ]; then
+      customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
+      gh api "repos/$REPO/pulls/$n" --jq '.state == "open" and .draft
+          and ((.body // "") | contains("<!-- a-team:customer -->"))' 2>/dev/null | grep -qx true ||
+        die "customer may only put its own open draft docs proposal in Pitched (#$n isn't one)"
+      other=$(items | jq -r --argjson n "$n" '[.[] | select((.labels | index("a-team:customer"))
+        and (.status == "In review" or .status == "Pitched") and .number != $n) | .number] | first // empty')
+      [ -z "$other" ] || die "customer's #$other is still open: no docs proposal beside it"
     elif [ "$role:$to" = "customer:Idea" ]; then
       customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
       gh api "repos/$REPO/issues/$n" --jq '.pull_request == null and .state == "open"
@@ -954,8 +967,15 @@ case "$CMD" in
     case "$role:$to" in
       lead:Idea | customer:Idea) write "label #$n a-team:idea" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:idea' >/dev/null ;;
       lead:Exploring | lead:Pitched) write "label #$n pitch" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
-      "customer:In review") write "label #$n a-team:customer" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:customer' >/dev/null ;;
+      "customer:In review" | customer:Pitched)
+        write "label #$n a-team:customer" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:customer' >/dev/null ;;
     esac
+    if [ "$role" = customer ] && [ -z "$DRY_RUN" ]; then
+      case $to in
+        Pitched) mkdir -p "$(dirname "$PROPOSAL")" && echo "$n" >"$PROPOSAL" ;;
+        "In review") rm -f "$PROPOSAL" ;;
+      esac
+    fi
     if [ -n "$existing" ]; then
       set_status "$(jq -r .id <<<"$existing")" "$to"
       record "$role" "$n" "added as $to"
@@ -1456,21 +1476,33 @@ case "$CMD" in
       if customer_on; then
         accepted=$(jq -r '.[] | select((.labels | index("pitch")) and .status == "Done" and .closed == "COMPLETED")
           | .number' <<<"$all")
+        proposal=$(cat "$PROPOSAL" 2>/dev/null || true)
+        proposing=''
+        if [ -n "$proposal" ]; then
+          state=$(gh api "repos/$REPO/pulls/$proposal" --jq 'if .merged_at then "merged" else .state end')
+          case $state in
+            open) proposing=1 ;;
+            merged) reasons+=("docs proposal #$proposal merged: write the docs it outlines") ;;
+            *) rm -f "$PROPOSAL" ;;
+          esac
+        fi
         # Turned on, it starts from the pitches done after that, not from every one before.
         if [ ! -f "$COVERED" ]; then
           mkdir -p "$(dirname "$COVERED")"
           printf '%s\n' "$accepted" >"$COVERED"
-        else
+        elif [ -z "$proposing" ]; then
           for n in $accepted; do
             grep -qx "$n" "$COVERED" || reasons+=("pitch #$n is done: check the docs cover what it shipped")
           done
         fi
-        docs=$(jq -r '[.[] | select((.labels | index("a-team:customer")) and .status == "In review") | .number]
-          | first // empty' <<<"$all")
+        docs=$(jq -r '[.[] | select((.labels | index("a-team:customer"))
+          and (.status == "In review" or .status == "Pitched")) | "\(.status)\t\(.number)"] | first // empty' <<<"$all")
         if [ -n "$docs" ]; then
-          recent=$(jq -s 'add' <(recent_comments) <(pr_reviews "$docs"))
-          at=$(feedback_at "$recent" customer "$docs")
-          [ -n "$at" ] && reasons+=("stakeholder feedback on docs PR #$docs ($at)") && items+=("$docs")
+          kind="docs PR" n=${docs##*$'\t'}
+          [ "${docs%%$'\t'*}" != Pitched ] || kind="docs proposal"
+          recent=$(jq -s 'add' <(recent_comments) <(pr_reviews "$n"))
+          at=$(feedback_at "$recent" customer "$n")
+          [ -n "$at" ] && reasons+=("stakeholder feedback on $kind #$n ($at)") && items+=("$n")
         fi
       fi
       creative=false
