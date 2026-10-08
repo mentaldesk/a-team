@@ -4516,7 +4516,7 @@ installed_pass() {
   HOME="$INSTALL_HOME" A_TEAM_STATE="$INSTALL_STATE" A_TEAM_BIN="${PASS_BIN:-$INSTALL_STUBS/a-team}" \
     A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") bash "$ROOT/scripts/dispatch.sh" "$@"
 }
-recorded() { jq -r "$1" "$INSTALL_STATE/dispatcher.json"; }
+in_record() { jq -r "$1" "$INSTALL_STATE/dispatcher.json"; }
 record_version() { jq ".version = \"$1\" | .installedAt = 1700000000" "$INSTALL_STATE/dispatcher.json" >"$WORK/record" &&
   mv "$WORK/record" "$INSTALL_STATE/dispatcher.json"; }
 
@@ -4530,17 +4530,17 @@ same "record" "{\"bin\":\"$INSTALL_STUBS/a-team\",\"version\":\"0.1.13-alpha.0.7
 case_ "launchd's pass brings the record's version up to date, and keeps when it was installed"
 record_version 0.1.12
 installed_pass
-same "version" 0.1.13-alpha.0.7 "$(recorded .version)"
-same "installedAt" 1700000000 "$(recorded .installedAt)"
+same "version" 0.1.13-alpha.0.7 "$(in_record .version)"
+same "installedAt" 1700000000 "$(in_record .installedAt)"
 
 case_ "a pass launchd doesn't run leaves the record alone"
 record_version 0.1.12
 PASS_BIN=/elsewhere/bin/a-team installed_pass
-same "another binary" 0.1.12 "$(recorded .version)"
+same "another binary" 0.1.12 "$(in_record .version)"
 installed_pass --dry-run
-same "another mode" 0.1.12 "$(recorded .version)"
+same "another mode" 0.1.12 "$(in_record .version)"
 A_TEAM_UNSCHEDULED=1 installed_pass
-same "off schedule" 0.1.12 "$(recorded .version)"
+same "off schedule" 0.1.12 "$(in_record .version)"
 install_dispatcher --uninstall
 installed_pass
 [ -e "$INSTALL_STATE/dispatcher.json" ] && fail "uninstalled: a pass wrote the record"
