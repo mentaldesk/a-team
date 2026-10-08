@@ -19,6 +19,7 @@
     "readyFloor": 3
   },
   "try": "./bin/a-team dashboard",
+  "release": "never",
   "workdir": "~/code/repo",
   "checkout": "~/code/repo/main",
   "dispatch": {

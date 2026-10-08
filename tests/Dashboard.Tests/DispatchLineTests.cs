@@ -7,6 +7,8 @@ public class DispatchLineTests
     [InlineData("2026-09-20T17:01:17Z a-team lead: would start: 3 Ideas to shape", LogLineKind.DispatchSkipped)]
     [InlineData("2026-09-20T17:01:17Z tuicode dev: triggers failed: gh: Not Found (HTTP 404)", LogLineKind.DispatchFailed)]
     [InlineData("2026-09-20T17:01:17Z a-team dev: killed run 41234 after 121 minutes", LogLineKind.DispatchFailed)]
+    [InlineData("2026-09-20T17:01:17Z tui release: failed: can't read mentaldesk/tui-style-guide", LogLineKind.DispatchFailed)]
+    [InlineData("2026-09-20T17:01:17Z tui release: ran release.yml on main at 1111111 (latest release: v0.2.0)", LogLineKind.Prose)]
     [InlineData("2026-09-20T17:01:17Z something else entirely", LogLineKind.Prose)]
     public void A_line_is_coloured_by_what_it_says(string line, LogLineKind kind) =>
         Assert.Equal(kind, DispatchLine.KindOf(line));

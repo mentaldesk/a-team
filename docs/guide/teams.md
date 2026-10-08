@@ -33,7 +33,7 @@ get to work or keep the team paused, and there `Esc` cancels the new team.
 ## A team's settings
 
 `Enter` on a team opens its form: repo, stakeholders, project, vision, workdir, skills, the command
-`a-team try` runs, whether it's working or paused, and its limits. Each field says what it's for
+`a-team try` runs, whether it's working or paused, when it releases, and its limits. Each field says what it's for
 underneath. `Enter` saves them into the team's file, leaving everything else in it as it was, and
 `Esc` cancels.
 

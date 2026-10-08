@@ -1406,6 +1406,14 @@ case "$CMD" in
     if [ -n "$reached" ] && [ -n "$vision" ] && ! gh api "repos/$REPO/contents/$vision" --silent >/dev/null 2>&1; then
       note vision "$vision isn't in $REPO yet: the Lead will draft one and open it as a draft PR"
     fi
+    release=$(cfg .release)
+    case "${release:-never}" in
+      never) ;;
+      daily | continuous)
+        [ -z "$reached" ] || gh api "repos/$REPO/actions/workflows/release.yml" --silent >/dev/null 2>&1 ||
+          note release "release is $release, but $REPO has no release.yml workflow for it to run" ;;
+      *) note release "release is '$release': expected never, daily or continuous" ;;
+    esac
     if [ -z "$NUMBER" ]; then
       problem project "$TEAM.json names no project number"
     elif ! meta=$({ project_raw 2>/dev/null || true; } | jq -ce --arg k "$KIND" '.data[$k].projectV2 // empty' 2>/dev/null); then

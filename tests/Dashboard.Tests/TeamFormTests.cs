@@ -161,6 +161,26 @@ public class TeamFormTests
     }
 
     [Fact]
+    public void Releases_shows_the_team_s_setting_and_saves_the_one_picked()
+    {
+        TeamSettings? written = null;
+        using var form = new TeamForm("a-team", Settings with { Release = TeamRelease.Daily }, now =>
+        {
+            written = now;
+            return null;
+        });
+        form.SetFocus();
+        Assert.Equal(TeamRelease.Daily, form.Releases.Value);
+
+        form.Releases.SetFocus();
+        Assert.Equal(TeamForm.ReleaseCaption, form.Hints.Message.Says);
+        form.Releases.Value = TeamRelease.Continuous;
+        form.Repo.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal(TeamRelease.Continuous, written?.Release);
+    }
+
+    [Fact]
     public void Enter_in_the_open_project_list_picks_rather_than_saves()
     {
         var saved = false;
@@ -234,7 +254,7 @@ public class TeamFormTests
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Limits"],
+            ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -363,7 +383,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Create", "Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Releases", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }

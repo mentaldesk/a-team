@@ -29,6 +29,7 @@ public sealed class TeamForm : Dialog
     internal const string TryCaption = "What a-team try runs to let you try a change.";
     internal const string CheckoutCaption = "Where the Dev looks for merged work to clean up. Change it in the file.";
     internal const string StatusCaption = "Whether the team picks up work. Paused lets a run in flight finish.";
+    internal const string ReleaseCaption = "When the repo's release.yml runs: never, at most daily, or after every merge to main.";
     internal const string WorktreesCaption = "How many tasks can be in flight, PRs included.";
     internal const string DevsCaption = "How many Dev runs build at once.";
     internal const string PitchedCaption = "How many pitches wait on you at once.";
@@ -64,6 +65,7 @@ public sealed class TeamForm : Dialog
     private readonly TextField _workdir;
     private readonly TextField _try;
     private readonly OptionSelector<TeamStatus>? _status;
+    private readonly OptionSelector<TeamRelease> _release;
     private readonly NumericUpDown<int> _worktrees;
     private readonly NumericUpDown<int> _devs;
     private readonly NumericUpDown<int> _pitched;
@@ -191,6 +193,18 @@ public sealed class TeamForm : Dialog
             Caption(_status, StatusCaption);
         }
 
+        Add(new Label { Text = "Releases", X = Inset, Y = row });
+        _release = new OptionSelector<TeamRelease>
+        {
+            X = FieldX,
+            Y = row++,
+            Orientation = Orientation.Horizontal,
+            TabBehavior = TabBehavior.NoStop,
+            Value = settings.Release,
+        };
+        Add(_release);
+        Caption(_release, ReleaseCaption);
+
         Add(new Label { Text = "Limits", X = Inset, Y = row });
         _worktrees = Limit("Worktrees", settings.Worktrees, 0, row, WorktreesCaption);
         _pitched = Limit("Pitched", settings.Pitched, 1, row, PitchedCaption);
@@ -277,6 +291,8 @@ public sealed class TeamForm : Dialog
     internal TextField Try => _try;
 
     internal OptionSelector<TeamStatus>? Status => _status;
+
+    internal OptionSelector<TeamRelease> Releases => _release;
 
     internal NumericUpDown<int> Worktrees => _worktrees;
 
@@ -378,6 +394,7 @@ public sealed class TeamForm : Dialog
             Stakeholders = _stakeholderNames,
             Skills = _skillNames,
             Working = _status is { } status ? status.Value == TeamStatus.Working : _before.Working,
+            Release = _release.Value ?? _before.Release,
             Worktrees = _worktrees.Value,
             Devs = _devs.Value,
             Pitched = _pitched.Value,
