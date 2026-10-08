@@ -4344,7 +4344,7 @@ In_review 8 A task
 Ready 12 A task
 ITEMS
 record_from 120
-start=$(ago 120)
+start=$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT at FROM events LIMIT 1")
 run board demo waiting
 same "from the start" "$start" "$(caught_arg since)"
 same "search" "repo:mentaldesk/demo updated:>=$start" "$(caught_arg q)"
@@ -4438,23 +4438,24 @@ unrecorded "trends"
 
 case_ "trends: the last 15 days of the queue, each item accepted once at its latest, and runs' cost in 7 days"
 rm -f "$A_TEAM_STATE/history.db"
+since=$(ago $((60 * 24 * 20))) days3=$(ago $((60 * 24 * 3))) m90=$(ago 90) m50=$(ago 50) m30=$(ago 30)
 sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
     at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
   CREATE TABLE queue (team TEXT NOT NULL, at TEXT NOT NULL, waiting INTEGER NOT NULL);
   CREATE TABLE runs (id INTEGER PRIMARY KEY, team TEXT NOT NULL, role TEXT NOT NULL,
     pid INTEGER NOT NULL, log TEXT NOT NULL, started TEXT NOT NULL, ended TEXT, cost REAL, outcome TEXT);
-  INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 16)))', 20), ('demo', '$(ago $((60 * 24 * 3)))', 12),
-    ('demo', '$(ago 90)', 9), ('other', '$(ago 60)', 30);
+  INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 16)))', 20), ('demo', '$days3', 12),
+    ('demo', '$m90', 9), ('other', '$(ago 60)', 30);
   INSERT INTO events (team, item, at, who, what) VALUES
-    ('demo', 8, '$(ago 50)', 'you', 'accepted · PR #908 merged'), ('demo', 908, '$(ago 50)', 'you', 'accepted · PR #908 merged'),
-    ('demo', 7, '$(ago 40)', 'you', 'accepted · closed'), ('demo', 7, '$(ago 30)', 'you', 'accepted · closed'),
-    ('demo', 9, '$(ago $((60 * 24 * 20)))', 'you', 'accepted · PR #909 merged'),
+    ('demo', 8, '$m50', 'you', 'accepted · PR #908 merged'), ('demo', 908, '$m50', 'you', 'accepted · PR #908 merged'),
+    ('demo', 7, '$(ago 40)', 'you', 'accepted · closed'), ('demo', 7, '$m30', 'you', 'accepted · closed'),
+    ('demo', 9, '$since', 'you', 'accepted · PR #909 merged'),
     ('demo', 10, '$(ago 10)', 'octocat', 'accepted · PR #910 merged'),
     ('other', 12, '$(ago 10)', 'you', 'accepted · closed');
   INSERT INTO runs (team, role, pid, log, started, cost) VALUES ('demo', 'dev', 1, 'a', '$(ago 100)', 1.25),
     ('demo', 'lead', 2, 'b', '$(ago 200)', NULL), ('demo', 'dev', 3, 'c', '$(ago $((60 * 24 * 8)))', 9),
     ('other', 'dev', 4, 'd', '$(ago 100)', 4);"
-same "trends" "{\"since\":\"$(ago $((60 * 24 * 20)))\",\"queue\":[{\"at\":\"$(ago $((60 * 24 * 3)))\",\"waiting\":12},{\"at\":\"$(ago 90)\",\"waiting\":9}],\"accepted\":[\"$(ago 50)\",\"$(ago 30)\"],\"cost\":1.25}" "$(trends)"
+same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cost\":1.25}" "$(trends)"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.
