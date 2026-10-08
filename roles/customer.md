@@ -29,7 +29,16 @@ While it's open, add to it: commit to its branch, and add a line to its descript
 If a worktree on `docs/customer-lead` is left over from a docs PR that has merged, remove it and
 its local branch first, untracked files and all.
 
-Your prompt names the done pitches to check. For each:
+If your prompt names stakeholder feedback on your docs PR, answer it first. Read it with
+`a-team board {{team}} feedback customer <pr>`, then for each comment:
+
+- If it asks for a docs change, make it in the PR's worktree, push, and update the PR's
+  description so its lines still say what the PR changes.
+- If it asks for anything but user docs (product code, say), change nothing for it.
+- Reply on the PR with `a-team board {{team}} comment customer <pr> <file>`: what you changed, or
+  why you didn't. Put anything only a product change would fix in your summary.
+
+Your prompt may also name done pitches to check. For each:
 
 1. Read the pitch (`a-team board {{team}} body <n>`) and its tasks
    (`a-team board {{team}} children <n>`), and what their PRs changed.

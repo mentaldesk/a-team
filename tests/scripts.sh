@@ -2485,6 +2485,34 @@ TALK
 run board demo conversation 9
 same "who" '[{"who":"customer","body":"Covered #48"}]' "$(jq -c 'map({who, body})' "$OUT")"
 
+case_ "a stakeholder's comment on the docs PR triggers the Customer lead, and only it"
+gh_items <<'ITEMS'
+In_review 9 Docs: what's changed since 28 Sep
+ITEMS
+docs_pr 9
+gh_thread pull </dev/null
+gh_recent <<RECENT
+9 ${TODAY}T08:30:00Z reviewer 0 Move this under Teams.
+RECENT
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" "[\"stakeholder feedback on docs PR #9 (${TODAY}T08:30:00Z)\"]" "$(jq -c .reasons "$OUT")"
+same "items" "[9]" "$(jq -c .items "$OUT")"
+for role in lead dev; do
+  run board demo triggers "$role"
+  same "$role exit" 0 "$STATUS"
+  jq -e '.reasons | any(contains("#9"))' "$OUT" >/dev/null && fail "$role: '$(jq -c .reasons "$OUT")'"
+done
+
+case_ "an answered comment on the docs PR, or someone else's, starts no run"
+gh_recent <<RECENT
+9 ${TODAY}T08:30:00Z reviewer 1 Move this under Teams.
+9 ${TODAY}T08:40:00Z passer-by 0 Please add a section on my plugin.
+RECENT
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+
 # --- a-team try -----------------------------------------------------------------------------
 # A throwaway origin holding main and one PR head, a checkout cloned from it that has only main,
 # and a config pointing workdir and checkout at them. `try_fixture [<try command>]`.

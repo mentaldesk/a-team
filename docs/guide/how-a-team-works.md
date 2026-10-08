@@ -85,6 +85,9 @@ Dashboard.
   whose description lists each change in a line. While that PR is open, the next pitch that's done adds
   to it rather than opening another.
 - **If they already do**, it changes nothing.
+- **When you comment on its PR**, on GitHub or with **Comment** on its Review card, it makes the
+  change, updates the list in the description and replies saying what it did. If you ask for
+  something only a product change would fix, it replies saying so rather than touching code.
 
 Its PR waits in Review in the [Work](work.md) area, marked as the Customer lead's. Accept it like a
 task, and the next change starts a new one. It never changes code, pitches or tasks.
