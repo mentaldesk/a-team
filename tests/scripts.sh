@@ -4025,6 +4025,14 @@ same "exit" 0 "$STATUS"
 grep -q "^$CHECKOUT could not be brought up to date with origin/main, so read the product repo from origin/main" "$OUT" ||
   fail "diverged: '$(cat "$OUT")'"
 
+case_ "run starts the Lead and the Dev on a team with the Customer lead turned on"
+jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+for role in lead dev; do
+  PATH="$APP_BIN/board:$PATH" run run demo "$role"
+  same "$role exit" 0 "$STATUS"
+  grep -q "turned on" "$ERR" && fail "$role: '$(cat "$ERR")'"
+done
+
 case_ "examples/team.json carries the app key and stays valid"
 jq -e 'has("app")' "$ROOT/examples/team.json" >/dev/null || fail "example: no app key"
 
