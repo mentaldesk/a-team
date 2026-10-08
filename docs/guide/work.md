@@ -13,7 +13,7 @@ through them. A column with nothing in it is hidden, and the one you're on takes
 | Triage | Ideas and pitches with no Priority. Nothing here is pitched or approved until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide). |
 | Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. |
-| Review | Finished work you can accept now: a task whose PR is ready to merge, a pitch whose tasks are all closed, or the Customer lead's docs PR. |
+| Review | Finished work you can accept now: a task whose PR is ready to merge, or the Customer lead's docs PR. |
 
 Each column's heading counts its cards. Under the Review cards, a line sums up the work that's in
 review but not ready for you yet, like `2 with the Dev: #12 CI failing · #14 still a draft`.
@@ -76,6 +76,9 @@ you or anyone else does on GitHub directly (a merge, a close, a comment, a move 
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
+Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
+how long it took and what it cost, like `run 38 min · $4.12`. One that didn't finish says why:
+`stopped` by you, `killed` at the time limit, `error`, or `died` with no result, and no cost.
 `Tab` moves between the body and History, and the arrows scroll whichever has focus. `h` hides
 History to give the body the full width, and shows it again; it stays as you left it until you
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.
@@ -95,9 +98,7 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
   rather than hiding History.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,
   with its acceptance criteria printed first; quit it to come back. If you were reading the task,
-  it opens again where you left it, ready for `a` or `c`, and says there if the try failed. On a
-  pitch in Review, `t` runs the default branch instead, where its tasks have landed.
+  it opens again where you left it, ready for `a` or `c`, and says there if the try failed.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. For a task, once you
-  confirm, its PR is squash-merged and its branch deleted. For a pitch, it's closed as done. The
-  Customer lead's docs PR is merged the same way. If it
-  isn't ready yet, `a` says why instead.
+  confirm, its PR is squash-merged and its branch deleted. The Customer lead's docs PR is merged
+  the same way. If it isn't ready yet, `a` says why instead.

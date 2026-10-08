@@ -64,6 +64,7 @@ if [ -n "$TASK" ]; then
   date +%s >"$RUN/held"
   if [ -n "$PID" ]; then
     kill "$PID" 2>/dev/null || true
+    run_outcome "$TEAM" dev "$PID" stopped
     echo "stopped $TEAM dev's run on #$TASK ($PID)"
   else
     echo "no run to stop on #$TASK"
@@ -111,6 +112,7 @@ case "$CMD $ROLE" in
     if [ -n "$PID" ]; then
       # shellcheck disable=SC2086 # one pid per word
       kill $PID 2>/dev/null || true
+      for pid in $PID; do run_outcome "$TEAM" "$ROLE" "$pid" stopped; done
       echo "stopped $TEAM $ROLE's run (${PID// /, }), and held $ROLE until: a-team resume $TEAM $ROLE"
     else
       echo "no run to stop; held $ROLE until: a-team resume $TEAM $ROLE"

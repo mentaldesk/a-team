@@ -39,20 +39,6 @@ record() {
     echo "board.sh: couldn't record '$3' in #$2's history" >&2
 }
 
-sql() { printf "'%s'" "${1//\'/\'\'}"; }
-
-# history_sql [sqlite3 options...] <statement>: the record, created on first use.
-history_sql() {
-  sqlite3 -cmd '.timeout 5000' "${@:1:$#-1}" "$STATE/history.db" "CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL, at TEXT NOT NULL,
-    who TEXT NOT NULL, what TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS caught_up (team TEXT PRIMARY KEY, started TEXT NOT NULL, at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS seen (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL,
-      status TEXT NOT NULL, PRIMARY KEY (team, item));
-    CREATE TABLE IF NOT EXISTS github (team TEXT NOT NULL, id TEXT NOT NULL, event INTEGER,
-      PRIMARY KEY (team, id)); ${*: -1}"
-}
-
 [ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
 TEAM=$1 CMD=$2
 shift 2
@@ -172,7 +158,7 @@ allowed() {
   case "$1:$2>$3" in
     "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
     "lead:Pitched>Idea" | "lead:Pitched>Exploring" | \
-    "lead:Approved>Building" | "lead:Building>In review" | \
+    "lead:Approved>Building" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
     "customer:None>In review")
@@ -733,6 +719,17 @@ depend_note() {
   printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
 }
 
+# close_pitch <n> [built]: closes pitch #n once all its tasks are closed; `built` also needs it to have some.
+close_pitch() {
+  local subs open refused
+  subs=$(gh api --paginate "repos/$REPO/issues/$1/sub_issues" | jq -s 'add // []')
+  [ "${2:-}" != built ] || [ "$(jq length <<<"$subs")" -gt 0 ] || die "#$1 has no tasks, so nothing was built"
+  open=$(jq 'map(select(.state == "open")) | length' <<<"$subs")
+  [ "$open" -eq 0 ] || die "#$1 has $open open task$([ "$open" -eq 1 ] || echo s)"
+  close() { { gh issue close "$1" -R "$REPO" --reason completed >/dev/null; } 2>&1; }
+  refused=$(write "close #$1 as completed" close "$1") || die "can't close #$1 ($(head -1 <<<"$refused"))"
+}
+
 # own_task <role> <n>: a Dev run started for one task touches only that task and its PR.
 own_task() {
   local task=${A_TEAM_RUN_TASK:-}
@@ -1030,10 +1027,7 @@ case "$CMD" in
     [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a task to accept"
     if jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       [ "$status" = "In review" ] || die "only a pitch In review can be accepted (#$n is in '$status')"
-      open=$(gh api --paginate "repos/$REPO/issues/$n/sub_issues" | jq -s 'add // [] | map(select(.state == "open")) | length')
-      [ "$open" -eq 0 ] || die "#$n has $open open task$([ "$open" -eq 1 ] || echo s)"
-      close() { { gh issue close "$1" -R "$REPO" --reason completed >/dev/null; } 2>&1; }
-      refused=$(write "close #$n as completed" close "$n") || die "can't close #$n ($(head -1 <<<"$refused"))"
+      close_pitch "$n"
       record "$role" "$n" "accepted · closed"
       say "#$n: closed as done"
       exit 0
@@ -1044,6 +1038,26 @@ case "$CMD" in
     merge "$pr"
     record "$role" "$n" "accepted · PR #$pr merged"
     say "#$n: merged PR #$pr"
+    ;;
+
+  finish)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM finish <role> <n> <file>"
+    role=$1 n=$2 file=$3
+    check_role "$role"
+    [ "$role" = lead ] || die "only lead may close a pitch as done"
+    [ -f "$file" ] || die "no such file: $file"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
+    status=$(jq -r .status <<<"$it")
+    [ "$status" = Building ] || die "only a pitch in Building can be closed as done (#$n is in '$status')"
+    close_pitch "$n" built
+    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    ack "$n"
+    record "$role" "$n" "closed as done"
+    say "#$n: closed as done"
     ;;
 
   comment)
@@ -1269,11 +1283,16 @@ case "$CMD" in
       echo '{"since": null, "events": []}'
       exit 0
     fi
-    events=$(history_sql -json "SELECT at, who, what FROM events WHERE team = $(sql "$TEAM") AND item = $1
-      ORDER BY at DESC, id DESC;")
-    since=$(history_sql "SELECT MIN(at) FROM events WHERE team = $(sql "$TEAM");")
-    jq -n --argjson events "${events:-[]}" --arg since "$since" \
-      '{since: (if $since == "" then null else $since end), events: $events}'
+    events=$(history_sql -json "SELECT at, who, what, 0 AS run, NULL AS ended, NULL AS cost, NULL AS outcome, id
+        FROM events WHERE team = $(sql "$TEAM") AND item = $1
+      UNION ALL SELECT started, role, 'run', 1, ended, cost, outcome, runs.id
+        FROM runs JOIN run_items ON run_items.run = runs.id WHERE team = $(sql "$TEAM") AND item = $1
+      ORDER BY at DESC, run DESC, id DESC;")
+    since=$(history_sql "SELECT MIN(at) FROM (SELECT at FROM events WHERE team = $(sql "$TEAM")
+      UNION ALL SELECT started FROM runs WHERE team = $(sql "$TEAM"));")
+    jq -n --argjson events "${events:-[]}" --arg since "$since" '{
+      since: (if $since == "" then null else $since end),
+      events: [$events[] | {at, who, what} + if .run == 1 then {run: {ended, cost, outcome}} else {} end]}'
     ;;
 
   pr)
@@ -1301,7 +1320,7 @@ case "$CMD" in
     reasons=()
     recent='[]'
     [ "$role" = customer ] || recent=$(recent_comments)
-    tasks='[]' chores=() ready=
+    tasks='[]' chores=() ready='' items=()
     # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
     task_reason() {
       reasons+=("$3")
@@ -1392,14 +1411,16 @@ case "$CMD" in
       while IFS= read -r row; do
         n=$(jq -r .number <<<"$row")
         status=$(jq -r .status <<<"$row")
+        had=${#reasons[@]}
         at=$(feedback_at "$recent" lead "$n")
         [ -n "$at" ] && reasons+=("stakeholder feedback on #$n ($at)")
         [ "$status" = Approved ] && reasons+=("#$n was approved: break it down")
         if [ "$status" = Building ]; then
           open=$(gh api "repos/$REPO/issues/$n/sub_issues" --jq '[length, (map(select(.state == "open")) | length)] | @tsv')
           [ "${open%%$'\t'*}" -gt 0 ] && [ "${open##*$'\t'}" -eq 0 ] &&
-            reasons+=("all of #$n's tasks are closed: validate it")
+            reasons+=("all of #$n's tasks are closed: check it and close it")
         fi
+        [ "${#reasons[@]}" -eq "$had" ] || items+=("$n")
       done < <(jq -c '.[] | select((.labels | index("pitch")) and .status != "Idea" and .status != "Done")' <<<"$all")
 
       pitched=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Pitched")] | length' <<<"$all")
@@ -1422,11 +1443,12 @@ case "$CMD" in
         [ "$found" -lt "$(cfg .wip.ideas)" ] && creative=true
     fi
     jq -n --argjson creative "$creative" --arg role "$role" --argjson tasks "$tasks" --arg ready "$ready" \
-      --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" '
+      --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" \
+      --argjson items "$(jq -n '$ARGS.positional | map(tonumber)' --args ${items[@]+"${items[@]}"})" '
       {reasons: $ARGS.positional, creative: $creative}
       + if $role == "dev"
         then {tasks: $tasks, ready: (if $ready == "" then null else $ready | tonumber end), chores: $chores}
-        else {} end' \
+        else {items: $items} end' \
       --args "${reasons[@]+"${reasons[@]}"}"
     ;;
 

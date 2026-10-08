@@ -29,7 +29,7 @@ does. An idle team costs nothing.
 Every item on the board has a status, and moves through them left to right:
 
 ```
-Idea → Exploring → Pitched → Approved → Building ───────────→ In review → Done
+Idea → Exploring → Pitched → Approved → Building ─────────────────────────────→ Done
                                           └─ tasks: Ready → In progress → In review → Done
 ```
 
@@ -42,8 +42,8 @@ Idea → Exploring → Pitched → Approved → Building ───────�
 | Building | Its tasks are in flight |
 | Ready | A task the Dev can pick up |
 | In progress | The Dev is building it |
-| In review | A PR, or a finished pitch, waiting for you |
-| Done | Merged or accepted |
+| In review | A task's PR, waiting for you |
+| Done | Merged, or a pitch whose tasks have all merged |
 
 A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. A task is one pull
 request that changes something you can see or do.
@@ -54,8 +54,9 @@ Work waits for you in two places, and no agent moves it on without you.
 
 - **Pitched.** You approve a pitch, or comment on it to have it changed. Nothing gets built until
   you approve.
-- **In review.** You merge a task's PR, or accept a finished pitch once the Lead has validated it.
-  Nothing is done until you say so.
+- **In review.** You merge a task's PR. Nothing is done until you say so. Once every task of a
+  pitch has merged, the Lead checks the whole and closes it, so a finished pitch doesn't come back
+  to you.
 
 Both are in the [Work](work.md) area, where you can answer them without leaving the app.
 
