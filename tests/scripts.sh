@@ -4293,11 +4293,11 @@ same "other team" "dev commented" \
 run board demo history 7
 same "since" "$(jq -r '.events[-1].at' "$OUT")" "$(jq -r .since "$OUT")"
 
-# A record begun $1 minutes ago by the Lead commenting on #7.
+# A record begun at $1 by the Lead commenting on #7.
 record_from() {
   rm -f "$A_TEAM_STATE/history.db"
   run board demo comment lead 7 "$WORK/reply"
-  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE events SET at = '$(ago "$1")'"
+  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE events SET at = '$1'"
 }
 caught_calls() { if [ -f "$BIN/caught-calls" ]; then grep -c '' "$BIN/caught-calls"; else echo 0; fi; }
 caught_arg() { sed -n "s/^$1=//p" "$BIN/caught-args"; }
@@ -4307,7 +4307,7 @@ gh_items <<'ITEMS'
 Pitched 7 A pitch
 In_review 8 A task
 ITEMS
-record_from 120
+record_from "$(ago 120)"
 said=$(ago 40)
 gh_caught <<CAUGHT
 8 closed $(ago 50) reviewer 908
@@ -4339,7 +4339,7 @@ same "exit" 0 "$STATUS"
 same "twice" 5 "$(history_of 7 | grep -c '')"
 
 case_ "the catch-up leaves out bots, other projects, and what happened before the record began"
-record_from 120
+record_from "$(ago 120)"
 gh_caught <<CAUGHT
 7 comment $(ago 40) demo-app[bot]
 7 moved $(ago 39) github-project-automation[bot] In_review>Done
@@ -4352,7 +4352,7 @@ same "exit" 0 "$STATUS"
 same "left out" "lead commented" "$(history_of 7)"
 
 case_ "what you did from the dashboard isn't recorded twice when the catch-up sees it on GitHub"
-record_from 120
+record_from "$(ago 120)"
 run board demo approve you 7
 run board demo comment you 7 "$WORK/reply"
 gh_pr 908 false
@@ -4378,8 +4378,8 @@ Pitched 7 A pitch
 In_review 8 A task
 Ready 12 A task
 ITEMS
-record_from 120
 start=$(ago 120)
+record_from "$start"
 run board demo waiting
 same "from the start" "$start" "$(caught_arg since)"
 same "search" "repo:mentaldesk/demo updated:>=$start" "$(caught_arg q)"
@@ -4443,10 +4443,11 @@ same "dry run" "2
 
 case_ "trend: waiting a week ago, and each item accepted in the last 7 days counted once"
 rm -f "$A_TEAM_STATE/history.db"
+since=$(ago $((60 * 24 * 9)))
 sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
     at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
   CREATE TABLE queue (team TEXT NOT NULL, at TEXT NOT NULL, waiting INTEGER NOT NULL);
-  INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 9)))', 20), ('demo', '$(ago $((60 * 24 * 7 + 120)))', 12),
+  INSERT INTO queue VALUES ('demo', '$since', 20), ('demo', '$(ago $((60 * 24 * 7 + 120)))', 12),
     ('demo', '$(ago $((60 * 24 * 6)))', 9), ('other', '$(ago $((60 * 24 * 7 + 60)))', 30);
   INSERT INTO events (team, item, at, who, what) VALUES
     ('demo', 8, '$(ago 50)', 'you', 'accepted · PR #908 merged'), ('demo', 908, '$(ago 50)', 'you', 'accepted · PR #908 merged'),
@@ -4456,7 +4457,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
     ('demo', 10, '$(ago 10)', 'octocat', 'accepted · PR #910 merged'),
     ('demo', 11, '$(ago 10)', 'you', 'Pitched → Approved'),
     ('other', 12, '$(ago 10)', 'you', 'accepted · closed');"
-same "trend" "{\"since\":\"$(ago $((60 * 24 * 9)))\",\"weekAgo\":12,\"accepted\":3}" "$(trend)"
+same "trend" "{\"since\":\"$since\",\"weekAgo\":12,\"accepted\":3}" "$(trend)"
 
 case_ "trend leaves a week ago out until the record reaches back a week, and a stale one is no week ago"
 sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM queue WHERE at <= '$(ago $((60 * 24 * 7)))'"
