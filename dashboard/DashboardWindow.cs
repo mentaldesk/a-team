@@ -19,6 +19,7 @@ public sealed class DashboardWindow : Window
 {
     private const int MenuLines = 1;
     private const int StatusLines = 1;
+    private const int TitleLines = 1;
     private const int DispatchLines = 4;
     private const int BrokeLines = 20;
     private const string BrokeRule = "── the dispatcher's own output since then ──";
@@ -56,6 +57,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
+    private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
@@ -65,6 +67,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
     private readonly FrameView _loading;
+    private readonly Label _title;
     private readonly TimeProvider _clock;
     private Area _area;
     private Task<string?>? _pending;
@@ -76,6 +79,8 @@ public sealed class DashboardWindow : Window
     private string? _said;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
+    private Task<Reading[]>? _trending;
+    private IReadOnlyList<WorkTrend> _trends = [];
     private (WaitingItem Item, Task<IssueBody> Read, Action<WaitingItem, IssueBody> Then)? _readingBody;
     private DateTimeOffset? _readAt;
     private DateTimeOffset? _askedAt;
@@ -122,10 +127,12 @@ public sealed class DashboardWindow : Window
         IClipboard? clipboard = null,
         Func<WaitingItem, Task<Reading>>? readHistory = null,
         TeamChecks? checks = null,
-        DispatchPass? pass = null)
+        DispatchPass? pass = null,
+        Func<string, Task<Reading>>? readTrend = null)
     {
         _clipboard = clipboard;
         _readHistory = readHistory;
+        _readTrend = readTrend;
         _pass = pass ?? new DispatchPass(stateRoot, "a-team");
         _checks = checks ?? (start is null ? null : new TeamChecks(start.Check, teams.Stamp));
         _showGuide = showGuide ?? (_ => { });
@@ -211,10 +218,12 @@ public sealed class DashboardWindow : Window
         _dispatchFrame.Add(_dispatch, _dispatchAll);
         Add(_dispatchFrame);
 
+        _title = new Label { X = 1, Y = MenuLines, Width = Dim.Fill(1), Text = "Work", Visible = area == Area.Work };
+        Add(_title);
         _work = new WorkView(_teamNames)
         {
             X = 0,
-            Y = MenuLines,
+            Y = MenuLines + TitleLines,
             Width = Dim.Fill(),
             Height = Dim.Func(_ => WorkHeight(), this),
             Visible = area == Area.Work,
@@ -225,7 +234,7 @@ public sealed class DashboardWindow : Window
         _loading = new FrameView
         {
             X = Pos.Center(),
-            Y = Pos.Func(_ => MenuLines + Math.Max(0, (WorkHeight() - LoadingHeight) / 2), this),
+            Y = Pos.Func(_ => MenuLines + TitleLines + Math.Max(0, (WorkHeight() - LoadingHeight) / 2), this),
             Width = LoadingText.Length + (LoadingPadding * 2) + 2,
             Height = LoadingHeight,
             CanFocus = false,
@@ -292,6 +301,8 @@ public sealed class DashboardWindow : Window
     public void Refresh()
     {
         Settle();
+        SettleTrend();
+        ShowTitle();
         var now = _clock.GetUtcNow();
         if (_area == Area.Work && Uncovered && (_askedAt is not { } asked || now - asked >= ReadEvery))
             ReadWaiting();
@@ -565,6 +576,7 @@ public sealed class DashboardWindow : Window
         {
             _readAt = _askedAt = tried.ReadAt;
             _work.Show(tried.Items);
+            ReadTrend();
             if (tried.Reader is { } place)
             {
                 _reopen = (tried.Item, place, _failure);
@@ -893,7 +905,34 @@ public sealed class DashboardWindow : Window
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
         if (_area == Area.Work && _work.Selected is null)
             _work.FocusFirstCard();
+        ReadTrend();
     }
+
+    /// <summary>Reads the record after the cards, so it counts the read that has just been taken.</summary>
+    private void ReadTrend()
+    {
+        if (_readTrend is not null && _trending is null)
+            _trending = Task.WhenAll(_teamNames.Select(team => _readTrend(team)));
+    }
+
+    /// <summary>A trend that couldn't be read leaves the title with what's waiting now.</summary>
+    private void SettleTrend()
+    {
+        if (_trending is not { IsCompleted: true } read)
+            return;
+        _trending = null;
+        var trends = read.Status == TaskStatus.RanToCompletion ? read.Result.Select(WorkTrend.Of).ToList() : null;
+        _trends = trends is null || trends.Contains(null) ? [] : [.. trends.OfType<WorkTrend>()];
+    }
+
+    private void ShowTitle()
+    {
+        var title = WorkTrend.Title(_readAt is null ? null : _work.Items.Count, _trends, _clock.GetUtcNow());
+        if (_title.Text != title)
+            _title.Text = title;
+    }
+
+    internal string WorkTitle => _title.Text;
 
     /// <summary>What went wrong, then what's running, then the region focus is in.</summary>
     private void ShowMessage()
@@ -942,7 +981,7 @@ public sealed class DashboardWindow : Window
 
     private int Foot() => DispatchLines + 2 + StatusLines;
 
-    private int WorkHeight() => Math.Max(0, Viewport.Height - MenuLines - StatusLines);
+    private int WorkHeight() => Math.Max(0, Viewport.Height - MenuLines - TitleLines - StatusLines);
 
     private void Show(Area area)
     {
@@ -956,7 +995,7 @@ public sealed class DashboardWindow : Window
         if (_dispatcherExpanded)
             SetDispatcherExpanded(false);
         _agents.Visible = _dispatchFrame.Visible = area == Area.Dashboard;
-        _work.Visible = area == Area.Work;
+        _work.Visible = _title.Visible = area == Area.Work;
         _menu.Show(area);
         if (area == Area.Work)
         {
