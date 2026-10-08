@@ -159,7 +159,7 @@ allowed() {
     "lead:Pitched>Idea" | "lead:Pitched>Exploring" | \
     "lead:Approved>Building" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
-    "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready")
+    "dev:None>Idea" | "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready")
       return 0 ;;
   esac
   return 1
@@ -886,6 +886,9 @@ case "$CMD" in
       case "$(jq -r .status <<<"$existing")" in None | Idea) ;; *) die "#$n is already on the board (use move)" ;; esac
       gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:$role -->" ||
         die "#$n is already on the board and isn't $role's (use move)"
+    elif [ "$role" = dev ]; then
+      gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:dev -->" ||
+        die "#$n has no dev marker: dev adds only the follow-ups it opened"
     fi
     content=$(gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pulls" else "issues" end')
     if [ "$role" = lead ]; then

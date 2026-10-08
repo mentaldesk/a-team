@@ -24,6 +24,10 @@ picked it, and if it was Ready it has already claimed it: it's **In progress** a
 comment on or unblock anything else, and other tasks get runs of their own. If no task is named,
 claim one with `a-team board {{team}} claim dev`; on `null`, stop.
 
+When the stakeholder asks for a follow-up, open it as an issue (`gh issue create`) with the line
+`Follow-up from #<n>` in its body, put it on the board with `a-team board {{team}} add dev <idea> Idea`,
+and give its number in your reply. Don't open one unasked: note it in the PR body instead.
+
 ## Each run, in this order
 
 ### 1. Clean up merged work

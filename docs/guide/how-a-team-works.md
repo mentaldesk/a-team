@@ -62,6 +62,7 @@ Both are in the [Work](work.md) area, where you can answer them without leaving 
 ## Talking to the team
 
 Comment on the issue or the PR. The agents read your comments on their next run and reply there.
+Ask for a follow-up and the agent files it as an Idea, which waits in Triage until you rank it.
 
 The 👀 reaction on your comment means a run has read it. Leave that one to the agents: every other
 reaction is yours. A comment you make while a run is going gets a run of its own, so nothing you say
