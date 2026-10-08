@@ -37,7 +37,9 @@ A card reads as the issue's number, then its title:
   plain.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
 - **Trouble.** A PR that's failing CI, conflicts with its base, is still running CI or is still a
-  draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`.
+  draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. A PR
+  whose base just moved shows `resolving mergeable status` until GitHub has worked out whether it
+  still merges.
 
 In kitty, WezTerm and Ghostty, which bundle a Nerd Font, the icons are that font's glyphs instead,
 and a PR row wears a pull request glyph in place of `PR`. No terminal says which font it has, so if
