@@ -4519,6 +4519,41 @@ A_TEAM_UNSCHEDULED=1 A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") A_TEAM_STA
 same "next-pass" 1800000000 "$(cat "$INSTALL_STATE/next-pass")"
 rm "$INSTALL_STATE/next-pass"
 
+# A pass as launchd runs the dispatcher install_dispatcher installed, from $PASS_BIN if that's set.
+installed_pass() {
+  HOME="$INSTALL_HOME" A_TEAM_STATE="$INSTALL_STATE" A_TEAM_BIN="${PASS_BIN:-$INSTALL_STUBS/a-team}" \
+    A_TEAM_CONFIG=$(mktemp -d "$WORK/config.XXXXXX") bash "$ROOT/scripts/dispatch.sh" "$@"
+}
+in_record() { jq -r "$1" "$INSTALL_STATE/dispatcher.json"; }
+record_version() { jq ".version = \"$1\" | .installedAt = 1700000000" "$INSTALL_STATE/dispatcher.json" >"$WORK/record" &&
+  mv "$WORK/record" "$INSTALL_STATE/dispatcher.json"; }
+
+case_ "launchd's pass writes the record for a dispatcher installed before there was one"
+install_dispatcher
+rm "$INSTALL_STATE/dispatcher.json"
+installed_pass
+same "record" "{\"bin\":\"$INSTALL_STUBS/a-team\",\"version\":\"0.1.13-alpha.0.7\",\"dryRun\":false,\"interval\":120,\"log\":\"$INSTALL_STATE/launchd.log\"}" \
+  "$(jq -c 'del(.installedAt)' "$INSTALL_STATE/dispatcher.json")"
+
+case_ "launchd's pass brings the record's version up to date, and keeps when it was installed"
+record_version 0.1.12
+installed_pass
+same "version" 0.1.13-alpha.0.7 "$(in_record .version)"
+same "installedAt" 1700000000 "$(in_record .installedAt)"
+
+case_ "a pass launchd doesn't run leaves the record alone"
+record_version 0.1.12
+PASS_BIN=/elsewhere/bin/a-team installed_pass
+same "another binary" 0.1.12 "$(in_record .version)"
+installed_pass --dry-run
+same "another mode" 0.1.12 "$(in_record .version)"
+A_TEAM_UNSCHEDULED=1 installed_pass
+same "off schedule" 0.1.12 "$(in_record .version)"
+install_dispatcher --uninstall
+installed_pass
+[ -e "$INSTALL_STATE/dispatcher.json" ] && fail "uninstalled: a pass wrote the record"
+rm -f "$INSTALL_STATE"/*next-pass
+
 # status.sh's first line, for a state directory holding $1 as dispatcher.json (or none), next-pass $2 seconds from now
 # (with prefix $3) and a pass in progress as pid $4.
 dispatcher_line() {
