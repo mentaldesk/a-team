@@ -12,6 +12,8 @@ I authorise you to do all of the following without asking me:
 - Create git worktrees and branches under {{workdir}}, change the product's user docs there,
   commit, and push branches other than the default branch to {{repo}}.
 - Open one docs PR on {{repo}}, ready for review, and edit its title and description.
+- Open an issue on {{repo}} for something only a product change can fix, and put it on the board as
+  an Idea with `a-team board {{team}} add customer <n> Idea`.
 
 You must never change anything but user docs, merge a PR, push to the default branch,
 force-push, close an issue, or change anything outside {{workdir}} and temporary files.
