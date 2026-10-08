@@ -14,7 +14,8 @@ CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || { echo "run.sh: no team config at $CONFIG" >&2; exit 3; }
 [ -f "$ROOT/roles/$ROLE.md" ] || { echo "run.sh: no role '$ROLE'" >&2; exit 3; }
 command -v jq >/dev/null || { echo "run.sh: jq is not installed" >&2; exit 3; }
-team_roles "$CONFIG" | grep -qx "$ROLE" || { echo "run.sh: $TEAM has no $ROLE turned on" >&2; exit 3; }
+# Not grep -q: quitting at the first match kills team_roles with SIGPIPE, and pipefail reports that.
+team_roles "$CONFIG" | grep -x "$ROLE" >/dev/null || { echo "run.sh: $TEAM has no $ROLE turned on" >&2; exit 3; }
 gh auth status >/dev/null 2>&1 || { echo "run.sh: gh is not authenticated" >&2; exit 3; }
 
 # check exits 2 for what's missing but leaves the team able to run, like a vision the Lead is yet to draft.
