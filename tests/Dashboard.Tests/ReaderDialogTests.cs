@@ -786,68 +786,170 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void Shift_Down_marks_the_top_line_in_view_and_extends_a_line_at_a_time()
+    public void The_caret_starts_on_the_top_line_in_view_and_the_arrows_move_it()
     {
         using var dialog = Replying();
-        Open(dialog);
-        dialog.NewKeyDownEvent(Key.Tab);
         dialog.NewKeyDownEvent(Key.CursorDown);
         dialog.NewKeyDownEvent(Key.CursorDown);
-
-        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
-        Assert.Equal(["line 3"], dialog.Body.MarkedText());
-        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
-        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
-        Assert.Equal(["line 3", "line 4", "line 5"], dialog.Body.MarkedText());
-        dialog.NewKeyDownEvent(Key.CursorUp.WithShift);
-        Assert.Equal(["line 3", "line 4"], dialog.Body.MarkedText());
-    }
-
-    [Fact]
-    public void Shift_Up_extends_upwards_from_the_top_line()
-    {
-        using var dialog = Replying();
         Open(dialog);
+        Assert.False(dialog.Body.ShowsCaret);
+
         dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Body.ShowsCaret);
+        Assert.Equal((2, 0), dialog.Body.Caret);
+
+        dialog.NewKeyDownEvent(Key.CursorRight);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal((3, 1), dialog.Body.Caret);
         dialog.NewKeyDownEvent(Key.End);
-
-        dialog.NewKeyDownEvent(Key.CursorUp.WithShift);
-        var top = dialog.Body.MarkedText().Single();
-        dialog.NewKeyDownEvent(Key.CursorUp.WithShift);
-
-        Assert.Equal(2, dialog.Body.Marked);
-        Assert.Equal(top, dialog.Body.MarkedText()[^1]);
+        Assert.Equal((3, 6), dialog.Body.Caret);
+        dialog.NewKeyDownEvent(Key.Home);
+        dialog.NewKeyDownEvent(Key.CursorLeft);
+        Assert.Equal((2, 6), dialog.Body.Caret);
     }
 
     [Fact]
-    public void History_lines_can_be_marked_too()
+    public void Up_and_Down_keep_the_caret_s_column_across_a_shorter_line()
+    {
+        using var dialog = Replying(body: "a longer line\nab\nanother line");
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.End);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal((1, 2), dialog.Body.Caret);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal((2, 12), dialog.Body.Caret);
+    }
+
+    [Fact]
+    public void In_a_wrapped_line_the_caret_moves_a_row_at_a_time()
+    {
+        using var dialog = Replying(body: string.Join(' ', Enumerable.Repeat("word", 60)));
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        var (line, offset) = dialog.Body.Caret!.Value;
+        dialog.NewKeyDownEvent(Key.End);
+        dialog.NewKeyDownEvent(Key.Home);
+
+        Assert.Equal(0, line);
+        Assert.True(offset > 0);
+        Assert.Equal((0, offset), dialog.Body.Caret);
+    }
+
+    [Fact]
+    public void The_pane_scrolls_to_keep_the_caret_in_view()
     {
         using var dialog = Replying();
         Open(dialog);
-        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+        dialog.NewKeyDownEvent(Key.Tab);
 
+        for (var i = 0; i < 30; i++)
+            dialog.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.Equal((30, 0), dialog.Body.Caret);
+        Assert.InRange(30, dialog.Body.Top, dialog.Body.Top + dialog.Body.Viewport.Height - 1);
+        dialog.NewKeyDownEvent(Key.Home.WithCtrl);
+        Assert.Equal(0, dialog.Body.Top);
+    }
+
+    [Fact]
+    public void Shift_and_the_arrows_select_part_of_a_line_or_across_lines()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+        for (var i = 0; i < 5; i++)
+            dialog.NewKeyDownEvent(Key.CursorRight);
+
+        dialog.NewKeyDownEvent(Key.End.WithShift);
+        Assert.Equal(["1"], dialog.Body.MarkedText());
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        Assert.Equal(["1", "line 2"], dialog.Body.MarkedText());
+        dialog.NewKeyDownEvent(Key.CursorLeft.WithShift);
+        Assert.Equal(["1", "line "], dialog.Body.MarkedText());
+        dialog.NewKeyDownEvent(Key.CursorUp.WithShift);
+        Assert.Equal(0, dialog.Body.Marked);
+        dialog.NewKeyDownEvent(Key.Home.WithShift);
+        Assert.Equal(["line "], dialog.Body.MarkedText());
+    }
+
+    [Fact]
+    public void Shift_Down_from_the_start_of_a_line_selects_that_line_alone()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        Assert.Equal(["line 1"], dialog.Body.MarkedText());
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        Assert.Equal(["line 1", "line 2"], dialog.Body.MarkedText());
+        Assert.Equal(2, dialog.Body.Marked);
+    }
+
+    [Fact]
+    public void Moving_without_Shift_drops_the_selection()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+
+        dialog.NewKeyDownEvent(Key.CursorRight);
+
+        Assert.Equal(0, dialog.Body.Marked);
+    }
+
+    [Fact]
+    public void History_has_a_caret_of_its_own()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        Assert.False(dialog.Body.ShowsCaret);
+        Assert.True(dialog.HistoryLog.ShowsCaret);
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
 
         Assert.Equal(dialog.HistoryLog.Lines.Take(2).Select(line => line.Text), dialog.HistoryLog.MarkedText());
         Assert.Equal(0, dialog.Body.Marked);
+        Assert.Equal((1, 0), dialog.Body.Caret);
     }
 
     [Fact]
-    public void The_hints_count_the_marked_lines_and_Esc_clears_them_first()
+    public void Back_in_the_comment_neither_pane_shows_its_caret()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        Assert.False(dialog.Body.ShowsCaret);
+        Assert.False(dialog.HistoryLog.ShowsCaret);
+    }
+
+    [Fact]
+    public void The_hints_count_the_selected_lines_and_Esc_clears_them_first()
     {
         var asked = 0;
         using var dialog = Replying(confirmDiscard: () => ++asked > 0);
         Open(dialog);
         Assert.Equal(
-            "Tab switch pane · Shift+↑↓ select · Ctrl+Enter post · g on GitHub · Esc back",
+            "Tab switch pane · Shift+arrows select · Ctrl+Enter post · g on GitHub · Esc back",
             dialog.Hints.Says);
         dialog.Field.Text = "draft";
         dialog.NewKeyDownEvent(Key.Tab);
-        Assert.EndsWith("Shift+↑↓ select · Ctrl+Enter post · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.EndsWith("Shift+arrows select · Ctrl+Enter post · g on GitHub · Esc close", dialog.Hints.Says);
 
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
-        Assert.Contains("Shift+↑↓ select · q quote 1 line · Ctrl+Enter post", dialog.Hints.Says);
+        Assert.Contains("Shift+arrows select · q quote 1 line · Ctrl+Enter post", dialog.Hints.Says);
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
         Assert.Contains("q quote 2 lines", dialog.Hints.Says);
         Assert.EndsWith("Esc clear", dialog.Hints.Says);
@@ -859,7 +961,7 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void q_quotes_the_marked_lines_into_the_comment_and_leaves_the_keyboard_in_the_body()
+    public void q_quotes_the_selection_into_the_comment_and_leaves_the_keyboard_in_the_body()
     {
         using var dialog = Replying();
         Open(dialog);
@@ -892,7 +994,7 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(new Key('c'));
         dialog.Field.InsertText("But not this.");
 
-        Assert.Equal("Agreed.\n> line 1\n\n> line 2\n\nBut not this.", dialog.Field.Text);
+        Assert.Equal("Agreed.\n> line 1\n\n> line 3\n\nBut not this.", dialog.Field.Text);
     }
 
     [Fact]
@@ -932,13 +1034,14 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void Without_the_comment_open_the_marking_keys_do_nothing()
+    public void Without_the_comment_open_there_is_no_caret_and_the_selecting_keys_do_nothing()
     {
         using var dialog = Replying();
 
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
         dialog.NewKeyDownEvent(new Key('q'));
 
+        Assert.Null(dialog.Body.Caret);
         Assert.Equal(0, dialog.Body.Marked);
         Assert.False(dialog.CommentShown);
         Assert.Equal("Up/Down/PgUp/PgDn scroll · Tab switch pane · h hide history · c comment · g on GitHub · Esc close",
@@ -966,6 +1069,8 @@ public class ReaderDialogTests
         Assert.True(dialog.Body.HasFocus);
         Assert.Equal("commented on #180", dialog.Message.Says);
         Assert.Equal("Ship it.", dialog.Body.Lines[^1].Text);
+        Assert.Null(dialog.Body.Caret);
+        Assert.False(dialog.Body.ShowsCaret);
         Assert.EndsWith("you   commented", dialog.HistoryLog.Lines[0].Text);
     }
 

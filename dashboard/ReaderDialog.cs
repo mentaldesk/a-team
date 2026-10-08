@@ -274,10 +274,8 @@ public sealed class ReaderDialog : Dialog
             return SwitchPane(-1);
         if (CommentShown && key == Key.Enter.WithCtrl)
             return Post();
-        if (CommentShown && key == Key.CursorDown.WithShift)
-            return Mark(+1);
-        if (CommentShown && key == Key.CursorUp.WithShift)
-            return Mark(-1);
+        if (CommentShown && Caret(key) is { } move)
+            return MoveCaret(move, key.IsShift);
         if (CommentShown && key == new Key('q'))
             return Quote();
         if (key == new Key('g'))
@@ -295,13 +293,14 @@ public sealed class ReaderDialog : Dialog
 
     private void ShowHints()
     {
+        ShowCarets();
         var marked = FocusedPane().Marked;
         _hints.Show("", [
             .. CommentShown ? Array.Empty<HintedCommand>() : [new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll")],
             .. CommentShown || HistoryShown ? [new HintedCommand(SwitchHint, "Tab switch pane")] : Array.Empty<HintedCommand>(),
             .. _ranks is not null || CommentShown ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(HistoryHint, HistoryShown ? "h hide history" : "h show history")],
-            .. CommentShown ? [new HintedCommand(SelectHint, "Shift+↑↓ select")] : Array.Empty<HintedCommand>(),
+            .. CommentShown ? [new HintedCommand(SelectHint, "Shift+arrows select")] : Array.Empty<HintedCommand>(),
             .. CommentShown && marked > 0
                 ? [new HintedCommand(QuoteHint, $"q quote {marked} {(marked == 1 ? "line" : "lines")}")]
                 : Array.Empty<HintedCommand>(),
@@ -317,6 +316,14 @@ public sealed class ReaderDialog : Dialog
             new HintedCommand(GitHubHint, "g on GitHub"),
             new HintedCommand(CloseHint, _field.HasFocus ? "Esc back" : marked > 0 ? "Esc clear" : "Esc close"),
         ], Run);
+    }
+
+    /// <summary>While you write, the pane you were reading shows where its caret is.</summary>
+    private void ShowCarets()
+    {
+        var reading = CommentShown && !_field.HasFocus;
+        _body.ShowsCaret = reading && _scrolled == _body;
+        _history.ShowsCaret = reading && _scrolled == _history;
     }
 
     private void ShowHistory(bool shown)
@@ -396,13 +403,29 @@ public sealed class ReaderDialog : Dialog
         return true;
     }
 
-    private bool Mark(int by)
+    private static CaretMove? Caret(Key key)
     {
-        FocusedPane().Mark(by);
+        var bare = key.NoShift;
+        return bare == Key.CursorLeft ? CaretMove.Left
+            : bare == Key.CursorRight ? CaretMove.Right
+            : bare == Key.CursorUp ? CaretMove.Up
+            : bare == Key.CursorDown ? CaretMove.Down
+            : bare == Key.PageUp ? CaretMove.PageUp
+            : bare == Key.PageDown ? CaretMove.PageDown
+            : bare == Key.Home ? CaretMove.RowStart
+            : bare == Key.End ? CaretMove.RowEnd
+            : bare == Key.Home.WithCtrl ? CaretMove.Start
+            : bare == Key.End.WithCtrl ? CaretMove.End
+            : null;
+    }
+
+    private bool MoveCaret(CaretMove move, bool extend)
+    {
+        FocusedPane().MoveCaret(move, extend);
         return true;
     }
 
-    /// <summary>The marked lines go in at the comment's cursor, and the keyboard stays where it was for the next.</summary>
+    /// <summary>The selected text goes in at the comment's cursor, and the keyboard stays where it was for the next.</summary>
     private bool Quote()
     {
         var pane = FocusedPane();
@@ -532,6 +555,8 @@ public sealed class ReaderDialog : Dialog
         }
         _field.Text = "";
         _commentFrame.Visible = false;
+        _body.DropCaret();
+        _history.DropCaret();
         ShowHistory(_panes.OpensWithHistory(_width));
         Back();
         ShowHints();
@@ -573,7 +598,7 @@ public sealed class ReaderDialog : Dialog
             ScrollHint => Scrolled(() => FocusedPane().Page(+1)),
             SwitchHint => SwitchPane(+1),
             HistoryHint => ToggleHistory(),
-            SelectHint => Mark(+1),
+            SelectHint => MoveCaret(CaretMove.Down, extend: true),
             QuoteHint => Quote(),
             TryHint => Try(),
             ApproveHint => Approve(),
