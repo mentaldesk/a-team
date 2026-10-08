@@ -29,7 +29,7 @@ public sealed class TeamForm : Dialog
     internal const string TryCaption = "What a-team try runs to let you try a change.";
     internal const string CheckoutCaption = "Where the Dev looks for merged work to clean up. Change it in the file.";
     internal const string StatusCaption = "Whether the team picks up work. Paused lets a run in flight finish.";
-    internal const string ReleaseCaption = "When the repo's release.yml runs: never, at most daily, or after every merge to main.";
+    internal const string ReleaseCaption = "When a-team runs the repo's release.yml. Never suits a repo that deploys itself on merge.";
     internal const string WorktreesCaption = "How many tasks can be in flight, PRs included.";
     internal const string DevsCaption = "How many Dev runs build at once.";
     internal const string PitchedCaption = "How many pitches wait on you at once.";
