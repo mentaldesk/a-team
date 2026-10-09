@@ -50,6 +50,8 @@
       "Bash(gh repo edit *)",
       "Bash(gh repo rename *)",
       "Bash(gh repo archive *)",
+      "Bash(a-team board * new you *)",
+      "Bash(a-team board * add you *)",
       "Bash(a-team board * priority *)",
       "Bash(a-team board * approve *)",
       "Bash(a-team board * accept *)",

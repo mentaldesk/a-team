@@ -193,6 +193,8 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
+                    echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;
   *"issue close"*) [ ! -e "$BIN/close-fails" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
                    echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
   *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"; printf '%s' "\${@: -1}" >"$EDITED"; exit 0 ;;
@@ -1382,6 +1384,75 @@ grep -q "would comment on #7" "$ERR" || fail "comment you dry run: '$(cat "$ERR"
 case_ "the agents' settings deny comment you, beside accept"
 grep -qF '"Bash(a-team board * comment you *)"' "$ROOT/settings/agents.json" || fail "no comment you deny rule"
 
+# `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
+# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
+gh_child() {
+  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
+    {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
+     labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
+     parent_issue_url: (if $parent == "-" then null
+                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
+  : >"$POSTED"
+  : >"$WRITES"
+  : >"$EDITED"
+}
+
+case_ "new you opens an issue as you, titled by the file's first line, and prints its number"
+printf 'Remember the lane I was on\n\nIt always starts on the first team.\n' >"$WORK/idea"
+run board demo new you "$WORK/idea"
+same "exit" 0 "$STATUS"
+same "number" 77 "$(cat "$OUT")"
+grep -qF -- "--title Remember the lane I was on" "$WRITES" || fail "new: no title in '$(cat "$WRITES")'"
+grep -qF -- "-R mentaldesk/demo" "$WRITES" || fail "new: not the team's repo in '$(cat "$WRITES")'"
+same "body" "$(printf '\nIt always starts on the first team.')" "$(cat "$POSTED")"
+grep -q "a-team:" "$POSTED" && fail "new: a marker in your issue"
+
+case_ "new refuses an empty title, an agent, and opens nothing"
+: >"$WRITES"
+printf '   \nA body with no title\n' >"$WORK/untitled"
+run board demo new you "$WORK/untitled"
+failed "untitled"
+one_line "untitled"
+grep -q "an issue needs a title" "$ERR" || fail "untitled: '$(cat "$ERR")'"
+for role in lead dev customer; do
+  run board demo new "$role" "$WORK/idea"
+  failed "$role new"
+  grep -q "$role may not open an issue as you" "$ERR" || fail "$role new: '$(cat "$ERR")'"
+done
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "new that GitHub refuses says why"
+touch "$BIN/create-fails"
+run board demo new you "$WORK/idea"
+failed "refused"
+grep -q "Could not resolve to a Repository" "$ERR" || fail "refused: '$(cat "$ERR")'"
+rm "$BIN/create-fails"
+
+case_ "--dry-run shows the issue you'd open and opens nothing"
+run board --dry-run demo new you "$WORK/idea"
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+grep -q "would open an issue titled 'Remember the lane I was on'" "$ERR" || fail "new dry run: '$(cat "$ERR")'"
+
+case_ "add you puts your own issue on the board as an Idea, with no label"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+gh_child 41 - - "It always starts on the first team."
+run board demo add you 41 Idea
+same "exit" 0 "$STATUS"
+grep -q "OPT_idea" "$WRITES" || fail "add you: no move to Idea in '$(cat "$WRITES")'"
+grep -q "labels" "$WRITES" && fail "add you: labelled '$(cat "$WRITES")'"
+
+case_ "add you adds only an Idea"
+for to in Ready Pitched; do
+  run board demo add you 41 "$to"
+  failed "add you as $to"
+  grep -qF "you may not add items as '$to'" "$ERR" || fail "add you as $to: '$(cat "$ERR")'"
+done
+
+case_ "the agents' settings deny new you and add you"
+grep -qF '"Bash(a-team board * new you *)"' "$ROOT/settings/agents.json" || fail "no new you deny rule"
+grep -qF '"Bash(a-team board * add you *)"' "$ROOT/settings/agents.json" || fail "no add you deny rule"
+
 # The 👀: a reviewer comment is answered once a run has left one on it, and a run leaves one only
 # on what it could have seen. The races replayed here are the ones in pitch #3. $TODAY is on or
 # after board.sh's ACK_FROM, so these cases see the 👀 rule and the dated ones below the old.
@@ -1906,19 +1977,6 @@ same "said" "(dry run) #11 is no longer blocked by #21, and said why on #11" "$(
 grep -q "No longer blocked by #21: looked again" "$ERR" || fail "dry run: no comment in '$(cat "$ERR")'"
 same "posted" "" "$(cat "$POSTED")"
 same "writes" "" "$(cat "$WRITES")"
-
-# `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
-# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
-gh_child() {
-  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
-    {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
-     labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
-     parent_issue_url: (if $parent == "-" then null
-                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
-  : >"$POSTED"
-  : >"$WRITES"
-  : >"$EDITED"
-}
 
 case_ "link refuses to file an idea under a pitch, in one line, and writes nothing"
 fixture <<'JSON'

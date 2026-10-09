@@ -131,3 +131,16 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 - **Accept finished work.** On a card in Review, or reading one, press `a`. For a task, once you
   confirm, its PR is squash-merged and its branch deleted. The Customer lead's docs PR is merged
   the same way. If it isn't ready yet, `a` says why instead.
+
+## Adding an idea
+
+Press `n`, or pick **New idea** from the Cards menu or Commands (`Ctrl+E`). **Team** starts on the
+lane you're in, or the first team from the Dashboard. Type a **Title**, and a **Description** if
+you like; `Tab` moves between the fields. **Priority** starts on **None**, which puts the idea in
+that team's Triage to rank later; pick another with `←`/`→` and it goes straight into the Lead's
+queue.
+
+`Ctrl+Enter` adds it: the issue is opened as you, put on the team's board as an Idea and ranked if
+you chose a Priority. Work reads again straight away, and the bar says `#<n> added to <team>'s
+ideas`. If a step fails, the dialog stays open with what you wrote and says which step; `Ctrl+Enter`
+tries again from there. `Esc` cancels, asking first if you've typed anything.

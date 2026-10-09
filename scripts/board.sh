@@ -161,7 +161,8 @@ allowed() {
     "lead:Approved>Building" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:None>Idea" | "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
-    "customer:None>Idea" | "customer:None>Pitched" | "customer:None>In review")
+    "customer:None>Idea" | "customer:None>Pitched" | "customer:None>In review" | \
+    "you:None>Idea")
       return 0 ;;
   esac
   return 1
@@ -924,7 +925,7 @@ case "$CMD" in
   add)
     [ $# -eq 3 ] || die "usage: board.sh $TEAM add <role> <n> <status>"
     role=$1 n=$2 to=$3
-    check_role "$role"
+    [ "$role" = you ] || check_role "$role"
     is_state "$to" || die "unknown status '$to'"
     allowed "$role" None "$to" || die "$role may not add items as '$to'"
     if [ "$role:$to" = "customer:In review" ]; then
@@ -963,8 +964,13 @@ case "$CMD" in
     if [ -n "$existing" ]; then
       # The project's auto-add workflow may already have put a new issue on the board.
       case "$(jq -r .status <<<"$existing")" in None | Idea) ;; *) die "#$n is already on the board (use move)" ;; esac
-      gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:$role -->" ||
-        die "#$n is already on the board and isn't $role's (use move)"
+      if [ "$role" = you ]; then
+        ! gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:" ||
+          die "#$n is already on the board and is a role's, not yours (use move)"
+      else
+        gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:$role -->" ||
+          die "#$n is already on the board and isn't $role's (use move)"
+      fi
     elif [ "$role" = dev ]; then
       gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:dev -->" ||
         die "#$n has no dev marker: dev adds only the follow-ups it opened"
@@ -990,6 +996,25 @@ case "$CMD" in
     set_status "${id:-new-item}" "$to"
     record "$role" "$n" "added as $to"
     say "#$n: added as $to"
+    ;;
+
+  new)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM new you <file>"
+    role=$1 file=$2
+    case "$role" in
+      lead | dev | customer) die "$role may not open an issue as you; open it yourself and add it" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    [ -f "$file" ] || die "no such file: $file"
+    title=$(head -n 1 "$file")
+    [ -n "${title//[[:space:]]/}" ] || die "an issue needs a title (the file's first line)"
+    body=$(tail -n +2 "$file")
+    [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
+    url=$(printf '%s\n' "$body" | write "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
+      die "can't open the issue on $REPO"
+    [ -z "$DRY_RUN" ] || url=0
+    echo "${url##*/}"
     ;;
 
   priority)

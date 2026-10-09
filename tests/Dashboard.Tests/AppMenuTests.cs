@@ -242,7 +242,7 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            ["_Open", "Set _priority", "_Try", "Open on _GitHub", "_Accept", "_Refresh", "Show only _mine"],
+            ["_Open", "Set _priority", "_Try", "Open on _GitHub", "_Accept", "_New idea", "_Refresh", "Show only _mine"],
             Under(window, Cards(window)).Select(id => Item(window, id).Title));
     }
 
@@ -267,7 +267,7 @@ public class AppMenuTests : IDisposable
         window.Refresh();
 
         Assert.Equal("work.approve.card", Above(window, Cards(window)).Last());
-        Assert.Equal(["work.refresh", "work.mine"], Below(window, Cards(window)));
+        Assert.Equal(["work.new", "work.refresh", "work.mine"], Below(window, Cards(window)));
         Assert.Equal(new Key('a'), Item(window, "work.approve.card").Key);
     }
 
@@ -375,12 +375,12 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void Cards_has_refresh_and_the_filter_under_a_line_with_their_keys()
+    public void Cards_has_new_idea_refresh_and_the_filter_under_a_line_with_their_keys()
     {
         using var window = Open();
 
-        Assert.Equal(["work.refresh", "work.mine"], Below(window, Cards(window)));
-        Assert.Equal([Key.F5, new Key('m')], Below(window, Cards(window)).Select(id => Item(window, id).Key));
+        Assert.Equal(["work.new", "work.refresh", "work.mine"], Below(window, Cards(window)));
+        Assert.Equal([new Key('n'), Key.F5, new Key('m')], Below(window, Cards(window)).Select(id => Item(window, id).Key));
     }
 
     [Theory]
