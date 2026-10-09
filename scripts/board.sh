@@ -233,10 +233,11 @@ items() {
           pageInfo { hasNextPage endCursor }
           nodes {
             id
-            fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+            fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } }
             content {
               __typename
               ... on Issue { id number title url stateReason repository { nameWithOwner } labels(first: 20) { nodes { name } }
+                             parent { number }
                              issueDependenciesSummary { blockedBy }
                              issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue {
                                name field { ... on IssueFieldSingleSelect { name } } } } } }
@@ -259,6 +260,8 @@ items() {
              labels: [.content.labels.nodes[].name],
              blockedBy: (.content.issueDependenciesSummary.blockedBy // 0),
              priority: ([.content.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
+             since: .fieldValueByName.updatedAt,
+             parent: .content.parent.number,
              status: (if $raw == null then "None"
                       elif $rev[$raw] then $rev[$raw]
                       elif ($states | index($raw)) then $raw
@@ -954,6 +957,11 @@ case "$CMD" in
       turn=none
     fi
     if [ "$turn" != none ]; then mkdir -p "$(dirname "$state")" && echo "$turn" >"$state"; fi
+    # A run started across the board shows on the Idea it pitches.
+    card="$STATE/$TEAM/lead/card"
+    if [ "$turn" = pitch ] && [ "${A_TEAM_RUN_TEAM:-}" = "$TEAM" ] && [ ! -e "$card" ] && [ -z "$DRY_RUN" ]; then
+      mkdir -p "$(dirname "$card")" && jq -c '{number}' <<<"$idea" >"$card"
+    fi
     jq -n --argjson promote "$promote" --argjson demote "$demote" --arg turn "$turn" --argjson item "$idea" \
       --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" --argjson blocked "$blocked" \
       --argjson floor "$(cfg '.wip.readyFloor // 0')" --argjson skipped "$skipped" '
@@ -1535,6 +1543,15 @@ case "$CMD" in
     printf '%s\n' "$waiting"
     ;;
 
+  overview)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM overview"
+    # Done only grows, so it's left off; `since` is when the item's Status was last set.
+    items "$(not_done)" | jq --arg team "$TEAM" 'map(select(.status != "Done") | {number, title, url, status, priority,
+      since, parent, team: $team,
+      kind: (if .labels | index("pitch") then "pitch" elif .labels | index("a-team:customer") then "docs"
+             elif (.labels | index("a-team:dev")) or .parent != null then "task" else "yours" end)})'
+    ;;
+
   trend)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM trend"
     if [ ! -f "$STATE/history.db" ]; then
@@ -1619,7 +1636,7 @@ case "$CMD" in
     reasons=()
     recent='[]'
     case "$role" in lead | dev) recent=$(recent_comments) ;; esac
-    tasks='[]' chores=() ready='' items=()
+    tasks='[]' chores=() ready='' items=() card=''
     # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
     task_reason() {
       reasons+=("$3")
@@ -1739,6 +1756,7 @@ case "$CMD" in
           [ "$status" != "In review" ] || kind="docs PR"
         fi
         if [ -n "$kind" ]; then
+          card=$n
           recent=$(jq -s 'add' <(recent_comments) <(pr_reviews "$n"))
           at=$(feedback_at "$recent" customer "$n")
           [ -n "$at" ] && reasons+=("stakeholder feedback on $kind #$n ($at)") && items+=("$n")
@@ -1790,11 +1808,11 @@ case "$CMD" in
     fi
     jq -n --argjson creative "$creative" --arg role "$role" --argjson tasks "$tasks" --arg ready "$ready" \
       --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" \
-      --argjson items "$(jq -n '$ARGS.positional | map(tonumber)' --args ${items[@]+"${items[@]}"})" '
+      --argjson items "$(jq -n '$ARGS.positional | map(tonumber)' --args ${items[@]+"${items[@]}"})" --arg card "$card" '
       {reasons: $ARGS.positional, creative: $creative}
       + if $role == "dev" or $role == "reviewer"
         then {tasks: $tasks, ready: (if $ready == "" then null else $ready | tonumber end), chores: $chores}
-        else {items: $items} end' \
+        else {items: $items, card: (if ($items | length) == 1 then $items[0] elif $card != "" then $card | tonumber else null end)} end' \
       --args "${reasons[@]+"${reasons[@]}"}"
     ;;
 

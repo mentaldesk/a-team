@@ -15,6 +15,11 @@ The area that shows everything waiting on you, across every team. What its colum
 icons and colours say, and how to answer from it: approving a pitch, replying to a question, and
 accepting finished work.
 
+## [Overseer](overseer.md)
+
+Every team's board on one screen: where each card is, how long it has waited there, which ones an
+agent is on, and the time limits that flag a card that has sat too long.
+
 ## [Dashboard](dashboard.md)
 
 What each agent is doing: its pane and log, tool calls, pausing a role, and interrupting a run to

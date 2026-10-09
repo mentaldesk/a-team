@@ -13,6 +13,11 @@ namespace ATeam.Dashboard;
 public sealed class SettingsDialog : Dialog
 {
     internal const string TeamsPage = "Teams";
+    internal const string OverseerPage = "Overseer";
+    private const string LimitsHeading = "Highlight a card that stays in a column longer than";
+    private const string LimitsHint = "e.g. 30m, 2h, 3d or 2w; blank for no limit";
+    private const int LimitsRow = 2;
+    private const int LimitWidth = 10;
     private static readonly Key Apply = Key.Enter.WithCtrl;
     private const string Prompt = "Press a key…";
     private const string RebindHint = "Enter rebind";
@@ -73,6 +78,7 @@ public sealed class SettingsDialog : Dialog
     private readonly List<string> _removed = [];
     private readonly TeamChecks? _checks;
     private readonly Action<string> _showGuide;
+    private readonly List<(string Column, TextField Field)> _limits;
     private bool _capturing;
 
     public SettingsDialog(
@@ -87,9 +93,12 @@ public sealed class SettingsDialog : Dialog
         TeamStart? start = null,
         Func<string, Task<TeamHealth>>? check = null,
         Action<string>? showGuide = null,
-        TeamChecks? checks = null)
+        TeamChecks? checks = null,
+        IReadOnlyDictionary<string, string>? limits = null)
     {
         _showGuide = showGuide ?? (_ => { });
+        _limits = [.. OverseerBoard.Columns.Select(column => (column,
+            new TextField { Width = LimitWidth, Text = limits is not null && limits.TryGetValue(column, out var limit) ? limit : "" }))];
         _commands = commands;
         _teams = teams;
         _start = start;
@@ -198,6 +207,7 @@ public sealed class SettingsDialog : Dialog
             new Page(TeamsPage, [new Placed(_teamHeader), new Placed(_teamList, 0, TeamListRow)], () => SelectedTeam() is { } team
                 ? [team.Paused ? ResumeHint : PauseHint, EditHint, RemoveTeamHint, NewHint]
                 : [NewHint]),
+            new Page(OverseerPage, LimitRows(), () => [LimitsHint]),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -254,6 +264,12 @@ public sealed class SettingsDialog : Dialog
 
     internal IReadOnlyList<(string Id, Key Key)> Changed => _changed;
 
+    internal IReadOnlyList<(string Column, TextField Field)> LimitFields => _limits;
+
+    /// <summary>Each column's limit as entered, blank for none.</summary>
+    internal IReadOnlyDictionary<string, string> Limits =>
+        _limits.ToDictionary(limit => limit.Column, limit => limit.Field.Text.Trim());
+
     /// <summary>Opens the team form and returns what it saved, or null where it was cancelled.</summary>
     internal Func<string, TeamSettings, Func<TeamSettings, string?>, TeamSettings?> EditTeam { get; set; }
 
@@ -308,7 +324,8 @@ public sealed class SettingsDialog : Dialog
         var theme = ThemeSetting.Live(settings);
         var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
-            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start, showGuide: showGuide, checks: checks);
+            theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start, showGuide: showGuide, checks: checks,
+            limits: settings.ReadLimits());
         if (newTeam)
             app.Invoke(() => dialog.NewTeam());
         app.Run(dialog);
@@ -328,6 +345,7 @@ public sealed class SettingsDialog : Dialog
         theme.Keep();
         icons.Keep();
         settings.WriteExpandToolCalls(ExpandToolCalls);
+        settings.WriteLimits(Limits);
         if (_changed.Count == 0)
             return;
         settings.WriteKeys(_changed);
@@ -690,6 +708,13 @@ public sealed class SettingsDialog : Dialog
 
     private bool Close(bool confirmed)
     {
+        if (confirmed && UnreadableLimit() is { } column)
+        {
+            _picker.Value = _pages.FindIndex(page => page.Name == OverseerPage);
+            _limits.First(limit => limit.Column == column).Field.SetFocus();
+            Say($"Overseer: can't read the limit for {column}. Use a number and m, h, d or w, like 3d, or leave it blank.");
+            return true;
+        }
         Confirmed = confirmed;
         RequestStop();
         return true;
@@ -779,6 +804,24 @@ public sealed class SettingsDialog : Dialog
             default:
                 return Close(confirmed: hint == KeepHint);
         }
+    }
+
+    /// <summary>The first column whose limit isn't one Overseer can read, or null when they all are.</summary>
+    internal string? UnreadableLimit() =>
+        _limits.FirstOrDefault(limit => !ColumnLimits.TryParse(limit.Field.Text, out _)).Column;
+
+    private IReadOnlyList<Placed> LimitRows()
+    {
+        var label = OverseerBoard.Columns.Max(column => column.Length) + Gap;
+        return
+        [
+            new Placed(new Label { Text = LimitsHeading }),
+            .. _limits.SelectMany((limit, row) => new[]
+            {
+                new Placed(new Label { Text = limit.Column }, Indent, LimitsRow + row),
+                new Placed(limit.Field, Indent + label, LimitsRow + row),
+            }),
+        ];
     }
 
     private IReadOnlyList<Placed> DashboardRows() =>

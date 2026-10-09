@@ -47,7 +47,7 @@ passing() {
 dispatch() {
   local team=$1 role=$2 config=$3
   local dir="$STATE/$team/$role" now triggers reasons creative last live limit pid at
-  local sweep='' prefix='' task='' number='' started=0 picked=' ' chores='' items=''
+  local sweep='' prefix='' task='' number='' started=0 picked=' ' chores='' items='' card=''
   $DRY_RUN && prefix="dry-"
   mkdir -p "$dir/logs"
   now=$(date +%s)
@@ -88,6 +88,7 @@ dispatch() {
     fi
     fresh "$dir/${prefix}fingerprint" "$reasons" "$dir/latest.jsonl" || return
     items=$(jq -r '.items[]?' <<<"$triggers")
+    card=$(jq -c 'select(.card) | {number: .card}' <<<"$triggers")
     launch
     return
   fi
@@ -157,6 +158,7 @@ launch() {
   echo "$now" >"$dir/${prefix}last-start"
   printf '%s\n' "$reasons" >"$dir/${prefix}last-reasons"
   if [ -n "$task" ]; then echo "$task" >"$dir/${prefix}task"; else rm -f "$dir/${prefix}task"; fi
+  if [ -n "$card" ]; then echo "$card" >"$dir/${prefix}card"; else rm -f "$dir/${prefix}card"; fi
   what=$(paste -sd ';' - <<<"$reasons")
   [ -z "$number" ] || what="#$number: $what"
 

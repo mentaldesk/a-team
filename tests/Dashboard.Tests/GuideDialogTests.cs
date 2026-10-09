@@ -206,12 +206,14 @@ public partial class GuideDialogTests : IDisposable
         Assert.Contains(("index.md", "work.md"), GuideLinks());
         Assert.Contains(("index.md", "dashboard.md"), GuideLinks());
         Assert.Contains(("index.md", "teams.md"), GuideLinks());
+        Assert.Contains(("index.md", "overseer.md"), GuideLinks());
     }
 
     [Theory]
     [InlineData(GuideDialog.Work)]
     [InlineData(GuideDialog.Dashboard)]
     [InlineData(GuideDialog.Teams)]
+    [InlineData(GuideDialog.Overseer)]
     public void Every_page_the_app_opens_the_guide_on_is_there(string page)
     {
         using var dialog = new GuideDialog(Guide(), _ => { }, page);

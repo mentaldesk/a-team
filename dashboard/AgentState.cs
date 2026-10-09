@@ -24,6 +24,9 @@ public sealed record AgentState(
     /// <summary>The run under runs/ the role's own files follow, live or not.</summary>
     public DevRun? Latest { get; init; }
 
+    /// <summary>The one card a Lead or Customer lead run was started for, or has taken up since.</summary>
+    public int? Card { get; init; }
+
     public static AgentState Read(string dir)
     {
         var latest = Pid(dir);
@@ -38,6 +41,7 @@ public sealed record AgentState(
         {
             Runs = LiveRuns(Path.Combine(dir, "runs")),
             Latest = RunOf(Path.Combine(dir, "runs"), latest),
+            Card = ReadTask(Path.Combine(dir, "card"))?.Number,
         };
     }
 

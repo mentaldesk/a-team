@@ -8,11 +8,12 @@ using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The two areas the app opens in: the agents, or everything waiting on the reviewer.</summary>
+/// <summary>The areas the app opens in: the agents, everything waiting on the reviewer, or every team's board.</summary>
 public enum Area
 {
     Dashboard,
     Work,
+    Overseer,
 }
 
 public sealed class DashboardWindow : Window
@@ -40,6 +41,11 @@ public sealed class DashboardWindow : Window
     private readonly LogView _dispatch;
     private readonly LogView _dispatchAll;
     private readonly WorkView _work;
+    private readonly OverseerView _overseer;
+    private readonly Func<string, Task<Reading>>? _readBoard;
+    private Task<Reading[]>? _boarding;
+    private DateTimeOffset? _boardReadAt;
+    private IReadOnlyDictionary<string, string> _limits;
     private readonly List<string> _teamNames;
     private readonly string _dispatchLog;
     private readonly string _nextPass;
@@ -132,8 +138,11 @@ public sealed class DashboardWindow : Window
         DispatchPass? pass = null,
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
-        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null)
+        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
+        Func<string, Task<Reading>>? readBoard = null)
     {
+        _readBoard = readBoard;
+        _limits = settings.ReadLimits();
         _clipboard = clipboard;
         _newIdea = newIdea;
         _readHistory = readHistory;
@@ -236,6 +245,15 @@ public sealed class DashboardWindow : Window
         _work.FocusChanged += ShowMessage;
         _work.ShowOnlyMine(settings.ReadOnlyMine());
         Add(_work);
+        _overseer = new OverseerView(_teamNames)
+        {
+            X = 0,
+            Y = MenuLines,
+            Width = Dim.Fill(),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this),
+            Visible = area == Area.Overseer,
+        };
+        Add(_overseer);
         _loading = new FrameView
         {
             X = Pos.Center(),
@@ -264,6 +282,8 @@ public sealed class DashboardWindow : Window
             Resume(resume);
         if (resume is null or TeamsChanged && _area == Area.Work)
             ReadWaiting();
+        if (_area == Area.Overseer)
+            ReadBoards();
     }
 
     internal IReadOnlyList<AgentPane> Panes => _panes;
@@ -281,6 +301,8 @@ public sealed class DashboardWindow : Window
     internal View Agents => _agents;
 
     internal WorkView Work => _work;
+
+    internal OverseerView Overseer => _overseer;
 
     internal MessageBar Message => _status.Message;
 
@@ -306,6 +328,7 @@ public sealed class DashboardWindow : Window
     public void Refresh()
     {
         Settle();
+        SettleBoards();
         SettleTrend();
         ShowTitle();
         var now = _clock.GetUtcNow();
@@ -330,6 +353,7 @@ public sealed class DashboardWindow : Window
             ShowWholeLog();
         ShowDispatcher(now);
 
+        ShowOverseer(now);
         _menu.Refresh();
         ShowMessage();
         ShowLoading();
@@ -386,6 +410,7 @@ public sealed class DashboardWindow : Window
     {
         bool OnDashboard() => _area == Area.Dashboard;
         bool OnWork() => _area == Area.Work;
+        bool OnOverseer() => _area == Area.Overseer;
         bool AnyAgents() => OnDashboard() && _panes.Count > 0;
         bool Selection() => OnDashboard() && Selected() is not null;
         bool Scrollable() => Selection() || (OnDashboard() && _dispatcherExpanded);
@@ -438,8 +463,27 @@ public sealed class DashboardWindow : Window
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
                 menuLabel: () => "Refresh")
+            .Register("overseer.right", "Select the chip to the right", () => _overseer.MoveColumn(+1), Key.CursorRight, isEnabled: OnOverseer)
+            .Register("overseer.left", "Select the chip to the left", () => _overseer.MoveColumn(-1), Key.CursorLeft, isEnabled: OnOverseer)
+            .Register("overseer.down", "Select the chip below", () => _overseer.MoveRow(+1), Key.CursorDown, isEnabled: OnOverseer)
+            .Register("overseer.up", "Select the chip above", () => _overseer.MoveRow(-1), Key.CursorUp, isEnabled: OnOverseer)
+            .Register("overseer.nextLane", "Select the next team's lane", () => _overseer.MoveLane(+1), Key.Tab, isEnabled: OnOverseer)
+            .Register("overseer.previousLane", "Select the previous team's lane", () => _overseer.MoveLane(-1), Key.Tab.WithShift, isEnabled: OnOverseer)
+            .Register("overseer.pageDown", "Scroll the lanes down", () => _overseer.Page(+1), Key.PageDown, isEnabled: OnOverseer)
+            .Register("overseer.pageUp", "Scroll the lanes up", () => _overseer.Page(-1), Key.PageUp, isEnabled: OnOverseer)
+            .Register("overseer.details", () => _overseer.Board.OnMore ? "Show the whole lane" : "Show details", OverseerEnter, Key.Enter,
+                isEnabled: () => OnOverseer() && _overseer.Board.Selected is not null, inMenu: OnOverseer)
+            .Register("overseer.fold", () => "Fold the lane", () => _overseer.Fold(), Key.Esc,
+                isEnabled: () => OnOverseer() && _overseer.CanFold, inMenu: OnOverseer)
+            .Register("overseer.github", () => "Open on GitHub", OpenChip, new Key('g'),
+                isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, inMenu: OnOverseer)
+            .Register("overseer.session", () => "Go to the agent's session", GoToSession, new Key('r'),
+                isEnabled: () => OnOverseer() && SessionFor(_overseer.Board.SelectedCard) is not null, inMenu: OnOverseer)
+            .Register("overseer.refresh", () => "Read every board again", ReadBoards, Key.F5, isEnabled: OnOverseer,
+                menuLabel: () => "Refresh", inMenu: OnOverseer)
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
+            .Register("view.overseer", "Overseer", () => Show(Area.Overseer), new Key('o'))
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
                 isEnabled: () => OnDashboard() && Selected() is not null,
                 menuLabel: () => UnlessHeld("Pause this role", "Let this role start again"))
@@ -452,7 +496,12 @@ public sealed class DashboardWindow : Window
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("teams.new", "New team", () => OpenSettings(SettingsDialog.TeamsPage, newTeam: true), isEnabled: HasApp)
             .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
-            .Register("guide", "Guide", () => _showGuide(OnWork() ? GuideDialog.Work : GuideDialog.Dashboard))
+            .Register("guide", "Guide", () => _showGuide(_area switch
+            {
+                Area.Work => GuideDialog.Work,
+                Area.Overseer => GuideDialog.Overseer,
+                _ => GuideDialog.Dashboard,
+            }))
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
             .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
@@ -557,6 +606,81 @@ public sealed class DashboardWindow : Window
 
     private string[] Activity() => [.. _panes.Select(pane => pane.Activity)];
 
+    /// <summary>Reads every team's whole board at once, and what's waiting for Work's reasons with it. A second go
+    /// while one is running is refused, not queued.</summary>
+    private void ReadBoards()
+    {
+        if (_readBoard is null)
+            return;
+        _boarding ??= Task.WhenAll(_teamNames.Select(team => _readBoard(team)));
+        if (_reading is null)
+            ReadWaiting();
+        ShowMessage();
+        ShowLoading();
+    }
+
+    /// <summary>A read that failed leaves the chips and the stamp as they were.</summary>
+    private void SettleBoards()
+    {
+        if (_boarding is not { IsCompleted: true } read)
+            return;
+        _boarding = null;
+        var readings = read.Status == TaskStatus.RanToCompletion ? read.Result : null;
+        var failure = readings is null
+            ? read.Exception?.GetBaseException().Message ?? "the read didn't finish"
+            : readings.Select(reading => reading.Failure).FirstOrDefault(line => line is { Length: > 0 });
+        if (failure is { Length: > 0 })
+        {
+            _failure = failure;
+            return;
+        }
+        _boardReadAt = _clock.GetUtcNow();
+        _overseer.Show([.. readings!.SelectMany(reading => BoardCard.Parse(reading.Output))]);
+    }
+
+    /// <summary>What Overseer draws besides the cards: the limits, and which cards and roles the agents are on.</summary>
+    private void ShowOverseer(DateTimeOffset now)
+    {
+        if (_area != Area.Overseer)
+            return;
+        var running = _panes.Where(pane => pane.Running).ToList();
+        _overseer.Show(new OverseerState(
+            now,
+            _limits,
+            running.SelectMany(pane => pane.Working.Select(number => (Card: (pane.Team, number), pane.Role)))
+                .DistinctBy(worked => worked.Card).ToDictionary(worked => worked.Card, worked => worked.Role),
+            running.GroupBy(pane => pane.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(pane => pane.Role)]),
+            (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number)));
+    }
+
+    private void OverseerEnter()
+    {
+        _overseer.Enter();
+        ShowMessage();
+    }
+
+    private void OpenChip()
+    {
+        if (_overseer.Board.SelectedCard is { Url.Length: > 0 } card)
+            _openUrl(card.Url);
+    }
+
+    /// <summary>The pane of the agent working on <paramref name="card"/>, if one is.</summary>
+    private AgentPane? SessionFor(BoardCard? card) =>
+        card is null ? null : _panes.FirstOrDefault(pane => pane.Team == card.Team && pane.Running && pane.Working.Contains(card.Number));
+
+    /// <summary>The Dashboard, with the agent on the selected card expanded on the run that's on it.</summary>
+    private void GoToSession()
+    {
+        if (SessionFor(_overseer.Board.SelectedCard) is not { } pane || _overseer.Board.SelectedCard is not { } card)
+            return;
+        Show(Area.Dashboard);
+        var index = _panes.IndexOf(pane);
+        SetExpanded(index);
+        pane.SetFocus();
+        pane.ShowTask(card.Number);
+    }
+
     /// <summary>The last read landed, began under five minutes ago, and no run has started or finished since.</summary>
     private bool UpToDate() =>
         _askedAt is { } asked && _readAt >= asked && _clock.GetUtcNow() - asked < ReadEvery
@@ -564,7 +688,9 @@ public sealed class DashboardWindow : Window
 
     /// <summary>There are no cards to look at until the first read lands; a later read leaves the ones already
     /// on screen where they are.</summary>
-    private void ShowLoading() => _loading.Visible = _area == Area.Work && _reading is not null && _work.Unread;
+    private void ShowLoading() => _loading.Visible =
+        _area == Area.Work && _reading is not null && _work.Unread
+        || _area == Area.Overseer && _boarding is not null && _overseer.Unread;
 
     private void ToggleOnlyMine()
     {
@@ -615,6 +741,12 @@ public sealed class DashboardWindow : Window
         {
             FocusResumed();
             App?.Invoke(ReopenReader);
+            App?.AddTimeout(OverseerView.SpinEvery, () =>
+            {
+                if (_area == Area.Overseer)
+                    _overseer.Spin();
+                return IsRunning;
+            });
         }
     }
 
@@ -654,8 +786,14 @@ public sealed class DashboardWindow : Window
             _openUrl(url);
     }
 
-    /// <summary>The team of the selected column in Work, or of the selected agent on the dashboard.</summary>
-    internal string? SelectedTeam() => _area == Area.Work ? _work.Team : Selected()?.Team;
+    /// <summary>The team of the selected column in Work, of the selected chip in Overseer, or of the selected agent
+    /// on the dashboard.</summary>
+    internal string? SelectedTeam() => _area switch
+    {
+        Area.Work => _work.Team,
+        Area.Overseer => _overseer.Board.Selected?.Team,
+        _ => Selected()?.Team,
+    };
 
     private void OpenBoard()
     {
@@ -1040,8 +1178,15 @@ public sealed class DashboardWindow : Window
             : _said is { Length: > 0 } ? (_said, Schemes.Accent)
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
+            : _area == Area.Overseer && _boarding is not null ? ("Reading…", Schemes.Accent)
+            : _area == Area.Overseer && _overseer.Region is { } chip ? ($"Overseer · {chip}", Schemes.Base)
             : ("", Schemes.Base);
-        var stamp = _area == Area.Work ? Stamped(_readAt, _clock.GetUtcNow()) : "";
+        var stamp = _area switch
+        {
+            Area.Work => Stamped(_readAt, _clock.GetUtcNow()),
+            Area.Overseer => Stamped(_boardReadAt, _clock.GetUtcNow()),
+            _ => "",
+        };
         var filter = _area == Area.Work ? _work.OnlyMine ? MyItems : AllItems : "";
         _status.ShowState(stamp, filter);
         if (_status.Message.Says == text)
@@ -1085,6 +1230,7 @@ public sealed class DashboardWindow : Window
             SetDispatcherExpanded(false);
         _agents.Visible = _dispatchFrame.Visible = area == Area.Dashboard;
         _work.Visible = _title.Visible = area == Area.Work;
+        _overseer.Visible = area == Area.Overseer;
         _menu.Show(area);
         if (area == Area.Work)
         {
@@ -1092,6 +1238,12 @@ public sealed class DashboardWindow : Window
                 ReadWaiting();
             if (_left is not { } left || !_work.Focus(left))
                 _work.FocusFirstCard();
+        }
+        else if (area == Area.Overseer)
+        {
+            ReadBoards();
+            ShowOverseer(_clock.GetUtcNow());
+            _overseer.SetFocus();
         }
         else
             _panes.FirstOrDefault()?.SetFocus();
@@ -1153,6 +1305,7 @@ public sealed class DashboardWindow : Window
             return;
         }
         Forget(removed);
+        _limits = _settings.ReadLimits();
         SyncQuitKey();
         _menu.Refresh();
     }
@@ -1179,6 +1332,7 @@ public sealed class DashboardWindow : Window
         }
         _teamNames.RemoveAll(teams.Contains);
         _work.Forget(teams);
+        _overseer.Forget(teams);
         _laidOutOver = Size.Empty;
         SetNeedsLayout();
         SetNeedsDraw();
@@ -1191,6 +1345,7 @@ public sealed class DashboardWindow : Window
         var drawn = Icons.Resolve(style, _auto);
         _drawn = drawn;
         _work.ShowIcons(drawn);
+        _overseer.ShowIcons(drawn);
         foreach (var pane in _panes)
             pane.ShowIcons(drawn);
     }

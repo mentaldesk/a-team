@@ -80,6 +80,8 @@ away.
   cards wear. *Automatic* names what it decided for the terminal you're in, and decides again every
   time the app starts. *Nerd Font* and *Unicode* are drawn in their own glyphs, so pick the one that
   isn't boxes. The app previews each behind Settings as you move.
+- **Overseer**: how long a card may stay in each column before [Overseer](overseer.md) highlights
+  it.
 
 What you keep is written to `~/.config/a-team/dashboard.json`, and is what the app comes up in next
 time.

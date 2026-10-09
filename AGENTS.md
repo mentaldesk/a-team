@@ -50,7 +50,7 @@ nothing to restart.
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
 | `scripts/pause.sh` | `a-team pause` / `a-team resume` / `a-team stop`: turns a team's dispatch off and on, or holds one role |
 | `scripts/attach.sh` | `a-team attach`: stops and holds a role, then resumes its last run's conversation |
-| `dashboard/` | `a-team`: the app, with a Work area and the agent Dashboard |
+| `dashboard/` | `a-team`: the app, with a Work area, Overseer and the agent Dashboard |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
 | `settings/<role>.json` | Rules one role's runs add to those |
@@ -67,9 +67,10 @@ The dashboard references it as the [`MentalDesk.Tui`](https://www.nuget.org/pack
 library has a type, use it rather than a dashboard copy; a change it needs goes to the style guide first, as its own PR.
 Dependabot opens a PR here for each new version.
 
-The dashboard has two custom views, each for a reason the built-ins can't cover: `LogView`, because
-`TextView` can't scroll without moving its cursor, and `LoadingView`, because `SpinnerView` draws a
-single line in one colour.
+The dashboard has three custom views, each for a reason the built-ins can't cover: `LogView`, because
+`TextView` can't scroll without moving its cursor, `LoadingView`, because `SpinnerView` draws a
+single line in one colour, and Overseer's chip grid, because no list or table draws each cell in a
+colour of its own.
 
 Help (F1) only gets someone started: the Commands palette key, how to open the menu, moving around,
 and quitting. Don't add rows to it. A new command belongs in the menu or the Commands palette.

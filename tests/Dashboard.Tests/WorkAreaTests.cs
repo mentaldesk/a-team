@@ -2493,7 +2493,8 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(
             [
-                "view.dashboard", "view.work", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
+                "view.dashboard", "view.work", "view.overseer", "overseer.details", "overseer.fold", "overseer.github",
+                "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
                 "work.github", "work.accept", "work.decline", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
@@ -3093,7 +3094,7 @@ public class WorkAreaTests : IDisposable
     {
         var reads = 0;
         Directory.CreateDirectory(Config);
-        new DashboardSettings(Config).WriteKeys([("work.refresh", new Key('r'))]);
+        new DashboardSettings(Config).WriteKeys([("work.refresh", new Key('z'))]);
         using var window = Open(read: team =>
         {
             reads++;
@@ -3101,10 +3102,10 @@ public class WorkAreaTests : IDisposable
         });
         window.Refresh();
 
-        Assert.True(window.NewKeyDownEvent(new Key('r')));
+        Assert.True(window.NewKeyDownEvent(new Key('z')));
 
         Assert.Equal(4, reads);
-        Assert.Equal(new Key('r'), MenuItem(window, "work.refresh").Key);
+        Assert.Equal(new Key('z'), MenuItem(window, "work.refresh").Key);
     }
 
     [Fact]

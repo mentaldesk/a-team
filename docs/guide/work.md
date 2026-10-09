@@ -1,7 +1,7 @@
 # Work
 
-Everything waiting on you, across every team. `w` opens it, and `d` goes to the Dashboard. The app
-opens in whichever area you were in last, and on Work the first time.
+Everything waiting on you, across every team. `w` opens it, `d` goes to the Dashboard and `o` to
+[Overseer](overseer.md). The app opens in whichever area you were in last, and on Work the first time.
 
 Work's title says whether the queue is shrinking and how much you've accepted, across every team:
 

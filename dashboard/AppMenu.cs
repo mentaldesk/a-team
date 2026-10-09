@@ -18,7 +18,8 @@ internal sealed class AppMenu
 
     internal static readonly (string Title, string[] Ids)[] Layout =
     [
-        ("_View", ["view.dashboard", "view.work", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit"]),
+        ("_View", ["view.dashboard", "view.work", "view.overseer", Separator, "overseer.details", "overseer.fold", "overseer.github",
+            "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit"]),
         (Cards, [Separator, "work.new", "work.refresh", "work.mine"]),
         (Agents, ["agent.hold", "agent.interrupt", "dispatch.pass", Separator, "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
         ("_Help", ["help", "guide", "commands", "about"]),
@@ -52,14 +53,13 @@ internal sealed class AppMenu
     /// <summary>The titles across the bar, each holding the items under it.</summary>
     internal IReadOnlyList<MenuBarItem> Menus => _menus;
 
-    /// <summary>Cards only in Work and Agents only on the dashboard, closing whatever menu is open. The other is
+    /// <summary>Cards only in Work and Agents only on the dashboard, closing whatever menu is open. The others are
     /// taken off the bar rather than hidden: the bar still spaces out a hidden title.</summary>
     internal void Show(Area area)
     {
         if (Bar.IsOpen())
             Bar.HideActiveItem();
-        var gone = area == Area.Work ? _agents : _cards;
-        Bar.Menus = [.. _menus.Where(menu => menu != gone)];
+        Bar.Menus = [.. _menus.Where(menu => menu == _cards ? area == Area.Work : menu != _agents || area == Area.Dashboard)];
     }
 
     /// <summary>Keeps each item reading as its command does now, like holding the selected agent's role, and
