@@ -342,6 +342,24 @@ catch_up() {
     | join("\n")') COMMIT;" >/dev/null || echo "board.sh: couldn't record what happened on GitHub" >&2
 }
 
+# cycle: of one item's events, oldest first, a task's span from first entering Ready to its last acceptance
+# and its seconds In review, or nothing for an item that never entered Ready while the record was kept.
+CYCLES='def move: if startswith("added as ") then {from: null, to: .[9:]}
+      elif contains(" → ") then split(" → ") | {from: .[0], to: .[1]} else empty end;
+  def task: IN("Ready", "In progress", "In review");
+  def cycle: (map(select(.who == "you" and (.what | startswith("accepted · ")))) | last.at) as $accepted
+    | [.[] | select(.at <= $accepted) | (.what | move) + {at}] as $moves
+    | ($moves | map(select((.from // "" | task) or (.to | task))) | first) as $first
+    | select($first.to == "Ready" and ($first.from // "" | task | not))
+    | (reduce ($moves[] | select(.at >= $first.at)) as $m ({review: 0, since: null};
+        if $m.to == "In review" then .since //= $m.at
+        elif $m.from == "In review" and .since != null
+        then .review += ($m.at | fromdateiso8601) - (.since | fromdateiso8601) | .since = null
+        else . end)) as $review
+    | {ready: $first.at, accepted: $accepted,
+       review: ($review.review + if $review.since == null then 0
+                else ($accepted | fromdateiso8601) - ($review.since | fromdateiso8601) end)};'
+
 # sql_now <modifier>: now, moved by an SQLite date modifier, in the record's own format.
 sql_now() { printf "strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ', 'now', '%s')" "$1"; }
 
@@ -1442,7 +1460,7 @@ case "$CMD" in
   trends)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM trends"
     if [ ! -f "$STATE/history.db" ]; then
-      echo '{"since": null, "queue": [], "accepted": [], "cost": 0}'
+      echo '{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0}'
       exit 0
     fi
     team=$(sql "$TEAM")
@@ -1454,8 +1472,12 @@ case "$CMD" in
         (SELECT json_group_array(at) FROM (SELECT MAX(at) AS at FROM events
           WHERE team = $team AND who = 'you' AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')
           GROUP BY CASE WHEN what LIKE 'accepted · PR #%' THEN what ELSE item END ORDER BY at)) AS accepted,
+        (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
+          WHERE team = $team AND item IN (SELECT item FROM events WHERE team = $team AND who = 'you'
+            AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')) ORDER BY at, id)) AS events,
         (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost;" |
-      jq '.[0] | .queue |= fromjson | .accepted |= fromjson'
+      jq "$CYCLES"'.[0] | .queue |= fromjson | .accepted |= fromjson
+        | .cycles = (.events | fromjson | group_by(.item) | map(cycle) | sort_by(.accepted)) | del(.events)'
     ;;
 
   history)

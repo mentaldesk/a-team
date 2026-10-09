@@ -15,10 +15,14 @@ installed: until it has a week's record the comparison is left out and *accepted
 has, and with nothing recorded yet the title shows only what's waiting.
 
 To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It charts the last 14 days,
-one line per team, for either what was waiting on you or what you accepted each day: `Left`/`Right`
-and `Space` switch between them. Days before a team's record began are left blank. Underneath, a
-table lists each team's waiting now and a week ago, what you accepted in the last 7 days, and what its
-runs cost in that time, with a total for all the teams at the bottom. `Esc` closes it.
+one line per team, for what was waiting on you, what you accepted each day, or the hours to accept:
+the median time the tasks you accepted that day took from first entering Ready.
+`Left`/`Right` and `Space` switch between them. Days before a team's record began are left blank,
+and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
+waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
+and for the tasks you accepted, their median **Cycle** and how much of it was **With you**, In
+review. The **All** row at the bottom covers every team. A task that entered Ready before its team's
+record began isn't counted in either. `Esc` closes it.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
 wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
