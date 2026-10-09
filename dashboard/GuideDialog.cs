@@ -11,6 +11,7 @@ public sealed class GuideDialog : Dialog
     internal const string Work = "work.md";
     internal const string Dashboard = "dashboard.md";
     internal const string Teams = "teams.md";
+    internal const string Overseer = "overseer.md";
 
     private const string NextHint = "next";
     private const string FollowHint = "follow";

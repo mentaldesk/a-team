@@ -33,13 +33,13 @@ public sealed class DashboardSettings
 
     public void WriteTheme(string theme) => Write("theme", writer => writer.WriteStringValue(theme));
 
-    /// <summary>The area to open in. Work unless the file names the Dashboard, so a first run lands on Work.</summary>
+    /// <summary>The area to open in. Work unless the file names another, so a first run lands on Work.</summary>
     public Area ReadArea()
     {
         using var file = Parse();
         return Setting(file, "area") is { ValueKind: JsonValueKind.String } area &&
-               string.Equals(area.GetString(), nameof(Area.Dashboard), StringComparison.OrdinalIgnoreCase)
-            ? Area.Dashboard
+               Enum.TryParse<Area>(area.GetString(), ignoreCase: true, out var named) && Enum.IsDefined(named)
+            ? named
             : Area.Work;
     }
 
@@ -74,6 +74,26 @@ public sealed class DashboardSettings
     }
 
     public void WriteExpandToolCalls(bool expand) => Write("expandToolCalls", writer => writer.WriteBooleanValue(expand));
+
+    /// <summary>Overseer's time limit for each column that has one, as entered. Never writes, whatever it finds.</summary>
+    public IReadOnlyDictionary<string, string> ReadLimits()
+    {
+        using var file = Parse();
+        if (Setting(file, "limits") is not { ValueKind: JsonValueKind.Object } limits)
+            return new Dictionary<string, string>();
+        return limits.EnumerateObject()
+            .Where(property => property.Value.ValueKind == JsonValueKind.String && property.Value.GetString()!.Trim().Length > 0)
+            .ToDictionary(property => property.Name, property => property.Value.GetString()!.Trim());
+    }
+
+    /// <summary>Writes every column's limit, leaving a blank one out.</summary>
+    public void WriteLimits(IReadOnlyDictionary<string, string> limits) => Write("limits", writer =>
+    {
+        writer.WriteStartObject();
+        foreach (var (column, limit) in limits.Where(limit => limit.Value.Trim().Length > 0))
+            writer.WriteString(column, limit.Trim());
+        writer.WriteEndObject();
+    });
 
     /// <summary>The key each command is to run on instead of its default, in the order the file gives them.
     /// An empty name unbinds the command, and one <see cref="Key.TryParse(string?, out Key)"/> rejects is left out. Never

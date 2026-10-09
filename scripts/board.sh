@@ -213,10 +213,11 @@ items() {
           pageInfo { hasNextPage endCursor }
           nodes {
             id
-            fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+            fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } }
             content {
               __typename
               ... on Issue { id number title url stateReason repository { nameWithOwner } labels(first: 20) { nodes { name } }
+                             parent { number }
                              issueDependenciesSummary { blockedBy }
                              issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue {
                                name field { ... on IssueFieldSingleSelect { name } } } } } }
@@ -239,6 +240,8 @@ items() {
              labels: [.content.labels.nodes[].name],
              blockedBy: (.content.issueDependenciesSummary.blockedBy // 0),
              priority: ([.content.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
+             since: .fieldValueByName.updatedAt,
+             parent: .content.parent.number,
              status: (if $raw == null then "None"
                       elif $rev[$raw] then $rev[$raw]
                       elif ($states | index($raw)) then $raw
@@ -1468,6 +1471,15 @@ case "$CMD" in
         --argjson unranked "$(unranked_ideas "$all" "$said")" '. + $asked + $unranked')
     snapshot "$(jq length <<<"$waiting")"
     printf '%s\n' "$waiting"
+    ;;
+
+  overview)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM overview"
+    # Done only grows, so it's left off; `since` is when the item's Status was last set.
+    items "$(not_done)" | jq --arg team "$TEAM" 'map(select(.status != "Done") | {number, title, url, status, priority,
+      since, parent, team: $team,
+      kind: (if .labels | index("pitch") then "pitch" elif .labels | index("a-team:customer") then "docs"
+             elif (.labels | index("a-team:dev")) or .parent != null then "task" else "yours" end)})'
     ;;
 
   trend)
