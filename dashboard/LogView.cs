@@ -1,6 +1,7 @@
 using System.Drawing;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Input;
 using Terminal.Gui.Text;
 using Terminal.Gui.Views;
 using Attribute = Terminal.Gui.Drawing.Attribute;
@@ -20,6 +21,7 @@ public sealed record LogPlace(IReadOnlyList<LogLine> Lines, int Top, bool Follow
 public sealed class LogView : View
 {
     private const int ErrorIndent = 2;
+    private const string WordEdges = "()[]{}<>\"'`.,;:!?*";
 
     private IReadOnlyList<LogLine> _lines = [];
     private IconStyle _icons = IconStyle.Auto;
@@ -209,11 +211,21 @@ public sealed class LogView : View
         set
         {
             _showsCaret = value;
-            if (value && _caret is null && Rows(Math.Max(1, Viewport.Width)) is { Count: > 0 } rows
-                && rows[Math.Min(_top, rows.Count - 1)] is var top)
-                _caret = (top.Line, top.Start);
+            if (value && Viewport.Width > 0)
+                PlaceCaret(Rows(Viewport.Width));
             SetNeedsDraw();
         }
+    }
+
+    /// <summary>Whether the mouse moves the caret: a press puts it there, a drag selects and a double-click takes a word.</summary>
+    public bool SelectsText { get; init; }
+
+    public event EventHandler? SelectionChanged;
+
+    private void PlaceCaret(IReadOnlyList<LogRow> rows)
+    {
+        if (_caret is null && rows.Count > 0 && rows[Math.Min(_top, rows.Count - 1)] is var top)
+            _caret = (top.Line, top.Start);
     }
 
     /// <summary>The caret's line among those drawn, and its offset in that line's text.</summary>
@@ -230,6 +242,7 @@ public sealed class LogView : View
     public void MoveCaret(CaretMove move, bool extend)
     {
         var rows = Rows(Math.Max(1, Viewport.Width));
+        PlaceCaret(rows);
         if (_caret is not { } caret || rows.Count == 0)
             return;
         var at = CaretRow(rows, caret);
@@ -276,6 +289,76 @@ public sealed class LogView : View
         else if (now >= _top + Viewport.Height)
             ScrollTo(now - Viewport.Height + 1);
         SetNeedsDraw();
+    }
+
+    protected override bool OnMouseEvent(Mouse mouse)
+    {
+        if (!SelectsText || mouse.Position is not { } at)
+            return false;
+        var rows = Rows(Math.Max(1, Viewport.Width));
+        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonDoubleClicked))
+            return SelectWord(CaretAt(rows, at));
+        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed))
+        {
+            var dragging = mouse.Flags.HasFlag(MouseFlags.PositionReport);
+            if (!dragging)
+            {
+                SetFocus();
+                App?.Mouse.GrabMouse(this);
+            }
+            var caret = CaretAt(rows, at);
+            _from = dragging ? _from ?? _caret : null;
+            _caret = caret;
+            _goal = null;
+            if (at.Y < 0)
+                ScrollTo(_top - 1);
+            else if (at.Y >= Viewport.Height)
+                ScrollTo(_top + 1);
+            SetNeedsDraw();
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonReleased) && App?.Mouse.IsGrabbed(this) == true)
+            App.Mouse.UngrabMouse();
+        return false;
+    }
+
+    /// <summary>The run of text around <paramref name="at"/> between spaces, without the punctuation around it.</summary>
+    internal bool SelectWord((int Line, int Offset)? at)
+    {
+        if (at is not var (line, offset) || Shown() is var shown && line >= shown.Count)
+            return false;
+        var text = _lines[shown[line]].Text;
+        if (offset >= text.Length || char.IsWhiteSpace(text[offset]))
+            return false;
+        var start = offset;
+        while (start > 0 && !char.IsWhiteSpace(text[start - 1]))
+            start--;
+        var end = offset;
+        while (end < text.Length && !char.IsWhiteSpace(text[end]))
+            end++;
+        while (start < end && WordEdges.Contains(text[start]))
+            start++;
+        while (end > start && WordEdges.Contains(text[end - 1]))
+            end--;
+        if (offset < start || offset >= end)
+            return false;
+        (_from, _caret, _goal) = ((line, start), (line, end), null);
+        SetNeedsDraw();
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    internal (int Line, int Offset)? CaretAt(IReadOnlyList<LogRow> rows, Point at)
+    {
+        if (rows.Count == 0)
+            return null;
+        var row = rows[Math.Clamp(_top + at.Y, 0, rows.Count - 1)];
+        var columns = Math.Max(0, at.X - Lead(row.Kind));
+        var column = 0;
+        while (column < row.Text.Length && row.Text[..(column + 1)].GetColumns() <= columns)
+            column++;
+        return (row.Line, row.Start + column);
     }
 
     /// <summary>How many lines the selection quotes, if any.</summary>
@@ -472,6 +555,8 @@ public sealed class LogView : View
             if (selected is var (start, end))
                 DrawSelected(line, row, start, end, rows);
         }
+        if (_showsCaret)
+            PlaceCaret(rows);
         if (_showsCaret && _caret is { } caret && rows.Count > 0 && CaretRow(rows, caret) - _top is var at && at >= 0 && at < height)
             DrawCaret(rows[_top + at], at, caret);
         return true;

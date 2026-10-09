@@ -97,8 +97,8 @@ That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dash
 ## Reading a card
 
 `Enter` opens the issue as it was written, then everything said since on it and on its PR, each
-comment headed by who said it and when. On a card in Questions it shows just the question. Arrows
-and `PgUp`/`PgDn` scroll, `g` opens it on GitHub, and `Esc` closes it.
+comment headed by who said it and when. On a card in Questions it shows just the question. `g`
+opens it on GitHub, and `Esc` closes it.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
 accept, comment, Priority, link and dependency, with when and who (`you`, `lead` or `dev`). What
@@ -109,9 +109,14 @@ away.
 Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
 how long it took and what it cost, like `run 38 min · $4.12`. One that didn't finish says why:
 `stopped` by you, `killed` at the time limit, `error`, or `died` with no result, and no cost.
-`Tab` moves between the body and History, and the arrows scroll whichever has focus. `h` hides
+`Tab` moves between the body and History. `h` hides
 History to give the body the full width, and shows it again; it stays as you left it until you
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.
+
+**Copy from it.** The body and History each have a cursor. Move it with the arrows, `Home`, `End`,
+`PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end), and hold `Shift` to select,
+as in any editor. You can also drag with the mouse, or double-click a word, like an issue number or
+a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
 
 ## Answering from a card
 
@@ -123,13 +128,11 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
   `Ctrl+Enter` posts it from any pane: it's posted as you, joins the end of what you're reading, and
   the agent picks it up on its next run. On a terminal too narrow for three panes, History hides
   while you write; `h` still shows it.
-- **Quote what you're answering.** With the comment open, the body and History each have a cursor,
-  starting on the top line in view. Move it with the arrows, `Home`, `End`, `PgUp` and `PgDn`, and
-  hold `Shift` to select, as in any editor. `q` quotes the selection into the comment where its
-  cursor is, as `> ` lines the agents read just as they read a quote reply on GitHub, and takes you
-  to the comment below it to write your answer; `Esc` goes back for the next part. `Esc` also clears
-  a selection. Closing the reader with
-  something unposted in the comment asks before throwing it away.
+- **Quote what you're answering.** Select it in the body or History and press `q`. It goes into the
+  comment where its cursor is, opening the comment if it isn't, as `> ` lines the agents read just
+  as they read a quote reply on GitHub, and takes you to the comment below it to write your answer;
+  `Esc` goes back for the next part. Closing the reader with something unposted in the comment asks
+  before throwing it away.
 - **Answer a question.** Read it in Questions, and reply with `c`.
 - **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
   ranks under it, **None** to **Urgent**, starting on the card's own, or on the Lead's
