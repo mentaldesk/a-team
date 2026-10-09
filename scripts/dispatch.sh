@@ -298,11 +298,18 @@ for team in $(team_names); do
   why=$(cannot_run "$team" "$config")
   if [ -n "$why" ]; then
     mkdir -p "$STATE/$team"
-    [ "$why" = "$(cat "$STATE/$team/cannot-run" 2>/dev/null)" ] || log "$team: stopped: $why"
-    echo "$why" >"$STATE/$team/cannot-run"
+    # One failed pass is often an upgrade or a blip, so a team is announced stopped only on the second.
+    if [ -f "$STATE/$team/cannot-run" ] || [ -f "$STATE/$team/failed-check" ]; then
+      [ "$why" = "$(cat "$STATE/$team/cannot-run" 2>/dev/null)" ] || log "$team: stopped: $why"
+      echo "$why" >"$STATE/$team/cannot-run"
+      rm -f "$STATE/$team/failed-check"
+    else
+      echo "$why" >"$STATE/$team/failed-check"
+    fi
     continue
   fi
-  rm -f "$STATE/$team/cannot-run"
+  [ -f "$STATE/$team/cannot-run" ] && log "$team: running again"
+  rm -f "$STATE/$team/cannot-run" "$STATE/$team/failed-check"
   for role in $(team_roles "$config"); do
     dispatch "$team" "$role" "$config"
   done

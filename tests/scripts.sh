@@ -2944,6 +2944,10 @@ mkdir -p "$APP/bin" "$APP/scripts"
 cp "$ROOT"/scripts/*.sh "$APP/scripts/"
 cat >"$APP/bin/a-team" <<'SH'
 #!/usr/bin/env bash
+if [ "$1" = token ] && [ "${NOT_INSTALLED:-}" = 2 ]; then
+  echo "a-team token: other" >&2
+  exit 1
+fi
 if [ "$1" = token ] && [ -n "${NOT_INSTALLED:-}" ]; then
   echo "a-team token: app 7 isn't installed on mentaldesk/$2: install it at https://github.com/apps/demo-app/installations/new" >&2
   exit 1
@@ -2955,30 +2959,56 @@ A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch: the lead wasn't started"
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the held dev was started"
 
-case_ "a dispatcher pass skips a team with no app key, says why in status, and runs the others"
+case_ "a dispatcher pass skips a team with no app key, says it stopped only on the second pass, and runs the others"
 jq 'del(.app) | .dispatch.hold = []' "$TEAM" >"$CONFIG/teams/bare.json"
 : >"$A_TEAM_STATE/dispatch.log"
 rm -f "$A_TEAM_STATE"/demo/*/dry-*
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 grep -q 'bare lead\|bare dev' "$A_TEAM_STATE/dispatch.log" && fail "no app: bare was started"
 grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "no app: demo wasn't started"
+grep -q 'bare: stopped' "$A_TEAM_STATE/dispatch.log" && fail "no app: stopped after one pass"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/status.sh" >"$OUT"
+grep -q '^bare: stopped' "$OUT" && fail "no app: status says stopped after one pass"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q 'bare lead\|bare dev' "$A_TEAM_STATE/dispatch.log" && fail "no app: bare was started on the second pass"
+same "stopped once" 1 "$(grep -c 'bare: stopped: no GitHub App' "$A_TEAM_STATE/dispatch.log")"
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/status.sh" >"$OUT"
 grep -q '^bare: stopped: no GitHub App: run a-team app create bare, then install it$' "$OUT" ||
   fail "no app: status says '$(cat "$OUT")'"
 grep -q '^demo: stopped' "$OUT" && fail "no app: demo shows as stopped"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+same "same reason, still once" 1 "$(grep -c 'bare: stopped' "$A_TEAM_STATE/dispatch.log")"
+rm "$CONFIG/teams/bare.json"
 
-case_ "and the same for a team whose App isn't installed, until it is"
+case_ "a team whose check fails once and then passes says nothing"
 : >"$A_TEAM_STATE/dispatch.log"
+NOT_INSTALLED=1 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q 'demo lead' "$A_TEAM_STATE/dispatch.log" && fail "blip: demo was started"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q 'demo: ' "$A_TEAM_STATE/dispatch.log" && fail "blip: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+NOT_INSTALLED=1 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+grep -q 'demo: stopped' "$A_TEAM_STATE/dispatch.log" && fail "blip: two failures that weren't in a row"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+
+case_ "a team whose App isn't installed says it stopped, again when the reason changes, and running again once it is"
+: >"$A_TEAM_STATE/dispatch.log"
+NOT_INSTALLED=1 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 NOT_INSTALLED=1 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 grep -q "demo: stopped: app 7 isn't installed on mentaldesk/demo" "$A_TEAM_STATE/dispatch.log" ||
   fail "not installed: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 grep -q 'demo lead' "$A_TEAM_STATE/dispatch.log" && fail "not installed: demo was started"
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/status.sh" >"$OUT"
 grep -q "^demo: stopped: app 7 isn't installed" "$OUT" || fail "not installed: status says '$(cat "$OUT")'"
+NOT_INSTALLED=2 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+same "new reason" 1 "$(grep -c 'demo: stopped: other' "$A_TEAM_STATE/dispatch.log")"
+same "stopped twice in all" 2 "$(grep -c 'demo: stopped' "$A_TEAM_STATE/dispatch.log")"
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+same "running again" 1 "$(grep -c 'demo: running again$' "$A_TEAM_STATE/dispatch.log")"
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/status.sh" >"$OUT"
 grep -q '^demo: stopped' "$OUT" && fail "installed: demo still shows as stopped"
-rm "$CONFIG/teams/bare.json"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+same "running again once" 1 "$(grep -c 'demo: running again' "$A_TEAM_STATE/dispatch.log")"
 
 case_ "a team moved aside to <name>.json.removed is neither listed nor dispatched"
 jq '.dispatch.hold = []' "$TEAM" >"$CONFIG/teams/gone.json.removed"
