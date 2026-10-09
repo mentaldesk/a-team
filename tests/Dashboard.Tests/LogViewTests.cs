@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard.Tests;
@@ -530,4 +531,82 @@ public class LogViewTests
         File.ReadLines(Path.Combine(AppContext.BaseDirectory, "fixtures", "pane.jsonl"))
             .SelectMany(SessionLog.Render)
             .ToList();
+
+    private static LogView Readable(params string[] lines)
+    {
+        var view = new LogView
+        {
+            Width = 60,
+            Height = 5,
+            Following = false,
+            Scrolls = true,
+            SelectsText = true,
+            CanFocus = true,
+            Lines = [.. lines.Select(line => new LogLine(line, LogLineKind.Prose))],
+        };
+        view.Layout(new System.Drawing.Size(30, 5));
+        return view;
+    }
+
+    private static void Mouse(LogView view, MouseFlags flags, int x, int y) =>
+        view.NewMouseEvent(new Mouse { Flags = flags, Position = new System.Drawing.Point(x, y), ScreenPosition = new System.Drawing.Point(x, y) });
+
+    [Fact]
+    public void Dragging_selects_from_where_the_button_went_down()
+    {
+        using var view = Readable("first line", "second line");
+
+        Mouse(view, MouseFlags.LeftButtonPressed, 6, 0);
+        Mouse(view, MouseFlags.LeftButtonPressed | MouseFlags.PositionReport, 6, 1);
+        Mouse(view, MouseFlags.LeftButtonReleased, 6, 1);
+
+        Assert.Equal(["line", "second"], view.MarkedText());
+    }
+
+    [Fact]
+    public void A_click_moves_the_caret_and_drops_the_selection()
+    {
+        using var view = Readable("first line", "second line");
+        Mouse(view, MouseFlags.LeftButtonPressed, 0, 0);
+        Mouse(view, MouseFlags.LeftButtonPressed | MouseFlags.PositionReport, 4, 0);
+
+        Mouse(view, MouseFlags.LeftButtonPressed, 3, 1);
+
+        Assert.Equal((1, 3), view.Caret);
+        Assert.Equal(0, view.Marked);
+    }
+
+    [Theory]
+    [InlineData(5, "#388")]
+    [InlineData(2, "See")]
+    [InlineData(20, "https://x.io/a-team")]
+    public void A_double_click_selects_the_word_without_the_punctuation_around_it(int x, string word)
+    {
+        using var view = Readable("See #388, (https://x.io/a-team).");
+
+        Mouse(view, MouseFlags.LeftButtonDoubleClicked, x, 0);
+
+        Assert.Equal([word], view.MarkedText());
+    }
+
+    [Fact]
+    public void A_double_click_on_a_space_selects_nothing()
+    {
+        using var view = Readable("two words");
+
+        Mouse(view, MouseFlags.LeftButtonDoubleClicked, 3, 0);
+
+        Assert.Equal(0, view.Marked);
+    }
+
+    [Fact]
+    public void Without_SelectsText_the_mouse_leaves_the_caret_alone()
+    {
+        using var view = new LogView { Width = 30, Height = 5, Lines = [new LogLine("text", LogLineKind.Prose)] };
+        view.Layout(new System.Drawing.Size(30, 5));
+
+        Mouse(view, MouseFlags.LeftButtonDoubleClicked, 1, 0);
+
+        Assert.Equal(0, view.Marked);
+    }
 }
