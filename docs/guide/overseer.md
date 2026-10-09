@@ -22,7 +22,10 @@ the largest unit, as in `◆404  6d`.
 | `✎` | The Customer lead's docs PR |
 | `○` | One of your own items |
 
-A chip is drawn in its Priority's colour, and a card an agent is working on shows a spinner in place
+Where a Nerd Font is in effect, a chip wears the icon [Work](work.md) gives the card
+instead: an idea, a pitch, a task or the docs PR.
+
+A chip is drawn in its Priority's colour, age and all, and a card an agent is working on shows a spinner in place
 of its age. Within a column, the card that has waited longest is first. Past three rows, a column
 puts the rest behind a count, as in `+7`.
 

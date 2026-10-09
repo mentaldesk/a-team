@@ -18,13 +18,24 @@ public sealed record BoardCard(
     string Team, int Number, string Title, string Url, string Status, string Priority, CardKind Kind,
     DateTimeOffset? Since, int? Parent = null)
 {
-    public string Mark => Kind switch
-    {
-        CardKind.Pitch => "◆",
-        CardKind.Task => "●",
-        CardKind.Docs => "✎",
-        _ => "○",
-    };
+    /// <summary>The mark its chip wears: Work's icon for the card in a Nerd Font, and a one-cell shape otherwise.</summary>
+    public string Mark(IconStyle style) => style == IconStyle.NerdFont
+        ? Icons.Field(Icon, style)
+        : Kind switch
+        {
+            CardKind.Pitch => "◆",
+            CardKind.Task => "●",
+            CardKind.Docs => "✎",
+            _ => "○",
+        };
+
+    public Icon Icon => Status == "Idea" ? Icon.Idea
+        : Kind switch
+        {
+            CardKind.Pitch => Icon.Pitch,
+            CardKind.Docs => Icon.Docs,
+            _ => Icon.Task,
+        };
 
     public string KindName => Kind switch
     {

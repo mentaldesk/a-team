@@ -36,6 +36,7 @@ public sealed class OverseerView : View
     private readonly Label _detailText = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = false };
     private OverseerState _state = OverseerState.Empty;
     private int _spin;
+    private IconStyle _icons = IconStyle.Unicode;
 
     public OverseerView(IReadOnlyList<string> teams)
     {
@@ -68,6 +69,12 @@ public sealed class OverseerView : View
     }
 
     internal OverseerBoard Board => _board;
+
+    public void ShowIcons(IconStyle style)
+    {
+        _icons = style;
+        SetNeedsDraw();
+    }
 
     internal bool DetailsShown => _details.Visible;
 
@@ -177,12 +184,12 @@ public sealed class OverseerView : View
 
     /// <summary>A chip as drawn: its mark and number, then its age, or a spinner frame while an agent is on it,
     /// right-aligned in three cells.</summary>
-    internal static string ChipText(Chip chip, DateTimeOffset now, string? spinner)
+    internal static string ChipText(Chip chip, DateTimeOffset now, string? spinner, IconStyle style)
     {
         if (chip.Card is not { } card)
             return $"+{chip.Hidden}";
         var age = spinner ?? (card.Age(now) is { } waited ? Ages.Short(waited) : "");
-        return $"{$"{card.Mark}{card.Number}",-NumberWidth} {age,3}";
+        return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)} {age,3}";
     }
 
     /// <summary>The details pane's lines for <paramref name="card"/>.</summary>
@@ -338,7 +345,7 @@ public sealed class OverseerView : View
                 {
                     var chip = chips[row];
                     var worked = chip.Card is { } card && state.Worked.Contains((card.Team, card.Number));
-                    var text = Card.Elide(ChipText(chip, state.Now, worked ? spinner : null), width - 1);
+                    var text = Card.Elide(ChipText(chip, state.Now, worked ? spinner : null, overseer._icons), width - 1);
                     var selected = board.Selected is { } place && place.Team == team && place.Column == column
                         && place.Number == chip.Card?.Number;
                     SetAttribute(overseer.ChipAttribute(chip.Card, selected));

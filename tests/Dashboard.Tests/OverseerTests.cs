@@ -93,7 +93,7 @@ public class OverseerTests : IDisposable
             """);
 
         Assert.Equal([404, 414, 415, 395], cards.Select(card => card.Number));
-        Assert.Equal(["◆", "●", "✎", "○"], cards.Select(card => card.Mark));
+        Assert.Equal(["◆", "●", "✎", "○"], cards.Select(card => card.Mark(IconStyle.Unicode)));
         Assert.Equal(new DateTimeOffset(2026, 10, 3, 10, 0, 0, TimeSpan.Zero), cards[0].Since);
         Assert.Equal(404, cards[1].Parent);
         Assert.Equal("", cards[1].Priority);
@@ -102,14 +102,24 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void In_a_nerd_font_a_card_wears_the_icon_work_gives_it()
+    {
+        Assert.Equal(Icon.Pitch, Card(404, "Building", days: 6).Icon);
+        Assert.Equal(Icon.Idea, Card(395, "Idea", days: 1).Icon);
+        Assert.Equal(Icon.Task, (Card(414, "Ready", days: 1) with { Kind = CardKind.Task }).Icon);
+        Assert.Equal(Icon.Docs, (Card(415, "In review", days: 1) with { Kind = CardKind.Docs }).Icon);
+        Assert.Equal(Icons.Field(Icon.Pitch, IconStyle.NerdFont), Card(404, "Building", days: 6).Mark(IconStyle.NerdFont));
+    }
+
+    [Fact]
     public void A_chip_is_its_mark_number_and_age_or_a_spinner_while_an_agent_is_on_it()
     {
         var card = Card(404, "Building", days: 6);
 
-        Assert.Equal("◆2     6d", OverseerView.ChipText(new Chip(Card(2, "Building", days: 6)), Now, null));
-        Assert.Equal("◆404   6d", OverseerView.ChipText(new Chip(card), Now, null));
-        Assert.Equal("◆404    ⠋", OverseerView.ChipText(new Chip(card), Now, "⠋"));
-        Assert.Equal("+7", OverseerView.ChipText(new Chip(null, 7), Now, null));
+        Assert.Equal("◆2     6d", OverseerView.ChipText(new Chip(Card(2, "Building", days: 6)), Now, null, IconStyle.Unicode));
+        Assert.Equal("◆404   6d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode));
+        Assert.Equal("◆404    ⠋", OverseerView.ChipText(new Chip(card), Now, "⠋", IconStyle.Unicode));
+        Assert.Equal("+7", OverseerView.ChipText(new Chip(null, 7), Now, null, IconStyle.Unicode));
     }
 
     [Fact]
@@ -295,7 +305,7 @@ public class OverseerTests : IDisposable
 
         Assert.Equal(14, width);
         Assert.True(width * OverseerBoard.Columns.Length <= 118);
-        Assert.True(OverseerView.ChipText(new Chip(Card(12345, "Ready", days: 99)), Now, null).Length < width);
+        Assert.True(OverseerView.ChipText(new Chip(Card(12345, "Ready", days: 99)), Now, null, IconStyle.NerdFont).Length < width);
     }
 
     [Fact]

@@ -1306,6 +1306,7 @@ public sealed class DashboardWindow : Window
         var drawn = Icons.Resolve(style, _auto);
         _drawn = drawn;
         _work.ShowIcons(drawn);
+        _overseer.ShowIcons(drawn);
         foreach (var pane in _panes)
             pane.ShowIcons(drawn);
     }
