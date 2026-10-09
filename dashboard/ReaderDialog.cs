@@ -1,3 +1,5 @@
+using System.Globalization;
+using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -31,6 +33,7 @@ public sealed class ReaderDialog : Dialog
     private const string SwitchHint = "switch";
     private const string HistoryHint = "history";
     private const string SelectHint = "select";
+    private const string CopyHint = "copy";
     private const string QuoteHint = "quote";
     private const string TryHint = "try";
     private const string ApproveHint = "approve";
@@ -52,6 +55,7 @@ public sealed class ReaderDialog : Dialog
     private readonly ReaderComment? _comment;
     private readonly ReaderTry? _try;
     private readonly Func<bool> _confirmDiscard;
+    private readonly IClipboard? _clipboard;
     private readonly int _number;
     private readonly int _width;
     private IssueBody _text;
@@ -82,8 +86,9 @@ public sealed class ReaderDialog : Dialog
     public ReaderDialog(
         WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0,
-        Rank? rank = null, Func<bool>? confirmDiscard = null)
+        Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null)
     {
+        _clipboard = clipboard;
         _panes = panes ?? new ReaderPanes();
         _onGitHub = onGitHub;
         _onApprove = onApprove;
@@ -141,6 +146,7 @@ public sealed class ReaderDialog : Dialog
             Following = false,
             Scrolls = true,
             ReadsMarkdown = true,
+            SelectsText = true,
             SchemeName = LogSchemes.Reader,
             Lines = body.Lines,
         };
@@ -160,10 +166,21 @@ public sealed class ReaderDialog : Dialog
             CanFocus = true,
             Following = false,
             Scrolls = true,
+            SelectsText = true,
             Lines = (body.History ?? new History([])).Lines,
         };
         _historyFrame.Add(_history);
         _scrolled = _body;
+        foreach (var pane in new[] { _body, _history })
+        {
+            pane.HasFocusChanged += (_, _) =>
+            {
+                if (pane.HasFocus && pane != _scrolled)
+                    Scroll(pane);
+                ShowHints();
+            };
+            pane.SelectionChanged += (_, _) => ShowHints();
+        }
         if (rank is { } start)
         {
             _ranks = new OptionSelector<Rank>
@@ -293,9 +310,11 @@ public sealed class ReaderDialog : Dialog
             return SwitchPane(-1);
         if (CommentShown && key == Key.Enter.WithCtrl)
             return Post();
-        if (CommentShown && Caret(key) is { } move)
+        if (_ranks is null && Caret(key) is { } move)
             return MoveCaret(move, key.IsShift);
-        if (CommentShown && key == new Key('q'))
+        if (key == Key.C.WithCtrl)
+            return Copy();
+        if (_comment is not null && key == new Key('q') && FocusedPane().Marked > 0)
             return Quote();
         if (key == new Key('g'))
             return OnGitHub();
@@ -309,20 +328,22 @@ public sealed class ReaderDialog : Dialog
             return Decline();
         if (_comment is not null && key == _comment.Key)
             return Comment();
-        return Scroll(key) is { } scroll && Scrolled(scroll);
+        return _ranks is not null && Scroll(key) is { } scroll && Scrolled(scroll);
     }
 
     private void ShowHints()
     {
         ShowCarets();
         var marked = FocusedPane().Marked;
+        var reading = !_field.HasFocus && marked > 0;
         _hints.Show("", [
-            .. CommentShown ? Array.Empty<HintedCommand>() : [new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll")],
+            .. _ranks is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll")],
             .. CommentShown || HistoryShown ? [new HintedCommand(SwitchHint, "Tab switch pane")] : Array.Empty<HintedCommand>(),
             .. _ranks is not null || CommentShown ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(HistoryHint, HistoryShown ? "h hide history" : "h show history")],
-            .. CommentShown ? [new HintedCommand(SelectHint, "Shift+arrows select")] : Array.Empty<HintedCommand>(),
-            .. CommentShown && marked > 0
+            .. _ranks is null && !reading ? [new HintedCommand(SelectHint, "Shift+arrows select")] : Array.Empty<HintedCommand>(),
+            .. reading ? [new HintedCommand(CopyHint, "Ctrl+C copy")] : Array.Empty<HintedCommand>(),
+            .. reading && _comment is not null
                 ? [new HintedCommand(QuoteHint, $"q quote {marked} {(marked == 1 ? "line" : "lines")}")]
                 : Array.Empty<HintedCommand>(),
             .. _ranks is null ? Array.Empty<HintedCommand>()
@@ -342,10 +363,9 @@ public sealed class ReaderDialog : Dialog
         ], Run);
     }
 
-    /// <summary>While you write, the pane you were reading shows where its caret is.</summary>
     private void ShowCarets()
     {
-        var reading = CommentShown && !_field.HasFocus;
+        var reading = _ranks is null && !_field.HasFocus;
         _body.ShowsCaret = reading && _scrolled == _body;
         _history.ShowsCaret = reading && _scrolled == _history;
     }
@@ -449,12 +469,34 @@ public sealed class ReaderDialog : Dialog
         return true;
     }
 
+    private bool Copy()
+    {
+        var text = string.Join('\n', FocusedPane().MarkedText());
+        if (text.Length == 0)
+            return true;
+        var clipboard = _clipboard ?? App?.Clipboard;
+        if (clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(text))
+            _message.Show(Copied(text), Schemes.Accent);
+        else
+            _message.Show("there's no clipboard to copy to", Schemes.Error);
+        SetNeedsLayout();
+        return true;
+    }
+
+    internal static string Copied(string text) =>
+        text.Length == 1 ? "copied 1 character" : string.Create(CultureInfo.InvariantCulture, $"copied {text.Length:N0} characters");
+
     /// <summary>The selected text goes in at the comment's cursor, and the keyboard follows it there to answer it.</summary>
     private bool Quote()
     {
         var pane = FocusedPane();
         if (pane.MarkedText() is not { Count: > 0 } lines)
             return true;
+        if (!CommentShown)
+        {
+            Comment();
+            Layout();
+        }
         // The field's cursor is in wrapped rows, so a character typed and taken back finds it in the text.
         _field.InsertText(Marker);
         var at = _field.Text.IndexOf(Marker, StringComparison.Ordinal);
@@ -649,6 +691,7 @@ public sealed class ReaderDialog : Dialog
             SwitchHint => SwitchPane(+1),
             HistoryHint => ToggleHistory(),
             SelectHint => MoveCaret(CaretMove.Down, extend: true),
+            CopyHint => Copy(),
             QuoteHint => Quote(),
             TryHint => Try(),
             ApproveHint => Approve(),

@@ -262,7 +262,7 @@ public sealed class DashboardWindow : Window
 
         if (resume is not null)
             Resume(resume);
-        else if (_area == Area.Work)
+        if (resume is null or TeamsChanged && _area == Area.Work)
             ReadWaiting();
     }
 
@@ -430,6 +430,9 @@ public sealed class DashboardWindow : Window
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true)
+            .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
+            .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
+            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, inMenu: OnWork)
             .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: () => _newIdea is not null && _teamNames.Count > 0)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
@@ -456,6 +459,13 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
                 inMenu: () => _expanded is not null || _dispatcherExpanded)
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
+        for (var tab = 0; tab < 9; tab++)
+        {
+            var index = tab;
+            _commands.Register($"work.team{index + 1}",
+                () => index < _work.Lanes.Count ? $"Go to {_work.Lanes[index].Team}" : $"Go to team {index + 1}",
+                () => _work.PickTab(index), new Key((char)('1' + index)), isEnabled: () => OnWork() && index < _work.Lanes.Count);
+        }
     }
 
     // Point Terminal.Gui's own Quit binding at our quit key: removing it leaves PopoverImpl binding Key.Empty, which throws.
@@ -582,6 +592,8 @@ public sealed class DashboardWindow : Window
     {
         _resume = handover;
         _failure = handover.Failure;
+        if (handover is TeamsChanged changed)
+            _left = changed.Left;
         if (handover is TryHandover tried)
         {
             _readAt = _askedAt = tried.ReadAt;
@@ -782,7 +794,7 @@ public sealed class DashboardWindow : Window
     /// <summary>Adds an idea to the team whose lane you're in, or the first team's, and reads Work again to show it.</summary>
     private void NewIdea()
     {
-        var team = _area == Area.Work && _work.Team is { } lane ? lane : _teamNames[0];
+        var team = _area == Area.Work && _work.Current is { } lane ? lane.Team : _teamNames[0];
         if (_newIdea?.Invoke(_teamNames, team) is not { } added)
             return;
         _failure = null;
@@ -970,7 +982,11 @@ public sealed class DashboardWindow : Window
         _readAt = _clock.GetUtcNow();
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
         if (_area == Area.Work && _work.Selected is null)
-            _work.FocusFirstCard();
+        {
+            if (_left is not { } left || !_work.Focus(left))
+                _work.FocusFirstCard();
+            _left = null;
+        }
         // Said once the cards are laid out again: laying them out moves the selection, which clears what's said.
         if (_added is { } added)
         {
@@ -1103,6 +1119,12 @@ public sealed class DashboardWindow : Window
             CommandsDialog.Show(app, _commands);
     }
 
+    private void GoToTeam()
+    {
+        if (App is { } app && CommandsDialog.Pick(app, "Go to team", _teamNames) is { } team)
+            _work.Pick(team);
+    }
+
     private void OpenHelp()
     {
         if (App is { } app)
@@ -1127,7 +1149,7 @@ public sealed class DashboardWindow : Window
         var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks);
         if (_teams.Names().Except(before).Any() || RolesChanged())
         {
-            _handOver?.Invoke(new TeamsChanged(_area));
+            _handOver?.Invoke(new TeamsChanged(_area, _area == Area.Work ? _work.Place : _left));
             return;
         }
         Forget(removed);
