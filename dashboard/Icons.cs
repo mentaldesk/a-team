@@ -37,6 +37,7 @@ public enum Icon
     Task,
     PullRequest,
     Docs,
+    Question,
 }
 
 /// <summary>A card's icon for whose move it is, and the scheme its colour comes from.</summary>
@@ -72,6 +73,7 @@ public static class Icons
         [Icon.Task] = "\uEC37",         // nf-cod-code_review
         [Icon.PullRequest] = "\uE726",  // nf-dev-git_pull_request
         [Icon.Docs] = "\U000F0219",    // nf-md-file_document
+        [Icon.Question] = "\U000F02D7", // nf-md-help_circle
     };
 
     private static readonly Dictionary<Icon, string> UnicodeGlyphs = new()
@@ -97,6 +99,7 @@ public static class Icons
         [Icon.Task] = "‹›",
         [Icon.PullRequest] = "PR",
         [Icon.Docs] = "\U0001F4C4",
+        [Icon.Question] = "?",
     };
 
     /// <summary>The meanings a style's sample shows, in the order Settings names them underneath.</summary>

@@ -7,8 +7,8 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Everything waiting on the reviewer: a swimlane per team, holding what's still to rank and then a
-/// column per gate, in the order the work moves through them.</summary>
+/// <summary>Everything waiting on the reviewer: a tab per team, holding what's still to rank and then a column per
+/// gate, in the order the work moves through them.</summary>
 public sealed class WorkView : View
 {
     /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
@@ -16,34 +16,39 @@ public sealed class WorkView : View
     /// acceptance whatever its rank. The Customer lead's docs proposal is a PR, so it can't carry one. A question,
     /// the Dev's on a Ready task or the Lead's on a pitch, waits in Questions whatever its rank. Review holds only what Accept would take, and sums up the rest under its
     /// cards. Triage and Pitches wear the kind they hold in their heading, and only a card of another kind wears
-    /// its own.</summary>
-    internal static readonly (string Name, Icon? Kind, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
+    /// its own. Each tab tallies its columns under the Tally icon.</summary>
+    internal static readonly (string Name, Icon? Kind, Icon Tally, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
     [
-        ("Triage", Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && item.Status is "Idea" or "Pitched", null),
-        ("Pitches", Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs) && item.Question.Length == 0, null),
-        ("Questions", null, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
-        ("Review", null, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
+        ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && item.Status is "Idea" or "Pitched", null),
+        ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs) && item.Question.Length == 0, null),
+        ("Questions", null, Icon.Question, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
+        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
     ];
 
+    private readonly TeamTabs _tabs = new();
     private readonly List<WorkLane> _lanes = [];
-    private WorkColumn? _lastFocused;
     private IReadOnlyList<WaitingItem> _items = [];
+    private WorkLane? _picked;
+    private WorkLane? _current;
 
     public WorkView(IReadOnlyList<string> teams)
     {
-        CanFocus = true;
-        VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
         foreach (var team in teams)
         {
-            var lane = new WorkLane(team, FocusMoved) { X = 0, Width = Dim.Fill() };
-            lane.Y = Pos.Func(_ => Top(_lanes.IndexOf(lane)), this);
+            var lane = new WorkLane(team, FocusMoved);
             _lanes.Add(lane);
-            Add(lane);
+            _tabs.Add(lane);
         }
-        SubViewLayout += (_, _) => Fit();
+        _tabs.ValueChanged += (_, _) => ShowFocus();
+        Add(_tabs);
+        CanFocus = true;
     }
 
     internal IReadOnlyList<WorkLane> Lanes => _lanes;
+
+    /// <summary>The team whose tab the keyboard was last in. Not the tab strip's own, which Terminal.Gui moves on by
+    /// itself as focus comes and goes.</summary>
+    internal WorkLane? Current => _current ?? _lanes.FirstOrDefault();
 
     /// <summary>Raised when the keyboard moves between columns, so the window can name the region it's in.</summary>
     internal event Action? FocusChanged;
@@ -80,30 +85,28 @@ public sealed class WorkView : View
     /// <summary>The vocabulary the cards wear their icons from.</summary>
     internal IconStyle Icons { get; private set; } = IconStyle.Unicode;
 
-    /// <summary>Lays the cards out again, hiding the columns a team has nothing in. A re-read brings the selected
-    /// card back with its reason moved on, so it's found again by team and number, in whichever column it's now in.</summary>
-    public void Show(IReadOnlyList<WaitingItem> items)
-    {
-        var card = FocusedColumn()?.Selected;
-        var now = card is null ? null : items.FirstOrDefault(item => item.Team == card.Item.Team && item.Number == card.Item.Number);
-        Keep(items, now, card?.IsPr ?? false);
-        if (now is not null && Selected != now)
-            _ = Focus(now, card!.IsPr) || Focus(now, false);
-    }
+    /// <summary>Lays the cards out again, hiding the columns a team has nothing in. A re-read brings each tab's
+    /// selected card back with its reason moved on, so it's found again by team and number, in whichever column it's now in.</summary>
+    public void Show(IReadOnlyList<WaitingItem> items) => Keep(items, follow: true);
 
-    /// <summary>Drops the lanes and the cards of teams that have been removed.</summary>
+    /// <summary>Drops the tabs and the cards of teams that have been removed.</summary>
     public void Forget(IReadOnlyList<string> teams)
     {
+        var current = Current;
         foreach (var lane in _lanes.Where(lane => teams.Contains(lane.Team)).ToList())
         {
-            if (_lastFocused is not null && lane.Columns.Contains(_lastFocused))
-                _lastFocused = null;
+            if (_picked == lane)
+                _picked = null;
+            if (_current == lane)
+                _current = null;
             _lanes.Remove(lane);
-            Remove(lane);
+            _tabs.Remove(lane);
             lane.Dispose();
         }
         _items = [.. _items.Where(item => !teams.Contains(item.Team))];
-        Lay();
+        Lay(follow: false);
+        if (current is not null && _lanes.Contains(current))
+            Pick(current);
     }
 
     /// <summary>Hides everything that isn't the reviewer's move, or brings it all back, staying on the
@@ -114,7 +117,7 @@ public sealed class WorkView : View
             return;
         OnlyMine = onlyMine;
         var was = Selected;
-        Lay();
+        Lay(follow: false);
         if (was is null || !Reselect(was))
             FocusFirstCard();
     }
@@ -125,18 +128,60 @@ public sealed class WorkView : View
         if (Icons == style)
             return;
         Icons = style;
-        foreach (var column in _lanes.SelectMany(lane => lane.Columns))
-            column.ShowIcons(style);
+        foreach (var lane in _lanes)
+            lane.ShowIcons(style);
     }
 
-    /// <summary>Focus starts on the first card in the first team's first column that has one.</summary>
+    /// <summary>Focus starts on the first card of the tab in front, unless it has none and wasn't picked, when it
+    /// goes to the first team with something waiting.</summary>
     public void FocusFirstCard()
     {
-        _lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Count > 0)?.FocusCards();
+        var lane = Current is { Count: > 0 } current || Current == _picked ? Current
+            : _lanes.FirstOrDefault(lane => lane.Count > 0) ?? Current;
+        if (lane?.Columns.FirstOrDefault(column => column.Count > 0) is { } first)
+            first.FocusCards(0);
+        else if (lane is not null)
+        {
+            _current = lane;
+            lane.SetFocus();
+            _tabs.Value = lane;
+        }
         ShowFocus();
     }
 
-    /// <summary>Left and right step between the columns a lane has cards in, stopping at its edges.</summary>
+    /// <summary>Brings the next team's tab, or the previous one's, to the front, round from the last to the first.</summary>
+    internal void MoveTeam(int step)
+    {
+        if (_lanes.Count == 0)
+            return;
+        var at = Current is { } current ? _lanes.IndexOf(current) : 0;
+        Pick(_lanes[((at + step) % _lanes.Count + _lanes.Count) % _lanes.Count]);
+    }
+
+    /// <summary>Brings <paramref name="team"/>'s tab to the front, on the card it was left on.</summary>
+    internal bool Pick(string team) =>
+        _lanes.FirstOrDefault(lane => lane.Team == team) is { } lane && Pick(lane);
+
+    /// <summary>Brings the tab at <paramref name="index"/> to the front, counting from the first.</summary>
+    internal bool PickTab(int index) => index >= 0 && index < _lanes.Count && Pick(_lanes[index]);
+
+    private bool Pick(WorkLane lane)
+    {
+        if (lane.LastColumn is { Count: > 0 } column)
+            column.FocusCards();
+        else if (lane.Columns.FirstOrDefault(each => each.Count > 0) is { } first)
+            first.FocusCards(0);
+        else
+            lane.SetFocus();
+        // Only once focus has moved: the column it leaves reports itself as current on the way out.
+        _picked = _current = lane;
+        _tabs.Value = lane;
+        ShowFocus();
+        FocusChanged?.Invoke();
+        return true;
+    }
+
+    /// <summary>Left and right step between the columns a tab has cards in, stopping at its edges.</summary>
     internal void MoveColumn(int step)
     {
         if (At() is not { } at)
@@ -148,13 +193,12 @@ public sealed class WorkView : View
         for (var gate = at.Gate + step; gate >= 0 && gate < columns.Count; gate += step)
             if (columns[gate].Count > 0)
             {
-                Land(at.Lane, gate, 0);
+                Land(at.Lane, gate);
                 return;
             }
     }
 
-    /// <summary>Up and down walk a column's rows, then carry on into the lane above or below, in the same column
-    /// or the nearest one it shows.</summary>
+    /// <summary>Up and down walk a column's rows, stopping at its ends.</summary>
     internal void MoveCard(int step)
     {
         if (At() is not { } at)
@@ -163,16 +207,7 @@ public sealed class WorkView : View
             return;
         }
         if (_lanes[at.Lane].Columns[at.Gate].MoveSelection(step))
-        {
-            ScrollIntoView(at.Lane, at.Gate);
-            return;
-        }
-        for (var lane = at.Lane + step; lane >= 0 && lane < _lanes.Count; lane += step)
-            if (_lanes[lane].Nearest(at.Gate) is { } gate)
-            {
-                Land(lane, gate, step);
-                return;
-            }
+            _lanes[at.Lane].ScrollIntoView(at.Gate);
     }
 
     /// <summary>What a rank the reviewer has just given leaves on screen, with no re-read: the card is laid out
@@ -192,34 +227,31 @@ public sealed class WorkView : View
 
     private void Replace(WaitingItem item, WaitingItem? now) =>
         Keep(now is null ? [.. _items.Where(each => each != item)] : [.. _items.Select(each => each == item ? now : each)],
-            now, onPr: false);
+            follow: false);
 
-    /// <summary>Shows <paramref name="items"/>, keeping the selection on <paramref name="now"/> while its column still
-    /// shows it, and otherwise on the row it was on.</summary>
-    private void Keep(IReadOnlyList<WaitingItem> items, WaitingItem? now, bool onPr)
+    /// <summary>Shows <paramref name="items"/>, each tab keeping its selection, and gives the keyboard back to the
+    /// tab in front where it had it.</summary>
+    private void Keep(IReadOnlyList<WaitingItem> items, bool follow)
     {
-        var at = At();
-        var row = FocusedColumn()?.Index ?? 0;
+        var focused = At() is { } at ? _lanes[at.Lane] : null;
+        var first = Unread;
         _items = items;
-        Lay();
-        if (at is not { } was)
+        Lay(follow);
+        if (first && focused is not null)
+            FocusFirstCard();
+        if (first || focused is null)
             return;
-        var column = _lanes[was.Lane].Columns[was.Gate];
-        if (now is not null && (column.Select(now, onPr) || column.Select(now)))
-            return;
-        if (column.Count > 0)
-            column.FocusCards(row);
-        else if (_lanes[was.Lane].Nearest(was.Gate) is { } gate)
-            _lanes[was.Lane].Columns[gate].FocusCards(0);
+        if (focused.LastColumn is { Count: > 0 } column)
+            column.FocusCards();
         else
             FocusFirstCard();
     }
 
-    private void Lay()
+    private void Lay(bool follow)
     {
         var shown = OnlyMine ? _items.Where(item => item.Mine).ToList() : _items;
         foreach (var lane in _lanes)
-            lane.Show(shown);
+            lane.Show(shown, follow);
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -231,7 +263,7 @@ public sealed class WorkView : View
             for (var gate = 0; gate < _lanes[lane].Columns.Count; gate++)
                 if (_lanes[lane].Columns[gate].Select(item, onPr))
                 {
-                    Land(lane, gate, 0);
+                    Land(lane, gate);
                     ShowFocus();
                     return true;
                 }
@@ -254,8 +286,8 @@ public sealed class WorkView : View
     {
         if (FocusedColumn() is { } column)
         {
-            _lastFocused = column;
-            _lanes.First(lane => lane.Columns.Contains(column)).Widen(column);
+            _current = _lanes.First(lane => lane.Columns.Contains(column));
+            _current.Remember(column);
         }
         ShowFocus();
         FocusChanged?.Invoke();
@@ -272,26 +304,13 @@ public sealed class WorkView : View
         }
     }
 
-    /// <summary>Lands on a column: coming from above on its first card, from below on its last.</summary>
-    private void Land(int lane, int gate, int step)
+    private void Land(int lane, int gate)
     {
-        var column = _lanes[lane].Columns[gate];
-        column.FocusCards(step switch { > 0 => 0, < 0 => column.Nodes - 1, _ => null });
-        ScrollIntoView(lane, gate);
+        _lanes[lane].Columns[gate].FocusCards();
+        _lanes[lane].ScrollIntoView(gate);
     }
 
-    /// <summary>The row the keyboard is on has to be in the part of the lanes the window shows.</summary>
-    private void ScrollIntoView(int lane, int gate)
-    {
-        var column = _lanes[lane].Columns[gate];
-        var row = _lanes[lane].Frame.Y + column.Frame.Y + column.Row;
-        if (row < Viewport.Y)
-            Viewport = Viewport with { Y = row };
-        else if (row >= Viewport.Y + Viewport.Height)
-            Viewport = Viewport with { Y = row - Viewport.Height + 1 };
-    }
-
-    /// <summary>Which lane and which of its columns focus is in.</summary>
+    /// <summary>Which tab and which of its columns focus is in.</summary>
     private (int Lane, int Gate)? At()
     {
         if (FocusedColumn() is not { } focused)
@@ -303,58 +322,88 @@ public sealed class WorkView : View
         return null;
     }
 
-    /// <summary>The column focus is in, or was last in while something outside the cards, like the Cards menu, has it.</summary>
-    private WorkColumn? SelectedColumn() => FocusedColumn() ?? _lastFocused;
+    /// <summary>The column focus is in, or was last in on the tab in front while something outside the cards,
+    /// like the Cards menu, has it.</summary>
+    private WorkColumn? SelectedColumn() => FocusedColumn() ?? Current?.LastColumn;
 
     private WorkColumn? FocusedColumn() =>
         MostFocused is { } view ? _lanes.SelectMany(lane => lane.Columns).FirstOrDefault(column => column.Holds(view)) : null;
-
-    private int Top(int index) => _lanes.Take(index).Sum(lane => lane.Lines);
-
-    private int Total() => _lanes.Sum(lane => lane.Lines);
-
-    private void Fit()
-    {
-        // A second pass: the scroll bar takes a column off the area the first one measured.
-        for (var pass = 0; pass < 2 && GetContentSize() != Content(); pass++)
-            SetContentSize(Content());
-        ShowFocus();
-    }
-
-    private Size Content() => Viewport.Size with { Height = Math.Max(Viewport.Height, Total()) };
 }
 
 /// <summary>Where the keyboard was in Work: an item's own row, or its PR's.</summary>
 public readonly record struct Place(string Team, int Number, bool OnPr);
 
-/// <summary>One team's swimlane: the team's name, and a column per gate under it that has anything in it.</summary>
+/// <summary>The strip of team tabs. The window's commands move between cards and teams, so the arrows Terminal.Gui
+/// binds to switching tabs are taken off.</summary>
+internal sealed class TeamTabs : Tabs
+{
+    private static readonly Rune NoHotKey = (Rune)0xffff;
+
+    internal TeamTabs()
+    {
+        foreach (var key in new[] { Key.CursorUp, Key.CursorDown, Key.CursorLeft, Key.CursorRight })
+            KeyBindings.Remove(key);
+    }
+
+    // Terminal.Gui 2.5 turns a tab's hotkey off but not its header's, which would hide the '_' in a team's name.
+    protected override void OnSubViewAdded(View view)
+    {
+        base.OnSubViewAdded(view);
+        if (view.Border.View is not { } border)
+            return;
+        foreach (var header in border.SubViews.OfType<ITitleView>().OfType<View>())
+            header.HotKeySpecifier = NoHotKey;
+        border.SubViewAdded += (_, e) =>
+        {
+            if (e.SubView is ITitleView)
+                e.SubView.HotKeySpecifier = NoHotKey;
+        };
+    }
+
+    /// <summary>Retitles <paramref name="tab"/>; Terminal.Gui would otherwise draw the new title at the old one's width.</summary>
+    internal static void Retitle(View tab, string title)
+    {
+        if (tab.Title == title)
+            return;
+        tab.Title = title;
+        if (tab.Border.View is not BorderView { TitleView: { } header })
+            return;
+        header.Text = title;
+        header.TextFormatter.ConstrainToSize = null;
+        if (header is ITitleView titled)
+            titled.MeasuredTabLength = 0;
+        tab.SetNeedsLayout();
+    }
+}
+
+/// <summary>One team's tab: a column per gate that has anything in it, titled with the team and how many cards
+/// each column shows.</summary>
 public sealed class WorkLane : View
 {
-    /// <summary>The rows a lane spends on anything but cards: a blank one, the team's name, and the column's frame.</summary>
-    internal const int Chrome = 4;
+    /// <summary>The rows a column spends on its frame.</summary>
+    private const int FrameRows = 2;
 
     private readonly List<WorkColumn> _columns = [];
-    private readonly Label _header;
     private WorkColumn? _wide;
-    private int _laidOutOver = -1;
+    private IconStyle _icons = IconStyle.Unicode;
 
     internal WorkLane(string team, Action focusChanged)
     {
         Team = team;
+        Title = team;
         CanFocus = true;
-        Height = Dim.Func(_ => Lines, this);
-        _header = new Label { X = 0, Y = 1, Width = Dim.Fill(), CanFocus = false };
-        Add(_header);
+        VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
         for (var i = 0; i < WorkView.Gates.Length; i++)
         {
             var index = i;
-            var (name, kind, holds, aside) = WorkView.Gates[i];
-            var column = new WorkColumn(team, name, kind, holds, aside, focusChanged)
+            var (name, kind, tally, holds, aside) = WorkView.Gates[i];
+            var column = new WorkColumn(team, name, kind, tally, holds, aside, focusChanged)
             {
                 X = Pos.Func(_ => Left(index), this),
-                Y = 2,
+                Y = 0,
                 Width = Dim.Func(_ => ColumnWidth(index), this),
-                Height = Dim.Fill(),
+                Height = Dim.Func(_ => Tall(), this),
+                Visible = false,
             };
             _columns.Add(column);
             Add(column);
@@ -366,29 +415,66 @@ public sealed class WorkLane : View
 
     internal IReadOnlyList<WorkColumn> Columns => _columns;
 
-    /// <summary>How many rows the lane gives each column: enough for the fullest one's cards, their PRs and its
-    /// summary, and never none.</summary>
+    /// <summary>How many cards the tab shows, which is what its title counts.</summary>
+    internal int Count => _columns.Sum(column => column.Count);
+
+    /// <summary>How many rows the fullest column needs for its cards, their PRs and its summary, and never none.</summary>
     internal int Rows => Math.Max(1, _columns.Max(column => column.Lines));
 
-    /// <summary>How tall the lane is: just its name when it shows no column.</summary>
-    internal int Lines => _columns.Any(column => column.Visible) ? Rows + Chrome : Chrome - 2;
+    /// <summary>The column the keyboard was last in on this tab, kept while the tab is behind another.</summary>
+    internal WorkColumn? LastColumn { get; private set; }
 
-    internal string Header => _header.Text;
+    /// <summary>A team's name, then how many cards wait in each column that has any, after the column's icon.</summary>
+    internal static string Heading(string team, IEnumerable<(Icon Tally, int Count)> columns, IconStyle style) =>
+        string.Join(" ", [team, .. columns.Where(column => column.Count > 0).Select(column => $"{Icons.Field(column.Tally, style)}{column.Count}")]);
 
-    internal void Show(IReadOnlyList<WaitingItem> items)
+    internal void ShowIcons(IconStyle style)
     {
+        _icons = style;
         foreach (var column in _columns)
-        {
-            var team = items.Where(item => item.Team == Team).ToList();
-            column.Show([.. team.Where(column.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(column.SetsAside)]);
-            column.Visible = column.Lines > 0;
-        }
-        SetNeedsLayout();
+            column.ShowIcons(style);
+        Retitle();
     }
 
-    /// <summary>Gives <paramref name="column"/> the lane's wide share.</summary>
-    internal void Widen(WorkColumn column)
+    private void Retitle() =>
+        TeamTabs.Retitle(this, Heading(Team, _columns.Select(column => (column.Tally, column.Count)), _icons));
+
+    /// <summary>Lays out the team's cards, keeping the selection on the card it was on, found again by number in
+    /// whichever column it's now in when <paramref name="follow"/>, and otherwise on the row it was on.</summary>
+    internal void Show(IReadOnlyList<WaitingItem> items, bool follow)
     {
+        var column = LastColumn;
+        var row = column?.Selected;
+        var index = column?.Index ?? 0;
+        var team = items.Where(item => item.Team == Team).ToList();
+        foreach (var each in _columns)
+        {
+            each.Show([.. team.Where(each.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)]);
+            each.Visible = each.Lines > 0;
+        }
+        Retitle();
+        SetNeedsLayout();
+        if (column is null)
+            return;
+        var now = row is null ? null : team.FirstOrDefault(item => item.Number == row.Item.Number);
+        if (now is not null && (column.Select(now, row!.IsPr) || column.Select(now)))
+            return;
+        if (follow && now is not null && _columns.FirstOrDefault(each => each.Select(now, row!.IsPr) || each.Select(now)) is { } moved)
+            LastColumn = moved;
+        else if (column.Count > 0)
+            column.SelectRow(index);
+        else if (Nearest(_columns.IndexOf(column)) is { } gate)
+        {
+            LastColumn = _columns[gate];
+            LastColumn.SelectRow(0);
+        }
+        else
+            LastColumn = null;
+    }
+
+    internal void Remember(WorkColumn column)
+    {
+        LastColumn = column;
         if (_wide == column)
             return;
         _wide = column;
@@ -403,21 +489,32 @@ public sealed class WorkLane : View
             .Cast<int?>()
             .FirstOrDefault();
 
-    /// <summary>The team's name, then a rule to the right edge.</summary>
-    internal static string Rule(string team, int width) =>
-        $"{team} {new string('─', Math.Max(0, width - team.Length - 1))}";
+    /// <summary>The row the keyboard is on has to be in the part of the tab that's shown.</summary>
+    internal void ScrollIntoView(int gate)
+    {
+        var column = _columns[gate];
+        var row = column.Frame.Y + column.Row;
+        if (row < Viewport.Y)
+            Viewport = Viewport with { Y = row };
+        else if (row >= Viewport.Y + Viewport.Height)
+            Viewport = Viewport with { Y = row - Viewport.Height + 1 };
+    }
+
+    /// <summary>Every column runs the height of the tab, or of the fullest one's cards where they're taller.</summary>
+    private int Tall() => Math.Max(Viewport.Height, Rows + FrameRows);
 
     private void Fit()
     {
-        if (_laidOutOver == Viewport.Width)
-            return;
-        _laidOutOver = Viewport.Width;
-        _header.Text = Rule(Team, Viewport.Width);
+        // A second pass: the scroll bar takes a column off the area the first one measured.
+        for (var pass = 0; pass < 2 && GetContentSize() != Content(); pass++)
+            SetContentSize(Content());
     }
+
+    private Size Content() => Viewport.Size with { Height = Tall() };
 
     private int Left(int index) => Enumerable.Range(0, index).Sum(ColumnWidth);
 
-    /// <summary>The selected column takes half the lane and the others it shows share the rest.</summary>
+    /// <summary>The selected column takes half the tab and the others it shows share the rest.</summary>
     private int ColumnWidth(int index)
     {
         var column = _columns[index];
@@ -451,12 +548,13 @@ public sealed class WorkColumn : FrameView
     private IconStyle _icons = IconStyle.Unicode;
 
     internal WorkColumn(
-        string team, string gate, Icon? kind, Func<WaitingItem, bool> holds, Func<WaitingItem, bool>? aside,
+        string team, string gate, Icon? kind, Icon tally, Func<WaitingItem, bool> holds, Func<WaitingItem, bool>? aside,
         Action focusChanged)
     {
         Team = team;
         Gate = gate;
         Kind = kind;
+        Tally = tally;
         _holds = holds;
         _aside = aside;
         CanFocus = true;
@@ -483,6 +581,9 @@ public sealed class WorkColumn : FrameView
 
     /// <summary>The kind of card the column's heading wears, or null where its cards each wear their own.</summary>
     internal Icon? Kind { get; }
+
+    /// <summary>The icon its count wears on the team's tab.</summary>
+    internal Icon Tally { get; }
 
     /// <summary>How many items the column holds, which is what its title counts.</summary>
     internal int Count => _items.Count;
@@ -587,9 +688,15 @@ public sealed class WorkColumn : FrameView
     /// <summary>Takes the keyboard, on the row asked for or on the one it was left on.</summary>
     internal void FocusCards(int? select = null)
     {
-        if (_nodes.Count > 0)
-            _cards.GoTo(_nodes[Math.Clamp(select ?? Index, 0, _nodes.Count - 1)]);
+        SelectRow(select ?? Index);
         _cards.SetFocus();
+    }
+
+    /// <summary>Moves the selection onto a row without taking the keyboard.</summary>
+    internal void SelectRow(int select)
+    {
+        if (_nodes.Count > 0)
+            _cards.GoTo(_nodes[Math.Clamp(select, 0, _nodes.Count - 1)]);
     }
 
     internal static string Heading(Icon? kind, string gate, int count, IconStyle style) =>
@@ -607,10 +714,10 @@ public sealed class WorkColumn : FrameView
     }
 
     /// <summary>Terminal.Gui's own TreeView answers the arrows and the letters itself: left and right would collapse
-    /// the PR this view keeps expanded, and down would stop at the last row rather than carry on into the next lane.
-    /// The Work area moves the selection itself, so the tree is left handling no key at all. Its expand and collapse
-    /// symbols are a blank cell rather than hidden, so every row starts in the same column, PR or no PR. A column
-    /// that isn't the one the keys act on draws its selected row like any other, keeping the selection unseen.</summary>
+    /// the PR this view keeps expanded. The Work area moves the selection itself, so the tree is left handling no key
+    /// at all. Its expand and collapse symbols are a blank cell rather than hidden, so every row starts in the same
+    /// column, PR or no PR. A column that isn't the one the keys act on draws its selected row like any other, keeping
+    /// the selection unseen.</summary>
     private sealed class Cards : TreeView<Card>
     {
         internal bool ShowsSelection { get; set; }
@@ -654,6 +761,9 @@ public sealed class WorkColumn : FrameView
 
     private void Fit()
     {
+        // The tree is as tall as its rows, but a GoTo before it was laid out can leave it scrolled past the first.
+        if (_cards.ScrollOffsetVertical != 0)
+            _cards.ScrollOffsetVertical = 0;
         var width = _cards.Viewport.Width;
         if (_laidOutOver == width)
             return;
