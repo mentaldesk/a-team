@@ -33,6 +33,10 @@ and changes nothing here.
 The strip along the bottom is the dispatcher's recent decisions. Each run it starts names the
 release it's on, as in `09:51 a-team lead: started 81834 on 0.1.7: #232 was approved`, and keeps
 that release to its end, even if you upgrade a-team meanwhile.
+A team that can't run on two passes in a row gets one line saying why, as in
+`a-team: stopped: no GitHub App: run a-team app create a-team, then install it`, another only if
+the reason changes, and `a-team: running again` once it can. A single failed pass, such as one
+during `brew upgrade`, says nothing, though the team still sits that pass out.
 
 Its title says what is driving the teams: the a-team the dispatcher runs and its version, with the
 countdown to its next pass, as in `dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12`.
