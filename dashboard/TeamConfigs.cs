@@ -200,6 +200,31 @@ public sealed class TeamConfigs
         }
     }
 
+    /// <summary>The team's Project board on GitHub, or null when its config doesn't name one.</summary>
+    public string? BoardUrl(string team)
+    {
+        try
+        {
+            using var config = JsonDocument.Parse(File.ReadAllText(PathOf(team)));
+            if (config.RootElement.ValueKind != JsonValueKind.Object ||
+                !config.RootElement.TryGetProperty("project", out var project) ||
+                project.ValueKind != JsonValueKind.Object ||
+                !project.TryGetProperty("owner", out var owner) || owner.ValueKind != JsonValueKind.String ||
+                owner.GetString() is not { Length: > 0 } login ||
+                !project.TryGetProperty("number", out var number) || !number.TryGetInt32(out var board))
+                return null;
+            var kind = project.TryGetProperty("ownerType", out var type) && type.ValueKind == JsonValueKind.String &&
+                       type.GetString() == "user"
+                ? "users"
+                : "orgs";
+            return $"https://github.com/{kind}/{Uri.EscapeDataString(login)}/projects/{board}";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Held is a role named in <c>dispatch.hold</c>, which <c>a-team stop</c> writes.</summary>
     public bool IsHeld(string team, string role)
     {

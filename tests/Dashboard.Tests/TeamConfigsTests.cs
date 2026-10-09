@@ -64,6 +64,26 @@ public class TeamConfigsTests : IDisposable
         Assert.Equal(roles, new TeamConfigs(_root).Roles("demo"));
     }
 
+    [Theory]
+    [InlineData("""{"project": {"owner": "mentaldesk", "number": 3}}""", "https://github.com/orgs/mentaldesk/projects/3")]
+    [InlineData("""{"project": {"owner": "mentaldesk", "number": 3, "ownerType": "organization"}}""", "https://github.com/orgs/mentaldesk/projects/3")]
+    [InlineData("""{"project": {"owner": "jamescrosswell", "number": 7, "ownerType": "user"}}""", "https://github.com/users/jamescrosswell/projects/7")]
+    [InlineData("""{"project": {"owner": "", "number": 3}}""", null)]
+    [InlineData("""{"project": {"owner": "mentaldesk"}}""", null)]
+    [InlineData("""{"project": {"owner": "mentaldesk", "number": "3"}}""", null)]
+    [InlineData("{}", null)]
+    [InlineData("{ not json", null)]
+    public void The_board_address_comes_from_the_project_in_the_team_config(string config, string? url)
+    {
+        Write("demo", config);
+
+        Assert.Equal(url, new TeamConfigs(_root).BoardUrl("demo"));
+    }
+
+    [Fact]
+    public void A_team_with_no_config_has_no_board_address() =>
+        Assert.Null(new TeamConfigs(_root).BoardUrl("demo"));
+
     [Fact]
     public void A_team_with_no_config_at_all_reads_as_paused() =>
         Assert.True(new TeamConfigs(_root).IsPaused("demo"));

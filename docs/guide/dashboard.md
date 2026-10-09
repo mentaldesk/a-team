@@ -68,6 +68,7 @@ countdown alone. The message bar says what it started, or `Pass done: nothing to
 | `Enter` | Expand the selected agent over the whole agent area, wide enough to read without scrolling |
 | `Tab`, `Shift+Tab` | In the expanded view, read the next or previous agent without leaving it |
 | `Esc` | Back to every agent |
+| `b` | Open the selected agent's team's Project board on GitHub |
 | `PgUp`, `PgDn`, `Home`, `End` | Scroll the selected log. Scrolling up stops it following new output until you press `End` |
 
 ## Copying from a log
