@@ -1157,7 +1157,7 @@ case "$CMD" in
     [ $# -eq 3 ] || die "usage: board.sh $TEAM decline <role> <n> <file>"
     role=$1 n=$2 file=$3
     case "$role" in
-      lead | dev | customer) die "$role may not decline an item; declining is the stakeholders' own gate" ;;
+      lead | dev | customer | reviewer) die "$role may not decline an item; declining is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac

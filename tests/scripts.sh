@@ -1231,7 +1231,7 @@ grep -q "would close #9 as not planned" "$ERR" || fail "decline dry run: '$(cat 
 [ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
 
 case_ "no agent may decline: that gate is the stakeholders' own"
-for role in lead dev customer; do
+for role in lead dev customer reviewer; do
   run board demo decline "$role" 9 "$WORK/reason"
   failed "$role declining"
   one_line "$role declining"
