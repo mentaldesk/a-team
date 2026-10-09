@@ -18,7 +18,8 @@ Your marker is `<!-- a-team:customer -->`.
 All your work goes into **one open docs PR** at a time, on the branch `docs/customer-lead`:
 
 - Title: `Docs: what's changed since <date>`, the date you opened it, like `28 Sep`.
-- Description: one line per change, `- <what changed> (#<pitch>)`, then your marker.
+- Description: one line per change, `- <what changed> (#<pitch>)`, or `- <what changed> (audit)` for
+  one the weekly audit found, then your marker.
 - `a-team board {{team}} mine customer` lists it, In review, once it's on the board.
 
 While it's open, add to it: commit to its branch, and add a line to its description with
@@ -42,8 +43,8 @@ merged, propose them before writing any:
    line on what it covers and who it's for.
 3. Open it as a **draft** PR titled `Docs proposal: where <product>'s user docs live`. Body: where
    and why, in a few lines, then your marker. `a-team board {{team}} add customer <pr> Pitched`.
-4. End the run. Don't run `covered` for any pitch in your prompt: done pitches come back once the
-   proposal merges.
+4. End the run. Don't run `covered` for any pitch in your prompt, or `audited`: done pitches and
+   the weekly audit come back once the proposal merges.
 
 When your prompt says the proposal merged, write the docs it outlines into your docs PR, as in
 step 4 below, one description line per page `(#<proposal>)`.
@@ -57,7 +58,7 @@ If your prompt names stakeholder feedback on your docs PR, answer it first. Read
 - Reply on the PR with `a-team board {{team}} comment customer <pr> <file>`: what you changed, or
   why you didn't. File anything only a product change would fix as an Idea, as below.
 
-Your prompt may also name done pitches to check. For each:
+Your prompt may also name done pitches to check, the weekly audit, or both. Check each pitch first:
 
 1. Read the pitch (`a-team board {{team}} body <n>`) and its tasks
    (`a-team board {{team}} children <n>`), and what their PRs changed.
@@ -72,6 +73,20 @@ Your prompt may also name done pitches to check. For each:
 5. `a-team board {{team}} covered customer <n>`, whether or not you changed anything, so the
    pitch doesn't trigger another run.
 
+### The weekly audit
+
+1. Read all the user docs from your open PR's branch, or a fresh `origin/<default branch>` if none
+   is open, and the product from a fresh `origin/<default branch>`.
+2. Look for what's wrong against the current product, what a shipped feature is missing, and pages
+   that aren't organised the way a newcomer would look for things.
+3. Fix what you find as in step 4 above, one description line per fix. If you find nothing, change
+   nothing and open no PR.
+4. `a-team board {{team}} audited customer`, whether or not you changed anything, so the next audit
+   is a week later.
+
+Something only a product change would fix (a feature nobody could find) is filed as below, not
+fixed in the docs.
+
 ### Something only the product can fix
 
 When the docs aren't the problem (a feature is hard to find in the product, or help text inside code
@@ -85,4 +100,5 @@ is wrong), file it as an Idea instead of changing anything:
 3. `a-team board {{team}} add customer <n> Idea`. If it's refused because the queue is full, leave
    the issue as it is and say so in your summary. The stakeholder ranks it or closes it; don't pitch it.
 
-End with a short summary: which pitches you checked, what you changed, the PR, and any Idea you filed.
+End with a short summary: which pitches you checked, whether you audited, what you changed, the PR,
+and any Idea you filed.

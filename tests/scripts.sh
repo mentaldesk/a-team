@@ -2348,8 +2348,15 @@ same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 [ -e "$A_TEAM_STATE/demo/customer/covered" ] && fail "off: it started counting what's covered"
 
-case_ "turned on, it starts from the pitches done after that, one reason each, and never for a shelved one"
+case_ "turned on, it audits the docs straight away"
 customer_on
+run board demo triggers customer
+same "first pass" '["weekly docs audit: check the docs as a whole"]' "$(jq -c .reasons "$OUT")"
+run board demo audited customer
+same "exit" 0 "$STATUS"
+same "said" "docs audited: the next audit is in a week" "$(cat "$OUT")"
+
+case_ "turned on, it starts from the pitches done after that, one reason each, and never for a shelved one"
 run board demo triggers customer
 same "first pass" '[]' "$(jq -c .reasons "$OUT")"
 same "creative" false "$(jq -c .creative "$OUT")"
@@ -2384,6 +2391,36 @@ grep -q "only customer checks the docs" "$ERR" || fail "dev covering: '$(cat "$E
 run board demo covered customer 7
 failed "covering a pitch In review"
 grep -q "#7 isn't a done pitch" "$ERR" || fail "covering In review: '$(cat "$ERR")'"
+
+case_ "the audit comes round again a week after the last one finished, and not before"
+AUDITED="$A_TEAM_STATE/demo/customer/audited"
+echo $(($(date +%s) - 7 * 24 * 60 * 60 + 60)) >"$AUDITED"
+run board demo triggers customer
+same "six days on" '[]' "$(jq -c .reasons "$OUT")"
+echo $(($(date +%s) - 7 * 24 * 60 * 60)) >"$AUDITED"
+run board demo triggers customer
+same "a week on" '["weekly docs audit: check the docs as a whole"]' "$(jq -c .reasons "$OUT")"
+run board demo triggers customer
+same "until it's audited" '["weekly docs audit: check the docs as a whole"]' "$(jq -c .reasons "$OUT")"
+run board demo audited customer
+run board demo triggers customer
+same "audited" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "audited is the Customer lead's alone, and --dry-run records nothing"
+echo 0 >"$AUDITED"
+run board --dry-run demo audited customer
+same "said" "(dry run) docs audited: the next audit is in a week" "$(cat "$OUT")"
+same "unchanged" 0 "$(cat "$AUDITED")"
+run board demo audited dev
+failed "dev auditing"
+grep -q "only customer audits the docs" "$ERR" || fail "dev auditing: '$(cat "$ERR")'"
+jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+run board demo triggers customer
+same "off" '[]' "$(jq -c .reasons "$OUT")"
+run board demo audited customer
+failed "auditing while off"
+customer_on
+echo $(($(date +%s))) >"$AUDITED"
 
 case_ "the Customer lead adds its own open docs PR to In review, labelled as its"
 gh_items <<'ITEMS'
@@ -2568,7 +2605,7 @@ run board --dry-run demo add customer 14 Pitched
 same "dry run" 0 "$STATUS"
 [ -e "$PROPOSED" ] && fail "dry run remembered the proposal"
 
-case_ "while the proposal is open, no docs PR goes up and done pitches wait"
+case_ "while the proposal is open, no docs PR goes up, and done pitches and the audit wait"
 gh_items <<'ITEMS'
 Pitched 12 Docs proposal: where the user docs live
 Done 16 A pitch just accepted
@@ -2577,9 +2614,11 @@ docs_pr 12
 accepted 16
 echo 12 >"$PROPOSED"
 proposal_pr 12
+mv "$AUDITED" "$AUDITED.kept"
 run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+mv "$AUDITED.kept" "$AUDITED"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
 run board demo add customer 15 "In review"
 failed "a docs PR before the proposal merges"
@@ -3313,6 +3352,14 @@ jq -e '.permissions.allow | index("Bash(gh pr edit *)")' "$SETTINGS" >/dev/null 
 jq -e '.permissions | (.allow | index("Bash(gh issue create *)")) and (.deny | index("Bash(gh issue create *)") | not)' \
   "$SETTINGS" >/dev/null ||
   fail "customer can't file an Idea: '$(jq -c .permissions "$SETTINGS")'"
+
+case_ "an audit run that ends without recording the audit is retried later, not every pass"
+for _ in $(seq 50); do kill -0 "$(cat "$A_TEAM_STATE/demo/customer/pid")" 2>/dev/null || break; sleep 0.1; done
+jq -n '{reasons: ["weekly docs audit: check the docs as a whole"], creative: false}' >"$CUSTOMER_TRIGGERS"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+same "runs" 1 "$(grep -c 'demo customer: would start: weekly docs audit' "$A_TEAM_STATE/dispatch.log")"
 jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 # Claims hand out the tasks queued in $QUEUE one at a time, then refuse for want of a worktree;

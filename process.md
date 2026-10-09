@@ -96,6 +96,8 @@ a-team board {{team}} history <n>               # what a-team has recorded on #<
 a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
                                                 # done pitch #<n>
+a-team board {{team}} audited customer          # Customer lead only: the docs as a whole are
+                                                # audited, so the next audit is a week later
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, and whether it conflicts
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
 a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a run for;
