@@ -195,7 +195,8 @@ public sealed class AgentPane : FrameView
         var role = AgentState.Read(_stateDir);
         _runs.Update(role.Runs, role.Latest);
         Working = [.. role.Runs.Where(run => run.Held is null && run.Task is not null).Select(run => run.Task!.Number)
-            .Concat(role is { Running: true, Task: { } task } ? [task.Number] : []).Distinct()];
+            .Concat(role is { Running: true, Task: { } task } ? [task.Number] : [])
+            .Concat(role is { Running: true, Card: { } card } ? [card] : []).Distinct()];
         var state = _runs.Current is { } run ? AgentState.Read(run.Dir) with { Stopped = run.Held ?? role.Stopped } : role;
         Paused = paused;
         Running = state.Running;

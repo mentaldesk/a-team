@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Text;
@@ -10,14 +11,20 @@ namespace ATeam.Dashboard;
 public sealed record OverseerState(
     DateTimeOffset Now,
     IReadOnlyDictionary<string, string> Limits,
-    IReadOnlySet<(string Team, int Number)> Worked,
+    IReadOnlyDictionary<(string Team, int Number), string> Worked,
     IReadOnlyDictionary<string, IReadOnlyList<string>> Busy,
     Func<string, int, WaitingItem?> Waiting)
 {
     public static readonly OverseerState Empty = new(
-        DateTimeOffset.MinValue, new Dictionary<string, string>(), new HashSet<(string, int)>(),
+        DateTimeOffset.MinValue, new Dictionary<string, string>(), new Dictionary<(string, int), string>(),
         new Dictionary<string, IReadOnlyList<string>>(), (_, _) => null);
 }
+
+/// <summary>Where a busy role's header frame goes in its lane's title, in columns from the title's start.</summary>
+public readonly record struct HeaderSlot(int Column, string Role);
+
+/// <summary>A lane's title, and the cells in it the busy roles' animations play in.</summary>
+public sealed record LaneHeading(string Title, IReadOnlyList<HeaderSlot> Slots);
 
 /// <summary>Every team's board on one screen: a framed lane per team under one row of column headings, and the
 /// selected card's details at the foot when they're open.</summary>
@@ -33,11 +40,12 @@ public sealed class OverseerView : View
     private readonly OverseerBoard _board;
     private readonly Label _header = new() { X = 1, Y = 0, Width = Dim.Fill(), CanFocus = false };
     private readonly View _lanes;
-    private readonly List<FrameView> _laneViews = [];
+    private readonly List<Lane> _laneViews = [];
     private readonly FrameView _details;
     private readonly Label _detailText = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = false };
     private OverseerState _state = OverseerState.Empty;
-    private int _spin;
+    private readonly long _started = Stopwatch.GetTimestamp();
+    private string _steps = "";
     private IconStyle _icons = IconStyle.Unicode;
 
     public OverseerView(IReadOnlyList<string> teams)
@@ -126,23 +134,31 @@ public sealed class OverseerView : View
         foreach (var lane in _laneViews)
         {
             var team = LaneTeam(lane);
-            var title = LaneTitle(team, state.Busy.TryGetValue(team, out var busy) ? busy : [], Over(team));
-            if (lane.Title != title)
-                lane.Title = title;
+            var heading = Heading(team, state.Busy.TryGetValue(team, out var busy) ? busy : [], Over(team));
+            lane.Slots = heading.Slots;
+            if (lane.Title != heading.Title)
+                lane.Title = heading.Title;
         }
         Redraw();
         ShowDetails();
     }
 
-    /// <summary>Moves the spinners of the cards an agent is on a frame.</summary>
+    /// <summary>Redraws the animations of the busy roles, once one of them has moved on a frame.</summary>
     public void Spin()
     {
-        _spin++;
-        if (_state.Worked.Count > 0)
-            Redraw();
+        var elapsed = Elapsed;
+        var steps = string.Join(' ', _state.Busy.Values.SelectMany(roles => roles).Concat(_state.Worked.Values).Distinct()
+            .Select(role => RoleAnimation.For(role)?.Step(elapsed)));
+        if (steps == _steps)
+            return;
+        _steps = steps;
+        Redraw();
     }
 
-    internal static TimeSpan SpinEvery => TimeSpan.FromMilliseconds(new SpinnerStyle.Dots().SpinDelay);
+    /// <summary>Every frame of every role's animation lasts a multiple of this.</summary>
+    internal static TimeSpan SpinEvery => TimeSpan.FromMilliseconds(20);
+
+    private TimeSpan Elapsed => Stopwatch.GetElapsedTime(_started);
 
     public void MoveColumn(int step) => Move(() => _board.MoveColumn(step));
 
@@ -192,11 +208,27 @@ public sealed class OverseerView : View
 
     internal bool CanFold => _board.Selected is { } place && _board.Unfolded(place.Team);
 
-    /// <summary>A lane's title: the team, its busy roles or <c>idle</c>, and how many of its cards are past their limit.</summary>
-    internal static string LaneTitle(string team, IReadOnlyList<string> busy, int over) =>
-        string.Join(Separator, new[] { team }
-            .Concat(busy.Count == 0 ? ["idle"] : busy.Select(RoleName))
-            .Concat(over > 0 ? [$"{over} over"] : []));
+    /// <summary>A lane's title: the team, its busy roles or <c>idle</c>, and how many of its cards are past their limit.
+    /// A busy role with an animation keeps a cell after its name, which the lane paints its header frame into.</summary>
+    internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over)
+    {
+        var title = team;
+        List<HeaderSlot> slots = [];
+        foreach (var role in busy)
+        {
+            title += Separator + RoleName(role);
+            if (RoleAnimation.For(role) is null)
+                continue;
+            title += " ";
+            slots.Add(new(title.GetColumns(), role));
+            title += " ";
+        }
+        if (busy.Count == 0)
+            title += Separator + "idle";
+        if (over > 0)
+            title += $"{Separator}{over} over";
+        return new(title, slots);
+    }
 
     internal static string RoleName(string role) => role switch
     {
@@ -207,13 +239,13 @@ public sealed class OverseerView : View
         _ => role,
     };
 
-    /// <summary>A chip as drawn: its mark and number, then its age, or a spinner frame while an agent is on it,
+    /// <summary>A chip as drawn: its mark and number, then its age, or its animation frame while an agent is on it,
     /// right-aligned in three cells.</summary>
-    internal static string ChipText(Chip chip, DateTimeOffset now, string? spinner, IconStyle style)
+    internal static string ChipText(Chip chip, DateTimeOffset now, string? playing, IconStyle style)
     {
         if (chip.Card is not { } card)
             return $"+{chip.Hidden}";
-        var age = spinner ?? (card.Age(now) is { } waited ? Ages.Short(waited) : "");
+        var age = playing ?? (card.Age(now) is { } waited ? Ages.Short(waited) : "");
         return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)} {age,AgeWidth}";
     }
 
@@ -251,7 +283,11 @@ public sealed class OverseerView : View
     private void Redraw()
     {
         foreach (var lane in _laneViews)
+        {
+            if (lane.Slots.Count > 0)
+                lane.SetNeedsDraw();
             lane.SubViews.First().SetNeedsDraw();
+        }
     }
 
     private void Changed()
@@ -289,7 +325,7 @@ public sealed class OverseerView : View
 
     private void AddLane(string team)
     {
-        var lane = new FrameView { X = 0, Width = Dim.Fill(), CanFocus = false, Title = LaneTitle(team, [], 0), Data = team };
+        var lane = new Lane(this, _laneViews.Count) { X = 0, Width = Dim.Fill(), CanFocus = false, Title = Heading(team, [], 0).Title, Data = team };
         lane.Y = Pos.Func(_ => Top(lane), _lanes);
         lane.Height = Dim.Func(_ => _board.Rows(team) + FrameRows, _lanes);
         lane.Add(new ChipGrid(this, team) { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() });
@@ -299,7 +335,7 @@ public sealed class OverseerView : View
 
     private static string LaneTeam(View lane) => (string)lane.Data!;
 
-    private int Top(FrameView lane) =>
+    private int Top(Lane lane) =>
         _laneViews.TakeWhile(each => each != lane).Sum(each => _board.Rows(LaneTeam(each)) + FrameRows);
 
     private int Tall() => _laneViews.Sum(lane => _board.Rows(LaneTeam(lane)) + FrameRows);
@@ -359,26 +395,62 @@ public sealed class OverseerView : View
         return GetAttributeForRole(VisualRole.Normal);
     }
 
+    /// <summary>The colour a cell of a role's animation is drawn in, on <paramref name="under"/>'s background.</summary>
+    internal static Attribute ToneAttribute(RoleAnimation animation, Tone tone, Attribute under) =>
+        under with { Foreground = animation.Colour(tone, under.Background.IsDarkColor()) };
+
+    /// <summary>Paints <paramref name="frame"/> from where <paramref name="view"/> last moved to, a colour per cell.</summary>
+    private static void PaintFrame(View view, RoleAnimation animation, AnimationFrame frame, Attribute under)
+    {
+        for (var cell = 0; cell < frame.Text.Length; cell++)
+        {
+            view.SetAttribute(ToneAttribute(animation, frame.ToneAt(cell), under));
+            view.AddStr(frame.Text[cell].ToString());
+        }
+    }
+
+    /// <summary>A team's framed lane, with each busy role's header frame painted into the cell its title keeps for it.</summary>
+    private sealed class Lane(OverseerView overseer, int index) : FrameView
+    {
+        public IReadOnlyList<HeaderSlot> Slots { get; set; } = [];
+
+        protected override void OnDrawComplete(DrawContext? context)
+        {
+            base.OnDrawComplete(context);
+            var shown = Math.Max(0, Frame.Width - 4);
+            var under = GetAttributeForRole(VisualRole.Normal);
+            foreach (var slot in Slots)
+            {
+                if (slot.Column >= shown || RoleAnimation.For(slot.Role) is not { } animation)
+                    continue;
+                // The border draws the title two cells in from the frame's left edge, on the row above the viewport.
+                Move(1 + slot.Column, -1);
+                PaintFrame(this, animation, animation.Header(overseer.Elapsed, index), under);
+            }
+        }
+    }
+
     /// <summary>One lane's chips, a column per status. Painted cell by cell: each chip takes its own colour, which no
     /// built-in list or table draws.</summary>
     private sealed class ChipGrid(OverseerView overseer, string team) : View
     {
-        private static readonly string[] Spinner = new SpinnerStyle.Dots().Sequence;
-
         protected override bool OnDrawingContent(DrawContext? context)
         {
             var board = overseer._board;
             var state = overseer._state;
             var width = ColumnWidth(Viewport.Width);
-            var spinner = Spinner[overseer._spin % Spinner.Length];
+            var elapsed = overseer.Elapsed;
             for (var column = 0; column < OverseerBoard.Columns.Length; column++)
             {
                 var chips = board.Chips(team, column);
                 for (var row = 0; row < chips.Count; row++)
                 {
                     var chip = chips[row];
-                    var worked = chip.Card is { } card && state.Worked.Contains((card.Team, card.Number));
-                    var full = ChipText(chip, state.Now, worked ? spinner : null, overseer._icons);
+                    var animation = chip.Card is { } card && state.Worked.TryGetValue((card.Team, card.Number), out var role)
+                        ? RoleAnimation.For(role)
+                        : null;
+                    var frame = animation?.Chip(elapsed, chip.Card!.Number);
+                    var full = ChipText(chip, state.Now, frame?.Text, overseer._icons);
                     var text = Card.Elide(full, width - 1);
                     var selected = board.Selected is { } place && place.Team == team && place.Column == column
                         && place.Number == chip.Card?.Number;
@@ -387,8 +459,14 @@ public sealed class OverseerView : View
                     AddStr(column * width, row, text[..^age]);
                     if (chip.Card is { } shown && age > 0)
                     {
-                        SetAttribute(overseer.AgeAttribute(shown, selected));
+                        var under = overseer.AgeAttribute(shown, selected);
+                        SetAttribute(under);
                         AddStr(column * width + text[..^age].GetColumns(), row, text[^age..]);
+                        if (animation is not null && frame is { } playing)
+                        {
+                            Move(column * width + text[..^age].GetColumns(), row);
+                            PaintFrame(this, animation, playing, under);
+                        }
                     }
                 }
             }

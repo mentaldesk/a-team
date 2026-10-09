@@ -112,13 +112,14 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
-    public void A_chip_is_its_mark_number_and_age_or_a_spinner_while_an_agent_is_on_it()
+    public void A_chip_is_its_mark_number_and_age_or_an_animation_frame_while_an_agent_is_on_it()
     {
         var card = Card(404, "Building", days: 6);
 
         Assert.Equal("◆2     6d", OverseerView.ChipText(new Chip(Card(2, "Building", days: 6)), Now, null, IconStyle.Unicode));
         Assert.Equal("◆404   6d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode));
-        Assert.Equal("◆404    ⠋", OverseerView.ChipText(new Chip(card), Now, "⠋", IconStyle.Unicode));
+        Assert.Equal("◆404  ｱ#ﾘ", OverseerView.ChipText(new Chip(card), Now, "ｱ#ﾘ", IconStyle.Unicode));
+        Assert.Equal("◆404    ✺", OverseerView.ChipText(new Chip(card), Now, "  ✺", IconStyle.Unicode));
         Assert.Equal("+7", OverseerView.ChipText(new Chip(null, 7), Now, null, IconStyle.Unicode));
     }
 
@@ -327,11 +328,16 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
-    public void A_lane_names_its_busy_roles_or_says_idle_and_counts_what_s_over()
+    public void A_lane_names_its_busy_roles_each_with_a_cell_for_its_animation_or_says_idle_and_counts_what_s_over()
     {
-        Assert.Equal("a-team · Lead · Dev · 2 over", OverseerView.LaneTitle("a-team", ["lead", "dev"], 2));
-        Assert.Equal("tui · idle", OverseerView.LaneTitle("tui", [], 0));
-        Assert.Equal("docs · Customer lead", OverseerView.LaneTitle("docs", ["customer"], 0));
+        var heading = OverseerView.Heading("a-team", ["lead", "dev"], 2);
+
+        Assert.Equal("a-team · Lead   · Dev   · 2 over", heading.Title);
+        Assert.Equal([new HeaderSlot(14, "lead"), new HeaderSlot(22, "dev")], heading.Slots);
+        Assert.Equal("tui · idle", OverseerView.Heading("tui", [], 0).Title);
+        Assert.Empty(OverseerView.Heading("tui", [], 0).Slots);
+        Assert.Equal("docs · Customer lead  ", OverseerView.Heading("docs", ["customer"], 0).Title);
+        Assert.Equal("ops · Reviewer", OverseerView.Heading("ops", ["reviewer"], 0).Title);
     }
 
     [Fact]
@@ -501,13 +507,31 @@ public class OverseerTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(12, window.Overseer.Board.SelectedCard?.Number);
         Assert.True(window.Commands.IsEnabled("overseer.session"));
-        Assert.Equal(["team0 · Dev", "team1 · idle"], window.Overseer.LaneTitles);
+        Assert.Equal(["team0 · Dev  ", "team1 · idle"], window.Overseer.LaneTitles);
 
         Assert.True(window.NewKeyDownEvent(new Key('r')));
 
         Assert.Equal(Area.Dashboard, window.CurrentArea);
         Assert.Equal(1, window.ExpandedAgent);
         Assert.True(window.Panes[1].HasFocus);
+    }
+
+    [Fact]
+    public void A_lead_run_started_for_one_card_is_on_that_card_and_a_run_across_the_board_on_none()
+    {
+        WriteRun("team0", "lead", card: 11);
+        WriteRun("team1", "lead");
+        using var window = Open();
+        window.NewKeyDownEvent(new Key('o'));
+        window.Refresh();
+
+        Assert.Equal(11, window.Overseer.Board.SelectedCard?.Number);
+        Assert.True(window.Commands.IsEnabled("overseer.session"));
+        Assert.Equal(["team0 · Lead  ", "team1 · Lead  "], window.Overseer.LaneTitles);
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal("team1", window.Overseer.Board.Selected!.Value.Team);
+        Assert.False(window.Commands.IsEnabled("overseer.session"));
     }
 
     [Fact]
@@ -585,14 +609,18 @@ public class OverseerTests : IDisposable
         return window;
     }
 
-    /// <summary>A live run on <paramref name="task"/>: this test's own process stands in for it.</summary>
-    private void WriteRun(string team, string role, int task)
+    /// <summary>A live run on <paramref name="task"/> or <paramref name="card"/>, or on neither: this test's own process
+    /// stands in for it.</summary>
+    private void WriteRun(string team, string role, int? task = null, int? card = null)
     {
         var dir = Path.Combine(_root, team, role);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "pid"), Environment.ProcessId.ToString());
         File.WriteAllText(Path.Combine(dir, "last-start"), "100");
-        File.WriteAllText(Path.Combine(dir, "task"), $$"""{"number": {{task}}, "title": "a task"}""");
+        if (task is not null)
+            File.WriteAllText(Path.Combine(dir, "task"), $$"""{"number": {{task}}, "title": "a task"}""");
+        if (card is not null)
+            File.WriteAllText(Path.Combine(dir, "card"), $$"""{"number": {{card}}}""");
     }
 
     private sealed class Clock : TimeProvider
