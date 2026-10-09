@@ -24,6 +24,7 @@ public sealed class TeamForm : Dialog
     internal const string OwnerCaption = "Who owns the Project: the user or organisation in its URL.";
     internal const string NumberCaption = "The Project's number, the last part of its URL.";
     internal const string VisionCaption = "The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.";
+    internal const string DocsCaption = "The user docs' first page, in the repo. Missing? The Customer lead proposes them.";
     internal const string WorkdirCaption = "Where the agents work. They can't write outside it.";
     internal const string SkillsCaption = "Skills the agents load. Must be installed on this machine.";
     internal const string TryCaption = "What a-team try runs to let you try a change.";
@@ -63,6 +64,7 @@ public sealed class TeamForm : Dialog
     private readonly TextField _number;
     private readonly View _ownedBy;
     private readonly TextField _vision;
+    private readonly TextField _docs;
     private readonly TextField _workdir;
     private readonly TextField _try;
     private readonly OptionSelector<TeamStatus>? _status;
@@ -173,6 +175,7 @@ public sealed class TeamForm : Dialog
         row++;
 
         _vision = Field("Vision", settings.Vision, row++, VisionCaption);
+        _docs = Field("Docs", settings.Docs, row++, DocsCaption);
         _workdir = Field("Workdir", settings.Workdir, row++, WorkdirCaption);
         _skills = Picks("Skills", _skillNames, row++, SkillsCaption, PickSkills);
         _try = Field("Try", settings.Try, row++, TryCaption);
@@ -295,6 +298,8 @@ public sealed class TeamForm : Dialog
 
     internal TextField Vision => _vision;
 
+    internal TextField Docs => _docs;
+
     internal TextField Workdir => _workdir;
 
     internal TextField Try => _try;
@@ -399,6 +404,7 @@ public sealed class TeamForm : Dialog
             ProjectOwner = _owner.Text.Trim(),
             ProjectNumber = int.TryParse(_number.Text.Trim(), out var number) ? number : null,
             Vision = _vision.Text.Trim(),
+            Docs = _docs.Text.Trim(),
             Workdir = _workdir.Text.Trim(),
             Try = _try.Text.Trim(),
             Stakeholders = _stakeholderNames,

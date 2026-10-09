@@ -38,6 +38,9 @@ public sealed partial record TeamSettings(
     /// <summary>Whether the team runs a Customer lead beside its Lead and Dev: <c>roles.customer</c>.</summary>
     public bool Customer { get; init; }
 
+    /// <summary>The first page of the user docs, in the repo, which the Customer lead keeps right.</summary>
+    public string Docs { get; init; } = "";
+
     public static TeamSettings Read(byte[] config)
     {
         using var document = JsonDocument.Parse(config);
@@ -72,6 +75,7 @@ public sealed partial record TeamSettings(
                 _ => TeamRelease.Never,
             },
             Customer = Find(root, "roles", "customer") is { ValueKind: JsonValueKind.True },
+            Docs = Text(root, "docs"),
         };
     }
 
@@ -129,6 +133,7 @@ public sealed partial record TeamSettings(
         Set(ProjectOwner, before.ProjectOwner, "project", "owner");
         SetNumber(ProjectNumber, before.ProjectNumber, "project", "number");
         Set(Vision, before.Vision, "vision");
+        Set(Docs, before.Docs, "docs");
         Set(Workdir, before.Workdir, "workdir");
         Set(Try, before.Try, "try");
         if (!Skills.SequenceEqual(before.Skills))
@@ -154,11 +159,12 @@ public sealed partial record TeamSettings(
         : !(projectOptional && NoProject) && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null) ? "Project is required."
         : ProjectNumber <= 0 ? "Project number must be above 0."
         : Vision.Trim().Length == 0 ? "Vision is required."
+        : Customer && Docs.Trim().Length == 0 ? "Docs is required with a Customer lead."
         : Workdir.Trim().Length == 0 ? "Workdir is required."
         : null;
 
     /// <summary>What's true of these that the team won't like, though it's still worth saving: a workdir that
-    /// isn't there, a skill this machine hasn't got, or a vision the repo hasn't got yet.</summary>
+    /// isn't there, a skill this machine hasn't got, or a vision or docs page the repo hasn't got yet.</summary>
     public string? Warning(string home)
     {
         var workdir = Expand(Workdir.Trim(), home);
@@ -168,8 +174,12 @@ public sealed partial record TeamSettings(
         if (Skills.FirstOrDefault(skill => !skill.Contains(':') && !found.Has(skill)) is { } missing)
             return $"No skill named {missing} in {SkillsFound.Installed}: the agents will work without it.";
         var checkout = Expand(CheckoutPath, home);
-        return Directory.Exists(checkout) && !File.Exists(Path.Combine(checkout, Vision.Trim()))
-            ? $"{Vision.Trim()} isn't there yet: the Lead will draft one and open it as a draft PR for you."
+        if (!Directory.Exists(checkout))
+            return null;
+        if (!File.Exists(Path.Combine(checkout, Vision.Trim())))
+            return $"{Vision.Trim()} isn't there yet: the Lead will draft one and open it as a draft PR for you.";
+        return Customer && !File.Exists(Path.Combine(checkout, Docs.Trim()))
+            ? $"{Docs.Trim()} isn't there yet: the Customer lead will propose the docs as a draft PR for you."
             : null;
     }
 

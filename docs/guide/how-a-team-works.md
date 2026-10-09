@@ -79,6 +79,10 @@ built can find it and learn it. It's off until you turn it on: tick **Customer l
 in the team's settings ([Teams](teams.md#a-teams-settings)), and its pane joins the team's on the
 Dashboard.
 
+- **If your team's Docs page isn't in the repo yet**, it proposes the docs first: a draft PR in
+  Pitched, `Docs proposal: where <product>'s user docs live`, that adds that page with their outline.
+  Comment on it to change the plan. Merge it on GitHub to agree, and its next run writes the docs.
+  Until then it writes none.
 - **When a pitch is done**, it reads what the pitch shipped and checks the user docs cover it:
   the README, guides and in-app help written as text.
 - **If they don't**, it writes what's missing into one docs PR, `Docs: what's changed since <date>`,

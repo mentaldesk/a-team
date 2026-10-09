@@ -32,7 +32,7 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
     private static readonly string[] Repairable = ["status", "labels"];
 
     /// <summary>What <c>check</c> reports that a team can still run with.</summary>
-    private static readonly string[] Notes = ["vision", "labels"];
+    private static readonly string[] Notes = ["vision", "docs", "labels"];
 
     public bool CanRepair => Problems.Any(problem => Repairable.Contains(problem.Topic));
 

@@ -117,6 +117,16 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void Docs_reads_from_and_saves_to_the_file_s_docs()
+    {
+        var before = TeamSettings.Read(Bytes(Config));
+
+        Assert.Equal("", before.Docs);
+        var after = (before with { Docs = "docs/guide/index.md" }).Write(Bytes(Config), before);
+        Assert.Equal("docs/guide/index.md", TeamSettings.Read(after).Docs);
+    }
+
+    [Fact]
     public void A_team_without_devs_reads_as_one_and_keeps_its_file_until_devs_changes()
     {
         var before = TeamSettings.Read(Bytes(Config));
@@ -227,6 +237,13 @@ public class TeamSettingsTests : IDisposable
         }).Refusal());
 
     [Theory]
+    [InlineData(false, "", null)]
+    [InlineData(true, "", "Docs is required with a Customer lead.")]
+    [InlineData(true, "docs/index.md", null)]
+    public void A_Customer_lead_needs_a_docs_page(bool customer, string docs, string? refusal) =>
+        Assert.Equal(refusal, (Settings() with { Customer = customer, Docs = docs }).Refusal());
+
+    [Theory]
     [InlineData("", null, null)]
     [InlineData("o", null, "Project is required.")]
     [InlineData("", 1, "Project is required.")]
@@ -249,6 +266,19 @@ public class TeamSettingsTests : IDisposable
         Assert.Equal(
             "docs/vision.md isn't there yet: the Lead will draft one and open it as a draft PR for you.",
             (Settings() with { Workdir = "~/code/demo", Vision = "docs/vision.md" }).Warning(_home));
+    }
+
+    [Fact]
+    public void With_a_Customer_lead_a_docs_page_the_repo_has_not_got_warns_that_it_will_propose_them()
+    {
+        Directory.CreateDirectory(Path.Combine(_home, "code", "demo", "main", "docs"));
+        File.WriteAllText(Path.Combine(_home, "code", "demo", "main", "docs", "vision.md"), "");
+        var settings = Settings() with { Workdir = "~/code/demo", Vision = "docs/vision.md", Docs = "docs/index.md" };
+
+        Assert.Null(settings.Warning(_home));
+        Assert.Equal(
+            "docs/index.md isn't there yet: the Customer lead will propose the docs as a draft PR for you.",
+            (settings with { Customer = true }).Warning(_home));
     }
 
     [Fact]
