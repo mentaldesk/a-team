@@ -3521,6 +3521,50 @@ grep -q 'demo dev: claim failed: board.sh: no free worktree for #13' "$A_TEAM_ST
   fail "refused: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 grep -q 'would start' "$A_TEAM_STATE/dispatch.log" && fail "refused: a run started"
 
+case_ "a trigger check that fails once and then passes says nothing, and the role sits that pass out"
+dev_dispatcher
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+cp "$CONFIG/teams/demo.json" "$CONFIG/teams/other.json"
+FAILS="$DISPATCH/fails"
+FAILING="  *\" demo triggers dev\"*) [ -s $FAILS ] && { cat $FAILS >&2; exit 1; }; cat $DEV_TRIGGERS ;;"
+FAILING=$FAILING perl -i -pe 'print "$ENV{FAILING}\n" if /^  \*" triggers dev"\*\)/' "$DISPATCH/bin/a-team"
+echo "gh: connection reset" >"$FAILS"
+echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
+jq '.ready = 13 | .reasons = ["Ready task available (e.g. #13) and a free worktree"]' "$DEV_TRIGGERS" >"$DISPATCH/ready.json"
+cp "$DISPATCH/ready.json" "$DEV_TRIGGERS"
+dispatch_dev --dry-run
+grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "blip: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+grep -q 'other dev: would start' "$A_TEAM_STATE/dispatch.log" || fail "blip: other wasn't started"
+same "claims" "board --dry-run other claim dev" "$(cat "$CLAIMS")"
+: >"$FAILS"
+: >"$A_TEAM_STATE/dispatch.log"
+jq '.ready = null | .reasons = []' "$DEV_TRIGGERS" >"$DEV_TRIGGERS.new" && mv "$DEV_TRIGGERS.new" "$DEV_TRIGGERS"
+dispatch_dev --dry-run
+same "after a blip" "" "$(cat "$A_TEAM_STATE/dispatch.log")"
+echo "gh: connection reset" >"$FAILS"
+dispatch_dev --dry-run
+: >"$FAILS"
+dispatch_dev --dry-run
+same "two failures not in a row" "" "$(cat "$A_TEAM_STATE/dispatch.log")"
+
+case_ "two failed trigger checks in a row say so once, again when the reason changes, and once working again"
+echo "gh: connection reset" >"$FAILS"
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+same "failed once" "demo dev: triggers failed: gh: connection reset" "$(cut -d' ' -f2- "$A_TEAM_STATE/dispatch.log")"
+echo "gh: API rate limit exceeded" >"$FAILS"
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+same "new reason" 1 "$(grep -c 'demo dev: triggers failed: gh: API rate limit exceeded$' "$A_TEAM_STATE/dispatch.log")"
+grep -q 'other \|demo lead\|demo customer' "$A_TEAM_STATE/dispatch.log" && fail "another role: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+: >"$FAILS"
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+same "working again" 1 "$(grep -c 'demo dev: triggers working again$' "$A_TEAM_STATE/dispatch.log")"
+same "lines" 3 "$(grep -c . "$A_TEAM_STATE/dispatch.log")"
+rm "$CONFIG/teams/other.json"
+
 case_ "merged worktrees alone start no Dev run"
 dev_dispatcher
 jq -n '{reasons: ["PR #900 has merged: clean up its worktree"], creative: false, tasks: [], ready: null,

@@ -27,6 +27,23 @@ fi
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
 
+# failing <shown> <once> <why> <label>: one failed pass is often a blip, so only a second in a row is logged.
+failing() {
+  if [ -f "$1" ] || [ -f "$2" ]; then
+    [ "$3" = "$(cat "$1" 2>/dev/null)" ] || log "$4: $3"
+    echo "$3" >"$1"
+    rm -f "$2"
+  else
+    echo "$3" >"$2"
+  fi
+}
+
+# passing <shown> <once> <message>: logs <message> if a failure was shown.
+passing() {
+  [ -f "$1" ] && log "$3"
+  rm -f "$1" "$2"
+}
+
 dispatch() {
   local team=$1 role=$2 config=$3
   local dir="$STATE/$team/$role" now triggers reasons creative last live limit pid at
@@ -53,9 +70,11 @@ dispatch() {
     -ge $(($(cfg '.dispatch.sweepEvery // 30') * 60)) ] && sweep=--sweep
 
   if ! triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" ${sweep:+"$sweep"} 2>&1); then
-    log "$team $role: triggers failed: $(tr '\n' ' ' <<<"$triggers")"
+    failing "$dir/${prefix}triggers-failing" "$dir/${prefix}triggers-failed-once" \
+      "${triggers//$'\n'/ }" "$team $role: triggers failed"
     return
   fi
+  passing "$dir/${prefix}triggers-failing" "$dir/${prefix}triggers-failed-once" "$team $role: triggers working again"
   [ -z "$sweep" ] || echo "$now" >"$dir/${prefix}last-sweep"
   last=$(cat "$dir/${prefix}last-start" 2>/dev/null || echo 0)
 
@@ -298,18 +317,10 @@ for team in $(team_names); do
   why=$(cannot_run "$team" "$config")
   if [ -n "$why" ]; then
     mkdir -p "$STATE/$team"
-    # One failed pass is often an upgrade or a blip, so a team is announced stopped only on the second.
-    if [ -f "$STATE/$team/cannot-run" ] || [ -f "$STATE/$team/failed-check" ]; then
-      [ "$why" = "$(cat "$STATE/$team/cannot-run" 2>/dev/null)" ] || log "$team: stopped: $why"
-      echo "$why" >"$STATE/$team/cannot-run"
-      rm -f "$STATE/$team/failed-check"
-    else
-      echo "$why" >"$STATE/$team/failed-check"
-    fi
+    failing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$why" "$team: stopped"
     continue
   fi
-  [ -f "$STATE/$team/cannot-run" ] && log "$team: running again"
-  rm -f "$STATE/$team/cannot-run" "$STATE/$team/failed-check"
+  passing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$team: running again"
   for role in $(team_roles "$config"); do
     dispatch "$team" "$role" "$config"
   done
