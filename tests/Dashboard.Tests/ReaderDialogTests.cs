@@ -1325,13 +1325,165 @@ public class ReaderDialogTests
         Assert.True(dialog.Ranks.HasFocus);
     }
 
+    private static ReaderDialog Declining(
+        Func<string, Task<string?>>? decline = null, bool open = false, WaitingItem? item = null, int width = 140)
+    {
+        var dialog = new ReaderDialog(item ?? Item, new IssueBody(Long(), History: Recorded), () => { },
+            comment: Commenting(decline: decline ?? (_ => Task.FromResult<string?>(null)), open: open), width: width);
+        dialog.Layout(new Size(width, 20));
+        return dialog;
+    }
+
+    [Fact]
+    public void An_Idea_or_pitch_puts_decline_after_comment()
+    {
+        using var dialog = Declining();
+
+        Assert.Equal(
+            "Tab switch pane · h hide history · Shift+arrows select · c comment · x decline · g on GitHub · Esc close",
+            dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Without_anything_to_decline_x_is_neither_hinted_nor_handled()
+    {
+        using var dialog = Replying();
+
+        Assert.DoesNotContain("decline", dialog.Hints.Says);
+        dialog.NewKeyDownEvent(new Key('x'));
+        Assert.False(dialog.CommentShown);
+    }
+
+    [Fact]
+    public void x_opens_the_comment_pane_to_decline_with_the_cursor_in_it()
+    {
+        using var dialog = Declining();
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('x')));
+
+        Assert.True(dialog.CommentShown);
+        Assert.True(dialog.Declining);
+        Assert.True(dialog.Field.HasFocus);
+        Assert.Equal("Decline #180: why?", dialog.CommentTitle);
+        Assert.Equal("Tab switch pane · Shift+arrows select · Ctrl+Enter decline · g on GitHub · Esc cancel", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Opened_to_decline_it_starts_in_the_reason()
+    {
+        using var dialog = Declining(open: true);
+
+        Assert.True(dialog.Declining);
+        Assert.True(dialog.Field.HasFocus);
+        Assert.Contains("Ctrl+Enter decline", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void x_keeps_a_comment_already_started_as_the_start_of_the_reason()
+    {
+        using var dialog = Declining();
+        Open(dialog);
+        dialog.Field.Text = "Covered by #46";
+        dialog.NewKeyDownEvent(Key.Esc);
+
+        dialog.NewKeyDownEvent(new Key('x'));
+
+        Assert.True(dialog.Declining);
+        Assert.Equal("Covered by #46", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void Lines_quoted_while_declining_go_into_the_reason()
+    {
+        using var dialog = Declining();
+        dialog.NewKeyDownEvent(new Key('x'));
+        dialog.NewKeyDownEvent(Key.Tab);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+
+        dialog.NewKeyDownEvent(new Key('q'));
+
+        Assert.Equal("> line 1\n\n", dialog.Field.Text);
+        Assert.True(dialog.Declining);
+    }
+
+    [Fact]
+    public void An_empty_reason_declines_nothing_and_says_one_is_needed()
+    {
+        var declined = 0;
+        using var dialog = Declining(_ => Task.FromResult<string?>(++declined < 0 ? "" : null));
+        dialog.NewKeyDownEvent(new Key('x'));
+        dialog.Field.Text = "  ";
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.Equal(0, declined);
+        Assert.Equal("A reason is needed to decline #180", dialog.Message.Says);
+        Assert.True(dialog.CommentShown);
+        Assert.False(dialog.Declined);
+    }
+
+    [Fact]
+    public void Ctrl_Enter_declines_with_the_reason_rather_than_posting_it()
+    {
+        var reasons = new List<string>();
+        var posted = 0;
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+            comment: Commenting(_ => Task.FromResult<string?>(++posted < 0 ? "" : null),
+                reason => { reasons.Add(reason); return Task.FromResult<string?>(null); }), width: 140);
+        dialog.NewKeyDownEvent(new Key('x'));
+        dialog.Field.Text = "Already covered by #46.";
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.Equal(["Already covered by #46."], reasons);
+        Assert.Equal(0, posted);
+        Assert.True(dialog.Declined);
+    }
+
+    [Fact]
+    public void A_decline_that_fails_stays_in_the_pane_saying_why()
+    {
+        using var dialog = Declining(_ => Task.FromResult<string?>("board.sh: can't close #180 (gh: HTTP 403)"));
+        dialog.NewKeyDownEvent(new Key('x'));
+        dialog.Field.Text = "No.";
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.False(dialog.Declined);
+        Assert.True(dialog.Declining);
+        Assert.Equal("No.", dialog.Field.Text);
+        Assert.Equal("board.sh: can't close #180 (gh: HTTP 403)", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Esc_turns_the_reason_back_into_a_comment_keeping_what_you_wrote()
+    {
+        var declined = 0;
+        using var dialog = Declining(_ => Task.FromResult<string?>(++declined < 0 ? "" : null));
+        dialog.NewKeyDownEvent(new Key('x'));
+        dialog.Field.Text = "Not now";
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+
+        Assert.False(dialog.Declining);
+        Assert.True(dialog.CommentShown);
+        Assert.Equal("Comment", dialog.CommentTitle);
+        Assert.Equal("Not now", dialog.Field.Text);
+        Assert.Contains("Ctrl+Enter post", dialog.Hints.Says);
+        Assert.Contains("x decline", dialog.Hints.Says);
+        Assert.Equal(0, declined);
+        Assert.False(dialog.Declined);
+    }
+
     private sealed class Epoch : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => DateTimeOffset.UnixEpoch;
     }
 
-    private static ReaderComment Commenting(Func<string, Task<string?>>? post = null) =>
-        new(new Key('c'), "comment", post ?? (_ => Task.FromResult<string?>(null)), new Epoch());
+    private static ReaderComment Commenting(
+        Func<string, Task<string?>>? post = null, Func<string, Task<string?>>? decline = null, bool open = false) =>
+        new(new Key('c'), "comment", post ?? (_ => Task.FromResult<string?>(null)), new Epoch(),
+            decline is null ? null : new ReaderDecline(new Key('x'), decline, open));
 
     private static void Say(ReaderDialog dialog, string text)
     {

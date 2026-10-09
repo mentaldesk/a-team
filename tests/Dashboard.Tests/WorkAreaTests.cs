@@ -1413,6 +1413,132 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void x_on_an_Idea_opens_the_reader_declining_and_the_card_leaves_once_it_s_declined()
+    {
+        var calls = new List<string[]>();
+        var reasons = new List<string>();
+        var reads = 0;
+        ReaderDecline? offered = null;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(Waiting(team), null));
+            },
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                reasons.Add(File.ReadAllText(arguments[^1]));
+                return Task.FromResult<string?>(null);
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, comment, _) =>
+            {
+                offered = comment?.Decline;
+                Assert.Null(offered!.Run("Covered by #46.").Result);
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(6, window.Work.Selected?.Number);
+        var before = reads;
+
+        Assert.True(window.NewKeyDownEvent(new Key('x')));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(offered?.Open);
+        Assert.Equal(new Key('x'), offered?.Key);
+        Assert.Equal("board team0 decline you 6", string.Join(' ', Assert.Single(calls)[..5]));
+        Assert.Equal(["Covered by #46."], reasons);
+        Assert.DoesNotContain(window.Work.Items, item => item.Number == 6);
+        Assert.Equal(before, reads);
+        Assert.Equal("#6 declined", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_refused_decline_leaves_the_card_where_it_was()
+    {
+        using var window = Open(
+            run: _ => Task.FromResult<string?>("board.sh: only an Idea or a Pitched pitch can be declined (#6 is in 'Done')"),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, comment, _) => comment!.Decline!.Run("No."));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('x'));
+        window.Refresh();
+
+        Assert.Contains(window.Work.Items, item => item.Number == 6);
+        Assert.Equal(6, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void The_reader_offers_decline_on_Ideas_and_pitches_only_and_opens_declining_only_from_x()
+    {
+        var offered = new List<(int Number, ReaderDecline? Decline)>();
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (item, _, _, _, _, comment, _) => offered.Add((item.Number, comment?.Decline)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(new Key('x'));
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([6, 107, 107, 49], offered.Select(each => each.Number));
+        Assert.Equal([false, false, true], offered.Take(3).Select(each => each.Decline!.Open));
+        Assert.Null(offered[3].Decline);
+    }
+
+    [Fact]
+    public void work_decline_is_on_x_in_the_Cards_menu_and_enabled_only_on_an_Idea_or_a_pitch()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        var decline = window.Commands.Registered.Single(command => command.Id == "work.decline");
+        Assert.Equal("Decline", decline.Label);
+        Assert.Equal(new Key('x'), decline.Key);
+        Assert.True(decline.OnCard);
+        Assert.DoesNotContain(window.Commands.Registered, command => command.Id != "work.decline" && command.Key == new Key('x'));
+        Assert.True(window.Commands.IsEnabled("work.decline"));
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.True(window.Commands.IsEnabled("work.decline"));
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.False(window.Commands.IsEnabled("work.decline"));
+    }
+
+    [Fact]
+    public void Decline_can_be_rebound_and_the_reader_offers_it_on_the_new_key()
+    {
+        Directory.CreateDirectory(_root);
+        new DashboardSettings(Config).WriteKeys([("work.decline", new Key('z'))]);
+        ReaderDecline? offered = null;
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, comment, _) => offered = comment?.Decline);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.False(window.NewKeyDownEvent(new Key('x')));
+        window.NewKeyDownEvent(new Key('z'));
+        window.Refresh();
+
+        Assert.Equal(new Key('z'), offered?.Key);
+        Assert.True(offered?.Open);
+    }
+
+    [Fact]
     public void A_on_a_Review_task_asks_then_merges_its_PR_and_the_card_leaves_with_no_re_read()
     {
         var asked = new List<WaitingItem>();
@@ -2368,7 +2494,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "work.accept", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
+                "work.github", "work.accept", "work.decline", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
