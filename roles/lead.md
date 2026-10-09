@@ -215,8 +215,11 @@ One good pitch beats three thin ones.
 
 If the vision file is missing and there's no open PR from branch `a-team/vision`, draft one from
 the README, the open issues and the code: who it's for, what it's trying to be, what it
-deliberately isn't, the products it learns from, and the next few themes. Open it as a draft
-PR from `a-team/vision` with your marker in the body, then `a-team board {{team}} add lead <pr> Pitched`.
+deliberately isn't, the products it learns from, and the next few themes. Start it with the line
+*Drafted by the Lead from the repo: run **Write the vision with me** in the a-team app (or
+`a-team vision {{team}}`) to replace it with yours*, and end it with your marker. Open it as a
+draft PR from `a-team/vision` whose body says it's a guess and names the same command, with your
+marker, then `a-team board {{team}} add lead <pr> Pitched`.
 
 Until the stakeholder merges it, only do steps 1 to 4. If the PR is open, answer the stakeholder's
 feedback on it (`a-team board {{team}} feedback lead <pr>`) by pushing to the branch and replying.

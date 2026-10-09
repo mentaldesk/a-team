@@ -1757,8 +1757,12 @@ case "$CMD" in
       problem checkout "$checkout isn't there: gh repo clone $REPO $checkout"
     fi
     vision=$(cfg .vision)
-    if [ -n "$reached" ] && [ -n "$vision" ] && ! gh api "repos/$REPO/contents/$vision" --silent >/dev/null 2>&1; then
-      note vision "$vision isn't in $REPO yet: the Lead will draft one and open it as a draft PR"
+    if [ -n "$reached" ] && [ -n "$vision" ]; then
+      if ! drafted=$(gh api -H 'Accept: application/vnd.github.raw' "repos/$REPO/contents/$vision" 2>/dev/null); then
+        note vision "$vision isn't in $REPO yet: the Lead will draft one and open it as a draft PR"
+      elif grep -qF '<!-- a-team:lead -->' <<<"$drafted"; then
+        note vision "drafted by the Lead: Write the vision with me replaces it"
+      fi
     fi
     if customer_on; then
       if [ -z "$(cfg .docs)" ]; then

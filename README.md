@@ -50,8 +50,11 @@ The app opens only once there's a team, so your first one starts by hand:
    can't run, or 2 if it can but something's missing, like its vision or a label. The Teams page in
    Settings shows the same problems, and F12 (or *Repair*) in a team's form sets its board up again.
 4. Give the team its own GitHub App (next section). The dispatcher won't run the team without one.
-5. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
-6. Install the dispatcher, first in dry-run mode, which only logs what it would start:
+5. Write the team's vision with `a-team vision <name>`, or **Write the vision with me** in the
+   app's Commands: an interview that opens it as a draft PR for you to merge. Skip it and the Lead
+   drafts one from the repo.
+6. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
+7. Install the dispatcher, first in dry-run mode, which only logs what it would start:
 
    ```
    a-team install --dry-run

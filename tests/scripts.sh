@@ -4206,6 +4206,67 @@ run help
 grep -q '^  attach \[--dry-run\] <team> <role>' "$OUT" || fail "usage: no attach line"
 unset A_TEAM_STATE
 
+# --- a-team vision ---------------------------------------------------------------------------
+# A claude that records its arguments and where it ran, one per line, for `a-team vision`.
+VISION_BIN=$(mktemp -d "$WORK/vision.XXXXXX")
+cat >"$VISION_BIN/claude" <<SH
+#!/usr/bin/env bash
+pwd -P >"$VISION_BIN/asked"
+printf '%s\n' "\$@" >>"$VISION_BIN/asked"
+SH
+chmod +x "$VISION_BIN/claude"
+VISION_WORK=$(mktemp -d "$WORK/visionwork.XXXXXX")
+mkdir -p "$VISION_WORK/main"
+# vision_with <a-team>: runs that a-team's `vision demo` with the recording claude, from no terminal.
+vision_with() {
+  A_TEAM_CONFIG="$CONFIG" PATH="$VISION_BIN:$PATH" "$1" vision demo >"$OUT" 2>"$ERR" </dev/null
+  STATUS=$?
+}
+
+case_ "vision hands the team's checkout to claude, briefed with the team's repo, vision and workdir"
+fixture <<JSON
+{ "repo": "mentaldesk/demo", "vision": "docs/why.md", "workdir": "$VISION_WORK" }
+JSON
+vision_with "$A_TEAM"
+same "exit" 0 "$STATUS"
+same "cwd" "$(cd "$VISION_WORK/main" && pwd -P)" "$(sed -n 1p "$VISION_BIN/asked")"
+same "workdir" "--add-dir $VISION_WORK" "$(sed -n 2,3p "$VISION_BIN/asked" | paste -sd ' ' -)"
+same "first message" "Write demo's vision with me." "$(tail -n 1 "$VISION_BIN/asked")"
+grep -q '^--append-system-prompt$' "$VISION_BIN/asked" || fail "no brief: '$(cat "$VISION_BIN/asked")'"
+grep -q 'Interview me, the stakeholder of demo (mentaldesk/demo)' "$VISION_BIN/asked" || fail "brief: no team or repo"
+grep -q 'Write the vision to `docs/why.md`' "$VISION_BIN/asked" || fail "brief: no vision path"
+grep -q "Run \`$A_TEAM board demo add lead <pr> Pitched\`" "$VISION_BIN/asked" || fail "brief: no board command"
+grep -q '{{' "$VISION_BIN/asked" && fail "brief: a placeholder left in '$(grep '{{' "$VISION_BIN/asked")'"
+
+case_ "vision reads its brief from an installed release, laid out as release.yml stages it"
+STAGE=$(mktemp -d "$WORK/stage.XXXXXX")
+staging=$(grep -E '^ +cp -R .* "\$stage/"$' "$ROOT/.github/workflows/release.yml" | sed -e 's/^ *cp -R //' -e 's| "\$stage/"$||')
+[ -n "$staging" ] || fail "release.yml: no cp -R line staging the release"
+(cd "$ROOT" && read -ra staged <<<"$staging" && cp -R "${staged[@]}" "$STAGE/")
+rm -f "$VISION_BIN/asked"
+vision_with "$STAGE/bin/a-team"
+same "installed exit" 0 "$STATUS"
+grep -q 'Interview me, the stakeholder of demo' "$VISION_BIN/asked" 2>/dev/null || fail "installed: no brief: '$(cat "$ERR")'"
+
+case_ "vision --dry-run says what it would run, and runs nothing"
+rm -f "$VISION_BIN/asked"
+A_TEAM_CONFIG="$CONFIG" PATH="$VISION_BIN:$PATH" "$A_TEAM" vision --dry-run demo >"$OUT" 2>"$ERR"
+same "dry run" "(dry run) would run claude in $VISION_WORK/main, briefed by $ROOT/tasks/vision.md" "$(cat "$OUT")"
+[ -f "$VISION_BIN/asked" ] && fail "dry run: claude ran"
+
+case_ "vision without a checkout names the clone command, and runs nothing"
+fixture <<JSON
+{ "repo": "mentaldesk/demo", "workdir": "$VISION_WORK/elsewhere" }
+JSON
+vision_with "$A_TEAM"
+failed "no checkout"
+same "no checkout" "a-team vision: $VISION_WORK/elsewhere/main isn't there: gh repo clone mentaldesk/demo $VISION_WORK/elsewhere/main" "$(cat "$ERR")"
+[ -f "$VISION_BIN/asked" ] && fail "no checkout: claude ran"
+
+case_ "vision is in the usage text"
+run help
+grep -q '^  vision \[--dry-run\] <team>' "$OUT" || fail "usage: no vision line"
+
 # --- the team's GitHub App -------------------------------------------------------------------
 # A Keychain holding a real test key, and GitHub's App endpoints, stubbed on PATH. `security` has
 # no key when NO_KEY is set; `curl` records each mint in $MINTS, keeps the JWT it was sent in
@@ -4424,7 +4485,7 @@ done
 
 # board.sh's check against a board that's fine, with the App's own view of it broken by
 # PROJECT_UNREADABLE or PRIORITY_UNREADABLE when it asks with the cached token, and the board itself
-# by REPO_GONE, NO_VISION, NO_PROJECT, NO_FIELD, and the options in meta.json and labels in labels.json.
+# by REPO_GONE, NO_VISION, LEAD_VISION, NO_PROJECT, NO_FIELD, and the options in meta.json and labels in labels.json.
 mkdir -p "$APP_BIN/board"
 board_options() {
   jq -n --args '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options:
@@ -4441,7 +4502,8 @@ cat >"$APP_BIN/board/gh" <<SH
 #!/usr/bin/env bash
 refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
 case " \$* " in
-  *" repos/mentaldesk/demo/contents/"*) [ -z "\${NO_VISION:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *" repos/mentaldesk/demo/contents/"*) [ -z "\${NO_VISION:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    [ -z "\${LEAD_VISION:-}" ] || printf '# Vision\n\nWho it is for.\n\n<!-- a-team:lead -->\n'; exit 0 ;;
   *" repos/mentaldesk/demo "*) [ -z "\${REPO_GONE:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"/actions/workflows/release.yml "*) [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"label list"*) page="$APP_BIN/board/labels.json" ;;
@@ -4537,9 +4599,11 @@ checked
 says 1 "workdir   $APP_BIN/work isn't there, so the agents would have nothing to work in"
 mkdir -p "$APP_BIN/work/main"
 
-case_ "a missing vision or labels are problems the team can still run with, so check exits 2"
+case_ "a missing or Lead-drafted vision, or missing labels, are problems the team can still run with, so check exits 2"
 NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
+LEAD_VISION=1 checked
+says 2 "vision    drafted by the Lead: Write the vision with me replaces it"
 board_labels pitch a-team:dev blocked
 checked
 says 2 "labels    no 'a-team:idea' label, so the Lead can't flag the ideas it finds for you
