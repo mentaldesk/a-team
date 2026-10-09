@@ -1383,6 +1383,19 @@ grep -q "would comment on #7" "$ERR" || fail "comment you dry run: '$(cat "$ERR"
 case_ "the agents' settings deny comment you, beside accept"
 grep -qF '"Bash(a-team board * comment you *)"' "$ROOT/settings/agents.json" || fail "no comment you deny rule"
 
+# `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
+# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
+gh_child() {
+  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
+    {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
+     labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
+     parent_issue_url: (if $parent == "-" then null
+                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
+  : >"$POSTED"
+  : >"$WRITES"
+  : >"$EDITED"
+}
+
 case_ "new you opens an issue as you, titled by the file's first line, and prints its number"
 printf 'Remember the lane I was on\n\nIt always starts on the first team.\n' >"$WORK/idea"
 run board demo new you "$WORK/idea"
@@ -1963,19 +1976,6 @@ same "said" "(dry run) #11 is no longer blocked by #21, and said why on #11" "$(
 grep -q "No longer blocked by #21: looked again" "$ERR" || fail "dry run: no comment in '$(cat "$ERR")'"
 same "posted" "" "$(cat "$POSTED")"
 same "writes" "" "$(cat "$WRITES")"
-
-# `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
-# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
-gh_child() {
-  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
-    {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
-     labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
-     parent_issue_url: (if $parent == "-" then null
-                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
-  : >"$POSTED"
-  : >"$WRITES"
-  : >"$EDITED"
-}
 
 case_ "link refuses to file an idea under a pitch, in one line, and writes nothing"
 fixture <<'JSON'
