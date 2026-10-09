@@ -13,14 +13,14 @@ public sealed class WorkView : View
 {
     /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
     /// Idea or a pitch that carries none is still to rank; by In review it's decided, and a PR waits for
-    /// acceptance whatever its rank. A question, the Dev's on a Ready task or the Lead's on a pitch, waits in
-    /// Questions whatever its rank. Review holds only what Accept would take, and sums up the rest under its
+    /// acceptance whatever its rank. The Customer lead's docs proposal is a PR, so it can't carry one. A question,
+    /// the Dev's on a Ready task or the Lead's on a pitch, waits in Questions whatever its rank. Review holds only what Accept would take, and sums up the rest under its
     /// cards. Triage and Pitches wear the kind they hold in their heading, and only a card of another kind wears
     /// its own.</summary>
     internal static readonly (string Name, Icon? Kind, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
     [
-        ("Triage", Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && item.Status is "Idea" or "Pitched", null),
-        ("Pitches", Icon.Pitch, item => item.Status == "Pitched" && item.Priority.Length > 0 && item.Question.Length == 0, null),
+        ("Triage", Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && item.Status is "Idea" or "Pitched", null),
+        ("Pitches", Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs) && item.Question.Length == 0, null),
         ("Questions", null, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
         ("Review", null, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
     ];

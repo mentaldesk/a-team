@@ -48,6 +48,7 @@ public class TeamHealthTests
         var health = new TeamHealth(
         [
             new TeamProblem("vision", "docs/vision.md isn't in mentaldesk/goose yet"),
+            new TeamProblem("docs", "docs/index.md isn't in mentaldesk/goose yet"),
             new TeamProblem("checkout", "~/code/goose/main isn't there"),
             new TeamProblem("labels", "no 'pitch' label"),
             new TeamProblem("status", "2 of 9 options missing"),

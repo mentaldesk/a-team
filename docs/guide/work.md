@@ -29,7 +29,7 @@ highlights its card, the one your keys act on; the others keep their place for w
 | Column | What it holds |
 |---|---|
 | Triage | Ideas and pitches with no Priority. Nothing here is pitched or approved until you give it one. |
-| Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide). |
+| Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and the Customer lead's docs proposal, which you agree to by merging it on GitHub. |
 | Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, or the Customer lead's docs PR. |
 
