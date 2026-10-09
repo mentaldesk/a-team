@@ -13,7 +13,7 @@ I authorise you to do all of the following without asking me:
 - Create git worktrees and branches under {{workdir}}, change the product's user docs there,
   commit, and push branches other than the default branch to {{repo}}.
 - Open one docs PR on {{repo}}, ready for review, and edit its title and description.
-- For a product with no user docs, open a draft docs proposal PR on {{repo}} first, put it in Pitched
+- While the team's `docs` page isn't in {{repo}}, open a draft docs proposal PR there first, put it in Pitched
   with `a-team board {{team}} add customer <pr> Pitched`, and push to it when the stakeholder comments.
 - Open an issue on {{repo}} for something only a product change can fix, and put it on the board as
   an Idea with `a-team board {{team}} add customer <n> Idea`.

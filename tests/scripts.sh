@@ -221,6 +221,7 @@ case " \$* " in
                       echo "PUT \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+  *"/contents/"*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"/pulls/"[0-9]*) page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
   *) page="$ITEMS" ;;
@@ -2333,7 +2334,7 @@ docs_pr() {
 accepted() {
   edit_item "$1" ".labels.nodes = [{name: \"pitch\"}] | .stateReason = \"${2:-COMPLETED}\""
 }
-customer_on() { jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"; }
+customer_on() { jq '.roles.customer = true | .docs = "docs/index.md"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"; }
 
 case_ "the Customer lead never triggers for a team that hasn't turned it on"
 fixture <<'JSON'
@@ -2373,7 +2374,7 @@ edit_item 7 '.labels.nodes = [{name: "pitch"}]'
 run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" '["pitch #6 is done: check the docs cover what it shipped"]' "$(jq -c .reasons "$OUT")"
-same "api calls" 1 "$(grep -c '' <"$CALLS")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
 
 case_ "covered stops a pitch triggering again, and goes in its history"
 run board demo covered customer 6
@@ -2549,18 +2550,35 @@ RECENT
 run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
-# The Customer lead's docs proposal: for a product with no user docs, a draft PR saying where they'll live.
-PROPOSED="$A_TEAM_STATE/demo/customer/proposal"
+# The Customer lead's docs proposal: while the config's `docs` page isn't in the repo, a draft PR adding it.
 proposal_pr() {
-  jq -n --argjson n "$1" --arg state "${2:-open}" --argjson draft "${3:-true}" --arg merged "${4:-}" \
+  jq -n --argjson n "$1" --arg state "${2:-open}" --argjson draft "${3:-true}" \
     '{node_id: "PR_\($n)", number: $n, state: $state, draft: $draft,
-      merged_at: (if $merged == "" then null else $merged end),
       body: "Where the docs live, and their outline.\n\n<!-- a-team:customer -->"}' >"$PULL"
   jq -n --argjson n "$1" '{node_id: "PR_\($n)", number: $n, state: "open", pull_request: {},
       body: "<!-- a-team:customer -->"}' >"$ISSUE"
 }
+touch "$WORK/no-docs"
+
+case_ "with no docs page, the Customer lead's one reason is to propose them, and done pitches and the audit wait"
+gh_items <<'ITEMS'
+Done 16 A pitch just accepted
+ITEMS
+accepted 16
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" "[\"no user docs yet: propose where they'll live\"]" "$(jq -c .reasons "$OUT")"
+[ -e "$AUDITED" ] && fail "the audit isn't due as soon as the docs page appears"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+  mv "$META.new" "$META"
+jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
+run board demo add customer 15 "In review"
+failed "a docs PR with no docs page"
+grep -q "docs/index.md isn't in mentaldesk/demo yet: propose the docs before writing any" "$ERR" ||
+  fail "docs PR with no docs page: '$(cat "$ERR")'"
 
 case_ "the Customer lead puts its own draft docs proposal in Pitched, labelled as its"
+: >"$WRITES"
 gh_items <<'ITEMS'
 Pitched 12 Docs proposal: where the user docs live
 ITEMS
@@ -2575,10 +2593,8 @@ same "said" "#12: added as Pitched" "$(cat "$OUT")"
 grep -q 'issues/12/labels -f labels\[\]=a-team:customer' "$WRITES" || fail "propose: no label in '$(cat "$WRITES")'"
 grep -q 'labels\[\]=pitch' "$WRITES" && fail "propose: labelled a pitch, which is the Lead's"
 grep -q 'item=PVTI_12 .*option=OPT_pitched' "$WRITES" || fail "propose: no move in '$(cat "$WRITES")'"
-same "remembered" 12 "$(cat "$PROPOSED")"
 
-case_ "it proposes only with its own open draft PR, one at a time, and never on dry run"
-rm -f "$PROPOSED"
+case_ "it proposes only with its own open draft PR, one at a time, and only while the docs page is missing"
 : >"$WRITES"
 proposal_pr 12 open false
 run board demo add customer 12 Pitched
@@ -2597,28 +2613,27 @@ proposal_pr 13
 run board demo add customer 13 Pitched
 failed "a second proposal"
 grep -q "customer's #12 is still open: no docs proposal beside it" "$ERR" || fail "a second proposal: '$(cat "$ERR")'"
-same "writes" "" "$(cat "$WRITES")"
-proposal_pr 14
 gh_items </dev/null
-proposal_pr 14
-run board --dry-run demo add customer 14 Pitched
-same "dry run" 0 "$STATUS"
-[ -e "$PROPOSED" ] && fail "dry run remembered the proposal"
+proposal_pr 13
+rm "$WORK/no-docs"
+run board demo add customer 13 Pitched
+failed "a proposal with docs"
+grep -q "docs/index.md is already in mentaldesk/demo: no docs proposal needed" "$ERR" ||
+  fail "a proposal with docs: '$(cat "$ERR")'"
+touch "$WORK/no-docs"
+same "writes" "" "$(cat "$WRITES")"
 
-case_ "while the proposal is open, no docs PR goes up, and done pitches and the audit wait"
+case_ "while the proposal is open, nothing but feedback on it starts a run, and no docs PR goes up"
 gh_items <<'ITEMS'
 Pitched 12 Docs proposal: where the user docs live
 Done 16 A pitch just accepted
 ITEMS
 docs_pr 12
 accepted 16
-echo 12 >"$PROPOSED"
 proposal_pr 12
-mv "$AUDITED" "$AUDITED.kept"
 run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
-mv "$AUDITED.kept" "$AUDITED"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
 run board demo add customer 15 "In review"
 failed "a docs PR before the proposal merges"
@@ -2651,33 +2666,34 @@ failed "accepting a proposal"
 grep -q "only a docs PR In review can be accepted" "$ERR" || fail "accepting a proposal: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
-case_ "once the proposal merges, the Customer lead writes the docs, until its docs PR is up"
+case_ "once the docs page is there, the audit writes the docs it outlines, and done pitches come back"
+rm "$WORK/no-docs"
 gh_items <<'ITEMS'
 Done 12 Docs proposal: where the user docs live
 Done 16 A pitch just accepted
 ITEMS
 docs_pr 12
 accepted 16
-proposal_pr 12 closed false "${TODAY}T10:00:00Z"
 run board demo triggers customer
-same "reasons" '["docs proposal #12 merged: write the docs it outlines","pitch #16 is done: check the docs cover what it shipped"]' \
+same "reasons" '["pitch #16 is done: check the docs cover what it shipped","weekly docs audit: check the docs as a whole"]' \
   "$(jq -c .reasons "$OUT")"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
 jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
   mv "$META.new" "$META"
 run board demo add customer 15 "In review"
 same "docs PR" 0 "$STATUS"
-[ -e "$PROPOSED" ] && fail "the proposal is still remembered after the docs PR went up"
 run board demo covered customer 16
+run board demo audited customer
 run board demo triggers customer
 same "written" '[]' "$(jq -c .reasons "$OUT")"
 
-case_ "a proposal closed without merging is forgotten"
-echo 12 >"$PROPOSED"
-proposal_pr 12 closed false
+case_ "a Customer lead with no docs page configured starts no run"
+jq 'del(.docs)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+rm -f "$AUDITED"
 run board demo triggers customer
+same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
-[ -e "$PROPOSED" ] && fail "a closed proposal is still remembered"
+jq '.docs = "docs/index.md"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 # `customer_issue <n> <body>`: #<n> is an open issue with <body>.
 customer_issue() { gh_child "$1" - - "$2" && jq '.state = "open"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"; }
 
@@ -4141,6 +4157,22 @@ says 2 "labels    no 'a-team:idea' label, so the Lead can't flag the ideas it fi
 labels    no 'a-team:skipped' label, so the Lead can't pass over an idea, and keeps coming back to it
 labels    no 'a-team:displaced' label, so the Lead tells you every time it bumps a pitch out of Pitched, not just the first"
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+
+case_ "with a Customer lead, a docs page that's missing or not named is a problem the team can still run with"
+jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked a-team:customer
+checked
+says 2 "docs      demo.json names no docs page, so the Customer lead has nothing to keep right"
+jq '.docs = "docs/index.md"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+checked
+says 0 ""
+NO_VISION=1 checked
+says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
+docs      docs/index.md isn't in mentaldesk/demo yet: the Customer lead will propose the docs as a draft PR"
+jq 'del(.roles, .docs)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+NO_VISION=1 checked
+says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
 
 case_ "a release setting check can't act on is a problem the team can still run with"
 jq '.release = "continuous"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"

@@ -27,7 +27,7 @@ The dashboard checks each team when it starts and again whenever the team's file
 check **Settings → Teams** shows. If something stops the team running, both its panes wear `⚠` in
 the error colour, their status row says what's wrong (as in `misconfigured: checkout
 ~/code/TuiCode/main isn't there: …`), and the message bar says which checks failed. Fix it in
-**Settings → Teams** or in the file, and the `⚠` clears. A missing vision or label is only a note,
+**Settings → Teams** or in the file, and the `⚠` clears. A missing vision, docs page or label is only a note,
 and changes nothing here.
 
 The strip along the bottom is the dispatcher's recent decisions. Each run it starts names the

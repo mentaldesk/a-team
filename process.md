@@ -45,8 +45,9 @@ Two kinds of item share the board:
   for a task waiting on the stakeholder: for an answer, or because they're holding it.
 - A **docs PR** is the Customer lead's, labelled `a-team:customer`: one open at a time, which it
   adds to after each pitch is done. It goes straight to In review, and accepting it merges it.
-  For a product with no user docs, a **docs proposal** comes first: a document pitch labelled
-  `a-team:customer`, not `pitch`, and no docs PR goes up until it's merged.
+  While the team config's `docs` page isn't in the repo, a **docs proposal** comes first: a
+  document pitch labelled `a-team:customer`, not `pitch`, that adds that page, and no docs PR goes
+  up until it's merged.
 
 The stakeholder uses the same board for their own work. Pitches carry the `pitch` label, tasks
 the Dev has claimed carry `a-team:dev`, and the docs PR `a-team:customer`; anything else past Ready
