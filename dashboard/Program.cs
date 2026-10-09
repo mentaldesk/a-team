@@ -101,7 +101,8 @@ Handover? Show(Handover? back)
         readHistory: item => command.Read("board", item.Team, "history", item.Number.ToString()),
         pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),
         readTrend: team => command.Read("board", team, "trend"),
-        showTrends: teams => TrendsDialog.Show(app, teams, team => command.Read("board", team, "trends")));
+        showTrends: teams => TrendsDialog.Show(app, teams, team => command.Read("board", team, "trends")),
+        newIdea: (teams, team) => NewIdeaDialog.Show(app, teams, team, new IdeaFiler(command.Read)));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

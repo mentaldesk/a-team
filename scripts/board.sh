@@ -72,6 +72,15 @@ a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitch
 a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running|the Lead can't pass over an idea, and keeps coming back to it
 a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced|the Lead tells you every time it bumps a pitch out of Pitched, not just the first
 blocked|fbca04|Waiting on another issue|the Dev can't mark a task that waits on your answer"
+# The Lead's recommended rank for an Idea, in the Priority field's colours. `recommend` creates any that are missing.
+RANK_LABELS="rank:urgent|c1408d|The a-team Lead recommends Urgent; your Priority still decides
+rank:high|d4323c|The a-team Lead recommends High; your Priority still decides
+rank:medium|9a6700|The a-team Lead recommends Medium; your Priority still decides
+rank:low|21833d|The a-team Lead recommends Low; your Priority still decides"
+
+# recommended: the rank the Lead recommends for an item, from its rank:* label, or null.
+RECOMMENDED='def recommended: [.labels[]? | {"rank:urgent": "Urgent", "rank:high": "High",
+    "rank:medium": "Medium", "rank:low": "Low"}[.] // empty] | first;'
 
 # A stakeholder comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
 # older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
@@ -161,7 +170,8 @@ allowed() {
     "lead:Approved>Building" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:None>Idea" | "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
-    "customer:None>Idea" | "customer:None>Pitched" | "customer:None>In review")
+    "customer:None>Idea" | "customer:None>Pitched" | "customer:None>In review" | \
+    "you:None>Idea")
       return 0 ;;
   esac
   return 1
@@ -375,7 +385,8 @@ priority_field() {
     jq --arg f "$PRIORITY" '[.data.organization.issueFields.nodes[] | select(.name == $f)] | first // empty'
 }
 
-# Reads a JSON array of items on stdin; adds .priority and sorts highest first, unset last.
+# Reads a JSON array of items on stdin; adds .priority and sorts highest first, unset last, and
+# within each of those by the Lead's recommendation.
 by_priority() {
   local list ranks values
   list=$(cat)
@@ -387,8 +398,9 @@ by_priority() {
           ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldSingleSelect { name } } } } } }"' <<<"$list")
       } }" | jq --arg f "$PRIORITY" '.data.repository | with_entries(
         .key |= ltrimstr("i") | .value = ([.value.issueFieldValues.nodes[] | select(.field.name == $f) | .name] | first))')
-  jq --argjson ranks "$ranks" --argjson values "$values" '
-    map(.priority = $values[.number | tostring]) | sort_by(.priority as $p | $ranks | index($p) // length)' <<<"$list"
+  jq --argjson ranks "$ranks" --argjson values "$values" "$RECOMMENDED"'
+    def rank($r): $ranks | index($r) // length;
+    map(.priority = $values[.number | tostring]) | sort_by([rank(.priority), rank(recommended)])' <<<"$list"
 }
 
 # An issue an agent wrote, from any team, carries its marker in the body.
@@ -408,24 +420,37 @@ idea() {
   return 1
 }
 
-# The Idea the Lead should pitch next: a stakeholder's own, or any a stakeholder has prioritised,
-# passing over the ones the Lead has skipped and a stakeholder hasn't since commented on.
+# pitchable <idea>: a stakeholder's own Idea, or one a stakeholder has prioritised, and not one the Lead
+# has skipped that a stakeholder hasn't since commented on.
+pitchable() {
+  if jq -e '.labels | index("a-team:skipped")' <<<"$1" >/dev/null &&
+    [ "$(unanswered_feedback lead "$(jq -r .number <<<"$1")" | jq length)" -eq 0 ]; then
+    return 1
+  fi
+  if [ "$(jq -r .priority <<<"$1")" = null ] &&
+    { jq -e '.labels | index("a-team:idea")' <<<"$1" >/dev/null ||
+      agent_written "$(jq -r .number <<<"$1")"; }; then
+    return 1
+  fi
+}
+
+# The Idea the Lead should pitch next, with `actedOn` its recommendation where that is what put it ahead
+# of the next pitchable Idea in its Priority band.
 pitchable_idea() {
-  local candidate
+  local candidate chosen=
   while IFS= read -r candidate; do
-    if jq -e '.labels | index("a-team:skipped")' <<<"$candidate" >/dev/null &&
-      [ "$(unanswered_feedback lead "$(jq -r .number <<<"$candidate")" | jq length)" -eq 0 ]; then
+    pitchable "$candidate" || continue
+    if [ -z "$chosen" ]; then
+      chosen=$candidate
+      jq -e "$RECOMMENDED"'recommended' <<<"$chosen" >/dev/null || break
       continue
     fi
-    if [ "$(jq -r .priority <<<"$candidate")" = null ] &&
-      { jq -e '.labels | index("a-team:idea")' <<<"$candidate" >/dev/null ||
-        agent_written "$(jq -r .number <<<"$candidate")"; }; then
-      continue
-    fi
-    echo "$candidate"
-    return
+    chosen=$(jq --argjson next "$candidate" "$RECOMMENDED"'
+      if .priority == $next.priority and recommended != ($next | recommended)
+      then . + {actedOn: recommended} else . end' <<<"$chosen")
+    break
   done < <(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$1" | by_priority | jq -c '.[]')
-  echo null
+  echo "${chosen:-null}"
 }
 
 # One swap set for Pitched, from all board items: `promote` are the Exploring pitches that
@@ -669,11 +694,17 @@ questions() {
         else . + {turn: "you", reason: "asked you\(since($asked.at))"} end)'
 }
 
-# unranked_ideas <items>: the Ideas with no Priority, which never get pitched until a stakeholder
-# gives them one. They come off the page `waiting` has already read, so they cost no call of their own.
+# unranked_ideas <items> <comments>: the Ideas with no Priority, which never get pitched until a stakeholder
+# gives them one. They come off the page `waiting` has already read, so they cost no call of their own. One
+# the Lead has recommended a rank for carries it, and the case from its newest `recommend` comment.
 unranked_ideas() {
-  jq --arg team "$TEAM" 'map(select(.status == "Idea" and .type == "Issue" and .priority == null)
-    | {number, title, status, url, team: $team, turn: "you", reason: "waiting to be ranked"})' <<<"$1"
+  jq --arg team "$TEAM" --argjson said "$2" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$RECOMMENDED"'
+    map(select(.status == "Idea" and .type == "Issue" and .priority == null)
+    | .number as $n
+    | ([$said[] | select(.n == $n and .kind == "comment" and team("<!-- a-team:lead -->"))
+        | .body | capture("^Recommended: \\*\\*[A-Za-z]+\\*\\* · (?<case>[^\n]+)") | .case] | last) as $case
+    | {number, title, status, url, team: $team, turn: "you", reason: ($case // "waiting to be ranked")}
+      + (recommended as $r | if $r then {recommendation: $r} else {} end))' <<<"$1"
 }
 
 comments() {
@@ -924,7 +955,7 @@ case "$CMD" in
   add)
     [ $# -eq 3 ] || die "usage: board.sh $TEAM add <role> <n> <status>"
     role=$1 n=$2 to=$3
-    check_role "$role"
+    [ "$role" = you ] || check_role "$role"
     is_state "$to" || die "unknown status '$to'"
     allowed "$role" None "$to" || die "$role may not add items as '$to'"
     if [ "$role:$to" = "customer:In review" ]; then
@@ -963,8 +994,13 @@ case "$CMD" in
     if [ -n "$existing" ]; then
       # The project's auto-add workflow may already have put a new issue on the board.
       case "$(jq -r .status <<<"$existing")" in None | Idea) ;; *) die "#$n is already on the board (use move)" ;; esac
-      gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:$role -->" ||
-        die "#$n is already on the board and isn't $role's (use move)"
+      if [ "$role" = you ]; then
+        ! gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:" ||
+          die "#$n is already on the board and is a role's, not yours (use move)"
+      else
+        gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:$role -->" ||
+          die "#$n is already on the board and isn't $role's (use move)"
+      fi
     elif [ "$role" = dev ]; then
       gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:dev -->" ||
         die "#$n has no dev marker: dev adds only the follow-ups it opened"
@@ -990,6 +1026,25 @@ case "$CMD" in
     set_status "${id:-new-item}" "$to"
     record "$role" "$n" "added as $to"
     say "#$n: added as $to"
+    ;;
+
+  new)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM new you <file>"
+    role=$1 file=$2
+    case "$role" in
+      lead | dev | customer) die "$role may not open an issue as you; open it yourself and add it" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    [ -f "$file" ] || die "no such file: $file"
+    title=$(head -n 1 "$file")
+    [ -n "${title//[[:space:]]/}" ] || die "an issue needs a title (the file's first line)"
+    body=$(tail -n +2 "$file")
+    [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
+    url=$(printf '%s\n' "$body" | write "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
+      die "can't open the issue on $REPO"
+    [ -z "$DRY_RUN" ] || url=0
+    echo "${url##*/}"
     ;;
 
   priority)
@@ -1138,6 +1193,40 @@ case "$CMD" in
     write "label #$n a-team:skipped" gh issue edit "$n" -R "$REPO" --add-label a-team:skipped >/dev/null
     record "$role" "$n" "skipped"
     say "#$n: skipped; a comment there, or removing the 'a-team:skipped' label, puts it back"
+    ;;
+
+  recommend)
+    [ $# -eq 4 ] || die "usage: board.sh $TEAM recommend lead <n> <urgent|high|medium|low> <file>"
+    role=$1 n=$2 level=$(tr '[:upper:]' '[:lower:]' <<<"$3") file=$4
+    case "$role" in
+      lead) ;;
+      dev | customer | you) die "$role may not recommend a rank; recommending is the Lead's, and ranking is the stakeholders'" ;;
+      *) die "unknown role '$role' (lead)" ;;
+    esac
+    label=rank:$level
+    spec=$(grep -F "$label|" <<<"$RANK_LABELS") || die "unknown rank '$3' (urgent | high | medium | low)"
+    [ -f "$file" ] || die "no such file: $file"
+    case_line=$(grep -v '^[[:space:]]*$' "$file" || true)
+    [ -n "$case_line" ] && [ "$(grep -c '' <<<"$case_line")" -eq 1 ] || die "the case for #$n is one line: $file has $(grep -c '' <<<"$case_line")"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board, so it is not an Idea to recommend"
+    [ "$(jq -r .type <<<"$it")" = Issue ] && [ "$(jq -r .status <<<"$it")" = Idea ] ||
+      die "recommend is only for Ideas (#$n is in '$(jq -r .status <<<"$it")')"
+    if ! gh label list -R "$REPO" --search rank: --json name --jq '.[].name' | grep -qxF "$label"; then
+      IFS='|' read -r _ color description <<<"$spec"
+      write "create label $label" gh label create "$label" -R "$REPO" --color "$color" --description "$description" >/dev/null
+    fi
+    edit=(--add-label "$label")
+    for stale in $(jq -r --arg l "$label" '.labels[] | select(startswith("rank:") and . != $l)' <<<"$it"); do
+      edit+=(--remove-label "$stale")
+    done
+    write "label #$n $label" gh issue edit "$n" -R "$REPO" "${edit[@]}" >/dev/null
+    name=$(jq -rn --arg l "$label" "$RECOMMENDED"'{labels: [$l]} | recommended')
+    body=$(printf 'Recommended: **%s** · %s\n\n<!-- a-team:%s -->' "$name" "$case_line" "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    record "$role" "$n" "recommended $name"
+    say "#$n: recommended $name"
     ;;
 
   feedback)
@@ -1320,13 +1409,15 @@ case "$CMD" in
         + if .labels | index("a-team:customer") then {role: "customer"} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
-    talk=$(gated_talk "$(jq -s add <<<"$gated$held")" checks)
+    recommended=$(jq "$RECOMMENDED"'map(select(.status == "Idea" and .type == "Issue" and .priority == null
+      and recommended != null) | {number})' <<<"$all")
+    talk=$(gated_talk "$(jq -s add <<<"$gated$held$recommended")" checks)
     said=$(gated_comments "$talk")
     waiting=$(turns "$gated" "$said" "$(gated_prs "$talk")" |
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
       jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
-        --argjson unranked "$(unranked_ideas "$all")" '. + $asked + $unranked')
+        --argjson unranked "$(unranked_ideas "$all" "$said")" '. + $asked + $unranked')
     snapshot "$(jq length <<<"$waiting")"
     printf '%s\n' "$waiting"
     ;;
@@ -1738,7 +1829,7 @@ case "$CMD" in
       [ -n "$changed" ] || continue
       $dry_run || gh label edit "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null
       say "updated label $name: $changed"
-    done <<<"$LABELS"
+    done <<<"$LABELS"$'\n'"$RANK_LABELS"
     ;;
 
   *)

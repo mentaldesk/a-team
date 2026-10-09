@@ -59,6 +59,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
+    private readonly Func<IReadOnlyList<string>, string, (string Team, int Number)?>? _newIdea;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
@@ -77,6 +78,7 @@ public sealed class DashboardWindow : Window
     private WaitingItem? _shown;
     private WaitingItem? _accepting;
     private string? _said;
+    private string? _added;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
     private Task<Reading[]>? _trending;
@@ -128,9 +130,11 @@ public sealed class DashboardWindow : Window
         TeamChecks? checks = null,
         DispatchPass? pass = null,
         Func<string, Task<Reading>>? readTrend = null,
-        Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null)
+        Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
+        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null)
     {
         _clipboard = clipboard;
+        _newIdea = newIdea;
         _readHistory = readHistory;
         _readTrend = readTrend;
         _showTrends = showTrends;
@@ -425,6 +429,7 @@ public sealed class DashboardWindow : Window
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
             .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, inMenu: OnWork)
+            .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: () => _newIdea is not null && _teamNames.Count > 0)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
@@ -662,7 +667,7 @@ public sealed class DashboardWindow : Window
     private void ReadRanking(WaitingItem item)
     {
         var url = _work.SelectedUrl;
-        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Of(read)), forReader: true);
+        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Starting(read)), forReader: true);
     }
 
     private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then, bool forReader = false)
@@ -744,6 +749,17 @@ public sealed class DashboardWindow : Window
                 HandOverTry(item, new ReaderPlace(from.Body, url, from.Top));
             }
         }
+    }
+
+    /// <summary>Adds an idea to the team whose lane you're in, or the first team's, and reads Work again to show it.</summary>
+    private void NewIdea()
+    {
+        var team = _area == Area.Work && _work.Current is { } lane ? lane.Team : _teamNames[0];
+        if (_newIdea?.Invoke(_teamNames, team) is not { } added)
+            return;
+        _failure = null;
+        _added = $"#{added.Number} added to {added.Team}'s ideas";
+        ReadWaiting();
     }
 
     /// <summary>Approves the pitch the reader is showing. Like a rank, the card stays put until the board takes it.</summary>
@@ -908,6 +924,13 @@ public sealed class DashboardWindow : Window
             if (_left is not { } left || !_work.Focus(left))
                 _work.FocusFirstCard();
             _left = null;
+        }
+        // Said once the cards are laid out again: laying them out moves the selection, which clears what's said.
+        if (_added is { } added)
+        {
+            _added = null;
+            _said = added;
+            _saidOn = _work.Selected;
         }
         ReadTrend();
     }

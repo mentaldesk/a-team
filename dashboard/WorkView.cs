@@ -67,6 +67,9 @@ public sealed class WorkView : View
     /// <summary>Whether the selection is a card in Triage, waiting for a rank.</summary>
     internal bool InTriage => SelectedColumn()?.Gate == Gates[0].Name;
 
+    /// <summary>The team whose lane the keyboard is in, or null before any column has had focus.</summary>
+    internal string? Team => SelectedColumn()?.Team;
+
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
 
@@ -430,7 +433,7 @@ public sealed class WorkLane : View
         var team = items.Where(item => item.Team == Team).ToList();
         foreach (var each in _columns)
         {
-            each.Show([.. team.Where(each.Holds)], [.. team.Where(each.SetsAside)]);
+            each.Show([.. team.Where(each.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)]);
             each.Visible = each.Lines > 0;
         }
         TeamTabs.Retitle(this, Heading(Team, Count));

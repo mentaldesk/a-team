@@ -908,6 +908,21 @@ public class WorkViewTests
             Pr: pr, PrUrl: pr == 0 ? "" : $"https://github.com/x/pull/{pr + number}", Trouble: unready,
             Unready: unready);
 
+
+    [Fact]
+    public void Triage_is_ordered_by_the_Lead_s_recommendation_and_cards_without_one_come_last_as_they_were()
+    {
+        using var view = Open(["a-team"]);
+        WaitingItem Idea(int number, string recommendation = "") =>
+            new(number, $"Idea {number}", "Idea", $"https://github.com/x/{number}", "a-team", "you", "waiting to be ranked",
+                Recommendation: recommendation);
+
+        view.Show([Idea(1), Idea(2, "Low"), Idea(3), Idea(4, "Urgent"), Idea(5, "Medium")]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(["#4  Urgent? · Idea 4", "#5  Med? · Idea 5", "#2  Low? · Idea 2", "#1  Idea 1", "#3  Idea 3"],
+            view.Lanes[0].Columns[0].CardText);
+    }
     private static WorkView Open(string[] teams)
     {
         var view = new WorkView(teams);

@@ -193,6 +193,8 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
+                    echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;
   *"issue close"*) [ ! -e "$BIN/close-fails" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
                    echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
   *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"; printf '%s' "\${@: -1}" >"$EDITED"; exit 0 ;;
@@ -1382,6 +1384,75 @@ grep -q "would comment on #7" "$ERR" || fail "comment you dry run: '$(cat "$ERR"
 case_ "the agents' settings deny comment you, beside accept"
 grep -qF '"Bash(a-team board * comment you *)"' "$ROOT/settings/agents.json" || fail "no comment you deny rule"
 
+# `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
+# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
+gh_child() {
+  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
+    {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
+     labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
+     parent_issue_url: (if $parent == "-" then null
+                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
+  : >"$POSTED"
+  : >"$WRITES"
+  : >"$EDITED"
+}
+
+case_ "new you opens an issue as you, titled by the file's first line, and prints its number"
+printf 'Remember the lane I was on\n\nIt always starts on the first team.\n' >"$WORK/idea"
+run board demo new you "$WORK/idea"
+same "exit" 0 "$STATUS"
+same "number" 77 "$(cat "$OUT")"
+grep -qF -- "--title Remember the lane I was on" "$WRITES" || fail "new: no title in '$(cat "$WRITES")'"
+grep -qF -- "-R mentaldesk/demo" "$WRITES" || fail "new: not the team's repo in '$(cat "$WRITES")'"
+same "body" "$(printf '\nIt always starts on the first team.')" "$(cat "$POSTED")"
+grep -q "a-team:" "$POSTED" && fail "new: a marker in your issue"
+
+case_ "new refuses an empty title, an agent, and opens nothing"
+: >"$WRITES"
+printf '   \nA body with no title\n' >"$WORK/untitled"
+run board demo new you "$WORK/untitled"
+failed "untitled"
+one_line "untitled"
+grep -q "an issue needs a title" "$ERR" || fail "untitled: '$(cat "$ERR")'"
+for role in lead dev customer; do
+  run board demo new "$role" "$WORK/idea"
+  failed "$role new"
+  grep -q "$role may not open an issue as you" "$ERR" || fail "$role new: '$(cat "$ERR")'"
+done
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "new that GitHub refuses says why"
+touch "$BIN/create-fails"
+run board demo new you "$WORK/idea"
+failed "refused"
+grep -q "Could not resolve to a Repository" "$ERR" || fail "refused: '$(cat "$ERR")'"
+rm "$BIN/create-fails"
+
+case_ "--dry-run shows the issue you'd open and opens nothing"
+run board --dry-run demo new you "$WORK/idea"
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+grep -q "would open an issue titled 'Remember the lane I was on'" "$ERR" || fail "new dry run: '$(cat "$ERR")'"
+
+case_ "add you puts your own issue on the board as an Idea, with no label"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+gh_child 41 - - "It always starts on the first team."
+run board demo add you 41 Idea
+same "exit" 0 "$STATUS"
+grep -q "OPT_idea" "$WRITES" || fail "add you: no move to Idea in '$(cat "$WRITES")'"
+grep -q "labels" "$WRITES" && fail "add you: labelled '$(cat "$WRITES")'"
+
+case_ "add you adds only an Idea"
+for to in Ready Pitched; do
+  run board demo add you 41 "$to"
+  failed "add you as $to"
+  grep -qF "you may not add items as '$to'" "$ERR" || fail "add you as $to: '$(cat "$ERR")'"
+done
+
+case_ "the agents' settings deny new you and add you"
+grep -qF '"Bash(a-team board * new you *)"' "$ROOT/settings/agents.json" || fail "no new you deny rule"
+grep -qF '"Bash(a-team board * add you *)"' "$ROOT/settings/agents.json" || fail "no add you deny rule"
+
 # The 👀: a reviewer comment is answered once a run has left one on it, and a run leaves one only
 # on what it could have seen. The races replayed here are the ones in pitch #3. $TODAY is on or
 # after board.sh's ACK_FROM, so these cases see the 👀 rule and the dated ones below the old.
@@ -1906,19 +1977,6 @@ same "said" "(dry run) #11 is no longer blocked by #21, and said why on #11" "$(
 grep -q "No longer blocked by #21: looked again" "$ERR" || fail "dry run: no comment in '$(cat "$ERR")'"
 same "posted" "" "$(cat "$POSTED")"
 same "writes" "" "$(cat "$WRITES")"
-
-# `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
-# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
-gh_child() {
-  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
-    {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
-     labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
-     parent_issue_url: (if $parent == "-" then null
-                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
-  : >"$POSTED"
-  : >"$WRITES"
-  : >"$EDITED"
-}
 
 case_ "link refuses to file an idea under a pitch, in one line, and writes nothing"
 fixture <<'JSON'
@@ -2764,6 +2822,135 @@ same "exit" 0 "$STATUS"
 same "lead-next" '{"turn":"pitch","item":41}' "$(jq -c '{turn, item: .item.number}' "$OUT")"
 run board demo waiting
 same "triage" '[42]' "$(jq -c 'map(select(.reason == "waiting to be ranked") | .number)' "$OUT")"
+
+# --- the Lead's recommended rank -------------------------------------------------------------
+case_ "recommend labels an Idea with its rank, drops the others, and posts the case as the Lead"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" },
+  "project": { "owner": "mentaldesk", "number": 1 }, "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
+JSON
+gh_items <<'ITEMS'
+Idea 41 Anything that goes wrong before the dashboard opens dumps a stack trace
+Ready 42 A task
+ITEMS
+edit_item 41 '.labels.nodes = [{name: "rank:low"}]'
+echo 'theme 3, small · a stack trace is the only error path there is' >"$WORK/case"
+run board demo recommend lead 41 High "$WORK/case"
+same "exit" 0 "$STATUS"
+grep -q 'label create rank:high -R mentaldesk/demo --color d4323c' "$WRITES" || fail "label not created: '$(cat "$WRITES")'"
+grep -q 'issue edit 41 -R mentaldesk/demo --add-label rank:high --remove-label rank:low' "$WRITES" ||
+  fail "labels: '$(cat "$WRITES")'"
+same "posted" 'Recommended: **High** · theme 3, small · a stack trace is the only error path there is
+
+<!-- a-team:lead -->' "$(cat "$POSTED")"
+
+case_ "recommend leaves a rank label that's already there alone"
+echo '[{"name": "rank:high"}]' >"$EMPTY"
+: >"$WRITES"
+run board demo recommend lead 41 high "$WORK/case"
+echo '[]' >"$EMPTY"
+same "exit" 0 "$STATUS"
+same "created" 0 "$(grep -c 'label create' "$WRITES")"
+
+case_ "only the Lead recommends, only on an Idea, and only with a one-line case"
+: >"$WRITES"
+: >"$POSTED"
+for role in you dev customer; do
+  run board demo recommend "$role" 41 High "$WORK/case"
+  failed "$role"
+  grep -qF "$role may not recommend a rank" "$ERR" || fail "$role: '$(cat "$ERR")'"
+done
+run board demo recommend lead 42 High "$WORK/case"
+failed "a task"
+grep -qF "recommend is only for Ideas (#42 is in 'Ready')" "$ERR" || fail "a task: '$(cat "$ERR")'"
+run board demo recommend lead 41 Soon "$WORK/case"
+failed "unknown rank"
+printf 'theme 3\nand a second line\n' >"$WORK/long-case"
+run board demo recommend lead 41 High "$WORK/long-case"
+failed "two lines"
+grep -qF "the case for #41 is one line" "$ERR" || fail "two lines: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "the Lead's recommendation breaks a tie inside a Priority band, and says it did"
+gh_items 41 42 43 <<'ITEMS'
+Idea 41 Ranked High, recommended Low
+Idea 42 Ranked High, recommended High
+Idea 43 Ranked High, not recommended
+ITEMS
+edit_item 41 '.labels.nodes = [{name: "rank:low"}]'
+edit_item 42 '.labels.nodes = [{name: "rank:high"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "lead-next" '{"turn":"pitch","item":42,"actedOn":"High"}' "$(jq -c '{turn, item: .item.number, actedOn: .item.actedOn}' "$OUT")"
+
+case_ "a recommendation the next Idea shares decided nothing"
+edit_item 41 '.labels.nodes = [{name: "rank:high"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "acted on" 'null' "$(jq -c '.item.actedOn' "$OUT")"
+
+case_ "a stakeholder's Priority wins across bands, whatever the Lead recommends"
+gh_items 43 <<'ITEMS'
+Idea 41 Unranked, recommended Urgent
+Idea 43 Ranked High, not recommended
+ITEMS
+edit_item 41 '.labels.nodes = [{name: "rank:urgent"}]'
+echo '{"body": "Mine.", "state": "open"}' >"$ISSUE"
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "item" 43 "$(jq -c '.item.number' "$OUT")"
+
+case_ "the stakeholder's own unranked Ideas are pitched in the order the Lead recommends"
+gh_items <<'ITEMS'
+Idea 51 Not recommended
+Idea 52 Recommended Low
+Idea 53 Recommended Medium
+ITEMS
+edit_item 52 '.labels.nodes = [{name: "rank:low"}]'
+edit_item 53 '.labels.nodes = [{name: "rank:medium"}]'
+echo '{"body": "Mine.", "state": "open"}' >"$ISSUE"
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "lead-next" '{"item":53,"actedOn":"Medium"}' "$(jq -c '{item: .item.number, actedOn: .item.actedOn}' "$OUT")"
+
+case_ "an unranked Idea the team found is never pitched, however high the Lead recommends it"
+gh_items <<'ITEMS'
+Idea 61 Found by the Lead
+Idea 62 The stakeholder's own
+ITEMS
+edit_item 61 '.labels.nodes = [{name: "a-team:idea"}, {name: "rank:urgent"}]'
+echo '{"body": "Mine.", "state": "open"}' >"$ISSUE"
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "item" 62 "$(jq -c '.item.number' "$OUT")"
+
+case_ "waiting gives a recommended Idea its rank and the Lead's case, in the call it already makes"
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+Idea 6 Recommended
+Idea 7 Not recommended
+ITEMS
+edit_item 6 '.labels.nodes = [{name: "rank:high"}]'
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+6 body ${TODAY}T07:00:00Z reviewer An idea
+6 comment ${TODAY}T07:10:00Z demo-app[bot] Recommended: **Low** · theme 5, large · an older case\n\n<!-- a-team:lead -->
+6 comment ${TODAY}T07:20:00Z demo-app[bot] Recommended: **High** · theme 2, small · clears the queue\n\n<!-- a-team:lead -->
+6 comment ${TODAY}T07:30:00Z reviewer Recommended: **Low** · not the Lead's
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "ideas" '[[6,"High","theme 2, small · clears the queue"],[7,null,"waiting to be ranked"]]' \
+  "$(jq -c 'map(select(.status == "Idea") | [.number, .recommendation, .reason])' "$OUT")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
+
+case_ "setup creates the rank labels in the Priority colours"
+run board --dry-run demo setup
+same "exit" 0 "$STATUS"
+for label in rank:urgent rank:high rank:medium rank:low; do
+  grep -q "created label $label" "$OUT" || fail "setup: no $label in '$(cat "$OUT")'"
+done
 
 # --- a-team try -----------------------------------------------------------------------------
 # A throwaway origin holding main and one PR head, a checkout cloned from it that has only main,
