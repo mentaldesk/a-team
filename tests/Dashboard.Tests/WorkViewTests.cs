@@ -123,13 +123,34 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void A_tabs_title_is_the_team_and_how_many_cards_it_shows()
+    public void A_tabs_title_is_the_team_and_how_many_cards_each_column_shows()
     {
         using var view = Open(["a-team", "tuicode", "goose"]);
 
         view.Show(Waiting);
 
-        Assert.Equal(["a-team 4", "tuicode 1", "goose"], view.Lanes.Select(lane => lane.Title));
+        Assert.Equal(["a-team \U0001F4A11 ◇ 2 PR1", "tuicode ◇ 1", "goose"], view.Lanes.Select(lane => lane.Title));
+    }
+
+    [Fact]
+    public void A_tab_tallies_questions_under_their_own_icon()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new(77, "Which key?", "Ready", "https://github.com/x/7", "a-team", "you", "asked", Question: "Which key?")]);
+
+        Assert.Equal("a-team ? 1", view.Lanes[0].Title);
+    }
+
+    [Fact]
+    public void A_tabs_tally_wears_the_icons_in_effect()
+    {
+        using var view = Open(["tuicode"]);
+        view.Show(Waiting);
+
+        view.ShowIcons(IconStyle.NerdFont);
+
+        Assert.Equal("tuicode \U000F0428 1", view.Lanes[0].Title);
     }
 
     [Fact]
@@ -140,7 +161,7 @@ public class WorkViewTests
 
         view.ShowOnlyMine(true);
 
-        Assert.Equal(["a-team 2", "tuicode 1"], view.Lanes.Select(lane => lane.Title));
+        Assert.Equal(["a-team \U0001F4A11 ◇ 1", "tuicode ◇ 1"], view.Lanes.Select(lane => lane.Title));
     }
 
     [Fact]

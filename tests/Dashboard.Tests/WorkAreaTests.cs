@@ -2259,6 +2259,23 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void A_number_key_brings_that_teams_tab_to_the_front()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(new Key('2')));
+        Assert.Equal("team1", window.Work.Current?.Team);
+        Assert.Equal(133, window.Work.Selected?.Number);
+
+        Assert.True(window.NewKeyDownEvent(new Key('1')));
+        Assert.Equal("team0", window.Work.Current?.Team);
+        Assert.False(window.Commands.IsEnabled("work.team3"));
+        Assert.Equal("Go to team1", window.Commands.Registered.Single(command => command.Id == "work.team2").Label);
+    }
+
+    [Fact]
     public void Built_again_after_a_team_is_added_Work_lands_on_the_card_it_was_on()
     {
         using var window = Open(resume: new TeamsChanged(Area.Work, new Place("team1", 133, false)));
@@ -2274,11 +2291,11 @@ public class WorkAreaTests : IDisposable
         using var window = Open();
         window.Refresh();
 
-        Assert.Equal(["team0 4", "team1 1"], window.Work.Lanes.Select(lane => lane.Title));
+        Assert.Equal(["team0 \U0001F4A11 ◇ 2 PR1", "team1 ◇ 1"], window.Work.Lanes.Select(lane => lane.Title));
 
         window.NewKeyDownEvent(new Key('m'));
 
-        Assert.Equal(["team0 2", "team1 1"], window.Work.Lanes.Select(lane => lane.Title));
+        Assert.Equal(["team0 \U0001F4A11 ◇ 1", "team1 ◇ 1"], window.Work.Lanes.Select(lane => lane.Title));
     }
 
     [Fact]

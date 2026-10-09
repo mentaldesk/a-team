@@ -21,8 +21,9 @@ table lists each team's waiting now and a week ago, what you accepted in the las
 runs cost in that time, with a total for all the teams at the bottom. `Esc` closes it.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
-wait there, like `a-team 12`; with `m` on, it counts only your moves, and a team with nothing
-showing has no number. Work opens on the first team with something waiting. Each tab has up to four
+wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
+Pitches and 1 in Review, with `?` counting Questions. With `m` on, it counts only your moves, and a
+column with nothing showing isn't counted. Work opens on the first team with something waiting. Each tab has up to four
 columns, left to right in the order work moves through them. A column with nothing in it is hidden,
 and the one you're on takes half the tab. Only that column highlights its card, the one your keys act
 on; the others, and the other tabs, keep their place for when you come back.
@@ -78,6 +79,7 @@ The line at the foot says why the card you're on is where it is, like
 |---|---|
 | Arrows | Move between cards and columns, stopping at the ends of a column |
 | `Ctrl+PgDn` / `Ctrl+PgUp` | Go to the next team's tab, or the previous one's, round from the last to the first |
+| `1` to `9` | Go to the first team's tab, the second's, and so on |
 | `Enter` | Read the card, and on a card in Triage, rank it |
 | `g` | Open the card, or the PR row you're on, on GitHub |
 | `p` | Read the card and set its Priority |

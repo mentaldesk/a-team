@@ -455,6 +455,13 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
                 inMenu: () => _expanded is not null || _dispatcherExpanded)
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
+        for (var tab = 0; tab < 9; tab++)
+        {
+            var index = tab;
+            _commands.Register($"work.team{index + 1}",
+                () => index < _work.Lanes.Count ? $"Go to {_work.Lanes[index].Team}" : $"Go to team {index + 1}",
+                () => _work.PickTab(index), new Key((char)('1' + index)), isEnabled: () => OnWork() && index < _work.Lanes.Count);
+        }
     }
 
     // Point Terminal.Gui's own Quit binding at our quit key: removing it leaves PopoverImpl binding Key.Empty, which throws.

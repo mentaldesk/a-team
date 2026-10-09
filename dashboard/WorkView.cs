@@ -16,13 +16,13 @@ public sealed class WorkView : View
     /// acceptance whatever its rank. The Customer lead's docs proposal is a PR, so it can't carry one. A question,
     /// the Dev's on a Ready task or the Lead's on a pitch, waits in Questions whatever its rank. Review holds only what Accept would take, and sums up the rest under its
     /// cards. Triage and Pitches wear the kind they hold in their heading, and only a card of another kind wears
-    /// its own.</summary>
-    internal static readonly (string Name, Icon? Kind, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
+    /// its own. Each tab tallies its columns under the Tally icon.</summary>
+    internal static readonly (string Name, Icon? Kind, Icon Tally, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
     [
-        ("Triage", Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && item.Status is "Idea" or "Pitched", null),
-        ("Pitches", Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs) && item.Question.Length == 0, null),
-        ("Questions", null, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
-        ("Review", null, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
+        ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && item.Status is "Idea" or "Pitched", null),
+        ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs) && item.Question.Length == 0, null),
+        ("Questions", null, Icon.Question, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
+        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
     ];
 
     private readonly TeamTabs _tabs = new();
@@ -128,8 +128,8 @@ public sealed class WorkView : View
         if (Icons == style)
             return;
         Icons = style;
-        foreach (var column in _lanes.SelectMany(lane => lane.Columns))
-            column.ShowIcons(style);
+        foreach (var lane in _lanes)
+            lane.ShowIcons(style);
     }
 
     /// <summary>Focus starts on the first card of the tab in front, unless it has none and wasn't picked, when it
@@ -161,6 +161,9 @@ public sealed class WorkView : View
     /// <summary>Brings <paramref name="team"/>'s tab to the front, on the card it was left on.</summary>
     internal bool Pick(string team) =>
         _lanes.FirstOrDefault(lane => lane.Team == team) is { } lane && Pick(lane);
+
+    /// <summary>Brings the tab at <paramref name="index"/> to the front, counting from the first.</summary>
+    internal bool PickTab(int index) => index >= 0 && index < _lanes.Count && Pick(_lanes[index]);
 
     private bool Pick(WorkLane lane)
     {
@@ -374,7 +377,7 @@ internal sealed class TeamTabs : Tabs
 }
 
 /// <summary>One team's tab: a column per gate that has anything in it, titled with the team and how many cards
-/// it shows.</summary>
+/// each column shows.</summary>
 public sealed class WorkLane : View
 {
     /// <summary>The rows a column spends on its frame.</summary>
@@ -382,6 +385,7 @@ public sealed class WorkLane : View
 
     private readonly List<WorkColumn> _columns = [];
     private WorkColumn? _wide;
+    private IconStyle _icons = IconStyle.Unicode;
 
     internal WorkLane(string team, Action focusChanged)
     {
@@ -392,8 +396,8 @@ public sealed class WorkLane : View
         for (var i = 0; i < WorkView.Gates.Length; i++)
         {
             var index = i;
-            var (name, kind, holds, aside) = WorkView.Gates[i];
-            var column = new WorkColumn(team, name, kind, holds, aside, focusChanged)
+            var (name, kind, tally, holds, aside) = WorkView.Gates[i];
+            var column = new WorkColumn(team, name, kind, tally, holds, aside, focusChanged)
             {
                 X = Pos.Func(_ => Left(index), this),
                 Y = 0,
@@ -420,8 +424,20 @@ public sealed class WorkLane : View
     /// <summary>The column the keyboard was last in on this tab, kept while the tab is behind another.</summary>
     internal WorkColumn? LastColumn { get; private set; }
 
-    /// <summary>A team's name, then how many cards wait there, when any do.</summary>
-    internal static string Heading(string team, int count) => count == 0 ? team : $"{team} {count}";
+    /// <summary>A team's name, then how many cards wait in each column that has any, after the column's icon.</summary>
+    internal static string Heading(string team, IEnumerable<(Icon Tally, int Count)> columns, IconStyle style) =>
+        string.Join(" ", [team, .. columns.Where(column => column.Count > 0).Select(column => $"{Icons.Field(column.Tally, style)}{column.Count}")]);
+
+    internal void ShowIcons(IconStyle style)
+    {
+        _icons = style;
+        foreach (var column in _columns)
+            column.ShowIcons(style);
+        Retitle();
+    }
+
+    private void Retitle() =>
+        TeamTabs.Retitle(this, Heading(Team, _columns.Select(column => (column.Tally, column.Count)), _icons));
 
     /// <summary>Lays out the team's cards, keeping the selection on the card it was on, found again by number in
     /// whichever column it's now in when <paramref name="follow"/>, and otherwise on the row it was on.</summary>
@@ -436,7 +452,7 @@ public sealed class WorkLane : View
             each.Show([.. team.Where(each.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)]);
             each.Visible = each.Lines > 0;
         }
-        TeamTabs.Retitle(this, Heading(Team, Count));
+        Retitle();
         SetNeedsLayout();
         if (column is null)
             return;
@@ -532,12 +548,13 @@ public sealed class WorkColumn : FrameView
     private IconStyle _icons = IconStyle.Unicode;
 
     internal WorkColumn(
-        string team, string gate, Icon? kind, Func<WaitingItem, bool> holds, Func<WaitingItem, bool>? aside,
+        string team, string gate, Icon? kind, Icon tally, Func<WaitingItem, bool> holds, Func<WaitingItem, bool>? aside,
         Action focusChanged)
     {
         Team = team;
         Gate = gate;
         Kind = kind;
+        Tally = tally;
         _holds = holds;
         _aside = aside;
         CanFocus = true;
@@ -564,6 +581,9 @@ public sealed class WorkColumn : FrameView
 
     /// <summary>The kind of card the column's heading wears, or null where its cards each wear their own.</summary>
     internal Icon? Kind { get; }
+
+    /// <summary>The icon its count wears on the team's tab.</summary>
+    internal Icon Tally { get; }
 
     /// <summary>How many items the column holds, which is what its title counts.</summary>
     internal int Count => _items.Count;
