@@ -37,6 +37,9 @@ A team that can't run on two passes in a row gets one line saying why, as in
 `a-team: stopped: no GitHub App: run a-team app create a-team, then install it`, another only if
 the reason changes, and `a-team: running again` once it can. A single failed pass, such as one
 during `brew upgrade`, says nothing, though the team still sits that pass out.
+A role whose check for work fails is the same: two passes in a row give one red line, as in
+`a-team dev: triggers failed: gh: connection reset`, and `a-team dev: triggers working again` once
+it passes.
 
 Its title says what is driving the teams: the a-team the dispatcher runs and its version, with the
 countdown to its next pass, as in `dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12`.
@@ -68,6 +71,7 @@ countdown alone. The message bar says what it started, or `Pass done: nothing to
 | `Enter` | Expand the selected agent over the whole agent area, wide enough to read without scrolling |
 | `Tab`, `Shift+Tab` | In the expanded view, read the next or previous agent without leaving it |
 | `Esc` | Back to every agent |
+| `b` | Open the selected agent's team's Project board on GitHub |
 | `PgUp`, `PgDn`, `Home`, `End` | Scroll the selected log. Scrolling up stops it following new output until you press `End` |
 
 ## Copying from a log

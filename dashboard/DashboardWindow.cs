@@ -423,6 +423,7 @@ public sealed class DashboardWindow : Window
             .Register("work.priority", "Set priority", SetPriority, new Key('p'), isEnabled: () => OnWork() && _work.SelectedCard is not null, onCard: true)
             .Register("work.try", "Try", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Triable: true }, onCard: true)
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
+            .Register("team.board", "Open team's board on GitHub", OpenBoard, new Key('b'), isEnabled: () => SelectedTeam() is not null)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
@@ -648,6 +649,26 @@ public sealed class DashboardWindow : Window
     {
         if (_work.SelectedUrl is { Length: > 0 } url)
             _openUrl(url);
+    }
+
+    /// <summary>The team of the selected column in Work, or of the selected agent on the dashboard.</summary>
+    internal string? SelectedTeam() => _area == Area.Work ? _work.Team : Selected()?.Team;
+
+    private void OpenBoard()
+    {
+        if (SelectedTeam() is not { } team)
+            return;
+        if (_teams.BoardUrl(team) is not { } url)
+        {
+            _failure = $"{team}'s config names no project board";
+            ShowMessage();
+            return;
+        }
+        _openUrl(url);
+        _failure = null;
+        _said = $"Opened {team}'s board";
+        _saidOn = _work.Selected;
+        ShowMessage();
     }
 
     /// <summary>Opens the reader with the ranks under it, starting on the card's own.</summary>

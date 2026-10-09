@@ -683,6 +683,39 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void b_opens_the_board_of_the_selected_cards_team()
+    {
+        var teams = Path.Combine(Config, "teams");
+        Directory.CreateDirectory(teams);
+        File.WriteAllText(Path.Combine(teams, "team0.json"), """{"project": {"owner": "mentaldesk", "number": 9}}""");
+        var opened = new List<string>();
+        using var window = Open(openUrl: opened.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal("team0", window.Work.Selected?.Team);
+        Assert.True(window.NewKeyDownEvent(new Key('b')));
+
+        Assert.Equal(["https://github.com/orgs/mentaldesk/projects/9"], opened);
+        Assert.Equal("Opened team0's board", window.Message.Says);
+    }
+
+    [Fact]
+    public void b_says_why_when_the_team_config_names_no_board()
+    {
+        var opened = new List<string>();
+        using var window = Open(openUrl: opened.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(window.NewKeyDownEvent(new Key('b')));
+
+        Assert.Empty(opened);
+        Assert.Equal("team0's config names no project board", window.Message.Says);
+    }
+
+    [Fact]
     public void g_on_the_row_under_a_card_opens_its_PR()
     {
         var opened = new List<string>();
@@ -2334,7 +2367,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(
             [
-                "view.dashboard", "view.work", "work.nextTeam", "work.previousTeam", "work.team", "settings", "quit", "work.read", "work.priority", "work.try",
+                "view.dashboard", "view.work", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
                 "work.github", "work.accept", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
