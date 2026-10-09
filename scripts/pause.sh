@@ -36,22 +36,24 @@ TEAM=$1
 ROLE=${2:-}
 TASK=${3:-}
 case "$ROLE" in
-  '' | lead | dev | customer) ;;
-  *) die "unknown role '$ROLE': expected lead, dev or customer" ;;
+  '' | lead | dev | customer | reviewer) ;;
+  *) die "unknown role '$ROLE': expected lead, dev, customer or reviewer" ;;
 esac
 CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG"
-[ "$ROLE" != customer ] || team_roles "$CONFIG" | grep -qx customer ||
+[ "$ROLE" != customer ] || team_roles "$CONFIG" | grep -x customer >/dev/null ||
   die "$TEAM has no Customer lead: turn it on in Settings → Teams"
+[ "$ROLE" != reviewer ] || team_roles "$CONFIG" | grep -x reviewer >/dev/null ||
+  die "$TEAM has no Reviewer: turn it on in Settings → Teams"
 
 if [ -n "$TASK" ]; then
-  [ "$ROLE" = dev ] || die "only a Dev run is for a task"
+  [ "$ROLE" = dev ] || [ "$ROLE" = reviewer ] || die "only a Dev or Reviewer run is for a task"
   [[ $TASK =~ ^[0-9]+$ ]] || die "expected a task number, not '$TASK'"
-  RUN="$STATE/$TEAM/dev/runs/$TASK"
+  RUN="$STATE/$TEAM/$ROLE/runs/$TASK"
   if [ "$CMD" = resume ]; then
     if [ -n "$DRY_RUN" ]; then echo "(dry run) would let #$TASK start again"; exit 0; fi
     rm -f "$RUN/held"
-    echo "let $TEAM dev start #$TASK again"
+    echo "let $TEAM $ROLE start #$TASK again"
     exit 0
   fi
   PID=$(cat "$RUN/pid" 2>/dev/null) && kill -0 "$PID" 2>/dev/null || PID=''
@@ -64,12 +66,12 @@ if [ -n "$TASK" ]; then
   date +%s >"$RUN/held"
   if [ -n "$PID" ]; then
     kill "$PID" 2>/dev/null || true
-    run_outcome "$TEAM" dev "$PID" stopped
-    echo "stopped $TEAM dev's run on #$TASK ($PID)"
+    run_outcome "$TEAM" "$ROLE" "$PID" stopped
+    echo "stopped $TEAM $ROLE's run on #$TASK ($PID)"
   else
     echo "no run to stop on #$TASK"
   fi
-  echo "#$TASK stays where it is, and no run starts on it until: a-team resume $TEAM dev $TASK"
+  echo "#$TASK stays where it is, and no run starts on it until: a-team resume $TEAM $ROLE $TASK"
   exit 0
 fi
 
@@ -86,7 +88,7 @@ UPDATED=$(jq -e --arg role "$ROLE" "if type == \"object\" then $FILTER else null
 DIR="$STATE/$TEAM/$ROLE"
 PID=''
 if [ "$CMD" = stop ]; then
-  # A Dev may have several runs going, each under runs/<task>.
+  # A Dev or Reviewer may have several runs going, each under runs/<task>.
   PID=$(for file in "$DIR/pid" "$DIR"/runs/*/pid; do
     pid=$(cat "$file" 2>/dev/null) && kill -0 "$pid" 2>/dev/null && echo "$pid"
   done | sort -un | paste -sd ' ' -) || true

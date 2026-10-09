@@ -23,17 +23,19 @@ TEAM=$1
 ROLE=$2
 TASK=${3:-}
 case "$ROLE" in
-  lead | dev | customer) ;;
-  *) die "unknown role '$ROLE': expected lead, dev or customer" ;;
+  lead | dev | customer | reviewer) ;;
+  *) die "unknown role '$ROLE': expected lead, dev, customer or reviewer" ;;
 esac
 CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG"
-[ "$ROLE" != customer ] || team_roles "$CONFIG" | grep -qx customer ||
+[ "$ROLE" != customer ] || team_roles "$CONFIG" | grep -x customer >/dev/null ||
   die "$TEAM has no Customer lead: turn it on in Settings → Teams"
+[ "$ROLE" != reviewer ] || team_roles "$CONFIG" | grep -x reviewer >/dev/null ||
+  die "$TEAM has no Reviewer: turn it on in Settings → Teams"
 
 DIR="$STATE/$TEAM/$ROLE"
 if [ -n "$TASK" ]; then
-  [ "$ROLE" = dev ] || die "only a Dev run is for a task"
+  [ "$ROLE" = dev ] || [ "$ROLE" = reviewer ] || die "only a Dev or Reviewer run is for a task"
   [[ $TASK =~ ^[0-9]+$ ]] || die "expected a task number, not '$TASK'"
   DIR="$DIR/runs/$TASK"
 fi

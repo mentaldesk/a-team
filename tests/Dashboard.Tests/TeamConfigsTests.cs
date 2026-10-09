@@ -55,9 +55,11 @@ public class TeamConfigsTests : IDisposable
     [Theory]
     [InlineData("""{"roles": {"customer": true}}""", new[] { "lead", "dev", "customer" })]
     [InlineData("""{"roles": {"customer": false}}""", new[] { "lead", "dev" })]
+    [InlineData("""{"roles": {"reviewer": true}}""", new[] { "lead", "dev", "reviewer" })]
+    [InlineData("""{"roles": {"customer": true, "reviewer": true}}""", new[] { "lead", "dev", "customer", "reviewer" })]
     [InlineData("{}", new[] { "lead", "dev" })]
     [InlineData("{ not json", new[] { "lead", "dev" })]
-    public void A_team_runs_a_Lead_and_a_Dev_and_a_Customer_lead_only_where_it_is_on(string config, string[] roles)
+    public void A_team_runs_a_Lead_and_a_Dev_and_a_Customer_lead_and_Reviewer_only_where_they_are_on(string config, string[] roles)
     {
         Write("demo", config);
 

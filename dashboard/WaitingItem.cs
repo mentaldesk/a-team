@@ -7,10 +7,13 @@ public sealed record WaitingItem(
     int Number, string Title, string Status, string Url, string Team, string Turn = "", string Reason = "",
     int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
     string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0, string Role = "",
-    string Recommendation = "")
+    string Recommendation = "", bool Reviewed = false, int Consider = 0)
 {
     /// <summary>Whether this is the Customer lead's docs PR, which is its own PR to merge.</summary>
     public bool Docs => Role == "customer";
+
+    /// <summary>What the card says about the Reviewer's review of its PR, or nothing where it has none.</summary>
+    public string Review => !Reviewed ? "" : Consider == 0 ? "reviewed" : $"reviewed · {Consider} to consider";
 
     /// <summary>Whether this is a pitch the reviewer can approve now.</summary>
     public bool Approvable => Pitch && Status == "Pitched";
@@ -73,7 +76,7 @@ public sealed record WaitingItem(
                         Text(item, "priority"), Flag(item, "pitch"), Text(item, "question"),
                         Text(item, "unready"), Text(item, "base"),
                         Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0, Text(item, "role"),
-                        Text(item, "recommendation")))
+                        Text(item, "recommendation"), Flag(item, "reviewed"), Numbered(item, "consider") ?? 0))
             ];
         }
         catch (JsonException)

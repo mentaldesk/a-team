@@ -209,6 +209,23 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void The_Reviewer_is_off_until_roles_reviewer_turns_it_on_and_is_saved_beside_the_Customer_lead()
+    {
+        const string config = """{"repo": "o/r", "roles": {"customer": true}}""";
+        var before = TeamSettings.Read(Bytes(config));
+
+        var on = (before with { Reviewer = true }).Write(Bytes(config), before);
+        var off = (TeamSettings.Read(on) with { Reviewer = false }).Write(on, TeamSettings.Read(on));
+
+        Assert.False(before.Reviewer);
+        Assert.True(TeamSettings.Read(on).Reviewer);
+        Assert.True(TeamSettings.Read(on).Customer);
+        Assert.Contains("\"reviewer\": true", Text(on));
+        Assert.False(TeamSettings.Read(off).Reviewer);
+        Assert.Equal(Text(on), Text((TeamSettings.Read(on)).Write(on, TeamSettings.Read(on))));
+    }
+
+    [Fact]
     public void A_setting_the_file_has_not_got_is_added_with_the_objects_on_the_way_to_it()
     {
         const string config = """{"repo": "o/r"}""";

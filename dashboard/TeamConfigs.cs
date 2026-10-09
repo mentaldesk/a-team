@@ -186,13 +186,15 @@ public sealed class TeamConfigs
     private static string Reason(string message) =>
         message.IndexOf(" LineNumber:", StringComparison.Ordinal) is var at and >= 0 ? message[..at] : message;
 
-    /// <summary>The roles the team runs, in the order their panes sit: the Customer lead only where it's on, and
-    /// just the Lead and Dev where the file can't be read.</summary>
+    /// <summary>The roles the team runs, in the order their panes sit: the Customer lead and the Reviewer only where
+    /// they're on, and just the Lead and Dev where the file can't be read.</summary>
     public string[] Roles(string team)
     {
         try
         {
-            return Settings(team).Customer ? ["lead", "dev", "customer"] : ["lead", "dev"];
+            var settings = Settings(team);
+            return ["lead", "dev", .. settings.Customer ? ["customer"] : Array.Empty<string>(),
+                .. settings.Reviewer ? ["reviewer"] : Array.Empty<string>()];
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {

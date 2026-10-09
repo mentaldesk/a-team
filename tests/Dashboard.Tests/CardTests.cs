@@ -32,6 +32,17 @@ public class CardTests
     }
 
     [Fact]
+    public void A_reviewed_task_says_so_and_how_many_points_it_left_to_consider()
+    {
+        var clean = Reviewing with { Turn = "you", Reviewed = true };
+
+        Assert.Equal("#49  reviewed · I can't change any of the dashboard's keys", new Card(clean, false).Text(0));
+        Assert.Equal("#49  reviewed · 1 to consider · I can't change any of the dashboard's keys",
+            new Card(clean with { Consider = 1 }, false).Text(0));
+        Assert.Equal("#49  I can't change any of the dashboard's keys", new Card(Reviewing with { Turn = "you" }, false).Text(0));
+    }
+
+    [Fact]
     public void A_column_draws_its_items_and_the_PR_under_each_of_them()
     {
         var nodes = Card.Nodes(Card.Roots([Unranked, Reviewing]));

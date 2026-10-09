@@ -42,7 +42,8 @@ on; the others, and the other tabs, keep their place for when you come back.
 | Review | Finished work you can accept now: a task whose PR is ready to merge, or the Customer lead's docs PR. |
 
 Each column's heading counts its cards. Under the Review cards, a line sums up the work that's in
-review but not ready for you yet, like `2 with the Dev: #12 CI failing · #14 still a draft`.
+review but not ready for you yet, grouped by whose move it is, like
+`1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`.
 
 ## A card
 
@@ -65,9 +66,13 @@ A card reads as the issue's number, then its title:
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
+- **Its review.** With the [Reviewer](how-a-team-works.md#the-reviewer) on, a task whose PR it has
+  reviewed says `reviewed` after its number, and how many points it left for you to consider, like
+  `#412  reviewed · 1 to consider · ...`.
 - **Trouble.** A PR that's failing CI, conflicts with its base, is still running CI or is still a
-  draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. A PR
-  whose base just moved shows `resolving mergeable status` until GitHub has worked out whether it
+  draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. With the
+  Reviewer on, a green draft it hasn't reviewed yet is its turn instead: `#124  reviewer · awaiting
+  review · ...`. A PR whose base just moved shows `resolving mergeable status` until GitHub has worked out whether it
   still merges.
 
 In kitty, WezTerm and Ghostty, which bundle a Nerd Font, the icons are that font's glyphs instead,

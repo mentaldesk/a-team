@@ -171,7 +171,7 @@ gh_items() {
   gh_runs <<'RUNS'
 completed success 2025-09-19T09:00:00Z build
 RUNS
-  PRS="$BIN/prs.json" PULL="$BIN/pull.json"
+  PRS="$BIN/prs.json" PULL="$BIN/pull.json" REVIEWING="$BIN/reviewing.json"
   gh_pr
   echo '{"head": {"sha": "deadbeefcafe"}}' >"$PULL"
   FILTERS="$BIN/filters"
@@ -193,6 +193,7 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
   *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
                     echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;
   *"issue close"*) [ ! -e "$BIN/close-fails" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
@@ -209,6 +210,7 @@ case " \$* " in
   *check-runs*) page="$RUNS" ;;
   *IssueEvents*) printf '%s\n' "\$@" >"$BIN/caught-args"; echo >>"$BIN/caught-calls"; page="$CAUGHT" ;;
   *issueOrPullRequest*) page="$TALK" ;;
+  *"isDraft body labels"*) page="$REVIEWING" ;;
   *": pullRequest(number"*) page="$UNLINKED" ;;
   *closedByPullRequestsReferences*) page="$PRS" ;;
   *reviews*) page="$REVIEWS" ;;
@@ -307,6 +309,24 @@ gh_pr() {
         issue: {closedByPullRequestsReferences: {nodes: (if $issue == "" then $pr else [] end)}},
         pullRequests: {nodes: (if $issue == "" then []
           else $pr | map(. + {body: "Closes #\($issue)\n\n<!-- a-team:dev -->"}) end)}}}}' >"$PRS"
+  gh_reviewing
+}
+
+# `gh_reviewed [<login>]`: the Reviewer's review on the PR gh_pr wrote, posted as <login>, by default the team's App.
+gh_reviewed() {
+  jq --arg login "${1:-demo-app[bot]}" '(.. | objects | select(has("isDraft"))) += {comments: {nodes: [
+      {body: "Nothing needs changing.\n\n<!-- a-team:reviewer -->",
+       author: (if $login | endswith("[bot]") then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))}
+                else {__typename: "User", login: $login} end)}]}}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+  gh_reviewing
+}
+
+# `gh_reviewing [<update>]`: the PR `review` reads, from the one gh_pr wrote: an open Dev PR, changed by a jq <update>.
+gh_reviewing() {
+  jq "{data: {repository: {pullRequest: ((.data.repository | .issue.closedByPullRequestsReferences.nodes
+      + .pullRequests.nodes)[0] // null | if . == null then null else
+      {state: \"OPEN\", body: \"Closes #12\n\n<!-- a-team:dev -->\", labels: {nodes: []}, comments: {nodes: []}} + .
+      | ${1:-.} end)}}}" "$PRS" >"$REVIEWING"
 }
 
 # The one GraphQL page `waiting` reads for whose turn it is, from lines of
@@ -637,6 +657,33 @@ same "exit" 0 "$STATUS"
 same "draft" true "$(jq -c '.[1].draft' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"still a draft"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "with a Reviewer, a green draft is the Reviewer's turn until its review is posted"
+jq '.roles.reviewer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"reviewer"' "$(jq -c '.[1].turn' "$OUT")"
+same "task trouble" '"awaiting review"' "$(jq -c '.[1].trouble' "$OUT")"
+same "task reason" '"awaiting review"' "$(jq -c '.[1].reason' "$OUT")"
+gh_runs <<RUNS
+in_progress - - build
+RUNS
+run board demo waiting
+same "running turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "running trouble" '"CI running"' "$(jq -c '.[1].trouble' "$OUT")"
+gh_runs <<RUNS
+completed success ${TODAY}T09:00:00Z build
+RUNS
+gh_talk true <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment+seen ${TODAY}T09:10:00Z demo-app[bot] Nothing needs changing.\n<!-- a-team:reviewer -->
+TALK
+run board demo waiting
+same "reviewed turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "reviewed trouble" '"still a draft"' "$(jq -c '.[1].trouble' "$OUT")"
+jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 case_ "a ready PR whose CI is still running, after a push to answer feedback, isn't your turn yet"
 gh_talk <<TALK
@@ -1113,10 +1160,10 @@ for role in lead dev; do
 done
 
 case_ "any other role is unknown"
-run board demo approve reviewer 7
+run board demo approve nobody 7
 failed "unknown role"
 one_line "unknown role"
-grep -q "unknown role 'reviewer' (you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
+grep -q "unknown role 'nobody' (you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
 
 case_ "approve is not a general move: only a pitch-labelled issue in Pitched"
 for n in 8 9 404; do
@@ -1184,7 +1231,7 @@ grep -q "would close #9 as not planned" "$ERR" || fail "decline dry run: '$(cat 
 [ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
 
 case_ "no agent may decline: that gate is the stakeholders' own"
-for role in lead dev customer; do
+for role in lead dev customer reviewer; do
   run board demo decline "$role" 9 "$WORK/reason"
   failed "$role declining"
   one_line "$role declining"
@@ -1471,10 +1518,10 @@ same "unanswered" '["Not yet: the second option is still missing."]' "$(jq -c '[
 
 case_ "comment still refuses a role it doesn't know"
 : >"$POSTED"
-run board demo comment reviewer 7 "$WORK/mine"
+run board demo comment nobody 7 "$WORK/mine"
 failed "unknown role"
 one_line "unknown role"
-grep -q "unknown role 'reviewer' (lead | dev | customer | you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
+grep -q "unknown role 'nobody' (lead | dev | customer | you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
 same "posted" "" "$(cat "$POSTED")"
 
 case_ "--dry-run shows the comment you'd post and posts nothing"
@@ -2038,11 +2085,11 @@ case_ "an unknown role is refused, in one line, by both verbs"
 run board demo depends nobody 11 21 "why"
 failed "depends role"
 one_line "depends role"
-grep -q "unknown role 'nobody' (lead | dev | customer)" "$ERR" || fail "depends role: '$(cat "$ERR")'"
+grep -q "unknown role 'nobody' (lead | dev | customer | reviewer)" "$ERR" || fail "depends role: '$(cat "$ERR")'"
 run board demo undepend nobody 11 21 "why"
 failed "undepend role"
 one_line "undepend role"
-grep -q "unknown role 'nobody' (lead | dev | customer)" "$ERR" || fail "undepend role: '$(cat "$ERR")'"
+grep -q "unknown role 'nobody' (lead | dev | customer | reviewer)" "$ERR" || fail "undepend role: '$(cat "$ERR")'"
 
 case_ "undepend on a pair that isn't linked is refused, in one line"
 gh_blocked </dev/null
@@ -2349,7 +2396,7 @@ same "reasons" '["PR #912 is green but still a draft"]' "$(jq -c .reasons "$OUT"
 run board demo pr 12
 same "exit" 0 "$STATUS"
 same "pr" 912 "$(jq -c .number "$OUT")"
-same "fields" '["headRefName","isDraft","mergeable","number","url"]' "$(jq -c keys "$OUT")"
+same "fields" '["headRefName","isDraft","mergeable","number","review","url"]' "$(jq -c keys "$OUT")"
 
 case_ "a task no PR closes, linked or not, has none"
 gh_pr 912 true 13
@@ -3539,6 +3586,16 @@ A_TEAM_CONFIG="$CONFIG" bash "$ROOT/scripts/status.sh" >"$OUT"
 grep -q '^demo customer: never run$' "$OUT" || fail "status: '$(cat "$OUT")'"
 run resume demo customer
 same "hold" '[]' "$(held)"
+jq '.roles.reviewer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+for role in customer reviewer; do
+  run pause demo "$role"
+  same "exit with both on" 0 "$STATUS"
+  same "hold with both on" "[\"$role\"]" "$(held)"
+  run resume demo "$role"
+  same "hold with both on" '[]' "$(held)"
+  run attach demo "$role"
+  grep -q "demo $role has no run with a session" "$ERR" || fail "attach $role with both on: '$(cat "$ERR")'"
+done
 jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 A_TEAM_CONFIG="$CONFIG" bash "$ROOT/scripts/status.sh" >"$OUT"
 grep -q 'customer' "$OUT" && fail "status while off: '$(cat "$OUT")'"
@@ -3564,8 +3621,8 @@ grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch:
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the paused dev was started"
 A_TEAM_STATE=$A_TEAM_STATE_WAS
 
-# A dispatcher whose a-team answers `triggers dev` with $DEV_TRIGGERS, records each claim, and
-# claims $CLAIMED. `task-prompt` is one line, and the Lead never has anything to do.
+# A dispatcher whose a-team answers `triggers dev` with $DEV_TRIGGERS and `triggers reviewer` with
+# $REVIEWER_TRIGGERS, records each claim, and claims $CLAIMED. `task-prompt` is one line, and the Lead never has anything to do.
 dev_dispatcher() {
   DISPATCH=$(mktemp -d "$WORK/dispatch.XXXXXX")
   mkdir -p "$DISPATCH/bin" "$DISPATCH/scripts"
@@ -3573,10 +3630,11 @@ dev_dispatcher() {
   cp -R "$ROOT/settings" "$DISPATCH/"
   echo 0.1.7 >"$DISPATCH/VERSION"
   CLAIMS="$DISPATCH/claims" DEV_TRIGGERS="$DISPATCH/triggers.json" CLAIMED="$DISPATCH/claimed.json"
-  CUSTOMER_TRIGGERS="$DISPATCH/customer.json"
+  CUSTOMER_TRIGGERS="$DISPATCH/customer.json" REVIEWER_TRIGGERS="$DISPATCH/reviewer.json"
   : >"$CLAIMS"
   echo null >"$CLAIMED"
   echo '{"reasons": [], "creative": false}' >"$CUSTOMER_TRIGGERS"
+  echo '{"reasons": [], "creative": false, "tasks": [], "ready": null, "chores": []}' >"$REVIEWER_TRIGGERS"
   cat >"$DISPATCH/bin/a-team" <<SH
 #!/usr/bin/env bash
 case " \$* " in
@@ -3584,6 +3642,7 @@ case " \$* " in
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
   *" triggers lead"*) echo '{"reasons": [], "creative": false}' ;;
   *" triggers customer"*) echo "\$*" >>"$CLAIMS"; cat "$CUSTOMER_TRIGGERS" ;;
+  *" triggers reviewer"*) cat "$REVIEWER_TRIGGERS" ;;
   *" task-prompt "*) echo "Run one shift." ;;
   *" version "*) cat "\$(dirname "\$0")/../VERSION" ;;
 esac
@@ -3637,6 +3696,50 @@ dispatch_dev --dry-run
 grep -q 'demo dev: claim failed: board.sh: no free worktree for #13' "$A_TEAM_STATE/dispatch.log" ||
   fail "refused: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 grep -q 'would start' "$A_TEAM_STATE/dispatch.log" && fail "refused: a run started"
+
+case_ "a Reviewer run is for one waiting PR at a time, named in the log, and claims nothing"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "dispatch": { "enabled": true },
+  "roles": { "reviewer": true } }
+JSON
+dev_dispatcher
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+jq -n '{reasons: ["PR #912 is green and waiting for its review", "PR #914 is green and waiting for its review"],
+        creative: false, ready: 13, chores: [],
+        tasks: [{number: 12, title: "Fix the pane", reasons: ["PR #912 is green and waiting for its review"]},
+                {number: 14, title: "Name the column", reasons: ["PR #914 is green and waiting for its review"]}]}' \
+  >"$REVIEWER_TRIGGERS"
+dispatch_dev --dry-run
+grep -q 'demo reviewer: would start: #12: PR #912 is green and waiting for its review$' "$A_TEAM_STATE/dispatch.log" ||
+  fail "reviewer: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "one run" 1 "$(grep -c 'demo reviewer: would start' "$A_TEAM_STATE/dispatch.log")"
+same "task" '{"number":12,"title":"Fix the pane"}' "$(cat "$A_TEAM_STATE/demo/reviewer/dry-task")"
+same "claims" "" "$(cat "$CLAIMS")"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+grep -q 'demo reviewer: would start: #14: PR #914 is green and waiting for its review$' "$A_TEAM_STATE/dispatch.log" ||
+  fail "next pass: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "next task" '{"number":14,"title":"Name the column"}' "$(cat "$A_TEAM_STATE/demo/reviewer/dry-task")"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+same "both tried" "" "$(cat "$A_TEAM_STATE/dispatch.log")"
+same "claims" "" "$(cat "$CLAIMS")"
+
+case_ "a task stopped for the Reviewer is passed over, and the next one gets its run"
+dev_dispatcher
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+jq -n '{reasons: ["PR #912 is green and waiting for its review", "PR #914 is green and waiting for its review"],
+        creative: false, ready: null, chores: [],
+        tasks: [{number: 12, title: "Fix the pane", reasons: ["PR #912 is green and waiting for its review"]},
+                {number: 14, title: "Name the column", reasons: ["PR #914 is green and waiting for its review"]}]}' \
+  >"$REVIEWER_TRIGGERS"
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/pause.sh" stop demo reviewer 12 >"$OUT"
+[ -e "$A_TEAM_STATE/demo/reviewer/runs/12/held" ] || fail "stop: nothing held under reviewer/runs/12"
+dispatch_dev --dry-run
+grep -q 'demo reviewer: would start: #14: ' "$A_TEAM_STATE/dispatch.log" ||
+  fail "held: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+grep -q '#12' "$A_TEAM_STATE/dispatch.log" && fail "held: #12 was started"
+same "claims" "" "$(cat "$CLAIMS")"
 
 case_ "a trigger check that fails once and then passes says nothing, and the role sits that pass out"
 dev_dispatcher
@@ -5419,6 +5522,172 @@ same "logged" "demo release: nothing to release: main is at v1.2.0
 demo release: would run release.yml on main at 1111111 (latest release: v1.2.0)
 demo release: failed: can't read mentaldesk/demo: Not Found (HTTP 404)" "$(cut -d' ' -f2- "$A_TEAM_STATE/dispatch.log")"
 same "asked" "release --dry-run demo" "$(sort -u "$APP/release-args")"
+
+case_ "with the Reviewer on, a green draft Dev PR starts the Reviewer, not the Dev"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 1 }, "roles": { "reviewer": true } }
+JSON
+gh_items <<'ITEMS'
+In_progress 12 A task with its draft PR up
+ITEMS
+gh_pr 912 true
+run board demo triggers reviewer
+same "exit" 0 "$STATUS"
+same "reasons" '["PR #912 is green and waiting for its review"]' "$(jq -c .reasons "$OUT")"
+same "tasks" '[12]' "$(jq -c '[.tasks[].number]' "$OUT")"
+same "ready" null "$(jq -c .ready "$OUT")"
+run board demo triggers dev
+same "dev reasons" '[]' "$(jq -c .reasons "$OUT")"
+run board demo pr 12
+same "review" '"waiting"' "$(jq -c .review "$OUT")"
+
+case_ "the Reviewer isn't started for a red PR, a ready one, or one that isn't the Dev's"
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+run board demo triggers reviewer
+same "red" '[]' "$(jq -c .reasons "$OUT")"
+gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+RUNS
+gh_pr 912 false
+run board demo triggers reviewer
+same "ready" '[]' "$(jq -c .reasons "$OUT")"
+gh_pr 912 true
+edit_item 12 '.labels.nodes = []'
+run board demo triggers reviewer
+same "not the Dev's" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "once the review is posted, the Dev acts on it and the Reviewer never starts again"
+edit_item 12 '.labels.nodes = [{name: "a-team:dev"}]'
+gh_reviewed
+run board demo triggers reviewer
+same "reviewer reasons" '[]' "$(jq -c .reasons "$OUT")"
+run board demo triggers dev
+same "dev reasons" '["PR #912 has its review: act on it"]' "$(jq -c .reasons "$OUT")"
+run board demo pr 12
+same "review" '"posted"' "$(jq -c .review "$OUT")"
+
+case_ "once the Dev answers the review, its next green run is told to mark the PR ready"
+# `dev_said <before|after>`: a Dev comment from the team's App, added before or after the review.
+dev_said() {
+  jq --arg where "$1" '(.. | objects | select(has("isDraft"))).comments.nodes |=
+      ([{body: "Done.\n\n<!-- a-team:dev -->", author: {__typename: "Bot", login: "demo-app"}}] as $c
+       | if $where == "before" then $c + . else . + $c end)' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+  gh_reviewing
+}
+dev_said before
+run board demo pr 12
+same "a Dev comment before the review" '"posted"' "$(jq -c .review "$OUT")"
+dev_said after
+run board demo pr 12
+same "review" '"answered"' "$(jq -c .review "$OUT")"
+run board demo triggers dev
+same "dev reasons" '["PR #912 has its review answered and is green: mark it ready"]' "$(jq -c .reasons "$OUT")"
+
+case_ "a review marker pasted by anyone but the team's App doesn't count"
+gh_pr 912 true
+gh_reviewed someone
+run board demo pr 12
+same "review" '"waiting"' "$(jq -c .review "$OUT")"
+
+case_ "the Reviewer posts one review on a green draft Dev PR, with its marker"
+gh_pr 912 true
+printf 'Nothing needs changing.\n' >"$WORK/review"
+run board demo review reviewer 912 "$WORK/review"
+same "exit" 0 "$STATUS"
+same "said" "#912: reviewed" "$(cat "$OUT")"
+grep -q '^PR COMMENT pr comment 912 ' "$WRITES" || fail "review: no PR comment in '$(cat "$WRITES")'"
+same "first line" "Nothing needs changing." "$(head -1 "$POSTED")"
+same "marker" "<!-- a-team:reviewer -->" "$(tail -1 "$POSTED")"
+
+case_ "a second review, a red or ready PR, and anything but the Dev's open task PR are refused"
+refused_review() {
+  : >"$WRITES"
+  run board demo review reviewer 912 "$WORK/review"
+  failed "$1"
+  one_line "$1"
+  grep -qF "$2" "$ERR" || fail "$1: '$(cat "$ERR")'"
+  same "$1 writes" "" "$(cat "$WRITES")"
+}
+gh_reviewed
+refused_review "second review" "#912 has its review already: a PR is reviewed once"
+gh_pr 912 false
+refused_review "ready PR" "#912 is ready for review already"
+gh_pr 912 true
+gh_reviewing '.labels.nodes = [{name: "pitch"}]'
+refused_review "pitch" "reviewer reviews only the Dev's open task PRs"
+gh_reviewing '.labels.nodes = [{name: "a-team:customer"}]'
+refused_review "docs PR" "reviewer reviews only the Dev's open task PRs"
+gh_reviewing '.body = "My own change"'
+refused_review "stakeholder's PR" "reviewer reviews only the Dev's open task PRs"
+gh_reviewing '.state = "CLOSED"'
+refused_review "closed PR" "reviewer reviews only the Dev's open task PRs"
+gh_reviewing
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+refused_review "red PR" "#912 isn't green"
+
+case_ "the Reviewer can't comment, move, claim or change what a task waits on, and no one else reviews"
+gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+RUNS
+: >"$WRITES"
+run board demo comment reviewer 12 "$WORK/review"
+failed "comment"
+grep -qF "reviewer posts only its review" "$ERR" || fail "comment: '$(cat "$ERR")'"
+run board demo move reviewer 12 "In review"
+failed "move"
+run board demo claim reviewer
+failed "claim"
+run board demo depends reviewer 12 13 "why"
+failed "depends"
+run board demo review dev 912 "$WORK/review"
+failed "dev review"
+grep -qF "only reviewer reviews a task's PR" "$ERR" || fail "dev review: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "with the Reviewer off, a green draft goes to the Dev as before, and review is refused"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 1 } }
+JSON
+run board demo triggers dev
+same "dev reasons" '["PR #912 is green but still a draft"]' "$(jq -c .reasons "$OUT")"
+run board demo triggers reviewer
+same "reviewer reasons" '[]' "$(jq -c .reasons "$OUT")"
+run board demo pr 12
+same "review" '"off"' "$(jq -c .review "$OUT")"
+refused_review "reviewer off" "demo has no Reviewer"
+
+case_ "waiting marks a reviewed task, with how many points the review left to consider"
+gh_items <<'ITEMS'
+In_review 115 Reviewed already
+ITEMS
+gh_talk <<TALK
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T08:40:00Z demo-app[bot] ## Needs changing\n- a.sh:1 off by one.\n\n## Worth considering\n- Rename it.\n- Split it.\n\n<!-- a-team:reviewer -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "reviewed" true "$(jq -c '.[0].reviewed' "$OUT")"
+same "consider" 2 "$(jq -c '.[0].consider' "$OUT")"
+gh_talk <<TALK
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T08:40:00Z demo-app[bot] Nothing needs changing.\n\n<!-- a-team:reviewer -->
+TALK
+run board demo waiting
+same "clean review" '[true,0]' "$(jq -c '[.[0].reviewed, .[0].consider]' "$OUT")"
+gh_talk <<TALK
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+TALK
+run board demo waiting
+same "unreviewed" null "$(jq -c '.[0].reviewed' "$OUT")"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

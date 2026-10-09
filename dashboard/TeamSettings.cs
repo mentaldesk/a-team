@@ -38,6 +38,9 @@ public sealed partial record TeamSettings(
     /// <summary>Whether the team runs a Customer lead beside its Lead and Dev: <c>roles.customer</c>.</summary>
     public bool Customer { get; init; }
 
+    /// <summary>Whether a Reviewer reads each of the Dev's task PRs before it reaches you: <c>roles.reviewer</c>.</summary>
+    public bool Reviewer { get; init; }
+
     /// <summary>The first page of the user docs, in the repo, which the Customer lead keeps right.</summary>
     public string Docs { get; init; } = "";
 
@@ -75,6 +78,7 @@ public sealed partial record TeamSettings(
                 _ => TeamRelease.Never,
             },
             Customer = Find(root, "roles", "customer") is { ValueKind: JsonValueKind.True },
+            Reviewer = Find(root, "roles", "reviewer") is { ValueKind: JsonValueKind.True },
             Docs = Text(root, "docs"),
         };
     }
@@ -142,6 +146,7 @@ public sealed partial record TeamSettings(
         if (Release != before.Release)
             config = ConfigEdit.Set(config, ["release"], Release.ToString().ToLowerInvariant());
         SetFlag(Customer, before.Customer, "roles", "customer");
+        SetFlag(Reviewer, before.Reviewer, "roles", "reviewer");
         SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");
         SetNumber(Devs, before.Devs, "wip", "devs");
         SetNumber(Pitched, before.Pitched, "wip", "pitched");

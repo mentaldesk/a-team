@@ -27,6 +27,20 @@ public class ConversationTests
     }
 
     [Fact]
+    public void The_Reviewer_s_review_and_the_Dev_s_reply_each_read_as_theirs()
+    {
+        var conversation = Conversation.Of(new Reading($$"""
+            [{"who": "reviewer", "at": "{{Opened:O}}", "body": "## Needs changing\n- No test.", "pr": 412, "description": false},
+             {"who": "dev", "at": "{{Asked:O}}", "body": "Added the test.", "pr": 412, "description": false}]
+            """, null), 410);
+
+        Assert.Equal(
+            $"\n\n───── reviewer · {Local(Opened)} ─────\n\n## Needs changing\n- No test." +
+            $"\n\n───── dev · {Local(Asked)} ─────\n\nAdded the test.",
+            conversation.Markdown());
+    }
+
+    [Fact]
     public void Nothing_said_leaves_the_body_alone()
     {
         var conversation = Conversation.Of(new Reading("[]", null), 6);

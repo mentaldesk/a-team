@@ -260,15 +260,16 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void Roles_shows_Lead_and_Dev_always_on_and_the_Customer_lead_as_the_team_has_it()
+    public void Roles_shows_Lead_and_Dev_always_on_and_the_Customer_lead_and_Reviewer_as_the_team_has_them()
     {
         using var form = new TeamForm("a-team", Settings, _ => null);
 
         var roles = form.SubViews.OfType<CheckBox>().ToList();
 
-        Assert.Equal(["Lead", "Dev", "Customer lead"], roles.Select(role => role.Text));
-        Assert.Equal([CheckState.Checked, CheckState.Checked, CheckState.UnChecked], roles.Select(role => role.Value));
-        Assert.Equal([false, false, true], roles.Select(role => role.Enabled));
+        Assert.Equal(["Lead", "Dev", "Customer lead", "Reviewer"], roles.Select(role => role.Text));
+        Assert.Equal([CheckState.Checked, CheckState.Checked, CheckState.UnChecked, CheckState.UnChecked],
+            roles.Select(role => role.Value));
+        Assert.Equal([false, false, true, true], roles.Select(role => role.Enabled));
         Assert.All(roles, role => Assert.Equal(roles[0].Frame.Y, role.Frame.Y));
     }
 
@@ -283,6 +284,28 @@ public class TeamFormTests
 
         Assert.Equal(TeamForm.CustomerCaption, form.Hints.Message.Says);
         Assert.Equal(Settings with { Customer = true }, form.Current());
+    }
+
+    [Fact]
+    public void Ticking_the_Reviewer_is_what_the_form_saves_and_says_what_it_does()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.SetFocus();
+
+        form.Reviewer.SetFocus();
+        form.Reviewer.Value = CheckState.Checked;
+
+        Assert.Equal(TeamForm.ReviewerCaption, form.Hints.Message.Says);
+        Assert.Equal(Settings with { Reviewer = true }, form.Current());
+    }
+
+    [Fact]
+    public void A_team_with_the_Reviewer_on_shows_it_ticked()
+    {
+        using var form = new TeamForm("a-team", Settings with { Reviewer = true }, _ => null);
+
+        Assert.Equal(CheckState.Checked, form.Reviewer.Value);
+        Assert.True(form.Current().Reviewer);
     }
 
     [Fact]

@@ -78,7 +78,7 @@ dispatch() {
   [ -z "$sweep" ] || echo "$now" >"$dir/${prefix}last-sweep"
   last=$(cat "$dir/${prefix}last-start" 2>/dev/null || echo 0)
 
-  if [ "$role" != dev ]; then
+  if [ "$role" != dev ] && [ "$role" != reviewer ]; then
     reasons=$(jq -r '.reasons[]' <<<"$triggers")
     creative=$(jq -r .creative <<<"$triggers")
     if [ -z "$reasons" ]; then
@@ -144,7 +144,7 @@ copy_release() {
   "$ROOT/bin/a-team" version >"$1/VERSION"
 }
 
-# launch: starts a run for $reasons (and $task, for the Dev). A Dev run keeps its state under
+# launch: starts a run for $reasons (and $task, for the Dev or Reviewer). Such a run keeps its state under
 # runs/<task>, and the role's own files follow the run started last. Each run runs on its own copy
 # of the release, so an upgrade mid-run can't change it.
 launch() {
@@ -268,7 +268,7 @@ pick_task() {
     fresh "$2/${prefix}tried/$n" "$(jq -r '.reasons[]' <<<"$row")" "$2/runs/$n/latest.jsonl" &&
       { echo "$row"; return; }
   done < <(jq -c '.tasks[]?' <<<"$3")
-  [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
+  [ "$role" = dev ] && [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
   if ! claimed=$("$ROOT/bin/a-team" board ${prefix:+--dry-run} "$1" claim dev 2>"$2/claim.err"); then
     # Once a run has started this pass, the worktrees running out is expected.
     [ "$started" -gt 0 ] && grep -q 'no free worktree' "$2/claim.err" ||

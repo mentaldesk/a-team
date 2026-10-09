@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(a-team board * move *)",
+      "Bash(a-team board * claim *)",
+      "Bash(a-team board * add *)",
+      "Bash(a-team board * link *)",
+      "Bash(a-team board * comment *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git worktree *)",
+      "Bash(git switch *)",
+      "Bash(git add *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue edit *)",
+      "Bash(gh issue comment *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr ready *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr review *)",
+      "Bash(gh run rerun *)",
+      "Edit(**)",
+      "NotebookEdit(**)"
+    ]
+  }
+}

@@ -40,7 +40,7 @@ nothing to restart.
 | Path | What it is |
 |---|---|
 | `process.md` | The shared rules: board states, gates, markers, what agents never do |
-| `roles/lead.md`, `roles/dev.md`, `roles/customer.md` | What each role does on a run; the Customer lead only runs where `roles.customer` turns it on |
+| `roles/lead.md`, `roles/dev.md`, `roles/customer.md`, `roles/reviewer.md` | What each role does on a run; the Customer lead and the Reviewer only run where `roles.customer` and `roles.reviewer` turn them on |
 | `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
 | `bin/gh` | `gh` as the team's App inside a run |
 | `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
