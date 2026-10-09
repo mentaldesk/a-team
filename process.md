@@ -86,6 +86,8 @@ a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on I
 a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
                                                 # for Idea #<n>, <file> its one-line case
 a-team board {{team}} feedback <role> <n>       # stakeholder comments with no 👀 on them yet
+a-team board {{team}} task lead <pitch> "<title>" <file>  # Lead only: open a task, put it in Ready
+                                                # under Approved or Building <pitch>, print its number
 a-team board {{team}} link <parent> <child>     # make task <child> a sub-issue of <parent>
 a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again
                                                 # (an idea under a pitch: says so on both)

@@ -396,6 +396,14 @@ set_status() {
                                             value: {singleSelectOptionId: $option}}) { clientMutationId } }' >/dev/null
 }
 
+# board_add <what> <content node id>: put an issue or PR on the board, printing its item id.
+board_add() {
+  write "add $1 to the board" gh api graphql -F project="$(project_meta | jq -r .id)" -F content="$2" -f query='
+    mutation($project: ID!, $content: ID!) {
+      addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } } }' \
+    --jq .data.addProjectV2ItemById.item.id
+}
+
 # The organisation's Priority field: its id, and its options, which are the values it takes.
 priority_field() {
   gh api graphql -F owner="$OWNER" -f query='query($owner: String!) {
@@ -833,6 +841,8 @@ STARTABLE="$READY_TASK and ($BLOCKED | not)"
 UNSTARTABLE="$READY_TASK and $BLOCKED"
 # Ready tasks labelled `blocked`: handed back with a question, or held by a stakeholder.
 HELD="$READY_TASK and (.labels | index(\"blocked\"))"
+# A pitch the Lead may file tasks under.
+FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "Building")'
 # The Dev's tasks that take up one of wip.worktrees.
 WORKING='(.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
@@ -1008,6 +1018,10 @@ case "$CMD" in
       limit=$(cfg '.wip.ideas // 0')
       [ "$found" -lt "$limit" ] ||
         die "$found discovered Ideas are waiting for triage (wip.ideas is $limit): leave #$n off the board"
+    elif [ "$role:$to" = "lead:Ready" ]; then
+      parent=$(parent_of "$n")
+      { [ -n "$parent" ] && items | jq -e --argjson p "$parent" "any(.[]; .number == \$p and $FILEABLE)" >/dev/null; } ||
+        die "#$n isn't a sub-issue of an Approved or Building pitch: file a task with: board.sh $TEAM task lead <pitch> <title> <file>"
     fi
     existing=$(item "$n")
     if [ -n "$existing" ]; then
@@ -1037,11 +1051,7 @@ case "$CMD" in
       say "#$n: added as $to"
       exit 0
     fi
-    id=$(write "add #$n to the board" gh api graphql -F project="$(project_meta | jq -r .id)" \
-      -F content="$(gh api "repos/$REPO/$content/$n" --jq .node_id)" -f query='
-      mutation($project: ID!, $content: ID!) {
-        addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } } }' \
-      --jq .data.addProjectV2ItemById.item.id)
+    id=$(board_add "#$n" "$(gh api "repos/$REPO/$content/$n" --jq .node_id)")
     set_status "${id:-new-item}" "$to"
     record "$role" "$n" "added as $to"
     say "#$n: added as $to"
@@ -1064,6 +1074,37 @@ case "$CMD" in
       die "can't open the issue on $REPO"
     [ -z "$DRY_RUN" ] || url=0
     echo "${url##*/}"
+    ;;
+
+  task)
+    [ $# -eq 4 ] || die "usage: board.sh $TEAM task lead <pitch> <title> <file>"
+    role=$1 pitch=$2 title=$3 file=$4
+    check_role "$role"
+    [ "$role" = lead ] || die "$role may not file a task; only lead breaks down pitches"
+    [ -f "$file" ] || die "no such file: $file"
+    [ -n "${title//[[:space:]]/}" ] || die "a task needs a title"
+    it=$(item "$pitch")
+    [ -n "$it" ] || die "#$pitch is not on the board"
+    jq -e "$FILEABLE" <<<"$it" >/dev/null ||
+      die "lead files tasks only under an Approved or Building pitch (#$pitch is '$(jq -r .status <<<"$it")')"
+    body=$(cat "$file")
+    grep -qF "<!-- a-team:$role -->" <<<"$body" || body=$(printf '%s\n\n<!-- a-team:%s -->' "$body" "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
+    # Added to Ready before it's linked: auto-add can drop a new issue in Idea, where link refuses it.
+    url=$(printf '%s\n' "$body" | write "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
+      die "can't open the issue on $REPO"
+    if [ -n "$DRY_RUN" ]; then
+      n=new issue='{}'
+    else
+      n=${url##*/}
+      issue=$(gh api "repos/$REPO/issues/$n" --jq '{id, node_id}')
+    fi
+    id=$(board_add "#$n" "$(jq -r .node_id <<<"$issue")")
+    set_status "${id:-new-item}" Ready
+    write "make #$n a sub-issue of #$pitch" gh api -X POST "repos/$REPO/issues/$pitch/sub_issues" \
+      -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
+    record "$role" "$n" "filed as Ready under #$pitch"
+    say "#$n: filed as Ready under #$pitch"
     ;;
 
   priority)
@@ -1288,7 +1329,11 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM link <parent> <child>"
     child=$(gh api "repos/$REPO/issues/$2" --jq '{id, labels: [.labels[].name]}')
     child_id=$(jq -r .id <<<"$child")
-    idea "$child" "$(item "$2" | jq -r '.status // empty')" &&
+    status=$(item "$2" | jq -r '.status // empty')
+    if [ "$status" = Idea ] && ! jq -e '.labels | index("pitch")' <<<"$child" >/dev/null; then
+      die "#$2 is in Idea: if it's an idea, say \"Follow-up from #$1\" in its body instead of linking it; if it's a task, add it to Ready first"
+    fi
+    idea "$child" "$status" &&
       die "#$2 is an idea, not a task: say \"Follow-up from #$1\" in its body instead of linking it"
     write "make #$2 a sub-issue of #$1" gh api -X POST "repos/$REPO/issues/$1/sub_issues" -F "sub_issue_id=$child_id" >/dev/null
     # Only the Lead draws breakdowns, and link names no role.

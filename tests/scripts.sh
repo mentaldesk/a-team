@@ -198,6 +198,7 @@ case " \$* " in
   *"issue close"*) [ ! -e "$BIN/close-fails" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
                    echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
   *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"; printf '%s' "\${@: -1}" >"$EDITED"; exit 0 ;;
+  *addProjectV2ItemById*) printf 'ADD %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo PVTI_new; exit 0 ;;
   *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *sub_issues*) page="$SUBS" ;;
@@ -2094,7 +2095,14 @@ Approved 33 An approved pitch
 Building 34 A pitch being built
 Ready 40 A task
 ITEMS
-for n in 30 31 32 33 34; do
+gh_child 30 - -
+run board demo link 10 30
+failed "link #30"
+one_line "link #30"
+grep -qF "#30 is in Idea: if it's an idea, say \"Follow-up from #10\" in its body instead of linking it; if it's a task, add it to Ready first" "$ERR" ||
+  fail "link #30: '$(cat "$ERR")'"
+same "link #30 writes" "" "$(cat "$WRITES")"
+for n in 31 32 33 34; do
   gh_child "$n" - -
   run board demo link 10 "$n"
   failed "link #$n"
@@ -2117,6 +2125,81 @@ for n in 40 41; do
   same "link #$n said" "#$n is now a sub-issue of #10" "$(cat "$OUT")"
   grep -q "^POST .*/issues/10/sub_issues .*sub_issue_id=90$n" "$WRITES" || fail "link #$n: '$(cat "$WRITES")'"
 done
+
+case_ "task files a new issue, puts it in Ready, then makes it a sub-issue of the pitch, and prints its number"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Approved 10 An approved pitch
+Building 11 A pitch being built
+Pitched 12 A pitch in front of the stakeholder
+Idea 13 An idea
+Ready 40 A task
+ITEMS
+jq '.data.organization.projectV2.field.options += [{id: "OPT_ready", name: "Ready"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+printf '## Context\n\nFor #10.\n' >"$WORK/task"
+for pitch in 10 11; do
+  gh_child 77 - -
+  run board demo task lead "$pitch" "b opens the board on GitHub" "$WORK/task"
+  same "task under #$pitch exit" 0 "$STATUS"
+  same "task under #$pitch said" "#77: filed as Ready under #$pitch" "$(cat "$OUT")"
+  same "task under #$pitch order" "CREATE ADD api POST" "$(awk '{print $1}' "$WRITES" | paste -sd ' ' -)"
+  grep -qF -- "--title b opens the board on GitHub" "$WRITES" || fail "task under #$pitch: no title in '$(cat "$WRITES")'"
+  grep -q 'item=PVTI_new .*option=OPT_ready' "$WRITES" || fail "task under #$pitch: not Ready in '$(cat "$WRITES")'"
+  grep -q "^POST .*/issues/$pitch/sub_issues .*sub_issue_id=9077" "$WRITES" || fail "task under #$pitch: no link in '$(cat "$WRITES")'"
+  same "task under #$pitch body" "$(printf '## Context\n\nFor #10.\n\n<!-- a-team:lead -->')" "$(cat "$POSTED")"
+done
+
+case_ "task refuses any role but the lead, and a pitch that isn't Approved or Building, and files nothing"
+for role in dev customer you; do
+  gh_child 77 - -
+  run board demo task "$role" 10 "A task" "$WORK/task"
+  failed "$role task"
+  one_line "$role task"
+  same "$role task writes" "" "$(cat "$WRITES")"
+done
+for refused in "12:#12 is 'Pitched'" "13:#13 is 'Idea'" "40:#40 is 'Ready'" "99:#99 is not on the board"; do
+  pitch=${refused%%:*}
+  gh_child 77 - -
+  run board demo task lead "$pitch" "A task" "$WORK/task"
+  failed "task under #$pitch"
+  one_line "task under #$pitch"
+  grep -qF "${refused#*:}" "$ERR" || fail "task under #$pitch: '$(cat "$ERR")'"
+  same "task under #$pitch writes" "" "$(cat "$WRITES")"
+done
+
+case_ "task --dry-run shows the whole step and changes nothing"
+gh_child 77 - -
+run board --dry-run demo task lead 11 "A task" "$WORK/task"
+same "exit" 0 "$STATUS"
+same "said" "(dry run) #new: filed as Ready under #11" "$(cat "$OUT")"
+for step in "open an issue titled 'A task'" "add #new to the board" "to 'Ready'" "make #new a sub-issue of #11"; do
+  grep -qF "$step" "$ERR" || fail "dry run: no '$step' in '$(cat "$ERR")'"
+done
+grep -qF "  | <!-- a-team:lead -->" "$ERR" || fail "dry run: no body in '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "the lead adding a task to Ready that isn't under an Approved or Building pitch is refused, pointing at task"
+for parent in - 12 13; do
+  gh_child 41 "$parent" -
+  run board demo add lead 41 Ready
+  failed "add under $parent"
+  one_line "add under $parent"
+  grep -qF "#41 isn't a sub-issue of an Approved or Building pitch: file a task with: board.sh demo task lead" "$ERR" ||
+    fail "add under $parent: '$(cat "$ERR")'"
+  same "add under $parent writes" "" "$(cat "$WRITES")"
+done
+gh_child 41 11 -
+run board demo add lead 41 Ready
+same "add under a Building pitch" 0 "$STATUS"
+
+case_ "the Lead's breakdown and the command list file tasks with task, not gh issue create, link and add"
+step=$(sed -n '/^### 2\. Break down approved pitches/,/^### 3\./p' "$ROOT/roles/lead.md")
+grep -qF 'task lead <pitch> "<title>" <file>' <<<"$step" || fail "lead.md breakdown: no task command"
+grep -qE 'gh issue create|board \{\{team\}\} (link|add lead)' <<<"$step" && fail "lead.md breakdown: still files tasks by hand"
+grep -qF 'a-team board {{team}} task lead <pitch> "<title>" <file>' "$ROOT/process.md" || fail "process.md: no task command"
 
 case_ "unlink takes an idea off a pitch in any status before Done, says so on the pitch, and names the pitch on the idea"
 for parent in Pitched Approved Building In_review; do
@@ -4788,7 +4871,13 @@ run board demo accept you 8
 recorded "accept" 8 "you accepted · PR #908 merged"
 
 case_ "putting an item on the board reads as added as its status"
-gh_child 41 - -
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+Idea 6 An idea
+Building 10 A pitch
+ITEMS
+claimable
+gh_child 41 10 -
 run board demo add lead 41 Ready
 recorded "add" 41 "lead added as Ready"
 
@@ -4813,6 +4902,10 @@ ITEMS
 gh_child 40 - -
 run board demo link 10 40
 recorded "link" 40 "lead made a sub-issue of #10"
+claimable
+gh_child 77 - -
+run board demo task lead 10 "A task" "$WORK/reply"
+recorded "task" 77 "lead filed as Ready under #10"
 gh_child 40 10 -
 run board demo unlink lead 10 40
 recorded "unlink" 40 "lead taken off #10"
