@@ -1090,7 +1090,6 @@ case "$CMD" in
     body=$(cat "$file")
     grep -qF "<!-- a-team:$role -->" <<<"$body" || body=$(printf '%s\n\n<!-- a-team:%s -->' "$body" "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
-    # Added to Ready before it's linked: auto-add can drop a new issue in Idea, where link refuses it.
     url=$(printf '%s\n' "$body" | write "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
       die "can't open the issue on $REPO"
     if [ -n "$DRY_RUN" ]; then
@@ -1099,10 +1098,10 @@ case "$CMD" in
       n=${url##*/}
       issue=$(gh api "repos/$REPO/issues/$n" --jq '{id, node_id}')
     fi
-    id=$(board_add "#$n" "$(jq -r .node_id <<<"$issue")")
-    set_status "${id:-new-item}" Ready
     write "make #$n a sub-issue of #$pitch" gh api -X POST "repos/$REPO/issues/$pitch/sub_issues" \
       -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
+    id=$(board_add "#$n" "$(jq -r .node_id <<<"$issue")")
+    set_status "${id:-new-item}" Ready
     record "$role" "$n" "filed as Ready under #$pitch"
     say "#$n: filed as Ready under #$pitch"
     ;;

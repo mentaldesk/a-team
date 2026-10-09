@@ -2126,7 +2126,7 @@ for n in 40 41; do
   grep -q "^POST .*/issues/10/sub_issues .*sub_issue_id=90$n" "$WRITES" || fail "link #$n: '$(cat "$WRITES")'"
 done
 
-case_ "task files a new issue, puts it in Ready, then makes it a sub-issue of the pitch, and prints its number"
+case_ "task files a new issue, makes it a sub-issue of the pitch, then puts it in Ready, and prints its number"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
@@ -2144,7 +2144,7 @@ for pitch in 10 11; do
   run board demo task lead "$pitch" "b opens the board on GitHub" "$WORK/task"
   same "task under #$pitch exit" 0 "$STATUS"
   same "task under #$pitch said" "#77: filed as Ready under #$pitch" "$(cat "$OUT")"
-  same "task under #$pitch order" "CREATE ADD api POST" "$(awk '{print $1}' "$WRITES" | paste -sd ' ' -)"
+  same "task under #$pitch order" "CREATE POST ADD api" "$(awk '{print $1}' "$WRITES" | paste -sd ' ' -)"
   grep -qF -- "--title b opens the board on GitHub" "$WRITES" || fail "task under #$pitch: no title in '$(cat "$WRITES")'"
   grep -q 'item=PVTI_new .*option=OPT_ready' "$WRITES" || fail "task under #$pitch: not Ready in '$(cat "$WRITES")'"
   grep -q "^POST .*/issues/$pitch/sub_issues .*sub_issue_id=9077" "$WRITES" || fail "task under #$pitch: no link in '$(cat "$WRITES")'"
@@ -2174,7 +2174,7 @@ gh_child 77 - -
 run board --dry-run demo task lead 11 "A task" "$WORK/task"
 same "exit" 0 "$STATUS"
 same "said" "(dry run) #new: filed as Ready under #11" "$(cat "$OUT")"
-for step in "open an issue titled 'A task'" "add #new to the board" "to 'Ready'" "make #new a sub-issue of #11"; do
+for step in "open an issue titled 'A task'" "make #new a sub-issue of #11" "add #new to the board" "to 'Ready'"; do
   grep -qF "$step" "$ERR" || fail "dry run: no '$step' in '$(cat "$ERR")'"
 done
 grep -qF "  | <!-- a-team:lead -->" "$ERR" || fail "dry run: no body in '$(cat "$ERR")'"
