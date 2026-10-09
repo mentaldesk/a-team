@@ -1627,8 +1627,7 @@ public class WorkAreaTests : IDisposable
     {
         var calls = new List<string[]>();
         var bodies = new List<string>();
-        var asked = new List<int>();
-        var posted = new List<Remark?>();
+        var said = new List<string?>();
         ReaderComment? offered = null;
         using var window = Open(
             run: arguments =>
@@ -1641,12 +1640,7 @@ public class WorkAreaTests : IDisposable
             showBody: (_, _, _, _, _, comment, _) =>
             {
                 offered = comment;
-                posted.Add(comment!.Run());
-            },
-            askComment: (item, post) =>
-            {
-                asked.Add(item.Number);
-                return post("Not yet: shelve it.").Result is null ? "Not yet: shelve it." : null;
+                said.Add(comment!.Post("Not yet: shelve it.").Result);
             });
         window.Refresh();
         LayOut(window, 120, 30);
@@ -1656,26 +1650,20 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(new Key('c'), offered?.Key);
         Assert.Equal("comment", offered?.Hint);
-        var number = asked.Single();
-        Assert.Equal(("you", "Not yet: shelve it."), (posted.Single()?.Who, posted.Single()?.Body));
-        Assert.Equal(["board", "team0", "comment", "you", number.ToString()], calls.Single()[..5]);
+        Assert.Equal([null], said);
+        Assert.Equal(["board", "team0", "comment", "you"], calls.Single()[..4]);
         Assert.Equal(["Not yet: shelve it."], bodies);
         Assert.False(File.Exists(calls.Single()[^1]));
     }
 
     [Fact]
-    public void A_comment_that_fails_to_post_says_why_to_the_dialog()
+    public void A_comment_that_fails_to_post_says_why_to_the_reader()
     {
         string? said = "";
         using var window = Open(
             run: _ => Task.FromResult<string?>("gh: HTTP 502"),
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            showBody: (_, _, _, _, _, comment, _) => comment!.Run(),
-            askComment: (_, post) =>
-            {
-                said = post("Shelve it.").Result;
-                return null;
-            });
+            showBody: (_, _, _, _, _, comment, _) => said = comment!.Post("Shelve it.").Result);
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -2844,7 +2832,6 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, Task<Reading>>? readConversation = null,
         Func<WaitingItem, bool>? confirmAccept = null,
         TimeProvider? clock = null,
-        Func<WaitingItem, Func<string, Task<string?>>, string?>? askComment = null,
         Func<WaitingItem, Task<Reading>>? readHistory = null,
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null)
@@ -2871,7 +2858,6 @@ public class WorkAreaTests : IDisposable
             readConversation: readConversation,
             confirmAccept: confirmAccept,
             clock: clock,
-            askComment: askComment,
             readHistory: readHistory,
             readTrend: readTrend,
             showTrends: showTrends);

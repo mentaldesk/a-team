@@ -7,8 +7,11 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
-/// <summary>One drawn row of a log line: the text alone, whether it's the row the icon goes beside, and which line drawn it's from.</summary>
-public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false, int Line = 0);
+/// <summary>One drawn row of a log line: the text alone, whether it's the row the icon goes beside, which line drawn
+/// it's from, and where in that line it starts.</summary>
+public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false, int Line = 0, int Start = 0);
+
+public enum CaretMove { Left, Right, Up, Down, PageUp, PageDown, RowStart, RowEnd, Start, End }
 
 /// <summary>Where a log view was: its lines, scroll, selection and whether tool calls were shown.</summary>
 public sealed record LogPlace(IReadOnlyList<LogLine> Lines, int Top, bool Following, int Anchor, int Cursor, bool Expanded);
@@ -23,11 +26,16 @@ public sealed class LogView : View
     private int _top;
     private int _maxTop;
     private bool _following = true;
+    private readonly bool _follows = true;
     private bool _expanded;
     private bool _scrolls;
     private bool _selects;
     private int _anchor;
     private int _cursor;
+    private (int Line, int Offset)? _caret;
+    private (int Line, int Offset)? _from;
+    private int? _goal;
+    private bool _showsCaret;
 
     public LogView()
     {
@@ -44,6 +52,7 @@ public sealed class LogView : View
             if (_selects && !_following)
                 Rebase(value);
             _lines = value;
+            _caret = _from = null;
             // Before anything scrolls: a viewport past the old content gets clamped back, and stops following.
             if (Viewport.Height > 0)
                 Fit();
@@ -56,7 +65,7 @@ public sealed class LogView : View
     public bool Following
     {
         get => _following;
-        init => _following = value;
+        init => _following = _follows = value;
     }
 
     /// <summary>The top row; set before the view is laid out, it's where the view opens.</summary>
@@ -193,6 +202,129 @@ public sealed class LogView : View
 
     public LogCopy CopyAll() => LogCopy.Of(_lines);
 
+    /// <summary>Draws the caret, putting it at the start of the top row in view if it has none yet.</summary>
+    public bool ShowsCaret
+    {
+        get => _showsCaret;
+        set
+        {
+            _showsCaret = value;
+            if (value && _caret is null && Rows(Math.Max(1, Viewport.Width)) is { Count: > 0 } rows
+                && rows[Math.Min(_top, rows.Count - 1)] is var top)
+                _caret = (top.Line, top.Start);
+            SetNeedsDraw();
+        }
+    }
+
+    /// <summary>The caret's line among those drawn, and its offset in that line's text.</summary>
+    public (int Line, int Offset)? Caret => _caret;
+
+    public void DropCaret()
+    {
+        _caret = _from = null;
+        _goal = null;
+        ShowsCaret = false;
+    }
+
+    /// <summary>Scrolls to keep the caret in view; <paramref name="extend"/> selects from where it was.</summary>
+    public void MoveCaret(CaretMove move, bool extend)
+    {
+        var rows = Rows(Math.Max(1, Viewport.Width));
+        if (_caret is not { } caret || rows.Count == 0)
+            return;
+        var at = CaretRow(rows, caret);
+        var row = rows[at];
+        var column = Math.Min(caret.Offset - row.Start, row.Text.Length);
+        var page = Math.Max(1, Viewport.Height - 1);
+        int? rowsBy = move switch
+        {
+            CaretMove.Up => -1,
+            CaretMove.Down => +1,
+            CaretMove.PageUp => -page,
+            CaretMove.PageDown => +page,
+            _ => null,
+        };
+        if (rowsBy is { } by)
+        {
+            _goal ??= column;
+            var target = rows[Math.Clamp(at + by, 0, rows.Count - 1)];
+            if (move is CaretMove.PageUp or CaretMove.PageDown)
+                ScrollTo(_top + by);
+            _caret = (target.Line, target.Start + Math.Min(_goal.Value, target.Text.Length));
+        }
+        else
+        {
+            _goal = null;
+            var last = rows[^1];
+            _caret = move switch
+            {
+                CaretMove.Left when caret.Offset > 0 => (caret.Line, caret.Offset - 1),
+                CaretMove.Left when caret.Line > 0 => (caret.Line - 1, LineEnd(rows, caret.Line - 1)),
+                CaretMove.Right when caret.Offset < LineEnd(rows, caret.Line) => (caret.Line, caret.Offset + 1),
+                CaretMove.Right when caret.Line < last.Line => (caret.Line + 1, 0),
+                CaretMove.RowStart => (row.Line, row.Start),
+                CaretMove.RowEnd => (row.Line, row.Start + row.Text.Length),
+                CaretMove.Start => (0, 0),
+                CaretMove.End => (last.Line, last.Start + last.Text.Length),
+                _ => caret,
+            };
+        }
+        _from = extend ? _from ?? caret : null;
+        var now = CaretRow(rows, _caret.Value);
+        if (now < _top)
+            ScrollTo(now);
+        else if (now >= _top + Viewport.Height)
+            ScrollTo(now - Viewport.Height + 1);
+        SetNeedsDraw();
+    }
+
+    /// <summary>How many lines the selection quotes, if any.</summary>
+    public int Marked => MarkedText().Count;
+
+    public void Unmark()
+    {
+        _from = null;
+        SetNeedsDraw();
+    }
+
+    /// <summary>The selected text, a line at a time; a selection ending at the start of a line leaves that line out.</summary>
+    public IReadOnlyList<string> MarkedText()
+    {
+        if (Selected() is not var (start, end))
+            return [];
+        var shown = Shown();
+        var lines = new List<string>();
+        for (var line = start.Line; line <= end.Line; line++)
+        {
+            var text = _lines[shown[line]].Text;
+            var from = line == start.Line ? Math.Min(start.Offset, text.Length) : 0;
+            var to = line == end.Line ? Math.Min(end.Offset, text.Length) : text.Length;
+            lines.Add(text[from..Math.Max(from, to)]);
+        }
+        if (lines.Count > 1 && lines[^1].Length == 0)
+            lines.RemoveAt(lines.Count - 1);
+        return lines;
+    }
+
+    private ((int Line, int Offset) Start, (int Line, int Offset) End)? Selected() =>
+        _caret is { } caret && _from is { } from && caret != from
+            ? from.CompareTo(caret) < 0 ? (from, caret) : (caret, from)
+            : null;
+
+    private static int CaretRow(IReadOnlyList<LogRow> rows, (int Line, int Offset) caret)
+    {
+        var at = 0;
+        for (var i = 0; i < rows.Count && (rows[i].Line < caret.Line || rows[i].Line == caret.Line && rows[i].Start <= caret.Offset); i++)
+            at = i;
+        return at;
+    }
+
+    private static int LineEnd(IReadOnlyList<LogRow> rows, int line)
+    {
+        var last = rows.Last(row => row.Line == line);
+        return last.Start + last.Text.Length;
+    }
+
     internal LogPlace Place => new(_lines, _top, _following, _anchor, _cursor, _expanded);
 
     /// <summary>Back where <paramref name="place"/> was, then on to <paramref name="lines"/> as if they'd arrived
@@ -281,14 +413,19 @@ public sealed class LogView : View
         return null;
     }
 
-    public void End() => ScrollTo(int.MaxValue);
+    /// <summary>Stays at the end, as the view is laid out again, until it's scrolled.</summary>
+    public void End()
+    {
+        ScrollTo(int.MaxValue);
+        _following = true;
+    }
 
     private void ScrollTo(int top)
     {
         if (Viewport.Height > 0)
             _maxTop = Math.Max(0, Rows(Math.Max(1, Viewport.Width)).Count - Viewport.Height);
         _top = Math.Clamp(top, 0, _maxTop);
-        _following = _top >= _maxTop;
+        _following = _follows && _top >= _maxTop;
         if (_scrolls)
             Viewport = Viewport with { Y = _top };
         SetNeedsDraw();
@@ -323,7 +460,8 @@ public sealed class LogView : View
         var rows = Rows(width);
         _maxTop = Math.Max(0, rows.Count - height);
         _top = _following ? _maxTop : Math.Min(_top, _maxTop);
-        var (from, to) = _selects && _lines.Count > 0 ? Selection(Shown()) : (-1, -1);
+        var (from, to) = _selects && _lines.Count > 0 ? Selection(Shown()) : (0, -1);
+        var selected = Selected();
         for (var row = 0; row < height; row++)
         {
             var line = _top + row < rows.Count ? rows[_top + row] : new LogRow("", LogLineKind.Prose, Line: -1);
@@ -331,8 +469,35 @@ public sealed class LogView : View
             AddStr(0, row, Drawn(line, width));
             if (ReadsMarkdown)
                 DrawSpans(line, row);
+            if (selected is var (start, end))
+                DrawSelected(line, row, start, end, rows);
         }
+        if (_showsCaret && _caret is { } caret && rows.Count > 0 && CaretRow(rows, caret) - _top is var at && at >= 0 && at < height)
+            DrawCaret(rows[_top + at], at, caret);
         return true;
+    }
+
+    /// <summary>A line selected through to the next takes a cell past its end, as an editor shows the line break.</summary>
+    private void DrawSelected(LogRow line, int row, (int Line, int Offset) start, (int Line, int Offset) end, IReadOnlyList<LogRow> rows)
+    {
+        if (line.Line < start.Line || line.Line > end.Line)
+            return;
+        var from = line.Line == start.Line ? Math.Clamp(start.Offset - line.Start, 0, line.Text.Length) : 0;
+        var to = line.Line == end.Line ? Math.Clamp(end.Offset - line.Start, 0, line.Text.Length) : line.Text.Length;
+        var lastRow = rows.Count == _top + row + 1 || rows[_top + row + 1].Line != line.Line;
+        var text = line.Text[from..Math.Max(from, to)] + (line.Line < end.Line && lastRow ? " " : "");
+        if (text.Length == 0)
+            return;
+        SetAttribute(AttributeFor(line.Kind, selected: true));
+        AddStr(Lead(line.Kind) + line.Text[..from].GetColumns(), row, text);
+    }
+
+    private void DrawCaret(LogRow line, int row, (int Line, int Offset) caret)
+    {
+        var column = Math.Clamp(caret.Offset - line.Start, 0, line.Text.Length);
+        var attribute = AttributeFor(line.Kind);
+        SetAttribute(new Attribute(attribute.Background, attribute.Foreground));
+        AddStr(Lead(line.Kind) + line.Text[..column].GetColumns(), row, column < line.Text.Length ? line.Text[column].ToString() : " ");
     }
 
     /// <summary>The row as it reaches the screen: its icon in the field the text is budgeted around, then the text.</summary>
@@ -458,17 +623,20 @@ public sealed class LogView : View
                 continue;
             }
             var rest = line.Text;
+            var start = 0;
             var wrapped = false;
             while (rest.Length > room)
             {
                 var cut = rest.LastIndexOf(' ', room - 1);
                 if (cut <= 0)
                     cut = room;
-                rows.Add(new LogRow(rest[..cut], line.Kind, wrapped, index));
-                rest = rest[cut..].TrimStart();
+                rows.Add(new LogRow(rest[..cut], line.Kind, wrapped, index, start));
+                var next = rest[cut..].TrimStart();
+                start += rest.Length - next.Length;
+                rest = next;
                 wrapped = true;
             }
-            rows.Add(new LogRow(rest, line.Kind, wrapped, index));
+            rows.Add(new LogRow(rest, line.Kind, wrapped, index, start));
         }
         return rows;
     }

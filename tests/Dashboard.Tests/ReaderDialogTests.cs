@@ -173,7 +173,7 @@ public class ReaderDialogTests
     public void Comment_sits_after_approve_and_before_GitHub()
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { }, () => { },
-            comment: new ReaderComment(new Key('c'), "comment", () => null));
+            comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
         Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · a approve · c comment · g on GitHub · Esc close", dialog.Hints.Says);
@@ -183,7 +183,7 @@ public class ReaderDialogTests
     public void Without_a_pitch_to_approve_comment_is_still_offered()
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
-            comment: new ReaderComment(new Key('c'), "comment", () => null));
+            comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
         Assert.Equal("Up/Down/PgUp/PgDn scroll · h show history · c comment · g on GitHub · Esc close", dialog.Hints.Says);
@@ -193,10 +193,10 @@ public class ReaderDialogTests
     public void A_posted_comment_leaves_the_reader_open_saying_so()
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
-            comment: new ReaderComment(new Key('c'), "comment", () => Said));
+            comment: Commenting());
         dialog.Layout(new Size(60, 10));
 
-        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
+        Say(dialog, Said.Body);
 
         Assert.Equal("commented on #180", dialog.Message.Says);
     }
@@ -205,11 +205,11 @@ public class ReaderDialogTests
     public void A_posted_comment_joins_the_end_of_the_conversation_in_view()
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
-            comment: new ReaderComment(new Key('c'), "comment", () => Said));
+            comment: Commenting());
         dialog.Layout(new Size(60, 10));
         var before = dialog.Body.Lines.Count;
 
-        dialog.NewKeyDownEvent(new Key('c'));
+        Say(dialog, Said.Body);
         dialog.Layout(new Size(60, 10));
 
         var added = dialog.Body.Lines.Skip(before).Select(line => line.Text).ToList();
@@ -219,19 +219,6 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.End);
         dialog.Layout(new Size(60, 10));
         Assert.Equal(dialog.Body.Top, top);
-    }
-
-    [Fact]
-    public void A_cancelled_comment_says_nothing()
-    {
-        var asked = 0;
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
-            comment: new ReaderComment(new Key('c'), "comment", () => ++asked < 0 ? Said : null));
-
-        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
-
-        Assert.Equal(1, asked);
-        Assert.Equal("", dialog.Message.Says);
     }
 
     [Fact]
@@ -361,10 +348,10 @@ public class ReaderDialogTests
     public void A_posted_comment_tops_History_without_reopening_the_reader()
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
-            comment: new ReaderComment(new Key('c'), "comment", () => Said), width: 120);
+            comment: Commenting(), width: 120);
         dialog.Layout(new Size(120, 20));
 
-        dialog.NewKeyDownEvent(new Key('c'));
+        Say(dialog, Said.Body);
 
         Assert.EndsWith("you   commented", dialog.HistoryLog.Lines[0].Text);
         Assert.Equal(Recorded.Events.Count + 1, dialog.HistoryLog.Lines.Count);
@@ -375,9 +362,9 @@ public class ReaderDialogTests
     {
         using var dialog = new ReaderDialog(Item,
             new IssueBody(Long(), History: new History([], Failure: "couldn't read #180's history")), () => { },
-            comment: new ReaderComment(new Key('c'), "comment", () => Said), width: 120);
+            comment: Commenting(), width: 120);
 
-        dialog.NewKeyDownEvent(new Key('c'));
+        Say(dialog, Said.Body);
 
         Assert.Equal(["couldn't read #180's history"], dialog.HistoryLog.Lines.Select(line => line.Text));
     }
@@ -629,7 +616,7 @@ public class ReaderDialogTests
     [Fact]
     public void The_hints_add_rank_and_set_and_leave_h_to_High()
     {
-        using var dialog = Ranking(onApprove: () => { }, comment: new ReaderComment(new Key('c'), "comment", () => null),
+        using var dialog = Ranking(onApprove: () => { }, comment: Commenting(),
             width: 120);
 
         Assert.Equal(
@@ -653,10 +640,10 @@ public class ReaderDialogTests
     public void Commenting_keeps_the_reader_open_with_the_rank_chosen_and_Enter_still_sets_it()
     {
         using var dialog = Ranking(Long(), Rank.None, height: 12,
-            comment: new ReaderComment(new Key('c'), "comment", () => Said));
+            comment: Commenting());
 
         dialog.NewKeyDownEvent(new Key('m'));
-        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
+        Say(dialog, Said.Body);
 
         Assert.Equal("commented on #180", dialog.Message.Says);
         Assert.Equal("Shelve it until #150 lands.", dialog.Body.Lines[^1].Text);
@@ -704,6 +691,520 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.Enter);
 
         Assert.Equal(Rank.Low, dialog.Chosen);
+    }
+
+    private static ReaderDialog Replying(
+        int width = 140, Func<string, Task<string?>>? post = null, Func<bool>? confirmDiscard = null,
+        Action? onApprove = null, ReaderCommand? accept = null, string? body = null, int height = 20)
+    {
+        var dialog = new ReaderDialog(Item, new IssueBody(body ?? Long(), History: Recorded), () => { }, onApprove,
+            accept, Commenting(post), width: width, confirmDiscard: confirmDiscard);
+        dialog.Layout(new Size(width, height));
+        return dialog;
+    }
+
+    private static void Open(ReaderDialog dialog, int width = 140, int height = 20)
+    {
+        dialog.NewKeyDownEvent(new Key('c'));
+        dialog.Layout(new Size(width, height));
+    }
+
+    [Fact]
+    public void c_opens_the_comment_on_the_left_of_the_body_with_the_cursor_in_it()
+    {
+        using var dialog = Replying();
+
+        Open(dialog);
+
+        Assert.True(dialog.CommentShown);
+        Assert.True(dialog.Field.HasFocus);
+        Assert.True(dialog.Field.WordWrap);
+        Assert.Equal(new Rectangle(0, 0, ReaderPanes.CommentWidth, dialog.Body.SuperView!.Frame.Height),
+            dialog.Field.SuperView!.Frame);
+        Assert.Equal(ReaderPanes.CommentWidth, dialog.Body.SuperView.Frame.X);
+        Assert.True(dialog.HistoryShown);
+        Assert.Equal(dialog.Viewport.Width - ReaderPanes.HistoryWidth, dialog.Body.SuperView.Frame.Right);
+    }
+
+    [Fact]
+    public void Opening_the_comment_leaves_a_body_that_now_wraps_where_you_were_reading()
+    {
+        var body = string.Join('\n', Enumerable.Range(1, 12).Select(line => $"{line} {new string('x', 70)}"));
+        using var dialog = Replying(body: body);
+
+        Open(dialog);
+
+        Assert.Equal(0, dialog.Body.Top);
+    }
+
+    [Fact]
+    public void Tab_cycles_comment_body_and_History_and_Shift_Tab_goes_back()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Body.HasFocus);
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.HistoryLog.HasFocus);
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Field.HasFocus);
+        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+        Assert.True(dialog.HistoryLog.HasFocus);
+        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+        Assert.True(dialog.Body.HasFocus);
+    }
+
+    [Fact]
+    public void Without_History_Tab_moves_between_the_comment_and_the_body()
+    {
+        using var dialog = Replying();
+        dialog.NewKeyDownEvent(new Key('h'));
+        Open(dialog);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Body.HasFocus);
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Field.HasFocus);
+    }
+
+    [Fact]
+    public void Esc_in_the_comment_goes_back_to_the_pane_you_came_from_and_c_returns_to_your_draft()
+    {
+        using var dialog = Replying();
+        dialog.NewKeyDownEvent(Key.Tab);
+        Open(dialog);
+        dialog.Field.Text = "half a thought";
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+        Assert.True(dialog.HistoryLog.HasFocus);
+        Assert.True(dialog.CommentShown);
+
+        dialog.NewKeyDownEvent(new Key('c'));
+        Assert.True(dialog.Field.HasFocus);
+        Assert.Equal("half a thought", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void The_caret_starts_on_the_top_line_in_view_and_the_arrows_move_it()
+    {
+        using var dialog = Replying();
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Open(dialog);
+        Assert.False(dialog.Body.ShowsCaret);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Body.ShowsCaret);
+        Assert.Equal((2, 0), dialog.Body.Caret);
+
+        dialog.NewKeyDownEvent(Key.CursorRight);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal((3, 1), dialog.Body.Caret);
+        dialog.NewKeyDownEvent(Key.End);
+        Assert.Equal((3, 6), dialog.Body.Caret);
+        dialog.NewKeyDownEvent(Key.Home);
+        dialog.NewKeyDownEvent(Key.CursorLeft);
+        Assert.Equal((2, 6), dialog.Body.Caret);
+    }
+
+    [Fact]
+    public void Up_and_Down_keep_the_caret_s_column_across_a_shorter_line()
+    {
+        using var dialog = Replying(body: "a longer line\nab\nanother line");
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.End);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal((1, 2), dialog.Body.Caret);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal((2, 12), dialog.Body.Caret);
+    }
+
+    [Fact]
+    public void In_a_wrapped_line_the_caret_moves_a_row_at_a_time()
+    {
+        using var dialog = Replying(body: string.Join(' ', Enumerable.Repeat("word", 60)));
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        var (line, offset) = dialog.Body.Caret!.Value;
+        dialog.NewKeyDownEvent(Key.End);
+        dialog.NewKeyDownEvent(Key.Home);
+
+        Assert.Equal(0, line);
+        Assert.True(offset > 0);
+        Assert.Equal((0, offset), dialog.Body.Caret);
+    }
+
+    [Fact]
+    public void The_pane_scrolls_to_keep_the_caret_in_view()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        for (var i = 0; i < 30; i++)
+            dialog.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.Equal((30, 0), dialog.Body.Caret);
+        Assert.InRange(30, dialog.Body.Top, dialog.Body.Top + dialog.Body.Viewport.Height - 1);
+        dialog.NewKeyDownEvent(Key.Home.WithCtrl);
+        Assert.Equal(0, dialog.Body.Top);
+    }
+
+    [Fact]
+    public void Shift_and_the_arrows_select_part_of_a_line_or_across_lines()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+        for (var i = 0; i < 5; i++)
+            dialog.NewKeyDownEvent(Key.CursorRight);
+
+        dialog.NewKeyDownEvent(Key.End.WithShift);
+        Assert.Equal(["1"], dialog.Body.MarkedText());
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        Assert.Equal(["1", "line 2"], dialog.Body.MarkedText());
+        dialog.NewKeyDownEvent(Key.CursorLeft.WithShift);
+        Assert.Equal(["1", "line "], dialog.Body.MarkedText());
+        dialog.NewKeyDownEvent(Key.CursorUp.WithShift);
+        Assert.Equal(0, dialog.Body.Marked);
+        dialog.NewKeyDownEvent(Key.Home.WithShift);
+        Assert.Equal(["line "], dialog.Body.MarkedText());
+    }
+
+    [Fact]
+    public void Shift_Down_from_the_start_of_a_line_selects_that_line_alone()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        Assert.Equal(["line 1"], dialog.Body.MarkedText());
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        Assert.Equal(["line 1", "line 2"], dialog.Body.MarkedText());
+        Assert.Equal(2, dialog.Body.Marked);
+    }
+
+    [Fact]
+    public void Moving_without_Shift_drops_the_selection()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+
+        dialog.NewKeyDownEvent(Key.CursorRight);
+
+        Assert.Equal(0, dialog.Body.Marked);
+    }
+
+    [Fact]
+    public void History_has_a_caret_of_its_own()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        Assert.False(dialog.Body.ShowsCaret);
+        Assert.True(dialog.HistoryLog.ShowsCaret);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+
+        Assert.Equal(dialog.HistoryLog.Lines.Take(2).Select(line => line.Text), dialog.HistoryLog.MarkedText());
+        Assert.Equal(0, dialog.Body.Marked);
+        Assert.Equal((1, 0), dialog.Body.Caret);
+    }
+
+    [Fact]
+    public void Back_in_the_comment_neither_pane_shows_its_caret()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        Assert.False(dialog.Body.ShowsCaret);
+        Assert.False(dialog.HistoryLog.ShowsCaret);
+    }
+
+    [Fact]
+    public void The_hints_count_the_selected_lines_and_Esc_clears_them_first()
+    {
+        var asked = 0;
+        using var dialog = Replying(confirmDiscard: () => ++asked > 0);
+        Open(dialog);
+        Assert.Equal(
+            "Tab switch pane · Shift+arrows select · Ctrl+Enter post · g on GitHub · Esc back",
+            dialog.Hints.Says);
+        dialog.Field.Text = "draft";
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.EndsWith("Shift+arrows select · Ctrl+Enter post · g on GitHub · Esc close", dialog.Hints.Says);
+
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        Assert.Contains("Shift+arrows select · q quote 1 line · Ctrl+Enter post", dialog.Hints.Says);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        Assert.Contains("q quote 2 lines", dialog.Hints.Says);
+        Assert.EndsWith("Esc clear", dialog.Hints.Says);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+        Assert.Equal(0, dialog.Body.Marked);
+        Assert.DoesNotContain("quote", dialog.Hints.Says);
+        Assert.Equal(0, asked);
+    }
+
+    [Fact]
+    public void q_quotes_the_selection_into_the_comment_and_takes_the_keyboard_below_it()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('q')));
+
+        Assert.Equal("> line 1\n> line 2\n\n", dialog.Field.Text);
+        Assert.True(dialog.Field.HasFocus);
+        dialog.Field.InsertText("Yes.");
+        Assert.Equal("> line 1\n> line 2\n\nYes.", dialog.Field.Text);
+        Assert.Equal(0, dialog.Body.Marked);
+        Assert.DoesNotContain("quote", dialog.Hints.Says);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+        Assert.True(dialog.Body.HasFocus);
+    }
+
+    [Fact]
+    public void Quotes_go_in_where_the_comment_s_cursor_is_as_often_as_you_like()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.Field.Text = "Agreed.";
+        dialog.Field.MoveEnd();
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        dialog.NewKeyDownEvent(new Key('q'));
+        dialog.NewKeyDownEvent(Key.Esc);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        dialog.NewKeyDownEvent(new Key('q'));
+        dialog.Field.InsertText("But not this.");
+
+        Assert.Equal("Agreed.\n> line 1\n\n> line 3\n\nBut not this.", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void A_quote_at_the_start_of_the_draft_goes_before_it()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.Field.Text = "Agreed.";
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        dialog.NewKeyDownEvent(new Key('q'));
+
+        Assert.Equal("> line 1\n\nAgreed.", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void A_quote_in_the_middle_of_a_line_starts_on_a_line_of_its_own()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.Field.Text = "Agreed, but";
+        dialog.Field.InsertionPoint = new Point(7, 0);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        dialog.NewKeyDownEvent(new Key('q'));
+
+        Assert.Equal("Agreed,\n> line 1\n\n but", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void A_quote_keeps_blank_lines_and_quotes_inside_it()
+    {
+        Assert.Equal("> ## Assumed\n>\n> > as written\n\n", ReaderDialog.Quote(["## Assumed", "", "> as written"], midLine: false));
+        Assert.Equal("\n> one\n\n", ReaderDialog.Quote(["one"], midLine: true));
+    }
+
+    [Fact]
+    public void Without_the_comment_open_there_is_no_caret_and_the_selecting_keys_do_nothing()
+    {
+        using var dialog = Replying();
+
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        dialog.NewKeyDownEvent(new Key('q'));
+
+        Assert.Null(dialog.Body.Caret);
+        Assert.Equal(0, dialog.Body.Marked);
+        Assert.False(dialog.CommentShown);
+        Assert.Equal("Up/Down/PgUp/PgDn scroll · Tab switch pane · h hide history · c comment · g on GitHub · Esc close",
+            dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Ctrl_Enter_posts_from_the_body_and_closes_the_pane()
+    {
+        var posted = new List<string>();
+        using var dialog = Replying(post: body =>
+        {
+            posted.Add(body);
+            return Task.FromResult<string?>(null);
+        });
+        Open(dialog);
+        dialog.Field.Text = "Ship it.";
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Enter.WithCtrl));
+
+        Assert.Equal(["Ship it."], posted);
+        Assert.False(dialog.CommentShown);
+        Assert.Equal("", dialog.Field.Text);
+        Assert.True(dialog.Body.HasFocus);
+        Assert.Equal("commented on #180", dialog.Message.Says);
+        Assert.Equal("Ship it.", dialog.Body.Lines[^1].Text);
+        Assert.Null(dialog.Body.Caret);
+        Assert.False(dialog.Body.ShowsCaret);
+        Assert.EndsWith("you   commented", dialog.HistoryLog.Lines[0].Text);
+    }
+
+    [Fact]
+    public void A_comment_that_fails_to_post_stays_in_the_pane_saying_why()
+    {
+        using var dialog = Replying(post: _ => Task.FromResult<string?>("gh: HTTP 502"));
+        Open(dialog);
+        dialog.Field.Text = "Ship it.";
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.True(dialog.CommentShown);
+        Assert.Equal("Ship it.", dialog.Field.Text);
+        Assert.Equal("gh: HTTP 502", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void An_empty_comment_is_not_posted()
+    {
+        var posted = 0;
+        using var dialog = Replying(post: _ => Task.FromResult<string?>(++posted < 0 ? "" : null));
+        Open(dialog);
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.Equal(0, posted);
+        Assert.Equal("Nothing to post: the comment is empty", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Leaving_with_a_draft_asks_first_and_staying_keeps_it()
+    {
+        var asked = 0;
+        var approved = 0;
+        var accepted = 0;
+        using var dialog = Replying(confirmDiscard: () => ++asked < 0, onApprove: () => approved++,
+            accept: new ReaderCommand(new Key('m'), "accept", () => ++accepted > 0));
+        Open(dialog);
+        dialog.Field.Text = "half a thought";
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+        dialog.NewKeyDownEvent(new Key('a'));
+        dialog.NewKeyDownEvent(new Key('m'));
+
+        Assert.Equal(3, asked);
+        Assert.Equal(0, approved);
+        Assert.Equal(0, accepted);
+        Assert.Equal("half a thought", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void Leaving_with_a_draft_goes_ahead_once_you_discard_it()
+    {
+        var approved = 0;
+        using var dialog = Replying(confirmDiscard: () => true, onApprove: () => approved++);
+        Open(dialog);
+        dialog.Field.Text = "half a thought";
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(new Key('a'));
+
+        Assert.Equal(1, approved);
+    }
+
+    [Fact]
+    public void Leaving_with_an_empty_comment_asks_nothing()
+    {
+        var asked = 0;
+        var approved = 0;
+        using var dialog = Replying(confirmDiscard: () => ++asked < 0, onApprove: () => approved++);
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(new Key('a'));
+
+        Assert.Equal(0, asked);
+        Assert.Equal(1, approved);
+    }
+
+    [Fact]
+    public void Too_narrow_for_three_panes_History_hides_while_you_comment_and_h_still_shows_it()
+    {
+        var panes = new ReaderPanes();
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+            comment: Commenting(), panes: panes, width: ReaderPanes.NarrowestThree - 1);
+        Assert.True(dialog.HistoryShown);
+
+        dialog.NewKeyDownEvent(new Key('c'));
+        Assert.False(dialog.HistoryShown);
+        Assert.True(panes.HistoryShown);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        dialog.NewKeyDownEvent(new Key('h'));
+        Assert.True(dialog.HistoryShown);
+    }
+
+    [Fact]
+    public void Typing_in_the_comment_with_the_ranks_showing_writes_rather_than_ranks()
+    {
+        using var dialog = Ranking(Long(), Rank.Low, comment: Commenting());
+
+        dialog.NewKeyDownEvent(new Key('c'));
+        dialog.NewKeyDownEvent(new Key('h'));
+        dialog.NewKeyDownEvent(Key.Enter);
+        dialog.NewKeyDownEvent(new Key('m'));
+
+        Assert.Equal("h\nm", dialog.Field.Text.ReplaceLineEndings("\n"));
+        Assert.Equal(Rank.Low, dialog.Ranks!.Value);
+        Assert.Null(dialog.Chosen);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+        Assert.True(dialog.Ranks.HasFocus);
+    }
+
+    private sealed class Epoch : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UnixEpoch;
+    }
+
+    private static ReaderComment Commenting(Func<string, Task<string?>>? post = null) =>
+        new(new Key('c'), "comment", post ?? (_ => Task.FromResult<string?>(null)), new Epoch());
+
+    private static void Say(ReaderDialog dialog, string text)
+    {
+        dialog.NewKeyDownEvent(new Key('c'));
+        dialog.Field.Text = text;
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
     }
 
     private static string Long() =>

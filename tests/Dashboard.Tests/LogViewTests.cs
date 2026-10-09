@@ -19,6 +19,16 @@ public class LogViewTests
     }
 
     [Fact]
+    public void Each_wrapped_row_knows_where_in_its_line_it_starts()
+    {
+        var line = new LogLine("one two  three", LogLineKind.Prose);
+
+        var rows = LogView.Wrap([line], 8);
+
+        Assert.Equal([("one two", 0), ("three", 9)], rows.Select(row => (row.Text, row.Start)));
+    }
+
+    [Fact]
     public void A_line_that_fits_is_left_alone()
     {
         var line = new LogLine("finished: ok, 34 turns, $1.42", LogLineKind.ResultOk);
