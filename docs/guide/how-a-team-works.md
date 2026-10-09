@@ -91,6 +91,10 @@ Dashboard.
 - **If only the product can fix it**, say a feature is hard to find, it files an Idea written as your
   user's problem ("I can't find how to…"), with what it looked at. It waits in Triage with the Lead's
   discoveries, and counts towards the same limit.
+- **Once a week**, and within a few minutes of being turned on, it audits the docs as a whole: what's
+  wrong against the product as it is now, what a shipped feature is missing, and whether pages are
+  where a newcomer would look. Each fix is a line in the same docs PR. If it finds nothing, it
+  changes nothing.
 
 Its PR waits in Review in the [Work](work.md) area, marked as the Customer lead's. Accept it like a
 task, and the next change starts a new one. It never changes code, pitches or tasks.
