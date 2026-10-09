@@ -925,6 +925,11 @@ case "$CMD" in
       turn=none
     fi
     if [ "$turn" != none ]; then mkdir -p "$(dirname "$state")" && echo "$turn" >"$state"; fi
+    # A run started across the board shows on the Idea it pitches.
+    card="$STATE/$TEAM/lead/card"
+    if [ "$turn" = pitch ] && [ "${A_TEAM_RUN_TEAM:-}" = "$TEAM" ] && [ ! -e "$card" ] && [ -z "$DRY_RUN" ]; then
+      mkdir -p "$(dirname "$card")" && jq -c '{number}' <<<"$idea" >"$card"
+    fi
     jq -n --argjson promote "$promote" --argjson demote "$demote" --arg turn "$turn" --argjson item "$idea" \
       --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" --argjson blocked "$blocked" \
       --argjson floor "$(cfg '.wip.readyFloor // 0')" --argjson skipped "$skipped" '
@@ -1566,7 +1571,7 @@ case "$CMD" in
     reasons=()
     recent='[]'
     [ "$role" = customer ] || recent=$(recent_comments)
-    tasks='[]' chores=() ready='' items=()
+    tasks='[]' chores=() ready='' items=() card=''
     # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
     task_reason() {
       reasons+=("$3")
@@ -1668,6 +1673,7 @@ case "$CMD" in
           [ "$status" != "In review" ] || kind="docs PR"
         fi
         if [ -n "$kind" ]; then
+          card=$n
           recent=$(jq -s 'add' <(recent_comments) <(pr_reviews "$n"))
           at=$(feedback_at "$recent" customer "$n")
           [ -n "$at" ] && reasons+=("stakeholder feedback on $kind #$n ($at)") && items+=("$n")
@@ -1719,11 +1725,11 @@ case "$CMD" in
     fi
     jq -n --argjson creative "$creative" --arg role "$role" --argjson tasks "$tasks" --arg ready "$ready" \
       --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" \
-      --argjson items "$(jq -n '$ARGS.positional | map(tonumber)' --args ${items[@]+"${items[@]}"})" '
+      --argjson items "$(jq -n '$ARGS.positional | map(tonumber)' --args ${items[@]+"${items[@]}"})" --arg card "$card" '
       {reasons: $ARGS.positional, creative: $creative}
       + if $role == "dev"
         then {tasks: $tasks, ready: (if $ready == "" then null else $ready | tonumber end), chores: $chores}
-        else {items: $items} end' \
+        else {items: $items, card: (if ($items | length) == 1 then $items[0] elif $card != "" then $card | tonumber else null end)} end' \
       --args "${reasons[@]+"${reasons[@]}"}"
     ;;
 

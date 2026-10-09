@@ -1602,6 +1602,7 @@ run board demo triggers lead
 same "exit" 0 "$STATUS"
 same "reasons" "[\"stakeholder feedback on #7 (${TODAY}T02:28:46Z)\"]" "$(jq -c .reasons "$OUT")"
 same "items" "[7]" "$(jq -c .items "$OUT")"
+same "card" 7 "$(jq -c .card "$OUT")"
 
 case_ "waiting says the same: the gate is the Lead's until the 👀 is there"
 gh_talk <<TALK
@@ -2697,6 +2698,7 @@ run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" "[\"stakeholder feedback on docs PR #9 (${TODAY}T08:30:00Z)\"]" "$(jq -c .reasons "$OUT")"
 same "items" "[9]" "$(jq -c .items "$OUT")"
+same "card" 9 "$(jq -c .card "$OUT")"
 for role in lead dev; do
   run board demo triggers "$role"
   same "$role exit" 0 "$STATUS"
@@ -2923,6 +2925,18 @@ customer_issue 41 "<!-- a-team:customer -->"
 A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "exit" 0 "$STATUS"
 same "lead-next" '{"turn":"pitch","item":41}' "$(jq -c '{turn, item: .item.number}' "$OUT")"
+[ -e "$WORK/state/demo/lead/card" ] && fail "outside a run: recorded a card"
+
+case_ "a Lead run started across the board records the Idea it pitches, and keeps a card it was started for"
+rm -f "$WORK/state/demo/lead/card"
+A_TEAM_RUN_TEAM=demo A_TEAM_STATE="$WORK/state" run board --dry-run demo lead-next
+[ -e "$WORK/state/demo/lead/card" ] && fail "dry run: recorded a card"
+A_TEAM_RUN_TEAM=demo A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "card" '{"number":41}' "$(cat "$WORK/state/demo/lead/card")"
+echo '{"number":7}' >"$WORK/state/demo/lead/card"
+A_TEAM_RUN_TEAM=demo A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "kept" '{"number":7}' "$(cat "$WORK/state/demo/lead/card")"
+rm -f "$WORK/state/demo/lead/card"
 run board demo waiting
 same "triage" '[42]' "$(jq -c 'map(select(.reason == "waiting to be ranked") | .number)' "$OUT")"
 
@@ -3724,6 +3738,7 @@ dispatch_dev
 same "asked" "board demo triggers customer --sweep" "$(cat "$CLAIMS")"
 grep -qE 'demo customer: started [0-9]+ on 0\.1\.7: pitch #5 is done' "$A_TEAM_STATE/dispatch.log" ||
   fail "customer: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+[ -e "$A_TEAM_STATE/demo/customer/card" ] && fail "no card: recorded '$(cat "$A_TEAM_STATE/demo/customer/card")'"
 SETTINGS="$A_TEAM_STATE/demo/customer/release/settings.json"
 jq -e '.permissions.deny | index("Edit(**/*.cs)") and index("Bash(gh pr merge *)")' "$SETTINGS" >/dev/null ||
   fail "customer settings: '$(jq -c .permissions.deny "$SETTINGS")'"
@@ -3740,6 +3755,16 @@ jq -n '{reasons: ["weekly docs audit: check the docs as a whole"], creative: fal
 dispatch_dev --dry-run
 dispatch_dev --dry-run
 same "runs" 1 "$(grep -c 'demo customer: would start: weekly docs audit' "$A_TEAM_STATE/dispatch.log")"
+
+case_ "a run for one card records it for Overseer, and the next run without one clears it"
+jq -n '{reasons: ["stakeholder feedback on docs PR #9 (2025-09-19T09:00:00Z)"], creative: false, items: [9], card: 9}' \
+  >"$CUSTOMER_TRIGGERS"
+dispatch_dev --dry-run
+same "card" '{"number":9}' "$(cat "$A_TEAM_STATE/demo/customer/dry-card")"
+jq -n '{reasons: ["pitch #6 is done: check the docs cover what it shipped"], creative: false, items: [], card: null}' \
+  >"$CUSTOMER_TRIGGERS"
+dispatch_dev --dry-run
+[ -e "$A_TEAM_STATE/demo/customer/dry-card" ] && fail "kept '$(cat "$A_TEAM_STATE/demo/customer/dry-card")'"
 jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 # Claims hand out the tasks queued in $QUEUE one at a time, then refuse for want of a worktree;

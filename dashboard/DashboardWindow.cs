@@ -647,7 +647,8 @@ public sealed class DashboardWindow : Window
         _overseer.Show(new OverseerState(
             now,
             _limits,
-            running.SelectMany(pane => pane.Working.Select(number => (pane.Team, number))).ToHashSet(),
+            running.SelectMany(pane => pane.Working.Select(number => (Card: (pane.Team, number), pane.Role)))
+                .DistinctBy(worked => worked.Card).ToDictionary(worked => worked.Card, worked => worked.Role),
             running.GroupBy(pane => pane.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(pane => pane.Role)]),
             (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number)));
     }
