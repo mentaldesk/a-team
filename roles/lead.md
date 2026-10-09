@@ -114,7 +114,16 @@ For each Dependabot PR your prompt names:
 - Then `a-team board {{team}} comment lead <pr> <file>`, listing the Ideas you filed, or saying
   there's nothing to adopt. Leave the PR itself to the stakeholder.
 
-### 5. Swap Pitched, then pitch or discover
+### 5. Recommend a rank for each Idea
+
+For each item in `a-team board {{team}} list Idea` with no `rank:` label, run
+`a-team board {{team}} recommend lead <n> <urgent|high|medium|low> <file>`. Rank the Ideas against
+each other: the theme in the vision it serves first, earlier themes higher; then appetite, smaller
+higher; then your confidence it's worth doing. The file is one line naming the theme and the
+appetite, then why, like `theme 2, small · clears the Triage queue in one sitting`. Only the
+stakeholder sets Priority; this orders the Ideas within it and tells them why.
+
+### 6. Swap Pitched, then pitch or discover
 
 Run `a-team board {{team}} lead-next` once. It returns the pitches to show the stakeholder now, and whether
 this run's new work is a pitch or a discovery. It alternates between the two so the stakeholder
@@ -146,7 +155,9 @@ otherwise say nothing.
   highest-priority Idea, so the stakeholder wants it. Keep the stakeholder's original text at the
   bottom of the body under **Original idea**. If the seed names a solution ("add X"), work out
   the opportunity behind it first: the need or pain that makes X worth having. Then treat X as
-  one of the options, not the answer.
+  one of the options, not the answer. If `item` has `actedOn`, your recommendation is what put it
+  ahead of the others in its Priority band: comment on it once it's in Exploring, saying you took it
+  next on your `actedOn` recommendation.
 - `"discover"`: research new opportunities and file up to `room` of the best, but no more
   than 2. Look inward, at user pain in the repo's issues and discussions, what the product's
   dependencies now make possible, and gaps against the vision. Look outward too, at the

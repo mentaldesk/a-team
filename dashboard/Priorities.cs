@@ -62,6 +62,14 @@ public static class Priorities
     public static Rank Of(WaitingItem item) =>
         Scheme(item.Priority).Length > 0 ? Enum.Parse<Rank>(item.Priority) : Rank.None;
 
+    /// <summary>The rank the Lead recommends for <paramref name="item"/>, or <see cref="Rank.None"/>.</summary>
+    public static Rank Recommended(WaitingItem item) =>
+        Scheme(item.Recommendation).Length > 0 ? Enum.Parse<Rank>(item.Recommendation) : Rank.None;
+
+    /// <summary>The rank the reader's row starts on: the item's own, or where it has none, the Lead's
+    /// recommendation.</summary>
+    public static Rank Starting(WaitingItem item) => Of(item) is var own and not Rank.None ? own : Recommended(item);
+
     /// <summary>The part of <paramref name="card"/> that is the item's number, which a column too narrow
     /// to draw the whole of it cuts short.</summary>
     public static PriorityMark Mark(WaitingItem item, string card)

@@ -28,7 +28,7 @@ highlights its card, the one your keys act on; the others keep their place for w
 
 | Column | What it holds |
 |---|---|
-| Triage | Ideas and pitches with no Priority. Nothing here is pitched or approved until you give it one. |
+| Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and the Customer lead's docs proposal, which you agree to by merging it on GitHub. |
 | Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, or the Customer lead's docs PR. |
@@ -53,6 +53,9 @@ A card reads as the issue's number, then its title:
 - **Its Priority.** The issue number is coloured by Priority, in the colours GitHub gives them:
   green for Low, amber for Medium, red for High and pink for Urgent. An unranked card's number is
   plain.
+- **The Lead's recommendation.** An Idea you haven't ranked shows the rank the Lead would give it
+  after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
+  status bar.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
 - **Trouble.** A PR that's failing CI, conflicts with its base, is still running CI or is still a
   draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. A PR
@@ -120,7 +123,8 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
   something unposted in the comment asks before throwing it away.
 - **Answer a question.** Read it in Questions, and reply with `c`.
 - **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
-  ranks under it, **None** to **Urgent**, starting on the card's own. `←`/`→` or a rank's initial
+  ranks under it, **None** to **Urgent**, starting on the card's own, or on the Lead's
+  recommendation if it has none, so `Enter` agrees with it. `←`/`→` or a rank's initial
   moves between them, and `Enter` sets it: the reader closes and the card moves to the column its
   new Priority puts it in. `Esc` closes without changing it. You can still scroll, comment with
   `c`, approve with `a` and open it with `g` while the ranks show; there, `h` picks **High**

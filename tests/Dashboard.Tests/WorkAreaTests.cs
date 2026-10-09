@@ -2817,6 +2817,34 @@ public class WorkAreaTests : IDisposable
           "turn": "you", "reason": "asked you since 08:00", "question": "## Needs your answer\n\n1. Which?"}]
         """;
 
+
+    [Fact]
+    public void A_recommended_Triage_card_puts_the_Lead_s_case_on_the_bar_and_opens_on_its_recommendation()
+    {
+        Rank? offered = null;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Recommended : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            chooseRank: (_, _, rank) => offered = rank);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(6, window.Work.Selected?.Number);
+        Assert.Equal("#6 · High? · theme 2, small · clears the queue", window.Message.Says);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+
+        Assert.Equal(Rank.High, offered);
+    }
+
+    /// <summary>An Idea the Lead has recommended a rank for, and nothing else.</summary>
+    private const string Recommended =
+        """
+        [{"number": 6, "title": "The agents can't say what they'd change", "status": "Idea",
+          "url": "https://github.com/mentaldesk/team0/issues/6", "team": "team0",
+          "turn": "you", "reason": "theme 2, small · clears the queue", "recommendation": "High"}]
+        """;
     private const string Body = """{"number": 6, "title": "t", "body": "## Opportunity"}""";
 
     private static IEnumerable<View> Descendants(View view) =>

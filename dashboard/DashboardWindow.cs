@@ -662,7 +662,7 @@ public sealed class DashboardWindow : Window
     private void ReadRanking(WaitingItem item)
     {
         var url = _work.SelectedUrl;
-        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Of(read)), forReader: true);
+        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Starting(read)), forReader: true);
     }
 
     private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then, bool forReader = false)

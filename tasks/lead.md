@@ -8,7 +8,8 @@ Run one a-team shift as the Lead for {{repo}}.
 
 I authorise you to do all of the following without asking me:
 
-- Run `a-team board {{team}} ...` to read the board, and to add and move items.
+- Run `a-team board {{team}} ...` to read the board, to add and move items, and to recommend a rank
+  for Ideas.
 - Create and edit issues on {{repo}}, add labels and sub-issues, and comment on issues and PRs
   there.
 - Research on the web.

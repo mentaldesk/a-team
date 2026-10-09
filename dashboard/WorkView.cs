@@ -380,7 +380,7 @@ public sealed class WorkLane : View
         foreach (var column in _columns)
         {
             var team = items.Where(item => item.Team == Team).ToList();
-            column.Show([.. team.Where(column.Holds)], [.. team.Where(column.SetsAside)]);
+            column.Show([.. team.Where(column.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(column.SetsAside)]);
             column.Visible = column.Lines > 0;
         }
         SetNeedsLayout();

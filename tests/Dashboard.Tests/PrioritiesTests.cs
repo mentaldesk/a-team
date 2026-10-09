@@ -74,4 +74,15 @@ public class PrioritiesTests : StaticConfigurationTest
     {
         Assert.Equal(3, Priorities.Mark(At("Low"), new Card(At("Low"), false).Text(4)).Width);
     }
+
+    [Theory]
+    [InlineData("", "", Rank.None)]
+    [InlineData("", "High", Rank.High)]
+    [InlineData("Low", "High", Rank.Low)]
+    [InlineData("Low", "", Rank.Low)]
+    public void The_rank_row_starts_on_the_item_s_own_rank_and_otherwise_on_the_recommendation(
+        string priority, string recommendation, Rank starting)
+    {
+        Assert.Equal(starting, Priorities.Starting(At(priority) with { Recommendation = recommendation }));
+    }
 }

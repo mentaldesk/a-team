@@ -112,6 +112,9 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
   discoveries, and the Customer lead's, carry the `a-team:idea` label.
 - **An Idea any agent wrote is only pitched once you give it a priority.** Until then it waits in
   Triage. Close the ones you don't want.
+- **The Lead recommends a rank for every Idea**, saying which theme in the vision it serves and how
+  big it is. Your Priority always wins; among Ideas with the same Priority, or none, the Lead pitches
+  the one it recommends higher first.
 - **Only a few pitches are in front of you at once,** highest priority first. A higher-priority
   draft takes the place of a lower-priority pitch, which waits in Exploring for room again.
 
