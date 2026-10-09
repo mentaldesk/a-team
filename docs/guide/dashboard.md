@@ -1,6 +1,7 @@
 # Dashboard
 
-What each agent is doing, one pane per agent. `d` opens it, and `w` goes back to [Work](work.md).
+What each agent is doing, one pane per agent. `d` opens it, `w` goes back to [Work](work.md) and `o`
+to [Overseer](overseer.md).
 It shows every team you have, paused or not. `a-team dashboard [team...]` opens the app here, on
 just the teams you name.
 
