@@ -53,7 +53,11 @@ public sealed class OverseerView : View
             CanFocus = false,
         };
         _lanes.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
-        _lanes.SubViewLayout += (_, _) => FitLanes();
+        _lanes.SubViewLayout += (_, _) =>
+        {
+            _board.FitTo(_lanes.Viewport.Height, FrameRows);
+            FitLanes();
+        };
         _details = new FrameView
         {
             X = 0,

@@ -15,8 +15,8 @@ public sealed class OverseerBoard
 {
     public static readonly string[] Columns = ["Idea", "Exploring", "Pitched", "Approved", "Building", "Ready", "In progress", "In review"];
 
-    /// <summary>Rows a column shows before a folded lane puts the rest behind a <c>+N</c>.</summary>
-    public const int FoldRows = 3;
+    /// <summary>The fewest rows a column shows before a folded lane puts the rest behind a <c>+N</c>.</summary>
+    public const int MinFoldRows = 3;
 
     private readonly List<string> _teams;
     private readonly HashSet<string> _unfolded = [];
@@ -29,6 +29,9 @@ public sealed class OverseerBoard
     public IReadOnlyList<BoardCard> Cards => _cards;
 
     public ChipPlace? Selected { get; private set; }
+
+    /// <summary>Rows a column shows before a folded lane puts the rest behind a <c>+N</c>.</summary>
+    public int FoldRows { get; private set; } = MinFoldRows;
 
     public void Show(IReadOnlyList<BoardCard> cards)
     {
@@ -45,6 +48,27 @@ public sealed class OverseerBoard
 
     public bool Unfolded(string team) => _unfolded.Contains(team);
 
+    /// <summary>Folds at the most rows that keep every lane, with <paramref name="frame"/> rows each around it,
+    /// within <paramref name="height"/>, and never fewer than <see cref="MinFoldRows"/>.</summary>
+    public void FitTo(int height, int frame)
+    {
+        var deepest = _teams.SelectMany(team => Enumerable.Range(0, Columns.Length).Select(column => Column(team, column).Count))
+            .DefaultIfEmpty(0).Max();
+        var fold = MinFoldRows;
+        while (fold < deepest && Tall(fold + 1, frame) <= height)
+            fold++;
+        if (fold == FoldRows)
+            return;
+        var row = SelectedRow;
+        FoldRows = fold;
+        if (Selected is { Number: null } place && row is { } at)
+            Selected = At(place.Team, place.Column, at);
+        else
+            Reselect();
+    }
+
+    private int Tall(int fold, int frame) => _teams.Sum(team => Rows(team, fold) + frame);
+
     /// <summary>A column's cards, the one that has waited longest first.</summary>
     public IReadOnlyList<BoardCard> Column(string team, int column) =>
         [.. _cards.Where(card => card.Team == team && card.Status == Columns[column])
@@ -53,16 +77,21 @@ public sealed class OverseerBoard
 
     /// <summary>The chips a column draws: all of them in an unfolded lane, and otherwise as many as fit in
     /// <see cref="FoldRows"/> with a <c>+N</c> in the last row for the rest.</summary>
-    public IReadOnlyList<Chip> Chips(string team, int column)
+    public IReadOnlyList<Chip> Chips(string team, int column) => Chips(team, column, FoldRows);
+
+    private IReadOnlyList<Chip> Chips(string team, int column, int fold)
     {
         var cards = Column(team, column);
-        if (cards.Count <= FoldRows || Unfolded(team))
+        if (cards.Count <= fold || Unfolded(team))
             return [.. cards.Select(card => new Chip(card))];
-        return [.. cards.Take(FoldRows - 1).Select(card => new Chip(card)), new Chip(null, cards.Count - (FoldRows - 1))];
+        return [.. cards.Take(fold - 1).Select(card => new Chip(card)), new Chip(null, cards.Count - (fold - 1))];
     }
 
     /// <summary>How many rows the lane needs for its fullest column, and never none.</summary>
-    public int Rows(string team) => Math.Max(1, Enumerable.Range(0, Columns.Length).Max(column => Chips(team, column).Count));
+    public int Rows(string team) => Rows(team, FoldRows);
+
+    private int Rows(string team, int fold) =>
+        Math.Max(1, Enumerable.Range(0, Columns.Length).Max(column => Chips(team, column, fold).Count));
 
     public BoardCard? SelectedCard =>
         Selected is { Number: { } number } place ? _cards.FirstOrDefault(card => card.Team == place.Team && card.Number == number) : null;

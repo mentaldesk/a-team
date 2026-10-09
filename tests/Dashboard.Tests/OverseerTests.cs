@@ -147,6 +147,53 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_tall_screen_folds_deeper_so_every_lane_still_fits()
+    {
+        var board = Board([.. Enumerable.Range(1, 9).Select(n => Card(n, "Ready", days: 10 - n)), Card(20, "Idea", days: 1, team: "b")], ["a", "b"]);
+
+        board.FitTo(height: 12, frame: 2);
+
+        Assert.Equal(7, board.Rows("a"));
+        Assert.True(board.Chips("a", 5)[^1].IsMore);
+        Assert.Equal(3, board.Chips("a", 5)[^1].Hidden);
+    }
+
+    [Fact]
+    public void A_screen_with_room_for_every_card_folds_nothing()
+    {
+        var board = Board([.. Enumerable.Range(1, 9).Select(n => Card(n, "Ready", days: 10 - n))]);
+
+        board.FitTo(height: 40, frame: 2);
+
+        Assert.Equal(9, board.Rows("a"));
+        Assert.DoesNotContain(board.Chips("a", 5), chip => chip.IsMore);
+    }
+
+    [Fact]
+    public void A_short_screen_still_folds_at_three_rows()
+    {
+        var board = Board([.. Enumerable.Range(1, 9).Select(n => Card(n, "Ready", days: 10 - n))]);
+
+        board.FitTo(height: 2, frame: 2);
+
+        Assert.Equal(3, board.Rows("a"));
+    }
+
+    [Fact]
+    public void Folding_deeper_moves_the_selection_from_the_count_to_the_card_it_stood_for()
+    {
+        var board = Board([.. Enumerable.Range(1, 9).Select(n => Card(n, "Ready", days: 10 - n))]);
+        board.SelectFirst();
+        board.MoveRow(+1);
+        board.MoveRow(+1);
+        Assert.True(board.OnMore);
+
+        board.FitTo(height: 7, frame: 2);
+
+        Assert.Equal(3, board.SelectedCard?.Number);
+    }
+
+    [Fact]
     public void Three_cards_fit_without_folding()
     {
         var board = Board([Card(1, "Ready", days: 3), Card(2, "Ready", days: 2), Card(3, "Ready", days: 1)]);

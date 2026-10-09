@@ -27,8 +27,8 @@ instead: an idea, a pitch, a task or the docs PR.
 
 A chip's mark and number are drawn in its Priority's colour. Its age is in the theme's own colour, and
 turns amber only once the card is past its column's limit. A card an agent is working on shows a
-spinner in place of its age. Within a column, the card that has waited longest is first. Past three rows, a column
-puts the rest behind a count, as in `+7`.
+spinner in place of its age. Within a column, the card that has waited longest is first. A column shows as many rows as
+fit with every lane on screen, and at least three, and puts the rest behind a count, as in `+7`.
 
 ## Moving around
 
@@ -38,7 +38,7 @@ puts the rest behind a count, as in `+7`.
 | `Tab`, `Shift+Tab` | Go to the next or previous team's lane |
 | `PgUp`, `PgDn` | Scroll the lanes a screen at a time, when they don't all fit |
 | `Enter` | Opens or closes the details of the selected card. On a `+7`, shows the whole lane |
-| `Esc` | Folds the lane back to three rows |
+| `Esc` | Folds the lane back |
 | `g` | Opens the card on GitHub |
 | `r` | Goes to the agent's session: the Dashboard, with the agent working on the card expanded |
 | `F5` | Reads every board again |
