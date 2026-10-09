@@ -372,7 +372,7 @@ set_status() {
   option_id=$(jq -r --arg o "$option" '.field.options[] | select(.name == $o) | .id' <<<"$meta")
   [ -n "$option_id" ] || die "field '$FIELD' has no option '$option' (run: board.sh $TEAM check)"
   write "set item $item_id to '$option'" gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$item_id" \
-    -F field="$(jq -r .field.id <<<"$meta")" -F option="$option_id" -f query='
+    -F field="$(jq -r .field.id <<<"$meta")" -f option="$option_id" -f query='
     mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
       updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field,
                                             value: {singleSelectOptionId: $option}}) { clientMutationId } }' >/dev/null

@@ -1233,6 +1233,14 @@ grep -q "can't close #9 (gh: Resource not accessible by integration (HTTP 403))"
   fail "refused close: '$(cat "$ERR")'"
 rm "$BIN/close-fails"
 
+case_ "a Status option whose id is all digits is sent as a string"
+jq '.data.organization.projectV2.field.options |= map(if .name == "Done" then .id = "98236657" else . end)' \
+  "$META" >"$META.new" && mv "$META.new" "$META"
+: >"$WRITES"
+run board demo decline you 9 "$WORK/reason"
+same "exit" 0 "$STATUS"
+grep -q -- "-f option=98236657 " "$WRITES" || fail "numeric option: not a raw string in '$(cat "$WRITES")'"
+
 case_ "the agents' settings deny decline"
 grep -qF '"Bash(a-team board * decline *)"' "$ROOT/settings/agents.json" || fail "no decline deny rule"
 
