@@ -378,7 +378,7 @@ internal sealed class TeamTabs : Tabs
 public sealed class WorkLane : View
 {
     /// <summary>The rows a column spends on its frame.</summary>
-    private const int Frame = 2;
+    private const int FrameRows = 2;
 
     private readonly List<WorkColumn> _columns = [];
     private WorkColumn? _wide;
@@ -485,7 +485,7 @@ public sealed class WorkLane : View
     }
 
     /// <summary>Every column runs the height of the tab, or of the fullest one's cards where they're taller.</summary>
-    private int Tall() => Math.Max(Viewport.Height, Rows + Frame);
+    private int Tall() => Math.Max(Viewport.Height, Rows + FrameRows);
 
     private void Fit()
     {
