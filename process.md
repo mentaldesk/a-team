@@ -105,7 +105,7 @@ a-team board {{team}} covered customer <n>      # Customer lead only: the docs a
 a-team board {{team}} audited customer          # Customer lead only: the docs as a whole are
                                                 # audited, so the next audit is a week later
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, whether it conflicts,
-                                                # and its review: waiting | posted | off
+                                                # and its review: waiting | posted | answered | off
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
 a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a run for;
                                                 # --sweep also reads old feedback on your items

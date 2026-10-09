@@ -5306,9 +5306,26 @@ gh_reviewed
 run board demo triggers reviewer
 same "reviewer reasons" '[]' "$(jq -c .reasons "$OUT")"
 run board demo triggers dev
-same "dev reasons" '["PR #912 has its review: act on it, then mark it ready"]' "$(jq -c .reasons "$OUT")"
+same "dev reasons" '["PR #912 has its review: act on it"]' "$(jq -c .reasons "$OUT")"
 run board demo pr 12
 same "review" '"posted"' "$(jq -c .review "$OUT")"
+
+case_ "once the Dev answers the review, its next green run is told to mark the PR ready"
+# `dev_said <before|after>`: a Dev comment from the team's App, added before or after the review.
+dev_said() {
+  jq --arg where "$1" '(.. | objects | select(has("isDraft"))).comments.nodes |=
+      ([{body: "Done.\n\n<!-- a-team:dev -->", author: {__typename: "Bot", login: "demo-app"}}] as $c
+       | if $where == "before" then $c + . else . + $c end)' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+  gh_reviewing
+}
+dev_said before
+run board demo pr 12
+same "a Dev comment before the review" '"posted"' "$(jq -c .review "$OUT")"
+dev_said after
+run board demo pr 12
+same "review" '"answered"' "$(jq -c .review "$OUT")"
+run board demo triggers dev
+same "dev reasons" '["PR #912 has its review answered and is green: mark it ready"]' "$(jq -c .reasons "$OUT")"
 
 case_ "a review marker pasted by anyone but the team's App doesn't count"
 gh_pr 912 true

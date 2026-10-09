@@ -155,8 +155,11 @@ CLOSES='def closes: if (.body // "") | contains("<!-- a-team:dev -->")
     else [] end;'
 
 # reviewed: the Reviewer has posted its one review on this PR, read off its comments as GraphQL gives them.
-REVIEWED='def reviewed: any(.comments.nodes[]?; (.author | '"$LOGIN"') == $bot
-    and ((.body // "") | contains("<!-- a-team:reviewer -->")));'
+# answered: the Dev has commented since that review.
+REVIEWED='def said($role): (.author | '"$LOGIN"') == $bot and ((.body // "") | contains("<!-- a-team:\($role) -->"));
+  def reviewed: any(.comments.nodes[]?; said("reviewer"));
+  def answered: [.comments.nodes[]? | if said("reviewer") then "review" elif said("dev") then "dev" else empty end]
+    | index("review") as $at | $at != null and (.[$at:] | index("dev")) != null;'
 
 # checks: the CI verdict on a commit's check runs, shaped as REST gives them.
 CHECKS='def checks:
@@ -489,7 +492,7 @@ pitch_swap() {
 }
 
 # pr_for <n>: the open PR that closes #n, with `review` saying whether the Reviewer is still to review it
-# (waiting), has (posted), or isn't turned on (off).
+# (waiting), has (posted), the Dev has answered that review (answered), or the Reviewer isn't turned on (off).
 pr_for() {
   local said='comments(last: 100) { nodes { body author { __typename login } } }'
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query="
@@ -509,7 +512,7 @@ pr_for() {
       | (.issue.closedByPullRequestsReferences.nodes[0]
          // ((.pullRequests.nodes // []) | map(select(any(closes[]; . == $n))) | first))
       | if . == null then null
-        else . + {review: (if reviewed then "posted" elif $on then "waiting" else "off" end)} | del(.body, .comments) end'
+        else . + {review: (if answered then "answered" elif reviewed then "posted" elif $on then "waiting" else "off" end)} | del(.body, .comments) end'
 }
 
 # ci <pr>: the CI verdict for <pr>'s head commit.
@@ -1589,7 +1592,8 @@ case "$CMD" in
           if [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ]; then
             case "$(jq -r .review <<<"$pr")" in
               off) task_reason "$n" "$title" "PR #$p is green but still a draft" ;;
-              posted) task_reason "$n" "$title" "PR #$p has its review: act on it, then mark it ready" ;;
+              posted) task_reason "$n" "$title" "PR #$p has its review: act on it" ;;
+              answered) task_reason "$n" "$title" "PR #$p has its review answered and is green: mark it ready" ;;
             esac
           fi
           # UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING fires.

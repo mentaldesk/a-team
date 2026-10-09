@@ -58,12 +58,13 @@ Find it with `a-team board {{team}} pr <n>`, then:
   with `<!-- a-team:reviewer -->`). Treat its **Needs changing** points like stakeholder feedback:
   fix each one and push, or say why not. Answer them all in one `a-team board {{team}} comment dev <pr>`.
   Leave **Worth considering** to the stakeholder unless they ask for it. Do this once: the PR isn't
-  reviewed again.
+  reviewed again, and once you've answered, `pr` reports `"review": "answered"`.
 - If the PR is still a draft and `checks` says `pass`, mark it ready with `gh pr ready <pr>`, and if
   the task is In progress, `a-team board {{team}} move dev <n> "In review"`. Only a green PR is
   marked ready, never a failing or pending one: this is the one exception to the stakeholder's
   general rule that PRs stay in draft. While `pr` reports `"review": "waiting"`, leave it a draft:
-  the Reviewer reads it first. After pushing fixes for a review, wait for CI to pass again.
+  the Reviewer reads it first. After pushing fixes for a review, end the run: a later run marks
+  it ready once CI is green again.
 - Leave it there and end the run. The stakeholder merges.
 
 ### 3. If your task is Ready, labelled `blocked`
