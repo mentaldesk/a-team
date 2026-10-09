@@ -257,7 +257,7 @@ public sealed class DashboardWindow : Window
 
         if (resume is not null)
             Resume(resume);
-        else if (_area == Area.Work)
+        if (resume is null or TeamsChanged && _area == Area.Work)
             ReadWaiting();
     }
 
@@ -422,6 +422,9 @@ public sealed class DashboardWindow : Window
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
+            .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
+            .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
+            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, inMenu: OnWork)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
@@ -573,6 +576,8 @@ public sealed class DashboardWindow : Window
     {
         _resume = handover;
         _failure = handover.Failure;
+        if (handover is TeamsChanged changed)
+            _left = changed.Left;
         if (handover is TryHandover tried)
         {
             _readAt = _askedAt = tried.ReadAt;
@@ -899,7 +904,11 @@ public sealed class DashboardWindow : Window
         _readAt = _clock.GetUtcNow();
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
         if (_area == Area.Work && _work.Selected is null)
-            _work.FocusFirstCard();
+        {
+            if (_left is not { } left || !_work.Focus(left))
+                _work.FocusFirstCard();
+            _left = null;
+        }
         ReadTrend();
     }
 
@@ -1025,6 +1034,12 @@ public sealed class DashboardWindow : Window
             CommandsDialog.Show(app, _commands);
     }
 
+    private void GoToTeam()
+    {
+        if (App is { } app && CommandsDialog.Pick(app, "Go to team", _teamNames) is { } team)
+            _work.Pick(team);
+    }
+
     private void OpenHelp()
     {
         if (App is { } app)
@@ -1049,7 +1064,7 @@ public sealed class DashboardWindow : Window
         var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks);
         if (_teams.Names().Except(before).Any() || RolesChanged())
         {
-            _handOver?.Invoke(new TeamsChanged(_area));
+            _handOver?.Invoke(new TeamsChanged(_area, _area == Area.Work ? _work.Place : _left));
             return;
         }
         Forget(removed);

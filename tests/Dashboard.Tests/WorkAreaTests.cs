@@ -627,7 +627,7 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('g')));
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
 
-        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.PageDown.WithCtrl);
         Assert.Equal("Pitches · team1", window.Work.Region);
     }
 
@@ -2137,7 +2137,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_arrows_reach_every_column_and_every_lane_that_has_a_card()
+    public void The_arrows_reach_every_column_a_team_has_a_card_in_and_stop_at_the_bottom_of_one()
     {
         using var window = Open();
         window.Refresh();
@@ -2149,15 +2149,50 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("Review · team0", window.Work.Region);
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("Review · team0", window.Work.Region);
-
         window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.Equal("Review · team0", window.Work.Region);
+    }
+
+    [Fact]
+    public void Ctrl_PgDn_and_Ctrl_PgUp_move_between_teams_and_come_back_to_the_card_left()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        Assert.True(window.NewKeyDownEvent(Key.PageDown.WithCtrl));
         Assert.Equal(133, window.Work.Selected?.Number);
         Assert.Equal("Pitches · team1", window.Work.Region);
 
-        window.NewKeyDownEvent(Key.CursorUp);
-        Assert.Equal(108, window.Work.Selected?.Number);
-        Assert.Equal("Pitches · team0", window.Work.Region);
+        Assert.True(window.NewKeyDownEvent(Key.PageUp.WithCtrl));
+        Assert.Equal(49, window.Work.Selected?.Number);
+        Assert.Equal("team0", window.Work.Current?.Team);
+    }
+
+    [Fact]
+    public void Built_again_after_a_team_is_added_Work_lands_on_the_card_it_was_on()
+    {
+        using var window = Open(resume: new TeamsChanged(Area.Work, new Place("team1", 133, false)));
+        window.Refresh();
+
+        Assert.Equal(133, window.Work.Selected?.Number);
+        Assert.Equal("team1", window.Work.Current?.Team);
+    }
+
+    [Fact]
+    public void Every_tab_says_how_many_cards_wait_there_and_m_narrows_the_count()
+    {
+        using var window = Open();
+        window.Refresh();
+
+        Assert.Equal(["team0 4", "team1 1"], window.Work.Lanes.Select(lane => lane.Title));
+
+        window.NewKeyDownEvent(new Key('m'));
+
+        Assert.Equal(["team0 2", "team1 1"], window.Work.Lanes.Select(lane => lane.Title));
     }
 
     [Fact]
@@ -2196,7 +2231,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(
             [
-                "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
+                "view.dashboard", "view.work", "work.nextTeam", "work.previousTeam", "work.team", "settings", "quit", "work.read", "work.priority", "work.try",
                 "work.github", "work.accept", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],

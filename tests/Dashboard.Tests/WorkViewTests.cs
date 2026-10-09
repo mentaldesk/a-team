@@ -22,7 +22,7 @@ public class WorkViewTests
     ];
 
     [Fact]
-    public void Every_team_gets_a_swimlane_and_every_lane_a_column_per_gate()
+    public void Every_team_gets_a_tab_and_every_tab_a_column_per_gate()
     {
         using var view = Open(["a-team", "tuicode"]);
 
@@ -69,19 +69,19 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void The_columns_a_lane_shows_divide_its_width_between_them()
+    public void The_columns_a_tab_shows_divide_its_width_between_them()
     {
         using var view = Open(["a-team", "tuicode"]);
 
         view.Show(Waiting);
-        LayOut(view, 120, 20);
+        LayOut(view, 122, 20);
 
         Assert.Equal([40, 40, 0, 40, 0, 120, 0, 0], Cells(view).Select(cell => cell.Width));
         Assert.Equal([0, 40, 80], view.Lanes[0].Columns.Where(column => column.Visible).Select(column => column.Frame.X));
     }
 
     [Fact]
-    public void The_selected_column_takes_half_its_lane_and_the_others_share_the_rest()
+    public void The_selected_column_takes_half_its_tab_and_the_others_share_the_rest()
     {
         using var view = Open(["a-team", "tuicode"]);
         view.Show(Waiting);
@@ -89,7 +89,7 @@ public class WorkViewTests
         view.FocusFirstCard();
         view.MoveColumn(+1);
 
-        LayOut(view, 120, 20);
+        LayOut(view, 122, 20);
 
         Assert.Equal([30, 60, 0, 30], view.Lanes[0].Columns.Select(column => column.Frame.Width));
         Assert.Equal([0, 30, 90], view.Lanes[0].Columns.Where(column => column.Visible).Select(column => column.Frame.X));
@@ -98,37 +98,49 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void A_lane_with_nothing_in_it_is_just_its_name()
+    public void A_tab_with_nothing_in_it_shows_no_column()
     {
         using var view = Open(["a-team", "tuicode"]);
 
         view.Show([.. Waiting.Where(item => item.Team == "a-team")]);
         LayOut(view, 120, 20);
 
-        Assert.Equal(2, view.Lanes[1].Lines);
         Assert.All(view.Lanes[1].Columns, column => Assert.False(column.Visible));
     }
 
     [Fact]
-    public void A_lane_is_as_tall_as_its_fullest_column_and_never_shorter_than_one_card()
+    public void Every_column_runs_the_height_of_its_tab()
     {
         using var view = Open(["a-team", "tuicode"]);
-
         view.Show(Waiting);
         LayOut(view, 120, 20);
 
-        Assert.Equal([2, 1], view.Lanes.Select(lane => lane.Rows));
-        Assert.Equal(view.Lanes[0].Frame.Bottom, view.Lanes[1].Frame.Y);
+        view.FocusFirstCard();
+        LayOut(view, 120, 20);
+
+        var lane = view.Lanes[0];
+        Assert.All(lane.Columns.Where(column => column.Visible), column => Assert.Equal(lane.Viewport.Height, column.Frame.Height));
     }
 
     [Fact]
-    public void A_lane_is_headed_by_its_team_and_a_rule_to_the_right_edge()
+    public void A_tabs_title_is_the_team_and_how_many_cards_it_shows()
     {
-        using var view = Open(["a-team"]);
+        using var view = Open(["a-team", "tuicode", "goose"]);
 
-        LayOut(view, 40, 20);
+        view.Show(Waiting);
 
-        Assert.Equal("a-team " + new string('─', 33), view.Lanes[0].Header);
+        Assert.Equal(["a-team 4", "tuicode 1", "goose"], view.Lanes.Select(lane => lane.Title));
+    }
+
+    [Fact]
+    public void A_tab_counts_only_what_the_filter_shows()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+
+        view.ShowOnlyMine(true);
+
+        Assert.Equal(["a-team 2", "tuicode 1"], view.Lanes.Select(lane => lane.Title));
     }
 
     [Fact]
@@ -202,35 +214,7 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void Down_into_a_lane_without_the_column_lands_on_the_nearest_one_it_shows()
-    {
-        using var view = Open(["a-team", "tuicode"]);
-        view.Show(Waiting);
-        LayOut(view, 120, 20);
-        view.FocusFirstCard();
-
-        view.MoveCard(+1);
-
-        Assert.Equal("Pitches · tuicode", view.Region);
-        Assert.Equal(133, view.Selected?.Number);
-    }
-
-    [Fact]
-    public void Down_passes_over_a_lane_with_nothing_in_it()
-    {
-        using var view = Open(["a-team", "tuicode", "triagent"]);
-        view.Show([.. Waiting.Where(item => item.Team == "a-team"),
-            Waiting[3] with { Team = "triagent" }]);
-        LayOut(view, 120, 20);
-        view.FocusFirstCard();
-
-        view.MoveCard(+1);
-
-        Assert.Equal("Pitches · triagent", view.Region);
-    }
-
-    [Fact]
-    public void Down_walks_a_columns_cards_and_then_the_next_lanes()
+    public void Down_walks_a_columns_cards_and_stops_at_its_last()
     {
         using var view = Open(["a-team", "tuicode"]);
         view.Show(Waiting);
@@ -242,48 +226,41 @@ public class WorkViewTests
         Assert.Equal(108, view.Selected?.Number);
 
         view.MoveCard(+1);
-        Assert.Equal("Pitches · tuicode", view.Region);
-        Assert.Equal(133, view.Selected?.Number);
-
-        view.MoveCard(+1);
-        Assert.Equal(133, view.Selected?.Number);
-    }
-
-    [Fact]
-    public void Up_from_the_first_card_lands_on_the_last_of_the_lane_above()
-    {
-        using var view = Open(["a-team", "tuicode"]);
-        view.Show(Waiting);
-        LayOut(view, 120, 20);
-        view.FocusFirstCard();
-        view.MoveColumn(+1);
-        view.MoveCard(+1);
-        view.MoveCard(+1);
-
-        view.MoveCard(-1);
-
         Assert.Equal("Pitches · a-team", view.Region);
         Assert.Equal(108, view.Selected?.Number);
     }
 
     [Fact]
-    public void A_card_below_the_window_is_scrolled_into_view()
+    public void Up_from_the_first_card_stays_on_it()
     {
         using var view = Open(["a-team", "tuicode"]);
         view.Show(Waiting);
-        LayOut(view, 120, 8);
+        LayOut(view, 120, 20);
         view.FocusFirstCard();
-        view.MoveColumn(+1);
+        view.Pick("tuicode");
 
-        view.MoveCard(+1);
-        view.MoveCard(+1);
+        view.MoveCard(-1);
 
         Assert.Equal("Pitches · tuicode", view.Region);
-        Assert.True(view.Viewport.Y > 0);
+        Assert.Equal(133, view.Selected?.Number);
     }
 
-    [Theory]
-    [InlineData(41, "#107  When the dashboard goes quiet, I c…")]
+    [Fact]
+    public void A_card_below_the_tab_is_scrolled_into_view()
+    {
+        var many = Enumerable.Range(1, 12).Select(number => Waiting[0] with { Number = number }).ToArray();
+        using var view = Open(["a-team"]);
+        view.Show(many);
+        LayOut(view, 120, 8);
+        view.FocusFirstCard();
+
+        for (var i = 0; i < 11; i++)
+            view.MoveCard(+1);
+
+        Assert.Equal(12, view.Selected?.Number);
+        Assert.True(view.Lanes[0].Viewport.Y > 0);
+    }
+
     [InlineData(53, "#107  When the dashboard goes quiet, I can't tell why")]
     public void A_card_reads_as_the_number_then_as_much_of_the_title_as_fits(int width, string expected)
     {
@@ -384,12 +361,12 @@ public class WorkViewTests
     public void A_cards_text_is_elided_to_leave_the_room_its_icons_and_its_indent_need()
     {
         using var view = Open(["a-team"]);
-        LayOut(view, 90, 20);
 
         view.Show(Waiting);
+        LayOut(view, 92, 20);
 
         Assert.Equal(
-            ["#107  When th…", "#108  lead · …"],
+            ["#107  When the dashb…", "#108  lead · A misco…"],
             view.Lanes[0].Columns[1].CardText);
     }
 
@@ -425,21 +402,20 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void At_four_columns_a_lane_still_fits_an_80_column_terminal()
+    public void At_four_columns_a_tab_still_fits_an_80_column_terminal()
     {
-        using var view = Open(["a-team", "tuicode"]);
+        using var view = Open(["a-team"]);
+        view.Show([.. Waiting, new(51, "A task the Dev has a question on", "Ready", "https://github.com/x/51", "a-team",
+            "you", "the Dev asked a question", Question: "the Dev asked a question")]);
+
         LayOut(view, 80, 20);
 
-        view.Show(Waiting);
-
-        Assert.All(view.Lanes, lane =>
-        {
-            var columns = lane.Columns.Select(column => column.Frame).ToList();
-            Assert.All(columns, cell => Assert.True(cell.Width > 0));
-            Assert.Equal(0, columns[0].X);
-            Assert.Equal(lane.Viewport.Width, columns[^1].Right);
-        });
-        Assert.All(view.Lanes.SelectMany(lane => lane.Columns), column =>
+        var lane = view.Lanes[0];
+        var columns = lane.Columns.Select(column => column.Frame).ToList();
+        Assert.All(columns, cell => Assert.True(cell.Width > 0));
+        Assert.Equal(0, columns[0].X);
+        Assert.Equal(lane.Viewport.Width, columns[^1].Right);
+        Assert.All(lane.Columns, column =>
             Assert.All(column.CardText, text => Assert.True(text.Length <= column.Frame.Width)));
     }
 
@@ -505,7 +481,7 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void Down_walks_a_card_then_the_row_under_it_then_the_next_lane()
+    public void Down_walks_a_card_then_the_row_under_it()
     {
         using var view = Open(["a-team", "tuicode"]);
         view.Show(Waiting);
@@ -525,24 +501,8 @@ public class WorkViewTests
 
         view.MoveCard(+1);
         view.MoveCard(+1);
-        Assert.Equal("Pitches · tuicode", view.Region);
-    }
-
-    [Fact]
-    public void The_row_under_a_card_is_scrolled_into_view_like_the_card_itself()
-    {
-        using var view = Open(["a-team", "tuicode"]);
-        view.Show(Waiting);
-        LayOut(view, 120, 8);
-        view.FocusFirstCard();
-        view.MoveColumn(+1);
-        view.MoveColumn(+1);
-
-        view.MoveCard(+1);
-        view.MoveCard(+1);
-
-        Assert.Equal("Pitches · tuicode", view.Region);
-        Assert.True(view.Viewport.Y > 0);
+        Assert.Equal("Review · a-team", view.Region);
+        Assert.Equal("https://github.com/x/pull/122", view.SelectedUrl);
     }
 
     [Fact]
@@ -581,26 +541,140 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void Forgetting_a_team_drops_its_lane_and_its_cards_and_closes_the_gap()
+    public void Forgetting_a_team_drops_its_tab_and_its_cards_and_keeps_the_tab_in_front()
     {
         using var view = Open(["a-team", "tuicode", "goose"]);
         view.Show(Waiting);
+        view.Pick("tuicode");
 
         view.Forget(["a-team"]);
         LayOut(view, 120, 20);
 
         Assert.Equal(["tuicode", "goose"], view.Lanes.Select(lane => lane.Team));
         Assert.All(view.Items, item => Assert.Equal("tuicode", item.Team));
-        Assert.Equal(0, view.Lanes[0].Frame.Y);
-        Assert.Equal(view.Lanes[0].Frame.Bottom, view.Lanes[1].Frame.Y);
+        Assert.Equal("tuicode", view.Current?.Team);
+        Assert.Equal(133, view.Selected?.Number);
     }
 
-    [Theory]
-    [InlineData("conflicts with main", 122, false)]
-    [InlineData("CI failing", 122, false)]
-    [InlineData("CI running", 122, false)]
-    [InlineData("still a draft", 122, false)]
-    [InlineData("", 0, false)]
+    [Fact]
+    public void Focus_starts_on_the_first_team_with_something_waiting()
+    {
+        using var view = Open(["goose", "tuicode", "a-team"]);
+        view.Show(Waiting);
+
+        view.FocusFirstCard();
+
+        Assert.Equal("tuicode", view.Current?.Team);
+        Assert.Equal("Pitches · tuicode", view.Region);
+    }
+
+    [Fact]
+    public void With_nothing_waiting_anywhere_focus_starts_on_the_first_team()
+    {
+        using var view = Open(["goose", "tuicode"]);
+        view.Show([]);
+
+        view.FocusFirstCard();
+
+        Assert.Equal("goose", view.Current?.Team);
+    }
+
+    [Fact]
+    public void Next_and_previous_team_go_round_from_the_last_tab_to_the_first()
+    {
+        using var view = Open(["a-team", "tuicode", "goose"]);
+        view.Show(Waiting);
+        view.FocusFirstCard();
+
+        view.MoveTeam(+1);
+        Assert.Equal("tuicode", view.Current?.Team);
+        Assert.Equal("Pitches · tuicode", view.Region);
+
+        view.MoveTeam(+1);
+        Assert.Equal("goose", view.Current?.Team);
+        Assert.Null(view.Selected);
+
+        view.MoveTeam(+1);
+        Assert.Equal("a-team", view.Current?.Team);
+
+        view.MoveTeam(-1);
+        Assert.Equal("goose", view.Current?.Team);
+    }
+
+    [Fact]
+    public void Going_to_a_team_by_name_brings_its_tab_to_the_front()
+    {
+        using var view = Open(["a-team", "tuicode", "goose"]);
+        view.Show(Waiting);
+        view.FocusFirstCard();
+
+        Assert.True(view.Pick("tuicode"));
+        Assert.Equal("tuicode", view.Current?.Team);
+        Assert.Equal(133, view.Selected?.Number);
+
+        Assert.False(view.Pick("nobody"));
+        Assert.Equal("tuicode", view.Current?.Team);
+    }
+
+    [Fact]
+    public void Coming_back_to_a_tab_lands_on_the_card_left_there()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+        view.MoveCard(+1);
+
+        view.MoveTeam(+1);
+        view.MoveTeam(-1);
+
+        Assert.Equal("Pitches · a-team", view.Region);
+        Assert.Equal(108, view.Selected?.Number);
+    }
+
+    [Fact]
+    public void A_tab_behind_another_keeps_its_card_through_a_re_read()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        view.FocusFirstCard();
+        view.MoveColumn(+1);
+        view.MoveCard(+1);
+        view.MoveTeam(+1);
+
+        view.Show([.. Waiting.Reverse()]);
+        view.MoveTeam(-1);
+
+        Assert.Equal("Pitches · a-team", view.Region);
+        Assert.Equal(108, view.Selected?.Number);
+    }
+
+    [Fact]
+    public void A_re_read_keeps_a_team_picked_with_nothing_waiting_in_front()
+    {
+        using var view = Open(["a-team", "goose"]);
+        view.Show(Waiting);
+        view.FocusFirstCard();
+        view.Pick("goose");
+
+        view.Show(Waiting);
+        view.FocusFirstCard();
+
+        Assert.Equal("goose", view.Current?.Team);
+    }
+
+    [Fact]
+    public void Forgetting_the_team_in_front_brings_another_to_the_front()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show(Waiting);
+        view.Pick("tuicode");
+
+        view.Forget(["tuicode"]);
+
+        Assert.Equal("a-team", view.Current?.Team);
+    }
+
     [InlineData("", 122, true)]
     public void Review_holds_a_task_only_when_its_PR_can_be_merged(string unready, int pr, bool held)
     {
@@ -708,6 +782,8 @@ public class WorkViewTests
         view.MoveCard(1);
         Assert.True(view.SelectedUrl?.EndsWith("/pull/122"));
         view.MoveCard(1);
+        Assert.True(view.SelectedUrl?.EndsWith("/pull/122"));
+        view.MoveTeam(1);
         Assert.Equal(133, view.Selected?.Number);
         Assert.Equal("Pitches · tuicode", view.Region);
 
@@ -747,7 +823,7 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void Only_the_focused_column_shows_its_selection_as_focus_moves_between_columns_and_lanes()
+    public void Only_the_focused_column_shows_its_selection_as_focus_moves_between_columns_and_teams()
     {
         using var view = Open(["a-team", "tuicode"]);
         view.Show(Waiting);
@@ -761,8 +837,7 @@ public class WorkViewTests
         view.MoveColumn(+1);
         Assert.Equal([false, true, false, false, false, false, false, false], ShowingSelection(view));
 
-        view.MoveCard(+1);
-        view.MoveCard(+1);
+        view.MoveTeam(+1);
         Assert.Equal("Pitches · tuicode", view.Region);
         Assert.Equal([false, false, false, false, false, true, false, false], ShowingSelection(view));
     }

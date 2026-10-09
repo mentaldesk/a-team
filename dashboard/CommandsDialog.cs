@@ -4,7 +4,7 @@ using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Everything the dashboard can do, narrowed by typing and run by name.</summary>
+/// <summary>Everything the dashboard can do, or any other list of names, narrowed by typing and picked by name.</summary>
 public sealed class CommandsDialog : Dialog
 {
     private readonly IReadOnlyList<CommandDescriptor> _commands;
@@ -13,12 +13,12 @@ public sealed class CommandsDialog : Dialog
     private readonly TextField _filter;
     private readonly ListView _list;
 
-    public CommandsDialog(IReadOnlyList<CommandDescriptor> commands)
+    public CommandsDialog(IReadOnlyList<CommandDescriptor> commands, string title = "Commands", string verb = "run")
     {
         _commands = commands;
         _labelWidth = commands.Count == 0 ? 0 : commands.Max(command => command.Label.Length);
 
-        Title = "Commands";
+        Title = title;
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);
 
@@ -31,7 +31,7 @@ public sealed class CommandsDialog : Dialog
         // Terminal.Gui's bar, not the window's own StatusBar next door.
         var hints = new Terminal.Gui.Views.StatusBar([
             Shortcut("Up/Down/PgUp/PgDn/Home/End", "select", () => Move(+1)),
-            Shortcut("Enter", "run", () => Run()),
+            Shortcut("Enter", verb, () => Run()),
             Shortcut("Esc", "cancel", () => Cancel()),
         ]);
         Add(_filter, _list, hints);
@@ -133,5 +133,13 @@ public sealed class CommandsDialog : Dialog
         app.Run(dialog);
         if (dialog.Chosen is { } id)
             commands.Execute(id);
+    }
+
+    /// <summary>One of <paramref name="names"/>, or null when the dialog is cancelled.</summary>
+    public static string? Pick(IApplication app, string title, IReadOnlyList<string> names)
+    {
+        using var dialog = new CommandsDialog([.. names.Select(name => new CommandDescriptor(name, name, Key.Empty))], title, "go");
+        app.Run(dialog);
+        return dialog.Chosen;
     }
 }

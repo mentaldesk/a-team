@@ -30,8 +30,9 @@ public sealed record AttachHandover(string Team, string Role, int? Task = null) 
     public override Area Area => Area.Dashboard;
 }
 
-/// <summary>The teams changed in Settings, so the window is built again over the new list.</summary>
-public sealed record TeamsChanged(Area Shown) : Handover
+/// <summary>The teams changed in Settings, so the window is built again over the new list, back on the card
+/// <paramref name="Left"/> names where it's still there.</summary>
+public sealed record TeamsChanged(Area Shown, Place? Left = null) : Handover
 {
     public override string[] Arguments => [];
 
