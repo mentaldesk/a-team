@@ -1,5 +1,6 @@
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Text;
 using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
@@ -27,6 +28,7 @@ public sealed class OverseerView : View
     private const int MaxDetailRows = 8;
     private const string Separator = " · ";
     private const int NumberWidth = 5;
+    private const int AgeWidth = 3;
 
     private readonly OverseerBoard _board;
     private readonly Label _header = new() { X = 1, Y = 0, Width = Dim.Fill(), CanFocus = false };
@@ -81,6 +83,8 @@ public sealed class OverseerView : View
     internal string Details => _detailText.Text;
 
     internal string DetailsTitle => _details.Title;
+
+    internal int ScrolledTo => _lanes.Viewport.Y;
 
     internal IReadOnlyList<string> LaneTitles => [.. _laneViews.Select(lane => lane.Title)];
 
@@ -140,6 +144,23 @@ public sealed class OverseerView : View
 
     public void MoveRow(int step) => Move(() => _board.MoveRow(step));
 
+    public void MoveLane(int step) => Move(() => _board.MoveLane(step));
+
+    /// <summary>PgUp and PgDn: scrolls the lanes a screen, selecting in the first lane with cards from the top, or at
+    /// the bottom already, the last.</summary>
+    public void Page(int step)
+    {
+        var height = _lanes.Viewport.Height;
+        var y = Math.Clamp(_lanes.Viewport.Y + step * height, 0, Math.Max(0, Tall() - height));
+        var column = _board.Selected?.Column ?? 0;
+        var lanes = step > 0 && y == _lanes.Viewport.Y ? Enumerable.Reverse(_laneViews) : _laneViews.Where(lane => Top(lane) >= y);
+        if (lanes.FirstOrDefault(lane => _board.SelectLane(LaneTeam(lane), column)) is null)
+            return;
+        _lanes.Viewport = _lanes.Viewport with { Y = y };
+        Changed();
+        ScrollToSelection();
+    }
+
     /// <summary>Enter: unfolds a lane on its <c>+N</c>, and otherwise opens or closes the details.</summary>
     public void Enter()
     {
@@ -189,7 +210,7 @@ public sealed class OverseerView : View
         if (chip.Card is not { } card)
             return $"+{chip.Hidden}";
         var age = spinner ?? (card.Age(now) is { } waited ? Ages.Short(waited) : "");
-        return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)} {age,3}";
+        return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)} {age,AgeWidth}";
     }
 
     /// <summary>The details pane's lines for <paramref name="card"/>.</summary>
@@ -321,9 +342,17 @@ public sealed class OverseerView : View
             return GetAttributeForRole(VisualRole.Focus);
         if (card is null)
             return GetAttributeForRole(VisualRole.Disabled);
+        return CardCells.Colour(Priorities.Scheme(card.Priority), GetAttributeForRole(VisualRole.Normal));
+    }
+
+    /// <summary>An age is neutral, and amber only past its column's limit, so it never reads as a Priority.</summary>
+    private Attribute AgeAttribute(BoardCard card, bool selected)
+    {
+        if (selected)
+            return GetAttributeForRole(VisualRole.Focus);
         if (ColumnLimits.IsOver(card, _state.Limits, _state.Now) && SchemeManager.TryGetScheme(LogSchemes.Overdue, out var overdue))
             return overdue.GetAttributeForRole(VisualRole.Normal);
-        return CardCells.Colour(Priorities.Scheme(card.Priority), GetAttributeForRole(VisualRole.Normal));
+        return GetAttributeForRole(VisualRole.Normal);
     }
 
     /// <summary>One lane's chips, a column per status. Painted cell by cell: each chip takes its own colour, which no
@@ -345,11 +374,18 @@ public sealed class OverseerView : View
                 {
                     var chip = chips[row];
                     var worked = chip.Card is { } card && state.Worked.Contains((card.Team, card.Number));
-                    var text = Card.Elide(ChipText(chip, state.Now, worked ? spinner : null, overseer._icons), width - 1);
+                    var full = ChipText(chip, state.Now, worked ? spinner : null, overseer._icons);
+                    var text = Card.Elide(full, width - 1);
                     var selected = board.Selected is { } place && place.Team == team && place.Column == column
                         && place.Number == chip.Card?.Number;
+                    var age = chip.Card is not null && text == full ? AgeWidth : 0;
                     SetAttribute(overseer.ChipAttribute(chip.Card, selected));
-                    AddStr(column * width, row, text);
+                    AddStr(column * width, row, text[..^age]);
+                    if (chip.Card is { } shown && age > 0)
+                    {
+                        SetAttribute(overseer.AgeAttribute(shown, selected));
+                        AddStr(column * width + text[..^age].GetColumns(), row, text[^age..]);
+                    }
                 }
             }
             return true;

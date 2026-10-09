@@ -464,6 +464,10 @@ public sealed class DashboardWindow : Window
             .Register("overseer.left", "Select the chip to the left", () => _overseer.MoveColumn(-1), Key.CursorLeft, isEnabled: OnOverseer)
             .Register("overseer.down", "Select the chip below", () => _overseer.MoveRow(+1), Key.CursorDown, isEnabled: OnOverseer)
             .Register("overseer.up", "Select the chip above", () => _overseer.MoveRow(-1), Key.CursorUp, isEnabled: OnOverseer)
+            .Register("overseer.nextLane", "Select the next team's lane", () => _overseer.MoveLane(+1), Key.Tab, isEnabled: OnOverseer)
+            .Register("overseer.previousLane", "Select the previous team's lane", () => _overseer.MoveLane(-1), Key.Tab.WithShift, isEnabled: OnOverseer)
+            .Register("overseer.pageDown", "Scroll the lanes down", () => _overseer.Page(+1), Key.PageDown, isEnabled: OnOverseer)
+            .Register("overseer.pageUp", "Scroll the lanes up", () => _overseer.Page(-1), Key.PageUp, isEnabled: OnOverseer)
             .Register("overseer.details", () => _overseer.Board.OnMore ? "Show the whole lane" : "Show details", OverseerEnter, Key.Enter,
                 isEnabled: () => OnOverseer() && _overseer.Board.Selected is not null, inMenu: OnOverseer)
             .Register("overseer.fold", () => "Fold the lane", () => _overseer.Fold(), Key.Esc,

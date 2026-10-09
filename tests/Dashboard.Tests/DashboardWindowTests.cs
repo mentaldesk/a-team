@@ -783,6 +783,7 @@ public class DashboardWindowTests : IDisposable
                 "Approve the pitch you're reading", "Accept", "Comment on the item you're reading",
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read what's waiting again",
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
+                "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
                 "Show details", "Fold the lane", "Open on GitHub", "Go to the agent's session", "Read every board again",
                 "Dashboard", "Work", "Overseer",
                 "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Trends", "Back to the agent grid", "Quit",

@@ -252,6 +252,22 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void Tab_goes_to_the_next_lane_with_cards_and_round_past_the_end()
+    {
+        var board = Board(
+            [Card(1, "Ready", days: 1), Card(2, "Ready", days: 2), Card(5, "Idea", days: 1, team: "c"), Card(6, "In review", days: 1, team: "c")],
+            ["a", "b", "c"]);
+        board.Select("a", 1);
+
+        board.MoveLane(+1);
+        Assert.Equal(("c", 6), (board.Selected!.Value.Team, board.SelectedCard?.Number));
+        board.MoveLane(+1);
+        Assert.Equal(("a", 2), (board.Selected!.Value.Team, board.SelectedCard?.Number));
+        board.MoveLane(-1);
+        Assert.Equal("c", board.Selected!.Value.Team);
+    }
+
+    [Fact]
     public void A_new_read_keeps_the_selection_on_its_card_wherever_it_went()
     {
         var board = Board([Card(1, "Ready", days: 1), Card(2, "Idea", days: 1)]);
@@ -381,6 +397,36 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void Tab_and_Shift_Tab_move_between_lanes()
+    {
+        using var window = Open();
+        window.NewKeyDownEvent(new Key('o'));
+        window.Refresh();
+
+        Assert.True(window.NewKeyDownEvent(Key.Tab));
+        Assert.Equal("team1", window.Overseer.Board.Selected!.Value.Team);
+        Assert.True(window.NewKeyDownEvent(Key.Tab.WithShift));
+        Assert.Equal("team0", window.Overseer.Board.Selected!.Value.Team);
+    }
+
+    [Fact]
+    public void PgDn_and_PgUp_scroll_lanes_that_don_t_fit()
+    {
+        using var window = Open(height: 8);
+        window.NewKeyDownEvent(new Key('o'));
+        window.Refresh();
+        Assert.Equal(0, window.Overseer.ScrolledTo);
+
+        Assert.True(window.NewKeyDownEvent(Key.PageDown));
+        Assert.True(window.Overseer.ScrolledTo > 0);
+        Assert.Equal("team1", window.Overseer.Board.Selected!.Value.Team);
+
+        Assert.True(window.NewKeyDownEvent(Key.PageUp));
+        Assert.Equal(0, window.Overseer.ScrolledTo);
+        Assert.Equal("team0", window.Overseer.Board.Selected!.Value.Team);
+    }
+
+    [Fact]
     public void Enter_toggles_the_details_of_the_selected_card()
     {
         using var window = Open();
@@ -469,7 +515,7 @@ public class OverseerTests : IDisposable
           """;
 
     private DashboardWindow Open(
-        Func<string, Task<Reading>>? readBoard = null, Action<string>? openUrl = null, TimeProvider? clock = null)
+        Func<string, Task<Reading>>? readBoard = null, Action<string>? openUrl = null, TimeProvider? clock = null, int height = 30)
     {
         Directory.CreateDirectory(_root);
         var window = new DashboardWindow(
@@ -486,8 +532,8 @@ public class OverseerTests : IDisposable
             IconStyle.Unicode,
             clock: clock,
             readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))));
-        window.Frame = new Rectangle(0, 0, 120, 30);
-        window.Layout(new Size(120, 30));
+        window.Frame = new Rectangle(0, 0, 120, height);
+        window.Layout(new Size(120, height));
         window.Refresh();
         return window;
     }

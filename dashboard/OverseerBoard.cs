@@ -139,6 +139,29 @@ public sealed class OverseerBoard
         }
     }
 
+    /// <summary>Tab and Shift+Tab: the next or previous lane with cards, round past the end.</summary>
+    public void MoveLane(int step)
+    {
+        if (Selected is not { } place)
+        {
+            SelectFirst();
+            return;
+        }
+        var from = _teams.IndexOf(place.Team);
+        for (var offset = 1; offset < _teams.Count; offset++)
+            if (SelectLane(_teams[((from + step * offset) % _teams.Count + _teams.Count) % _teams.Count], place.Column))
+                return;
+    }
+
+    /// <summary>The top chip of the lane's column nearest <paramref name="column"/>, if the lane has any.</summary>
+    public bool SelectLane(string team, int column)
+    {
+        if (Nearest(team, column) is not { } nearest)
+            return false;
+        Selected = At(team, nearest, 0);
+        return true;
+    }
+
     /// <summary>Shows every chip in the selected lane, staying on the card the <c>+N</c> stood in front of.</summary>
     public void Unfold()
     {
