@@ -18,10 +18,11 @@ dispatcher_record() {
 
 team_config() { echo "$CONFIG_DIR/teams/$1.json"; }
 
-# team_roles <config>: the roles a team runs, the Customer lead only where it's turned on.
+# team_roles <config>: the roles a team runs, the Customer lead and the Reviewer only where they're turned on.
 team_roles() {
   printf '%s\n' lead dev
   jq -e '.roles.customer == true' "$1" >/dev/null 2>&1 && echo customer
+  jq -e '.roles.reviewer == true' "$1" >/dev/null 2>&1 && echo reviewer
   return 0
 }
 

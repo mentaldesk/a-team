@@ -36,7 +36,8 @@ get to work or keep the team paused, and there `Esc` cancels the new team.
 `a-team try` runs, whether it's working or paused, when it releases, which roles it runs, and its
 limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
 [Customer lead](how-a-team-works.md#the-customer-lead), and untick it to take it away again. With it,
-**Docs** is required: the first page of your user docs, in the repo. Each
+**Docs** is required: the first page of your user docs, in the repo. Tick **Reviewer** to have the
+[Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. Each
 field says what it's for underneath. `Enter` saves them into the team's file, leaving everything else in it as it was, and
 `Esc` cancels.
 

@@ -61,6 +61,9 @@ A card reads as the issue's number, then its title:
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
+- **Its review.** With the [Reviewer](how-a-team-works.md#the-reviewer) on, a task whose PR it has
+  reviewed says `reviewed` after its number, and how many points it left for you to consider, like
+  `#412  reviewed · 1 to consider · ...`.
 - **Trouble.** A PR that's failing CI, conflicts with its base, is still running CI or is still a
   draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. A PR
   whose base just moved shows `resolving mergeable status` until GitHub has worked out whether it

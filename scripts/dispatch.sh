@@ -78,7 +78,7 @@ dispatch() {
   [ -z "$sweep" ] || echo "$now" >"$dir/${prefix}last-sweep"
   last=$(cat "$dir/${prefix}last-start" 2>/dev/null || echo 0)
 
-  if [ "$role" != dev ]; then
+  if [ "$role" != dev ] && [ "$role" != reviewer ]; then
     reasons=$(jq -r '.reasons[]' <<<"$triggers")
     creative=$(jq -r .creative <<<"$triggers")
     if [ -z "$reasons" ]; then
@@ -143,7 +143,7 @@ copy_release() {
   "$ROOT/bin/a-team" version >"$1/VERSION"
 }
 
-# launch: starts a run for $reasons (and $task, for the Dev). A Dev run keeps its state under
+# launch: starts a run for $reasons (and $task, for the Dev or Reviewer). Such a run keeps its state under
 # runs/<task>, and the role's own files follow the run started last. Each run runs on its own copy
 # of the release, so an upgrade mid-run can't change it.
 launch() {

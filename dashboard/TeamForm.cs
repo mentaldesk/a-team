@@ -32,6 +32,7 @@ public sealed class TeamForm : Dialog
     internal const string StatusCaption = "Whether the team picks up work. Paused lets a run in flight finish.";
     internal const string ReleaseCaption = "When a-team runs the repo's release.yml. Never suits a repo that deploys itself on merge.";
     internal const string CustomerCaption = "Keeps the user docs right: a docs PR for you after each pitch is done.";
+    internal const string ReviewerCaption = "Reviews each task PR once it's green, so the Dev fixes what it finds before you look.";
     internal const string WorktreesCaption = "How many tasks can be in flight, PRs included.";
     internal const string DevsCaption = "How many Dev runs build at once.";
     internal const string PitchedCaption = "How many pitches wait on you at once.";
@@ -70,6 +71,7 @@ public sealed class TeamForm : Dialog
     private readonly OptionSelector<TeamStatus>? _status;
     private readonly OptionSelector<TeamRelease> _release;
     private readonly CheckBox _customer;
+    private readonly CheckBox _reviewer;
     private readonly NumericUpDown<int> _worktrees;
     private readonly NumericUpDown<int> _devs;
     private readonly NumericUpDown<int> _pitched;
@@ -214,8 +216,10 @@ public sealed class TeamForm : Dialog
         var lead = Role("Lead", CheckState.Checked, FieldX, row);
         var dev = Role("Dev", CheckState.Checked, Pos.Right(lead) + 2, row);
         lead.Enabled = dev.Enabled = false;
-        _customer = Role("Customer lead", settings.Customer ? CheckState.Checked : CheckState.UnChecked, Pos.Right(dev) + 2, row++);
+        _customer = Role("Customer lead", settings.Customer ? CheckState.Checked : CheckState.UnChecked, Pos.Right(dev) + 2, row);
         Caption(_customer, CustomerCaption);
+        _reviewer = Role("Reviewer", settings.Reviewer ? CheckState.Checked : CheckState.UnChecked, Pos.Right(_customer) + 2, row++);
+        Caption(_reviewer, ReviewerCaption);
 
         Add(new Label { Text = "Limits", X = Inset, Y = row });
         _worktrees = Limit("Worktrees", settings.Worktrees, 0, row, WorktreesCaption);
@@ -308,6 +312,8 @@ public sealed class TeamForm : Dialog
 
     internal OptionSelector<TeamRelease> Releases => _release;
     internal CheckBox CustomerLead => _customer;
+
+    internal CheckBox Reviewer => _reviewer;
 
     internal NumericUpDown<int> Worktrees => _worktrees;
 
@@ -412,6 +418,7 @@ public sealed class TeamForm : Dialog
             Working = _status is { } status ? status.Value == TeamStatus.Working : _before.Working,
             Release = _release.Value ?? _before.Release,
             Customer = _customer.Value == CheckState.Checked,
+            Reviewer = _reviewer.Value == CheckState.Checked,
             Worktrees = _worktrees.Value,
             Devs = _devs.Value,
             Pitched = _pitched.Value,

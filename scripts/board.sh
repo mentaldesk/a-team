@@ -138,10 +138,25 @@ NEEDS='def fenced: reduce .[] as $line ({fence: null, out: []};
         | if $text == "" or ($text | test("^none\\.?$"; "i")) then "" else "## Needs your answer\n\n\($text)" end
       end;'
 
+# considered: how many points a review's "Worth considering" section makes, one per top-level list item.
+CONSIDERED='def considered: (gsub("\r"; "") | split("\n")) as $lines
+    | ([range($lines | length) | select($lines[.] | test("^#{1,6}[ \t]+Worth considering[ \t]*$"; "i"))] | first) as $at
+    | if $at == null then 0 else
+        reduce $lines[$at + 1:][] as $line ({open: true, n: 0};
+          if .open | not then .
+          elif $line | test("^#{1,6}[ \t]|<!-- a-team:") then .open = false
+          elif $line | test("^(?:[-*+]|[0-9]+[.)])[ \t]+") then .n += 1
+          else . end) | .n
+      end;'
+
 # closes: the issues a Dev PR's body closes, for when GitHub hasn't linked them.
 CLOSES='def closes: if (.body // "") | contains("<!-- a-team:dev -->")
     then [.body | scan("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?[ \t]+#([0-9]+)\\b") | .[0] | tonumber]
     else [] end;'
+
+# reviewed: the Reviewer has posted its one review on this PR, read off its comments as GraphQL gives them.
+REVIEWED='def reviewed: any(.comments.nodes[]?; (.author | '"$LOGIN"') == $bot
+    and ((.body // "") | contains("<!-- a-team:reviewer -->")));'
 
 # checks: the CI verdict on a commit's check runs, shaped as REST gives them.
 CHECKS='def checks:
@@ -178,7 +193,7 @@ allowed() {
 }
 
 check_role() {
-  case "$1" in lead | dev | customer) ;; *) die "unknown role '$1' (lead | dev | customer)" ;; esac
+  case "$1" in lead | dev | customer | reviewer) ;; *) die "unknown role '$1' (lead | dev | customer | reviewer)" ;; esac
 }
 
 own_label() {
@@ -186,6 +201,8 @@ own_label() {
 }
 
 customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
+
+reviewer_on() { jq -e '.roles.reviewer == true' "$CONFIG" >/dev/null 2>&1; }
 
 # Whether the first page of the user docs, the config's `docs`, is on the default branch.
 docs_there() { [ -n "$(cfg .docs)" ] && gh api "repos/$REPO/contents/$(cfg .docs)" --silent >/dev/null 2>&1; }
@@ -405,7 +422,7 @@ by_priority() {
 
 # An issue an agent wrote, from any team, carries its marker in the body.
 agent_written() {
-  gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev|customer) -->'
+  gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev|customer|reviewer) -->'
 }
 
 # The number of the issue #1 is a sub-issue of, or nothing.
@@ -471,22 +488,28 @@ pitch_swap() {
         end'
 }
 
+# pr_for <n>: the open PR that closes #n, with `review` saying whether the Reviewer is still to review it
+# (waiting), has (posted), or isn't turned on (off).
 pr_for() {
-  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
-    query($owner: String!, $name: String!, $n: Int!) {
-      repository(owner: $owner, name: $name) {
-        issue(number: $n) {
+  local said='comments(last: 100) { nodes { body author { __typename login } } }'
+  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query="
+    query(\$owner: String!, \$name: String!, \$n: Int!) {
+      repository(owner: \$owner, name: \$name) {
+        issue(number: \$n) {
           closedByPullRequestsReferences(first: 10, includeClosedPrs: false) {
-            nodes { number url isDraft headRefName mergeable }
+            nodes { number url isDraft headRefName mergeable $said }
           }
         }
         pullRequests(states: OPEN, first: 100) {
-          nodes { number url isDraft headRefName mergeable body }
+          nodes { number url isDraft headRefName mergeable body $said }
         }
       }
-    }' | jq -c --argjson n "$1" "$CLOSES"'.data.repository
-      | .issue.closedByPullRequestsReferences.nodes[0]
-        // ((.pullRequests.nodes // []) | map(select(any(closes[]; . == $n))) | first | del(.body))'
+    }" | jq -c --argjson n "$1" --arg bot "$BOT" --argjson on "$(reviewer_on && echo true || echo false)" \
+      "$CLOSES$REVIEWED"'.data.repository
+      | (.issue.closedByPullRequestsReferences.nodes[0]
+         // ((.pullRequests.nodes // []) | map(select(any(closes[]; . == $n))) | first))
+      | if . == null then null
+        else . + {review: (if reviewed then "posted" elif $on then "waiting" else "off" end)} | del(.body, .comments) end'
 }
 
 # ci <pr>: the CI verdict for <pr>'s head commit.
@@ -634,7 +657,7 @@ gated_blocked() {
 # build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --argjson stakeholders "$STAKEHOLDERS" \
-    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE$NEEDS"'
+    --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE$NEEDS$CONSIDERED"'
     $items | map(
       . as $item
       | (.role // if .status == "Pitched" then "lead" else "dev" end) as $role
@@ -656,6 +679,8 @@ turns() {
                                          conflicting: $pr.conflicting, draft: $pr.draft, base: $pr.base,
                                          unready: ($wrong.trouble // "")} end)
       | (if $question == "" then . else . + {question: $question} end)
+      | ([$theirs[] | select(.kind == "comment" and team("<!-- a-team:reviewer -->"))] | last) as $review
+      | (if $review == null then . else . + {reviewed: true, consider: ($review.body | considered)} end)
       | if $asked != ""
         then . + {turn: $role, reason: "answering your feedback\(since($asked))"}
         elif $wrong != null
@@ -779,10 +804,11 @@ close_pitch() {
   refused=$(write "close #$1 as completed" close "$1") || die "can't close #$1 ($(head -1 <<<"$refused"))"
 }
 
-# own_task <role> <n>: a Dev run started for one task touches only that task and its PR.
+# own_task <role> <n>: a Dev or Reviewer run started for one task touches only that task and its PR.
 own_task() {
   local task=${A_TEAM_RUN_TASK:-}
-  [ "$1" = dev ] && [ -n "$task" ] && [ "$2" != "$task" ] || return 0
+  case "$1" in dev | reviewer) ;; *) return 0 ;; esac
+  [ -n "$task" ] && [ "$2" != "$task" ] || return 0
   [ "$(pr_for "$task" | jq -r '.number // empty')" = "$2" ] ||
     die "this run is for #$task: leave #$2 to a run of its own"
 }
@@ -1032,7 +1058,7 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM new you <file>"
     role=$1 file=$2
     case "$role" in
-      lead | dev | customer) die "$role may not open an issue as you; open it yourself and add it" ;;
+      lead | dev | customer | reviewer) die "$role may not open an issue as you; open it yourself and add it" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
@@ -1051,7 +1077,7 @@ case "$CMD" in
     [ $# -eq 3 ] || die "usage: board.sh $TEAM priority <role> <n> <value|none>"
     role=$1 n=$2 value=$3
     case "$role" in
-      lead | dev | customer) die "$role may not set a $PRIORITY; ranking an item is the stakeholders' own gate" ;;
+      lead | dev | customer | reviewer) die "$role may not set a $PRIORITY; ranking an item is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
@@ -1087,7 +1113,7 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM approve <role> <n>"
     role=$1 n=$2
     case "$role" in
-      lead | dev | customer) die "$role may not approve a pitch; approving is the stakeholders' own gate" ;;
+      lead | dev | customer | reviewer) die "$role may not approve a pitch; approving is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
@@ -1106,7 +1132,7 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM accept <role> <n>"
     role=$1 n=$2
     case "$role" in
-      lead | dev | customer) die "$role may not accept a task; accepting is the stakeholders' own gate" ;;
+      lead | dev | customer | reviewer) die "$role may not accept a task; accepting is the stakeholders' own gate" ;;
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
@@ -1160,7 +1186,11 @@ case "$CMD" in
   comment)
     [ $# -eq 3 ] || die "usage: board.sh $TEAM comment <role> <n> <file>"
     role=$1 n=$2 file=$3
-    case "$role" in lead | dev | customer | you) ;; *) die "unknown role '$role' (lead | dev | customer | you)" ;; esac
+    case "$role" in
+      lead | dev | customer | you) ;;
+      reviewer) die "reviewer posts only its review, with: board.sh $TEAM review reviewer <pr> <file>" ;;
+      *) die "unknown role '$role' (lead | dev | customer | you)" ;;
+    esac
     [ -f "$file" ] || die "no such file: $file"
     own_task "$role" "$n"
     own_docs "$role" "$n"
@@ -1174,6 +1204,35 @@ case "$CMD" in
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     [ "$role" = you ] || ack "$n"
     record "$role" "$n" "commented"
+    ;;
+
+  review)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM review reviewer <pr> <file>"
+    role=$1 pr=$2 file=$3
+    check_role "$role"
+    [ "$role" = reviewer ] || die "only reviewer reviews a task's PR"
+    reviewer_on || die "$TEAM has no Reviewer (roles.reviewer in $TEAM.json)"
+    [ -f "$file" ] || die "no such file: $file"
+    [ -n "$(grep -v '^[[:space:]]*$' "$file" || true)" ] || die "the review is empty: $file"
+    own_task "$role" "$pr"
+    it=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$pr" -f query='
+      query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
+        pullRequest(number: $n) { state isDraft body labels(first: 20) { nodes { name } }
+          comments(last: 100) { nodes { body author { __typename login } } } } } }' 2>/dev/null |
+      jq -c '.data.repository.pullRequest // empty') || true
+    [ -n "$it" ] || die "#$pr isn't a PR"
+    jq -e '.state == "OPEN" and ((.body // "") | contains("<!-- a-team:dev -->"))
+        and ([.labels.nodes[].name] | index("pitch") or index("a-team:customer") | not)' <<<"$it" >/dev/null ||
+      die "reviewer reviews only the Dev's open task PRs (#$pr isn't one)"
+    ! jq -e --arg bot "$BOT" "$REVIEWED reviewed" <<<"$it" >/dev/null ||
+      die "#$pr has its review already: a PR is reviewed once"
+    jq -e .isDraft <<<"$it" >/dev/null || die "#$pr is ready for review already: it went to the stakeholders unreviewed"
+    [ "$(ci "$pr" | jq -r .verdict)" = pass ] || die "#$pr isn't green: it's reviewed once CI passes"
+    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$pr" gh pr comment "$pr" -R "$REPO" --body-file -
+    record "$role" "${A_TEAM_RUN_TASK:-$pr}" "reviewed PR #$pr"
+    say "#$pr: reviewed"
     ;;
 
   skip)
@@ -1200,7 +1259,7 @@ case "$CMD" in
     role=$1 n=$2 level=$(tr '[:upper:]' '[:lower:]' <<<"$3") file=$4
     case "$role" in
       lead) ;;
-      dev | customer | you) die "$role may not recommend a rank; recommending is the Lead's, and ranking is the stakeholders'" ;;
+      dev | customer | reviewer | you) die "$role may not recommend a rank; recommending is the Lead's, and ranking is the stakeholders'" ;;
       *) die "unknown role '$role' (lead)" ;;
     esac
     label=rank:$level
@@ -1252,7 +1311,7 @@ case "$CMD" in
     [ $# -eq 4 ] || die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\""
     role=$1 task=$2 prereq=$3 why=$4
     check_role "$role"
-    [ "$role" != customer ] || die "customer may not change what a task waits on"
+    case "$role" in customer | reviewer) die "$role may not change what a task waits on" ;; esac
     own_task "$role" "$task"
     write "block #$task on #$prereq" gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" \
       -F "issue_id=$(gh api "repos/$REPO/issues/$prereq" --jq .id)" >/dev/null
@@ -1265,7 +1324,7 @@ case "$CMD" in
     [ $# -eq 4 ] || die "usage: board.sh $TEAM undepend <role> <task> <prerequisite> \"<why>\""
     role=$1 task=$2 prereq=$3 why=$4
     check_role "$role"
-    [ "$role" != customer ] || die "customer may not change what a task waits on"
+    case "$role" in customer | reviewer) die "$role may not change what a task waits on" ;; esac
     own_task "$role" "$task"
     prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
       jq -r --argjson n "$prereq" '[.[] | select(.number == $n) | .id] | first // empty')
@@ -1381,7 +1440,7 @@ case "$CMD" in
       "def login: $LOGIN; $TEAM_SAID"'
       def remark($pr): {at: .createdAt, author: (.author | login), body: (.body // ""), pr: $pr};
       def who: if team("<!-- a-team:lead -->") then "lead" elif team("<!-- a-team:dev -->") then "dev"
-        elif team("<!-- a-team:customer -->") then "customer"
+        elif team("<!-- a-team:customer -->") then "customer" elif team("<!-- a-team:reviewer -->") then "reviewer"
         elif .author | IN($stakeholders[]) then "you" else .author end;
       [.data.repository | to_entries[].value | select(. != null)
        | (.comments.nodes[]? | remark(null)),
@@ -1389,7 +1448,7 @@ case "$CMD" in
           | (remark($pr) + {description: true}), (.comments.nodes[]? | remark($pr)))]
       | sort_by(.at)
       | map({who: who, at, pr, description: (.description // false),
-             body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev|customer) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
+             body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev|customer|reviewer) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
     ;;
 
   children)
@@ -1501,7 +1560,7 @@ case "$CMD" in
     all=$(items)
     reasons=()
     recent='[]'
-    [ "$role" = customer ] || recent=$(recent_comments)
+    case "$role" in lead | dev) recent=$(recent_comments) ;; esac
     tasks='[]' chores=() ready='' items=()
     # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
     task_reason() {
@@ -1526,8 +1585,13 @@ case "$CMD" in
           # Changes once the rest settle, so a run starts that can re-run a transient failure.
           running=$(jq -r 'if .pending == [] then "" else ", other checks still running" end' <<<"$checks")
           [ "$verdict" = fail ] && task_reason "$n" "$title" "CI failed on PR #$p at $(gh api "repos/$REPO/pulls/$p" --jq '.head.sha[:7]')$running"
-          [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ] &&
-            task_reason "$n" "$title" "PR #$p is green but still a draft"
+          # With a Reviewer, a green draft is its to review first.
+          if [ "$verdict" = pass ] && [ "$(jq -r .isDraft <<<"$pr")" = true ]; then
+            case "$(jq -r .review <<<"$pr")" in
+              off) task_reason "$n" "$title" "PR #$p is green but still a draft" ;;
+              posted) task_reason "$n" "$title" "PR #$p has its review: act on it, then mark it ready" ;;
+            esac
+          fi
           # UNKNOWN means GitHub hasn't finished computing it, so only CONFLICTING fires.
           [ "$(jq -r .mergeable <<<"$pr")" = CONFLICTING ] &&
             task_reason "$n" "$title" "PR #$p conflicts with its base: merge the base branch into it and resolve"
@@ -1573,6 +1637,18 @@ case "$CMD" in
         fi
       fi
       reasons+=(${chores[@]+"${chores[@]}"})
+      creative=false
+    elif [ "$role" = reviewer ]; then
+      if reviewer_on; then
+        while IFS= read -r row; do
+          n=$(jq -r .number <<<"$row")
+          pr=$(pr_for "$n")
+          [ -n "$pr" ] && [ "$pr" != null ] && [ "$(jq -r '.isDraft and .review == "waiting"' <<<"$pr")" = true ] || continue
+          p=$(jq -r .number <<<"$pr")
+          [ "$(ci "$p" | jq -r .verdict)" = pass ] &&
+            task_reason "$n" "$(jq -r .title <<<"$row")" "PR #$p is green and waiting for its review"
+        done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
+      fi
       creative=false
     elif [ "$role" = customer ]; then
       if customer_on && [ -n "$(cfg .docs)" ]; then
@@ -1657,7 +1733,7 @@ case "$CMD" in
       --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" \
       --argjson items "$(jq -n '$ARGS.positional | map(tonumber)' --args ${items[@]+"${items[@]}"})" '
       {reasons: $ARGS.positional, creative: $creative}
-      + if $role == "dev"
+      + if $role == "dev" or $role == "reviewer"
         then {tasks: $tasks, ready: (if $ready == "" then null else $ready | tonumber end), chores: $chores}
         else {items: $items} end' \
       --args "${reasons[@]+"${reasons[@]}"}"

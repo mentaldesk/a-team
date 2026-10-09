@@ -1,7 +1,7 @@
 # How a team works
 
-A team is two agents working on one GitHub repository, and you. You can add a third, the
-[Customer lead](#the-customer-lead). They coordinate through that repo's
+A team is two agents working on one GitHub repository, and you. You can add the
+[Customer lead](#the-customer-lead) and the [Reviewer](#the-reviewer). They coordinate through that repo's
 Project board: if it isn't on the board, in an issue or in a PR, the team doesn't know about it.
 
 ## Who does what
@@ -102,6 +102,28 @@ Dashboard.
 
 Its PR waits in Review in the [Work](work.md) area, marked as the Customer lead's. Accept it like a
 task, and the next change starts a new one. It never changes code, pitches or tasks.
+
+## The Reviewer
+
+The Reviewer gives each of the Dev's task PRs the sanity check you'd otherwise ask a fresh session
+for, before the PR reaches you. It's off until you turn it on: tick **Reviewer** under **Roles** in
+the team's settings ([Teams](teams.md#a-teams-settings)), and its pane joins the team's on the
+Dashboard. Each review is a run, so it costs one run per task.
+
+- **When it runs.** Once a task's PR goes green and is still a draft, the Reviewer reads it before
+  the Dev marks it ready. It reads the task and its pitch as well as the diff, and changes no code.
+- **What it says.** One comment on the PR, in two sections: **Needs changing**, each point with the
+  file and line and why, and **Worth considering**, for what needn't hold the PR up. It leaves out
+  whatever is fine. If nothing needs changing, it says so in one line.
+- **What happens next.** The Dev fixes each **Needs changing** point or replies why not, then marks
+  the PR ready as usual. It leaves **Worth considering** to you: comment if you want any of it done.
+- **Once only.** A PR is reviewed once. The Dev's fixes come to you without a second review, so the
+  two agents can't go round in circles.
+- **Only task PRs.** Pitches, the Customer lead's docs PR and your own PRs are never reviewed.
+
+In the [Work](work.md) area, a reviewed task's card says `reviewed`, and how many points it left to
+consider, like `reviewed · 1 to consider`. Its reader shows the review and the Dev's reply in the
+conversation, under `reviewer` and `dev`.
 
 ## Ideas and priorities
 

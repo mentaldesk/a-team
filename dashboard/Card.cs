@@ -44,7 +44,7 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null)
     {
         if (IsPr)
             return Elide($"{Icons.Glyph(Icon.PullRequest, style)} #{Item.Pr}  {Item.Title}", width);
-        var said = new[] { Item.Mine ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "", Item.Title }
+        var said = new[] { Item.Mine ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "", Item.Review, Item.Title }
             .Where(part => part.Length > 0);
         return Elide($"#{Item.Number}  {string.Join(" · ", said)}", width);
     }

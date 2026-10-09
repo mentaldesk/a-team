@@ -83,6 +83,18 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void A_reviewed_task_carries_the_review_and_how_many_points_it_left_to_consider()
+    {
+        var items = WaitingItem.Parse("""
+            [{"number": 412, "status": "In review", "reviewed": true, "consider": 2},
+             {"number": 413, "status": "In review", "reviewed": true, "consider": 0},
+             {"number": 414, "status": "In review"}]
+            """);
+
+        Assert.Equal(["reviewed · 2 to consider", "reviewed", ""], items.Select(item => item.Review));
+    }
+
+    [Fact]
     public void The_Customer_lead_s_docs_PR_is_its_own_PR_and_is_marked_as_its()
     {
         var item = Assert.Single(WaitingItem.Parse("""
