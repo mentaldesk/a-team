@@ -261,6 +261,8 @@ public class WorkViewTests
         Assert.True(view.Lanes[0].Viewport.Y > 0);
     }
 
+    [Theory]
+    [InlineData(41, "#107  When the dashboard goes quiet, I c…")]
     [InlineData(53, "#107  When the dashboard goes quiet, I can't tell why")]
     public void A_card_reads_as_the_number_then_as_much_of_the_title_as_fits(int width, string expected)
     {
@@ -675,6 +677,12 @@ public class WorkViewTests
         Assert.Equal("a-team", view.Current?.Team);
     }
 
+    [Theory]
+    [InlineData("conflicts with main", 122, false)]
+    [InlineData("CI failing", 122, false)]
+    [InlineData("CI running", 122, false)]
+    [InlineData("still a draft", 122, false)]
+    [InlineData("", 0, false)]
     [InlineData("", 122, true)]
     public void Review_holds_a_task_only_when_its_PR_can_be_merged(string unready, int pr, bool held)
     {
