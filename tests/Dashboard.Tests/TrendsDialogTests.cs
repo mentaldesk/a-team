@@ -58,6 +58,21 @@ public class TrendsDialogTests
     }
 
     [Fact]
+    public void Arrow_keys_choose_the_measure_they_move_to()
+    {
+        using var dialog = Open(("a-team", 4, Recorded));
+
+        dialog.Measure.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(1, dialog.Measure.Value);
+        Assert.Equal(1, dialog.Measure.FocusedItem);
+
+        dialog.Measure.NewKeyDownEvent(Key.CursorLeft);
+        dialog.Measure.NewKeyDownEvent(Key.CursorLeft);
+        Assert.Equal(2, dialog.Measure.Value);
+        Assert.Equal([null, 8, 10], dialog.Series[0].TakeLast(3));
+    }
+
+    [Fact]
     public void With_nothing_recorded_it_says_so_instead_of_charting()
     {
         using var dialog = Open(("a-team", 4, Nothing), ("tuicode", 1, Nothing));

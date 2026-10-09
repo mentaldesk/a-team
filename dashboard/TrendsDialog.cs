@@ -61,6 +61,8 @@ public sealed class TrendsDialog : Dialog
             Visible = false,
         };
         _measure.ValueChanged += (_, _) => Plot();
+        _measure.KeyDown += (_, key) =>
+            key.Handled = key == Key.CursorRight ? Step(+1) : key == Key.CursorLeft && Step(-1);
         _graph = new GraphView
         {
             X = Inset,
@@ -173,6 +175,14 @@ public sealed class TrendsDialog : Dialog
         _measure.Visible = _graph.Visible = _table.Visible = true;
         _measure.SetFocus();
         Plot();
+    }
+
+    private bool Step(int by)
+    {
+        var next = ((_measure.Value ?? 0) + by + Measures.Length) % Measures.Length;
+        _measure.Value = next;
+        _measure.FocusedItem = next;
+        return true;
     }
 
     private static string Number(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "–";

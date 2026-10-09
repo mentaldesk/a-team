@@ -17,7 +17,7 @@ has, and with nothing recorded yet the title shows only what's waiting.
 To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It charts the last 14 days,
 one line per team, for what was waiting on you, what you accepted each day, or the hours to accept:
 the median time the tasks you accepted that day took from first entering Ready.
-`Left`/`Right` and `Space` switch between them. Days before a team's record began are left blank,
+`Left`/`Right` switch between them. Days before a team's record began are left blank,
 and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
 and for the tasks you accepted, their median **Cycle** and how much of it was **With you**, In
