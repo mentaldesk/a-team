@@ -345,6 +345,36 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void b_opens_the_selected_agents_team_board_and_says_so()
+    {
+        WriteTeam("team1", """{"project": {"owner": "someone", "number": 4, "ownerType": "user"}}""");
+        var opened = new List<string>();
+        using var window = Open(agents: Agents(4), openUrl: opened.Add);
+        LayOut(window, 120, 30);
+        SelectAgent(window, 2);
+
+        Assert.True(window.NewKeyDownEvent(new Key('b')));
+
+        Assert.Equal(["https://github.com/users/someone/projects/4"], opened);
+        Assert.Equal("Opened team1's board", window.Message.Says);
+    }
+
+    [Fact]
+    public void Opening_a_board_is_greyed_out_until_an_agent_is_selected_and_again_on_the_dispatcher()
+    {
+        using var window = Open(agents: Agents(4));
+        LayOut(window, 120, 30);
+
+        Assert.False(window.Commands.IsEnabled("team.board"));
+        SelectAgent(window, 3);
+        Assert.True(window.Commands.IsEnabled("team.board"));
+        window.NewKeyDownEvent(Key.Tab);
+
+        Assert.True(window.DispatcherSelected);
+        Assert.False(window.Commands.IsEnabled("team.board"));
+    }
+
+    [Fact]
     public void The_dispatcher_opens_collapsed_and_unselected()
     {
         using var window = Open(agents: Agents(4));
@@ -749,7 +779,7 @@ public class DashboardWindowTests : IDisposable
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
-                "Select the card above", "Open", "Set priority", "Try", "Open on GitHub",
+                "Select the card above", "Open", "Set priority", "Try", "Open on GitHub", "Open team's board on GitHub",
                 "Approve the pitch you're reading", "Accept", "Comment on the item you're reading", "New idea",
                 "Show only what's your move", "Read what's waiting again", "Dashboard", "Work",
                 "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Trends", "Back to the agent grid", "Quit",
@@ -1814,6 +1844,13 @@ public class DashboardWindowTests : IDisposable
         var dir = Path.Combine(_root, team, role, "runs", task.ToString());
         File.WriteAllText(Path.Combine(dir, "pid"), "999999");
         File.WriteAllText(Path.Combine(dir, "held"), "100");
+    }
+
+    private void WriteTeam(string team, string config)
+    {
+        var teams = Path.Combine(Config, "teams");
+        Directory.CreateDirectory(teams);
+        File.WriteAllText(Path.Combine(teams, team + ".json"), config);
     }
 
     private void WriteHold(string team, string role)

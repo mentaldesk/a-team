@@ -76,6 +76,7 @@ The line at the foot says why the card you're on is where it is, like
 | Arrows | Move between cards and columns, and on into the lanes above and below |
 | `Enter` | Read the card, and on a card in Triage, rank it |
 | `g` | Open the card, or the PR row you're on, on GitHub |
+| `b` | Open the team's Project board on GitHub, for everything that isn't waiting on you |
 | `p` | Read the card and set its Priority |
 | `m` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `F5` | Read what's waiting again |
