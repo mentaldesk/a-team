@@ -55,6 +55,7 @@
       "Bash(a-team board * priority *)",
       "Bash(a-team board * approve *)",
       "Bash(a-team board * accept *)",
+      "Bash(a-team board * decline *)",
       "Bash(a-team board * comment you *)",
       "Bash(gh issue edit *--remove-label*)",
       "Bash(a-team dispatch*)",

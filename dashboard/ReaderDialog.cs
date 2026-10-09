@@ -13,7 +13,12 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 
 /// <summary>Commenting from the reader: Post posts the comment as you, with null once it's posted or else why it
 /// wasn't.</summary>
-public sealed record ReaderComment(Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null);
+public sealed record ReaderComment(
+    Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null);
+
+/// <summary>Declining from the Comment pane: Run closes the item as not planned with the reason, with null once it's
+/// done or else why not. <paramref name="Open"/> opens the reader already declining.</summary>
+public sealed record ReaderDecline(Key Key, Func<string, Task<string?>> Run, bool Open = false);
 
 /// <summary>Trying from the reader: Run hands over what it shows and the row it's scrolled to. Reopened after the
 /// try, it opens at <paramref name="Top"/>, saying <paramref name="Failure"/> if it failed.</summary>
@@ -32,6 +37,7 @@ public sealed class ReaderDialog : Dialog
     private const string AcceptHint = "accept";
     private const string CommentHint = "comment";
     private const string PostHint = "post";
+    private const string DeclineHint = "decline";
     private const string RankHint = "rank";
     private const string SetHint = "set";
     private const string GitHubHint = "github";
@@ -60,6 +66,7 @@ public sealed class ReaderDialog : Dialog
     private readonly OptionSelector<Rank>? _ranks;
     private LogView _scrolled;
     private Task<string?>? _posting;
+    private bool _declining;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
 
@@ -204,6 +211,11 @@ public sealed class ReaderDialog : Dialog
             _body.SetFocus();
         else
             FocusRanks();
+        if (comment?.Decline is { Open: true })
+        {
+            Decline();
+            ShowHints();
+        }
     }
 
     /// <summary>The rank Enter set, or null where the reader closed any other way.</summary>
@@ -220,6 +232,13 @@ public sealed class ReaderDialog : Dialog
     internal bool HistoryShown => _historyFrame.Visible;
 
     internal bool CommentShown => _commentFrame.Visible;
+
+    internal bool Declining => _declining;
+
+    /// <summary>Whether the item was declined, which closed the reader.</summary>
+    internal bool Declined { get; private set; }
+
+    internal string CommentTitle => _commentFrame.Title;
 
     internal TextView Field => _field;
 
@@ -255,7 +274,7 @@ public sealed class ReaderDialog : Dialog
         (midLine ? "\n" : "") + string.Join('\n', lines.Select(line => line.Length == 0 ? ">" : $"> {line}")) + "\n\n";
 
     private bool Commenting(Key key) =>
-        key == Key.Esc ? Back()
+        key == Key.Esc ? Unfocus()
         : key == Key.Enter.WithCtrl ? Post()
         : key == Key.Tab ? SwitchPane(+1)
         : key == Key.Tab.WithShift && SwitchPane(-1);
@@ -286,6 +305,8 @@ public sealed class ReaderDialog : Dialog
             return Approve();
         if (_accept is not null && key == _accept.Key)
             return Accept();
+        if (_comment?.Decline is { } decline && key == decline.Key)
+            return Decline();
         if (_comment is not null && key == _comment.Key)
             return Comment();
         return Scroll(key) is { } scroll && Scrolled(scroll);
@@ -311,10 +332,13 @@ public sealed class ReaderDialog : Dialog
             .. _accept is null ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(AcceptHint, $"{KeyNames.Short(_accept.Key)} {_accept.Hint}", _accept.Enabled)],
             .. _comment is null ? Array.Empty<HintedCommand>()
-                : CommentShown ? [new HintedCommand(PostHint, "Ctrl+Enter post")]
+                : CommentShown ? [new HintedCommand(PostHint, _declining ? "Ctrl+Enter decline" : "Ctrl+Enter post")]
                 : [new HintedCommand(CommentHint, $"{KeyNames.Short(_comment.Key)} {_comment.Hint}")],
+            .. _comment?.Decline is not { } decline || _declining ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(DeclineHint, $"{KeyNames.Short(decline.Key)} decline")],
             new HintedCommand(GitHubHint, "g on GitHub"),
-            new HintedCommand(CloseHint, _field.HasFocus ? "Esc back" : marked > 0 ? "Esc clear" : "Esc close"),
+            new HintedCommand(CloseHint,
+                _field.HasFocus ? _declining ? "Esc cancel" : "Esc back" : marked > 0 ? "Esc clear" : "Esc close"),
         ], Run);
     }
 
@@ -489,6 +513,24 @@ public sealed class ReaderDialog : Dialog
         return true;
     }
 
+    /// <summary>The Comment pane, retitled; what's already in it becomes the start of the reason.</summary>
+    private bool Decline()
+    {
+        _declining = true;
+        _commentFrame.Title = $"Decline #{_number}: why?";
+        return Comment();
+    }
+
+    private bool CancelDecline()
+    {
+        _declining = false;
+        _commentFrame.Title = "Comment";
+        SetNeedsDraw();
+        return true;
+    }
+
+    private bool Unfocus() => _declining ? CancelDecline() : Back();
+
     private void ToComment()
     {
         _field.SetFocus();
@@ -507,14 +549,15 @@ public sealed class ReaderDialog : Dialog
             return true;
         if (string.IsNullOrWhiteSpace(_field.Text))
         {
-            _message.Show("Nothing to post: the comment is empty", Schemes.Error);
+            _message.Show(_declining ? $"A reason is needed to decline #{_number}" : "Nothing to post: the comment is empty",
+                Schemes.Error);
             SetNeedsLayout();
             return true;
         }
-        _message.Show("Posting…", Schemes.Accent);
+        _message.Show(_declining ? $"Declining #{_number}…" : "Posting…", Schemes.Accent);
         SetNeedsLayout();
         var text = _field.Text;
-        var posting = _posting = _comment!.Post(text);
+        var posting = _posting = _declining ? _comment!.Decline!.Run(text) : _comment!.Post(text);
         if (posting.IsCompleted)
         {
             Settle(posting, text);
@@ -542,6 +585,12 @@ public sealed class ReaderDialog : Dialog
         {
             _message.Show(failure, Schemes.Error);
             SetNeedsLayout();
+            return;
+        }
+        if (_declining)
+        {
+            Declined = true;
+            Close();
             return;
         }
         var remark = new Remark("you", (_comment!.Clock ?? TimeProvider.System).GetUtcNow(), text);
@@ -606,10 +655,11 @@ public sealed class ReaderDialog : Dialog
             AcceptHint => Accept(),
             CommentHint => Comment(),
             PostHint => Post(),
+            DeclineHint => Decline(),
             RankHint => Step(+1),
             SetHint => Set(),
             GitHubHint => OnGitHub(),
-            _ => _field.HasFocus ? Back() : Escape(),
+            _ => _field.HasFocus ? Unfocus() : Escape(),
         };
         ShowHints();
         return handled;

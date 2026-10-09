@@ -327,7 +327,8 @@ catch_up() {
                else empty end)}]
     | map(
         "INSERT OR IGNORE INTO github (team, id, event) SELECT \($team | q), \(.id | q), (SELECT e.id FROM events e
-           WHERE e.team = \($team | q) AND e.item = \(.item) AND e.who = \(.who | q) AND e.what = \(.what | q)
+           WHERE e.team = \($team | q) AND e.item = \(.item) AND e.who = \(.who | q)
+             AND e.what IN (\(.what | q)\(if .what == "closed as not planned" then ", \("declined" | q)" else "" end))
              AND abs(julianday(e.at) - julianday(\(.at | q))) * 1440 <= 5
              AND NOT EXISTS (SELECT 1 FROM github g WHERE g.team = e.team AND g.event = e.id)
            ORDER BY abs(julianday(e.at) - julianday(\(.at | q))) LIMIT 1);
@@ -1100,6 +1101,35 @@ case "$CMD" in
     set_status "$(jq -r .id <<<"$it")" Approved
     record "$role" "$n" "Pitched → Approved"
     say "#$n: Pitched -> Approved"
+    ;;
+
+  decline)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM decline <role> <n> <file>"
+    role=$1 n=$2 file=$3
+    case "$role" in
+      lead | dev | customer) die "$role may not decline an item; declining is the stakeholders' own gate" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    [ -f "$file" ] || die "no such file: $file"
+    grep -q '[^[:space:]]' "$file" || die "a decline needs a reason, so whoever reads #$n later knows why"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not an Idea or a pitch to decline"
+    status=$(jq -r .status <<<"$it")
+    case "$status" in
+      Idea) ;;
+      Pitched) jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)" ;;
+      *) die "only an Idea or a Pitched pitch can be declined (#$n is in '$status')" ;;
+    esac
+    [ -z "$DRY_RUN" ] || sed 's/^/  | /' "$file" >&2
+    write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - <"$file" >/dev/null
+    record "$role" "$n" "commented"
+    close() { { gh issue close "$1" -R "$REPO" --reason "not planned" >/dev/null; } 2>&1; }
+    refused=$(write "close #$n as not planned" close "$n") || die "can't close #$n ($(head -1 <<<"$refused"))"
+    set_status "$(jq -r .id <<<"$it")" Done
+    record "$role" "$n" "declined"
+    say "#$n: declined"
     ;;
 
   accept)

@@ -75,6 +75,8 @@ a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on
 a-team board {{team}} priority <role> <n> <value|none>  # stakeholder only: rank an item, or clear its rank
 a-team board {{team}} approve <role> <n>        # stakeholder only: move a Pitched pitch to Approved
 a-team board {{team}} accept <role> <n>         # stakeholder only: squash-merge task #<n>'s PR, or close validated pitch #<n>
+a-team board {{team}} decline <role> <n> <file> # stakeholder only: comment <file> on Idea or Pitched pitch #<n>
+                                                # and close it as not planned
 a-team board {{team}} finish <role> <n> <file>  # Lead only: once every task of pitch #<n> has closed,
                                                 # comment <file> on it and close it as done
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours

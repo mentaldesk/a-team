@@ -93,7 +93,7 @@ comment headed by who said it and when. On a card in Questions it shows just the
 and `PgUp`/`PgDn` scroll, `g` opens it on GitHub, and `Esc` closes it.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
-accept, comment, Priority, link and dependency, with when and who (`you`, `lead` or `dev`). What
+accept, decline, comment, Priority, link and dependency, with when and who (`you`, `lead` or `dev`). What
 you or anyone else does on GitHub directly (a merge, a close, a comment, a move on the Project board)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
@@ -123,6 +123,12 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
   a selection. Closing the reader with
   something unposted in the comment asks before throwing it away.
 - **Answer a question.** Read it in Questions, and reply with `c`.
+- **Decline it.** On an Idea or a pitch, reading it or with its card selected, press `x`. The
+  Comment pane opens as **Decline #n: why?**, keeping anything you'd already written, and you can
+  quote into it with `q` as into a comment. `Ctrl+Enter` posts your reason as a comment, closes the
+  issue as not planned on GitHub, and the card leaves Work; History records it as `declined`, and it
+  doesn't count as accepted. A reason is required. `Esc` turns the pane back into a plain comment,
+  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub.
 - **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
   ranks under it, **None** to **Urgent**, starting on the card's own, or on the Lead's
   recommendation if it has none, so `Enter` agrees with it. `←`/`→` or a rank's initial
