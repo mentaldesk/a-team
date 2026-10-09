@@ -83,6 +83,7 @@ public sealed class DashboardWindow : Window
     private WaitingItem? _approving;
     private WaitingItem? _shown;
     private WaitingItem? _accepting;
+    private WaitingItem? _declined;
     private string? _said;
     private string? _added;
     private WaitingItem? _saidOn;
@@ -452,6 +453,8 @@ public sealed class DashboardWindow : Window
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
+            .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
+                isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true)
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
             .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, inMenu: OnWork)
@@ -815,24 +818,27 @@ public sealed class DashboardWindow : Window
             ReadRanking(item);
     }
 
+    private void ReadSelected() => ReadSelected(declining: false);
+
     /// <summary>A card in Triage is waiting for a rank, so it opens with the ranks under it.</summary>
-    private void ReadSelected()
+    private void ReadSelected(bool declining)
     {
-        if (_work.Selected is not { } item)
+        if ((declining ? _work.SelectedCard : _work.Selected) is not { } item)
             return;
         if (_work.InTriage && _work.SelectedCard is { } card)
         {
-            ReadRanking(card);
+            ReadRanking(card, declining);
             return;
         }
         var url = _work.SelectedUrl;
-        ReadBody(item, (read, body) => ShowBody(read, body, url), forReader: true);
+        ReadBody(item, (read, body) => ShowBody(read, body, url, declining: declining), forReader: true);
     }
 
-    private void ReadRanking(WaitingItem item)
+    private void ReadRanking(WaitingItem item, bool declining = false)
     {
         var url = _work.SelectedUrl;
-        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Starting(read)), forReader: true);
+        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Starting(read), declining: declining),
+            forReader: true);
     }
 
     private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then, bool forReader = false)
@@ -885,7 +891,7 @@ public sealed class DashboardWindow : Window
     /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board. With
     /// <paramref name="rank"/> it opens anyway, saying why, since you came to rank it.</summary>
     private void ShowBody(WaitingItem item, IssueBody body, string? url, int top = 0, string? failure = null,
-        Rank? rank = null)
+        Rank? rank = null, bool declining = false)
     {
         if (rank is null && body.Failure is { Length: > 0 } unread)
             _failure = unread;
@@ -901,11 +907,17 @@ public sealed class DashboardWindow : Window
                     _openUrl(url);
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
-                new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock),
+                new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
+                    item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 rank);
             _approvable = null;
             _shown = null;
+            if (_declined == item)
+            {
+                Declined(item);
+                return;
+            }
             if (chosen is { } ranked && ranked != Priorities.Of(item))
                 SetRank(item, ranked);
             if (_triedFrom is { } from)
@@ -973,13 +985,35 @@ public sealed class DashboardWindow : Window
         return true;
     }
 
-    private async Task<string?> Post(WaitingItem item, string body)
+    private Task<string?> Post(WaitingItem item, string body) => WithFile(item, "comment", body);
+
+    /// <summary>Closes the item as not planned with your reason. The reader closes on it, and the card leaves.</summary>
+    private async Task<string?> Decline(WaitingItem item, string reason)
+    {
+        var refused = await WithFile(item, "decline", reason).ConfigureAwait(false);
+        if (refused is null or { Length: 0 })
+            _declined = item;
+        return refused;
+    }
+
+    private void Declined(WaitingItem item)
+    {
+        _declined = null;
+        _work.Leave(item);
+        _failure = null;
+        _said = $"#{item.Number} declined";
+        _saidOn = _work.Selected;
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private async Task<string?> WithFile(WaitingItem item, string command, string text)
     {
         var file = Path.GetTempFileName();
         try
         {
-            await File.WriteAllTextAsync(file, body).ConfigureAwait(false);
-            return await _run(["board", item.Team, "comment", "you", item.Number.ToString(), file]).ConfigureAwait(false);
+            await File.WriteAllTextAsync(file, text).ConfigureAwait(false);
+            return await _run(["board", item.Team, command, "you", item.Number.ToString(), file]).ConfigureAwait(false);
         }
         finally
         {
