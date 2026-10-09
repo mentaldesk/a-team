@@ -141,4 +141,29 @@ public class WaitingItemTests
 
         Assert.Equal("#124 · dev · CI failing since 09:02 · PR #131", item.Line);
     }
+
+    [Fact]
+    public void A_recommended_Idea_says_the_Lead_s_rank_and_its_case_on_the_message_bar()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 183, "title": "A stack trace", "status": "Idea", "team": "a-team", "turn": "you",
+              "reason": "theme 3, small · a stack trace is the only error path", "recommendation": "High"}]
+            """));
+
+        Assert.Equal("High", item.Recommendation);
+        Assert.Equal("#183 · High? · theme 3, small · a stack trace is the only error path", item.Line);
+    }
+
+    [Theory]
+    [InlineData("Urgent", "", "Urgent?")]
+    [InlineData("High", "", "High?")]
+    [InlineData("Medium", "", "Med?")]
+    [InlineData("Low", "", "Low?")]
+    [InlineData("", "", "")]
+    [InlineData("High", "Low", "")]
+    public void A_recommendation_shows_only_until_a_rank_is_set(string recommendation, string priority, string suggested)
+    {
+        Assert.Equal(suggested,
+            new WaitingItem(1, "", "Idea", "", "", Priority: priority, Recommendation: recommendation).Suggested);
+    }
 }

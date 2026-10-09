@@ -6,7 +6,8 @@ namespace ATeam.Dashboard;
 public sealed record WaitingItem(
     int Number, string Title, string Status, string Url, string Team, string Turn = "", string Reason = "",
     int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
-    string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0, string Role = "")
+    string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0, string Role = "",
+    string Recommendation = "")
 {
     /// <summary>Whether this is the Customer lead's docs PR, which is its own PR to merge.</summary>
     public bool Docs => Role == "customer";
@@ -31,13 +32,24 @@ public sealed record WaitingItem(
         : Pr == 0 ? "no PR to merge"
         : Unready;
 
+    /// <summary>The rank the Lead recommends, as the card wears it while no Priority is set, so it never reads
+    /// like one: <c>High?</c>.</summary>
+    public string Suggested => Priority.Length > 0 ? "" : Recommendation switch
+    {
+        "Urgent" => "Urgent?",
+        "High" => "High?",
+        "Medium" => "Med?",
+        "Low" => "Low?",
+        _ => "",
+    };
+
     /// <summary>Whether the next move is the reviewer's. An item the board said nothing about is theirs.</summary>
     public bool Mine => Turn.Length == 0 || Turn == "you";
 
     /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's,
     /// and the PR it hands over to at the end.</summary>
     public string Line => string.Join(" · ",
-        new[] { $"#{Number}", Mine ? "" : Turn, Reason, Pr == 0 ? "" : $"PR #{Pr}" }.Where(part => part.Length > 0));
+        new[] { $"#{Number}", Mine ? "" : Turn, Suggested, Reason, Pr == 0 ? "" : $"PR #{Pr}" }.Where(part => part.Length > 0));
 
     /// <summary>What that command printed. Anything that isn't an item with a number is left out.</summary>
     public static IReadOnlyList<WaitingItem> Parse(string json)
@@ -57,7 +69,8 @@ public sealed record WaitingItem(
                         Numbered(item, "pr") ?? 0, Text(item, "prUrl"), Text(item, "trouble"),
                         Text(item, "priority"), Flag(item, "pitch"), Text(item, "question"),
                         Text(item, "unready"), Text(item, "base"),
-                        Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0, Text(item, "role")))
+                        Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0, Text(item, "role"),
+                        Text(item, "recommendation")))
             ];
         }
         catch (JsonException)

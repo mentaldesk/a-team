@@ -151,4 +151,13 @@ public class CardTests
         Assert.Equal(Priorities.Scheme("Medium"), new Card(Reviewing, false).Mark(0).Scheme);
         Assert.Equal(default, new Card(Reviewing, true).Mark(0));
     }
+
+    [Fact]
+    public void A_recommended_card_wears_the_Lead_s_rank_after_its_number_and_a_ranked_one_does_not()
+    {
+        Assert.Equal("#6  High? · The agents can't say what they'd change",
+            new Card(Unranked with { Recommendation = "High" }, false).Text(0));
+        Assert.Equal("#6  The agents can't say what they'd change",
+            new Card(Unranked with { Recommendation = "High", Priority = "Low" }, false).Text(0));
+    }
 }

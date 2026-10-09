@@ -78,6 +78,8 @@ a-team board {{team}} comment <role> <n> <file> # post a comment, marked as your
                                                 # (as `you`, stakeholder only: no marker, no 👀)
 a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass
                                                 # over it from now on
+a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
+                                                # for Idea #<n>, <file> its one-line case
 a-team board {{team}} feedback <role> <n>       # stakeholder comments with no 👀 on them yet
 a-team board {{team}} link <parent> <child>     # make task <child> a sub-issue of <parent>
 a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again
