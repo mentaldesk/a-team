@@ -4940,7 +4940,7 @@ trends() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trends | jq -c .; }
 
 case_ "with nothing recorded, trends has no start, no points and no cost, and makes no record file"
 rm -f "$A_TEAM_STATE/history.db"
-same "empty" '{"since":null,"queue":[],"accepted":[],"cost":0}' "$(trends)"
+same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0}' "$(trends)"
 unrecorded "trends"
 
 case_ "trends: the last 15 days of the queue, each item accepted once at its latest, and runs' cost in 7 days"
@@ -4962,7 +4962,23 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
   INSERT INTO runs (team, role, pid, log, started, cost) VALUES ('demo', 'dev', 1, 'a', '$(ago 100)', 1.25),
     ('demo', 'lead', 2, 'b', '$(ago 200)', NULL), ('demo', 'dev', 3, 'c', '$(ago $((60 * 24 * 8)))', 9),
     ('other', 'dev', 4, 'd', '$(ago 100)', 4);"
-same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cost\":1.25}" "$(trends)"
+same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25}" "$(trends)"
+
+case_ "trends: a task's cycle runs from first entering Ready to its acceptance, with every spell In review counted"
+base=$(date +%s); before() { jq -rn --argjson t "$base" --argjson m "$1" '$t - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
+m600=$(before 600) m480=$(before 480) m420=$(before 420) m300=$(before 300) m120=$(before 120)
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 20, '2026-10-01T00:00:00Z', 'lead', 'Idea → Exploring'),
+    ('demo', 20, '$m600', 'lead', 'added as Ready'), ('demo', 20, '$(ago 540)', 'dev', 'Ready → In progress'),
+    ('demo', 20, '$m480', 'dev', 'In progress → In review'), ('demo', 20, '$m420', 'you', 'In review → Ready'),
+    ('demo', 20, '$(ago 360)', 'dev', 'Ready → In progress'), ('demo', 20, '$m300', 'dev', 'In progress → In review'),
+    ('demo', 20, '$m120', 'you', 'accepted · PR #920 merged'), ('demo', 920, '$m120', 'you', 'accepted · PR #920 merged'),
+    ('demo', 20, '$(ago 100)', 'you', 'commented'),
+    ('demo', 21, '$(ago 300)', 'dev', 'Ready → In progress'), ('demo', 21, '$(ago 240)', 'lead', 'In progress → Ready'),
+    ('demo', 21, '$(ago 200)', 'dev', 'Ready → In progress'), ('demo', 21, '$(ago 100)', 'dev', 'In progress → In review'),
+    ('demo', 21, '$(ago 60)', 'you', 'accepted · PR #921 merged'),
+    ('demo', 22, '$(ago 300)', 'lead', 'Exploring → Pitched'), ('demo', 22, '$(ago 200)', 'you', 'accepted · closed');"
+same "cycles" "[{\"ready\":\"$m600\",\"accepted\":\"$m120\",\"review\":$((60 * 60 + 180 * 60))}]" "$(trends | jq -c .cycles)"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.

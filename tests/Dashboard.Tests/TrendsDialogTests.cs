@@ -14,22 +14,24 @@ public class TrendsDialogTests
 
     private const string Recorded = """
         {"since": "2026-09-20T00:00:00Z", "queue": [{"at": "2026-10-01T00:30:00Z", "waiting": 12}, {"at": "2026-10-08T09:00:00Z", "waiting": 9}],
-         "accepted": ["2026-10-07T10:00:00Z", "2026-10-08T10:00:00Z"], "cost": 212.4}
+         "accepted": ["2026-10-07T10:00:00Z", "2026-10-08T10:00:00Z"],
+         "cycles": [{"ready": "2026-10-07T02:00:00Z", "accepted": "2026-10-07T10:00:00Z", "review": 21600},
+                    {"ready": "2026-10-08T00:00:00Z", "accepted": "2026-10-08T10:00:00Z", "review": 36000}], "cost": 212.4}
         """;
 
-    private const string Nothing = """{"since": null, "queue": [], "accepted": [], "cost": 0}""";
+    private const string Nothing = """{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0}""";
 
     [Fact]
     public void It_charts_waiting_first_and_lists_each_team_s_week_with_run_cost()
     {
         using var dialog = Open(("a-team", 4, Recorded), ("tuicode", null, Nothing));
 
-        Assert.Equal(["Waiting on you", "Accepted per day"], dialog.Measure.Labels);
+        Assert.Equal(["Waiting on you", "Accepted per day", "Hours to accept"], dialog.Measure.Labels);
         Assert.Equal(0, dialog.Measure.Value);
         Assert.True(dialog.Graph.Visible);
         Assert.False(dialog.Message.Visible);
-        Assert.Equal([new TeamTrendRow("a-team", 4, 12, 2, 212.4m), new TeamTrendRow("tuicode", null, null, 0, 0)], dialog.Rows);
-        Assert.Equal(new TeamTrendRow("Total", 4, 12, 2, 212.4m), dialog.Total);
+        Assert.Equal([new TeamTrendRow("a-team", 4, 12, 2, 212.4m, 9, 16 / 18.0), new TeamTrendRow("tuicode", null, null, 0, 0, null, null)], dialog.Rows);
+        Assert.Equal(new TeamTrendRow("All", 4, 12, 2, 212.4m, 9, 16 / 18.0), dialog.All);
         Assert.Equal(9, dialog.Series[0][^1]);
         Assert.All(dialog.Series[1], Assert.Null);
     }
@@ -42,6 +44,32 @@ public class TrendsDialogTests
         dialog.Measure.Value = 1;
 
         Assert.Equal([1, 1], dialog.Series[0].TakeLast(2));
+    }
+
+    [Fact]
+    public void Choosing_hours_to_accept_charts_each_day_s_median_hours()
+    {
+        using var dialog = Open(("a-team", 4, Recorded), ("tuicode", null, Nothing));
+
+        dialog.Measure.Value = 2;
+
+        Assert.Equal([null, 8, 10], dialog.Series[0].TakeLast(3));
+        Assert.All(dialog.Series[1], Assert.Null);
+    }
+
+    [Fact]
+    public void Arrow_keys_choose_the_measure_they_move_to()
+    {
+        using var dialog = Open(("a-team", 4, Recorded));
+
+        dialog.Measure.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(1, dialog.Measure.Value);
+        Assert.Equal(1, dialog.Measure.FocusedItem);
+
+        dialog.Measure.NewKeyDownEvent(Key.CursorLeft);
+        dialog.Measure.NewKeyDownEvent(Key.CursorLeft);
+        Assert.Equal(2, dialog.Measure.Value);
+        Assert.Equal([null, 8, 10], dialog.Series[0].TakeLast(3));
     }
 
     [Fact]
