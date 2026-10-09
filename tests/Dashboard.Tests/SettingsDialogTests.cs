@@ -255,7 +255,7 @@ public class SettingsDialogTests : IDisposable
     {
         using var dialog = Open(out _, out _);
 
-        Assert.Equal(["Theme", "Keyboard Shortcuts", "Dashboard", "Teams"], PageNames(dialog));
+        Assert.Equal(["Theme", "Keyboard Shortcuts", "Dashboard", "Teams", "Overseer"], PageNames(dialog));
     }
 
     [Fact]

@@ -157,6 +157,18 @@ public sealed class AgentPane : FrameView
 
     internal bool RunHeld => _runs.Current?.Held is not null;
 
+    /// <summary>The cards the role's live runs were started for.</summary>
+    internal IReadOnlyList<int> Working { get; private set; } = [];
+
+    /// <summary>Shows the run working on <paramref name="number"/>, where one is.</summary>
+    internal void ShowTask(int number)
+    {
+        if (_runs.Runs.FirstOrDefault(run => run.Task?.Number == number) is not { } run)
+            return;
+        _runs.Chosen = run.Dir;
+        Refresh(_now, _refreshed.NextCheck, _refreshed.Paused, _refreshed.Held, _refreshed.Misconfigured, _refreshed.Passing);
+    }
+
     /// <summary>Changes whenever one of the role's runs starts or finishes.</summary>
     internal string Activity
     {
@@ -182,6 +194,8 @@ public sealed class AgentPane : FrameView
         _refreshed = (nextCheck, paused, held, misconfigured, passing);
         var role = AgentState.Read(_stateDir);
         _runs.Update(role.Runs, role.Latest);
+        Working = [.. role.Runs.Where(run => run.Held is null && run.Task is not null).Select(run => run.Task!.Number)
+            .Concat(role is { Running: true, Task: { } task } ? [task.Number] : []).Distinct()];
         var state = _runs.Current is { } run ? AgentState.Read(run.Dir) with { Stopped = run.Held ?? role.Stopped } : role;
         Paused = paused;
         Running = state.Running;

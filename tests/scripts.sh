@@ -4912,6 +4912,33 @@ run board --dry-run demo waiting
 same "dry run" "2
 1" "$(queue)"
 
+case_ "overview returns every card but Done, with when its Status was set, in one call"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items 404 <<'ITEMS'
+Building 404 Overseer
+Ready 414 Every board on one screen
+In_review 415 Docs
+Idea 395 A seed of mine
+Done 99 Already merged
+ITEMS
+jq '.data.organization.projectV2.items.nodes[].fieldValueByName.updatedAt = "2026-10-01T08:00:00Z"' "$ITEMS" >"$ITEMS.new" &&
+  mv "$ITEMS.new" "$ITEMS"
+edit_item 414 '.parent = {number: 404}'
+edit_item 415 '.labels.nodes = [{name: "a-team:customer"}]'
+run board demo overview
+same "exit" 0 "$STATUS"
+same "numbers" '[404,414,415,395]' "$(jq -c '[.[].number]' "$OUT")"
+same "kinds" '["pitch","task","docs","yours"]' "$(jq -c '[.[].kind]' "$OUT")"
+same "fields" '["kind","number","parent","priority","since","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "since" '"2026-10-01T08:00:00Z"' "$(jq -c '.[0].since' "$OUT")"
+same "parent" '404' "$(jq -c '.[1].parent' "$OUT")"
+same "priority" '"High"' "$(jq -c '.[0].priority' "$OUT")"
+same "status" '"In review"' "$(jq -c '.[2].status' "$OUT")"
+same "filter" '-Status:"Done"' "$(cat "$FILTERS")"
+same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
 case_ "trend: waiting a week ago, and each item accepted in the last 7 days counted once"
 rm -f "$A_TEAM_STATE/history.db"
 since=$(ago $((60 * 24 * 9)))

@@ -12,6 +12,7 @@ public static class LogSchemes
     public const string Form = "Form";
     public const string Reader = "Reader";
     public const string Warning = "Warning";
+    public const string Overdue = "Overdue";
 
     // Anything under 0.1 GetBrighterColor doubles, so that's the floor for a step it takes as asked.
     private const double Lift = 0.12;
@@ -35,6 +36,7 @@ public static class LogSchemes
         var form = Banded(SchemeManager.GetScheme(Schemes.Dialog));
         SchemeManager.AddScheme(Form, form);
         SchemeManager.AddScheme(Warning, Tinted(SchemeManager.GetScheme(Schemes.Dialog), Amber, WarningTint));
+        SchemeManager.AddScheme(Overdue, Tinted(baseScheme, Amber, WarningTint));
         Priorities.Register(baseScheme, form);
     }
 
