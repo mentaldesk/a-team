@@ -656,10 +656,11 @@ gated_blocked() {
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
 # stakeholders' until one comments; from then it is the role's, the same test `unanswered_feedback`
 # makes. A PR that is failing, conflicting, not yet known to merge, still running CI or still a draft
-# is the Dev's too, but an unanswered comment outranks them all: the answer is owed before a green
-# build means anything.
+# is the Dev's too, or the Reviewer's while a green draft waits for its review, but an unanswered
+# comment outranks them all: the answer is owed before a green build means anything.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --argjson stakeholders "$STAKEHOLDERS" \
+    --argjson reviewerOn "$(reviewer_on && echo true || echo false)" \
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE$NEEDS$CONSIDERED"'
     $items | map(
       . as $item
@@ -671,23 +672,25 @@ turns() {
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
       | (if .status == "Pitched" and .pitch
          then $theirs | map(select(.kind == "body")) | first | .body // "" | needs_answer else "" end) as $question
+      | ([$theirs[] | select(.kind == "comment" and team("<!-- a-team:reviewer -->"))] | last) as $review
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
          elif $pr.resolving then {trouble: "resolving mergeable status", at: ""}
          elif $pr.checks == "pending" then {trouble: "CI running", at: ""}
+         elif $pr.draft and $reviewerOn and $role == "dev" and $review == null
+         then {trouble: "awaiting review", at: "", turn: "reviewer"}
          elif $pr.draft then {trouble: "still a draft", at: ""}
          else null end) as $wrong
       | (if $pr == null then . else . + {pr: $pr.pr, prUrl: $pr.prUrl, checks: $pr.checks,
                                          conflicting: $pr.conflicting, draft: $pr.draft, base: $pr.base,
                                          unready: ($wrong.trouble // "")} end)
       | (if $question == "" then . else . + {question: $question} end)
-      | ([$theirs[] | select(.kind == "comment" and team("<!-- a-team:reviewer -->"))] | last) as $review
       | (if $review == null then . else . + {reviewed: true, consider: ($review.body | considered)} end)
       | if $asked != ""
         then . + {turn: $role, reason: "answering your feedback\(since($asked))"}
         elif $wrong != null
-        then . + {turn: $role, trouble: $wrong.trouble,
+        then . + {turn: ($wrong.turn // $role), trouble: $wrong.trouble,
                   reason: "\($wrong.trouble)\(since($wrong.at))"}
         else (if $said != "" then $said else $opened end) as $waited
              | (if $question != "" then "asked you"

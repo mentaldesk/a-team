@@ -266,7 +266,7 @@ pick_task() {
     fresh "$2/${prefix}tried/$n" "$(jq -r '.reasons[]' <<<"$row")" "$2/runs/$n/latest.jsonl" &&
       { echo "$row"; return; }
   done < <(jq -c '.tasks[]?' <<<"$3")
-  [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
+  [ "$role" = dev ] && [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
   if ! claimed=$("$ROOT/bin/a-team" board ${prefix:+--dry-run} "$1" claim dev 2>"$2/claim.err"); then
     # Once a run has started this pass, the worktrees running out is expected.
     [ "$started" -gt 0 ] && grep -q 'no free worktree' "$2/claim.err" ||

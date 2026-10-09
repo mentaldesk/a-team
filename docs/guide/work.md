@@ -65,8 +65,9 @@ A card reads as the issue's number, then its title:
   reviewed says `reviewed` after its number, and how many points it left for you to consider, like
   `#412  reviewed · 1 to consider · ...`.
 - **Trouble.** A PR that's failing CI, conflicts with its base, is still running CI or is still a
-  draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. A PR
-  whose base just moved shows `resolving mergeable status` until GitHub has worked out whether it
+  draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. With the
+  Reviewer on, a green draft it hasn't reviewed yet is its turn instead: `#124  reviewer · awaiting
+  review · ...`. A PR whose base just moved shows `resolving mergeable status` until GitHub has worked out whether it
   still merges.
 
 In kitty, WezTerm and Ghostty, which bundle a Nerd Font, the icons are that font's glyphs instead,

@@ -658,6 +658,33 @@ same "draft" true "$(jq -c '.[1].draft' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"still a draft"' "$(jq -c '.[1].reason' "$OUT")"
 
+case_ "with a Reviewer, a green draft is the Reviewer's turn until its review is posted"
+jq '.roles.reviewer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "task turn" '"reviewer"' "$(jq -c '.[1].turn' "$OUT")"
+same "task trouble" '"awaiting review"' "$(jq -c '.[1].trouble' "$OUT")"
+same "task reason" '"awaiting review"' "$(jq -c '.[1].reason' "$OUT")"
+gh_runs <<RUNS
+in_progress - - build
+RUNS
+run board demo waiting
+same "running turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "running trouble" '"CI running"' "$(jq -c '.[1].trouble' "$OUT")"
+gh_runs <<RUNS
+completed success ${TODAY}T09:00:00Z build
+RUNS
+gh_talk true <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment+seen ${TODAY}T09:10:00Z demo-app[bot] Nothing needs changing.\n<!-- a-team:reviewer -->
+TALK
+run board demo waiting
+same "reviewed turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "reviewed trouble" '"still a draft"' "$(jq -c '.[1].trouble' "$OUT")"
+jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
 case_ "a ready PR whose CI is still running, after a push to answer feedback, isn't your turn yet"
 gh_talk <<TALK
 106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
@@ -3477,8 +3504,8 @@ grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch:
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the paused dev was started"
 A_TEAM_STATE=$A_TEAM_STATE_WAS
 
-# A dispatcher whose a-team answers `triggers dev` with $DEV_TRIGGERS, records each claim, and
-# claims $CLAIMED. `task-prompt` is one line, and the Lead never has anything to do.
+# A dispatcher whose a-team answers `triggers dev` with $DEV_TRIGGERS and `triggers reviewer` with
+# $REVIEWER_TRIGGERS, records each claim, and claims $CLAIMED. `task-prompt` is one line, and the Lead never has anything to do.
 dev_dispatcher() {
   DISPATCH=$(mktemp -d "$WORK/dispatch.XXXXXX")
   mkdir -p "$DISPATCH/bin" "$DISPATCH/scripts"
@@ -3486,10 +3513,11 @@ dev_dispatcher() {
   cp -R "$ROOT/settings" "$DISPATCH/"
   echo 0.1.7 >"$DISPATCH/VERSION"
   CLAIMS="$DISPATCH/claims" DEV_TRIGGERS="$DISPATCH/triggers.json" CLAIMED="$DISPATCH/claimed.json"
-  CUSTOMER_TRIGGERS="$DISPATCH/customer.json"
+  CUSTOMER_TRIGGERS="$DISPATCH/customer.json" REVIEWER_TRIGGERS="$DISPATCH/reviewer.json"
   : >"$CLAIMS"
   echo null >"$CLAIMED"
   echo '{"reasons": [], "creative": false}' >"$CUSTOMER_TRIGGERS"
+  echo '{"reasons": [], "creative": false, "tasks": [], "ready": null, "chores": []}' >"$REVIEWER_TRIGGERS"
   cat >"$DISPATCH/bin/a-team" <<SH
 #!/usr/bin/env bash
 case " \$* " in
@@ -3497,6 +3525,7 @@ case " \$* " in
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
   *" triggers lead"*) echo '{"reasons": [], "creative": false}' ;;
   *" triggers customer"*) echo "\$*" >>"$CLAIMS"; cat "$CUSTOMER_TRIGGERS" ;;
+  *" triggers reviewer"*) cat "$REVIEWER_TRIGGERS" ;;
   *" task-prompt "*) echo "Run one shift." ;;
   *" version "*) cat "\$(dirname "\$0")/../VERSION" ;;
 esac
@@ -3550,6 +3579,50 @@ dispatch_dev --dry-run
 grep -q 'demo dev: claim failed: board.sh: no free worktree for #13' "$A_TEAM_STATE/dispatch.log" ||
   fail "refused: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 grep -q 'would start' "$A_TEAM_STATE/dispatch.log" && fail "refused: a run started"
+
+case_ "a Reviewer run is for one waiting PR at a time, named in the log, and claims nothing"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "dispatch": { "enabled": true },
+  "roles": { "reviewer": true } }
+JSON
+dev_dispatcher
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+jq -n '{reasons: ["PR #912 is green and waiting for its review", "PR #914 is green and waiting for its review"],
+        creative: false, ready: 13, chores: [],
+        tasks: [{number: 12, title: "Fix the pane", reasons: ["PR #912 is green and waiting for its review"]},
+                {number: 14, title: "Name the column", reasons: ["PR #914 is green and waiting for its review"]}]}' \
+  >"$REVIEWER_TRIGGERS"
+dispatch_dev --dry-run
+grep -q 'demo reviewer: would start: #12: PR #912 is green and waiting for its review$' "$A_TEAM_STATE/dispatch.log" ||
+  fail "reviewer: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "one run" 1 "$(grep -c 'demo reviewer: would start' "$A_TEAM_STATE/dispatch.log")"
+same "task" '{"number":12,"title":"Fix the pane"}' "$(cat "$A_TEAM_STATE/demo/reviewer/dry-task")"
+same "claims" "" "$(cat "$CLAIMS")"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+grep -q 'demo reviewer: would start: #14: PR #914 is green and waiting for its review$' "$A_TEAM_STATE/dispatch.log" ||
+  fail "next pass: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "next task" '{"number":14,"title":"Name the column"}' "$(cat "$A_TEAM_STATE/demo/reviewer/dry-task")"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+same "both tried" "" "$(cat "$A_TEAM_STATE/dispatch.log")"
+same "claims" "" "$(cat "$CLAIMS")"
+
+case_ "a task stopped for the Reviewer is passed over, and the next one gets its run"
+dev_dispatcher
+jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
+jq -n '{reasons: ["PR #912 is green and waiting for its review", "PR #914 is green and waiting for its review"],
+        creative: false, ready: null, chores: [],
+        tasks: [{number: 12, title: "Fix the pane", reasons: ["PR #912 is green and waiting for its review"]},
+                {number: 14, title: "Name the column", reasons: ["PR #914 is green and waiting for its review"]}]}' \
+  >"$REVIEWER_TRIGGERS"
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/pause.sh" stop demo reviewer 12 >"$OUT"
+[ -e "$A_TEAM_STATE/demo/reviewer/runs/12/held" ] || fail "stop: nothing held under reviewer/runs/12"
+dispatch_dev --dry-run
+grep -q 'demo reviewer: would start: #14: ' "$A_TEAM_STATE/dispatch.log" ||
+  fail "held: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+grep -q '#12' "$A_TEAM_STATE/dispatch.log" && fail "held: #12 was started"
+same "claims" "" "$(cat "$CLAIMS")"
 
 case_ "a trigger check that fails once and then passes says nothing, and the role sits that pass out"
 dev_dispatcher
