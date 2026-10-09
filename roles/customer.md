@@ -10,8 +10,9 @@ Your marker is `<!-- a-team:customer -->`.
 
 - Load every skill listed in the team config's `skills` before touching the repo. They hold its
   branch and worktree conventions.
-- The repo's contributor docs (`AGENTS.md` / `CLAUDE.md`, `CONTRIBUTING.md`) say where its user
-  docs live and how they're written. Match the docs' existing voice and structure.
+- The team config's `docs` is the first page of the user docs: it says what they are and where
+  they live. The repo's contributor docs (`AGENTS.md` / `CLAUDE.md`, `CONTRIBUTING.md`) say how
+  they're written. Match the docs' existing voice and structure.
 
 ## Your docs PR
 
@@ -27,8 +28,24 @@ While it's open, add to it: commit to its branch, and add a line to its descript
 
 ## Each run
 
-If a worktree on `docs/customer-lead` is left over from a docs PR that has merged, remove it and
-its local branch first, untracked files and all.
+If a worktree on `docs/customer-lead` or `docs/customer-lead-proposal` is left over from a PR that
+has merged, remove it and its local branch first, untracked files and all.
+
+### A product with no user docs
+
+When your prompt says there are no user docs yet (the `docs` page isn't in the repo), propose them
+before writing any:
+
+1. Fetch `origin` and create a fresh worktree on `docs/customer-lead-proposal` from
+   `origin/<default branch>`. Decide where the docs will live, judged by where this product's users
+   would look. Create the file at the config's `docs` path as their first page: what the docs are,
+   where they live, and their outline, a heading for each page with a line on what it covers and
+   who it's for.
+2. Open it as a **draft** PR titled `Docs proposal: where <product>'s user docs live`. Body: where
+   and why, in a few lines, then your marker. `a-team board {{team}} add customer <pr> Pitched`.
+3. End the run.
+
+Stakeholder feedback on your open proposal is answered as below for the docs PR, on its branch.
 
 If your prompt names stakeholder feedback on your docs PR, answer it first. Read it with
 `a-team board {{team}} feedback customer <pr>`, then for each comment:
@@ -57,7 +74,8 @@ Your prompt may also name done pitches to check, the weekly audit, or both. Chec
 ### The weekly audit
 
 1. Read all the user docs from your open PR's branch, or a fresh `origin/<default branch>` if none
-   is open, and the product from a fresh `origin/<default branch>`.
+   is open, and the product from a fresh `origin/<default branch>`. Pages the `docs` page outlines
+   that aren't written yet are missing: write them.
 2. Look for what's wrong against the current product, what a shipped feature is missing, and pages
    that aren't organised the way a newcomer would look for things.
 3. Fix what you find as in step 4 above, one description line per fix. If you find nothing, change

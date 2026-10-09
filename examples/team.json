@@ -9,6 +9,7 @@
     "statusMap": {}
   },
   "vision": "docs/vision.md",
+  "docs": "docs/index.md",
   "skills": [],
   "wip": {
     "worktrees": 3,

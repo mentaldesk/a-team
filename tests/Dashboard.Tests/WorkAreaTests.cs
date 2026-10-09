@@ -1449,6 +1449,21 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void The_Customer_lead_s_docs_proposal_waits_in_Pitches_though_it_has_no_rank()
+    {
+        const string proposal = """
+            [{"number": 360, "title": "Docs proposal: where TuiCode's user docs live", "status": "Pitched",
+              "url": "https://github.com/mentaldesk/team0/pull/360", "team": "team0", "turn": "you", "role": "customer"}]
+            """;
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? proposal : "[]", null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 1"], Titles(window).Take(2));
+        Assert.Equal(360, window.Work.Selected?.Number);
+    }
+
+    [Fact]
     public void Cancelling_the_confirmation_merges_nothing()
     {
         var calls = new List<string[]>();

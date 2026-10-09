@@ -254,7 +254,7 @@ public class TeamFormTests
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Roles", "Limits"],
+            ["Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Status", "Releases", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -418,7 +418,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Create", "Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Releases", "Roles", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Releases", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
