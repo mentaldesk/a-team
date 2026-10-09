@@ -664,10 +664,18 @@ public sealed class WorkColumn : FrameView
     /// <summary>Whether <paramref name="item"/> is one this column sums up rather than shows.</summary>
     internal bool SetsAside(WaitingItem item) => _aside?.Invoke(item) ?? false;
 
-    /// <summary>The Review column's summary of the tasks the Dev is still fixing, cut to fit.</summary>
-    internal static string Summarise(IReadOnlyList<WaitingItem> items, int width) =>
-        items.Count == 0 ? ""
-        : Card.Elide($"{items.Count} with the Dev: {string.Join(" · ", items.Select(item => $"#{item.Number} {item.Holdup}"))}", width);
+    /// <summary>The Review column's summary of the tasks the Reviewer or the Dev still has, cut to fit.</summary>
+    internal static string Summarise(IReadOnlyList<WaitingItem> items, int width)
+    {
+        var reviewer = items.Where(item => item.Turn == "reviewer").ToList();
+        var dev = items.Where(item => item.Turn != "reviewer").ToList();
+        var groups = new[]
+        {
+            reviewer.Count == 0 ? "" : $"{reviewer.Count} with the Reviewer: {string.Join(" · ", reviewer.Select(item => $"#{item.Number}"))}",
+            dev.Count == 0 ? "" : $"{dev.Count} with the Dev: {string.Join(" · ", dev.Select(item => $"#{item.Number} {item.Holdup}"))}",
+        };
+        return Card.Elide(string.Join(" · ", groups.Where(group => group.Length > 0)), width);
+    }
 
     /// <summary>The row the selection is on, inside the frame.</summary>
     internal int Row => Index + 1;

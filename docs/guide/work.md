@@ -42,7 +42,8 @@ on; the others, and the other tabs, keep their place for when you come back.
 | Review | Finished work you can accept now: a task whose PR is ready to merge, or the Customer lead's docs PR. |
 
 Each column's heading counts its cards. Under the Review cards, a line sums up the work that's in
-review but not ready for you yet, like `2 with the Dev: #12 CI failing · #14 still a draft`.
+review but not ready for you yet, grouped by whose move it is, like
+`1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`.
 
 ## A card
 

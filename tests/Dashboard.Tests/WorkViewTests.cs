@@ -769,6 +769,22 @@ public class WorkViewTests
         Assert.Equal(says, WorkColumn.Summarise([.. aside.Take(count)], width));
     }
 
+    [Theory]
+    [InlineData(new[] { 244 }, "1 with the Reviewer: #244")]
+    [InlineData(new[] { 244, 245 }, "2 with the Reviewer: #244 · #245")]
+    [InlineData(new[] { 244, 246 }, "1 with the Reviewer: #244 · 1 with the Dev: #246 CI failing")]
+    public void The_summary_groups_what_waits_on_the_Reviewer_ahead_of_the_Dev(int[] numbers, string says)
+    {
+        WaitingItem[] aside =
+        [
+            Reviewing(246, "CI failing"),
+            Reviewing(244, "awaiting review") with { Turn = "reviewer" },
+            Reviewing(245, "awaiting review") with { Turn = "reviewer" },
+        ];
+
+        Assert.Equal(says, WorkColumn.Summarise([.. aside.Where(item => numbers.Contains(item.Number))], 100));
+    }
+
     [Fact]
     public void The_summary_is_cut_to_the_column_it_is_drawn_in()
     {
