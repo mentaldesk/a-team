@@ -41,9 +41,9 @@ case "$ROLE" in
 esac
 CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG"
-[ "$ROLE" != customer ] || team_roles "$CONFIG" | grep -qx customer ||
+[ "$ROLE" != customer ] || team_roles "$CONFIG" | grep -x customer >/dev/null ||
   die "$TEAM has no Customer lead: turn it on in Settings → Teams"
-[ "$ROLE" != reviewer ] || team_roles "$CONFIG" | grep -qx reviewer ||
+[ "$ROLE" != reviewer ] || team_roles "$CONFIG" | grep -x reviewer >/dev/null ||
   die "$TEAM has no Reviewer: turn it on in Settings → Teams"
 
 if [ -n "$TASK" ]; then

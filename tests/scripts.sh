@@ -3442,6 +3442,16 @@ A_TEAM_CONFIG="$CONFIG" bash "$ROOT/scripts/status.sh" >"$OUT"
 grep -q '^demo customer: never run$' "$OUT" || fail "status: '$(cat "$OUT")'"
 run resume demo customer
 same "hold" '[]' "$(held)"
+jq '.roles.reviewer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+for role in customer reviewer; do
+  run pause demo "$role"
+  same "exit with both on" 0 "$STATUS"
+  same "hold with both on" "[\"$role\"]" "$(held)"
+  run resume demo "$role"
+  same "hold with both on" '[]' "$(held)"
+  run attach demo "$role"
+  grep -q "demo $role has no run with a session" "$ERR" || fail "attach $role with both on: '$(cat "$ERR")'"
+done
 jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 A_TEAM_CONFIG="$CONFIG" bash "$ROOT/scripts/status.sh" >"$OUT"
 grep -q 'customer' "$OUT" && fail "status while off: '$(cat "$OUT")'"
