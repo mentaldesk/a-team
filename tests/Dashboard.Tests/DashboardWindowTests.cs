@@ -56,9 +56,9 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void Rebinding_quit_takes_the_apps_quit_binding_with_it()
     {
-        using var window = Open(keys: "{ \"quit\": \"x\" }");
+        using var window = Open(keys: "{ \"quit\": \"y\" }");
 
-        Assert.Equal(new Key('x'), Application.GetDefaultKey(Command.Quit));
+        Assert.Equal(new Key('y'), Application.GetDefaultKey(Command.Quit));
     }
 
     [Fact]
@@ -780,7 +780,7 @@ public class DashboardWindowTests : IDisposable
                 "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Open", "Set priority", "Try", "Open on GitHub", "Open team's board on GitHub",
-                "Approve the pitch you're reading", "Accept", "Comment on the item you're reading",
+                "Approve the pitch you're reading", "Accept", "Comment on the item you're reading", "Decline",
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read what's waiting again", "Dashboard", "Work",
                 "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Trends", "Back to the agent grid", "Quit",
                 "Go to team0", "Go to team1", "Go to team 3", "Go to team 4", "Go to team 5", "Go to team 6", "Go to team 7",
@@ -824,10 +824,10 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void A_key_the_file_names_runs_that_command_and_the_one_in_the_source_no_longer_does()
     {
-        using var window = Open(keys: "{ \"log.toolCalls\": \"x\" }");
+        using var window = Open(keys: "{ \"log.toolCalls\": \"y\" }");
         window.NewKeyDownEvent(Key.Tab);
 
-        Assert.True(window.NewKeyDownEvent(new Key('x')));
+        Assert.True(window.NewKeyDownEvent(new Key('y')));
         Assert.False(window.NewKeyDownEvent(new Key('t')));
 
         Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));

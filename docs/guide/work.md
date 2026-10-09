@@ -15,10 +15,14 @@ installed: until it has a week's record the comparison is left out and *accepted
 has, and with nothing recorded yet the title shows only what's waiting.
 
 To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It charts the last 14 days,
-one line per team, for either what was waiting on you or what you accepted each day: `Left`/`Right`
-and `Space` switch between them. Days before a team's record began are left blank. Underneath, a
-table lists each team's waiting now and a week ago, what you accepted in the last 7 days, and what its
-runs cost in that time, with a total for all the teams at the bottom. `Esc` closes it.
+one line per team, for what was waiting on you, what you accepted each day, or the hours to accept:
+the median time the tasks you accepted that day took from first entering Ready.
+`Left`/`Right` switch between them. Days before a team's record began are left blank,
+and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
+waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
+and for the tasks you accepted, their median **Cycle** and how much of it was **With you**, In
+review. The **All** row at the bottom covers every team. A task that entered Ready before its team's
+record began isn't counted in either. `Esc` closes it.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
 wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
@@ -105,7 +109,7 @@ comment headed by who said it and when. On a card in Questions it shows just the
 opens it on GitHub, and `Esc` closes it.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
-accept, comment, Priority, link and dependency, with when and who (`you`, `lead` or `dev`). What
+accept, decline, comment, Priority, link and dependency, with when and who (`you`, `lead` or `dev`). What
 you or anyone else does on GitHub directly (a merge, a close, a comment, a move on the Project board)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
@@ -138,6 +142,12 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   `Esc` goes back for the next part. Closing the reader with something unposted in the comment asks
   before throwing it away.
 - **Answer a question.** Read it in Questions, and reply with `c`.
+- **Decline it.** On an Idea or a pitch, reading it or with its card selected, press `x`. The
+  Comment pane opens as **Decline #n: why?**, keeping anything you'd already written, and you can
+  quote into it with `q` as into a comment. `Ctrl+Enter` posts your reason as a comment, closes the
+  issue as not planned on GitHub, and the card leaves Work; History records it as `declined`, and it
+  doesn't count as accepted. A reason is required. `Esc` turns the pane back into a plain comment,
+  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub.
 - **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
   ranks under it, **None** to **Urgent**, starting on the card's own, or on the Lead's
   recommendation if it has none, so `Enter` agrees with it. `←`/`→` or a rank's initial

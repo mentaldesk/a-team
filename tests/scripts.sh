@@ -164,7 +164,7 @@ gh_items() {
   META="$BIN/meta.json"
   jq -n '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options: [
     {id: "OPT_exploring", name: "Exploring"}, {id: "OPT_pitched", name: "Pitched"},
-    {id: "OPT_approved", name: "Approved"}]}}}}}' >"$META"
+    {id: "OPT_approved", name: "Approved"}, {id: "OPT_done", name: "Done"}]}}}}}' >"$META"
   gh_thread </dev/null
   gh_recent </dev/null
   RUNS="$BIN/runs.json"
@@ -1187,6 +1187,109 @@ run board demo approve you 7
 failed "approve a PR"
 grep -q "#7 is not an issue" "$ERR" || fail "approve a PR: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+# Declining: the stakeholder's no to an Idea or a pitch, with the reason on the issue.
+case_ "decline posts the reason as yours, closes the issue as not planned and moves it to Done"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Idea 9 An Idea I don't want
+Pitched 7 A pitch I don't want
+Exploring 8 A pitch still being drafted
+Ready 10 A task
+ITEMS
+rm -f "$A_TEAM_STATE/history.db"
+printf 'Already covered by #46.\n' >"$WORK/reason"
+for n in 9 7; do
+  : >"$WRITES"
+  : >"$POSTED"
+  run board demo decline you "$n" "$WORK/reason"
+  same "#$n exit" 0 "$STATUS"
+  same "#$n said" "#$n: declined" "$(cat "$OUT")"
+  same "#$n posted" "Already covered by #46." "$(cat "$POSTED")"
+  grep -q "^CLOSE issue close $n -R mentaldesk/demo --reason not planned$" "$WRITES" ||
+    fail "#$n: not closed as not planned in '$(cat "$WRITES")'"
+  grep -q "item=PVTI_$n .*option=OPT_done " "$WRITES" || fail "#$n: not moved to Done in '$(cat "$WRITES")'"
+  same "#$n history" "you declined
+you commented" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history "$n" | jq -r '.events[] | "\(.who) \(.what)"')"
+done
+
+case_ "a decline isn't counted as accepted"
+run board demo trend
+same "accepted" 0 "$(jq .accepted "$OUT")"
+
+case_ "--dry-run says what it would decline and changes nothing"
+: >"$WRITES"
+: >"$POSTED"
+rm -f "$A_TEAM_STATE/history.db"
+run board --dry-run demo decline you 9 "$WORK/reason"
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+grep -q "would close #9 as not planned" "$ERR" || fail "decline dry run: '$(cat "$ERR")'"
+[ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
+
+case_ "no agent may decline: that gate is the stakeholders' own"
+for role in lead dev customer; do
+  run board demo decline "$role" 9 "$WORK/reason"
+  failed "$role declining"
+  one_line "$role declining"
+  grep -q "$role may not decline an item; declining is the stakeholders' own gate" "$ERR" ||
+    fail "$role declining: '$(cat "$ERR")'"
+done
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "a decline needs a reason"
+printf ' \n\t\n' >"$WORK/blank"
+run board demo decline you 9 "$WORK/blank"
+failed "no reason"
+one_line "no reason"
+grep -q "a decline needs a reason" "$ERR" || fail "no reason: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "decline is only for an Idea or a Pitched pitch, never a task, a PR or the docs PR"
+for n in 8 10 404; do
+  run board demo decline you "$n" "$WORK/reason"
+  failed "decline #$n"
+  one_line "decline #$n"
+done
+grep -q "#404 is not on the board" "$ERR" || fail "decline off the board: '$(cat "$ERR")'"
+run board demo decline you 10 "$WORK/reason"
+grep -q "only an Idea or a Pitched pitch can be declined (#10 is in 'Ready')" "$ERR" || fail "decline a task: '$(cat "$ERR")'"
+edit_item 7 '.labels.nodes = []'
+run board demo decline you 7 "$WORK/reason"
+failed "decline unlabelled"
+grep -q "#7 is not a pitch" "$ERR" || fail "decline unlabelled: '$(cat "$ERR")'"
+edit_item 7 '.labels.nodes = [{name: "pitch"}] | .__typename = "PullRequest"'
+run board demo decline you 7 "$WORK/reason"
+failed "decline a PR"
+grep -q "#7 is not an issue" "$ERR" || fail "decline a PR: '$(cat "$ERR")'"
+edit_item 7 '.labels.nodes = [{name: "a-team:customer"}] | .__typename = "PullRequest"'
+run board demo decline you 7 "$WORK/reason"
+failed "decline the docs PR"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "a close GitHub refuses says why in one line"
+touch "$BIN/close-fails"
+run board demo decline you 9 "$WORK/reason"
+failed "refused close"
+grep -q "can't close #9 (gh: Resource not accessible by integration (HTTP 403))" "$ERR" ||
+  fail "refused close: '$(cat "$ERR")'"
+rm "$BIN/close-fails"
+
+case_ "a Status option whose id is all digits is sent as a string"
+jq '.data.organization.projectV2.field.options |= map(if .name == "Done" then .id = "98236657" else . end)' \
+  "$META" >"$META.new" && mv "$META.new" "$META"
+: >"$WRITES"
+run board demo decline you 9 "$WORK/reason"
+same "exit" 0 "$STATUS"
+grep -q -- "-f option=98236657 " "$WRITES" || fail "numeric option: not a raw string in '$(cat "$WRITES")'"
+
+case_ "the agents' settings deny decline"
+grep -qF '"Bash(a-team board * decline *)"' "$ROOT/settings/agents.json" || fail "no decline deny rule"
 
 # Accepting: the app's merge, the gate a task leaves by.
 case_ "accept squash-merges the task's PR and deletes its branch"
@@ -4946,6 +5049,21 @@ you commented
 lead commented" "$(history_of 7)"
 same "accepted once" "you accepted · PR #908 merged" "$(history_of 8)"
 
+case_ "a decline from the dashboard stays a decline when the catch-up sees the close on GitHub"
+gh_items <<'ITEMS'
+Idea 9 An Idea
+ITEMS
+record_from "$(ago 120)"
+run board demo decline you 9 "$WORK/reply"
+gh_caught <<CAUGHT
+9 comment $(ago 0) reviewer
+9 closed $(ago 0) reviewer NOT_PLANNED
+CAUGHT
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "declined once" "you declined
+you commented" "$(history_of 9)"
+
 case_ "the catch-up reaches back to the start of the record, then asks after the items whose Status moved"
 gh_items <<'ITEMS'
 Pitched 7 A pitch
@@ -5043,7 +5161,7 @@ trends() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trends | jq -c .; }
 
 case_ "with nothing recorded, trends has no start, no points and no cost, and makes no record file"
 rm -f "$A_TEAM_STATE/history.db"
-same "empty" '{"since":null,"queue":[],"accepted":[],"cost":0}' "$(trends)"
+same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0}' "$(trends)"
 unrecorded "trends"
 
 case_ "trends: the last 15 days of the queue, each item accepted once at its latest, and runs' cost in 7 days"
@@ -5065,7 +5183,23 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
   INSERT INTO runs (team, role, pid, log, started, cost) VALUES ('demo', 'dev', 1, 'a', '$(ago 100)', 1.25),
     ('demo', 'lead', 2, 'b', '$(ago 200)', NULL), ('demo', 'dev', 3, 'c', '$(ago $((60 * 24 * 8)))', 9),
     ('other', 'dev', 4, 'd', '$(ago 100)', 4);"
-same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cost\":1.25}" "$(trends)"
+same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25}" "$(trends)"
+
+case_ "trends: a task's cycle runs from first entering Ready to its acceptance, with every spell In review counted"
+base=$(date +%s); before() { jq -rn --argjson t "$base" --argjson m "$1" '$t - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
+m600=$(before 600) m480=$(before 480) m420=$(before 420) m300=$(before 300) m120=$(before 120)
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 20, '2026-10-01T00:00:00Z', 'lead', 'Idea → Exploring'),
+    ('demo', 20, '$m600', 'lead', 'added as Ready'), ('demo', 20, '$(ago 540)', 'dev', 'Ready → In progress'),
+    ('demo', 20, '$m480', 'dev', 'In progress → In review'), ('demo', 20, '$m420', 'you', 'In review → Ready'),
+    ('demo', 20, '$(ago 360)', 'dev', 'Ready → In progress'), ('demo', 20, '$m300', 'dev', 'In progress → In review'),
+    ('demo', 20, '$m120', 'you', 'accepted · PR #920 merged'), ('demo', 920, '$m120', 'you', 'accepted · PR #920 merged'),
+    ('demo', 20, '$(ago 100)', 'you', 'commented'),
+    ('demo', 21, '$(ago 300)', 'dev', 'Ready → In progress'), ('demo', 21, '$(ago 240)', 'lead', 'In progress → Ready'),
+    ('demo', 21, '$(ago 200)', 'dev', 'Ready → In progress'), ('demo', 21, '$(ago 100)', 'dev', 'In progress → In review'),
+    ('demo', 21, '$(ago 60)', 'you', 'accepted · PR #921 merged'),
+    ('demo', 22, '$(ago 300)', 'lead', 'Exploring → Pitched'), ('demo', 22, '$(ago 200)', 'you', 'accepted · closed');"
+same "cycles" "[{\"ready\":\"$m600\",\"accepted\":\"$m120\",\"review\":$((60 * 60 + 180 * 60))}]" "$(trends | jq -c .cycles)"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.

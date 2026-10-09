@@ -18,6 +18,9 @@ public sealed record WaitingItem(
     /// <summary>Whether this is a pitch the reviewer can approve now.</summary>
     public bool Approvable => Pitch && Status == "Pitched";
 
+    /// <summary>Whether this is an Idea or a pitch the reviewer could turn down: never a task, a PR or a question.</summary>
+    public bool Declinable => Question.Length == 0 && (Status == "Idea" || Pitch && Status == "Pitched");
+
     /// <summary>Whether this is a task whose PR the reviewer could merge, or a validated pitch they could close,
     /// trouble or not.</summary>
     public bool Acceptable => Status == "In review";

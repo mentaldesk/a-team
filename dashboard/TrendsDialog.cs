@@ -17,7 +17,7 @@ public sealed class TrendsDialog : Dialog
     private const int AxisRows = 2;
     private const int LabelWidth = 7;
 
-    internal static readonly string[] Measures = ["Waiting on you", "Accepted per day"];
+    internal static readonly string[] Measures = ["Waiting on you", "Accepted per day", "Hours to accept"];
 
     private static readonly char[] Markers = ['*', '+', 'o', 'x', '#', '@', '%', '&'];
 
@@ -61,6 +61,8 @@ public sealed class TrendsDialog : Dialog
             Visible = false,
         };
         _measure.ValueChanged += (_, _) => Plot();
+        _measure.KeyDown += (_, key) =>
+            key.Handled = key == Key.CursorRight ? Step(+1) : key == Key.CursorLeft && Step(-1);
         _graph = new GraphView
         {
             X = Inset,
@@ -122,14 +124,14 @@ public sealed class TrendsDialog : Dialog
 
     internal IReadOnlyList<TeamTrendRow> Rows { get; private set; } = [];
 
-    internal TeamTrendRow? Total { get; private set; }
+    internal TeamTrendRow? All { get; private set; }
 
     internal bool Closed { get; private set; }
 
     internal IReadOnlyList<IReadOnlyList<int?>> Series =>
         _records is null ? [] : [.. _records.Select(record => record.Series(Chosen, _dates, _zone))];
 
-    private TrendMeasure Chosen => _measure.Value == 1 ? TrendMeasure.Accepted : TrendMeasure.Waiting;
+    private TrendMeasure Chosen => _measure.Value switch { 1 => TrendMeasure.Accepted, 2 => TrendMeasure.Cycle, _ => TrendMeasure.Waiting };
 
     /// <summary>Enter reaches a Dialog as Accept and would close it; Trends has nothing to confirm.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => true;
@@ -155,22 +157,32 @@ public sealed class TrendsDialog : Dialog
             return;
         }
         Rows = [.. _teams.Select((team, i) => TeamTrendRow.Of(team.Team, team.Waiting, _records[i], _now))];
-        Total = TeamTrendRow.Total(Rows);
-        _table.Table = new EnumerableTableSource<TeamTrendRow>([.. Rows, Total], new Dictionary<string, Func<TeamTrendRow, object>>
+        All = TeamTrendRow.All(Rows, [.. _records.SelectMany(record => record.CyclesInWeek(_now))]);
+        _table.Table = new EnumerableTableSource<TeamTrendRow>([.. Rows, All], new Dictionary<string, Func<TeamTrendRow, object>>
         {
             ["Team"] = row => row.Team,
             ["Waiting now"] = row => Number(row.WaitingNow),
             ["A week ago"] = row => Number(row.WeekAgo),
             ["Accepted (7d)"] = row => Number(row.Accepted),
             ["Runs $"] = row => row.Cost.ToString("0.00", CultureInfo.InvariantCulture),
+            ["Cycle"] = row => row.Cycle is { } hours ? hours.ToString("0.0", CultureInfo.InvariantCulture) + "h" : "–",
+            ["With you"] = row => row.WithYou is { } share ? share.ToString("0%", CultureInfo.InvariantCulture) : "–",
         });
-        for (var column = 1; column < 5; column++)
+        for (var column = 1; column < 7; column++)
             _table.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
         _legend = new Legend([.. _teams.Select((team, i) => (Cell(i), team.Team))]);
         _message.Visible = false;
         _measure.Visible = _graph.Visible = _table.Visible = true;
         _measure.SetFocus();
         Plot();
+    }
+
+    private bool Step(int by)
+    {
+        var next = ((_measure.Value ?? 0) + by + Measures.Length) % Measures.Length;
+        _measure.Value = next;
+        _measure.FocusedItem = next;
+        return true;
     }
 
     private static string Number(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "–";
