@@ -72,6 +72,92 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void New_idea_is_on_n_in_the_palette_and_in_Cards()
+    {
+        using var window = Open(newIdea: (_, _) => null);
+
+        Assert.Contains(window.Commands.Enabled, command => command is { Id: "work.new", Label: "New idea" });
+        Assert.Equal(new Key('n'), window.Commands.KeyFor("work.new"));
+        Assert.Contains(window.MenuItems, item => item.Id == "work.new");
+    }
+
+    [Fact]
+    public void New_idea_starts_on_the_lane_you_re_in()
+    {
+        var asked = new List<(IReadOnlyList<string> Teams, string Team)>();
+        using var window = Open(newIdea: (teams, team) =>
+        {
+            asked.Add((teams, team));
+            return null;
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.Work.Focus(window.Work.Items.Single(item => item.Number == 133), false);
+
+        window.NewKeyDownEvent(new Key('n'));
+
+        Assert.Equal(["team0", "team1"], asked.Single().Teams);
+        Assert.Equal("team1", asked.Single().Team);
+    }
+
+    [Fact]
+    public void New_idea_off_Work_starts_on_the_first_team()
+    {
+        var asked = new List<string>();
+        using var window = Open(area: Area.Dashboard, newIdea: (_, team) =>
+        {
+            asked.Add(team);
+            return null;
+        });
+
+        window.Commands.Execute("work.new");
+
+        Assert.Equal(["team0"], asked);
+    }
+
+    [Fact]
+    public void An_added_idea_is_read_straight_away_and_the_bar_says_where_it_went()
+    {
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(Waiting(team), null));
+            },
+            newIdea: (_, _) => ("team1", 412));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        var before = reads;
+
+        window.Commands.Execute("work.new");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(before + 2, reads);
+        Assert.Equal("#412 added to team1's ideas", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_cancelled_idea_reads_nothing()
+    {
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(Waiting(team), null));
+            },
+            newIdea: (_, _) => null);
+        window.Refresh();
+        var before = reads;
+
+        window.Commands.Execute("work.new");
+
+        Assert.Equal(before, reads);
+    }
+
+    [Fact]
     public void Trends_is_in_the_palette_and_opens_with_each_team_s_cards_once_Work_has_read_them()
     {
         var opened = new List<IReadOnlyList<(string Team, int? Waiting)>>();
@@ -2182,7 +2268,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "work.accept", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
+                "work.github", "work.accept", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
@@ -2834,7 +2920,8 @@ public class WorkAreaTests : IDisposable
         TimeProvider? clock = null,
         Func<WaitingItem, Task<Reading>>? readHistory = null,
         Func<string, Task<Reading>>? readTrend = null,
-        Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null)
+        Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
+        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -2860,7 +2947,8 @@ public class WorkAreaTests : IDisposable
             clock: clock,
             readHistory: readHistory,
             readTrend: readTrend,
-            showTrends: showTrends);
+            showTrends: showTrends,
+            newIdea: newIdea);
     }
 
     private void WriteRun(string team, string role, int pid)

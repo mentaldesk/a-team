@@ -59,6 +59,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
+    private readonly Func<IReadOnlyList<string>, string, (string Team, int Number)?>? _newIdea;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
@@ -77,6 +78,7 @@ public sealed class DashboardWindow : Window
     private WaitingItem? _shown;
     private WaitingItem? _accepting;
     private string? _said;
+    private string? _added;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
     private Task<Reading[]>? _trending;
@@ -128,9 +130,11 @@ public sealed class DashboardWindow : Window
         TeamChecks? checks = null,
         DispatchPass? pass = null,
         Func<string, Task<Reading>>? readTrend = null,
-        Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null)
+        Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
+        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null)
     {
         _clipboard = clipboard;
+        _newIdea = newIdea;
         _readHistory = readHistory;
         _readTrend = readTrend;
         _showTrends = showTrends;
@@ -422,6 +426,7 @@ public sealed class DashboardWindow : Window
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
+            .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: () => _newIdea is not null && _teamNames.Count > 0)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
@@ -741,6 +746,17 @@ public sealed class DashboardWindow : Window
         }
     }
 
+    /// <summary>Adds an idea to the team whose lane you're in, or the first team's, and reads Work again to show it.</summary>
+    private void NewIdea()
+    {
+        var team = _area == Area.Work && _work.Team is { } lane ? lane : _teamNames[0];
+        if (_newIdea?.Invoke(_teamNames, team) is not { } added)
+            return;
+        _failure = null;
+        _added = $"#{added.Number} added to {added.Team}'s ideas";
+        ReadWaiting();
+    }
+
     /// <summary>Approves the pitch the reader is showing. Like a rank, the card stays put until the board takes it.</summary>
     private void Approve()
     {
@@ -900,6 +916,13 @@ public sealed class DashboardWindow : Window
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
         if (_area == Area.Work && _work.Selected is null)
             _work.FocusFirstCard();
+        // Said once the cards are laid out again: laying them out moves the selection, which clears what's said.
+        if (_added is { } added)
+        {
+            _added = null;
+            _said = added;
+            _saidOn = _work.Selected;
+        }
         ReadTrend();
     }
 
