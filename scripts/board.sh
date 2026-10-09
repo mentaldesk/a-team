@@ -1474,10 +1474,10 @@ case "$CMD" in
           GROUP BY CASE WHEN what LIKE 'accepted · PR #%' THEN what ELSE item END ORDER BY at)) AS accepted,
         (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
           WHERE team = $team AND item IN (SELECT item FROM events WHERE team = $team AND who = 'you'
-            AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')) ORDER BY at, id)) AS events,
+            AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')) ORDER BY at, id)) AS cycles,
         (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost;" |
       jq "$CYCLES"'.[0] | .queue |= fromjson | .accepted |= fromjson
-        | .cycles = (.events | fromjson | group_by(.item) | map(cycle) | sort_by(.accepted)) | del(.events)'
+        | .cycles |= (fromjson | group_by(.item) | map(cycle) | sort_by(.accepted))'
     ;;
 
   history)
