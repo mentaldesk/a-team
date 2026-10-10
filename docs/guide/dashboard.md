@@ -25,7 +25,7 @@ countdown to the dispatcher's next check. Then why the run was started, and then
 it happens: what the agent said, the tools it called, any errors, and how the run finished.
 
 The dashboard checks each team when it starts and again whenever the team's file changes, the same
-check **Settings → Teams** shows. If something stops the team running, both its panes wear `⚠` in
+check **Settings → Teams** shows. If something stops the team running, all its panes wear `⚠` in
 the error colour, their status row says what's wrong (as in `misconfigured: checkout
 ~/code/TuiCode/main isn't there: …`), and the message bar says which checks failed. Fix it in
 **Settings → Teams** or in the file, and the `⚠` clears. A missing vision, docs page or label is only a note,
@@ -104,7 +104,7 @@ up. To start every pane with its calls showing, tick *Show tool calls in full* u
 
 `h` pauses the selected agent's role. A run already going finishes, its pane reading
 `running <time> · held`, and the dispatcher starts no new one. The same key, now
-*Let this role start again*, lets it start again. The other role carries on either way.
+*Let this role start again*, lets it start again. The other roles carry on either way.
 
 It's the same as `a-team pause <team> <role>` and `a-team resume <team> <role>`.
 

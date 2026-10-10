@@ -26,19 +26,20 @@ press `Enter`. A-Team writes the team's file, paused, then offers in turn to:
 5. Write its vision with you.
 6. Get to work.
 
-Each step says what it will do and waits for `Enter`, and `Esc` skips it. The last asks whether to
-get to work or keep the team paused, and there `Esc` cancels the new team.
+Each step says what it will do and waits for `Enter`. `Esc` skips it, and `Backspace` goes back a
+step. The last asks whether to get to work or keep the team paused, and there `Esc` cancels the new
+team.
 
 ## Writing the vision
 
 The Lead judges every pitch against the team's vision. **Write the vision with me** in Commands, for
 the selected team, hands the terminal to Claude for about 20 minutes. It reads the repo first, then
-asks you eight questions one at a time, and opens the vision it writes from your answers as a draft
-PR in Pitched, for you to approve by merging it. Quit Claude with `/exit` and press `Enter` to come
-back. It rewrites a vision the team already has. From a terminal, it's `a-team vision <team>`.
+asks you about eight questions one at a time, and opens the vision it writes from your answers as a
+draft PR in Pitched, for you to approve by merging it. Quit Claude with `/exit` and press `Enter`
+to come back. It rewrites a vision the team already has. From a terminal, it's `a-team vision <team>`.
 
-Skip it and the Lead drafts one from the repo instead. That's a guess, so the team's Health counts
-it as a problem until you replace it.
+Skip it and the Lead drafts one from the repo instead. That's a guess, so the team's Health notes
+it until you replace it.
 
 `gh` needs to be able to manage projects first: `gh auth refresh -s project`.
 
