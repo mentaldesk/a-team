@@ -136,7 +136,7 @@ public class TeamStartTests : IDisposable
             return step.Title == "Get to work?" ? Answer.Done : Answer.Skipped;
         });
 
-        Assert.Equal(["Clone mentaldesk/fretty?", "Give fretty a GitHub App?", "Set up fretty's board?"], asked);
+        Assert.Equal(["Clone mentaldesk/fretty?", "Give fretty a GitHub App?", "Set up fretty's board?", "Write fretty's vision with you?"], asked);
         Assert.Equal(("fretty won't run until it has a GitHub App (a-team app create fretty).", Schemes.Accent), said);
         Assert.True(_teams.IsPaused("fretty"));
         Assert.Empty(Ran());
@@ -154,7 +154,7 @@ public class TeamStartTests : IDisposable
             return Answer.Skipped;
         });
 
-        Assert.Equal(["Set up fretty's board?", "Get to work?"], asked);
+        Assert.Equal(["Set up fretty's board?", "Write fretty's vision with you?", "Get to work?"], asked);
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -170,7 +170,7 @@ public class TeamStartTests : IDisposable
             return Answer.Skipped;
         });
 
-        Assert.Equal(["Set up fretty's board?", "Get to work?"], asked);
+        Assert.Equal(["Set up fretty's board?", "Write fretty's vision with you?", "Get to work?"], asked);
         Assert.True(_teams.HasApp("fretty"));
         Assert.Contains("app create fretty --no-open", Ran());
     }
@@ -359,6 +359,93 @@ public class TeamStartTests : IDisposable
 
         Assert.Null(said);
         Assert.Equal(["Clone mentaldesk/fretty?", "Give fretty a GitHub App?"], asked);
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void The_vision_step_comes_before_Get_to_work_and_writing_it_now_is_asked_for_once_the_steps_are_done()
+    {
+        Team("fretty", app: true, checkout: true);
+        Step? offered = null;
+        List<string> asked = [];
+        var written = 0;
+
+        var said = Start().Follow(_teams, "fretty", step =>
+        {
+            asked.Add(step.Title);
+            if (step.Title == "Write fretty's vision with you?")
+            {
+                offered = step;
+                return Answer.Done;
+            }
+            Assert.Equal(0, written);
+            return step.Title == "Get to work?" ? Answer.Done : Answer.Skipped;
+        }, () => written++);
+
+        Assert.Equal(["Set up fretty's board?", "Write fretty's vision with you?", "Get to work?"], asked);
+        Assert.Equal(("write it now", "later"), (offered!.Yes, offered.No));
+        Assert.Null(offered.Work);
+        using var dialog = new StepDialog(offered);
+        Assert.Equal("Enter write it now · Esc later · Backspace back", dialog.Hints.Says);
+        Assert.Equal(1, written);
+        Assert.Equal(("fretty is working.", Schemes.Base), said);
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void Later_carries_on_to_Get_to_work_without_the_interview()
+    {
+        Team("fretty", app: true, checkout: true);
+        List<string> asked = [];
+        var written = 0;
+
+        Start().Follow(_teams, "fretty", step =>
+        {
+            asked.Add(step.Title);
+            return step.Title == "Get to work?" ? Answer.Done : Answer.Skipped;
+        }, () => written++);
+
+        Assert.Equal(["Set up fretty's board?", "Write fretty's vision with you?", "Get to work?"], asked);
+        Assert.Equal(0, written);
+        Assert.False(_teams.IsPaused("fretty"));
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void Back_from_the_vision_step_returns_to_the_board_and_from_Get_to_work_to_the_vision()
+    {
+        Team("fretty", app: true, checkout: true);
+        List<string> asked = [];
+        var answers = new Queue<Answer>([Answer.Skipped, Answer.Back, Answer.Skipped, Answer.Done, Answer.Back, Answer.Skipped, Answer.Skipped]);
+        var written = 0;
+
+        Start().Follow(_teams, "fretty", step =>
+        {
+            asked.Add(step.Title);
+            return answers.Dequeue();
+        }, () => written++);
+
+        Assert.Equal(
+            [
+                "Set up fretty's board?", "Write fretty's vision with you?", "Set up fretty's board?", "Write fretty's vision with you?",
+                "Get to work?", "Write fretty's vision with you?", "Get to work?",
+            ],
+            asked);
+        Assert.Equal(0, written);
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void Cancelling_Get_to_work_after_choosing_the_interview_skips_it()
+    {
+        Team("fretty", app: true, checkout: true);
+        var written = 0;
+
+        Start().Follow(_teams, "fretty", step => step.Title switch
+        {
+            "Write fretty's vision with you?" => Answer.Done,
+            "Get to work?" => Answer.Cancelled,
+            _ => Answer.Skipped,
+        }, () => written++);
+
+        Assert.Equal(0, written);
+        Assert.DoesNotContain("fretty", _teams.Names());
     }
 
     [Fact]

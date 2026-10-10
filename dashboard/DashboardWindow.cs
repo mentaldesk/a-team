@@ -280,7 +280,7 @@ public sealed class DashboardWindow : Window
 
         if (resume is not null)
             Resume(resume);
-        if (resume is null or TeamsChanged && _area == Area.Work)
+        if (resume is null or TeamsChanged or VisionHandover && _area == Area.Work)
             ReadWaiting();
         if (_area == Area.Overseer)
             ReadBoards();
@@ -450,6 +450,8 @@ public sealed class DashboardWindow : Window
             .Register("work.try", "Try", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Triable: true }, onCard: true)
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
             .Register("team.board", "Open team's board on GitHub", OpenBoard, new Key('b'), isEnabled: () => SelectedTeam() is not null)
+            .Register("team.vision", () => SelectedTeam() is { } team ? $"Write the vision with me · {team}" : "Write the vision with me",
+                () => WriteVision(SelectedTeam()), isEnabled: () => _handOver is not null && SelectedTeam() is not null)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
@@ -720,6 +722,8 @@ public sealed class DashboardWindow : Window
         _failure = handover.Failure;
         if (handover is TeamsChanged changed)
             _left = changed.Left;
+        if (handover is VisionHandover vision)
+            _left = vision.Left;
         if (handover is TryHandover tried)
         {
             _readAt = _askedAt = tried.ReadAt;
@@ -777,6 +781,9 @@ public sealed class DashboardWindow : Window
             case AttachHandover attached when _panes.FindIndex(pane => pane.Team == attached.Team && pane.Role == attached.Role) is >= 0 and var index:
                 Select(index);
                 break;
+            case VisionHandover vision when _panes.FindIndex(pane => pane.Team == vision.Team && pane.Role == vision.Role) is >= 0 and var index:
+                Select(index);
+                break;
         }
     }
 
@@ -794,6 +801,15 @@ public sealed class DashboardWindow : Window
         Area.Overseer => _overseer.Board.Selected?.Team,
         _ => Selected()?.Team,
     };
+
+    /// <summary>Hands the terminal to the vision interview for <paramref name="team"/>, to come back where it is now.</summary>
+    private void WriteVision(string? team)
+    {
+        if (team is null)
+            return;
+        _handOver?.Invoke(new VisionHandover(team, _area, _area == Area.Work ? _work.Place : _left,
+            _area == Area.Dashboard ? Selected()?.Role : null));
+    }
 
     private void OpenBoard()
     {
@@ -1298,7 +1314,12 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         var before = _teams.Names();
-        var removed = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks);
+        var (removed, vision) = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks);
+        if (vision is not null && _teams.Names().Contains(vision))
+        {
+            WriteVision(vision);
+            return;
+        }
         if (_teams.Names().Except(before).Any() || RolesChanged())
         {
             _handOver?.Invoke(new TeamsChanged(_area, _area == Area.Work ? _work.Place : _left));

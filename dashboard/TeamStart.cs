@@ -70,9 +70,10 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         }
     }
 
-    /// <summary>Offers each step the new team still needs, in order, through <paramref name="ask"/>. Returns the line to
-    /// leave on the Teams page, or null where Back went past the first step, to the form.</summary>
-    public (string Message, Schemes Scheme)? Follow(TeamConfigs teams, string team, Func<Step, Answer> ask)
+    /// <summary>Offers each step the new team still needs, in order, through <paramref name="ask"/>, calling
+    /// <paramref name="writeVision"/> at the end where you chose to write its vision now. Returns the line to leave on the
+    /// Teams page, or null where Back went past the first step, to the form.</summary>
+    public (string Message, Schemes Scheme)? Follow(TeamConfigs teams, string team, Func<Step, Answer> ask, Action? writeVision = null)
     {
         string Checkout() => teams.Settings(team).CheckoutPath;
         bool Cloned() => Directory.Exists(TeamSettings.Expand(Checkout(), home));
@@ -96,10 +97,13 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             App,
             () => teams.Settings(team).NoProject ? ProjectStep(teams, team, teams.Settings(team)) : null,
             () => BoardStep(team, teams.Settings(team)),
+            () => VisionStep(team),
             () => teams.HasApp(team) ? WorkStep(team) : null,
         ];
         const int appStep = 1;
         const int projectStep = 2;
+        const int visionStep = 4;
+        var vision = false;
         Stack<int> shown = [];
         for (var at = 0; at < steps.Count;)
         {
@@ -122,6 +126,8 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             shown.Push(at);
             if (at == appStep && uninstalled)
                 uninstalled = answer != Answer.Done;
+            if (at == visionStep)
+                vision = answer == Answer.Done;
             if (at == projectStep && teams.Settings(team).NoProject)
                 return ($"{team} is paused: it has no project to move its work across. Pick one in its settings.", Schemes.Accent);
             if (at == steps.Count - 1)
@@ -137,6 +143,8 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             at++;
         }
 
+        if (vision)
+            writeVision?.Invoke();
         if (!teams.HasApp(team))
             return ($"{team} won't run until it has a GitHub App (a-team app create {team}).", Schemes.Accent);
         if (uninstalled)
@@ -175,6 +183,13 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
                     ? (null, $"Can't set up {team}'s board: {failure}")
                     : (SetupPlan((await plan).Output, await project, settings.Repo), null);
             });
+
+    private static Step VisionStep(string team) =>
+        new(
+            $"Write {team}'s vision with you?",
+            ["The Lead judges every pitch against the vision. Write it with me now? About 20 minutes, one question at a time."],
+            "write it now",
+            "later");
 
     private Step WorkStep(string team)
     {

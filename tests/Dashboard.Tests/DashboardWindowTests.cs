@@ -780,7 +780,7 @@ public class DashboardWindowTests : IDisposable
                 "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Open", "Set priority", "Try", "Open on GitHub", "Open team's board on GitHub",
-                "Approve the pitch you're reading", "Accept", "Comment on the item you're reading", "Decline",
+                "Write the vision with me", "Approve the pitch you're reading", "Accept", "Comment on the item you're reading", "Decline",
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read what's waiting again",
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
@@ -1548,6 +1548,39 @@ public class DashboardWindowTests : IDisposable
 
         Assert.False(window.NewKeyDownEvent(new Key('i')));
         Assert.Empty(handed);
+    }
+
+    [Fact]
+    public void Write_the_vision_with_me_names_the_selected_team_and_hands_its_interview_the_terminal()
+    {
+        var handed = new List<Handover>();
+        using var window = Open(agents: Agents(4), handOver: handed.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.False(window.Commands.IsEnabled("team.vision"));
+        SelectAgent(window, 3);
+        Assert.True(window.Commands.IsEnabled("team.vision"));
+        Assert.Equal("Write the vision with me · team1", window.Commands.Registered.Single(c => c.Id == "team.vision").Label);
+
+        Assert.True(window.Commands.Execute("team.vision"));
+
+        var handover = Assert.IsType<VisionHandover>(Assert.Single(handed));
+        Assert.Equal(["vision", "team1"], handover.Arguments);
+        Assert.Equal(Area.Dashboard, handover.Area);
+        Assert.Equal("dev", handover.Role);
+    }
+
+    [Fact]
+    public void Back_from_the_vision_interview_the_grid_has_the_same_agent_selected()
+    {
+        using var window = Open(agents: Agents(4), resume: new VisionHandover("team1", Area.Dashboard, Role: "dev"));
+        window.Refresh();
+        LayOut(window, 120, 40);
+        window.FocusResumed();
+
+        Assert.Equal(3, Selected(window));
+        Assert.True(window.Agents.Visible);
     }
 
     [Fact]

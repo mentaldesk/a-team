@@ -54,6 +54,7 @@ With no command, a-team opens the app where you left it.
   attach [--dry-run] <team> <role>        stop a role and pick its conversation up yourself
   dashboard [team...]                     the app, on the Dashboard area
   try <team> [<pr>] [--clean]             run a PR, or main, sandboxed in a scratch worktree
+  vision [--dry-run] <team>               write the team's vision with Claude, one question at a time
   release [--dry-run] <team>              run the repo's release.yml, if its release setting says one is due
   run <team> <role>                       print the brief a run starts from
   task-prompt <team> <role>               print a role's scheduled prompt
@@ -72,7 +73,7 @@ USAGE
 command=$1
 shift
 case "$command" in
-  app | attach | board | dispatch | install | release | status | run | task-prompt | token | try)
+  app | attach | board | dispatch | install | release | status | run | task-prompt | token | try | vision)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
   dashboard)
     exec bash "$ROOT/scripts/dashboard.sh" --area dashboard "$@" ;;

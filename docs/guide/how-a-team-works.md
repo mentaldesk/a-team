@@ -10,8 +10,9 @@ Project board: if it isn't on the board, in an issue or in a PR, the team doesn'
   document (`docs/vision.md` unless the team's settings say otherwise). The clearer they are about
   who it's for and where it's headed, in the short and the long term, the better the team builds it.
   Name the products you'd like it to learn from, competitors and inspiration alike: the Lead watches
-  what they ship. Say what it deliberately isn't, too. If there's no vision yet, the Lead drafts one
-  from the README and the code for you to edit and merge.
+  what they ship. Say what it deliberately isn't, too. [Write the vision with me](teams.md#writing-the-vision)
+  writes it with you; if there's no vision yet, the Lead drafts one from the README and the code
+  for you to edit and merge.
 - **The Lead** finds work worth doing: gaps against the vision, open issues, and what those other
   products are doing. It writes a pitch for an Idea, with a mockup, revises it on your feedback,
   breaks an approved pitch into tasks, and checks the finished feature against the pitch.

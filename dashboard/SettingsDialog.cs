@@ -188,7 +188,7 @@ public sealed class SettingsDialog : Dialog
                     _start.Projects, Task.FromResult(""), again);
         };
         FollowTeam = team => App is { } app && _start is not null
-            ? _start.Follow(_teams, team, step => StepDialog.Show(app, step))
+            ? _start.Follow(_teams, team, step => StepDialog.Show(app, step), () => VisionFor = team)
             : (string.Empty, Schemes.Base);
         ConfirmRemove = (team, repo, kept) => App is { } app && RemoveTeamDialog.Show(app, team, repo, kept);
         _teamList.ValueChanged += (_, _) => ShowTeam();
@@ -287,6 +287,9 @@ public sealed class SettingsDialog : Dialog
     /// <summary>Sets a team's board up again, once you've seen what that does, and says whether it did.</summary>
     internal Func<string, bool> RepairTeam { get; set; }
 
+    /// <summary>The new team whose vision you chose to write now, which closes the dialog for the interview.</summary>
+    internal string? VisionFor { get; private set; }
+
     /// <summary>The teams removed while the dialog was open.</summary>
     internal IReadOnlyList<string> RemovedTeams => _removed;
 
@@ -307,8 +310,8 @@ public sealed class SettingsDialog : Dialog
     }
 
     /// <summary>Runs the dialog, keeping what was picked in it only if it was accepted, and returns the teams
-    /// removed in it, which are gone either way.</summary>
-    public static IReadOnlyList<string> Show(
+    /// removed in it, which are gone either way, and the new team whose vision to write now.</summary>
+    public static (IReadOnlyList<string> Removed, string? Vision) Show(
         IApplication app,
         DashboardSettings settings,
         CommandRegistry commands,
@@ -330,7 +333,7 @@ public sealed class SettingsDialog : Dialog
             app.Invoke(() => dialog.NewTeam());
         app.Run(dialog);
         dialog.Store(theme, icons, settings);
-        return dialog.RemovedTeams;
+        return (dialog.RemovedTeams, dialog.VisionFor);
     }
 
     /// <summary>Keeps what the dialog was left holding, or puts back what was in effect before it opened.</summary>
@@ -525,6 +528,8 @@ public sealed class SettingsDialog : Dialog
             {
                 ReadTeams(team);
                 Say(said.Message, said.Scheme);
+                if (VisionFor == team)
+                    Close(confirmed: true);
                 return true;
             }
             var was = team;

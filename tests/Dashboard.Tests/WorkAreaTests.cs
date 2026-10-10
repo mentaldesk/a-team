@@ -2445,6 +2445,34 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Write_the_vision_with_me_from_Work_comes_back_on_the_card_it_was_on()
+    {
+        var handed = new List<Handover>();
+        using (var window = Open(handOver: handed.Add))
+        {
+            window.Refresh();
+            LayOut(window, 120, 30);
+            window.NewKeyDownEvent(Key.CursorRight);
+            window.NewKeyDownEvent(Key.CursorRight);
+            window.NewKeyDownEvent(Key.CursorRight);
+            var team = window.Work.Current?.Team;
+            var card = window.Work.Selected?.Number;
+
+            Assert.True(window.Commands.Execute("team.vision"));
+
+            var handover = Assert.IsType<VisionHandover>(Assert.Single(handed));
+            Assert.Equal(["vision", team!], handover.Arguments);
+            Assert.Equal(Area.Work, handover.Area);
+            Assert.Equal(card, handover.Left?.Number);
+        }
+
+        using var back = Open(resume: handed[0]);
+        back.Refresh();
+
+        Assert.Equal(((VisionHandover)handed[0]).Left?.Number, back.Work.Selected?.Number);
+    }
+
+    [Fact]
     public void Every_tab_says_how_many_cards_wait_there_and_m_narrows_the_count()
     {
         using var window = Open();
