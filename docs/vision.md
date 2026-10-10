@@ -223,4 +223,4 @@ In order. Each is a direction, not a commitment; pitches turn them into work.
 - Does it raise what the stakeholder can get through, or lower what the team delivers to fit?
 - Is it Now, or is it reaching for Next or Later early?
 - Does it land where the stakeholder already is, rather than adding somewhere else to go?
-- Is it the smallest version that's actually useful — without being a small idea?
+- Does it deliver real value today?
