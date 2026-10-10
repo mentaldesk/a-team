@@ -45,6 +45,18 @@ public class HistoryTests
     }
 
     [Fact]
+    public void A_visit_says_how_long_you_spent_and_what_you_did_at_least_a_minute()
+    {
+        var history = Read($$"""
+            {"since": null, "events": [
+              {"at": "{{Moved.ToUniversalTime():O}}", "who": "you", "what": "approved", "spent": 372},
+              {"at": "{{Added.ToUniversalTime():O}}", "who": "you", "what": "read", "spent": 14}]}
+            """);
+
+        Assert.Equal(["3 Oct 13:40  you   6m · approved", "3 Oct 10:41  you   1m · read"], history.Lines.Select(line => line.Text));
+    }
+
+    [Fact]
     public void A_card_with_nothing_recorded_says_since_when_a_team_has_kept_history()
     {
         var history = Read($$"""{"since": "{{Added.ToUniversalTime():O}}", "events": []}""");

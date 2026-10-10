@@ -3,10 +3,11 @@
 Everything waiting on you, across every team. `w` opens it, `d` goes to the Dashboard and `o` to
 [Overseer](overseer.md). The app opens in whichever area you were in last, and on Work the first time.
 
-Work's title says whether the queue is shrinking and how much you've accepted, across every team:
+Work's title says whether the queue is shrinking, how much you've accepted, and how much of your
+time it took, across every team:
 
 ```
-Work · 7 waiting on you (12 a week ago) · 23 accepted in 7 days
+Work · 7 waiting on you (12 a week ago) · 23 accepted in 7 days · 3h 10m of yours · 7.3 per hour
 ```
 
 *Waiting on you* counts every card in Work, including those `m` hides. *Accepted* counts the task
@@ -14,14 +15,25 @@ PRs merged and the pitches accepted, whether from here or on GitHub. a-team coun
 installed: until it has a week's record the comparison is left out and *accepted* covers the days it
 has, and with nothing recorded yet the title shows only what's waiting.
 
+*Of yours* is the time you spent in Work in the last 7 days, and *per hour* what you accepted for
+each hour of it. a-team times you only here, never on GitHub, and only while you're active: after 5
+minutes with no key pressed it stops counting until the next one. Time with a card's reader open,
+commenting included, counts against that card, and a try counts in full, up to 30 minutes. Time in
+Work with no reader open counts as *other* for the team whose lane is selected. Time on the
+Dashboard and Overseer doesn't count. Neither figure shows until some time has been recorded.
+
 To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It charts the last 14 days,
-one line per team, for what was waiting on you, what you accepted each day, or the hours to accept:
-the median time the tasks you accepted that day took from first entering Ready.
+one line per team, for what was waiting on you, what you accepted each day, the hours to accept:
+the median time the tasks you accepted that day took from first entering Ready, or **Your time**,
+in minutes a day. With *Your time* chosen, a table beside the legend splits this week's time by gate:
+Triage, Pitches, Questions, Review and Other.
 `Left`/`Right` switch between them. Days before a team's record began are left blank,
 and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
 and for the tasks you accepted, their median **Cycle** and how much of it was **With you**, In
-review. The **All** row at the bottom covers every team. A task that entered Ready before its team's
+review, then **Yours (7d)**, your time on it in the last 7 days, and **/h**, what you accepted per
+hour of it. Days and weeks before your time was first recorded are left blank, not zero. The **All**
+row at the bottom covers every team. A task that entered Ready before its team's
 record began isn't counted in either. `Esc` closes it.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
@@ -118,6 +130,8 @@ away.
 Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
 how long it took and what it cost, like `run 38 min · $4.12`. One that didn't finish says why:
 `stopped` by you, `killed` at the time limit, `error`, or `died` with no result, and no cost.
+Each of your visits to the card is a line as well: how long you spent on it and what you did, like
+`6m · approved` or `1m · read`.
 `Tab` moves between the body and History. `h` hides
 History to give the body the full width, and shows it again; it stays as you left it until you
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.

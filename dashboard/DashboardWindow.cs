@@ -76,6 +76,7 @@ public sealed class DashboardWindow : Window
     private readonly FrameView _loading;
     private readonly Label _title;
     private readonly TimeProvider _clock;
+    private readonly Attention _attention;
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
@@ -139,7 +140,8 @@ public sealed class DashboardWindow : Window
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
         Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
-        Func<string, Task<Reading>>? readBoard = null)
+        Func<string, Task<Reading>>? readBoard = null,
+        Attention? attention = null)
     {
         _readBoard = readBoard;
         _limits = settings.ReadLimits();
@@ -153,6 +155,7 @@ public sealed class DashboardWindow : Window
         _showGuide = showGuide ?? (_ => { });
         _start = start;
         _clock = clock ?? TimeProvider.System;
+        _attention = attention ?? new Attention(_clock, _ => { });
         BorderStyle = LineStyle.None;
         _settings = settings;
         _auto = auto;
@@ -325,8 +328,11 @@ public sealed class DashboardWindow : Window
     /// <summary>How long Work, in front with nothing over it, goes before it reads again by itself.</summary>
     internal static readonly TimeSpan ReadEvery = TimeSpan.FromMinutes(5);
 
+    internal Attention Attention => _attention;
+
     public void Refresh()
     {
+        _attention.Browsing(_area == Area.Work ? _work.Current?.Team : null);
         Settle();
         SettleBoards();
         SettleTrend();
@@ -709,8 +715,15 @@ public sealed class DashboardWindow : Window
             HandOverTry(item);
     }
 
-    private void HandOverTry(WaitingItem item, ReaderPlace? reader = null) =>
-        _handOver?.Invoke(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader));
+    private void HandOverTry(WaitingItem item, ReaderPlace? reader = null)
+    {
+        if (_handOver is null)
+            return;
+        _attention.Open(item, WorkView.GateOf(item));
+        _attention.Did("tried");
+        _attention.HandOver();
+        _handOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader));
+    }
 
     /// <summary>Back from a try, the cards as they were with no re-read; from an attach, the grid. Either way, what
     /// went wrong if it failed.</summary>
@@ -722,6 +735,9 @@ public sealed class DashboardWindow : Window
             _left = changed.Left;
         if (handover is TryHandover tried)
         {
+            _attention.TakeBack();
+            if (tried.Reader is null)
+                _attention.Close();
             _readAt = _askedAt = tried.ReadAt;
             _work.Show(tried.Items);
             ReadTrend();
@@ -902,6 +918,7 @@ public sealed class DashboardWindow : Window
         {
             _approvable = item.Approvable ? item : null;
             _shown = item;
+            _attention.Open(item, WorkView.GateOf(item));
             var chosen = _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
@@ -914,13 +931,18 @@ public sealed class DashboardWindow : Window
                 rank);
             _approvable = null;
             _shown = null;
+            var reranked = chosen is { } ranked && ranked != Priorities.Of(item) ? chosen : null;
+            if (reranked is not null)
+                _attention.Did("ranked");
+            if (_triedFrom is null)
+                _attention.Close();
             if (_declined == item)
             {
                 Declined(item);
                 return;
             }
-            if (chosen is { } ranked && ranked != Priorities.Of(item))
-                SetRank(item, ranked);
+            if (reranked is { } to)
+                SetRank(item, to);
             if (_triedFrom is { } from)
             {
                 _triedFrom = null;
@@ -946,6 +968,7 @@ public sealed class DashboardWindow : Window
         if (_approvable is not { } item || _pending is not null)
             return;
         _approving = item;
+        _attention.Did("approved");
         _progress = $"Approving #{item.Number}…";
         ShowMessage();
         _pending = _run(["board", item.Team, "approve", "you", item.Number.ToString()]);
@@ -979,6 +1002,7 @@ public sealed class DashboardWindow : Window
         if (!_confirmAccept(item))
             return false;
         _accepting = item;
+        _attention.Did("accepted");
         _failure = null;
         _progress = item.Pitch ? $"Closing #{item.Number}…" : $"Merging PR #{item.Pr}…";
         ShowMessage();
@@ -986,14 +1010,23 @@ public sealed class DashboardWindow : Window
         return true;
     }
 
-    private Task<string?> Post(WaitingItem item, string body) => WithFile(item, "comment", body);
+    private async Task<string?> Post(WaitingItem item, string body)
+    {
+        var refused = await WithFile(item, "comment", body).ConfigureAwait(false);
+        if (refused is null or { Length: 0 })
+            _attention.Did("commented");
+        return refused;
+    }
 
     /// <summary>Closes the item as not planned with your reason. The reader closes on it, and the card leaves.</summary>
     private async Task<string?> Decline(WaitingItem item, string reason)
     {
         var refused = await WithFile(item, "decline", reason).ConfigureAwait(false);
         if (refused is null or { Length: 0 })
+        {
+            _attention.Did("declined");
             _declined = item;
+        }
         return refused;
     }
 

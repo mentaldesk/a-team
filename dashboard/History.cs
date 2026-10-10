@@ -3,11 +3,16 @@ using System.Text.Json;
 
 namespace ATeam.Dashboard;
 
-/// <summary>One thing a-team did to an item, as <c>a-team board &lt;team&gt; history &lt;n&gt;</c> reports it.</summary>
-public sealed record HistoryEvent(DateTimeOffset At, string Who, string What, Run? Run = null)
+/// <summary>One thing a-team did to an item, as <c>a-team board &lt;team&gt; history &lt;n&gt;</c> reports it.
+/// <paramref name="Spent"/> is a visit's time, said before what you did in it.</summary>
+public sealed record HistoryEvent(DateTimeOffset At, string Who, string What, Run? Run = null, TimeSpan? Spent = null)
 {
     public string Line =>
-        $"{At.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.InvariantCulture),-12} {Who,-4}  {Run?.Describe(At) ?? What}";
+        $"{At.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.InvariantCulture),-12} {Who,-4}  {Run?.Describe(At) ?? Visited ?? What}";
+
+    private string? Visited => Spent is { } spent
+        ? $"{Visit.Duration(spent < TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : spent)} · {What}"
+        : null;
 }
 
 /// <summary>A run started at an event's time: still going while <paramref name="Ended"/> is null.</summary>
@@ -60,7 +65,9 @@ public sealed record History(IReadOnlyList<HistoryEvent> Events, DateTimeOffset?
                 e.GetProperty("at").GetDateTimeOffset(),
                 e.GetProperty("who").GetString() ?? "",
                 e.GetProperty("what").GetString() ?? "",
-                e.TryGetProperty("run", out var run) && run.ValueKind == JsonValueKind.Object ? ParseRun(run) : null))], since);
+                e.TryGetProperty("run", out var run) && run.ValueKind == JsonValueKind.Object ? ParseRun(run) : null,
+                e.TryGetProperty("spent", out var spent) && spent.ValueKind == JsonValueKind.Number
+                    ? TimeSpan.FromSeconds(spent.GetDouble()) : null))], since);
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
         {
