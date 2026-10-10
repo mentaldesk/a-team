@@ -11,6 +11,27 @@
         "DefaultShadow": "None"
       },
       "Schemes": {
+        "ButtonPrimary": {
+          "Normal": { "Foreground": "#FFFFFF", "Background": "#1E4F8A" },
+          "Focus": { "Foreground": "#FFFFFF", "Background": "#2F6BB3", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#FFFFFF", "Background": "#1E4F8A", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#FFFFFF", "Background": "#2F6BB3", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#FFFFFF", "Background": "#285D9E" }
+        },
+        "ButtonDanger": {
+          "Normal": { "Foreground": "#FFFFFF", "Background": "#8C2F39" },
+          "Focus": { "Foreground": "#FFFFFF", "Background": "#B0303C", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#FFFFFF", "Background": "#8C2F39", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#FFFFFF", "Background": "#B0303C", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#FFFFFF", "Background": "#9C3540" }
+        },
+        "ButtonSecondary": {
+          "Normal": { "Foreground": "#E6E9EF", "Background": "#3A4150" },
+          "Focus": { "Foreground": "#FFFFFF", "Background": "#56637A", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#E6E9EF", "Background": "#3A4150", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#FFFFFF", "Background": "#56637A", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#E6E9EF", "Background": "#465063" }
+        },
         "Base": {
           "Normal": { "Foreground": "#8B93A1", "Background": "#1B1E24" },
           "Focus": { "Foreground": "#E6E9EF", "Background": "#2F3A4D" },
@@ -88,6 +109,27 @@
         "DefaultShadow": "None"
       },
       "Schemes": {
+        "ButtonPrimary": {
+          "Normal": { "Foreground": "#FFFFFF", "Background": "#0A5CC2" },
+          "Focus": { "Foreground": "#FFFFFF", "Background": "#073E85", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#FFFFFF", "Background": "#0A5CC2", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#FFFFFF", "Background": "#073E85", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#FFFFFF", "Background": "#1A6AD0" }
+        },
+        "ButtonDanger": {
+          "Normal": { "Foreground": "#FFFFFF", "Background": "#C62828" },
+          "Focus": { "Foreground": "#FFFFFF", "Background": "#8E1B1B", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#FFFFFF", "Background": "#C62828", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#FFFFFF", "Background": "#8E1B1B", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#FFFFFF", "Background": "#D03535" }
+        },
+        "ButtonSecondary": {
+          "Normal": { "Foreground": "#1F2328", "Background": "#DDE1E6" },
+          "Focus": { "Foreground": "#1F2328", "Background": "#B4C6DE", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#1F2328", "Background": "#DDE1E6", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#1F2328", "Background": "#B4C6DE", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#1F2328", "Background": "#E9ECF0" }
+        },
         "Base": {
           "Normal": { "Foreground": "#6A6F78", "Background": "#FAFAFA" },
           "Focus": { "Foreground": "#1F2328", "Background": "#DCE6F3" },
@@ -165,6 +207,27 @@
         "DefaultShadow": "Opaque"
       },
       "Schemes": {
+        "ButtonPrimary": {
+          "Normal": { "Foreground": "#000000", "Background": "#00AA00" },
+          "Focus": { "Foreground": "#000000", "Background": "#55FF55", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#000000", "Background": "#00AA00", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#000000", "Background": "#55FF55", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#000000", "Background": "#2BD42B" }
+        },
+        "ButtonDanger": {
+          "Normal": { "Foreground": "#FFFFFF", "Background": "#AA0000" },
+          "Focus": { "Foreground": "#000000", "Background": "#FF5555", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#FFFFFF", "Background": "#AA0000", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#000000", "Background": "#FF5555", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#FFFFFF", "Background": "#C42020" }
+        },
+        "ButtonSecondary": {
+          "Normal": { "Foreground": "#000000", "Background": "#00AAAA" },
+          "Focus": { "Foreground": "#000000", "Background": "#55FFFF", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#000000", "Background": "#00AAAA", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#000000", "Background": "#55FFFF", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#000000", "Background": "#2BD4D4" }
+        },
         "Base": {
           "Normal": { "Foreground": "#FFFFFF", "Background": "#0000AA" },
           "Focus": { "Foreground": "#000000", "Background": "#00AAAA" },
@@ -242,6 +305,27 @@
         "DefaultShadow": "Opaque"
       },
       "Schemes": {
+        "ButtonPrimary": {
+          "Normal": { "Foreground": "#FFFFFF", "Background": "#246600" },
+          "Focus": { "Foreground": "#000000", "Background": "#4CB814", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#FFFFFF", "Background": "#246600", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#000000", "Background": "#4CB814", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#FFFFFF", "Background": "#2D7A00" }
+        },
+        "ButtonDanger": {
+          "Normal": { "Foreground": "#FFFFFF", "Background": "#A80000" },
+          "Focus": { "Foreground": "#FFFF57", "Background": "#7A0000", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#FFFFFF", "Background": "#A80000", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#FFFF57", "Background": "#7A0000", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#FFFFFF", "Background": "#C01818" }
+        },
+        "ButtonSecondary": {
+          "Normal": { "Foreground": "#000000", "Background": "#A8A8A8" },
+          "Focus": { "Foreground": "#000000", "Background": "#E0E0E0", "Style": "Bold" },
+          "HotNormal": { "Foreground": "#000000", "Background": "#A8A8A8", "Style": "Underline" },
+          "HotFocus": { "Foreground": "#000000", "Background": "#E0E0E0", "Style": "Bold, Underline" },
+          "Highlight": { "Foreground": "#000000", "Background": "#C0C0C0" }
+        },
         "Base": {
           "Normal": { "Foreground": "#A8A8A8", "Background": "#003078" },
           "Focus": { "Foreground": "#FFFFFF", "Background": "#308800" },
