@@ -6,242 +6,221 @@ towards it, it doesn't ship, however good it is on its own.
 
 ## The tenet
 
-**a-team scales the impact of the stakeholder's time and attention.** Every feature either takes
-work off the stakeholder or makes the work only they can do (setting direction, approving,
-judging the result) faster. If we stop doing that, a-team stops being worth using.
+**Attention is the scarce resource, and a-team spends the stakeholder's only on what shapes the
+product.** The stakeholder decides where a product is going: its vision, which pitches are worth
+chasing, and whether what was built does what they had in mind. Everything else — the code, CI,
+releases, deployment, documentation, and the small design decisions in between — is the team's.
+Every feature either takes work off the stakeholder or makes what only they can do faster.
 
-**When more needs the stakeholder than they can absorb, fix their end, not the team's.** The
-answer is always to make the decisions fewer, faster or unnecessary: show what's waiting, order it
-so the thing that matters is first, group what can be judged together, and hand back the ones that
-never needed a person. Throttling the team so its output fits the stakeholder's day is the failure
-mode that looks like the fix — it spends the value a-team exists to create in order to make the
-queue look calm. The stakeholder can always pull capacity back themselves: pause a team, end an
-experiment, cap what it spends. That is them setting direction, and it stays theirs. a-team never
-makes that choice for them.
+**When more needs the stakeholder than they can absorb, fix their end, not the team's.** Make the
+decisions fewer, faster or unnecessary. Never throttle the team so its output fits the
+stakeholder's day. The stakeholder can always pull capacity back themselves: pause a team, end an
+experiment. That is them setting direction, and a-team never makes that choice for them.
 
 ## Press release
 
 ### a-team gives anyone with an idea their own AI product team
 
-**Describe the idea. A team of AI agents shapes it, builds it and ships it, while you focus on
-what to build next.**
+**Describe the idea. A team of AI agents shapes it, builds it and ships it, while you decide
+what's worth building.**
 
-**20 September 2027.** a-team is now available to anyone with an idea and no team to build it.
-Sign in with a GitHub account and a Claude account, describe what you want to exist, and a-team
-puts together a product team of AI agents to make it real. You stay in charge of the direction.
-The team does the rest, including while you're away.
+**20 September 2027.** a-team is now available to every developer with more ideas than hours.
+Install it, point it at a GitHub repo, and a-team puts a product team of AI agents to work on it:
+a Lead that researches and pitches, developers that build, test and ship. You set the direction
+and judge the results. The team does everything in between, including while you're away.
 
-Most ideas never get built. Hiring developers is expensive, and building it yourself is slow
-even for people who can code. Turning a rough idea into precise specifications, then guiding
-each change through development and release, uses up so much attention that most people can
-pursue one idea at a time, if any. Ideas that deserved a quick test wait for years, and ideas
-that should have been dropped take months to prove it.
+Developers already get a lot out of Claude. But driving it by hand, in Claude Desktop or a
+terminal, means herding every change yourself: deciding each detail, nudging each PR through CI,
+fixing each release. Your attention goes on the minutiae, so you can push one idea at a time, and
+the ideas that deserved a bold step get a series of small ones.
 
-a-team starts by helping you get clear on the idea: who it's for, what problem it solves, and
-what a great result looks like. From there a product lead researches opportunities, asks you
-questions, and pitches solutions with mockups for you to approve. Approved pitches are broken
-into small increments, each one useful on its own, and developers build them. You never see
-code, pull requests or servers. You get a link to try, and you either accept the change or say
-what's wrong. Work starts from events, not from you: your feedback, an approved pitch, a
-finished task. So the team keeps moving when you step away.
+a-team turns that around. The Lead doesn't just polish what's there: it studies the product and
+its users and pitches what you hadn't thought of, or had thought was too ambitious for now, with
+a mockup that already looks like the rest of the product. Approve it, and the team breaks it into
+work, builds it, checks it works the way a user would, and hands you the result to try. You don't
+review code. You try the new experience and accept it, or say what's wrong — and most of the
+time there's nothing to say, because the design was right first time.
 
-Whether you run one team or dozens, the a-team dashboard shows every one of them: which agents
-are busy, which are idle, and exactly what needs your decision. You can act on any of it right
-there. Start a small team to test a new idea, add agents as an idea gains momentum, or bring in
-a strategy lead to rethink the vision with you as a project grows. Pull capacity back from lower
-priorities, or end an experiment that isn't working.
+The dashboard shows every team you run: which agents are busy, and exactly what needs your
+decision, in the order you'd want to make it. You act on all of it right there.
 
-"I want it to be easy to turn an idea into something real and find out whether it works," said
-James Crosswell, creator of a-team. "When an idea is cheap to build, it's cheap to walk away
-from, so you can afford to try many more of them."
+"The best day with a-team is when a Lead pitches something I'd never have asked for, I approve
+it, and the team nails it," said James Crosswell, creator of a-team. "I get a step change in the
+product without giving fifteen bits of feedback along the way. A really great day is when that
+happens five or ten times, across different products, from separate teams."
 
-Getting started takes a few minutes. Sign in with GitHub, connect your Claude account, and
-describe your first idea.
-
-"I'd had an idea for years for a tool my team could use to manage our work, but we never had
-the budget for developers," said a property manager who started an a-team last spring. "a-team
-helped me get crisp about what I actually wanted, then got straight to work. I felt like the CTO
-of a rocket-ship start-up. Within a day I had something that would have taken a real team
-months. Within a week it was everything I'd imagined. After a month it was doing things I'd
-never dreamed of."
+Getting started takes a few minutes: `brew install mentaldesk/tap/a-team`, connect a repo and
+your Claude account, and write the vision for your first team in a short interview.
 
 ## Customer FAQ
 
 **Who is it for?**
-Anyone with ideas and no team to build them. The first user is a solo developer running several
-product ideas at once. The customer we're building towards may never have written code.
+Developers like the creator: comfortable with GitHub and Claude, with more product ideas than
+time, who today drive Claude by hand in Claude Desktop or a terminal. In time, people who have
+never written code, through a web interface; that's a later step, not this release.
 
-**How do I use it?**
-Through the a-team dashboard, and in time a web portal. The CLI installs a-team and is what the
-agents themselves run; you shouldn't need it.
-
-**Do I need to know how to code?**
-No. You judge the product by using it, not by reading its code.
-
-**Can I bring an existing project?**
-Yes. The first team was put to work on an existing product, TuiCode.
-
-**Where does the thing it builds live, and who owns it?**
-The code lives in your own GitHub repo, so everything the team builds is yours. How it ships
-depends on what it is, and working that out is part of the team's job: TuiCode ships as a
-Homebrew package, with Linux packages next; a web app would be deployed and hosted.
-
-**What stops the team doing something I didn't want?**
-Two gates that only you hold. Nothing gets built until you approve the pitch, and nothing gets
-released until you accept it. Ideas the team finds on its own aren't pitched until you give
-them a priority. Everything between the gates, the team does without you.
+**What do I actually do?**
+Set the vision, decide which pitches are worth chasing, and try what the team delivers. The gate
+on a finished task is user testing, not code review: does it do what you thought it would when
+you approved the pitch?
 
 **How much of my time does it take?**
-As much as you want to give it. An hour a day makes solid progress on an idea, because your
-attention is only spent where it's needed. Give it more and it does more.
+As much as you want to give it. The aim is that the time goes on decisions that change where a
+product is heading, and almost none on correcting details.
 
-**What is it bad at?**
-Anything that needs humans to build or test it. Physical products, research with real people,
-and sign-off from third parties all move at human speed, and a-team can't change that.
+**What kinds of product can it build?**
+Today, terminal (TUI) apps, which is what it was built on. Web apps are next: building them, and
+trying them locally without deploying anywhere first. Deploying to production and mobile apps
+come later.
+
+**Can I bring an existing project?**
+Yes. The first teams work on existing products: TuiCode and a-team itself.
+
+**Who owns what it builds?**
+You. The code lives in your own GitHub repo.
+
+**What stops the team doing something I didn't want?**
+Two gates that only you hold, enforced by a script rather than a promise: nothing gets built
+until you approve the pitch, and nothing is done until you've tried it and accepted it.
+
+**Can my colleagues and I share a team?**
+Not yet. Teams with several stakeholders are on the way, and will need a hosted service to
+coordinate everyone's agents.
 
 **What does it cost?**
-You bring your own Claude account. We haven't decided how a-team itself will be paid for.
+You bring your own Claude subscription; running a-team for one person is free. Teams with
+several stakeholders will likely need a paid, hosted coordination service.
 
 ## Internal FAQ
 
 **What's the most likely reason this fails?**
-We stop automating the stakeholder's work. Every release has to leave the stakeholder with less
-to do, or make what's left quicker. The gates stay, but each one should take seconds: a clear
-question, a link to try, one click to answer.
+We stop taking work off the stakeholder. Today a-team still leaves its stakeholder making lots of
+small decisions, mostly because the Lead and Dev can't reliably make good UX decisions on their
+own. Every small correction is attention spent on detail instead of direction.
+
+**What's the second most likely?**
+The teams stay feature factories. They're good at iterative improvement and rarely propose bold
+new sections of a product that solve big problems it doesn't solve yet. Tools like Paperclip
+already run for much longer without input and delegate more decisions. If a-team only ever makes
+products slightly better, it isn't worth running.
 
 **How will we know it's working?**
-Accepted changes per stakeholder hour. Accepted means it passed the release gate: a merged PR or
-an accepted pitch. Stakeholder hours are the time spent at gates and giving feedback, which
-a-team can log because every approval, comment and merge goes through it. Commits per day is a
-cheap sanity check alongside it, not the measure.
+The real measure is how quickly the products get better, and there's no easy way to count that.
+Accepted changes per stakeholder hour was the old proxy, but a change is ambiguous: one large
+task that matters is worth more than several the stakeholder only vaguely cares about. Until
+there's something better, the signal is the great day: a surprising pitch, approved, built right
+first time, with little or no feedback in between — and how many of those happen per week across
+teams. Stakeholder time per team (#426) is the cost side.
 
-**What's the most tempting wrong turn?**
-Throttling. The stakeholder's queue is the most visible problem in the product, and capping it —
-rate limits, portfolio caps, teams that slow down when the queue is long — is the easiest thing to
-build and the easiest to mistake for the tenet. It isn't: it makes a-team deliver less so that the
-dashboard feels calm. Measuring the queue is right, and we don't do it yet. Bounding it
-automatically is the failure mode. Only the stakeholder throttles a-team, by deciding that an idea
-matters less than another one.
+**Isn't "bigger and bolder" in tension with "less of my attention"?**
+Yes. A bigger pitch that misses wastes more than a small one, and longer runs without input mean
+mistakes surface later. Bolder pitches only pay off if the UX and self-verification work makes
+the team right first time more often.
 
-**What's the evidence so far?**
-One project for one day: the first version of a-team, run on TuiCode, delivered more in a day
-than six months of herding PRs through Claude by hand. That's promising, but the release
-promises tens of projects, so we still have to show it holds at that scale.
+**Can agents check their own work?**
+Not well enough yet, and it matters. For TUIs they struggle: there are many terminals, and no
+easy way yet to capture what the screen looks like during a test. If agents can't see what they
+built, the stakeholder becomes the tester of last resort for things a machine should have caught.
 
-**Can one person really run fifteen teams?**
-Only if the gates are cheap *and there are fewer of them*. Fifteen teams are fifteen streams of
-pitches and releases waiting on one person, so the dashboard has to put what needs the stakeholder
-in front of them, in order, and let them answer without leaving it. Cheapening each gate doesn't
-close the gap on its own: at two teams the stakeholder already makes tens of merge decisions a day.
-The rest comes from the number of items — judging a batch instead of an item, a question settled
-once instead of asked fifty times, and the team not manufacturing decisions it could have made
-itself. Both gates stay; what changes is how many things arrive at them and what each one costs.
-What can't close the gap is the teams producing less.
+**Is a-team too specialised?**
+It could become one. TUI apps are niche, and a-team grew up building them. Broader appeal needs
+web apps: building them, testing them locally without deploying via Vercel, then deploying to
+production infrastructure. Mobile is much later; certificates and store signing make it a
+nightmare today.
 
-**How does a non-developer grant what deployment needs?**
-Open. Shipping can need things only the customer can provide: a cloud account, a domain, a
-payment method, an app-store listing. The team needs a way to ask for them, and the customer a
-safe way to give them, without either one handling credentials in the open.
+**The headline says "anyone with an idea", but the customer is developers. Which is it?**
+Both, on different horizons. The headline is where it goes; the release in September 2027 is for
+developers. The non-coder needs a web interface and deployment handled for them, which are Later.
+A pitch that serves the non-coder at the developer's expense is early.
 
 **Is a-team a business or an open-source tool?**
-Undecided on purpose. First deliver value, then work out how to charge for it. Meanwhile, avoid
-choices that close the door on a hosted version: don't let "it runs on your machine" spread
-further than it has to.
+One idea: the single-user experience stays free, and a hosted coordinator and project service is
+paid. It coordinates agents for teams with several stakeholders, and in time replaces GitHub
+Projects for workflow management. Avoid choices that close that door: don't let "it all runs on
+one machine" spread further than it has to.
 
-**How far is today from the press release?**
-Today a-team is a Lead and a Dev on one repo each, run by a dispatcher on the stakeholder's Mac,
-reviewed through GitHub. Still to build:
+**Isn't the platforms building this in a threat?**
+GitHub Agent HQ, Claude Code agent teams and Paperclip are all heading towards orchestration. We
+build on them rather than compete head-on; what a-team owns is the product loop — a Lead that
+pitches, gates the stakeholder holds, and spending their attention only on direction.
 
-- Acting on every gate from the dashboard, without going to GitHub
-- Onboarding that captures a new idea Working Backwards, like this document
-- A non-developer experience: a link to try instead of a PR, and a web portal alongside the CLI
-- Portfolio controls: start, scale, pause and cancel teams; add agents and roles
-- A strategy lead for periodic vision reviews
-- Deployment chosen and carried out by the team
-- Logging stakeholder time and accepted changes
+**Does cost limit it?**
+Not today. Current use comes nowhere near the limits of a Claude subscription.
 
 ## Where features land
 
-The tenet says what every feature has to do. This says where it goes.
-
 **Everything the stakeholder does lives in one place, reached from a command palette.** Today
-that place is the dashboard. Anything that needs the stakeholder — answering a gate, starting a
-team, pausing one, changing a setting, seeing what a team is waiting on — is a command in it.
-Nothing that needs them is somewhere else.
+that place is the dashboard. Answering a gate, starting a team, pausing one, changing a setting,
+seeing what a team is waiting on: each is a command in it.
 
 **The CLI has three jobs, and stakeholder work isn't one of them:** getting a-team onto a
-machine (`install`), the agents' own API (`board`), and debugging (`run`, `task-prompt`). It
-isn't going away, and a command may well have both a dashboard and a CLI form; what it can't
-have is only the CLI one. That holds for each slice as well as the finished feature: a CLI form
-ships in the same PR as the dashboard command that runs it, never ahead of it.
+machine (`install`), the agents' own API (`board`), and debugging (`run`, `task-prompt`). A
+command may have both a dashboard and a CLI form, but never only the CLI one, and the CLI form
+never ships ahead of the dashboard command.
 
 **A capability is a command before it's a key.** Every action is registered with an id and a
-label, so it shows up in the palette, can be rebound, and can be driven from somewhere else
-later. That is what makes the web portal a second front-end rather than a second product, so
-building it this way costs nothing now and saves the portal.
-
-Two things this deliberately doesn't say. It doesn't say every interaction has to be a dialog:
-a conversation is better as a session in the terminal than as a wizard, and the rule is
-satisfied when the palette is what starts it. And it doesn't make the dashboard the only
-front-end for ever — the portal is coming — only the one home there is at a time.
+label, so it shows up in the palette, can be rebound, and can later be driven from a web
+front-end without becoming a second product.
 
 ## Who we learn from
 
-a-team isn't the only way to put agents to work. Study these for what to borrow and what to
-avoid, and look for newer ones.
+None of these has been studied in depth yet; that's the Lead's homework (#76). Look for what to
+borrow and what to avoid, and for newer ones.
 
-- **[Vibe Kanban](https://vibekanban.com/)**: a kanban board over coding agents, each task in its
-  own worktree. The closest to our board-driven loop, seen from the developer's seat.
-- **[Nimbalyst](https://nimbalyst.com/)**: a kanban card per agent session, visual mockups, and
-  approving work from a phone.
-- **[OpenAI Symphony](https://github.com/openai/symphony)**: an issue tracker as the control
-  plane for agents. Our Dev loop, without a Lead.
-- **[Paperclip](https://github.com/paperclipai/paperclip)**: agents in an org chart with
-  budgets, and a human board over them. Our portfolio controls.
+- **Claude Desktop, Claude Code by hand**: what the customer uses today. a-team has to be clearly
+  less work than driving Claude directly.
+- **[Paperclip](https://github.com/paperclipai/paperclip)**: agents in an org chart with budgets,
+  running for long stretches with decisions delegated. The ambition and autonomy our teams lack.
+- **[MentalDesk TUI style guide](https://github.com/mentaldesk/tui-style-guide)**: our own source
+  of consistent UX. Improve it whenever a team's design needed correcting.
+- **[Vibe Kanban](https://vibekanban.com/), [Nimbalyst](https://nimbalyst.com/)**: kanban boards
+  over coding agents; the closest to our board-driven loop.
+- **[OpenAI Symphony](https://github.com/openai/symphony)**: an issue tracker as the control plane
+  for agents. Our Dev loop, without a Lead.
 - **[Orca](https://github.com/stablyai/orca), [Conductor](https://www.conductor.build/),
-  [Superset](https://superset.sh/)**: one developer supervising many agents at once. The
-  attention cost we remove.
+  [Superset](https://superset.sh/)**: one developer supervising many agents. The attention cost
+  we remove.
 - **[Atoms](https://atoms.dev/), [Replit Agent](https://replit.com/),
-  [Lovable](https://lovable.dev/)**: idea to app for people who don't code. The customer in our
-  press release.
+  [Lovable](https://lovable.dev/)**: idea to app for people who don't code. Our Later customer.
 - **[GitHub Agent HQ](https://github.blog/news-insights/company-news/welcome-home-agents/),
-  Claude Code agent teams**: the platforms building orchestration in. Not something to compete
-  with head-on.
+  Claude Code agent teams**: platforms building orchestration in. Build on them, don't compete.
 
 ## Next themes
 
-Roughly in order. Each is a direction, not a commitment; pitches turn them into work.
+In order. Each is a direction, not a commitment; pitches turn them into work.
 
-1. **Run the teams from the dashboard.** It's where the stakeholder already spends their day.
-   Fit more than one team (#12), browse earlier sessions (#2), logs you can scan at a glance
-   (#9); then a command palette and a registry to hang commands off (#86, #49), which is what
-   every action after it is reached by; and then act on every gate from it: approve a pitch,
-   give feedback, accept work.
-2. **Fewer decisions, not slower teams.** The stakeholder's queue is the bottleneck the whole
-   product is judged on, and nothing measures it: start with the total waiting on you, across
-   every team, in the order you'd want to answer it. Then bring it down from the demand side —
-   judge related work together rather than item by item, settle a question once and have the team
-   apply it, stop the team asking what it could have decided itself. Never by making the teams
-   produce less.
-3. **Trust the loop.** Feedback is never lost and the team never spins, so the stakeholder
-   never has to repeat themselves or chase a stuck item: comments mid-run or older than a day
-   (#3, #5), stuck triggers (#4), readyLow counting blocked tasks (#23), shelving a pitch on
-   request (#24, #26).
-4. **Guardrails that don't depend on the model.** A spending cap and API headroom (#13), and
-   the team's own GitHub identity so GitHub enforces the gates (#6).
-5. **Beyond the first user.** Starting a team without knowing how a-team works: setup that
-   checks itself, a dispatcher beyond macOS launchd (#6), shared release tooling (#25), and
-   first steps towards the non-developer experience.
+### Now: super slick for developers like the creator
+
+1. **Consistently good UX.** Designs that are right first time and consistent with the rest of the
+   product, using and improving the tui-style-guide, so the stakeholder stops correcting details.
+2. **Agents verify their own work.** See what they built the way a user would, including
+   capturing what a TUI looks like across terminals, so the stakeholder isn't the first to find
+   what's broken.
+3. **Think bigger.** Bold pitches for whole new parts of a product that solve problems it doesn't
+   solve yet, and longer stretches of work without needing the stakeholder.
+4. **Fewer small decisions.** The task gate is user testing, not code review; everything that
+   isn't direction or judging the result moves off the stakeholder.
+
+### Next
+
+5. **Beyond TUIs.** Build web apps, and try them locally without deploying via Vercel first.
+6. **Multiple stakeholders.** Teams shared by several people, coordinated by a hosted coordinator
+   and project service: free for one user, paid for teams, eventually replacing GitHub Projects.
+
+### Later
+
+7. **Deploy to production.** Web apps shipped to real infrastructure by the team.
+8. **Non-coders.** A web interface, for people who have never written code.
+9. **Mobile apps.**
 
 ## How to judge a proposal
 
-- Does it save the stakeholder attention, or spend it?
-- Does it raise how much the stakeholder can get through, or lower what the team delivers to fit
-  them?
+- Does it spend the stakeholder's attention on direction, or on detail?
+- Will the stakeholder accept the result without a round of corrections?
+- Is it a step change for the product, or one more small iteration?
 - Does it keep both gates in the stakeholder's hands, enforced by a script rather than a
   sentence?
-- Does it move a-team towards the press release, or only polish today's version?
-- Does it land where the stakeholder already is, or does it add somewhere else to go?
-- Does it keep an idle team free and a busy one bounded in what it spends, not in what it
-  delivers?
-- Is it the smallest version that's actually useful?
+- Does it raise what the stakeholder can get through, or lower what the team delivers to fit?
+- Is it Now, or is it reaching for Next or Later early?
+- Does it land where the stakeholder already is, rather than adding somewhere else to go?
+- Does it deliver real value today?
