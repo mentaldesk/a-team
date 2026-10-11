@@ -34,6 +34,7 @@ public sealed class WorkView : View
     private IReadOnlyList<WaitingItem> _items = [];
     private WorkLane? _picked;
     private WorkLane? _current;
+    private IReadOnlySet<(string Team, int Number)> _new = new HashSet<(string, int)>();
 
     public WorkView(IReadOnlyList<string> teams)
     {
@@ -112,6 +113,18 @@ public sealed class WorkView : View
         if (current is not null && _lanes.Contains(current))
             Pick(current);
     }
+
+    /// <summary>Marks the cards that have become your move since the app started, staying on the selected card.</summary>
+    internal void ShowNew(IEnumerable<NewItem> items)
+    {
+        var fresh = items.Select(item => (item.Team, item.Number)).ToHashSet();
+        if (fresh.SetEquals(_new))
+            return;
+        _new = fresh;
+        Lay(follow: false);
+    }
+
+    internal bool IsNew(WaitingItem item) => _new.Contains((item.Team, item.Number));
 
     /// <summary>Hides everything that isn't the reviewer's move, or brings it all back, staying on the
     /// selected card when the filter still shows it.</summary>
@@ -255,7 +268,7 @@ public sealed class WorkView : View
     {
         var shown = OnlyMine ? _items.Where(item => item.Mine).ToList() : _items;
         foreach (var lane in _lanes)
-            lane.Show(shown, follow);
+            lane.Show(shown, follow, IsNew);
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -445,7 +458,7 @@ public sealed class WorkLane : View
 
     /// <summary>Lays out the team's cards, keeping the selection on the card it was on, found again by number in
     /// whichever column it's now in when <paramref name="follow"/>, and otherwise on the row it was on.</summary>
-    internal void Show(IReadOnlyList<WaitingItem> items, bool follow)
+    internal void Show(IReadOnlyList<WaitingItem> items, bool follow, Func<WaitingItem, bool>? isNew = null)
     {
         var column = LastColumn;
         var row = column?.Selected;
@@ -453,7 +466,7 @@ public sealed class WorkLane : View
         var team = items.Where(item => item.Team == Team).ToList();
         foreach (var each in _columns)
         {
-            each.Show([.. team.Where(each.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)]);
+            each.Show([.. team.Where(each.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)], isNew);
             each.Visible = each.Lines > 0;
         }
         Retitle();
@@ -625,12 +638,12 @@ public sealed class WorkColumn : FrameView
     /// <summary>Whether the column draws its selected row's bar: only the one the keys act on does.</summary>
     internal bool ShowsSelection => _cards.ShowsSelection;
 
-    internal void Show(IReadOnlyList<WaitingItem> items, IReadOnlyList<WaitingItem>? setAside = null)
+    internal void Show(IReadOnlyList<WaitingItem> items, IReadOnlyList<WaitingItem>? setAside = null, Func<WaitingItem, bool>? isNew = null)
     {
         _items = items;
         _setAside = setAside ?? [];
         _summary.Visible = _setAside.Count > 0;
-        var roots = Card.Roots(items, Kind);
+        var roots = Card.Roots(items, Kind, isNew);
         _nodes = [.. Card.Nodes(roots)];
         Title = Heading(Kind, Gate, items.Count, _icons);
         _cards.ClearObjects();

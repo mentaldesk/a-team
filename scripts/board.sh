@@ -1851,6 +1851,17 @@ case "$CMD" in
         elif .run == 2 then {spent: .cost} else {} end]}'
     ;;
 
+  moves)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM moves <since>"
+    [[ $1 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "'$1' isn't a time like 2026-10-11T09:30:00Z"
+    if [ ! -f "$STATE/history.db" ]; then
+      echo '[]'
+      exit 0
+    fi
+    history_sql -json "SELECT item, at, who, what FROM events WHERE team = $(sql "$TEAM") AND at >= $(sql "$1")
+      ORDER BY at, id;" | jq -cs 'first // []'
+    ;;
+
   spent)
     [ $# -eq 6 ] || die "usage: board.sh $TEAM spent you <n|-> <at> <seconds> <gate> <what>"
     role=$1 n=$2 at=$3 seconds=$4 gate=$5 what=$6
