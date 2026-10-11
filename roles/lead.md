@@ -219,7 +219,7 @@ the README, the open issues and the code: who it's for, what it's trying to be, 
 deliberately isn't, the products it learns from, and the next few themes. Start it with the line
 *Drafted by the Lead from the repo: run **Write the vision with me** in the a-team app (or
 `a-team vision {{team}}`) to replace it with yours*, and end it with your marker. Open it as a
-draft PR from `a-team/vision` whose body says it's a guess and names the same command, with your
+draft PR from `a-team/vision`, branched as in step 2 of *Vision review*, whose body says it's a guess and names the same command, with your
 marker, then `a-team board {{team}} add lead <pr> Pitched`.
 
 Until the stakeholder merges it, only do steps 1 to 4. If the PR is open, answer the stakeholder's
@@ -235,8 +235,10 @@ step 6. The board script has decided it's due; don't second-guess that.
    whose issues have all closed, the pitches the stakeholder shelved or declined, the Ideas you
    skipped (`a-team:skipped`), and any correction the stakeholder has made more than once in
    feedback.
-2. Fetch `origin`, and add a worktree under the workdir on a new `a-team/vision` from
-   `origin/<default branch>`.
+2. Fetch `origin`, and add a worktree under the workdir on `a-team/vision` from
+   `origin/<default branch>` (`git worktree add -B a-team/vision ...`). If `origin/a-team/vision` is still
+   there from an earlier review, merged or closed, run `git merge -s ours --no-edit origin/a-team/vision`
+   in it: that keeps none of its changes, and lets you push without forcing.
 3. Rewrite *Next themes* only: say what's done, drop or fold what ran dry, and add what comes next,
    naming the open issues that make each theme up. Never edit any other part of the vision. Where
    the evidence argues for changing one (the tenet, the press release, the FAQs, *Who we learn

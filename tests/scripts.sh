@@ -3360,6 +3360,29 @@ for rule in "Bash(a-team board * edit *)" "Bash(a-team board * vision-review *)"
   jq -e --arg r "$rule" '.permissions.deny | index($r)' "$ROOT/settings/agents.json" >/dev/null || fail "no deny rule $rule"
 done
 
+case_ "after a review closed unmerged, the Lead's branching pushes a new one without forcing, and keeps none of the old"
+ours="git merge -s ours --no-edit origin/a-team/vision"
+grep -qF "$ours" "$ROOT/roles/lead.md" || fail "lead.md no longer says '$ours'"
+vdir=$(mktemp -d "$WORK/vision.XXXXXX")
+vgit() { git -C "$vdir/$1" -c user.email=test@example.com -c user.name=Test "${@:2}"; }
+git -c init.defaultBranch=main init -q --bare "$vdir/origin"
+git -c init.defaultBranch=main clone -q "file://$vdir/origin" "$vdir/old" 2>/dev/null
+echo "# Vision" >"$vdir/old/vision.md"
+vgit old add -A && vgit old commit -qm first && vgit old push -q origin HEAD:main
+vgit old switch -qc a-team/vision && echo "closed unmerged" >>"$vdir/old/vision.md"
+vgit old commit -qam "the closed review" && vgit old push -q origin a-team/vision
+vgit old switch -q main && echo more >"$vdir/old/other" && vgit old add -A && vgit old commit -qm later && vgit old push -q origin main
+git clone -q "file://$vdir/origin" "$vdir/lead" 2>/dev/null
+vgit lead fetch -q origin
+vgit lead worktree add -q -B a-team/vision "$vdir/review" origin/main
+# shellcheck disable=SC2086
+vgit review ${ours#git } -q
+echo "the new review" >>"$vdir/review/vision.md"
+vgit review commit -qam "the new review"
+vgit review push -q origin a-team/vision 2>"$ERR" || fail "push: '$(cat "$ERR")'"
+same "vision" $'# Vision\nthe new review' "$(git -C "$vdir/origin" show a-team/vision:vision.md)"
+same "files changed" vision.md "$(git -C "$vdir/origin" diff --name-only main...a-team/vision)"
+
 # A document pitch, the Lead's, in <status>.
 document_pitch() {
   gh_items <<ITEMS
