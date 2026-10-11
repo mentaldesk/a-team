@@ -6,7 +6,7 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The last row of a window or a dialog: the keys you can press, each one clickable, or what's going on,
+/// <summary>The last row of a window or a dialog: the keys you can press, each one clickable, then what's going on,
 /// and at its right end what the area is showing, then, in a window that has one, what has just become your move. Terminal.Gui's own StatusBar lays out Shortcuts with a border between
 /// each, so the hints are laid out here instead.</summary>
 public sealed class StatusBar : View
@@ -26,6 +26,7 @@ public sealed class StatusBar : View
 
     private readonly View _hints;
     private readonly MessageBar _message = new() { Y = 0 };
+    private readonly Label _divider = new() { Text = Separator, Y = 0, CanFocus = false };
     private readonly Label _state = new() { Y = 0, CanFocus = false };
     private readonly AlertButton _alert = new();
     private readonly Queue<string> _frames = [];
@@ -42,11 +43,14 @@ public sealed class StatusBar : View
         {
             X = 0,
             Y = 0,
-            Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Room()), this),
+            Width = Dim.Func(_ => Math.Min(Says.GetColumns(), Math.Max(0, Viewport.Width - Room())), this),
             Height = 1,
             CanFocus = false,
         };
-        _message.Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Room()), this);
+        _divider.X = Pos.Func(_ => Says.GetColumns(), this);
+        _divider.Width = Dim.Func(_ => Says.Length > 0 && _message.Lines > 0 ? Separator.Length : 0, this);
+        _message.X = Pos.Func(_ => Lead(), this);
+        _message.Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Room() - Lead()), this);
         _state.X = Pos.Func(_ => Math.Max(0, Viewport.Width - _state.Text.GetColumns() - AlertRoom()), this);
         _alert.X = Pos.AnchorEnd();
         _alert.Accepting += (_, args) =>
@@ -55,7 +59,7 @@ public sealed class StatusBar : View
             if (_alerting.Length > 0)
                 AlertChosen?.Invoke();
         };
-        Add(_hints, _message, _state, _alert);
+        Add(_hints, _divider, _message, _state, _alert);
     }
 
     /// <summary>Whether the row shows an <see cref="Alert"/> at its right end.</summary>
@@ -123,8 +127,8 @@ public sealed class StatusBar : View
         SetNeedsDraw();
     }
 
-    /// <summary>The left end, in place of hints: what's selected, what's running or what just happened. Only an
-    /// error takes a colour of its own.</summary>
+    /// <summary>After the hints: what's selected, what's running or what just happened. Only an error takes a colour
+    /// of its own.</summary>
     public void Say(string message, Schemes scheme)
     {
         _message.Show(message, scheme);
@@ -132,10 +136,11 @@ public sealed class StatusBar : View
             _message.SchemeName = Scheme;
     }
 
-    /// <summary>The right end: when the area was last read, then what it's filtered to.</summary>
-    public void ShowState(string stamp, string filter)
+    /// <summary>The right end: each of <paramref name="parts"/> that says something, such as when the area was last
+    /// read and what it's filtered to.</summary>
+    public void ShowState(params string[] parts)
     {
-        var state = string.Join(Separator, new[] { stamp, filter }.Where(part => part.Length > 0));
+        var state = string.Join(Separator, parts.Where(part => part.Length > 0));
         if (_state.Text == state)
             return;
         _state.Text = state;
@@ -219,6 +224,8 @@ public sealed class StatusBar : View
         SetNeedsLayout();
         SetNeedsDraw();
     }
+
+    private int Lead() => Says.Length == 0 ? 0 : Says.GetColumns() + Separator.Length;
 
     /// <summary>What the right end leaves the left, so a long hint bar or message is cut off rather than drawn over it.</summary>
     private int Room() => (_state.Text.Length == 0 ? 0 : _state.Text.GetColumns() + Gap) + AlertRoom();

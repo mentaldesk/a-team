@@ -787,7 +787,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
                 "Show details", "Fold the lane", "Open on GitHub", "Go to the agent's session", "Read every board again",
                 "Dashboard", "Work", "Overseer", "Go to what's new",
-                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Trends", "Back to the agent grid", "Quit",
+                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "About", "Trends", "Back to the agent grid", "Quit",
                 "Go to team0", "Go to team1", "Go to team 3", "Go to team 4", "Go to team 5", "Go to team 6", "Go to team 7",
                 "Go to team 8", "Go to team 9",
             ],
@@ -881,17 +881,30 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_names_no_keys_and_no_version_on_the_grid_expanded_or_in_Work()
+    public void The_status_bar_s_one_hint_is_F1_keys_on_the_grid_expanded_in_Work_and_in_Overseer()
     {
         using var window = Open(agents: Agents(4));
+        AssertOnlyKeysHint(window);
+
         window.NewKeyDownEvent(Key.Tab);
-        AssertNoHints(window);
+        AssertOnlyKeysHint(window);
 
         window.NewKeyDownEvent(Key.Enter);
-        AssertNoHints(window);
+        AssertOnlyKeysHint(window);
 
         window.Commands.Execute("view.work");
-        AssertNoHints(window);
+        AssertOnlyKeysHint(window);
+
+        window.Commands.Execute("view.overseer");
+        AssertOnlyKeysHint(window);
+    }
+
+    [Fact]
+    public void The_status_bar_s_hint_follows_the_keys_command_s_key()
+    {
+        using var window = Open(agents: Agents(4), keys: "{ \"help\": \"F2\" }");
+
+        Assert.Equal("F2 keys", window.Status.Says);
     }
 
     [Fact]
@@ -920,7 +933,8 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal("Pausing this role…", window.Message.Says);
         Assert.Same(window.Status, window.Message.SuperView);
-        Assert.Equal(new Rectangle(0, 0, window.Status.Viewport.Width, 1), window.Message.Frame);
+        var lead = "F1 keys · ".Length;
+        Assert.Equal(new Rectangle(lead, 0, window.Status.Viewport.Width - lead - window.Status.State.Text.Length - 1, 1), window.Message.Frame);
         Assert.Equal(StatusBar.Scheme, window.Message.SchemeName);
         Assert.Equal(status, window.Status.Frame);
         Assert.Equal(dispatcher, window.Dispatcher.Frame);
@@ -1816,10 +1830,10 @@ public class DashboardWindowTests : IDisposable
     private static Rectangle AgentArea(DashboardWindow window) =>
         new(0, 0, window.Viewport.Width, window.Dispatcher.Frame.Y - window.Agents.Frame.Y);
 
-    private static void AssertNoHints(DashboardWindow window)
+    private static void AssertOnlyKeysHint(DashboardWindow window)
     {
-        Assert.Empty(window.Status.Hints);
-        Assert.Equal("", window.Status.Says);
+        Assert.Equal(["F1 keys"], window.Status.Hints.Select(hint => hint.Text));
+        Assert.Equal("F1 keys", window.Status.Says);
         Assert.DoesNotContain("a-team", window.Message.Says);
     }
 

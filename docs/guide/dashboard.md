@@ -130,12 +130,20 @@ why, in red.
 
 ## Commands and keys
 
-`Ctrl+E` opens Commands: everything the app can do, with the key for each. Type to narrow the list,
-`Enter` to run one. Every key on this page is one of those commands, so anything you can press you
-can also run by name, and you can change its key under
-[Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
+`F1` shows the keys. *Here* lists the ones for where you are: Work, Overseer, the agent grid or an
+expanded log. *Everywhere* lists the rest, under the menu that holds them. *Help → Show keys* and
+**Show keys** in Commands open it too, and `Esc` closes it. `F1 keys` is the only key the status
+bar names; the rest of it says what's selected or going on, when the board was last read, the
+filter, and the app's version.
 
-`F1` lists the few keys worth knowing first, and `q` quits the app.
+`Ctrl+E` opens Commands: everything the app can do where you are, with the key for each. Type to
+narrow the list. Letters that start words match first, so `gt` finds **Go to team…**, then names
+that hold the letters anywhere, best match first; `Enter` runs the one at the top. Every key on
+this page is one of those commands, so anything you can press you can also run by name, and you
+can change its key under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
+
+The menus list everything, wherever you are. An item that can't run here is dimmed, with its key
+beside it, and does nothing. `q` quits the app.
 
 ## Confirming
 

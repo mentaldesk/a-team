@@ -70,6 +70,45 @@ public class PickerTests
     }
 
     [Fact]
+    public void Typing_puts_word_starts_before_a_plain_contains()
+    {
+        using var picker = new Picker("Skills", [], "", "");
+        picker.ShowChoices(["dotnet-tests", "sentry-dotnet", "tuicode"], "");
+
+        picker.Filter.Text = "dt";
+
+        Assert.Equal(["dotnet-tests"], picker.Rows.Select(row => row.Row));
+
+        picker.Filter.Text = "net";
+
+        Assert.Equal(["dotnet-tests", "sentry-dotnet"], picker.Rows.Select(row => row.Row));
+
+        picker.Filter.Text = "sd";
+
+        Assert.Equal(["sentry-dotnet"], picker.Rows.Select(row => row.Row));
+    }
+
+    [Fact]
+    public void A_filter_nothing_matches_says_so_in_the_list()
+    {
+        using var picker = new Picker("Skills", [], "", "");
+        picker.ShowChoices(["tuicode"], "");
+        Assert.False(picker.NoMatches);
+
+        picker.Filter.Text = "zzz";
+
+        Assert.True(picker.NoMatches);
+    }
+
+    [Fact]
+    public void An_empty_list_waiting_on_its_names_doesn_t_say_nothing_matches()
+    {
+        using var picker = new Picker("Stakeholders", [], "", "Reading…");
+
+        Assert.False(picker.NoMatches);
+    }
+
+    [Fact]
     public void A_typed_name_that_matches_nothing_is_added_on_Enter()
     {
         using var picker = new Picker("Skills", ["a-team"], "", "");

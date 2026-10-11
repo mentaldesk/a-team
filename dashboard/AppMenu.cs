@@ -26,7 +26,7 @@ internal sealed class AppMenu
     ];
 
     private readonly CommandRegistry _commands;
-    private readonly List<(string Id, MenuItem Item)> _items = [];
+    private readonly List<(string Id, DimmedMenuItem Item)> _items = [];
     private readonly List<MenuBarItem> _menus = [];
     private readonly Dictionary<MenuBarItem, List<View>> _order = [];
     private readonly MenuBarItem _cards;
@@ -48,7 +48,7 @@ internal sealed class AppMenu
 
     internal MenuBar Bar { get; }
 
-    internal IReadOnlyList<(string Id, MenuItem Item)> Items => _items;
+    internal IReadOnlyList<(string Id, DimmedMenuItem Item)> Items => _items;
 
     /// <summary>The titles across the bar, each holding the items under it.</summary>
     internal IReadOnlyList<MenuBarItem> Menus => _menus;
@@ -119,18 +119,15 @@ internal sealed class AppMenu
             popover.Enabled = false;
     }
 
-    /// <summary>Greys out what wouldn't run now, like trying a card with no PR. Only in an open menu: enabling an
-    /// item in a shut one would have it answer its letter from anywhere.</summary>
+    /// <summary>Dims what wouldn't run now, like trying a card with no PR, in place.</summary>
     private void Grey(MenuBarItem menu)
     {
-        if (menu.PopoverMenu is not { Enabled: true })
-            return;
-        foreach (var (id, item) in _items.Where(entry => entry.Item.SuperView == menu.PopoverMenu.Root))
-            item.Enabled = _commands.IsEnabled(id);
+        foreach (var (id, item) in _items.Where(entry => _order[menu].Contains(entry.Item)))
+            item.Dimmed = !_commands.IsEnabled(id);
     }
 
-    /// <summary>Holds only the items the menu shows now, in layout order. One it doesn't is taken out rather than
-    /// hidden, since the menu still spaces out a hidden item.</summary>
+    /// <summary>Of two items that undo each other, like Expand and Back, holds only the one that applies. The other is
+    /// taken out rather than hidden, since the menu still spaces out a hidden item.</summary>
     private void Arrange(MenuBarItem menu)
     {
         if (menu.PopoverMenu?.Root is not { } root)
@@ -143,7 +140,7 @@ internal sealed class AppMenu
     }
 
     /// <summary>A card command goes last in the first group, above the line.</summary>
-    private void AddCard(MenuItem item)
+    private void AddCard(DimmedMenuItem item)
     {
         var views = _order[_cards];
         var line = views.FindIndex(view => view is Line);
@@ -153,9 +150,9 @@ internal sealed class AppMenu
 
     private string[] CardIds() => [.. _commands.Registered.Where(command => command.OnCard).Select(command => command.Id)];
 
-    private MenuItem Item(string id)
+    private DimmedMenuItem Item(string id)
     {
-        var item = new MenuItem
+        var item = new DimmedMenuItem
         {
             Title = _commands.Registered.FirstOrDefault(command => command.Id == id) is { } command
                 ? Hot(command.MenuLabel, command.Key)
@@ -170,9 +167,12 @@ internal sealed class AppMenu
     }
 
     /// <summary>The label with its command's own letter key marked as the hot one where the label has it, and its
-    /// first letter otherwise, past any mark in front of it. A shifted letter only matches its capital.</summary>
+    /// first letter otherwise, past any mark in front of it. A shifted letter only matches its capital. A label that
+    /// marks its own letter keeps it.</summary>
     private static string Hot(string label, Key key)
     {
+        if (label.Contains('_'))
+            return label;
         var at = key.IsKeyCodeAtoZ && !key.IsCtrl && !key.IsAlt
             ? key.IsShift
                 ? label.IndexOf((char)key.NoShift.KeyCode, StringComparison.Ordinal)

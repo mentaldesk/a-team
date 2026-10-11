@@ -72,8 +72,10 @@ The dashboard has three custom views, each for a reason the built-ins can't cove
 single line in one colour, and Overseer's chip grid, because no list or table draws each cell in a
 colour of its own.
 
-Help (F1) only gets someone started: the Commands palette key, how to open the menu, moving around,
-and quitting. Don't add rows to it. A new command belongs in the menu or the Commands palette.
+`F1`, the status bar and the menus follow the guide's [*Finding keys*](https://github.com/mentaldesk/tui-style-guide#finding-keys),
+[*The status bar*](https://github.com/mentaldesk/tui-style-guide#the-status-bar) and
+[*Only what works here*](https://github.com/mentaldesk/tui-style-guide#only-what-works-here): the status bar's one hint
+is `F1 keys`. A command that only works in one region registers that region's scope, so its key shows under *Here*.
 
 Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj`),
 outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's

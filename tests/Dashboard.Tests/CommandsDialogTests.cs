@@ -30,14 +30,47 @@ public class CommandsDialogTests
     }
 
     [Fact]
-    public void A_filter_nothing_matches_leaves_the_list_empty()
+    public void A_filter_nothing_matches_says_so_in_the_list_and_drops_Enter_from_the_hints()
     {
         using var dialog = Open(out _);
+        Assert.False(dialog.NoMatches);
+        Assert.True(dialog.OffersEnter);
 
         Type(dialog, "zzz");
 
         Assert.Empty(dialog.Matches);
         Assert.Null(dialog.List.Value);
+        Assert.True(dialog.NoMatches);
+        Assert.False(dialog.OffersEnter);
+    }
+
+    [Fact]
+    public void Word_starts_match_before_a_plain_contains_and_the_best_match_comes_first()
+    {
+        using var dialog = new CommandsDialog(new CommandRegistry()
+            .Register("start", "Start", () => { })
+            .Register("toggle", "Toggle all", () => { })
+            .Register("tail", "Tail", () => { })
+            .Register("other", "Other", () => { })
+            .Registered);
+
+        Type(dialog, "TA");
+
+        Assert.Equal(["tail", "toggle", "start"], dialog.Matches.Select(command => command.Id));
+        Assert.Equal(0, dialog.List.Value);
+    }
+
+    [Fact]
+    public void Go_to_team_narrows_the_same_way()
+    {
+        using var dialog = CommandsDialog.ForNames("Go to team", ["mentaldesk-site", "a-team", "tuicode"]);
+
+        Type(dialog, "ms");
+        Assert.Equal(["mentaldesk-site"], dialog.Matches.Select(command => command.Id));
+
+        Type(dialog, "zzz");
+        Assert.True(dialog.NoMatches);
+        Assert.False(dialog.OffersEnter);
     }
 
     [Fact]
