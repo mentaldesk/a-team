@@ -1652,7 +1652,7 @@ case "$CMD" in
     ref=$(gh api "repos/$REPO/pulls/$n" --jq .head.ref)
     put() {
       jq -n --arg message "Edit $path" --arg content "$(base64 <"$file" | tr -d '\n')" --arg sha "$sha" --arg branch "$ref" \
-        '{message: $message, content: $content, sha: $sha, branch: $branch}' |
+        '{message: $message, content: $content, sha: $sha, branch: $branch}' 2>/dev/null |
         { gh api -X PUT "repos/$REPO/contents/$path" --input - >/dev/null; } 2>&1
     }
     if ! refused=$(write "commit $file to $path on $ref" put); then
