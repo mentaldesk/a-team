@@ -136,3 +136,11 @@ can also run by name, and you can change its key under
 [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
 
 `F1` lists the few keys worth knowing first, and `q` quits the app.
+
+## Confirming
+
+Accepting work, stopping a run, removing a team and throwing away something you've written all ask
+first. `Ctrl+Enter` goes ahead, `Esc` cancels, and `Enter` does nothing, so a stray one can't.
+`Tab` or `←`/`→` move between the buttons and `Space` presses one; the `Esc` button starts focused. In a
+terminal that can't tell `Ctrl+Enter` from `Enter`, such as macOS Terminal, `Tab` to the action's
+button and press `Space`.
