@@ -366,12 +366,37 @@ catch_up() {
     | join("\n")') COMMIT;" >/dev/null || echo "board.sh: couldn't record what happened on GitHub" >&2
 }
 
-# cycle: of one item's events, oldest first, a task's span from first entering Ready to its last acceptance
-# and its seconds In review, or nothing for an item that never entered Ready while the record was kept.
+# waits($worktrees): a team's events, oldest first, as spans saying which Ready tasks await an answer, which
+# are free to start, and whether the Dev's slots, held as `claim` counts them, are full with one In review.
+# cycle($waits): of one item's events, oldest first, a task's span from first entering Ready to its last
+# acceptance and its seconds with you, or nothing for an item that never entered Ready while the record was kept.
 CYCLES='def move: if startswith("added as ") then {from: null, to: .[9:]}
       elif contains(" → ") then split(" → ") | {from: .[0], to: .[1]} else empty end;
   def task: IN("Ready", "In progress", "In review");
-  def cycle: (map(select(.who == "you" and (.what | startswith("accepted · ")))) | last.at) as $accepted
+  def waits($worktrees):
+    def ready(f): [.items | to_entries[] | select(.value.status == "Ready" and (.value | f)) | .key];
+    def span($from; $to): [.items[] | select(.dev and (.status | IN("In progress", "In review")) and .deps == [])] as $held
+      | {from: ($from | fromdateiso8601), to: ($to | fromdateiso8601), asked: ready(.asked),
+         free: ready((.asked | not) and .deps == []),
+         full: ($worktrees != null and ($held | length) >= $worktrees and any($held[]; .status == "In review"))};
+    reduce .[] as $e ({items: {}, last: null, spans: []};
+      (if .last != null and $e.at > .last then .spans += [span(.last; $e.at)] else . end)
+      | .last = $e.at
+      | ($e.item | tostring) as $n
+      | ([$e.what | move] | first) as $m
+      | .items[$n] //= {status: null, dev: false, deps: [], asked: false}
+      | if $m != null then .items[$n] |= (.status = $m.to
+            | .dev = ($m.to | IN("In progress", "In review")) and (.dev or ($e.who == "dev" and $m.to == "In progress"))
+            | .asked = (.asked and $m.to == "Ready"))
+        elif $e.what | test("^blocked by #[0-9]+$") then .items[$n].deps += [$e.what[12:] | tonumber]
+        elif $e.what | test("^no longer blocked by #[0-9]+$") then .items[$n].deps -= [$e.what[22:] | tonumber]
+        elif $e.what | test("^(accepted · |closed|declined)") then .items[$n] |= (.status = "Done" | .dev = false)
+          | .items |= map_values(.deps -= [$e.item])
+        elif $e.what == "handed back with a question" then .items[$n].asked = true
+        elif $e.what == "question answered" then .items[$n].asked = false
+        else . end)
+    | .spans;
+  def cycle($waits): (map(select(.who == "you" and (.what | startswith("accepted · ")))) | last.at) as $accepted
     | [.[] | select(.at <= $accepted) | (.what | move) + {at}] as $moves
     | ($moves | map(select((.from // "" | task) or (.to | task))) | first) as $first
     | select($first.to == "Ready" and ($first.from // "" | task | not))
@@ -380,9 +405,12 @@ CYCLES='def move: if startswith("added as ") then {from: null, to: .[9:]}
         elif $m.from == "In review" and .since != null
         then .review += ($m.at | fromdateiso8601) - (.since | fromdateiso8601) | .since = null
         else . end)) as $review
+    | ($first.at | fromdateiso8601) as $from | ($accepted | fromdateiso8601) as $to | (.[0].item | tostring) as $n
+    | ([$waits[] | select(.to > $from and .from < $to and ((.asked | index($n)) or (.full and (.free | index($n)))))
+        | ([.to, $to] | min) - ([.from, $from] | max)] | add // 0) as $waited
     | {ready: $first.at, accepted: $accepted,
-       review: ($review.review + if $review.since == null then 0
-                else ($accepted | fromdateiso8601) - ($review.since | fromdateiso8601) end)};'
+       withYou: ($review.review + $waited + if $review.since == null then 0
+                 else $to - ($review.since | fromdateiso8601) end)};'
 
 # sql_now <modifier>: now, moved by an SQLite date modifier, in the record's own format.
 sql_now() { printf "strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ', 'now', '%s')" "$1"; }
@@ -1018,6 +1046,9 @@ case "$CMD" in
     fi
     set_status "$(jq -r .id <<<"$it")" "$to"
     record "$role" "$n" "$from → $to"
+    if [ "$role:$from>$to" = "dev:In progress>Ready" ] && jq -e '.labels | index("blocked")' <<<"$it" >/dev/null; then
+      record "$role" "$n" "handed back with a question"
+    fi
     say "#$n: $from -> $to"
     ;;
 
@@ -1497,6 +1528,7 @@ case "$CMD" in
     [ -n "$turn" ] || die "#$n has no question from dev: a stakeholder is holding it, so leave it to them"
     [ "$turn" = dev ] || die "no stakeholder has replied to dev's question on #$n since it was handed back"
     write "remove blocked from #$n" gh issue edit "$n" -R "$REPO" --remove-label blocked >/dev/null
+    record "$role" "$n" "question answered"
     ack "$n"
     say "#$n: no longer blocked"
     ;;
@@ -1633,12 +1665,16 @@ case "$CMD" in
         (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
           WHERE team = $team AND item IN (SELECT item FROM events WHERE team = $team AND who = 'you'
             AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')) ORDER BY at, id)) AS cycles,
+        (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
+          WHERE team = $team AND at > $(sql_now '-45 days') ORDER BY at, id)) AS moves,
         (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost,
         (SELECT MIN(at) FROM spent WHERE team = $team) AS spentSince,
         (SELECT json_group_array(json_object('at', at, 'seconds', seconds, 'gate', gate)) FROM (SELECT at, seconds, gate
           FROM spent WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS spent;" |
-      jq "$CYCLES"'.[0] | .queue |= fromjson | .accepted |= fromjson | .spent |= fromjson
-        | .cycles |= (fromjson | group_by(.item) | map(cycle) | sort_by(.accepted))'
+      jq --argjson worktrees "$(jq '.wip.worktrees // null' "$CONFIG")" "$CYCLES"'.[0]
+        | .queue |= fromjson | .accepted |= fromjson | .spent |= fromjson
+        | (.moves | fromjson | waits($worktrees)) as $waits
+        | .cycles |= (fromjson | group_by(.item) | map(cycle($waits)) | sort_by(.accepted)) | del(.moves)'
     ;;
 
   history)

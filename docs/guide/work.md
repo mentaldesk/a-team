@@ -30,8 +30,8 @@ Triage, Pitches, Questions, Review and Other.
 `Left`/`Right` switch between them. Days before a team's record began are left blank,
 and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
-and for the tasks you accepted, their median **Cycle** and how much of it was **With you**, In
-review, then **Yours (7d)**, your time on it in the last 7 days, and **/h**, what you accepted per
+and for the tasks you accepted, their median **Cycle** and how much of it was **With you**: In
+review, waiting for a slot your reviews were holding, or waiting for your answer to a question. Then **Yours (7d)**, your time on it in the last 7 days, and **/h**, what you accepted per
 hour of it. Days and weeks before your time was first recorded are left blank, not zero. The **All**
 row at the bottom covers every team. A task that entered Ready before its team's
 record began isn't counted in either. `Esc` closes it.

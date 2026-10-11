@@ -71,8 +71,8 @@ public class TeamRecordTests
         Assert.Equal(new TeamTrendRow("All", 7, null, 3, 3.75m, null, null), TeamTrendRow.All(rows, []));
     }
 
-    private static Cycle Took(DateTimeOffset accepted, double hours, double inReview) =>
-        new(accepted.AddHours(-hours), accepted, TimeSpan.FromHours(inReview));
+    private static Cycle Took(DateTimeOffset accepted, double hours, double withYou) =>
+        new(accepted.AddHours(-hours), accepted, TimeSpan.FromHours(withYou));
 
     [Fact]
     public void Hours_to_accept_is_each_day_s_median_blank_on_a_day_with_nothing_accepted()
@@ -123,7 +123,7 @@ public class TeamRecordTests
         var record = Read("""
             {"since": "2026-10-01T00:00:00Z", "queue": [{"at": "2026-10-02T00:00:00Z", "waiting": 4}],
              "accepted": ["2026-10-03T00:00:00Z"],
-             "cycles": [{"ready": "2026-10-02T00:00:00Z", "accepted": "2026-10-03T00:00:00Z", "review": 5400}], "cost": 1.25}
+             "cycles": [{"ready": "2026-10-02T00:00:00Z", "accepted": "2026-10-03T00:00:00Z", "withYou": 5400}], "cost": 1.25}
             """)!;
 
         Assert.Equal(DateTimeOffset.Parse("2026-10-01T00:00:00Z"), record.Since);
