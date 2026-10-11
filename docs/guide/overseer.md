@@ -50,6 +50,7 @@ fit with every lane on screen, and at least three, and puts the rest behind a co
 | `Enter` | Opens or closes the details of the selected card. On a `+7`, shows the whole lane |
 | `Esc` | Folds the lane back |
 | `g` | Opens the card on GitHub |
+| `b` | Opens the card's team's Project board on GitHub |
 | `r` | Goes to the agent's session: the Dashboard, with the agent working on the card expanded |
 | `F5` | Reads every board again |
 

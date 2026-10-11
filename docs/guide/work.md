@@ -122,7 +122,8 @@ comment headed by who said it and when. On a card in Questions it shows just the
 opens it on GitHub, and `Esc` closes it.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
-accept, decline, comment, Priority, link and dependency, with when and who (`you`, `lead` or `dev`). What
+accept, decline, comment, Priority, recommendation, skip, review, link and dependency, with when
+and who (`you`, or the role: `lead`, `dev`, `customer` or `reviewer`). What
 you or anyone else does on GitHub directly (a merge, a close, a comment, a move on the Project board)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
@@ -174,9 +175,8 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   with its acceptance criteria printed first; quit it to come back. If you were reading the task,
   it opens again where you left it, ready for `a` or `c`, and says there if the try failed.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. It asks first:
-  `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't. In a terminal
-  that can't tell `Ctrl+Enter` from `Enter`, such as macOS Terminal, `Tab` to **Accept** and press
-  `Space`. Every confirm in A-Team works this way. For a task, its PR is squash-merged and its
+  `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't
+  ([Confirming](dashboard.md#confirming)). For a task, its PR is squash-merged and its
   branch deleted. The Customer lead's docs PR is merged the same way. If it isn't ready yet, `a` says why instead.
 
 ## Adding an idea
