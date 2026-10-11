@@ -68,6 +68,27 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void A_config_with_no_budget_reads_as_0_and_a_budget_set_is_written_under_dispatch()
+    {
+        var before = TeamSettings.Read(Bytes(Config));
+        Assert.Equal(0, before.Budget);
+
+        var written = (before with { Budget = 40 }).Write(Bytes(Config), before);
+
+        Assert.Equal(40, TeamSettings.Read(written).Budget);
+        Assert.Contains("\"budget\": 40", Text(written));
+        Assert.True(TeamSettings.Read(written).Working);
+    }
+
+    [Fact]
+    public void A_budget_that_isn_t_a_whole_number_reads_as_0_like_the_dispatcher_reads_it()
+    {
+        var config = Config.Replace("\"retryAfter\": 60", "\"retryAfter\": 60, \"budget\": 12.5");
+
+        Assert.Equal(0, TeamSettings.Read(Bytes(config)).Budget);
+    }
+
+    [Fact]
     public void Reading_a_config_into_the_form_and_saving_it_unchanged_writes_the_same_bytes()
     {
         var before = TeamSettings.Read(Bytes(Config));

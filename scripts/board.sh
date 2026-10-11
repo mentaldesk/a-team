@@ -1825,6 +1825,11 @@ case "$CMD" in
         | .cycles |= (fromjson | group_by(.item) | map(cycle($waits)) | sort_by(.accepted)) | del(.moves)'
     ;;
 
+  today)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM today"
+    budget_today "$TEAM" "$CONFIG" "$(date +%s)"
+    ;;
+
   history)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM history <n>"
     [[ $1 =~ ^[0-9]+$ ]] || die "#$1 isn't an item number"

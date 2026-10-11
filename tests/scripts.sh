@@ -4442,6 +4442,87 @@ lead - 0 - -" "$(runs_recorded | sed -n '1,3p')"
 for _ in $(seq 50); do kill -0 "$(cat "$A_TEAM_STATE/demo/lead/pid")" 2>/dev/null || break; sleep 0.1; done
 jq 'del(.dispatch.creativeEvery)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
+case_ "today's cost is the team's runs that ended since local midnight, and a running or costless run counts nothing"
+CONFIG_WAS=$CONFIG TEAM_WAS=$TEAM
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "dispatch": { "enabled": true },
+  "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+dev_dispatcher
+jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
+echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
+midnight=$(sqlite3 :memory: "SELECT strftime('%s', 'now', 'localtime', 'start of day', 'utc')")
+at() { sqlite3 :memory: "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', $((midnight + $1)), 'unixepoch')"; }
+history_db "INSERT INTO runs (team, role, pid, log, started, ended, cost) VALUES
+  ('demo', 'dev', 1, 'a', '$(at -7200)', '$(at -1)', 5),
+  ('demo', 'dev', 2, 'b', '$(at -60)', '$(at 0)', 2.996),
+  ('demo', 'lead', 3, 'c', '$(at 1)', '$(at 2)', 1.004),
+  ('demo', 'dev', 4, 'd', '$(at 3)', '$(at 4)', NULL),
+  ('demo', 'dev', 5, 'e', '$(at 5)', NULL, NULL),
+  ('other', 'dev', 6, 'f', '$(at 5)', '$(at 6)', 100);"
+today() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo today; }
+same "no budget" '{"cost":4,"budget":0,"reached":false}' "$(today)"
+
+case_ "with no budget, or under it, the dispatcher starts runs as before"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start: #13' "$A_TEAM_STATE/dispatch.log" || fail "no budget: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+jq '.dispatch.budget = 5' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+same "under" '{"cost":4,"budget":5,"reached":false}' "$(today)"
+: >"$A_TEAM_STATE/dispatch.log"
+rm -rf "$A_TEAM_STATE/demo/dev/dry-tried"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start: #13' "$A_TEAM_STATE/dispatch.log" || fail "under: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+
+case_ "at or over its budget, a team starts nothing, and the log says so once a day"
+for budget in 4 3; do
+  jq --argjson budget "$budget" '.dispatch.budget = $budget' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+  same "reached at $budget" true "$(today | jq .reached)"
+  rm -f "$A_TEAM_STATE/demo/dry-budget-said"
+  : >"$A_TEAM_STATE/dispatch.log"
+  rm -rf "$A_TEAM_STATE/demo/dev/dry-tried" "$A_TEAM_STATE/demo/lead/dry-fingerprint"
+  dispatch_dev --dry-run
+  dispatch_dev --dry-run
+  grep -q 'would start:' "$A_TEAM_STATE/dispatch.log" && fail "at $budget: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+  same "said once at $budget" "demo: daily budget \$$budget reached (\$4.00 today); would start no new runs until midnight" \
+    "$(cut -d' ' -f2- "$A_TEAM_STATE/dispatch.log")"
+done
+
+case_ "a budget reached yesterday says so again today"
+echo 2000-01-01 >"$A_TEAM_STATE/demo/dry-budget-said"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+same "said again" 1 "$(grep -c 'daily budget' "$A_TEAM_STATE/dispatch.log")"
+same "today's date" "$(date +%F)" "$(cat "$A_TEAM_STATE/demo/dry-budget-said")"
+
+case_ "a budget that isn't a whole number holds nothing back, and the log says so once"
+jq '.dispatch.budget = 3.5' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+same "reads as none" '{"cost":4,"budget":0,"reached":false}' "$(today)"
+: >"$A_TEAM_STATE/dispatch.log"
+for _ in 1 2 3; do
+  rm -rf "$A_TEAM_STATE/demo/dev/dry-tried"
+  dispatch_dev --dry-run
+done
+same "starts runs" 3 "$(grep -c 'demo dev: would start: #13' "$A_TEAM_STATE/dispatch.log")"
+same "said once" "demo: daily budget ignored: \$3.5 isn't a whole number of dollars" \
+  "$(grep 'budget' "$A_TEAM_STATE/dispatch.log" | cut -d' ' -f2-)"
+jq '.dispatch.budget = 5' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+same "in use again" "demo: daily budget in use again" "$(grep 'budget' "$A_TEAM_STATE/dispatch.log" | cut -d' ' -f2-)"
+
+case_ "a history the budget can't be read from holds nothing back, and the log says so once"
+mv "$A_TEAM_STATE/history.db" "$A_TEAM_STATE/history.db.was"
+echo "not a database" >"$A_TEAM_STATE/history.db"
+: >"$A_TEAM_STATE/dispatch.log"
+for _ in 1 2 3; do
+  rm -rf "$A_TEAM_STATE/demo/dev/dry-tried"
+  dispatch_dev --dry-run
+done
+same "starts runs" 3 "$(grep -c 'demo dev: would start: #13' "$A_TEAM_STATE/dispatch.log")"
+same "said once" 1 "$(grep -c "demo: daily budget ignored: couldn't read today's cost: " "$A_TEAM_STATE/dispatch.log")"
+mv "$A_TEAM_STATE/history.db.was" "$A_TEAM_STATE/history.db"
+CONFIG=$CONFIG_WAS TEAM=$TEAM_WAS
+
 case_ "devs stops at the worktrees limit quietly, and a missing devs reads as 1"
 queued_dispatcher
 devs 5
