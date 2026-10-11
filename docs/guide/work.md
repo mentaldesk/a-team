@@ -94,6 +94,11 @@ the icons come out wrong, pick *Nerd Font* or *Unicode* under **Settings → Das
 The line at the foot says why the card you're on is where it is, like
 `#118 · lead · answering your feedback since 08:14`, and how long ago the cards were read.
 
+At its right end, in every area, an alert like `? #481 +2` says what has become your move since you
+opened the app: a pitch in Pitched, a PR in review or the Dev's question, the newest and how many
+others. `u` (**View → Go to what's new**) or a click takes you to it, and each new card wears a `●`
+before its title until you open it.
+
 ## Moving around
 
 | Key | Does |
@@ -106,6 +111,7 @@ The line at the foot says why the card you're on is where it is, like
 | `b` | Open the team's Project board on GitHub, for everything that isn't waiting on you |
 | `p` | Read the card and set its Priority |
 | `m` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
+| `u` | Go to the newest card that has become your move |
 | `F5` | Read what's waiting again |
 
 To pick a team by name, open **Go to team…** from Commands (`Ctrl+E`) or the View menu.

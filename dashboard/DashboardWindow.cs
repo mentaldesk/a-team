@@ -35,7 +35,7 @@ public sealed class DashboardWindow : Window
     private readonly CommandRegistry _commands = new();
     private readonly string _version = Version();
     private readonly AppMenu _menu;
-    private readonly StatusBar _status = new();
+    private readonly StatusBar _status = new() { Alerts = true };
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
     private readonly LogView _dispatch;
@@ -78,6 +78,13 @@ public sealed class DashboardWindow : Window
     private readonly Label _title;
     private readonly TimeProvider _clock;
     private readonly Attention _attention;
+    private readonly WhatsNew _news;
+    private readonly Func<string, DateTimeOffset, Task<Reading>>? _readMoves;
+    private (IReadOnlyList<string> Teams, Task<Reading[]> Read)? _moving;
+    private (DateTime, DateTime)? _recordStamp;
+    private readonly Dictionary<string, (Task<Reading> Read, DateTimeOffset Asked)> _teamReads = [];
+    private DateTimeOffset _readingAsked;
+    private NewItem? _goingTo;
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
@@ -145,8 +152,11 @@ public sealed class DashboardWindow : Window
         Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
         Func<string, Task<Reading>>? readBoard = null,
         Attention? attention = null,
-        Func<WaitingItem, Task<Reading>>? readDocument = null)
+        Func<WaitingItem, Task<Reading>>? readDocument = null,
+        Func<string, DateTimeOffset, Task<Reading>>? readMoves = null,
+        WhatsNew? whatsNew = null)
     {
+        _readMoves = readMoves;
         _readBoard = readBoard;
         _readDocument = readDocument;
         _limits = settings.ReadLimits();
@@ -161,6 +171,7 @@ public sealed class DashboardWindow : Window
         _start = start;
         _clock = clock ?? TimeProvider.System;
         _attention = attention ?? new Attention(_clock, _ => { });
+        _news = whatsNew ?? new WhatsNew(_clock.GetUtcNow());
         BorderStyle = LineStyle.None;
         _settings = settings;
         _auto = auto;
@@ -276,6 +287,7 @@ public sealed class DashboardWindow : Window
         ShowIcons(settings.ReadIcons());
 
         _status.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
+        _status.AlertChosen += () => _commands.Execute("work.whatsNew");
         Add(_status);
 
         RegisterCommands();
@@ -335,10 +347,15 @@ public sealed class DashboardWindow : Window
 
     internal Attention Attention => _attention;
 
+    internal WhatsNew News => _news;
+
     public void Refresh()
     {
         _attention.Browsing(_area == Area.Work ? _work.Current?.Team : null);
         Settle();
+        SettleTeamReads();
+        SettleMoves();
+        ReadMoves();
         SettleBoards();
         SettleTrend();
         ShowTitle();
@@ -365,9 +382,96 @@ public sealed class DashboardWindow : Window
         ShowDispatcher(now);
 
         ShowOverseer(now);
+        ShowNews();
         _menu.Refresh();
         ShowMessage();
         ShowLoading();
+    }
+
+    /// <summary>Reads every team's moves since start whenever the record has been written to.</summary>
+    private void ReadMoves()
+    {
+        if (_readMoves is null || _moving is not null)
+            return;
+        var stamp = (Written(Path.Combine(_stateRoot, "history.db")), Written(Path.Combine(_stateRoot, "history.db-wal")));
+        if (stamp == _recordStamp)
+            return;
+        _recordStamp = stamp;
+        IReadOnlyList<string> teams = [.. _teamNames];
+        _moving = (teams, Task.WhenAll(teams.Select(team => _readMoves(team, _news.Since))));
+    }
+
+    private static DateTime Written(string path) => File.Exists(path) ? File.GetLastWriteTimeUtc(path) : default;
+
+    /// <summary>A team with something new is read again, so its card is there when you get to it.</summary>
+    private void SettleMoves()
+    {
+        if (_moving is not { Read.IsCompleted: true } moving)
+            return;
+        _moving = null;
+        if (moving.Read.Status != TaskStatus.RanToCompletion)
+            return;
+        for (var i = 0; i < moving.Teams.Count; i++)
+            if (moving.Read.Result[i].Failure is null or { Length: 0 }
+                && _news.Read(moving.Teams[i], Dashboard.Move.Parse(moving.Read.Result[i].Output)))
+                ReadTeam(moving.Teams[i]);
+    }
+
+    private void ReadTeam(string team)
+    {
+        if (!_teamReads.ContainsKey(team))
+            _teamReads[team] = (_readWaiting(team), _clock.GetUtcNow());
+    }
+
+    /// <summary>A team's own read replaces only its cards. One that fails leaves them as they were.</summary>
+    private void SettleTeamReads()
+    {
+        foreach (var (team, (read, asked)) in _teamReads.Where(entry => entry.Value.Read.IsCompleted).ToList())
+        {
+            _teamReads.Remove(team);
+            if (read.Status != TaskStatus.RanToCompletion || read.Result.Failure is { Length: > 0 })
+                continue;
+            var items = WaitingItem.Parse(read.Result.Output);
+            _news.Read(team, items, asked);
+            _work.Show([.. _work.Items.Where(item => item.Team != team), .. items]);
+            GoToWaiting();
+        }
+    }
+
+    private void ShowNews()
+    {
+        _status.Alert(_news.Alert(_drawn));
+        _work.ShowNew(_news.Items);
+    }
+
+    /// <summary>Work, on the newest new card's tab with it selected; where Work hasn't read it yet, once it has.</summary>
+    private void GoToNew()
+    {
+        if (_news.Newest is not { } newest)
+            return;
+        Show(Area.Work);
+        _work.Pick(newest.Team);
+        _goingTo = newest;
+        GoToWaiting();
+    }
+
+    private void GoToWaiting()
+    {
+        if (_goingTo is not { } going || _area != Area.Work)
+            return;
+        if (_work.Items.FirstOrDefault(item => item.Team == going.Team && item.Number == going.Number) is not { } item)
+            return;
+        _goingTo = null;
+        _work.Pick(going.Team);
+        _work.Focus(item, false);
+        ShowMessage();
+    }
+
+    /// <summary>Opening a card is seeing it.</summary>
+    private void Seen(WaitingItem item)
+    {
+        _news.Seen(item.Team, item.Number, _clock.GetUtcNow());
+        ShowNews();
     }
 
     private void ShowDispatcher(DateTimeOffset now)
@@ -500,6 +604,7 @@ public sealed class DashboardWindow : Window
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
             .Register("view.overseer", "Overseer", () => Show(Area.Overseer), new Key('o'))
+            .Register("work.whatsNew", "Go to what's new", GoToNew, new Key('u'), isEnabled: () => _news.Newest is not null)
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
                 isEnabled: () => OnDashboard() && Selected() is not null,
                 menuLabel: () => UnlessHeld("Pause this role", "Let this role start again"))
@@ -613,6 +718,7 @@ public sealed class DashboardWindow : Window
         _askedAt = _clock.GetUtcNow();
         if (_reading is null)
         {
+            _readingAsked = _askedAt.Value;
             _activityRead = Activity();
             _reading = Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
         }
@@ -730,6 +836,7 @@ public sealed class DashboardWindow : Window
         if (_handOver is null)
             return;
         _attention.Open(item, WorkView.GateOf(item));
+        Seen(item);
         _attention.Did("tried");
         _attention.HandOver();
         _handOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader));
@@ -998,6 +1105,7 @@ public sealed class DashboardWindow : Window
             _approvable = item.Approvable ? item : null;
             _shown = item;
             _attention.Open(item, WorkView.GateOf(item));
+            Seen(item);
             var chosen = _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
@@ -1249,12 +1357,15 @@ public sealed class DashboardWindow : Window
         _failure = null;
         _readAt = _clock.GetUtcNow();
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
+        foreach (var team in _teamNames)
+            _news.Read(team, _work.Items, _readingAsked);
         if (_area == Area.Work && _work.Selected is null)
         {
             if (_left is not { } left || !_work.Focus(left))
                 _work.FocusFirstCard();
             _left = null;
         }
+        GoToWaiting();
         // Said once the cards are laid out again: laying them out moves the selection, which clears what's said.
         if (_added is { } added)
         {
