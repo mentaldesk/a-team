@@ -17,8 +17,8 @@ public class TrendsDialogTests
     private const string Recorded = """
         {"since": "2026-09-20T00:00:00Z", "queue": [{"at": "2026-10-01T00:30:00Z", "waiting": 12}, {"at": "2026-10-08T09:00:00Z", "waiting": 9}],
          "accepted": ["2026-10-07T10:00:00Z", "2026-10-08T10:00:00Z"],
-         "cycles": [{"ready": "2026-10-07T02:00:00Z", "accepted": "2026-10-07T10:00:00Z", "review": 21600},
-                    {"ready": "2026-10-08T00:00:00Z", "accepted": "2026-10-08T10:00:00Z", "review": 36000}], "cost": 212.4}
+         "cycles": [{"ready": "2026-10-07T02:00:00Z", "accepted": "2026-10-07T10:00:00Z", "withYou": 21600},
+                    {"ready": "2026-10-08T00:00:00Z", "accepted": "2026-10-08T10:00:00Z", "withYou": 36000}], "cost": 212.4}
         """;
 
     private const string Nothing = """{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0}""";

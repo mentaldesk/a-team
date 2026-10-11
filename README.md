@@ -7,6 +7,8 @@ that repo's Project board:
   feedback, breaks approved pitches into tasks, and checks the finished feature.
 - **Dev** picks up Ready tasks, builds each one in its own worktree with tests, opens a draft PR
   and sees it through CI and your review.
+- **Customer lead** (optional) keeps the product's user docs right as features ship.
+- **Reviewer** (optional) reviews each of the Dev's task PRs once before it reaches you.
 - **You** own the two gates: approving a pitch, and merging a task's PR.
 
 ```
@@ -16,8 +18,8 @@ Idea → Exploring → Pitched ⛔ → Approved → Building ──────�
 
 A dispatcher checks every 2 minutes whether a role has something to do: your feedback, an
 approved pitch, a merged PR, failing CI, a free slot. When it does, it starts a headless Claude
-Code session for that role. Checking is a plain script, so an idle team costs nothing. Both
-roles read their instructions from this repo, so a change to how the team works is a commit
+Code session for that role. Checking is a plain script, so an idle team costs nothing. Every
+role reads its instructions from this repo, so a change to how the team works is a commit
 here.
 
 ## Install
@@ -44,8 +46,8 @@ The app opens only once there's a team, so your first one starts by hand:
 3. Copy `examples/team.json` to `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
    your GitHub login in `stakeholders`, the Project, and where the product is checked out on this
    machine (`workdir` for its worktrees, `checkout` for its main clone), and optionally `try`,
-   the command that runs the product from a worktree. Leave `app` as `null`: the next step fills
-   it in. `a-team teams` lists the teams it finds. Check the team with
+   the command that runs the product from a worktree, and `roles` to turn on the Customer lead or
+   the Reviewer. Leave `app` as `null`: the next step fills it in. `a-team teams` lists the teams it finds. Check the team with
    `a-team board <name> check`: it prints one line per problem it finds, and exits 1 if the team
    can't run, or 2 if it can but something's missing, like its vision or a label. The Teams page in
    Settings shows the same problems, and F12 (or *Repair*) in a team's form sets its board up again.
@@ -116,23 +118,24 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   are read in full instead, however old the comments on them are. The gap is elapsed time, not
   passes, so a Mac that was off all weekend sweeps on its first pass: feedback left on Friday
   starts a run on Monday.
-- **One run per role at a time.** A run that's still going after `dispatch.maxRuntime` minutes
-  is stopped. If the same triggers are still there after a run, the dispatcher waits
+- **One run per role at a time**, except the Dev, which runs up to `wip.devs` at once, each on its
+  own task. A run that's still going after `dispatch.maxRuntime` minutes is stopped. If the same triggers are still there after a run, the dispatcher waits
   `dispatch.retryAfter` minutes before trying again, so a problem the role can't fix doesn't
   start a run every 2 minutes.
 - **Stopping a run.** `a-team stop <team> <role>` ends the role's live run and holds the role
   (`dispatch.hold` in the team config), so the dispatcher starts no replacement until
   `a-team resume <team> <role>`. It lists anything the run left claimed In progress; the next run
-  picks that up. The other role carries on as normal. `a-team pause <team> <role>` holds the role
+  picks that up. The other roles carry on as normal. `a-team pause <team> <role>` holds the role
   the same way but lets a run already going finish. `a-team stop <team> dev <task>` ends only
-  that task's run and holds only that task, until `a-team resume <team> dev <task>`.
+  that task's run and holds only that task, until `a-team resume <team> dev <task>`. A Reviewer
+  run takes a `<task>` the same way.
 - **Stepping into a run.** `a-team attach <team> <role>` does what `a-team stop` does, then runs
   `claude --resume` on the latest run's session in the team's `workdir`, so you pick up the
   conversation with everything it had worked out. Quitting lets the role start again. With a
   `<task>`, it does the same for that one Dev run.
-- **Permissions** come from `settings/agents.json` and the task prompt in `tasks/`. Runs use
-  auto mode, and anything that would ask for permission is refused rather than waiting for
-  someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
+- **Permissions** come from `settings/agents.json`, the role's own `settings/<role>.json`, and
+  the task prompt in `tasks/`. Runs use auto mode, and anything that would ask for permission is
+  refused rather than waiting for someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
   editing this repo) hold even if the model tries.
 - **Logs** are under `~/.local/state/a-team/` (or `$A_TEAM_STATE`). `a-team status` shows what each role is
   doing and how its last run went. A dashboard that crashes says so in one line and leaves the whole

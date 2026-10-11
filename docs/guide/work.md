@@ -30,8 +30,8 @@ Triage, Pitches, Questions, Review and Other.
 `Left`/`Right` switch between them. Days before a team's record began are left blank,
 and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
-and for the tasks you accepted, their median **Cycle** and how much of it was **With you**, In
-review, then **Yours (7d)**, your time on it in the last 7 days, and **/h**, what you accepted per
+and for the tasks you accepted, their median **Cycle** and how much of it was **With you**: In
+review, waiting for a slot your reviews were holding, or waiting for your answer to a question. Then **Yours (7d)**, your time on it in the last 7 days, and **/h**, what you accepted per
 hour of it. Days and weeks before your time was first recorded are left blank, not zero. The **All**
 row at the bottom covers every team. A task that entered Ready before its team's
 record began isn't counted in either. `Esc` closes it.
@@ -122,7 +122,8 @@ comment headed by who said it and when. On a card in Questions it shows just the
 opens it on GitHub, and `Esc` closes it.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
-accept, decline, comment, Priority, link and dependency, with when and who (`you`, `lead` or `dev`). What
+accept, decline, comment, Priority, recommendation, skip, review, link and dependency, with when
+and who (`you`, or the role: `lead`, `dev`, `customer` or `reviewer`). What
 you or anyone else does on GitHub directly (a merge, a close, a comment, a move on the Project board)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
@@ -180,9 +181,8 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   while you were editing, nothing is overwritten: the reader says so, and where your edit is kept.
   A pitch that changes more than one file can't be edited here; `g` opens it on GitHub.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. It asks first:
-  `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't. In a terminal
-  that can't tell `Ctrl+Enter` from `Enter`, such as macOS Terminal, `Tab` to **Accept** and press
-  `Space`. Every confirm in A-Team works this way. For a task, its PR is squash-merged and its
+  `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't
+  ([Confirming](dashboard.md#confirming)). For a task, its PR is squash-merged and its
   branch deleted. The Customer lead's docs PR is merged the same way, and so is a document pitch,
   from Pitches: the card leaves, and the Lead's next run reads the new vision. If it isn't ready yet,
   `a` says why instead.

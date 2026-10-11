@@ -25,7 +25,7 @@ countdown to the dispatcher's next check. Then why the run was started, and then
 it happens: what the agent said, the tools it called, any errors, and how the run finished.
 
 The dashboard checks each team when it starts and again whenever the team's file changes, the same
-check **Settings → Teams** shows. If something stops the team running, both its panes wear `⚠` in
+check **Settings → Teams** shows. If something stops the team running, all its panes wear `⚠` in
 the error colour, their status row says what's wrong (as in `misconfigured: checkout
 ~/code/TuiCode/main isn't there: …`), and the message bar says which checks failed. Fix it in
 **Settings → Teams** or in the file, and the `⚠` clears. A missing vision, docs page or label is only a note,
@@ -104,7 +104,7 @@ up. To start every pane with its calls showing, tick *Show tool calls in full* u
 
 `h` pauses the selected agent's role. A run already going finishes, its pane reading
 `running <time> · held`, and the dispatcher starts no new one. The same key, now
-*Let this role start again*, lets it start again. The other role carries on either way.
+*Let this role start again*, lets it start again. The other roles carry on either way.
 
 It's the same as `a-team pause <team> <role>` and `a-team resume <team> <role>`.
 
@@ -136,3 +136,11 @@ can also run by name, and you can change its key under
 [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
 
 `F1` lists the few keys worth knowing first, and `q` quits the app.
+
+## Confirming
+
+Accepting work, stopping a run, removing a team and throwing away something you've written all ask
+first. `Ctrl+Enter` goes ahead, `Esc` cancels, and `Enter` does nothing, so a stray one can't.
+`Tab` or `←`/`→` move between the buttons and `Space` presses one; the `Esc` button starts focused. In a
+terminal that can't tell `Ctrl+Enter` from `Enter`, such as macOS Terminal, `Tab` to the action's
+button and press `Space`.
