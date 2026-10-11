@@ -92,8 +92,8 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
    PR merges, so there is nothing to undo and nothing to ask the stakeholder; if the deferral
    turns out to be wrong, either role can drop it with `undepend`.
 2. Read the issue and the pitch it belongs to. If the acceptance criteria are ambiguous or
-   contradict the code, comment with the specific question, move it back to Ready with the
-   `blocked` label, and end the run.
+   contradict the code, comment with the specific question, label it `blocked`, then move it back
+   to Ready, and end the run.
 3. Pick it up from its worktree and branch if they exist. Otherwise fetch `origin` and create a
    fresh worktree from `origin/<default branch>` following the repo's conventions. Implement it.
    Stay inside the task's scope; note anything else you spot in the PR body instead of fixing it.

@@ -950,6 +950,7 @@ A_TEAM_RUN_STARTED=${TODAY}T23:59:59Z run board demo unblock dev 192
 same "exit" 0 "$STATUS"
 same "writes" "issue edit 192 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
 same "acked" "IC_2" "$(cat "$ACKED")"
+same "recorded" '"question answered"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 192 | jq -c '.events[0].what')"
 
 case_ "the Dev may not clear blocked on a task the reviewer holds, nor may the Lead"
 gh_talk <<TALK
@@ -2615,6 +2616,21 @@ same "posted" "" "$(cat "$POSTED")"
 gh_pr 912 true
 A_TEAM_RUN_TASK=12 run board demo comment dev 912 "$WORK/question"
 same "its own PR" 0 "$STATUS"
+
+case_ "handing a task back labelled blocked records the question, for Trends' With you"
+rm -f "$A_TEAM_STATE/history.db"
+gh_items <<'ITEMS'
+In_progress 12 A task with a question
+In_progress 16 A task that can't be finished
+ITEMS
+claimable
+edit_item 12 '.labels.nodes += [{name: "blocked"}]'
+A_TEAM_RUN_TASK=12 run board demo move dev 12 Ready
+same "exit" 0 "$STATUS"
+same "recorded" '["handed back with a question","In progress → Ready"]' \
+  "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 12 | jq -c '[.events[].what]')"
+A_TEAM_RUN_TASK=16 run board demo move dev 16 Ready
+same "unlabelled" '["In progress → Ready"]' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 16 | jq -c '[.events[].what]')"
 
 # The Customer lead: a third role a team can turn on, which touches only its own docs PR.
 # `docs_pr <n>`: #<n> on the page gh_items wrote is the Customer lead's PR. `accepted <n> [<reason>]`:
@@ -5408,7 +5424,61 @@ sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, wha
     ('demo', 21, '$(ago 200)', 'dev', 'Ready → In progress'), ('demo', 21, '$(ago 100)', 'dev', 'In progress → In review'),
     ('demo', 21, '$(ago 60)', 'you', 'accepted · PR #921 merged'),
     ('demo', 22, '$(ago 300)', 'lead', 'Exploring → Pitched'), ('demo', 22, '$(ago 200)', 'you', 'accepted · closed');"
-same "cycles" "[{\"ready\":\"$m600\",\"accepted\":\"$m120\",\"review\":$((60 * 60 + 180 * 60))}]" "$(trends | jq -c .cycles)"
+same "cycles" "[{\"ready\":\"$m600\",\"accepted\":\"$m120\",\"withYou\":$((60 * 60 + 180 * 60))}]" "$(trends | jq -c .cycles)"
+
+# events <n> <minutes ago> <who> <what>, one per line: a fresh record of demo's events, timed from $base.
+events() {
+  rm -f "$A_TEAM_STATE/history.db"
+  local values=() n m who what
+  while read -r n m who what; do values+=("('demo', $n, '$(before "$m")', '$who', '$what')"); done
+  sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
+      at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
+    INSERT INTO events (team, item, at, who, what) VALUES $(IFS=,; echo "${values[*]}");"
+}
+with_you() { trends | jq -c --argjson n "$1" '[.cycles[] | select(.ready == $n) | .withYou / 60]'; }
+jq '.wip.worktrees = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+slots='31 700 dev Ready → In progress
+32 650 dev Ready → In progress
+30 600 lead added as Ready
+31 500 dev In progress → In review
+31 300 you accepted · PR #931 merged
+30 200 dev Ready → In progress
+30 150 dev In progress → In review
+30 100 you accepted · PR #930 merged'
+
+case_ "trends: a Ready task waits on you while every slot is full and one is In review, not while all are In progress or one is free"
+events <<<"$slots"
+same "slot wait" "[$((200 + 50))]" "$(with_you "\"$(before 600)\"")"
+
+case_ "trends: a task in a slot but blocked by another doesn't hold it"
+events <<<"$slots
+32 480 dev blocked by #34
+34 400 you accepted · PR #934 merged"
+same "freed" "[$((20 + 100 + 50))]" "$(with_you "\"$(before 600)\"")"
+
+case_ "trends: a Ready task waiting on a prerequisite is the team's, until it's no longer blocked"
+events <<<"$slots
+30 450 dev blocked by #33
+30 400 dev no longer blocked by #33"
+same "prerequisite" "[$((50 + 100 + 50))]" "$(with_you "\"$(before 600)\"")"
+
+case_ "trends: a task handed back with a question waits on you until the answer, whatever the slots"
+events <<'EVENTS'
+40 600 lead added as Ready
+40 550 dev Ready → In progress
+40 500 dev In progress → Ready
+40 500 dev handed back with a question
+40 420 dev question answered
+40 410 dev Ready → In progress
+40 400 dev In progress → In review
+40 300 you accepted · PR #940 merged
+EVENTS
+same "question" "[$((80 + 100))]" "$(with_you "\"$(before 600)\"")"
+
+case_ "trends: with no wip.worktrees, only In review and questions count"
+jq 'del(.wip)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+events <<<"$slots"
+same "no slots" "[50]" "$(with_you "\"$(before 600)\"")"
 
 case_ "spent records your time on a card, or between cards, for History, trend and trends"
 rm -f "$A_TEAM_STATE/history.db"
