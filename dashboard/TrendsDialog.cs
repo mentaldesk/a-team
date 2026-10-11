@@ -277,7 +277,7 @@ public sealed class TrendsDialog : Dialog
     }
 
     /// <summary>Columns between days, so the last day lands on the plot's last column.</summary>
-    internal static float DaySpacing(int plotWide) => Math.Max(1f, (plotWide - 1) / (TeamRecord.Days - 1f));
+    internal static float DaySpacing(int plotWide) => Math.Max(1f, (plotWide - 0.5f) / (TeamRecord.Days - 1f));
 
     private int LegendWide => _teams.Max(team => team.Team.Length) + 3;
 
@@ -339,7 +339,7 @@ public sealed class TrendsDialog : Dialog
         app.Run(dialog);
     }
 
-    /// <summary>Beside the graph rather than on it, so the graph's axis ends at today. LegendAnnotation draws as a blank box in Terminal.Gui 2.5.</summary>
+    /// <summary>Beside the graph so the axis ends at today.</summary>
     private sealed class Legend : View
     {
         public IReadOnlyList<(GraphCellToRender Cell, string Team)> Entries { get; set; } = [];
