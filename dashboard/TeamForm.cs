@@ -558,7 +558,7 @@ public sealed class TeamForm : Dialog
     /// <summary>Enter reaches a Dialog as Accept, from any field alike, and never saves: Ctrl+Enter does. The
     /// project list's own Enter picks a project.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
-        args.Context?.Source?.TryGetTarget(out var from) != true || !Picking(from);
+        args.Context?.Source is not { } source || !source.TryGetTarget(out var from) || !Picking(from);
 
     private bool Picking(View from)
     {
