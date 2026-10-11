@@ -28,6 +28,7 @@
     "creativeEvery": 180,
     "sweepEvery": 30,
     "retryAfter": 60,
-    "maxRuntime": 120
+    "maxRuntime": 120,
+    "budget": 0
   }
 }

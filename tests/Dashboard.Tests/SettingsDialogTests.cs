@@ -639,6 +639,39 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
+    public void Today_shows_what_each_team_has_spent_and_a_team_at_its_budget_reads_budget_reached()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        WriteTeam("beta", """{"repo": "mentaldesk/beta", "dispatch": {"enabled": true, "budget": 40}}""");
+        WriteTeam("gamma", """{"repo": "mentaldesk/gamma", "dispatch": {"enabled": false, "budget": 1}}""");
+        var spent = new Dictionary<string, string>
+        {
+            ["alpha"] = """{"cost":18.4,"budget":0,"reached":false}""",
+            ["beta"] = """{"cost":41.37,"budget":40,"reached":true}""",
+            ["gamma"] = """{"cost":0,"budget":1,"reached":false}""",
+        };
+        using var dialog = Open(out _, out _, page: "Teams", today: team => Task.FromResult(new Reading(spent[team], null)));
+
+        Assert.Equal("Team   Repo              Status           Today", dialog.TeamHeader);
+        Assert.Equal(
+            [
+                "alpha  mentaldesk/alpha  working         $18.40",
+                "beta   mentaldesk/beta   budget reached  $41.37",
+                "gamma  mentaldesk/gamma  paused           $0.00",
+            ],
+            TeamRows(dialog));
+    }
+
+    [Fact]
+    public void Today_stays_blank_for_a_team_whose_cost_cannot_be_read()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _, page: "Teams", today: _ => Task.FromResult(new Reading("", "board.sh: no config")));
+
+        Assert.Equal(["alpha  mentaldesk/alpha  working"], TeamRows(dialog));
+    }
+
+    [Fact]
     public void Selecting_a_team_whose_file_is_broken_says_which_line_and_why()
     {
         WriteTeam("alpha", """{"dispatch": {"enabled": true}}""");
@@ -1144,12 +1177,13 @@ public class SettingsDialogTests : IDisposable
         string? page = null,
         Func<string, Task<TeamHealth>>? check = null,
         Action<string>? showGuide = null,
-        TeamChecks? checks = null)
+        TeamChecks? checks = null,
+        Func<string, Task<Reading>>? today = null)
     {
         theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, keep ?? (_ => { }));
         icons = new IconSetting(iconStyle, apply ?? (_ => { }), new DashboardSettings(_configRoot).WriteIcons);
         var dialog = new SettingsDialog(
-            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check, showGuide: showGuide, checks: checks);
+            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check, showGuide: showGuide, checks: checks, today: today);
         dialog.SetFocus();
         return dialog;
     }
