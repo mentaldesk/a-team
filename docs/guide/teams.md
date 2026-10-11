@@ -67,6 +67,7 @@ team's runs since midnight have cost that much, the dispatcher starts no new run
 midnight, and its row reads `budget reached`. A run already going finishes. The dispatcher's log
 says so once a day, e.g. `tuicode: daily budget $40 reached ($41.37 today); no new runs until
 midnight`. After midnight the team starts runs again by itself. 0, the default, means no budget.
+The budget is whole dollars: a config that says `12.5` has none, and the log says why.
 
 A run's cost counts once it has ended, so **Today** can pass the budget by what the last runs cost.
 

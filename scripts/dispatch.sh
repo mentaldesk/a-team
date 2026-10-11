@@ -60,7 +60,7 @@ dispatch() {
     [ $((now - at)) -gt $(($(cfg '.dispatch.maxRuntime // 120') * 60)) ] && kill "$pid" &&
       log "$team $role: killed run $pid after $(((now - at) / 60)) minutes" && run_outcome "$team" "$role" "$pid" killed
   done <<<"$live"
-  $over_budget && return
+  $held && return
   limit=1
   [ "$role" = dev ] && limit=$(cfg '.wip.devs // 1')
   [ "$(grep -c . <<<"$live")" -lt "$limit" ] || return
@@ -241,15 +241,26 @@ settle_runs() {
   done < <(history_sql "SELECT id, pid, log FROM runs WHERE team = $(sql "$team") AND ended IS NULL;")
 }
 
-# over_budget <team> <config>: whether the team's runs today have reached its daily budget, which the log says once a day.
+# over_budget <team> <config>: whether the team's runs today have reached its daily budget, which the log says once a
+# day. A budget that isn't a whole number, or a history it can't read, holds nothing back, and the log says that too.
 over_budget() {
-  local today said file
-  file="$STATE/$1/$($DRY_RUN && echo dry-)budget-said"
-  today=$(budget_today "$1" "$2" "$now") && jq -e .reached <<<"$today" >/dev/null || return 1
-  said=$(date +%F)
-  [ "$said" = "$(cat "$file" 2>/dev/null)" ] && return
+  local today said why='' file
+  file="$STATE/$1/$($DRY_RUN && echo dry-)budget"
   mkdir -p "$STATE/$1"
-  echo "$said" >"$file"
+  if jq -e '.dispatch.budget | numbers | . != floor' "$2" >/dev/null; then
+    why="\$$(jq .dispatch.budget "$2") isn't a whole number of dollars"
+  elif ! today=$(budget_today "$1" "$2" "$now" 2>&1); then
+    why="couldn't read today's cost: $(tr '\n' ' ' <<<"$today")"
+  fi
+  if [ -n "$why" ]; then
+    failing "$file-unusable" "$file-unusable-once" "$why" "$1: daily budget ignored"
+    return 1
+  fi
+  passing "$file-unusable" "$file-unusable-once" "$1: daily budget in use again"
+  jq -e .reached <<<"$today" >/dev/null || return 1
+  said=$(date +%F)
+  [ "$said" = "$(cat "$file-said" 2>/dev/null)" ] && return
+  echo "$said" >"$file-said"
   log "$1: daily budget \$$(jq .budget <<<"$today") reached (\$$(printf '%.2f' "$(jq .cost <<<"$today")") today);\
  $($DRY_RUN && echo "would start ")no new runs until midnight"
 }
@@ -338,8 +349,8 @@ for team in $(team_names); do
   passing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$team: running again"
   now=$(date +%s)
   $DRY_RUN || settle_runs
-  over_budget=false
-  over_budget "$team" "$config" && over_budget=true
+  held=false
+  over_budget "$team" "$config" && held=true
   for role in $(team_roles "$config"); do
     dispatch "$team" "$role" "$config"
   done

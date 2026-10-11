@@ -81,6 +81,14 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void A_budget_that_isn_t_a_whole_number_reads_as_0_like_the_dispatcher_reads_it()
+    {
+        var config = Config.Replace("\"retryAfter\": 60", "\"retryAfter\": 60, \"budget\": 12.5");
+
+        Assert.Equal(0, TeamSettings.Read(Bytes(config)).Budget);
+    }
+
+    [Fact]
     public void Reading_a_config_into_the_form_and_saving_it_unchanged_writes_the_same_bytes()
     {
         var before = TeamSettings.Read(Bytes(Config));
