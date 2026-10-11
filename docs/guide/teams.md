@@ -61,6 +61,10 @@ else, so the card waits in Questions. While it's open, no other review starts. C
 merging, and the next waits for the vision to change, or for the setting to come due again counting
 from the day you closed it.
 
+Read it from its card in Work: `e` edits the proposed vision in your editor, `c` asks the Lead to
+change it, and `a` accepts it ([Answering from a card](work.md#answering-from-a-card)). The Lead's
+next run uses it.
+
 ## A team's settings
 
 `Enter` on a team opens its form: repo, stakeholders, project, vision, docs, workdir, skills, the command
