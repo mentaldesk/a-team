@@ -32,6 +32,24 @@ public class BundledThemesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void Every_theme_fills_the_library_s_buttons()
+    {
+        BundledThemes.Load();
+        string[] buttons = [SchemeNames.ButtonPrimary, SchemeNames.ButtonDanger, SchemeNames.ButtonSecondary];
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            var dialog = SchemeManager.GetScheme(Schemes.Dialog).Normal.Background;
+            foreach (var name in buttons)
+            {
+                Assert.True(SchemeManager.TryGetScheme(name, out var button), $"{theme} has no {name} scheme");
+                Assert.NotEqual(dialog, button!.Normal.Background);
+            }
+        }
+    }
+
+    [Fact]
     public void Every_theme_sets_each_kind_of_markdown_apart_from_the_text_on_the_reader_s_background()
     {
         BundledThemes.Load();

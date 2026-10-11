@@ -1,9 +1,12 @@
+using MentalDesk.Tui.Dialogs;
+
 namespace ATeam.Dashboard;
 
 /// <summary>Asks before a team is removed, saying what goes and what doesn't.</summary>
-public sealed class RemoveTeamDialog(string team, string repo, string kept)
-    : ConfirmDialog($"Remove {team}?", Says(team, repo, kept), "remove")
+public static class RemoveTeamDialog
 {
+    internal static readonly ConfirmAction Remove = new("Remove", ButtonKind.Danger, Confirm.Chord);
+
     internal static string Says(string team, string repo, string kept)
     {
         var older = kept == $"{team}.json.removed" ? "" : $" An older {team}.json.removed is left as it is.";
@@ -12,9 +15,12 @@ public sealed class RemoveTeamDialog(string team, string repo, string kept)
                $"and the config is kept as {kept} if you want it back.{older}";
     }
 
+    internal static ConfirmDialog Create(string team, string repo, string kept, int width = Confirm.Wide) =>
+        Confirm.Create($"Remove {team}?", Says(team, repo, kept), Remove, width);
+
     public static bool Show(IApplication app, string team, string repo, string kept)
     {
-        using var dialog = new RemoveTeamDialog(team, repo, kept);
-        return Ask(app, dialog);
+        using var dialog = Create(team, repo, kept, Confirm.Fit(app.Screen.Width));
+        return Confirm.Ask(app, dialog);
     }
 }

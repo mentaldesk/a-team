@@ -42,6 +42,13 @@ var start = new TeamStart(
     home,
     () => File.Exists(Path.Combine(home, "Library", "LaunchAgents", "com.a-team.dispatch.plist")));
 
+var recording = new List<Task>();
+var attention = new Attention(TimeProvider.System, visit =>
+{
+    lock (recording)
+        recording.Add(command.Run(visit.Arguments));
+});
+
 return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 
 int Run()
@@ -60,6 +67,9 @@ int Run()
             _ => handover with { Failure = command.Hand(handover.Arguments) },
         };
     }
+    attention.Stop();
+    lock (recording)
+        Task.WaitAll([.. recording], TimeSpan.FromSeconds(5));
     BundledThemes.Cursor.Restore();
     terminal.Restore();
     return 0;
@@ -71,6 +81,7 @@ Handover? Show(Handover? back)
     BundledThemes.Load(settings.ReadTheme());
     using var app = Application.Create();
     app.Init();
+    app.Keyboard.KeyDown += (_, _) => attention.Key();
     LogSchemes.Register();
     Handover? handedOver = null;
     var named = wanted.Length > 0 ? wanted : teams.Names();
@@ -103,7 +114,8 @@ Handover? Show(Handover? back)
         readTrend: team => command.Read("board", team, "trend"),
         showTrends: teams => TrendsDialog.Show(app, teams, team => command.Read("board", team, "trends")),
         newIdea: (teams, team) => NewIdeaDialog.Show(app, teams, team, new IdeaFiler(command.Read)),
-        readBoard: team => command.Read("board", team, "overview"));
+        readBoard: team => command.Read("board", team, "overview"),
+        attention: attention);
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

@@ -1599,7 +1599,7 @@ case "$CMD" in
   trend)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM trend"
     if [ ! -f "$STATE/history.db" ]; then
-      echo '{"since": null, "weekAgo": null, "accepted": 0}'
+      echo '{"since": null, "weekAgo": null, "accepted": 0, "spentSince": null, "spent": 0}'
       exit 0
     fi
     team=$(sql "$TEAM")
@@ -1609,14 +1609,16 @@ case "$CMD" in
         (SELECT waiting FROM queue WHERE team = $team AND at <= $(sql_now '-7 days') AND at > $(sql_now '-8 days')
           ORDER BY at DESC LIMIT 1) AS weekAgo,
         (SELECT COUNT(DISTINCT CASE WHEN what LIKE 'accepted · PR #%' THEN what ELSE item END) FROM events
-          WHERE team = $team AND who = 'you' AND what LIKE 'accepted · %' AND at > $(sql_now '-7 days')) AS accepted;" |
+          WHERE team = $team AND who = 'you' AND what LIKE 'accepted · %' AND at > $(sql_now '-7 days')) AS accepted,
+        (SELECT MIN(at) FROM spent WHERE team = $team) AS spentSince,
+        (SELECT COALESCE(SUM(seconds), 0) FROM spent WHERE team = $team AND at > $(sql_now '-7 days')) AS spent;" |
       jq '.[0]'
     ;;
 
   trends)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM trends"
     if [ ! -f "$STATE/history.db" ]; then
-      echo '{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0}'
+      echo '{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0, "spentSince": null, "spent": []}'
       exit 0
     fi
     team=$(sql "$TEAM")
@@ -1631,8 +1633,11 @@ case "$CMD" in
         (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
           WHERE team = $team AND item IN (SELECT item FROM events WHERE team = $team AND who = 'you'
             AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')) ORDER BY at, id)) AS cycles,
-        (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost;" |
-      jq "$CYCLES"'.[0] | .queue |= fromjson | .accepted |= fromjson
+        (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost,
+        (SELECT MIN(at) FROM spent WHERE team = $team) AS spentSince,
+        (SELECT json_group_array(json_object('at', at, 'seconds', seconds, 'gate', gate)) FROM (SELECT at, seconds, gate
+          FROM spent WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS spent;" |
+      jq "$CYCLES"'.[0] | .queue |= fromjson | .accepted |= fromjson | .spent |= fromjson
         | .cycles |= (fromjson | group_by(.item) | map(cycle) | sort_by(.accepted))'
     ;;
 
@@ -1652,12 +1657,31 @@ case "$CMD" in
         FROM events WHERE team = $(sql "$TEAM") AND item = $1
       UNION ALL SELECT started, role, 'run', 1, ended, cost, outcome, runs.id
         FROM runs JOIN run_items ON run_items.run = runs.id WHERE team = $(sql "$TEAM") AND item = $1
+      UNION ALL SELECT at, 'you', what, 2, NULL, seconds, NULL, rowid FROM spent WHERE team = $(sql "$TEAM") AND item = $1
       ORDER BY at DESC, run DESC, id DESC;")
     since=$(history_sql "SELECT MIN(at) FROM (SELECT at FROM events WHERE team = $(sql "$TEAM")
       UNION ALL SELECT started FROM runs WHERE team = $(sql "$TEAM"));")
     jq -n --argjson events "${events:-[]}" --arg since "$since" '{
       since: (if $since == "" then null else $since end),
-      events: [$events[] | {at, who, what} + if .run == 1 then {run: {ended, cost, outcome}} else {} end]}'
+      events: [$events[] | {at, who, what} + if .run == 1 then {run: {ended, cost, outcome}}
+        elif .run == 2 then {spent: .cost} else {} end]}'
+    ;;
+
+  spent)
+    [ $# -eq 6 ] || die "usage: board.sh $TEAM spent you <n|-> <at> <seconds> <gate> <what>"
+    role=$1 n=$2 at=$3 seconds=$4 gate=$5 what=$6
+    [ "$role" = you ] || die "only the stakeholders' own time is recorded, not $role's"
+    [[ $n =~ ^[0-9]+$ || $n == - ]] || die "#$n isn't an item number"
+    [[ $at =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "'$at' isn't a UTC time"
+    [[ $seconds =~ ^[0-9]+$ ]] || die "'$seconds' isn't a number of seconds"
+    case $gate in Triage | Pitches | Questions | Review | Other) ;; *) die "unknown gate '$gate'" ;; esac
+    if [ -n "$DRY_RUN" ]; then
+      echo "dry-run: would record ${seconds}s of yours on ${n/#-/other}" >&2
+      exit 0
+    fi
+    mkdir -p "$STATE"
+    history_sql "INSERT INTO spent (team, item, at, seconds, gate, what) VALUES ($(sql "$TEAM"),
+      $([ "$n" = - ] && echo NULL || echo "$n"), $(sql "$at"), $seconds, $(sql "$gate"), $(sql "$what"));" >/dev/null
     ;;
 
   pr)

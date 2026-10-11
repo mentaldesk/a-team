@@ -25,6 +25,10 @@ public sealed class WorkView : View
         ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
     ];
 
+    /// <summary>The gate a card waits at, as your time on it is split by; Other for one at none of them.</summary>
+    internal static string GateOf(WaitingItem item) =>
+        Gates.FirstOrDefault(gate => gate.Holds(item) || gate.Aside?.Invoke(item) == true).Name ?? Attention.Other;
+
     private readonly TeamTabs _tabs = new();
     private readonly List<WorkLane> _lanes = [];
     private IReadOnlyList<WaitingItem> _items = [];
