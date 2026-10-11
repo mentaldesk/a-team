@@ -67,7 +67,8 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
      the UI"); a command, API or script the product's own code or agents call is a layer too.
      The model, plumbing and tests a task needs ship inside it.
    - Each task is one reviewable PR with the tests that prove it.
-3. Create each task as an issue (`gh issue create`). Body:
+3. File each task with `a-team board {{team}} task lead <pitch> "<title>" <file>`, which opens it,
+   puts it in Ready under the pitch and prints its number. The file is its body:
    - **Context**: one paragraph and a link to the pitch.
    - **Acceptance criteria**: a checklist of what the user can do and see once it merges, which
      the stakeholder ticks off as they try it. Each item is an end result, checked by using the
@@ -76,9 +77,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    - **Tests**: what should be covered, including the internals the criteria leave out.
    - **Out of scope**: what a well-meaning Dev might wrongly add.
    - Your marker.
-4. `a-team board {{team}} link <pitch> <task>`, then `a-team board {{team}} add lead <task> Ready`. For a task that
-   needs another merged first, `a-team board {{team}} depends lead <task> <prerequisite> "<why>"` and name
-   the prerequisite in its body. It becomes available to the Dev by itself when the prerequisite
+4. For a task that needs another merged first,
+   `a-team board {{team}} depends lead <task> <prerequisite> "<why>"` and name the prerequisite in
+   its body. It becomes available to the Dev by itself when the prerequisite
    closes. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
    independent of each other if they touch different parts of the code. Make the later one depend
    on the earlier when both would make major changes to the same file or the same part of the

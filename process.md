@@ -89,6 +89,8 @@ a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on I
 a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
                                                 # for Idea #<n>, <file> its one-line case
 a-team board {{team}} feedback <role> <n>       # stakeholder comments with no 👀 on them yet
+a-team board {{team}} task lead <pitch> "<title>" <file>  # Lead only: open a task, put it in Ready
+                                                # under Approved or Building <pitch>, print its number
 a-team board {{team}} link <parent> <child>     # make task <child> a sub-issue of <parent>
 a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again
                                                 # (an idea under a pitch: says so on both)
@@ -114,8 +116,8 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 ```
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
-`trend` and `trends` are what the app's Work area reads, `overview` is what its Overseer reads, and `new` is how it
-opens an Idea. Don't run them.
+`trend` and `trends` are what the app's Work area reads, `overview` is what its Overseer reads, `new` is how it
+opens an Idea, and `spent` is how it records the stakeholder's time. Don't run them.
 
 Run it exactly as written here, one command per call. Don't put it in a shell variable or
 chain it with other commands: the permission check approves what it can read, and it can't

@@ -199,6 +199,7 @@ case " \$* " in
   *"issue close"*) [ ! -e "$BIN/close-fails" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
                    echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
   *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"; printf '%s' "\${@: -1}" >"$EDITED"; exit 0 ;;
+  *addProjectV2ItemById*) printf 'ADD %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo PVTI_new; exit 0 ;;
   *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *sub_issues*) page="$SUBS" ;;
@@ -2142,7 +2143,14 @@ Approved 33 An approved pitch
 Building 34 A pitch being built
 Ready 40 A task
 ITEMS
-for n in 30 31 32 33 34; do
+gh_child 30 - -
+run board demo link 10 30
+failed "link #30"
+one_line "link #30"
+grep -qF "#30 is in Idea: if it's an idea, say \"Follow-up from #10\" in its body instead of linking it; if it's a task, add it to Ready first" "$ERR" ||
+  fail "link #30: '$(cat "$ERR")'"
+same "link #30 writes" "" "$(cat "$WRITES")"
+for n in 31 32 33 34; do
   gh_child "$n" - -
   run board demo link 10 "$n"
   failed "link #$n"
@@ -2165,6 +2173,81 @@ for n in 40 41; do
   same "link #$n said" "#$n is now a sub-issue of #10" "$(cat "$OUT")"
   grep -q "^POST .*/issues/10/sub_issues .*sub_issue_id=90$n" "$WRITES" || fail "link #$n: '$(cat "$WRITES")'"
 done
+
+case_ "task files a new issue, makes it a sub-issue of the pitch, then puts it in Ready, and prints its number"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Approved 10 An approved pitch
+Building 11 A pitch being built
+Pitched 12 A pitch in front of the stakeholder
+Idea 13 An idea
+Ready 40 A task
+ITEMS
+jq '.data.organization.projectV2.field.options += [{id: "OPT_ready", name: "Ready"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+printf '## Context\n\nFor #10.\n' >"$WORK/task"
+for pitch in 10 11; do
+  gh_child 77 - -
+  run board demo task lead "$pitch" "b opens the board on GitHub" "$WORK/task"
+  same "task under #$pitch exit" 0 "$STATUS"
+  same "task under #$pitch said" "#77: filed as Ready under #$pitch" "$(cat "$OUT")"
+  same "task under #$pitch order" "CREATE POST ADD api" "$(awk '{print $1}' "$WRITES" | paste -sd ' ' -)"
+  grep -qF -- "--title b opens the board on GitHub" "$WRITES" || fail "task under #$pitch: no title in '$(cat "$WRITES")'"
+  grep -q 'item=PVTI_new .*option=OPT_ready' "$WRITES" || fail "task under #$pitch: not Ready in '$(cat "$WRITES")'"
+  grep -q "^POST .*/issues/$pitch/sub_issues .*sub_issue_id=9077" "$WRITES" || fail "task under #$pitch: no link in '$(cat "$WRITES")'"
+  same "task under #$pitch body" "$(printf '## Context\n\nFor #10.\n\n<!-- a-team:lead -->')" "$(cat "$POSTED")"
+done
+
+case_ "task refuses any role but the lead, and a pitch that isn't Approved or Building, and files nothing"
+for role in dev customer you; do
+  gh_child 77 - -
+  run board demo task "$role" 10 "A task" "$WORK/task"
+  failed "$role task"
+  one_line "$role task"
+  same "$role task writes" "" "$(cat "$WRITES")"
+done
+for refused in "12:#12 is 'Pitched'" "13:#13 is 'Idea'" "40:#40 is 'Ready'" "99:#99 is not on the board"; do
+  pitch=${refused%%:*}
+  gh_child 77 - -
+  run board demo task lead "$pitch" "A task" "$WORK/task"
+  failed "task under #$pitch"
+  one_line "task under #$pitch"
+  grep -qF "${refused#*:}" "$ERR" || fail "task under #$pitch: '$(cat "$ERR")'"
+  same "task under #$pitch writes" "" "$(cat "$WRITES")"
+done
+
+case_ "task --dry-run shows the whole step and changes nothing"
+gh_child 77 - -
+run board --dry-run demo task lead 11 "A task" "$WORK/task"
+same "exit" 0 "$STATUS"
+same "said" "(dry run) #new: filed as Ready under #11" "$(cat "$OUT")"
+for step in "open an issue titled 'A task'" "make #new a sub-issue of #11" "add #new to the board" "to 'Ready'"; do
+  grep -qF "$step" "$ERR" || fail "dry run: no '$step' in '$(cat "$ERR")'"
+done
+grep -qF "  | <!-- a-team:lead -->" "$ERR" || fail "dry run: no body in '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "the lead adding a task to Ready that isn't under an Approved or Building pitch is refused, pointing at task"
+for parent in - 12 13; do
+  gh_child 41 "$parent" -
+  run board demo add lead 41 Ready
+  failed "add under $parent"
+  one_line "add under $parent"
+  grep -qF "#41 isn't a sub-issue of an Approved or Building pitch: file a task with: board.sh demo task lead" "$ERR" ||
+    fail "add under $parent: '$(cat "$ERR")'"
+  same "add under $parent writes" "" "$(cat "$WRITES")"
+done
+gh_child 41 11 -
+run board demo add lead 41 Ready
+same "add under a Building pitch" 0 "$STATUS"
+
+case_ "the Lead's breakdown and the command list file tasks with task, not gh issue create, link and add"
+step=$(sed -n '/^### 2\. Break down approved pitches/,/^### 3\./p' "$ROOT/roles/lead.md")
+grep -qF 'task lead <pitch> "<title>" <file>' <<<"$step" || fail "lead.md breakdown: no task command"
+grep -qE 'gh issue create|board \{\{team\}\} (link|add lead)' <<<"$step" && fail "lead.md breakdown: still files tasks by hand"
+grep -qF 'a-team board {{team}} task lead <pitch> "<title>" <file>' "$ROOT/process.md" || fail "process.md: no task command"
 
 case_ "unlink takes an idea off a pitch in any status before Done, says so on the pitch, and names the pitch on the idea"
 for parent in Pitched Approved Building In_review; do
@@ -4980,7 +5063,13 @@ run board demo accept you 8
 recorded "accept" 8 "you accepted · PR #908 merged"
 
 case_ "putting an item on the board reads as added as its status"
-gh_child 41 - -
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+Idea 6 An idea
+Building 10 A pitch
+ITEMS
+claimable
+gh_child 41 10 -
 run board demo add lead 41 Ready
 recorded "add" 41 "lead added as Ready"
 
@@ -5005,6 +5094,10 @@ ITEMS
 gh_child 40 - -
 run board demo link 10 40
 recorded "link" 40 "lead made a sub-issue of #10"
+claimable
+gh_child 77 - -
+run board demo task lead 10 "A task" "$WORK/reply"
+recorded "task" 77 "lead filed as Ready under #10"
 gh_child 40 10 -
 run board demo unlink lead 10 40
 recorded "unlink" 40 "lead taken off #10"
@@ -5196,7 +5289,7 @@ queue() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT waiting FROM queue WHERE te
 
 case_ "with nothing recorded, trend has no start, no week ago and nothing accepted, and makes no record file"
 rm -f "$A_TEAM_STATE/history.db"
-same "empty" '{"since":null,"weekAgo":null,"accepted":0}' "$(trend)"
+same "empty" '{"since":null,"weekAgo":null,"accepted":0,"spentSince":null,"spent":0}' "$(trend)"
 unrecorded "trend"
 
 case_ "waiting records how many items it returned, at most once an hour"
@@ -5265,7 +5358,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
     ('demo', 10, '$(ago 10)', 'octocat', 'accepted · PR #910 merged'),
     ('demo', 11, '$(ago 10)', 'you', 'Pitched → Approved'),
     ('other', 12, '$(ago 10)', 'you', 'accepted · closed');"
-same "trend" "{\"since\":\"$since\",\"weekAgo\":12,\"accepted\":3}" "$(trend)"
+same "trend" "{\"since\":\"$since\",\"weekAgo\":12,\"accepted\":3,\"spentSince\":null,\"spent\":0}" "$(trend)"
 
 case_ "trend leaves a week ago out until the record reaches back a week, and a stale one is no week ago"
 sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM queue WHERE at <= '$(ago $((60 * 24 * 7)))'"
@@ -5277,7 +5370,7 @@ trends() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trends | jq -c .; }
 
 case_ "with nothing recorded, trends has no start, no points and no cost, and makes no record file"
 rm -f "$A_TEAM_STATE/history.db"
-same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0}' "$(trends)"
+same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0,"spentSince":null,"spent":[]}' "$(trends)"
 unrecorded "trends"
 
 case_ "trends: the last 15 days of the queue, each item accepted once at its latest, and runs' cost in 7 days"
@@ -5299,7 +5392,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
   INSERT INTO runs (team, role, pid, log, started, cost) VALUES ('demo', 'dev', 1, 'a', '$(ago 100)', 1.25),
     ('demo', 'lead', 2, 'b', '$(ago 200)', NULL), ('demo', 'dev', 3, 'c', '$(ago $((60 * 24 * 8)))', 9),
     ('other', 'dev', 4, 'd', '$(ago 100)', 4);"
-same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25}" "$(trends)"
+same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25,\"spentSince\":null,\"spent\":[]}" "$(trends)"
 
 case_ "trends: a task's cycle runs from first entering Ready to its acceptance, with every spell In review counted"
 base=$(date +%s); before() { jq -rn --argjson t "$base" --argjson m "$1" '$t - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
@@ -5316,6 +5409,35 @@ sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, wha
     ('demo', 21, '$(ago 60)', 'you', 'accepted · PR #921 merged'),
     ('demo', 22, '$(ago 300)', 'lead', 'Exploring → Pitched'), ('demo', 22, '$(ago 200)', 'you', 'accepted · closed');"
 same "cycles" "[{\"ready\":\"$m600\",\"accepted\":\"$m120\",\"review\":$((60 * 60 + 180 * 60))}]" "$(trends | jq -c .cycles)"
+
+case_ "spent records your time on a card, or between cards, for History, trend and trends"
+rm -f "$A_TEAM_STATE/history.db"
+d9=$(ago $((60 * 24 * 9))) d16=$(ago $((60 * 24 * 16))) m90=$(ago 90) m30=$(ago 30)
+for visit in "7 $d16 600 Pitches read" "7 $d9 120 Pitches commented" "8 $m90 372 Review tried,_accepted" "- $m30 300 Other _"; do
+  read -r n at seconds gate what <<<"${visit//_/ }"
+  run board demo spent you "$n" "$at" "$seconds" "$gate" "${what# }"
+  same "exit $n $gate" 0 "$STATUS"
+done
+cp "$TEAM" "$CONFIG/teams/other.json"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board other spent you 8 "$m30" 60 Review read >/dev/null
+run board demo history 8
+same "history" "[{\"at\":\"$m90\",\"who\":\"you\",\"what\":\"tried, accepted\",\"spent\":372}]" "$(jq -c .events "$OUT")"
+same "trend" '{"spentSince":"'"$d16"'","spent":672}' "$(trend | jq -c '{spentSince, spent}')"
+same "trends" '{"spentSince":"'"$d16"'","spent":[{"at":"'"$d9"'","seconds":120,"gate":"Pitches"},{"at":"'"$m90"'","seconds":372,"gate":"Review"},{"at":"'"$m30"'","seconds":300,"gate":"Other"}]}' \
+  "$(trends | jq -c '{spentSince, spent}')"
+
+case_ "only your own time is recorded, at a gate, and a dry run records none"
+rm -f "$A_TEAM_STATE/history.db"
+for args in "lead 7 $m30 60 Review read" "you x $m30 60 Review read" "you 7 yesterday 60 Review read" \
+  "you 7 $m30 1m Review read" "you 7 $m30 60 Done read"; do
+  read -r -a words <<<"$args"
+  run board demo spent "${words[@]}"
+  failed "spent ${words[*]}"
+  one_line "spent ${words[*]}"
+done
+run board --dry-run demo spent you 7 "$m30" 60 Review read
+same "dry run" 0 "$STATUS"
+unrecorded "dry run"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.

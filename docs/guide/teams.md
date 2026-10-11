@@ -62,9 +62,9 @@ team's own form, pauses it and starts it again. To pause one role and not the ot
 
 ## Removing a team
 
-`x` asks first, then A-Team forgets the team. Its repo, its board and everything it has built are
-untouched, and its file is kept as `<team>.json.removed`. Rename it back to `<team>.json` to bring the
-team back.
+`x` asks first, and `Ctrl+Enter` removes it: A-Team forgets the team. Its repo, its board and
+everything it has built are untouched, and its file is kept as `<team>.json.removed`. Rename it back
+to `<team>.json` to bring the team back.
 
 ## When a team can't run
 
