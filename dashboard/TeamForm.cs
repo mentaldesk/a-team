@@ -40,6 +40,7 @@ public sealed class TeamForm : Dialog
     internal const string ExploringCaption = "How many drafted pitches wait for room in Pitched.";
     internal const string IdeasCaption = "How many of the Lead's ideas wait for you to prioritise them.";
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
+    internal const string ReadingFiles = "Reading the Markdown files in {0}…";
     private const string ProblemsHeading = "Problems";
     private const int BandPadding = 1;
     private const int ProblemsTop = BandPadding + 2;
@@ -92,7 +93,10 @@ public sealed class TeamForm : Dialog
     private readonly Label _problemsLabel = new() { Text = ProblemsHeading, X = Inset, Y = BandPadding };
     private readonly ListView _problems = new();
     private TeamHealth? _health;
-    private Func<int, IReadOnlyList<string>> _problemRows = _ => [];
+    private IReadOnlyList<TeamProblem>? _checked = [];
+    private RepoFiles? _repoFiles;
+    private bool _workdirFollows;
+    private bool _settingWorkdir;
     private int _wrappedTo;
     private List<ProjectChoice> _projects = [];
     private IReadOnlyList<string> _stakeholderNames;
@@ -126,7 +130,10 @@ public sealed class TeamForm : Dialog
         _skillNames = settings.Skills;
         RunPicker = picker => App is { } app ? Picker.Show(app, picker) : null;
         FindStakeholders = Stakeholders.Read;
-        FindSkills = () => SkillsFound.Find(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Current().CheckoutPath);
+        FindSkills = () => SkillsFound.Find(Home, Current().CheckoutPath);
+        FindRepoFiles = RepoFiles.Read;
+        PickFolder = (title, typed) => App is { } app ? FolderPicker.Browse(app, title, typed, Home) : null;
+        PickRepoFile = (title, files) => App is { } app ? RepoFilePicker.Show(app, title, files) : null;
 
         Title = team is null ? "New team" : $"Team: {team}";
         X = 0;
@@ -143,13 +150,12 @@ public sealed class TeamForm : Dialog
                 if (_name.HasFocus)
                     Hint(Becomes());
             };
-            var named = name;
+            _workdirFollows = settings.Workdir.Length == 0 || settings.Workdir == TeamSettings.WorkdirFor(name);
             _name.TextChanged += (_, _) =>
             {
                 var name = _name.Text.Trim();
-                if (_workdir is { } workdir && (workdir.Text.Length == 0 || workdir.Text == TeamSettings.WorkdirFor(named)))
-                    workdir.Text = name.Length == 0 ? "" : TeamSettings.WorkdirFor(name);
-                named = name;
+                if (_workdirFollows)
+                    SetWorkdir(name.Length == 0 ? "" : TeamSettings.WorkdirFor(name));
                 Hint(Becomes());
             };
         }
@@ -182,9 +188,15 @@ public sealed class TeamForm : Dialog
         ShowProjects([]);
         row++;
 
-        _vision = Field("Vision", settings.Vision, row++, VisionCaption);
-        _docs = Field("Docs", settings.Docs, row++, DocsCaption);
-        _workdir = Field("Workdir", settings.Workdir, row++, WorkdirCaption);
+        _vision = PathField("Vision", settings.Vision, row++, () => FileCaption(_vision!, VisionCaption, VisionMissing), PickVision);
+        _docs = PathField("Docs", settings.Docs, row++, () => FileCaption(_docs!, DocsCaption, DocsMissing), PickDocs);
+        _workdir = PathField("Workdir", settings.Workdir, row++, () => WorkdirCaption, PickWorkdir);
+        _workdir.TextChanged += (_, _) =>
+        {
+            if (!_settingWorkdir)
+                _workdirFollows = false;
+            LayProblems();
+        };
         _skills = Picks("Skills", _skillNames, row++, SkillsCaption, PickSkills);
         _try = Field("Try", settings.Try, row++, TryCaption);
         if (settings.OtherCheckout is { } checkout)
@@ -290,6 +302,7 @@ public sealed class TeamForm : Dialog
         _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         Add(_buttons, _hints, _message);
+        LayProblems();
         if (_name is { } first)
         {
             first.SetFocus();
@@ -323,6 +336,18 @@ public sealed class TeamForm : Dialog
     internal Func<string, Task<IReadOnlyList<string>?>> FindStakeholders { get; set; }
 
     internal Func<SkillsFound> FindSkills { get; set; }
+
+    /// <summary>The Markdown files on a repo's default branch.</summary>
+    internal Func<string, Task<RepoFiles>> FindRepoFiles { get; set; }
+
+    /// <summary>Browses for a folder from the one typed, and returns it with <c>~</c> for home, or null where it was
+    /// cancelled.</summary>
+    internal Func<string, string, string?> PickFolder { get; set; }
+
+    /// <summary>Picks one of a repo's files, or a new path, and returns it, or null where it was cancelled.</summary>
+    internal Func<string, RepoFiles, string?> PickRepoFile { get; set; }
+
+    internal string Home { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     internal DropDownList Project => _project;
 
@@ -387,7 +412,7 @@ public sealed class TeamForm : Dialog
             ShowHealth(Health(health));
             return;
         }
-        ShowProblems(_ => [TeamHealth.Checking]);
+        ShowProblems(null);
         health.ContinueWith(done =>
         {
             if (App is { } app)
@@ -414,20 +439,26 @@ public sealed class TeamForm : Dialog
     private void ShowHealth(TeamHealth health)
     {
         _health = health;
-        ShowProblems(width => [.. health.Problems.SelectMany(problem => problem.Rows(width))]);
+        ShowProblems(health.Problems);
     }
 
-    private void ShowProblems(Func<int, IReadOnlyList<string>> rows)
+    /// <summary>Shows what <c>check</c> found, or <c>checking…</c> where <paramref name="problems"/> is null.</summary>
+    private void ShowProblems(IReadOnlyList<TeamProblem>? problems)
     {
-        _problemRows = rows;
+        _checked = problems;
         LayProblems();
         ShowRepair();
     }
 
+    /// <summary>What <c>check</c> found, with what's wrong with the Workdir typed in place of what it said about the
+    /// one saved.</summary>
     private void LayProblems()
     {
         _wrappedTo = _problems.Viewport.Width;
-        var rows = _problemRows(_wrappedTo);
+        var problems = _checked ?? [];
+        if (WorkdirChanged)
+            problems = [.. WorkdirProblems(), .. problems.Where(problem => problem.Topic is not ("workdir" or "checkout"))];
+        List<string> rows = [.. _checked is null ? [TeamHealth.Checking] : Array.Empty<string>(), .. problems.SelectMany(problem => problem.Rows(_wrappedTo))];
         _problems.SetSource(new ObservableCollection<string>(rows));
         _problemsBand.Visible = _problems.Visible = rows.Count > 0;
         SetNeedsLayout();
@@ -645,6 +676,104 @@ public sealed class TeamForm : Dialog
         picker.ShowChoices(found.Names, found.Message);
         if (RunPicker(picker) is { } picked)
             _skillNames = Show(_skills, picked);
+    }
+
+    /// <summary>Opens the folder browser from the Workdir typed in.</summary>
+    internal void PickWorkdir()
+    {
+        if (PickFolder($"Workdir for {TeamName}", _workdir.Text.Trim()) is not { } picked)
+            return;
+        _workdirFollows = false;
+        _workdir.Text = picked;
+        Hint(WorkdirCaption);
+    }
+
+    internal void PickVision() => PickFile(_vision, "Vision", VisionCaption, VisionMissing);
+
+    internal void PickDocs() => PickFile(_docs, "Docs", DocsCaption, DocsMissing);
+
+    internal static string VisionMissing(string path, string repo) =>
+        $"{path} isn't in {repo} yet: the Lead will draft it for you to approve.";
+
+    internal static string DocsMissing(string path, string repo) =>
+        $"{path} isn't in {repo} yet: the Customer lead will draft the docs for you to approve.";
+
+    /// <summary>Opens the repo's Markdown files to pick from, once they've been read.</summary>
+    private void PickFile(TextField field, string label, string caption, Func<string, string, string> missing)
+    {
+        var repo = Current().Repo;
+        if (_repoFiles is { Failure: null } known && known.Repo == repo)
+        {
+            Pick(known);
+            return;
+        }
+        Hint(string.Format(ReadingFiles, repo));
+        FindRepoFiles(repo).ContinueWith(read =>
+        {
+            var files = read.Status == TaskStatus.RanToCompletion
+                ? read.Result
+                : RepoFiles.Unread(repo, $"Couldn't read {repo}: {read.Exception?.InnerException?.Message}");
+            if (App is { } app)
+                app.Invoke(() => Pick(files));
+            else
+                Pick(files);
+        }, TaskContinuationOptions.ExecuteSynchronously);
+
+        void Pick(RepoFiles files)
+        {
+            _repoFiles = files;
+            if (PickRepoFile($"{label} for {TeamName}", files) is { } picked)
+                field.Text = picked;
+            Hint(FileCaption(field, caption, missing));
+        }
+    }
+
+    /// <summary>The field's caption, or that the path isn't in the repo yet where its files have been read.</summary>
+    private string FileCaption(TextField field, string caption, Func<string, string, string> missing) =>
+        field.Text.Trim() is { Length: > 0 } path && _repoFiles is { Failure: null } files && files.Repo == Current().Repo && !files.Has(path)
+            ? missing(path, files.Repo)
+            : caption;
+
+    private bool WorkdirChanged => _team is null || _workdir.Text.Trim() != _before.Workdir.Trim();
+
+    /// <summary>What <c>check</c> would say about the Workdir typed in, worded the same.</summary>
+    private IReadOnlyList<TeamProblem> WorkdirProblems()
+    {
+        var now = Current();
+        if (now.Workdir.Length == 0)
+            return [];
+        if (!Directory.Exists(TeamSettings.Expand(now.Workdir, Home)))
+            return [new TeamProblem("workdir", $"{now.Workdir} isn't there, so the agents would have nothing to work in")];
+        return Directory.Exists(TeamSettings.Expand(now.CheckoutPath, Home))
+            ? []
+            : [new TeamProblem("checkout", $"{now.CheckoutPath} isn't there: gh repo clone {now.Repo} {now.CheckoutPath}")];
+    }
+
+    private void SetWorkdir(string workdir)
+    {
+        _settingWorkdir = true;
+        _workdir.Text = workdir;
+        _settingWorkdir = false;
+    }
+
+    private TextField PathField(string label, string value, int row, Func<string> caption, Action pick)
+    {
+        Add(new Label { Text = label, X = Inset, Y = row });
+        var field = new TextField { Text = value, X = FieldX, Y = row, Width = Dim.Fill(Inset + PickWidth) };
+        field.KeyDown += (_, key) =>
+        {
+            if (key != Key.Enter)
+                return;
+            pick();
+            key.Handled = true;
+        };
+        field.HasFocusChanged += (_, _) =>
+        {
+            if (field.HasFocus)
+                Hint(caption());
+        };
+        Add(field, new Label { Text = PickText, X = Pos.AnchorEnd(Inset + PickWidth), Y = row });
+        return field;
     }
 
     private TextField Field(string label, string value, int row, string caption)

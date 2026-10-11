@@ -76,6 +76,19 @@ next run uses it.
 field says what it's for underneath. `Enter` saves them into the team's file, leaving everything else in it as it was, and
 `Esc` cancels.
 
+**Workdir**, **Vision** and **Docs** take typing, and `Enter` on one opens a picker instead of saving:
+
+- **Workdir** browses the folders on this machine, starting from the one typed in. Type to narrow the
+  list, `Enter` goes into a folder and `Backspace` goes up a level. **Use this folder** (`Ctrl+Enter`)
+  puts the folder you're in into Workdir. A Workdir with no `main` checkout in it shows under
+  **Problems** before you save.
+- **Vision** and **Docs** list the repo's Markdown files on its default branch. Type to narrow the list
+  and `Enter` to pick one. Type a path that isn't there and `Enter` uses it anyway: the field then says
+  the Lead or Customer lead will draft it.
+
+`Esc` in a picker leaves the field as it was. A new team's Workdir follows its Name, as
+`~/code/<name>`, until you type or pick one of your own.
+
 ## Pausing a team
 
 A paused team picks up no new work, and a run already going finishes. `p` on the Teams page, or the
