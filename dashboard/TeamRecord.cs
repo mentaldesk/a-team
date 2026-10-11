@@ -15,8 +15,8 @@ public sealed record QueueCount(DateTimeOffset At, int Waiting);
 /// <summary>A visit's worth of your time, from <paramref name="At"/>, at one of Work's gates or Other.</summary>
 public sealed record SpentTime(DateTimeOffset At, TimeSpan Spent, string Gate);
 
-/// <summary>A task's span from first entering Ready to being accepted, and how long of it was In review.</summary>
-public sealed record Cycle(DateTimeOffset Ready, DateTimeOffset Accepted, TimeSpan InReview)
+/// <summary>A task's span from first entering Ready to being accepted, and how long of it waited on you.</summary>
+public sealed record Cycle(DateTimeOffset Ready, DateTimeOffset Accepted, TimeSpan WaitedOnYou)
 {
     public double Hours => (Accepted - Ready).TotalHours;
 
@@ -29,12 +29,12 @@ public sealed record Cycle(DateTimeOffset Ready, DateTimeOffset Accepted, TimeSp
         return hours.Count % 2 == 1 ? hours[middle] : (hours[middle - 1] + hours[middle]) / 2;
     }
 
-    /// <summary>The share of the cycles' time, all together, that they spent In review.</summary>
+    /// <summary>The share of the cycles' time, all together, that waited on you.</summary>
     public static double? WithYou(IEnumerable<Cycle> cycles)
     {
         var list = cycles.ToList();
         var total = list.Sum(cycle => cycle.Hours);
-        return total > 0 ? list.Sum(cycle => cycle.InReview.TotalHours) / total : null;
+        return total > 0 ? list.Sum(cycle => cycle.WaitedOnYou.TotalHours) / total : null;
     }
 }
 
@@ -107,7 +107,7 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
                     new QueueCount(count.GetProperty("at").GetDateTimeOffset(), count.GetProperty("waiting").GetInt32()))],
                 [.. root.GetProperty("accepted").EnumerateArray().Select(at => at.GetDateTimeOffset())],
                 [.. root.GetProperty("cycles").EnumerateArray().Select(cycle => new Cycle(cycle.GetProperty("ready").GetDateTimeOffset(),
-                    cycle.GetProperty("accepted").GetDateTimeOffset(), TimeSpan.FromSeconds(cycle.GetProperty("review").GetDouble())))],
+                    cycle.GetProperty("accepted").GetDateTimeOffset(), TimeSpan.FromSeconds(cycle.GetProperty("withYou").GetDouble())))],
                 root.GetProperty("cost").GetDecimal(),
                 root.TryGetProperty("spentSince", out var spentSince) && spentSince.ValueKind == JsonValueKind.String
                     ? spentSince.GetDateTimeOffset() : null,
