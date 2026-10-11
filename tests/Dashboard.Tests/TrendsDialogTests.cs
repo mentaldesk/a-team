@@ -174,7 +174,7 @@ public class TrendsDialogTests
     [InlineData(3, 120)]
     [InlineData(0, 160)]
     [InlineData(3, 160)]
-    public void The_chart_s_days_end_on_the_plot_s_last_column(int measure, int wide)
+    public void The_axis_ends_on_today(int measure, int wide)
     {
         var host = new View { Width = wide, Height = 40 };
         using var dialog = Open(("a-team", 4, Timed), ("tuicode", null, Nothing));
@@ -182,8 +182,7 @@ public class TrendsDialogTests
         dialog.Measure.Value = measure;
         host.Layout(new System.Drawing.Size(wide, 40));
 
-        var legendWide = "tuicode".Length + 3;
-        var lastColumn = dialog.Graph.Viewport.Width - legendWide - 2;
+        var lastColumn = dialog.Graph.Viewport.Width - 1;
         var lastDay = dialog.Graph.AxisX.Increment * (TeamRecord.Days - 1);
 
         Assert.Equal(lastColumn, dialog.Graph.GraphSpaceToViewport(new System.Drawing.PointF(lastDay, 0)).X);
