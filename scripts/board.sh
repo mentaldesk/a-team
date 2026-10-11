@@ -1149,11 +1149,8 @@ case "$CMD" in
           and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
         die "customer may only add its own open docs PR (#$n isn't one)"
       other=$(items | jq -r --argjson n "$n" '[.[] | select((.labels | index("a-team:customer"))
-        and (.status == "In review" or .status == "Pitched") and .number != $n) | "\(.status)\t\(.number)"]
-        | first // empty')
-      [ "${other%%$'\t'*}" != Pitched ] ||
-        die "customer's docs proposal #${other##*$'\t'} isn't merged yet: no docs PR until it is"
-      [ -z "$other" ] || die "customer's docs PR #${other##*$'\t'} is still open: add to it rather than opening another"
+        and .status == "In review" and .number != $n) | .number] | first // empty')
+      [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
       docs_there || die "$(cfg .docs) isn't in $REPO yet: propose the docs before writing any"
     elif [ "$role:$to" = "customer:Pitched" ]; then
       customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
