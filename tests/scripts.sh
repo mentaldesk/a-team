@@ -180,6 +180,12 @@ RUNS
   gh_caught </dev/null
   UPDATES="$BIN/updates.json"
   echo '[]' >"$UPDATES"
+  VOPEN="$BIN/vision-open.json" VCLOSED="$BIN/vision-closed.json" VCOMMITS="$BIN/vision-commits.json"
+  VISION_MD="$BIN/vision.md" THEMES="$BIN/themes.json" FILES="$BIN/files.json" CONTENTS="$BIN/contents.json"
+  echo '[]' | tee "$VOPEN" "$VCLOSED" "$VCOMMITS" "$FILES" >/dev/null
+  : >"$VISION_MD"
+  echo '{"data": {"repository": {}}}' >"$THEMES"
+  echo '{}' >"$CONTENTS"
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
@@ -196,6 +202,7 @@ case " \$* " in
   *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
   *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
                     echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;
+  *"pr ready"*) echo "READY \$*" >>"$WRITES"; exit 0 ;;
   *"issue close"*) [ ! -e "$BIN/close-fails" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
                    echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
   *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"; printf '%s' "\${@: -1}" >"$EDITED"; exit 0 ;;
@@ -207,7 +214,16 @@ case " \$* " in
   *"/labels -f labels[]="*) echo "\$*" >>"$WRITES"; echo '[]'; exit 0 ;;
   *"label list"*) page="$EMPTY" ;;
   *"label create"*) echo "\$*" >>"$WRITES"; exit 0 ;;
+  *"-X PUT"*"/contents/"*) [ ! -e "$BIN/put-conflicts" ] || { echo "gh: docs/vision.md does not match 0123abc (HTTP 409)" >&2; exit 1; }
+                          echo "PUT \$*" >>"$WRITES"; cat >"$BIN/put.json"; echo '{}'; exit 0 ;;
   *"--input -"*) cat >"$BIN/mutation.json"; echo '{}'; exit 0 ;;
+  *"pulls?head="*"state=open"*) page="$VOPEN" ;;
+  *"pulls?head="*"state=closed"*) page="$VCLOSED" ;;
+  *"commits?path="*) page="$VCOMMITS" ;;
+  *VisionThemes*) page="$THEMES" ;;
+  *"/files"*) page="$FILES" ;;
+  *"/contents/"*"?ref="*) page="$CONTENTS" ;;
+  *vnd.github.raw*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; cat "$VISION_MD"; exit 0 ;;
   *check-runs*) page="$RUNS" ;;
   *IssueEvents*) printf '%s\n' "\$@" >"$BIN/caught-args"; echo >>"$BIN/caught-calls"; page="$CAUGHT" ;;
   *issueOrPullRequest*) page="$TALK" ;;
@@ -2954,10 +2970,16 @@ for args in "accept customer 12" "approve customer 12" "move customer 12 Approve
   run board demo $args
   failed "customer: $args"
 done
+
+case_ "accepting the docs proposal marks the draft ready, squash-merges it and moves it to Done"
+: >"$WRITES"
+echo '{"head": {"sha": "deadbeefcafe", "ref": "docs/customer-lead-proposal", "repo": {"full_name": "mentaldesk/demo"}}, "draft": true}' >"$PULL"
 run board demo accept you 12
-failed "accepting a proposal"
-grep -q "only a docs PR In review can be accepted" "$ERR" || fail "accepting a proposal: '$(cat "$ERR")'"
-same "writes" "" "$(cat "$WRITES")"
+same "exit" 0 "$STATUS"
+same "said" "#12: merged document pitch #12" "$(cat "$OUT")"
+same "first write" "READY pr ready 12 -R mentaldesk/demo" "$(head -1 "$WRITES")"
+grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/12/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_12 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
 
 case_ "once the docs page is there, the audit writes the docs it outlines, and done pitches come back"
 rm "$WORK/no-docs"
@@ -3191,6 +3213,245 @@ same "exit" 0 "$STATUS"
 same "ideas" '[[6,"High","theme 2, small · clears the queue"],[7,null,"waiting to be ranked"]]' \
   "$(jq -c 'map(select(.status == "Idea") | [.number, .recommendation, .reason])' "$OUT")"
 same "api calls" 3 "$(grep -c '' <"$CALLS")"
+
+days_ago() { ago $(($1 * 1440)); }
+vision_team() {
+  fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "app": { "id": 7, "slug": "demo-app" },
+  "project": { "owner": "mentaldesk", "number": 1 }, "vision": "docs/vision.md", "wip": { "pitched": 3 } }
+JSON
+  [ -z "${1:-}" ] || { jq --argjson review "$1" '.visionReview = $review' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"; }
+  gh_items </dev/null
+}
+changed() { jq -n --arg at "$(days_ago "$1")" '[{commit: {committer: {date: $at}}}]' >"$VCOMMITS"; }
+lead_reasons() { run board demo triggers lead --sweep; jq -c '[.reasons[] | select(startswith("vision review"))]' "$OUT"; }
+
+case_ "with Manually, the default, a vision review never comes due by itself"
+vision_team
+changed 400
+run board demo triggers lead --sweep
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+vision_team '{"trigger": "manually", "every": 1}'
+changed 400
+same "manually" '[]' "$(lead_reasons)"
+
+case_ "with Every N days, a review comes due that long after the vision last changed"
+vision_team '{"trigger": "every", "every": 30, "unit": "days"}'
+changed 10
+same "too soon" '[]' "$(lead_reasons)"
+changed 31
+same "due" '["vision review due: 30 days since it last changed"]' "$(lead_reasons)"
+
+case_ "weeks and months count in weeks and months, and one of them reads as one"
+vision_team '{"trigger": "every", "every": 4, "unit": "weeks"}'
+changed 27
+same "27 days" '[]' "$(lead_reasons)"
+changed 29
+same "4 weeks" '["vision review due: 4 weeks since it last changed"]' "$(lead_reasons)"
+vision_team '{"trigger": "every", "every": 1, "unit": "months"}'
+changed 20
+same "20 days" '[]' "$(lead_reasons)"
+changed 40
+same "1 month" '["vision review due: 1 month since it last changed"]' "$(lead_reasons)"
+
+case_ "a vision that isn't on the default branch yet never comes due: the Lead drafts one instead"
+vision_team '{"trigger": "every", "every": 1}'
+same "no vision" '[]' "$(lead_reasons)"
+
+case_ "nothing comes due while a review PR is open"
+vision_team '{"trigger": "every", "every": 30}'
+changed 60
+echo '[{"number": 51}]' >"$VOPEN"
+same "open" '[]' "$(lead_reasons)"
+
+case_ "a review closed without merging re-arms the interval from the day it was closed"
+vision_team '{"trigger": "every", "every": 30}'
+changed 60
+jq -n --arg at "$(days_ago 5)" --arg old "$(days_ago 90)" '[{number: 51, merged_at: null, closed_at: $at},
+  {number: 40, merged_at: null, closed_at: $old}]' >"$VCLOSED"
+same "closed 5 days ago" '[]' "$(lead_reasons)"
+jq -n --arg at "$(days_ago 35)" '[{number: 51, merged_at: null, closed_at: $at}]' >"$VCLOSED"
+same "closed 35 days ago" '["vision review due: 30 days since you closed #51 without merging it"]' "$(lead_reasons)"
+jq -n --arg at "$(days_ago 5)" '[{number: 51, merged_at: $at, closed_at: $at}]' >"$VCLOSED"
+same "merged, not closed" '["vision review due: 30 days since it last changed"]' "$(lead_reasons)"
+
+# themes_states "<n>:<OPEN|CLOSED>[:<days ago closed>]"...: the issues the Next themes name, as GitHub has them.
+themes_states() {
+  local entry n state days
+  for entry in "$@"; do
+    IFS=: read -r n state days <<<"$entry"
+    jq -n --arg n "$n" --arg state "$state" --arg at "$([ -n "$days" ] && days_ago "$days")" \
+      '{key: "i\($n)", value: {state: $state, closedAt: (if $at == "" then null else $at end)}}'
+  done | jq -s '{data: {repository: from_entries}}' >"$THEMES"
+}
+
+case_ "with After N%, a review comes due once that share of the issues Next themes names have closed, counting no others"
+vision_team '{"trigger": "after", "after": 50}'
+changed 3
+cat >"$VISION_MD" <<'MD'
+# Vision
+
+Inspired by #99, which isn't a theme.
+
+## Next themes
+
+1. **One.** #1 and #2 (see owner/repo#77).
+2. **Two.** #3, #4 and [#5](#5).
+
+### Later
+
+3. **Three.** #3 again.
+
+## How to judge a proposal
+
+- Like #98.
+MD
+themes_states 1:CLOSED:1 2:OPEN 3:OPEN 4:OPEN 5:OPEN
+same "1 of 5" '[]' "$(lead_reasons)"
+themes_states 1:CLOSED:1 2:CLOSED:2 3:CLOSED:9 4:OPEN 5:OPEN
+same "3 of 5" '["vision review due: 3 of the 5 issues its themes name are closed"]' "$(lead_reasons)"
+
+case_ "after closing a review unmerged, only issues closed since count towards the next one"
+jq -n --arg at "$(days_ago 3)" '[{number: 52, merged_at: null, closed_at: $at}]' >"$VCLOSED"
+changed 30
+same "1 since" '[]' "$(lead_reasons)"
+themes_states 1:CLOSED:1 2:CLOSED:2 3:CLOSED:1 4:OPEN 5:OPEN
+same "3 since" '["vision review due: 3 of the 5 issues its themes name have closed since you closed #52 without merging it"]' \
+  "$(lead_reasons)"
+echo '[]' >"$VCLOSED"
+
+case_ "a vision whose themes name no issues never comes due on the percentage"
+printf '# Vision\n\n## Next themes\n\n1. **Fewer decisions.** No issues yet.\n' >"$VISION_MD"
+themes_states
+same "none named" '[]' "$(lead_reasons)"
+
+case_ "between sweeps, the trigger's verdict is reused rather than worked out again"
+vision_team '{"trigger": "every", "every": 30}'
+changed 31
+same "sweep" '["vision review due: 30 days since it last changed"]' "$(lead_reasons)"
+changed 1
+run board demo triggers lead
+same "between sweeps" '["vision review due: 30 days since it last changed"]' "$(jq -c '[.reasons[] | select(startswith("vision"))]' "$OUT")"
+echo '[{"number": 53}]' >"$VOPEN"
+run board demo triggers lead
+same "but not once a review is open" '[]' "$(jq -c '[.reasons[] | select(startswith("vision"))]' "$OUT")"
+
+case_ "Review the vision asks for one whatever the trigger, until its PR opens"
+vision_team
+run board demo vision-review you
+same "exit" 0 "$STATUS"
+same "said" "vision review asked for: the Lead starts one on the next pass" "$(cat "$OUT")"
+same "asked" '["vision review asked for from Commands"]' "$(lead_reasons)"
+echo '[{"number": 54}]' >"$VOPEN"
+same "opened" '[]' "$(lead_reasons)"
+echo '[]' >"$VOPEN"
+same "asked once" '[]' "$(lead_reasons)"
+
+case_ "only a stakeholder asks for a review, and a dry run asks for nothing"
+run board demo vision-review lead
+failed "lead"
+run board --dry-run demo vision-review you
+same "dry exit" 0 "$STATUS"
+same "dry asked" '[]' "$(lead_reasons)"
+
+case_ "the agents' settings deny edit and vision-review"
+for rule in "Bash(a-team board * edit *)" "Bash(a-team board * vision-review *)"; do
+  jq -e --arg r "$rule" '.permissions.deny | index($r)' "$ROOT/settings/agents.json" >/dev/null || fail "no deny rule $rule"
+done
+
+# A document pitch, the Lead's, in <status>.
+document_pitch() {
+  gh_items <<ITEMS
+${2:-Pitched} $1 Vision review: themes 1 and 5 have run dry
+ITEMS
+  edit_item "$1" '.__typename = "PullRequest" | .labels.nodes = [{name: "pitch"}] | del(.issueDependenciesSummary, .issueFieldValues)'
+  jq '.data.organization.projectV2.field.options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+  echo '{"head": {"sha": "deadbeefcafe", "ref": "a-team/vision", "repo": {"full_name": "mentaldesk/demo"}}, "draft": true}' >"$PULL"
+}
+
+case_ "accept merges a document pitch from Pitched, ready first, and moves it to Done"
+vision_team
+document_pitch 60
+run board demo accept you 60
+same "exit" 0 "$STATUS"
+same "said" "#60: merged document pitch #60" "$(cat "$OUT")"
+same "first write" "READY pr ready 60 -R mentaldesk/demo" "$(head -1 "$WRITES")"
+grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/60/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
+grep -q 'DELETE api -X DELETE repos/mentaldesk/demo/git/refs/heads/a-team/vision' "$WRITES" || fail "branch: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_60 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+
+case_ "accept refuses a document pitch that isn't in Pitched"
+document_pitch 61 Approved
+run board demo accept you 61
+failed "approved"
+grep -q "only a document pitch in Pitched can be accepted (#61 is in 'Approved')" "$ERR" || fail "approved: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "document reads the one file a document pitch changes, at its branch, with the blob to edit it from"
+document_pitch 60
+echo '[{"filename": "docs/vision.md"}]' >"$FILES"
+jq -n --arg c "$(printf '# Vision\n\nThe tenet — attention.\n' | base64)" '{sha: "0123abc", content: $c}' >"$CONTENTS"
+run board demo document 60
+same "exit" 0 "$STATUS"
+same "document" '{"number":60,"files":["docs/vision.md"],"path":"docs/vision.md","ref":"a-team/vision","sha":"0123abc","text":"# Vision\n\nThe tenet — attention.\n"}' \
+  "$(jq -c . "$OUT")"
+
+case_ "document names every file of one that changes more than one, and nothing to edit"
+echo '[{"filename": "docs/vision.md"}, {"filename": "README.md"}]' >"$FILES"
+run board demo document 60
+same "files" '{"number":60,"files":["docs/vision.md","README.md"]}' "$(jq -c . "$OUT")"
+
+case_ "edit commits your file to the pitch's branch, from the blob you started from"
+printf '# Vision\n\nEdited.\n' >"$WORK/edited.md"
+run board demo edit you 60 docs/vision.md 0123abc "$WORK/edited.md"
+same "exit" 0 "$STATUS"
+same "said" "#60: committed your edit to docs/vision.md" "$(cat "$OUT")"
+grep -q 'PUT api -X PUT repos/mentaldesk/demo/contents/docs/vision.md --input -' "$WRITES" || fail "put: '$(cat "$WRITES")'"
+same "commit" '{"message":"Edit docs/vision.md","sha":"0123abc","branch":"a-team/vision","text":"# Vision\n\nEdited.\n"}' \
+  "$(jq -c '{message, sha, branch, text: (.content | @base64d)}' "$BIN/put.json")"
+
+case_ "edit says so when the file changed on GitHub meanwhile, and overwrites nothing"
+: >"$WRITES"
+touch "$BIN/put-conflicts"
+run board demo edit you 60 docs/vision.md 0123abc "$WORK/edited.md"
+failed "conflict"
+same "refused" "board.sh: docs/vision.md changed on GitHub while you were editing it" "$(cat "$ERR")"
+same "writes" "" "$(cat "$WRITES")"
+rm "$BIN/put-conflicts"
+
+case_ "only a stakeholder edits, and only a document pitch in Pitched"
+run board demo edit lead 60 docs/vision.md 0123abc "$WORK/edited.md"
+failed "lead"
+document_pitch 61 Approved
+run board demo edit you 61 docs/vision.md 0123abc "$WORK/edited.md"
+failed "approved"
+grep -q "#61 isn't a document pitch in Pitched" "$ERR" || fail "approved: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "waiting marks a document pitch, and its Needs your answer waits under Questions"
+document_pitch 60
+gh_talk <<TALK
+60 body ${TODAY}T08:14:00Z demo-app[bot] ## Why now\n\nThemes ran dry.\n\n## Needs your answer\n\n- Move fewer decisions up?\n\n<!-- a-team:lead -->
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "document" '{"number":60,"document":true,"pitch":false,"question":"## Needs your answer\n\n- Move fewer decisions up?"}' \
+  "$(jq -c '.[] | select(.number == 60) | {number, document, pitch, question}' "$OUT")"
+
+case_ "a document pitch stays in Pitched whatever the limit: no draft displaces it"
+vision_team
+jq '.wip.pitched = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+gh_items 73 <<'ITEMS'
+Pitched 60 Vision review
+Exploring 73 A ranked draft
+ITEMS
+# The stub answers every Priority query with every item, so this PR keeps the fields an issue has.
+edit_item 60 '.__typename = "PullRequest" | .labels.nodes = [{name: "pitch"}]'
+run board demo lead-next
+same "exit" 0 "$STATUS"
+same "demote" '[]' "$(jq -c '[.demote[].number]' "$OUT")"
+same "promote" '[73]' "$(jq -c '[.promote[].number]' "$OUT")"
 
 case_ "setup creates the rank labels in the Priority colours"
 run board --dry-run demo setup
@@ -3713,8 +3974,9 @@ dev_dispatcher() {
   cp -R "$ROOT/settings" "$DISPATCH/"
   echo 0.1.7 >"$DISPATCH/VERSION"
   CLAIMS="$DISPATCH/claims" DEV_TRIGGERS="$DISPATCH/triggers.json" CLAIMED="$DISPATCH/claimed.json"
-  CUSTOMER_TRIGGERS="$DISPATCH/customer.json" REVIEWER_TRIGGERS="$DISPATCH/reviewer.json"
+  CUSTOMER_TRIGGERS="$DISPATCH/customer.json" REVIEWER_TRIGGERS="$DISPATCH/reviewer.json" LEAD_TRIGGERS="$DISPATCH/lead.json"
   : >"$CLAIMS"
+  echo '{"reasons": [], "creative": false}' >"$LEAD_TRIGGERS"
   echo null >"$CLAIMED"
   echo '{"reasons": [], "creative": false}' >"$CUSTOMER_TRIGGERS"
   echo '{"reasons": [], "creative": false, "tasks": [], "ready": null, "chores": []}' >"$REVIEWER_TRIGGERS"
@@ -3723,7 +3985,7 @@ dev_dispatcher() {
 case " \$* " in
   *" claim dev "*) echo "\$*" >>"$CLAIMS"; cat "$CLAIMED" ;;
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
-  *" triggers lead"*) echo '{"reasons": [], "creative": false}' ;;
+  *" triggers lead"*) cat "$LEAD_TRIGGERS" ;;
   *" triggers customer"*) echo "\$*" >>"$CLAIMS"; cat "$CUSTOMER_TRIGGERS" ;;
   *" triggers reviewer"*) cat "$REVIEWER_TRIGGERS" ;;
   *" task-prompt "*) echo "Run one shift." ;;
@@ -4071,6 +4333,16 @@ echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
 dispatch_dev --dry-run
 grep -q 'would start' "$A_TEAM_STATE/dispatch.log" || fail "dry run: nothing would start"
 [ -e "$A_TEAM_STATE/history.db" ] && fail "dry run: recorded '$(runs_recorded)'"
+
+case_ "a dry-run dispatch says why a vision review is due, and starts no run for it"
+for reason in "vision review due: 11 of the 14 issues its themes name are closed" "vision review due: 30 days since it last changed"; do
+  : >"$A_TEAM_STATE/dispatch.log"
+  jq -n --arg why "$reason" '{reasons: [$why], creative: false, items: [], card: null}' >"$LEAD_TRIGGERS"
+  dispatch_dev --dry-run
+  grep -q "demo lead: would start: $reason\$" "$A_TEAM_STATE/dispatch.log" || fail "lead: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+  [ -e "$A_TEAM_STATE/demo/lead/pid" ] && fail "dry run: a lead run started"
+done
+echo '{"reasons": [], "creative": false}' >"$LEAD_TRIGGERS"
 
 case_ "a run that ends with a result records how long it took, its cost and whether it erred"
 # claude waits for $DISPATCH/finish, then prints $DISPATCH/result, if there is one, as its log's last line.

@@ -598,7 +598,7 @@ public class OverseerTests : IDisposable
             _ => Task.FromResult(new Reading("[]", null)),
             _ => Task.FromResult(new Reading("{\"body\": \"\"}", null)),
             openUrl ?? (_ => { }),
-            (_, _, _, _, _, _, _, _) => null,
+            (_, _, _, _, _, _, _, _, _) => null,
             Area.Dashboard,
             IconStyle.Unicode,
             clock: clock,

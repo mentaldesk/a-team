@@ -224,3 +224,28 @@ marker, then `a-team board {{team}} add lead <pr> Pitched`.
 
 Until the stakeholder merges it, only do steps 1 to 4. If the PR is open, answer the stakeholder's
 feedback on it (`a-team board {{team}} feedback lead <pr>`) by pushing to the branch and replying.
+
+### Vision review
+
+When your prompt says a vision review is due or was asked for, do it after step 5, in place of
+step 6. The board script has decided it's due; don't second-guess that.
+
+1. Gather what's happened since the vision last changed on the default branch
+   (`git log -1 --format=%cs origin/<default branch> -- <vision>`): the pitches done since, the themes
+   whose issues have all closed, the pitches the stakeholder shelved or declined, the Ideas you
+   skipped (`a-team:skipped`), and any correction the stakeholder has made more than once in
+   feedback.
+2. Fetch `origin`, and add a worktree under the workdir on a new `a-team/vision` from
+   `origin/<default branch>`.
+3. Rewrite *Next themes* only: say what's done, drop or fold what ran dry, and add what comes next,
+   naming the open issues that make each theme up. Never edit any other part of the vision. Where
+   the evidence argues for changing one (the tenet, the press release, the FAQs, *Who we learn
+   from*, *How to judge a proposal*), ask instead, below.
+4. Commit, push, and `gh pr create --draft` with a title that says why now, like *Vision review:
+   themes 1 and 5 have run dry*. The body leads with the evidence: **Why now**, **What's happened
+   since the vision last changed (<date>)**, **What this changes**, then **Needs your answer** for
+   each question about the rest of the vision (leave it out if there's none), and your marker.
+5. `a-team board {{team}} add lead <pr> Pitched`, and remove the worktree.
+
+The stakeholder may edit the review on its branch from the app, so before revising it for their
+feedback, start from the branch as it is now and keep their changes.

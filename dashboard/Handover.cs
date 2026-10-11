@@ -78,3 +78,63 @@ public sealed record EditorHandover(string Team, string Role, PanePlace Place, s
 
 /// <summary>The reader a try was started from: what it showed, its link, and the row it was scrolled to.</summary>
 public sealed record ReaderPlace(IssueBody Body, string? Url, int Top);
+
+/// <summary>A document pitch's one file, written to <paramref name="File"/> and handed to <paramref name="Editor"/>. What you
+/// save is committed to the pitch as you, and Work opens its reader again, where it was.</summary>
+public sealed record DocumentHandover(
+    WaitingItem Item, DocumentPitch Document, string File, string[] Editor, bool OnPr, IReadOnlyList<WaitingItem> Items,
+    DateTimeOffset? ReadAt, ReaderPlace Reader) : Handover
+{
+    /// <summary>What became of the edit, where it went through.</summary>
+    public string? Said { get; init; }
+
+    /// <summary>Whether the pitch has a new commit, so the reader reads it again.</summary>
+    public bool Committed { get; init; }
+
+    public override string[] Arguments => [.. Editor[1..], File];
+
+    public override Area Area => Area.Work;
+
+    /// <summary>The file to hand your editor: the document's own name, so the editor knows what it is.</summary>
+    public static string FileFor(WaitingItem item, DocumentPitch document) =>
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"a-team-{item.Team}-{item.Number}-{System.IO.Path.GetFileName(document.Path)}");
+
+    /// <summary>Waits for <paramref name="hand"/> to give the terminal back, then commits the file if it changed. A
+    /// refused commit leaves your edit in <paramref name="keep"/>, and says where.</summary>
+    public DocumentHandover Open(Func<string[], string?> hand, Func<string[], string?> commit, string keep, DateTimeOffset now)
+    {
+        if (hand(Arguments) is { } failure)
+            return Done(this with { Failure = failure });
+        string edited;
+        try
+        {
+            edited = System.IO.File.ReadAllText(File);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return Done(this with { Failure = $"couldn't read your edit: {e.Message}" });
+        }
+        if (edited == Document.Text)
+            return Done(this with { Said = $"no change to {Document.Path}" });
+        var refused = commit(["board", Item.Team, "edit", "you", Item.Number.ToString(), Document.Path, Document.Sha, File]);
+        if (refused is null or { Length: 0 })
+            return Done(this with { Said = $"committed your edit to {Document.Path}", Committed = true });
+        var kept = System.IO.Path.Combine(keep, $"{Item.Team}-{Item.Number}-{now:yyyyMMddHHmmss}-{System.IO.Path.GetFileName(Document.Path)}");
+        try
+        {
+            Directory.CreateDirectory(keep);
+            System.IO.File.Move(File, kept);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            kept = File;
+        }
+        return this with { Failure = $"{refused}: your edit is kept in {kept}" };
+    }
+
+    private DocumentHandover Done(DocumentHandover handover)
+    {
+        System.IO.File.Delete(File);
+        return handover;
+    }
+}

@@ -62,12 +62,13 @@ public sealed class DashboardWindow : Window
     private readonly Func<string, Task<Reading>> _readWaiting;
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
+    private readonly Func<WaitingItem, Task<Reading>>? _readDocument;
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
     private readonly Func<IReadOnlyList<string>, string, (string Team, int Number)?>? _newIdea;
     private readonly Action<string> _openUrl;
-    private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> _showBody;
+    private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Action<string> _showGuide;
@@ -84,6 +85,7 @@ public sealed class DashboardWindow : Window
     private WaitingItem? _approving;
     private WaitingItem? _shown;
     private WaitingItem? _accepting;
+    private string? _askingReview;
     private WaitingItem? _declined;
     private string? _said;
     private string? _added;
@@ -109,7 +111,8 @@ public sealed class DashboardWindow : Window
     private Place? _left;
     private string[] _activityRead = [];
     private (IssueBody Body, int Top)? _triedFrom;
-    private (WaitingItem Item, ReaderPlace Place, string? Failure)? _reopen;
+    private (WaitingItem Item, ReaderPlace Place, string? Failure, string? Said, bool Reread)? _reopen;
+    private (IssueBody Body, int Top)? _editFrom;
     private (string Text, Schemes Scheme)? _copied;
     private readonly IClipboard? _clipboard;
 
@@ -122,7 +125,7 @@ public sealed class DashboardWindow : Window
         Func<string, Task<Reading>> readWaiting,
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
-        Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, Rank?, Rank?> showBody,
+        Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Rank?, Rank?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -141,9 +144,11 @@ public sealed class DashboardWindow : Window
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
         Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
         Func<string, Task<Reading>>? readBoard = null,
-        Attention? attention = null)
+        Attention? attention = null,
+        Func<WaitingItem, Task<Reading>>? readDocument = null)
     {
         _readBoard = readBoard;
+        _readDocument = readDocument;
         _limits = settings.ReadLimits();
         _clipboard = clipboard;
         _newIdea = newIdea;
@@ -458,9 +463,12 @@ public sealed class DashboardWindow : Window
             .Register("team.board", "Open team's board on GitHub", OpenBoard, new Key('b'), isEnabled: () => SelectedTeam() is not null)
             .Register("team.vision", () => SelectedTeam() is { } team ? $"Write the vision with me · {team}" : "Write the vision with me",
                 () => WriteVision(SelectedTeam()), isEnabled: () => _handOver is not null && SelectedTeam() is not null)
+            .Register("team.visionReview", () => SelectedTeam() is { } team ? $"Review the vision · {team}" : "Review the vision",
+                () => ReviewVision(SelectedTeam()), isEnabled: () => SelectedTeam() is not null)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
+            .Register("work.edit", "Edit the document pitch you're reading", () => { }, new Key('e'), isEnabled: () => _shown is { Document: true })
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true)
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
@@ -727,6 +735,29 @@ public sealed class DashboardWindow : Window
         _handOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader));
     }
 
+    /// <summary>Writes the document pitch's file for your editor, and hands the terminal to it.</summary>
+    private void HandOverEdit(WaitingItem item, DocumentPitch document, ReaderPlace reader)
+    {
+        if (_handOver is null)
+            return;
+        var file = DocumentHandover.FileFor(item, document);
+        try
+        {
+            File.WriteAllText(file, document.Text);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _attention.Close();
+            _failure = $"couldn't write {document.Path} for your editor: {e.Message}";
+            ShowMessage();
+            return;
+        }
+        _attention.Did("edited");
+        _attention.HandOver();
+        _handOver(new DocumentHandover(item, document, file, EditorHandover.Command(Environment.GetEnvironmentVariable),
+            _work.SelectedCard is null, _work.Items, _readAt, reader));
+    }
+
     /// <summary>Back from a try, the cards as they were with no re-read; from an attach, the grid. Either way, what
     /// went wrong if it failed.</summary>
     private void Resume(Handover handover)
@@ -747,9 +778,18 @@ public sealed class DashboardWindow : Window
             ReadTrend();
             if (tried.Reader is { } place)
             {
-                _reopen = (tried.Item, place, _failure);
+                _reopen = (tried.Item, place, _failure, null, false);
                 _failure = null;
             }
+        }
+        if (handover is DocumentHandover edited)
+        {
+            _attention.TakeBack();
+            _readAt = _askedAt = edited.ReadAt;
+            _work.Show(edited.Items);
+            ReadTrend();
+            _reopen = (edited.Item, edited.Reader, _failure, edited.Said, edited.Committed);
+            _failure = null;
         }
         ShowMessage();
     }
@@ -770,13 +810,18 @@ public sealed class DashboardWindow : Window
         }
     }
 
-    /// <summary>Back from a try started in the reader, the same reader, where it was.</summary>
+    /// <summary>Back from a try or an edit started in the reader, the same reader, where it was: read again where the
+    /// edit was committed.</summary>
     internal void ReopenReader()
     {
         if (_reopen is not { } reopen)
             return;
         _reopen = null;
-        ShowBody(reopen.Item, reopen.Place.Body, reopen.Place.Url, reopen.Place.Top, reopen.Failure);
+        if (reopen.Reread)
+            ReadBody(reopen.Item, (read, body) => ShowBody(read, body, reopen.Place.Url, reopen.Place.Top, reopen.Failure, said: reopen.Said),
+                forReader: true);
+        else
+            ShowBody(reopen.Item, reopen.Place.Body, reopen.Place.Url, reopen.Place.Top, reopen.Failure, said: reopen.Said);
     }
 
     internal void FocusResumed()
@@ -787,6 +832,9 @@ public sealed class DashboardWindow : Window
         switch (resume)
         {
             case TryHandover tried when !_work.Focus(tried.Item, tried.OnPr):
+                _work.FocusFirstCard();
+                break;
+            case DocumentHandover edited when !_work.Focus(edited.Item, edited.OnPr):
                 _work.FocusFirstCard();
                 break;
             case EditorHandover edited when _panes.FindIndex(pane => pane.Team == edited.Team && pane.Role == edited.Role) is >= 0 and var index:
@@ -819,6 +867,18 @@ public sealed class DashboardWindow : Window
     };
 
     /// <summary>Hands the terminal to the vision interview for <paramref name="team"/>, to come back where it is now.</summary>
+    /// <summary>Asks for a review whatever the team's trigger, then runs a pass so the Lead starts on it now.</summary>
+    private void ReviewVision(string? team)
+    {
+        if (team is null || _pending is not null)
+            return;
+        _askingReview = team;
+        _failure = null;
+        _progress = "Asking for a vision review…";
+        ShowMessage();
+        _pending = _run(["board", team, "vision-review", "you"]);
+    }
+
     private void WriteVision(string? team)
     {
         if (team is null)
@@ -900,6 +960,9 @@ public sealed class DashboardWindow : Window
         if (conversation is not null)
             read = read.With(await Settled(conversation, reading => Conversation.Of(reading, item.Number),
                 new Conversation([], $"couldn't read the conversation on #{item.Number}")).ConfigureAwait(false));
+        if (forReader && item.Document && _readDocument?.Invoke(item) is { } reading
+            && await Settled(reading, read => read.Failure is null ? DocumentPitch.Parse(read.Output) : null, null).ConfigureAwait(false) is { } document)
+            read = read.With(document);
         if (history is not null)
             read = read with
             {
@@ -924,7 +987,7 @@ public sealed class DashboardWindow : Window
     /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board. With
     /// <paramref name="rank"/> it opens anyway, saying why, since you came to rank it.</summary>
     private void ShowBody(WaitingItem item, IssueBody body, string? url, int top = 0, string? failure = null,
-        Rank? rank = null, bool declining = false)
+        Rank? rank = null, bool declining = false, string? said = null)
     {
         if (rank is null && body.Failure is { Length: > 0 } unread)
             _failure = unread;
@@ -944,13 +1007,16 @@ public sealed class DashboardWindow : Window
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
+                item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
+                    body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
+                    top, said, failure) : null,
                 rank);
             _approvable = null;
             _shown = null;
             var reranked = chosen is { } ranked && ranked != Priorities.Of(item) ? chosen : null;
             if (reranked is not null)
                 _attention.Did("ranked");
-            if (_triedFrom is null)
+            if (_triedFrom is null && _editFrom is null)
                 _attention.Close();
             if (_declined == item)
             {
@@ -963,6 +1029,11 @@ public sealed class DashboardWindow : Window
             {
                 _triedFrom = null;
                 HandOverTry(item, new ReaderPlace(from.Body, url, from.Top));
+            }
+            if (_editFrom is { } edit && body.Document is { Editable: true } edited)
+            {
+                _editFrom = null;
+                HandOverEdit(item, edited, new ReaderPlace(edit.Body, url, edit.Top));
             }
         }
     }
@@ -1020,7 +1091,7 @@ public sealed class DashboardWindow : Window
         _accepting = item;
         _attention.Did("accepted");
         _failure = null;
-        _progress = item.Pitch ? $"Closing #{item.Number}…" : $"Merging PR #{item.Pr}…";
+        _progress = item.Document ? $"Merging #{item.Number}…" : item.Pitch ? $"Closing #{item.Number}…" : $"Merging PR #{item.Pr}…";
         ShowMessage();
         _pending = _run(["board", item.Team, "accept", "you", item.Number.ToString()]);
         return true;
@@ -1074,7 +1145,7 @@ public sealed class DashboardWindow : Window
     private void Merged(WaitingItem item)
     {
         _work.Leave(item);
-        _said = item.Pitch ? $"accepted #{item.Number}" : $"merged PR #{item.Pr}";
+        _said = item.Document ? $"merged #{item.Number}" : item.Pitch ? $"accepted #{item.Number}" : $"merged PR #{item.Pr}";
         _saidOn = _work.Selected;
         SetNeedsLayout();
         SetNeedsDraw();
@@ -1131,6 +1202,16 @@ public sealed class DashboardWindow : Window
                 _accepting = null;
                 if (_failure is null or { Length: 0 })
                     Merged(accepting);
+            }
+            if (_askingReview is { } asked)
+            {
+                _askingReview = null;
+                if (_failure is null or { Length: 0 })
+                {
+                    _pass.Start();
+                    _said = $"vision review asked for · {asked}: the Lead starts it now";
+                    _saidOn = _work.Selected;
+                }
             }
         }
 

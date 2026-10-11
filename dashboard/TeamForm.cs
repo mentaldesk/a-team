@@ -31,6 +31,7 @@ public sealed class TeamForm : Dialog
     internal const string CheckoutCaption = "Where the Dev looks for merged work to clean up. Change it in the file.";
     internal const string StatusCaption = "Whether the team picks up work. Paused lets a run in flight finish.";
     internal const string ReleaseCaption = "When a-team runs the repo's release.yml. Never suits a repo that deploys itself on merge.";
+    internal const string VisionReviewsCaption = "When the Lead proposes a refresh of the vision. Review the vision in Commands starts one now.";
     internal const string CustomerCaption = "Keeps the user docs right: a docs PR for you after each pitch is done.";
     internal const string ReviewerCaption = "Reviews each task PR once it's green, so the Dev fixes what it finds before you look.";
     internal const string WorktreesCaption = "How many tasks can be in flight, PRs included.";
@@ -50,6 +51,7 @@ public sealed class TeamForm : Dialog
     private const int ButtonGap = 2;
     private static readonly Key RepairKey = Key.F12;
     private const int PickWidth = 8;
+    private const int TriggerWidth = 10;
 
     private readonly TeamSettings _before;
     private readonly string? _team;
@@ -70,6 +72,10 @@ public sealed class TeamForm : Dialog
     private readonly TextField _try;
     private readonly OptionSelector<TeamStatus>? _status;
     private readonly OptionSelector<TeamRelease> _release;
+    private readonly OptionSelector<VisionTrigger> _visionTrigger;
+    private readonly NumericUpDown<int> _visionEvery;
+    private readonly OptionSelector<VisionUnit> _visionUnit;
+    private readonly NumericUpDown<int> _visionAfter;
     private readonly CheckBox _customer;
     private readonly CheckBox _reviewer;
     private readonly NumericUpDown<int> _worktrees;
@@ -212,6 +218,30 @@ public sealed class TeamForm : Dialog
         Add(_release);
         Caption(_release, ReleaseCaption);
 
+        Add(new Label { Text = "Vision", X = Inset, Y = row }, new Label { Text = "reviews", X = Inset, Y = row + 1 });
+        var review = settings.VisionReview;
+        _visionTrigger = new OptionSelector<VisionTrigger> { X = FieldX, Y = row, TabBehavior = TabBehavior.NoStop, Value = review.Trigger };
+        _visionEvery = new NumericUpDown<int> { Value = review.Every, X = FieldX + TriggerWidth, Y = row + 1, Width = LimitWidth };
+        _visionUnit = new OptionSelector<VisionUnit>
+        {
+            X = Pos.Right(_visionEvery) + 1,
+            Y = row + 1,
+            Orientation = Orientation.Horizontal,
+            TabBehavior = TabBehavior.NoStop,
+            Labels = ["days", "weeks", "months"],
+            Value = review.Unit,
+        };
+        _visionAfter = new NumericUpDown<int> { Value = review.After, X = FieldX + TriggerWidth, Y = row + 2, Width = LimitWidth };
+        var share = new Label { Text = "% of its themes' issues close", X = Pos.Right(_visionAfter), Y = row + 2 };
+        _visionEvery.ValueChanging += (_, e) => e.Handled = e.NewValue < 1;
+        _visionAfter.ValueChanging += (_, e) => e.Handled = e.NewValue is < 1 or > 100;
+        _visionTrigger.ValueChanged += (_, _) => EnableVisionReview();
+        Add(_visionTrigger, _visionEvery, _visionUnit, _visionAfter, share);
+        foreach (var field in new View[] { _visionTrigger, _visionEvery, _visionUnit, _visionAfter })
+            Caption(field, VisionReviewsCaption);
+        EnableVisionReview();
+        row += 3;
+
         Add(new Label { Text = "Roles", X = Inset, Y = row });
         var lead = Role("Lead", CheckState.Checked, FieldX, row);
         var dev = Role("Dev", CheckState.Checked, Pos.Right(lead) + 2, row);
@@ -311,6 +341,15 @@ public sealed class TeamForm : Dialog
     internal OptionSelector<TeamStatus>? Status => _status;
 
     internal OptionSelector<TeamRelease> Releases => _release;
+
+    internal OptionSelector<VisionTrigger> VisionTrigger => _visionTrigger;
+
+    internal NumericUpDown<int> VisionEvery => _visionEvery;
+
+    internal OptionSelector<VisionUnit> VisionUnit => _visionUnit;
+
+    internal NumericUpDown<int> VisionAfter => _visionAfter;
+
     internal CheckBox CustomerLead => _customer;
 
     internal CheckBox Reviewer => _reviewer;
@@ -417,6 +456,9 @@ public sealed class TeamForm : Dialog
             Skills = _skillNames,
             Working = _status is { } status ? status.Value == TeamStatus.Working : _before.Working,
             Release = _release.Value ?? _before.Release,
+            VisionReview = new VisionReview(
+                _visionTrigger.Value ?? _before.VisionReview.Trigger, _visionEvery.Value,
+                _visionUnit.Value ?? _before.VisionReview.Unit, _visionAfter.Value),
             Customer = _customer.Value == CheckState.Checked,
             Reviewer = _reviewer.Value == CheckState.Checked,
             Worktrees = _worktrees.Value,
@@ -646,6 +688,13 @@ public sealed class TeamForm : Dialog
         Add(name, limit);
         Caption(limit, caption);
         return limit;
+    }
+
+    /// <summary>Each trigger's numbers can be changed only while it's the one chosen.</summary>
+    private void EnableVisionReview()
+    {
+        _visionEvery.Enabled = _visionUnit.Enabled = _visionTrigger.Value == ATeam.Dashboard.VisionTrigger.Every;
+        _visionAfter.Enabled = _visionTrigger.Value == ATeam.Dashboard.VisionTrigger.After;
     }
 
     /// <summary>What a field changes, said in the status bar as it takes focus.</summary>

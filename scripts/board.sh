@@ -210,6 +210,85 @@ reviewer_on() { jq -e '.roles.reviewer == true' "$CONFIG" >/dev/null 2>&1; }
 # Whether the first page of the user docs, the config's `docs`, is on the default branch.
 docs_there() { [ -n "$(cfg .docs)" ] && gh api "repos/$REPO/contents/$(cfg .docs)" --silent >/dev/null 2>&1; }
 
+# A stakeholder asked for a vision review from Commands, and no review PR has opened since.
+VISION_ASKED="$STATE/$TEAM/lead/vision-review"
+# What vision_due last worked out on a sweep, reused between sweeps: "<reason>" or nothing.
+VISION_DUE="$STATE/$TEAM/lead/vision-due"
+
+# themes_named: the issue numbers the Next themes section of the vision on stdin names, one a line.
+themes_named() {
+  awk '/^##[ \t]+Next themes[ \t]*$/ { on = 1; next } /^##[ \t]/ { on = 0 } on' |
+    grep -oE '(^|[^A-Za-z0-9_/&-])#[0-9]+' | grep -oE '[0-9]+' | sort -un
+}
+
+# vision_due: why the Lead should review the vision now, or nothing, which it always is while a PR from a-team/vision
+# is open. The trigger is worked out only on a sweep and reused between them; the open PR is checked every pass.
+vision_due() {
+  local trigger vision since last closed every unit due named closes total after reason=''
+  trigger=$(cfg .visionReview.trigger)
+  vision=$(cfg .vision)
+  [ -n "$vision" ] || return 0
+  [ -e "$VISION_ASKED" ] || case "$trigger" in every | after) ;; *) return 0 ;; esac
+  if [ "$(gh api "repos/$REPO/pulls?head=${REPO%/*}:a-team/vision&state=open&per_page=1" --jq length)" -gt 0 ]; then
+    [ -n "$DRY_RUN" ] || rm -f "$VISION_ASKED" "$VISION_DUE"
+    return 0
+  fi
+  if [ -e "$VISION_ASKED" ]; then
+    echo "vision review asked for from Commands"
+    return 0
+  fi
+  if [ -z "$SWEEP" ] && [ -f "$VISION_DUE" ]; then
+    cat "$VISION_DUE"
+    return 0
+  fi
+  last=$(gh api "repos/$REPO/commits?path=$vision&per_page=1" --jq '.[0].commit.committer.date // empty')
+  if [ -n "$last" ]; then
+    # A review closed without merging since the vision changed is your answer: the trigger counts afresh from it.
+    closed=$(gh api "repos/$REPO/pulls?head=${REPO%/*}:a-team/vision&state=closed&per_page=20" |
+      jq -r --arg since "$last" '[.[] | select(.merged_at == null and .closed_at > $since)]
+        | max_by(.closed_at) // empty | "\(.number) \(.closed_at)"')
+    since=${closed#* }
+    since=${since:-$last}
+    case "$trigger" in
+      every)
+        every=$(cfg .visionReview.every)
+        every=${every:-30}
+        unit=$(cfg .visionReview.unit)
+        unit=${unit:-days}
+        due=$(jq -rn --arg since "$since" --argjson n "$every" --arg unit "$unit" '$since | fromdateiso8601
+          | if $unit == "months" then gmtime | .[1] += $n | mktime
+            else . + $n * 86400 * (if $unit == "weeks" then 7 else 1 end) end')
+        if [ "$(date +%s)" -ge "$due" ]; then
+          [ "$every" -eq 1 ] && unit=${unit%s}
+          reason="vision review due: $every $unit since $([ -n "$closed" ] && echo "you closed #${closed%% *} without merging it" || echo "it last changed")"
+        fi
+        ;;
+      after)
+        named=$(gh api -H 'Accept: application/vnd.github.raw' "repos/$REPO/contents/$vision" | themes_named)
+        if [ -n "$named" ]; then
+          read -r closes total < <(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="
+            query VisionThemes(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {
+              $(for n in $named; do printf 'i%s: issueOrPullRequest(number: %s) { ... on Issue { state closedAt } ... on PullRequest { state closedAt } } ' "$n" "$n"; done)
+            } }" | jq -r --arg since "$([ -n "$closed" ] && echo "$since")" '[.data.repository[] | select(. != null)]
+              | [(map(select(.state != "OPEN" and .closedAt > $since)) | length), length] | @tsv')
+          after=$(cfg .visionReview.after)
+          after=${after:-50}
+          if [ "$total" -gt 0 ] && [ $((closes * 100)) -ge $((after * total)) ]; then
+            if [ -n "$closed" ]; then
+              reason="vision review due: $closes of the $total issues its themes name have closed since you closed #${closed%% *} without merging it"
+            else
+              reason="vision review due: $closes of the $total issues its themes name are closed"
+            fi
+          fi
+        fi
+        ;;
+    esac
+  fi
+  mkdir -p "$(dirname "$VISION_DUE")"
+  printf '%s' "$reason" >"$VISION_DUE"
+  [ -z "$reason" ] || echo "$reason"
+}
+
 # The done pitches the Customer lead has already checked the docs against, one number a line.
 COVERED="$STATE/$TEAM/customer/covered"
 # When the Customer lead last finished auditing the docs as a whole, in seconds since the epoch.
@@ -506,9 +585,10 @@ pitchable_idea() {
 # One swap set for Pitched, from all board items: `promote` are the Exploring pitches that
 # belong in Pitched, `demote` the Pitched ones they displace, paired in order. Sorting Pitched
 # first makes `by_priority`'s stable sort displace only on a strictly higher priority, and
-# `demote` never outruns `promote`, so nothing leaves Pitched without a draft taking its slot.
+# `demote` never outruns `promote`, so nothing leaves Pitched without a draft taking its slot. A
+# document pitch is a PR, and stays in Pitched whatever the limit.
 pitch_swap() {
-  jq -c '[.[] | select((.labels | index("pitch")) and (.status == "Pitched" or .status == "Exploring"))]
+  jq -c '[.[] | select((.labels | index("pitch")) and .type == "Issue" and (.status == "Pitched" or .status == "Exploring"))]
          | sort_by(.status != "Pitched")' <<<"$1" | by_priority |
     jq --argjson limit "$(cfg '.wip.pitched')" '
       ([.[] | select(.status == "Pitched")] | length) as $pitched
@@ -700,7 +780,7 @@ turns() {
       | ($theirs | said("<!-- a-team:\($role) -->")) as $said
       | ($theirs | unanswered($said) | map(.at) | max // "") as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
-      | (if .status == "Pitched" and .pitch
+      | (if .status == "Pitched" and (.pitch or .document)
          then $theirs | map(select(.kind == "body")) | first | .body // "" | needs_answer else "" end) as $question
       | ([$theirs[] | select(.kind == "comment" and team("<!-- a-team:reviewer -->"))] | last) as $review
       | (if $pr == null then null
@@ -859,7 +939,12 @@ own_docs() {
 # merge <pr>: squash-merges <pr> and deletes its branch.
 merge() {
   local head refused ref
-  head=$(gh api "repos/$REPO/pulls/$1" --jq '{ref: .head.ref, repo: (.head.repo.full_name // "")}')
+  head=$(gh api "repos/$REPO/pulls/$1" --jq '{ref: .head.ref, repo: (.head.repo.full_name // ""), draft: (.draft // false)}')
+  # A document pitch is still a draft when accepted, and GitHub won't merge a draft.
+  if [ "$(jq -r .draft <<<"$head")" = true ]; then
+    refused=$({ write "mark PR #$1 ready for review" gh pr ready "$1" -R "$REPO" >/dev/null; } 2>&1) ||
+      die "can't mark PR #$1 ready to merge it ($(head -1 <<<"$refused"))"
+  fi
   squash() { { gh api -X PUT "repos/$REPO/pulls/$1/merge" -f merge_method=squash >/dev/null; } 2>&1; }
   refused=$(write "squash-merge PR #$1" squash "$1") || die "can't merge PR #$1 ($(head -1 <<<"$refused"))"
   # A repo that deletes merged branches itself has already done it, so that refusal is no failure.
@@ -1241,8 +1326,18 @@ case "$CMD" in
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     status=$(jq -r .status <<<"$it")
+    # A document pitch, the Lead's or the Customer lead's docs proposal, is accepted from Pitched by merging it.
+    if [ "$(jq -r .type <<<"$it")" = PullRequest ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null ||
+      { [ "$status" = Pitched ] && jq -e '.labels | index("a-team:customer")' <<<"$it" >/dev/null; }; then
+      [ "$status" = Pitched ] || die "only a document pitch in Pitched can be accepted (#$n is in '$status')"
+      merge "$n"
+      set_status "$(jq -r .id <<<"$it")" Done
+      record "$role" "$n" "accepted · PR #$n merged"
+      say "#$n: merged document pitch #$n"
+      exit 0
+    fi
     if [ "$(jq -r .type <<<"$it")" = PullRequest ] && jq -e '.labels | index("a-team:customer")' <<<"$it" >/dev/null; then
-      [ "$status" = "In review" ] || die "only a docs PR In review can be accepted (#$n is in '$status')"
+      [ "$status" = "In review" ] || die "only a docs PR In review, or a docs proposal in Pitched, can be accepted (#$n is in '$status')"
       merge "$n"
       set_status "$(jq -r .id <<<"$it")" Done
       record "$role" "$n" "accepted · PR #$n merged"
@@ -1526,6 +1621,57 @@ case "$CMD" in
     say "docs audited: the next audit is in a week"
     ;;
 
+  document)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM document <n>"
+    trouble=$(mktemp)
+    ref=$(gh api "repos/$REPO/pulls/$1" --jq .head.ref 2>"$trouble") &&
+      files=$(gh api --paginate "repos/$REPO/pulls/$1/files" --jq '.[].filename' 2>"$trouble") ||
+      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read PR #$1 ($reason)"; }
+    if [ "$(grep -c . <<<"$files")" -ne 1 ]; then
+      rm -f "$trouble"
+      jq -n --argjson n "$1" '{number: $n, files: $ARGS.positional}' --args $files
+      exit 0
+    fi
+    file=$(gh api "repos/$REPO/contents/$files?ref=$ref" 2>"$trouble") ||
+      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read $files on $ref ($reason)"; }
+    rm -f "$trouble"
+    jq --argjson n "$1" --arg path "$files" --arg ref "$ref" \
+      '{number: $n, files: [$path], path: $path, ref: $ref, sha, text: (.content | gsub("\\s"; "") | @base64d)}' <<<"$file"
+    ;;
+
+  edit)
+    [ $# -eq 5 ] || die "usage: board.sh $TEAM edit you <n> <path> <sha> <file>"
+    role=$1 n=$2 path=$3 sha=$4 file=$5
+    [ "$role" = you ] || die "$role may not edit a document pitch; only the stakeholders edit one from the app"
+    [ -f "$file" ] || die "no file $file"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    [ "$(jq -r '.type == "PullRequest" and .status == "Pitched"
+        and ((.labels | index("pitch")) or (.labels | index("a-team:customer")))' <<<"$it")" = true ] ||
+      die "#$n isn't a document pitch in Pitched"
+    ref=$(gh api "repos/$REPO/pulls/$n" --jq .head.ref)
+    put() {
+      jq -n --arg message "Edit $path" --arg content "$(base64 <"$file" | tr -d '\n')" --arg sha "$sha" --arg branch "$ref" \
+        '{message: $message, content: $content, sha: $sha, branch: $branch}' |
+        { gh api -X PUT "repos/$REPO/contents/$path" --input - >/dev/null; } 2>&1
+    }
+    if ! refused=$(write "commit $file to $path on $ref" put); then
+      grep -qE 'HTTP 409|does not match' <<<"$refused" &&
+        die "$path changed on GitHub while you were editing it"
+      die "can't commit to $path on $ref ($(head -1 <<<"$refused"))"
+    fi
+    record "$role" "$n" "edited $path"
+    say "#$n: committed your edit to $path"
+    ;;
+
+  vision-review)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM vision-review you"
+    [ "$1" = you ] || die "$1 may not ask for a vision review; the team's trigger or a stakeholder does"
+    [ -n "$(cfg .vision)" ] || die "$TEAM.json names no vision"
+    [ -n "$DRY_RUN" ] || { mkdir -p "$(dirname "$VISION_ASKED")" && touch "$VISION_ASKED"; }
+    say "vision review asked for: the Lead starts one on the next pass"
+    ;;
+
   body)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM body <n>"
     # gh puts the error's own body on stdout, so its one-line reason is read from stderr alone.
@@ -1571,7 +1717,9 @@ case "$CMD" in
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)}
-        + if .labels | index("a-team:customer") then {role: "customer"} else {} end)' <<<"$all")
+        + if .labels | index("a-team:customer") then {role: "customer"} else {} end
+        + if .type == "PullRequest" and .status == "Pitched" and ((.labels | index("pitch")) or (.labels | index("a-team:customer")))
+          then {document: true} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
     recommended=$(jq "$RECOMMENDED"'map(select(.status == "Idea" and .type == "Issue" and .priority == null
@@ -1854,6 +2002,9 @@ case "$CMD" in
       done < <(jq -r --arg bot "$(cfg .app.slug)" '.[]
         | select(any(.comments[]; .author.login == $bot and (.body | contains("<!-- a-team:lead -->"))) | not)
         | [.number, .title] | @tsv' <<<"$updates")
+
+      due=$(vision_due)
+      [ -z "$due" ] || reasons+=("$due")
 
       pitched=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Pitched")] | length' <<<"$all")
       exploring=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")] | length' <<<"$all")

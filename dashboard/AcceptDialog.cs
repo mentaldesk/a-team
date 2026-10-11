@@ -2,12 +2,15 @@ using MentalDesk.Tui.Dialogs;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Asks before a task's PR is merged or a validated pitch is closed, saying what that does.</summary>
+/// <summary>Asks before a task's PR or a document pitch is merged, or a validated pitch is closed, saying what that does.</summary>
 public static class AcceptDialog
 {
     internal static readonly ConfirmAction Accept = new("Accept", ButtonKind.Primary, Confirm.Chord);
 
-    internal static string Says(WaitingItem item) => item.Pitch
+    internal static string Says(WaitingItem item) => item.Document
+        ? $"Merges #{item.Number} into {(item.Base.Length > 0 ? item.Base : "main")}, squashed. " +
+          (item.Docs ? "The Customer lead then writes the docs it outlines." : "The Lead's next run reads it.")
+        : item.Pitch
         ? $"Closes #{item.Number} as done. " +
           (item.Tasks == 1 ? "Its 1 task is already merged." : $"Its {item.Tasks} tasks are already merged.")
         : item.Docs
