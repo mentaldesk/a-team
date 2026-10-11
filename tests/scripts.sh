@@ -5289,7 +5289,7 @@ queue() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT waiting FROM queue WHERE te
 
 case_ "with nothing recorded, trend has no start, no week ago and nothing accepted, and makes no record file"
 rm -f "$A_TEAM_STATE/history.db"
-same "empty" '{"since":null,"weekAgo":null,"accepted":0}' "$(trend)"
+same "empty" '{"since":null,"weekAgo":null,"accepted":0,"spentSince":null,"spent":0}' "$(trend)"
 unrecorded "trend"
 
 case_ "waiting records how many items it returned, at most once an hour"
@@ -5358,7 +5358,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
     ('demo', 10, '$(ago 10)', 'octocat', 'accepted · PR #910 merged'),
     ('demo', 11, '$(ago 10)', 'you', 'Pitched → Approved'),
     ('other', 12, '$(ago 10)', 'you', 'accepted · closed');"
-same "trend" "{\"since\":\"$since\",\"weekAgo\":12,\"accepted\":3}" "$(trend)"
+same "trend" "{\"since\":\"$since\",\"weekAgo\":12,\"accepted\":3,\"spentSince\":null,\"spent\":0}" "$(trend)"
 
 case_ "trend leaves a week ago out until the record reaches back a week, and a stale one is no week ago"
 sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM queue WHERE at <= '$(ago $((60 * 24 * 7)))'"
@@ -5370,7 +5370,7 @@ trends() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trends | jq -c .; }
 
 case_ "with nothing recorded, trends has no start, no points and no cost, and makes no record file"
 rm -f "$A_TEAM_STATE/history.db"
-same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0}' "$(trends)"
+same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0,"spentSince":null,"spent":[]}' "$(trends)"
 unrecorded "trends"
 
 case_ "trends: the last 15 days of the queue, each item accepted once at its latest, and runs' cost in 7 days"
@@ -5392,7 +5392,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
   INSERT INTO runs (team, role, pid, log, started, cost) VALUES ('demo', 'dev', 1, 'a', '$(ago 100)', 1.25),
     ('demo', 'lead', 2, 'b', '$(ago 200)', NULL), ('demo', 'dev', 3, 'c', '$(ago $((60 * 24 * 8)))', 9),
     ('other', 'dev', 4, 'd', '$(ago 100)', 4);"
-same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25}" "$(trends)"
+same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25,\"spentSince\":null,\"spent\":[]}" "$(trends)"
 
 case_ "trends: a task's cycle runs from first entering Ready to its acceptance, with every spell In review counted"
 base=$(date +%s); before() { jq -rn --argjson t "$base" --argjson m "$1" '$t - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
@@ -5409,6 +5409,35 @@ sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, wha
     ('demo', 21, '$(ago 60)', 'you', 'accepted · PR #921 merged'),
     ('demo', 22, '$(ago 300)', 'lead', 'Exploring → Pitched'), ('demo', 22, '$(ago 200)', 'you', 'accepted · closed');"
 same "cycles" "[{\"ready\":\"$m600\",\"accepted\":\"$m120\",\"review\":$((60 * 60 + 180 * 60))}]" "$(trends | jq -c .cycles)"
+
+case_ "spent records your time on a card, or between cards, for History, trend and trends"
+rm -f "$A_TEAM_STATE/history.db"
+d9=$(ago $((60 * 24 * 9))) d16=$(ago $((60 * 24 * 16))) m90=$(ago 90) m30=$(ago 30)
+for visit in "7 $d16 600 Pitches read" "7 $d9 120 Pitches commented" "8 $m90 372 Review tried,_accepted" "- $m30 300 Other _"; do
+  read -r n at seconds gate what <<<"${visit//_/ }"
+  run board demo spent you "$n" "$at" "$seconds" "$gate" "${what# }"
+  same "exit $n $gate" 0 "$STATUS"
+done
+cp "$TEAM" "$CONFIG/teams/other.json"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board other spent you 8 "$m30" 60 Review read >/dev/null
+run board demo history 8
+same "history" "[{\"at\":\"$m90\",\"who\":\"you\",\"what\":\"tried, accepted\",\"spent\":372}]" "$(jq -c .events "$OUT")"
+same "trend" '{"spentSince":"'"$d16"'","spent":672}' "$(trend | jq -c '{spentSince, spent}')"
+same "trends" '{"spentSince":"'"$d16"'","spent":[{"at":"'"$d9"'","seconds":120,"gate":"Pitches"},{"at":"'"$m90"'","seconds":372,"gate":"Review"},{"at":"'"$m30"'","seconds":300,"gate":"Other"}]}' \
+  "$(trends | jq -c '{spentSince, spent}')"
+
+case_ "only your own time is recorded, at a gate, and a dry run records none"
+rm -f "$A_TEAM_STATE/history.db"
+for args in "lead 7 $m30 60 Review read" "you x $m30 60 Review read" "you 7 yesterday 60 Review read" \
+  "you 7 $m30 1m Review read" "you 7 $m30 60 Done read"; do
+  read -r -a words <<<"$args"
+  run board demo spent "${words[@]}"
+  failed "spent ${words[*]}"
+  one_line "spent ${words[*]}"
+done
+run board --dry-run demo spent you 7 "$m30" 60 Review read
+same "dry run" 0 "$STATUS"
+unrecorded "dry run"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.

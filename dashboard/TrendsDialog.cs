@@ -17,7 +17,7 @@ public sealed class TrendsDialog : Dialog
     private const int AxisRows = 2;
     private const int LabelWidth = 7;
 
-    internal static readonly string[] Measures = ["Waiting on you", "Accepted per day", "Hours to accept"];
+    internal static readonly string[] Measures = ["Waiting on you", "Accepted per day", "Hours to accept", "Your time"];
 
     private static readonly char[] Markers = ['*', '+', 'o', 'x', '#', '@', '%', '&'];
 
@@ -34,6 +34,7 @@ public sealed class TrendsDialog : Dialog
     private readonly OptionSelector _measure;
     private readonly GraphView _graph;
     private readonly TableView _table;
+    private readonly TableView _gates;
     private readonly Label _message;
     private IReadOnlyList<TeamRecord>? _records;
     private Legend? _legend;
@@ -47,9 +48,20 @@ public sealed class TrendsDialog : Dialog
 
         Title = "Trends";
         var tableRows = teams.Count + 2;
-        Width = Dim.Func(_ => Fits(76 + GetAdornmentsThickness().Horizontal, Room()?.Width), this);
+        Width = Dim.Func(_ => Fits(Wide + GetAdornmentsThickness().Horizontal, Room()?.Width), this);
         Height = Dim.Func(_ => Fits(2 + GraphRows + AxisRows + 1 + tableRows + 2 + GetAdornmentsThickness().Vertical, Room()?.Height), this);
 
+        _gates = new TableView
+        {
+            X = Pos.AnchorEnd(GatesWide + Inset),
+            Y = 2,
+            Width = GatesWide,
+            Height = TeamRecord.Gates.Length + 4,
+            CanFocus = false,
+            FullRowSelect = false,
+            Visible = false,
+            Style = { ShowVerticalHeaderLines = false, ShowVerticalCellLines = false, ExpandLastColumn = false },
+        };
         _measure = new OptionSelector
         {
             X = Inset,
@@ -60,14 +72,19 @@ public sealed class TrendsDialog : Dialog
             Value = 0,
             Visible = false,
         };
-        _measure.ValueChanged += (_, _) => Plot();
+        _measure.ValueChanged += (_, _) =>
+        {
+            _gates.Visible = _records is not null && Chosen == TrendMeasure.Spent;
+            SetNeedsLayout();
+            Plot();
+        };
         _measure.KeyDown += (_, key) =>
             key.Handled = key == Key.CursorRight ? Step(+1) : key == Key.CursorLeft && Step(-1);
         _graph = new GraphView
         {
             X = Inset,
             Y = 2,
-            Width = Dim.Fill(Inset),
+            Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Inset * 2 - (_gates.Visible ? GatesWide + 1 : 0)), this),
             Height = Dim.Fill(tableRows + 3),
             MarginBottom = AxisRows,
             MarginLeft = (uint)LabelWidth,
@@ -107,7 +124,7 @@ public sealed class TrendsDialog : Dialog
         };
         hint.Accepting += (_, args) => args.Handled = Close();
         _graph.ViewportChanged += (_, _) => Plot();
-        Add(_measure, _graph, _table, _message, hint);
+        Add(_measure, _graph, _table, _gates, _message, hint);
 
         reading.ContinueWith(read =>
         {
@@ -122,6 +139,10 @@ public sealed class TrendsDialog : Dialog
 
     internal Label Message => _message;
 
+    internal TableView Table => _table;
+
+    internal TableView Gates => _gates;
+
     internal IReadOnlyList<TeamTrendRow> Rows { get; private set; } = [];
 
     internal TeamTrendRow? All { get; private set; }
@@ -131,7 +152,19 @@ public sealed class TrendsDialog : Dialog
     internal IReadOnlyList<IReadOnlyList<int?>> Series =>
         _records is null ? [] : [.. _records.Select(record => record.Series(Chosen, _dates, _zone))];
 
-    private TrendMeasure Chosen => _measure.Value switch { 1 => TrendMeasure.Accepted, 2 => TrendMeasure.Cycle, _ => TrendMeasure.Waiting };
+    private TrendMeasure Chosen => _measure.Value switch
+    {
+        1 => TrendMeasure.Accepted,
+        2 => TrendMeasure.Cycle,
+        3 => TrendMeasure.Spent,
+        _ => TrendMeasure.Waiting,
+    };
+
+    /// <summary>Wide enough for every column of the table, which a 120-wide terminal has room for.</summary>
+    private const int Wide = 96;
+
+    /// <summary>The split by gate: its row names, then a column of minutes per team.</summary>
+    private int GatesWide => "This week".Length + 2 + _teams.Sum(team => Math.Max(team.Team.Length, "10h 00m".Length) + 1);
 
     /// <summary>Enter reaches a Dialog as Accept and would close it; Trends has nothing to confirm.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => true;
@@ -167,9 +200,17 @@ public sealed class TrendsDialog : Dialog
             ["Runs $"] = row => row.Cost.ToString("0.00", CultureInfo.InvariantCulture),
             ["Cycle"] = row => row.Cycle is { } hours ? hours.ToString("0.0", CultureInfo.InvariantCulture) + "h" : "–",
             ["With you"] = row => row.WithYou is { } share ? share.ToString("0%", CultureInfo.InvariantCulture) : "–",
+            ["Yours (7d)"] = row => row.Yours is { } yours ? Visit.Duration(yours) : "–",
+            ["/h"] = row => row.PerHour ?? "–",
         });
-        for (var column = 1; column < 7; column++)
+        for (var column = 1; column < 9; column++)
             _table.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
+        var gates = new Dictionary<string, Func<string, object>> { ["This week"] = gate => gate };
+        foreach (var (team, record) in _teams.Zip(_records))
+            gates[team.Team] = gate => record.SpentInWeek(_now, gate) is { } spent ? Visit.Duration(spent) : "–";
+        _gates.Table = new EnumerableTableSource<string>(TeamRecord.Gates, gates);
+        for (var column = 1; column <= _teams.Count; column++)
+            _gates.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
         _legend = new Legend([.. _teams.Select((team, i) => (Cell(i), team.Team))]);
         _message.Visible = false;
         _measure.Visible = _graph.Visible = _table.Visible = true;
@@ -208,7 +249,8 @@ public sealed class TrendsDialog : Dialog
         _graph.AxisY.Increment = perRow * 2;
         _graph.AxisY.ShowLabelsEvery = 1;
         _graph.AxisY.Minimum = 0;
-        _graph.AxisY.LabelGetter = increment => increment.Value.ToString("0", CultureInfo.InvariantCulture);
+        var unit = Chosen == TrendMeasure.Spent ? "m" : "";
+        _graph.AxisY.LabelGetter = increment => increment.Value.ToString("0", CultureInfo.InvariantCulture) + unit;
 
         for (var i = 0; i < series.Count; i++)
         {

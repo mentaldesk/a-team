@@ -2733,6 +2733,79 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Time_in_a_card_s_reader_counts_against_it_at_its_gate_with_the_comment_written_there()
+    {
+        var clock = new Clock();
+        var visits = new List<Visit>();
+        var attention = new Attention(clock, visits.Add);
+        var opened = clock.Now;
+        using var window = Open(
+            clock: clock,
+            attention: attention,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, comment, _) =>
+            {
+                clock.Now += TimeSpan.FromMinutes(2);
+                attention.Key();
+                Assert.Null(comment!.Post("Looks right").Result);
+                clock.Now += TimeSpan.FromMinutes(1);
+            });
+
+        OpenTheTaskInReview(window);
+
+        var visit = Assert.Single(visits);
+        Assert.Equal(new Visit("team0", 49, "Review", opened, TimeSpan.FromMinutes(3), []), visit with { Did = [] });
+        Assert.Equal("commented", visit.What);
+    }
+
+    [Fact]
+    public void Time_in_Work_between_cards_is_the_selected_lane_s_and_the_Dashboard_s_is_nobody_s()
+    {
+        var clock = new Clock();
+        var visits = new List<Visit>();
+        var attention = new Attention(clock, visits.Add);
+        using var window = Open(clock: clock, attention: attention);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        clock.Now += TimeSpan.FromMinutes(3);
+        attention.Key();
+        window.Commands.Execute("view.dashboard");
+        window.Refresh();
+        clock.Now += TimeSpan.FromMinutes(4);
+        attention.Key();
+        window.Commands.Execute("view.work");
+        window.Refresh();
+        clock.Now += TimeSpan.FromMinutes(1);
+        attention.Stop();
+
+        Assert.Equal([("team0", (int?)null, "Other", 3.0), ("team0", null, "Other", 1.0)],
+            visits.Select(visit => (visit.Team, visit.Item, visit.Gate, visit.Spent.TotalMinutes)));
+    }
+
+    [Fact]
+    public void A_try_from_a_card_counts_the_whole_session_against_it_up_to_half_an_hour()
+    {
+        var clock = new Clock();
+        var visits = new List<Visit>();
+        var attention = new Attention(clock, visits.Add);
+        var handed = new List<Handover>();
+        using var first = Open(clock: clock, attention: attention, handOver: handed.Add);
+        first.Refresh();
+        LayOut(first, 120, 30);
+        first.NewKeyDownEvent(Key.CursorRight);
+        first.NewKeyDownEvent(Key.CursorRight);
+        first.NewKeyDownEvent(Key.CursorRight);
+        first.Commands.Execute("work.try");
+        clock.Now += TimeSpan.FromMinutes(40);
+
+        using var back = Open(clock: clock, attention: attention, resume: handed.Single());
+
+        var visit = Assert.Single(visits);
+        Assert.Equal(("team0", 49, "Review", TimeSpan.FromMinutes(30), "tried"), (visit.Team, visit.Item, visit.Gate, visit.Spent, visit.What));
+    }
+
+    [Fact]
     public void t_in_the_reader_hands_over_to_try_with_the_team_PR_and_where_the_reader_was()
     {
         var handed = new List<Handover>();
@@ -3204,7 +3277,8 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, Task<Reading>>? readHistory = null,
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
-        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null)
+        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
+        Attention? attention = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -3231,7 +3305,8 @@ public class WorkAreaTests : IDisposable
             readHistory: readHistory,
             readTrend: readTrend,
             showTrends: showTrends,
-            newIdea: newIdea);
+            newIdea: newIdea,
+            attention: attention);
     }
 
     private void WriteRun(string team, string role, int pid)
