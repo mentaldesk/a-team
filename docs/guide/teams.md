@@ -18,7 +18,7 @@ what its runs have cost **Today**, since midnight, and its health.
 ## Starting a team
 
 `n` on the Teams page, or **New team** in Commands, opens the form for a new team. Fill it in and
-press `Enter`. A-Team writes the team's file, paused, then offers in turn to:
+press `Ctrl+Enter` (**Create**). A-Team writes the team's file, paused, then offers in turn to:
 
 1. Clone the repo.
 2. Give the team its GitHub App, and install it on the repo.
@@ -74,10 +74,10 @@ next run uses it.
 [Customer lead](how-a-team-works.md#the-customer-lead), and untick it to take it away again. With it,
 **Docs** is required: the first page of your user docs, in the repo. Tick **Reviewer** to have the
 [Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. Each
-field says what it's for underneath. `Enter` saves them into the team's file, leaving everything else in it as it was, and
-`Esc` cancels.
+field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the team's file, leaving everything else in it as it was, and
+`Esc` (**Cancel**) cancels. `Enter` never saves.
 
-**Workdir**, **Vision** and **Docs** take typing, and `Enter` on one opens a picker instead of saving:
+**Workdir**, **Vision** and **Docs** take typing, and `Enter` on one opens a picker:
 
 - **Workdir** browses the folders on this machine, starting from the one typed in. Type to narrow the
   list, `Enter` goes into a folder and `Backspace` goes up a level. **Use this folder** (`Ctrl+Enter`)

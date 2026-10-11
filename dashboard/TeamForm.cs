@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
+using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Keys;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -89,7 +91,7 @@ public sealed class TeamForm : Dialog
     private readonly NumericUpDown<int> _budget;
     private readonly StatusBar _hints = new();
     private readonly View _buttons = new() { X = Pos.Center(), Width = Dim.Auto(), Height = 1, CanFocus = true };
-    private readonly Button _repair = Button($"Repair ({RepairKey})");
+    private readonly Button _repair = FootButton(AppButton.Secondary($"{KeyChord.Display(RepairKey)} Repair"));
     private readonly MessageBar _message = new();
     private readonly View _problemsBand = new() { SchemeName = LogSchemes.Warning, CanFocus = true, Visible = false };
     private readonly Label _problemsLabel = new() { Text = ProblemsHeading, X = Inset, Y = BandPadding };
@@ -292,8 +294,9 @@ public sealed class TeamForm : Dialog
         _problemsBand.Add(_problemsLabel, _problems);
         Add(_problemsBand);
 
-        var saveButton = Button(team is null ? "Create" : "Save");
-        var cancelButton = Button("Cancel");
+        var saveButton = FootButton(AppButton.Primary($"{KeyChord.Display(Confirm.Chord)} {(team is null ? "Create" : "Save")}"));
+        saveButton.IsDefault = false;
+        var cancelButton = FootButton(AppButton.Secondary($"{KeyChord.Display(Key.Esc)} Cancel"));
         _repair.Visible = false;
         _repair.Accepting += (_, args) => args.Handled = Repair();
         saveButton.Accepting += (_, args) => args.Handled = Save();
@@ -552,10 +555,10 @@ public sealed class TeamForm : Dialog
         }, TaskScheduler.Default);
     }
 
-    /// <summary>Enter reaches a Dialog as Accept, from any field alike, and never as a key. The project list's own
-    /// Enter picks a project rather than saving.</summary>
+    /// <summary>Enter reaches a Dialog as Accept, from any field alike, and never saves: Ctrl+Enter does. The
+    /// project list's own Enter picks a project.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
-        args.Context?.Source?.TryGetTarget(out var from) == true && Picking(from) || Save();
+        args.Context?.Source?.TryGetTarget(out var from) != true || !Picking(from);
 
     private bool Picking(View from)
     {
@@ -571,6 +574,8 @@ public sealed class TeamForm : Dialog
             return Close(null);
         if (key == RepairKey)
             return Repair();
+        if (key == Confirm.Chord)
+            return Save();
         return base.OnKeyDown(key);
     }
 
@@ -851,7 +856,14 @@ public sealed class TeamForm : Dialog
         SetNeedsDraw();
     }
 
-    private static Button Button(string text) => new() { Text = text, Y = 0, HotKeySpecifier = (Rune)0xffff };
+    /// <summary>A button along the foot, which Enter doesn't press: its own key, or Space, does.</summary>
+    private static Button FootButton(Button button)
+    {
+        button.Y = 0;
+        button.HotKeySpecifier = (Rune)0xffff;
+        button.KeyDown += (_, key) => key.Handled = key == Key.Enter;
+        return button;
+    }
 
     private void Say(string message, Schemes scheme)
     {
