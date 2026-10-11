@@ -159,6 +159,36 @@ public class TrendsDialogTests
         Assert.True(dialog.Table.Viewport.Width >= needed, $"{needed} wide in {dialog.Table.Viewport.Width}");
     }
 
+    [Theory]
+    [InlineData(14, 1f)]
+    [InlineData(27, 2f)]
+    [InlineData(31, 30 / 13f)]
+    [InlineData(38, 37 / 13f)]
+    [InlineData(76, 75 / 13f)]
+    [InlineData(5, 1f)]
+    public void Days_are_spaced_to_span_the_plot(int plotWide, float spacing) =>
+        Assert.Equal(spacing, TrendsDialog.DaySpacing(plotWide), 4);
+
+    [Theory]
+    [InlineData(0, 120)]
+    [InlineData(3, 120)]
+    [InlineData(0, 160)]
+    [InlineData(3, 160)]
+    public void The_chart_s_days_end_on_the_plot_s_last_column(int measure, int wide)
+    {
+        var host = new View { Width = wide, Height = 40 };
+        using var dialog = Open(("a-team", 4, Timed), ("tuicode", null, Nothing));
+        host.Add(dialog);
+        dialog.Measure.Value = measure;
+        host.Layout(new System.Drawing.Size(wide, 40));
+
+        var legendWide = "tuicode".Length + 3;
+        var lastColumn = dialog.Graph.Viewport.Width - legendWide - 2;
+        var lastDay = dialog.Graph.AxisX.Increment * (TeamRecord.Days - 1);
+
+        Assert.Equal(lastColumn, dialog.Graph.GraphSpaceToViewport(new System.Drawing.PointF(lastDay, 0)).X);
+    }
+
     private static string[] Cells(TableView table, int row, params int[] columns) =>
         [.. columns.Select(column => table.Table![row, column].ToString()!)];
 

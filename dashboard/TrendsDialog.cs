@@ -233,8 +233,7 @@ public sealed class TrendsDialog : Dialog
         if (_records is null || _legend is null || !_graph.Visible || _graph.Viewport.Width == 0)
             return;
         var series = Series;
-        var plotWide = Math.Max(TeamRecord.Days, _graph.Viewport.Width - LabelWidth - LegendWide - 1);
-        var perDay = Math.Max(1, (plotWide - 1) / (TeamRecord.Days - 1));
+        var perDay = DaySpacing(_graph.Viewport.Width - LabelWidth - LegendWide - 1);
         var plotTall = Math.Max(2, _graph.Viewport.Height - AxisRows);
         var highest = Math.Max(1, series.SelectMany(values => values).Max(value => value ?? 0));
         var perRow = Math.Max(1, (int)Math.Ceiling(highest / (double)(plotTall - 1)));
@@ -269,6 +268,9 @@ public sealed class TrendsDialog : Dialog
         _graph.Annotations.Add(_legend);
         _graph.SetNeedsDraw();
     }
+
+    /// <summary>Columns between days, so the last day lands on the plot's last column.</summary>
+    internal static float DaySpacing(int plotWide) => Math.Max(1f, (plotWide - 1) / (TeamRecord.Days - 1f));
 
     private int LegendWide => _teams.Max(team => team.Team.Length) + 3;
 
