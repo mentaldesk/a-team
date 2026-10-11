@@ -1990,7 +1990,8 @@ case "$CMD" in
           printf '%s\n' "$accepted" >"$COVERED"
         fi
         docs=$(jq -r '[.[] | select((.labels | index("a-team:customer"))
-          and (.status == "In review" or .status == "Pitched")) | "\(.status)\t\(.number)"] | first // empty' <<<"$all")
+          and (.status == "In review" or .status == "Pitched"))] | sort_by(.status != "In review")
+          | map("\(.status)\t\(.number)") | first // empty' <<<"$all")
         status=${docs%%$'\t'*} n=${docs##*$'\t'}
         kind=''
         if ! docs_there; then

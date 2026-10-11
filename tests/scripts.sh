@@ -2992,6 +2992,26 @@ for role in lead dev; do
 done
 gh_recent </dev/null
 
+case_ "beside a leftover proposal listed first, feedback on the docs PR still triggers the Customer lead"
+rm "$WORK/no-docs"
+gh_items <<'ITEMS'
+Pitched 12 Docs proposal: where the user docs live
+In_review 15 Docs: what's changed since 28 Sep
+ITEMS
+docs_pr 12
+docs_pr 15
+gh_thread pull </dev/null
+gh_recent <<RECENT
+15 ${TODAY}T09:10:00Z reviewer 0 Move this under Teams.
+RECENT
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+jq -e --arg r "stakeholder feedback on docs PR #15 (${TODAY}T09:10:00Z)" '.reasons | index($r)' "$OUT" >/dev/null ||
+  fail "feedback on the docs PR: '$(jq -c .reasons "$OUT")'"
+same "card" 15 "$(jq -c .card "$OUT")"
+gh_recent </dev/null
+touch "$WORK/no-docs"
+
 case_ "the Customer lead can't merge, approve or move its proposal"
 for args in "accept customer 12" "approve customer 12" "move customer 12 Approved" "move customer 12 Done"; do
   # shellcheck disable=SC2086 # one argument per word
