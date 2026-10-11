@@ -33,6 +33,7 @@ public sealed class SettingsDialog : Dialog
     private const string RemoveTeamHint = "x remove";
     private const string Working = "working";
     private const string Paused = "paused";
+    private const string TodayHeading = "Today";
     private const string Unreadable = "can't read this file";
     private const string Separator = " · ";
     private const string ToolCalls = "Show tool calls in full";
@@ -77,6 +78,8 @@ public sealed class SettingsDialog : Dialog
     private readonly MessageBar _message = new();
     private readonly List<string> _removed = [];
     private readonly TeamChecks? _checks;
+    private readonly Func<string, Task<Reading>>? _readToday;
+    private readonly Dictionary<string, TeamToday?> _today = [];
     private readonly Action<string> _showGuide;
     private readonly List<(string Column, TextField Field)> _limits;
     private bool _capturing;
@@ -94,7 +97,8 @@ public sealed class SettingsDialog : Dialog
         Func<string, Task<TeamHealth>>? check = null,
         Action<string>? showGuide = null,
         TeamChecks? checks = null,
-        IReadOnlyDictionary<string, string>? limits = null)
+        IReadOnlyDictionary<string, string>? limits = null,
+        Func<string, Task<Reading>>? today = null)
     {
         _showGuide = showGuide ?? (_ => { });
         _limits = [.. OverseerBoard.Columns.Select(column => (column,
@@ -106,6 +110,7 @@ public sealed class SettingsDialog : Dialog
         _auto = auto;
         check ??= start is null ? null : start.Check;
         _checks = checks ?? (check is null ? null : new TeamChecks(check, teams.Stamp));
+        _readToday = today ?? (start is null ? null : start.Today);
         _teamRows = [.. teams.Names().Select(teams.Row)];
         _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
         _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
@@ -509,6 +514,7 @@ public sealed class SettingsDialog : Dialog
             return true;
         _teamRows[index] = _teams.Row(team.Name);
         Check(team.Name);
+        ReadToday(team.Name);
         ShowTeams();
         ShowTeam();
         if (saved.Warning(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) is { } warning)
@@ -607,15 +613,41 @@ public sealed class SettingsDialog : Dialog
 
     private (string Header, IReadOnlyList<string> Rows) TeamColumns()
     {
-        string[] headings = _checks is null ? ["Team", "Repo", "Status"] : ["Team", "Repo", "Status", "Health"];
-        var cells = _teamRows.Select(team => new[] { team.Name, team.Repo, Status(team), Health(team) }).ToList();
-        var widths = Enumerable.Range(0, headings.Length - 1)
+        List<string> headings = ["Team", "Repo", "Status"];
+        if (_readToday is not null)
+            headings.Add(TodayHeading);
+        if (_checks is not null)
+            headings.Add("Health");
+        var cells = _teamRows.Select(team => (string[])[team.Name, team.Repo, Status(team),
+            .. _readToday is null ? Array.Empty<string>() : [Today(team)], Health(team)]).ToList();
+        var widths = Enumerable.Range(0, headings.Count)
             .Select(column => cells.Select(row => row[column].Length).Append(headings[column].Length).Max())
             .ToArray();
+        string Cell(string cell, int column) =>
+            headings[column] == TodayHeading ? cell.PadLeft(widths[column])
+            : column < headings.Count - 1 ? cell.PadRight(widths[column])
+            : cell;
         string Line(IReadOnlyList<string> row) =>
-            string.Join("  ", row.Take(headings.Length).Select((cell, column) => column < widths.Length ? cell.PadRight(widths[column]) : cell)).TrimEnd();
+            string.Join("  ", row.Take(headings.Count).Select(Cell)).TrimEnd();
         return (Line(headings), [.. cells.Select(Line)]);
     }
+
+    /// <summary>The Today column: nothing until the team's cost has been read, or where it can't be.</summary>
+    private string Today(TeamRow team) => _today.GetValueOrDefault(team.Name)?.Column ?? "";
+
+    /// <summary>Reads what each readable team has spent today, each filling its row in when it answers.</summary>
+    private void ReadToday()
+    {
+        foreach (var team in _teamRows.Where(team => team.Problem is null))
+            ReadToday(team.Name);
+    }
+
+    private void ReadToday(string team) =>
+        _readToday?.Invoke(team).ContinueWith(read => OnUi(() =>
+        {
+            _today[team] = read.Status == TaskStatus.RanToCompletion ? TeamToday.Of(read.Result) : null;
+            ShowTeams();
+        }), TaskContinuationOptions.ExecuteSynchronously);
 
     /// <summary>The health column: nothing where there's no way to check, and <c>checking…</c> until the check answers.</summary>
     private string Health(TeamRow team) =>
@@ -654,15 +686,21 @@ public sealed class SettingsDialog : Dialog
             action();
     }
 
-    private static string Status(TeamRow team) =>
-        team.Problem is not null ? Unreadable : team.Paused ? Paused : Working;
+    private string Status(TeamRow team) =>
+        team.Problem is not null ? Unreadable
+        : team.Paused ? Paused
+        : _today.GetValueOrDefault(team.Name) is { Reached: true } ? TeamToday.BudgetReached
+        : Working;
 
     /// <summary>Shows the page the list is on, and only that one, with the hints that page answers to.</summary>
     private void ShowPage()
     {
         var selected = _picker.Value ?? 0;
         if (_pages[selected].Name == TeamsPage)
+        {
             CheckTeams();
+            ReadToday();
+        }
         for (var index = 0; index < _pages.Count; index++)
             foreach (var placed in _pages[index].Rows)
                 placed.View.Visible = index == selected;

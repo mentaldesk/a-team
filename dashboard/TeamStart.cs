@@ -162,6 +162,9 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             "skip",
             line => gh.Stream(line, "repo", "clone", settings.Repo, clonePath, "--", "--progress"));
 
+    /// <summary>What the team's runs have cost today, against its daily budget.</summary>
+    public Task<Reading> Today(string team) => aTeam.Read("board", team, "today");
+
     /// <summary>What <c>board check</c> finds wrong with the team.</summary>
     public async Task<TeamHealth> Check(string team) => TeamHealth.Parse(await aTeam.Report("board", team, "check"));
 

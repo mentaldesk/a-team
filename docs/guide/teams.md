@@ -5,7 +5,8 @@ opens it on that page. `F1` in Settings opens this page.
 
 ## The Teams page
 
-A row per team: its name, its repo, whether it's `working` or `paused`, and its health.
+A row per team: its name, its repo, whether it's `working`, `paused` or has its `budget reached`,
+what its runs have cost **Today**, since midnight, and its health.
 
 | Key | Does |
 |---|---|
@@ -58,6 +59,16 @@ field says what it's for underneath. `Enter` saves them into the team's file, le
 A paused team picks up no new work, and a run already going finishes. `p` on the Teams page, or the
 team's own form, pauses it and starts it again. To pause one role and not the other, use `h` on the
 [Dashboard](dashboard.md#pausing-a-role).
+
+## A daily budget
+
+**Budget $/day**, under the form's limits, is the most a day's runs may cost at API prices. Once the
+team's runs since midnight have cost that much, the dispatcher starts no new run for it until
+midnight, and its row reads `budget reached`. A run already going finishes. The dispatcher's log
+says so once a day, e.g. `tuicode: daily budget $40 reached ($41.37 today); no new runs until
+midnight`. After midnight the team starts runs again by itself. 0, the default, means no budget.
+
+A run's cost counts once it has ended, so **Today** can pass the budget by what the last runs cost.
 
 ## Removing a team
 
