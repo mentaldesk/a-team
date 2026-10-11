@@ -181,6 +181,48 @@ public class TeamFormTests
     }
 
     [Fact]
+    public void Vision_reviews_starts_on_Manually_with_both_spinners_off()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+
+        Assert.Equal(VisionTrigger.Manually, form.VisionTrigger.Value);
+        Assert.False(form.VisionEvery.Enabled);
+        Assert.False(form.VisionUnit.Enabled);
+        Assert.False(form.VisionAfter.Enabled);
+    }
+
+    [Fact]
+    public void Each_vision_review_spinner_is_on_only_beside_its_chosen_option_and_the_choice_is_saved()
+    {
+        TeamSettings? written = null;
+        using var form = new TeamForm("a-team", Settings, now =>
+        {
+            written = now;
+            return null;
+        });
+        form.SetFocus();
+
+        form.VisionTrigger.SetFocus();
+        Assert.Equal(TeamForm.VisionReviewsCaption, form.Hints.Message.Says);
+        form.VisionTrigger.Value = VisionTrigger.Every;
+        Assert.True(form.VisionEvery.Enabled);
+        Assert.True(form.VisionUnit.Enabled);
+        Assert.False(form.VisionAfter.Enabled);
+        form.VisionEvery.Value = 2;
+        form.VisionUnit.Value = VisionUnit.Months;
+
+        form.VisionTrigger.Value = VisionTrigger.After;
+        Assert.False(form.VisionEvery.Enabled);
+        Assert.True(form.VisionAfter.Enabled);
+        form.VisionAfter.Value = 101;
+        Assert.Equal(50, form.VisionAfter.Value);
+        form.VisionAfter.Value = 80;
+        form.Repo.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal(new VisionReview(VisionTrigger.After, 2, VisionUnit.Months, 80), written?.VisionReview);
+    }
+
+    [Fact]
     public void Enter_in_the_open_project_list_picks_rather_than_saves()
     {
         var saved = false;
@@ -254,7 +296,7 @@ public class TeamFormTests
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Status", "Releases", "Roles", "Limits"],
+            ["Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -441,7 +483,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Create", "Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Releases", "Roles", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }

@@ -64,6 +64,11 @@ int Run()
         {
             TeamsChanged => handover,
             EditorHandover editor => editor with { Failure = editor.Open() },
+            DocumentHandover document => document.Open(
+                arguments => new TeamCommand(document.Editor[0]).Hand(arguments, Path.GetFileName(document.Editor[0])),
+                arguments => command.Run(arguments).GetAwaiter().GetResult(),
+                Path.Combine(stateRoot, "edits"),
+                DateTimeOffset.Now),
             _ => handover with { Failure = command.Hand(handover.Arguments) },
         };
     }
@@ -94,8 +99,8 @@ Handover? Show(Handover? back)
         team => command.Read("board", team, "waiting"),
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
-        (item, body, onGitHub, onApprove, accept, comment, tryIt, rank) =>
-            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes),
+        (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, rank) =>
+            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes, edit),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>
@@ -115,7 +120,8 @@ Handover? Show(Handover? back)
         showTrends: teams => TrendsDialog.Show(app, teams, team => command.Read("board", team, "trends")),
         newIdea: (teams, team) => NewIdeaDialog.Show(app, teams, team, new IdeaFiler(command.Read)),
         readBoard: team => command.Read("board", team, "overview"),
-        attention: attention);
+        attention: attention,
+        readDocument: item => command.Read("board", item.Team, "document", item.Number.ToString()));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

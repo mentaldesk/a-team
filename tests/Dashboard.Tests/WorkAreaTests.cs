@@ -1855,6 +1855,120 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void A_document_pitch_waits_under_Pitches_and_a_merges_it_once_you_ve_said_so()
+    {
+        var calls = new List<string[]>();
+        var asked = new List<WaitingItem>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? DocumentPitch() : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            confirmAccept: item =>
+            {
+                asked.Add(item);
+                return true;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal("Pitches", WorkView.GateOf(window.Work.Selected!));
+        Assert.True(window.NewKeyDownEvent(new Key('a')));
+        window.Refresh();
+
+        Assert.Equal(60, Assert.Single(asked).Number);
+        Assert.Equal("Merges #60 into main, squashed. The Lead's next run reads it.", AcceptDialog.Says(asked[0]));
+        Assert.Equal([["board", "team0", "accept", "you", "60"]], calls);
+        Assert.Equal("merged #60", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_document_pitch_s_reader_shows_its_file_after_its_body_and_offers_e()
+    {
+        var shown = new List<IssueBody>();
+        var edits = new List<ReaderEdit?>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? DocumentPitch() : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading("""{"number": 60, "title": "t", "body": "## Why now"}""", null)),
+            readDocument: _ => Task.FromResult(new Reading(VisionDocument, null)),
+            showBody: (_, body, _, _, _, _, _) => shown.Add(body),
+            showEdit: edits.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal("## Why now\n\n---\n\n# docs/vision.md\n\n# Vision\n\nThe tenet.\n", Assert.Single(shown).Text);
+        var edit = Assert.Single(edits);
+        Assert.NotNull(edit);
+        Assert.Null(edit.Uneditable);
+    }
+
+    [Fact]
+    public void A_document_pitch_that_changes_several_files_can_t_be_edited_from_its_reader()
+    {
+        var edits = new List<ReaderEdit?>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? DocumentPitch() : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading("""{"number": 60, "title": "t", "body": "## Why now"}""", null)),
+            readDocument: _ => Task.FromResult(new Reading("""{"number": 60, "files": ["docs/vision.md", "README.md"]}""", null)),
+            showEdit: edits.Add);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal("#60 changes 2 files, so it can't be edited here: g opens it on GitHub", Assert.Single(edits)?.Uneditable);
+    }
+
+    [Fact]
+    public void e_hands_your_editor_the_file_and_the_reader_reads_it_again_once_your_edit_is_committed()
+    {
+        var handed = new List<Handover>();
+        using var first = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? DocumentPitch() : "[]", null)),
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading("""{"number": 60, "title": "t", "body": "## Why now"}""", null)),
+            readDocument: _ => Task.FromResult(new Reading(VisionDocument, null)),
+            showEdit: edit => edit!.Run(new IssueBody("## Why now"), 7));
+        first.Refresh();
+        LayOut(first, 120, 30);
+        first.NewKeyDownEvent(Key.Enter);
+        first.Refresh();
+
+        var handover = Assert.IsType<DocumentHandover>(Assert.Single(handed));
+        Assert.Equal("# Vision\n\nThe tenet.\n", File.ReadAllText(handover.File));
+        File.Delete(handover.File);
+        Assert.Equal(7, handover.Reader.Top);
+
+        var reads = 0;
+        var reopened = new List<ReaderEdit?>();
+        using var back = Open(
+            readBody: _ =>
+            {
+                reads++;
+                return Task.FromResult(new Reading("""{"number": 60, "title": "t", "body": "## Why now"}""", null));
+            },
+            readDocument: _ => Task.FromResult(new Reading(VisionDocument, null)),
+            showEdit: reopened.Add,
+            resume: handover with { Said = "committed your edit to docs/vision.md", Committed = true });
+        back.Refresh();
+        LayOut(back, 120, 30);
+        back.FocusResumed();
+        back.ReopenReader();
+        back.Refresh();
+
+        Assert.Equal(1, reads);
+        var edit = Assert.Single(reopened);
+        Assert.Equal("committed your edit to docs/vision.md", edit?.Said);
+        Assert.Equal(7, edit?.Top);
+    }
+
+    [Fact]
     public void The_reader_offers_no_accept_on_a_pitch()
     {
         var offered = new List<bool>();
@@ -3069,6 +3183,16 @@ public class WorkAreaTests : IDisposable
             "unready": "{{unready}}"}]
           """;
 
+    private static string DocumentPitch() =>
+        """
+        [{"number": 60, "title": "Vision review: themes 1 and 5 have run dry", "status": "Pitched",
+          "url": "https://github.com/mentaldesk/team0/pull/60", "team": "team0", "pitch": false, "document": true,
+          "turn": "you", "reason": "awaiting your approval since 08:14"}]
+        """;
+
+    private const string VisionDocument =
+        """{"number": 60, "files": ["docs/vision.md"], "path": "docs/vision.md", "ref": "a-team/vision", "sha": "0123abc", "text": "# Vision\n\nThe tenet.\n"}""";
+
     private static string ReviewPitch(int open = 0) =>
         $$"""
           [{"number": 174, "title": "Accepting finished work", "status": "In review",
@@ -3278,7 +3402,9 @@ public class WorkAreaTests : IDisposable
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
         Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
-        Attention? attention = null)
+        Attention? attention = null,
+        Action<ReaderEdit?>? showEdit = null,
+        Func<WaitingItem, Task<Reading>>? readDocument = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -3290,9 +3416,10 @@ public class WorkAreaTests : IDisposable
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
-            (item, body, onGitHub, onApprove, accept, comment, tryIt, rank) =>
+            (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, rank) =>
             {
                 showBody?.Invoke(item, body, onGitHub, onApprove, accept, comment, tryIt);
+                showEdit?.Invoke(edit);
                 return chooseRank?.Invoke(item, body, rank);
             },
             area,
@@ -3306,7 +3433,8 @@ public class WorkAreaTests : IDisposable
             readTrend: readTrend,
             showTrends: showTrends,
             newIdea: newIdea,
-            attention: attention);
+            attention: attention,
+            readDocument: readDocument);
     }
 
     private void WriteRun(string team, string role, int pid)

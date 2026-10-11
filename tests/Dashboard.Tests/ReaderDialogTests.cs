@@ -336,6 +336,60 @@ public class ReaderDialogTests
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), dialog.Message.SchemeName);
     }
 
+    [Fact]
+    public void A_document_pitch_offers_e_edit_and_hands_over_what_it_shows_and_where()
+    {
+        var edited = new List<(IssueBody Body, int Top)>();
+        var body = new IssueBody(Long());
+        using var dialog = new ReaderDialog(Item, body, () => { },
+            accept: new ReaderCommand(new Key('a'), "accept", () => true),
+            edit: new ReaderEdit(new Key('e'), (shown, top) => edited.Add((shown, top))));
+        dialog.Layout(new Size(80, 10));
+        dialog.NewKeyDownEvent(Key.PageDown);
+        var top = dialog.Body.Top;
+
+        Assert.Contains("e edit · a accept", dialog.Hints.Says);
+        Assert.True(dialog.NewKeyDownEvent(new Key('e')));
+
+        Assert.Equal([(body, top)], edited);
+    }
+
+    [Fact]
+    public void One_it_can_t_edit_says_why_and_stays_open()
+    {
+        var edited = 0;
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            edit: new ReaderEdit(new Key('e'), (_, _) => edited++, "#180 changes 2 files, so it can't be edited here: g opens it on GitHub"));
+        dialog.Layout(new Size(80, 20));
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('e')));
+
+        Assert.Equal(0, edited);
+        Assert.Equal("#180 changes 2 files, so it can't be edited here: g opens it on GitHub", dialog.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), dialog.Message.SchemeName);
+    }
+
+    [Fact]
+    public void Reopened_after_an_edit_it_opens_where_it_was_saying_what_became_of_it()
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+            edit: new ReaderEdit(new Key('e'), (_, _) => { }, Top: 12, Said: "committed your edit to docs/vision.md"));
+        dialog.Layout(new Size(60, 10));
+
+        Assert.Equal(12, dialog.Body.Top);
+        Assert.Equal("committed your edit to docs/vision.md", dialog.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Accent), dialog.Message.SchemeName);
+    }
+
+    [Fact]
+    public void Anything_but_a_document_pitch_has_no_e()
+    {
+        using var dialog = Open(Pitch);
+
+        Assert.DoesNotContain("edit", dialog.Hints.Says);
+        Assert.False(dialog.NewKeyDownEvent(new Key('e')));
+    }
+
     private static readonly History Recorded = new([
         new HistoryEvent(new(new DateTime(2026, 10, 3, 13, 40, 0, DateTimeKind.Local)), "dev", "In progress → In review"),
         .. Enumerable.Range(1, 40).Select(n =>

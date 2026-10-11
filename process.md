@@ -37,8 +37,9 @@ Two kinds of item share the board:
   Building → Done. Its tasks are GitHub sub-issues of it, and the Lead closes it once they've
   all closed.
 - A **document pitch** is a proposal that is itself a document, like the product vision. It's a
-  draft PR with the `pitch` label that goes straight to Pitched. The stakeholder approves it by
-  merging, which moves it to Done.
+  draft PR with the `pitch` label that goes straight to Pitched, even when Pitched is full. The
+  stakeholder may edit it on its branch, and approves it by merging, which moves it to Done. A
+  **vision review** is one: the Lead opens it when the team's trigger says one is due.
 - A **task** is a single PR that ships something a user can notice (never a layer or a
   technical milestone on its own), and travels Ready → In progress → In review → Done.
   A task that needs another merged first is recorded as blocked by it, a GitHub issue
@@ -75,7 +76,8 @@ a-team board {{team}} move <role> <n> <STATUS>
 a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on the board
 a-team board {{team}} priority <role> <n> <value|none>  # stakeholder only: rank an item, or clear its rank
 a-team board {{team}} approve <role> <n>        # stakeholder only: move a Pitched pitch to Approved
-a-team board {{team}} accept <role> <n>         # stakeholder only: squash-merge task #<n>'s PR, or close validated pitch #<n>
+a-team board {{team}} accept <role> <n>         # stakeholder only: squash-merge task #<n>'s PR or document
+                                                # pitch #<n>, or close validated pitch #<n>
 a-team board {{team}} decline <role> <n> <file> # stakeholder only: comment <file> on Idea or Pitched pitch #<n>
                                                 # and close it as not planned
 a-team board {{team}} finish <role> <n> <file>  # Lead only: once every task of pitch #<n> has closed,
@@ -117,7 +119,8 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend` and `trends` are what the app's Work area reads, `overview` is what its Overseer reads, `new` is how it
-opens an Idea, and `spent` is how it records the stakeholder's time. Don't run them.
+opens an Idea, `spent` is how it records the stakeholder's time, `document` and `edit` are how it edits a
+document pitch, and `vision-review` is how it asks for a vision review. Don't run them.
 
 Run it exactly as written here, one command per call. Don't put it in a shell variable or
 chain it with other commands: the permission check approves what it can read, and it can't
