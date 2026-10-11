@@ -48,7 +48,7 @@ public class WhatsNewWindowTests : IDisposable
 
         Assert.Empty(_reads);
         Assert.Equal("", window.Status.Alerting);
-        Assert.False(window.Commands.Enabled.Any(command => command.Id == "work.whatsNew"));
+        Assert.DoesNotContain(window.Commands.Enabled, command => command.Id == "work.whatsNew");
     }
 
     [Fact]
