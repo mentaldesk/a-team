@@ -335,6 +335,28 @@ public class TeamFormTests
     }
 
     [Fact]
+    public void Budget_sits_below_Devs_says_what_it_limits_and_saves_what_it_holds()
+    {
+        TeamSettings? written = null;
+        using var form = new TeamForm("a-team", Settings with { Budget = 40 }, now =>
+        {
+            written = now;
+            return null;
+        });
+        form.SetFocus();
+        form.Layout();
+
+        Assert.Equal(40, form.Budget.Value);
+        Assert.Equal(form.Devs.Frame.Y + 1, form.Budget.Frame.Y);
+        form.Budget.SetFocus();
+        Assert.Equal(TeamForm.BudgetCaption, form.Hints.Message.Says);
+        form.Budget.Value = 25;
+        form.Repo.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal(Settings with { Budget = 25 }, written);
+    }
+
+    [Fact]
     public void The_list_rows_say_what_they_change_as_they_take_focus()
     {
         using var form = new TeamForm("a-team", Settings, _ => null);

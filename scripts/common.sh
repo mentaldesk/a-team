@@ -63,3 +63,13 @@ run_outcome() {
   history_sql "UPDATE runs SET outcome = $(sql "$4") WHERE team = $(sql "$1") AND role = $(sql "$2")
     AND pid = $3 AND ended IS NULL;" >/dev/null || true
 }
+
+# budget_today <team> <config> <now>: what the team's runs that ended since local midnight cost, its daily budget
+# (0 for none), and whether that's reached, as JSON.
+budget_today() {
+  local cost=0
+  [ ! -f "$STATE/history.db" ] || cost=$(history_sql "SELECT COALESCE(SUM(cost), 0) FROM runs WHERE team = $(sql "$1")
+    AND ended >= strftime('%Y-%m-%dT%H:%M:%SZ', $3, 'unixepoch', 'localtime', 'start of day', 'utc');") || return
+  jq -c --argjson cost "$cost" '((.dispatch.budget | numbers) // 0) as $budget | ($cost * 100 | round / 100) as $cost
+    | {$cost, $budget, reached: ($budget > 0 and $cost >= $budget)}' "$2"
+}

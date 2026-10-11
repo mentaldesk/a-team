@@ -53,13 +53,14 @@ dispatch() {
   now=$(date +%s)
   cfg() { jq -r "$1" "$config"; }
 
-  $DRY_RUN || { prune_releases "$dir"; settle_runs; }
+  $DRY_RUN || prune_releases "$dir"
   live=$(live_runs "$dir")
   while read -r pid at _; do
     [ -n "$pid" ] || continue
     [ $((now - at)) -gt $(($(cfg '.dispatch.maxRuntime // 120') * 60)) ] && kill "$pid" &&
       log "$team $role: killed run $pid after $(((now - at) / 60)) minutes" && run_outcome "$team" "$role" "$pid" killed
   done <<<"$live"
+  $over_budget && return
   limit=1
   [ "$role" = dev ] && limit=$(cfg '.wip.devs // 1')
   [ "$(grep -c . <<<"$live")" -lt "$limit" ] || return
@@ -220,7 +221,7 @@ record_run() {
     log "$team $role: couldn't record run $1 in the history"
 }
 
-# settle_runs: records the end of each of the role's runs that has finished since the last pass, with
+# settle_runs: records the end of each of the team's runs that has finished since the last pass, with
 # its cost if its log got as far as a result.
 settle_runs() {
   local id pid log result ended cost outcome
@@ -237,8 +238,20 @@ settle_runs() {
     fi
     history_sql "UPDATE runs SET ended = $(sql "$(iso "$ended")"), cost = $cost,
       outcome = COALESCE(outcome, $([ -n "$outcome" ] && sql "$outcome" || echo NULL)) WHERE id = $id;" >/dev/null
-  done < <(history_sql "SELECT id, pid, log FROM runs WHERE team = $(sql "$team") AND role = $(sql "$role")
-    AND ended IS NULL;")
+  done < <(history_sql "SELECT id, pid, log FROM runs WHERE team = $(sql "$team") AND ended IS NULL;")
+}
+
+# over_budget <team> <config>: whether the team's runs today have reached its daily budget, which the log says once a day.
+over_budget() {
+  local today said file
+  file="$STATE/$1/$($DRY_RUN && echo dry-)budget-said"
+  today=$(budget_today "$1" "$2" "$now") && jq -e .reached <<<"$today" >/dev/null || return 1
+  said=$(date +%F)
+  [ "$said" = "$(cat "$file" 2>/dev/null)" ] && return
+  mkdir -p "$STATE/$1"
+  echo "$said" >"$file"
+  log "$1: daily budget \$$(jq .budget <<<"$today") reached (\$$(printf '%.2f' "$(jq .cost <<<"$today")") today);\
+ $($DRY_RUN && echo "would start ")no new runs until midnight"
 }
 
 # fresh <file> <reasons> <log>: whether these reasons are worth a run. The same ones as last time
@@ -323,6 +336,10 @@ for team in $(team_names); do
     continue
   fi
   passing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$team: running again"
+  now=$(date +%s)
+  $DRY_RUN || settle_runs
+  over_budget=false
+  over_budget "$team" "$config" && over_budget=true
   for role in $(team_roles "$config"); do
     dispatch "$team" "$role" "$config"
   done

@@ -44,6 +44,10 @@ public sealed partial record TeamSettings(
     /// <summary>The first page of the user docs, in the repo, which the Customer lead keeps right.</summary>
     public string Docs { get; init; } = "";
 
+    /// <summary>The most a day's runs may cost before the dispatcher starts no more of them: <c>dispatch.budget</c>,
+    /// 0 for no budget.</summary>
+    public int Budget { get; init; }
+
     public static TeamSettings Read(byte[] config)
     {
         using var document = JsonDocument.Parse(config);
@@ -80,6 +84,7 @@ public sealed partial record TeamSettings(
             Customer = Find(root, "roles", "customer") is { ValueKind: JsonValueKind.True },
             Reviewer = Find(root, "roles", "reviewer") is { ValueKind: JsonValueKind.True },
             Docs = Text(root, "docs"),
+            Budget = Number(root, "dispatch", "budget") ?? 0,
         };
     }
 
@@ -153,6 +158,7 @@ public sealed partial record TeamSettings(
         SetNumber(Exploring, before.Exploring, "wip", "exploring");
         SetNumber(Ideas, before.Ideas, "wip", "ideas");
         SetNumber(ReadyFloor, before.ReadyFloor, "wip", "readyFloor");
+        SetNumber(Budget, before.Budget, "dispatch", "budget");
         return config;
     }
 

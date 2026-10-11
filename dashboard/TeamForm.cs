@@ -39,6 +39,7 @@ public sealed class TeamForm : Dialog
     internal const string ExploringCaption = "How many drafted pitches wait for room in Pitched.";
     internal const string IdeasCaption = "How many of the Lead's ideas wait for you to prioritise them.";
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
+    internal const string BudgetCaption = "Most a day's runs may cost, at API prices, before the team stops starting new ones. 0 for no budget.";
     private const string ProblemsHeading = "Problems";
     private const int BandPadding = 1;
     private const int ProblemsTop = BandPadding + 2;
@@ -78,6 +79,7 @@ public sealed class TeamForm : Dialog
     private readonly NumericUpDown<int> _exploring;
     private readonly NumericUpDown<int> _ideas;
     private readonly NumericUpDown<int> _readyFloor;
+    private readonly NumericUpDown<int> _budget;
     private readonly StatusBar _hints = new();
     private readonly View _buttons = new() { X = Pos.Center(), Width = Dim.Auto(), Height = 1, CanFocus = true };
     private readonly Button _repair = Button($"Repair ({RepairKey})");
@@ -227,7 +229,8 @@ public sealed class TeamForm : Dialog
         _exploring = Limit("Exploring", settings.Exploring, 2, row++, ExploringCaption);
         _devs = Limit("Devs", settings.Devs, 0, row, DevsCaption, least: 1);
         _ideas = Limit("Ideas", settings.Ideas, 1, row, IdeasCaption);
-        _readyFloor = Limit("Ready floor", settings.ReadyFloor, 2, row, ReadyFloorCaption);
+        _readyFloor = Limit("Ready floor", settings.ReadyFloor, 2, row++, ReadyFloorCaption);
+        _budget = Limit("Budget $/day", settings.Budget, 0, row, BudgetCaption);
         row += 2;
 
         _problemsBand.X = 0;
@@ -318,6 +321,8 @@ public sealed class TeamForm : Dialog
     internal NumericUpDown<int> Worktrees => _worktrees;
 
     internal NumericUpDown<int> Devs => _devs;
+
+    internal NumericUpDown<int> Budget => _budget;
 
     internal StatusBar Hints => _hints;
 
@@ -425,6 +430,7 @@ public sealed class TeamForm : Dialog
             Exploring = _exploring.Value,
             Ideas = _ideas.Value,
             ReadyFloor = _readyFloor.Value,
+            Budget = _budget.Value,
         };
 
     /// <summary>The owner's projects as a list to pick from, keeping the team's own where the list hasn't got it;
@@ -641,7 +647,10 @@ public sealed class TeamForm : Dialog
     {
         const int columnWidth = 22;
         var name = new Label { Text = label, X = FieldX + column * columnWidth, Y = row };
-        var limit = new NumericUpDown<int> { Value = value, X = FieldX + column * columnWidth + 12, Y = row, Width = LimitWidth };
+        var limit = new NumericUpDown<int>
+        {
+            Value = value, X = FieldX + column * columnWidth + Math.Max(12, label.Length + 1), Y = row, Width = LimitWidth,
+        };
         limit.ValueChanging += (_, e) => e.Handled = e.NewValue < least;
         Add(name, limit);
         Caption(limit, caption);
