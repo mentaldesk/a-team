@@ -7,7 +7,7 @@ namespace ATeam.Dashboard;
 /// its keys routed to its commands, which the library does only under an AppShell the dashboard doesn't have.</summary>
 public abstract class PathPicker : PickerDialog<string>
 {
-    private const int Margin = 4;
+    private const int ScreenMargin = 4;
     private const int Widest = 90;
 
     private readonly Label _where;
@@ -46,7 +46,7 @@ public abstract class PathPicker : PickerDialog<string>
     /// <summary>The widest a picker can be on a screen <paramref name="columns"/> wide, and how many rows it can show
     /// on one <paramref name="lines"/> high.</summary>
     internal static (int Width, int Rows) Fit(int columns, int lines) =>
-        (Math.Clamp(columns - Margin, 20, Widest), Math.Clamp(lines - Margin - 2, 6, 24));
+        (Math.Clamp(columns - ScreenMargin, 20, Widest), Math.Clamp(lines - ScreenMargin - 2, 6, 24));
 
     protected void Say(string text) => _noMatches.Text = text;
 
