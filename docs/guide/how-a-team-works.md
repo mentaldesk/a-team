@@ -51,7 +51,8 @@ request that changes something you can see or do. A task that needs another merg
 blocked by it on GitHub, and becomes ready to start by itself when that one closes.
 
 A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a
-draft pull request in Pitched instead. You agree to it by merging it.
+draft pull request in Pitched instead. You agree to it by merging it, with `a` in
+[Work](work.md#answering-from-a-card), where `e` also edits it.
 
 ## Where you decide
 
@@ -88,7 +89,7 @@ Dashboard.
 
 - **If your team's Docs page isn't in the repo yet**, it proposes the docs first: a draft PR in
   Pitched, `Docs proposal: where <product>'s user docs live`, that adds that page with their outline.
-  Comment on it to change the plan. Merge it on GitHub to agree, and its next run writes the docs.
+  Comment on it to change the plan. Accept it in Work to agree, and its next run writes the docs.
   Until then it writes none.
 - **When a pitch is done**, it reads what the pitch shipped and checks the user docs cover it:
   the README, guides and in-app help written as text.
