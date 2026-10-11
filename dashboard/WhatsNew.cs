@@ -50,12 +50,12 @@ public sealed record Move(int Item, DateTimeOffset At, string Who, string What)
 /// <summary>An item that has become your move since the app started.</summary>
 public sealed record NewItem(string Team, int Number, Arrival Kind, DateTimeOffset At)
 {
-    /// <summary>The Work column it waits in.</summary>
-    internal string Gate => Kind switch
+    /// <summary>Whether it waits in Work's <paramref name="gate"/>: a pitch with an open question waits in Questions.</summary>
+    internal bool WaitsIn(string gate) => Kind switch
     {
-        Arrival.Pitch => "Pitches",
-        Arrival.Question => "Questions",
-        _ => "Review",
+        Arrival.Pitch => gate is "Pitches" or "Questions",
+        Arrival.Question => gate == "Questions",
+        _ => gate == "Review",
     };
 
     internal Icon Icon => Kind switch
@@ -99,7 +99,7 @@ public sealed class WhatsNew(DateTimeOffset since)
     {
         var at = waiting.Where(item => item.Team == team).ToList();
         foreach (var item in _arrived.GetValueOrDefault(team, []).Where(item => item.At < asked && Uncleared(item)))
-            if (!at.Any(each => each.Number == item.Number && WorkView.GateOf(each) == item.Gate))
+            if (!at.Any(each => each.Number == item.Number && item.WaitsIn(WorkView.GateOf(each))))
                 _cleared[(team, item.Number)] = asked;
     }
 

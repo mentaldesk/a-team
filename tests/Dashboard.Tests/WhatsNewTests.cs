@@ -95,18 +95,20 @@ public class WhatsNewTests
     [Fact]
     public void A_read_of_Work_that_doesn_t_show_it_at_its_gate_clears_it_but_one_asked_for_before_it_arrived_doesn_t()
     {
-        var news = Read(At(1, 7, "lead", "Exploring → Pitched"), At(1, 8, "lead", "Exploring → Pitched"));
+        var news = Read(At(1, 7, "lead", "Exploring → Pitched"), At(1, 8, "lead", "Exploring → Pitched"),
+            At(1, 9, "lead", "Exploring → Pitched"));
         WaitingItem[] waiting =
         [
             new(7, "Ranked", "Pitched", "", "team", Priority: "High", Pitch: true),
             new(8, "Unranked, so in Triage", "Pitched", "", "team", Pitch: true),
+            new(9, "With a question, so in Questions", "Pitched", "", "team", Priority: "High", Pitch: true, Question: "Which?"),
         ];
 
         news.Read("team", waiting, Start);
-        Assert.Equal([7, 8], news.Items.Select(item => item.Number).Order());
+        Assert.Equal([7, 8, 9], news.Items.Select(item => item.Number).Order());
 
         news.Read("team", waiting, Start.AddMinutes(2));
-        Assert.Equal([7], news.Items.Select(item => item.Number));
+        Assert.Equal([7, 9], news.Items.Select(item => item.Number).Order());
     }
 
     [Fact]
