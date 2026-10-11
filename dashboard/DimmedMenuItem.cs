@@ -4,7 +4,7 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
-/// <summary>A menu item that can't run here, drawn dimmed and doing nothing, rather than disabled: the arrows skip a
+/// <summary>A menu item that can't run here, drawn dimmed and doing nothing, its letter left to the next item with it, rather than disabled: the arrows skip a
 /// disabled item. A copy of MentalDesk.Tui's own, which the library keeps internal, keeping its letter underlined.</summary>
 internal sealed class DimmedMenuItem : MenuItem
 {
@@ -43,6 +43,8 @@ internal sealed class DimmedMenuItem : MenuItem
             : disabled;
         return true;
     }
+
+    protected override bool OnHandlingHotKey(CommandEventArgs args) => Dimmed || base.OnHandlingHotKey(args);
 
     protected override bool OnActivating(CommandEventArgs args) => Dimmed || base.OnActivating(args);
 

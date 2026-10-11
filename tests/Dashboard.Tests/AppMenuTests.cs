@@ -211,6 +211,25 @@ public class AppMenuTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(Area.Work)]
+    [InlineData(Area.Dashboard)]
+    public void A_dimmed_item_passes_its_letter_on_to_the_next_item_with_it(Area area)
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open(area);
+        app.Begin(window);
+        var opened = false;
+        Item(window, "settings").Action = () => opened = true;
+
+        window.NewKeyDownEvent(new Key('v').WithAlt);
+        Assert.True(Item(window, "overseer.details").Dimmed);
+        Assert.Equal(new Key('s'), Item(window, "overseer.details").HotKey);
+        app.Keyboard.RaiseKeyDownEvent(new Key('s'));
+
+        Assert.True(opened);
+    }
+
     [Fact]
     public void Help_holds_show_keys_guide_commands_and_about_each_with_its_letter()
     {
