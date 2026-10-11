@@ -155,7 +155,7 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   comment where its cursor is, opening the comment if it isn't, as `> ` lines the agents read just
   as they read a quote reply on GitHub, and takes you to the comment below it to write your answer;
   `Esc` goes back for the next part. Closing the reader with something unposted in the comment asks
-  before throwing it away.
+  before throwing it away: `Ctrl+Enter` discards it, and `Esc` keeps writing.
 - **Answer a question.** Read it in Questions, and reply with `c`.
 - **Decline it.** On an Idea or a pitch, reading it or with its card selected, press `x`. The
   Comment pane opens as **Decline #n: why?**, keeping anything you'd already written, and you can
@@ -173,9 +173,11 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,
   with its acceptance criteria printed first; quit it to come back. If you were reading the task,
   it opens again where you left it, ready for `a` or `c`, and says there if the try failed.
-- **Accept finished work.** On a card in Review, or reading one, press `a`. For a task, once you
-  confirm, its PR is squash-merged and its branch deleted. The Customer lead's docs PR is merged
-  the same way. If it isn't ready yet, `a` says why instead.
+- **Accept finished work.** On a card in Review, or reading one, press `a`. It asks first:
+  `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't. In a terminal
+  that can't tell `Ctrl+Enter` from `Enter`, such as macOS Terminal, `Tab` to **Accept** and press
+  `Space`. Every confirm in A-Team works this way. For a task, its PR is squash-merged and its
+  branch deleted. The Customer lead's docs PR is merged the same way. If it isn't ready yet, `a` says why instead.
 
 ## Adding an idea
 
@@ -188,4 +190,5 @@ queue.
 `Ctrl+Enter` adds it: the issue is opened as you, put on the team's board as an Idea and ranked if
 you chose a Priority. Work reads again straight away, and the bar says `#<n> added to <team>'s
 ideas`. If a step fails, the dialog stays open with what you wrote and says which step; `Ctrl+Enter`
-tries again from there. `Esc` cancels, asking first if you've typed anything.
+tries again from there. `Esc` cancels, asking first if you've typed anything: `Ctrl+Enter` discards
+it, and `Esc` keeps writing.
