@@ -7,7 +7,7 @@ public sealed record WaitingItem(
     int Number, string Title, string Status, string Url, string Team, string Turn = "", string Reason = "",
     int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
     string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0, string Role = "",
-    string Recommendation = "", bool Reviewed = false, int Consider = 0)
+    string Recommendation = "", bool Reviewed = false, int Consider = 0, bool Document = false)
 {
     /// <summary>Whether this is the Customer lead's docs PR, which is its own PR to merge.</summary>
     public bool Docs => Role == "customer";
@@ -21,9 +21,9 @@ public sealed record WaitingItem(
     /// <summary>Whether this is an Idea or a pitch the reviewer could turn down: never a task, a PR or a question.</summary>
     public bool Declinable => Question.Length == 0 && (Status == "Idea" || Pitch && Status == "Pitched");
 
-    /// <summary>Whether this is a task whose PR the reviewer could merge, or a validated pitch they could close,
-    /// trouble or not.</summary>
-    public bool Acceptable => Status == "In review";
+    /// <summary>Whether this is a task whose PR the reviewer could merge, a validated pitch they could close, or a
+    /// document pitch they could merge, trouble or not.</summary>
+    public bool Acceptable => Status == "In review" || Document && Status == "Pitched";
 
     /// <summary>Whether there's something to try: a task's PR, or the default branch for a validated pitch.</summary>
     public bool Triable => Pr > 0 || Pitch && Acceptable;
@@ -34,7 +34,8 @@ public sealed record WaitingItem(
 
     /// <summary>What stands in the way of accepting it, without its number, or nothing when it can be.</summary>
     public string Holdup =>
-        Pitch ? OpenTasks == 0 ? "" : $"has {OpenTasks} open task{(OpenTasks == 1 ? "" : "s")}"
+        Document ? ""
+        : Pitch ? OpenTasks == 0 ? "" : $"has {OpenTasks} open task{(OpenTasks == 1 ? "" : "s")}"
         : Pr == 0 ? "no PR to merge"
         : Unready;
 
@@ -76,7 +77,8 @@ public sealed record WaitingItem(
                         Text(item, "priority"), Flag(item, "pitch"), Text(item, "question"),
                         Text(item, "unready"), Text(item, "base"),
                         Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0, Text(item, "role"),
-                        Text(item, "recommendation"), Flag(item, "reviewed"), Numbered(item, "consider") ?? 0))
+                        Text(item, "recommendation"), Flag(item, "reviewed"), Numbered(item, "consider") ?? 0,
+                        Flag(item, "document")))
             ];
         }
         catch (JsonException)

@@ -11,6 +11,26 @@ public enum TeamRelease
     Continuous,
 }
 
+/// <summary>What makes a vision review due: only Review the vision in Commands, a time since the vision last changed,
+/// or a share of the issues its Next themes name closing.</summary>
+public enum VisionTrigger
+{
+    Manually,
+    Every,
+    After,
+}
+
+public enum VisionUnit
+{
+    Days,
+    Weeks,
+    Months,
+}
+
+/// <summary>The team's <c>visionReview</c>: its trigger, and the numbers each trigger would use, kept while another
+/// is chosen.</summary>
+public sealed record VisionReview(VisionTrigger Trigger = VisionTrigger.Manually, int Every = 30, VisionUnit Unit = VisionUnit.Days, int After = 50);
+
 /// <summary>What the team form shows and changes. Every other key in the file is left as it is.</summary>
 public sealed partial record TeamSettings(
     string Repo,
@@ -47,6 +67,8 @@ public sealed partial record TeamSettings(
     /// <summary>The most a day's runs may cost before the dispatcher starts no more of them: <c>dispatch.budget</c>,
     /// 0 for no budget.</summary>
     public int Budget { get; init; }
+
+    public VisionReview VisionReview { get; init; } = new();
 
     public static TeamSettings Read(byte[] config)
     {
@@ -85,6 +107,21 @@ public sealed partial record TeamSettings(
             Reviewer = Find(root, "roles", "reviewer") is { ValueKind: JsonValueKind.True },
             Docs = Text(root, "docs"),
             Budget = Number(root, "dispatch", "budget") ?? 0,
+            VisionReview = new VisionReview(
+                Text(root, "visionReview", "trigger") switch
+                {
+                    "every" => VisionTrigger.Every,
+                    "after" => VisionTrigger.After,
+                    _ => VisionTrigger.Manually,
+                },
+                Number(root, "visionReview", "every") ?? 30,
+                Text(root, "visionReview", "unit") switch
+                {
+                    "weeks" => VisionUnit.Weeks,
+                    "months" => VisionUnit.Months,
+                    _ => VisionUnit.Days,
+                },
+                Number(root, "visionReview", "after") ?? 50),
         };
     }
 
@@ -150,6 +187,13 @@ public sealed partial record TeamSettings(
         SetFlag(Working, before.Working, "dispatch", "enabled");
         if (Release != before.Release)
             config = ConfigEdit.Set(config, ["release"], Release.ToString().ToLowerInvariant());
+        // Each key a file hasn't got yet goes in first, so they're set last to first.
+        SetNumber(VisionReview.After, before.VisionReview.After, "visionReview", "after");
+        if (VisionReview.Unit != before.VisionReview.Unit)
+            config = ConfigEdit.Set(config, ["visionReview", "unit"], VisionReview.Unit.ToString().ToLowerInvariant());
+        SetNumber(VisionReview.Every, before.VisionReview.Every, "visionReview", "every");
+        if (VisionReview.Trigger != before.VisionReview.Trigger)
+            config = ConfigEdit.Set(config, ["visionReview", "trigger"], VisionReview.Trigger.ToString().ToLowerInvariant());
         SetFlag(Customer, before.Customer, "roles", "customer");
         SetFlag(Reviewer, before.Reviewer, "roles", "reviewer");
         SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");

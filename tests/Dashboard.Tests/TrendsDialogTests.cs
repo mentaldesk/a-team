@@ -1,6 +1,8 @@
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using Terminal.Gui.Input;
+using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -17,8 +19,8 @@ public class TrendsDialogTests
     private const string Recorded = """
         {"since": "2026-09-20T00:00:00Z", "queue": [{"at": "2026-10-01T00:30:00Z", "waiting": 12}, {"at": "2026-10-08T09:00:00Z", "waiting": 9}],
          "accepted": ["2026-10-07T10:00:00Z", "2026-10-08T10:00:00Z"],
-         "cycles": [{"ready": "2026-10-07T02:00:00Z", "accepted": "2026-10-07T10:00:00Z", "review": 21600},
-                    {"ready": "2026-10-08T00:00:00Z", "accepted": "2026-10-08T10:00:00Z", "review": 36000}], "cost": 212.4}
+         "cycles": [{"ready": "2026-10-07T02:00:00Z", "accepted": "2026-10-07T10:00:00Z", "withYou": 21600},
+                    {"ready": "2026-10-08T00:00:00Z", "accepted": "2026-10-08T10:00:00Z", "withYou": 36000}], "cost": 212.4}
         """;
 
     private const string Nothing = """{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0}""";
@@ -157,6 +159,35 @@ public class TrendsDialogTests
                 .Append(table.ColumnNames[column].Length).Max() + 1);
 
         Assert.True(dialog.Table.Viewport.Width >= needed, $"{needed} wide in {dialog.Table.Viewport.Width}");
+    }
+
+    public static TheoryData<int, int> NameLengths() =>
+        [.. Enumerable.Range(1, 24).SelectMany(length => new[] { (length, 0), (length, 3) })];
+
+    [Theory]
+    [MemberData(nameof(NameLengths))]
+    public void Each_day_s_tick_sits_on_its_points_and_today_on_the_last_column(int nameLength, int measure)
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(160, 40);
+        using var dialog = Open((new string('a', nameLength), 4, Recorded), ("tuicode", null, Nothing));
+        app.Begin(dialog);
+        dialog.Measure.Value = measure;
+        dialog.Layout();
+        dialog.Draw();
+
+        var graph = dialog.Graph;
+        var origin = graph.FrameToScreen();
+        var axis = origin.Bottom - 1 - (int)graph.MarginBottom;
+        var contents = app.Driver.Contents!;
+        var ticks = Enumerable.Range(origin.X, origin.Width)
+            .Where(x => contents[axis, x].Grapheme is "┼" or "┬").Select(x => x - origin.X).ToArray();
+        var days = Enumerable.Range(0, TeamRecord.Days)
+            .Select(day => graph.GraphSpaceToViewport(new System.Drawing.PointF(day * graph.AxisX.Increment, 0)).X).ToArray();
+
+        Assert.True(graph.Viewport.Width - graph.MarginLeft >= TeamRecord.Days);
+        Assert.Equal(days, ticks);
+        Assert.Equal(graph.Viewport.Width - 1, days[^1]);
     }
 
     private static string[] Cells(TableView table, int row, params int[] columns) =>

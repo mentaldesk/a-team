@@ -27,27 +27,46 @@ press `Enter`. A-Team writes the team's file, paused, then offers in turn to:
 5. Write its vision with you.
 6. Get to work.
 
-Each step says what it will do and waits for `Enter`, and `Esc` skips it. The last asks whether to
-get to work or keep the team paused, and there `Esc` cancels the new team.
+Each step says what it will do and waits for `Enter`. `Esc` skips it, and `Backspace` goes back a
+step. The last asks whether to get to work or keep the team paused, and there `Esc` cancels the new
+team.
 
 ## Writing the vision
 
 The Lead judges every pitch against the team's vision. **Write the vision with me** in Commands, for
 the selected team, hands the terminal to Claude for about 20 minutes. It reads the repo first, then
-asks you eight questions one at a time, and opens the vision it writes from your answers as a draft
-PR in Pitched, for you to approve by merging it. Quit Claude with `/exit` and press `Enter` to come
-back. It rewrites a vision the team already has. From a terminal, it's `a-team vision <team>`.
+asks you about eight questions one at a time, and opens the vision it writes from your answers as a
+draft PR in Pitched, for you to approve by merging it. Quit Claude with `/exit` and press `Enter`
+to come back. It rewrites a vision the team already has. From a terminal, it's `a-team vision <team>`.
 
-Skip it and the Lead drafts one from the repo instead. That's a guess, so the team's Health counts
-it as a problem until you replace it.
+Skip it and the Lead drafts one from the repo instead. That's a guess, so the team's Health notes
+it until you replace it.
 
 `gh` needs to be able to manage projects first: `gh auth refresh -s project`.
+
+## Reviewing the vision
+
+A vision goes stale as the team ships. **Vision reviews**, in the team's form, says when the Lead
+proposes a refresh:
+
+- **Manually**, the default: only when you run **Review the vision** in Commands.
+- **Every N days, weeks or months** after the vision last changed.
+- **After N% of its themes' issues close**: the issues its *Next themes* name. A vision that names
+  none never comes due this way.
+
+**Review the vision** in Commands starts one now for the selected team, whatever its setting. When
+one's due, the dispatcher starts the Lead and says why, like `vision review due: 30 days since it
+last changed`. The Lead opens a draft PR in Pitched, leading with what's happened since the vision
+last changed. It rewrites *Next themes* only, and asks under **Needs your answer** about anything
+else, so the card waits in Questions. While it's open, no other review starts. Close it without
+merging, and the next waits for the vision to change, or for the setting to come due again counting
+from the day you closed it.
 
 ## A team's settings
 
 `Enter` on a team opens its form: repo, stakeholders, project, vision, docs, workdir, skills, the command
-`a-team try` runs, whether it's working or paused, when it releases, which roles it runs, and its
-limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
+`a-team try` runs, whether it's working or paused, when it releases, when the Lead
+[reviews the vision](#reviewing-the-vision), which roles it runs, and its limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
 [Customer lead](how-a-team-works.md#the-customer-lead), and untick it to take it away again. With it,
 **Docs** is required: the first page of your user docs, in the repo. Tick **Reviewer** to have the
 [Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. Each

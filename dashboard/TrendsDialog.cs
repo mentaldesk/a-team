@@ -36,8 +36,8 @@ public sealed class TrendsDialog : Dialog
     private readonly TableView _table;
     private readonly TableView _gates;
     private readonly Label _message;
+    private readonly Legend _legend;
     private IReadOnlyList<TeamRecord>? _records;
-    private Legend? _legend;
 
     public TrendsDialog(IReadOnlyList<(string Team, int? Waiting)> teams, Task<Reading[]> reading, DateTimeOffset now, TimeZoneInfo? zone = null)
     {
@@ -84,11 +84,19 @@ public sealed class TrendsDialog : Dialog
         {
             X = Inset,
             Y = 2,
-            Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Inset * 2 - (_gates.Visible ? GatesWide + 1 : 0)), this),
+            Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Inset * 2 - LegendWide - (_gates.Visible ? GatesWide + 1 : 0)), this),
             Height = Dim.Fill(tableRows + 3),
             MarginBottom = AxisRows,
             MarginLeft = (uint)LabelWidth,
             CanFocus = false,
+            Visible = false,
+        };
+        _legend = new Legend
+        {
+            X = Pos.Right(_graph) + 1,
+            Y = 2,
+            Width = LegendWide - 1,
+            Height = teams.Count,
             Visible = false,
         };
         _table = new TableView
@@ -124,7 +132,7 @@ public sealed class TrendsDialog : Dialog
         };
         hint.Accepting += (_, args) => args.Handled = Close();
         _graph.ViewportChanged += (_, _) => Plot();
-        Add(_measure, _graph, _table, _gates, _message, hint);
+        Add(_measure, _graph, _legend, _table, _gates, _message, hint);
 
         reading.ContinueWith(read =>
         {
@@ -211,9 +219,9 @@ public sealed class TrendsDialog : Dialog
         _gates.Table = new EnumerableTableSource<string>(TeamRecord.Gates, gates);
         for (var column = 1; column <= _teams.Count; column++)
             _gates.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
-        _legend = new Legend([.. _teams.Select((team, i) => (Cell(i), team.Team))]);
+        _legend.Entries = [.. _teams.Select((team, i) => (Cell(i), team.Team))];
         _message.Visible = false;
-        _measure.Visible = _graph.Visible = _table.Visible = true;
+        _measure.Visible = _graph.Visible = _legend.Visible = _table.Visible = true;
         _measure.SetFocus();
         Plot();
     }
@@ -230,11 +238,10 @@ public sealed class TrendsDialog : Dialog
 
     private void Plot()
     {
-        if (_records is null || _legend is null || !_graph.Visible || _graph.Viewport.Width == 0)
+        if (_records is null || !_graph.Visible || _graph.Viewport.Width == 0)
             return;
         var series = Series;
-        var plotWide = Math.Max(TeamRecord.Days, _graph.Viewport.Width - LabelWidth - LegendWide - 1);
-        var perDay = Math.Max(1, (plotWide - 1) / (TeamRecord.Days - 1));
+        var perDay = DaySpacing(_graph.Viewport.Width - LabelWidth);
         var plotTall = Math.Max(2, _graph.Viewport.Height - AxisRows);
         var highest = Math.Max(1, series.SelectMany(values => values).Max(value => value ?? 0));
         var perRow = Math.Max(1, (int)Math.Ceiling(highest / (double)(plotTall - 1)));
@@ -266,9 +273,11 @@ public sealed class TrendsDialog : Dialog
                 });
             _graph.Series.Add(new ScatterSeries { Points = points, Fill = cell });
         }
-        _graph.Annotations.Add(_legend);
         _graph.SetNeedsDraw();
     }
+
+    /// <summary>Columns between days, so the last day lands on the plot's last column.</summary>
+    internal static float DaySpacing(int plotWide) => Math.Max(1f, (plotWide - 0.5f) / (TeamRecord.Days - 1f));
 
     private int LegendWide => _teams.Max(team => team.Team.Length) + 3;
 
@@ -330,23 +339,23 @@ public sealed class TrendsDialog : Dialog
         app.Run(dialog);
     }
 
-    /// <summary>LegendAnnotation draws as a blank box in Terminal.Gui 2.5.</summary>
-    private sealed class Legend(IReadOnlyList<(GraphCellToRender Cell, string Team)> entries) : IAnnotation
+    /// <summary>Beside the graph so the axis ends at today.</summary>
+    private sealed class Legend : View
     {
-        public bool BeforeSeries => false;
+        public IReadOnlyList<(GraphCellToRender Cell, string Team)> Entries { get; set; } = [];
 
-        public void Render(GraphView graph, DrawContext? context)
+        protected override bool OnDrawingContent(DrawContext? context)
         {
-            var x = graph.Viewport.Width - entries.Max(entry => entry.Team.Length) - 2;
-            for (var line = 0; line < entries.Count && line < graph.Viewport.Height; line++)
+            for (var line = 0; line < Entries.Count && line < Viewport.Height; line++)
             {
-                var (cell, team) = entries[line];
-                graph.SetAttribute(cell.Color ?? graph.GetAttributeForRole(VisualRole.Normal));
-                graph.AddRune(x, line, cell.Rune);
-                graph.SetAttribute(graph.GetAttributeForRole(VisualRole.Normal));
-                graph.Move(x + 2, line);
-                graph.AddStr(team);
+                var (cell, team) = Entries[line];
+                SetAttribute(cell.Color ?? GetAttributeForRole(VisualRole.Normal));
+                AddRune(0, line, cell.Rune);
+                SetAttribute(GetAttributeForRole(VisualRole.Normal));
+                Move(2, line);
+                AddStr(team);
             }
+            return true;
         }
     }
 }

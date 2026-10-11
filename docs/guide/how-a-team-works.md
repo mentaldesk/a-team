@@ -19,7 +19,7 @@ Project board: if it isn't on the board, in an issue or in a PR, the team doesn'
 - **The Dev** builds those tasks. It takes a Ready task, builds it in its own worktree with tests,
   opens a pull request and sees it through CI and your review.
 - **You decide** which of the Lead's pitches get built, and you accept the finished work. Only you
-  approve, merge or close.
+  approve or merge, and the Lead closes a pitch only once its tasks have all closed.
 
 Neither agent runs all the time. A dispatcher checks every couple of minutes whether a role has
 something to do, like your feedback, an approved pitch or failing CI, and starts a run for it when it
@@ -44,10 +44,14 @@ Idea → Exploring → Pitched → Approved → Building ───────�
 | Ready | A task the Dev can pick up |
 | In progress | The Dev is building it |
 | In review | A task's PR, waiting for you |
-| Done | Merged, or a pitch whose tasks have all merged |
+| Done | Merged or closed, or a pitch whose tasks have all closed |
 
 A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. A task is one pull
-request that changes something you can see or do.
+request that changes something you can see or do. A task that needs another merged first is
+blocked by it on GitHub, and becomes ready to start by itself when that one closes.
+
+A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a
+draft pull request in Pitched instead. You agree to it by merging it.
 
 ## Where you decide
 
@@ -56,7 +60,7 @@ Work waits for you in two places, and no agent moves it on without you.
 - **Pitched.** You approve a pitch, or comment on it to have it changed. Nothing gets built until
   you approve.
 - **In review.** You merge a task's PR. Nothing is done until you say so. Once every task of a
-  pitch has merged, the Lead checks the whole and closes it, so a finished pitch doesn't come back
+  pitch has closed, the Lead checks the whole and closes it, so a finished pitch doesn't come back
   to you.
 
 Both are in the [Work](work.md) area, where you can answer them without leaving the app.
@@ -64,14 +68,16 @@ Both are in the [Work](work.md) area, where you can answer them without leaving 
 ## Talking to the team
 
 Comment on the issue or the PR. The agents read your comments on their next run and reply there.
-Ask for a follow-up and the agent files it as an Idea, which waits in Triage until you rank it.
+Ask the Lead, the Dev or the Customer lead for a follow-up and it files it as an Idea, which waits
+in Triage until you rank it.
 
 The 👀 reaction on your comment means a run has read it. Leave that one to the agents: every other
 reaction is yours. A comment you make while a run is going gets a run of its own, so nothing you say
 is missed.
 
 When the Dev can't go on without you, it hands its task back with a question and the `blocked` label.
-The Lead does the same on a pitch. Both wait in **Questions** in the Work area until you answer.
+The Lead asks on a pitch under **Needs your answer** in its description. Both wait in **Questions**
+in the Work area until you answer.
 
 ## The Customer lead
 
@@ -95,7 +101,7 @@ Dashboard.
   something only a product change would fix, it files that as an Idea rather than touching code.
 - **If only the product can fix it**, say a feature is hard to find, it files an Idea written as your
   user's problem ("I can't find how to…"), with what it looked at. It waits in Triage with the Lead's
-  discoveries, and counts towards the same limit.
+  discoveries, and counts towards the same limit, **Ideas** in the team's settings.
 - **Once a week**, and within a few minutes of being turned on, it audits the docs as a whole: what's
   wrong against the product as it is now, what a shipped feature is missing, and whether pages are
   where a newcomer would look. Each fix is a line in the same docs PR. If it finds nothing, it
@@ -140,5 +146,9 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
   the one it recommends higher first.
 - **Only a few pitches are in front of you at once,** highest priority first. A higher-priority
   draft takes the place of a lower-priority pitch, which waits in Exploring for room again.
+- **The Lead's own Ideas are limited too.** Once **Ideas** in the team's settings are waiting on
+  you, it stops discovering until you rank or close one.
+- **An Idea the Lead sets aside** gets the `a-team:skipped` label and a comment saying why. Comment
+  on it to put it back in the running.
 
 The Dev also takes the highest-priority Ready task first.

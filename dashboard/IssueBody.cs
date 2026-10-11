@@ -6,6 +6,16 @@ namespace ATeam.Dashboard;
 /// why it couldn't be read, and its <paramref name="History"/> where that was read too.</summary>
 public sealed record IssueBody(string Text = "", string? Failure = null, History? History = null)
 {
+    /// <summary>What a document pitch changes, where it is one and that was read.</summary>
+    public DocumentPitch? Document { get; init; }
+
+    /// <summary>A document pitch's body, followed by the one file it changes, as it is on its branch now.</summary>
+    public IssueBody With(DocumentPitch document) => this with
+    {
+        Text = document.Editable ? $"{Text.TrimEnd()}\n\n---\n\n# {document.Path}\n\n{document.Text}" : Text,
+        Document = document,
+    };
+
     /// <summary>What the command printed, or its own first line of stderr, which says what failed in its terms.</summary>
     public static IssueBody Of(Reading reading, int number) =>
         reading.Failure is { Length: > 0 } failure ? new IssueBody(Failure: failure)
