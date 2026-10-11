@@ -780,7 +780,8 @@ public class DashboardWindowTests : IDisposable
                 "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Open", "Set priority", "Try", "Open on GitHub", "Open team's board on GitHub",
-                "Write the vision with me", "Approve the pitch you're reading", "Accept", "Comment on the item you're reading", "Decline",
+                "Write the vision with me", "Review the vision", "Approve the pitch you're reading", "Accept",
+                "Comment on the item you're reading", "Edit the document pitch you're reading", "Decline",
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read what's waiting again",
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
@@ -1551,6 +1552,57 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void Review_the_vision_asks_for_one_for_the_selected_team_then_runs_a_pass_so_the_Lead_starts_now()
+    {
+        var calls = new List<string[]>();
+        var passes = 0;
+        using var window = Open(agents: Agents(4),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            pass: new DispatchPass(_root, "a-team", (_, _) =>
+            {
+                passes++;
+                return new TaskCompletionSource<Reading>().Task;
+            }));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.False(window.Commands.IsEnabled("team.visionReview"));
+        SelectAgent(window, 3);
+        Assert.Equal("Review the vision · team1", window.Commands.Registered.Single(c => c.Id == "team.visionReview").Label);
+        Assert.True(window.Commands.Execute("team.visionReview"));
+        window.Refresh();
+
+        Assert.Equal([["board", "team1", "vision-review", "you"]], calls);
+        Assert.Equal(1, passes);
+    }
+
+    [Fact]
+    public void A_refused_review_starts_no_pass_and_says_why()
+    {
+        var passes = 0;
+        using var window = Open(agents: Agents(4),
+            run: _ => Task.FromResult<string?>("board.sh: team1.json names no vision"),
+            pass: new DispatchPass(_root, "a-team", (_, _) =>
+            {
+                passes++;
+                return new TaskCompletionSource<Reading>().Task;
+            }));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        SelectAgent(window, 3);
+
+        window.Commands.Execute("team.visionReview");
+        window.Refresh();
+
+        Assert.Equal(0, passes);
+        Assert.Equal("board.sh: team1.json names no vision", window.Message.Says);
+    }
+
+    [Fact]
     public void Write_the_vision_with_me_names_the_selected_team_and_hands_its_interview_the_terminal()
     {
         var handed = new List<Handover>();
@@ -1826,7 +1878,7 @@ public class DashboardWindowTests : IDisposable
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
             _ => Task.FromResult(new Reading("{}", null)),
             openUrl ?? (_ => { }),
-            (_, _, _, _, _, _, _, _) => null,
+            (_, _, _, _, _, _, _, _, _) => null,
             area,
             auto,
             handOver,

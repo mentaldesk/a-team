@@ -117,6 +117,27 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void A_config_without_vision_reviews_reads_as_Manually()
+    {
+        Assert.Equal(new VisionReview(), TeamSettings.Read(Bytes(Config)).VisionReview);
+        Assert.Equal(VisionTrigger.Manually, new VisionReview().Trigger);
+    }
+
+    [Fact]
+    public void Vision_reviews_round_trip_through_the_file_and_keep_each_trigger_s_numbers()
+    {
+        var before = TeamSettings.Read(Bytes(Config));
+
+        var every = (before with { VisionReview = new VisionReview(VisionTrigger.Every, 2, VisionUnit.Weeks) }).Write(Bytes(Config), before);
+        Assert.Contains("\"visionReview\": {\"trigger\": \"every\"", Text(every));
+        Assert.Equal(new VisionReview(VisionTrigger.Every, 2, VisionUnit.Weeks), TeamSettings.Read(every).VisionReview);
+
+        var read = TeamSettings.Read(every);
+        var after = (read with { VisionReview = read.VisionReview with { Trigger = VisionTrigger.After, After = 75 } }).Write(every, read);
+        Assert.Equal(new VisionReview(VisionTrigger.After, 2, VisionUnit.Weeks, 75), TeamSettings.Read(after).VisionReview);
+    }
+
+    [Fact]
     public void Docs_reads_from_and_saves_to_the_file_s_docs()
     {
         var before = TeamSettings.Read(Bytes(Config));

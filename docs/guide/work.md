@@ -49,7 +49,7 @@ on; the others, and the other tabs, keep their place for when you come back.
 | Column | What it holds |
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
-| Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and the Customer lead's docs proposal, which you agree to by merging it on GitHub. |
+| Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
 | Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, or the Customer lead's docs PR. |
 
@@ -173,11 +173,19 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,
   with its acceptance criteria printed first; quit it to come back. If you were reading the task,
   it opens again where you left it, ready for `a` or `c`, and says there if the try failed.
+- **Edit a document pitch.** Reading a vision draft, a vision review or a docs proposal, which shows
+  the file it proposes under its description, press `e`. The file opens in your editor (`$VISUAL`,
+  else `$EDITOR`). Save and quit, and your change is committed to the pitch as you, and the reader
+  opens again showing it. Quit without saving and nothing changes. If the pitch changed on GitHub
+  while you were editing, nothing is overwritten: the reader says so, and where your edit is kept.
+  A pitch that changes more than one file can't be edited here; `g` opens it on GitHub.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. It asks first:
   `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't. In a terminal
   that can't tell `Ctrl+Enter` from `Enter`, such as macOS Terminal, `Tab` to **Accept** and press
   `Space`. Every confirm in A-Team works this way. For a task, its PR is squash-merged and its
-  branch deleted. The Customer lead's docs PR is merged the same way. If it isn't ready yet, `a` says why instead.
+  branch deleted. The Customer lead's docs PR is merged the same way, and so is a document pitch,
+  from Pitches: the card leaves, and the Lead's next run reads the new vision. If it isn't ready yet,
+  `a` says why instead.
 
 ## Adding an idea
 

@@ -26,6 +26,12 @@ public sealed record ReaderDecline(Key Key, Func<string, Task<string?>> Run, boo
 /// try, it opens at <paramref name="Top"/>, saying <paramref name="Failure"/> if it failed.</summary>
 public sealed record ReaderTry(Key Key, Action<IssueBody, int> Run, int Top = 0, string? Failure = null);
 
+/// <summary>Editing a document pitch's file from the reader: Run hands over what it shows and the row it's scrolled to,
+/// unless <paramref name="Uneditable"/> says why it can't. Reopened after the edit, it opens at <paramref name="Top"/>,
+/// saying <paramref name="Said"/> or <paramref name="Failure"/>.</summary>
+public sealed record ReaderEdit(
+    Key Key, Action<IssueBody, int> Run, string? Uneditable = null, int Top = 0, string? Said = null, string? Failure = null);
+
 /// <summary>An item's body as it was written, and its History beside it, to read without leaving the board.</summary>
 public sealed class ReaderDialog : Dialog
 {
@@ -36,6 +42,7 @@ public sealed class ReaderDialog : Dialog
     private const string CopyHint = "copy";
     private const string QuoteHint = "quote";
     private const string TryHint = "try";
+    private const string EditHint = "edit";
     private const string ApproveHint = "approve";
     private const string AcceptHint = "accept";
     private const string CommentHint = "comment";
@@ -54,6 +61,7 @@ public sealed class ReaderDialog : Dialog
     private readonly ReaderCommand? _accept;
     private readonly ReaderComment? _comment;
     private readonly ReaderTry? _try;
+    private readonly ReaderEdit? _edit;
     private readonly Func<bool> _confirmDiscard;
     private readonly IClipboard? _clipboard;
     private readonly int _number;
@@ -79,6 +87,7 @@ public sealed class ReaderDialog : Dialog
     /// <param name="comment">Commenting on the item, in a pane beside the body; a posted comment joins the end of the
     /// conversation and the top of History, and the reader stays open either way.</param>
     /// <param name="tryIt">Trying the item's PR or, for a validated pitch, the default branch; null where neither.</param>
+    /// <param name="edit">Editing a document pitch's file in your editor; null for anything else.</param>
     /// <param name="rank">The rank the row of ranks starts on, or null for a reader with no row of ranks.</param>
     /// <param name="panes">Whether History was last shown; a terminal narrower than <paramref name="width"/> needs for
     /// both opens without it.</param>
@@ -86,7 +95,7 @@ public sealed class ReaderDialog : Dialog
     public ReaderDialog(
         WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0,
-        Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null)
+        Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null)
     {
         _clipboard = clipboard;
         _panes = panes ?? new ReaderPanes();
@@ -95,6 +104,7 @@ public sealed class ReaderDialog : Dialog
         _accept = accept;
         _comment = comment;
         _try = tryIt;
+        _edit = edit;
         _confirmDiscard = confirmDiscard ?? (() => true);
         _number = item.Number;
         _width = width;
@@ -213,8 +223,8 @@ public sealed class ReaderDialog : Dialog
             };
             _band.Add(_ranks);
         }
-        if (tryIt is not null)
-            _body.Top = tryIt.Top;
+        if ((tryIt?.Top ?? edit?.Top) is { } top)
+            _body.Top = top;
         _hints.Y = Pos.Func(_ => HintRow(), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
@@ -222,8 +232,10 @@ public sealed class ReaderDialog : Dialog
         if (_band is not null)
             Add(_band);
         ShowHistory(_panes.OpensWithHistory(width));
-        if ((tryIt?.Failure ?? body.Failure) is { Length: > 0 } failure)
+        if ((tryIt?.Failure ?? edit?.Failure ?? body.Failure) is { Length: > 0 } failure)
             _message.Show(failure, Schemes.Error);
+        else if (edit?.Said is { Length: > 0 } said)
+            _message.Show(said, Schemes.Accent);
         if (_ranks is null)
             _body.SetFocus();
         else
@@ -278,10 +290,10 @@ public sealed class ReaderDialog : Dialog
     /// <returns>The rank Enter set on the row of ranks, or null.</returns>
     public static Rank? Show(
         IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
-        ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes)
+        ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes, ReaderEdit? edit = null)
     {
         using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment, tryIt, panes,
-            app.Screen.Width, rank, () => DiscardDialog.Show(app));
+            app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit);
         app.Run(dialog);
         return dialog.Chosen;
     }
@@ -320,6 +332,8 @@ public sealed class ReaderDialog : Dialog
             return OnGitHub();
         if (_try is not null && key == _try.Key)
             return Try();
+        if (_edit is not null && key == _edit.Key)
+            return Edit();
         if (key == new Key('a') && _onApprove is not null)
             return Approve();
         if (_accept is not null && key == _accept.Key)
@@ -349,6 +363,8 @@ public sealed class ReaderDialog : Dialog
             .. _ranks is null ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(RankHint, "←/→ rank"), new HintedCommand(SetHint, "Enter set")],
             .. _try is null ? Array.Empty<HintedCommand>() : [new HintedCommand(TryHint, $"{KeyNames.Short(_try.Key)} try")],
+            .. _edit is null ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(EditHint, $"{KeyNames.Short(_edit.Key)} edit", _edit.Uneditable is null)],
             .. _onApprove is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ApproveHint, "a approve")],
             .. _accept is null ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(AcceptHint, $"{KeyNames.Short(_accept.Key)} {_accept.Hint}", _accept.Enabled)],
@@ -531,6 +547,22 @@ public sealed class ReaderDialog : Dialog
         return Close();
     });
 
+    /// <summary>One that can't be edited only says why, and stays open.</summary>
+    private bool Edit()
+    {
+        if (_edit!.Uneditable is { } why)
+        {
+            _message.Show(why, Schemes.Error);
+            SetNeedsLayout();
+            return true;
+        }
+        return Leave(() =>
+        {
+            _edit.Run(_text, _body.Top);
+            return Close();
+        });
+    }
+
     private bool Approve() => Leave(() =>
     {
         _onApprove!();
@@ -694,6 +726,7 @@ public sealed class ReaderDialog : Dialog
             CopyHint => Copy(),
             QuoteHint => Quote(),
             TryHint => Try(),
+            EditHint => Edit(),
             ApproveHint => Approve(),
             AcceptHint => Accept(),
             CommentHint => Comment(),
