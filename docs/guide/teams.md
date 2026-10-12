@@ -73,7 +73,8 @@ next run uses it.
 [reviews the vision](#reviewing-the-vision), which roles it runs, and its limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
 [Customer lead](how-a-team-works.md#the-customer-lead), and untick it to take it away again. With it,
 **Docs** is required: the first page of your user docs, in the repo. Tick **Reviewer** to have the
-[Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. Each
+[Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. **Stakeholders** and **Skills** open a list: type to
+narrow it as in Commands, `Space` marks a name, and `Enter` keeps what's marked. Each
 field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the team's file, leaving everything else in it as it was, and
 `Esc` (**Cancel**) cancels. `Enter` never saves.
 

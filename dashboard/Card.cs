@@ -3,12 +3,15 @@ using Terminal.Gui.Drawing;
 namespace ATeam.Dashboard;
 
 /// <summary>A row in a Work column: an item, or the PR that closes it hanging under it. <paramref name="Column"/> is
-/// the kind the column's heading already wears, which a card of that kind doesn't repeat.</summary>
-public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null)
+/// the kind the column's heading already wears, which a card of that kind doesn't repeat. <paramref name="New"/> marks
+/// one that has become your move since the app started.</summary>
+public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool New = false)
 {
+    internal const string NewMark = "● ";
+
     /// <summary>A card per item, each of them a root of its column's tree.</summary>
-    internal static IReadOnlyList<Card> Roots(IEnumerable<WaitingItem> items, Icon? column = null) =>
-        [.. items.Select(item => new Card(item, false, column))];
+    internal static IReadOnlyList<Card> Roots(IEnumerable<WaitingItem> items, Icon? column = null, Func<WaitingItem, bool>? isNew = null) =>
+        [.. items.Select(item => new Card(item, false, column, isNew?.Invoke(item) ?? false))];
 
     /// <summary>Those roots and their PRs, in the order the tree draws them.</summary>
     internal static IReadOnlyList<Card> Nodes(IEnumerable<Card> roots) =>
@@ -44,7 +47,8 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null)
     {
         if (IsPr)
             return Elide($"{Icons.Glyph(Icon.PullRequest, style)} #{Item.Pr}  {Item.Title}", width);
-        var said = new[] { Item.Mine ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "", Item.Review, Item.Title }
+        var said = new[] { Item.Mine ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "", Item.Review,
+                New ? NewMark + Item.Title : Item.Title }
             .Where(part => part.Length > 0);
         return Elide($"#{Item.Number}  {string.Join(" · ", said)}", width);
     }

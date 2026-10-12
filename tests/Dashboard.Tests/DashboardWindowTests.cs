@@ -786,8 +786,8 @@ public class DashboardWindowTests : IDisposable
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
                 "Show details", "Fold the lane", "Open on GitHub", "Go to the agent's session", "Read every board again",
-                "Dashboard", "Work", "Overseer",
-                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Keys", "Guide", "About", "Trends", "Back to the agent grid", "Quit",
+                "Dashboard", "Work", "Overseer", "Go to what's new",
+                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "About", "Trends", "Back to the agent grid", "Quit",
                 "Go to team0", "Go to team1", "Go to team 3", "Go to team 4", "Go to team 5", "Go to team 6", "Go to team 7",
                 "Go to team 8", "Go to team 9",
             ],
@@ -881,17 +881,30 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_names_no_keys_and_no_version_on_the_grid_expanded_or_in_Work()
+    public void The_status_bar_s_one_hint_is_press_F1_for_help_at_its_right_end_on_the_grid_expanded_in_Work_and_in_Overseer()
     {
         using var window = Open(agents: Agents(4));
+        AssertOnlyKeysHint(window);
+
         window.NewKeyDownEvent(Key.Tab);
-        AssertNoHints(window);
+        AssertOnlyKeysHint(window);
 
         window.NewKeyDownEvent(Key.Enter);
-        AssertNoHints(window);
+        AssertOnlyKeysHint(window);
 
         window.Commands.Execute("view.work");
-        AssertNoHints(window);
+        AssertOnlyKeysHint(window);
+
+        window.Commands.Execute("view.overseer");
+        AssertOnlyKeysHint(window);
+    }
+
+    [Fact]
+    public void The_status_bar_s_hint_follows_the_keys_command_s_key()
+    {
+        using var window = Open(agents: Agents(4), keys: "{ \"help\": \"F2\" }");
+
+        Assert.Equal("Press F2 for help", window.Status.HelpHint.Text);
     }
 
     [Fact]
@@ -920,7 +933,8 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal("Pausing this role…", window.Message.Says);
         Assert.Same(window.Status, window.Message.SuperView);
-        Assert.Equal(new Rectangle(0, 0, window.Status.Viewport.Width, 1), window.Message.Frame);
+        var right = "Press F1 for help".Length + 3;
+        Assert.Equal(new Rectangle(0, 0, window.Status.Viewport.Width - right, 1), window.Message.Frame);
         Assert.Equal(StatusBar.Scheme, window.Message.SchemeName);
         Assert.Equal(status, window.Status.Frame);
         Assert.Equal(dispatcher, window.Dispatcher.Frame);
@@ -931,7 +945,7 @@ public class DashboardWindowTests : IDisposable
     {
         using var bar = new StatusBar();
         string? ran = null;
-        bar.Show("", [new HintedCommand("save", "Enter save")], id => (ran = id) is not null);
+        bar.Show([new HintedCommand("save", "Enter save")], id => (ran = id) is not null);
 
         bar.Hints.Single().InvokeCommand(Command.Accept);
 
@@ -939,10 +953,23 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void Clicking_the_help_hint_runs_what_it_was_given()
+    {
+        using var bar = new StatusBar();
+        var ran = 0;
+        bar.Help("Press F1 for help", () => ran++);
+        bar.Help("Press F1 for help", () => ran++);
+
+        bar.HelpHint.InvokeCommand(Command.Accept);
+
+        Assert.Equal(1, ran);
+    }
+
+    [Fact]
     public void A_hint_is_a_clickable_one_of_its_own_that_claims_no_key()
     {
         using var bar = new StatusBar();
-        bar.Show("", [new HintedCommand("save", "Enter save"), new HintedCommand("cancel", "Esc cancel")], _ => true);
+        bar.Show([new HintedCommand("save", "Enter save"), new HintedCommand("cancel", "Esc cancel")], _ => true);
 
         Assert.Equal(2, bar.Hints.Count);
         Assert.All(bar.Hints, hint =>
@@ -1816,10 +1843,12 @@ public class DashboardWindowTests : IDisposable
     private static Rectangle AgentArea(DashboardWindow window) =>
         new(0, 0, window.Viewport.Width, window.Dispatcher.Frame.Y - window.Agents.Frame.Y);
 
-    private static void AssertNoHints(DashboardWindow window)
+    private static void AssertOnlyKeysHint(DashboardWindow window)
     {
+        LayOut(window, 120, 30);
         Assert.Empty(window.Status.Hints);
-        Assert.Equal("", window.Status.Says);
+        Assert.Equal("Press F1 for help", window.Status.HelpHint.Text);
+        Assert.Equal(window.Status.Viewport.Width, window.Status.HelpHint.Frame.Right);
         Assert.DoesNotContain("a-team", window.Message.Says);
     }
 

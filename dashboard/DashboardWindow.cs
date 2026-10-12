@@ -1,5 +1,7 @@
 using System.Drawing;
 using System.Reflection;
+using MentalDesk.Tui.Commands;
+using MentalDesk.Tui.Keys;
 using Terminal.Gui;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
@@ -35,7 +37,7 @@ public sealed class DashboardWindow : Window
     private readonly CommandRegistry _commands = new();
     private readonly string _version = Version();
     private readonly AppMenu _menu;
-    private readonly StatusBar _status = new();
+    private readonly StatusBar _status = new() { Alerts = true };
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
     private readonly LogView _dispatch;
@@ -78,6 +80,13 @@ public sealed class DashboardWindow : Window
     private readonly Label _title;
     private readonly TimeProvider _clock;
     private readonly Attention _attention;
+    private readonly WhatsNew _news;
+    private readonly Func<string, DateTimeOffset, Task<Reading>>? _readMoves;
+    private (IReadOnlyList<string> Teams, Task<Reading[]> Read)? _moving;
+    private (DateTime, DateTime)? _recordStamp;
+    private readonly Dictionary<string, (Task<Reading> Read, DateTimeOffset Asked)> _teamReads = [];
+    private DateTimeOffset _readingAsked;
+    private NewItem? _goingTo;
     private Area _area;
     private Task<string?>? _pending;
     private (WaitingItem Item, Rank Rank)? _ranking;
@@ -145,8 +154,11 @@ public sealed class DashboardWindow : Window
         Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
         Func<string, Task<Reading>>? readBoard = null,
         Attention? attention = null,
-        Func<WaitingItem, Task<Reading>>? readDocument = null)
+        Func<WaitingItem, Task<Reading>>? readDocument = null,
+        Func<string, DateTimeOffset, Task<Reading>>? readMoves = null,
+        WhatsNew? whatsNew = null)
     {
+        _readMoves = readMoves;
         _readBoard = readBoard;
         _readDocument = readDocument;
         _limits = settings.ReadLimits();
@@ -161,6 +173,7 @@ public sealed class DashboardWindow : Window
         _start = start;
         _clock = clock ?? TimeProvider.System;
         _attention = attention ?? new Attention(_clock, _ => { });
+        _news = whatsNew ?? new WhatsNew(_clock.GetUtcNow());
         BorderStyle = LineStyle.None;
         _settings = settings;
         _auto = auto;
@@ -276,11 +289,13 @@ public sealed class DashboardWindow : Window
         ShowIcons(settings.ReadIcons());
 
         _status.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
+        _status.AlertChosen += () => _commands.Execute("work.whatsNew");
         Add(_status);
 
         RegisterCommands();
         _commands.Apply(settings.ReadKeys());
         SyncQuitKey();
+        ShowKeysHint();
         _menu = new AppMenu(_commands, _area);
         _menu.Bar.X = 0;
         _menu.Bar.Y = 0;
@@ -318,7 +333,7 @@ public sealed class DashboardWindow : Window
 
     internal MenuBar Menu => _menu.Bar;
 
-    internal IReadOnlyList<(string Id, MenuItem Item)> MenuItems => _menu.Items;
+    internal IReadOnlyList<(string Id, DimmedMenuItem Item)> MenuItems => _menu.Items;
 
     internal IReadOnlyList<MenuBarItem> Menus => _menu.Menus;
 
@@ -335,10 +350,15 @@ public sealed class DashboardWindow : Window
 
     internal Attention Attention => _attention;
 
+    internal WhatsNew News => _news;
+
     public void Refresh()
     {
         _attention.Browsing(_area == Area.Work ? _work.Current?.Team : null);
         Settle();
+        SettleTeamReads();
+        SettleMoves();
+        ReadMoves();
         SettleBoards();
         SettleTrend();
         ShowTitle();
@@ -365,9 +385,96 @@ public sealed class DashboardWindow : Window
         ShowDispatcher(now);
 
         ShowOverseer(now);
+        ShowNews();
         _menu.Refresh();
         ShowMessage();
         ShowLoading();
+    }
+
+    /// <summary>Reads every team's moves since start whenever the record has been written to.</summary>
+    private void ReadMoves()
+    {
+        if (_readMoves is null || _moving is not null)
+            return;
+        var stamp = (Written(Path.Combine(_stateRoot, "history.db")), Written(Path.Combine(_stateRoot, "history.db-wal")));
+        if (stamp == _recordStamp)
+            return;
+        _recordStamp = stamp;
+        IReadOnlyList<string> teams = [.. _teamNames];
+        _moving = (teams, Task.WhenAll(teams.Select(team => _readMoves(team, _news.Since))));
+    }
+
+    private static DateTime Written(string path) => File.Exists(path) ? File.GetLastWriteTimeUtc(path) : default;
+
+    /// <summary>A team with something new is read again, so its card is there when you get to it.</summary>
+    private void SettleMoves()
+    {
+        if (_moving is not { Read.IsCompleted: true } moving)
+            return;
+        _moving = null;
+        if (moving.Read.Status != TaskStatus.RanToCompletion)
+            return;
+        for (var i = 0; i < moving.Teams.Count; i++)
+            if (moving.Read.Result[i].Failure is null or { Length: 0 }
+                && _news.Read(moving.Teams[i], Dashboard.Move.Parse(moving.Read.Result[i].Output)))
+                ReadTeam(moving.Teams[i]);
+    }
+
+    private void ReadTeam(string team)
+    {
+        if (!_teamReads.ContainsKey(team))
+            _teamReads[team] = (_readWaiting(team), _clock.GetUtcNow());
+    }
+
+    /// <summary>A team's own read replaces only its cards. One that fails leaves them as they were.</summary>
+    private void SettleTeamReads()
+    {
+        foreach (var (team, (read, asked)) in _teamReads.Where(entry => entry.Value.Read.IsCompleted).ToList())
+        {
+            _teamReads.Remove(team);
+            if (read.Status != TaskStatus.RanToCompletion || read.Result.Failure is { Length: > 0 })
+                continue;
+            var items = WaitingItem.Parse(read.Result.Output);
+            _news.Read(team, items, asked);
+            _work.Show([.. _work.Items.Where(item => item.Team != team), .. items]);
+            GoToWaiting();
+        }
+    }
+
+    private void ShowNews()
+    {
+        _status.Alert(_news.Alert(_drawn));
+        _work.ShowNew(_news.Items);
+    }
+
+    /// <summary>Work, on the newest new card's tab with it selected; where Work hasn't read it yet, once it has.</summary>
+    private void GoToNew()
+    {
+        if (_news.Newest is not { } newest)
+            return;
+        Show(Area.Work);
+        _work.Pick(newest.Team);
+        _goingTo = newest;
+        GoToWaiting();
+    }
+
+    private void GoToWaiting()
+    {
+        if (_goingTo is not { } going || _area != Area.Work)
+            return;
+        if (_work.Items.FirstOrDefault(item => item.Team == going.Team && item.Number == going.Number) is not { } item)
+            return;
+        _goingTo = null;
+        _work.Pick(going.Team);
+        _work.Focus(item, false);
+        ShowMessage();
+    }
+
+    /// <summary>Opening a card is seeing it.</summary>
+    private void Seen(WaitingItem item)
+    {
+        _news.Seen(item.Team, item.Number, _clock.GetUtcNow());
+        ShowNews();
     }
 
     private void ShowDispatcher(DateTimeOffset now)
@@ -428,90 +535,91 @@ public sealed class DashboardWindow : Window
         bool OnGrid() => AnyAgents() && _expanded is null;
         bool Reading() => Selection() && _expanded is not null;
         _commands
-            .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents)
-            .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents)
-            .Register("agent.right", "Select the agent to the right", () => MoveSelection(0, +1), Key.CursorRight, isEnabled: AnyAgents)
-            .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, isEnabled: AnyAgents)
-            .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: OnGrid)
-            .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: OnGrid)
-            .Register("log.lineDown", "Select the next line of the log", () => Selected()?.MoveLine(+1, extend: false), Key.CursorDown, isEnabled: Reading)
-            .Register("log.lineUp", "Select the line above in the log", () => Selected()?.MoveLine(-1, extend: false), Key.CursorUp, isEnabled: Reading)
-            .Register("log.extendDown", "Extend the selection down", () => Selected()?.MoveLine(+1, extend: true), Key.CursorDown.WithShift, isEnabled: Reading)
-            .Register("log.extendUp", "Extend the selection up", () => Selected()?.MoveLine(-1, extend: true), Key.CursorUp.WithShift, isEnabled: Reading)
+            .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
+            .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
+            .Register("agent.right", "Select the agent to the right", () => MoveSelection(0, +1), Key.CursorRight, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
+            .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
+            .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: OnGrid, scopes: [Regions.Agents])
+            .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: OnGrid, scopes: [Regions.Agents])
+            .Register("log.lineDown", "Select the next line of the log", () => Selected()?.MoveLine(+1, extend: false), Key.CursorDown, isEnabled: Reading, scopes: [Regions.Log])
+            .Register("log.lineUp", "Select the line above in the log", () => Selected()?.MoveLine(-1, extend: false), Key.CursorUp, isEnabled: Reading, scopes: [Regions.Log])
+            .Register("log.extendDown", "Extend the selection down", () => Selected()?.MoveLine(+1, extend: true), Key.CursorDown.WithShift, isEnabled: Reading, scopes: [Regions.Log])
+            .Register("log.extendUp", "Extend the selection up", () => Selected()?.MoveLine(-1, extend: true), Key.CursorUp.WithShift, isEnabled: Reading, scopes: [Regions.Log])
             .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter,
                 isEnabled: () => Selection() || (OnDashboard() && _onDispatcher && !_dispatcherExpanded),
-                menuLabel: () => "Expand", inMenu: () => _expanded is null && !_dispatcherExpanded)
-            .Register("log.pageUp", "Scroll the log up", () => Scroll(pane => pane.Page(-1), log => log.Page(-1)), Key.PageUp, isEnabled: Scrollable)
-            .Register("log.pageDown", "Scroll the log down", () => Scroll(pane => pane.Page(+1), log => log.Page(+1)), Key.PageDown, isEnabled: Scrollable)
-            .Register("log.top", "Jump to the top of the log", () => Scroll(pane => pane.Home(), log => log.Home()), Key.Home, isEnabled: Scrollable)
-            .Register("log.bottom", "Jump to the bottom of the log", () => Scroll(pane => pane.End(), log => log.End()), Key.End, isEnabled: Scrollable)
-            .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection)
+                menuLabel: () => "Expand", inMenu: () => _expanded is null && !_dispatcherExpanded, scopes: [Regions.Agents])
+            .Register("log.pageUp", "Scroll the log up", () => Scroll(pane => pane.Page(-1), log => log.Page(-1)), Key.PageUp, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
+            .Register("log.pageDown", "Scroll the log down", () => Scroll(pane => pane.Page(+1), log => log.Page(+1)), Key.PageDown, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
+            .Register("log.top", "Jump to the top of the log", () => Scroll(pane => pane.Home(), log => log.Home()), Key.Home, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
+            .Register("log.bottom", "Jump to the bottom of the log", () => Scroll(pane => pane.End(), log => log.End()), Key.End, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
+            .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection, scopes: [Regions.Agents, Regions.Log])
             .Register("log.copyLines", () => "Copy the selected lines", () => Copy(pane => pane.CopySelection()), new Key('l'), isEnabled: Reading,
-                menuLabel: () => "Copy selected lines", inMenu: () => _expanded is not null)
+                menuLabel: () => "Copy selected lines", scopes: [Regions.Log])
             .Register("log.copyAll", () => "Copy the whole log", () => Copy(pane => pane.CopyAll()), new Key('L'), isEnabled: Reading,
-                menuLabel: () => "Copy whole log", inMenu: () => _expanded is not null)
+                menuLabel: () => "Copy whole log", scopes: [Regions.Log])
             .Register("log.editor", () => "Open the whole log in your editor", OpenInEditor, new Key('e'), isEnabled: Reading,
-                menuLabel: () => "Open whole log in editor", inMenu: () => _expanded is not null)
-            .Register("work.right", "Select the column to the right", () => _work.MoveColumn(+1), Key.CursorRight, isEnabled: OnWork)
-            .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork)
-            .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork)
-            .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork)
-            .Register("work.read", "Open", ReadSelected, Key.Enter, isEnabled: () => OnWork() && _work.Selected is not null, onCard: true)
-            .Register("work.priority", "Set priority", SetPriority, new Key('p'), isEnabled: () => OnWork() && _work.SelectedCard is not null, onCard: true)
-            .Register("work.try", "Try", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Triable: true }, onCard: true)
-            .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true)
+                menuLabel: () => "Open whole log in editor", scopes: [Regions.Log])
+            .Register("work.right", "Select the column to the right", () => _work.MoveColumn(+1), Key.CursorRight, isEnabled: OnWork, scopes: [Regions.Work])
+            .Register("work.left", "Select the column to the left", () => _work.MoveColumn(-1), Key.CursorLeft, isEnabled: OnWork, scopes: [Regions.Work])
+            .Register("work.down", "Select the card below", () => _work.MoveCard(+1), Key.CursorDown, isEnabled: OnWork, scopes: [Regions.Work])
+            .Register("work.up", "Select the card above", () => _work.MoveCard(-1), Key.CursorUp, isEnabled: OnWork, scopes: [Regions.Work])
+            .Register("work.read", "Open", ReadSelected, Key.Enter, isEnabled: () => OnWork() && _work.Selected is not null, onCard: true, scopes: [Regions.Work])
+            .Register("work.priority", "Set priority", SetPriority, new Key('p'), isEnabled: () => OnWork() && _work.SelectedCard is not null, onCard: true, scopes: [Regions.Work])
+            .Register("work.try", "Try", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Triable: true }, onCard: true, scopes: [Regions.Work])
+            .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true, scopes: [Regions.Work])
             .Register("team.board", "Open team's board on GitHub", OpenBoard, new Key('b'), isEnabled: () => SelectedTeam() is not null)
             .Register("team.vision", () => SelectedTeam() is { } team ? $"Write the vision with me · {team}" : "Write the vision with me",
                 () => WriteVision(SelectedTeam()), isEnabled: () => _handOver is not null && SelectedTeam() is not null)
             .Register("team.visionReview", () => SelectedTeam() is { } team ? $"Review the vision · {team}" : "Review the vision",
                 () => ReviewVision(SelectedTeam()), isEnabled: () => SelectedTeam() is not null)
             .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
-            .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true)
+            .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
             .Register("work.edit", "Edit the document pitch you're reading", () => { }, new Key('e'), isEnabled: () => _shown is { Document: true })
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
-                isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true)
-            .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
-            .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, inMenu: OnWork)
-            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, inMenu: OnWork)
+                isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true, scopes: [Regions.Work])
+            .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
+            .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
+            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: () => _newIdea is not null && _teamNames.Count > 0)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
-                menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine")
+                menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine", scopes: [Regions.Work])
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
-                menuLabel: () => "Refresh")
-            .Register("overseer.right", "Select the chip to the right", () => _overseer.MoveColumn(+1), Key.CursorRight, isEnabled: OnOverseer)
-            .Register("overseer.left", "Select the chip to the left", () => _overseer.MoveColumn(-1), Key.CursorLeft, isEnabled: OnOverseer)
-            .Register("overseer.down", "Select the chip below", () => _overseer.MoveRow(+1), Key.CursorDown, isEnabled: OnOverseer)
-            .Register("overseer.up", "Select the chip above", () => _overseer.MoveRow(-1), Key.CursorUp, isEnabled: OnOverseer)
-            .Register("overseer.nextLane", "Select the next team's lane", () => _overseer.MoveLane(+1), Key.Tab, isEnabled: OnOverseer)
-            .Register("overseer.previousLane", "Select the previous team's lane", () => _overseer.MoveLane(-1), Key.Tab.WithShift, isEnabled: OnOverseer)
-            .Register("overseer.pageDown", "Scroll the lanes down", () => _overseer.Page(+1), Key.PageDown, isEnabled: OnOverseer)
-            .Register("overseer.pageUp", "Scroll the lanes up", () => _overseer.Page(-1), Key.PageUp, isEnabled: OnOverseer)
+                menuLabel: () => "Refresh", scopes: [Regions.Work])
+            .Register("overseer.right", "Select the chip to the right", () => _overseer.MoveColumn(+1), Key.CursorRight, isEnabled: OnOverseer, scopes: [Regions.Overseer])
+            .Register("overseer.left", "Select the chip to the left", () => _overseer.MoveColumn(-1), Key.CursorLeft, isEnabled: OnOverseer, scopes: [Regions.Overseer])
+            .Register("overseer.down", "Select the chip below", () => _overseer.MoveRow(+1), Key.CursorDown, isEnabled: OnOverseer, scopes: [Regions.Overseer])
+            .Register("overseer.up", "Select the chip above", () => _overseer.MoveRow(-1), Key.CursorUp, isEnabled: OnOverseer, scopes: [Regions.Overseer])
+            .Register("overseer.nextLane", "Select the next team's lane", () => _overseer.MoveLane(+1), Key.Tab, isEnabled: OnOverseer, scopes: [Regions.Overseer])
+            .Register("overseer.previousLane", "Select the previous team's lane", () => _overseer.MoveLane(-1), Key.Tab.WithShift, isEnabled: OnOverseer, scopes: [Regions.Overseer])
+            .Register("overseer.pageDown", "Scroll the lanes down", () => _overseer.Page(+1), Key.PageDown, isEnabled: OnOverseer, scopes: [Regions.Overseer])
+            .Register("overseer.pageUp", "Scroll the lanes up", () => _overseer.Page(-1), Key.PageUp, isEnabled: OnOverseer, scopes: [Regions.Overseer])
             .Register("overseer.details", () => _overseer.Board.OnMore ? "Show the whole lane" : "Show details", OverseerEnter, Key.Enter,
-                isEnabled: () => OnOverseer() && _overseer.Board.Selected is not null, inMenu: OnOverseer)
+                isEnabled: () => OnOverseer() && _overseer.Board.Selected is not null, scopes: [Regions.Overseer])
             .Register("overseer.fold", () => "Fold the lane", () => _overseer.Fold(), Key.Esc,
-                isEnabled: () => OnOverseer() && _overseer.CanFold, inMenu: OnOverseer)
+                isEnabled: () => OnOverseer() && _overseer.CanFold, scopes: [Regions.Overseer])
             .Register("overseer.github", () => "Open on GitHub", OpenChip, new Key('g'),
-                isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, inMenu: OnOverseer)
+                isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, scopes: [Regions.Overseer])
             .Register("overseer.session", () => "Go to the agent's session", GoToSession, new Key('r'),
-                isEnabled: () => OnOverseer() && SessionFor(_overseer.Board.SelectedCard) is not null, inMenu: OnOverseer)
+                isEnabled: () => OnOverseer() && SessionFor(_overseer.Board.SelectedCard) is not null, scopes: [Regions.Overseer])
             .Register("overseer.refresh", () => "Read every board again", ReadBoards, Key.F5, isEnabled: OnOverseer,
-                menuLabel: () => "Refresh", inMenu: OnOverseer)
+                menuLabel: () => "Refresh", scopes: [Regions.Overseer])
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
             .Register("view.overseer", "Overseer", () => Show(Area.Overseer), new Key('o'))
+            .Register("work.whatsNew", "Go to what's new", GoToNew, new Key('u'), isEnabled: () => _news.Newest is not null)
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
                 isEnabled: () => OnDashboard() && Selected() is not null,
-                menuLabel: () => UnlessHeld("Pause this role", "Let this role start again"))
+                menuLabel: () => UnlessHeld("Pause this role", "Let this role start again"), scopes: [Regions.Agents, Regions.Log])
             .Register("agent.interrupt", () => UnlessStopped("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
                 isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true } or { RunHeld: true },
-                menuLabel: () => UnlessStopped("Interrupt", "Let it start again"))
+                menuLabel: () => UnlessStopped("Interrupt", "Let it start again"), scopes: [Regions.Agents, Regions.Log])
             .Register("dispatch.pass", "Run a dispatch pass now", PassNow)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", () => OpenSettings(), new Key('s'), isEnabled: HasApp)
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("teams.new", "New team", () => OpenSettings(SettingsDialog.TeamsPage, newTeam: true), isEnabled: HasApp)
-            .Register("help", "Keys", OpenHelp, Key.F1, isEnabled: HasApp)
+            .Register("help", () => "Show keys", OpenKeys, Key.F1, isEnabled: HasApp, menuLabel: () => "Show _keys")
             .Register("guide", "Guide", () => _showGuide(_area switch
             {
                 Area.Work => GuideDialog.Work,
@@ -522,14 +630,15 @@ public sealed class DashboardWindow : Window
             .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
             .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
-                inMenu: () => _expanded is not null || _dispatcherExpanded)
+                inMenu: () => _expanded is not null || _dispatcherExpanded, scopes: [Regions.Log])
             .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
         for (var tab = 0; tab < 9; tab++)
         {
             var index = tab;
             _commands.Register($"work.team{index + 1}",
                 () => index < _work.Lanes.Count ? $"Go to {_work.Lanes[index].Team}" : $"Go to team {index + 1}",
-                () => _work.PickTab(index), new Key((char)('1' + index)), isEnabled: () => OnWork() && index < _work.Lanes.Count);
+                () => _work.PickTab(index), new Key((char)('1' + index)), isEnabled: () => OnWork() && index < _work.Lanes.Count,
+                scopes: [Regions.Work]);
         }
     }
 
@@ -542,6 +651,13 @@ public sealed class DashboardWindow : Window
     }
 
     private bool HasApp() => App is not null;
+
+    /// <summary>The status bar's one hint, as TuiCode words it: every other key is in the sheet it opens.</summary>
+    private void ShowKeysHint()
+    {
+        var key = _commands.KeyFor("help");
+        _status.Help(key == Key.Empty ? "" : $"Press {KeyNames.Short(key)} for help", () => _commands.Execute("help"));
+    }
 
     private void ToggleHold()
     {
@@ -613,6 +729,7 @@ public sealed class DashboardWindow : Window
         _askedAt = _clock.GetUtcNow();
         if (_reading is null)
         {
+            _readingAsked = _askedAt.Value;
             _activityRead = Activity();
             _reading = Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
         }
@@ -730,6 +847,7 @@ public sealed class DashboardWindow : Window
         if (_handOver is null)
             return;
         _attention.Open(item, WorkView.GateOf(item));
+        Seen(item);
         _attention.Did("tried");
         _attention.HandOver();
         _handOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader));
@@ -998,6 +1116,7 @@ public sealed class DashboardWindow : Window
             _approvable = item.Approvable ? item : null;
             _shown = item;
             _attention.Open(item, WorkView.GateOf(item));
+            Seen(item);
             var chosen = _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
@@ -1249,12 +1368,15 @@ public sealed class DashboardWindow : Window
         _failure = null;
         _readAt = _clock.GetUtcNow();
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
+        foreach (var team in _teamNames)
+            _news.Read(team, _work.Items, _readingAsked);
         if (_area == Area.Work && _work.Selected is null)
         {
             if (_left is not { } left || !_work.Focus(left))
                 _work.FocusFirstCard();
             _left = null;
         }
+        GoToWaiting();
         // Said once the cards are laid out again: laying them out moves the selection, which clears what's said.
         if (_added is { } added)
         {
@@ -1309,7 +1431,7 @@ public sealed class DashboardWindow : Window
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : _area == Area.Overseer && _boarding is not null ? ("Reading…", Schemes.Accent)
-            : _area == Area.Overseer && _overseer.Region is { } chip ? ($"Overseer · {chip}", Schemes.Base)
+            : _area == Area.Overseer && _overseer.Region is { } chip ? (chip, Schemes.Base)
             : ("", Schemes.Base);
         var stamp = _area switch
         {
@@ -1317,8 +1439,13 @@ public sealed class DashboardWindow : Window
             Area.Overseer => Stamped(_boardReadAt, _clock.GetUtcNow()),
             _ => "",
         };
-        var filter = _area == Area.Work ? _work.OnlyMine ? MyItems : AllItems : "";
-        _status.ShowState(stamp, filter);
+        var place = _area switch
+        {
+            Area.Work => _work.OnlyMine ? MyItems : AllItems,
+            Area.Overseer => "Overseer",
+            _ => "",
+        };
+        _status.ShowState(place, stamp);
         if (_status.Message.Says == text)
             return;
         if (text.Length == 0)
@@ -1407,11 +1534,21 @@ public sealed class DashboardWindow : Window
             _work.Pick(team);
     }
 
-    private void OpenHelp()
+    private void OpenKeys()
     {
         if (App is { } app)
-            HelpDialog.Show(app, _commands);
+            KeysSheet.Show(app, Keys);
     }
+
+    internal KeySheet Keys => KeysSheet.For(_commands.Enabled, Region);
+
+    /// <summary>Where the window is now, for the keys that work only there.</summary>
+    internal CommandScope Region => _area switch
+    {
+        Area.Work => Regions.Work,
+        Area.Overseer => Regions.Overseer,
+        _ => _expanded is not null || _dispatcherExpanded ? Regions.Log : Regions.Agents,
+    };
 
     private void OpenAbout()
     {
@@ -1442,6 +1579,7 @@ public sealed class DashboardWindow : Window
         Forget(removed);
         _limits = _settings.ReadLimits();
         SyncQuitKey();
+        ShowKeysHint();
         _menu.Refresh();
     }
 

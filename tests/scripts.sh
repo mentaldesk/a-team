@@ -2948,7 +2948,7 @@ grep -q "docs/index.md is already in mentaldesk/demo: no docs proposal needed" "
 touch "$WORK/no-docs"
 same "writes" "" "$(cat "$WRITES")"
 
-case_ "while the proposal is open, nothing but feedback on it starts a run, and no docs PR goes up"
+case_ "while the proposal is open, nothing but feedback on it starts a run, and no docs PR goes up without the page"
 gh_items <<'ITEMS'
 Pitched 12 Docs proposal: where the user docs live
 Done 16 A pitch just accepted
@@ -2962,9 +2962,21 @@ same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
 run board demo add customer 15 "In review"
 failed "a docs PR before the proposal merges"
-grep -q "customer's docs proposal #12 isn't merged yet: no docs PR until it is" "$ERR" ||
+grep -q "docs/index.md isn't in mentaldesk/demo yet: propose the docs before writing any" "$ERR" ||
   fail "docs PR too soon: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+case_ "a docs PR goes into In review beside a leftover proposal once the docs page is in the repo"
+rm "$WORK/no-docs"
+jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+  mv "$META.new" "$META"
+jq -n '{node_id: "PR_15", number: 15, state: "open", draft: false, body: "<!-- a-team:customer -->"}' >"$PULL"
+run board demo add customer 15 "In review"
+same "exit" 0 "$STATUS"
+grep -q 'option=OPT_review' "$WRITES" || fail "beside a proposal: no move in '$(cat "$WRITES")'"
+grep -q 'PVTI_12' "$WRITES" && fail "beside a proposal: the proposal moved in '$(cat "$WRITES")'"
+touch "$WORK/no-docs"
+: >"$WRITES"
 
 case_ "a stakeholder's comment on the proposal triggers the Customer lead, not the Lead"
 gh_recent <<RECENT
@@ -2979,6 +2991,26 @@ for role in lead dev; do
   jq -e '.reasons | any(contains("#12"))' "$OUT" >/dev/null && fail "$role: '$(jq -c .reasons "$OUT")'"
 done
 gh_recent </dev/null
+
+case_ "beside a leftover proposal listed first, feedback on the docs PR still triggers the Customer lead"
+rm "$WORK/no-docs"
+gh_items <<'ITEMS'
+Pitched 12 Docs proposal: where the user docs live
+In_review 15 Docs: what's changed since 28 Sep
+ITEMS
+docs_pr 12
+docs_pr 15
+gh_thread pull </dev/null
+gh_recent <<RECENT
+15 ${TODAY}T09:10:00Z reviewer 0 Move this under Teams.
+RECENT
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+jq -e --arg r "stakeholder feedback on docs PR #15 (${TODAY}T09:10:00Z)" '.reasons | index($r)' "$OUT" >/dev/null ||
+  fail "feedback on the docs PR: '$(jq -c .reasons "$OUT")'"
+same "card" 15 "$(jq -c .card "$OUT")"
+gh_recent </dev/null
+touch "$WORK/no-docs"
 
 case_ "the Customer lead can't merge, approve or move its proposal"
 for args in "accept customer 12" "approve customer 12" "move customer 12 Approved" "move customer 12 Done"; do
@@ -5757,6 +5789,32 @@ sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM queue WHERE at <= '$(ago $((60 *
 same "partial" null "$(trend | jq .weekAgo)"
 sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO queue VALUES ('demo', '$(ago $((60 * 24 * 8 + 60)))', 20)"
 same "stale" null "$(trend | jq .weekAgo)"
+
+case_ "moves: with nothing recorded, none, and no record file"
+rm -f "$A_TEAM_STATE/history.db"
+run board demo moves 2026-10-11T09:00:00Z
+same "exit" 0 "$STATUS"
+same "none" '[]' "$(jq -c . "$OUT")"
+unrecorded "moves"
+
+case_ "moves: the team's events from a time on, oldest first, and nothing before it"
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
+    at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
+  INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 7, '2026-10-11T08:59:59Z', 'lead', 'Exploring → Pitched'),
+    ('demo', 8, '2026-10-11T09:05:00Z', 'dev', 'In progress → In review'),
+    ('demo', 9, '2026-10-11T09:01:00Z', 'dev', 'In progress → Ready'),
+    ('demo', 9, '2026-10-11T09:01:00Z', 'dev', 'handed back with a question'),
+    ('other', 10, '2026-10-11T09:02:00Z', 'lead', 'Exploring → Pitched');"
+run board demo moves 2026-10-11T09:00:00Z
+same "exit" 0 "$STATUS"
+same "moves" '[[9,"dev","In progress → Ready"],[9,"dev","handed back with a question"],[8,"dev","In progress → In review"]]' \
+  "$(jq -c 'map([.item, .who, .what])' "$OUT")"
+same "at" '"2026-10-11T09:01:00Z"' "$(jq -c '.[0].at' "$OUT")"
+
+case_ "moves refuses a time it can't compare"
+run board demo moves yesterday
+failed "moves"
 
 trends() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trends | jq -c .; }
 

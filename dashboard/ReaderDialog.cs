@@ -350,7 +350,7 @@ public sealed class ReaderDialog : Dialog
         ShowCarets();
         var marked = FocusedPane().Marked;
         var reading = !_field.HasFocus && marked > 0;
-        _hints.Show("", [
+        _hints.Show([
             .. _ranks is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll")],
             .. CommentShown || HistoryShown ? [new HintedCommand(SwitchHint, "Tab switch pane")] : Array.Empty<HintedCommand>(),
             .. _ranks is not null || CommentShown ? Array.Empty<HintedCommand>()

@@ -1149,11 +1149,8 @@ case "$CMD" in
           and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
         die "customer may only add its own open docs PR (#$n isn't one)"
       other=$(items | jq -r --argjson n "$n" '[.[] | select((.labels | index("a-team:customer"))
-        and (.status == "In review" or .status == "Pitched") and .number != $n) | "\(.status)\t\(.number)"]
-        | first // empty')
-      [ "${other%%$'\t'*}" != Pitched ] ||
-        die "customer's docs proposal #${other##*$'\t'} isn't merged yet: no docs PR until it is"
-      [ -z "$other" ] || die "customer's docs PR #${other##*$'\t'} is still open: add to it rather than opening another"
+        and .status == "In review" and .number != $n) | .number] | first // empty')
+      [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
       docs_there || die "$(cfg .docs) isn't in $REPO yet: propose the docs before writing any"
     elif [ "$role:$to" = "customer:Pitched" ]; then
       customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
@@ -1851,6 +1848,17 @@ case "$CMD" in
         elif .run == 2 then {spent: .cost} else {} end]}'
     ;;
 
+  moves)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM moves <since>"
+    [[ $1 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "'$1' isn't a time like 2026-10-11T09:30:00Z"
+    if [ ! -f "$STATE/history.db" ]; then
+      echo '[]'
+      exit 0
+    fi
+    history_sql -json "SELECT item, at, who, what FROM events WHERE team = $(sql "$TEAM") AND at >= $(sql "$1")
+      ORDER BY at, id;" | jq -cs 'first // []'
+    ;;
+
   spent)
     [ $# -eq 6 ] || die "usage: board.sh $TEAM spent you <n|-> <at> <seconds> <gate> <what>"
     role=$1 n=$2 at=$3 seconds=$4 gate=$5 what=$6
@@ -1993,7 +2001,8 @@ case "$CMD" in
           printf '%s\n' "$accepted" >"$COVERED"
         fi
         docs=$(jq -r '[.[] | select((.labels | index("a-team:customer"))
-          and (.status == "In review" or .status == "Pitched")) | "\(.status)\t\(.number)"] | first // empty' <<<"$all")
+          and (.status == "In review" or .status == "Pitched"))] | sort_by(.status != "In review")
+          | map("\(.status)\t\(.number)") | first // empty' <<<"$all")
         status=${docs%%$'\t'*} n=${docs##*$'\t'}
         kind=''
         if ! docs_there; then

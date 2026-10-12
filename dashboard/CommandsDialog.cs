@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using MentalDesk.Tui.Filtering;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Everything the dashboard can do, or any other list of names, narrowed by typing and picked by name.</summary>
+/// <summary>Everything the dashboard can do, or any other list of names, narrowed by typing and picked by name. The
+/// best match comes first, as in every MentalDesk app's lists.</summary>
 public sealed class CommandsDialog : Dialog
 {
     private readonly IReadOnlyList<CommandDescriptor> _commands;
@@ -12,6 +14,10 @@ public sealed class CommandsDialog : Dialog
     private readonly int _labelWidth;
     private readonly TextField _filter;
     private readonly ListView _list;
+    private readonly Label _noMatches;
+    private readonly Shortcut _enter;
+    private readonly Shortcut _esc;
+    private readonly Terminal.Gui.Views.StatusBar _hints;
 
     public CommandsDialog(IReadOnlyList<CommandDescriptor> commands, string title = "Commands", string verb = "run")
     {
@@ -28,13 +34,12 @@ public sealed class CommandsDialog : Dialog
         _filter.KeyBindings.Remove(Key.Home);
         _filter.KeyBindings.Remove(Key.End);
         _list = new ListView { X = 0, Y = Pos.Bottom(_filter), Width = Dim.Fill(), Height = Dim.Fill(1) };
+        _noMatches = new Label { X = 0, Y = Pos.Bottom(_filter), Text = "(no matches)", Enabled = false, Visible = false };
+        _enter = Shortcut("Enter", verb, () => Run());
+        _esc = Shortcut("Esc", "cancel", () => Cancel());
         // Terminal.Gui's bar, not the window's own StatusBar next door.
-        var hints = new Terminal.Gui.Views.StatusBar([
-            Shortcut("Up/Down/PgUp/PgDn/Home/End", "select", () => Move(+1)),
-            Shortcut("Enter", verb, () => Run()),
-            Shortcut("Esc", "cancel", () => Cancel()),
-        ]);
-        Add(_filter, _list, hints);
+        _hints = new Terminal.Gui.Views.StatusBar([Shortcut("Up/Down/PgUp/PgDn/Home/End", "select", () => Move(+1)), _enter, _esc]);
+        Add(_filter, _list, _noMatches, _hints);
 
         Narrow();
         _filter.SetFocus();
@@ -48,8 +53,19 @@ public sealed class CommandsDialog : Dialog
 
     internal TextField Filter => _filter;
 
+    internal bool NoMatches => _noMatches.Visible;
+
+    internal bool OffersEnter => _enter.SuperView is not null;
+
     /// <summary>Enter reaches a Dialog as Accept, from the filter or the list alike, and never as a key.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => Run();
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !OffersEnter)
+            _enter.Dispose();
+        base.Dispose(disposing);
+    }
 
     protected override bool OnKeyDown(Key key)
     {
@@ -74,12 +90,25 @@ public sealed class CommandsDialog : Dialog
 
     private void Narrow()
     {
-        var filter = _filter.Text ?? "";
         _matches.Clear();
-        _matches.AddRange(_commands.Where(command =>
-            command.Label.Contains(filter, StringComparison.OrdinalIgnoreCase)));
+        _matches.AddRange(ListFilter.Apply(_filter.Text ?? "", _commands, command => Row(command).TrimEnd()));
         _list.SetSource(new ObservableCollection<string>(_matches.Select(Row)));
         _list.Value = _matches.Count == 0 ? null : 0;
+        _noMatches.Visible = _matches.Count == 0;
+        OfferEnter(_matches.Count > 0);
+    }
+
+    /// <summary>Taken off the bar rather than hidden, since the bar still spaces out a hidden shortcut.</summary>
+    private void OfferEnter(bool offer)
+    {
+        if (OffersEnter == offer)
+            return;
+        _hints.Remove(_esc);
+        if (offer)
+            _hints.Add(_enter);
+        else
+            _hints.Remove(_enter);
+        _hints.Add(_esc);
     }
 
     private string Row(CommandDescriptor command) =>
@@ -135,10 +164,13 @@ public sealed class CommandsDialog : Dialog
             commands.Execute(id);
     }
 
+    internal static CommandsDialog ForNames(string title, IReadOnlyList<string> names) =>
+        new([.. names.Select(name => new CommandDescriptor(name, name, Key.Empty))], title, "go");
+
     /// <summary>One of <paramref name="names"/>, or null when the dialog is cancelled.</summary>
     public static string? Pick(IApplication app, string title, IReadOnlyList<string> names)
     {
-        using var dialog = new CommandsDialog([.. names.Select(name => new CommandDescriptor(name, name, Key.Empty))], title, "go");
+        using var dialog = ForNames(title, names);
         app.Run(dialog);
         return dialog.Chosen;
     }

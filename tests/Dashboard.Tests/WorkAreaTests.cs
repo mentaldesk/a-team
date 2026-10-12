@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Keys;
 using System.Drawing;
 using System.Text.Json.Nodes;
 using Terminal.Gui.Configuration;
@@ -517,23 +518,23 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_says_when_it_last_read_and_whether_the_filter_is_on()
+    public void The_status_bar_starts_with_whether_the_filter_is_on_then_when_it_last_read()
     {
         using var window = Open();
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("read <1m ago · All items", window.Status.State.Text);
-        Assert.Equal(window.Status.Viewport.Width, window.Status.State.Frame.Right);
+        Assert.Equal("All items · read <1m ago", window.Status.State.Text);
+        Assert.Equal(0, window.Status.State.Frame.X);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal("read <1m ago · My items", window.Status.State.Text);
+        Assert.Equal("My items · read <1m ago", window.Status.State.Text);
     }
 
     [Fact]
-    public void The_status_bar_shows_the_selected_card_at_its_left_and_the_stamp_and_filter_at_its_right()
+    public void The_status_bar_shows_the_filter_and_stamp_then_the_selected_card_and_help_at_its_right()
     {
         using var window = Open();
         window.Refresh();
@@ -541,10 +542,9 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
         Assert.Equal(window.Message.Says, window.Message.Text);
-        Assert.Equal(0, window.Message.Frame.X);
-        Assert.Equal("read <1m ago · All items", window.Status.State.Text);
-        Assert.Equal(window.Status.Viewport.Width, window.Status.State.Frame.Right);
-        Assert.True(window.Message.Frame.Right < window.Status.State.Frame.X);
+        Assert.Equal("All items · read <1m ago".Length + 3, window.Message.Frame.X);
+        Assert.Equal(window.Status.Viewport.Width, window.Status.HelpHint.Frame.Right);
+        Assert.DoesNotContain(window.Status.SubViews, view => view.Visible && view.Text.Contains("a-team "));
     }
 
     [Fact]
@@ -577,8 +577,8 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 80, 30);
 
         Assert.StartsWith("board.sh: xxx", window.Message.Says);
-        Assert.Equal(80 - window.Status.State.Text.Length - 1, window.Message.Frame.Width);
-        Assert.Equal(80, window.Status.State.Frame.Right);
+        Assert.Equal(80 - window.Message.Frame.X - "Press F1 for help".Length - 3, window.Message.Frame.Width);
+        Assert.Equal(80, window.Status.HelpHint.Frame.Right);
     }
 
     [Fact]
@@ -1055,7 +1055,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("board.sh: API rate limit exceeded", window.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
-        Assert.True(window.Message.Frame.Right < window.Status.State.Frame.X);
+        Assert.True(window.Message.Frame.X > window.Status.State.Frame.Right);
         Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
@@ -2216,7 +2216,7 @@ public class WorkAreaTests : IDisposable
 
         window.Refresh();
 
-        Assert.Equal("read <1m ago · All items", window.Status.State.Text);
+        Assert.Equal("All items · read <1m ago", window.Status.State.Text);
         Assert.Equal("read 2m ago", DashboardWindow.Stamped(now, now.AddMinutes(2)));
     }
 
@@ -2304,7 +2304,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(2, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
         Assert.NotNull(window.Work.SelectedCard);
-        Assert.StartsWith("read 4m ago", window.Status.State.Text);
+        Assert.EndsWith("read 4m ago", window.Status.State.Text);
     }
 
     [Fact]
@@ -2391,7 +2391,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(4, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
-        Assert.StartsWith("read <1m ago", window.Status.State.Text);
+        Assert.EndsWith("read <1m ago", window.Status.State.Text);
     }
 
     [Fact]
@@ -2635,7 +2635,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(
             [
-                "view.dashboard", "view.work", "view.overseer", "overseer.details", "overseer.fold", "overseer.github",
+                "view.dashboard", "view.work", "view.overseer", "work.whatsNew", "overseer.details", "overseer.fold", "overseer.github",
                 "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
                 "work.github", "work.accept", "work.decline", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
@@ -2644,7 +2644,7 @@ public class WorkAreaTests : IDisposable
         Assert.All(window.MenuItems, item =>
         {
             var command = window.Commands.Registered.Single(registered => registered.Id == item.Id);
-            Assert.Equal(command.MenuLabel, item.Item.Title.Replace("_", ""));
+            Assert.Equal(command.MenuLabel.Replace("_", ""), item.Item.Title.Replace("_", ""));
             Assert.Equal(command.Key, item.Item.Key);
         });
     }
@@ -2736,13 +2736,13 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.Empty(handed);
-        Assert.False(item.Enabled);
+        Assert.True(item.Dimmed);
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
         window.Refresh();
-        Assert.True(item.Enabled);
+        Assert.False(item.Dimmed);
     }
 
     [Fact]
@@ -3366,14 +3366,26 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_Commands_palette_shows_F5_for_refresh_and_Help_leaves_it_to_the_menu()
+    public void Typing_gt_in_Commands_puts_Go_to_team_at_the_top()
+    {
+        using var window = Open();
+        window.Refresh();
+        using var palette = new CommandsDialog(window.Commands.Enabled);
+
+        foreach (var character in "gt")
+            palette.NewKeyDownEvent(new Key(character));
+
+        Assert.Equal("work.team", palette.Matches[0].Id);
+    }
+
+    [Fact]
+    public void The_Commands_palette_and_the_keys_here_both_show_F5_for_refresh()
     {
         using var window = Open();
 
-        using var help = new HelpDialog(window.Commands.Registered);
         using var palette = new CommandsDialog(window.Commands.Registered);
 
-        Assert.DoesNotContain("F5", help.Keys.Text);
+        Assert.Contains(new KeyRow("F5", "Read what's waiting again"), window.Keys.Here!.Groups.Single().Rows);
         Assert.Contains(
             palette.List.Source!.ToList().Cast<string>(),
             row => row.StartsWith("Read what's waiting again") && row.TrimEnd().EndsWith(" F5"));

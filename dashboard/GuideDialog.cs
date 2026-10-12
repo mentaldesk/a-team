@@ -63,7 +63,7 @@ public sealed class GuideDialog : Dialog
             then?.Invoke();
         };
         _hints.Y = Pos.Func(_ => HintRow(), this);
-        _hints.Show("", [
+        _hints.Show([
             new HintedCommand(NextHint, "Tab next link"),
             new HintedCommand(FollowHint, "Enter follow"),
             new HintedCommand(BackHint, "Backspace back"),
