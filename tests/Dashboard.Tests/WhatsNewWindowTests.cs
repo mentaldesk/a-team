@@ -27,15 +27,55 @@ public class WhatsNewWindowTests : IDisposable
     }
 
     [Fact]
-    public void Something_new_on_a_team_reads_that_team_again_and_shows_in_the_status_bar_from_any_area()
+    public void Something_new_on_a_team_reads_that_team_again_and_shows_in_the_menu_bar_from_any_area()
     {
         using var window = Open(Area.Dashboard);
 
         Settle(window);
 
         Assert.Equal(["team1"], _reads);
-        Assert.Equal("◇ #133", window.Status.Alerting);
+        Assert.Equal("◇ #133", window.Alert.Alerting);
         Assert.Contains(window.Work.Items, item => item is { Team: "team1", Number: 133 });
+    }
+
+    [Theory]
+    [InlineData(Area.Work)]
+    [InlineData(Area.Dashboard)]
+    [InlineData(Area.Overseer)]
+    public void The_alert_sits_at_the_right_end_of_the_menu_bar_in_every_area(Area area)
+    {
+        using var window = Open(area);
+
+        Settle(window);
+
+        Assert.Equal(window.Menu.Frame.Y, window.Alert.Frame.Y);
+        Assert.Equal(window.Viewport.Width, window.Alert.Frame.Right);
+        Assert.Equal("◇ #133", window.Alert.Text);
+        Assert.True(MenuTitlesEnd(window) + 3 <= window.Alert.Frame.X, $"{window.Alert.Frame} runs into the menu titles");
+    }
+
+    [Fact]
+    public void The_status_bar_says_nothing_of_the_alert()
+    {
+        using var window = Open(Area.Dashboard);
+
+        Settle(window);
+
+        Assert.DoesNotContain("#133", window.Status.Says + window.Status.Message.Says + window.Status.State.Text);
+    }
+
+    [Fact]
+    public void On_a_narrow_window_the_menu_titles_stay_whole_and_the_alert_is_cut_from_the_left()
+    {
+        using var window = Open(Area.Dashboard);
+        Settle(window);
+        var titles = MenuTitlesEnd(window);
+
+        LayOut(window, titles + 3 + 4);
+
+        Assert.Equal(titles, MenuTitlesEnd(window));
+        Assert.Equal(titles + 3, window.Alert.Frame.X);
+        Assert.Equal("…133", window.Alert.Text);
     }
 
     [Fact]
@@ -58,7 +98,7 @@ public class WhatsNewWindowTests : IDisposable
         Settle(window);
 
         Assert.Empty(_reads);
-        Assert.Equal("", window.Status.Alerting);
+        Assert.Equal("", window.Alert.Alerting);
         Assert.DoesNotContain(window.Commands.Enabled, command => command.Id == "work.whatsNew");
     }
 
@@ -98,7 +138,7 @@ public class WhatsNewWindowTests : IDisposable
         using var window = Open(Area.Overseer);
         Settle(window);
 
-        window.Status.AlertView.InvokeCommand(Command.Accept);
+        window.Alert.InvokeCommand(Command.Accept);
         Settle(window);
 
         Assert.Equal(Area.Work, window.CurrentArea);
@@ -129,7 +169,7 @@ public class WhatsNewWindowTests : IDisposable
 
         Assert.Equal([133], _opened.Select(item => item.Number));
         Assert.Equal("#133  Notice when open files change on disk", pitches.CardText.Single());
-        Assert.Equal("", window.Status.Alerting);
+        Assert.Equal("", window.Alert.Alerting);
         Assert.Empty(window.News.Items);
     }
 
@@ -144,7 +184,7 @@ public class WhatsNewWindowTests : IDisposable
         File.WriteAllText(record, "");
         Settle(window);
 
-        Assert.Equal("", window.Status.Alerting);
+        Assert.Equal("", window.Alert.Alerting);
     }
 
     private void Settle(DashboardWindow window)
@@ -156,11 +196,17 @@ public class WhatsNewWindowTests : IDisposable
         }
     }
 
-    private static void LayOut(DashboardWindow window)
+    private static void LayOut(DashboardWindow window, int width = 120)
     {
-        window.Frame = new Rectangle(0, 0, 120, 30);
-        window.Layout(new Size(120, 30));
+        for (var i = 0; i < 2; i++)
+        {
+            window.Frame = new Rectangle(0, 0, width, 30);
+            window.Layout(new Size(width, 30));
+        }
     }
+
+    private static int MenuTitlesEnd(DashboardWindow window) =>
+        window.Menus.Where(menu => menu.SuperView is not null).Max(menu => menu.Frame.Right);
 
     private DashboardWindow Open(Area area, Action? onMoves = null)
     {

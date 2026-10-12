@@ -33,11 +33,13 @@ public sealed class DashboardWindow : Window
     private const string LoadingText = "Loading…";
     private const int LoadingPadding = 8;
     private const int LoadingHeight = 5;
+    private const int AlertGap = 3;
     private readonly List<AgentPane> _panes = [];
     private readonly CommandRegistry _commands = new();
     private readonly string _version = Version();
     private readonly AppMenu _menu;
-    private readonly StatusBar _status = new() { Alerts = true };
+    private readonly StatusBar _status = new();
+    private readonly MoveAlert _alert = new();
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
     private readonly LogView _dispatch;
@@ -291,7 +293,6 @@ public sealed class DashboardWindow : Window
         ShowIcons(settings.ReadIcons());
 
         _status.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
-        _status.AlertChosen += () => _commands.Execute("work.whatsNew");
         Add(_status);
 
         RegisterCommands();
@@ -301,7 +302,12 @@ public sealed class DashboardWindow : Window
         _menu = new AppMenu(_commands, _area);
         _menu.Bar.X = 0;
         _menu.Bar.Y = 0;
+        _menu.Bar.SubViewsLaidOut += (_, _) => _alert.SetNeedsLayout();
         Add(_menu.Bar);
+        _alert.X = Pos.Func(_ => Math.Max(MenuTitlesEnd() + AlertGap, Viewport.Width - _alert.Shown.GetColumns()), this);
+        _alert.Width = Dim.Fill();
+        _alert.Chosen += () => _commands.Execute("work.whatsNew");
+        Add(_alert);
 
         if (resume is not null)
             Resume(resume);
@@ -332,6 +338,8 @@ public sealed class DashboardWindow : Window
     internal MessageBar Message => _status.Message;
 
     internal StatusBar Status => _status;
+
+    internal MoveAlert Alert => _alert;
 
     internal MenuBar Menu => _menu.Bar;
 
@@ -446,7 +454,7 @@ public sealed class DashboardWindow : Window
 
     private void ShowNews()
     {
-        _status.Alert(_news.Alert(_drawn));
+        _alert.Show(_news.Alert(_drawn));
         _work.ShowNew(_news.Items);
     }
 
@@ -1520,6 +1528,9 @@ public sealed class DashboardWindow : Window
     }
 
     private int Foot() => DispatchLines + 2 + StatusLines;
+
+    private int MenuTitlesEnd() =>
+        _menu.Bar.Frame.X + _menu.Bar.SubViews.Where(view => view.Visible).Select(view => view.Frame.Right).DefaultIfEmpty(0).Max();
 
     private int WorkHeight() => Math.Max(0, Viewport.Height - MenuLines - TitleLines - StatusLines);
 
