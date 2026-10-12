@@ -197,17 +197,46 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void No_two_items_in_a_menu_share_a_letter()
+    public void No_two_items_that_can_run_in_a_menu_share_a_letter()
     {
         using var window = Open();
+        window.Refresh();
 
         Assert.Equal(['v', 'c', 'a', 'h'], window.Menus.Select(menu => Letter(menu.HotKey)));
         foreach (var menu in window.Menus)
         {
-            var ids = Under(window, menu);
+            var ids = Under(window, menu).Where(id => !Item(window, id).Dimmed);
             var letters = ids.Select(id => Letter(Item(window, id).HotKey)).ToList();
             Assert.Equal(letters.Count, letters.Distinct().Count());
         }
+    }
+
+    [Theory]
+    [InlineData(Area.Work)]
+    [InlineData(Area.Dashboard)]
+    public void A_dimmed_item_passes_its_letter_on_to_the_next_item_with_it(Area area)
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open(area);
+        app.Begin(window);
+        var opened = false;
+        Item(window, "settings").Action = () => opened = true;
+
+        window.NewKeyDownEvent(new Key('v').WithAlt);
+        Assert.True(Item(window, "overseer.details").Dimmed);
+        Assert.Equal(new Key('s'), Item(window, "overseer.details").HotKey);
+        app.Keyboard.RaiseKeyDownEvent(new Key('s'));
+
+        Assert.True(opened);
+    }
+
+    [Fact]
+    public void Help_holds_show_keys_guide_commands_and_about_each_with_its_letter()
+    {
+        using var window = Open();
+
+        Assert.Equal(["Show _keys", "_Guide", "_Commands", "_About"], Under(window, Help(window)).Select(id => Item(window, id).Title));
+        Assert.Equal(Key.F1, Item(window, "help").Key);
     }
 
     [Fact]
@@ -295,14 +324,47 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void An_open_Cards_menu_greys_out_what_the_selection_can_t_do()
+    public void Cards_dims_what_the_selection_can_t_do_in_place_with_its_key()
     {
         using var window = Open();
-        Cards(window).PopoverMenu!.Enabled = true;
 
         window.Refresh();
 
-        Assert.All(Under(window, Cards(window)), id => Assert.False(Item(window, id).Enabled, id));
+        Assert.All(Under(window, Cards(window)), id =>
+        {
+            Assert.True(Item(window, id).Dimmed, id);
+            Assert.Equal(window.Commands.KeyFor(id), Item(window, id).Key);
+        });
+    }
+
+    [Fact]
+    public void A_dimmed_item_runs_nothing_when_picked()
+    {
+        var ran = false;
+        using var window = Open();
+        window.Commands.Register("card.zap", "Zap", () => ran = true, isEnabled: () => false, onCard: true);
+        window.Refresh();
+        var zap = InOpenMenu(window, "card.zap");
+
+        Assert.True(zap.Dimmed);
+        zap.InvokeCommand(Command.Accept);
+        zap.NewKeyDownEvent(zap.HotKey);
+
+        Assert.False(ran);
+    }
+
+    [Fact]
+    public void View_lists_the_Work_and_Overseer_items_on_the_dashboard_dimmed()
+    {
+        using var window = Open();
+
+        window.Refresh();
+
+        string[] elsewhere = ["overseer.details", "overseer.fold", "overseer.github", "overseer.session", "overseer.refresh",
+            "work.nextTeam", "work.previousTeam", "work.team"];
+        Assert.Subset(Under(window, View(window)).ToHashSet(), elsewhere.ToHashSet());
+        Assert.All(elsewhere, id => Assert.True(Item(window, id).Dimmed, id));
+        Assert.False(Item(window, "view.work").Dimmed);
     }
 
 
@@ -331,13 +393,17 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void On_the_grid_Agents_has_expand_and_tool_calls_under_a_line_with_their_keys()
+    public void On_the_grid_Agents_has_expand_and_tool_calls_then_the_log_s_items_dimmed_under_a_line_with_their_keys()
     {
         using var window = Open();
+        window.NewKeyDownEvent(Key.Tab);
 
-        Assert.Equal(["agent.expand", "log.toolCalls"], Below(window, Agents(window)));
-        Assert.Equal(["_Expand", "Show _tool calls in full"], Below(window, Agents(window)).Select(id => Item(window, id).Title));
-        Assert.Equal([Key.Enter, new Key('t')], Below(window, Agents(window)).Select(id => Item(window, id).Key));
+        window.Refresh();
+
+        Assert.Equal(["agent.expand", "log.toolCalls", "log.copyLines", "log.copyAll", "log.editor"], Below(window, Agents(window)));
+        Assert.Equal(["_Expand", "Show _tool calls in full"], Below(window, Agents(window)).Take(2).Select(id => Item(window, id).Title));
+        Assert.Equal([Key.Enter, new Key('t'), new Key('l'), new Key('L'), new Key('e')], Below(window, Agents(window)).Select(id => Item(window, id).Key));
+        Assert.Equal([false, false, true, true, true], Below(window, Agents(window)).Select(id => Item(window, id).Dimmed));
     }
 
     [Fact]
@@ -371,7 +437,7 @@ public class AppMenuTests : IDisposable
 
         window.NewKeyDownEvent(new Key('a').WithAlt);
 
-        Assert.Equal(["agent.expand", "log.toolCalls"], Below(window, Agents(window)));
+        Assert.Equal(["agent.expand", "log.toolCalls", "log.copyLines", "log.copyAll", "log.editor"], Below(window, Agents(window)));
     }
 
     [Fact]
@@ -384,19 +450,18 @@ public class AppMenuTests : IDisposable
     }
 
     [Theory]
-    [InlineData(0, false)]
-    [InlineData(1, true)]
-    [InlineData(2, true)]
-    public void An_open_Agents_menu_greys_out_what_needs_a_selected_agent(int keys, bool enabled)
+    [InlineData(0, new[] { true, true, true, true, true })]
+    [InlineData(1, new[] { false, false, true, true, true })]
+    [InlineData(2, new[] { false, false, false, false, false })]
+    public void Agents_dims_what_needs_a_selected_agent_or_an_expanded_log(int keys, bool[] dimmed)
     {
         using var window = Open();
         foreach (var key in new[] { Key.Tab, Key.Enter }.Take(keys))
             window.NewKeyDownEvent(key);
-        Agents(window).PopoverMenu!.Enabled = true;
 
         window.Refresh();
 
-        Assert.All(Below(window, Agents(window)), id => Assert.Equal(enabled, Item(window, id).Enabled));
+        Assert.Equal(dimmed, Below(window, Agents(window)).Select(id => Item(window, id).Dimmed));
     }
 
     [Fact]
@@ -425,11 +490,11 @@ public class AppMenuTests : IDisposable
         Assert.DoesNotContain(window.Commands.Registered, command => command.Id == "menu");
     }
 
-    private static MenuItem Item(DashboardWindow window, string id) =>
+    private static DimmedMenuItem Item(DashboardWindow window, string id) =>
         window.MenuItems.Single(item => item.Id == id).Item;
 
     /// <summary>The item, with the menu holding it enabled and visible, which is what the framework does as it shows it.</summary>
-    private static MenuItem InOpenMenu(DashboardWindow window, string id)
+    private static DimmedMenuItem InOpenMenu(DashboardWindow window, string id)
     {
         var popover = window.Menus.Single(menu => Under(window, menu).Contains(id)).PopoverMenu!;
         popover.Enabled = true;
@@ -452,6 +517,10 @@ public class AppMenuTests : IDisposable
     }
 
     private static MenuBarItem Agents(DashboardWindow window) => window.Menus.Single(menu => menu.Title == AppMenu.Agents);
+
+    private static MenuBarItem View(DashboardWindow window) => window.Menus.Single(menu => menu.Title == "_View");
+
+    private static MenuBarItem Help(DashboardWindow window) => window.Menus.Single(menu => menu.Title == "_Help");
 
     private static MenuBarItem Cards(DashboardWindow window) => window.Menus.Single(menu => menu.Title == AppMenu.Cards);
 

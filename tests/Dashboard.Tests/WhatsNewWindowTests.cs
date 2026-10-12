@@ -39,6 +39,17 @@ public class WhatsNewWindowTests : IDisposable
     }
 
     [Fact]
+    public void The_alert_s_key_is_listed_under_Everywhere()
+    {
+        using var window = Open(Area.Dashboard);
+
+        Settle(window);
+
+        Assert.Contains(window.Keys.Everywhere.Groups.Single(group => group.Heading == "View").Rows,
+            row => row is { Keys: "u", Label: "Go to what's new" });
+    }
+
+    [Fact]
     public void Nothing_new_reads_nothing_and_says_nothing()
     {
         _moves["team1"] = "[]";

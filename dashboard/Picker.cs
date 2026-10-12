@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using MentalDesk.Tui.Filtering;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -19,6 +20,7 @@ public sealed class Picker : Dialog
     private readonly List<string> _shown = [];
     private readonly TextField _filter;
     private readonly ListView _list;
+    private readonly Label _noMatches;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private bool _closed;
@@ -55,12 +57,13 @@ public sealed class Picker : Dialog
             MarkMultiple = true,
         };
         _list.KeyDown += (_, key) => key.Handled = key == Key.Space && Toggle();
+        _noMatches = new Label { X = Pos.Absolute(1), Y = Pos.Bottom(_filter), Text = "(no matches)", Enabled = false, Visible = false };
 
         _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
-        _hints.Show("", [new HintedCommand(MarkHint, "Space mark"), new HintedCommand(DoneHint, "Enter done"),
+        _hints.Show([new HintedCommand(MarkHint, "Space mark"), new HintedCommand(DoneHint, "Enter done"),
             new HintedCommand(CancelHint, "Esc cancel")], Run);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
-        Add(_filter, _list, _hints, _message);
+        Add(_filter, _list, _noMatches, _hints, _message);
 
         Narrow();
         Say(message, Schemes.Base);
@@ -75,6 +78,8 @@ public sealed class Picker : Dialog
     internal ListView List => _list;
 
     internal StatusBar Hints => _hints;
+
+    internal bool NoMatches => _noMatches.Visible;
 
     internal MessageBar Message => _message;
 
@@ -172,17 +177,17 @@ public sealed class Picker : Dialog
         }
     }
 
-    /// <summary>The chosen names the list hasn't got first, then the list, narrowed to what the filter holds.</summary>
+    /// <summary>The chosen names the list hasn't got first, then the list, narrowed to what the filter holds, best match
+    /// first.</summary>
     private void Narrow()
     {
-        var filter = _filter.Text.Trim();
         _shown.Clear();
-        _shown.AddRange(_kept.Where(name => !_listed.Contains(name)).Concat(_listed)
-            .Where(name => name.Contains(filter, StringComparison.OrdinalIgnoreCase)));
+        _shown.AddRange(ListFilter.Apply(_filter.Text.Trim(), [.. _kept.Where(name => !_listed.Contains(name)).Concat(_listed)], name => name));
         _list.SetSource(new ObservableCollection<string>(_shown.Select(RowOf)));
         for (var index = 0; index < _shown.Count; index++)
             _list.Source?.SetMark(index, _chosen.Contains(_shown[index]));
         _list.Value = _shown.Count == 0 ? null : 0;
+        _noMatches.Visible = _shown.Count == 0 && _filter.Text.Trim().Length > 0;
     }
 
     private string RowOf(string name) =>

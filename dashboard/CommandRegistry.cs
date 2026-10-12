@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Commands;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -8,10 +9,14 @@ public sealed record HintedCommand(string Id, string Text, bool Enabled = true);
 
 /// <summary>A command as the registry holds it. <paramref name="OnCard"/> marks one that acts on the Work area's
 /// selected card, which is what puts it in the Cards menu. <paramref name="MenuLabel"/> is how it reads in the menu,
-/// where the title it sits under can say the rest.</summary>
-public sealed record CommandDescriptor(string Id, string Label, Key Key, bool OnCard = false, string? MenuLabel = null)
+/// where the title it sits under can say the rest. <paramref name="Scopes"/> are the regions it works in, where it
+/// belongs to some; one with none is global.</summary>
+public sealed record CommandDescriptor(
+    string Id, string Label, Key Key, bool OnCard = false, string? MenuLabel = null, IReadOnlyList<CommandScope>? Scopes = null)
 {
     public string MenuLabel { get; init; } = MenuLabel ?? Label;
+
+    public IReadOnlyList<CommandScope> Scopes { get; init; } = Scopes ?? [];
 }
 
 /// <summary>Everything the dashboard can do, by id, so a key or the Commands dialog can run any of it.</summary>
@@ -20,7 +25,7 @@ public sealed class CommandRegistry
     private readonly List<Entry> _entries = [];
 
     public IReadOnlyList<CommandDescriptor> Registered =>
-        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.OnCard, entry.MenuLabel?.Invoke()))];
+        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.OnCard, entry.MenuLabel?.Invoke(), entry.Scopes))];
 
     public CommandRegistry Register(
         string id,
@@ -28,8 +33,9 @@ public sealed class CommandRegistry
         Action handler,
         Key? key = null,
         Func<bool>? isEnabled = null,
-        bool onCard = false) =>
-        Register(id, () => label, handler, key, isEnabled, onCard);
+        bool onCard = false,
+        CommandScope[]? scopes = null) =>
+        Register(id, () => label, handler, key, isEnabled, onCard, scopes: scopes);
 
     /// <summary>A command whose label depends on what it would do now, like pausing the selected team.</summary>
     public CommandRegistry Register(
@@ -40,9 +46,10 @@ public sealed class CommandRegistry
         Func<bool>? isEnabled = null,
         bool onCard = false,
         Func<string>? menuLabel = null,
-        Func<bool>? inMenu = null)
+        Func<bool>? inMenu = null,
+        CommandScope[]? scopes = null)
     {
-        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, isEnabled, onCard, menuLabel, inMenu));
+        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, isEnabled, onCard, menuLabel, inMenu, scopes ?? []));
         return this;
     }
 
@@ -93,5 +100,5 @@ public sealed class CommandRegistry
 
     private sealed record Entry(
         string Id, Func<string> Label, Action Handler, Key Key, Func<bool>? IsEnabled, bool OnCard, Func<string>? MenuLabel,
-        Func<bool>? InMenu);
+        Func<bool>? InMenu, CommandScope[] Scopes);
 }

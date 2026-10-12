@@ -115,7 +115,8 @@ before its title until you open it.
 | `u` | Go to the newest card that has become your move |
 | `F5` | Read what's waiting again |
 
-To pick a team by name, open **Go to team…** from Commands (`Ctrl+E`) or the View menu.
+To pick a team by name, open **Go to team…** from Commands (`Ctrl+E`) or the View menu, and type
+to narrow the list as in Commands.
 
 The cards are read when you open Work, when you press `F5`, and by themselves every five minutes
 while Work is in front. Coming back from the Dashboard puts you on the card you left, and reads again
@@ -202,7 +203,8 @@ Each one is written to the board in the background, one at a time in the order y
 card wears `⋯` in place of its `✓` until the board has taken it, then leaves or moves as above,
 and the status bar says what's being written and how many more are queued, like
 `Merging PR #459… · 1 more queued`. Acting on that card again says it's already under way. If the
-board refuses one, the status bar says why, the card stays where it was, and the rest still run.
+board refuses one, the status bar says which card and why, the card stays where it was, and the
+rest still run.
 Quitting while some are still queued asks first: `Ctrl+Enter` quits and drops them, `Esc` stays.
 The one being written finishes either way.
 
