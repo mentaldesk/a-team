@@ -332,8 +332,12 @@ public sealed partial class ReaderDialog : Dialog
             return heading < 0 ? null : heading;
         }
         var dev = body.Remarks.Where(said => said.Remark.Who == "dev").ToList();
-        return (dev.LastOrDefault(said => said.Remark.Body.Trim() == item.Question.Trim()) ?? dev.LastOrDefault())?.Line;
+        return (dev.LastOrDefault(said => DevMarker().Replace(said.Remark.Body, "").Trim() == item.Question.Trim())
+            ?? dev.LastOrDefault())?.Line;
     }
+
+    [GeneratedRegex(@"\s*<!-- a-team:dev -->\s*$")]
+    private static partial Regex DevMarker();
 
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex NeedsAnswer();

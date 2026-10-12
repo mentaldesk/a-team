@@ -1627,6 +1627,19 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void A_Dev_s_question_opens_at_its_marked_comment_though_the_Dev_spoke_after()
+    {
+        var body = (new IssueBody(Long()) with { Opened = null }).With(new Conversation(
+        [
+            new("dev", Then, $"{Paragraph("Asked")}\n\n<!-- a-team:dev -->"),
+            new("dev", Then.AddMinutes(10), $"{Paragraph("Later")}\n\n<!-- a-team:dev -->"),
+        ]), null);
+        using var dialog = Telling(body, Item with { Status = "Ready", Question = Paragraph("Asked") });
+
+        Assert.Equal(body.Remarks[0].Line, dialog.Body.TopLine);
+    }
+
+    [Fact]
     public void A_Lead_s_question_opens_at_the_pitch_s_Needs_your_answer_heading()
     {
         var body = Told(null, $"{Long()}\n\n## Needs your answer\n\n1. Which?\n\n{Long()}");
