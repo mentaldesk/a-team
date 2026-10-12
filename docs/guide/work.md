@@ -126,8 +126,14 @@ That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dash
 ## Reading a card
 
 `Enter` opens the issue as it was written, then everything said since on it and on its PR, each
-comment headed by who said it and when. On a card in Questions it shows just the question. `g`
-opens it on GitHub, and `Esc` closes it.
+comment headed by who said it and when. `g` opens it on GitHub, and `Esc` closes it.
+
+**Where it opens.** A card you've opened before on this machine opens at the first comment posted
+since you last did, and each comment since then has `new` at the end of its heading. If nothing has
+been said since, it opens at the newest comment. A card you've never opened, or one nobody has
+commented on, opens at the top. A card in Questions reads the same, and opens at the question: the
+Dev's comment, or the pitch's **Needs your answer** heading. In the body, `Alt+↑` and `Alt+↓` go to
+the previous and next comment's heading, with the top of the body counting as the first.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
 accept, decline, comment, Priority, recommendation, skip, review, link and dependency, with when
@@ -141,7 +147,8 @@ how long it took and what it cost, like `run 38 min · $4.12`. One that didn't f
 `stopped` by you, `killed` at the time limit, `error`, or `died` with no result, and no cost.
 Each of your visits to the card is a line as well: how long you spent on it and what you did, like
 `6m · approved` or `1m · read`.
-`Tab` moves between the body and History. `h` hides
+`Tab` moves between the body and History. `Enter` or a click on a comment's line in History shows
+that comment in the body. `h` hides
 History to give the body the full width, and shows it again; it stays as you left it until you
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.
 

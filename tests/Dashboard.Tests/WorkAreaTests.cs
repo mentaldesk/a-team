@@ -818,6 +818,7 @@ public class WorkAreaTests : IDisposable
         Rank? offered = Rank.Low;
         using var window = Open(
             read: team => Task.FromResult(new Reading(team == "team0" ? Question : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
             chooseRank: (_, _, rank) => offered = rank);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -1195,17 +1196,15 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void A_question_reads_only_its_history()
+    public void A_question_reads_its_body_conversation_and_history_like_any_other_card()
     {
-        var bodies = 0;
+        var at = new DateTimeOffset(2026, 9, 29, 4, 31, 0, TimeSpan.Zero);
         IssueBody? shown = null;
         using var window = Open(
             read: _ => Task.FromResult(new Reading(Question, null)),
-            readBody: _ =>
-            {
-                bodies++;
-                return Task.FromResult(new Reading(Body, null));
-            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            readConversation: _ => Task.FromResult(new Reading(
+                $$"""[{"who": "dev", "at": "{{at:O}}", "body": "Which marker should it post?"}]""", null)),
             readHistory: _ => Task.FromResult(new Reading("""{"since": null, "events": []}""", null)),
             showBody: (_, body, _, _, _, _, _) => shown = body);
         window.Refresh();
@@ -1214,9 +1213,43 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(Key.Enter));
         window.Refresh();
 
-        Assert.Equal(0, bodies);
-        Assert.Equal("Which marker should it post?", shown?.Text);
+        Assert.Equal(new IssueBody("## Opportunity").With(new Conversation([new Remark("dev", at, "Which marker should it post?")])).Text,
+            shown?.Text);
         Assert.NotNull(shown?.History);
+    }
+
+    [Fact]
+    public void A_card_opened_before_reads_its_conversation_since_then_as_new_even_after_a_restart()
+    {
+        var clock = new Clock();
+        var before = clock.Now.AddHours(-1);
+        var after = clock.Now.AddHours(1);
+        IssueBody? shown = null;
+        DashboardWindow Window() => Open(
+            clock: clock,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            readConversation: _ => Task.FromResult(new Reading(
+                $$"""[{"who": "dev", "at": "{{before:O}}", "body": "Old."}, {"who": "lead", "at": "{{after:O}}", "body": "New."}]""",
+                null)),
+            showBody: (_, body, _, _, _, _, _) => shown = body);
+        using (var first = Window())
+        {
+            first.Refresh();
+            LayOut(first, 120, 30);
+            first.NewKeyDownEvent(Key.Enter);
+            first.Refresh();
+        }
+        Assert.Null(shown?.Opened);
+        Assert.DoesNotContain(" · new ", shown?.Text);
+
+        using var again = Window();
+        again.Refresh();
+        LayOut(again, 120, 30);
+        again.NewKeyDownEvent(Key.Enter);
+        again.Refresh();
+
+        Assert.Equal(clock.Now, shown?.Opened);
+        Assert.Equal([false, true], shown?.Remarks.Select(said => shown.Lines[said.Line].Text.Contains(" · new ")));
     }
 
     [Fact]
@@ -1237,7 +1270,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Enter_on_a_question_opens_the_reader_on_the_Dev_s_question_with_nothing_read()
+    public void Enter_on_a_question_opens_the_reader_on_the_task_it_s_about()
     {
         var read = new List<WaitingItem>();
         (WaitingItem Item, IssueBody Body)? shown = null;
@@ -1257,9 +1290,9 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(Key.Enter));
         window.Refresh();
 
-        Assert.Empty(read);
+        Assert.Equal([192], read.Select(item => item.Number));
         Assert.Equal(192, shown?.Item.Number);
-        Assert.Equal(new IssueBody("Which marker should it post?"), shown?.Body);
+        Assert.Equal(new IssueBody("## Opportunity"), shown?.Body);
     }
 
     [Fact]
@@ -1274,6 +1307,7 @@ public class WorkAreaTests : IDisposable
                 calls.Add(arguments);
                 return Task.FromResult<string?>(null);
             },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
             showBody: (_, body, _, approve, _, _, _) =>
             {
                 shown = body;
@@ -1286,7 +1320,7 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(Key.Enter));
         window.Refresh();
 
-        Assert.Equal(new IssueBody("## Needs your answer\n\n1. Which?"), shown);
+        Assert.Equal(new IssueBody("## Opportunity"), shown);
         Assert.Equal(["board", "team0", "approve", "you", "257"], Assert.Single(calls));
     }
 

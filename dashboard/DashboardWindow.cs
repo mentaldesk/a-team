@@ -83,6 +83,7 @@ public sealed class DashboardWindow : Window
     private readonly TimeProvider _clock;
     private readonly Attention _attention;
     private readonly WhatsNew _news;
+    private readonly Opened _opened;
     private readonly Func<string, DateTimeOffset, Task<Reading>>? _readMoves;
     private (IReadOnlyList<string> Teams, Task<Reading[]> Read)? _moving;
     private (DateTime, DateTime)? _recordStamp;
@@ -178,6 +179,7 @@ public sealed class DashboardWindow : Window
         _clock = clock ?? TimeProvider.System;
         _attention = attention ?? new Attention(_clock, _ => { });
         _news = whatsNew ?? new WhatsNew(_clock.GetUtcNow());
+        _opened = new Opened(stateRoot);
         BorderStyle = LineStyle.None;
         _settings = settings;
         _auto = auto;
@@ -1109,22 +1111,21 @@ public sealed class DashboardWindow : Window
         _readingBody = (item, Read(item, forReader), then);
     }
 
-    /// <summary>The reads start at once; a conversation or history that won't read still leaves the body to show.
-    /// A question is shown as asked, so only its history is read.</summary>
+    /// <summary>The reads start at once; a conversation or history that won't read still leaves the body to show.</summary>
     private async Task<IssueBody> Read(WaitingItem item, bool forReader)
     {
-        var question = forReader && item.Question.Length > 0;
-        var body = question ? null : _readBody(item);
-        var conversation = forReader && !question ? _readConversation?.Invoke(item) : null;
+        var body = _readBody(item);
+        var conversation = forReader ? _readConversation?.Invoke(item) : null;
         var history = forReader ? _readHistory?.Invoke(item) : null;
-        var read = body is null ? new IssueBody(item.Question)
-            : await Settled(body, reading => IssueBody.Of(reading, item.Number),
-                new IssueBody(Failure: $"couldn't read #{item.Number}")).ConfigureAwait(false);
+        var opened = forReader ? _opened.Last(item.Team, item.Number) : null;
+        var read = await Settled(body, reading => IssueBody.Of(reading, item.Number),
+            new IssueBody(Failure: $"couldn't read #{item.Number}")).ConfigureAwait(false);
         if (read.Failure is not null)
             return read;
+        read = read with { Opened = opened };
         if (conversation is not null)
             read = read.With(await Settled(conversation, reading => Conversation.Of(reading, item.Number),
-                new Conversation([], $"couldn't read the conversation on #{item.Number}")).ConfigureAwait(false));
+                new Conversation([], $"couldn't read the conversation on #{item.Number}")).ConfigureAwait(false), opened);
         if (forReader && item.Document && _readDocument?.Invoke(item) is { } reading
             && await Settled(reading, read => read.Failure is null ? DocumentPitch.Parse(read.Output) : null, null).ConfigureAwait(false) is { } document)
             read = read.With(document);
@@ -1151,7 +1152,7 @@ public sealed class DashboardWindow : Window
 
     /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board. With
     /// <paramref name="rank"/> it opens anyway, saying why, since you came to rank it.</summary>
-    private void ShowBody(WaitingItem item, IssueBody body, string? url, int top = 0, string? failure = null,
+    private void ShowBody(WaitingItem item, IssueBody body, string? url, int? top = null, string? failure = null,
         Rank? rank = null, bool declining = false, string? said = null)
     {
         if (rank is null && body.Failure is { Length: > 0 } unread)
@@ -1177,6 +1178,7 @@ public sealed class DashboardWindow : Window
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
                     top, said, failure) : null,
                 rank);
+            _opened.Open(item.Team, item.Number, _clock.GetUtcNow());
             _approvable = null;
             _shown = null;
             var reranked = chosen is { } ranked && ranked != Priorities.Of(item) ? chosen : null;

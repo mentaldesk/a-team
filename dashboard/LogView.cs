@@ -38,6 +38,7 @@ public sealed class LogView : View
     private (int Line, int Offset)? _from;
     private int? _goal;
     private bool _showsCaret;
+    private int? _opensAt;
 
     public LogView()
     {
@@ -82,6 +83,25 @@ public sealed class LogView : View
             else
                 _top = value;
         }
+    }
+
+    internal int TopLine => Rows(Math.Max(1, Viewport.Width)) is { Count: > 0 } rows ? rows[Math.Min(_top, rows.Count - 1)].Line : 0;
+
+    /// <summary>Scrolls <paramref name="line"/> to the top row with the caret at its start; set before the view is
+    /// laid out, it's where the view opens.</summary>
+    internal void ShowLine(int line)
+    {
+        _following = false;
+        _caret = (line, 0);
+        _from = null;
+        _goal = null;
+        if (Viewport.Height <= 0)
+        {
+            _opensAt = line;
+            return;
+        }
+        var row = Rows(Math.Max(1, Viewport.Width)).FindIndex(each => each.Line == line);
+        ScrollTo(row < 0 ? _top : row);
     }
 
     /// <summary>Whether text too long for the view gets a scroll bar beside it, as a body read at a sitting
@@ -528,6 +548,12 @@ public sealed class LogView : View
         // A second pass: the scroll bar takes a column off the width the first one wrapped to.
         for (var pass = 0; pass < 2 && GetContentSize() != Content(); pass++)
             SetContentSize(Content());
+        if (_opensAt is { } line && Viewport.Height > 0)
+        {
+            _opensAt = null;
+            ShowLine(line);
+            return;
+        }
         ScrollTo(_following ? int.MaxValue : _top);
     }
 
