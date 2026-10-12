@@ -50,6 +50,7 @@ var attention = new Attention(TimeProvider.System, visit =>
         recording.Add(command.Run(visit.Arguments));
 });
 var news = new WhatsNew(DateTimeOffset.UtcNow);
+var writes = new WriteQueue(command.Run);
 
 return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 
@@ -75,6 +76,7 @@ int Run()
         };
     }
     attention.Stop();
+    writes.InFlight?.Wait(TimeSpan.FromMinutes(1));
     lock (recording)
         Task.WaitAll([.. recording], TimeSpan.FromSeconds(5));
     BundledThemes.Cursor.Restore();
@@ -125,7 +127,9 @@ Handover? Show(Handover? back)
         attention: attention,
         readMoves: (team, since) => command.Read("board", team, "moves", since.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)),
         whatsNew: news,
-        readDocument: item => command.Read("board", item.Team, "document", item.Number.ToString()));
+        readDocument: item => command.Read("board", item.Team, "document", item.Number.ToString()),
+        writes: writes,
+        confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {
