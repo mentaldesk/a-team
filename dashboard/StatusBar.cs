@@ -2,38 +2,25 @@ using System.Text;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Text;
-using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
 /// <summary>The last row of a window or a dialog: what the area is showing, the keys you can press, each one
-/// clickable, then what's going on, and at its right end, in a window that has one, what has just become your move, then
-/// how to get help. Terminal.Gui's own StatusBar lays out Shortcuts with a border between each, so the hints are laid
+/// clickable, then what's going on, and at its right end how to get help. Terminal.Gui's own StatusBar lays out Shortcuts with a border between each, so the hints are laid
 /// out here instead.</summary>
 public sealed class StatusBar : View
 {
     internal const string Scheme = "StatusBar";
     private const string Separator = " · ";
-    private const int AlertGap = 3;
-
-    /// <summary>The alert's slot, so the message doesn't shift as one alert gives way to another.</summary>
-    private const int AlertSlot = 12;
-
-    /// <summary>Frames a slide takes each way.</summary>
-    internal const int SlideSteps = 3;
-
-    internal static readonly TimeSpan SlideEvery = TimeSpan.FromMilliseconds(40);
+    private const int HelpGap = 3;
 
     private readonly View _hints;
     private readonly MessageBar _message = new() { Y = 0 };
     private readonly Label _divider = new() { Text = Separator, Y = 0, CanFocus = false };
     private readonly Label _state = new() { X = 0, Y = 0, CanFocus = false };
     private readonly Label _stateDivider = new() { Text = Separator, Y = 0, CanFocus = false };
-    private readonly AlertButton _alert = new();
     private readonly Button _help = Clickable("");
     private Action? _helpRun;
-    private readonly Queue<string> _frames = [];
-    private string _alerting = "";
 
     public StatusBar()
     {
@@ -56,33 +43,15 @@ public sealed class StatusBar : View
         _divider.Width = Dim.Func(_ => Says.Length > 0 && _message.Lines > 0 ? Separator.Length : 0, this);
         _message.X = Pos.Func(_ => Lead(), this);
         _message.Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Room() - Lead()), this);
-        _alert.X = Pos.Func(_ => Math.Max(0, Viewport.Width - _alert.Text.GetColumns() - HelpRoom()), this);
         _help.X = Pos.AnchorEnd();
         _help.Width = Dim.Func(_ => _help.Text.GetColumns());
-        _alert.Accepting += (_, args) =>
-        {
-            args.Handled = true;
-            if (_alerting.Length > 0)
-                AlertChosen?.Invoke();
-        };
         _help.Accepting += (_, args) =>
         {
             args.Handled = true;
             _helpRun?.Invoke();
         };
-        Add(_state, _stateDivider, _hints, _divider, _message, _alert, _help);
+        Add(_state, _stateDivider, _hints, _divider, _message, _help);
     }
-
-    /// <summary>Whether the row shows an <see cref="Alert"/> at its right end.</summary>
-    public bool Alerts { get; init; }
-
-    /// <summary>Raised when the alert is clicked while it says something.</summary>
-    internal event Action? AlertChosen;
-
-    internal Button AlertView => _alert;
-
-    /// <summary>The alert the bar is showing or sliding to.</summary>
-    internal string Alerting => _alerting;
 
     /// <summary>Each hint, as it's drawn from the left.</summary>
     internal string Says => string.Concat(_hints.SubViews.Select(view => view.Text));
@@ -167,117 +136,10 @@ public sealed class StatusBar : View
         SetNeedsDraw();
     }
 
-    /// <summary>Slides the alert out to the right and <paramref name="alert"/> in from the right edge; with no app to
-    /// time the frames, it changes at once.</summary>
-    public void Alert(string alert)
-    {
-        if (alert == _alerting)
-            return;
-        var from = _frames.Count > 0 ? _alerting : _alert.Text;
-        _alerting = alert;
-        _frames.Clear();
-        foreach (var frame in Slide(from, alert))
-            _frames.Enqueue(frame);
-        if (App is null)
-        {
-            _frames.Clear();
-            ShowAlert(alert);
-            return;
-        }
-        App.AddTimeout(SlideEvery, () =>
-        {
-            if (_frames.Count == 0)
-                return false;
-            ShowAlert(_frames.Dequeue());
-            if (_frames.Count > 0)
-                return true;
-            ShowAlert(_alerting);
-            return false;
-        });
-    }
-
-    /// <summary>Each frame of the change from <paramref name="from"/> to <paramref name="to"/>, right-aligned in the
-    /// width of the wider: the old one leaving to the right a step at a time, then the new one arriving from the
-    /// right edge.</summary>
-    internal static IReadOnlyList<string> Slide(string from, string to)
-    {
-        var width = Math.Max(from.GetColumns(), to.GetColumns());
-        var frames = new List<string>();
-        if (from.Length > 0)
-            for (var step = 1; step <= SlideSteps; step++)
-                frames.Add(Shifted(from, width, Steps(from, step)));
-        if (to.Length > 0)
-            for (var step = SlideSteps - 1; step >= 0; step--)
-                frames.Add(Shifted(to, width, Steps(to, step)));
-        return frames;
-    }
-
-    private static int Steps(string text, int step) => (text.GetColumns() * step + SlideSteps - 1) / SlideSteps;
-
-    /// <summary><paramref name="text"/> at the right of <paramref name="width"/> columns, pushed
-    /// <paramref name="shift"/> further right and cut off at the edge.</summary>
-    private static string Shifted(string text, int width, int shift)
-    {
-        var room = text.GetColumns() - shift;
-        var kept = new StringBuilder();
-        var columns = 0;
-        foreach (var rune in text.EnumerateRunes())
-        {
-            var cells = rune.ToString().GetColumns();
-            if (columns + cells > room)
-                break;
-            kept.Append(rune.ToString());
-            columns += cells;
-        }
-        var left = width - text.GetColumns() + shift;
-        return new string(' ', left) + kept + new string(' ', Math.Max(0, width - left - columns));
-    }
-
-    /// <summary>A frame's leading blanks are only where it starts, so the highlight covers the text alone.</summary>
-    private void ShowAlert(string text)
-    {
-        var shown = text.TrimStart();
-        if (_alert.Text == shown)
-            return;
-        _alert.Text = shown;
-        SetNeedsLayout();
-        SetNeedsDraw();
-    }
-
     private int StateRoom() => _state.Text.Length == 0 ? 0 : _state.Text.GetColumns() + Separator.Length;
 
     private int Lead() => StateRoom() + (Says.Length == 0 ? 0 : Says.GetColumns() + Separator.Length);
 
     /// <summary>What the right end leaves the left, so a long hint bar or message is cut off rather than drawn over it.</summary>
-    private int Room() => AlertRoom() + HelpRoom();
-
-    private int HelpRoom() => _help.Text.Length == 0 ? 0 : _help.Text.GetColumns() + AlertGap;
-
-    private int AlertRoom() =>
-        Alerts && (_alerting.Length > 0 || _frames.Count > 0) ? Math.Max(AlertSlot, _alert.Text.GetColumns()) + AlertGap : 0;
-
-    /// <summary>A clickable alert in the theme's highlight colour, claiming no key. The bar's own scheme has no
-    /// highlight, so it's the one the theme highlights with everywhere else.</summary>
-    private sealed class AlertButton : Button
-    {
-        internal AlertButton()
-        {
-            Y = 0;
-            Width = Dim.Func(_ => Text.GetColumns());
-            Height = 1;
-            NoDecorations = true;
-            NoPadding = true;
-            ShadowStyle = ShadowStyles.None;
-            HotKeySpecifier = (Rune)0xffff;
-            CanFocus = false;
-        }
-
-        protected override bool OnGettingAttributeForRole(in VisualRole role, ref Attribute currentAttribute)
-        {
-            currentAttribute = Highlight;
-            return true;
-        }
-
-        internal static Attribute Highlight => SchemeManager.GetScheme(Schemes.Base).GetAttributeForRole(VisualRole.Highlight);
-    }
+    private int Room() => _help.Text.Length == 0 ? 0 : _help.Text.GetColumns() + HelpGap;
 }

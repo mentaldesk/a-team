@@ -139,25 +139,25 @@ public class WhatsNewTests
     [Fact]
     public void The_first_alert_slides_in_from_the_right_edge()
     {
-        Assert.Equal(["    ? ", "  ? #4", "? #481"], StatusBar.Slide("", "? #481"));
+        Assert.Equal(["    ? ", "  ? #4", "? #481"], MoveAlert.Slide("", "? #481"));
     }
 
     [Fact]
     public void A_changed_alert_slides_the_old_one_out_and_the_new_one_in()
     {
-        Assert.Equal(["  ? #4", "    ? ", "      ", "    ◇ ", "  ◇ #4", "◇ #493"], StatusBar.Slide("? #481", "◇ #493"));
+        Assert.Equal(["  ? #4", "    ? ", "      ", "    ◇ ", "  ◇ #4", "◇ #493"], MoveAlert.Slide("? #481", "◇ #493"));
     }
 
     [Fact]
     public void The_last_alert_slides_out_once_it_s_cleared()
     {
-        Assert.Equal(["  ? #4", "    ? ", "      "], StatusBar.Slide("? #481", ""));
+        Assert.Equal(["  ? #4", "    ? ", "      "], MoveAlert.Slide("? #481", ""));
     }
 
     [Fact]
     public void A_wider_alert_slides_in_the_width_of_the_wider()
     {
-        var frames = StatusBar.Slide("? #481", "? #481 +2");
+        var frames = MoveAlert.Slide("? #481", "? #481 +2");
 
         Assert.All(frames, frame => Assert.Equal(9, frame.Length));
         Assert.Equal("     ? #4", frames[0]);
@@ -165,67 +165,60 @@ public class WhatsNewTests
     }
 
     [Fact]
-    public void The_alert_sits_flush_right_with_the_message_kept_clear_of_it()
+    public void The_status_bar_s_message_runs_to_its_right_end_with_no_room_kept_for_an_alert()
     {
-        using var bar = new StatusBar { Alerts = true, Width = 80 };
+        using var bar = new StatusBar { Width = 80 };
         bar.ShowState("All items", "read 2m ago");
         bar.Say(new string('x', 100), Schemes.Base);
         LayOut(bar);
-        Assert.Equal(0, bar.State.Frame.X);
-        Assert.Equal(80, bar.Message.Frame.Right);
 
-        bar.Alert("? #481 +2");
-        LayOut(bar);
-        var message = bar.Message.Frame;
-        bar.Alert("◇ #493");
-        LayOut(bar);
-
-        Assert.Equal(message, bar.Message.Frame);
-        Assert.Equal(80, bar.AlertView.Frame.Right);
-        Assert.Equal("◇ #493", bar.AlertView.Text);
-        Assert.True(bar.Message.Frame.Right + 3 <= bar.AlertView.Frame.X, $"{bar.Message.Frame} runs into {bar.AlertView.Frame}");
-
-        bar.Alert("");
-        LayOut(bar);
         Assert.Equal(80, bar.Message.Frame.Right);
     }
 
     [Fact]
-    public void With_a_help_hint_the_alert_sits_just_before_it_and_the_hint_stays_flush_right()
+    public void The_status_bar_s_help_hint_sits_flush_right_with_the_message_three_columns_clear_of_it()
     {
-        using var bar = new StatusBar { Alerts = true, Width = 80 };
+        using var bar = new StatusBar { Width = 80 };
         bar.ShowState("All items", "read 2m ago");
         bar.Say(new string('x', 100), Schemes.Base);
         bar.Help("Press F1 for help", () => { });
-        bar.Alert("◇ #493");
         LayOut(bar);
 
         Assert.Equal(80, bar.HelpHint.Frame.Right);
-        Assert.Equal(bar.HelpHint.Frame.X - 3, bar.AlertView.Frame.Right);
-        Assert.True(bar.Message.Frame.Right + 3 <= bar.AlertView.Frame.X, $"{bar.Message.Frame} runs into {bar.AlertView.Frame}");
+        Assert.Equal(bar.HelpHint.Frame.X - 3, bar.Message.Frame.Right);
+    }
+
+    [Fact]
+    public void An_alert_too_wide_for_its_room_is_cut_from_the_left()
+    {
+        Assert.Equal("? #481", MoveAlert.Fitted("? #481", 6));
+        Assert.Equal("…#481", MoveAlert.Fitted("? #481", 5));
+        Assert.Equal("… #481", MoveAlert.Fitted("◇◇ #481", 6));
+        Assert.Equal("…", MoveAlert.Fitted("? #481", 1));
+        Assert.Equal("", MoveAlert.Fitted("? #481", 0));
     }
 
     [Fact]
     public void The_alert_is_in_the_highlight_colour()
     {
-        using var bar = new StatusBar { Alerts = true };
+        using var alert = new MoveAlert();
 
         var highlight = SchemeManager.GetScheme(Schemes.Base).GetAttributeForRole(VisualRole.Highlight);
 
-        Assert.Equal(highlight, bar.AlertView.GetAttributeForRole(VisualRole.Normal));
-        Assert.Equal(highlight, bar.AlertView.GetAttributeForRole(VisualRole.HotNormal));
+        Assert.Equal(highlight, alert.GetAttributeForRole(VisualRole.Normal));
+        Assert.Equal(highlight, alert.GetAttributeForRole(VisualRole.HotNormal));
     }
 
     [Fact]
     public void Clicking_the_alert_goes_to_it_only_while_it_says_something()
     {
-        using var bar = new StatusBar { Alerts = true };
+        using var alert = new MoveAlert();
         var chosen = 0;
-        bar.AlertChosen += () => chosen++;
+        alert.Chosen += () => chosen++;
 
-        bar.AlertView.InvokeCommand(Command.Accept);
-        bar.Alert("? #481");
-        bar.AlertView.InvokeCommand(Command.Accept);
+        alert.InvokeCommand(Command.Accept);
+        alert.Show("? #481");
+        alert.InvokeCommand(Command.Accept);
 
         Assert.Equal(1, chosen);
     }

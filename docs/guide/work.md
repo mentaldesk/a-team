@@ -95,7 +95,7 @@ the icons come out wrong, pick *Nerd Font* or *Unicode* under **Settings → Das
 The line at the foot says why the card you're on is where it is, like
 `#118 · lead · answering your feedback since 08:14`, and how long ago the cards were read.
 
-In every area, just before *Press F1 for help* at the right end, an alert like `? #481 +2` says what has become your move since you
+In every area, at the top right beside the menus, an alert like `? #481 +2` says what has become your move since you
 opened the app: a pitch in Pitched, a PR in review or the Dev's question, the newest and how many
 others. `u` (**View → Go to what's new**) or a click takes you to it, and each new card wears a `●`
 before its title until you open it.
