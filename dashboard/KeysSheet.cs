@@ -35,7 +35,7 @@ internal static class KeysSheet
     internal static KeysDialog Create(KeySheet sheet, Size screen)
     {
         // TuiCode puts Everywhere on the left, and the place's keys on top once stacked; the library does the reverse.
-        var dialog = new KeysDialog(new KeySheet(sheet.Everywhere, sheet.Here), screen);
+        var dialog = new KeysDialog(sheet.Here is { } here ? new KeySheet(sheet.Everywhere, here) : sheet, screen);
         if (dialog.Stacked)
         {
             dialog.Dispose();
