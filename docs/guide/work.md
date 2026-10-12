@@ -114,7 +114,8 @@ before its title until you open it.
 | `u` | Go to the newest card that has become your move |
 | `F5` | Read what's waiting again |
 
-To pick a team by name, open **Go to team…** from Commands (`Ctrl+E`) or the View menu.
+To pick a team by name, open **Go to team…** from Commands (`Ctrl+E`) or the View menu, and type
+to narrow the list as in Commands.
 
 The cards are read when you open Work, when you press `F5`, and by themselves every five minutes
 while Work is in front. Coming back from the Dashboard puts you on the card you left, and reads again

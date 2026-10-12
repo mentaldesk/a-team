@@ -165,27 +165,44 @@ public class WhatsNewTests
     }
 
     [Fact]
-    public void The_alert_sits_flush_right_with_the_read_time_kept_clear_of_it()
+    public void The_alert_sits_flush_right_with_the_message_kept_clear_of_it()
     {
         using var bar = new StatusBar { Alerts = true, Width = 80 };
-        bar.ShowState("read 2m ago", "All items");
+        bar.ShowState("All items", "read 2m ago");
+        bar.Say(new string('x', 100), Schemes.Base);
         LayOut(bar);
-        Assert.Equal(80, bar.State.Frame.Right);
+        Assert.Equal(0, bar.State.Frame.X);
+        Assert.Equal(80, bar.Message.Frame.Right);
 
         bar.Alert("? #481 +2");
         LayOut(bar);
-        var state = bar.State.Frame;
+        var message = bar.Message.Frame;
         bar.Alert("◇ #493");
         LayOut(bar);
 
-        Assert.Equal(state, bar.State.Frame);
+        Assert.Equal(message, bar.Message.Frame);
         Assert.Equal(80, bar.AlertView.Frame.Right);
         Assert.Equal("◇ #493", bar.AlertView.Text);
-        Assert.True(bar.State.Frame.Right + 3 <= bar.AlertView.Frame.X, $"{bar.State.Frame} runs into {bar.AlertView.Frame}");
+        Assert.True(bar.Message.Frame.Right + 3 <= bar.AlertView.Frame.X, $"{bar.Message.Frame} runs into {bar.AlertView.Frame}");
 
         bar.Alert("");
         LayOut(bar);
-        Assert.Equal(80, bar.State.Frame.Right);
+        Assert.Equal(80, bar.Message.Frame.Right);
+    }
+
+    [Fact]
+    public void With_a_help_hint_the_alert_sits_just_before_it_and_the_hint_stays_flush_right()
+    {
+        using var bar = new StatusBar { Alerts = true, Width = 80 };
+        bar.ShowState("All items", "read 2m ago");
+        bar.Say(new string('x', 100), Schemes.Base);
+        bar.Help("Press F1 for help", () => { });
+        bar.Alert("◇ #493");
+        LayOut(bar);
+
+        Assert.Equal(80, bar.HelpHint.Frame.Right);
+        Assert.Equal(bar.HelpHint.Frame.X - 3, bar.AlertView.Frame.Right);
+        Assert.True(bar.Message.Frame.Right + 3 <= bar.AlertView.Frame.X, $"{bar.Message.Frame} runs into {bar.AlertView.Frame}");
     }
 
     [Fact]

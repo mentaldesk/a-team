@@ -198,7 +198,7 @@ public sealed class StepDialog : Dialog
             return;
         }
         _message.Clear();
-        _hints.Show("", [new HintedCommand(ContinueHint, "Enter continue")], _ => Close());
+        _hints.Show([new HintedCommand(ContinueHint, "Enter continue")], _ => Close());
         Refresh();
     }
 
@@ -221,7 +221,7 @@ public sealed class StepDialog : Dialog
         List<HintedCommand> hints = [];
         if (_choice is not null)
         {
-            _hints.Show("",
+            _hints.Show(
                 [new HintedCommand(ChooseHint, "Enter choose"), new HintedCommand(NoHint, "Esc cancel new team"), new HintedCommand(BackHint, "Backspace back")],
                 Answered);
             Refresh();
@@ -234,7 +234,7 @@ public sealed class StepDialog : Dialog
             hints.Add(new HintedCommand(NoHint, $"Esc {_step.No}"));
             hints.Add(new HintedCommand(BackHint, "Backspace back"));
         }
-        _hints.Show("", hints, Answered);
+        _hints.Show(hints, Answered);
         Refresh();
     }
 

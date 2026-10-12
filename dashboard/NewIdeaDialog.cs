@@ -81,7 +81,7 @@ public sealed class NewIdeaDialog : Dialog
         // The fields bind Enter and Esc themselves, so the dialog's keys are caught before they see them.
         foreach (var field in new View[] { _team, _title, _description, _rank })
             field.KeyDown += (_, key) => key.Handled = key.Handled || Pressed(key);
-        _hints.Show("", [new HintedCommand(AddHint, "Ctrl+Enter add"), new HintedCommand(CancelHint, "Esc cancel")], Run);
+        _hints.Show([new HintedCommand(AddHint, "Ctrl+Enter add"), new HintedCommand(CancelHint, "Esc cancel")], Run);
         _title.SetFocus();
     }
 
