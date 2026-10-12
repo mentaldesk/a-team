@@ -7,8 +7,11 @@ namespace ATeam.Dashboard;
 /// <summary>One thing said on an item or its PR, as <c>a-team board &lt;team&gt; conversation &lt;n&gt;</c> reports it.</summary>
 public sealed record Remark(string Who, DateTimeOffset At, string Body, int? Pr = null, bool Description = false)
 {
-    public string Heading =>
-        $"───── {(Description ? $"PR #{Pr} · " : "")}{Who} · {At.ToLocalTime().ToString("dd MMM HH:mm", CultureInfo.InvariantCulture)} ─────";
+    /// <summary>Headed <c>new</c> when it was posted after <paramref name="since"/>.</summary>
+    public string Heading(DateTimeOffset? since = null) =>
+        $"───── {(Description ? $"PR #{Pr} · " : "")}{Who} · {At.ToLocalTime().ToString("dd MMM HH:mm", CultureInfo.InvariantCulture)}{(IsNewSince(since) ? " · new" : "")} ─────";
+
+    public bool IsNewSince(DateTimeOffset? since) => since is { } last && At > last;
 }
 
 /// <summary>Everything said on an item since its body, oldest first, or the one line saying why it couldn't be read.</summary>
@@ -20,13 +23,13 @@ public sealed record Conversation(IReadOnlyList<Remark> Remarks, string? Failure
         : new Conversation([], $"couldn't read the conversation on #{number}");
 
     /// <summary>The remarks under their headings, or the failure line; nothing at all when nobody has said anything.</summary>
-    public string Markdown()
+    public string Markdown(DateTimeOffset? since = null)
     {
         if (Failure is { Length: > 0 } failure)
             return $"\n\n{failure}";
         var text = new StringBuilder();
         foreach (var remark in Remarks)
-            text.Append("\n\n").Append(remark.Heading).Append("\n\n").Append(remark.Body);
+            text.Append("\n\n").Append(remark.Heading(since)).Append("\n\n").Append(remark.Body);
         return text.ToString();
     }
 

@@ -100,7 +100,7 @@ public class ReaderDialogTests
     {
         using var dialog = Open(Pitch);
 
-        Assert.Equal("h show history · Shift+arrows select · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · g on GitHub · Esc close", dialog.Hints.Says);
         Assert.Equal(dialog.Viewport.Height - 1, dialog.Hints.Frame.Y);
     }
 
@@ -109,7 +109,7 @@ public class ReaderDialogTests
     {
         using var dialog = Open(Pitch, onApprove: () => { });
 
-        Assert.Equal("h show history · Shift+arrows select · a approve · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · a approve · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public class ReaderDialogTests
             accept: new ReaderCommand(new Key('A'), "accept", () => true));
         dialog.Layout(new Size(60, 20));
 
-        Assert.Equal("h show history · Shift+arrows select · A accept · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · A accept · g on GitHub · Esc close", dialog.Hints.Says);
         Assert.True(dialog.Hints.Hints.Single(hint => hint.Text == "A accept").Enabled);
     }
 
@@ -177,7 +177,7 @@ public class ReaderDialogTests
             comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
-        Assert.Equal("h show history · Shift+arrows select · a approve · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · a approve · c comment · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public class ReaderDialogTests
             comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
-        Assert.Equal("h show history · Shift+arrows select · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · c comment · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public class ReaderDialogTests
         dialog.Layout(new Size(60, 10));
 
         var added = dialog.Body.Lines.Skip(before).Select(line => line.Text).ToList();
-        Assert.Contains(Said.Heading, added);
+        Assert.Contains(Said.Heading(), added);
         Assert.Equal("Shelve it until #150 lands.", added[^1]);
         var top = dialog.Body.Top;
         dialog.NewKeyDownEvent(Key.End.WithCtrl);
@@ -295,7 +295,7 @@ public class ReaderDialogTests
             tryIt: new ReaderTry(new Key('t'), (_, _) => { }));
         dialog.Layout(new Size(60, 20));
 
-        Assert.Equal("h show history · Shift+arrows select · t try · a accept · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · t try · a accept · g on GitHub · Esc close", dialog.Hints.Says);
     }
 
     [Fact]
@@ -437,7 +437,7 @@ public class ReaderDialogTests
         Assert.True(dialog.HistoryShown);
         Assert.Equal("3 Oct 13:40  dev   In progress → In review", dialog.HistoryLog.Lines[0].Text);
         Assert.Equal(dialog.Viewport.Width - ReaderPanes.HistoryWidth, dialog.Body.SuperView!.Frame.Width);
-        Assert.Equal("Tab switch pane · h hide history · Shift+arrows select · g on GitHub · Esc close",
+        Assert.Equal("Alt+↑/↓ remark · Tab switch pane · h hide history · Shift+arrows select · g on GitHub · Esc close",
             dialog.Hints.Says);
     }
 
@@ -452,7 +452,7 @@ public class ReaderDialogTests
 
             Assert.False(dialog.HistoryShown);
             Assert.Equal(dialog.Viewport.Width, dialog.Body.SuperView!.Frame.Width);
-            Assert.Equal("h show history · Shift+arrows select · g on GitHub · Esc close", dialog.Hints.Says);
+            Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · g on GitHub · Esc close", dialog.Hints.Says);
         }
 
         using var next = Wide(panes);
@@ -1394,7 +1394,7 @@ public class ReaderDialogTests
         using var dialog = Declining();
 
         Assert.Equal(
-            "Tab switch pane · h hide history · Shift+arrows select · c comment · x decline · g on GitHub · Esc close",
+            "Alt+↑/↓ remark · Tab switch pane · h hide history · Shift+arrows select · c comment · x decline · g on GitHub · Esc close",
             dialog.Hints.Says);
     }
 
@@ -1544,6 +1544,187 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(new Key('c'));
         dialog.Field.Text = text;
         dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+    }
+
+    private static readonly DateTimeOffset Then = new(2026, 10, 12, 7, 0, 0, TimeSpan.Zero);
+
+    private static readonly Remark[] Remarks =
+    [
+        new("dev", Then, Paragraph("First")),
+        new("reviewer", Then.AddMinutes(10), Paragraph("Second")),
+        new("dev", Then.AddMinutes(20), Paragraph("Third")),
+    ];
+
+    private static string Paragraph(string first) =>
+        string.Join('\n', Enumerable.Range(1, 12).Select(line => $"{first} {line}"));
+
+    private static IssueBody Told(DateTimeOffset? opened, string body = "", History? history = null) =>
+        (new IssueBody(body.Length == 0 ? Long() : body, History: history) with { Opened = opened })
+            .With(new Conversation(Remarks), opened);
+
+    private static ReaderDialog Telling(IssueBody body, WaitingItem? item = null, int width = 60)
+    {
+        var dialog = new ReaderDialog(item ?? Item, body, () => { }, width: width);
+        dialog.Layout(new Size(width, 14));
+        return dialog;
+    }
+
+    [Fact]
+    public void A_card_never_opened_opens_at_the_top_with_nothing_new()
+    {
+        using var dialog = Telling(Told(null));
+
+        Assert.Equal(0, dialog.Body.Top);
+        Assert.DoesNotContain(dialog.Body.Lines, line => line.Text.Contains(" · new "));
+    }
+
+    [Fact]
+    public void A_card_opened_before_opens_at_the_first_remark_since_with_new_on_each_one_since()
+    {
+        var body = Told(Then.AddMinutes(5));
+        using var dialog = Telling(body);
+
+        Assert.Equal(body.Remarks[1].Line, dialog.Body.TopLine);
+        Assert.Equal(body.Remarks[1].Line, dialog.Body.Caret?.Line);
+        Assert.Equal([false, true, true], body.Remarks.Select(said => dialog.Body.Lines[said.Line].Text.EndsWith(" · new ─────")));
+    }
+
+    [Fact]
+    public void A_card_with_nothing_new_since_opens_at_the_newest_remark()
+    {
+        var body = Told(Then.AddMinutes(30));
+        using var dialog = Telling(body);
+
+        Assert.Equal(body.Remarks[2].Line, dialog.Body.TopLine);
+        Assert.DoesNotContain(dialog.Body.Lines, line => line.Text.Contains(" · new "));
+    }
+
+    [Fact]
+    public void A_task_to_try_opens_where_any_card_would()
+    {
+        var body = Told(Then.AddMinutes(30));
+        using var dialog = new ReaderDialog(Item with { Pr = 9 }, body, () => { }, tryIt: new ReaderTry(new Key('t'), (_, _) => { }));
+        dialog.Layout(new Size(60, 14));
+
+        Assert.Equal(body.Remarks[2].Line, dialog.Body.TopLine);
+    }
+
+    [Fact]
+    public void A_card_with_nothing_said_opens_at_the_top()
+    {
+        using var dialog = Telling((new IssueBody(Long()) with { Opened = Then }).With(new Conversation([]), Then));
+
+        Assert.Equal(0, dialog.Body.Top);
+    }
+
+    [Fact]
+    public void A_Dev_s_question_opens_at_the_Dev_s_comment()
+    {
+        var body = Told(Then.AddMinutes(5));
+        using var dialog = Telling(body, Item with { Status = "Ready", Question = Remarks[0].Body });
+
+        Assert.Equal(body.Remarks[0].Line, dialog.Body.TopLine);
+    }
+
+    [Fact]
+    public void A_Lead_s_question_opens_at_the_pitch_s_Needs_your_answer_heading()
+    {
+        var body = Told(null, $"{Long()}\n\n## Needs your answer\n\n1. Which?\n\n{Long()}");
+        using var dialog = Telling(body, Item with { Pitch = true, Question = "## Needs your answer\n\n1. Which?" });
+
+        Assert.Equal("## Needs your answer", dialog.Body.Lines[dialog.Body.TopLine].Text);
+        Assert.Equal("#180  The dashboard tells me a pitch needs me · the Lead's question", dialog.Title);
+    }
+
+    [Fact]
+    public void Alt_arrows_go_between_the_remarks_headings_with_the_top_of_the_body_the_first()
+    {
+        var body = Told(null);
+        var headings = body.Remarks.Select(said => said.Line).ToList();
+        using var dialog = Telling(body);
+        int? Jump(Key key)
+        {
+            dialog.NewKeyDownEvent(key);
+            dialog.Layout(new Size(60, 14));
+            return dialog.Body.Caret?.Line;
+        }
+
+        Assert.Equal(0, Jump(Key.CursorUp.WithAlt));
+        Assert.Equal(headings[0], Jump(Key.CursorDown.WithAlt));
+        Assert.Equal(headings[0], dialog.Body.TopLine);
+        Assert.Equal(headings[1], Jump(Key.CursorDown.WithAlt));
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(headings[1], Jump(Key.CursorUp.WithAlt));
+        Assert.Equal(headings[2], Jump(Key.CursorDown.WithAlt));
+        Assert.Equal(headings[2], Jump(Key.CursorDown.WithAlt));
+        dialog.NewKeyDownEvent(Key.End.WithCtrl);
+        Assert.Equal(headings[2], Jump(Key.CursorUp.WithAlt));
+        Assert.Equal(headings[1], Jump(Key.CursorUp.WithAlt));
+        Assert.Equal(headings[0], Jump(Key.CursorUp.WithAlt));
+        Assert.Equal(0, Jump(Key.CursorUp.WithAlt));
+    }
+
+    private static readonly History Commented = new([
+        new HistoryEvent(Then.AddMinutes(20).AddSeconds(4), "dev", "commented"),
+        new HistoryEvent(Then.AddMinutes(10).AddSeconds(2), "reviewer", "commented"),
+        new HistoryEvent(Then.AddMinutes(5), "dev", "Ready → In progress"),
+        new HistoryEvent(Then.AddMinutes(1), "dev", "commented", new Run(Then.AddMinutes(4), 1.5m, "ok")),
+        new HistoryEvent(Then, "dev", "commented"),
+    ]);
+
+    [Fact]
+    public void Enter_on_a_comment_in_History_shows_that_remark_in_the_Body()
+    {
+        var body = Told(null, history: Commented);
+        using var dialog = Telling(body, width: 120);
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.HistoryLog.HasFocus);
+        Assert.Contains("Enter show", dialog.Hints.Says);
+        Assert.DoesNotContain("Alt+↑/↓ remark", dialog.Hints.Says);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Enter));
+        dialog.Layout(new Size(120, 14));
+
+        Assert.True(dialog.Body.HasFocus);
+        Assert.Equal(body.Remarks[1].Line, dialog.Body.TopLine);
+        Assert.Equal(body.Remarks[1].Line, dialog.Body.Caret?.Line);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void Enter_on_a_move_or_a_run_in_History_does_nothing(int line)
+    {
+        using var dialog = Telling(Told(null, history: Commented), width: 120);
+        dialog.NewKeyDownEvent(Key.Tab);
+        for (var i = 0; i < line; i++)
+            dialog.NewKeyDownEvent(Key.CursorDown);
+
+        dialog.NewKeyDownEvent(Key.Enter);
+
+        Assert.True(dialog.HistoryLog.HasFocus);
+        Assert.Equal(0, dialog.Body.Top);
+    }
+
+    [Fact]
+    public void A_click_on_a_comment_in_History_shows_that_remark_and_a_click_on_a_move_does_nothing()
+    {
+        var body = Told(null, history: Commented);
+        using var dialog = Telling(body, width: 120);
+        void Click(int row) => dialog.HistoryLog.NewMouseEvent(new Mouse
+        {
+            Flags = MouseFlags.LeftButtonClicked, Position = new Point(2, row), ScreenPosition = new Point(2, row),
+        });
+
+        Click(2);
+        Assert.Equal(0, dialog.Body.Top);
+
+        Click(4);
+        dialog.Layout(new Size(120, 14));
+        Assert.True(dialog.Body.HasFocus);
+        Assert.Equal(body.Remarks[0].Line, dialog.Body.TopLine);
     }
 
     private static string Long() =>

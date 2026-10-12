@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
@@ -24,18 +25,20 @@ public sealed record ReaderDecline(Key Key, Func<string, Task<string?>> Run, boo
 
 /// <summary>Trying from the reader: Run hands over what it shows and the row it's scrolled to. Reopened after the
 /// try, it opens at <paramref name="Top"/>, saying <paramref name="Failure"/> if it failed.</summary>
-public sealed record ReaderTry(Key Key, Action<IssueBody, int> Run, int Top = 0, string? Failure = null);
+public sealed record ReaderTry(Key Key, Action<IssueBody, int> Run, int? Top = null, string? Failure = null);
 
 /// <summary>Editing a document pitch's file from the reader: Run hands over what it shows and the row it's scrolled to,
 /// unless <paramref name="Uneditable"/> says why it can't. Reopened after the edit, it opens at <paramref name="Top"/>,
 /// saying <paramref name="Said"/> or <paramref name="Failure"/>.</summary>
 public sealed record ReaderEdit(
-    Key Key, Action<IssueBody, int> Run, string? Uneditable = null, int Top = 0, string? Said = null, string? Failure = null);
+    Key Key, Action<IssueBody, int> Run, string? Uneditable = null, int? Top = null, string? Said = null, string? Failure = null);
 
 /// <summary>An item's body as it was written, and its History beside it, to read without leaving the board.</summary>
-public sealed class ReaderDialog : Dialog
+public sealed partial class ReaderDialog : Dialog
 {
     private const string ScrollHint = "scroll";
+    private const string RemarkHint = "remark";
+    private const string ShowHint = "show";
     private const string SwitchHint = "switch";
     private const string HistoryHint = "history";
     private const string SelectHint = "select";
@@ -54,6 +57,7 @@ public sealed class ReaderDialog : Dialog
     private const string CloseHint = "close";
     private const int BandLines = 3;
     private const string Marker = "\uE000";
+    private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
     private readonly Action _onGitHub;
@@ -191,6 +195,12 @@ public sealed class ReaderDialog : Dialog
             };
             pane.SelectionChanged += (_, _) => ShowHints();
         }
+        _history.MouseEvent += (_, mouse) =>
+        {
+            if (mouse.Flags.HasFlag(MouseFlags.LeftButtonClicked) && mouse.Position is { } at
+                && _history.CaretAt(_history.Rows(Math.Max(1, _history.Viewport.Width)), at) is { } clicked)
+                mouse.Handled = ShowRemark(clicked.Line);
+        };
         if (rank is { } start)
         {
             _ranks = new OptionSelector<Rank>
@@ -225,6 +235,8 @@ public sealed class ReaderDialog : Dialog
         }
         if ((tryIt?.Top ?? edit?.Top) is { } top)
             _body.Top = top;
+        else if (OpensAt(item, body) is > 0 and var line)
+            _body.ShowLine(line);
         _hints.Y = Pos.Func(_ => HintRow(), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
@@ -298,6 +310,34 @@ public sealed class ReaderDialog : Dialog
         return dialog.Chosen;
     }
 
+    /// <summary>The line the body opens at: a question at the question; else, once you've opened it before, the first
+    /// remark since, or the newest where nothing is new; else the top.</summary>
+    internal static int OpensAt(WaitingItem item, IssueBody body)
+    {
+        if (item.Question.Length > 0 && Asked(item, body) is { } asked)
+            return asked;
+        if (body.Opened is not { } opened || body.Remarks.Count == 0)
+            return 0;
+        return (body.Remarks.FirstOrDefault(said => said.Remark.IsNewSince(opened)) ?? body.Remarks[^1]).Line;
+    }
+
+    /// <summary>A Lead's question is its pitch's Needs your answer heading; a Dev's is its comment.</summary>
+    private static int? Asked(WaitingItem item, IssueBody body)
+    {
+        if (item.Status == "Pitched")
+        {
+            var lines = body.Lines;
+            var heading = Enumerable.Range(0, lines.Count)
+                .FirstOrDefault(i => lines[i].Kind == LogLineKind.Heading && NeedsAnswer().IsMatch(lines[i].Text), -1);
+            return heading < 0 ? null : heading;
+        }
+        var dev = body.Remarks.Where(said => said.Remark.Who == "dev").ToList();
+        return (dev.LastOrDefault(said => said.Remark.Body.Trim() == item.Question.Trim()) ?? dev.LastOrDefault())?.Line;
+    }
+
+    [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex NeedsAnswer();
+
     /// <summary>The lines quoted as a reply quotes them, on lines of their own with a blank line after.</summary>
     internal static string Quote(IEnumerable<string> lines, bool midLine) =>
         (midLine ? "\n" : "") + string.Join('\n', lines.Select(line => line.Length == 0 ? ">" : $"> {line}")) + "\n\n";
@@ -322,6 +362,10 @@ public sealed class ReaderDialog : Dialog
             return SwitchPane(-1);
         if (CommentShown && key == Key.Enter.WithCtrl)
             return Post();
+        if (_scrolled == _body && (key == Key.CursorUp.WithAlt || key == Key.CursorDown.WithAlt))
+            return ToRemark(key == Key.CursorUp.WithAlt ? -1 : +1);
+        if (_ranks is null && _history.HasFocus && key == Key.Enter)
+            return ShowRemark(_history.Caret?.Line ?? -1);
         if (_ranks is null && Caret(key) is { } move)
             return MoveCaret(move, key.IsShift);
         if (key == Key.C.WithCtrl)
@@ -352,6 +396,10 @@ public sealed class ReaderDialog : Dialog
         var reading = !_field.HasFocus && marked > 0;
         _hints.Show([
             .. _ranks is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll")],
+            .. _ranks is null && !_field.HasFocus && _scrolled == _body
+                ? [new HintedCommand(RemarkHint, "Alt+↑/↓ remark")] : Array.Empty<HintedCommand>(),
+            .. _ranks is null && !_field.HasFocus && _scrolled == _history
+                ? [new HintedCommand(ShowHint, "Enter show")] : Array.Empty<HintedCommand>(),
             .. CommentShown || HistoryShown ? [new HintedCommand(SwitchHint, "Tab switch pane")] : Array.Empty<HintedCommand>(),
             .. _ranks is not null || CommentShown ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(HistoryHint, HistoryShown ? "h hide history" : "h show history")],
@@ -453,6 +501,36 @@ public sealed class ReaderDialog : Dialog
             : key == Key.Home ? pane.Home
             : key == Key.End ? pane.End
             : null;
+    }
+
+    /// <summary>The previous or next remark's heading, the top of the body counting as the first.</summary>
+    private bool ToRemark(int by)
+    {
+        var at = _body.Caret?.Line ?? _body.TopLine;
+        var stops = _text.Remarks.Select(said => said.Line).Prepend(0).Distinct().ToList();
+        var to = by < 0 ? stops.LastOrDefault(line => line < at, -1) : stops.FirstOrDefault(line => line > at, -1);
+        if (to >= 0)
+            _body.ShowLine(to);
+        SetNeedsDraw();
+        return true;
+    }
+
+    /// <summary>The comment History's line <paramref name="line"/> is about, matched by who and when; a line about
+    /// anything else shows nothing.</summary>
+    private bool ShowRemark(int line)
+    {
+        if (_text.History is not { Failure: null } history || line < 0 || line >= history.Events.Count
+            || history.Events[line] is not { What: "commented", Run: null } commented)
+            return true;
+        var said = _text.Remarks
+            .Where(said => said.Remark.Who == commented.Who && (said.Remark.At - commented.At).Duration() <= SameComment)
+            .MinBy(said => (said.Remark.At - commented.At).Duration());
+        if (said is null)
+            return true;
+        _body.ShowLine(said.Line);
+        Scroll(_body);
+        SetNeedsDraw();
+        return true;
     }
 
     private bool Step(int by)
@@ -720,6 +798,8 @@ public sealed class ReaderDialog : Dialog
         var handled = hint switch
         {
             ScrollHint => Scrolled(() => FocusedPane().Page(+1)),
+            RemarkHint => ToRemark(+1),
+            ShowHint => ShowRemark(_history.Caret?.Line ?? -1),
             SwitchHint => SwitchPane(+1),
             HistoryHint => ToggleHistory(),
             SelectHint => MoveCaret(CaretMove.Down, extend: true),
