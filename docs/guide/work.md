@@ -177,7 +177,8 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   Comment pane opens as **Decline #n: why?**, keeping anything you'd already written, and you can
   quote into it with `q` as into a comment. `Ctrl+Enter` posts your reason as a comment, closes the
   issue as not planned on GitHub, and the card leaves Work; History records it as `declined`, and it
-  doesn't count as accepted. A reason is required. `Esc` turns the pane back into a plain comment,
+  doesn't count as accepted. If the board refuses the decline, the status bar says why and the
+  reason you typed is lost. A reason is required. `Esc` turns the pane back into a plain comment,
   keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub.
 - **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
   ranks under it, **None** to **Urgent**, starting on the card's own, or on the Lead's

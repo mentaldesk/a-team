@@ -126,7 +126,8 @@ From a shell, `a-team stop <team> <role>` stops a run and holds the role, and
 `a-team resume`, to act on that one Dev run alone.
 
 While any of these is going, a line at the foot of the window says so. If one fails, the line says
-why, in red.
+why, in red. Pausing and interrupting never make you wait: they queue behind anything else being
+written to the board, as in [Work](work.md#while-its-being-written).
 
 ## Commands and keys
 
