@@ -1248,7 +1248,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void A_second_go_is_refused_until_the_first_one_resolves()
+    public void Pausing_a_role_already_being_paused_says_so_until_the_first_one_resolves()
     {
         var calls = 0;
         var finish = new TaskCompletionSource<string?>();
@@ -1262,11 +1262,48 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("agent.hold");
         window.Commands.Execute("agent.hold");
         Assert.Equal(1, calls);
+        Assert.Equal("team0's lead is already being paused", window.Message.Says);
 
         finish.SetResult(null);
         window.Refresh();
         window.Commands.Execute("agent.hold");
         Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public void Pausing_interrupting_and_asking_for_a_vision_review_queue_behind_each_other()
+    {
+        var calls = new List<string[]>();
+        var finishes = new List<TaskCompletionSource<string?>>();
+        using var window = Open(agents: Agents(4), run: arguments =>
+        {
+            calls.Add(arguments);
+            var finish = new TaskCompletionSource<string?>();
+            finishes.Add(finish);
+            return finish.Task;
+        }, pass: new DispatchPass(_root, "a-team", (_, _) => new TaskCompletionSource<Reading>().Task));
+        WriteRunning("team1", "dev");
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        SelectAgent(window, 3);
+        window.Commands.Execute("agent.interrupt");
+        window.Commands.Execute("team.visionReview");
+        for (var i = 0; i < 3; i++)
+            window.NewKeyDownEvent(Key.Tab.WithShift);
+        Assert.Equal(0, Selected(window));
+        window.Commands.Execute("agent.hold");
+
+        Assert.Equal([["stop", "team1", "dev"]], calls);
+        Assert.Equal("Interrupting… · 2 more queued", window.Message.Says);
+
+        for (var i = 0; i < 3; i++)
+        {
+            finishes[i].SetResult(null);
+            window.Refresh();
+        }
+
+        Assert.Equal([["stop", "team1", "dev"], ["board", "team1", "vision-review", "you"], ["pause", "team0", "lead"]], calls);
     }
 
     [Fact]

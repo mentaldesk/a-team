@@ -68,7 +68,8 @@ A card reads as the issue's number, then its title:
 
 - **Whose move it is.** A green `✓` means it's yours. A dimmed `·` means an agent owes you an
   answer, and the card names the role in front of its title, like `#118  lead · ...`. It's theirs
-  from the moment you comment on the issue or its PR until they reply.
+  from the moment you comment on the issue or its PR until they reply. A `⋯` in its place means
+  something you did to it is still being written to the board ([below](#while-its-being-written)).
 - **What it is.** 💡 an Idea, `◇` a pitch, `‹›` a task, 📄 the Customer lead's docs PR. Triage
   and Pitches show the kind in their heading instead, so only a card of another kind wears its own.
 - **Its Priority.** The issue number is coloured by Priority, in the colours GitHub gives them:
@@ -192,6 +193,18 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   branch deleted. The Customer lead's docs PR is merged the same way, and so is a document pitch,
   from Pitches: the card leaves, and the Lead's next run reads the new vision. If it isn't ready yet,
   `a` says why instead.
+
+### While it's being written
+
+Approving, accepting, ranking or declining a card, and on the Dashboard pausing or interrupting
+an agent or asking for a vision review, never makes you wait: carry straight on to the next card.
+Each one is written to the board in the background, one at a time in the order you made them. The
+card wears `⋯` in place of its `✓` until the board has taken it, then leaves or moves as above,
+and the status bar says what's being written and how many more are queued, like
+`Merging PR #459… · 1 more queued`. Acting on that card again says it's already under way. If the
+board refuses one, the status bar says why, the card stays where it was, and the rest still run.
+Quitting while some are still queued asks first: `Ctrl+Enter` quits and drops them, `Esc` stays.
+The one being written finishes either way.
 
 ## Adding an idea
 

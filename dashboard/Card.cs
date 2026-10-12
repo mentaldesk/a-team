@@ -4,14 +4,16 @@ namespace ATeam.Dashboard;
 
 /// <summary>A row in a Work column: an item, or the PR that closes it hanging under it. <paramref name="Column"/> is
 /// the kind the column's heading already wears, which a card of that kind doesn't repeat. <paramref name="New"/> marks
-/// one that has become your move since the app started.</summary>
-public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool New = false)
+/// one that has become your move since the app started, and <paramref name="Writing"/> one with a board write under way
+/// or queued.</summary>
+public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool New = false, bool Writing = false)
 {
     internal const string NewMark = "● ";
 
     /// <summary>A card per item, each of them a root of its column's tree.</summary>
-    internal static IReadOnlyList<Card> Roots(IEnumerable<WaitingItem> items, Icon? column = null, Func<WaitingItem, bool>? isNew = null) =>
-        [.. items.Select(item => new Card(item, false, column, isNew?.Invoke(item) ?? false))];
+    internal static IReadOnlyList<Card> Roots(IEnumerable<WaitingItem> items, Icon? column = null, Func<WaitingItem, bool>? isNew = null,
+        Func<WaitingItem, bool>? isWriting = null) =>
+        [.. items.Select(item => new Card(item, false, column, isNew?.Invoke(item) ?? false, isWriting?.Invoke(item) ?? false))];
 
     /// <summary>Those roots and their PRs, in the order the tree draws them.</summary>
     internal static IReadOnlyList<Card> Nodes(IEnumerable<Card> roots) =>
@@ -23,9 +25,11 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool
     /// <summary>The page Enter opens on this row, or nothing where it has none.</summary>
     internal string Url => IsPr ? Item.PrUrl : Item.Url;
 
-    /// <summary>What the row wears in front of its text: whose move the item is, or the line its PR hangs from.</summary>
+    /// <summary>What the row wears in front of its text: whose move the item is, that it's being written, or the line
+    /// its PR hangs from.</summary>
     internal TurnIcon Lead(IconStyle style) => IsPr
         ? new TurnIcon(Glyphs.LLCorner.ToString(), LogSchemes.Dimmed)
+        : Writing ? new TurnIcon(Icons.Glyph(Icon.Writing, style), LogSchemes.Dimmed)
         : Icons.For(Item, style);
 
     /// <summary>Every icon in front of the row's text: a card's lead is followed by what kind of thing it is.</summary>

@@ -35,6 +35,7 @@ public sealed class WorkView : View
     private WorkLane? _picked;
     private WorkLane? _current;
     private IReadOnlySet<(string Team, int Number)> _new = new HashSet<(string, int)>();
+    private IReadOnlySet<(string Team, int Number)> _writing = new HashSet<(string, int)>();
 
     public WorkView(IReadOnlyList<string> teams)
     {
@@ -125,6 +126,18 @@ public sealed class WorkView : View
     }
 
     internal bool IsNew(WaitingItem item) => _new.Contains((item.Team, item.Number));
+
+    /// <summary>Marks the cards with a board write under way or queued, staying on the selected card.</summary>
+    internal void ShowWriting(IEnumerable<WaitingItem> items)
+    {
+        var writing = items.Select(item => (item.Team, item.Number)).ToHashSet();
+        if (writing.SetEquals(_writing))
+            return;
+        _writing = writing;
+        Lay(follow: false);
+    }
+
+    internal bool IsWriting(WaitingItem item) => _writing.Contains((item.Team, item.Number));
 
     /// <summary>Hides everything that isn't the reviewer's move, or brings it all back, staying on the
     /// selected card when the filter still shows it.</summary>
@@ -233,17 +246,18 @@ public sealed class WorkView : View
     /// keeps the selection, wearing the colour its new rank gives its number; one that leaves hands it to the next
     /// card down.</summary>
     internal void Ranked(WaitingItem item, Rank rank) =>
-        Replace(item, item with { Priority = rank == Rank.None ? "" : rank.ToString() });
+        Replace(item, now => now with { Priority = rank == Rank.None ? "" : rank.ToString() });
 
     /// <summary>What an approval leaves on screen, with no re-read: Approved isn't a gate, so the card leaves and
     /// hands the selection to the next card down.</summary>
-    internal void Approved(WaitingItem item) => Replace(item, null);
+    internal void Approved(WaitingItem item) => Replace(item, _ => null);
 
     /// <summary>What a merge leaves on screen, with no re-read: the task is done, so its card leaves.</summary>
-    internal void Leave(WaitingItem item) => Replace(item, null);
+    internal void Leave(WaitingItem item) => Replace(item, _ => null);
 
-    private void Replace(WaitingItem item, WaitingItem? now) =>
-        Keep(now is null ? [.. _items.Where(each => each != item)] : [.. _items.Select(each => each == item ? now : each)],
+    /// <summary>Found by team and number, since a read while the write ran may have brought the card back changed.</summary>
+    private void Replace(WaitingItem item, Func<WaitingItem, WaitingItem?> now) =>
+        Keep([.. _items.Select(each => each.Team == item.Team && each.Number == item.Number ? now(each) : each).OfType<WaitingItem>()],
             follow: false);
 
     /// <summary>Shows <paramref name="items"/>, each tab keeping its selection, and gives the keyboard back to the
@@ -268,7 +282,7 @@ public sealed class WorkView : View
     {
         var shown = OnlyMine ? _items.Where(item => item.Mine).ToList() : _items;
         foreach (var lane in _lanes)
-            lane.Show(shown, follow, IsNew);
+            lane.Show(shown, follow, IsNew, IsWriting);
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -458,7 +472,8 @@ public sealed class WorkLane : View
 
     /// <summary>Lays out the team's cards, keeping the selection on the card it was on, found again by number in
     /// whichever column it's now in when <paramref name="follow"/>, and otherwise on the row it was on.</summary>
-    internal void Show(IReadOnlyList<WaitingItem> items, bool follow, Func<WaitingItem, bool>? isNew = null)
+    internal void Show(IReadOnlyList<WaitingItem> items, bool follow, Func<WaitingItem, bool>? isNew = null,
+        Func<WaitingItem, bool>? isWriting = null)
     {
         var column = LastColumn;
         var row = column?.Selected;
@@ -466,7 +481,7 @@ public sealed class WorkLane : View
         var team = items.Where(item => item.Team == Team).ToList();
         foreach (var each in _columns)
         {
-            each.Show([.. team.Where(each.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)], isNew);
+            each.Show([.. team.Where(each.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)], isNew, isWriting);
             each.Visible = each.Lines > 0;
         }
         Retitle();
@@ -638,12 +653,13 @@ public sealed class WorkColumn : FrameView
     /// <summary>Whether the column draws its selected row's bar: only the one the keys act on does.</summary>
     internal bool ShowsSelection => _cards.ShowsSelection;
 
-    internal void Show(IReadOnlyList<WaitingItem> items, IReadOnlyList<WaitingItem>? setAside = null, Func<WaitingItem, bool>? isNew = null)
+    internal void Show(IReadOnlyList<WaitingItem> items, IReadOnlyList<WaitingItem>? setAside = null, Func<WaitingItem, bool>? isNew = null,
+        Func<WaitingItem, bool>? isWriting = null)
     {
         _items = items;
         _setAside = setAside ?? [];
         _summary.Visible = _setAside.Count > 0;
-        var roots = Card.Roots(items, Kind, isNew);
+        var roots = Card.Roots(items, Kind, isNew, isWriting);
         _nodes = [.. Card.Nodes(roots)];
         Title = Heading(Kind, Gate, items.Count, _icons);
         _cards.ClearObjects();

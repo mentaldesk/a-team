@@ -921,7 +921,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.Equal([["board", "team0", "priority", "you", "6", "High"]], calls);
-        Assert.Equal("Setting…", window.Message.Says);
+        Assert.Equal("Setting #6 to High…", window.Message.Says);
     }
 
     [Fact]
@@ -1316,8 +1316,6 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(Key.Enter);
         window.Refresh();
-        Assert.Equal("Approving #107…", window.Message.Says);
-        window.Refresh();
         LayOut(window, 120, 30);
 
         Assert.Equal([["board", "team0", "approve", "you", "107"]], calls);
@@ -1575,6 +1573,229 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(["Review · 0"], Titles(window).Take(4).Where(title => title.StartsWith("Review")));
         Assert.Equal(before, reads);
         Assert.Equal("merged PR #122", window.Message.Says);
+    }
+
+    /// <summary>Each board write it's asked for, left running until the test finishes it.</summary>
+    private sealed class Writes
+    {
+        internal List<string[]> Calls { get; } = [];
+        internal List<TaskCompletionSource<string?>> Finishes { get; } = [];
+
+        internal Task<string?> Run(string[] arguments)
+        {
+            Calls.Add(arguments);
+            var finish = new TaskCompletionSource<string?>();
+            Finishes.Add(finish);
+            return finish.Task;
+        }
+    }
+
+    private DashboardWindow OpenTwoReviews(Writes writes, Action<WaitingItem>? shown = null,
+        Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null, Func<WaitingItem, bool>? confirmAccept = null)
+    {
+        var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? TwoReviews : "[]", null)),
+            run: writes.Run,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (item, _, _, _, _, _, _) => shown?.Invoke(item),
+            confirmAccept: confirmAccept ?? (_ => true),
+            confirmQuit: confirmQuit);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        return window;
+    }
+
+    private static IEnumerable<int> Reviewing(DashboardWindow window) =>
+        window.Work.Items.Where(item => item.Status == "In review").Select(item => item.Number);
+
+    [Fact]
+    public void Enter_on_another_card_opens_it_while_the_first_is_still_being_merged()
+    {
+        var writes = new Writes();
+        var shown = new List<int>();
+        using var window = OpenTwoReviews(writes, item => shown.Add(item.Number));
+        window.NewKeyDownEvent(new Key('a'));
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(50, window.Work.Selected?.Number);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([50], shown);
+        Assert.Single(writes.Calls);
+    }
+
+    [Fact]
+    public void Two_accepts_in_a_row_both_land_in_the_order_they_were_made()
+    {
+        var writes = new Writes();
+        using var window = OpenTwoReviews(writes);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(new Key('a'));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(["49"], writes.Calls.Select(call => call[^1]));
+        Assert.Equal("Merging PR #122… · 1 more queued", window.Message.Says);
+        Assert.Equal(["⋯", "⋯"], window.Work.Lanes[0].Columns[3].CardIcons.Where((_, row) => row % 2 == 0).Select(icon => icon.Glyph));
+
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(["49", "50"], writes.Calls.Select(call => call[^1]));
+        Assert.Equal([50], Reviewing(window));
+        Assert.Equal("Merging PR #123…", window.Message.Says);
+
+        writes.Finishes[1].SetResult(null);
+        window.Refresh();
+
+        Assert.Empty(Reviewing(window));
+        Assert.Equal("merged PR #123", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_refused_first_merge_leaves_its_card_and_the_second_still_runs()
+    {
+        var writes = new Writes();
+        using var window = OpenTwoReviews(writes);
+        window.NewKeyDownEvent(new Key('a'));
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(new Key('a'));
+
+        writes.Finishes[0].SetResult("board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))");
+        window.Refresh();
+
+        Assert.Equal("board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))", window.Message.Says);
+        Assert.Equal(["49", "50"], writes.Calls.Select(call => call[^1]));
+
+        writes.Finishes[1].SetResult(null);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal([49], Reviewing(window));
+        Assert.Equal("✓", window.Work.Lanes[0].Columns[3].CardIcons[0].Glyph);
+    }
+
+    [Fact]
+    public void Accepting_a_card_already_being_merged_says_so_and_merges_it_once()
+    {
+        var writes = new Writes();
+        var asked = 0;
+        using var window = OpenTwoReviews(writes, confirmAccept: _ => ++asked > 0);
+
+        window.NewKeyDownEvent(new Key('a'));
+        window.NewKeyDownEvent(new Key('a'));
+
+        Assert.Equal(1, asked);
+        Assert.Single(writes.Calls);
+        Assert.Equal("#49 is already being merged", window.Message.Says);
+
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+
+        Assert.Single(writes.Calls);
+        Assert.Equal([50], Reviewing(window));
+    }
+
+    [Fact]
+    public void Quitting_with_writes_queued_asks_and_drops_only_the_unstarted_ones()
+    {
+        var writes = new Writes();
+        var asked = new List<(string? Running, string[] Queued)>();
+        var quit = false;
+        using var window = OpenTwoReviews(writes, confirmQuit: (running, queued) =>
+        {
+            asked.Add((running?.Doing, [.. queued.Select(write => write.Queued)]));
+            return quit;
+        });
+        window.NewKeyDownEvent(new Key('a'));
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(new Key('a'));
+
+        window.Commands.Execute("quit");
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+
+        Assert.Equal(2, writes.Calls.Count);
+
+        writes.Finishes[1].SetResult(null);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorUp);
+        quit = true;
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.Commands.Execute("quit");
+
+        Assert.Single(asked);
+        Assert.Equal("Merging PR #122…", asked[0].Running);
+        Assert.Equal(["merging PR #123"], asked[0].Queued);
+    }
+
+    [Fact]
+    public void Quitting_drops_what_hasn_t_started_once_you_say_so()
+    {
+        var writes = new Writes();
+        using var window = OpenTwoReviews(writes, confirmQuit: (_, _) => true);
+        window.NewKeyDownEvent(new Key('a'));
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(new Key('a'));
+
+        window.Commands.Execute("quit");
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+
+        Assert.Single(writes.Calls);
+        Assert.Equal([50], Reviewing(window));
+    }
+
+    [Fact]
+    public void Ranking_approving_and_declining_queue_behind_each_other()
+    {
+        var writes = new Writes();
+        using var window = Open(
+            run: writes.Run,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (item, _, _, onApprove, _, comment, _) =>
+            {
+                if (item.Number == 107)
+                    onApprove!();
+                if (item.Number == 108)
+                    Assert.Null(comment!.Decline!.Run("Not now.").Result);
+            },
+            chooseRank: (item, _, _) => item.Number == 6 ? Rank.High : null);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.priority");
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(108, window.Work.Selected?.Number);
+        window.NewKeyDownEvent(new Key('x'));
+        window.Refresh();
+
+        Assert.Equal("Setting #6 to High… · 2 more queued", window.Message.Says);
+        Assert.Equal(["priority"], writes.Calls.Select(call => call[2]));
+
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+        writes.Finishes[1].SetResult(null);
+        window.Refresh();
+        writes.Finishes[2].SetResult(null);
+        window.Refresh();
+
+        Assert.Equal(["priority", "approve", "decline"], writes.Calls.Select(call => call[2]));
+        Assert.DoesNotContain(window.Work.Items, item => item.Number is 107 or 108);
     }
 
     [Fact]
@@ -3183,6 +3404,18 @@ public class WorkAreaTests : IDisposable
             "unready": "{{unready}}"}]
           """;
 
+    private const string TwoReviews =
+        """
+        [{"number": 49, "title": "I can't change any of the keys", "status": "In review",
+          "url": "https://github.com/mentaldesk/team0/issues/49", "team": "team0",
+          "turn": "you", "reason": "awaiting your acceptance since 10:15",
+          "pr": 122, "prUrl": "https://github.com/mentaldesk/team0/pull/122", "base": "main", "unready": ""},
+         {"number": 50, "title": "Nothing says when a run is cut short", "status": "In review",
+          "url": "https://github.com/mentaldesk/team0/issues/50", "team": "team0",
+          "turn": "you", "reason": "awaiting your acceptance since 10:20",
+          "pr": 123, "prUrl": "https://github.com/mentaldesk/team0/pull/123", "base": "main", "unready": ""}]
+        """;
+
     private static string DocumentPitch() =>
         """
         [{"number": 60, "title": "Vision review: themes 1 and 5 have run dry", "status": "Pitched",
@@ -3404,7 +3637,8 @@ public class WorkAreaTests : IDisposable
         Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
         Attention? attention = null,
         Action<ReaderEdit?>? showEdit = null,
-        Func<WaitingItem, Task<Reading>>? readDocument = null)
+        Func<WaitingItem, Task<Reading>>? readDocument = null,
+        Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -3434,7 +3668,8 @@ public class WorkAreaTests : IDisposable
             showTrends: showTrends,
             newIdea: newIdea,
             attention: attention,
-            readDocument: readDocument);
+            readDocument: readDocument,
+            confirmQuit: confirmQuit);
     }
 
     private void WriteRun(string team, string role, int pid)

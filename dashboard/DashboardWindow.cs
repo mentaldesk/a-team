@@ -86,15 +86,13 @@ public sealed class DashboardWindow : Window
     private DateTimeOffset _readingAsked;
     private NewItem? _goingTo;
     private Area _area;
-    private Task<string?>? _pending;
-    private (WaitingItem Item, Rank Rank)? _ranking;
+    private readonly WriteQueue _writes;
+    private readonly Func<Write?, IReadOnlyList<Write>, bool> _confirmQuit;
     private WaitingItem? _approvable;
-    private WaitingItem? _approving;
     private WaitingItem? _shown;
-    private WaitingItem? _accepting;
-    private string? _askingReview;
     private WaitingItem? _declined;
     private string? _said;
+    private (string Text, WaitingItem? On)? _already;
     private string? _added;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
@@ -154,8 +152,12 @@ public sealed class DashboardWindow : Window
         Attention? attention = null,
         Func<WaitingItem, Task<Reading>>? readDocument = null,
         Func<string, DateTimeOffset, Task<Reading>>? readMoves = null,
-        WhatsNew? whatsNew = null)
+        WhatsNew? whatsNew = null,
+        WriteQueue? writes = null,
+        Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null)
     {
+        _writes = writes ?? new WriteQueue(run);
+        _confirmQuit = confirmQuit ?? ((_, _) => true);
         _readMoves = readMoves;
         _readBoard = readBoard;
         _readDocument = readDocument;
@@ -353,6 +355,7 @@ public sealed class DashboardWindow : Window
     {
         _attention.Browsing(_area == Area.Work ? _work.Current?.Team : null);
         Settle();
+        SettleWrites();
         SettleTeamReads();
         SettleMoves();
         ReadMoves();
@@ -628,7 +631,7 @@ public sealed class DashboardWindow : Window
             .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
                 inMenu: () => _expanded is not null || _dispatcherExpanded)
-            .Register("quit", "Quit", () => App?.RequestStop(), new Key('q'));
+            .Register("quit", "Quit", Quit, new Key('q'));
         for (var tab = 0; tab < 9; tab++)
         {
             var index = tab;
@@ -648,13 +651,48 @@ public sealed class DashboardWindow : Window
 
     private bool HasApp() => App is not null;
 
+    /// <summary>Writes that haven't started are your decisions, so quitting asks before it drops them.</summary>
+    private void Quit()
+    {
+        if (_writes.Queued.Count > 0 && !_confirmQuit(_writes.Running, _writes.Queued))
+            return;
+        _writes.Drop();
+        App?.RequestStop();
+    }
+
+    /// <summary>Says what's already under way on <paramref name="key"/>, if anything is.</summary>
+    private bool Already(string key)
+    {
+        if (_writes.Holding(key) is not { } already)
+            return false;
+        _failure = null;
+        _already = (already.Already, _work.Selected);
+        ShowMessage();
+        return true;
+    }
+
+    /// <summary>Queues <paramref name="write"/> behind any already under way, so nothing waits on it.</summary>
+    private void Queue(Write write)
+    {
+        _failure = null;
+        _already = null;
+        _writes.Add(write);
+        _work.ShowWriting(Writing());
+        ShowMessage();
+    }
+
+    private IEnumerable<WaitingItem> Writing() =>
+        [.. _writes.Running is { Item: { } running } ? [running] : Array.Empty<WaitingItem>(),
+            .. _writes.Queued.Select(write => write.Item).OfType<WaitingItem>()];
+
     private void ToggleHold()
     {
-        if (_pending is not null || Selected() is not { } pane)
+        if (Selected() is not { } pane || Already(RoleKey(pane)))
             return;
-        _progress = pane.Held ? "Letting it start again…" : "Pausing this role…";
-        ShowMessage();
-        _pending = _run([pane.Held ? "resume" : "pause", pane.Team, pane.Role]);
+        Queue(new Write(WriteKind.Hold, RoleKey(pane), [pane.Held ? "resume" : "pause", pane.Team, pane.Role],
+            pane.Held ? "Letting it start again…" : "Pausing this role…",
+            $"{pane.Team}'s {pane.Role} is already being {(pane.Held ? "let start again" : "paused")}",
+            $"{(pane.Held ? "letting" : "pausing")} {pane.Team}'s {pane.Role}{(pane.Held ? " start again" : "")}"));
     }
 
     private void PassNow()
@@ -665,6 +703,8 @@ public sealed class DashboardWindow : Window
         ShowMessage();
     }
 
+    private static string RoleKey(AgentPane pane) => $"{pane.Team}/{pane.Role}";
+
     private string UnlessHeld(string label, string resume) => Selected() is { Held: true } ? resume : label;
 
     private string UnlessStopped(string label, string resume) => Selected() is { Held: true } or { RunHeld: true } ? resume : label;
@@ -672,7 +712,7 @@ public sealed class DashboardWindow : Window
     /// <summary>With several Dev runs, acts on the shown run's task alone; otherwise on the role, as with one run.</summary>
     private void ToggleInterrupt()
     {
-        if (_pending is not null || Selected() is not { } pane || !(pane.Running || pane.Held || pane.RunHeld))
+        if (Selected() is not { } pane || !(pane.Running || pane.Held || pane.RunHeld) || Already(RoleKey(pane)))
             return;
         var task = pane is { Held: true, RunHeld: false } ? null : pane.RunTask;
         var resume = pane.Held || pane.RunHeld;
@@ -683,10 +723,11 @@ public sealed class DashboardWindow : Window
         }
         if (!resume && task is not null && !_confirmStop(task))
             return;
-        _progress = resume ? "Letting it start again…" : "Interrupting…";
-        ShowMessage();
         string[] target = task is null ? [pane.Team, pane.Role] : [pane.Team, pane.Role, task.Number.ToString()];
-        _pending = _run([resume ? "resume" : "stop", .. target]);
+        Queue(new Write(WriteKind.Interrupt, RoleKey(pane), [resume ? "resume" : "stop", .. target],
+            resume ? "Letting it start again…" : "Interrupting…",
+            $"{pane.Team}'s {pane.Role} is already being {(resume ? "let start again" : "interrupted")}",
+            $"{(resume ? "letting" : "interrupting")} {pane.Team}'s {pane.Role}{(resume ? " start again" : "")}"));
     }
 
     /// <summary>Writes every line of the shown session to a file and hands the terminal to your editor with it.</summary>
@@ -977,13 +1018,11 @@ public sealed class DashboardWindow : Window
     /// <summary>Asks for a review whatever the team's trigger, then runs a pass so the Lead starts on it now.</summary>
     private void ReviewVision(string? team)
     {
-        if (team is null || _pending is not null)
+        if (team is null || Already($"{team}/vision"))
             return;
-        _askingReview = team;
-        _failure = null;
-        _progress = "Asking for a vision review…";
-        ShowMessage();
-        _pending = _run(["board", team, "vision-review", "you"]);
+        Queue(new Write(WriteKind.VisionReview, $"{team}/vision", ["board", team, "vision-review", "you"],
+            "Asking for a vision review…", $"A vision review for {team} is already being asked for",
+            $"asking for {team}'s vision review", Team: team));
     }
 
     private void WriteVision(string? team)
@@ -1043,7 +1082,7 @@ public sealed class DashboardWindow : Window
 
     private void ReadBody(WaitingItem item, Action<WaitingItem, IssueBody> then, bool forReader = false)
     {
-        if (_pending is not null || _readingBody is not null)
+        if (_readingBody is not null)
             return;
         _failure = null;
         _progress = $"Reading #{item.Number}…";
@@ -1128,7 +1167,7 @@ public sealed class DashboardWindow : Window
                 _attention.Close();
             if (_declined == item)
             {
-                Declined(item);
+                _declined = null;
                 return;
             }
             if (reranked is { } to)
@@ -1160,13 +1199,11 @@ public sealed class DashboardWindow : Window
     /// <summary>Approves the pitch the reader is showing. Like a rank, the card stays put until the board takes it.</summary>
     private void Approve()
     {
-        if (_approvable is not { } item || _pending is not null)
+        if (_approvable is not { } item || Already(Write.KeyOf(item)))
             return;
-        _approving = item;
         _attention.Did("approved");
-        _progress = $"Approving #{item.Number}…";
-        ShowMessage();
-        _pending = _run(["board", item.Team, "approve", "you", item.Number.ToString()]);
+        Queue(new Write(WriteKind.Approve, Write.KeyOf(item), ["board", item.Team, "approve", "you", item.Number.ToString()],
+            $"Approving #{item.Number}…", $"#{item.Number} is already being approved", $"approving #{item.Number}", item));
     }
 
     private void Approved(WaitingItem item)
@@ -1183,11 +1220,13 @@ public sealed class DashboardWindow : Window
         (_shown ?? (_area == Area.Work ? _work.Selected : null)) is { Acceptable: true } item ? item : null;
 
     /// <summary>Merges the task's PR or closes the pitch once you've said so, or says why it can't yet. True once
-    /// it's under way.</summary>
+    /// it's under way, or already was.</summary>
     private bool Accept()
     {
-        if (Acceptable() is not { } item || _pending is not null)
+        if (Acceptable() is not { } item)
             return false;
+        if (Already(Write.KeyOf(item)))
+            return true;
         if (item.Unacceptable is { Length: > 0 } why)
         {
             _failure = why;
@@ -1196,12 +1235,12 @@ public sealed class DashboardWindow : Window
         }
         if (!_confirmAccept(item))
             return false;
-        _accepting = item;
         _attention.Did("accepted");
-        _failure = null;
-        _progress = item.Document ? $"Merging #{item.Number}…" : item.Pitch ? $"Closing #{item.Number}…" : $"Merging PR #{item.Pr}…";
-        ShowMessage();
-        _pending = _run(["board", item.Team, "accept", "you", item.Number.ToString()]);
+        var (doing, being, queued) = item.Document ? ($"Merging #{item.Number}…", "merged", $"merging #{item.Number}")
+            : item.Pitch ? ($"Closing #{item.Number}…", "closed", $"closing #{item.Number}")
+            : ($"Merging PR #{item.Pr}…", "merged", $"merging PR #{item.Pr}");
+        Queue(new Write(WriteKind.Accept, Write.KeyOf(item), ["board", item.Team, "accept", "you", item.Number.ToString()],
+            doing, $"#{item.Number} is already being {being}", queued, item));
         return true;
     }
 
@@ -1213,16 +1252,20 @@ public sealed class DashboardWindow : Window
         return refused;
     }
 
-    /// <summary>Closes the item as not planned with your reason. The reader closes on it, and the card leaves.</summary>
-    private async Task<string?> Decline(WaitingItem item, string reason)
+    /// <summary>Closes the item as not planned with your reason. The reader closes on it at once, and the card leaves
+    /// once the board has taken it.</summary>
+    private Task<string?> Decline(WaitingItem item, string reason)
     {
-        var refused = await WithFile(item, "decline", reason).ConfigureAwait(false);
-        if (refused is null or { Length: 0 })
-        {
-            _attention.Did("declined");
-            _declined = item;
-        }
-        return refused;
+        if (_writes.Holding(Write.KeyOf(item)) is { } already)
+            return Task.FromResult<string?>(already.Already);
+        var file = Path.GetTempFileName();
+        File.WriteAllText(file, reason);
+        _attention.Did("declined");
+        _declined = item;
+        Queue(new Write(WriteKind.Decline, Write.KeyOf(item), ["board", item.Team, "decline", "you", item.Number.ToString(), file],
+            $"Declining #{item.Number}…", $"#{item.Number} is already being declined", $"declining #{item.Number}", item,
+            Scratch: file));
+        return Task.FromResult<string?>(null);
     }
 
     private void Declined(WaitingItem item)
@@ -1263,12 +1306,11 @@ public sealed class DashboardWindow : Window
     /// refusal rather than being guessed at here.</summary>
     private void SetRank(WaitingItem item, Rank rank)
     {
-        if (_pending is not null)
+        if (Already(Write.KeyOf(item)))
             return;
-        _ranking = (item, rank);
-        _progress = "Setting…";
-        ShowMessage();
-        _pending = _run(["board", item.Team, "priority", "you", item.Number.ToString(), Priorities.Value(rank)]);
+        Queue(new Write(WriteKind.Rank, Write.KeyOf(item), ["board", item.Team, "priority", "you", item.Number.ToString(), Priorities.Value(rank)],
+            $"Setting #{item.Number} to {rank}…", $"#{item.Number} is already being ranked", $"setting #{item.Number} to {rank}",
+            item, rank));
     }
 
     /// <summary>What the board took: the card moves to the column its new Priority puts it in, and the bar says
@@ -1285,44 +1327,6 @@ public sealed class DashboardWindow : Window
     /// <summary>Picked up by the next refresh, so a command runs off the draw loop and reports back on it.</summary>
     private void Settle()
     {
-        if (_pending is { IsCompleted: true } finished)
-        {
-            _pending = null;
-            _progress = null;
-            _failure = finished.Status == TaskStatus.RanToCompletion
-                ? finished.Result
-                : finished.Exception?.GetBaseException().Message ?? "the command didn't finish";
-            // Nothing moves until the board has taken it: a refused write leaves the card as it was.
-            if (_ranking is { } ranking)
-            {
-                _ranking = null;
-                if (_failure is null or { Length: 0 })
-                    Ranked(ranking.Item, ranking.Rank);
-            }
-            if (_approving is { } approving)
-            {
-                _approving = null;
-                if (_failure is null or { Length: 0 })
-                    Approved(approving);
-            }
-            if (_accepting is { } accepting)
-            {
-                _accepting = null;
-                if (_failure is null or { Length: 0 })
-                    Merged(accepting);
-            }
-            if (_askingReview is { } asked)
-            {
-                _askingReview = null;
-                if (_failure is null or { Length: 0 })
-                {
-                    _pass.Start();
-                    _said = $"vision review asked for · {asked}: the Lead starts it now";
-                    _saidOn = _work.Selected;
-                }
-            }
-        }
-
         if (_pass.Finished() is { } passed)
         {
             if (passed.Scheme == Schemes.Error)
@@ -1376,6 +1380,48 @@ public sealed class DashboardWindow : Window
         ReadTrend();
     }
 
+    /// <summary>After the reader has closed, so a write it queued that's already done lands on the same refresh.</summary>
+    private void SettleWrites()
+    {
+        var settled = _writes.Settle();
+        if (settled.Count == 0)
+            return;
+        _already = null;
+        _work.ShowWriting(Writing());
+        foreach (var (write, refused) in settled)
+            Settled(write, refused);
+    }
+
+    /// <summary>Nothing moves until the board has taken it: a refused write leaves its card as it was.</summary>
+    private void Settled(Write write, string? failure)
+    {
+        if (failure is { Length: > 0 })
+        {
+            _failure = failure;
+            return;
+        }
+        switch (write.Kind)
+        {
+            case WriteKind.Accept:
+                Merged(write.Item!);
+                break;
+            case WriteKind.Approve:
+                Approved(write.Item!);
+                break;
+            case WriteKind.Rank:
+                Ranked(write.Item!, write.Rank);
+                break;
+            case WriteKind.Decline:
+                Declined(write.Item!);
+                break;
+            case WriteKind.VisionReview:
+                _pass.Start();
+                _said = $"vision review asked for · {write.Team}: the Lead starts it now";
+                _saidOn = _work.Selected;
+                break;
+        }
+    }
+
     /// <summary>Reads the record after the cards, so it counts the read that has just been taken.</summary>
     private void ReadTrend()
     {
@@ -1410,11 +1456,15 @@ public sealed class DashboardWindow : Window
             _said = null;
             _saidOn = null;
         }
+        if (_already is { } moved && _work.Selected != moved.On)
+            _already = null;
         var (text, scheme) =
             _failure is { Length: > 0 } ? (_failure, Schemes.Error)
             : _copied is { } copied ? copied
             : _reading is not null ? ("Reading…", Schemes.Accent)
             : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
+            : _already is { } already ? (already.Text, Schemes.Accent)
+            : _writes.Status() is { Length: > 0 } writing ? (writing, Schemes.Accent)
             : _pass.Progress is { } passing ? (passing, Schemes.Accent)
             : _said is { Length: > 0 } ? (_said, Schemes.Accent)
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
