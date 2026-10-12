@@ -881,7 +881,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_s_one_hint_is_F1_keys_on_the_grid_expanded_in_Work_and_in_Overseer()
+    public void The_status_bar_s_one_hint_is_press_F1_for_help_at_its_right_end_on_the_grid_expanded_in_Work_and_in_Overseer()
     {
         using var window = Open(agents: Agents(4));
         AssertOnlyKeysHint(window);
@@ -904,7 +904,7 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open(agents: Agents(4), keys: "{ \"help\": \"F2\" }");
 
-        Assert.Equal("F2 keys", window.Status.Says);
+        Assert.Equal("Press F2 for help", window.Status.HelpHint.Text);
     }
 
     [Fact]
@@ -933,8 +933,8 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal("Pausing this role…", window.Message.Says);
         Assert.Same(window.Status, window.Message.SuperView);
-        var lead = "F1 keys · ".Length;
-        Assert.Equal(new Rectangle(lead, 0, window.Status.Viewport.Width - lead - window.Status.State.Text.Length - 1, 1), window.Message.Frame);
+        var right = window.Status.State.Text.Length + 1 + "Press F1 for help".Length + 3;
+        Assert.Equal(new Rectangle(0, 0, window.Status.Viewport.Width - right, 1), window.Message.Frame);
         Assert.Equal(StatusBar.Scheme, window.Message.SchemeName);
         Assert.Equal(status, window.Status.Frame);
         Assert.Equal(dispatcher, window.Dispatcher.Frame);
@@ -950,6 +950,19 @@ public class DashboardWindowTests : IDisposable
         bar.Hints.Single().InvokeCommand(Command.Accept);
 
         Assert.Equal("save", ran);
+    }
+
+    [Fact]
+    public void Clicking_the_help_hint_runs_what_it_was_given()
+    {
+        using var bar = new StatusBar();
+        var ran = 0;
+        bar.Help("Press F1 for help", () => ran++);
+        bar.Help("Press F1 for help", () => ran++);
+
+        bar.HelpHint.InvokeCommand(Command.Accept);
+
+        Assert.Equal(1, ran);
     }
 
     [Fact]
@@ -1832,8 +1845,10 @@ public class DashboardWindowTests : IDisposable
 
     private static void AssertOnlyKeysHint(DashboardWindow window)
     {
-        Assert.Equal(["F1 keys"], window.Status.Hints.Select(hint => hint.Text));
-        Assert.Equal("F1 keys", window.Status.Says);
+        LayOut(window, 120, 30);
+        Assert.Empty(window.Status.Hints);
+        Assert.Equal("Press F1 for help", window.Status.HelpHint.Text);
+        Assert.Equal(window.Status.Viewport.Width, window.Status.HelpHint.Frame.Right);
         Assert.DoesNotContain("a-team", window.Message.Says);
     }
 

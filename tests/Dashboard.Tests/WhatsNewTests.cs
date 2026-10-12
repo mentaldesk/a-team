@@ -189,6 +189,20 @@ public class WhatsNewTests
     }
 
     [Fact]
+    public void With_a_help_hint_the_alert_sits_just_before_it_and_the_hint_stays_flush_right()
+    {
+        using var bar = new StatusBar { Alerts = true, Width = 80 };
+        bar.ShowState("read 2m ago", "All items");
+        bar.Help("Press F1 for help", () => { });
+        bar.Alert("◇ #493");
+        LayOut(bar);
+
+        Assert.Equal(80, bar.HelpHint.Frame.Right);
+        Assert.Equal(bar.HelpHint.Frame.X - 3, bar.AlertView.Frame.Right);
+        Assert.True(bar.State.Frame.Right + 3 <= bar.AlertView.Frame.X, $"{bar.State.Frame} runs into {bar.AlertView.Frame}");
+    }
+
+    [Fact]
     public void The_alert_is_in_the_highlight_colour()
     {
         using var bar = new StatusBar { Alerts = true };

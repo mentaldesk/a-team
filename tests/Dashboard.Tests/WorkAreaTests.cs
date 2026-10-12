@@ -525,7 +525,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal($"read <1m ago · All items · {DashboardWindow.VersionShown}", window.Status.State.Text);
-        Assert.Equal(window.Status.Viewport.Width, window.Status.State.Frame.Right);
+        Assert.Equal(window.Status.HelpHint.Frame.X - 3, window.Status.State.Frame.Right);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
@@ -534,7 +534,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_shows_the_selected_card_after_F1_keys_and_the_stamp_filter_and_version_at_its_right()
+    public void The_status_bar_shows_the_selected_card_at_its_left_and_the_stamp_filter_version_and_help_at_its_right()
     {
         using var window = Open();
         window.Refresh();
@@ -542,9 +542,10 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
         Assert.Equal(window.Message.Says, window.Message.Text);
-        Assert.Equal("F1 keys · ".Length, window.Message.Frame.X);
+        Assert.Equal(0, window.Message.Frame.X);
         Assert.Equal($"read <1m ago · All items · {DashboardWindow.VersionShown}", window.Status.State.Text);
-        Assert.Equal(window.Status.Viewport.Width, window.Status.State.Frame.Right);
+        Assert.Equal(window.Status.HelpHint.Frame.X - 3, window.Status.State.Frame.Right);
+        Assert.Equal(window.Status.Viewport.Width, window.Status.HelpHint.Frame.Right);
         Assert.True(window.Message.Frame.Right < window.Status.State.Frame.X);
     }
 
@@ -578,8 +579,8 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 80, 30);
 
         Assert.StartsWith("board.sh: xxx", window.Message.Says);
-        Assert.Equal(80 - "F1 keys · ".Length - window.Status.State.Text.Length - 1, window.Message.Frame.Width);
-        Assert.Equal(80, window.Status.State.Frame.Right);
+        Assert.Equal(80 - window.Status.State.Text.Length - 1 - "Press F1 for help".Length - 3, window.Message.Frame.Width);
+        Assert.Equal(80, window.Status.HelpHint.Frame.Right);
     }
 
     [Fact]

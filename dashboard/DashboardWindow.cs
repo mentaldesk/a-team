@@ -652,11 +652,11 @@ public sealed class DashboardWindow : Window
 
     private bool HasApp() => App is not null;
 
-    /// <summary>The status bar's one hint: every other key is in the sheet it opens.</summary>
+    /// <summary>The status bar's one hint, as TuiCode words it: every other key is in the sheet it opens.</summary>
     private void ShowKeysHint()
     {
         var key = _commands.KeyFor("help");
-        _status.Show("", key == Key.Empty ? [] : [new HintedCommand("help", $"{KeyNames.Short(key)} keys")], _commands.Execute);
+        _status.Help(key == Key.Empty ? "" : $"Press {KeyNames.Short(key)} for help", () => _commands.Execute("help"));
     }
 
     private void ToggleHold()

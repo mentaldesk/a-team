@@ -7,8 +7,9 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 namespace ATeam.Dashboard;
 
 /// <summary>The last row of a window or a dialog: the keys you can press, each one clickable, then what's going on,
-/// and at its right end what the area is showing, then, in a window that has one, what has just become your move. Terminal.Gui's own StatusBar lays out Shortcuts with a border between
-/// each, so the hints are laid out here instead.</summary>
+/// and at its right end what the area is showing, then, in a window that has one, what has just become your move, then
+/// how to get help. Terminal.Gui's own StatusBar lays out Shortcuts with a border between each, so the hints are laid
+/// out here instead.</summary>
 public sealed class StatusBar : View
 {
     internal const string Scheme = "StatusBar";
@@ -29,6 +30,8 @@ public sealed class StatusBar : View
     private readonly Label _divider = new() { Text = Separator, Y = 0, CanFocus = false };
     private readonly Label _state = new() { Y = 0, CanFocus = false };
     private readonly AlertButton _alert = new();
+    private readonly Button _help = Clickable("");
+    private Action? _helpRun;
     private readonly Queue<string> _frames = [];
     private string _alerting = "";
 
@@ -51,15 +54,22 @@ public sealed class StatusBar : View
         _divider.Width = Dim.Func(_ => Says.Length > 0 && _message.Lines > 0 ? Separator.Length : 0, this);
         _message.X = Pos.Func(_ => Lead(), this);
         _message.Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Room() - Lead()), this);
-        _state.X = Pos.Func(_ => Math.Max(0, Viewport.Width - _state.Text.GetColumns() - AlertRoom()), this);
-        _alert.X = Pos.AnchorEnd();
+        _state.X = Pos.Func(_ => Math.Max(0, Viewport.Width - _state.Text.GetColumns() - AlertRoom() - HelpRoom()), this);
+        _alert.X = Pos.Func(_ => Math.Max(0, Viewport.Width - _alert.Text.GetColumns() - HelpRoom()), this);
+        _help.X = Pos.AnchorEnd();
+        _help.Width = Dim.Func(_ => _help.Text.GetColumns());
         _alert.Accepting += (_, args) =>
         {
             args.Handled = true;
             if (_alerting.Length > 0)
                 AlertChosen?.Invoke();
         };
-        Add(_hints, _divider, _message, _state, _alert);
+        _help.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            _helpRun?.Invoke();
+        };
+        Add(_hints, _divider, _message, _state, _alert, _help);
     }
 
     /// <summary>Whether the row shows an <see cref="Alert"/> at its right end.</summary>
@@ -77,6 +87,8 @@ public sealed class StatusBar : View
     internal string Says => string.Concat(_hints.SubViews.Select(view => view.Text));
 
     internal Label State => _state;
+
+    internal Button HelpHint => _help;
 
     internal MessageBar Message => _message;
 
@@ -107,18 +119,9 @@ public sealed class StatusBar : View
                 _hints.Add(separator);
                 x = Pos.Right(separator);
             }
-            var button = new Button
-            {
-                Text = hint.Text,
-                X = x,
-                Y = 0,
-                NoDecorations = true,
-                NoPadding = true,
-                ShadowStyle = ShadowStyles.None,
-                HotKeySpecifier = (Rune)0xffff,
-                CanFocus = false,
-                Enabled = hint.Enabled,
-            };
+            var button = Clickable(hint.Text);
+            button.X = x;
+            button.Enabled = hint.Enabled;
             button.Accepting += (_, args) => args.Handled = run(hint.Id);
             _hints.Add(button);
             x = Pos.Right(button);
@@ -126,6 +129,28 @@ public sealed class StatusBar : View
         SetNeedsLayout();
         SetNeedsDraw();
     }
+
+    /// <summary>The far right: how to get help, which runs <paramref name="run"/> when clicked; empty hides it.</summary>
+    public void Help(string text, Action run)
+    {
+        _helpRun = run;
+        if (_help.Text == text)
+            return;
+        _help.Text = text;
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    private static Button Clickable(string text) => new()
+    {
+        Text = text,
+        Y = 0,
+        NoDecorations = true,
+        NoPadding = true,
+        ShadowStyle = ShadowStyles.None,
+        HotKeySpecifier = (Rune)0xffff,
+        CanFocus = false,
+    };
 
     /// <summary>After the hints: what's selected, what's running or what just happened. Only an error takes a colour
     /// of its own.</summary>
@@ -228,7 +253,9 @@ public sealed class StatusBar : View
     private int Lead() => Says.Length == 0 ? 0 : Says.GetColumns() + Separator.Length;
 
     /// <summary>What the right end leaves the left, so a long hint bar or message is cut off rather than drawn over it.</summary>
-    private int Room() => (_state.Text.Length == 0 ? 0 : _state.Text.GetColumns() + Gap) + AlertRoom();
+    private int Room() => (_state.Text.Length == 0 ? 0 : _state.Text.GetColumns() + Gap) + AlertRoom() + HelpRoom();
+
+    private int HelpRoom() => _help.Text.Length == 0 ? 0 : _help.Text.GetColumns() + AlertGap;
 
     private int AlertRoom() =>
         Alerts && (_alerting.Length > 0 || _frames.Count > 0) ? Math.Max(AlertSlot, _alert.Text.GetColumns()) + AlertGap : 0;

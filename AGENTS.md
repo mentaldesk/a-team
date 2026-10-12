@@ -74,8 +74,10 @@ colour of its own.
 
 `F1`, the status bar and the menus follow the guide's [*Finding keys*](https://github.com/mentaldesk/tui-style-guide#finding-keys),
 [*The status bar*](https://github.com/mentaldesk/tui-style-guide#the-status-bar) and
-[*Only what works here*](https://github.com/mentaldesk/tui-style-guide#only-what-works-here): the status bar's one hint
-is `F1 keys`. A command that only works in one region registers that region's scope, so its key shows under *Here*.
+[*Only what works here*](https://github.com/mentaldesk/tui-style-guide#only-what-works-here): except that, like TuiCode,
+the status bar's one hint is `Press F1 for help` at its right end, and the keys sheet puts *Everywhere* on the left
+and heads the region's column with its name. A command that only works in one region registers that region's scope,
+so its key shows in that column.
 
 Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj`),
 outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's

@@ -25,7 +25,7 @@ public class KeysSheetTests : IDisposable
 
         var here = window.Keys.Here!;
 
-        Assert.Equal("Here: Work", here.Heading);
+        Assert.Equal("Work", here.Heading);
         Assert.Equal(
             [
                 ("CursorRight", "Select the column to the right"), ("CursorLeft", "Select the column to the left"),
@@ -43,7 +43,7 @@ public class KeysSheetTests : IDisposable
 
         var here = window.Keys.Here!;
 
-        Assert.Equal("Here: Overseer", here.Heading);
+        Assert.Equal("Overseer", here.Heading);
         Assert.Equal(
             [
                 ("CursorRight", "Select the chip to the right"), ("CursorLeft", "Select the chip to the left"),
@@ -62,7 +62,7 @@ public class KeysSheetTests : IDisposable
 
         var here = window.Keys.Here!;
 
-        Assert.Equal("Here: Agents", here.Heading);
+        Assert.Equal("Agents", here.Heading);
         Assert.Equal(
             [
                 "Select the next agent", "Select the previous agent", "Select the agent to the right", "Select the agent to the left",
@@ -81,7 +81,7 @@ public class KeysSheetTests : IDisposable
 
         var here = window.Keys.Here!;
 
-        Assert.Equal("Here: Log", here.Heading);
+        Assert.Equal("Log", here.Heading);
         Assert.Contains(("Shift+CursorDown", "Extend the selection down"), Rows(here));
         Assert.Contains(("l", "Copy the selected lines"), Rows(here));
         Assert.Contains(("L", "Copy the whole log"), Rows(here));
@@ -145,6 +145,21 @@ public class KeysSheetTests : IDisposable
         Assert.False(wide.Stacked);
         Assert.True(narrow.Stacked);
     }
+
+    [Fact]
+    public void Everywhere_is_on_the_left_side_by_side_and_the_place_on_top_stacked_as_in_TuiCode()
+    {
+        using var window = Open(Area.Work);
+
+        using var wide = KeysSheet.Create(window.Keys, new Size(160, 40));
+        using var narrow = KeysSheet.Create(window.Keys, new Size(60, 40));
+
+        Assert.Equal(["Everywhere", "Work"], Headings(wide.Sheet));
+        Assert.Equal(["Work", "Everywhere"], Headings(narrow.Sheet));
+    }
+
+    private static List<string> Headings(KeySheet sheet) =>
+        [.. new[] { sheet.Here, sheet.Everywhere }.OfType<KeyColumn>().Select(column => column.Heading)];
 
     [Fact]
     public void On_a_short_terminal_the_sheet_scrolls()
