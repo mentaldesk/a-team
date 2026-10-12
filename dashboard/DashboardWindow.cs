@@ -1431,7 +1431,7 @@ public sealed class DashboardWindow : Window
             : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : _area == Area.Overseer && _boarding is not null ? ("Reading…", Schemes.Accent)
-            : _area == Area.Overseer && _overseer.Region is { } chip ? ($"Overseer · {chip}", Schemes.Base)
+            : _area == Area.Overseer && _overseer.Region is { } chip ? (chip, Schemes.Base)
             : ("", Schemes.Base);
         var stamp = _area switch
         {
@@ -1439,8 +1439,13 @@ public sealed class DashboardWindow : Window
             Area.Overseer => Stamped(_boardReadAt, _clock.GetUtcNow()),
             _ => "",
         };
-        var filter = _area == Area.Work ? _work.OnlyMine ? MyItems : AllItems : "";
-        _status.ShowState(stamp, filter, VersionShown);
+        var place = _area switch
+        {
+            Area.Work => _work.OnlyMine ? MyItems : AllItems,
+            Area.Overseer => "Overseer",
+            _ => "",
+        };
+        _status.ShowState(place, stamp);
         if (_status.Message.Says == text)
             return;
         if (text.Length == 0)
@@ -1799,9 +1804,6 @@ public sealed class DashboardWindow : Window
     private AgentPane? Selected() => _onDispatcher
         ? null
         : _panes.FirstOrDefault(pane => pane.HasFocus) ?? (_area == Area.Dashboard ? _lastSelected : null);
-
-    /// <summary>The version as the status bar shows it.</summary>
-    internal static string VersionShown { get; } = Version() is { Length: > 0 } version ? $"a-team {version}" : "";
 
     private static string Version() =>
         typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?

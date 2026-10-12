@@ -933,7 +933,7 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal("Pausing this role…", window.Message.Says);
         Assert.Same(window.Status, window.Message.SuperView);
-        var right = window.Status.State.Text.Length + 1 + "Press F1 for help".Length + 3;
+        var right = "Press F1 for help".Length + 3;
         Assert.Equal(new Rectangle(0, 0, window.Status.Viewport.Width - right, 1), window.Message.Frame);
         Assert.Equal(StatusBar.Scheme, window.Message.SchemeName);
         Assert.Equal(status, window.Status.Frame);
@@ -945,7 +945,7 @@ public class DashboardWindowTests : IDisposable
     {
         using var bar = new StatusBar();
         string? ran = null;
-        bar.Show("", [new HintedCommand("save", "Enter save")], id => (ran = id) is not null);
+        bar.Show([new HintedCommand("save", "Enter save")], id => (ran = id) is not null);
 
         bar.Hints.Single().InvokeCommand(Command.Accept);
 
@@ -969,7 +969,7 @@ public class DashboardWindowTests : IDisposable
     public void A_hint_is_a_clickable_one_of_its_own_that_claims_no_key()
     {
         using var bar = new StatusBar();
-        bar.Show("", [new HintedCommand("save", "Enter save"), new HintedCommand("cancel", "Esc cancel")], _ => true);
+        bar.Show([new HintedCommand("save", "Enter save"), new HintedCommand("cancel", "Esc cancel")], _ => true);
 
         Assert.Equal(2, bar.Hints.Count);
         Assert.All(bar.Hints, hint =>

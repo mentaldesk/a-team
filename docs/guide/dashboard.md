@@ -133,9 +133,10 @@ why, in red.
 `F1` shows the keys. *Everywhere*, on the left, lists the ones that work anywhere, under the menu
 that holds them. Beside it, headed with where you are (Work, Overseer, the agent grid or an expanded
 log), are the ones for there. *Help → Show keys* and **Show keys** in Commands open it too, and
-`Esc` closes it. *Press F1 for help*, at the right end of the status bar, is the only key it names;
-the rest of it says what's selected or going on, when the board was last read, the filter, and the
-app's version.
+`Esc` or its *Esc Close* button closes it. *Press F1 for help*, at the right end of the status bar,
+is the only key it names. The rest of it starts with where you are (Work's filter, or Overseer) and
+when the board was last read, then says what's selected or going on. The app's version is in
+*Help → About*.
 
 `Ctrl+E` opens Commands: everything the app can do where you are, with the key for each. Type to
 narrow the list. Letters that start words match first, so `gt` finds **Go to team…**, then names

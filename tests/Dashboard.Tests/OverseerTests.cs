@@ -415,7 +415,7 @@ public class OverseerTests : IDisposable
         clock.Now += TimeSpan.FromMinutes(3);
         window.Refresh();
 
-        Assert.Equal($"read 3m ago · {DashboardWindow.VersionShown}", window.Status.State.Text);
+        Assert.Equal("Overseer · read 3m ago", window.Status.State.Text);
         Assert.True(window.NewKeyDownEvent(Key.F5));
         Assert.Equal(4, reads);
     }

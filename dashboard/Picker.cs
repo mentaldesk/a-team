@@ -60,7 +60,7 @@ public sealed class Picker : Dialog
         _noMatches = new Label { X = Pos.Absolute(1), Y = Pos.Bottom(_filter), Text = "(no matches)", Enabled = false, Visible = false };
 
         _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
-        _hints.Show("", [new HintedCommand(MarkHint, "Space mark"), new HintedCommand(DoneHint, "Enter done"),
+        _hints.Show([new HintedCommand(MarkHint, "Space mark"), new HintedCommand(DoneHint, "Enter done"),
             new HintedCommand(CancelHint, "Esc cancel")], Run);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         Add(_filter, _list, _noMatches, _hints, _message);

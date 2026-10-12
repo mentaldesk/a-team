@@ -3,6 +3,7 @@ using MentalDesk.Tui.Keys;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
+using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -184,6 +185,21 @@ public class KeysSheetTests : IDisposable
 
         Assert.True(dialog.NewKeyDownEvent(new Key('q')));
         Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+    }
+
+    [Fact]
+    public void It_closes_with_a_button_centred_below_the_sheet()
+    {
+        using var window = Open(Area.Work);
+        using var dialog = KeysSheet.Create(window.Keys, new Size(120, 40));
+        dialog.Layout(new Size(120, 40));
+
+        var close = Assert.Single(dialog.SubViews.OfType<Button>(), button => button.Visible);
+        Assert.Equal(" Esc Close ", close.Text);
+        Assert.False(dialog.Hints.Visible);
+        var viewport = dialog.Viewport.Width;
+        Assert.InRange(close.Frame.X - (viewport - close.Frame.Right), -1, 1);
+        Assert.True(close.Frame.Y >= dialog.Body.Frame.Bottom, $"{close.Frame} overlaps {dialog.Body.Frame}");
     }
 
     private static List<(string Keys, string Label)> Rows(KeyColumn column) =>
