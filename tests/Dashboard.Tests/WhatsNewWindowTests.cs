@@ -225,7 +225,7 @@ public class WhatsNewWindowTests : IDisposable
             },
             _ => Task.FromResult(new Reading("""{"body": "What it's about"}""", null)),
             _ => { },
-            (item, _, _, _, _, _, _, _, _) =>
+            (item, _, _, _, _, _, _, _, _, _) =>
             {
                 _opened.Add(item);
                 return null;

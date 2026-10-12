@@ -53,6 +53,7 @@ public sealed partial class ReaderDialog : Dialog
     private const string DeclineHint = "decline";
     private const string RankHint = "rank";
     private const string SetHint = "set";
+    private const string BranchHint = "branch";
     private const string GitHubHint = "github";
     private const string CloseHint = "close";
     private const int BandLines = 3;
@@ -68,6 +69,8 @@ public sealed partial class ReaderDialog : Dialog
     private readonly ReaderEdit? _edit;
     private readonly Func<bool> _confirmDiscard;
     private readonly IClipboard? _clipboard;
+    private readonly Key _copyBranch;
+    private readonly string _branch;
     private readonly int _number;
     private readonly int _width;
     private IssueBody _text;
@@ -96,12 +99,16 @@ public sealed partial class ReaderDialog : Dialog
     /// <param name="panes">Whether History was last shown; a terminal narrower than <paramref name="width"/> needs for
     /// both opens without it.</param>
     /// <param name="confirmDiscard">Asked before closing on a comment that hasn't been posted.</param>
+    /// <param name="copyBranch">The key that copies the PR's branch name, where the item has one.</param>
     public ReaderDialog(
         WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0,
-        Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null)
+        Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
+        Key? copyBranch = null)
     {
         _clipboard = clipboard;
+        _branch = item.Branch;
+        _copyBranch = item.Branch.Length > 0 ? copyBranch ?? Key.Empty : Key.Empty;
         _panes = panes ?? new ReaderPanes();
         _onGitHub = onGitHub;
         _onApprove = onApprove;
@@ -302,10 +309,11 @@ public sealed partial class ReaderDialog : Dialog
     /// <returns>The rank Enter set on the row of ranks, or null.</returns>
     public static Rank? Show(
         IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
-        ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes, ReaderEdit? edit = null)
+        ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes, ReaderEdit? edit = null,
+        Key? copyBranch = null)
     {
         using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment, tryIt, panes,
-            app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit);
+            app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit, copyBranch: copyBranch);
         app.Run(dialog);
         return dialog.Chosen;
     }
@@ -376,6 +384,8 @@ public sealed partial class ReaderDialog : Dialog
             return Copy();
         if (_comment is not null && key == new Key('q') && FocusedPane().Marked > 0)
             return Quote();
+        if (_copyBranch != Key.Empty && key == _copyBranch)
+            return CopyBranch();
         if (key == new Key('g'))
             return OnGitHub();
         if (_try is not null && key == _try.Key)
@@ -425,6 +435,8 @@ public sealed partial class ReaderDialog : Dialog
                 : [new HintedCommand(CommentHint, $"{KeyNames.Short(_comment.Key)} {_comment.Hint}")],
             .. _comment?.Decline is not { } decline || _declining ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(DeclineHint, $"{KeyNames.Short(decline.Key)} decline")],
+            .. _copyBranch == Key.Empty ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(BranchHint, $"{KeyNames.Short(_copyBranch)} copy branch")],
             new HintedCommand(GitHubHint, "g on GitHub"),
             new HintedCommand(CloseHint,
                 _field.HasFocus ? _declining ? "Esc cancel" : "Esc back" : marked > 0 ? "Esc clear" : "Esc close"),
@@ -570,11 +582,16 @@ public sealed partial class ReaderDialog : Dialog
     private bool Copy()
     {
         var text = string.Join('\n', FocusedPane().MarkedText());
-        if (text.Length == 0)
-            return true;
+        return text.Length == 0 || Copy(text, Copied(text));
+    }
+
+    private bool CopyBranch() => Copy(_branch, $"Copied {_branch}");
+
+    private bool Copy(string text, string said)
+    {
         var clipboard = _clipboard ?? App?.Clipboard;
         if (clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(text))
-            _message.Show(Copied(text), Schemes.Accent);
+            _message.Show(said, Schemes.Accent);
         else
             _message.Show("there's no clipboard to copy to", Schemes.Error);
         SetNeedsLayout();
@@ -818,6 +835,7 @@ public sealed partial class ReaderDialog : Dialog
             DeclineHint => Decline(),
             RankHint => Step(+1),
             SetHint => Set(),
+            BranchHint => CopyBranch(),
             GitHubHint => OnGitHub(),
             _ => _field.HasFocus ? Unfocus() : Escape(),
         };

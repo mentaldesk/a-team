@@ -41,6 +41,13 @@ public sealed record IssueBody(string Text = "", string? Failure = null, History
         return this with { Text = Text + conversation.Markdown(since), Remarks = remarks };
     }
 
+    /// <summary>The body with <paramref name="line"/> above it, its remarks moved down to match.</summary>
+    public IssueBody Headed(string line) => line.Length == 0 ? this : this with
+    {
+        Text = $"{line}\n\n{Text}",
+        Remarks = [.. Remarks.Select(said => said with { Line = said.Line + 2 })],
+    };
+
     public bool Equals(IssueBody? other) =>
         other is not null && Text == other.Text && Failure == other.Failure && History == other.History
         && Document == other.Document && Opened == other.Opened && Remarks.SequenceEqual(other.Remarks);

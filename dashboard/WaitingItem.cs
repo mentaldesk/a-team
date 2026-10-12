@@ -7,8 +7,17 @@ public sealed record WaitingItem(
     int Number, string Title, string Status, string Url, string Team, string Turn = "", string Reason = "",
     int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
     string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0, string Role = "",
-    string Recommendation = "", bool Reviewed = false, int Consider = 0, bool Document = false)
+    string Recommendation = "", bool Reviewed = false, int Consider = 0, bool Document = false, string Branch = "")
 {
+    /// <summary>The PR its branch is on: the one that closes it, or a document pitch itself; 0 where there's none.</summary>
+    public int BranchPr => Branch.Length == 0 ? 0 : Pr > 0 ? Pr : Number;
+
+    /// <summary>The PR and its branch, as the status bar ends with them, or nothing where there's no branch.</summary>
+    public string PrBranch => BranchPr == 0 ? "" : $"PR #{BranchPr} · {Branch}";
+
+    /// <summary>The PR, its branch and the branch it merges into, as the reader heads its body with them.</summary>
+    public string PrHeading => PrBranch.Length == 0 ? "" : Base.Length == 0 ? PrBranch : $"{PrBranch} → {Base}";
+
     /// <summary>Whether this is the Customer lead's docs PR, which is its own PR to merge.</summary>
     public bool Docs => Role == "customer";
 
@@ -56,7 +65,7 @@ public sealed record WaitingItem(
     /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's,
     /// and the PR it hands over to at the end.</summary>
     public string Line => string.Join(" · ",
-        new[] { $"#{Number}", Mine ? "" : Turn, Suggested, Reason, Pr == 0 ? "" : $"PR #{Pr}" }.Where(part => part.Length > 0));
+        new[] { $"#{Number}", Mine ? "" : Turn, Suggested, Reason, PrBranch.Length > 0 ? PrBranch : Pr == 0 ? "" : $"PR #{Pr}" }.Where(part => part.Length > 0));
 
     /// <summary>What that command printed. Anything that isn't an item with a number is left out.</summary>
     public static IReadOnlyList<WaitingItem> Parse(string json)
@@ -78,7 +87,7 @@ public sealed record WaitingItem(
                         Text(item, "unready"), Text(item, "base"),
                         Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0, Text(item, "role"),
                         Text(item, "recommendation"), Flag(item, "reviewed"), Numbered(item, "consider") ?? 0,
-                        Flag(item, "document")))
+                        Flag(item, "document"), Text(item, "branch")))
             ];
         }
         catch (JsonException)

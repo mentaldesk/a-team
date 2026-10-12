@@ -261,7 +261,7 @@ public class AppMenuTests : IDisposable
         Assert.Equal(
             window.Commands.Registered.Where(command => command.OnCard).Select(command => command.Id),
             Above(window, Cards(window)));
-        Assert.Equal(["work.read", "work.priority", "work.try", "work.github", "work.accept", "work.decline"], Above(window, Cards(window)));
+        Assert.Equal(["work.read", "work.priority", "work.try", "work.copyBranch", "work.github", "work.accept", "work.decline"], Above(window, Cards(window)));
         Assert.All(Under(window, Cards(window)), id => Assert.Equal(window.Commands.KeyFor(id), Item(window, id).Key));
     }
 
@@ -271,7 +271,7 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            ["_Open", "Set _priority", "_Try", "Open on _GitHub", "_Accept", "_Decline", "_New idea", "_Refresh", "Show only _mine"],
+            ["_Open", "Set _priority", "_Try", "Cop_y branch name", "Open on _GitHub", "_Accept", "_Decline", "_New idea", "_Refresh", "Show only _mine"],
             Under(window, Cards(window)).Select(id => Item(window, id).Title));
     }
 
@@ -305,22 +305,22 @@ public class AppMenuTests : IDisposable
     {
         using var window = Open();
 
-        window.Commands.Apply([("work.try", new Key('y'))]);
+        window.Commands.Apply([("work.try", new Key('z'))]);
         window.Refresh();
 
-        Assert.Equal(new Key('y'), Item(window, "work.try").Key);
+        Assert.Equal(new Key('z'), Item(window, "work.try").Key);
     }
 
     [Fact]
     public void A_rebinding_in_settings_is_the_key_Cards_opens_with()
     {
         Directory.CreateDirectory(Config);
-        new DashboardSettings(Config).WriteKeys([("work.try", new Key('y'))]);
+        new DashboardSettings(Config).WriteKeys([("work.try", new Key('z'))]);
 
         using var window = Open();
 
-        Assert.Equal(new Key('y'), Item(window, "work.try").Key);
-        Assert.Contains(window.Commands.Registered, command => command.Id == "work.try" && command.Key == new Key('y'));
+        Assert.Equal(new Key('z'), Item(window, "work.try").Key);
+        Assert.Contains(window.Commands.Registered, command => command.Id == "work.try" && command.Key == new Key('z'));
     }
 
     [Fact]
@@ -385,11 +385,11 @@ public class AppMenuTests : IDisposable
     public void Rebinding_interrupt_changes_the_key_Agents_shows_for_it()
     {
         Directory.CreateDirectory(Config);
-        new DashboardSettings(Config).WriteKeys([("agent.interrupt", new Key('y'))]);
+        new DashboardSettings(Config).WriteKeys([("agent.interrupt", new Key('z'))]);
 
         using var window = Open();
 
-        Assert.Equal(new Key('y'), Item(window, "agent.interrupt").Key);
+        Assert.Equal(new Key('z'), Item(window, "agent.interrupt").Key);
     }
 
     [Fact]
@@ -558,7 +558,7 @@ public class AppMenuTests : IDisposable
             _ => Task.FromResult(new Reading("[]", null)),
             _ => Task.FromResult(new Reading("{}", null)),
             _ => { },
-            (_, _, _, _, _, _, _, _, _) => null,
+            (_, _, _, _, _, _, _, _, _, _) => null,
             area,
             IconStyle.Unicode);
     }

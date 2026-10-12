@@ -72,7 +72,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
     private readonly Func<IReadOnlyList<string>, string, (string Team, int Number)?>? _newIdea;
     private readonly Action<string> _openUrl;
-    private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Rank?, Rank?> _showBody;
+    private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Action<string> _showGuide;
@@ -135,7 +135,7 @@ public sealed class DashboardWindow : Window
         Func<string, Task<Reading>> readWaiting,
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
-        Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Rank?, Rank?> showBody,
+        Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, Rank?, Rank?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -579,6 +579,8 @@ public sealed class DashboardWindow : Window
             .Register("work.read", "Open", ReadSelected, Key.Enter, isEnabled: () => OnWork() && _work.Selected is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.priority", "Set priority", SetPriority, new Key('p'), isEnabled: () => OnWork() && _work.SelectedCard is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.try", "Try", Try, new Key('t'), isEnabled: () => OnWork() && _work.Selected is { Triable: true }, onCard: true, scopes: [Regions.Work])
+            .Register("work.copyBranch", "Copy branch name", CopyBranch, new Key('y'),
+                isEnabled: () => OnWork() && _work.Selected is { Branch.Length: > 0 }, onCard: true, scopes: [Regions.Work])
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true, scopes: [Regions.Work])
             .Register("team.board", "Open team's board on GitHub", OpenBoard, new Key('b'), isEnabled: () => SelectedTeam() is not null)
             .Register("team.vision", () => SelectedTeam() is { } team ? $"Write the vision with me · {team}" : "Write the vision with me",
@@ -1129,6 +1131,8 @@ public sealed class DashboardWindow : Window
         if (forReader && item.Document && _readDocument?.Invoke(item) is { } reading
             && await Settled(reading, read => read.Failure is null ? DocumentPitch.Parse(read.Output) : null, null).ConfigureAwait(false) is { } document)
             read = read.With(document);
+        if (forReader)
+            read = read.Headed(item.PrHeading);
         if (history is not null)
             read = read with
             {
@@ -1177,6 +1181,7 @@ public sealed class DashboardWindow : Window
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
                     top, said, failure) : null,
+                _commands.KeyFor("work.copyBranch"),
                 rank);
             _opened.Open(item.Team, item.Number, _clock.GetUtcNow());
             _approvable = null;
@@ -1580,6 +1585,17 @@ public sealed class DashboardWindow : Window
         var clipboard = _clipboard ?? App?.Clipboard;
         _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(copied.Text)
             ? (copied.Said, Schemes.Accent)
+            : ("there's no clipboard to copy to", Schemes.Error);
+        ShowMessage();
+    }
+
+    private void CopyBranch()
+    {
+        if (_work.Selected is not { Branch.Length: > 0 } card)
+            return;
+        var clipboard = _clipboard ?? App?.Clipboard;
+        _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(card.Branch)
+            ? ($"Copied {card.Branch}", Schemes.Accent)
             : ("there's no clipboard to copy to", Schemes.Error);
         ShowMessage();
     }

@@ -155,6 +155,37 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void The_message_bar_line_ends_with_the_PR_s_branch_where_it_has_one()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 458, "title": "Pickers", "status": "In review", "team": "a-team", "turn": "you",
+              "reason": "ready to merge", "pr": 459, "base": "main", "branch": "feat/path-pickers"}]
+            """));
+
+        Assert.Equal("#458 · ready to merge · PR #459 · feat/path-pickers", item.Line);
+        Assert.Equal("PR #459 · feat/path-pickers → main", item.PrHeading);
+    }
+
+    [Fact]
+    public void A_document_pitch_s_branch_is_on_its_own_PR()
+    {
+        var item = new WaitingItem(60, "Vision review", "Pitched", "https://github.com/x/pull/60", "a-team",
+            Reason: "awaiting your approval", Document: true, Base: "main", Branch: "a-team/vision");
+
+        Assert.Equal("#60 · awaiting your approval · PR #60 · a-team/vision", item.Line);
+        Assert.Equal("PR #60 · a-team/vision → main", item.PrHeading);
+    }
+
+    [Fact]
+    public void A_card_with_no_PR_has_no_branch_on_its_line_or_in_the_reader()
+    {
+        var item = new WaitingItem(183, "An idea", "Idea", "https://github.com/x/1", "a-team", Reason: "awaiting your rank");
+
+        Assert.Equal("#183 · awaiting your rank", item.Line);
+        Assert.Equal("", item.PrHeading);
+    }
+
+    [Fact]
     public void A_recommended_Idea_says_the_Lead_s_rank_and_its_case_on_the_message_bar()
     {
         var item = Assert.Single(WaitingItem.Parse("""
