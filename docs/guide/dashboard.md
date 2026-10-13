@@ -155,7 +155,7 @@ the page, **Contents** lists every page with its sections under it, the one you'
 the section you're at selected. `↑`/`↓` move, `→`/`←` open and close a page, and `Enter` opens that
 page at that section. **Index** lists every section by name, its page under it: type to narrow it,
 so `pau` finds *Pausing a role* and *Pausing a team*, and `Enter` opens the one selected.
-`Ctrl+Shift+E` goes to Contents and `Ctrl+Shift+F` to Index from anywhere in the Guide. In a page,
+`Ctrl+Shift+C` goes to Contents and `Ctrl+Shift+I` to Index from anywhere in the Guide. In a page,
 `Tab` moves to the next link, `Enter` follows it, `Backspace` goes back, and `Esc` closes the Guide.
 
 ## Confirming

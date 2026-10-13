@@ -23,8 +23,8 @@ public sealed class GuideDialog : Dialog
     private const string BackHint = "back";
     private const string CloseHint = "close";
     private const int Inset = 1;
-    private static readonly Key ContentsKey = Key.E.WithCtrl.WithShift;
-    private static readonly Key IndexKey = Key.F.WithCtrl.WithShift;
+    private static readonly Key ContentsKey = Key.C.WithCtrl.WithShift;
+    private static readonly Key IndexKey = Key.I.WithCtrl.WithShift;
 
     private readonly string _folder;
     private readonly Action<string> _openUrl;
@@ -130,8 +130,8 @@ public sealed class GuideDialog : Dialog
         _hints.Show([
             new HintedCommand(NextHint, "Tab next link"),
             new HintedCommand(FollowHint, "Enter follow"),
-            new HintedCommand(ContentsHint, "Ctrl+Shift+E contents"),
-            new HintedCommand(IndexHint, "Ctrl+Shift+F index"),
+            new HintedCommand(ContentsHint, "Ctrl+Shift+C contents"),
+            new HintedCommand(IndexHint, "Ctrl+Shift+I index"),
             new HintedCommand(BackHint, "Backspace back"),
             new HintedCommand(CloseHint, "Esc close"),
         ], Run);

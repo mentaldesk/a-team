@@ -52,7 +52,7 @@ public partial class GuideDialogTests : IDisposable
     {
         using var dialog = Open();
 
-        Assert.Equal(["Tab next link", "Enter follow", "Ctrl+Shift+E contents", "Ctrl+Shift+F index", "Backspace back", "Esc close"],
+        Assert.Equal(["Tab next link", "Enter follow", "Ctrl+Shift+C contents", "Ctrl+Shift+I index", "Backspace back", "Esc close"],
             dialog.Hints.Hints.Select(hint => hint.Text));
     }
 
@@ -270,7 +270,7 @@ public partial class GuideDialogTests : IDisposable
     public void Enter_on_a_section_in_Contents_opens_its_page_there_and_reads_on_in_the_page()
     {
         using var dialog = Open();
-        dialog.NewKeyDownEvent(Key.E.WithCtrl.WithShift);
+        dialog.NewKeyDownEvent(Key.C.WithCtrl.WithShift);
         dialog.ContentsTree.SelectedObject = Pages(dialog).First().Sections[0];
 
         dialog.NewKeyDownEvent(Key.Enter);
@@ -283,20 +283,20 @@ public partial class GuideDialogTests : IDisposable
     }
 
     [Fact]
-    public void Ctrl_Shift_E_and_Ctrl_Shift_F_show_and_focus_their_tab_from_the_page_and_from_each_other()
+    public void Ctrl_Shift_C_and_Ctrl_Shift_I_show_and_focus_their_tab_from_the_page_and_from_each_other()
     {
         using var dialog = Open();
         Assert.True(dialog.View.HasFocus);
 
-        Assert.True(dialog.NewKeyDownEvent(Key.F.WithCtrl.WithShift));
+        Assert.True(dialog.NewKeyDownEvent(Key.I.WithCtrl.WithShift));
         Assert.True(dialog.ShowsIndex);
         Assert.True(dialog.IndexFilter.HasFocus);
 
-        Assert.True(dialog.NewKeyDownEvent(Key.E.WithCtrl.WithShift));
+        Assert.True(dialog.NewKeyDownEvent(Key.C.WithCtrl.WithShift));
         Assert.False(dialog.ShowsIndex);
         Assert.True(dialog.ContentsTree.HasFocus);
 
-        Assert.True(dialog.NewKeyDownEvent(Key.F.WithCtrl.WithShift));
+        Assert.True(dialog.NewKeyDownEvent(Key.I.WithCtrl.WithShift));
         Assert.True(dialog.IndexFilter.HasFocus);
     }
 
@@ -304,7 +304,7 @@ public partial class GuideDialogTests : IDisposable
     public void The_Index_filters_by_any_part_of_a_section_s_name_whatever_its_case()
     {
         using var dialog = Open();
-        dialog.NewKeyDownEvent(Key.F.WithCtrl.WithShift);
+        dialog.NewKeyDownEvent(Key.I.WithCtrl.WithShift);
         Assert.Equal(["Columns"], dialog.Matches.Select(topic => topic.Name));
 
         dialog.IndexFilter.Text = "LUMN";
@@ -326,7 +326,7 @@ public partial class GuideDialogTests : IDisposable
     public void Backspace_in_the_Index_edits_the_filter_and_stays_on_the_page()
     {
         using var dialog = new GuideDialog(_folder, _ => { }, "work.md");
-        dialog.NewKeyDownEvent(Key.F.WithCtrl.WithShift);
+        dialog.NewKeyDownEvent(Key.I.WithCtrl.WithShift);
         dialog.IndexFilter.Text = "col";
         dialog.IndexFilter.MoveEnd();
 
@@ -340,7 +340,7 @@ public partial class GuideDialogTests : IDisposable
     public void Enter_in_the_Index_opens_the_match_s_page_at_its_heading()
     {
         using var dialog = Open();
-        dialog.NewKeyDownEvent(Key.F.WithCtrl.WithShift);
+        dialog.NewKeyDownEvent(Key.I.WithCtrl.WithShift);
         dialog.IndexFilter.Text = "col";
 
         dialog.NewKeyDownEvent(Key.Enter);
@@ -355,7 +355,7 @@ public partial class GuideDialogTests : IDisposable
     public void Up_and_Down_in_the_Index_move_from_section_to_section()
     {
         using var dialog = new GuideDialog(Guide(), _ => { }, GuideDialog.Work);
-        dialog.NewKeyDownEvent(Key.F.WithCtrl.WithShift);
+        dialog.NewKeyDownEvent(Key.I.WithCtrl.WithShift);
         dialog.IndexFilter.Text = "pau";
         Assert.Equal(["Pausing a role", "Pausing a team"], dialog.Matches.Select(topic => topic.Name));
 
