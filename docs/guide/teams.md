@@ -81,7 +81,7 @@ field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the
 **Workdir**, **Vision** and **Docs** take typing, and `Enter` on one opens a picker:
 
 - **Workdir** browses the folders on this machine, starting from the one typed in. Type to narrow the
-  list, `Enter` goes into a folder and `Backspace` goes up a level. **Use this folder** (`Ctrl+Enter`)
+  list, `Enter` goes into a folder, and into `../` at the top (or `Backspace`) to go up. **Use this folder** (`Ctrl+Enter`)
   puts the folder you're in into Workdir. A Workdir with no `main` checkout in it shows under
   **Problems** before you save.
 - **Vision** and **Docs** list the repo's Markdown files on its default branch. Type to narrow the list

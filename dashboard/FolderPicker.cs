@@ -8,11 +8,12 @@ public sealed class FolderPicker : PathPicker
     internal const string UseText = "Use this folder (Ctrl+Enter)";
     private const string UseId = "folder.use";
     private const string UpId = "folder.up";
+    internal const string ParentRow = "../";
 
     private readonly string _folder;
 
     public FolderPicker(string title, string folder, string home, int width = 74, int contentRows = 16)
-        : base(title, width, contentRows, Subfolders(folder), Tilde(folder, home), "open")
+        : base(title, width, contentRows, Rows(folder), Tilde(folder, home), "open")
     {
         _folder = folder;
         Commands.Register(PickId, "Open", Open).Register(UseId, "Use this folder", Use).Register(UpId, "Up", Up);
@@ -43,6 +44,12 @@ public sealed class FolderPicker : PathPicker
                 return Path.TrimEndingDirectorySeparator(at);
         return home;
     }
+
+    /// <summary>A <c>../</c> row to go up, where there's an up, then the folders in <paramref name="folder"/>.</summary>
+    private static IReadOnlyList<string> Rows(string folder) =>
+        Parent(folder) is null ? Subfolders(folder) : [ParentRow, .. Subfolders(folder)];
+
+    private static string? Parent(string folder) => Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder));
 
     /// <summary>The folders in <paramref name="folder"/>, hidden ones left out, or none where it can't be read.</summary>
     internal static IReadOnlyList<string> Subfolders(string folder)
@@ -93,13 +100,15 @@ public sealed class FolderPicker : PathPicker
 
     internal void Open()
     {
-        if (Selected is { } name)
+        if (Selected == ParentRow)
+            Up();
+        else if (Selected is { } name)
             Go(Path.Combine(_folder, name));
     }
 
     internal void Up()
     {
-        if (Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(_folder)) is { } parent)
+        if (Parent(_folder) is { } parent)
             Go(parent);
     }
 

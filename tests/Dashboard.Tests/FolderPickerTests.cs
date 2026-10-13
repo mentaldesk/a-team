@@ -29,14 +29,14 @@ public sealed class FolderPickerTests : IDisposable
         Assert.Equal(_home, FolderPicker.Start($"/no-such-{Guid.NewGuid():N}/deeper", _home));
 
     [Fact]
-    public void It_shows_where_it_is_above_the_filter_and_lists_the_folders_in_it_hidden_ones_left_out()
+    public void It_shows_where_it_is_above_the_filter_and_lists_a_way_up_then_the_folders_in_it_hidden_ones_left_out()
     {
         using var picker = new FolderPicker("Workdir for a-team", At("code"), _home);
 
         Assert.Equal("Workdir for a-team", picker.Title);
         Assert.Equal("~/code", picker.Where);
         Assert.Equal(Pos.Absolute(1).ToString(), picker.FilterField.Y.ToString());
-        Assert.Equal(["a-team", "TuiCode"], picker.Labels);
+        Assert.Equal([FolderPicker.ParentRow, "a-team", "TuiCode"], picker.Labels);
         Assert.Equal(FolderPicker.UseText, picker.UseButton.Text);
     }
 
@@ -60,6 +60,24 @@ public sealed class FolderPickerTests : IDisposable
 
         Assert.Equal(At("code/TuiCode"), picker.Next);
         Assert.Null(picker.Picked);
+    }
+
+    [Fact]
+    public void Enter_on_the_parent_row_goes_up_a_level()
+    {
+        using var picker = new FolderPicker("Workdir", At("code/a-team"), _home);
+
+        Assert.True(picker.Route(Key.Enter));
+
+        Assert.Equal(At("code"), picker.Next);
+    }
+
+    [Fact]
+    public void The_root_has_no_parent_row()
+    {
+        using var picker = new FolderPicker("Workdir", Path.GetPathRoot(_home)!, _home);
+
+        Assert.DoesNotContain(FolderPicker.ParentRow, picker.Labels);
     }
 
     [Fact]
