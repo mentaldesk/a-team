@@ -157,7 +157,8 @@ History to give the body the full width, and shows it again; it stays as you lef
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.
 
 **Copy from it.** The body and History each have a cursor. Move it with the arrows, `Home`, `End`,
-`PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end), and hold `Shift` to select,
+`PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end, `Option+←`/`→` or
+`Ctrl+←`/`→` for a word), and hold `Shift` to select,
 as in any editor. You can also drag with the mouse, or double-click a word, like an issue number or
 a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
 
@@ -168,6 +169,7 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
 - **Reply.** Reading any card, press `c` to write a comment. It opens in a **Comment** pane on the
   left, with the body and History still beside it. `Tab` and `Shift+Tab` move between the panes,
   `Esc` in the comment goes back to the pane you came from, and `c` comes back to what you'd written.
+  It moves and selects as in [a description](#adding-an-idea).
   `Ctrl+Enter` posts it from any pane: it's posted as you, joins the end of what you're reading, and
   the agent picks it up on its next run. On a terminal too narrow for three panes, History hides
   while you write; `h` still shows it.
@@ -227,6 +229,12 @@ lane you're in, or the first team from the Dashboard. Type a **Title**, and a **
 you like; `Tab` moves between the fields. **Priority** starts on **None**, which puts the idea in
 that team's Triage to rank later; pick another with `←`/`→` and it goes straight into the Lead's
 queue.
+
+**Writing in a comment or description.** The reader's Comment and New idea's Description scroll to
+keep what you're typing in view, with a scroll bar once the text is taller than the box.
+`Option+←`/`→` (or `Ctrl+←`/`→`) moves a word, `Home` and `End` (`fn+←`/`→` on a Mac laptop) go to
+the start and end of the row you can see, and `Ctrl+Home` and `Ctrl+End` to the start and end of
+the text. Hold `Shift` with any of them to select; `Ctrl+A` selects everything.
 
 `Ctrl+Enter` adds it: the issue is opened as you, put on the team's board as an Idea and ranked if
 you chose a Priority. Work reads again straight away, and the bar says `#<n> added to <team>'s

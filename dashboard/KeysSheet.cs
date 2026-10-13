@@ -42,17 +42,7 @@ internal static class KeysSheet
             dialog.Dispose();
             dialog = new KeysDialog(sheet, screen);
         }
-        dialog.Hints.Visible = false;
-        var close = AppButton.Secondary("Esc Close");
-        close.X = Pos.Center();
-        close.Y = Pos.Top(dialog.Hints);
-        close.CanFocus = false;
-        close.Accepting += (_, args) =>
-        {
-            args.Handled = true;
-            dialog.RequestStop();
-        };
-        dialog.Add(close);
+        dialog.CloseButton.X = Pos.Center();
         dialog.KeyDown += (_, key) => key.Handled = Handle(dialog, key);
         return dialog;
     }

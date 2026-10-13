@@ -16,7 +16,6 @@ public abstract class PathPicker : PickerDialog<string>
     protected PathPicker(string title, int width, int contentRows, IReadOnlyList<string> rows, string where, string verb)
         : base(title, width, contentRows, rows, row => row, verb)
     {
-        FilterField = SubViews.OfType<TextField>().Single();
         _noMatches = SubViews.OfType<Label>().Single(label => label.Text == "(no matches)");
         _where = new Label { Text = where, X = 1, Y = 0, Width = Dim.Fill(1) };
         FilterField.Y = 1;
@@ -25,8 +24,6 @@ public abstract class PathPicker : PickerDialog<string>
             view.KeyDown += (_, key) => key.Handled = Route(key);
         FilterField.SetFocus();
     }
-
-    internal TextField FilterField { get; }
 
     internal string Where => _where.Text;
 

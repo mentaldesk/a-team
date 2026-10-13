@@ -1,10 +1,8 @@
 using System.Collections.ObjectModel;
+using MentalDesk.Tui.Fields;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
-
-// Terminal.Gui 2.5 obsoletes TextView in favour of Terminal.Gui.Editor; moving to it is a change of its own.
-#pragma warning disable CS0618
 
 namespace ATeam.Dashboard;
 
@@ -16,7 +14,7 @@ public sealed class NewIdeaDialog : Dialog
     private const string CancelHint = "cancel";
     private const int Inset = 1;
     private const int FieldX = 11;
-    private const int DescriptionLines = 6;
+    private const int DescriptionLines = 10;
     private const int Wide = 76;
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
@@ -24,7 +22,7 @@ public sealed class NewIdeaDialog : Dialog
     private readonly Func<bool> _confirmDiscard;
     private readonly DropDownList _team;
     private readonly TextField _title;
-    private readonly TextView _description;
+    private readonly MultiLineField _description;
     private readonly OptionSelector<Rank> _rank;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
@@ -51,16 +49,7 @@ public sealed class NewIdeaDialog : Dialog
         Add(new Label { Text = "Title", X = Inset, Y = 2 });
         _title = new TextField { X = FieldX, Y = 2, Width = Dim.Fill(Inset) };
         Add(new Label { Text = "Description", X = Inset, Y = 4 });
-        _description = new TextView
-        {
-            X = Inset,
-            Y = 5,
-            Width = Dim.Fill(Inset),
-            Height = DescriptionLines,
-            WordWrap = true,
-            TabKeyAddsTab = false,
-            BorderStyle = LineStyle.Rounded,
-        };
+        _description = new MultiLineField { X = Inset, Y = 5, Width = Dim.Fill(Inset), Height = DescriptionLines };
         var rankY = 5 + DescriptionLines + 1;
         Add(new Label { Text = "Priority", X = Inset, Y = rankY });
         _rank = new OptionSelector<Rank>
@@ -92,7 +81,7 @@ public sealed class NewIdeaDialog : Dialog
 
     internal TextField IdeaTitle => _title;
 
-    internal TextView Description => _description;
+    internal MultiLineField Description => _description;
 
     internal OptionSelector<Rank> Ranks => _rank;
 
