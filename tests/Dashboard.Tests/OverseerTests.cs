@@ -337,7 +337,9 @@ public class OverseerTests : IDisposable
         Assert.Equal("tui · idle", OverseerView.Heading("tui", [], 0).Title);
         Assert.Empty(OverseerView.Heading("tui", [], 0).Slots);
         Assert.Equal("docs · Customer lead  ", OverseerView.Heading("docs", ["customer"], 0).Title);
-        Assert.Equal("ops · Reviewer", OverseerView.Heading("ops", ["reviewer"], 0).Title);
+        Assert.Equal("ops · Reviewer  ", OverseerView.Heading("ops", ["reviewer"], 0).Title);
+        Assert.Equal([new HeaderSlot(15, "reviewer")], OverseerView.Heading("ops", ["reviewer"], 0).Slots);
+        Assert.Equal([new HeaderSlot(12, "scout")], OverseerView.Heading("ops", ["scout"], 0).Slots);
     }
 
     [Fact]

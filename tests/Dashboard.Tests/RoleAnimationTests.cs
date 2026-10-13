@@ -8,15 +8,17 @@ namespace ATeam.Dashboard.Tests;
 /// <summary>Each role's animation in Overseer, frame for frame as the stakeholder drew them on #404.</summary>
 public class RoleAnimationTests
 {
-    public static TheoryData<string> Roles => ["dev", "lead", "customer"];
+    public static TheoryData<string> Roles => ["dev", "lead", "customer", "reviewer", "scout"];
 
     [Theory]
     [InlineData("dev", "Decrypt", 140, 72, 56)]
     [InlineData("lead", "Thought to idea", 280, 10, 10)]
     [InlineData("customer", "Typing", 220, 14, 8)]
+    [InlineData("reviewer", "Magnifier", 240, 36, 8)]
+    [InlineData("scout", "Spinner", 80, 10, 10)]
     public void Each_role_plays_its_own_animation_at_its_own_speed(string role, string name, int ms, int chip, int header)
     {
-        var animation = RoleAnimation.For(role)!;
+        var animation = RoleAnimation.For(role);
 
         Assert.Equal(name, animation.Name);
         Assert.Equal(TimeSpan.FromMilliseconds(ms), animation.Every);
@@ -26,7 +28,50 @@ public class RoleAnimationTests
     }
 
     [Fact]
-    public void A_role_with_no_animation_has_none() => Assert.Null(RoleAnimation.For("reviewer"));
+    public void A_role_with_no_animation_of_its_own_plays_a_dim_spinner()
+    {
+        var spinner = RoleAnimation.For("scout");
+        var theme = new Attribute(new Color(0xcc, 0xcc, 0xcc), new Color(0x10, 0x10, 0x10));
+
+        Assert.Same(RoleAnimation.Spinner, spinner);
+        Assert.Equal(["  ⠋", "  ⠙", "  ⠹"], spinner.ChipFrames().Take(3).Select(frame => frame.Text));
+        Assert.All(spinner.ChipFrames().Concat(spinner.HeaderFrames()), frame => Assert.All(frame.Tones, tone => Assert.Equal('0', tone)));
+        Assert.Equal(new Color(0x6e, 0x6e, 0x6e), OverseerView.ToneAttribute(spinner, Tone.Dim, theme).Foreground);
+    }
+
+    [Fact]
+    public void Magnifier_is_the_frames_in_the_comment()
+    {
+        Assert.Equal(
+            ["⌕-+", "⌕-+", "⌕-+", "+⌕+", "+⌕+", "+⌕+", "+-⌕", "+-⌕", "+-⌕", "-+⌕", "-+⌕", "-+⌕",
+             "-⌕-", "-⌕-", "-⌕-", "⌕+-", "⌕+-", "⌕+-", "⌕+-", "⌕+-", "⌕+-", "+⌕-", "+⌕-", "+⌕-",
+             "++⌕", "++⌕", "++⌕", "-+⌕", "-+⌕", "-+⌕", "-⌕+", "-⌕+", "-⌕+", "⌕++", "⌕++", "⌕++"],
+            RoleAnimation.Magnifier.ChipFrames().Select(frame => frame.Text));
+        Assert.All(RoleAnimation.Magnifier.ChipFrames(), frame =>
+            Assert.Equal(string.Concat(frame.Text.Select(glyph => glyph == RoleAnimation.Lens ? '2' : '0')), frame.Tones));
+        Assert.Equal("⌕⌕⌕+⌕⌕⌕-", string.Concat(RoleAnimation.Magnifier.HeaderFrames().Select(frame => frame.Text)));
+        Assert.Equal("22202220", string.Concat(RoleAnimation.Magnifier.HeaderFrames().Select(frame => frame.Tones)));
+    }
+
+    [Fact]
+    public void The_lens_is_nf_md_magnify_in_the_Nerd_Font_style_and_one_cell_either_way()
+    {
+        var frame = RoleAnimation.Magnifier.ChipFrames()[3];
+
+        Assert.Equal("⌕", frame.Glyph(1, IconStyle.Unicode));
+        Assert.Equal("\U000F0349", frame.Glyph(1, IconStyle.NerdFont));
+        Assert.Equal("+", frame.Glyph(0, IconStyle.NerdFont));
+        Assert.Equal(1, frame.Glyph(1, IconStyle.NerdFont).GetColumns());
+    }
+
+    [Fact]
+    public void A_reviewer_on_a_card_plays_the_magnifier_in_place_of_its_age()
+    {
+        var card = new BoardCard("a-team", 492, "Overseer shows which card the Reviewer is on", "", "In review", "", CardKind.Task, null);
+        var frame = RoleAnimation.For("reviewer").Chip(TimeSpan.FromMilliseconds(240 * 3), card.Number);
+
+        Assert.EndsWith(" +⌕+", OverseerView.ChipText(new Chip(card, 0), DateTimeOffset.UnixEpoch, frame.Text, IconStyle.Unicode));
+    }
 
     [Fact]
     public void Thought_to_idea_and_typing_are_the_frames_in_the_comment()
@@ -100,7 +145,7 @@ public class RoleAnimationTests
     [MemberData(nameof(Roles))]
     public void Every_frame_is_one_cell_a_glyph_and_keeps_the_chip_its_width(string role)
     {
-        var animation = RoleAnimation.For(role)!;
+        var animation = RoleAnimation.For(role);
 
         Assert.All(animation.ChipFrames(0, 1).Concat(animation.ChipFrames(5, 9)), frame =>
         {
@@ -121,9 +166,10 @@ public class RoleAnimationTests
     [InlineData("dev", "#2f7d48", "#4fd27a", "#e6ffec")]
     [InlineData("lead", "#8d6818", "#f0b23e", "#fff3c8")]
     [InlineData("customer", "#2b6789", "#5cb9ea", "#e2f5ff")]
+    [InlineData("reviewer", "#6b5299", "#b691f2", "#f1e8ff")]
     public void On_a_dark_theme_each_tone_is_the_role_s_colour_from_the_comment(string role, string dim, string normal, string bright)
     {
-        var animation = RoleAnimation.For(role)!;
+        var animation = RoleAnimation.For(role);
         var dark = new Attribute(new Color(0xcc, 0xcc, 0xcc), new Color(0x0c, 0x0e, 0x0e));
 
         Assert.Equal(Color.Parse(dim), OverseerView.ToneAttribute(animation, Tone.Dim, dark).Foreground);
@@ -132,16 +178,30 @@ public class RoleAnimationTests
         Assert.Equal(dark.Background, OverseerView.ToneAttribute(animation, Tone.Bright, dark).Background);
     }
 
+    [Fact]
+    public void On_a_light_theme_the_reviewer_s_tones_are_the_agreed_violets()
+    {
+        var light = new Attribute(new Color(0x20, 0x20, 0x20), new Color(0xfa, 0xfa, 0xfa));
+
+        Assert.Equal(
+            [Color.Parse("#b9a6d9"), Color.Parse("#7a4fc4"), Color.Parse("#3d2170")],
+            Enum.GetValues<Tone>().Select(tone => OverseerView.ToneAttribute(RoleAnimation.Magnifier, tone, light).Foreground));
+    }
+
     [Theory]
-    [MemberData(nameof(Roles))]
+    [InlineData("dev")]
+    [InlineData("lead")]
+    [InlineData("customer")]
+    [InlineData("reviewer")]
     public void On_a_light_theme_the_tones_are_darker_and_still_step_from_faint_to_strong(string role)
     {
-        var animation = RoleAnimation.For(role)!;
+        var animation = RoleAnimation.For(role);
         var light = new Attribute(new Color(0x20, 0x20, 0x20), new Color(0xfa, 0xfa, 0xfa));
+        var dark = new Attribute(new Color(0xcc, 0xcc, 0xcc), new Color(0x0c, 0x0e, 0x0e));
         var tones = Enum.GetValues<Tone>().Select(tone => OverseerView.ToneAttribute(animation, tone, light).Foreground).ToList();
 
-        Assert.True(Lightness(tones[1]) < Lightness(animation.Colour(Tone.Normal, dark: true)));
-        Assert.True(Lightness(tones[2]) < Lightness(animation.Colour(Tone.Bright, dark: true)));
+        Assert.True(Lightness(tones[1]) < Lightness(animation.Colour(Tone.Normal, dark)));
+        Assert.True(Lightness(tones[2]) < Lightness(animation.Colour(Tone.Bright, dark)));
         Assert.True(Lightness(tones[0]) > Lightness(tones[1]));
         Assert.True(Lightness(tones[1]) > Lightness(tones[2]));
     }
