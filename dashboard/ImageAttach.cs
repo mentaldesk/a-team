@@ -12,7 +12,7 @@ public sealed record Attaching(Key Key, Func<string, string, Task<Reading>> Uplo
 /// becomes its link once it's up. <paramref name="upload"/> stores a file and prints its link.</summary>
 public sealed class ImageAttach(
     MultiLineField field, Func<string, Task<Reading>> upload, IClipboardImage clipboard, Action<string, Schemes> say,
-    string? home = null, TimeProvider? clock = null)
+    string? home = null, TimeProvider? clock = null, IClipboard? text = null)
 {
     internal const string OverSsh = "Over SSH the clipboard is your own machine's: drop the image file here to attach it";
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
@@ -24,8 +24,9 @@ public sealed class ImageAttach(
     /// <summary>Whether an image is still on its way up, so what you wrote doesn't have its link yet.</summary>
     public bool Uploading => _uploading > 0;
 
-    /// <summary>Ctrl+V attaches the clipboard's image where it holds one; otherwise its text pastes as ever.</summary>
-    public bool Pressed(Key key) => key == Key.V.WithCtrl && PasteImage(sayOverSsh: Empty(field.App?.Clipboard));
+    /// <summary>Ctrl+V attaches the clipboard's image where it holds no text, so text copied with a picture of it
+    /// pastes as ever.</summary>
+    public bool Pressed(Key key) => key == Key.V.WithCtrl && Empty(text ?? field.App?.Clipboard) && PasteImage(sayOverSsh: true);
 
     /// <summary>A paste the terminal delivered: a dropped image file attaches; an empty one is the terminal's paste
     /// of an image it couldn't pass on. True where it's taken care of, so the text doesn't go in.</summary>
@@ -128,5 +129,5 @@ public sealed class ImageAttach(
 
     private void Failed(string why) => say($"Attach failed: {why}", Schemes.Error);
 
-    private static bool Empty(IClipboard? text) => text is null || !text.TryGetClipboardData(out var said) || string.IsNullOrEmpty(said);
+    private static bool Empty(IClipboard? clipboard) => clipboard is null || !clipboard.TryGetClipboardData(out var said) || string.IsNullOrEmpty(said);
 }

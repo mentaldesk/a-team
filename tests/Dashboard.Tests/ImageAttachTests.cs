@@ -1,5 +1,7 @@
 using MentalDesk.Tui.Fields;
+using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -22,7 +24,7 @@ public sealed class ImageAttachTests : IDisposable
     }
 
     private (MultiLineField Field, ImageAttach Attach) Open(
-        string text = "", Clipboard? clipboard = null, Func<string, Task<Reading>>? upload = null)
+        string text = "", Clipboard? clipboard = null, Func<string, Task<Reading>>? upload = null, IClipboard? copied = null)
     {
         var field = new MultiLineField { Text = text };
         field.CaretOffset = text.Length;
@@ -30,7 +32,7 @@ public sealed class ImageAttachTests : IDisposable
         {
             _uploaded.Add(file);
             return Task.FromResult(new Reading(Link + "\n", null));
-        }), clipboard ?? new Clipboard(), (said, scheme) => _said.Add((said, scheme)), _folder, new Clock());
+        }), clipboard ?? new Clipboard(), (said, scheme) => _said.Add((said, scheme)), _folder, new Clock(), copied);
         return (field, attach);
     }
 
@@ -51,6 +53,18 @@ public sealed class ImageAttachTests : IDisposable
     public void Ctrl_V_with_text_on_the_clipboard_is_left_to_paste_the_text()
     {
         var (field, attach) = Open("as typed");
+
+        Assert.False(attach.Pressed(Key.V.WithCtrl));
+        Assert.Equal("as typed", field.Text);
+        Assert.Empty(_uploaded);
+    }
+
+    [Fact]
+    public void Ctrl_V_with_text_copied_along_with_a_picture_of_it_pastes_the_text()
+    {
+        var copied = new FakeClipboard();
+        copied.TrySetClipboardData("1\t2\t3");
+        var (field, attach) = Open("as typed", new Clipboard(png: 10), copied: copied);
 
         Assert.False(attach.Pressed(Key.V.WithCtrl));
         Assert.Equal("as typed", field.Text);

@@ -151,7 +151,7 @@ public sealed partial class ReaderDialog : Dialog
         if (comment?.Attach is { } attaching)
         {
             _attaching = attaching;
-            _attach = new ImageAttach(_field, file => attaching.Upload(item.Team, file), attaching.Clipboard, Say);
+            _attach = new ImageAttach(_field, file => attaching.Upload(item.Team, file), attaching.Clipboard, Say, text: _clipboard);
         }
         _bodyFrame = new FrameView
         {
