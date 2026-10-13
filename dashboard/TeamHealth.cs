@@ -36,8 +36,12 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
 
     public bool CanRepair => Problems.Any(problem => Repairable.Contains(problem.Topic));
 
+    /// <summary>A docs page not written yet, which is where every team with a Customer lead starts.</summary>
+    public static bool Expected(TeamProblem problem) =>
+        problem.Topic == "docs" && problem.Detail.Contains(" yet:", StringComparison.Ordinal);
+
     /// <summary>The Teams page's health column.</summary>
-    public string Column => Problems.Count switch
+    public string Column => Problems.Count(problem => !Expected(problem)) switch
     {
         0 => "ok",
         1 => "1 problem",

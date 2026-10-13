@@ -214,12 +214,11 @@ public sealed partial record TeamSettings(
         : !(projectOptional && NoProject) && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null) ? "Project is required."
         : ProjectNumber <= 0 ? "Project number must be above 0."
         : Vision.Trim().Length == 0 ? "Vision is required."
-        : Customer && Docs.Trim().Length == 0 ? "Docs is required with a Customer lead."
         : Workdir.Trim().Length == 0 ? "Workdir is required."
         : null;
 
     /// <summary>What's true of these that the team won't like, though it's still worth saving: a workdir that
-    /// isn't there, a skill this machine hasn't got, or a vision or docs page the repo hasn't got yet.</summary>
+    /// isn't there, a skill this machine hasn't got, or a vision the repo hasn't got yet.</summary>
     public string? Warning(string home)
     {
         var workdir = Expand(Workdir.Trim(), home);
@@ -231,10 +230,18 @@ public sealed partial record TeamSettings(
         var checkout = Expand(CheckoutPath, home);
         if (!Directory.Exists(checkout))
             return null;
-        if (!File.Exists(Path.Combine(checkout, Vision.Trim())))
-            return $"{Vision.Trim()} isn't there yet: the Lead will draft one and open it as a draft PR for you.";
-        return Customer && !File.Exists(Path.Combine(checkout, Docs.Trim()))
-            ? $"{Docs.Trim()} isn't there yet: the Customer lead will propose the docs as a draft PR for you."
+        return File.Exists(Path.Combine(checkout, Vision.Trim()))
+            ? null
+            : $"{Vision.Trim()} isn't there yet: the Lead will draft one and open it as a draft PR for you.";
+    }
+
+    /// <summary>What saving starts that's worth knowing, though nothing is wrong: the Customer lead proposing docs
+    /// the checkout hasn't got yet.</summary>
+    public string? Notice(string home)
+    {
+        var checkout = Expand(CheckoutPath, home);
+        return Customer && Directory.Exists(checkout) && !File.Exists(Path.Combine(checkout, Docs.Trim()))
+            ? $"The Customer lead will propose the docs at {Docs.Trim()}."
             : null;
     }
 

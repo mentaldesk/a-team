@@ -82,6 +82,7 @@ public sealed class SettingsDialog : Dialog
     private readonly Dictionary<string, TeamToday?> _today = [];
     private readonly Action<string> _showGuide;
     private readonly List<(string Column, TextField Field)> _limits;
+    private bool _refreshingTeams;
     private bool _capturing;
 
     public SettingsDialog(
@@ -196,7 +197,11 @@ public sealed class SettingsDialog : Dialog
             ? _start.Follow(_teams, team, step => StepDialog.Show(app, step), () => VisionFor = team)
             : (string.Empty, Schemes.Base);
         ConfirmRemove = (team, repo, kept) => App is { } app && RemoveTeamDialog.Show(app, team, repo, kept);
-        _teamList.ValueChanged += (_, _) => ShowTeam();
+        _teamList.ValueChanged += (_, _) =>
+        {
+            if (!_refreshingTeams)
+                ShowTeam();
+        };
         _teamHeader.GettingAttributeForRole += (_, e) =>
         {
             var attribute = e.Result ?? GetAttributeForRole(e.Role);
@@ -517,8 +522,11 @@ public sealed class SettingsDialog : Dialog
         ReadToday(team.Name);
         ShowTeams();
         ShowTeam();
-        if (saved.Warning(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) is { } warning)
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (saved.Warning(home) is { } warning)
             Say(warning, Schemes.Accent);
+        else if (saved.Notice(home) is { } notice)
+            Say(notice, Schemes.Base);
         return true;
     }
 
@@ -607,8 +615,12 @@ public sealed class SettingsDialog : Dialog
         var selected = _teamList.Value;
         var (header, rows) = TeamColumns();
         _teamHeader.Text = header;
+        _refreshingTeams = true;
         _teamList.SetSource(new ObservableCollection<string>(rows));
         _teamList.Value = _teamRows.Count == 0 ? null : Math.Min(selected ?? 0, _teamRows.Count - 1);
+        _refreshingTeams = false;
+        if (_teamList.Value != selected)
+            ShowTeam();
     }
 
     private (string Header, IReadOnlyList<string> Rows) TeamColumns()

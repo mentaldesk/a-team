@@ -59,6 +59,20 @@ public class TeamHealthTests
     }
 
     [Fact]
+    public void A_docs_page_not_written_yet_is_a_note_that_Health_does_not_count()
+    {
+        var health = TeamHealth.Parse(new Reading("""
+            docs      docs/guide/index.md isn't in mentaldesk/goose yet: the Customer lead will propose the docs as a draft PR
+            labels    no 'pitch' label, so the team can't tell its pitches from tasks
+            """, null));
+
+        Assert.Equal("1 problem", health.Column);
+        Assert.Empty(health.Fatal);
+        Assert.Equal("ok", new TeamHealth([health.Problems[0]]).Column);
+        Assert.Equal("1 problem", new TeamHealth([new TeamProblem("docs", "goose.json names no docs page")]).Column);
+    }
+
+    [Fact]
     public void A_team_with_only_notes_or_one_fatal_problem_says_so_in_kind()
     {
         Assert.Null(new TeamHealth([new TeamProblem("labels", "no 'pitch' label")]).Failed("goose"));

@@ -84,10 +84,10 @@ in the Work area until you answer.
 
 The Customer lead makes sure what the team ships is documented, so someone who didn't watch it being
 built can find it and learn it. It's off until you turn it on: tick **Customer lead** under **Roles**
-in the team's settings ([Teams](teams.md#a-teams-settings)), and its pane joins the team's on the
+in the team's settings ([Turning on the Customer lead](teams.md#turning-on-the-customer-lead)), and its pane joins the team's on the
 Dashboard.
 
-- **If your team's Docs page isn't in the repo yet**, it proposes the docs first: a draft PR in
+- **If the docs' first page isn't in the repo yet**, it proposes the docs first: a draft PR in
   Pitched, `Docs proposal: where <product>'s user docs live`, that adds that page with their outline.
   Comment on it to change the plan. Accept it in Work to agree, and its next run writes the docs.
   Until then it writes none.

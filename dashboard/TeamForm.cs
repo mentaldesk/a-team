@@ -15,6 +15,13 @@ public enum TeamStatus
     Paused,
 }
 
+/// <summary>Whether the Customer lead writes the user docs from scratch or keeps ones the repo already has.</summary>
+public enum DocsChoice
+{
+    WriteNew,
+    Existing,
+}
+
 /// <summary>One team's settings, to change and save without a text editor.</summary>
 public sealed class TeamForm : Dialog
 {
@@ -26,7 +33,11 @@ public sealed class TeamForm : Dialog
     internal const string OwnerCaption = "Who owns the Project: the user or organisation in its URL.";
     internal const string NumberCaption = "The Project's number, the last part of its URL.";
     internal const string VisionCaption = "The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.";
-    internal const string DocsCaption = "The user docs' first page, in the repo. Missing? The Customer lead proposes them.";
+    internal const string SuggestedDocs = "docs/guide/index.md";
+    internal const string SuggestedDocsCaption = "Suggested. The Customer lead proposes the docs here.";
+    internal const string NewDocsCaption = "The Customer lead proposes the docs here.";
+    internal const string DocsCaption = "The user docs' first page. The Customer lead keeps every page right.";
+    internal const string UserDocsCaption = "Write new docs, or keep the ones the repo already has.";
     internal const string WorkdirCaption = "Where the agents work. They can't write outside it.";
     internal const string SkillsCaption = "Skills the agents load. Must be installed on this machine.";
     internal const string TryCaption = "What a-team try runs to let you try a change.";
@@ -56,6 +67,7 @@ public sealed class TeamForm : Dialog
     private static readonly Key RepairKey = Key.F12;
     private const int PickWidth = 8;
     private const int TriggerWidth = 10;
+    private const int DocsRows = 2;
 
     private readonly TeamSettings _before;
     private readonly string? _team;
@@ -71,6 +83,8 @@ public sealed class TeamForm : Dialog
     private readonly TextField _number;
     private readonly View _ownedBy;
     private readonly TextField _vision;
+    private readonly View _docsRows = new() { X = 0, Width = Dim.Fill(), Height = DocsRows, CanFocus = true };
+    private readonly OptionSelector<DocsChoice> _docsChoice;
     private readonly TextField _docs;
     private readonly TextField _workdir;
     private readonly TextField _try;
@@ -193,7 +207,6 @@ public sealed class TeamForm : Dialog
         row++;
 
         _vision = PathField("Vision", settings.Vision, row++, () => FileCaption(_vision!, VisionCaption, VisionMissing), PickVision);
-        _docs = PathField("Docs", settings.Docs, row++, () => FileCaption(_docs!, DocsCaption, DocsMissing), PickDocs);
         _workdir = PathField("Workdir", settings.Workdir, row++, () => WorkdirCaption, PickWorkdir);
         _workdir.TextChanged += (_, _) =>
         {
@@ -267,7 +280,29 @@ public sealed class TeamForm : Dialog
         _reviewer = Role("Reviewer", settings.Reviewer ? CheckState.Checked : CheckState.UnChecked, Pos.Right(_customer) + 2, row++);
         Caption(_reviewer, ReviewerCaption);
 
-        Add(new Label { Text = "Limits", X = Inset, Y = row });
+        _docsRows.Y = row;
+        _docsRows.Add(new Label { Text = "User docs", X = Inset, Y = 0 });
+        _docsChoice = new OptionSelector<DocsChoice>
+        {
+            X = FieldX,
+            Y = 0,
+            Orientation = Orientation.Horizontal,
+            TabBehavior = TabBehavior.NoStop,
+            Labels = ["Write new docs", "I already have docs"],
+            Value = DocsThere(settings) ? DocsChoice.Existing : DocsChoice.WriteNew,
+        };
+        _docsRows.Add(_docsChoice);
+        Caption(_docsChoice, UserDocsCaption);
+        _docs = PathField("First page", settings.Docs.Length > 0 ? settings.Docs : SuggestedDocs, 1, DocsHint, PickDocs, _docsRows);
+        _docsRows.Visible = settings.Customer;
+        Add(_docsRows);
+        _customer.ValueChanged += (_, _) =>
+        {
+            _docsRows.Visible = _customer.Value == CheckState.Checked;
+            SetNeedsLayout();
+        };
+
+        Add(new Label { Text = "Limits", X = Inset, Y = BelowDocs(row) });
         _worktrees = Limit("Worktrees", settings.Worktrees, 0, row, WorktreesCaption);
         _pitched = Limit("Pitched", settings.Pitched, 1, row, PitchedCaption);
         _exploring = Limit("Exploring", settings.Exploring, 2, row++, ExploringCaption);
@@ -278,10 +313,10 @@ public sealed class TeamForm : Dialog
         row += 2;
 
         _problemsBand.X = 0;
-        _problemsBand.Y = row;
+        _problemsBand.Y = BelowDocs(row);
         _problemsBand.Width = Dim.Fill();
         _problemsBand.Height = Dim.Func(_ => Math.Max(ProblemsTop + 1 + BandPadding,
-            Math.Min((_problems.Source?.Count ?? 0) + ProblemsTop + BandPadding, Viewport.Height - 2 - _message.Lines - row)), this);
+            Math.Min((_problems.Source?.Count ?? 0) + ProblemsTop + BandPadding, Viewport.Height - 2 - _message.Lines - row - DocsShift)), this);
         _problems.X = Inset;
         _problems.Y = ProblemsTop;
         _problems.Width = Dim.Fill(Inset);
@@ -364,6 +399,11 @@ public sealed class TeamForm : Dialog
     internal TextField Vision => _vision;
 
     internal TextField Docs => _docs;
+
+    /// <summary>The User docs and First page rows, shown only while the Customer lead is ticked.</summary>
+    internal View DocsRowsView => _docsRows;
+
+    internal OptionSelector<DocsChoice> UserDocs => _docsChoice;
 
     internal TextField Workdir => _workdir;
 
@@ -463,7 +503,7 @@ public sealed class TeamForm : Dialog
     private void LayProblems()
     {
         _wrappedTo = _problems.Viewport.Width;
-        var problems = _checked ?? [];
+        IReadOnlyList<TeamProblem> problems = [.. (_checked ?? []).Where(problem => !TeamHealth.Expected(problem))];
         if (WorkdirChanged)
             problems = [.. WorkdirProblems(), .. problems.Where(problem => problem.Topic is not ("workdir" or "checkout"))];
         List<string> rows = [.. _checked is null ? [TeamHealth.Checking] : Array.Empty<string>(), .. problems.SelectMany(problem => problem.Rows(_wrappedTo))];
@@ -488,7 +528,7 @@ public sealed class TeamForm : Dialog
             ProjectOwner = _owner.Text.Trim(),
             ProjectNumber = int.TryParse(_number.Text.Trim(), out var number) ? number : null,
             Vision = _vision.Text.Trim(),
-            Docs = _docs.Text.Trim(),
+            Docs = DocsPage(),
             Workdir = _workdir.Text.Trim(),
             Try = _try.Text.Trim(),
             Stakeholders = _stakeholderNames,
@@ -699,9 +739,9 @@ public sealed class TeamForm : Dialog
         Hint(WorkdirCaption);
     }
 
-    internal void PickVision() => PickFile(_vision, "Vision", VisionCaption, VisionMissing);
+    internal void PickVision() => PickFile(_vision, "Vision", () => FileCaption(_vision, VisionCaption, VisionMissing));
 
-    internal void PickDocs() => PickFile(_docs, "Docs", DocsCaption, DocsMissing);
+    internal void PickDocs() => PickFile(_docs, "First page of the docs", DocsHint);
 
     internal static string VisionMissing(string path, string repo) =>
         $"{path} isn't in {repo} yet: the Lead will draft it for you to approve.";
@@ -710,7 +750,7 @@ public sealed class TeamForm : Dialog
         $"{path} isn't in {repo} yet: the Customer lead will draft the docs for you to approve.";
 
     /// <summary>Opens the repo's Markdown files to pick from, once they've been read.</summary>
-    private void PickFile(TextField field, string label, string caption, Func<string, string, string> missing)
+    private void PickFile(TextField field, string label, Func<string> caption)
     {
         var repo = Current().Repo;
         if (_repoFiles is { Failure: null } known && known.Repo == repo)
@@ -735,7 +775,7 @@ public sealed class TeamForm : Dialog
             _repoFiles = files;
             if (PickRepoFile($"{label} for {TeamName}", files) is { } picked)
                 field.Text = picked;
-            Hint(FileCaption(field, caption, missing));
+            Hint(caption());
         }
     }
 
@@ -744,6 +784,29 @@ public sealed class TeamForm : Dialog
         field.Text.Trim() is { Length: > 0 } path && _repoFiles is { Failure: null } files && files.Repo == Current().Repo && !files.Has(path)
             ? missing(path, files.Repo)
             : caption;
+
+    private string DocsHint() =>
+        _docsChoice.Value == DocsChoice.Existing ? FileCaption(_docs, DocsCaption, DocsMissing)
+        : _docs.Text.Trim() == SuggestedDocs ? SuggestedDocsCaption
+        : NewDocsCaption;
+
+    /// <summary>The First page to save: never empty with the Customer lead on, and with it off, the suggestion only
+    /// where the team had already chosen it.</summary>
+    private string DocsPage()
+    {
+        var page = _docs.Text.Trim();
+        if (_customer.Value == CheckState.Checked)
+            return page.Length > 0 ? page : SuggestedDocs;
+        return page == SuggestedDocs ? _before.Docs : page;
+    }
+
+    private static bool DocsThere(TeamSettings settings) =>
+        settings.Docs.Trim().Length > 0
+        && File.Exists(Path.Combine(TeamSettings.Expand(settings.CheckoutPath, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)), settings.Docs.Trim()));
+
+    private int DocsShift => _docsRows.Visible ? DocsRows : 0;
+
+    private Pos BelowDocs(int row) => Pos.Func(_ => row + DocsShift, this);
 
     private bool WorkdirChanged => _team is null || _workdir.Text.Trim() != _before.Workdir.Trim();
 
@@ -767,9 +830,10 @@ public sealed class TeamForm : Dialog
         _settingWorkdir = false;
     }
 
-    private TextField PathField(string label, string value, int row, Func<string> caption, Action pick)
+    private TextField PathField(string label, string value, int row, Func<string> caption, Action pick, View? into = null)
     {
-        Add(new Label { Text = label, X = Inset, Y = row });
+        into ??= this;
+        into.Add(new Label { Text = label, X = Inset, Y = row });
         var field = new TextField { Text = value, X = FieldX, Y = row, Width = Dim.Fill(Inset + PickWidth) };
         field.KeyDown += (_, key) =>
         {
@@ -783,7 +847,7 @@ public sealed class TeamForm : Dialog
             if (field.HasFocus)
                 Hint(caption());
         };
-        Add(field, new Label { Text = PickText, X = Pos.AnchorEnd(Inset + PickWidth), Y = row });
+        into.Add(field, new Label { Text = PickText, X = Pos.AnchorEnd(Inset + PickWidth), Y = row });
         return field;
     }
 
@@ -822,10 +886,10 @@ public sealed class TeamForm : Dialog
     private NumericUpDown<int> Limit(string label, int value, int column, int row, string caption, int least = 0)
     {
         const int columnWidth = 22;
-        var name = new Label { Text = label, X = FieldX + column * columnWidth, Y = row };
+        var name = new Label { Text = label, X = FieldX + column * columnWidth, Y = BelowDocs(row) };
         var limit = new NumericUpDown<int>
         {
-            Value = value, X = FieldX + column * columnWidth + Math.Max(12, label.Length + 1), Y = row, Width = LimitWidth,
+            Value = value, X = FieldX + column * columnWidth + Math.Max(12, label.Length + 1), Y = BelowDocs(row), Width = LimitWidth,
         };
         limit.ValueChanging += (_, e) => e.Handled = e.NewValue < least;
         Add(name, limit);
