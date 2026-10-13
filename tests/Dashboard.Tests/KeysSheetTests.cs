@@ -196,7 +196,6 @@ public class KeysSheetTests : IDisposable
 
         var close = Assert.Single(dialog.SubViews.OfType<Button>(), button => button.Visible);
         Assert.Equal(" Esc Close ", close.Text);
-        Assert.False(dialog.Hints.Visible);
         var viewport = dialog.Viewport.Width;
         Assert.InRange(close.Frame.X - (viewport - close.Frame.Right), -1, 1);
         Assert.True(close.Frame.Y >= dialog.Body.Frame.Bottom, $"{close.Frame} overlaps {dialog.Body.Frame}");

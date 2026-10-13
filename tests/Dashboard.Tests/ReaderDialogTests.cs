@@ -33,6 +33,12 @@ public class ReaderDialogTests
         new(180, "The dashboard tells me a pitch needs me", "Pitched", "https://github.com/x/180", "a-team",
             "you", "awaiting your approval since 22:25");
 
+    private static void Type(View field, string text)
+    {
+        foreach (var c in text)
+            field.NewKeyDownEvent(new Key(c));
+    }
+
     private static ReaderDialog Open(string body, Action? onGitHub = null, int height = 20, Action? onApprove = null)
     {
         var dialog = new ReaderDialog(Item, new IssueBody(body), onGitHub ?? (() => { }), onApprove);
@@ -1035,7 +1041,7 @@ public class ReaderDialogTests
 
         Assert.Equal("> line 1\n> line 2\n\n", dialog.Field.Text);
         Assert.True(dialog.Field.HasFocus);
-        dialog.Field.InsertText("Yes.");
+        Type(dialog.Field, "Yes.");
         Assert.Equal("> line 1\n> line 2\n\nYes.", dialog.Field.Text);
         Assert.Equal(0, dialog.Body.Marked);
         Assert.DoesNotContain("quote", dialog.Hints.Says);
@@ -1050,7 +1056,7 @@ public class ReaderDialogTests
         using var dialog = Replying();
         Open(dialog);
         dialog.Field.Text = "Agreed.";
-        dialog.Field.MoveEnd();
+        dialog.Field.CaretOffset = dialog.Field.Text.Length;
         dialog.NewKeyDownEvent(Key.Tab);
 
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
@@ -1059,7 +1065,7 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.CursorDown);
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
         dialog.NewKeyDownEvent(new Key('q'));
-        dialog.Field.InsertText("But not this.");
+        Type(dialog.Field, "But not this.");
 
         Assert.Equal("Agreed.\n> line 1\n\n> line 3\n\nBut not this.", dialog.Field.Text);
     }
@@ -1070,6 +1076,7 @@ public class ReaderDialogTests
         using var dialog = Replying();
         Open(dialog);
         dialog.Field.Text = "Agreed.";
+        dialog.Field.CaretOffset = 0;
         dialog.NewKeyDownEvent(Key.Tab);
 
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
@@ -1084,7 +1091,7 @@ public class ReaderDialogTests
         using var dialog = Replying();
         Open(dialog);
         dialog.Field.Text = "Agreed, but";
-        dialog.Field.InsertionPoint = new Point(7, 0);
+        dialog.Field.CaretOffset = 7;
         dialog.NewKeyDownEvent(Key.Tab);
 
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
@@ -1307,6 +1314,32 @@ public class ReaderDialogTests
         Assert.Equal("Ship it.", dialog.Body.Lines[^1].Text);
         Assert.True(dialog.Body.ShowsCaret);
         Assert.EndsWith("you   commented", dialog.HistoryLog.Lines[0].Text);
+    }
+
+    [Fact]
+    public void Typing_past_the_bottom_of_the_comment_keeps_the_cursor_in_view_and_posts_what_was_typed()
+    {
+        var posted = new List<string>();
+        using var dialog = Replying(post: body =>
+        {
+            posted.Add(body);
+            return Task.FromResult<string?>(null);
+        });
+        Open(dialog);
+        var lines = Enumerable.Range(1, 30).Select(line => $"line {line}").ToList();
+
+        foreach (var (line, i) in lines.Select((line, i) => (line, i)))
+        {
+            if (i > 0)
+                dialog.NewKeyDownEvent(Key.Enter);
+            Type(dialog.Field, line);
+        }
+
+        var viewport = dialog.Field.Viewport;
+        Assert.True(viewport.Y > 0);
+        Assert.InRange(lines.Count - 1, viewport.Y, viewport.Bottom - 1);
+        Assert.True(dialog.NewKeyDownEvent(Key.Enter.WithCtrl));
+        Assert.Equal([string.Join('\n', lines)], posted);
     }
 
     [Fact]

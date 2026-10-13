@@ -1,12 +1,10 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using MentalDesk.Tui.Fields;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
-
-// Terminal.Gui 2.5 obsoletes TextView in favour of Terminal.Gui.Editor; moving to it is a change of its own.
-#pragma warning disable CS0618
 
 namespace ATeam.Dashboard;
 
@@ -57,7 +55,6 @@ public sealed partial class ReaderDialog : Dialog
     private const string GitHubHint = "github";
     private const string CloseHint = "close";
     private const int BandLines = 3;
-    private const string Marker = "\uE000";
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
@@ -79,7 +76,7 @@ public sealed partial class ReaderDialog : Dialog
     private readonly LogView _history;
     private readonly FrameView _historyFrame;
     private readonly FrameView _commentFrame;
-    private readonly TextView _field;
+    private readonly MultiLineField _field;
     private readonly ReaderPanes _panes;
     private readonly View? _band;
     private readonly OptionSelector<Rank>? _ranks;
@@ -138,13 +135,7 @@ public sealed partial class ReaderDialog : Dialog
             Height = Dim.Func(_ => PaneRows(), this),
             Visible = false,
         };
-        _field = new TextView
-        {
-            Width = Dim.Fill(),
-            Height = Dim.Fill(),
-            WordWrap = true,
-            TabKeyAddsTab = false,
-        };
+        _field = new MultiLineField { Width = Dim.Fill(), Height = Dim.Fill(), BorderStyle = LineStyle.None };
         // The field binds Enter itself, so the keys that leave it are caught before it sees them.
         _field.KeyDown += (_, key) =>
         {
@@ -288,7 +279,7 @@ public sealed partial class ReaderDialog : Dialog
 
     internal string CommentTitle => _commentFrame.Title;
 
-    internal TextView Field => _field;
+    internal MultiLineField Field => _field;
 
     internal StatusBar Hints => _hints;
 
@@ -612,26 +603,13 @@ public sealed partial class ReaderDialog : Dialog
             Comment();
             Layout();
         }
-        // The field's cursor is in wrapped rows, so a character typed and taken back finds it in the text.
-        _field.InsertText(Marker);
-        var at = _field.Text.IndexOf(Marker, StringComparison.Ordinal);
-        _field.DeleteCharLeft();
-        Type(Quote(lines, at > 0 && _field.Text[at - 1] != '\n'));
+        var at = _field.CaretOffset;
+        var quoted = Quote(lines, at > 0 && _field.Text[at - 1] != '\n');
+        _field.Document!.Insert(at, quoted);
+        _field.CaretOffset = at + quoted.Length;
         pane.Unmark();
         ToComment();
         return true;
-    }
-
-    /// <summary>InsertText puts a line break after the cursor's line rather than at the cursor, so each is typed.</summary>
-    private void Type(string text)
-    {
-        foreach (var (line, i) in text.Split('\n').Select((line, i) => (line, i)))
-        {
-            if (i > 0)
-                _field.NewKeyDownEvent(Key.Enter);
-            if (line.Length > 0)
-                _field.InsertText(line);
-        }
     }
 
     private bool OnGitHub()
