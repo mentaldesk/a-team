@@ -1678,6 +1678,7 @@ grep -qF '"Bash(a-team board * attach *)"' "$ROOT/settings/agents.json" || fail 
 
 case_ "body and feedback bring a local copy of each attached image, for the agent to look at"
 export TMPDIR="$WORK/tmp"
+mkdir -p "$TMPDIR"
 gh_thread <<TALK
 body ${TODAY}T08:00:00Z reviewer 0 Look: ![Shot]($SHOT_LINK)
 comment ${TODAY}T08:10:00Z reviewer 0 And again ![Shot]($SHOT_LINK) with nothing else
