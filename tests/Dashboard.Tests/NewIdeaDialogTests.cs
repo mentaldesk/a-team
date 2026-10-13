@@ -28,6 +28,48 @@ public class NewIdeaDialogTests
     }
 
     [Fact]
+    public void Typing_past_the_bottom_of_the_description_keeps_the_cursor_in_view_and_adds_what_was_typed()
+    {
+        using var dialog = Open();
+        dialog.IdeaTitle.Text = "Remember my lane";
+        dialog.Description.SetFocus();
+        var lines = Enumerable.Range(1, 20).Select(line => $"line {line}").ToList();
+
+        foreach (var (line, i) in lines.Select((line, i) => (line, i)))
+        {
+            if (i > 0)
+                dialog.NewKeyDownEvent(Key.Enter);
+            foreach (var c in line)
+                dialog.NewKeyDownEvent(new Key(c));
+        }
+
+        var viewport = dialog.Description.Viewport;
+        Assert.True(viewport.Y > 0);
+        Assert.InRange(lines.Count - 1, viewport.Y, viewport.Bottom - 1);
+        Assert.Equal(string.Join('\n', lines), dialog.Draft.Description);
+        Assert.True(dialog.NewKeyDownEvent(Key.Enter.WithCtrl));
+        Assert.Equal(("team1", 77), dialog.Added);
+    }
+
+    [Fact]
+    public void The_description_leaves_Tab_to_move_focus_and_Esc_cancels()
+    {
+        var asked = 0;
+        using var dialog = Open(confirmDiscard: () =>
+        {
+            asked++;
+            return false;
+        });
+        dialog.Description.SetFocus();
+        dialog.Description.Text = "Some words";
+
+        Assert.False(dialog.Description.NewKeyDownEvent(Key.Tab));
+        Assert.Equal("Some words", dialog.Description.Text);
+        Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+        Assert.Equal(1, asked);
+    }
+
+    [Fact]
     public void Priority_starts_on_None_and_says_what_None_does()
     {
         using var dialog = Open();

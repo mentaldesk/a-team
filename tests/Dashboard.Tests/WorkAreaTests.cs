@@ -1131,7 +1131,7 @@ public class WorkAreaTests : IDisposable
             showIdea: (idea, pass) =>
             {
                 said = idea!.File("From https://github.com/x/6");
-                offered = [.. opened!.Keys.Everywhere.Groups.SelectMany(group => group.Rows).Select(row => row.Label)];
+                offered = [.. opened!.Keys.Everywhere!.Groups.SelectMany(group => group.Rows).Select(row => row.Label)];
                 keys.Add(pass(new Key('w')));
             });
         window.Refresh();

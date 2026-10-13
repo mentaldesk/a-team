@@ -12,7 +12,7 @@ namespace ATeam.Dashboard;
 /// it's from, and where in that line it starts.</summary>
 public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false, int Line = 0, int Start = 0);
 
-public enum CaretMove { Left, Right, Up, Down, PageUp, PageDown, RowStart, RowEnd, Start, End }
+public enum CaretMove { Left, Right, WordLeft, WordRight, Up, Down, PageUp, PageDown, RowStart, RowEnd, Start, End }
 
 /// <summary>Where a log view was: its lines, scroll, selection and whether tool calls were shown.</summary>
 public sealed record LogPlace(IReadOnlyList<LogLine> Lines, int Top, bool Following, int Anchor, int Cursor, bool Expanded);
@@ -295,6 +295,8 @@ public sealed class LogView : View
                 CaretMove.Left when caret.Line > 0 => (caret.Line - 1, LineEnd(rows, caret.Line - 1)),
                 CaretMove.Right when caret.Offset < LineEnd(rows, caret.Line) => (caret.Line, caret.Offset + 1),
                 CaretMove.Right when caret.Line < last.Line => (caret.Line + 1, 0),
+                CaretMove.WordLeft => WordLeft(caret),
+                CaretMove.WordRight => WordRight(caret, last.Line),
                 CaretMove.RowStart => (row.Line, row.Start),
                 CaretMove.RowEnd => (row.Line, row.Start + row.Text.Length),
                 CaretMove.Start => (0, 0),
@@ -310,6 +312,37 @@ public sealed class LogView : View
             ScrollTo(now - Viewport.Height + 1);
         SetNeedsDraw();
     }
+
+    private (int Line, int Offset) WordLeft((int Line, int Offset) caret)
+    {
+        var (line, offset) = caret;
+        if (offset == 0 && line > 0)
+            offset = LineText(--line).Length;
+        var text = LineText(line);
+        while (offset > 0 && !IsWordChar(text[offset - 1]))
+            offset--;
+        while (offset > 0 && IsWordChar(text[offset - 1]))
+            offset--;
+        return (line, offset);
+    }
+
+    private (int Line, int Offset) WordRight((int Line, int Offset) caret, int lastLine)
+    {
+        var (line, offset) = caret;
+        var text = LineText(line);
+        if (offset >= text.Length && line < lastLine)
+            (line, offset, text) = (line + 1, 0, LineText(line + 1));
+        else
+            while (offset < text.Length && IsWordChar(text[offset]))
+                offset++;
+        while (offset < text.Length && !IsWordChar(text[offset]))
+            offset++;
+        return (line, offset);
+    }
+
+    private string LineText(int line) => _lines[Shown()[line]].Text;
+
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     protected override bool OnMouseEvent(Mouse mouse)
     {
