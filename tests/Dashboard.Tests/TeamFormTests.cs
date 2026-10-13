@@ -57,7 +57,7 @@ public class TeamFormTests
     {
         using var form = new TeamForm("a-team", Settings, _ => null);
 
-        Assert.Equal(["Save", "Cancel"], Buttons(form));
+        Assert.Equal(["Ctrl+Enter Save", "Esc Cancel"], Buttons(form));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public class TeamFormTests
             return null;
         });
 
-        form.FootButtons.Single(button => button.Text == "Cancel").InvokeCommand(Command.Accept);
+        Foot(form, "Esc Cancel").InvokeCommand(Command.Accept);
 
         Assert.False(saved);
         Assert.Null(form.Saved);
@@ -81,7 +81,7 @@ public class TeamFormTests
     {
         using var form = new TeamForm("a-team", Settings, _ => "Couldn't save a-team: Access denied.");
         form.SetFocus();
-        form.FootButtons.Single(button => button.Text == "Save").InvokeCommand(Command.Accept);
+        Foot(form, "Ctrl+Enter Save").InvokeCommand(Command.Accept);
         Assert.Equal("Couldn't save a-team: Access denied.", form.Message.Says);
 
         form.Workdir.SetFocus();
@@ -141,7 +141,7 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void Enter_saves_what_the_form_holds_and_closes_it()
+    public void Ctrl_Enter_saves_what_the_form_holds_and_closes_it()
     {
         TeamSettings? written = null;
         using var form = new TeamForm("a-team", Settings, now =>
@@ -153,11 +153,30 @@ public class TeamFormTests
         form.Repo.Text = "mentaldesk/other";
         form.Status!.Value = TeamStatus.Paused;
 
-        form.Repo.NewKeyDownEvent(Key.Enter);
+        form.NewKeyDownEvent(Key.Enter.WithCtrl);
 
         var expected = Settings with { Repo = "mentaldesk/other", Working = false };
         Assert.Equal(expected, written);
         Assert.Equal(expected, form.Saved);
+    }
+
+    [Fact]
+    public void Enter_saves_nothing_from_a_field_or_the_Save_button()
+    {
+        var saved = false;
+        using var form = new TeamForm("a-team", Settings, _ =>
+        {
+            saved = true;
+            return null;
+        });
+        form.SetFocus();
+
+        form.NewKeyDownEvent(Key.Enter);
+        Foot(form, "Ctrl+Enter Save").SetFocus();
+        form.NewKeyDownEvent(Key.Enter);
+
+        Assert.False(saved);
+        Assert.Null(form.Saved);
     }
 
     [Fact]
@@ -175,7 +194,7 @@ public class TeamFormTests
         form.Releases.SetFocus();
         Assert.Equal(TeamForm.ReleaseCaption, form.Hints.Message.Says);
         form.Releases.Value = TeamRelease.Continuous;
-        form.Repo.NewKeyDownEvent(Key.Enter);
+        form.NewKeyDownEvent(Key.Enter.WithCtrl);
 
         Assert.Equal(TeamRelease.Continuous, written?.Release);
     }
@@ -217,7 +236,7 @@ public class TeamFormTests
         form.VisionAfter.Value = 101;
         Assert.Equal(50, form.VisionAfter.Value);
         form.VisionAfter.Value = 80;
-        form.Repo.NewKeyDownEvent(Key.Enter);
+        form.NewKeyDownEvent(Key.Enter.WithCtrl);
 
         Assert.Equal(new VisionReview(VisionTrigger.After, 2, VisionUnit.Months, 80), written?.VisionReview);
     }
@@ -393,7 +412,7 @@ public class TeamFormTests
         form.Budget.SetFocus();
         Assert.Equal(TeamForm.BudgetCaption, form.Hints.Message.Says);
         form.Budget.Value = 25;
-        form.Repo.NewKeyDownEvent(Key.Enter);
+        form.NewKeyDownEvent(Key.Enter.WithCtrl);
 
         Assert.Equal(Settings with { Budget = 25 }, written);
     }
@@ -503,7 +522,7 @@ public class TeamFormTests
         Assert.Equal("New team", form.Title);
         Assert.True(form.NameField!.HasFocus);
         Assert.Null(form.Status);
-        Assert.Equal(["Create", "Cancel"], Buttons(form));
+        Assert.Equal(["Ctrl+Enter Create", "Esc Cancel"], Buttons(form));
         Assert.Equal(
             ["Name", "Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
@@ -627,7 +646,7 @@ public class TeamFormTests
         form.Watch(Task.FromResult(new TeamHealth([])));
 
         Assert.False(form.Problems.Visible);
-        Assert.Equal(["Save", "Cancel"], Buttons(form));
+        Assert.Equal(["Ctrl+Enter Save", "Esc Cancel"], Buttons(form));
     }
 
     [Fact]
@@ -645,7 +664,7 @@ public class TeamFormTests
         Assert.Equal(
             ["project   no single-select field 'Status' on aaif-goose project 2", "labels    no 'pitch' label, so the team can't tell its pitches from tasks"],
             ProblemRows(form));
-        Assert.Equal(["Repair (F12)", "Save", "Cancel"], Buttons(form));
+        Assert.Equal(["F12 Repair", "Ctrl+Enter Save", "Esc Cancel"], Buttons(form));
     }
 
     [Fact]
@@ -664,7 +683,7 @@ public class TeamFormTests
         form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("app", "goose has no GitHub App")])));
         form.NewKeyDownEvent(Key.F12);
 
-        Assert.Equal(["Save", "Cancel"], Buttons(form));
+        Assert.Equal(["Ctrl+Enter Save", "Esc Cancel"], Buttons(form));
         Assert.False(repaired);
     }
 
@@ -703,7 +722,7 @@ public class TeamFormTests
         Assert.Equal(1, repairs);
         Assert.Equal("mentaldesk/a-team", form.Repo.Text);
         Assert.False(form.Problems.Visible);
-        Assert.Equal(["Save", "Cancel"], Buttons(form));
+        Assert.Equal(["Ctrl+Enter Save", "Esc Cancel"], Buttons(form));
     }
 
     [Fact]
@@ -712,7 +731,7 @@ public class TeamFormTests
         using var form = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
         form.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "no 'blocked' label, so the Dev can't mark a task that waits on your answer")])));
 
-        form.FootButtons.Single(button => button.Text == "Repair (F12)").InvokeCommand(Command.Accept);
+        Foot(form, "F12 Repair").InvokeCommand(Command.Accept);
 
         Assert.Equal(["labels    no 'blocked' label, so the Dev can't mark a task that waits on your answer"], ProblemRows(form));
     }
@@ -727,7 +746,9 @@ public class TeamFormTests
         Assert.Equal(heading, form.ProblemsTitle);
     }
 
-    private static IReadOnlyList<string> Buttons(TeamForm form) => [.. form.FootButtons.Select(button => button.Text)];
+    private static IReadOnlyList<string> Buttons(TeamForm form) => [.. form.FootButtons.Select(button => button.Text.Trim())];
+
+    private static Button Foot(TeamForm form, string text) => form.FootButtons.Single(button => button.Text.Trim() == text);
 
     [Fact]
     public void The_problems_sit_under_their_heading_after_a_blank_line()

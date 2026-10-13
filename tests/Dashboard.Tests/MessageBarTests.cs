@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard.Tests;
@@ -18,6 +19,16 @@ public class MessageBarTests
         bar.Clear();
         Assert.Equal(0, bar.Lines);
         Assert.Equal("", bar.Text);
+    }
+
+    [Fact]
+    public void An_underscore_is_shown_rather_than_taken_as_a_hotkey()
+    {
+        var bar = new MessageBar();
+
+        bar.Show("VISION_NEW.md isn't in mentaldesk/a-team yet", Schemes.Base);
+
+        Assert.Equal(Key.Empty, bar.HotKey);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Terminal.Gui.Configuration;
+using System.Text;
 using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
@@ -13,6 +14,7 @@ public sealed class MessageBar : Label
         Width = Dim.Fill();
         Height = Dim.Func(_ => Lines, this);
         CanFocus = false;
+        HotKeySpecifier = (Rune)0xffff;
     }
 
     public int Lines { get; private set; }
