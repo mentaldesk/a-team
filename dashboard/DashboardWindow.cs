@@ -70,7 +70,8 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
-    private readonly Func<IReadOnlyList<string>, string, (string Team, int Number)?>? _newIdea;
+    private readonly Func<IReadOnlyList<string>, string, Attaching?, (string Team, int Number)?>? _newIdea;
+    private readonly Func<Key, Attaching>? _attaching;
     private readonly Action<string> _openUrl;
     private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
@@ -152,15 +153,17 @@ public sealed class DashboardWindow : Window
         DispatchPass? pass = null,
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
-        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
+        Func<IReadOnlyList<string>, string, Attaching?, (string Team, int Number)?>? newIdea = null,
         Func<string, Task<Reading>>? readBoard = null,
         Attention? attention = null,
         Func<WaitingItem, Task<Reading>>? readDocument = null,
         Func<string, DateTimeOffset, Task<Reading>>? readMoves = null,
         WhatsNew? whatsNew = null,
         WriteQueue? writes = null,
-        Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null)
+        Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
+        Func<Key, Attaching>? attaching = null)
     {
+        _attaching = attaching;
         _writes = writes ?? new WriteQueue(run);
         _confirmQuit = confirmQuit ?? ((_, _) => true);
         _readMoves = readMoves;
@@ -591,6 +594,8 @@ public sealed class DashboardWindow : Window
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
             .Register("work.edit", "Edit the document pitch you're reading", () => { }, new Key('e'), isEnabled: () => _shown is { Document: true })
+            .Register("work.attach", "Attach image file to what you're writing", () => { }, Key.U.WithCtrl,
+                isEnabled: () => _shown is not null && _attaching is not null)
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true, scopes: [Regions.Work])
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
@@ -1176,7 +1181,8 @@ public sealed class DashboardWindow : Window
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
-                    item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null),
+                    item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
+                    Attaching()),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -1211,11 +1217,13 @@ public sealed class DashboardWindow : Window
         }
     }
 
+    private Attaching? Attaching() => _attaching?.Invoke(_commands.KeyFor("work.attach"));
+
     /// <summary>Adds an idea to the team whose lane you're in, or the first team's, and reads Work again to show it.</summary>
     private void NewIdea()
     {
         var team = _area == Area.Work && _work.Current is { } lane ? lane.Team : _teamNames[0];
-        if (_newIdea?.Invoke(_teamNames, team) is not { } added)
+        if (_newIdea?.Invoke(_teamNames, team, Attaching()) is not { } added)
             return;
         _failure = null;
         _added = $"#{added.Number} added to {added.Team}'s ideas";

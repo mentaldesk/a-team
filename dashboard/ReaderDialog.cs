@@ -15,7 +15,8 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 /// <summary>Commenting from the reader: Post posts the comment as you, with null once it's posted or else why it
 /// wasn't.</summary>
 public sealed record ReaderComment(
-    Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null);
+    Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
+    Attaching? Attach = null);
 
 /// <summary>Declining from the Comment pane: Run closes the item as not planned with the reason, with null once it's
 /// done or else why not. <paramref name="Open"/> opens the reader already declining.</summary>
@@ -48,6 +49,8 @@ public sealed partial class ReaderDialog : Dialog
     private const string AcceptHint = "accept";
     private const string CommentHint = "comment";
     private const string PostHint = "post";
+    private const string PasteHint = "paste";
+    private const string AttachHint = "attach";
     private const string DeclineHint = "decline";
     private const string RankHint = "rank";
     private const string SetHint = "set";
@@ -85,6 +88,8 @@ public sealed partial class ReaderDialog : Dialog
     private bool _declining;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
+    private readonly Attaching? _attaching;
+    private readonly ImageAttach? _attach;
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
@@ -143,6 +148,11 @@ public sealed partial class ReaderDialog : Dialog
                 ShowHints();
         };
         _commentFrame.Add(_field);
+        if (comment?.Attach is { } attaching)
+        {
+            _attaching = attaching;
+            _attach = new ImageAttach(_field, file => attaching.Upload(item.Team, file), attaching.Clipboard, Say);
+        }
         _bodyFrame = new FrameView
         {
             Title = "Body",
@@ -349,7 +359,50 @@ public sealed partial class ReaderDialog : Dialog
         key == Key.Esc ? Unfocus()
         : key == Key.Enter.WithCtrl ? Post()
         : key == Key.Tab ? SwitchPane(+1)
-        : key == Key.Tab.WithShift && SwitchPane(-1);
+        : key == Key.Tab.WithShift ? SwitchPane(-1)
+        : _attaching is not null && key == _attaching.Key ? AttachFile()
+        : _attach?.Pressed(key) == true;
+
+    /// <summary>A paste reaches the app before any view, so a dropped image or a pasted screenshot is caught here.</summary>
+    protected override void OnIsRunningChanged(bool newIsRunning)
+    {
+        base.OnIsRunningChanged(newIsRunning);
+        if (App is not { } app)
+            return;
+        if (newIsRunning)
+            app.Paste += OnAppPaste;
+        else
+            app.Paste -= OnAppPaste;
+    }
+
+    internal void OnAppPaste(object? sender, PasteEventArgs paste) =>
+        paste.Handled = paste.Handled || (_field.HasFocus && _attach?.Paste(paste.Text) == true);
+
+    internal bool AttachFile()
+    {
+        if (_attaching?.PickFile() is { } path)
+        {
+            ToComment();
+            _attach!.Attach(path);
+        }
+        return true;
+    }
+
+    /// <summary>What Ctrl+V does in the comment, for a click on its hint.</summary>
+    private bool Paste()
+    {
+        ToComment();
+        if (!_attach!.Pressed(Key.V.WithCtrl))
+            _field.InvokeCommand(Command.Paste);
+        return true;
+    }
+
+    private void Say(string text, Schemes scheme)
+    {
+        _message.Show(text, scheme);
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
 
     private bool Reading(Key key)
     {
@@ -424,6 +477,8 @@ public sealed partial class ReaderDialog : Dialog
             .. _comment is null ? Array.Empty<HintedCommand>()
                 : CommentShown ? [new HintedCommand(PostHint, _declining ? "Ctrl+Enter decline" : "Ctrl+Enter post")]
                 : [new HintedCommand(CommentHint, $"{KeyNames.Short(_comment.Key)} {_comment.Hint}")],
+            .. _attaching is null || !_field.HasFocus ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(PasteHint, "Ctrl+V paste"), new HintedCommand(AttachHint, $"{KeyNames.Short(_attaching.Key)} attach file")],
             .. _comment?.Decline is not { } decline || _declining ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(DeclineHint, $"{KeyNames.Short(decline.Key)} decline")],
             .. _copyBranch == Key.Empty ? Array.Empty<HintedCommand>()
@@ -707,6 +762,11 @@ public sealed partial class ReaderDialog : Dialog
             SetNeedsLayout();
             return true;
         }
+        if (_attach?.Uploading == true)
+        {
+            Say("Wait for the image to finish uploading", Schemes.Error);
+            return true;
+        }
         _message.Show(_declining ? $"Declining #{_number}…" : "Posting…", Schemes.Accent);
         SetNeedsLayout();
         var text = _field.Text;
@@ -812,6 +872,8 @@ public sealed partial class ReaderDialog : Dialog
             AcceptHint => Accept(),
             CommentHint => Comment(),
             PostHint => Post(),
+            PasteHint => Paste(),
+            AttachHint => AttachFile(),
             DeclineHint => Decline(),
             RankHint => Step(+1),
             SetHint => Set(),

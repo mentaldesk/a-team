@@ -1847,6 +1847,64 @@ public class ReaderDialogTests
         Assert.Equal(body.Remarks[0].Line, dialog.Body.TopLine);
     }
 
+    private static ReaderDialog Attaching(List<(string Team, string File)> uploads, Func<string, Task<string?>>? post = null)
+    {
+        var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+            comment: Commenting(post) with
+            {
+                Attach = new Attaching(Key.U.WithCtrl, (team, file) =>
+                {
+                    uploads.Add((team, file));
+                    return Task.FromResult(new Reading("https://example.com/shot.png", null));
+                }, new ImageAttachTests.Clipboard(png: 10), () => null),
+            });
+        dialog.Layout(new Size(140, 20));
+        return dialog;
+    }
+
+    [Fact]
+    public void Writing_a_comment_offers_paste_and_attach_file()
+    {
+        using var dialog = Attaching([]);
+
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        Assert.Equal("Tab switch pane · Shift+arrows select · Ctrl+Enter post · Ctrl+V paste · Ctrl+U attach file · g on GitHub · Esc back", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Ctrl_V_in_the_comment_attaches_the_screenshot_to_the_item_s_team()
+    {
+        var uploads = new List<(string Team, string File)>();
+        using var dialog = Attaching(uploads);
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        dialog.Field.NewKeyDownEvent(Key.V.WithCtrl);
+
+        Assert.Equal(["a-team"], uploads.Select(upload => upload.Team));
+        Assert.Matches(@"^!\[Screenshot .*\]\(https://example.com/shot.png\)$", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void A_dropped_image_attaches_only_while_the_comment_has_the_keyboard()
+    {
+        var image = Path.Combine(Directory.CreateTempSubdirectory().FullName, "shot.png");
+        File.WriteAllBytes(image, new byte[10]);
+        var uploads = new List<(string Team, string File)>();
+        using var dialog = Attaching(uploads);
+        var reading = new PasteEventArgs(image);
+
+        dialog.OnAppPaste(null, reading);
+        dialog.NewKeyDownEvent(new Key('c'));
+        var writing = new PasteEventArgs(image);
+        dialog.OnAppPaste(null, writing);
+
+        Assert.False(reading.Handled);
+        Assert.True(writing.Handled);
+        Assert.Equal([image], uploads.Select(upload => upload.File));
+        Assert.Equal("![shot](https://example.com/shot.png)", dialog.Field.Text);
+    }
+
     private static string Long() =>
         string.Join('\n', Enumerable.Range(1, 60).Select(line => $"line {line}"));
 }

@@ -12,6 +12,8 @@ public sealed class NewIdeaDialog : Dialog
     internal const string RankCaption = "None leaves it in Triage to rank later.";
     private const string AddHint = "add";
     private const string CancelHint = "cancel";
+    private const string PasteHint = "paste";
+    private const string AttachHint = "attach";
     private const int Inset = 1;
     private const int FieldX = 11;
     private const int DescriptionLines = 10;
@@ -26,9 +28,12 @@ public sealed class NewIdeaDialog : Dialog
     private readonly OptionSelector<Rank> _rank;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
+    private readonly Attaching? _attaching;
+    private readonly ImageAttach? _attach;
     private Task<string?>? _adding;
 
-    public NewIdeaDialog(IReadOnlyList<string> teams, string team, IdeaFiler filer, Func<bool>? confirmDiscard = null)
+    public NewIdeaDialog(
+        IReadOnlyList<string> teams, string team, IdeaFiler filer, Func<bool>? confirmDiscard = null, Attaching? attaching = null)
     {
         _filer = filer;
         _confirmDiscard = confirmDiscard ?? (() => true);
@@ -70,7 +75,18 @@ public sealed class NewIdeaDialog : Dialog
         // The fields bind Enter and Esc themselves, so the dialog's keys are caught before they see them.
         foreach (var field in new View[] { _team, _title, _description, _rank })
             field.KeyDown += (_, key) => key.Handled = key.Handled || Pressed(key);
-        _hints.Show([new HintedCommand(AddHint, "Ctrl+Enter add"), new HintedCommand(CancelHint, "Esc cancel")], Run);
+        _attaching = attaching;
+        if (attaching is not null)
+        {
+            _attach = new ImageAttach(_description, file => attaching.Upload(_team.Text, file), attaching.Clipboard, Say);
+            _description.KeyDown += (_, key) => key.Handled = key.Handled || _attach.Pressed(key);
+        }
+        _hints.Show([
+            new HintedCommand(AddHint, "Ctrl+Enter add"),
+            .. attaching is null ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(PasteHint, "Ctrl+V paste"), new HintedCommand(AttachHint, $"{KeyNames.Short(attaching.Key)} attach file")],
+            new HintedCommand(CancelHint, "Esc cancel"),
+        ], Run);
         _title.SetFocus();
     }
 
@@ -93,9 +109,10 @@ public sealed class NewIdeaDialog : Dialog
     internal IdeaDraft Draft => new(_team.Text, _title.Text, _description.Text, _rank.Value ?? Rank.None);
 
     /// <summary>Opens the dialog, and returns the idea it added, or null where it was cancelled.</summary>
-    public static (string Team, int Number)? Show(IApplication app, IReadOnlyList<string> teams, string team, IdeaFiler filer)
+    public static (string Team, int Number)? Show(
+        IApplication app, IReadOnlyList<string> teams, string team, IdeaFiler filer, Attaching? attaching = null)
     {
-        using var dialog = new NewIdeaDialog(teams, team, filer, () => DiscardDialog.Show(app, DiscardDialog.Idea));
+        using var dialog = new NewIdeaDialog(teams, team, filer, () => DiscardDialog.Show(app, DiscardDialog.Idea), attaching);
         app.Run(dialog);
         return dialog.Added;
     }
@@ -105,9 +122,45 @@ public sealed class NewIdeaDialog : Dialog
 
     protected override bool OnKeyDown(Key key) => Pressed(key) || base.OnKeyDown(key);
 
+    /// <summary>A paste reaches the app before any view, so a dropped image or a pasted screenshot is caught here.</summary>
+    protected override void OnIsRunningChanged(bool newIsRunning)
+    {
+        base.OnIsRunningChanged(newIsRunning);
+        if (App is not { } app)
+            return;
+        if (newIsRunning)
+            app.Paste += OnAppPaste;
+        else
+            app.Paste -= OnAppPaste;
+    }
+
+    internal void OnAppPaste(object? sender, PasteEventArgs paste) =>
+        paste.Handled = paste.Handled || (_description.HasFocus && _attach?.Paste(paste.Text) == true);
+
     private bool Pressed(Key key) =>
         key == Key.Enter.WithCtrl ? AddIdea()
+        : _attaching is not null && key == _attaching.Key ? AttachFile()
         : key == Key.Esc && Cancel();
+
+    /// <summary>What Ctrl+V does in the description, for a click on its hint.</summary>
+    private bool Paste()
+    {
+        _description.SetFocus();
+        if (!_attach!.Pressed(Key.V.WithCtrl))
+            _description.InvokeCommand(Command.Paste);
+        return true;
+    }
+
+    /// <summary>The image goes in at the description's cursor, wherever the keyboard was.</summary>
+    internal bool AttachFile()
+    {
+        if (_attaching?.PickFile() is { } path)
+        {
+            _description.SetFocus();
+            _attach!.Attach(path);
+        }
+        return true;
+    }
 
     private bool Step(int by)
     {
@@ -117,7 +170,13 @@ public sealed class NewIdeaDialog : Dialog
         return true;
     }
 
-    private bool Run(string hint) => hint == AddHint ? AddIdea() : Cancel();
+    private bool Run(string hint) => hint switch
+    {
+        AddHint => AddIdea(),
+        AttachHint => AttachFile(),
+        PasteHint => Paste(),
+        _ => Cancel(),
+    };
 
     internal bool AddIdea()
     {
@@ -126,6 +185,11 @@ public sealed class NewIdeaDialog : Dialog
         if (string.IsNullOrWhiteSpace(_title.Text))
         {
             Say("Nothing to add: the title is needed", Schemes.Error);
+            return true;
+        }
+        if (_attach?.Uploading == true)
+        {
+            Say("Wait for the image to finish uploading", Schemes.Error);
             return true;
         }
         Say("Adding…", Schemes.Accent);

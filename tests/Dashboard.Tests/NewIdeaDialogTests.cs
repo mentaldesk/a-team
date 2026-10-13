@@ -102,6 +102,93 @@ public class NewIdeaDialogTests
         Assert.Equal("Ctrl+Enter add · Esc cancel", dialog.Hints.Says);
     }
 
+    private static NewIdeaDialog OpenAttaching(
+        List<(string Team, string File)> uploads, Func<string?> pickFile, Func<string[], Task<Reading>>? board = null,
+        Task<Reading>? upload = null)
+    {
+        var dialog = new NewIdeaDialog(["team0", "team1"], "team1",
+            new IdeaFiler(board ?? (args => Task.FromResult(new Reading(args[2] == "new" ? "77" : "", null)))), null,
+            new Attaching(Key.U.WithCtrl, (team, file) =>
+            {
+                uploads.Add((team, file));
+                return upload ?? Task.FromResult(new Reading("https://example.com/shot.png", null));
+            }, new ImageAttachTests.Clipboard(png: 10), pickFile));
+        dialog.Layout(new Size(80, 30));
+        return dialog;
+    }
+
+    [Fact]
+    public void With_attaching_the_hints_offer_paste_and_attach_file()
+    {
+        using var dialog = OpenAttaching([], () => null);
+
+        Assert.Equal("Ctrl+Enter add · Ctrl+V paste · Ctrl+U attach file · Esc cancel", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Ctrl_U_attaches_the_file_picked_to_the_description_for_the_team_picked()
+    {
+        var image = Path.Combine(Directory.CreateTempSubdirectory().FullName, "shot.png");
+        File.WriteAllBytes(image, new byte[10]);
+        var uploads = new List<(string, string)>();
+        using var dialog = OpenAttaching(uploads, () => image);
+        dialog.Description.Text = "See: ";
+        dialog.Description.CaretOffset = 5;
+
+        Assert.True(dialog.NewKeyDownEvent(Key.U.WithCtrl));
+
+        Assert.Equal([("team1", image)], uploads);
+        Assert.True(dialog.Description.HasFocus);
+        Assert.Equal("See: ![shot](https://example.com/shot.png)", dialog.Description.Text);
+        Assert.Equal("Attached shot.png  •  10 B", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Ctrl_V_in_the_description_attaches_a_screenshot_on_the_clipboard()
+    {
+        var uploads = new List<(string, string)>();
+        using var dialog = OpenAttaching(uploads, () => null);
+        dialog.Description.SetFocus();
+
+        Assert.True(dialog.Description.NewKeyDownEvent(Key.V.WithCtrl));
+
+        Assert.Single(uploads);
+        Assert.StartsWith("![Screenshot ", dialog.Description.Text);
+    }
+
+    [Fact]
+    public void A_paste_into_the_title_is_left_alone()
+    {
+        var uploads = new List<(string, string)>();
+        using var dialog = OpenAttaching(uploads, () => null);
+        var paste = new PasteEventArgs("");
+
+        dialog.OnAppPaste(null, paste);
+
+        Assert.False(paste.Handled);
+        Assert.Empty(uploads);
+    }
+
+    [Fact]
+    public void An_idea_isn_t_added_while_its_image_is_still_uploading()
+    {
+        var image = Path.Combine(Directory.CreateTempSubdirectory().FullName, "shot.png");
+        File.WriteAllBytes(image, new byte[10]);
+        var calls = 0;
+        using var dialog = OpenAttaching([], () => image, board: _ =>
+        {
+            calls++;
+            return Task.FromResult(new Reading("77", null));
+        }, upload: new TaskCompletionSource<Reading>().Task);
+        dialog.IdeaTitle.Text = "Clipped dialog";
+        dialog.AttachFile();
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.Equal(0, calls);
+        Assert.Equal("Wait for the image to finish uploading", dialog.Message.Says);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
