@@ -712,7 +712,7 @@ gated_talk() {
     checkRuns(first: 100, filterBy: {checkType: LATEST}) { nodes { name status conclusion completedAt url } } } } } } }'
   said="number createdAt body author { __typename login }
         comments(last: 50) { nodes { createdAt body author { __typename login } $seen } }"
-  reviewed="$said"" url isDraft mergeable baseRefName $runs
+  reviewed="$said"" url isDraft mergeable baseRefName headRefName $runs
               reviews(last: 50) { nodes { createdAt body state author { __typename login } $seen
               comments(first: 50) { nodes { createdAt body author { __typename login } $seen } } } }"
   for n in $(jq -r '.[].number' <<<"$1"); do
@@ -761,7 +761,7 @@ gated_comments() {
 }
 
 # gated_prs <talk>: the open PR that closes each of those items, or that is the item, as {n, pr, prUrl,
-# draft, conflicting, resolving, base, checks, failedAt, self}, off a page read with `checks`. UNKNOWN
+# draft, conflicting, resolving, base, head, checks, failedAt, self}, off a page read with `checks`. UNKNOWN
 # means GitHub hasn't finished computing it, so it's `resolving` rather than a conflict.
 gated_prs() {
   jq "$CHECKS"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
@@ -771,7 +771,7 @@ gated_prs() {
               completed_at: .completedAt, html_url: .url}] | checks) as $ci
        | {n: $n, pr: .number, prUrl: .url, draft: .isDraft, self: (.number == $n),
           conflicting: (.mergeable == "CONFLICTING"), resolving: (.mergeable == "UNKNOWN"), base: .baseRefName,
-          checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
+          head: .headRefName, checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
 }
 
 # gated_tasks <talk>: how many tasks each of those items has, and how many are still open, as
@@ -805,6 +805,7 @@ turns() {
       | (.role // if .status == "Pitched" then "lead" else "dev" end) as $role
       | ($comments | map(select(.n == $item.number))) as $theirs
       | ($prs | map(select(.n == $item.number and ((.self | not) or $item.role == "customer"))) | first) as $pr
+      | ($prs | map(select(.n == $item.number and .self)) | first) as $own
       | ($theirs | said("<!-- a-team:\($role) -->")) as $said
       | ($theirs | unanswered($said) | map(.at) | max // "") as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
@@ -822,7 +823,8 @@ turns() {
          else null end) as $wrong
       | (if $pr == null then . else . + {pr: $pr.pr, prUrl: $pr.prUrl, checks: $pr.checks,
                                          conflicting: $pr.conflicting, draft: $pr.draft, base: $pr.base,
-                                         unready: ($wrong.trouble // "")} end)
+                                         branch: $pr.head, unready: ($wrong.trouble // "")} end)
+      | (if $pr == null and $own != null then . + {base: $own.base, branch: $own.head} else . end)
       | (if $question == "" then . else . + {question: $question} end)
       | (if $review == null then . else . + {reviewed: true, consider: ($review.body | considered)} end)
       | if $asked != ""

@@ -56,9 +56,9 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void Rebinding_quit_takes_the_apps_quit_binding_with_it()
     {
-        using var window = Open(keys: "{ \"quit\": \"y\" }");
+        using var window = Open(keys: "{ \"quit\": \"z\" }");
 
-        Assert.Equal(new Key('y'), Application.GetDefaultKey(Command.Quit));
+        Assert.Equal(new Key('z'), Application.GetDefaultKey(Command.Quit));
     }
 
     [Fact]
@@ -779,7 +779,7 @@ public class DashboardWindowTests : IDisposable
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
-                "Select the card above", "Open", "Set priority", "Try", "Open on GitHub", "Open team's board on GitHub",
+                "Select the card above", "Open", "Set priority", "Try", "Copy branch name", "Open on GitHub", "Open team's board on GitHub",
                 "Write the vision with me", "Review the vision", "Approve the pitch you're reading", "Accept",
                 "Comment on the item you're reading", "Edit the document pitch you're reading", "Decline",
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read what's waiting again",
@@ -829,10 +829,10 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void A_key_the_file_names_runs_that_command_and_the_one_in_the_source_no_longer_does()
     {
-        using var window = Open(keys: "{ \"log.toolCalls\": \"y\" }");
+        using var window = Open(keys: "{ \"log.toolCalls\": \"z\" }");
         window.NewKeyDownEvent(Key.Tab);
 
-        Assert.True(window.NewKeyDownEvent(new Key('y')));
+        Assert.True(window.NewKeyDownEvent(new Key('z')));
         Assert.False(window.NewKeyDownEvent(new Key('t')));
 
         Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));
@@ -1944,7 +1944,7 @@ public class DashboardWindowTests : IDisposable
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
             _ => Task.FromResult(new Reading("{}", null)),
             openUrl ?? (_ => { }),
-            (_, _, _, _, _, _, _, _, _) => null,
+            (_, _, _, _, _, _, _, _, _, _) => null,
             area,
             auto,
             handOver,

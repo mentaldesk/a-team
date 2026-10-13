@@ -129,10 +129,10 @@ public class KeysSheetTests : IDisposable
     public void A_rebound_key_shows_as_it_is_bound()
     {
         Directory.CreateDirectory(Config);
-        new DashboardSettings(Config).WriteKeys([("work.mine", new Key('y'))]);
+        new DashboardSettings(Config).WriteKeys([("work.mine", new Key('z'))]);
         using var window = Open(Area.Work);
 
-        Assert.Contains(("y", "Show only what's your move"), Rows(window.Keys.Here!));
+        Assert.Contains(("z", "Show only what's your move"), Rows(window.Keys.Here!));
     }
 
     [Fact]
@@ -220,7 +220,7 @@ public class KeysSheetTests : IDisposable
             _ => Task.FromResult(new Reading("[]", null)),
             _ => Task.FromResult(new Reading("{}", null)),
             _ => { },
-            (_, _, _, _, _, _, _, _, _) => null,
+            (_, _, _, _, _, _, _, _, _, _) => null,
             area,
             IconStyle.Unicode);
     }

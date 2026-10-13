@@ -79,6 +79,10 @@ A card reads as the issue's number, then its title:
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
+- **Its branch.** Selecting a card with a PR (a task, the docs PR or a document pitch) ends the
+  status bar line with the PR and its branch, like `PR #459 · feat/path-pickers`, and the reader
+  heads its body with them and the base, like `PR #459 · feat/path-pickers → main`. `y` (**Cards →
+  Copy branch name**) copies the branch, on the card or in the reader.
 - **Its review.** With the [Reviewer](how-a-team-works.md#the-reviewer) on, a task whose PR it has
   reviewed says `reviewed` after its number, and how many points it left for you to consider, like
   `#412  reviewed · 1 to consider · ...`.

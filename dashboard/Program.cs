@@ -103,8 +103,8 @@ Handover? Show(Handover? back)
         team => command.Read("board", team, "waiting"),
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
-        (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, rank) =>
-            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes, edit),
+        (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, copyBranch, rank) =>
+            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes, edit, copyBranch),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>

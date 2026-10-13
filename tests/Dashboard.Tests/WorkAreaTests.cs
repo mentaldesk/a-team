@@ -2909,7 +2909,7 @@ public class WorkAreaTests : IDisposable
             [
                 "view.dashboard", "view.work", "view.overseer", "work.whatsNew", "overseer.details", "overseer.fold", "overseer.github",
                 "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.github", "work.accept", "work.decline", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
+                "work.copyBranch", "work.github", "work.accept", "work.decline", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
@@ -2935,6 +2935,77 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(Area.Work, window.CurrentArea);
     }
 
+
+    private static string Branched() => Review().Replace("\"base\": \"main\"", "\"base\": \"main\", \"branch\": \"feat/keys\"");
+
+    [Fact]
+    public void work_copyBranch_is_on_y_and_acts_on_the_card()
+    {
+        using var window = Open();
+
+        var command = window.Commands.Registered.Single(registered => registered.Id == "work.copyBranch");
+
+        Assert.Equal(new Key('y'), command.Key);
+        Assert.True(command.OnCard);
+        Assert.Equal("Copy branch name", command.Label);
+    }
+
+    [Fact]
+    public void work_copyBranch_is_disabled_on_a_card_with_no_PR()
+    {
+        using var window = Open();
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(6, window.Work.Selected?.Number);
+        Assert.False(window.Commands.IsEnabled("work.copyBranch"));
+    }
+
+    [Fact]
+    public void Y_copies_the_selected_card_s_branch_and_the_status_bar_says_so()
+    {
+        var clipboard = new FakeClipboard();
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
+            clipboard: clipboard);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal("#49 · awaiting your acceptance since 10:15 · PR #122 · feat/keys", window.Work.Selected?.Line);
+        Assert.True(window.Commands.IsEnabled("work.copyBranch"));
+
+        window.NewKeyDownEvent(new Key('y'));
+
+        Assert.Equal("feat/keys", clipboard.GetClipboardData());
+        Assert.Equal("Copied feat/keys", window.Message.Says);
+    }
+
+    [Fact]
+    public void Y_without_a_clipboard_says_why_it_couldn_t_copy()
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
+            clipboard: new FakeClipboard(isSupportedAlwaysFalse: true));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('y'));
+
+        Assert.Equal("there's no clipboard to copy to", window.Message.Says);
+    }
+
+    [Fact]
+    public void The_reader_heads_a_PR_s_body_with_its_branch_and_base()
+    {
+        IssueBody? shown = null;
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, body, _, _, _, _, _) => shown = body);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal("PR #122 · feat/keys → main\n\n## Opportunity", shown?.Text);
+    }
 
     [Fact]
     public void work_try_is_on_t_and_acts_on_the_card()
@@ -3292,7 +3363,7 @@ public class WorkAreaTests : IDisposable
     public void Try_can_be_rebound_and_the_card_and_the_reader_share_the_new_key()
     {
         Directory.CreateDirectory(_root);
-        new DashboardSettings(Config).WriteKeys([("work.try", new Key('y'))]);
+        new DashboardSettings(Config).WriteKeys([("work.try", new Key('z'))]);
         var handed = new List<Handover>();
         ReaderTry? offered = null;
         using var window = Open(
@@ -3301,10 +3372,10 @@ public class WorkAreaTests : IDisposable
             showBody: (_, _, _, _, _, _, tryIt) => offered = tryIt);
         OpenTheTaskInReview(window);
 
-        Assert.Equal(new Key('y'), offered?.Key);
+        Assert.Equal(new Key('z'), offered?.Key);
         Assert.Empty(handed);
 
-        Assert.True(window.NewKeyDownEvent(new Key('y')));
+        Assert.True(window.NewKeyDownEvent(new Key('z')));
 
         Assert.Equal(["try", "team0", "122"], Assert.Single(handed).Arguments);
     }
@@ -3701,7 +3772,8 @@ public class WorkAreaTests : IDisposable
         Attention? attention = null,
         Action<ReaderEdit?>? showEdit = null,
         Func<WaitingItem, Task<Reading>>? readDocument = null,
-        Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null)
+        Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
+        IClipboard? clipboard = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -3713,7 +3785,7 @@ public class WorkAreaTests : IDisposable
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
-            (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, rank) =>
+            (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, _, rank) =>
             {
                 showBody?.Invoke(item, body, onGitHub, onApprove, accept, comment, tryIt);
                 showEdit?.Invoke(edit);
@@ -3732,7 +3804,8 @@ public class WorkAreaTests : IDisposable
             newIdea: newIdea,
             attention: attention,
             readDocument: readDocument,
-            confirmQuit: confirmQuit);
+            confirmQuit: confirmQuit,
+            clipboard: clipboard);
     }
 
     private void WriteRun(string team, string role, int pid)

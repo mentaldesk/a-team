@@ -1205,6 +1205,49 @@ public class ReaderDialogTests
         Assert.Equal("there's no clipboard to copy to", dialog.Message.Says);
     }
 
+    private static ReaderDialog CopyingBranch(FakeClipboard clipboard, string branch)
+    {
+        var dialog = new ReaderDialog(Item with { Pr = 459, Branch = branch }, new IssueBody("text"), () => { },
+            clipboard: clipboard, copyBranch: new Key('y'));
+        dialog.Layout(new Size(120, 20));
+        return dialog;
+    }
+
+    [Fact]
+    public void Y_copies_the_PR_s_branch_name()
+    {
+        var clipboard = new FakeClipboard();
+        using var dialog = CopyingBranch(clipboard, "feat/path-pickers");
+
+        Assert.Contains("y copy branch", dialog.Hints.Says);
+        Assert.True(dialog.NewKeyDownEvent(new Key('y')));
+
+        Assert.Equal("feat/path-pickers", clipboard.GetClipboardData());
+        Assert.Equal("Copied feat/path-pickers", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Y_without_a_clipboard_says_so()
+    {
+        using var dialog = CopyingBranch(new FakeClipboard(isSupportedAlwaysFalse: true), "feat/path-pickers");
+
+        dialog.NewKeyDownEvent(new Key('y'));
+
+        Assert.Equal("there's no clipboard to copy to", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Y_copies_nothing_where_there_s_no_branch()
+    {
+        var clipboard = new FakeClipboard();
+        using var dialog = CopyingBranch(clipboard, "");
+
+        Assert.DoesNotContain("copy branch", dialog.Hints.Says);
+        dialog.NewKeyDownEvent(new Key('y'));
+
+        Assert.Equal("", clipboard.GetClipboardData() ?? "");
+    }
+
     [Theory]
     [InlineData("x", "copied 1 character")]
     [InlineData("ab\nc", "copied 4 characters")]
@@ -1587,6 +1630,17 @@ public class ReaderDialogTests
         Assert.Equal(body.Remarks[1].Line, dialog.Body.TopLine);
         Assert.Equal(body.Remarks[1].Line, dialog.Body.Caret?.Line);
         Assert.Equal([false, true, true], body.Remarks.Select(said => dialog.Body.Lines[said.Line].Text.EndsWith(" · new ─────")));
+    }
+
+    [Fact]
+    public void A_PR_line_heads_the_body_and_a_card_still_opens_at_its_first_new_remark()
+    {
+        var body = Told(Then.AddMinutes(5)).Headed("PR #459 · feat/path-pickers → main");
+        using var dialog = Telling(body);
+
+        Assert.Equal("PR #459 · feat/path-pickers → main", dialog.Body.Lines[0].Text);
+        Assert.Equal(body.Remarks[1].Line, dialog.Body.TopLine);
+        Assert.EndsWith(" · new ─────", dialog.Body.Lines[body.Remarks[1].Line].Text);
     }
 
     [Fact]

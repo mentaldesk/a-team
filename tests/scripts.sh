@@ -378,7 +378,7 @@ gh_talk() {
              end))}};
     def open_pr($rows; $number): node($rows; $number)
       + {url: "https://github.com/mentaldesk/demo/pull/\($number)", isDraft: ($draft == "true"),
-         mergeable: $mergeable, baseRefName: "main", headRefOid: "deadbee"};
+         mergeable: $mergeable, baseRefName: "main", headRefName: "feat/task-\($number - 900)", headRefOid: "deadbee"};
     split("\n") | map(select(length > 0)) | map(split(" ") as $f
       | {n: ($f[0] | tonumber), kind: ($f[1] | rtrimstr("+seen")), at: $f[2], author: $f[3],
          body: ($f[4:] | join(" ") | split("\\n") | join("\n")),
@@ -594,11 +594,12 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "pitch fields" '["number","pitch","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "task fields" \
-  '["base","checks","conflicting","draft","number","pitch","pr","prUrl","priority","reason","status","team","title","turn","unready","url"]' \
+  '["base","branch","checks","conflicting","draft","number","pitch","pr","prUrl","priority","reason","status","team","title","turn","unready","url"]' \
   "$(jq -c '.[1] | keys' "$OUT")"
 same "pitch flags" '[true,false]' "$(jq -c '[.[].pitch]' "$OUT")"
 same "pr" 1015 "$(jq -c '.[1].pr' "$OUT")"
 same "prUrl" '"https://github.com/mentaldesk/demo/pull/1015"' "$(jq -c '.[1].prUrl' "$OUT")"
+same "branch" '"feat/task-115"' "$(jq -c '.[1].branch' "$OUT")"
 
 case_ "a green, mergeable, ready PR with nothing unanswered stays the reviewer's"
 same "checks" '"pass"' "$(jq -c '.[1].checks' "$OUT")"
@@ -3509,6 +3510,19 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "document" '{"number":60,"document":true,"pitch":false,"question":"## Needs your answer\n\n- Move fewer decisions up?"}' \
   "$(jq -c '.[] | select(.number == 60) | {number, document, pitch, question}' "$OUT")"
+
+case_ "waiting gives a document pitch its own branch and base"
+document_pitch 60
+gh_talk <<TALK
+60 body ${TODAY}T08:14:00Z demo-app[bot] Themes ran dry.\n<!-- a-team:lead -->
+TALK
+jq '.data.repository.x60 += {url: "https://github.com/mentaldesk/demo/pull/60", isDraft: false, mergeable: "MERGEABLE",
+      baseRefName: "main", headRefName: "a-team/vision"} | del(.data.repository.x60.closedByPullRequestsReferences)' \
+  "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "document" '{"number":60,"pr":null,"branch":"a-team/vision","base":"main"}' \
+  "$(jq -c '.[] | select(.number == 60) | {number, pr, branch, base}' "$OUT")"
 
 case_ "a document pitch stays in Pitched whatever the limit: no draft displaces it"
 vision_team
