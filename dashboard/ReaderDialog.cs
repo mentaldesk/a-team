@@ -33,6 +33,13 @@ public sealed record ReaderTry(Key Key, Action<IssueBody, int> Run, int? Top = n
 public sealed record ReaderEdit(
     Key Key, Action<IssueBody, int> Run, string? Uneditable = null, int? Top = null, string? Said = null, string? Failure = null);
 
+/// <summary>Filing a new idea from what you're reading: File opens New idea with the Description given, and says what
+/// it added, or null where nothing was. The reader sets <see cref="Start"/> to its own, for Commands to run.</summary>
+public sealed record ReaderIdea(Key Key, Func<string, string?> File)
+{
+    public Action? Start { get; set; }
+}
+
 /// <summary>An item's body as it was written, and its History beside it, to read without leaving the board.</summary>
 public sealed partial class ReaderDialog : Dialog
 {
@@ -44,6 +51,7 @@ public sealed partial class ReaderDialog : Dialog
     private const string SelectHint = "select";
     private const string CopyHint = "copy";
     private const string QuoteHint = "quote";
+    private const string IdeaHint = "idea";
     private const string TryHint = "try";
     private const string EditHint = "edit";
     private const string ApproveHint = "approve";
@@ -67,6 +75,9 @@ public sealed partial class ReaderDialog : Dialog
     private readonly ReaderComment? _comment;
     private readonly ReaderTry? _try;
     private readonly ReaderEdit? _edit;
+    private readonly ReaderIdea? _idea;
+    private readonly Func<Key, bool> _window;
+    private readonly string _url;
     private readonly Func<bool> _confirmDiscard;
     private readonly IClipboard? _clipboard;
     private readonly Key _copyBranch;
@@ -100,12 +111,19 @@ public sealed partial class ReaderDialog : Dialog
     /// both opens without it.</param>
     /// <param name="confirmDiscard">Asked before closing on a comment that hasn't been posted.</param>
     /// <param name="copyBranch">The key that copies the PR's branch name, where the item has one.</param>
+    /// <param name="idea">Filing a new idea that links back here; null where there's nowhere to file one.</param>
+    /// <param name="window">The window's own keys that work here too, run where the reader leaves a key alone.</param>
     public ReaderDialog(
         WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0,
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
-        Key? copyBranch = null)
+        Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null)
     {
+        _idea = idea;
+        if (idea is not null)
+            idea.Start = () => Run(IdeaHint);
+        _window = window ?? (_ => false);
+        _url = item.Url;
         _clipboard = clipboard;
         _branch = item.Branch;
         _copyBranch = item.Branch.Length > 0 ? copyBranch ?? Key.Empty : Key.Empty;
@@ -303,17 +321,18 @@ public sealed partial class ReaderDialog : Dialog
         var handled = _field.HasFocus ? Commenting(key) : Reading(key);
         if (handled)
             ShowHints();
-        return handled || base.OnKeyDown(key);
+        return handled || base.OnKeyDown(key) || _window(key);
     }
 
     /// <returns>The rank Enter set on the row of ranks, or null.</returns>
     public static Rank? Show(
         IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
         ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes, ReaderEdit? edit = null,
-        Key? copyBranch = null)
+        Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null)
     {
         using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment, tryIt, panes,
-            app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit, copyBranch: copyBranch);
+            app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit, copyBranch: copyBranch, idea: idea,
+            window: window);
         app.Run(dialog);
         return dialog.Chosen;
     }
@@ -354,6 +373,17 @@ public sealed partial class ReaderDialog : Dialog
     internal static string Quote(IEnumerable<string> lines, bool midLine) =>
         (midLine ? "\n" : "") + string.Join('\n', lines.Select(line => line.Length == 0 ? ">" : $"> {line}")) + "\n\n";
 
+    /// <summary>A new idea's Description: the lines quoted, then a link to the remark the first came from, or to the
+    /// item where they're from its body or nothing is selected.</summary>
+    internal static string IdeaFrom(IssueBody body, string url, IReadOnlyList<string> lines, int? from)
+    {
+        var said = from is { } line ? body.Remarks.LastOrDefault(said => said.Line <= line) : null;
+        var link = said is not null && from <= said.Line + 2 + said.Remark.Body.Count(c => c == '\n')
+            ? said.Remark.Url ?? url
+            : url;
+        return (lines.Count == 0 ? "" : Quote(lines, midLine: false)) + $"From {link}";
+    }
+
     private bool Commenting(Key key) =>
         key == Key.Esc ? Unfocus()
         : key == Key.Enter.WithCtrl ? Post()
@@ -384,6 +414,9 @@ public sealed partial class ReaderDialog : Dialog
             return Copy();
         if (_comment is not null && key == new Key('q') && FocusedPane().Marked > 0)
             return Quote();
+        // n is None's hotkey on the row of ranks.
+        if (_idea is not null && _ranks is null && key == _idea.Key)
+            return NewIdea();
         if (_copyBranch != Key.Empty && key == _copyBranch)
             return CopyBranch();
         if (key == new Key('g'))
@@ -419,9 +452,9 @@ public sealed partial class ReaderDialog : Dialog
                 : [new HintedCommand(HistoryHint, HistoryShown ? "h hide history" : "h show history")],
             .. _ranks is null && !reading ? [new HintedCommand(SelectHint, "Shift+arrows select")] : Array.Empty<HintedCommand>(),
             .. reading ? [new HintedCommand(CopyHint, "Ctrl+C copy")] : Array.Empty<HintedCommand>(),
-            .. reading && _comment is not null
-                ? [new HintedCommand(QuoteHint, $"q quote {marked} {(marked == 1 ? "line" : "lines")}")]
-                : Array.Empty<HintedCommand>(),
+            .. reading && _comment is not null ? [new HintedCommand(QuoteHint, $"q quote {Lines(marked)}")] : Array.Empty<HintedCommand>(),
+            .. _idea is null || _ranks is not null || _field.HasFocus ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(IdeaHint, $"{KeyNames.Short(_idea.Key)} {(Quoted() > 0 ? $"idea from {Lines(Quoted())}" : "new idea")}")],
             .. _ranks is null ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(RankHint, "←/→ rank"), new HintedCommand(SetHint, "Enter set")],
             .. _try is null ? Array.Empty<HintedCommand>() : [new HintedCommand(TryHint, $"{KeyNames.Short(_try.Key)} try")],
@@ -442,6 +475,11 @@ public sealed partial class ReaderDialog : Dialog
                 _field.HasFocus ? _declining ? "Esc cancel" : "Esc back" : marked > 0 ? "Esc clear" : "Esc close"),
         ], Run);
     }
+
+    private static string Lines(int count) => $"{count} {(count == 1 ? "line" : "lines")}";
+
+    /// <summary>How many of the Body's lines a new idea quotes: none while History has the keyboard.</summary>
+    private int Quoted() => FocusedPane() == _body ? _body.Marked : 0;
 
     private void ShowCarets()
     {
@@ -632,6 +670,19 @@ public sealed partial class ReaderDialog : Dialog
             if (line.Length > 0)
                 _field.InsertText(line);
         }
+    }
+
+    /// <summary>The reader stays open underneath, and says what was added.</summary>
+    private bool NewIdea()
+    {
+        var quoted = Quoted() > 0;
+        var description = IdeaFrom(_text, _url, quoted ? _body.MarkedText() : [], quoted ? _body.MarkedFrom : null);
+        if (_idea!.File(description) is not { } added)
+            return true;
+        _body.Unmark();
+        _message.Show(added, Schemes.Accent);
+        SetNeedsLayout();
+        return true;
     }
 
     private bool OnGitHub()
@@ -826,6 +877,7 @@ public sealed partial class ReaderDialog : Dialog
             SelectHint => MoveCaret(CaretMove.Down, extend: true),
             CopyHint => Copy(),
             QuoteHint => Quote(),
+            IdeaHint => NewIdea(),
             TryHint => Try(),
             EditHint => Edit(),
             ApproveHint => Approve(),

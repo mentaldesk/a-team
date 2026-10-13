@@ -381,6 +381,9 @@ public sealed class LogView : View
         return (row.Line, row.Start + column);
     }
 
+    /// <summary>The line the selection starts on, or null where nothing is selected.</summary>
+    public int? MarkedFrom => Selected()?.Start.Line;
+
     /// <summary>How many lines the selection quotes, if any.</summary>
     public int Marked => MarkedText().Count;
 
