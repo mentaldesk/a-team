@@ -157,7 +157,8 @@ History to give the body the full width, and shows it again; it stays as you lef
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.
 
 **Copy from it.** The body and History each have a cursor. Move it with the arrows, `Home`, `End`,
-`PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end), and hold `Shift` to select,
+`PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end, `Option+←`/`→` or
+`Ctrl+←`/`→` for a word), and hold `Shift` to select,
 as in any editor. You can also drag with the mouse, or double-click a word, like an issue number or
 a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
 

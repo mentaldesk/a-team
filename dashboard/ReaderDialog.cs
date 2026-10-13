@@ -553,6 +553,8 @@ public sealed partial class ReaderDialog : Dialog
         var bare = key.NoShift;
         return bare == Key.CursorLeft ? CaretMove.Left
             : bare == Key.CursorRight ? CaretMove.Right
+            : bare == Key.CursorLeft.WithCtrl || bare == Key.CursorLeft.WithAlt || bare == Key.B.WithAlt ? CaretMove.WordLeft
+            : bare == Key.CursorRight.WithCtrl || bare == Key.CursorRight.WithAlt || bare == Key.F.WithAlt ? CaretMove.WordRight
             : bare == Key.CursorUp ? CaretMove.Up
             : bare == Key.CursorDown ? CaretMove.Down
             : bare == Key.PageUp ? CaretMove.PageUp

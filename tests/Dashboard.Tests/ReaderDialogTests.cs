@@ -275,6 +275,26 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void Ctrl_and_Option_arrows_move_the_body_cursor_a_word_and_select_with_Shift()
+    {
+        using var dialog = Open(Long(), height: 10);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.CursorRight.WithCtrl));
+        Assert.Equal((0, 5), dialog.Body.Caret);
+        Assert.True(dialog.NewKeyDownEvent(Key.F.WithAlt));
+        Assert.Equal((0, 6), dialog.Body.Caret);
+        Assert.True(dialog.NewKeyDownEvent(Key.CursorRight.WithAlt));
+        Assert.Equal((1, 0), dialog.Body.Caret);
+        Assert.True(dialog.NewKeyDownEvent(Key.CursorLeft.WithAlt));
+        Assert.Equal((0, 5), dialog.Body.Caret);
+        Assert.True(dialog.NewKeyDownEvent(Key.B.WithAlt));
+        Assert.Equal((0, 0), dialog.Body.Caret);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.CursorRight.WithCtrl.WithShift));
+        Assert.Equal(["line "], dialog.Body.MarkedText());
+    }
+
+    [Fact]
     public void g_opens_the_item_on_GitHub()
     {
         var opened = 0;
