@@ -148,7 +148,7 @@ public sealed class OverseerView : View
     {
         var elapsed = Elapsed;
         var steps = string.Join(' ', _state.Busy.Values.SelectMany(roles => roles).Concat(_state.Worked.Values).Distinct()
-            .Select(role => RoleAnimation.For(role)?.Step(elapsed)));
+            .Select(role => RoleAnimation.For(role).Step(elapsed)));
         if (steps == _steps)
             return;
         _steps = steps;
@@ -209,17 +209,14 @@ public sealed class OverseerView : View
     internal bool CanFold => _board.Selected is { } place && _board.Unfolded(place.Team);
 
     /// <summary>A lane's title: the team, its busy roles or <c>idle</c>, and how many of its cards are past their limit.
-    /// A busy role with an animation keeps a cell after its name, which the lane paints its header frame into.</summary>
+    /// Each busy role keeps a cell after its name, which the lane paints its header frame into.</summary>
     internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over)
     {
         var title = team;
         List<HeaderSlot> slots = [];
         foreach (var role in busy)
         {
-            title += Separator + RoleName(role);
-            if (RoleAnimation.For(role) is null)
-                continue;
-            title += " ";
+            title += Separator + RoleName(role) + " ";
             slots.Add(new(title.GetColumns(), role));
             title += " ";
         }
@@ -397,15 +394,15 @@ public sealed class OverseerView : View
 
     /// <summary>The colour a cell of a role's animation is drawn in, on <paramref name="under"/>'s background.</summary>
     internal static Attribute ToneAttribute(RoleAnimation animation, Tone tone, Attribute under) =>
-        under with { Foreground = animation.Colour(tone, under.Background.IsDarkColor()) };
+        under with { Foreground = animation.Colour(tone, under) };
 
     /// <summary>Paints <paramref name="frame"/> from where <paramref name="view"/> last moved to, a colour per cell.</summary>
-    private static void PaintFrame(View view, RoleAnimation animation, AnimationFrame frame, Attribute under)
+    private static void PaintFrame(View view, RoleAnimation animation, AnimationFrame frame, Attribute under, IconStyle style)
     {
         for (var cell = 0; cell < frame.Text.Length; cell++)
         {
             view.SetAttribute(ToneAttribute(animation, frame.ToneAt(cell), under));
-            view.AddStr(frame.Text[cell].ToString());
+            view.AddStr(frame.Glyph(cell, style));
         }
     }
 
@@ -421,11 +418,12 @@ public sealed class OverseerView : View
             var under = GetAttributeForRole(VisualRole.Normal);
             foreach (var slot in Slots)
             {
-                if (slot.Column >= shown || RoleAnimation.For(slot.Role) is not { } animation)
+                if (slot.Column >= shown)
                     continue;
+                var animation = RoleAnimation.For(slot.Role);
                 // The border draws the title two cells in from the frame's left edge, on the row above the viewport.
                 Move(1 + slot.Column, -1);
-                PaintFrame(this, animation, animation.Header(overseer.Elapsed, index), under);
+                PaintFrame(this, animation, animation.Header(overseer.Elapsed, index), under, overseer._icons);
             }
         }
     }
@@ -465,7 +463,7 @@ public sealed class OverseerView : View
                         if (animation is not null && frame is { } playing)
                         {
                             Move(column * width + text[..^age].GetColumns(), row);
-                            PaintFrame(this, animation, playing, under);
+                            PaintFrame(this, animation, playing, under, overseer._icons);
                         }
                     }
                 }

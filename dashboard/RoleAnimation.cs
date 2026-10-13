@@ -1,4 +1,5 @@
 using Terminal.Gui.Drawing;
+using Attribute = Terminal.Gui.Drawing.Attribute;
 using Color = Terminal.Gui.Drawing.Color;
 
 namespace ATeam.Dashboard;
@@ -15,10 +16,15 @@ public enum Tone
 public readonly record struct AnimationFrame(string Text, string Tones)
 {
     public Tone ToneAt(int cell) => (Tone)(Tones[cell] - '0');
+
+    /// <summary>The glyph a cell is drawn as: the Magnifier's lens is <c>nf-md-magnify</c> where a Nerd Font is in effect.</summary>
+    public string Glyph(int cell, IconStyle style) =>
+        Text[cell] == RoleAnimation.Lens && style == IconStyle.NerdFont ? RoleAnimation.NerdLens : Text[cell].ToString();
 }
 
 /// <summary>A role's animation in Overseer: three cells in a card's age slot while a run is on it, and one beside the
-/// role's name in its lane's title while it's busy. Each frame lasts <see cref="Every"/>.</summary>
+/// role's name in its lane's title while it's busy. Each frame lasts <see cref="Every"/>. One with no palette is drawn
+/// dim in the theme's own colour.</summary>
 public sealed class RoleAnimation
 {
     private readonly Func<int, int, IReadOnlyList<AnimationFrame>> _chip;
@@ -26,7 +32,7 @@ public sealed class RoleAnimation
 
     private RoleAnimation(
         string name, TimeSpan every, Func<int, int, IReadOnlyList<AnimationFrame>> chip,
-        Func<int, int, IReadOnlyList<AnimationFrame>> header, TonePalette dark, TonePalette light)
+        Func<int, int, IReadOnlyList<AnimationFrame>> header, TonePalette? dark, TonePalette? light)
     {
         Name = name;
         Every = every;
@@ -40,9 +46,9 @@ public sealed class RoleAnimation
 
     public TimeSpan Every { get; }
 
-    internal TonePalette Dark { get; }
+    internal TonePalette? Dark { get; }
 
-    internal TonePalette Light { get; }
+    internal TonePalette? Light { get; }
 
     public const int ChipCells = 3;
 
@@ -59,7 +65,10 @@ public sealed class RoleAnimation
     /// <summary>Which frame is showing; it changes exactly when the drawing does.</summary>
     public long Step(TimeSpan elapsed) => elapsed.Ticks / Every.Ticks;
 
-    public Color Colour(Tone tone, bool dark) => (dark ? Dark : Light)[(int)tone];
+    public Color Colour(Tone tone, Attribute under) =>
+        (under.Background.IsDarkColor() ? Dark : Light)?[(int)tone] ?? Midway(under.Foreground, under.Background);
+
+    private static Color Midway(Color from, Color to) => new((from.R + to.R) / 2, (from.G + to.G) / 2, (from.B + to.B) / 2);
 
     private AnimationFrame At(Func<int, int, IReadOnlyList<AnimationFrame>> frames, TimeSpan elapsed, int salt)
     {
@@ -69,13 +78,18 @@ public sealed class RoleAnimation
         return run[(int)(step % count)];
     }
 
-    public static RoleAnimation? For(string role) => role switch
+    public static RoleAnimation For(string role) => role switch
     {
         "dev" => Decrypt,
         "lead" => ThoughtToIdea,
         "customer" => Typing,
-        _ => null,
+        "reviewer" => Magnifier,
+        _ => Spinner,
     };
+
+    internal const char Lens = '⌕';
+
+    internal const string NerdLens = "\U000F0349"; // nf-md-magnify
 
     private static readonly AnimationFrame[] ThoughtChip =
     [
@@ -101,6 +115,27 @@ public sealed class RoleAnimation
         new("⣤", "0"), new("⠶", "1"), new("⠛", "2"), new("⠶", "1"), new("⣤", "0"), new("⣤", "0"), new("⣤", "0"), new("⣤", "0"),
     ];
 
+    private static readonly AnimationFrame[] MagnifierChip =
+    [
+        new("⌕-+", "200"), new("⌕-+", "200"), new("⌕-+", "200"), new("+⌕+", "020"), new("+⌕+", "020"), new("+⌕+", "020"),
+        new("+-⌕", "002"), new("+-⌕", "002"), new("+-⌕", "002"), new("-+⌕", "002"), new("-+⌕", "002"), new("-+⌕", "002"),
+        new("-⌕-", "020"), new("-⌕-", "020"), new("-⌕-", "020"), new("⌕+-", "200"), new("⌕+-", "200"), new("⌕+-", "200"),
+        new("⌕+-", "200"), new("⌕+-", "200"), new("⌕+-", "200"), new("+⌕-", "020"), new("+⌕-", "020"), new("+⌕-", "020"),
+        new("++⌕", "002"), new("++⌕", "002"), new("++⌕", "002"), new("-+⌕", "002"), new("-+⌕", "002"), new("-+⌕", "002"),
+        new("-⌕+", "020"), new("-⌕+", "020"), new("-⌕+", "020"), new("⌕++", "200"), new("⌕++", "200"), new("⌕++", "200"),
+    ];
+
+    private static readonly AnimationFrame[] MagnifierHeader =
+    [
+        new("⌕", "2"), new("⌕", "2"), new("⌕", "2"), new("+", "0"), new("⌕", "2"), new("⌕", "2"), new("⌕", "2"), new("-", "0"),
+    ];
+
+    internal const string SpinnerGlyphs = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+
+    private static readonly AnimationFrame[] SpinnerChip = [.. SpinnerGlyphs.Select(glyph => new AnimationFrame($"  {glyph}", "000"))];
+
+    private static readonly AnimationFrame[] SpinnerHeader = [.. SpinnerGlyphs.Select(glyph => new AnimationFrame($"{glyph}", "0"))];
+
     public static readonly RoleAnimation Decrypt = new(
         "Decrypt", TimeSpan.FromMilliseconds(140), DecryptChip, DecryptHeader,
         new("#2f7d48", "#4fd27a", "#e6ffec"), new("#8dc4a0", "#23864a", "#0b4a22"));
@@ -112,6 +147,13 @@ public sealed class RoleAnimation
     public static readonly RoleAnimation Typing = new(
         "Typing", TimeSpan.FromMilliseconds(220), (_, _) => TypingChip, (_, _) => TypingHeader,
         new("#2b6789", "#5cb9ea", "#e2f5ff"), new("#8fb6cf", "#1f76a8", "#0b3d5c"));
+
+    public static readonly RoleAnimation Magnifier = new(
+        "Magnifier", TimeSpan.FromMilliseconds(240), (_, _) => MagnifierChip, (_, _) => MagnifierHeader,
+        new("#6b5299", "#b691f2", "#f1e8ff"), new("#b9a6d9", "#7a4fc4", "#3d2170"));
+
+    public static readonly RoleAnimation Spinner = new(
+        "Spinner", TimeSpan.FromMilliseconds(80), (_, _) => SpinnerChip, (_, _) => SpinnerHeader, null, null);
 
     internal static readonly string[] Words = ["</>", "{;}", "f()", "0x1"];
 

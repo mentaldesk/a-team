@@ -34,11 +34,15 @@ its role's animation in place of its age:
 | Dev | Decrypt: scrambled symbols lock into `</>`, `{;}`, `f()` or `0x1` | `ｱ#ﾘ` `</ｶ` `</>` in green |
 | Lead | Thought to idea: thought bubbles rise and burst into a spark | `.oO` `  ✺` `. ✧` in amber |
 | Customer lead | Typing: three dots bounce like someone typing | `⠶⠛⣤` `⣤⣤⣤` in blue |
+| Reviewer | Magnifier: a lens works along one line of a diff, then back along the next | `⌕-+` `+⌕+` `+-⌕` in violet |
 
-A Lead run started for one card (feedback on it, or the Idea it's pitching) and a Customer lead run on
-its docs PR animate on that card. A run working across the whole board animates in the lane's title
-only. Within a column, the card that has waited longest is first. A column shows as many rows as
-fit with every lane on screen, and at least three, and puts the rest behind a count, as in `+7`.
+A role with no animation of its own plays a dim spinner, `⠋⠙⠹`, in the theme's colour.
+
+A Lead run started for one card (feedback on it, or the Idea it's pitching), a Customer lead run on
+its docs PR and a Reviewer run on a task's PR animate on that card. A run working across the whole
+board animates in the lane's title only. Within a column, the card that has waited longest is first.
+A column shows as many rows as fit with every lane on screen, and at least three, and puts the rest
+behind a count, as in `+7`.
 
 ## Moving around
 
