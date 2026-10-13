@@ -85,7 +85,9 @@ public class WhatsNewWindowTests : IDisposable
 
         Settle(window);
 
-        Assert.Contains(window.Keys.Everywhere.Groups.Single(group => group.Heading == "View").Rows,
+        var everywhere = window.Keys.Everywhere;
+        Assert.NotNull(everywhere);
+        Assert.Contains(everywhere.Groups.Single(group => group.Heading == "View").Rows,
             row => row is { Keys: "u", Label: "Go to what's new" });
     }
 

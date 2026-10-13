@@ -115,6 +115,7 @@ public class KeysSheetTests : IDisposable
         app.Begin(window);
 
         var everywhere = window.Keys.Everywhere;
+        Assert.NotNull(everywhere);
 
         Assert.Equal("Everywhere", everywhere.Heading);
         Assert.Equal(["View", "Help"], everywhere.Groups.Select(group => group.Heading));
