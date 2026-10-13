@@ -148,6 +148,16 @@ can change its key under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-
 The menus list everything, wherever you are. An item that can't run here is dimmed, with its key
 beside it, and does nothing. `q` quits the app.
 
+## The Guide
+
+**Help → Guide**, or **Guide** in Commands, opens these pages on the one for where you are. Beside
+the page, **Contents** lists every page with its sections under it, the one you're reading open and
+the section you're at selected. `↑`/`↓` move, `→`/`←` open and close a page, and `Enter` opens that
+page at that section. **Index** lists every section by name, its page under it: type to narrow it,
+so `pau` finds *Pausing a role* and *Pausing a team*, and `Enter` opens the one selected.
+`Ctrl+Shift+C` goes to Contents and `Ctrl+Shift+I` to Index from anywhere in the Guide. In a page,
+`Tab` moves to the next link, `Enter` follows it, `Backspace` goes back, and `Esc` closes the Guide.
+
 ## Confirming
 
 Accepting work, stopping a run, removing a team and throwing away something you've written all ask
