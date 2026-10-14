@@ -29,10 +29,11 @@ public sealed record ReaderShelve(Key Key, Func<int, string, Task<string?>> Run,
     public const int Weeks = 2;
 
     /// <summary>The day it comes back, as the board dates it.</summary>
-    public static DateOnly Until(DateTimeOffset now, int weeks) => DateOnly.FromDateTime(now.UtcDateTime.AddDays(7 * weeks));
+    public static DateOnly Until(DateTimeOffset now, int weeks, TimeZoneInfo? zone = null) =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone ?? TimeZoneInfo.Local).DateTime.AddDays(7 * weeks));
 
-    public static string BackOn(DateTimeOffset now, int weeks) =>
-        Until(now, weeks).ToString("d MMM", CultureInfo.InvariantCulture);
+    public static string BackOn(DateTimeOffset now, int weeks, TimeZoneInfo? zone = null) =>
+        Until(now, weeks, zone).ToString("d MMM", CultureInfo.InvariantCulture);
 }
 
 /// <summary>Trying from the reader: Run hands over what it shows and the row it's scrolled to. Reopened after the

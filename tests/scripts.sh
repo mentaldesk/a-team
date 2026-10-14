@@ -206,6 +206,7 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"-X POST"*"/issues/"*"/comments"*) cat >"$POSTED"; echo IC_posted; exit 0 ;;
   *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
   *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
                     echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;
@@ -1328,10 +1329,10 @@ case_ "the agents' settings deny decline"
 grep -qF '"Bash(a-team board * decline *)"' "$ROOT/settings/agents.json" || fail "no decline deny rule"
 
 # Not now: a Pitched pitch back to Idea, held back from the Lead until a date.
-weeks_on() { jq -rn --argjson w "$1" 'now + $w * 7 * 86400 | strftime("%Y-%m-%d")'; }
+weeks_on() { jq -rn --argjson w "$1" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")'; }
 back_on() { jq -rn --arg d "$(weeks_on "$1")" '$d | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0")'; }
 
-case_ "shelve posts your reason with the date, labels it, moves it to Idea and acks it, so no run answers it"
+case_ "shelve posts your reason with the date, labels it, moves it to Idea and acks only that, so no run answers it"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
@@ -1344,7 +1345,7 @@ Ready 10 A task
 ITEMS
 jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_thread <<THREAD
-comment $(ago 1) reviewer 0 Cost isn't what I'm watching yet.
+comment $(ago 1) reviewer 0 What would this cost to run?
 THREAD
 rm -f "$A_TEAM_STATE/history.db"
 printf "Cost isn't what I'm watching yet.\n" >"$WORK/reason"
@@ -1358,7 +1359,7 @@ Not now: back on $(back_on 3).
 <!-- a-team:shelved until=$(weeks_on 3) priority=High -->" "$(cat "$POSTED")"
 grep -q "issues/7/labels -f labels\[\]=a-team:shelved" "$WRITES" || fail "not labelled: '$(cat "$WRITES")'"
 grep -q "item=PVTI_7 .*option=OPT_idea " "$WRITES" || fail "not moved to Idea: '$(cat "$WRITES")'"
-same "acked" "IC_0" "$(cat "$ACKED")"
+same "acked" "IC_posted" "$(cat "$ACKED")"
 same "history" "you shelved until $(back_on 3)
 you Pitched → Idea" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 7 | jq -r '.events[] | "\(.who) \(.what)"')"
 

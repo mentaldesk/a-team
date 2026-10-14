@@ -593,7 +593,7 @@ cooling() {
   local shelf
   jq -e '.labels | index("a-team:shelved")' <<<"$1" >/dev/null || return 1
   shelf=$(shelved "$(jq -r .number <<<"$1")")
-  [ -n "$shelf" ] && jq -e --argjson idea "$1" --arg today "$(date -u +%F)" \
+  [ -n "$shelf" ] && jq -e --argjson idea "$1" --arg today "$(date +%F)" \
     '.until > $today and .priority == $idea.priority' <<<"$shelf" >/dev/null
 }
 
@@ -996,15 +996,20 @@ store_attachment() {
   done
 }
 
+# react <id> <what>: a 👀 on comment <id>.
+react() {
+  write "add 👀 to $2" gh api graphql -F subject="$1" -f query='
+    mutation($subject: ID!) {
+      addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
+}
+
 # ack <n>: a 👀 on every stakeholder comment on #n this run could have seen. One that arrived mid-run
 # is newer than A_TEAM_RUN_STARTED, so it stays unanswered and gets a run of its own. Unset means
 # now, which is right for a person running `comment` by hand, since they have just read the thread.
 ack() {
   local id at started=${A_TEAM_RUN_STARTED:-$(iso "$(date +%s)")}
   while IFS=$'\t' read -r id at; do
-    write "add 👀 to your comment of $at on #$1" gh api graphql -F subject="$id" -f query='
-      mutation($subject: ID!) {
-        addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
+    react "$id" "your comment of $at on #$1"
   done < <(comments "$1" | jq -r --argjson stakeholders "$STAKEHOLDERS" --arg started "$started" \
     --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID"'
     map(select(.at < $started))
@@ -1480,7 +1485,7 @@ case "$CMD" in
     if [ "$role" = lead ] && [ "$(unanswered_feedback lead "$n" | jq length)" -eq 0 ]; then
       die "lead may shelve #$n only when a stakeholder has asked (no unanswered stakeholder feedback on #$n)"
     fi
-    until=$(jq -rn --argjson w "$weeks" 'now + $w * 7 * 86400 | strftime("%Y-%m-%d")')
+    until=$(jq -rn --argjson w "$weeks" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")')
     back=$(jq -rn --arg d "$until" '$d | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0")')
     reason=$(cat "$file")
     body=$(
@@ -1489,10 +1494,11 @@ case "$CMD" in
       [ "$role" = you ] || printf '\n\n<!-- a-team:%s -->' "$role"
     )
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
+    posted=$(printf '%s\n' "$body" | write "comment on #$n" \
+      gh api -X POST "repos/$REPO/issues/$n/comments" -F body=@- --jq .node_id)
     if [ "$role" = you ]; then
       # Your Not now is read when the Lead next pitches it, not answered now.
-      A_TEAM_RUN_STARTED=$(iso $(($(date +%s) + 60))) ack "$n"
+      [ -z "$posted" ] || react "$posted" "your Not now on #$n"
     else
       ack "$n"
     fi

@@ -1789,15 +1789,18 @@ public class ReaderDialogTests
     }
 
     [Theory]
-    [InlineData(2, "2026-10-28", "28 Oct")]
-    [InlineData(3, "2026-11-04", "4 Nov")]
-    [InlineData(19, "2027-02-24", "24 Feb")]
-    public void The_weeks_give_the_day_it_comes_back(int weeks, string until, string backOn)
+    [InlineData(2, 0, "2026-10-28", "28 Oct")]
+    [InlineData(3, 0, "2026-11-04", "4 Nov")]
+    [InlineData(19, 0, "2027-02-24", "24 Feb")]
+    [InlineData(2, 13, "2026-10-29", "29 Oct")]
+    [InlineData(2, -5, "2026-10-28", "28 Oct")]
+    public void The_weeks_give_the_day_it_comes_back_on_the_local_calendar(int weeks, int offset, string until, string backOn)
     {
         var now = new DateTimeOffset(2026, 10, 14, 23, 30, 0, TimeSpan.Zero);
+        var zone = TimeZoneInfo.CreateCustomTimeZone("test", TimeSpan.FromHours(offset), "test", "test");
 
-        Assert.Equal(DateOnly.Parse(until, CultureInfo.InvariantCulture), ReaderShelve.Until(now, weeks));
-        Assert.Equal(backOn, ReaderShelve.BackOn(now, weeks));
+        Assert.Equal(DateOnly.Parse(until, CultureInfo.InvariantCulture), ReaderShelve.Until(now, weeks, zone));
+        Assert.Equal(backOn, ReaderShelve.BackOn(now, weeks, zone));
     }
 
     private sealed class Epoch : TimeProvider
