@@ -16,11 +16,25 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 /// wasn't.</summary>
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
-    Attaching? Attach = null);
+    ReaderShelve? Shelve = null, Attaching? Attach = null);
 
 /// <summary>Declining from the Comment pane: Run closes the item as not planned with the reason, with null once it's
 /// done or else why not. <paramref name="Open"/> opens the reader already declining.</summary>
 public sealed record ReaderDecline(Key Key, Func<string, Task<string?>> Run, bool Open = false);
+
+/// <summary>Saying Not now from the Comment pane: Run shelves the pitch for a number of weeks, with the reason if
+/// there is one, with null once it's done or else why not. <paramref name="Open"/> opens the reader already shelving.</summary>
+public sealed record ReaderShelve(Key Key, Func<int, string, Task<string?>> Run, bool Open = false)
+{
+    public const int Weeks = 2;
+
+    /// <summary>The day it comes back, as the board dates it.</summary>
+    public static DateOnly Until(DateTimeOffset now, int weeks, TimeZoneInfo? zone = null) =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone ?? TimeZoneInfo.Local).DateTime.AddDays(7 * weeks));
+
+    public static string BackOn(DateTimeOffset now, int weeks, TimeZoneInfo? zone = null) =>
+        Until(now, weeks, zone).ToString("d MMM", CultureInfo.InvariantCulture);
+}
 
 /// <summary>Trying from the reader: Run hands over what it shows and the row it's scrolled to. Reopened after the
 /// try, it opens at <paramref name="Top"/>, saying <paramref name="Failure"/> if it failed.</summary>
@@ -60,6 +74,7 @@ public sealed partial class ReaderDialog : Dialog
     private const string PasteHint = "paste";
     private const string AttachHint = "attach";
     private const string DeclineHint = "decline";
+    private const string NotNowHint = "notNow";
     private const string RankHint = "rank";
     private const string SetHint = "set";
     private const string BranchHint = "branch";
@@ -91,12 +106,15 @@ public sealed partial class ReaderDialog : Dialog
     private readonly FrameView _historyFrame;
     private readonly FrameView _commentFrame;
     private readonly MultiLineField _field;
+    private readonly View _weeksRow;
+    private readonly NumericUpDown<int> _weeks;
     private readonly ReaderPanes _panes;
     private readonly View? _band;
     private readonly OptionSelector<Rank>? _ranks;
     private LogView _scrolled;
     private Task<string?>? _posting;
     private bool _declining;
+    private bool _shelving;
     private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private readonly Attaching? _attaching;
@@ -158,6 +176,15 @@ public sealed partial class ReaderDialog : Dialog
             Height = Dim.Func(_ => PaneRows(), this),
             Visible = false,
         };
+        _weeks = new NumericUpDown<int> { Value = ReaderShelve.Weeks, X = 8, Width = 5, CanEdit = true };
+        _weeks.ValueChanging += (_, e) => e.Handled = e.NewValue < 1;
+        _weeks.KeyDown += (_, key) =>
+        {
+            if (key.Handled = Commenting(key))
+                ShowHints();
+        };
+        _weeksRow = new View { Width = Dim.Fill(), Height = 1, CanFocus = true, Visible = false };
+        _weeksRow.Add(new Label { Text = "Back in" }, _weeks, new Label { Text = "weeks", X = Pos.Right(_weeks) + 1 });
         _field = new MultiLineField { Width = Dim.Fill(), Height = Dim.Fill(), BorderStyle = LineStyle.None };
         // The field binds Enter itself, so the keys that leave it are caught before it sees them.
         _field.KeyDown += (_, key) =>
@@ -165,7 +192,7 @@ public sealed partial class ReaderDialog : Dialog
             if (key.Handled = Commenting(key))
                 ShowHints();
         };
-        _commentFrame.Add(_field);
+        _commentFrame.Add(_weeksRow, _field);
         if (comment?.Attach is { } attaching)
         {
             _attaching = attaching;
@@ -283,6 +310,11 @@ public sealed partial class ReaderDialog : Dialog
             Decline();
             ShowHints();
         }
+        else if (comment?.Shelve is { Open: true })
+        {
+            Shelve();
+            ShowHints();
+        }
     }
 
     /// <summary>The rank Enter set, or null where the reader closed any other way.</summary>
@@ -305,6 +337,15 @@ public sealed partial class ReaderDialog : Dialog
     /// <summary>Whether the item was declined, which closed the reader.</summary>
     internal bool Declined { get; private set; }
 
+    internal bool Shelving => _shelving;
+
+    /// <summary>Whether the pitch was shelved, which closed the reader.</summary>
+    internal bool Shelved { get; private set; }
+
+    internal NumericUpDown<int> Weeks => _weeks;
+
+    internal bool WeeksShown => _weeksRow.Visible;
+
     internal string CommentTitle => _commentFrame.Title;
 
     internal MultiLineField Field => _field;
@@ -315,11 +356,14 @@ public sealed partial class ReaderDialog : Dialog
 
     /// <summary>Enter reaches a Dialog as Accept, from the ranks themselves, and never as a key.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
-        _ranks is null ? base.OnAccepting(args) : _field.HasFocus || Set();
+        _ranks is null ? base.OnAccepting(args) : Writing || Set();
+
+    /// <summary>The keyboard is in the Comment pane: its text, or its weeks while saying Not now.</summary>
+    private bool Writing => _field.HasFocus || _weeks.HasFocus;
 
     protected override bool OnKeyDown(Key key)
     {
-        var handled = _field.HasFocus ? Commenting(key) : Reading(key);
+        var handled = Writing ? Commenting(key) : Reading(key);
         if (handled)
             ShowHints();
         return handled || base.OnKeyDown(key) || _window(key);
@@ -475,6 +519,8 @@ public sealed partial class ReaderDialog : Dialog
             return Accept();
         if (_comment?.Decline is { } decline && key == decline.Key)
             return Decline();
+        if (_comment?.Shelve is { } shelve && key == shelve.Key)
+            return Shelve();
         if (_comment is not null && key == _comment.Key)
             return Comment();
         return _ranks is not null && Scroll(key) is { } scroll && Scrolled(scroll);
@@ -484,12 +530,12 @@ public sealed partial class ReaderDialog : Dialog
     {
         ShowCarets();
         var marked = FocusedPane().Marked;
-        var reading = !_field.HasFocus && marked > 0;
+        var reading = !Writing && marked > 0;
         _hints.Show([
             .. _ranks is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll")],
-            .. _ranks is null && !_field.HasFocus && _scrolled == _body
+            .. _ranks is null && !Writing && _scrolled == _body
                 ? [new HintedCommand(RemarkHint, "Alt+↑/↓ remark")] : Array.Empty<HintedCommand>(),
-            .. _ranks is null && !_field.HasFocus && _scrolled == _history
+            .. _ranks is null && !Writing && _scrolled == _history
                 ? [new HintedCommand(ShowHint, "Enter show")] : Array.Empty<HintedCommand>(),
             .. CommentShown || HistoryShown ? [new HintedCommand(SwitchHint, "Tab switch pane")] : Array.Empty<HintedCommand>(),
             .. _ranks is not null || CommentShown ? Array.Empty<HintedCommand>()
@@ -508,17 +554,21 @@ public sealed partial class ReaderDialog : Dialog
             .. _accept is null ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(AcceptHint, $"{KeyNames.Short(_accept.Key)} {_accept.Hint}", _accept.Enabled)],
             .. _comment is null ? Array.Empty<HintedCommand>()
-                : CommentShown ? [new HintedCommand(PostHint, _declining ? "Ctrl+Enter decline" : "Ctrl+Enter post")]
+                : CommentShown ? [new HintedCommand(PostHint,
+                    _declining ? "Ctrl+Enter decline" : _shelving ? "Ctrl+Enter not now" : "Ctrl+Enter post")]
                 : [new HintedCommand(CommentHint, $"{KeyNames.Short(_comment.Key)} {_comment.Hint}")],
             .. _attaching is null || !_field.HasFocus ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(PasteHint, "Ctrl+V paste"), new HintedCommand(AttachHint, $"{KeyNames.Short(_attaching.Key)} attach file")],
             .. _comment?.Decline is not { } decline || _declining ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(DeclineHint, $"{KeyNames.Short(decline.Key)} decline")],
+            .. _comment?.Shelve is not { } shelve || _shelving ? Array.Empty<HintedCommand>()
+                : [new HintedCommand(NotNowHint, $"{KeyNames.Short(shelve.Key)} not now")],
             .. _copyBranch == Key.Empty ? Array.Empty<HintedCommand>()
                 : [new HintedCommand(BranchHint, $"{KeyNames.Short(_copyBranch)} copy branch")],
             new HintedCommand(GitHubHint, "g on GitHub"),
             new HintedCommand(CloseHint,
-                _field.HasFocus ? _declining ? "Esc cancel" : "Esc back" : marked > 0 ? "Esc clear" : "Esc close"),
+                Writing ? _declining ? "Esc cancel" : _shelving ? "Esc comment instead" : "Esc back"
+                : marked > 0 ? "Esc clear" : "Esc close"),
         ], Run);
     }
 
@@ -529,7 +579,7 @@ public sealed partial class ReaderDialog : Dialog
 
     private void ShowCarets()
     {
-        var reading = _ranks is null && !_field.HasFocus;
+        var reading = _ranks is null && !Writing;
         _body.ShowsCaret = reading && _scrolled == _body;
         _history.ShowsCaret = reading && _scrolled == _history;
     }
@@ -552,14 +602,20 @@ public sealed partial class ReaderDialog : Dialog
         return true;
     }
 
-    /// <summary>Comment, Body and History in turn, leaving out whichever isn't showing.</summary>
+    /// <summary>Weeks, Comment, Body and History in turn, leaving out whichever isn't showing.</summary>
     private bool SwitchPane(int by)
     {
-        List<View> panes = [.. CommentShown ? [_field] : Array.Empty<View>(), _body, .. HistoryShown ? [_history] : Array.Empty<View>()];
-        var at = panes.IndexOf(_field.HasFocus ? _field : _scrolled);
+        List<View> panes =
+        [
+            .. _shelving ? [_weeks] : Array.Empty<View>(), .. CommentShown ? [_field] : Array.Empty<View>(),
+            _body, .. HistoryShown ? [_history] : Array.Empty<View>(),
+        ];
+        var at = panes.IndexOf(_field.HasFocus ? _field : _weeks.HasFocus ? _weeks : _scrolled);
         var next = panes[(at + by + panes.Count) % panes.Count];
         if (next == _field)
             ToComment();
+        else if (next == _weeks)
+            _weeks.SetFocus();
         else
             Scroll((LogView)next);
         return true;
@@ -775,20 +831,42 @@ public sealed partial class ReaderDialog : Dialog
     /// <summary>The Comment pane, retitled; what's already in it becomes the start of the reason.</summary>
     private bool Decline()
     {
+        ShowWeeks(false);
         _declining = true;
         _commentFrame.Title = $"Decline #{_number}: why?";
         return Comment();
     }
 
-    private bool CancelDecline()
+    /// <summary>The Comment pane, retitled, with the weeks above it; what's already in it becomes the reason.</summary>
+    private bool Shelve()
     {
         _declining = false;
+        ShowWeeks(true);
+        _commentFrame.Title = $"Not now #{_number}";
+        return Comment();
+    }
+
+    private void ShowWeeks(bool shelving)
+    {
+        _shelving = shelving;
+        _weeksRow.Visible = shelving;
+        _field.Y = shelving ? 2 : 0;
+        SetNeedsLayout();
+    }
+
+    private bool BackToComment()
+    {
+        var weeks = _weeks.HasFocus;
+        _declining = false;
+        ShowWeeks(false);
         _commentFrame.Title = "Comment";
+        if (weeks)
+            ToComment();
         SetNeedsDraw();
         return true;
     }
 
-    private bool Unfocus() => _declining ? CancelDecline() : Back();
+    private bool Unfocus() => _declining || _shelving ? BackToComment() : Back();
 
     private void ToComment()
     {
@@ -806,7 +884,7 @@ public sealed partial class ReaderDialog : Dialog
     {
         if (_posting is not null)
             return true;
-        if (string.IsNullOrWhiteSpace(_field.Text))
+        if (!_shelving && string.IsNullOrWhiteSpace(_field.Text))
         {
             _message.Show(_declining ? $"A reason is needed to decline #{_number}" : "Nothing to post: the comment is empty",
                 Schemes.Error);
@@ -818,10 +896,12 @@ public sealed partial class ReaderDialog : Dialog
             Say("Wait for the image to finish uploading", Schemes.Error);
             return true;
         }
-        _message.Show(_declining ? $"Declining #{_number}…" : "Posting…", Schemes.Accent);
+        _message.Show(_declining ? $"Declining #{_number}…" : _shelving ? $"Shelving #{_number}…" : "Posting…", Schemes.Accent);
         SetNeedsLayout();
         var text = _field.Text;
-        var posting = _posting = _declining ? _comment!.Decline!.Run(text) : _comment!.Post(text);
+        var posting = _posting = _declining ? _comment!.Decline!.Run(text)
+            : _shelving ? _comment!.Shelve!.Run(_weeks.Value, text)
+            : _comment!.Post(text);
         if (posting.IsCompleted)
         {
             Settle(posting, text);
@@ -851,9 +931,10 @@ public sealed partial class ReaderDialog : Dialog
             SetNeedsLayout();
             return;
         }
-        if (_declining)
+        if (_declining || _shelving)
         {
-            Declined = true;
+            Declined = _declining;
+            Shelved = _shelving;
             Close();
             return;
         }
@@ -927,11 +1008,12 @@ public sealed partial class ReaderDialog : Dialog
             PasteHint => Paste(),
             AttachHint => AttachFile(),
             DeclineHint => Decline(),
+            NotNowHint => Shelve(),
             RankHint => Step(+1),
             SetHint => Set(),
             BranchHint => CopyBranch(),
             GitHubHint => OnGitHub(),
-            _ => _field.HasFocus ? Unfocus() : Escape(),
+            _ => Writing ? Unfocus() : Escape(),
         };
         ShowHints();
         return handled;

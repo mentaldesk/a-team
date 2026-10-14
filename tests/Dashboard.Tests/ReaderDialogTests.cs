@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Drawing;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
@@ -1623,6 +1624,201 @@ public class ReaderDialogTests
         Assert.Contains("x decline", dialog.Hints.Says);
         Assert.Equal(0, declined);
         Assert.False(dialog.Declined);
+    }
+
+    private static ReaderDialog Shelving(
+        Func<int, string, Task<string?>>? shelve = null, bool open = false, Func<string, Task<string?>>? post = null)
+    {
+        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", post ?? (_ => Task.FromResult<string?>(null)), new Epoch(),
+                new ReaderDecline(new Key('x'), _ => Task.FromResult<string?>(null)),
+                new ReaderShelve(new Key('l'), shelve ?? ((_, _) => Task.FromResult<string?>(null)), open)),
+            width: 140);
+        dialog.Layout(new Size(140, 20));
+        return dialog;
+    }
+
+    [Fact]
+    public void A_pitch_puts_not_now_after_decline()
+    {
+        using var dialog = Shelving();
+
+        Assert.Equal(
+            "Alt+↑/↓ remark · Tab switch pane · h hide history · Shift+arrows select · c comment · x decline · l not now · g on GitHub · Esc close",
+            dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void l_opens_the_comment_pane_as_Not_now_with_two_weeks_above_the_reason()
+    {
+        using var dialog = Shelving();
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('l')));
+        dialog.Layout(new Size(140, 20));
+
+        Assert.True(dialog.Shelving);
+        Assert.True(dialog.Field.HasFocus);
+        Assert.Equal("Not now #180", dialog.CommentTitle);
+        Assert.Equal(2, dialog.Weeks.Value);
+        Assert.True(dialog.WeeksShown);
+        Assert.Equal(2, dialog.Field.Frame.Y);
+        Assert.Equal("Tab switch pane · Shift+arrows select · Ctrl+Enter not now · x decline · g on GitHub · Esc comment instead",
+            dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Opened_to_shelve_it_starts_in_the_reason()
+    {
+        using var dialog = Shelving(open: true);
+
+        Assert.True(dialog.Shelving);
+        Assert.True(dialog.Field.HasFocus);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_long_reason_wraps_in_the_pane_like_a_comment(bool open)
+    {
+        using var dialog = Shelving(open: open);
+        if (!open)
+            dialog.NewKeyDownEvent(new Key('l'));
+        dialog.Layout(new Size(140, 20));
+
+        Type(dialog.Field, string.Join(' ', Enumerable.Repeat("waiting", 20)));
+        dialog.Layout(new Size(140, 20));
+
+        Assert.True(dialog.Field.WordWrap);
+        Assert.Equal(0, dialog.Field.Viewport.X);
+        Assert.Equal(dialog.Field.SuperView!.Viewport.Width, dialog.Field.Frame.Width);
+    }
+
+    [Fact]
+    public void Shift_Tab_reaches_the_weeks_and_any_whole_number_from_one_goes()
+    {
+        using var dialog = Shelving(open: true);
+
+        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+        Assert.True(dialog.Weeks.HasFocus);
+        dialog.Weeks.Value = 19;
+        dialog.Weeks.Value = 0;
+
+        Assert.Equal(19, dialog.Weeks.Value);
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Field.HasFocus);
+    }
+
+    [Fact]
+    public void Ctrl_Enter_shelves_for_the_weeks_with_or_without_a_reason()
+    {
+        var shelved = new List<(int Weeks, string Reason)>();
+        var posted = 0;
+        using var dialog = Shelving((weeks, reason) => { shelved.Add((weeks, reason)); return Task.FromResult<string?>(null); },
+            post: _ => Task.FromResult<string?>(++posted < 0 ? "" : null));
+        dialog.NewKeyDownEvent(new Key('l'));
+        dialog.Weeks.Value = 3;
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.Equal([(3, "")], shelved);
+        Assert.Equal(0, posted);
+        Assert.True(dialog.Shelved);
+        Assert.False(dialog.Declined);
+    }
+
+    [Fact]
+    public void Ctrl_Enter_from_the_weeks_shelves_too_with_the_reason()
+    {
+        var shelved = new List<(int Weeks, string Reason)>();
+        using var dialog = Shelving((weeks, reason) => { shelved.Add((weeks, reason)); return Task.FromResult<string?>(null); });
+        dialog.NewKeyDownEvent(new Key('l'));
+        dialog.Field.Text = "Cost isn't what I'm watching yet.";
+        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.Equal([(2, "Cost isn't what I'm watching yet.")], shelved);
+        Assert.True(dialog.Shelved);
+    }
+
+    [Fact]
+    public void A_shelve_that_fails_stays_in_the_pane_saying_why()
+    {
+        using var dialog = Shelving((_, _) => Task.FromResult<string?>("board.sh: only a Pitched pitch can be shelved (#180 is in 'Idea')"));
+        dialog.NewKeyDownEvent(new Key('l'));
+        dialog.Field.Text = "Later.";
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.False(dialog.Shelved);
+        Assert.True(dialog.Shelving);
+        Assert.Equal("Later.", dialog.Field.Text);
+        Assert.Equal("board.sh: only a Pitched pitch can be shelved (#180 is in 'Idea')", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Esc_turns_Not_now_back_into_a_comment_and_shelves_nothing()
+    {
+        var shelved = 0;
+        using var dialog = Shelving((_, _) => Task.FromResult<string?>(++shelved < 0 ? "" : null));
+        dialog.NewKeyDownEvent(new Key('l'));
+        dialog.Field.Text = "Hmm";
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+
+        Assert.False(dialog.Shelving);
+        Assert.False(dialog.WeeksShown);
+        Assert.True(dialog.CommentShown);
+        Assert.Equal("Comment", dialog.CommentTitle);
+        Assert.Equal("Hmm", dialog.Field.Text);
+        Assert.Contains("l not now", dialog.Hints.Says);
+        Assert.Equal(0, shelved);
+        Assert.False(dialog.Shelved);
+    }
+
+    [Fact]
+    public void Esc_from_the_weeks_does_the_same_and_leaves_you_in_the_comment()
+    {
+        using var dialog = Shelving(open: true);
+        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+
+        Assert.False(dialog.Shelving);
+        Assert.True(dialog.Field.HasFocus);
+    }
+
+    [Fact]
+    public void x_while_shelving_declines_instead_and_l_while_declining_shelves_instead()
+    {
+        using var dialog = Shelving();
+        dialog.NewKeyDownEvent(new Key('l'));
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        dialog.NewKeyDownEvent(new Key('x'));
+        Assert.True(dialog.Declining);
+        Assert.False(dialog.Shelving);
+        Assert.False(dialog.WeeksShown);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        dialog.NewKeyDownEvent(new Key('l'));
+        Assert.True(dialog.Shelving);
+        Assert.False(dialog.Declining);
+    }
+
+    [Theory]
+    [InlineData(2, 0, "2026-10-28", "28 Oct")]
+    [InlineData(3, 0, "2026-11-04", "4 Nov")]
+    [InlineData(19, 0, "2027-02-24", "24 Feb")]
+    [InlineData(2, 13, "2026-10-29", "29 Oct")]
+    [InlineData(2, -5, "2026-10-28", "28 Oct")]
+    public void The_weeks_give_the_day_it_comes_back_on_the_local_calendar(int weeks, int offset, string until, string backOn)
+    {
+        var now = new DateTimeOffset(2026, 10, 14, 23, 30, 0, TimeSpan.Zero);
+        var zone = TimeZoneInfo.CreateCustomTimeZone("test", TimeSpan.FromHours(offset), "test", "test");
+
+        Assert.Equal(DateOnly.Parse(until, CultureInfo.InvariantCulture), ReaderShelve.Until(now, weeks, zone));
+        Assert.Equal(backOn, ReaderShelve.BackOn(now, weeks, zone));
     }
 
     private sealed class Epoch : TimeProvider

@@ -17,6 +17,8 @@ I authorise you to do all of the following without asking me:
   commit, push branches other than the default branch to {{repo}}, and open draft PRs for
   document pitches.
 - Open issues on mentaldesk/a-team to suggest changes to how the team works.
+- Shelve a pitch the stakeholder asks to shelve or defer, with
+  `a-team board {{team}} shelve lead <n> <weeks> <file>`.
 - Close a pitch once every one of its tasks has closed, with
   `a-team board {{team}} finish lead <n> <file>`.
 

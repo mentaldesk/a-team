@@ -30,6 +30,9 @@ public sealed record WaitingItem(
     /// <summary>Whether this is an Idea or a pitch the reviewer could turn down: never a task, a PR or a question.</summary>
     public bool Declinable => Question.Length == 0 && (Status == "Idea" || Pitch && Status == "Pitched");
 
+    /// <summary>Whether this is a pitch the reviewer could say Not now to, holding it back for a while.</summary>
+    public bool Shelvable => Pitch && !Document && Status == "Pitched";
+
     /// <summary>Whether this is a task whose PR the reviewer could merge, a validated pitch they could close, or a
     /// document pitch they could merge, trouble or not.</summary>
     public bool Acceptable => Status == "In review" || Document && Status == "Pitched";

@@ -140,7 +140,7 @@ Dev's comment, or the pitch's **Needs your answer** heading. In the body, `Alt+�
 the previous and next comment's heading, with the top of the body counting as the first.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
-accept, decline, comment, Priority, recommendation, skip, review, link and dependency, with when
+accept, decline, Not now, comment, Priority, recommendation, skip, review, link and dependency, with when
 and who (`you`, or the role: `lead`, `dev`, `customer` or `reviewer`). What
 you or anyone else does on GitHub directly (a merge, a close, a comment, a move on the Project board)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
@@ -186,6 +186,15 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   doesn't count as accepted. If the board refuses the decline, the status bar says why and the
   reason you typed is lost. A reason is required. `Esc` turns the pane back into a plain comment,
   keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub.
+- **Say Not now to a pitch.** On a pitch in Pitches, reading it or with its card selected, press
+  `l`. The Comment pane opens as **Not now #n**, with **Back in [2] weeks** above it: `Shift+Tab`
+  reaches the weeks, and `↑`/`↓` or typing sets any whole number from 1. A reason is optional.
+  `Ctrl+Enter` posts it, with the date, as a comment, and the card leaves Pitches; the status bar
+  says `#81 back on 25 Oct`, and History records `shelved until 25 Oct`. Until then the Lead won't
+  pitch it again. After that it comes back at its Priority in turn, and the Lead says it was
+  shelved and why. Changing its Priority brings it back sooner; clearing it leaves it in Triage.
+  `Esc` turns the pane back into a plain comment and shelves nothing. Asking the Lead in a comment
+  to shelve a pitch does the same, for the weeks you name or 2, and its reply gives the date.
 - **Rank it.** `Enter` on a card in Triage, or `p` on any card, opens the reader with a row of
   ranks under it, **None** to **Urgent**, starting on the card's own, or on the Lead's
   recommendation if it has none, so `Enter` agrees with it. `←`/`→` or a rank's initial
