@@ -366,14 +366,14 @@ gh_talk() {
     def who($login): if $login | endswith("[bot]")
       then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))} else {__typename: "User", login: $login} end;
     def seen: {reactions: {totalCount: (if .seen then 1 else 0 end)}};
-    def node($rows; $number):
+    def node($rows; $number; $url):
       ($rows | map(select(.kind == "body")) | first) as $body
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
          author: who($body.author // ""), reactions: {totalCount: 0},
          timelineItems: {nodes: ($rows | map(select(.kind == "labeled")
            | {createdAt: .at, label: {name: .body}}))},
-         comments: {nodes: ($rows | map(select(.kind == "comment")
-           | seen + {createdAt: .at, body: .body, author: who(.author)}))},
+         comments: {nodes: ($rows | map(select(.kind == "comment")) | to_entries | map(.key as $i | .value
+           | seen + {createdAt: .at, body: .body, url: "\($url)#issuecomment-\($i + 1)", author: who(.author)}))},
          reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
            | if .kind == "review"
              then seen + {createdAt: .at, body: .body, state: "COMMENTED",
@@ -383,7 +383,7 @@ gh_talk() {
                    comments: {nodes: [seen + {createdAt: .at, body: .body,
                                               author: who(.author)}]}}
              end))}};
-    def open_pr($rows; $number): node($rows; $number)
+    def open_pr($rows; $number): node($rows; $number; "https://github.com/mentaldesk/demo/pull/\($number)")
       + {url: "https://github.com/mentaldesk/demo/pull/\($number)", isDraft: ($draft == "true"),
          mergeable: $mergeable, baseRefName: "main", headRefName: "feat/task-\($number - 900)", headRefOid: "deadbee"};
     split("\n") | map(select(length > 0)) | map(split(" ") as $f
@@ -393,7 +393,7 @@ gh_talk() {
     | group_by(.n) | map(
         (map(select(.kind | startswith("pr-") | not))) as $own
         | (map(select(.kind | startswith("pr-")) | .kind |= ltrimstr("pr-"))) as $pr
-        | {n: .[0].n, own: node($own; .[0].n),
+        | {n: .[0].n, own: node($own; .[0].n; "https://github.com/mentaldesk/demo/issues/\(.[0].n)"),
            pr: (if ($pr | length) > 0 then open_pr($pr; 900 + .[0].n) else null end)})
     | {talk: {data: {repository: ((map({key: "x\(.n)", value: (.own + {closedByPullRequestsReferences:
           {nodes: (if .pr != null and $linked then [.pr] else [] end)}})}) | from_entries)
@@ -1076,6 +1076,8 @@ same "bodies" '["Closes #6","Draft PR #906 is up.","Does it scroll?","+1","It do
 same "prs" '[906,null,906,null,906,null]' "$(jq -c '[.[].pr]' "$OUT")"
 same "description" '[true,false,false,false,false,false]' "$(jq -c '[.[].description]' "$OUT")"
 same "at" '"2026-10-01T08:05:00Z"' "$(jq -c '.[0].at' "$OUT")"
+same "urls" '["https://github.com/mentaldesk/demo/pull/906","https://github.com/mentaldesk/demo/issues/6#issuecomment-1","https://github.com/mentaldesk/demo/pull/906#issuecomment-1","https://github.com/mentaldesk/demo/issues/6#issuecomment-2","https://github.com/mentaldesk/demo/pull/906#issuecomment-2","https://github.com/mentaldesk/demo/issues/6#issuecomment-3"]' \
+  "$(jq -c '[.[].url]' "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
 
 case_ "a card nobody has said anything on has an empty conversation"

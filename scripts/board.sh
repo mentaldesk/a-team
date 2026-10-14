@@ -711,7 +711,7 @@ gated_talk() {
   [ "${2:-}" = checks ] && runs='commits(last: 1) { nodes { commit { checkSuites(first: 50) { nodes {
     checkRuns(first: 100, filterBy: {checkType: LATEST}) { nodes { name status conclusion completedAt url } } } } } } }'
   said="number createdAt body author { __typename login }
-        comments(last: 50) { nodes { createdAt body author { __typename login } $seen } }"
+        comments(last: 50) { nodes { createdAt body url author { __typename login } $seen } }"
   reviewed="$said"" url isDraft mergeable baseRefName headRefName $runs
               reviews(last: 50) { nodes { createdAt body state author { __typename login } $seen
               comments(first: 50) { nodes { createdAt body author { __typename login } $seen } } } }"
@@ -1812,7 +1812,7 @@ case "$CMD" in
     rm -f "$trouble"
     jq --argjson stakeholders "$STAKEHOLDERS" --arg appFrom "$APP_FROM" --arg bot "$BOT" \
       "def login: $LOGIN; $TEAM_SAID"'
-      def remark($pr): {at: .createdAt, author: (.author | login), body: (.body // ""), pr: $pr};
+      def remark($pr): {at: .createdAt, author: (.author | login), body: (.body // ""), pr: $pr, url};
       def who: if team("<!-- a-team:lead -->") then "lead" elif team("<!-- a-team:dev -->") then "dev"
         elif team("<!-- a-team:customer -->") then "customer" elif team("<!-- a-team:reviewer -->") then "reviewer"
         elif .author | IN($stakeholders[]) then "you" else .author end;
@@ -1821,7 +1821,7 @@ case "$CMD" in
          (.closedByPullRequestsReferences.nodes[]? | .number as $pr
           | (remark($pr) + {description: true}), (.comments.nodes[]? | remark($pr)))]
       | sort_by(.at)
-      | map({who: who, at, pr, description: (.description // false),
+      | map({who: who, at, pr, url, description: (.description // false),
              body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev|customer|reviewer) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
     ;;
 

@@ -32,8 +32,10 @@ public sealed class NewIdeaDialog : Dialog
     private readonly ImageAttach? _attach;
     private Task<string?>? _adding;
 
+    /// <param name="description">What the Description starts with, which Esc asks before throwing away.</param>
     public NewIdeaDialog(
-        IReadOnlyList<string> teams, string team, IdeaFiler filer, Func<bool>? confirmDiscard = null, Attaching? attaching = null)
+        IReadOnlyList<string> teams, string team, IdeaFiler filer, Func<bool>? confirmDiscard = null, string description = "",
+        Attaching? attaching = null)
     {
         _filer = filer;
         _confirmDiscard = confirmDiscard ?? (() => true);
@@ -54,7 +56,7 @@ public sealed class NewIdeaDialog : Dialog
         Add(new Label { Text = "Title", X = Inset, Y = 2 });
         _title = new TextField { X = FieldX, Y = 2, Width = Dim.Fill(Inset) };
         Add(new Label { Text = "Description", X = Inset, Y = 4 });
-        _description = new MultiLineField { X = Inset, Y = 5, Width = Dim.Fill(Inset), Height = DescriptionLines };
+        _description = new MultiLineField { X = Inset, Y = 5, Width = Dim.Fill(Inset), Height = DescriptionLines, Text = description };
         var rankY = 5 + DescriptionLines + 1;
         Add(new Label { Text = "Priority", X = Inset, Y = rankY });
         _rank = new OptionSelector<Rank>
@@ -110,9 +112,11 @@ public sealed class NewIdeaDialog : Dialog
 
     /// <summary>Opens the dialog, and returns the idea it added, or null where it was cancelled.</summary>
     public static (string Team, int Number)? Show(
-        IApplication app, IReadOnlyList<string> teams, string team, IdeaFiler filer, Attaching? attaching = null)
+        IApplication app, IReadOnlyList<string> teams, string team, IdeaFiler filer, string description = "",
+        Attaching? attaching = null)
     {
-        using var dialog = new NewIdeaDialog(teams, team, filer, () => DiscardDialog.Show(app, DiscardDialog.Idea), attaching);
+        using var dialog = new NewIdeaDialog(
+            teams, team, filer, () => DiscardDialog.Show(app, DiscardDialog.Idea), description, attaching);
         app.Run(dialog);
         return dialog.Added;
     }

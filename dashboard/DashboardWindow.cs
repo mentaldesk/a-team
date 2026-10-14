@@ -70,10 +70,10 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
-    private readonly Func<IReadOnlyList<string>, string, Attaching?, (string Team, int Number)?>? _newIdea;
+    private readonly Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? _newIdea;
     private readonly Func<Key, Attaching>? _attaching;
     private readonly Action<string> _openUrl;
-    private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, Rank?, Rank?> _showBody;
+    private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Action<string> _showGuide;
@@ -100,6 +100,7 @@ public sealed class DashboardWindow : Window
     private string? _said;
     private (string Text, WaitingItem? On)? _already;
     private string? _added;
+    private ReaderIdea? _idea;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
     private Task<Reading[]>? _trending;
@@ -136,7 +137,7 @@ public sealed class DashboardWindow : Window
         Func<string, Task<Reading>> readWaiting,
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
-        Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, Rank?, Rank?> showBody,
+        Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -153,7 +154,7 @@ public sealed class DashboardWindow : Window
         DispatchPass? pass = null,
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
-        Func<IReadOnlyList<string>, string, Attaching?, (string Team, int Number)?>? newIdea = null,
+        Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? newIdea = null,
         Func<string, Task<Reading>>? readBoard = null,
         Attention? attention = null,
         Func<WaitingItem, Task<Reading>>? readDocument = null,
@@ -601,7 +602,7 @@ public sealed class DashboardWindow : Window
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, scopes: [Regions.Work])
-            .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: () => _newIdea is not null && _teamNames.Count > 0)
+            .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: NewIdeaEnabled)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine", scopes: [Regions.Work])
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
@@ -1174,6 +1175,7 @@ public sealed class DashboardWindow : Window
             _shown = item;
             _attention.Open(item, WorkView.GateOf(item));
             Seen(item);
+            _idea = NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
             var chosen = _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
@@ -1188,7 +1190,10 @@ public sealed class DashboardWindow : Window
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
                     top, said, failure) : null,
                 _commands.KeyFor("work.copyBranch"),
+                _idea,
+                key => (key == _commands.KeyFor("help") || key == _commands.KeyFor("commands")) && _commands.Press(key),
                 rank);
+            _idea = null;
             _opened.Open(item.Team, item.Number, _clock.GetUtcNow());
             _approvable = null;
             _shown = null;
@@ -1219,15 +1224,26 @@ public sealed class DashboardWindow : Window
 
     private Attaching? Attaching() => _attaching?.Invoke(_commands.KeyFor("work.attach"));
 
-    /// <summary>Adds an idea to the team whose lane you're in, or the first team's, and reads Work again to show it.</summary>
+    private bool NewIdeaEnabled() => _newIdea is not null && _teamNames.Count > 0;
+
+    /// <summary>Adds an idea to the team whose lane you're in, or the first team's, or from what the reader shows.</summary>
     private void NewIdea()
     {
-        var team = _area == Area.Work && _work.Current is { } lane ? lane.Team : _teamNames[0];
-        if (_newIdea?.Invoke(_teamNames, team, Attaching()) is not { } added)
-            return;
+        if (_idea?.Start is { } fromReader)
+            fromReader();
+        else
+            AddIdea(_area == Area.Work && _work.Current is { } lane ? lane.Team : _teamNames[0]);
+    }
+
+    /// <summary>Reads Work again to show the idea added, and says which it was.</summary>
+    private string? AddIdea(string team, string description = "")
+    {
+        if (_newIdea?.Invoke(_teamNames, team, description, Attaching()) is not { } added)
+            return null;
         _failure = null;
         _added = $"#{added.Number} added to {added.Team}'s ideas";
         ReadWaiting();
+        return _added;
     }
 
     /// <summary>Approves the pitch the reader is showing. Like a rank, the card stays put until the board takes it.</summary>
@@ -1611,7 +1627,7 @@ public sealed class DashboardWindow : Window
     private void OpenCommands()
     {
         if (App is { } app)
-            CommandsDialog.Show(app, _commands);
+            CommandsDialog.Show(app, _commands, Offered);
     }
 
     private void GoToTeam()
@@ -1626,7 +1642,11 @@ public sealed class DashboardWindow : Window
             KeysSheet.Show(app, Keys);
     }
 
-    internal KeySheet Keys => KeysSheet.For(_commands.Enabled, Region);
+    internal KeySheet Keys => KeysSheet.For(Offered, Region);
+
+    /// <summary>While the reader is open, only what works from it: the rest acts on the board underneath.</summary>
+    private IReadOnlyList<CommandDescriptor> Offered =>
+        _shown is null ? _commands.Enabled : [.. _commands.Enabled.Where(command => command.Id is "work.new" or "help" or "commands")];
 
     /// <summary>Where the window is now, for the keys that work only there.</summary>
     internal CommandScope Region => _area switch

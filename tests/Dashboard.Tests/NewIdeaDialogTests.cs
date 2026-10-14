@@ -108,7 +108,7 @@ public class NewIdeaDialogTests
     {
         var dialog = new NewIdeaDialog(["team0", "team1"], "team1",
             new IdeaFiler(board ?? (args => Task.FromResult(new Reading(args[2] == "new" ? "77" : "", null)))), null,
-            new Attaching(Key.U.WithCtrl, (team, file) =>
+            attaching: new Attaching(Key.U.WithCtrl, (team, file) =>
             {
                 uploads.Add((team, file));
                 return upload ?? Task.FromResult(new Reading("https://example.com/shot.png", null));
@@ -317,5 +317,31 @@ public class NewIdeaDialogTests
     {
         Assert.Equal("Discard your idea?", DiscardDialog.Idea.Title);
         Assert.Contains("hasn't been added", DiscardDialog.Idea.Says);
+    }
+
+    [Fact]
+    public void A_description_it_s_given_is_already_written_with_the_title_still_to_type()
+    {
+        using var dialog = new NewIdeaDialog(["team0", "team1"], "team0", new IdeaFiler(_ => Task.FromResult(new Reading("", null))),
+            description: "> a line\n\nFrom https://github.com/x/180");
+        dialog.Layout(new Size(80, 30));
+
+        Assert.Equal("team0", dialog.Team.Text);
+        Assert.Equal("> a line\n\nFrom https://github.com/x/180", dialog.Description.Text);
+        Assert.True(dialog.IdeaTitle.HasFocus);
+        Assert.Equal("", dialog.IdeaTitle.Text);
+    }
+
+    [Fact]
+    public void Esc_with_only_the_description_it_was_given_still_asks()
+    {
+        var asked = 0;
+        using var dialog = new NewIdeaDialog(["team0"], "team0", new IdeaFiler(_ => Task.FromResult(new Reading("", null))),
+            () => ++asked < 0, "From https://github.com/x/180");
+
+        dialog.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal(1, asked);
+        Assert.Equal("From https://github.com/x/180", dialog.Description.Text);
     }
 }

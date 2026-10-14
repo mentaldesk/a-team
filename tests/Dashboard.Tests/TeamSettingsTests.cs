@@ -297,9 +297,9 @@ public class TeamSettingsTests : IDisposable
 
     [Theory]
     [InlineData(false, "", null)]
-    [InlineData(true, "", "Docs is required with a Customer lead.")]
+    [InlineData(true, "", null)]
     [InlineData(true, "docs/index.md", null)]
-    public void A_Customer_lead_needs_a_docs_page(bool customer, string docs, string? refusal) =>
+    public void A_Customer_lead_never_refuses_the_save_for_its_docs(bool customer, string docs, string? refusal) =>
         Assert.Equal(refusal, (Settings() with { Customer = customer, Docs = docs }).Refusal());
 
     [Theory]
@@ -328,16 +328,16 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
-    public void With_a_Customer_lead_a_docs_page_the_repo_has_not_got_warns_that_it_will_propose_them()
+    public void With_a_Customer_lead_a_docs_page_the_repo_has_not_got_is_a_notice_not_a_warning()
     {
         Directory.CreateDirectory(Path.Combine(_home, "code", "demo", "main", "docs"));
         File.WriteAllText(Path.Combine(_home, "code", "demo", "main", "docs", "vision.md"), "");
-        var settings = Settings() with { Workdir = "~/code/demo", Vision = "docs/vision.md", Docs = "docs/index.md" };
+        var settings = Settings() with { Workdir = "~/code/demo", Vision = "docs/vision.md", Docs = "docs/guide/index.md" };
 
-        Assert.Null(settings.Warning(_home));
-        Assert.Equal(
-            "docs/index.md isn't there yet: the Customer lead will propose the docs as a draft PR for you.",
-            (settings with { Customer = true }).Warning(_home));
+        Assert.Null(settings.Notice(_home));
+        Assert.Null((settings with { Customer = true }).Warning(_home));
+        Assert.Equal("The Customer lead will propose the docs at docs/guide/index.md.", (settings with { Customer = true }).Notice(_home));
+        Assert.Null((settings with { Customer = true, Docs = "docs/vision.md" }).Notice(_home));
     }
 
     [Fact]
