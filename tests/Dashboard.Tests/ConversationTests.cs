@@ -62,4 +62,20 @@ public class ConversationTests
     {
         Assert.Equal("couldn't read the conversation on #6", Conversation.Of(new Reading("{}", null), 6).Failure);
     }
+
+    [Fact]
+    public void Each_remark_carries_the_link_to_where_it_was_said()
+    {
+        var conversation = Conversation.Of(new Reading($$"""
+            [{"who": "dev", "at": "{{Opened:O}}", "body": "Closes #6", "pr": 906, "description": true,
+              "url": "https://github.com/x/pull/906"},
+             {"who": "you", "at": "{{Asked:O}}", "body": "Why?", "pr": null, "description": false,
+              "url": "https://github.com/x/issues/6#issuecomment-1"},
+             {"who": "lead", "at": "{{Asked:O}}", "body": "Older board", "pr": null, "description": false}]
+            """, null), 6);
+
+        Assert.Equal(
+            ["https://github.com/x/pull/906", "https://github.com/x/issues/6#issuecomment-1", null],
+            conversation.Remarks.Select(remark => remark.Url));
+    }
 }

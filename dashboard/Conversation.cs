@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace ATeam.Dashboard;
 
 /// <summary>One thing said on an item or its PR, as <c>a-team board &lt;team&gt; conversation &lt;n&gt;</c> reports it.</summary>
-public sealed record Remark(string Who, DateTimeOffset At, string Body, int? Pr = null, bool Description = false)
+public sealed record Remark(string Who, DateTimeOffset At, string Body, int? Pr = null, bool Description = false, string? Url = null)
 {
     /// <summary>Headed <c>new</c> when it was posted after <paramref name="since"/>.</summary>
     public string Heading(DateTimeOffset? since = null) =>
@@ -45,7 +45,8 @@ public sealed record Conversation(IReadOnlyList<Remark> Remarks, string? Failure
                 remark.GetProperty("at").GetDateTimeOffset(),
                 remark.GetProperty("body").GetString() ?? "",
                 remark.TryGetProperty("pr", out var pr) && pr.ValueKind == JsonValueKind.Number ? pr.GetInt32() : null,
-                remark.TryGetProperty("description", out var description) && description.ValueKind == JsonValueKind.True))];
+                remark.TryGetProperty("description", out var description) && description.ValueKind == JsonValueKind.True,
+                remark.TryGetProperty("url", out var url) && url.ValueKind == JsonValueKind.String ? url.GetString() : null))];
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
         {

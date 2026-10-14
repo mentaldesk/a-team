@@ -75,7 +75,7 @@ public class WorkAreaTests : IDisposable
     [Fact]
     public void New_idea_is_on_n_in_the_palette_and_in_Cards()
     {
-        using var window = Open(newIdea: (_, _) => null);
+        using var window = Open(newIdea: (_, _, _) => null);
 
         Assert.Contains(window.Commands.Enabled, command => command is { Id: "work.new", Label: "New idea" });
         Assert.Equal(new Key('n'), window.Commands.KeyFor("work.new"));
@@ -86,7 +86,7 @@ public class WorkAreaTests : IDisposable
     public void New_idea_starts_on_the_lane_you_re_in()
     {
         var asked = new List<(IReadOnlyList<string> Teams, string Team)>();
-        using var window = Open(newIdea: (teams, team) =>
+        using var window = Open(newIdea: (teams, team, _) =>
         {
             asked.Add((teams, team));
             return null;
@@ -105,7 +105,7 @@ public class WorkAreaTests : IDisposable
     public void New_idea_off_Work_starts_on_the_first_team()
     {
         var asked = new List<string>();
-        using var window = Open(area: Area.Dashboard, newIdea: (_, team) =>
+        using var window = Open(area: Area.Dashboard, newIdea: (_, team, _) =>
         {
             asked.Add(team);
             return null;
@@ -126,7 +126,7 @@ public class WorkAreaTests : IDisposable
                 reads++;
                 return Task.FromResult(new Reading(Waiting(team), null));
             },
-            newIdea: (_, _) => ("team1", 412));
+            newIdea: (_, _, _) => ("team1", 412));
         window.Refresh();
         LayOut(window, 120, 30);
         var before = reads;
@@ -149,7 +149,7 @@ public class WorkAreaTests : IDisposable
                 reads++;
                 return Task.FromResult(new Reading(Waiting(team), null));
             },
-            newIdea: (_, _) => null);
+            newIdea: (_, _, _) => null);
         window.Refresh();
         var before = reads;
 
@@ -1109,6 +1109,41 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.Equal(new IssueBody(Failure: "board.sh: can't read #6 (gh: Not Found (HTTP 404))"), asked);
+    }
+
+    [Fact]
+    public void The_reader_files_an_idea_on_the_card_s_team_and_the_keys_offer_only_what_works_there()
+    {
+        var asked = new List<(string Team, string Description)>();
+        string? said = null;
+        WaitingItem? reading = null;
+        IReadOnlyList<string>? offered = null;
+        var keys = new List<bool>();
+        DashboardWindow? opened = null;
+        using var window = opened = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            newIdea: (_, team, description) =>
+            {
+                asked.Add((team, description));
+                return (team, 412);
+            },
+            showBody: (item, _, _, _, _, _, _) => reading = item,
+            showIdea: (idea, pass) =>
+            {
+                said = idea!.File("From https://github.com/x/6");
+                offered = [.. opened!.Keys.Everywhere!.Groups.SelectMany(group => group.Rows).Select(row => row.Label)];
+                keys.Add(pass(new Key('w')));
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([(reading!.Team, "From https://github.com/x/6")], asked);
+        Assert.Equal($"#412 added to {reading.Team}'s ideas", said);
+        Assert.Equal(["New idea"], offered);
+        Assert.Equal([false], keys);
     }
 
     [Fact]
@@ -3768,12 +3803,13 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, Task<Reading>>? readHistory = null,
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
-        Func<IReadOnlyList<string>, string, (string Team, int Number)?>? newIdea = null,
+        Func<IReadOnlyList<string>, string, string, (string Team, int Number)?>? newIdea = null,
         Attention? attention = null,
         Action<ReaderEdit?>? showEdit = null,
         Func<WaitingItem, Task<Reading>>? readDocument = null,
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
-        IClipboard? clipboard = null)
+        IClipboard? clipboard = null,
+        Action<ReaderIdea?, Func<Key, bool>>? showIdea = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -3785,9 +3821,10 @@ public class WorkAreaTests : IDisposable
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
             openUrl ?? (_ => { }),
-            (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, _, rank) =>
+            (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, _, idea, keys, rank) =>
             {
                 showBody?.Invoke(item, body, onGitHub, onApprove, accept, comment, tryIt);
+                showIdea?.Invoke(idea, keys);
                 showEdit?.Invoke(edit);
                 return chooseRank?.Invoke(item, body, rank);
             },

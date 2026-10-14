@@ -1944,7 +1944,7 @@ public class DashboardWindowTests : IDisposable
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
             _ => Task.FromResult(new Reading("{}", null)),
             openUrl ?? (_ => { }),
-            (_, _, _, _, _, _, _, _, _, _) => null,
+            (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             area,
             auto,
             handOver,

@@ -241,3 +241,10 @@ you chose a Priority. Work reads again straight away, and the bar says `#<n> add
 ideas`. If a step fails, the dialog stays open with what you wrote and says which step; `Ctrl+Enter`
 tries again from there. `Esc` cancels, asking first if you've typed anything: `Ctrl+Enter` discards
 it, and `Esc` keeps writing.
+
+**From what you're reading.** Press `n` in a card's reader, or pick **New idea** from Commands
+(`Ctrl+E`) there. **Team** starts on the card's team, and the **Description** on a link back to the
+card. Select lines in the body first and they're quoted above the link, which goes to the comment
+they came from (the first, if they span two). The new issue shows on the card's GitHub timeline as
+"mentioned this", and closing the dialog leaves you in the reader where you were. While the ranks
+show, `n` picks **None**; Commands still files an idea from there.

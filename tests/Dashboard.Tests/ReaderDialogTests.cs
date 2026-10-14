@@ -1849,4 +1849,166 @@ public class ReaderDialogTests
 
     private static string Long() =>
         string.Join('\n', Enumerable.Range(1, 60).Select(line => $"line {line}"));
+
+    private static readonly IssueBody Talked = new IssueBody("Body line 1\nBody line 2").With(new Conversation([
+        new Remark("dev", DateTimeOffset.UnixEpoch, "first a\nfirst b", Url: "https://github.com/x/180#issuecomment-1"),
+        new Remark("you", DateTimeOffset.UnixEpoch.AddHours(1), "second", Url: "https://github.com/x/180#issuecomment-2"),
+    ]));
+
+    [Fact]
+    public void An_idea_from_a_comment_quotes_it_and_links_to_that_comment()
+    {
+        Assert.Equal(
+            "> first a\n> first b\n\nFrom https://github.com/x/180#issuecomment-1",
+            ReaderDialog.IdeaFrom(Talked, Item.Url, ["first a", "first b"], 5));
+    }
+
+    [Fact]
+    public void An_idea_from_the_body_links_to_the_item()
+    {
+        Assert.Equal("> Body line 2\n\nFrom https://github.com/x/180", ReaderDialog.IdeaFrom(Talked, Item.Url, ["Body line 2"], 1));
+    }
+
+    [Fact]
+    public void An_idea_from_two_remarks_links_to_the_first()
+    {
+        Assert.EndsWith(
+            "> second\n\nFrom https://github.com/x/180#issuecomment-1",
+            ReaderDialog.IdeaFrom(Talked, Item.Url, ["first b", "", "───── you ─────", "", "second"], 6));
+    }
+
+    [Fact]
+    public void An_idea_with_nothing_selected_only_links_to_the_item()
+    {
+        Assert.Equal("From https://github.com/x/180", ReaderDialog.IdeaFrom(Talked, Item.Url, [], null));
+    }
+
+    [Fact]
+    public void An_idea_from_below_the_last_remark_links_to_the_item()
+    {
+        var shown = Talked with { Text = Talked.Text + "\n\n---\n\n# docs/vision.md\n\nThe vision" };
+
+        Assert.Equal("> The vision\n\nFrom https://github.com/x/180", ReaderDialog.IdeaFrom(shown, Item.Url, ["The vision"], 16));
+    }
+
+    private static ReaderDialog Ideas(List<string> filed, Func<string, string?>? file = null, Rank? rank = null)
+    {
+        var dialog = new ReaderDialog(Item, Talked, () => { }, rank: rank,
+            idea: new ReaderIdea(new Key('n'), description =>
+            {
+                filed.Add(description);
+                return file?.Invoke(description);
+            }));
+        dialog.Layout(new Size(140, 20));
+        return dialog;
+    }
+
+    private static void SelectFirstComment(ReaderDialog dialog)
+    {
+        for (var i = 0; i < 5; i++)
+            dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+    }
+
+    [Fact]
+    public void n_files_an_idea_from_the_selected_lines()
+    {
+        var filed = new List<string>();
+        using var dialog = Ideas(filed);
+        SelectFirstComment(dialog);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('n')));
+
+        Assert.Equal(["> first a\n> first b\n\nFrom https://github.com/x/180#issuecomment-1"], filed);
+    }
+
+    [Fact]
+    public void n_with_nothing_selected_files_an_idea_linking_the_item()
+    {
+        var filed = new List<string>();
+        using var dialog = Ideas(filed);
+
+        dialog.NewKeyDownEvent(new Key('n'));
+
+        Assert.Equal(["From https://github.com/x/180"], filed);
+    }
+
+    [Fact]
+    public void An_added_idea_is_said_and_clears_the_selection_and_a_cancelled_one_keeps_it()
+    {
+        var filed = new List<string>();
+        string? added = null;
+        using var dialog = Ideas(filed, _ => added);
+        SelectFirstComment(dialog);
+
+        dialog.NewKeyDownEvent(new Key('n'));
+        Assert.Equal(2, dialog.Body.Marked);
+        Assert.Equal("", dialog.Message.Says);
+
+        added = "#412 added to a-team's ideas";
+        dialog.NewKeyDownEvent(new Key('n'));
+        Assert.Equal(0, dialog.Body.Marked);
+        Assert.Equal("#412 added to a-team's ideas", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void The_hints_offer_a_new_idea_and_count_the_lines_it_would_quote()
+    {
+        using var dialog = Replying();
+        using var ideas = new ReaderDialog(Item, Talked, () => { }, comment: Commenting(null),
+            idea: new ReaderIdea(new Key('n'), _ => null));
+        ideas.Layout(new Size(140, 20));
+
+        Assert.Contains("Shift+arrows select · n new idea · c comment", ideas.Hints.Says);
+        SelectFirstComment(ideas);
+        Assert.Contains("Ctrl+C copy · q quote 2 lines · n idea from 2 lines · c comment", ideas.Hints.Says);
+        Assert.DoesNotContain("idea", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Commands_runs_the_reader_s_own_new_idea()
+    {
+        var filed = new List<string>();
+        var idea = new ReaderIdea(new Key('n'), description =>
+        {
+            filed.Add(description);
+            return null;
+        });
+        using var dialog = new ReaderDialog(Item, Talked, () => { }, idea: idea);
+        dialog.Layout(new Size(140, 20));
+
+        idea.Start!();
+
+        Assert.Equal(["From https://github.com/x/180"], filed);
+    }
+
+    [Fact]
+    public void With_a_row_of_ranks_n_is_still_None_and_no_idea_is_offered()
+    {
+        var filed = new List<string>();
+        using var dialog = Ideas(filed, rank: Rank.High);
+
+        dialog.NewKeyDownEvent(new Key('n'));
+
+        Assert.Empty(filed);
+        Assert.DoesNotContain("idea", dialog.Hints.Says);
+    }
+
+    [Fact]
+    public void Keys_the_reader_leaves_alone_go_to_the_window()
+    {
+        var passed = new List<Key>();
+        using var dialog = new ReaderDialog(Item, Talked, () => { }, window: key =>
+        {
+            passed.Add(key);
+            return key == Key.F1;
+        });
+        dialog.Layout(new Size(140, 20));
+
+        Assert.True(dialog.NewKeyDownEvent(Key.F1));
+        dialog.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.Equal([Key.F1], passed);
+    }
 }
