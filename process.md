@@ -26,10 +26,11 @@ Every item's Status is one of:
 | Done | Merged, or a pitch whose tasks have all closed | **Stakeholder**, or the Lead for a pitch (`finish`) |
 
 ⛔ marks a gate. Agents move work *into* a gate and stop. Only the stakeholder moves it out. Pitched
-has two exceptions and no others: the Lead moves a pitch back to **Idea** when the stakeholder
-answers it by asking to shelve or defer it, and back to **Exploring** when a higher-priority
+has two exceptions and no others: the Lead shelves a pitch back to **Idea** when the stakeholder
+answers it by asking to shelve or defer it, and moves it back to **Exploring** when a higher-priority
 draft displaces it. `a-team board` allows the first only while that comment is unanswered, and
-the second only for a pitch `lead-next` names in `demote`.
+the second only for a pitch `lead-next` names in `demote`. A shelved pitch isn't pitched again
+until the date its shelve set, unless the stakeholder changes its Priority first.
 
 Two kinds of item share the board:
 
@@ -80,6 +81,9 @@ a-team board {{team}} accept <role> <n>         # stakeholder only: squash-merge
                                                 # pitch #<n>, or close validated pitch #<n>
 a-team board {{team}} decline <role> <n> <file> # stakeholder only: comment <file> on Idea or Pitched pitch #<n>
                                                 # and close it as not planned
+a-team board {{team}} shelve <role> <n> <weeks> <file>  # stakeholder, or the Lead when they ask: Pitched pitch
+                                                # #<n> back to Idea, not pitched again for <weeks>; <file>
+                                                # is the comment, and the board adds the date
 a-team board {{team}} finish <role> <n> <file>  # Lead only: once every task of pitch #<n> has closed,
                                                 # comment <file> on it and close it as done
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours

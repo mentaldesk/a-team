@@ -95,7 +95,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<Write?, IReadOnlyList<Write>, bool> _confirmQuit;
     private WaitingItem? _approvable;
     private WaitingItem? _shown;
-    private WaitingItem? _declined;
+    private WaitingItem? _leaving;
     private string? _said;
     private (string Text, WaitingItem? On)? _already;
     private string? _added;
@@ -593,6 +593,8 @@ public sealed class DashboardWindow : Window
             .Register("work.edit", "Edit the document pitch you're reading", () => { }, new Key('e'), isEnabled: () => _shown is { Document: true })
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true, scopes: [Regions.Work])
+            .Register("work.notNow", "Not now", () => ReadSelected(declining: false, shelving: true), new Key('l'),
+                isEnabled: () => OnWork() && _work.SelectedCard is { Shelvable: true }, onCard: true, scopes: [Regions.Work])
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, scopes: [Regions.Work])
@@ -1083,9 +1085,9 @@ public sealed class DashboardWindow : Window
     private void ReadSelected() => ReadSelected(declining: false);
 
     /// <summary>A card in Triage is waiting for a rank, so it opens with the ranks under it.</summary>
-    private void ReadSelected(bool declining)
+    private void ReadSelected(bool declining, bool shelving = false)
     {
-        if ((declining ? _work.SelectedCard : _work.Selected) is not { } item)
+        if ((declining || shelving ? _work.SelectedCard : _work.Selected) is not { } item)
             return;
         if (_work.InTriage && _work.SelectedCard is { } card)
         {
@@ -1093,7 +1095,7 @@ public sealed class DashboardWindow : Window
             return;
         }
         var url = _work.SelectedUrl;
-        ReadBody(item, (read, body) => ShowBody(read, body, url, declining: declining), forReader: true);
+        ReadBody(item, (read, body) => ShowBody(read, body, url, declining: declining, shelving: shelving), forReader: true);
     }
 
     private void ReadRanking(WaitingItem item, bool declining = false)
@@ -1157,7 +1159,7 @@ public sealed class DashboardWindow : Window
     /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board. With
     /// <paramref name="rank"/> it opens anyway, saying why, since you came to rank it.</summary>
     private void ShowBody(WaitingItem item, IssueBody body, string? url, int? top = null, string? failure = null,
-        Rank? rank = null, bool declining = false, string? said = null)
+        Rank? rank = null, bool declining = false, string? said = null, bool shelving = false)
     {
         if (rank is null && body.Failure is { Length: > 0 } unread)
             _failure = unread;
@@ -1176,7 +1178,8 @@ public sealed class DashboardWindow : Window
             }, _approvable is null ? null : () => _commands.Execute("work.approve"),
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
-                    item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null),
+                    item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
+                    item.Shelvable ? new ReaderShelve(_commands.KeyFor("work.notNow"), (weeks, reason) => Shelve(item, weeks, reason), shelving) : null),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -1191,9 +1194,9 @@ public sealed class DashboardWindow : Window
                 _attention.Did("ranked");
             if (_triedFrom is null && _editFrom is null)
                 _attention.Close();
-            if (_declined == item)
+            if (_leaving == item)
             {
-                _declined = null;
+                _leaving = null;
                 return;
             }
             if (reranked is { } to)
@@ -1287,7 +1290,7 @@ public sealed class DashboardWindow : Window
         var file = Path.GetTempFileName();
         File.WriteAllText(file, reason);
         _attention.Did("declined");
-        _declined = item;
+        _leaving = item;
         Queue(new Write(WriteKind.Decline, Write.KeyOf(item), ["board", item.Team, "decline", "you", item.Number.ToString(), file],
             $"Declining #{item.Number}…", $"#{item.Number} is already being declined", $"declining #{item.Number}", item,
             Scratch: file));
@@ -1296,10 +1299,38 @@ public sealed class DashboardWindow : Window
 
     private void Declined(WaitingItem item)
     {
-        _declined = null;
+        _leaving = null;
         _work.Leave(item);
         _failure = null;
         _said = $"#{item.Number} declined";
+        _saidOn = _work.Selected;
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    /// <summary>Shelves the pitch for <paramref name="weeks"/>, with your reason if you gave one. Like a decline, the
+    /// reader closes on it at once, and the card leaves once the board has taken it.</summary>
+    private Task<string?> Shelve(WaitingItem item, int weeks, string reason)
+    {
+        if (_writes.Holding(Write.KeyOf(item)) is { } already)
+            return Task.FromResult<string?>(already.Already);
+        var file = Path.GetTempFileName();
+        File.WriteAllText(file, reason);
+        _attention.Did("shelved");
+        _leaving = item;
+        Queue(new Write(WriteKind.Shelve, Write.KeyOf(item),
+            ["board", item.Team, "shelve", "you", item.Number.ToString(), weeks.ToString(), file],
+            $"Shelving #{item.Number}…", $"#{item.Number} is already being shelved", $"shelving #{item.Number}", item,
+            Scratch: file, Weeks: weeks));
+        return Task.FromResult<string?>(null);
+    }
+
+    private void Shelved(WaitingItem item, int weeks)
+    {
+        _leaving = null;
+        _work.Leave(item);
+        _failure = null;
+        _said = $"#{item.Number} back on {ReaderShelve.BackOn(_clock.GetUtcNow(), weeks)}";
         _saidOn = _work.Selected;
         SetNeedsLayout();
         SetNeedsDraw();
@@ -1438,6 +1469,9 @@ public sealed class DashboardWindow : Window
                 break;
             case WriteKind.Decline:
                 Declined(write.Item!);
+                break;
+            case WriteKind.Shelve:
+                Shelved(write.Item!, write.Weeks);
                 break;
             case WriteKind.VisionReview:
                 _pass.Start();

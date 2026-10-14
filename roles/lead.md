@@ -26,11 +26,10 @@ For each item in `a-team board {{team}} mine lead Pitched Approved Building "In 
 Approved is included because the stakeholder often answers a question and approves in the same
 sitting. Where the stakeholder has commented:
 
-- If the stakeholder asks to shelve or defer a pitch in **Pitched**, run
-  `a-team board {{team}} move lead <n> Idea` **before** replying: the reply answers the feedback, and
-  after that the move is refused. Say in the reply that it went back to Idea and keeps its
-  priority, so you'll pitch it again once higher-priority ideas have had their turn, unless the
-  stakeholder clears the priority.
+- If the stakeholder asks to shelve or defer a pitch in **Pitched**, your reply is
+  `a-team board {{team}} shelve lead <n> <weeks> <file>`, for the weeks they name, or 2. It moves the
+  pitch back to Idea and adds the date it comes back to your reply. Say that it keeps its priority,
+  and that changing its priority brings it back sooner.
 - Revise the pitch in the issue body (`gh issue edit <n> --body-file ...`). The issue's edit
   history is the version history, so rewrite; don't append. Move each question the stakeholder
   answered from **Needs your answer** into **Assumed**, and remove the section once it's empty.
@@ -158,7 +157,9 @@ otherwise say nothing.
   the opportunity behind it first: the need or pain that makes X worth having. Then treat X as
   one of the options, not the answer. If `item` has `actedOn`, your recommendation is what put it
   ahead of the others in its Priority band: comment on it once it's in Exploring, saying you took it
-  next on your `actedOn` recommendation.
+  next on your `actedOn` recommendation. If `item` has `shelved`, the stakeholder said Not now to it
+  until that date: read why in its comments, check it against what's changed since, and say in the
+  pitch that it was shelved and why.
 - `"discover"`: research new opportunities and file up to `room` of the best, but no more
   than 2. Look inward, at user pain in the repo's issues and discussions, what the product's
   dependencies now make possible, and gaps against the vision. Look outward too, at the

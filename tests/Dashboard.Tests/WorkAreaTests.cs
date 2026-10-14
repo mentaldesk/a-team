@@ -1551,6 +1551,90 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void l_on_a_pitch_opens_the_reader_saying_Not_now_and_the_card_leaves_saying_when_it_s_back()
+    {
+        var calls = new List<string[]>();
+        var reasons = new List<string>();
+        ReaderShelve? offered = null;
+        using var window = Open(
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                reasons.Add(File.ReadAllText(arguments[^1]));
+                return Task.FromResult<string?>(null);
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, comment, _) =>
+            {
+                offered = comment?.Shelve;
+                Assert.Null(offered!.Run(3, "").Result);
+            },
+            clock: new Clock());
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+
+        Assert.True(window.NewKeyDownEvent(new Key('l')));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.True(offered?.Open);
+        Assert.Equal(new Key('l'), offered?.Key);
+        Assert.Equal("board team0 shelve you 107 3", string.Join(' ', Assert.Single(calls)[..6]));
+        Assert.Equal([""], reasons);
+        Assert.DoesNotContain(window.Work.Items, item => item.Number == 107);
+        Assert.Equal("#107 back on 23 Oct", window.Message.Says);
+    }
+
+    [Fact]
+    public void A_refused_shelve_leaves_the_card_where_it_was()
+    {
+        using var window = Open(
+            run: _ => Task.FromResult<string?>("board.sh: only a Pitched pitch can be shelved (#107 is in 'Idea')"),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, comment, _) => comment!.Shelve!.Run(2, "Later."));
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(new Key('l'));
+        window.Refresh();
+
+        Assert.Contains(window.Work.Items, item => item.Number == 107);
+        Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void work_notNow_is_on_l_in_the_Cards_menu_and_the_reader_offers_it_on_pitches_only()
+    {
+        var offered = new List<(int Number, ReaderShelve? Shelve)>();
+        using var window = Open(
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (item, _, _, _, _, comment, _) => offered.Add((item.Number, comment?.Shelve)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        var notNow = window.Commands.Registered.Single(command => command.Id == "work.notNow");
+        Assert.Equal("Not now", notNow.Label);
+        Assert.Equal(new Key('l'), notNow.Key);
+        Assert.True(notNow.OnCard);
+        Assert.DoesNotContain(window.Commands.Registered,
+            command => command.Id != "work.notNow" && command.Key == new Key('l') && command.Scopes.Contains(Regions.Work));
+        Assert.False(window.Commands.IsEnabled("work.notNow"));
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.True(window.Commands.IsEnabled("work.notNow"));
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([6, 107], offered.Select(each => each.Number));
+        Assert.Null(offered[0].Shelve);
+        Assert.False(offered[1].Shelve!.Open);
+    }
+
+    [Fact]
     public void Decline_can_be_rebound_and_the_reader_offers_it_on_the_new_key()
     {
         Directory.CreateDirectory(_root);
@@ -2909,7 +2993,7 @@ public class WorkAreaTests : IDisposable
             [
                 "view.dashboard", "view.work", "view.overseer", "work.whatsNew", "overseer.details", "overseer.fold", "overseer.github",
                 "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.copyBranch", "work.github", "work.accept", "work.decline", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
+                "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));

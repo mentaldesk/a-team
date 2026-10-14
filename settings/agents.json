@@ -56,6 +56,7 @@
       "Bash(a-team board * approve *)",
       "Bash(a-team board * accept *)",
       "Bash(a-team board * decline *)",
+      "Bash(a-team board * shelve you *)",
       "Bash(a-team board * comment you *)",
       "Bash(a-team board * edit *)",
       "Bash(a-team board * vision-review *)",
