@@ -1675,6 +1675,24 @@ public class ReaderDialogTests
         Assert.True(dialog.Field.HasFocus);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_long_reason_wraps_in_the_pane_like_a_comment(bool open)
+    {
+        using var dialog = Shelving(open: open);
+        if (!open)
+            dialog.NewKeyDownEvent(new Key('l'));
+        dialog.Layout(new Size(140, 20));
+
+        Type(dialog.Field, string.Join(' ', Enumerable.Repeat("waiting", 20)));
+        dialog.Layout(new Size(140, 20));
+
+        Assert.True(dialog.Field.WordWrap);
+        Assert.Equal(0, dialog.Field.Viewport.X);
+        Assert.Equal(dialog.Field.SuperView!.Viewport.Width, dialog.Field.Frame.Width);
+    }
+
     [Fact]
     public void Shift_Tab_reaches_the_weeks_and_any_whole_number_from_one_goes()
     {

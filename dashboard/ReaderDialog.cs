@@ -185,10 +185,7 @@ public sealed partial class ReaderDialog : Dialog
         };
         _weeksRow = new View { Width = Dim.Fill(), Height = 1, CanFocus = true, Visible = false };
         _weeksRow.Add(new Label { Text = "Back in" }, _weeks, new Label { Text = "weeks", X = Pos.Right(_weeks) + 1 });
-        _field = new MultiLineField
-        {
-            Y = Pos.Func(_ => _shelving ? 2 : 0, this), Width = Dim.Fill(), Height = Dim.Fill(), BorderStyle = LineStyle.None,
-        };
+        _field = new MultiLineField { Width = Dim.Fill(), Height = Dim.Fill(), BorderStyle = LineStyle.None };
         // The field binds Enter itself, so the keys that leave it are caught before it sees them.
         _field.KeyDown += (_, key) =>
         {
@@ -853,6 +850,7 @@ public sealed partial class ReaderDialog : Dialog
     {
         _shelving = shelving;
         _weeksRow.Visible = shelving;
+        _field.Y = shelving ? 2 : 0;
         SetNeedsLayout();
     }
 
