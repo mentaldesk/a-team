@@ -6,6 +6,7 @@ public enum WriteKind
     Approve,
     Rank,
     Decline,
+    Shelve,
     VisionReview,
     Hold,
     Interrupt,
@@ -16,7 +17,7 @@ public enum WriteKind
 /// collides with it. <paramref name="Scratch"/> is a file it reads, deleted once it's done with.</summary>
 public sealed record Write(
     WriteKind Kind, string Key, string[] Arguments, string Doing, string Already, string Queued,
-    WaitingItem? Item = null, Rank Rank = Rank.None, string Team = "", string? Scratch = null)
+    WaitingItem? Item = null, Rank Rank = Rank.None, string Team = "", string? Scratch = null, int Weeks = 0)
 {
     public static string KeyOf(WaitingItem item) => $"{item.Team}#{item.Number}";
 }

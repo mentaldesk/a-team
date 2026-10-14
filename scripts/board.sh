@@ -71,6 +71,7 @@ a-team:customer|1d76db|The a-team Customer lead's docs PR|the Customer lead can'
 a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched|the Lead can't flag the ideas it finds for you
 a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running|the Lead can't pass over an idea, and keeps coming back to it
 a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced|the Lead tells you every time it bumps a pitch out of Pitched, not just the first
+a-team:shelved|d4c5f9|You said Not now; the Lead won't pitch it again until the date on it|the Lead pitches again a pitch you've just said Not now to
 blocked|fbca04|Waiting on another issue|the Dev can't mark a task that waits on your answer"
 # The Lead's recommended rank for an Idea, in the Priority field's colours. `recommend` creates any that are missing.
 RANK_LABELS="rank:urgent|c1408d|The a-team Lead recommends Urgent; your Priority still decides
@@ -180,11 +181,11 @@ is_state() {
 }
 
 allowed() {
-  # Both moves out of Pitched are gated again in `move`: Idea only with unanswered stakeholder
-  # feedback, Exploring only for a pitch `lead-next` names in `demote`.
+  # Pitched > Exploring is gated again in `move`, only for a pitch `lead-next` names in `demote`;
+  # Pitched > Idea is `shelve`'s.
   case "$1:$2>$3" in
     "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
-    "lead:Pitched>Idea" | "lead:Pitched>Exploring" | \
+    "lead:Pitched>Exploring" | \
     "lead:Approved>Building" | \
     "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
     "dev:None>Idea" | "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
@@ -577,13 +578,33 @@ idea() {
   return 1
 }
 
+# shelved <n>: the newest Not now on #n, as {until, priority}, or nothing. Only a stakeholder or the team
+# can have written it.
+shelved() {
+  gh api --paginate "repos/$REPO/issues/$1/comments" |
+    jq -s --argjson stakeholders "$STAKEHOLDERS" --arg bot "$BOT" '
+      [add[] | select(.user.login == $bot or (.user.login | IN($stakeholders[])))
+       | .body // "" | capture("<!-- a-team:shelved until=(?<until>[0-9-]+) priority=(?<priority>.+?) -->")]
+      | last // empty | .priority |= if . == "none" then null else . end'
+}
+
+# cooling <idea>: inside the cooldown a Not now gave it, at the Priority it had then.
+cooling() {
+  local shelf
+  jq -e '.labels | index("a-team:shelved")' <<<"$1" >/dev/null || return 1
+  shelf=$(shelved "$(jq -r .number <<<"$1")")
+  [ -n "$shelf" ] && jq -e --argjson idea "$1" --arg today "$(date +%F)" \
+    '.until > $today and .priority == $idea.priority' <<<"$shelf" >/dev/null
+}
+
 # pitchable <idea>: a stakeholder's own Idea, or one a stakeholder has prioritised, and not one the Lead
-# has skipped that a stakeholder hasn't since commented on.
+# has skipped that a stakeholder hasn't since commented on, nor one still cooling after a Not now.
 pitchable() {
   if jq -e '.labels | index("a-team:skipped")' <<<"$1" >/dev/null &&
     [ "$(unanswered_feedback lead "$(jq -r .number <<<"$1")" | jq length)" -eq 0 ]; then
     return 1
   fi
+  cooling "$1" && return 1
   if [ "$(jq -r .priority <<<"$1")" = null ] &&
     { jq -e '.labels | index("a-team:idea")' <<<"$1" >/dev/null ||
       agent_written "$(jq -r .number <<<"$1")"; }; then
@@ -599,6 +620,10 @@ pitchable_idea() {
     pitchable "$candidate" || continue
     if [ -z "$chosen" ]; then
       chosen=$candidate
+      if jq -e '.labels | index("a-team:shelved")' <<<"$chosen" >/dev/null; then
+        chosen=$(jq --argjson shelf "$(shelved "$(jq -r .number <<<"$chosen")" | jq -s 'first')" \
+          'if $shelf then . + {shelved: $shelf.until} else . end' <<<"$chosen")
+      fi
       jq -e "$RECOMMENDED"'recommended' <<<"$chosen" >/dev/null || break
       continue
     fi
@@ -971,15 +996,20 @@ store_attachment() {
   done
 }
 
+# react <id> <what>: a 👀 on comment <id>.
+react() {
+  write "add 👀 to $2" gh api graphql -F subject="$1" -f query='
+    mutation($subject: ID!) {
+      addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
+}
+
 # ack <n>: a 👀 on every stakeholder comment on #n this run could have seen. One that arrived mid-run
 # is newer than A_TEAM_RUN_STARTED, so it stays unanswered and gets a run of its own. Unset means
 # now, which is right for a person running `comment` by hand, since they have just read the thread.
 ack() {
   local id at started=${A_TEAM_RUN_STARTED:-$(iso "$(date +%s)")}
   while IFS=$'\t' read -r id at; do
-    write "add 👀 to your comment of $at on #$1" gh api graphql -F subject="$id" -f query='
-      mutation($subject: ID!) {
-        addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
+    react "$id" "your comment of $at on #$1"
   done < <(comments "$1" | jq -r --argjson stakeholders "$STAKEHOLDERS" --arg started "$started" \
     --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID"'
     map(select(.at < $started))
@@ -1179,10 +1209,6 @@ case "$CMD" in
     if [ "$role" = dev ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       die "dev does not move pitches"
     fi
-    if [ "$role:$from>$to" = "lead:Pitched>Idea" ] &&
-      [ "$(unanswered_feedback lead "$n" | jq length)" -eq 0 ]; then
-      die "lead may move #$n out of Pitched only when a stakeholder has asked (no unanswered stakeholder feedback on #$n)"
-    fi
     if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
       ! pitch_swap "$(items)" | jq -e --argjson n "$n" 'any(.demote[]; .number == $n)' >/dev/null; then
       die "lead may move #$n out of Pitched only when a higher-priority draft displaces it (nothing in Exploring out-ranks #$n)"
@@ -1194,6 +1220,9 @@ case "$CMD" in
         jq -e --arg l "$label" '.labels | index($l)' <<<"$it" >/dev/null ||
           die "#$n isn't $role's (no '$label' label); leave it to the stakeholders" ;;
     esac
+    if [ "$role:$from>$to" = "lead:Idea>Exploring" ] && jq -e '.labels | index("a-team:shelved")' <<<"$it" >/dev/null; then
+      write "unlabel #$n a-team:shelved" gh issue edit "$n" -R "$REPO" --remove-label a-team:shelved >/dev/null
+    fi
     if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
       ! jq -e '.labels | index("a-team:displaced")' <<<"$it" >/dev/null; then
       write "label #$n a-team:displaced" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:displaced' >/dev/null
@@ -1434,6 +1463,50 @@ case "$CMD" in
     set_status "$(jq -r .id <<<"$it")" Done
     record "$role" "$n" "declined"
     say "#$n: declined"
+    ;;
+
+  shelve)
+    [ $# -eq 4 ] || die "usage: board.sh $TEAM shelve <role> <n> <weeks> <file>"
+    role=$1 n=$2 weeks=$3 file=$4
+    case "$role" in
+      you | lead) ;;
+      dev | customer | reviewer) die "$role may not shelve a pitch; Not now is the stakeholders' own, or the Lead's when they ask" ;;
+      *) die "unknown role '$role' (you | lead)" ;;
+    esac
+    [[ $weeks =~ ^[0-9]+$ ]] && [ "$weeks" -ge 1 ] || die "weeks is a whole number from 1 ('$weeks' isn't)"
+    [ -f "$file" ] || die "no such file: $file"
+    [ "$role" = you ] || grep -q '[^[:space:]]' "$file" || die "the Lead's shelve is its reply: $file is empty"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a pitch to shelve"
+    jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
+    status=$(jq -r .status <<<"$it")
+    [ "$status" = Pitched ] || die "only a Pitched pitch can be shelved (#$n is in '$status')"
+    if [ "$role" = lead ] && [ "$(unanswered_feedback lead "$n" | jq length)" -eq 0 ]; then
+      die "lead may shelve #$n only when a stakeholder has asked (no unanswered stakeholder feedback on #$n)"
+    fi
+    until=$(jq -rn --argjson w "$weeks" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")')
+    back=$(jq -rn --arg d "$until" '$d | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0")')
+    reason=$(cat "$file")
+    body=$(
+      [ -z "${reason//[[:space:]]/}" ] || printf '%s\n\n' "$reason"
+      printf 'Not now: back on %s.\n\n<!-- a-team:shelved until=%s priority=%s -->' "$back" "$until" "$(jq -r '.priority // "none"' <<<"$it")"
+      [ "$role" = you ] || printf '\n\n<!-- a-team:%s -->' "$role"
+    )
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    posted=$(printf '%s\n' "$body" | write "comment on #$n" \
+      gh api -X POST "repos/$REPO/issues/$n/comments" -F body=@- --jq .node_id)
+    if [ "$role" = you ]; then
+      # Your Not now is read when the Lead next pitches it, not answered now.
+      [ -z "$posted" ] || react "$posted" "your Not now on #$n"
+    else
+      ack "$n"
+    fi
+    write "label #$n a-team:shelved" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:shelved' >/dev/null
+    set_status "$(jq -r .id <<<"$it")" Idea
+    record "$role" "$n" "Pitched → Idea"
+    record "$role" "$n" "shelved until $back"
+    say "#$n: back on $back"
     ;;
 
   accept)
@@ -1822,7 +1895,7 @@ case "$CMD" in
           | (remark($pr) + {description: true}), (.comments.nodes[]? | remark($pr)))]
       | sort_by(.at)
       | map({who: who, at, pr, url, description: (.description // false),
-             body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev|customer|reviewer) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
+             body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev|customer|reviewer|shelved [^>]*) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
     ;;
 
   children)

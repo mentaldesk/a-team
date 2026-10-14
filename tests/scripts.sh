@@ -206,6 +206,7 @@ case " \$* " in
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"-X POST"*"/issues/"*"/comments"*) cat >"$POSTED"; echo IC_posted; exit 0 ;;
   *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
   *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
                     echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;
@@ -1080,6 +1081,14 @@ same "urls" '["https://github.com/mentaldesk/demo/pull/906","https://github.com/
   "$(jq -c '[.[].url]' "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
 
+case_ "a Not now reads without its date marker"
+gh_talk <<'TALK'
+6 body 2026-10-01T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+6 comment 2026-10-01T09:00:00Z reviewer Later.\n\nNot now: back on 15 Oct.\n\n<!-- a-team:shelved until=2026-10-15 priority=High -->
+TALK
+run board demo conversation 6
+same "bodies" '["Later.\n\nNot now: back on 15 Oct."]' "$(jq -c '[.[].body]' "$OUT")"
+
 case_ "a card nobody has said anything on has an empty conversation"
 gh_talk <<'TALK'
 6 body 2026-10-01T08:00:00Z reviewer An Idea of my own
@@ -1318,6 +1327,175 @@ grep -q -- "-f option=98236657 " "$WRITES" || fail "numeric option: not a raw st
 
 case_ "the agents' settings deny decline"
 grep -qF '"Bash(a-team board * decline *)"' "$ROOT/settings/agents.json" || fail "no decline deny rule"
+
+# Not now: a Pitched pitch back to Idea, held back from the Lead until a date.
+weeks_on() { jq -rn --argjson w "$1" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")'; }
+back_on() { jq -rn --arg d "$(weeks_on "$1")" '$d | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0")'; }
+
+case_ "shelve posts your reason with the date, labels it, moves it to Idea and acks only that, so no run answers it"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
+JSON
+gh_items 7 <<'ITEMS'
+Pitched 7 A pitch for later
+Exploring 8 A pitch still being drafted
+Idea 9 An Idea
+Ready 10 A task
+ITEMS
+jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+gh_thread <<THREAD
+comment $(ago 1) reviewer 0 What would this cost to run?
+THREAD
+rm -f "$A_TEAM_STATE/history.db"
+printf "Cost isn't what I'm watching yet.\n" >"$WORK/reason"
+run board demo shelve you 7 3 "$WORK/reason"
+same "exit" 0 "$STATUS"
+same "said" "#7: back on $(back_on 3)" "$(cat "$OUT")"
+same "posted" "Cost isn't what I'm watching yet.
+
+Not now: back on $(back_on 3).
+
+<!-- a-team:shelved until=$(weeks_on 3) priority=High -->" "$(cat "$POSTED")"
+grep -q "issues/7/labels -f labels\[\]=a-team:shelved" "$WRITES" || fail "not labelled: '$(cat "$WRITES")'"
+grep -q "item=PVTI_7 .*option=OPT_idea " "$WRITES" || fail "not moved to Idea: '$(cat "$WRITES")'"
+same "acked" "IC_posted" "$(cat "$ACKED")"
+same "history" "you shelved until $(back_on 3)
+you Pitched → Idea" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 7 | jq -r '.events[] | "\(.who) \(.what)"')"
+
+case_ "a reason is optional: without one the comment is the date alone"
+: >"$POSTED"
+: >"$WORK/blank"
+run board demo shelve you 7 2 "$WORK/blank"
+same "exit" 0 "$STATUS"
+same "posted" "Not now: back on $(back_on 2).
+
+<!-- a-team:shelved until=$(weeks_on 2) priority=High -->" "$(cat "$POSTED")"
+
+case_ "shelve takes any whole number of weeks from 1, and only a Pitched pitch"
+: >"$WRITES"
+: >"$POSTED"
+for weeks in 0 -1 two 1.5; do
+  run board demo shelve you 7 "$weeks" "$WORK/reason"
+  failed "$weeks weeks"
+  one_line "$weeks weeks"
+  grep -qF "weeks is a whole number from 1 ('$weeks' isn't)" "$ERR" || fail "$weeks weeks: '$(cat "$ERR")'"
+done
+for n in 8 9 10; do
+  run board demo shelve you "$n" 2 "$WORK/reason"
+  failed "shelve #$n"
+done
+run board demo shelve you 8 2 "$WORK/reason"
+grep -qF "only a Pitched pitch can be shelved (#8 is in 'Exploring')" "$ERR" || fail "a draft: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "no Dev, Customer lead or Reviewer may shelve"
+for role in dev customer reviewer; do
+  run board demo shelve "$role" 7 2 "$WORK/reason"
+  failed "$role shelving"
+  grep -qF "$role may not shelve a pitch" "$ERR" || fail "$role shelving: '$(cat "$ERR")'"
+done
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "the Lead shelves only when a stakeholder has asked, and its reply carries the date and its marker"
+gh_thread <<THREAD
+comment $(ago 5) reviewer 1 Already answered.
+THREAD
+printf 'Shelved for 3 weeks, as you asked.\n' >"$WORK/reply"
+run board demo shelve lead 7 3 "$WORK/reply"
+failed "nothing asked"
+grep -qF "lead may shelve #7 only when a stakeholder has asked" "$ERR" || fail "nothing asked: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+gh_thread <<THREAD
+comment $(ago 5) reviewer 0 Not for a few weeks: shelve it for 3.
+THREAD
+run board demo shelve lead 7 3 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "posted" "Shelved for 3 weeks, as you asked.
+
+Not now: back on $(back_on 3).
+
+<!-- a-team:shelved until=$(weeks_on 3) priority=High -->
+
+<!-- a-team:lead -->" "$(cat "$POSTED")"
+run board demo shelve lead 7 3 "$WORK/blank"
+failed "empty reply"
+
+case_ "the Lead can't move a pitch out of Pitched to Idea any more: shelve does that"
+run board demo move lead 7 Idea
+failed "move to Idea"
+grep -qF "lead may not move #7 from 'Pitched' to 'Idea'" "$ERR" || fail "move to Idea: '$(cat "$ERR")'"
+
+case_ "--dry-run says what it would shelve and changes nothing"
+: >"$WRITES"
+: >"$POSTED"
+rm -f "$A_TEAM_STATE/history.db"
+run board --dry-run demo shelve you 7 2 "$WORK/reason"
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+grep -q "would label #7 a-team:shelved" "$ERR" || fail "shelve dry run: '$(cat "$ERR")'"
+[ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
+
+case_ "lead-next passes over a shelved Idea until its date, even when it's the only one with a Priority"
+gh_items 7 <<'ITEMS'
+Idea 7 A pitch for later
+Idea 9 An unranked Idea the Lead found
+ITEMS
+edit_item 7 '.labels.nodes = [{name: "pitch"}, {name: "a-team:shelved"}]'
+edit_item 9 '.labels.nodes = [{name: "a-team:idea"}]'
+gh_thread <<THREAD
+comment $(ago 60) reviewer 1 Cost isn't what I'm watching yet.\n\nNot now: back on someday.\n\n<!-- a-team:shelved until=$(weeks_on 2) priority=High -->
+THREAD
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "cooling" '{"turn":"discover","item":null}' "$(jq -c '{turn, item}' "$OUT")"
+
+case_ "once its date has passed it's pitched again at its Priority, saying it was shelved"
+gh_thread <<THREAD
+comment $(ago 30000) reviewer 1 Not now: back on 1 Oct.\n\n<!-- a-team:shelved until=$YESTERDAY priority=High -->
+THREAD
+echo discover >"$WORK/state/demo/lead-turn"
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "back" "{\"turn\":\"pitch\",\"item\":7,\"shelved\":\"$YESTERDAY\"}" "$(jq -c '{turn, item: .item.number, shelved: .item.shelved}' "$OUT")"
+
+case_ "changing its Priority ends the cooldown early"
+gh_thread <<THREAD
+comment $(ago 60) reviewer 1 Not now.\n\n<!-- a-team:shelved until=$(weeks_on 2) priority=Low -->
+THREAD
+echo discover >"$WORK/state/demo/lead-turn"
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "reranked" '{"turn":"pitch","item":7}' "$(jq -c '{turn, item: .item.number}' "$OUT")"
+
+case_ "only a stakeholder or the team can shelve: anyone else's marker is ignored"
+gh_thread <<THREAD
+comment $(ago 60) passer-by 0 <!-- a-team:shelved until=$(weeks_on 2) priority=High -->
+THREAD
+echo discover >"$WORK/state/demo/lead-turn"
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "ignored" '{"turn":"pitch","item":7}' "$(jq -c '{turn, item: .item.number}' "$OUT")"
+
+case_ "a displaced pitch is no shelved one: it still comes back as soon as a slot frees"
+gh_items 11 <<'ITEMS'
+Exploring 11 Displaced, not shelved
+ITEMS
+edit_item 11 '.labels.nodes = [{name: "pitch"}, {name: "a-team:displaced"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "promoted" '[11]' "$(jq -c '[.promote[].number]' "$OUT")"
+
+case_ "pitching a shelved Idea takes its a-team:shelved label off"
+gh_items 7 <<'ITEMS'
+Idea 7 A pitch for later
+ITEMS
+edit_item 7 '.labels.nodes = [{name: "pitch"}, {name: "a-team:shelved"}]'
+run board demo move lead 7 Exploring
+same "exit" 0 "$STATUS"
+grep -q "issue edit 7 -R mentaldesk/demo --remove-label a-team:shelved" "$WRITES" || fail "label kept: '$(cat "$WRITES")'"
+
+case_ "the agents' settings deny shelving as you"
+grep -qF '"Bash(a-team board * shelve you *)"' "$ROOT/settings/agents.json" || fail "no shelve deny rule"
 
 # Accepting: the app's merge, the gate a task leaves by.
 case_ "accept squash-merges the task's PR and deletes its branch"
@@ -5213,7 +5391,7 @@ board_options() {
 }
 board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
 board_labels() { jq -n --args '$ARGS.positional | map({name: .})' "$@" >"$APP_BIN/board/labels.json"; }
-board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
 board_workflows() {
   jq -n --args '{data: {organization: {projectV2: {workflows: {nodes:
     ($ARGS.positional | map({name: ., enabled: true}) + [{name: "Pull request merged", enabled: false}])}}}}}' \
@@ -5335,12 +5513,13 @@ board_labels pitch a-team:dev blocked
 checked
 says 2 "labels    no 'a-team:idea' label, so the Lead can't flag the ideas it finds for you
 labels    no 'a-team:skipped' label, so the Lead can't pass over an idea, and keeps coming back to it
-labels    no 'a-team:displaced' label, so the Lead tells you every time it bumps a pitch out of Pitched, not just the first"
-board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+labels    no 'a-team:displaced' label, so the Lead tells you every time it bumps a pitch out of Pitched, not just the first
+labels    no 'a-team:shelved' label, so the Lead pitches again a pitch you've just said Not now to"
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
 
 case_ "with a Customer lead, a docs page that's missing or not named is a problem the team can still run with"
 jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
-board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked a-team:customer
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked a-team:customer
 checked
 says 2 "docs      demo.json names no docs page, so the Customer lead has nothing to keep right"
 jq '.docs = "docs/index.md"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
@@ -5350,7 +5529,7 @@ NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
 docs      docs/index.md isn't in mentaldesk/demo yet: the Customer lead will propose the docs as a draft PR"
 jq 'del(.roles, .docs)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
-board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
 NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
 
@@ -5381,12 +5560,12 @@ says 0 ""
 board_workflows "Auto-add to project" "Item added to project" "Item closed"
 
 case_ "check reports every problem it finds, not just the first"
-board_labels pitch a-team:dev a-team:idea a-team:skipped blocked
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:shelved blocked
 NO_VISION=1 NO_FIELD=1 checked
 says 1 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
 project   no single-select field 'Status' on mentaldesk project 1
 labels    no 'a-team:displaced' label, so the Lead tells you every time it bumps a pitch out of Pitched, not just the first"
-board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
 
 case_ "check reports a config it can't read, or one with no repo or project, as problems"
 before=$(cat "$TEAM")
