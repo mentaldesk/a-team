@@ -101,6 +101,7 @@ public sealed class DashboardWindow : Window
     private (string Text, WaitingItem? On)? _already;
     private string? _added;
     private ReaderIdea? _idea;
+    private ReaderImage? _image;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
     private Task<Reading[]>? _trending;
@@ -597,6 +598,7 @@ public sealed class DashboardWindow : Window
             .Register("work.edit", "Edit the document pitch you're reading", () => { }, new Key('e'), isEnabled: () => _shown is { Document: true })
             .Register("work.attach", "Attach image file to what you're writing", () => { }, Key.U.WithCtrl,
                 isEnabled: () => _shown is not null && _attaching is not null)
+            .Register("work.viewImage", () => "View image", () => _image?.View(), isEnabled: () => _image?.Viewable() == true)
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true, scopes: [Regions.Work])
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
@@ -1176,6 +1178,7 @@ public sealed class DashboardWindow : Window
             _attention.Open(item, WorkView.GateOf(item));
             Seen(item);
             _idea = NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
+            _image = new ReaderImage();
             var chosen = _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
@@ -1184,7 +1187,7 @@ public sealed class DashboardWindow : Window
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
-                    Attaching()),
+                    Attaching(), _image),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -1194,6 +1197,7 @@ public sealed class DashboardWindow : Window
                 key => (key == _commands.KeyFor("help") || key == _commands.KeyFor("commands")) && _commands.Press(key),
                 rank);
             _idea = null;
+            _image = null;
             _opened.Open(item.Team, item.Number, _clock.GetUtcNow());
             _approvable = null;
             _shown = null;
@@ -1646,7 +1650,7 @@ public sealed class DashboardWindow : Window
 
     /// <summary>While the reader is open, only what works from it: the rest acts on the board underneath.</summary>
     private IReadOnlyList<CommandDescriptor> Offered =>
-        _shown is null ? _commands.Enabled : [.. _commands.Enabled.Where(command => command.Id is "work.new" or "help" or "commands")];
+        _shown is null ? _commands.Enabled : [.. _commands.Enabled.Where(command => command.Id is "work.new" or "work.viewImage" or "help" or "commands")];
 
     /// <summary>Where the window is now, for the keys that work only there.</summary>
     internal CommandScope Region => _area switch

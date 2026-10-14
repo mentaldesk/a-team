@@ -94,6 +94,7 @@ Handover? Show(Handover? back)
     LogSchemes.Register();
     Handover? handedOver = null;
     var named = wanted.Length > 0 ? wanted : teams.Names();
+    var pictures = Pictures.Of(app);
     using var window = new DashboardWindow(
         [.. named.SelectMany(team => teams.Roles(team).Select(role => (team, role)))],
         stateRoot,
@@ -104,7 +105,8 @@ Handover? Show(Handover? back)
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
         (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, copyBranch, idea, keys, rank) =>
-            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes, edit, copyBranch, idea, keys),
+            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes, edit, copyBranch, idea, keys,
+                pictures, url => Link.OpenUrl(url)),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>

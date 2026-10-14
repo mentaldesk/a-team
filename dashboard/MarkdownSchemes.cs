@@ -30,6 +30,7 @@ public static class MarkdownSchemes
         Add(reader, LogLineKind.Code, palette.Code);
         Add(reader, LogLineKind.InlineCode, palette.InlineCode);
         Add(reader, LogLineKind.Quote, palette.Quote);
+        Add(reader, LogLineKind.Caption, palette.Quote, TextStyle.Italic);
         Add(reader, LogLineKind.ListMarker, palette.ListMarker);
         Add(reader, LogLineKind.Strong, palette.Strong, TextStyle.Bold);
     }
