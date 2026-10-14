@@ -609,4 +609,41 @@ public class LogViewTests
 
         Assert.Equal(0, view.Marked);
     }
+
+    [Theory]
+    [InlineData("\U0001F4F8 a screenshot")]
+    [InlineData("A wide line that wraps right where \U0001F4F8 sits")]
+    public void The_caret_draws_on_a_character_outside_the_basic_plane(string line)
+    {
+        using var app = Terminal.Gui.App.Application.Create().Init(Terminal.Gui.Drivers.DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(40, 5);
+        var window = new Terminal.Gui.Views.Window();
+        using var view = Readable(line);
+        window.Add(view);
+        app.Begin(window);
+        view.ShowsCaret = true;
+
+        for (var x = 0; x < 30; x++)
+        {
+            Mouse(view, MouseFlags.LeftButtonPressed, x, 0);
+            Mouse(view, MouseFlags.LeftButtonPressed, x, 1);
+            app.LayoutAndDraw(forceRedraw: true);
+            Mouse(view, MouseFlags.LeftButtonPressed | MouseFlags.PositionReport, 1, 0);
+            app.LayoutAndDraw(forceRedraw: true);
+        }
+    }
+
+    [Fact]
+    public void The_arrow_keys_step_over_a_character_outside_the_basic_plane_whole()
+    {
+        using var view = Readable("a\U0001F4F8b");
+        view.ShowsCaret = true;
+
+        view.MoveCaret(CaretMove.Right, extend: false);
+        view.MoveCaret(CaretMove.Right, extend: false);
+        Assert.Equal((0, 3), view.Caret);
+
+        view.MoveCaret(CaretMove.Left, extend: false);
+        Assert.Equal((0, 1), view.Caret);
+    }
 }
