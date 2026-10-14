@@ -156,9 +156,9 @@ public sealed class CommandsDialog : Dialog
         new() { Title = what, HelpText = keys, Key = Key.Empty, Action = action, CanFocus = false };
 
     /// <summary>Runs what was picked only once the dialog has closed, so Quit stops the dashboard and not this.</summary>
-    public static void Show(IApplication app, CommandRegistry commands)
+    public static void Show(IApplication app, CommandRegistry commands, IReadOnlyList<CommandDescriptor>? offered = null)
     {
-        using var dialog = new CommandsDialog(commands.Enabled);
+        using var dialog = new CommandsDialog(offered ?? commands.Enabled);
         app.Run(dialog);
         if (dialog.Chosen is { } id)
             commands.Execute(id);
