@@ -1,5 +1,6 @@
 using System.Drawing;
 using Terminal.Gui.Input;
+using Color = Terminal.Gui.Drawing.Color;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -92,10 +93,26 @@ public class PicturesTests
     }
 
     [Fact]
+    public void A_picture_is_drawn_over_the_pane_s_background_so_no_text_shows_through_it()
+    {
+        var pixels = new Color[3, 1];
+        pixels[0, 0] = new(255, 0, 0, 0);
+        pixels[1, 0] = new(255, 0, 0, 255);
+        pixels[2, 0] = new(255, 0, 0, 128);
+
+        var flat = new Picture(pixels).Over(new Color(0, 0, 255));
+
+        Assert.Equal(new Color(0, 0, 255), flat[0, 0]);
+        Assert.Equal(new Color(255, 0, 0), flat[1, 0]);
+        Assert.Equal(new Color(128, 0, 127), flat[2, 0]);
+        Assert.All(flat.Cast<Color>(), pixel => Assert.Equal(255, pixel.A));
+    }
+
+    [Fact]
     public void A_picture_is_as_many_rows_as_its_shape_needs_at_the_pane_s_width()
     {
         var pictures = new Pictures(() => true, () => new Size(10, 20));
-        var wide = new Picture(new Terminal.Gui.Drawing.Color[400, 200]);
+        var wide = new Picture(new Color[400, 200]);
 
         Assert.Equal(5, pictures.Rows(wide, width: 20, most: 50));
         Assert.Equal(3, pictures.Rows(wide, width: 20, most: 3));

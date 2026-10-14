@@ -15,6 +15,24 @@ public sealed record ImageLink(string Alt, string Url);
 public sealed record Picture(Color[,] Pixels)
 {
     public Size Size => new(Pixels.GetLength(0), Pixels.GetLength(1));
+
+    /// <summary>The pixels laid over <paramref name="background"/>, with nothing left see-through: a terminal leaves
+    /// whatever text was in a cell showing through a transparent pixel.</summary>
+    public Color[,] Over(Color background)
+    {
+        var (width, height) = (Size.Width, Size.Height);
+        var flat = new Color[width, height];
+        for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+            {
+                var pixel = Pixels[x, y];
+                flat[x, y] = new Color(Blend(pixel.R, background.R, pixel.A), Blend(pixel.G, background.G, pixel.A),
+                    Blend(pixel.B, background.B, pixel.A));
+            }
+        return flat;
+    }
+
+    private static int Blend(int over, int under, int alpha) => (over * alpha + under * (255 - alpha) + 127) / 255;
 }
 
 /// <summary>The pictures image lines link to, read with your own <c>gh</c> login and drawn where the terminal can.

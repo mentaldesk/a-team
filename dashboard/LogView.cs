@@ -629,7 +629,7 @@ public sealed class LogView : View
             kept.Add(key);
             if (!_pictures.TryGetValue(key, out var view))
             {
-                view = new ImageView { CanFocus = false, Image = picture.Pixels };
+                view = new ImageView { CanFocus = false, Image = picture.Over(GetAttributeForRole(VisualRole.Normal).Background) };
                 view.MouseBindings.Clear();
                 _pictures[key] = view;
                 Add(view);

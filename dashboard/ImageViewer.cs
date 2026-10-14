@@ -1,3 +1,4 @@
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
@@ -17,7 +18,7 @@ public sealed class ImageViewer : Dialog
         Y = 0;
         Width = Dim.Fill();
         Height = Dim.Fill();
-        var image = new ImageView { Width = Dim.Fill(), Height = Dim.Fill(1), CanFocus = false, Image = picture.Pixels };
+        var image = new ImageView { Width = Dim.Fill(), Height = Dim.Fill(1), CanFocus = false, Image = picture.Over(GetAttributeForRole(VisualRole.Normal).Background) };
         image.MouseBindings.Clear();
         _hints.Y = Pos.AnchorEnd(1);
         _hints.Show([new HintedCommand(CloseHint, "Esc close")], _ => Close());
