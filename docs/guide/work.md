@@ -266,9 +266,8 @@ they read what you wrote, and a reply about it says what they saw. **In a public
 images are public.**
 
 **Seeing a screenshot.** In a terminal that draws pictures (iTerm2, Ghostty, WezTerm, kitty or
-Windows Terminal), the reader draws each image in the body and its comments as wide as the pane,
-with its name beneath. Put the cursor on one and press `Enter` to see it full-window; `Esc` closes
-it. In the Comment pane `Enter` starts a new line, so put the cursor on the image's line and pick
+Windows Terminal), the reader draws each image in the body and its comments as wide as the pane.
+Put the cursor on one and press `Enter` to see it full-window; `Esc` closes it. In the Comment pane `Enter` starts a new line, so put the cursor on the image's line and pick
 **View image** from Commands (`Ctrl+E`). In any other terminal, over a connection that doesn't pass
 pictures on, or for an image your `gh` login can't read, the line stays as text and `Enter` opens
 the image on GitHub. PNG, JPEG and GIF images are drawn; a WebP stays as its line. While you're

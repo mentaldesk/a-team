@@ -129,7 +129,7 @@ public sealed class LogView : View
     /// <summary>Colours the markdown inside prose rows too: list markers, inline code and bold.</summary>
     public bool ReadsMarkdown { get; init; }
 
-    /// <summary>Draws each image line as its picture, with its alt text beneath, where the terminal can.</summary>
+    /// <summary>Draws each image line as its picture, where the terminal can.</summary>
     public Pictures? Pictures { get; init; }
 
     /// <summary>The image line the caret is on, or null.</summary>
@@ -790,10 +790,10 @@ public sealed class LogView : View
         ? [.. _lines.Select((line, i) => new LogRow(Elide(line.Text, Room(width, line.Kind)), line.Kind, Line: i))]
         : Wrap(_expanded ? _lines : Collapse(_lines, width), width, Pictures is { Drawn: true } ? line => Pictured(line, width) : null);
 
-    /// <summary>The rows an image line's picture takes, and its alt text, where the picture has been read.</summary>
-    private (string Alt, int Rows)? Pictured(LogLine line, int width) =>
+    /// <summary>The rows an image line's picture takes, where the picture has been read.</summary>
+    private int? Pictured(LogLine line, int width) =>
         Pictures.Link(line.Text) is { } link && Pictures!.For(link.Url) is { } picture
-            ? (link.Alt, Pictures.Rows(picture, width, Viewport.Height - 1))
+            ? Pictures.Rows(picture, width, Viewport.Height - 1)
             : null;
 
     /// <summary>The cells a line of this kind has left for its text, never fewer than one.</summary>
@@ -861,17 +861,17 @@ public sealed class LogView : View
 
     private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
 
-    internal static List<LogRow> Wrap(IReadOnlyList<LogLine> lines, int width, Func<LogLine, (string Alt, int Rows)?>? pictured = null)
+    internal static List<LogRow> Wrap(IReadOnlyList<LogLine> lines, int width, Func<LogLine, int?>? pictured = null)
     {
         var rows = new List<LogRow>(lines.Count);
         for (var index = 0; index < lines.Count; index++)
         {
             var line = lines[index];
-            if (pictured?.Invoke(line) is var (alt, height))
+            if (pictured?.Invoke(line) is { } height)
             {
                 for (var row = 0; row < height; row++)
                     rows.Add(new LogRow("", line.Kind, row > 0, index, Pictured: true));
-                rows.Add(new LogRow(alt, LogLineKind.Caption, true, index));
+                rows.Add(new LogRow("", line.Kind, true, index));
                 continue;
             }
             var room = Room(width, line.Kind);

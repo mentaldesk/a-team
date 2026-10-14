@@ -19,7 +19,6 @@ public enum LogLineKind
     InlineCode,
     Strong,
     ListMarker,
-    Caption,
 }
 
 /// <summary>One rendered line of a session log, and what it came from. <paramref name="Full"/> is the untruncated

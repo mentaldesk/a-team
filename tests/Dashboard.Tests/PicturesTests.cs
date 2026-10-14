@@ -119,18 +119,18 @@ public class PicturesTests
     }
 
     [Fact]
-    public void An_image_line_wraps_to_its_picture_s_rows_then_its_alt_text()
+    public void An_image_line_wraps_to_its_picture_s_rows_then_an_empty_row_with_no_alt_text()
     {
         LogLine[] lines = [new("Before", LogLineKind.Prose), new("![shot](https://x/y.png)", LogLineKind.Prose)];
 
-        var rows = LogView.Wrap(lines, 40, line => Pictures.Link(line.Text) is { } link ? (link.Alt, 2) : null);
+        var rows = LogView.Wrap(lines, 40, line => Pictures.Link(line.Text) is { } link ? 2 : null);
 
         Assert.Equal(
             [
                 new LogRow("Before", LogLineKind.Prose),
                 new LogRow("", LogLineKind.Prose, false, 1, Pictured: true),
                 new LogRow("", LogLineKind.Prose, true, 1, Pictured: true),
-                new LogRow("shot", LogLineKind.Caption, true, 1),
+                new LogRow("", LogLineKind.Prose, true, 1),
             ],
             rows);
     }
@@ -151,7 +151,7 @@ public class PicturesTests
         using var dialog = Reader($"Before\n\n![shot]({Attached})", pictures, opened, viewed);
 
         Assert.Contains(dialog.Body.Rows(40), row => row.Pictured);
-        Assert.Contains(dialog.Body.Rows(40), row => row is { Kind: LogLineKind.Caption, Text: "shot" });
+        Assert.DoesNotContain(dialog.Body.Rows(40), row => row.Text.Contains("shot"));
         dialog.NewKeyDownEvent(Key.End.WithCtrl);
         Assert.True(dialog.NewKeyDownEvent(Key.Enter));
 
