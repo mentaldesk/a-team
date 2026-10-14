@@ -5204,7 +5204,8 @@ done
 
 # board.sh's check against a board that's fine, with the App's own view of it broken by
 # PROJECT_UNREADABLE or PRIORITY_UNREADABLE when it asks with the cached token, and the board itself
-# by REPO_GONE, NO_VISION, LEAD_VISION, NO_PROJECT, NO_FIELD, and the options in meta.json and labels in labels.json.
+# by REPO_GONE, NO_VISION, LEAD_VISION, NO_PROJECT, NO_FIELD, and the options in meta.json, labels in labels.json
+# and the project's enabled workflows in workflows.json.
 mkdir -p "$APP_BIN/board"
 board_options() {
   jq -n --args '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options:
@@ -5213,6 +5214,12 @@ board_options() {
 board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
 board_labels() { jq -n --args '$ARGS.positional | map({name: .})' "$@" >"$APP_BIN/board/labels.json"; }
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced blocked
+board_workflows() {
+  jq -n --args '{data: {organization: {projectV2: {workflows: {nodes:
+    ($ARGS.positional | map({name: ., enabled: true}) + [{name: "Pull request merged", enabled: false}])}}}}}' \
+    "$@" >"$APP_BIN/board/workflows.json"
+}
+board_workflows "Auto-add to project" "Item added to project" "Item closed"
 echo '{"data": {"organization": {"projectV2": {"items": {"totalCount": 0,
   "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": []}}}}}' >"$APP_BIN/board/items.json"
 echo '{"data": {"organization": {"issueFields": {"nodes": [{"id": "IF_priority", "name": "Priority",
@@ -5226,6 +5233,7 @@ case " \$* " in
   *" repos/mentaldesk/demo "*) [ -z "\${REPO_GONE:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"/actions/workflows/release.yml "*) [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"label list"*) page="$APP_BIN/board/labels.json" ;;
+  *"workflows(first"*) page="$APP_BIN/board/workflows.json" ;;
   *ProjectV2SingleSelectField*)
     [ -z "\${NO_PROJECT:-}" ] || { echo '{"data": {"organization": {"projectV2": null}}}'
       echo "gh: Could not resolve to a ProjectV2 with the number 1." >&2; exit 1; }
@@ -5356,6 +5364,21 @@ jq '.release = "weekly"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 checked
 says 2 "release   release is 'weekly': expected never, daily or continuous"
 jq 'del(.release)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "a project that won't put new issues in Triage is a problem the team can still run with"
+board_workflows "Item closed"
+checked
+says 2 "workflow  \"Auto-add to project\" is off on mentaldesk project 1, so an issue opened on mentaldesk/demo, by you or another team, never reaches Triage
+workflow  \"Item added to project\" is off on mentaldesk project 1, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea"
+board_workflows "Auto-add to project (2)" "Item added to project"
+checked
+says 0 ""
+NO_PROJECT=1 checked
+says 1 "project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
+echo '{"data": {"organization": {"projectV2": null}}}' >"$APP_BIN/board/workflows.json"
+checked
+says 0 ""
+board_workflows "Auto-add to project" "Item added to project" "Item closed"
 
 case_ "check reports every problem it finds, not just the first"
 board_labels pitch a-team:dev a-team:idea a-team:skipped blocked

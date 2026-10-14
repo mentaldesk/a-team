@@ -52,6 +52,7 @@ public class TeamHealthTests
             new TeamProblem("checkout", "~/code/goose/main isn't there"),
             new TeamProblem("labels", "no 'pitch' label"),
             new TeamProblem("status", "2 of 9 options missing"),
+            new TeamProblem("workflow", "\"Auto-add to project\" is off on mentaldesk project 6"),
         ]);
 
         Assert.Equal(["checkout", "status"], health.Fatal.Select(problem => problem.Topic));
