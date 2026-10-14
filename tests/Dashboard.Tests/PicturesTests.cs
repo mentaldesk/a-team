@@ -159,6 +159,32 @@ public class PicturesTests
     }
 
     [Fact]
+    public async Task A_picture_read_after_the_view_opens_keeps_the_remark_it_opened_at_on_top()
+    {
+        var held = new TaskCompletionSource();
+        var pictures = new Pictures(() => true, () => new Size(1, 1), async (_, file) =>
+        {
+            await held.Task;
+            File.WriteAllBytes(file, Convert.FromBase64String(RedPng));
+            return true;
+        });
+        LogLine[] lines = [new("Before", LogLineKind.Prose), new($"![shot]({Attached})", LogLineKind.Prose),
+            .. Enumerable.Range(0, 30).Select(i => new LogLine($"Remark {i}", LogLineKind.Prose))];
+        var view = new LogView { Width = 120, Height = 10, Following = false, Scrolls = true, Pictures = pictures, Lines = lines };
+        view.ShowLine(20);
+        view.Layout(new Size(120, 10));
+        Assert.Equal(20, view.TopLine);
+
+        held.SetResult();
+        while (pictures.Reading)
+            await Task.Delay(10);
+        view.PicturesRead();
+
+        Assert.Contains(view.Rows(view.Viewport.Width), row => row.Pictured);
+        Assert.Equal(20, view.TopLine);
+    }
+
+    [Fact]
     public void An_image_still_uploading_stays_its_text_line()
     {
         List<string> opened = [], viewed = [];

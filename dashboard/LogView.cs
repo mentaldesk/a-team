@@ -41,6 +41,7 @@ public sealed class LogView : View
     private int? _opensAt;
     private readonly Dictionary<(int Line, string Url), ImageView> _pictures = [];
     private bool _awaitingPictures;
+    private List<LogRow> _placed = [];
 
     public LogView()
     {
@@ -612,6 +613,7 @@ public sealed class LogView : View
     private void PlacePictures()
     {
         var rows = Pictures is { Drawn: true } ? Rows(Math.Max(1, Viewport.Width)) : [];
+        _placed = rows;
         var shown = Shown();
         var kept = new HashSet<(int, string)>();
         for (var at = 0; at < rows.Count; at++)
@@ -652,10 +654,33 @@ public sealed class LogView : View
             if (Pictures.Reading)
                 return true;
             _awaitingPictures = false;
-            Fit();
-            SetNeedsDraw();
+            PicturesRead();
             return false;
         });
+    }
+
+    /// <summary>Lays the rows out again with the pictures just read, keeping the line you were reading on top.</summary>
+    internal void PicturesRead()
+    {
+        if (!_following)
+            _top = Kept(_placed, Rows(Math.Max(1, Viewport.Width)), _top);
+        Fit();
+        SetNeedsDraw();
+    }
+
+    /// <summary>The row in <paramref name="after"/> holding what row <paramref name="top"/> of <paramref name="before"/>
+    /// held, or the start of its line where that line has turned into a picture.</summary>
+    internal static int Kept(List<LogRow> before, List<LogRow> after, int top)
+    {
+        if (top >= before.Count)
+            return top;
+        var line = before[top].Line;
+        var was = before.FindIndex(row => row.Line == line);
+        var now = after.FindIndex(row => row.Line == line);
+        if (now < 0)
+            return top;
+        var same = before.Count(row => row.Line == line) == after.Count(row => row.Line == line);
+        return now + (same ? top - was : 0);
     }
 
     private Size Content() => Viewport.Size with
