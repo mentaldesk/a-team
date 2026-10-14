@@ -29,7 +29,8 @@ public sealed class TeamFormPathTests : IDisposable
     {
         using var form = new TeamForm("a-team", Settings, _ => null);
 
-        Assert.Equal(5, form.SubViews.OfType<Label>().Count(label => label.Text == "Enter ▸"));
+        Assert.Equal(4, form.SubViews.OfType<Label>().Count(label => label.Text == "Enter ▸"));
+        Assert.Contains(form.DocsRowsView.SubViews.OfType<Label>(), label => label.Text == "Enter ▸");
         form.Workdir.Text = "~/src/a-team";
         Assert.Equal("~/src/a-team", form.Current().Workdir);
     }
@@ -100,6 +101,7 @@ public sealed class TeamFormPathTests : IDisposable
             PickRepoFile = (_, _) => "docs/user-guide.md",
         };
         form.SetFocus();
+        form.UserDocs.Value = DocsChoice.Existing;
 
         form.PickDocs();
         Assert.Equal("docs/user-guide.md isn't in mentaldesk/a-team yet: the Customer lead will draft the docs for you to approve.",

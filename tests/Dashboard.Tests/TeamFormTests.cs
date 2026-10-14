@@ -315,7 +315,7 @@ public class TeamFormTests
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Limits"],
+            ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -344,7 +344,7 @@ public class TeamFormTests
         form.CustomerLead.Value = CheckState.Checked;
 
         Assert.Equal(TeamForm.CustomerCaption, form.Hints.Message.Says);
-        Assert.Equal(Settings with { Customer = true }, form.Current());
+        Assert.Equal(Settings with { Customer = true, Docs = TeamForm.SuggestedDocs }, form.Current());
     }
 
     [Fact]
@@ -524,7 +524,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Ctrl+Enter Create", "Esc Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Docs", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }

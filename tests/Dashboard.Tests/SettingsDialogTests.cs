@@ -1,3 +1,5 @@
+using Terminal.Gui.Configuration;
+using Terminal.Gui.Drawing;
 using System.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -868,6 +870,26 @@ public class SettingsDialogTests : IDisposable
         dialog.Teams.NewKeyDownEvent(Key.Enter);
 
         Assert.Equal("/nowhere/alpha isn't there, so the agents would have nothing to work in.", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void A_save_with_a_docs_page_not_written_yet_says_where_the_Customer_lead_will_propose_them()
+    {
+        var workdir = Path.Combine(_configRoot, "work");
+        Directory.CreateDirectory(Path.Combine(workdir, "main", "docs"));
+        File.WriteAllText(Path.Combine(workdir, "main", "docs", "vision.md"), "");
+        WriteTeam("alpha", $$"""{"repo": "mentaldesk/alpha", "workdir": "{{workdir}}", "vision": "docs/vision.md"}""");
+        using var dialog = Open(out _, out _, page: "Teams", today: _ => Task.FromResult(new Reading("", null)));
+        dialog.EditTeam = (_, settings, save) =>
+        {
+            var after = settings with { Customer = true, Docs = "docs/guide/index.md" };
+            return save(after) is null ? after : null;
+        };
+
+        dialog.Teams.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal("The Customer lead will propose the docs at docs/guide/index.md.", dialog.Message.Says);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Base), dialog.Message.SchemeName);
     }
 
     [Fact]

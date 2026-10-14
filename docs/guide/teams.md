@@ -68,28 +68,43 @@ next run uses it.
 
 ## A team's settings
 
-`Enter` on a team opens its form: repo, stakeholders, project, vision, docs, workdir, skills, the command
+`Enter` on a team opens its form: repo, stakeholders, project, vision, workdir, skills, the command
 `a-team try` runs, whether it's working or paused, when it releases, when the Lead
 [reviews the vision](#reviewing-the-vision), which roles it runs, and its limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
-[Customer lead](how-a-team-works.md#the-customer-lead), and untick it to take it away again. With it,
-**Docs** is required: the first page of your user docs, in the repo. Tick **Reviewer** to have the
+[Customer lead](how-a-team-works.md#the-customer-lead) (see [Turning on the Customer lead](#turning-on-the-customer-lead)),
+and untick it to take it away again. Tick **Reviewer** to have the
 [Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. **Stakeholders** and **Skills** open a list: type to
 narrow it as in Commands, `Space` marks a name, and `Enter` keeps what's marked. Each
 field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the team's file, leaving everything else in it as it was, and
 `Esc` (**Cancel**) cancels. `Enter` never saves.
 
-**Workdir**, **Vision** and **Docs** take typing, and `Enter` on one opens a picker:
+**Workdir**, **Vision** and **First page** take typing, and `Enter` on one opens a picker:
 
 - **Workdir** browses the folders on this machine, starting from the one typed in. Type to narrow the
   list, `Enter` goes into a folder, and into `../` at the top (or `Backspace`) to go up. **Use this folder** (`Ctrl+Enter`)
   puts the folder you're in into Workdir. A Workdir with no `main` checkout in it shows under
   **Problems** before you save.
-- **Vision** and **Docs** list the repo's Markdown files on its default branch. Type to narrow the list
+- **Vision** and **First page** list the repo's Markdown files on its default branch. Type to narrow the list
   and `Enter` to pick one. Type a path that isn't there and `Enter` uses it anyway: the field then says
   the Lead or Customer lead will draft it.
 
 `Esc` in a picker leaves the field as it was. A new team's Workdir follows its Name, as
 `~/code/<name>`, until you type or pick one of your own.
+
+## Turning on the Customer lead
+
+Ticking **Customer lead**, in a team's form or in **New team**, adds two rows under **Roles**:
+
+- **User docs**: **Write new docs**, or **I already have docs**. It starts on **I already have docs**
+  when the team's docs page is already in the repo, and on **Write new docs** otherwise.
+- **First page**: the docs' first page, in the repo. With **Write new docs** it's filled with
+  `docs/guide/index.md` unless the team already has one; keep it or type another. With
+  **I already have docs**, `Enter` lists the repo's Markdown files to pick the first page from.
+
+Saving with a first page that isn't in the repo yet says so, e.g. *The Customer lead will propose the docs at
+docs/guide/index.md.* Its first PR proposes the docs there, and it writes them once you accept that proposal.
+That page isn't counted under **Health** while it's waiting to be written. Untick **Customer lead** and
+the rows go, but the first page is kept for when you tick it again.
 
 ## Pausing a team
 
