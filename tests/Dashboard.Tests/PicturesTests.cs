@@ -177,7 +177,7 @@ public class PicturesTests
 
         held.SetResult();
         while (pictures.Reading)
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         view.PicturesRead();
 
         Assert.Contains(view.Rows(view.Viewport.Width), row => row.Pictured);
