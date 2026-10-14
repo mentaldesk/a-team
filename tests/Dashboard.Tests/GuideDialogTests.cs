@@ -412,7 +412,7 @@ public partial class GuideDialogTests : IDisposable
 
     private static IEnumerable<(string Page, string Link)> GuideLinks() =>
         (from page in Directory.GetFiles(Guide(), "*.md")
-        from Match link in Link().Matches(File.ReadAllText(page))
+        from Match link in Link().Matches(CodeSpan().Replace(File.ReadAllText(page), ""))
         where !GuideDialog.IsWeb(link.Groups[1].Value)
         select (Path.GetFileName(page), link.Groups[1].Value)).Distinct();
 
@@ -426,4 +426,7 @@ public partial class GuideDialogTests : IDisposable
 
     [GeneratedRegex(@"\]\(([^)\s]+)\)")]
     private static partial Regex Link();
+
+    [GeneratedRegex("`[^`\n]*`")]
+    private static partial Regex CodeSpan();
 }

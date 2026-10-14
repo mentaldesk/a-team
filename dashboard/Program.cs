@@ -122,14 +122,17 @@ Handover? Show(Handover? back)
         pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),
         readTrend: team => command.Read("board", team, "trend"),
         showTrends: teams => TrendsDialog.Show(app, teams, team => command.Read("board", team, "trends")),
-        newIdea: (teams, team, description) => NewIdeaDialog.Show(app, teams, team, new IdeaFiler(command.Read), description),
+        newIdea: (teams, team, description, attaching) =>
+            NewIdeaDialog.Show(app, teams, team, new IdeaFiler(command.Read), description, attaching),
         readBoard: team => command.Read("board", team, "overview"),
         attention: attention,
         readMoves: (team, since) => command.Read("board", team, "moves", since.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)),
         whatsNew: news,
         readDocument: item => command.Read("board", item.Team, "document", item.Number.ToString()),
         writes: writes,
-        confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued));
+        confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
+        attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
+            new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

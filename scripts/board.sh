@@ -926,7 +926,74 @@ unanswered_feedback() {
   comments "$2" | jq --arg marker "<!-- a-team:$1 -->" --argjson stakeholders "$STAKEHOLDERS" \
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED"'
     said($marker) as $since
-    | unanswered($since) | map(del(.id, .eyes))'
+    | unanswered($since) | map(del(.id, .eyes))' | with_images
+}
+
+# Images attached from the app live on one orphan branch, named by content under a month folder.
+ATTACHMENTS=a-team/attachments
+IMAGE_TYPES='png|jpe?g|gif|webp'
+
+attachment_link() { printf 'https://github.com/%s/blob/%s/%s?raw=true' "$REPO" "$ATTACHMENTS" "$1"; }
+
+# with_images: to each object of a JSON array whose .body links an attachment, adds .images, a local
+# copy of each, for an agent to look at.
+with_images() {
+  local json links pattern path copy files='{}'
+  json=$(cat)
+  pattern="https://github\\.com/${REPO//./\\.}/blob/$ATTACHMENTS/[0-9]{4}-[0-9]{2}/[0-9a-f]+\\.($IMAGE_TYPES)"
+  links=$(jq -r '.[].body' <<<"$json" | grep -oE "$pattern" | sort -u) || true
+  while IFS= read -r link; do
+    [ -n "$link" ] || continue
+    path=${link#*/blob/"$ATTACHMENTS"/}
+    copy="${TMPDIR:-/tmp}/a-team-attachments/$REPO/$path"
+    if [ ! -s "$copy" ]; then
+      mkdir -p "$(dirname "$copy")"
+      gh api "repos/$REPO/contents/$path?ref=$ATTACHMENTS" -H 'Accept: application/vnd.github.raw' >"$copy.part" 2>/dev/null &&
+        mv "$copy.part" "$copy" || { rm -f "$copy.part"; continue; }
+    fi
+    files=$(jq --arg link "$link" --arg copy "$copy" '. + {($link): $copy}' <<<"$files")
+  done <<<"$links"
+  jq --argjson files "$files" 'map(. as $said | [$files | to_entries[] | .key as $link | select($said.body | contains($link)) | .value]
+    | if length == 0 then $said else $said + {images: .} end)' <<<"$json"
+}
+
+# git_post <path> <jq filter> [jq args...]: POST to the repo's git database, printing the new object's sha.
+git_post() {
+  local path=$1 filter=$2 input
+  shift 2
+  input=$(mktemp)
+  jq -n "$@" "$filter" >"$input" || { rm -f "$input"; return 1; }
+  gh api -X POST "repos/$REPO/git/$path" --input "$input" --jq .sha
+  local status=$?
+  rm -f "$input"
+  return $status
+}
+
+# store_attachment <file> <path>: commits <file> as <path> on the attachments branch, starting the
+# branch the first time. A ref that moved on under it is read again and tried once more.
+store_attachment() {
+  local file=$1 path=$2 encoded blob head base tree commit attempt
+  encoded=$(mktemp)
+  base64 <"$file" | tr -d '\n' >"$encoded"
+  blob=$(git_post blobs '{content: $content, encoding: "base64"}' --rawfile content "$encoded")
+  rm -f "$encoded"
+  [ -n "$blob" ] || return 1
+  for attempt in 1 2; do
+    head=$(gh api "repos/$REPO/git/ref/heads/$ATTACHMENTS" --jq .object.sha 2>/dev/null) || head=
+    base=
+    [ -z "$head" ] || base=$(gh api "repos/$REPO/git/commits/$head" --jq .tree.sha) || return 1
+    tree=$(git_post trees '{tree: [{path: $path, mode: "100644", type: "blob", sha: $blob}]}
+      + if $base == "" then {} else {base_tree: $base} end' \
+      --arg path "$path" --arg blob "$blob" --arg base "$base") || return 1
+    commit=$(git_post commits '{message: "Attach \($path)", tree: $tree, parents: (if $head == "" then [] else [$head] end)}' \
+      --arg path "$path" --arg tree "$tree" --arg head "$head") || return 1
+    if [ -z "$head" ]; then
+      gh api -X POST "repos/$REPO/git/refs" -f ref="refs/heads/$ATTACHMENTS" -f sha="$commit" --silent && return 0
+    else
+      gh api -X PATCH "repos/$REPO/git/refs/heads/$ATTACHMENTS" -f sha="$commit" -F force=false --silent && return 0
+    fi
+    [ "$attempt" = 1 ] || return 1
+  done
 }
 
 # ack <n>: a 👀 on every stakeholder comment on #n this run could have seen. One that arrived mid-run
@@ -1253,6 +1320,30 @@ case "$CMD" in
       die "can't open the issue on $REPO"
     [ -z "$DRY_RUN" ] || url=0
     echo "${url##*/}"
+    ;;
+
+  attach)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM attach you <image>"
+    role=$1 file=$2
+    case "$role" in
+      lead | dev | customer | reviewer) die "$role may not attach an image; only a stakeholder does, from the app" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    [ -f "$file" ] || die "no such file: $file"
+    ext=$(tr '[:upper:]' '[:lower:]' <<<"${file##*.}")
+    [ "$ext" != jpeg ] || ext=jpg
+    grep -qxE "$IMAGE_TYPES" <<<"$ext" || die "$(basename "$file") isn't a .png, .jpg, .gif or .webp"
+    size=$(wc -c <"$file" | tr -d ' ')
+    [ "$size" -le $((10 * 1024 * 1024)) ] || die "$(basename "$file") is over 10 MB"
+    hash=$({ shasum -a 256 || sha256sum; } <"$file" 2>/dev/null | cut -c1-16)
+    path="$(date -u +%Y-%m)/$hash.$ext"
+    if ! gh api "repos/$REPO/contents/$path?ref=$ATTACHMENTS" --silent >/dev/null 2>&1; then
+      write "commit $(basename "$file") to $path on $ATTACHMENTS" store_attachment "$file" "$path" ||
+        die "can't store $(basename "$file") on $REPO's $ATTACHMENTS branch"
+    fi
+    attachment_link "$path"
+    echo
     ;;
 
   task)
@@ -1777,7 +1868,7 @@ case "$CMD" in
     issue=$(gh api "repos/$REPO/issues/$1" --jq '{number, title, body: (.body // "")}' 2>"$trouble") ||
       { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read #$1 ($reason)"; }
     rm -f "$trouble"
-    printf '%s\n' "$issue"
+    jq -s . <<<"$issue" | with_images | jq '.[0]'
     ;;
 
   conversation)
@@ -2226,6 +2317,15 @@ case "$CMD" in
           echo "ok: $OWNER project $NUMBER, field '$FIELD'"
         fi
       fi
+    fi
+    if [ -n "$NUMBER" ] && [ -z "$unreachable" ] &&
+      enabled=$(gql "query(\$owner: String!, \$number: Int!) { $KIND(login: \$owner) { projectV2(number: \$number) {
+          workflows(first: 50) { nodes { name enabled } } } } }" \
+        --jq ".data.$KIND.projectV2.workflows.nodes[] | select(.enabled) | .name" 2>/dev/null); then
+      grep -q '^Auto-add to project' <<<"$enabled" ||
+        note workflow "\"Auto-add to project\" is off on $OWNER project $NUMBER, so an issue opened on $REPO, by you or another team, never reaches Triage"
+      grep -q '^Item added to project' <<<"$enabled" ||
+        note workflow "\"Item added to project\" is off on $OWNER project $NUMBER, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea"
     fi
     if [ -n "$reached" ]; then
       if ! have=$(gh label list -R "$REPO" --limit 500 --json name --jq '.[].name' 2>&1); then

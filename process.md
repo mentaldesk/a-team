@@ -94,7 +94,8 @@ a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on I
                                                 # over it from now on
 a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
                                                 # for Idea #<n>, <file> its one-line case
-a-team board {{team}} feedback <role> <n>       # stakeholder comments with no 👀 on them yet
+a-team board {{team}} feedback <role> <n>       # stakeholder comments with no 👀 on them yet, each with
+                                                # `images` where it has screenshots attached
 a-team board {{team}} task lead <pitch> "<title>" <file>  # Lead only: open a task, put it in Ready
                                                 # under Approved or Building <pitch>, print its number
 a-team board {{team}} link <parent> <child>     # make task <child> a sub-issue of <parent>
@@ -107,7 +108,8 @@ a-team board {{team}} undepend <role> <task> <prereq> "<why>"
                                                 # drop that dependency again, saying why on <task>
 a-team board {{team}} unblock <role> <n>        # Dev only: clear `blocked` on a task it handed back,
                                                 # once a stakeholder has replied to its question
-a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON
+a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON, with
+                                                # `images` where it has screenshots attached
 a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON
 a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
@@ -123,7 +125,8 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend`, `trends` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
-`overview` is what its Overseer reads, `new` is how it opens an Idea, `spent` is how it records the
+`overview` is what its Overseer reads, `new` is how it opens an Idea, `attach` is how it uploads a
+screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. Don't run them.
 
@@ -145,6 +148,8 @@ tell what `$B` will run.
   Which is why a comment you have already replied to can come back: say so in a line rather than
   answering it twice.
 - Answer every piece of feedback, even if only to say what you did about it.
+- **Look at every screenshot.** `images` lists a local copy of each image the stakeholder attached.
+  Read each one before acting on what it's attached to, and when you reply about it, say what you saw.
 - Be brief. The stakeholder reads these on a phone.
 
 ## Every run
