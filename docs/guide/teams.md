@@ -31,6 +31,10 @@ Each step says what it will do and waits for `Enter`. `Esc` skips it, and `Backs
 step. The last asks whether to get to work or keep the team paused, and there `Esc` cancels the new
 team.
 
+One part of the Project is yours to set up on GitHub: under its **Workflows**, turn on **Auto-add
+to project** for the repo, and **Item added to project** with Status set to Idea. Without them, an
+issue you or another team open on the repo never reaches Triage. Health notes it until both are on.
+
 ## Writing the vision
 
 The Lead judges every pitch against the team's vision. **Write the vision with me** in Commands, for

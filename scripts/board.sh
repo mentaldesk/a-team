@@ -2160,6 +2160,15 @@ case "$CMD" in
         fi
       fi
     fi
+    if [ -n "$NUMBER" ] && [ -z "$unreachable" ] &&
+      enabled=$(gql "query(\$owner: String!, \$number: Int!) { $KIND(login: \$owner) { projectV2(number: \$number) {
+          workflows(first: 50) { nodes { name enabled } } } } }" \
+        --jq ".data.$KIND.projectV2.workflows.nodes[] | select(.enabled) | .name" 2>/dev/null); then
+      grep -q '^Auto-add to project' <<<"$enabled" ||
+        note workflow "\"Auto-add to project\" is off on $OWNER project $NUMBER, so an issue opened on $REPO, by you or another team, never reaches Triage"
+      grep -q '^Item added to project' <<<"$enabled" ||
+        note workflow "\"Item added to project\" is off on $OWNER project $NUMBER, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea"
+    fi
     if [ -n "$reached" ]; then
       if ! have=$(gh label list -R "$REPO" --limit 500 --json name --jq '.[].name' 2>&1); then
         note labels "can't list $REPO's labels: ${have#gh: }"
