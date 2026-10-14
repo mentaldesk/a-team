@@ -75,7 +75,7 @@ public class WorkAreaTests : IDisposable
     [Fact]
     public void New_idea_is_on_n_in_the_palette_and_in_Cards()
     {
-        using var window = Open(newIdea: (_, _, _) => null);
+        using var window = Open(newIdea: (_, _, _, _) => null);
 
         Assert.Contains(window.Commands.Enabled, command => command is { Id: "work.new", Label: "New idea" });
         Assert.Equal(new Key('n'), window.Commands.KeyFor("work.new"));
@@ -86,7 +86,7 @@ public class WorkAreaTests : IDisposable
     public void New_idea_starts_on_the_lane_you_re_in()
     {
         var asked = new List<(IReadOnlyList<string> Teams, string Team)>();
-        using var window = Open(newIdea: (teams, team, _) =>
+        using var window = Open(newIdea: (teams, team, _, _) =>
         {
             asked.Add((teams, team));
             return null;
@@ -105,7 +105,7 @@ public class WorkAreaTests : IDisposable
     public void New_idea_off_Work_starts_on_the_first_team()
     {
         var asked = new List<string>();
-        using var window = Open(area: Area.Dashboard, newIdea: (_, team, _) =>
+        using var window = Open(area: Area.Dashboard, newIdea: (_, team, _, _) =>
         {
             asked.Add(team);
             return null;
@@ -126,7 +126,7 @@ public class WorkAreaTests : IDisposable
                 reads++;
                 return Task.FromResult(new Reading(Waiting(team), null));
             },
-            newIdea: (_, _, _) => ("team1", 412));
+            newIdea: (_, _, _, _) => ("team1", 412));
         window.Refresh();
         LayOut(window, 120, 30);
         var before = reads;
@@ -149,7 +149,7 @@ public class WorkAreaTests : IDisposable
                 reads++;
                 return Task.FromResult(new Reading(Waiting(team), null));
             },
-            newIdea: (_, _, _) => null);
+            newIdea: (_, _, _, _) => null);
         window.Refresh();
         var before = reads;
 
@@ -1122,7 +1122,7 @@ public class WorkAreaTests : IDisposable
         DashboardWindow? opened = null;
         using var window = opened = Open(
             readBody: _ => Task.FromResult(new Reading(Body, null)),
-            newIdea: (_, team, description) =>
+            newIdea: (_, team, description, _) =>
             {
                 asked.Add((team, description));
                 return (team, 412);
@@ -3803,7 +3803,7 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, Task<Reading>>? readHistory = null,
         Func<string, Task<Reading>>? readTrend = null,
         Action<IReadOnlyList<(string Team, int? Waiting)>>? showTrends = null,
-        Func<IReadOnlyList<string>, string, string, (string Team, int Number)?>? newIdea = null,
+        Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? newIdea = null,
         Attention? attention = null,
         Action<ReaderEdit?>? showEdit = null,
         Func<WaitingItem, Task<Reading>>? readDocument = null,

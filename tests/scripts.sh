@@ -190,6 +190,13 @@ RUNS
 #!/usr/bin/env bash
 echo call >>"$CALLS"
 case " \$* " in
+  *"/contents/"*"?ref=a-team/attachments"*vnd.github.raw*) echo "RAW \$*" >>"$WRITES"; echo PNG; exit 0 ;;
+  *"/contents/"*"?ref=a-team/attachments"*) [ -e "$BIN/stored" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *"git/ref/heads/a-team/attachments"*) [ -e "$BIN/branched" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; echo HEAD1; exit 0 ;;
+  *"git/commits/HEAD1"*) echo TREE1; exit 0 ;;
+  *"-X POST"*"/git/"*"--input"*) all="\$*"; kind=\${all##*/git/}; kind=\${kind%% *}; jq -c ". + {kind: \"\$kind\"}" "\${@: -3:1}" >>"$BIN/git.json"
+                                  echo "\${kind}-sha"; exit 0 ;;
+  *"/git/refs"*"a-team/attachments"*) echo "REF \$*" >>"$WRITES"; exit 0 ;;
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
   *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
   *updateProjectV2ItemFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
@@ -1604,6 +1611,92 @@ run board --dry-run demo new you "$WORK/idea"
 same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
 grep -q "would open an issue titled 'Remember the lane I was on'" "$ERR" || fail "new dry run: '$(cat "$ERR")'"
+
+MONTH=$(date -u +%Y-%m)
+printf 'not really a png' >"$WORK/Shot.PNG"
+SHOT_HASH=$(shasum -a 256 <"$WORK/Shot.PNG" | cut -c1-16)
+SHOT_LINK="https://github.com/mentaldesk/demo/blob/a-team/attachments/$MONTH/$SHOT_HASH.png?raw=true"
+
+case_ "attach you starts the attachments branch with the image, named by its content, and prints its link"
+: >"$WRITES"
+run board demo attach you "$WORK/Shot.PNG"
+same "exit" 0 "$STATUS"
+same "link" "$SHOT_LINK" "$(cat "$OUT")"
+same "objects" "blobs trees commits" "$(jq -r .kind "$BIN/git.json" | tr '\n' ' ' | sed 's/ $//')"
+same "content" "$(base64 <"$WORK/Shot.PNG" | tr -d '\n')" "$(jq -r 'select(.kind == "blobs") | .content' "$BIN/git.json")"
+same "path" "$MONTH/$SHOT_HASH.png" "$(jq -r 'select(.kind == "trees") | .tree[0].path' "$BIN/git.json")"
+same "orphan" '[]' "$(jq -c 'select(.kind == "commits") | .parents' "$BIN/git.json")"
+grep -q "REF.*-X POST repos/mentaldesk/demo/git/refs.*ref=refs/heads/a-team/attachments" "$WRITES" ||
+  fail "attach: no new branch in '$(cat "$WRITES")'"
+
+case_ "attach you adds to the branch once it's there"
+: >"$WRITES"
+rm -f "$BIN/git.json"
+touch "$BIN/branched"
+run board demo attach you "$WORK/Shot.PNG"
+same "exit" 0 "$STATUS"
+same "base" "TREE1" "$(jq -r 'select(.kind == "trees") | .base_tree' "$BIN/git.json")"
+same "parent" '["HEAD1"]' "$(jq -c 'select(.kind == "commits") | .parents' "$BIN/git.json")"
+grep -q "REF.*-X PATCH repos/mentaldesk/demo/git/refs/heads/a-team/attachments" "$WRITES" ||
+  fail "attach: branch not moved on in '$(cat "$WRITES")'"
+
+case_ "the same image attached again is stored once"
+: >"$WRITES"
+rm -f "$BIN/git.json"
+touch "$BIN/stored"
+run board demo attach you "$WORK/Shot.PNG"
+same "exit" 0 "$STATUS"
+same "link" "$SHOT_LINK" "$(cat "$OUT")"
+[ ! -e "$BIN/git.json" ] || fail "attach again: stored a second time"
+same "writes" "" "$(cat "$WRITES")"
+rm "$BIN/stored" "$BIN/branched"
+
+case_ "attach refuses what isn't an image, one over 10 MB, and an agent, and stores nothing"
+printf 'notes' >"$WORK/notes.txt"
+run board demo attach you "$WORK/notes.txt"
+failed "not an image"
+one_line "not an image"
+grep -q "notes.txt isn't a .png, .jpg, .gif or .webp" "$ERR" || fail "not an image: '$(cat "$ERR")'"
+head -c $((10 * 1024 * 1024 + 1)) /dev/zero >"$WORK/huge.png"
+run board demo attach you "$WORK/huge.png"
+failed "over 10 MB"
+grep -q "huge.png is over 10 MB" "$ERR" || fail "over 10 MB: '$(cat "$ERR")'"
+for role in lead dev customer reviewer; do
+  run board demo attach "$role" "$WORK/Shot.PNG"
+  failed "$role attach"
+  grep -q "$role may not attach an image" "$ERR" || fail "$role attach: '$(cat "$ERR")'"
+done
+[ ! -e "$BIN/git.json" ] || fail "refused attach: stored something"
+
+case_ "--dry-run says what it would store and stores nothing"
+run board --dry-run demo attach you "$WORK/Shot.PNG"
+same "exit" 0 "$STATUS"
+same "link" "$SHOT_LINK" "$(cat "$OUT")"
+[ ! -e "$BIN/git.json" ] || fail "attach dry run: stored something"
+grep -q "would commit Shot.PNG to $MONTH/$SHOT_HASH.png on a-team/attachments" "$ERR" || fail "attach dry run: '$(cat "$ERR")'"
+
+case_ "the agents' settings deny attach"
+grep -qF '"Bash(a-team board * attach *)"' "$ROOT/settings/agents.json" || fail "no attach deny rule"
+
+case_ "body and feedback bring a local copy of each attached image, for the agent to look at"
+export TMPDIR="$WORK/tmp"
+mkdir -p "$TMPDIR"
+gh_thread <<TALK
+body ${TODAY}T08:00:00Z reviewer 0 Look: ![Shot]($SHOT_LINK)
+comment ${TODAY}T08:10:00Z reviewer 0 And again ![Shot]($SHOT_LINK) with nothing else
+comment ${TODAY}T08:20:00Z reviewer 0 Plain words, no picture
+TALK
+COPY="$WORK/tmp/a-team-attachments/mentaldesk/demo/$MONTH/$SHOT_HASH.png"
+: >"$WRITES"
+run board demo body 7
+same "exit" 0 "$STATUS"
+same "body images" "[\"$COPY\"]" "$(jq -c .images "$OUT")"
+same "copy" PNG "$(cat "$COPY")"
+run board demo feedback lead 7
+same "exit" 0 "$STATUS"
+same "feedback images" "[[\"$COPY\"],null]" "$(jq -c '[.[] | .images]' "$OUT")"
+same "fetched once" 1 "$(grep -c RAW "$WRITES")"
+unset TMPDIR
 
 case_ "add you puts your own issue on the board as an Idea, with no label"
 jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"

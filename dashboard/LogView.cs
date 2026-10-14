@@ -291,9 +291,9 @@ public sealed class LogView : View
             var last = rows[^1];
             _caret = move switch
             {
-                CaretMove.Left when caret.Offset > 0 => (caret.Line, caret.Offset - 1),
+                CaretMove.Left when caret.Offset > 0 => (caret.Line, caret.Offset - CharsAt(LineText(caret.Line), caret.Offset - 2)),
                 CaretMove.Left when caret.Line > 0 => (caret.Line - 1, LineEnd(rows, caret.Line - 1)),
-                CaretMove.Right when caret.Offset < LineEnd(rows, caret.Line) => (caret.Line, caret.Offset + 1),
+                CaretMove.Right when caret.Offset < LineEnd(rows, caret.Line) => (caret.Line, caret.Offset + CharsAt(LineText(caret.Line), caret.Offset)),
                 CaretMove.Right when caret.Line < last.Line => (caret.Line + 1, 0),
                 CaretMove.WordLeft => WordLeft(caret),
                 CaretMove.WordRight => WordRight(caret, last.Line),
@@ -409,8 +409,8 @@ public sealed class LogView : View
         var row = rows[Math.Clamp(_top + at.Y, 0, rows.Count - 1)];
         var columns = Math.Max(0, at.X - Lead(row.Kind));
         var column = 0;
-        while (column < row.Text.Length && row.Text[..(column + 1)].GetColumns() <= columns)
-            column++;
+        while (column < row.Text.Length && row.Text[..(column + CharsAt(row.Text, column))].GetColumns() <= columns)
+            column += CharsAt(row.Text, column);
         return (row.Line, row.Start + column);
     }
 
@@ -642,10 +642,18 @@ public sealed class LogView : View
     private void DrawCaret(LogRow line, int row, (int Line, int Offset) caret)
     {
         var column = Math.Clamp(caret.Offset - line.Start, 0, line.Text.Length);
+        if (column > 0 && CharsAt(line.Text, column - 1) == 2)
+            column--;
         var attribute = AttributeFor(line.Kind);
         SetAttribute(new Attribute(attribute.Background, attribute.Foreground));
-        AddStr(Lead(line.Kind) + line.Text[..column].GetColumns(), row, column < line.Text.Length ? line.Text[column].ToString() : " ");
+        AddStr(Lead(line.Kind) + line.Text[..column].GetColumns(), row,
+            column < line.Text.Length ? line.Text.Substring(column, CharsAt(line.Text, column)) : " ");
     }
+
+    /// <summary>How many chars the character at <paramref name="at"/> takes: two for a surrogate pair, which the caret
+    /// never splits.</summary>
+    private static int CharsAt(string text, int at) =>
+        at >= 0 && at + 1 < text.Length && char.IsSurrogatePair(text[at], text[at + 1]) ? 2 : 1;
 
     /// <summary>The row as it reaches the screen: its icon in the field the text is budgeted around, then the text.</summary>
     internal string Drawn(LogRow row, int width)

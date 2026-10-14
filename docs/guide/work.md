@@ -236,6 +236,29 @@ keep what you're typing in view, with a scroll bar once the text is taller than 
 the start and end of the row you can see, and `Ctrl+Home` and `Ctrl+End` to the start and end of
 the text. Hold `Shift` with any of them to select; `Ctrl+A` selects everything.
 
+**Attaching a screenshot.** In a comment or a description, there are three ways to attach an image:
+
+- **Paste it.** With a screenshot on the clipboard (`⌃⇧⌘4` on a Mac), press `Ctrl+V`. That works in
+  every terminal, iTerm2 and Ghostty included. `⌘V` works too where the terminal passes on a paste
+  with nothing in it; if it does nothing, use `Ctrl+V`. With text on the clipboard, both paste the
+  text.
+- **Drop it.** Drag a `.png`, `.jpg`, `.gif` or `.webp` file onto the terminal. A dropped file of any
+  other kind pastes its path, as before.
+- **Name it.** `Ctrl+U` opens **Attach image file**: type the path, and `Ctrl+Enter` attaches it.
+
+A line like `![Screenshot 2026-10-13 at 07.02.09](uploading…)` goes in at the cursor, and becomes the
+image's link once it's up; edit, move or delete it like any other text. The bar says
+`Attached <file>  •  412 KB`, or `Attach failed:` and why, leaving what you wrote as it was. Images
+go up to 10 MB. `Ctrl+Enter` won't post or add until every image is up.
+
+The image is stored on the `a-team/attachments` branch of the team's repo, which a-team starts the
+first time you attach one and never merges, and shows inline on GitHub. The agents look at it when
+they read what you wrote, and a reply about it says what they saw. **In a public repo, attached
+images are public.**
+
+Over SSH the dashboard can't read your own machine's clipboard: pasting pastes text as before, and
+the bar says to drop the file instead.
+
 `Ctrl+Enter` adds it: the issue is opened as you, put on the team's board as an Idea and ranked if
 you chose a Priority. Work reads again straight away, and the bar says `#<n> added to <team>'s
 ideas`. If a step fails, the dialog stays open with what you wrote and says which step; `Ctrl+Enter`
