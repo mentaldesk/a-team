@@ -70,6 +70,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
+    private readonly Action<string>? _showDecisions;
     private readonly Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? _newIdea;
     private readonly Func<Key, Attaching>? _attaching;
     private readonly Action<string> _openUrl;
@@ -162,9 +163,11 @@ public sealed class DashboardWindow : Window
         WhatsNew? whatsNew = null,
         WriteQueue? writes = null,
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
-        Func<Key, Attaching>? attaching = null)
+        Func<Key, Attaching>? attaching = null,
+        Action<string>? showDecisions = null)
     {
         _attaching = attaching;
+        _showDecisions = showDecisions;
         _writes = writes ?? new WriteQueue(run);
         _confirmQuit = confirmQuit ?? ((_, _) => true);
         _readMoves = readMoves;
@@ -651,6 +654,9 @@ public sealed class DashboardWindow : Window
             }))
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
+            .Register("decisions", () => SelectedTeam() is { } team ? $"Decisions… · {team}" : "Decisions…",
+                () => _showDecisions?.Invoke(SelectedTeam()!), isEnabled: () => _showDecisions is not null && SelectedTeam() is not null,
+                menuLabel: () => "Decisions…")
             .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
                 inMenu: () => _expanded is not null || _dispatcherExpanded, scopes: [Regions.Log])

@@ -80,6 +80,33 @@ When the Dev can't go on without you, it hands its task back with a question and
 The Lead asks on a pitch under **Needs your answer** in its description. Both wait in **Questions**
 in the Work area until you answer.
 
+## What the team remembers
+
+When you answer something that will come up again, the Lead records it in a decision register,
+on this machine, beside the team's history. Before it pitches, breaks a pitch down or assumes anything,
+it searches the register, and a new pitch cites what it relied on under **Assumed**: *From the
+register: you, on #34*. A register entry is a leaning, not a law: comment to overturn it like any
+other assumption. Your latest word replaces an older entry, and the Lead's reply says which.
+
+Each entry is a **rule**, something you said generally, or a **lean**, a call on one pitch that
+looks like it will carry. It belongs to its team or to all teams.
+
+Open **Decisions…** from the **View** menu or Commands (`Ctrl+E`) to see the selected team's
+entries and all teams', newest confirmed first. Type in **Search** to narrow them, untick **Include
+all-teams** to see the team's own, and tick **Show replaced** for the ones replaced or retired. The
+selected entry is shown in full below the list: why, where and when it was said, when a pitch last
+relied on it, and what it replaced.
+
+| Key | What it does |
+|---|---|
+| `Enter` | Open where it was said on GitHub |
+| `e` | Edit its wording; `Enter` saves, `Esc` leaves it |
+| `k` | Make it a rule or a lean |
+| `w` | Widen it to all teams, or narrow it again |
+| `r` | Retire it, or bring it back |
+
+The Lead never changes back an entry you've corrected.
+
 ## The Customer lead
 
 The Customer lead makes sure what the team ships is documented, so someone who didn't watch it being

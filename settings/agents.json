@@ -60,6 +60,7 @@
       "Bash(a-team board * shelve you *)",
       "Bash(a-team board * comment you *)",
       "Bash(a-team board * edit *)",
+      "Bash(a-team board * decision *)",
       "Bash(a-team board * vision-review *)",
       "Bash(gh issue edit *--remove-label*)",
       "Bash(a-team dispatch*)",

@@ -39,6 +39,50 @@ record() {
     echo "board.sh: couldn't record '$3' in #$2's history" >&2
 }
 
+# decisions_sql [sqlite3 options...] <statement>: the decision register, beside the history it shares a file with.
+# Kept out of history_sql so a sqlite3 without FTS5 loses only the register.
+decisions_sql() {
+  history_sql "${@:1:$#-1}" "CREATE TABLE IF NOT EXISTS decisions (id INTEGER PRIMARY KEY, team TEXT NOT NULL,
+    everyone INTEGER NOT NULL DEFAULT 0, decision TEXT NOT NULL, why TEXT NOT NULL, who TEXT NOT NULL,
+    kind TEXT NOT NULL, item INTEGER NOT NULL, link TEXT NOT NULL, said TEXT NOT NULL, recorded TEXT NOT NULL,
+    confirmed TEXT NOT NULL, confirmed_on INTEGER, replaced_by INTEGER, retired TEXT, yours TEXT);
+  CREATE VIRTUAL TABLE IF NOT EXISTS decisions_text USING fts5(decision, why, content='decisions', content_rowid='id');
+  CREATE TRIGGER IF NOT EXISTS decisions_added AFTER INSERT ON decisions BEGIN
+    INSERT INTO decisions_text (rowid, decision, why) VALUES (new.id, new.decision, new.why); END;
+  CREATE TRIGGER IF NOT EXISTS decisions_reworded AFTER UPDATE OF decision, why ON decisions BEGIN
+    INSERT INTO decisions_text (decisions_text, rowid, decision, why) VALUES ('delete', old.id, old.decision, old.why);
+    INSERT INTO decisions_text (rowid, decision, why) VALUES (new.id, new.decision, new.why); END;
+  ${*: -1}"
+}
+
+# DECISION: the columns of a register entry, as `decisions` reports them.
+DECISION="id, team, CASE WHEN everyone THEN 'all' ELSE 'team' END AS scope, decision, why, who, kind, item, link,
+  said, recorded, confirmed, confirmed_on AS confirmedOn, replaced_by AS replacedBy, retired, yours"
+
+# decision_entry <id>: that entry of this team's register, or one for all teams, as JSON; nothing if there's none.
+decision_entry() {
+  [[ $1 =~ ^[0-9]+$ ]] || die "'$1' isn't a decision's id"
+  [ -f "$STATE/history.db" ] || return 0
+  decisions_sql -json "SELECT $DECISION FROM decisions WHERE id = $1 AND (team = $(sql "$TEAM") OR everyone);" |
+    jq -c 'first // empty'
+}
+
+# live_decision <id>: the entry, refused unless it's still standing.
+live_decision() {
+  local entry
+  entry=$(decision_entry "$1")
+  [ -n "$entry" ] || die "no decision $1 in $TEAM's register"
+  jq -e '.replacedBy == null' <<<"$entry" >/dev/null || die "decision $1 was replaced by $(jq -r .replacedBy <<<"$entry")"
+  jq -e '.retired == null' <<<"$entry" >/dev/null || die "decision $1 is retired"
+  echo "$entry"
+}
+
+# replaceable <old entry> <who>: refuses the Lead's change to an entry you changed, unless it's your own newer word.
+replaceable() {
+  [ "$2" = you ] || jq -e '.yours == null' <<<"$1" >/dev/null ||
+    die "you changed decision $(jq -r .id <<<"$1") in Decisions, so only your own newer word replaces it"
+}
+
 [ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
 TEAM=$1 CMD=$2
 shift 2
@@ -2040,6 +2084,173 @@ case "$CMD" in
     mkdir -p "$STATE"
     history_sql "INSERT INTO spent (team, item, at, seconds, gate, what) VALUES ($(sql "$TEAM"),
       $([ "$n" = - ] && echo NULL || echo "$n"), $(sql "$at"), $seconds, $(sql "$gate"), $(sql "$what"));" >/dev/null
+    ;;
+
+  decisions)
+    live="AND replaced_by IS NULL AND retired IS NULL"
+    if [ "${1:-}" = --replaced ]; then
+      live=
+      shift
+    fi
+    if [ ! -f "$STATE/history.db" ]; then
+      echo '[]'
+      exit 0
+    fi
+    match=
+    for word in "$@"; do
+      match+="${match:+ }\"${word//\"/\"\"}\"*"
+    done
+    decisions_sql -json "SELECT $DECISION FROM decisions WHERE (team = $(sql "$TEAM") OR everyone)
+      $live
+      ${match:+AND id IN (SELECT rowid FROM decisions_text WHERE decisions_text MATCH $(sql "$match"))}
+      ORDER BY confirmed DESC, id DESC;" | jq -cs 'first // []'
+    ;;
+
+  decide)
+    usage="usage: board.sh $TEAM decide lead <you|lead> <rule|lean> <team|all> <n|url> <file> [--said <date>] [--replaces <id>]"
+    [ $# -ge 6 ] || die "$usage"
+    role=$1 who=$2 kind=$3 scope=$4 where=$5 file=$6
+    shift 6
+    said=$(date -u +%FT%TZ) old=
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --said) [ $# -ge 2 ] || die "$usage"; said=$2; shift 2 ;;
+        --replaces) [ $# -ge 2 ] || die "$usage"; old=$2; shift 2 ;;
+        *) die "$usage" ;;
+      esac
+    done
+    case "$role" in
+      lead) ;;
+      dev | customer | reviewer | you) die "only lead records decisions; you correct them from Decisions in the app" ;;
+      *) die "unknown role '$role' (lead)" ;;
+    esac
+    case $who in you | lead) ;; *) die "who said it is 'you' or 'lead', not '$who'" ;; esac
+    case $kind in rule | lean) ;; *) die "a decision is a 'rule' or a 'lean', not '$kind'" ;; esac
+    case $scope in team | all) ;; *) die "a decision is for this 'team' or 'all' teams, not '$scope'" ;; esac
+    if [[ $where =~ ^[0-9]+$ ]]; then
+      item=$where link="https://github.com/$REPO/issues/$where"
+    elif [[ $where =~ ^https://github\.com/${REPO//./\\.}/(issues|pull)/([0-9]+)([#?].*)?$ ]]; then
+      item=${BASH_REMATCH[2]} link=$where
+    else
+      die "'$where' isn't an issue number or a link to an issue, PR or comment in $REPO"
+    fi
+    if [[ $said =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+      said+=T00:00:00Z
+    fi
+    [[ $said =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "'$said' isn't a date like 2026-09-26"
+    [ -f "$file" ] || die "no such file: $file"
+    decision=$(grep -m1 '[^[:space:]]' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' || true)
+    [ -n "$decision" ] || die "the decision is the first line of $file, and it's empty"
+    why=$(awk 'found { print } !found && /[^[:space:]]/ { found = 1 }' "$file" | sed '/[^[:space:]]/,$!d')
+    replacing=
+    if [ -n "$old" ]; then
+      replacing=$(live_decision "$old")
+      replaceable "$replacing" "$who"
+    fi
+    if [ -n "$DRY_RUN" ]; then
+      echo "dry-run: would record decision '$decision'${old:+, replacing decision $old}" >&2
+      exit 0
+    fi
+    mkdir -p "$STATE"
+    id=$(decisions_sql "BEGIN; INSERT INTO decisions (team, everyone, decision, why, who, kind, item, link, said,
+        recorded, confirmed) VALUES ($(sql "$TEAM"), $([ "$scope" = all ] && echo 1 || echo 0), $(sql "$decision"),
+        $(sql "$why"), $(sql "$who"), $(sql "$kind"), $item, $(sql "$link"), $(sql "$said"),
+        $(sql "$(date -u +%FT%TZ)"), $(sql "$said"));
+      ${old:+UPDATE decisions SET replaced_by = last_insert_rowid() WHERE id = $old;}
+      SELECT last_insert_rowid(); COMMIT;")
+    record lead "$item" "recorded decision $id"
+    if [ -n "$replacing" ]; then
+      say "decision $id recorded; it replaces decision $old, $(jq -r '"what \(if .who == "you" then "you" else "the Lead" end)
+        said on #\(.item) on \(.said | fromdateiso8601 | strftime("%-d %b"))"' <<<"$replacing" | tr -s ' \n' ' ' | sed 's/ $//')"
+    else
+      say "decision $id recorded"
+    fi
+    ;;
+
+  replace)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM replace lead <old> <new>"
+    role=$1 old=$2 new=$3
+    [ "$role" = lead ] || die "only lead marks one decision replaced by another"
+    [ "$old" != "$new" ] || die "a decision can't replace itself"
+    replacing=$(live_decision "$old")
+    newer=$(live_decision "$new")
+    replaceable "$replacing" "$(jq -r .who <<<"$newer")"
+    if [ -n "$DRY_RUN" ]; then
+      echo "dry-run: would mark decision $old replaced by decision $new" >&2
+      exit 0
+    fi
+    decisions_sql "UPDATE decisions SET replaced_by = $new WHERE id = $old;" >/dev/null
+    say "decision $old replaced by decision $new"
+    ;;
+
+  reconfirm)
+    [ $# -ge 3 ] || die "usage: board.sh $TEAM reconfirm lead <n> <id>..."
+    role=$1 n=$2
+    shift 2
+    [ "$role" = lead ] || die "only lead reconfirms decisions, as it breaks down a pitch that cited them"
+    [[ $n =~ ^[0-9]+$ ]] || die "#$n isn't an item number"
+    for id in "$@"; do
+      live_decision "$id" >/dev/null
+    done
+    if [ -n "$DRY_RUN" ]; then
+      echo "dry-run: would reconfirm decisions $* on #$n" >&2
+      exit 0
+    fi
+    decisions_sql "UPDATE decisions SET confirmed = $(sql "$(date -u +%FT%TZ)"), confirmed_on = $n
+      WHERE id IN ($(IFS=,; echo "$*"));" >/dev/null
+    say "reconfirmed decisions $* on #$n"
+    ;;
+
+  decision)
+    [ $# -ge 3 ] || die "usage: board.sh $TEAM decision you <id> <edit <file> | kind | widen | retire>"
+    role=$1 id=$2 change=$3
+    case "$role" in
+      you) ;;
+      lead | dev | customer | reviewer) die "only you correct the register, from Decisions in the app" ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    entry=$(decision_entry "$id")
+    [ -n "$entry" ] || die "no decision $id in $TEAM's register"
+    case $change in
+      edit)
+        [ $# -eq 4 ] || die "usage: board.sh $TEAM decision you <id> edit <file>"
+        [ -f "$4" ] || die "no such file: $4"
+        wording=$(grep -v '^[[:space:]]*$' "$4" || true)
+        [ -n "$wording" ] && [ "$(grep -c '' <<<"$wording")" -eq 1 ] || die "a decision is one line: $4 has $(grep -c '' <<<"$wording")"
+        wording=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' <<<"$wording")
+        set_="decision = $(sql "$wording")" done_="reworded"
+        ;;
+      kind)
+        [ $# -eq 3 ] || die "usage: board.sh $TEAM decision you <id> kind"
+        kind=$(jq -r 'if .kind == "rule" then "lean" else "rule" end' <<<"$entry")
+        set_="kind = $(sql "$kind")" done_="now a $kind"
+        ;;
+      widen)
+        [ $# -eq 3 ] || die "usage: board.sh $TEAM decision you <id> widen"
+        if jq -e '.scope == "all"' <<<"$entry" >/dev/null; then
+          team=$(jq -r .team <<<"$entry")
+          [ "$team" = "$TEAM" ] || die "decision $id is $team's; narrow it to $team from there"
+          set_="everyone = 0" done_="for $TEAM only"
+        else
+          set_="everyone = 1" done_="for all teams"
+        fi
+        ;;
+      retire)
+        [ $# -eq 3 ] || die "usage: board.sh $TEAM decision you <id> retire"
+        if jq -e '.retired == null' <<<"$entry" >/dev/null; then
+          set_="retired = $(sql "$(date -u +%FT%TZ)")" done_="retired"
+        else
+          set_="retired = NULL" done_="back in force"
+        fi
+        ;;
+      *) die "unknown change '$change' (edit | kind | widen | retire)" ;;
+    esac
+    if [ -n "$DRY_RUN" ]; then
+      echo "dry-run: would make decision $id $done_" >&2
+      exit 0
+    fi
+    decisions_sql "UPDATE decisions SET $set_, yours = $(sql "$(date -u +%FT%TZ)") WHERE id = $id;" >/dev/null
+    say "decision $id: $done_"
     ;;
 
   pr)

@@ -132,7 +132,9 @@ Handover? Show(Handover? back)
         writes: writes,
         confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
         attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
-            new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)));
+            new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
+        showDecisions: team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
+            change => change.Run(team, command.Read), url => Link.OpenUrl(url)));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {
