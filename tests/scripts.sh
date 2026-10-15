@@ -6371,10 +6371,20 @@ same "yours stands" '[6,4,5]' "$(ids)"
 run board demo decide lead you lean team 71 "$WORK/decision" --replaces 5
 same "your word" 0 "$STATUS"
 
+case_ "one team's entry doesn't replace an all-teams one"
+said "This team's cards keep their commands in the hint bar"
+run board demo decide lead you lean team 72 "$WORK/decision" --replaces 4
+failed "team entry replacing all-teams"
+one_line "team entry replacing all-teams"
+run board demo replace lead 4 6
+failed "replace all-teams with team"
+one_line "replace all-teams with team"
+same "other keeps it" '[4,3]' "$(ids other)"
+
 case_ "a dry run of every decision write changes nothing"
 before=$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo decisions --replaced)
 said "Dry"
-for args in "decide lead you lean team 80 $WORK/decision --replaces 4" "replace lead 4 6" "reconfirm lead 80 4" \
+for args in "decide lead you lean all 80 $WORK/decision --replaces 4" "replace lead 6 7" "reconfirm lead 80 4" \
   "decision you 4 kind" "decision you 4 widen" "decision you 4 retire" "decision you 4 edit $WORK/decision"; do
   read -r -a words <<<"$args"
   run board --dry-run demo "${words[@]}"

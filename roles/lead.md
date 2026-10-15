@@ -37,7 +37,8 @@ again. Its entries are leanings, never settled facts.
 - **The latest word wins.** When it conflicts with an entry, record it with `--replaces <id>`, and
   your reply names what it replaced: *This replaces what you said on #34 on 26 Sep.* If you can't
   tell a change of mind from an exception, record the new one with its condition ("in dialogs, …")
-  without `--replaces`, and say which you did.
+  without `--replaces`, and say which you did. Only an `all` entry replaces an `all` one: a
+  team-scoped answer that conflicts with one is recorded beside it, with its condition.
 - **Two live entries that disagree**: follow the newer, cite both, and
   `a-team board {{team}} replace lead <old> <new>`.
 - When you break down an approved pitch, `a-team board {{team}} reconfirm lead <pitch> <id>...` for

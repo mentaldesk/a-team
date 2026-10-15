@@ -77,10 +77,12 @@ live_decision() {
   echo "$entry"
 }
 
-# replaceable <old entry> <who>: refuses the Lead's change to an entry you changed, unless it's your own newer word.
+# replaceable <old entry> <who> <team|all>: refuses the Lead's change to an entry you changed, and a team's to an all-teams one.
 replaceable() {
   [ "$2" = you ] || jq -e '.yours == null' <<<"$1" >/dev/null ||
     die "you changed decision $(jq -r .id <<<"$1") in Decisions, so only your own newer word replaces it"
+  [ "$3" = all ] || jq -e '.scope == "team"' <<<"$1" >/dev/null ||
+    die "decision $(jq -r .id <<<"$1") is for all teams, so only an all-teams entry replaces it; record this one beside it with its condition"
 }
 
 [ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
@@ -2145,7 +2147,7 @@ case "$CMD" in
     replacing=
     if [ -n "$old" ]; then
       replacing=$(live_decision "$old")
-      replaceable "$replacing" "$who"
+      replaceable "$replacing" "$who" "$scope"
     fi
     if [ -n "$DRY_RUN" ]; then
       echo "dry-run: would record decision '$decision'${old:+, replacing decision $old}" >&2
@@ -2174,7 +2176,7 @@ case "$CMD" in
     [ "$old" != "$new" ] || die "a decision can't replace itself"
     replacing=$(live_decision "$old")
     newer=$(live_decision "$new")
-    replaceable "$replacing" "$(jq -r .who <<<"$newer")"
+    replaceable "$replacing" "$(jq -r .who <<<"$newer")" "$(jq -r .scope <<<"$newer")"
     if [ -n "$DRY_RUN" ]; then
       echo "dry-run: would mark decision $old replaced by decision $new" >&2
       exit 0
