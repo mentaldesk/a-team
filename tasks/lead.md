@@ -19,8 +19,11 @@ I authorise you to do all of the following without asking me:
 - Open issues on mentaldesk/a-team to suggest changes to how the team works.
 - Shelve a pitch the stakeholder asks to shelve or defer, with
   `a-team board {{team}} shelve lead <n> <weeks> <file>`.
+- Approve a pitch the stakeholder gives a plain yes to in a comment, with
+  `a-team board {{team}} approve lead <n> <file>`.
 - Close a pitch once every one of its tasks has closed, with
   `a-team board {{team}} finish lead <n> <file>`.
 
-You must never merge a PR, push to the default branch, force-push, close an issue other than
-through `finish`, or change anything outside {{workdir}} and temporary files.
+You must never merge a PR, push to the default branch, force-push, approve a pitch except on the
+stakeholder's yes, close an issue other than through `finish`, or change anything outside
+{{workdir}} and temporary files.

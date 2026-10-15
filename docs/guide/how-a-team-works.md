@@ -59,7 +59,9 @@ draft pull request in Pitched instead. You agree to it by merging it, with `a` i
 Work waits for you in two places, and no agent moves it on without you.
 
 - **Pitched.** You approve a pitch, comment on it to have it changed, say Not now to it for a few
-  weeks, or decline it. Nothing gets built until you approve.
+  weeks, or decline it. Nothing gets built until you approve. A plain yes in a comment, like
+  "Let's build it", approves it too, just as Not now in a comment shelves it: the Lead acts on your
+  word and says so. A yes with a condition leaves the pitch for you to approve once it's revised.
 - **In review.** You merge a task's PR. Nothing is done until you say so. Once every task of a
   pitch has closed, the Lead checks the whole and closes it, so a finished pitch doesn't come back
   to you.
@@ -146,7 +148,8 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
   big it is. Your Priority always wins; among Ideas with the same Priority, or none, the Lead pitches
   the one it recommends higher first.
 - **Only a few pitches are in front of you at once,** highest priority first. A higher-priority
-  draft takes the place of a lower-priority pitch, which waits in Exploring for room again.
+  draft takes the place of a lower-priority pitch, which waits in Exploring for room again. A draft
+  with the same Priority never does, whatever the Lead recommends.
 - **A pitch you say Not now to** goes back to Idea, and the Lead won't pitch it again until the
   date you picked, or until you change its Priority. See [Work](work.md#answering-from-a-card).
 - **The Lead's own Ideas are limited too.** Once **Ideas** in the team's settings are waiting on

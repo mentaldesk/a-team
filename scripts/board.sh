@@ -544,9 +544,10 @@ priority_field() {
 }
 
 # Reads a JSON array of items on stdin; adds .priority and sorts highest first, unset last, and
-# within each of those by the Lead's recommendation.
+# within each of those by the Lead's recommendation, unless the argument is `strict`.
 by_priority() {
-  local list ranks values
+  local list ranks values strict=false
+  [ "${1:-}" != strict ] || strict=true
   list=$(cat)
   if [ "$(jq length <<<"$list")" -eq 0 ]; then echo '[]'; return; fi
   ranks=$(priority_field | jq -s '[.[0].options[]?.name]')
@@ -556,9 +557,10 @@ by_priority() {
           ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldSingleSelect { name } } } } } }"' <<<"$list")
       } }" | jq --arg f "$PRIORITY" '.data.repository | with_entries(
         .key |= ltrimstr("i") | .value = ([.value.issueFieldValues.nodes[] | select(.field.name == $f) | .name] | first))')
-  jq --argjson ranks "$ranks" --argjson values "$values" "$RECOMMENDED"'
+  jq --argjson ranks "$ranks" --argjson values "$values" --argjson strict "$strict" "$RECOMMENDED"'
     def rank($r): $ranks | index($r) // length;
-    map(.priority = $values[.number | tostring]) | sort_by([rank(.priority), rank(recommended)])' <<<"$list"
+    map(.priority = $values[.number | tostring])
+    | sort_by([rank(.priority), if $strict then 0 else rank(recommended) end])' <<<"$list"
 }
 
 # An issue an agent wrote, from any team, carries its marker in the body.
@@ -637,12 +639,12 @@ pitchable_idea() {
 
 # One swap set for Pitched, from all board items: `promote` are the Exploring pitches that
 # belong in Pitched, `demote` the Pitched ones they displace, paired in order. Sorting Pitched
-# first makes `by_priority`'s stable sort displace only on a strictly higher priority, and
+# first, and ignoring `rank:`, makes the stable sort displace only on a strictly higher priority, and
 # `demote` never outruns `promote`, so nothing leaves Pitched without a draft taking its slot. A
 # document pitch is a PR, and stays in Pitched whatever the limit.
 pitch_swap() {
   jq -c '[.[] | select((.labels | index("pitch")) and .type == "Issue" and (.status == "Pitched" or .status == "Exploring"))]
-         | sort_by(.status != "Pitched")' <<<"$1" | by_priority |
+         | sort_by(.status != "Pitched")' <<<"$1" | by_priority strict |
     jq --argjson limit "$(cfg '.wip.pitched')" '
       ([.[] | select(.status == "Pitched")] | length) as $pitched
       | if $pitched < $limit
@@ -1418,21 +1420,40 @@ case "$CMD" in
     ;;
 
   approve)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM approve <role> <n>"
-    role=$1 n=$2
+    [ $# -eq 2 ] || [ $# -eq 3 ] || die "usage: board.sh $TEAM approve <role> <n> [<file>]"
+    role=$1 n=$2 file=${3:-}
     case "$role" in
-      lead | dev | customer | reviewer) die "$role may not approve a pitch; approving is the stakeholders' own gate" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
+      you) [ $# -eq 2 ] || die "usage: board.sh $TEAM approve you <n>" ;;
+      lead) [ $# -eq 3 ] || die "usage: board.sh $TEAM approve lead <n> <file>" ;;
+      dev | customer | reviewer) die "$role may not approve a pitch; approving is the stakeholders' own gate, or the Lead's on their word" ;;
+      *) die "unknown role '$role' (you | lead)" ;;
     esac
+    if [ "$role" = lead ]; then
+      [ -f "$file" ] || die "no such file: $file"
+      grep -q '[^[:space:]]' "$file" || die "the Lead's approve is its reply: $file is empty"
+    fi
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a pitch to approve"
     jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
     status=$(jq -r .status <<<"$it")
     [ "$status" = Pitched ] || die "only a Pitched pitch can be approved (#$n is in '$status')"
+    if [ "$role" = lead ]; then
+      word=$(unanswered_feedback lead "$n" | jq -c 'max_by(.at) // empty')
+      [ -n "$word" ] || die "lead may approve #$n only on a stakeholder's word (no unanswered stakeholder feedback on #$n)"
+      [ -z "$(gh api "repos/$REPO/issues/$n" --jq '.body // ""' | jq -Rsr "$NEEDS"'needs_answer')" ] ||
+        die "#$n still has questions under Needs your answer: fold the stakeholder's answers into the pitch first, or ask them"
+      body=$(printf '%s\n\n<!-- a-team:lead -->' "$(cat "$file")")
+      [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+      printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
+      ack "$n"
+    fi
     set_status "$(jq -r .id <<<"$it")" Approved
     record "$role" "$n" "Pitched → Approved"
+    if [ "$role" = lead ]; then
+      when=$(jq -r '.at | fromdateiso8601 | "\(strflocaltime("%d %b") | ltrimstr("0")) \(strflocaltime("%H:%M"))"' <<<"$word")
+      record "$role" "$n" "approved on $(jq -r .author <<<"$word")'s word of $when"
+    fi
     say "#$n: Pitched -> Approved"
     ;;
 
