@@ -1185,13 +1185,13 @@ same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
 grep -q "would set item PVTI_7 to 'Approved'" "$ERR" || fail "approve dry run: '$(cat "$ERR")'"
 
-case_ "neither agent may approve a pitch: that gate is the reviewer's own"
-for role in lead dev; do
+case_ "no Dev, Customer lead or Reviewer may approve a pitch"
+for role in dev customer reviewer; do
   : >"$WRITES"
   run board demo approve "$role" 7
   failed "$role approving"
   one_line "$role approving"
-  grep -q "$role may not approve a pitch; approving is the stakeholders' own gate" "$ERR" ||
+  grep -q "$role may not approve a pitch; approving is the stakeholders' own gate, or the Lead's on their word" "$ERR" ||
     fail "$role approving: '$(cat "$ERR")'"
   same "$role writes" "" "$(cat "$WRITES")"
 done
@@ -1200,7 +1200,7 @@ case_ "any other role is unknown"
 run board demo approve nobody 7
 failed "unknown role"
 one_line "unknown role"
-grep -q "unknown role 'nobody' (you)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
+grep -q "unknown role 'nobody' (you | lead)" "$ERR" || fail "unknown role: '$(cat "$ERR")'"
 
 case_ "approve is not a general move: only a pitch-labelled issue in Pitched"
 for n in 8 9 404; do
@@ -1224,6 +1224,94 @@ run board demo approve you 7
 failed "approve a PR"
 grep -q "#7 is not an issue" "$ERR" || fail "approve a PR: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+case_ "the Lead approves only on a stakeholder's unanswered word, replying with its marker"
+gh_items <<'ITEMS'
+Pitched 7 A pitch in front of me
+Exploring 8 A pitch still being drafted
+ITEMS
+gh_thread <<THREAD
+body $(ago 600) demo-app[bot] 0 The pitch\n\n## Needs your answer\n\nNone.\n\n<!-- a-team:lead -->
+comment $(ago 5) reviewer 1 Already answered.
+THREAD
+printf 'Approved on your word.\n' >"$WORK/reply"
+run board demo approve lead 7 "$WORK/reply"
+failed "nothing said"
+one_line "nothing said"
+grep -qF "lead may approve #7 only on a stakeholder's word" "$ERR" || fail "nothing said: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+SAID=$(ago 5)
+gh_thread <<THREAD
+body $(ago 600) demo-app[bot] 0 The pitch\n\n## Needs your answer\n\nNone.\n\n<!-- a-team:lead -->
+comment $SAID reviewer 0 Let's build it.
+THREAD
+rm -f "$A_TEAM_STATE/history.db"
+run board demo approve lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "said" "#7: Pitched -> Approved" "$(cat "$OUT")"
+same "posted" "Approved on your word.
+
+<!-- a-team:lead -->" "$(cat "$POSTED")"
+grep -q "item=PVTI_7 .*option=OPT_approved " "$WRITES" || fail "not approved: '$(cat "$WRITES")'"
+same "acked" "IC_1" "$(cat "$ACKED")"
+when=$(jq -rn --arg at "$SAID" '$at | fromdateiso8601 | "\(strflocaltime("%d %b") | ltrimstr("0")) \(strflocaltime("%H:%M"))"')
+same "history" "lead approved on reviewer's word of $when
+lead Pitched → Approved" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 7 | jq -r '.events[] | "\(.who) \(.what)"')"
+
+case_ "the Lead's approve needs a reply, and only a Pitched pitch that's an issue"
+: >"$WRITES"
+: >"$POSTED"
+: >"$WORK/blank"
+run board demo approve lead 7 "$WORK/blank"
+failed "empty reply"
+grep -qF "the Lead's approve is its reply" "$ERR" || fail "empty reply: '$(cat "$ERR")'"
+run board demo approve lead 7
+failed "no reply"
+grep -qF "usage: board.sh demo approve lead <n> <file>" "$ERR" || fail "no reply: '$(cat "$ERR")'"
+run board demo approve you 7 "$WORK/reply"
+failed "your approve with a file"
+run board demo approve lead 8 "$WORK/reply"
+grep -qF "only a Pitched pitch can be approved (#8 is in 'Exploring')" "$ERR" || fail "a draft: '$(cat "$ERR")'"
+edit_item 7 '.labels.nodes = [{name: "pitch"}] | .__typename = "PullRequest"'
+run board demo approve lead 7 "$WORK/reply"
+grep -q "#7 is not an issue" "$ERR" || fail "a document pitch: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+
+case_ "the Lead can't approve while Needs your answer still holds a question"
+gh_items <<'ITEMS'
+Pitched 7 A pitch in front of me
+ITEMS
+gh_thread <<THREAD
+body $(ago 600) demo-app[bot] 0 The pitch\n\n## Needs your answer\n\n1. Which columns?\n\n<!-- a-team:lead -->
+comment $(ago 5) reviewer 0 Go ahead.
+THREAD
+run board demo approve lead 7 "$WORK/reply"
+failed "open question"
+one_line "open question"
+grep -qF "#7 still has questions under Needs your answer" "$ERR" || fail "open question: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+same "acked" "" "$(cat "$ACKED")"
+
+case_ "--dry-run says what the Lead's approve would post and changes nothing"
+gh_thread <<THREAD
+body $(ago 600) demo-app[bot] 0 The pitch\n\n<!-- a-team:lead -->
+comment $(ago 5) reviewer 0 Let's build it.
+THREAD
+rm -f "$A_TEAM_STATE/history.db"
+run board --dry-run demo approve lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+grep -q "would set item PVTI_7 to 'Approved'" "$ERR" || fail "dry run: '$(cat "$ERR")'"
+[ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
+
+case_ "the Lead's role and the shared rules say when a yes approves"
+grep -qF 'approve lead <n> <file>' "$ROOT/roles/lead.md" || fail "role: no approve lead"
+grep -qF 'approve lead <n> <file>' "$ROOT/tasks/lead.md" || fail "task prompt: not authorised"
+grep -qF 'the Lead approves a pitch when the stakeholder answers it with a' "$ROOT/process.md" || fail "process: no exception"
 
 # Declining: the stakeholder's no to an Idea or a pitch, with the reason on the issue.
 case_ "decline posts the reason as yours, closes the issue as not planned and moves it to Done"
@@ -1693,8 +1781,8 @@ grep -q "lead may not move #7 from 'Building' to 'In review'" "$ERR" ||
   fail "Building to In review: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
-case_ "the agents' settings deny approve, beside priority"
-grep -qF '"Bash(a-team board * approve *)"' "$ROOT/settings/agents.json" || fail "no approve deny rule"
+case_ "the agents' settings deny approving as you, beside priority"
+grep -qF '"Bash(a-team board * approve you *)"' "$ROOT/settings/agents.json" || fail "no approve deny rule"
 
 case_ "comment you posts your words as they are: no marker, and no 👀 on anything"
 fixture <<'JSON'
@@ -2271,6 +2359,60 @@ A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "exit" 0 "$STATUS"
 same "demote" '[[11,true],[12,false]]' "$(jq -c '[.demote[] | [.number, .announce]] | sort' "$OUT")"
 same "promote" '[[21,true],[22,false]]' "$(jq -c '[.promote[] | [.number, .announce]] | sort' "$OUT")"
+
+case_ "lead-next: a higher Priority displaces a lower one, both unranked (#81)"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 1, "exploring": 4, "ideas": 4 } }
+JSON
+gh_items 21 <<'ITEMS'
+Pitched 11 Low, in front of me
+Exploring 21 High, a draft
+ITEMS
+edit_item 11 '.issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "swap" '{"demote":[11],"promote":[21]}' "$(jq -c '{demote: [.demote[].number], promote: [.promote[].number]}' "$OUT")"
+
+case_ "lead-next: a same-Priority draft never displaces a pitch, however the Lead ranked them (#336)"
+gh_items 11 21 <<'ITEMS'
+Pitched 11 High, recommended Low
+Exploring 21 High, recommended High
+ITEMS
+edit_item 21 '.labels.nodes += [{name: "rank:high"}]'
+edit_item 11 '.labels.nodes += [{name: "rank:low"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "swap" '{"demote":[],"promote":[]}' "$(jq -c '{demote: [.demote[].number], promote: [.promote[].number]}' "$OUT")"
+run board demo move lead 11 Exploring
+failed "demote a same-Priority pitch"
+
+case_ "lead-next: with room in Pitched, the higher-recommended of two same-Priority drafts goes first"
+gh_items 21 22 <<'ITEMS'
+Exploring 21 High, recommended Low
+Exploring 22 High, recommended High
+ITEMS
+edit_item 21 '.labels.nodes += [{name: "rank:low"}]'
+edit_item 22 '.labels.nodes += [{name: "rank:high"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "swap" '{"demote":[],"promote":[22]}' "$(jq -c '{demote: [.demote[].number], promote: [.promote[].number]}' "$OUT")"
+
+case_ "lead-next: a higher draft displaces the lower-recommended of two same-Priority pitches"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
+JSON
+gh_items 21 <<'ITEMS'
+Pitched 11 Low, recommended Low
+Pitched 12 Low, recommended High
+Exploring 21 High, a draft
+ITEMS
+edit_item 11 '.issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}] | .labels.nodes += [{name: "rank:low"}]'
+edit_item 12 '.issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}] | .labels.nodes += [{name: "rank:high"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "swap" '{"demote":[11],"promote":[21]}' "$(jq -c '{demote: [.demote[].number], promote: [.promote[].number]}' "$OUT")"
 
 case_ "a first demote labels the pitch a-team:displaced"
 fixture <<'JSON'

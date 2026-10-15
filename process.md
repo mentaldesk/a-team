@@ -18,7 +18,7 @@ Every item's Status is one of:
 | Idea | A seed: a problem or opportunity worth a look | Stakeholder or Lead, Dev for a follow-up the stakeholder asked for, or Customer lead for a feature users can't find |
 | Exploring | Lead has drafted the pitch, or a higher-priority one displaced it; it waits here for room in Pitched | Lead |
 | Pitched ⛔ | Pitch is in front of the stakeholder, a few at a time | Lead |
-| Approved | Stakeholder agreed; Lead to break it down | **Stakeholder only** |
+| Approved | Stakeholder agreed; Lead to break it down | **Stakeholder**, or the Lead on their plain yes (`approve`) |
 | Building | Broken into tasks; tasks are in flight | Lead |
 | Ready | A task Dev can pick up | Lead (or stakeholder) |
 | In progress | Dev is working on it | Dev |
@@ -26,11 +26,12 @@ Every item's Status is one of:
 | Done | Merged, or a pitch whose tasks have all closed | **Stakeholder**, or the Lead for a pitch (`finish`) |
 
 ⛔ marks a gate. Agents move work *into* a gate and stop. Only the stakeholder moves it out. Pitched
-has two exceptions and no others: the Lead shelves a pitch back to **Idea** when the stakeholder
-answers it by asking to shelve or defer it, and moves it back to **Exploring** when a higher-priority
-draft displaces it. `a-team board` allows the first only while that comment is unanswered, and
-the second only for a pitch `lead-next` names in `demote`. A shelved pitch isn't pitched again
-until the date its shelve set, unless the stakeholder changes its Priority first.
+has three exceptions and no others: the Lead approves a pitch when the stakeholder answers it with a
+plain yes, shelves it back to **Idea** when they ask to shelve or defer it, and moves it back to
+**Exploring** when a draft with a higher Priority displaces it. `a-team board` allows the first two
+only while that comment is unanswered, and the third only for a pitch `lead-next` names in `demote`.
+A shelved pitch isn't pitched again until the date its shelve set, unless the stakeholder changes
+its Priority first.
 
 Two kinds of item share the board:
 
@@ -76,7 +77,8 @@ a-team board {{team}} lead-next                 # Lead only: pitch or discover t
 a-team board {{team}} move <role> <n> <STATUS>
 a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on the board
 a-team board {{team}} priority <role> <n> <value|none>  # stakeholder only: rank an item, or clear its rank
-a-team board {{team}} approve <role> <n>        # stakeholder only: move a Pitched pitch to Approved
+a-team board {{team}} approve <role> <n> [<file>]  # stakeholder, or the Lead on their yes: move a Pitched
+                                                # pitch to Approved; the Lead's <file> is its reply
 a-team board {{team}} accept <role> <n>         # stakeholder only: squash-merge task #<n>'s PR or document
                                                 # pitch #<n>, or close validated pitch #<n>
 a-team board {{team}} decline <role> <n> <file> # stakeholder only: comment <file> on Idea or Pitched pitch #<n>
@@ -190,8 +192,9 @@ out stops everyone.
 
 ## Never
 
-- Merge a PR, close an issue, or move anything to Approved or Done. The one exception is the
-  Lead closing a pitch whose tasks have all closed, with `finish`.
+- Merge a PR, close an issue, or move anything to Approved or Done. The exceptions are the Lead
+  approving a pitch on the stakeholder's plain yes, with `approve`, and closing a pitch whose tasks
+  have all closed, with `finish`.
 - Mark a PR ready for review, except the Dev's own green PRs, as its role describes. The Customer
   lead opens its docs PR ready for review.
 - Push to the default branch, or force-push anything.
