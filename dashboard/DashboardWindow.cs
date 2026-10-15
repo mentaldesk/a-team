@@ -70,6 +70,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
+    private readonly Action<IReadOnlyList<string>, Action<string, SpendingItem>>? _showSpending;
     private readonly Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? _newIdea;
     private readonly Func<Key, Attaching>? _attaching;
     private readonly Action<string> _openUrl;
@@ -163,9 +164,11 @@ public sealed class DashboardWindow : Window
         WhatsNew? whatsNew = null,
         WriteQueue? writes = null,
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
-        Func<Key, Attaching>? attaching = null)
+        Func<Key, Attaching>? attaching = null,
+        Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null)
     {
         _attaching = attaching;
+        _showSpending = showSpending;
         _writes = writes ?? new WriteQueue(run);
         _confirmQuit = confirmQuit ?? ((_, _) => true);
         _readMoves = readMoves;
@@ -653,6 +656,7 @@ public sealed class DashboardWindow : Window
             }))
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
+            .Register("spending", "Spending", OpenSpending, isEnabled: () => _showSpending is not null)
             .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
                 inMenu: () => _expanded is not null || _dispatcherExpanded, scopes: [Regions.Log])
@@ -1703,6 +1707,15 @@ public sealed class DashboardWindow : Window
     /// <summary>What's waiting now is Work's count, once it has read one.</summary>
     private void OpenTrends() =>
         _showTrends?.Invoke([.. _teamNames.Select(team => (team, _readAt is null ? (int?)null : _work.Items.Count(item => item.Team == team)))]);
+
+    private void OpenSpending() => _showSpending?.Invoke(_teamNames, OpenPitch);
+
+    /// <summary>The reader opens over Spending once the pitch has been read.</summary>
+    private void OpenPitch(string team, SpendingItem pitch)
+    {
+        var item = new WaitingItem(pitch.Number, pitch.Title, pitch.Status, pitch.Url, team, Pitch: true);
+        ReadBody(item, (read, body) => ShowBody(read, body, pitch.Url), forReader: true);
+    }
 
     private void OpenSettings(string? page = null, bool newTeam = false)
     {

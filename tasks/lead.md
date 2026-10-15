@@ -21,6 +21,8 @@ I authorise you to do all of the following without asking me:
   `a-team board {{team}} shelve lead <n> <weeks> <file>`.
 - Approve a pitch the stakeholder gives a plain yes to in a comment, with
   `a-team board {{team}} approve lead <n> <file>`.
+- Label each pitch with the vision theme it serves, with `a-team board {{team}} theme lead <n> <heading|none>`,
+  creating the label if it's new.
 - Close a pitch once every one of its tasks has closed, with
   `a-team board {{team}} finish lead <n> <file>`.
 

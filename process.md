@@ -96,6 +96,8 @@ a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on I
                                                 # over it from now on
 a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
                                                 # for Idea #<n>, <file> its one-line case
+a-team board {{team}} theme lead <n> <heading|none>  # Lead only: label pitch #<n> `theme: <heading>`
+                                                # for the vision theme it serves, or say it serves none
 a-team board {{team}} feedback <role> <n>       # stakeholder comments with no 👀 on them yet, each with
                                                 # `images` where it has screenshots attached
 a-team board {{team}} task lead <pitch> "<title>" <file>  # Lead only: open a task, put it in Ready
@@ -126,7 +128,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 ```
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
-`trend`, `trends` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
+`trend`, `trends`, `spending` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
 `overview` is what its Overseer reads, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is

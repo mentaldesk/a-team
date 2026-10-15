@@ -612,6 +612,21 @@ pitchable() {
   fi
 }
 
+# unthemed <items>: pitches with no theme and no `none` from the Lead: open ones, and done ones since runs were recorded.
+unthemed() {
+  local recent='[]' none='[]'
+  if [ -f "$STATE/history.db" ]; then
+    recent=$(history_sql -json "SELECT DISTINCT item FROM events WHERE team = $(sql "$TEAM")
+      AND at >= (SELECT MIN(started) FROM runs WHERE team = $(sql "$TEAM"));" | jq -s 'add // [] | map(.item)')
+    none=$(history_sql -json "SELECT item FROM events e WHERE team = $(sql "$TEAM") AND what = 'no theme'
+      AND id = (SELECT MAX(id) FROM events WHERE team = e.team AND item = e.item AND what LIKE '%theme%');" |
+      jq -s 'add // [] | map(.item)')
+  fi
+  jq -c --argjson recent "$recent" --argjson none "$none" '[.[] | select(.type == "Issue" and (.labels | index("pitch"))
+    and all(.labels[]; startswith("theme: ") | not) and .closed != "NOT_PLANNED"
+    and (.status != "Done" or (.number | IN($recent[]))) and (.number | IN($none[]) | not)) | .number]' <<<"$1"
+}
+
 # The Idea the Lead should pitch next, with `actedOn` its recommendation where that is what put it ahead
 # of the next pitchable Idea in its Priority band.
 pitchable_idea() {
@@ -1188,12 +1203,12 @@ case "$CMD" in
     fi
     jq -n --argjson promote "$promote" --argjson demote "$demote" --arg turn "$turn" --argjson item "$idea" \
       --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" --argjson blocked "$blocked" \
-      --argjson floor "$(cfg '.wip.readyFloor // 0')" --argjson skipped "$skipped" '
+      --argjson floor "$(cfg '.wip.readyFloor // 0')" --argjson skipped "$skipped" --argjson unthemed "$(unthemed "$all")" '
       {promote: $promote, demote: $demote, turn: $turn}
       + (if $turn == "pitch" then {item: $item}
          elif $turn == "discover" then {room: $room}
          else {reason: "Exploring and the discovery queue are both full, or there is no Idea to pitch"} end)
-      + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor), skipped: $skipped}'
+      + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor), skipped: $skipped, unthemed: $unthemed}'
     ;;
 
   move)
@@ -1700,6 +1715,37 @@ case "$CMD" in
     say "#$n: recommended $name"
     ;;
 
+  theme)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM theme lead <n> <heading|none>"
+    role=$1 n=$2 heading=$3
+    case "$role" in
+      lead) ;;
+      dev | customer | reviewer | you) die "$role may not set a pitch's theme; that's the Lead's" ;;
+      *) die "unknown role '$role' (lead)" ;;
+    esac
+    [[ -n $heading && $heading != *,* && $heading != *$'\n'* ]] || die "a theme is its heading from the vision, on one line and with no commas"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    jq -e '.type == "Issue" and (.labels | index("pitch"))' <<<"$it" >/dev/null || die "#$n isn't a pitch: only pitches carry a theme"
+    label=
+    [ "$heading" = none ] || label="theme: $heading"
+    [ ${#label} -le 50 ] || die "'$label' is longer than the 50 characters GitHub allows a label"
+    edit=()
+    if [ -n "$label" ]; then
+      if ! gh label list -R "$REPO" --search theme: --limit 100 --json name --jq '.[].name' | grep -qxF "$label"; then
+        write "create label $label" gh label create "$label" -R "$REPO" --color 5319e7 \
+          --description "The vision theme the a-team Lead says this pitch serves" >/dev/null
+      fi
+      edit+=(--add-label "$label")
+    fi
+    while IFS= read -r stale; do
+      [ -z "$stale" ] || edit+=(--remove-label "$stale")
+    done < <(jq -r --arg l "$label" '.labels[] | select(startswith("theme: ") and . != $l)' <<<"$it")
+    [ ${#edit[@]} -eq 0 ] || write "label #$n ${label:-with no theme}" gh issue edit "$n" -R "$REPO" "${edit[@]}" >/dev/null
+    record "$role" "$n" "${label:-no theme}"
+    say "#$n: ${label:-no theme}"
+    ;;
+
   feedback)
     [ $# -eq 2 ] || die "usage: board.sh $TEAM feedback <role> <n>"
     role=$1 n=$2
@@ -2007,6 +2053,25 @@ case "$CMD" in
         | .queue |= fromjson | .accepted |= fromjson | .spent |= fromjson
         | (.moves | fromjson | waits($worktrees)) as $waits
         | .cycles |= (fromjson | group_by(.item) | map(cycle($waits)) | sort_by(.accepted)) | del(.moves)'
+    ;;
+
+  spending)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM spending"
+    runs=
+    [ ! -f "$STATE/history.db" ] || runs=$(history_sql -json "SELECT started, role, COALESCE(cost, 0) AS cost,
+        (SELECT json_group_array(item) FROM run_items WHERE run = runs.id) AS items
+      FROM runs WHERE team = $(sql "$TEAM") ORDER BY started, id;")
+    if [ -z "$runs" ]; then
+      echo '{"since": null, "runs": [], "items": []}'
+      exit 0
+    fi
+    items | jq --argjson runs "$runs" '($runs | map(.items |= fromjson)) as $runs
+      | [$runs[].items[]] as $on
+      | [.[] | select(.number | IN($on[])) | .parent | values] as $over
+      | {since: $runs[0].started, runs: $runs,
+         items: [.[] | select(.number | IN($on[], $over[]))
+           | {number, title, url, status, parent, pitch: (.type == "Issue" and (.labels | index("pitch")) != null),
+              theme: ([.labels[] | select(startswith("theme: ")) | ltrimstr("theme: ")] | first)}]}'
     ;;
 
   today)
