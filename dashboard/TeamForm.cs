@@ -28,6 +28,7 @@ public sealed class TeamForm : Dialog
     internal const string NameCaption = "The team's name, which names its file.";
     internal const string RepoCaption = "The GitHub repo the team works on, as owner/repo.";
     internal const string StakeholdersCaption = "Whose comments the team acts on. You, unless you add others.";
+    internal const string ContributesCaption = "Other repos the Dev may open draft PRs on. Merging stays yours.";
     internal const string ProjectCaption = "The GitHub Project whose board the team moves its work across.";
     internal const string NewProject = "A new project, named after the team";
     internal const string OwnerCaption = "Who owns the Project: the user or organisation in its URL.";
@@ -60,7 +61,7 @@ public sealed class TeamForm : Dialog
     private const int ProblemsTop = BandPadding + 2;
     private const string NoName = "the new team";
     private const int Inset = 1;
-    private const int FieldX = 14;
+    private const int FieldX = 16;
     private const int LimitWidth = 6;
     private const string PickText = "Enter ▸";
     private const int ButtonGap = 2;
@@ -77,6 +78,7 @@ public sealed class TeamForm : Dialog
     private readonly TextField? _name;
     private readonly TextField _repo;
     private readonly PickRow _stakeholders;
+    private readonly PickRow _contributes;
     private readonly PickRow _skills;
     private readonly DropDownList _project;
     private readonly TextField _owner;
@@ -118,6 +120,7 @@ public sealed class TeamForm : Dialog
     private int _wrappedTo;
     private List<ProjectChoice> _projects = [];
     private IReadOnlyList<string> _stakeholderNames;
+    private IReadOnlyList<string> _contributesTo;
     private IReadOnlyList<string> _skillNames;
     private Func<string, Task<Reading>>? _listProjects;
     private string? _projectsOwner;
@@ -145,9 +148,11 @@ public sealed class TeamForm : Dialog
         _taken = taken;
         _teamsDirectory = teamsDirectory;
         _stakeholderNames = settings.Stakeholders;
+        _contributesTo = settings.ContributesTo;
         _skillNames = settings.Skills;
         RunPicker = picker => App is { } app ? Picker.Show(app, picker) : null;
         FindStakeholders = Stakeholders.Read;
+        FindRepos = (_, _) => Task.FromResult(new ReachableRepos([], "nothing here can ask GitHub"));
         FindSkills = () => SkillsFound.Find(Home, Current().CheckoutPath);
         FindRepoFiles = RepoFiles.Read;
         PickFolder = (title, typed) => App is { } app ? FolderPicker.Browse(app, title, typed, Home) : null;
@@ -184,6 +189,7 @@ public sealed class TeamForm : Dialog
                 LoadProjects(list);
         };
         _stakeholders = Picks("Stakeholders", _stakeholderNames, row++, StakeholdersCaption, PickStakeholders);
+        _contributes = Picks("Contributes to", _contributesTo, row++, ContributesCaption, PickContributes);
 
         Add(new Label { Text = "Project", X = Inset, Y = row });
         _project = new DropDownList { X = FieldX, Y = row, Width = Dim.Fill(Inset), ReadOnly = true };
@@ -370,11 +376,16 @@ public sealed class TeamForm : Dialog
 
     internal View SkillsRow => _skills;
 
+    internal View ContributesRow => _contributes;
+
     /// <summary>Runs a picker over the form and returns what it picked, or null where it was cancelled.</summary>
     internal Func<Picker, IReadOnlyList<string>?> RunPicker { get; set; }
 
     /// <summary>Who can push to a repo, or null where GitHub can't say.</summary>
     internal Func<string, Task<IReadOnlyList<string>?>> FindStakeholders { get; set; }
+
+    /// <summary>The repos a team's App can reach, by team name and repo.</summary>
+    internal Func<string, string, Task<ReachableRepos>> FindRepos { get; set; }
 
     internal Func<SkillsFound> FindSkills { get; set; }
 
@@ -532,6 +543,7 @@ public sealed class TeamForm : Dialog
             Workdir = _workdir.Text.Trim(),
             Try = _try.Text.Trim(),
             Stakeholders = _stakeholderNames,
+            ContributesTo = _contributesTo,
             Skills = _skillNames,
             Working = _status is { } status ? status.Value == TeamStatus.Working : _before.Working,
             Release = _release.Value ?? _before.Release,
@@ -622,9 +634,12 @@ public sealed class TeamForm : Dialog
     /// <summary>Opens the form, and returns what it saved, or null where it was cancelled.</summary>
     public static TeamSettings? Show(
         IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save, Func<string, Task<Reading>> projects,
-        Task<TeamHealth>? health = null, Func<Task<TeamHealth>?>? repair = null, IconStyle icons = IconStyle.Unicode)
+        Task<TeamHealth>? health = null, Func<Task<TeamHealth>?>? repair = null, IconStyle icons = IconStyle.Unicode,
+        Func<string, string, Task<ReachableRepos>>? repos = null)
     {
         using var form = new TeamForm(team, settings, save) { RepairBoard = repair, IconStyle = icons };
+        if (repos is not null)
+            form.FindRepos = repos;
         if (health is not null)
             form.Watch(health);
         return Run(app, form, projects) ? form.Saved : null;
@@ -634,9 +649,12 @@ public sealed class TeamForm : Dialog
     /// cancelled.</summary>
     public static string? ShowNew(
         IApplication app, TeamSettings settings, IReadOnlyCollection<string> taken, string teamsDirectory,
-        Func<string, TeamSettings, string?> create, Func<string, Task<Reading>> projects, Task<string> me, string name = "")
+        Func<string, TeamSettings, string?> create, Func<string, Task<Reading>> projects, Task<string> me, string name = "",
+        Func<string, string, Task<ReachableRepos>>? repos = null)
     {
         using var form = New(settings, taken, teamsDirectory, create, name);
+        if (repos is not null)
+            form.FindRepos = repos;
         me.ContinueWith(read =>
         {
             if (read.Status == TaskStatus.RanToCompletion)
@@ -717,6 +735,25 @@ public sealed class TeamForm : Dialog
         }, TaskContinuationOptions.ExecuteSynchronously);
         if (RunPicker(picker) is { } picked)
             _stakeholderNames = Show(_stakeholders, picked);
+    }
+
+    /// <summary>Opens the Contributes to picker, filling it once GitHub says which repos the team's App can reach.</summary>
+    internal void PickContributes()
+    {
+        using var picker = new Picker($"Contributes to for {TeamName}", _contributesTo, "", "Reading the repos the team's App can reach…");
+        FindRepos(_team ?? _name?.Text.Trim() ?? "", Current().Repo).ContinueWith(read =>
+        {
+            var found = read.Status == TaskStatus.RanToCompletion
+                ? read.Result
+                : new ReachableRepos([], read.Exception?.InnerException?.Message ?? "it was cancelled");
+            void Show() => picker.ShowChoices(found.Names, found.Message, found.Failure is null ? Schemes.Base : Schemes.Accent);
+            if (App is { } app)
+                app.Invoke(Show);
+            else
+                Show();
+        }, TaskContinuationOptions.ExecuteSynchronously);
+        if (RunPicker(picker) is { } picked)
+            _contributesTo = Show(_contributes, picked);
     }
 
     /// <summary>Opens the skills picker over the skills installed here and the repo's own.</summary>

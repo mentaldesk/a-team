@@ -315,7 +315,7 @@ public class TeamFormTests
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Limits"],
+            ["Repo", "Stakeholders", "Contributes to", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -425,8 +425,62 @@ public class TeamFormTests
 
         form.StakeholdersRow.SetFocus();
         Assert.Equal("Whose comments the team acts on. You, unless you add others.", form.Hints.Message.Says);
+        form.ContributesRow.SetFocus();
+        Assert.Equal("Other repos the Dev may open draft PRs on. Merging stays yours.", form.Hints.Message.Says);
         form.SkillsRow.SetFocus();
         Assert.Equal("Skills the agents load. Must be installed on this machine.", form.Hints.Message.Says);
+    }
+
+    [Fact]
+    public void Enter_on_Contributes_to_lists_the_repos_the_team_s_App_can_reach_and_keeps_what_is_marked()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        Assert.Equal("none", form.ContributesRow.Text);
+        string? asked = null;
+        form.FindRepos = (team, repo) =>
+        {
+            asked = $"{team} {repo}";
+            return Task.FromResult(new ReachableRepos(["mentaldesk/TuiCode", "mentaldesk/tui-style-guide"]));
+        };
+        Picker? opened = null;
+        IReadOnlyList<(string, bool)>? rows = null;
+        form.RunPicker = picker =>
+        {
+            opened = picker;
+            picker.List.Value = 1;
+            picker.Toggle();
+            rows = picker.Rows;
+            return picker.Done() ? picker.Picked : null;
+        };
+        form.SetFocus();
+        form.ContributesRow.SetFocus();
+
+        Assert.True(form.ContributesRow.NewKeyDownEvent(Key.Enter));
+
+        Assert.Equal("a-team mentaldesk/a-team", asked);
+        Assert.Equal("Contributes to for a-team", opened?.Title);
+        Assert.Equal("2 other repos the team's App can reach.", opened?.Message.Says);
+        Assert.Equal([("mentaldesk/TuiCode", false), ("mentaldesk/tui-style-guide", true)], rows);
+        Assert.Equal("mentaldesk/tui-style-guide", form.ContributesRow.Text);
+        Assert.Equal(["mentaldesk/tui-style-guide"], form.Current().ContributesTo);
+    }
+
+    [Fact]
+    public void The_Contributes_to_picker_says_why_it_couldn_t_read_the_repos_and_keeps_those_already_chosen()
+    {
+        using var form = new TeamForm("a-team", Settings with { ContributesTo = ["mentaldesk/tui-style-guide"] }, _ => null);
+        form.FindRepos = (_, _) => Task.FromResult(new ReachableRepos([], "a-team token: team 'a-team' has no GitHub App"));
+        string? said = null;
+        form.RunPicker = picker =>
+        {
+            said = picker.Message.Says;
+            return picker.Done() ? picker.Picked : null;
+        };
+
+        form.PickContributes();
+
+        Assert.Equal("Couldn't read the repos the team's App can reach: team 'a-team' has no GitHub App", said);
+        Assert.Equal(["mentaldesk/tui-style-guide"], form.Current().ContributesTo);
     }
 
     [Fact]
@@ -524,7 +578,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Ctrl+Enter Create", "Esc Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Project", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Contributes to", "Project", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }

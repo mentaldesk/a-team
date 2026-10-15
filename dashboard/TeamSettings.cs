@@ -70,6 +70,9 @@ public sealed partial record TeamSettings(
 
     public VisionReview VisionReview { get; init; } = new();
 
+    /// <summary>Other repos the Dev may open draft PRs on: <c>contributesTo</c>.</summary>
+    public IReadOnlyList<string> ContributesTo { get; init; } = [];
+
     public static TeamSettings Read(byte[] config)
     {
         using var document = JsonDocument.Parse(config);
@@ -107,6 +110,7 @@ public sealed partial record TeamSettings(
             Reviewer = Find(root, "roles", "reviewer") is { ValueKind: JsonValueKind.True },
             Docs = Text(root, "docs"),
             Budget = Number(root, "dispatch", "budget") ?? 0,
+            ContributesTo = Names(root, "contributesTo"),
             VisionReview = new VisionReview(
                 Text(root, "visionReview", "trigger") switch
                 {
@@ -139,6 +143,7 @@ public sealed partial record TeamSettings(
             Checkout = null,
             Stakeholders = me.Length == 0 ? [] : [me],
             Skills = [],
+            ContributesTo = [],
         };
 
     /// <summary>Why <paramref name="name"/> can't be a new team's, or null when it can.</summary>
@@ -176,6 +181,8 @@ public sealed partial record TeamSettings(
             config = ConfigEdit.Replace(config, "reviewer", "stakeholders", Stakeholders);
         else if (!Stakeholders.SequenceEqual(before.Stakeholders))
             config = ConfigEdit.Set(config, ["stakeholders"], Stakeholders);
+        if (!ContributesTo.SequenceEqual(before.ContributesTo))
+            config = ConfigEdit.Set(config, ["contributesTo"], ContributesTo);
         Set(ProjectOwner, before.ProjectOwner, "project", "owner");
         SetNumber(ProjectNumber, before.ProjectNumber, "project", "number");
         Set(Vision, before.Vision, "vision");

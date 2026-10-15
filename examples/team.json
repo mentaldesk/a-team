@@ -1,6 +1,7 @@
 {
   "repo": "owner/repo",
   "stakeholders": ["your-github-login"],
+  "contributesTo": [],
   "app": null,
   "project": {
     "owner": "owner",
