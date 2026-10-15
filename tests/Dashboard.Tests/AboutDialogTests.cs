@@ -113,4 +113,15 @@ public class AboutDialogTests
 
         Assert.True(dialog.Van.Visible);
     }
+
+    [Fact]
+    public void F1_lists_Esc_Close_under_its_title()
+    {
+        using var dialog = new AboutDialog("1.2.3");
+
+        var sheet = DialogTests.F1(dialog);
+
+        Assert.Equal(dialog.Title, sheet.Here!.Heading);
+        Assert.Equal([("Esc", "Close")], DialogTests.Rows(sheet));
+    }
 }

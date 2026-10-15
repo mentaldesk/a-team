@@ -122,4 +122,17 @@ public class SpendingDialogTests
 
         Assert.True(dialog.HasClosed);
     }
+
+    [Fact]
+    public void F1_lists_the_period_the_rows_and_Esc_Close_under_its_title()
+    {
+        using var dialog = Open(teams: [("a-team", Recorded)]);
+
+        var sheet = DialogTests.F1(dialog);
+
+        Assert.Equal(dialog.Title, sheet.Here!.Heading);
+        var rows = DialogTests.Rows(sheet);
+        Assert.Equal([("←/→", "Period"), ("↑/↓", "Select a row")], rows[..2]);
+        Assert.Equal(("Esc", "Close"), rows[^1]);
+    }
 }

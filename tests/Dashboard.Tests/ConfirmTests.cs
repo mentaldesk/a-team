@@ -76,7 +76,7 @@ public class ConfirmTests
         var rows = DialogTests.Rows(DialogTests.F1(dialog));
 
         Assert.Contains(("Ctrl+Enter", which switch { "accept" => "Accept", "remove" => "Remove", "stop" => "Stop", _ => "Discard" }), rows);
-        Assert.Equal(("Esc", "Cancel"), rows[^1]);
+        Assert.Equal(("Esc", which == "discard" ? DiscardDialog.KeepWriting : "Cancel"), rows[^1]);
         Assert.True(Action(dialog).HasFocus);
     }
 

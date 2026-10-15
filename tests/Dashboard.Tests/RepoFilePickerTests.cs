@@ -83,4 +83,17 @@ public class RepoFilePickerTests
     [Fact]
     public async Task No_repo_yet_is_said_without_asking_GitHub() =>
         Assert.Equal("No Repo yet, so there are no files to pick from.", (await RepoFiles.Read("")).Failure);
+
+    [Fact]
+    public void F1_lists_picking_and_Esc_Cancel_under_its_title()
+    {
+        using var picker = new RepoFilePicker("Vision for a-team", Files);
+
+        var sheet = DialogTests.F1(picker);
+
+        Assert.Equal("Vision for a-team", sheet.Here!.Heading);
+        var rows = DialogTests.Rows(sheet);
+        Assert.Equal(("Enter", "Pick"), rows[0]);
+        Assert.Equal(("Esc", "Cancel"), rows[^1]);
+    }
 }

@@ -202,4 +202,15 @@ public class TrendsDialogTests
 
         Assert.True(dialog.HasClosed);
     }
+
+    [Fact]
+    public void F1_lists_choosing_the_measure_and_Esc_Close_under_its_title()
+    {
+        using var dialog = Open(("a-team", 4, Recorded));
+
+        var sheet = DialogTests.F1(dialog);
+
+        Assert.Equal(dialog.Title, sheet.Here!.Heading);
+        Assert.Equal([("←/→", "Measure"), ("Esc", "Close")], DialogTests.Rows(sheet));
+    }
 }

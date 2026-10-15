@@ -45,7 +45,20 @@ public static class DialogHost
     internal static void ShowKeys(AppDialog dialog, KeySheet sheet, Action<KeySheet> show)
     {
         var focused = dialog.MostFocused;
-        show(dialog is DashboardDialog ours ? ours.Sheet : sheet);
+        show(dialog switch
+        {
+            DashboardDialog ours => ours.Sheet,
+            ConfirmDialog confirm => Relabel(sheet, "Esc", confirm.CancelButton.Text.Trim()["Esc ".Length..]),
+            _ => sheet,
+        });
         focused?.SetFocus();
     }
+
+    /// <summary>ConfirmDialog's cancel command is always called Cancel, whatever its button says.</summary>
+    private static KeySheet Relabel(KeySheet sheet, string keys, string label) => sheet with
+    {
+        Here = sheet.Here is { } here
+            ? here with { Groups = [.. here.Groups.Select(group => group with { Rows = [.. group.Rows.Select(row => row.Keys == keys ? row with { Label = label } : row)] })] }
+            : null,
+    };
 }
