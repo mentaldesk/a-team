@@ -46,8 +46,9 @@ Idea → Exploring → Pitched → Approved → Building ───────�
 | In review | A task's PR, waiting for you |
 | Done | Merged or closed, or a pitch whose tasks have all closed |
 
-A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. A task is one pull
-request that changes something you can see or do. A task that needs another merged first is
+A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. The Lead also labels
+it `theme: <heading>` for the vision theme it serves, which you can change on GitHub. A task is one
+pull request that changes something you can see or do. A task that needs another merged first is
 blocked by it on GitHub, and becomes ready to start by itself when that one closes.
 
 A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a

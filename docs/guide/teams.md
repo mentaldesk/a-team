@@ -127,6 +127,8 @@ The budget is whole dollars: a config that says `12.5` has none, and the log say
 
 A run's cost counts once it has ended, so **Today** can pass the budget by what the last runs cost.
 
+**Spending**, in [Work](work.md), shows what the money bought: each team's runs by theme and pitch.
+
 ## Removing a team
 
 `x` asks first, and `Ctrl+Enter` removes it: A-Team forgets the team. Its repo, its board and
