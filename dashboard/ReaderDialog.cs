@@ -16,7 +16,15 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 /// wasn't.</summary>
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
-    ReaderShelve? Shelve = null, Attaching? Attach = null);
+    ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null);
+
+/// <summary>Viewing the image line at the comment's cursor, for Commands to run. The reader sets both.</summary>
+public sealed class ReaderImage
+{
+    public Func<bool> Viewable { get; set; } = () => false;
+
+    public Action View { get; set; } = () => { };
+}
 
 /// <summary>Declining from the Comment pane: Run closes the item as not planned with the reason, with null once it's
 /// done or else why not. <paramref name="Open"/> opens the reader already declining.</summary>
@@ -59,6 +67,7 @@ public sealed partial class ReaderDialog : Dialog
     private const string ScrollHint = "scroll";
     private const string RemarkHint = "remark";
     private const string ShowHint = "show";
+    private const string ImageHint = "image";
     private const string SwitchHint = "switch";
     private const string HistoryHint = "history";
     private const string SelectHint = "select";
@@ -119,6 +128,9 @@ public sealed partial class ReaderDialog : Dialog
     private readonly MessageBar _message = new();
     private readonly Attaching? _attaching;
     private readonly ImageAttach? _attach;
+    private readonly Pictures? _pictures;
+    private readonly Action<string> _openUrl;
+    private readonly Action<Picture, string> _viewImage;
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
@@ -133,12 +145,19 @@ public sealed partial class ReaderDialog : Dialog
     /// <param name="copyBranch">The key that copies the PR's branch name, where the item has one.</param>
     /// <param name="idea">Filing a new idea that links back here; null where there's nowhere to file one.</param>
     /// <param name="window">The window's own keys that work here too, run where the reader leaves a key alone.</param>
+    /// <param name="pictures">Draws image lines as pictures, where the terminal can.</param>
+    /// <param name="openUrl">Opens an image on GitHub where it can't be drawn.</param>
+    /// <param name="viewImage">Shows a picture full-window, under its alt text.</param>
     public ReaderDialog(
         WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0,
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
-        Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null)
+        Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
+        Action<string>? openUrl = null, Action<Picture, string>? viewImage = null)
     {
+        _pictures = pictures;
+        _openUrl = openUrl ?? (_ => { });
+        _viewImage = viewImage ?? ((_, _) => { });
         _idea = idea;
         if (idea is not null)
             idea.Start = () => Run(IdeaHint);
@@ -193,6 +212,11 @@ public sealed partial class ReaderDialog : Dialog
                 ShowHints();
         };
         _commentFrame.Add(_weeksRow, _field);
+        if (comment?.Image is { } image)
+        {
+            image.Viewable = () => _field.HasFocus && FieldImage() is not null;
+            image.View = () => ViewImage(FieldImage());
+        }
         if (comment?.Attach is { } attaching)
         {
             _attaching = attaching;
@@ -214,6 +238,7 @@ public sealed partial class ReaderDialog : Dialog
             Scrolls = true,
             ReadsMarkdown = true,
             SelectsText = true,
+            Pictures = pictures,
             SchemeName = LogSchemes.Reader,
             Lines = body.Lines,
         };
@@ -373,11 +398,13 @@ public sealed partial class ReaderDialog : Dialog
     public static Rank? Show(
         IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
         ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes, ReaderEdit? edit = null,
-        Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null)
+        Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
+        Action<string>? openUrl = null)
     {
         using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment, tryIt, panes,
             app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit, copyBranch: copyBranch, idea: idea,
-            window: window);
+            window: window, pictures: pictures, openUrl: openUrl,
+            viewImage: (picture, alt) => ImageViewer.Show(app, picture, alt));
         app.Run(dialog);
         return dialog.Chosen;
     }
@@ -494,6 +521,8 @@ public sealed partial class ReaderDialog : Dialog
             return Post();
         if (_scrolled == _body && (key == Key.CursorUp.WithAlt || key == Key.CursorDown.WithAlt))
             return ToRemark(key == Key.CursorUp.WithAlt ? -1 : +1);
+        if (_ranks is null && _body.HasFocus && key == Key.Enter && _body.ImageAtCaret is { } image)
+            return ViewImage(image);
         if (_ranks is null && _history.HasFocus && key == Key.Enter)
             return ShowRemark(_history.Caret?.Line ?? -1);
         if (_ranks is null && Caret(key) is { } move)
@@ -535,6 +564,8 @@ public sealed partial class ReaderDialog : Dialog
             .. _ranks is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll")],
             .. _ranks is null && !Writing && _scrolled == _body
                 ? [new HintedCommand(RemarkHint, "Alt+↑/↓ remark")] : Array.Empty<HintedCommand>(),
+            .. _ranks is null && !Writing && _scrolled == _body && _body.ImageAtCaret is not null
+                ? [new HintedCommand(ImageHint, "Enter view image")] : Array.Empty<HintedCommand>(),
             .. _ranks is null && !Writing && _scrolled == _history
                 ? [new HintedCommand(ShowHint, "Enter show")] : Array.Empty<HintedCommand>(),
             .. CommentShown || HistoryShown ? [new HintedCommand(SwitchHint, "Tab switch pane")] : Array.Empty<HintedCommand>(),
@@ -776,6 +807,30 @@ public sealed partial class ReaderDialog : Dialog
         return true;
     }
 
+    /// <summary>The image line the comment's cursor is on, or null.</summary>
+    private ImageLink? FieldImage()
+    {
+        var text = _field.Text;
+        var at = Math.Clamp(_field.CaretOffset, 0, text.Length);
+        var start = at == 0 ? 0 : text.LastIndexOf('\n', at - 1) + 1;
+        var end = text.IndexOf('\n', at);
+        return Pictures.Link(text[start..(end < 0 ? text.Length : end)]);
+    }
+
+    /// <summary>Drawn full-window where the terminal can, else opened on GitHub; one still uploading only says so.</summary>
+    private bool ViewImage(ImageLink? image)
+    {
+        if (image is null)
+            return true;
+        if (_pictures is { Drawn: true } && _pictures.For(image.Url) is { } picture)
+            _viewImage(picture, image.Alt);
+        else if (image.Url.StartsWith("https://", StringComparison.Ordinal))
+            _openUrl(image.Url);
+        else
+            Say($"{image.Alt} hasn't finished uploading", Schemes.Error);
+        return true;
+    }
+
     private bool OnGitHub()
     {
         _onGitHub();
@@ -993,6 +1048,7 @@ public sealed partial class ReaderDialog : Dialog
             ScrollHint => Scrolled(() => FocusedPane().Page(+1)),
             RemarkHint => ToRemark(+1),
             ShowHint => ShowRemark(_history.Caret?.Line ?? -1),
+            ImageHint => ViewImage(_body.ImageAtCaret),
             SwitchHint => SwitchPane(+1),
             HistoryHint => ToggleHistory(),
             SelectHint => MoveCaret(CaretMove.Down, extend: true),
