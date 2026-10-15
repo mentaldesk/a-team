@@ -68,6 +68,28 @@ public class ConfirmTests
 
     [Theory]
     [MemberData(nameof(Dialogs))]
+    public void F1_lists_its_keys_under_its_title_and_focus_stays_where_it_was(string which)
+    {
+        using var dialog = Open(which);
+        Action(dialog).SetFocus();
+
+        var rows = DialogTests.Rows(DialogTests.F1(dialog));
+
+        Assert.Contains(("Ctrl+Enter", which switch { "accept" => "Accept", "remove" => "Remove", "stop" => "Stop", _ => "Discard" }), rows);
+        Assert.Equal(("Esc", "Cancel"), rows[^1]);
+        Assert.True(Action(dialog).HasFocus);
+    }
+
+    [Fact]
+    public void F1_heads_the_keys_with_the_confirm_s_title()
+    {
+        using var dialog = Open("remove");
+
+        Assert.Equal("Remove goose?", DialogTests.F1(dialog).Here!.Heading);
+    }
+
+    [Theory]
+    [MemberData(nameof(Dialogs))]
     public void Cancel_starts_focused(string which)
     {
         using var dialog = Open(which);

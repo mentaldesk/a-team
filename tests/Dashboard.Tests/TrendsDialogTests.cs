@@ -200,6 +200,6 @@ public class TrendsDialogTests
 
         dialog.NewKeyDownEvent(Key.Esc);
 
-        Assert.True(dialog.Closed);
+        Assert.True(dialog.HasClosed);
     }
 }

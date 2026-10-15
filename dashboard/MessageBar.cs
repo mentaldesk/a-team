@@ -4,7 +4,7 @@ using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The line for what just happened: below a dialog's hints, so it never takes their row, or the left end of
+/// <summary>The line for what just happened: below a dialog's buttons, so it never takes their row, or the left end of
 /// the window's status bar. No row at all while there's nothing to say.</summary>
 public sealed class MessageBar : Label
 {

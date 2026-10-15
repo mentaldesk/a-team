@@ -120,6 +120,6 @@ public class SpendingDialogTests
 
         dialog.NewKeyDownEvent(Key.Esc);
 
-        Assert.True(dialog.Closed);
+        Assert.True(dialog.HasClosed);
     }
 }

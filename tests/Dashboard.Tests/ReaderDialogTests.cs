@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Drawing;
+using MentalDesk.Tui.Keys;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
@@ -39,6 +40,14 @@ public class ReaderDialogTests
         foreach (var c in text)
             field.NewKeyDownEvent(new Key(c));
     }
+
+    private static string Buttons(ReaderDialog dialog) => string.Join(" · ", dialog.ButtonLabels);
+
+    private static string Keys(ReaderDialog dialog) =>
+        string.Join(" · ", DialogTests.Rows(DialogTests.F1(dialog)).Select(row => $"{row.Keys} {row.Label}"));
+
+    private static Button ButtonFor(ReaderDialog dialog, string label) =>
+        dialog.Foot.Shown.Single(button => button.Text.Trim() == label);
 
     private static ReaderDialog Open(string body, Action? onGitHub = null, int height = 20, Action? onApprove = null)
     {
@@ -103,20 +112,24 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void The_hints_name_the_reader_s_keys_on_its_last_row()
+    public void Its_actions_are_buttons_on_its_last_row_and_F1_lists_every_key()
     {
         using var dialog = Open(Pitch);
 
-        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · g on GitHub · Esc close", dialog.Hints.Says);
-        Assert.Equal(dialog.Viewport.Height - 1, dialog.Hints.Frame.Y);
+        Assert.Equal("g GitHub · Esc Close", Buttons(dialog));
+        Assert.Equal(dialog.Viewport.Height - 1, dialog.Foot.Frame.Y);
+        Assert.Empty(dialog.SubViews.OfType<StatusBar>());
+        Assert.Equal(
+            "g GitHub · h Show history · Alt+↑ Previous remark · Alt+↓ Next remark · Ctrl+C Copy · Arrows/PgUp/PgDn Move · Shift+arrows Select · Esc Close",
+            Keys(dialog));
     }
 
     [Fact]
-    public void A_pitch_to_approve_puts_a_between_scrolling_and_GitHub()
+    public void A_pitch_to_approve_puts_Approve_first()
     {
         using var dialog = Open(Pitch, onApprove: () => { });
 
-        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · a approve · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("a Approve · g GitHub · Esc Close", Buttons(dialog));
     }
 
     [Fact]
@@ -131,25 +144,25 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void Clicking_the_approve_hint_approves()
+    public void Clicking_Approve_approves()
     {
         var approved = 0;
         using var dialog = Open(Pitch, onApprove: () => approved++);
 
-        dialog.Hints.Hints.Single(hint => hint.Text == "a approve").InvokeCommand(Command.Accept);
+        ButtonFor(dialog, "a Approve").InvokeCommand(Command.Accept);
 
         Assert.Equal(1, approved);
     }
 
     [Fact]
-    public void A_task_to_accept_puts_its_key_after_scrolling()
+    public void A_task_to_accept_has_an_Accept_button()
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
             accept: new ReaderCommand(new Key('A'), "accept", () => true));
         dialog.Layout(new Size(60, 20));
 
-        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · A accept · g on GitHub · Esc close", dialog.Hints.Says);
-        Assert.True(dialog.Hints.Hints.Single(hint => hint.Text == "A accept").Enabled);
+        Assert.Equal("a Accept · g GitHub · Esc Close", Buttons(dialog));
+        Assert.True(ButtonFor(dialog, "a Accept").Enabled);
     }
 
     [Fact]
@@ -160,7 +173,7 @@ public class ReaderDialogTests
             accept: new ReaderCommand(new Key('A'), "accept", () => ++ran < 0, Enabled: false));
         dialog.Layout(new Size(60, 20));
 
-        Assert.False(dialog.Hints.Hints.Single(hint => hint.Text == "A accept").Enabled);
+        Assert.False(ButtonFor(dialog, "a Accept").Enabled);
         Assert.True(dialog.NewKeyDownEvent(new Key('A')));
         Assert.Equal(1, ran);
     }
@@ -178,13 +191,13 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void Comment_sits_after_approve_and_before_GitHub()
+    public void Comment_sits_after_Approve_and_before_GitHub()
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { }, () => { },
             comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
-        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · a approve · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("a Approve · c Comment · g GitHub · Esc Close", Buttons(dialog));
     }
 
     [Fact]
@@ -194,7 +207,7 @@ public class ReaderDialogTests
             comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
-        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · c comment · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("c Comment · g GitHub · Esc Close", Buttons(dialog));
     }
 
     [Fact]
@@ -238,12 +251,12 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void Clicking_a_hint_runs_its_key()
+    public void Clicking_a_button_runs_its_key()
     {
         var opened = 0;
         using var dialog = Open(Pitch, () => opened++);
 
-        dialog.Hints.Hints.Single(hint => hint.Text == "g on GitHub").InvokeCommand(Command.Accept);
+        ButtonFor(dialog, "g GitHub").InvokeCommand(Command.Accept);
 
         Assert.Equal(1, opened);
     }
@@ -315,14 +328,14 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void A_task_with_a_PR_puts_try_between_scrolling_and_accept()
+    public void A_task_with_a_PR_puts_Try_after_Accept()
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
             accept: new ReaderCommand(new Key('a'), "accept", () => true),
             tryIt: new ReaderTry(new Key('t'), (_, _) => { }));
         dialog.Layout(new Size(60, 20));
 
-        Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · t try · a accept · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("a Accept · t Try · g GitHub · Esc Close", Buttons(dialog));
     }
 
     [Fact]
@@ -330,7 +343,7 @@ public class ReaderDialogTests
     {
         using var dialog = Open(Pitch);
 
-        Assert.DoesNotContain("try", dialog.Hints.Says);
+        Assert.DoesNotContain("Try", Buttons(dialog));
         Assert.False(dialog.NewKeyDownEvent(new Key('t')));
     }
 
@@ -375,7 +388,7 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.PageDown);
         var top = dialog.Body.Top;
 
-        Assert.Contains("e edit · a accept", dialog.Hints.Says);
+        Assert.Equal("a Accept · e Edit · g GitHub · Esc Close", Buttons(dialog));
         Assert.True(dialog.NewKeyDownEvent(new Key('e')));
 
         Assert.Equal([(body, top)], edited);
@@ -413,7 +426,7 @@ public class ReaderDialogTests
     {
         using var dialog = Open(Pitch);
 
-        Assert.DoesNotContain("edit", dialog.Hints.Says);
+        Assert.DoesNotContain("Edit", Buttons(dialog));
         Assert.False(dialog.NewKeyDownEvent(new Key('e')));
     }
 
@@ -464,8 +477,8 @@ public class ReaderDialogTests
         Assert.True(dialog.HistoryShown);
         Assert.Equal("3 Oct 13:40  dev   In progress → In review", dialog.HistoryLog.Lines[0].Text);
         Assert.Equal(dialog.Viewport.Width - ReaderPanes.HistoryWidth, dialog.Body.SuperView!.Frame.Width);
-        Assert.Equal("Alt+↑/↓ remark · Tab switch pane · h hide history · Shift+arrows select · g on GitHub · Esc close",
-            dialog.Hints.Says);
+        Assert.Contains("Tab/Shift+Tab Switch pane", Keys(dialog));
+        Assert.Contains("h Hide history", Keys(dialog));
     }
 
     [Fact]
@@ -479,7 +492,8 @@ public class ReaderDialogTests
 
             Assert.False(dialog.HistoryShown);
             Assert.Equal(dialog.Viewport.Width, dialog.Body.SuperView!.Frame.Width);
-            Assert.Equal("Alt+↑/↓ remark · h show history · Shift+arrows select · g on GitHub · Esc close", dialog.Hints.Says);
+            Assert.Contains("h Show history", Keys(dialog));
+            Assert.DoesNotContain("Switch pane", Keys(dialog));
         }
 
         using var next = Wide(panes);
@@ -546,8 +560,8 @@ public class ReaderDialogTests
         using var dialog = Open(Pitch);
 
         Assert.Null(dialog.Ranks);
-        Assert.DoesNotContain("Enter set", dialog.Hints.Says);
-        Assert.DoesNotContain("rank", dialog.Hints.Says);
+        Assert.DoesNotContain("Set", Buttons(dialog));
+        Assert.DoesNotContain("Priority", Keys(dialog));
     }
 
     [Theory]
@@ -620,16 +634,15 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void Arrows_initials_and_the_rank_hint_all_keep_the_mark_on_the_highlighted_rank()
+    public void Arrows_and_initials_keep_the_mark_on_the_highlighted_rank()
     {
         using var dialog = Ranking(rank: Rank.None);
-        var rankHint = dialog.Hints.Hints.Single(hint => hint.Text == "←/→ rank");
 
         foreach (var move in new Action[]
         {
             () => dialog.NewKeyDownEvent(Key.CursorRight),
             () => dialog.NewKeyDownEvent(new Key('h')),
-            () => rankHint.InvokeCommand(Command.Accept),
+            () => dialog.NewKeyDownEvent(Key.CursorRight),
             () => dialog.NewKeyDownEvent(Key.CursorLeft),
             () => dialog.NewKeyDownEvent(new Key('l')),
             () => dialog.NewKeyDownEvent(Key.CursorLeft),
@@ -703,24 +716,25 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void The_hints_add_rank_and_set_and_leave_h_to_High()
+    public void The_ranks_add_Set_and_leave_h_to_High()
     {
         using var dialog = Ranking(onApprove: () => { }, comment: Commenting(),
             width: 120);
 
-        Assert.Equal(
-            "Up/Down/PgUp/PgDn scroll · Tab switch pane · ←/→ rank · Enter set · a approve · c comment · g on GitHub · Esc close",
-            dialog.Hints.Says);
+        Assert.Equal("Enter Set · a Approve · c Comment · g GitHub · Esc Close", Buttons(dialog));
+        Assert.Contains("↑/↓/PgUp/PgDn Scroll", Keys(dialog));
+        Assert.Contains("←/→ Priority", Keys(dialog));
+        Assert.DoesNotContain("history", Keys(dialog));
     }
 
     [Fact]
-    public void Clicking_set_sets_the_rank_and_clicking_rank_moves_to_the_next()
+    public void Clicking_Set_sets_the_rank()
     {
         using var dialog = Ranking(rank: Rank.Low);
 
-        dialog.Hints.Hints.Single(hint => hint.Text == "←/→ rank").InvokeCommand(Command.Accept);
+        dialog.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(Rank.Medium, dialog.Ranks!.Value);
-        dialog.Hints.Hints.Single(hint => hint.Text == "Enter set").InvokeCommand(Command.Accept);
+        ButtonFor(dialog, "Enter Set").InvokeCommand(Command.Accept);
 
         Assert.Equal(Rank.Medium, dialog.Chosen);
     }
@@ -759,12 +773,12 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void The_ranks_sit_in_a_band_of_their_own_between_the_panes_and_the_hints()
+    public void The_ranks_sit_in_a_band_of_their_own_between_the_panes_and_the_buttons()
     {
         using var dialog = Ranking();
 
         Assert.Equal(LogSchemes.Form, dialog.Band!.SchemeName);
-        Assert.Equal(new Rectangle(0, dialog.Hints.Frame.Y - 3, dialog.Viewport.Width, 3), dialog.Band.Frame);
+        Assert.Equal(new Rectangle(0, dialog.Foot.Frame.Y - 3, dialog.Viewport.Width, 3), dialog.Band.Frame);
         Assert.Equal(dialog.Band.Frame.Y, dialog.Body.SuperView!.Frame.Bottom);
         Assert.Equal(1, dialog.Ranks!.Frame.Y);
         Assert.Equal(dialog.Band.Viewport.Width - dialog.Ranks.Frame.Right, dialog.Ranks.Frame.X);
@@ -1025,27 +1039,25 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void The_hints_count_the_selected_lines_and_Esc_clears_them_first()
+    public void F1_counts_the_selected_lines_and_Esc_clears_them_first()
     {
         var asked = 0;
         using var dialog = Replying(confirmDiscard: () => ++asked > 0);
         Open(dialog);
-        Assert.Equal(
-            "Tab switch pane · Shift+arrows select · Ctrl+Enter post · g on GitHub · Esc back",
-            dialog.Hints.Says);
+        Assert.Equal("Ctrl+Enter Post · Esc Back", Buttons(dialog));
         dialog.Field.Text = "draft";
         dialog.NewKeyDownEvent(Key.Tab);
-        Assert.EndsWith("Shift+arrows select · Ctrl+Enter post · g on GitHub · Esc close", dialog.Hints.Says);
+        Assert.Equal("Ctrl+Enter Post · g GitHub · Esc Close", Buttons(dialog));
 
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
-        Assert.Contains("Tab switch pane · Ctrl+C copy · q quote 1 line · Ctrl+Enter post", dialog.Hints.Says);
+        Assert.Contains("q Quote 1 line", Keys(dialog));
         dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
-        Assert.Contains("q quote 2 lines", dialog.Hints.Says);
-        Assert.EndsWith("Esc clear", dialog.Hints.Says);
+        Assert.Contains("q Quote 2 lines", Keys(dialog));
+        Assert.EndsWith("Esc Clear", Buttons(dialog));
 
         Assert.True(dialog.NewKeyDownEvent(Key.Esc));
         Assert.Equal(0, dialog.Body.Marked);
-        Assert.DoesNotContain("quote", dialog.Hints.Says);
+        Assert.DoesNotContain("Quote", Keys(dialog));
         Assert.Equal(0, asked);
     }
 
@@ -1065,7 +1077,7 @@ public class ReaderDialogTests
         Type(dialog.Field, "Yes.");
         Assert.Equal("> line 1\n> line 2\n\nYes.", dialog.Field.Text);
         Assert.Equal(0, dialog.Body.Marked);
-        Assert.DoesNotContain("quote", dialog.Hints.Says);
+        Assert.DoesNotContain("Quote", Keys(dialog));
 
         dialog.NewKeyDownEvent(Key.Esc);
         Assert.True(dialog.Body.HasFocus);
@@ -1136,7 +1148,7 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.CursorRight);
 
         dialog.NewKeyDownEvent(Key.End.WithShift);
-        Assert.Contains("Ctrl+C copy · q quote 1 line", dialog.Hints.Says);
+        Assert.Contains("Ctrl+C Copy · q Quote 1 line", Keys(dialog));
         Assert.True(dialog.NewKeyDownEvent(new Key('q')));
 
         Assert.True(dialog.CommentShown);
@@ -1152,7 +1164,7 @@ public class ReaderDialogTests
         Assert.False(dialog.NewKeyDownEvent(new Key('q')));
 
         Assert.False(dialog.CommentShown);
-        Assert.DoesNotContain("copy", dialog.Hints.Says);
+        Assert.DoesNotContain("Quote", Keys(dialog));
     }
 
     private static ReaderDialog Copying(FakeClipboard clipboard, string body, int width = 60)
@@ -1247,7 +1259,7 @@ public class ReaderDialogTests
         var clipboard = new FakeClipboard();
         using var dialog = CopyingBranch(clipboard, "feat/path-pickers");
 
-        Assert.Contains("y copy branch", dialog.Hints.Says);
+        Assert.Contains("y Copy the branch name", Keys(dialog));
         Assert.True(dialog.NewKeyDownEvent(new Key('y')));
 
         Assert.Equal("feat/path-pickers", clipboard.GetClipboardData());
@@ -1270,7 +1282,7 @@ public class ReaderDialogTests
         var clipboard = new FakeClipboard();
         using var dialog = CopyingBranch(clipboard, "");
 
-        Assert.DoesNotContain("copy branch", dialog.Hints.Says);
+        Assert.DoesNotContain("branch", Keys(dialog));
         dialog.NewKeyDownEvent(new Key('y'));
 
         Assert.Equal("", clipboard.GetClipboardData() ?? "");
@@ -1486,13 +1498,11 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void An_Idea_or_pitch_puts_decline_after_comment()
+    public void An_Idea_or_pitch_puts_Decline_after_Comment()
     {
         using var dialog = Declining();
 
-        Assert.Equal(
-            "Alt+↑/↓ remark · Tab switch pane · h hide history · Shift+arrows select · c comment · x decline · g on GitHub · Esc close",
-            dialog.Hints.Says);
+        Assert.Equal("c Comment · x Decline · g GitHub · Esc Close", Buttons(dialog));
     }
 
     [Fact]
@@ -1500,7 +1510,7 @@ public class ReaderDialogTests
     {
         using var dialog = Replying();
 
-        Assert.DoesNotContain("decline", dialog.Hints.Says);
+        Assert.DoesNotContain("Decline", Buttons(dialog));
         dialog.NewKeyDownEvent(new Key('x'));
         Assert.False(dialog.CommentShown);
     }
@@ -1516,7 +1526,7 @@ public class ReaderDialogTests
         Assert.True(dialog.Declining);
         Assert.True(dialog.Field.HasFocus);
         Assert.Equal("Decline #180: why?", dialog.CommentTitle);
-        Assert.Equal("Tab switch pane · Shift+arrows select · Ctrl+Enter decline · g on GitHub · Esc cancel", dialog.Hints.Says);
+        Assert.Equal("Ctrl+Enter Decline · Esc Cancel", Buttons(dialog));
     }
 
     [Fact]
@@ -1526,7 +1536,7 @@ public class ReaderDialogTests
 
         Assert.True(dialog.Declining);
         Assert.True(dialog.Field.HasFocus);
-        Assert.Contains("Ctrl+Enter decline", dialog.Hints.Says);
+        Assert.Contains("Ctrl+Enter Decline", Buttons(dialog));
     }
 
     [Fact]
@@ -1620,8 +1630,9 @@ public class ReaderDialogTests
         Assert.True(dialog.CommentShown);
         Assert.Equal("Comment", dialog.CommentTitle);
         Assert.Equal("Not now", dialog.Field.Text);
-        Assert.Contains("Ctrl+Enter post", dialog.Hints.Says);
-        Assert.Contains("x decline", dialog.Hints.Says);
+        Assert.Equal("Ctrl+Enter Post · Esc Back", Buttons(dialog));
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.Contains("x Decline", Buttons(dialog));
         Assert.Equal(0, declined);
         Assert.False(dialog.Declined);
     }
@@ -1638,14 +1649,33 @@ public class ReaderDialogTests
         return dialog;
     }
 
+    [Theory]
+    [InlineData(140, 1)]
+    [InlineData(60, 2)]
+    public void On_a_narrow_terminal_the_buttons_wrap_right_aligned_and_none_is_dropped(int width, int rows)
+    {
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { }, () => { },
+            comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null), new Epoch(),
+                new ReaderDecline(new Key('x'), _ => Task.FromResult<string?>(null)),
+                new ReaderShelve(new Key('l'), (_, _) => Task.FromResult<string?>(null))),
+            idea: new ReaderIdea(new Key('n'), _ => null), width: width);
+        dialog.Layout(new Size(width, 20));
+
+        var shown = dialog.Foot.Shown;
+        Assert.Equal(["a Approve", "c Comment", "x Decline", "l Not now", "n Idea", "g GitHub", "Esc Close"], dialog.ButtonLabels);
+        Assert.Equal(rows, shown.Select(button => button.Frame.Y).Distinct().Count());
+        foreach (var row in shown.GroupBy(button => button.Frame.Y))
+            Assert.Equal(dialog.Foot.Viewport.Width, row.Max(button => button.Frame.Right));
+        Assert.Equal(dialog.Foot.Frame.Bottom, dialog.Body.SuperView!.Frame.Bottom + rows);
+        Assert.Equal(shown[^1], shown.MaxBy(button => (button.Frame.Y, button.Frame.X)));
+    }
+
     [Fact]
-    public void A_pitch_puts_not_now_after_decline()
+    public void A_pitch_puts_Not_now_after_Decline()
     {
         using var dialog = Shelving();
 
-        Assert.Equal(
-            "Alt+↑/↓ remark · Tab switch pane · h hide history · Shift+arrows select · c comment · x decline · l not now · g on GitHub · Esc close",
-            dialog.Hints.Says);
+        Assert.Equal("c Comment · x Decline · l Not now · g GitHub · Esc Close", Buttons(dialog));
     }
 
     [Fact]
@@ -1662,8 +1692,7 @@ public class ReaderDialogTests
         Assert.Equal(2, dialog.Weeks.Value);
         Assert.True(dialog.WeeksShown);
         Assert.Equal(2, dialog.Field.Frame.Y);
-        Assert.Equal("Tab switch pane · Shift+arrows select · Ctrl+Enter not now · x decline · g on GitHub · Esc comment instead",
-            dialog.Hints.Says);
+        Assert.Equal("Ctrl+Enter Not now · Esc Comment instead", Buttons(dialog));
     }
 
     [Fact]
@@ -1771,7 +1800,8 @@ public class ReaderDialogTests
         Assert.True(dialog.CommentShown);
         Assert.Equal("Comment", dialog.CommentTitle);
         Assert.Equal("Hmm", dialog.Field.Text);
-        Assert.Contains("l not now", dialog.Hints.Says);
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.Contains("l Not now", Buttons(dialog));
         Assert.Equal(0, shelved);
         Assert.False(dialog.Shelved);
     }
@@ -1996,8 +2026,8 @@ public class ReaderDialogTests
         using var dialog = Telling(body, width: 120);
         dialog.NewKeyDownEvent(Key.Tab);
         Assert.True(dialog.HistoryLog.HasFocus);
-        Assert.Contains("Enter show", dialog.Hints.Says);
-        Assert.DoesNotContain("Alt+↑/↓ remark", dialog.Hints.Says);
+        Assert.Contains("Enter Show the comment", Keys(dialog));
+        Assert.DoesNotContain("remark", Keys(dialog));
         dialog.NewKeyDownEvent(Key.CursorDown);
 
         Assert.True(dialog.NewKeyDownEvent(Key.Enter));
@@ -2059,13 +2089,38 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void Writing_a_comment_offers_paste_and_attach_file()
+    public void Writing_a_comment_offers_Post_Attach_file_and_Back_and_F1_lists_the_editing_keys()
     {
         using var dialog = Attaching([]);
 
         dialog.NewKeyDownEvent(new Key('c'));
 
-        Assert.Equal("Tab switch pane · Shift+arrows select · Ctrl+Enter post · Ctrl+V paste · Ctrl+U attach file · g on GitHub · Esc back", dialog.Hints.Says);
+        Assert.Equal("Ctrl+Enter Post · Ctrl+U Attach file · Esc Back", Buttons(dialog));
+        Assert.Equal(
+            "Ctrl+Enter Post · Ctrl+U Attach file · Tab/Shift+Tab Switch pane · Shift+arrows Select · Ctrl+V Paste · Ctrl+X Cut · Ctrl+Z Undo · Esc Back",
+            Keys(dialog));
+    }
+
+    [Fact]
+    public void Closing_Help_leaves_the_comment_as_it_was_with_the_cursor_where_it_was()
+    {
+        using var dialog = Attaching([]);
+        dialog.NewKeyDownEvent(new Key('c'));
+        Type(dialog.Field, "Halfway thr");
+        dialog.Field.CaretOffset = 4;
+        KeySheet? shown = null;
+        dialog.KeysRequested += (_, sheet) => DialogHost.ShowKeys(dialog, sheet, keys =>
+        {
+            shown = keys;
+            dialog.Body.SetFocus();
+        });
+
+        Assert.True(dialog.Field.NewKeyDownEvent(Key.F1));
+
+        Assert.NotNull(shown);
+        Assert.True(dialog.Field.HasFocus);
+        Assert.Equal("Halfway thr", dialog.Field.Text);
+        Assert.Equal(4, dialog.Field.CaretOffset);
     }
 
     [Fact]
@@ -2207,17 +2262,17 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void The_hints_offer_a_new_idea_and_count_the_lines_it_would_quote()
+    public void Idea_is_a_button_that_counts_the_lines_it_would_quote()
     {
         using var dialog = Replying();
         using var ideas = new ReaderDialog(Item, Talked, () => { }, comment: Commenting(null),
             idea: new ReaderIdea(new Key('n'), _ => null));
         ideas.Layout(new Size(140, 20));
 
-        Assert.Contains("Shift+arrows select · n new idea · c comment", ideas.Hints.Says);
+        Assert.Equal("c Comment · n Idea · g GitHub · Esc Close", Buttons(ideas));
         SelectFirstComment(ideas);
-        Assert.Contains("Ctrl+C copy · q quote 2 lines · n idea from 2 lines · c comment", ideas.Hints.Says);
-        Assert.DoesNotContain("idea", dialog.Hints.Says);
+        Assert.Equal("c Comment · n Idea from 2 lines · g GitHub · Esc Clear", Buttons(ideas));
+        Assert.DoesNotContain("Idea", Buttons(dialog));
     }
 
     [Fact]
@@ -2246,7 +2301,7 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(new Key('n'));
 
         Assert.Empty(filed);
-        Assert.DoesNotContain("idea", dialog.Hints.Says);
+        Assert.DoesNotContain("Idea", Buttons(dialog));
     }
 
     [Fact]

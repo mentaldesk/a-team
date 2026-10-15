@@ -941,18 +941,6 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Clicking_a_hint_runs_the_command_it_names()
-    {
-        using var bar = new StatusBar();
-        string? ran = null;
-        bar.Show([new HintedCommand("save", "Enter save")], id => (ran = id) is not null);
-
-        bar.Hints.Single().InvokeCommand(Command.Accept);
-
-        Assert.Equal("save", ran);
-    }
-
-    [Fact]
     public void Clicking_the_help_hint_runs_what_it_was_given()
     {
         using var bar = new StatusBar();
@@ -963,23 +951,6 @@ public class DashboardWindowTests : IDisposable
         bar.HelpHint.InvokeCommand(Command.Accept);
 
         Assert.Equal(1, ran);
-    }
-
-    [Fact]
-    public void A_hint_is_a_clickable_one_of_its_own_that_claims_no_key()
-    {
-        using var bar = new StatusBar();
-        bar.Show([new HintedCommand("save", "Enter save"), new HintedCommand("cancel", "Esc cancel")], _ => true);
-
-        Assert.Equal(2, bar.Hints.Count);
-        Assert.All(bar.Hints, hint =>
-        {
-            Assert.True(hint.NoDecorations);
-            Assert.True(hint.NoPadding);
-            Assert.Equal(ShadowStyles.None, hint.ShadowStyle);
-            Assert.False(hint.CanFocus);
-            Assert.Equal((Rune)0xffff, hint.HotKeySpecifier);
-        });
     }
 
     [Fact]
@@ -1883,7 +1854,6 @@ public class DashboardWindowTests : IDisposable
     private static void AssertOnlyKeysHint(DashboardWindow window)
     {
         LayOut(window, 120, 30);
-        Assert.Empty(window.Status.Hints);
         Assert.Equal("Press F1 for help", window.Status.HelpHint.Text);
         Assert.Equal(window.Status.Viewport.Width, window.Status.HelpHint.Frame.Right);
         Assert.DoesNotContain("a-team", window.Message.Says);

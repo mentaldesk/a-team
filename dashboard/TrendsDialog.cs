@@ -9,7 +9,7 @@ using Color = Terminal.Gui.Drawing.Color;
 namespace ATeam.Dashboard;
 
 /// <summary>The teams side by side over the last fortnight: a chart of one measure, and this week's numbers.</summary>
-public sealed class TrendsDialog : Dialog
+public sealed class TrendsDialog : DashboardDialog
 {
     private const string HintText = "Esc close";
     private const int Inset = 1;
@@ -40,13 +40,13 @@ public sealed class TrendsDialog : Dialog
     private IReadOnlyList<TeamRecord>? _records;
 
     public TrendsDialog(IReadOnlyList<(string Team, int? Waiting)> teams, Task<Reading[]> reading, DateTimeOffset now, TimeZoneInfo? zone = null)
+        : base("Trends")
     {
         _teams = teams;
         _now = now;
         _zone = zone ?? TimeZoneInfo.Local;
         _dates = TeamRecord.Dates(now, _zone);
 
-        Title = "Trends";
         var tableRows = teams.Count + 2;
         Width = Dim.Func(_ => Fits(Wide + GetAdornmentsThickness().Horizontal, Room()?.Width), this);
         Height = Dim.Func(_ => Fits(2 + GraphRows + AxisRows + 1 + tableRows + 2 + GetAdornmentsThickness().Vertical, Room()?.Height), this);
@@ -131,6 +131,8 @@ public sealed class TrendsDialog : Dialog
             CanFocus = false,
         };
         hint.Accepting += (_, args) => args.Handled = Close();
+        Register(CancelId, "Close", () => Close());
+        Also("←/→", "Measure");
         _graph.ViewportChanged += (_, _) => Plot();
         Add(_measure, _graph, _legend, _table, _gates, _message, hint);
 
@@ -155,7 +157,7 @@ public sealed class TrendsDialog : Dialog
 
     internal TeamTrendRow? All { get; private set; }
 
-    internal bool Closed { get; private set; }
+    internal bool HasClosed { get; private set; }
 
     internal IReadOnlyList<IReadOnlyList<int?>> Series =>
         _records is null ? [] : [.. _records.Select(record => record.Series(Chosen, _dates, _zone))];
@@ -173,11 +175,6 @@ public sealed class TrendsDialog : Dialog
 
     /// <summary>The split by gate: its row names, then a column of minutes per team.</summary>
     private int GatesWide => "This week".Length + 2 + _teams.Sum(team => Math.Max(team.Team.Length, "10h 00m".Length) + 1);
-
-    /// <summary>Enter reaches a Dialog as Accept and would close it; Trends has nothing to confirm.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => true;
-
-    protected override bool OnKeyDown(Key key) => key == Key.Esc ? Close() : base.OnKeyDown(key);
 
     private void Loaded(Reading[]? readings)
     {
@@ -328,7 +325,7 @@ public sealed class TrendsDialog : Dialog
 
     private bool Close()
     {
-        Closed = true;
+        HasClosed = true;
         RequestStop();
         return true;
     }
@@ -336,7 +333,7 @@ public sealed class TrendsDialog : Dialog
     public static void Show(IApplication app, IReadOnlyList<(string Team, int? Waiting)> teams, Func<string, Task<Reading>> read)
     {
         using var dialog = new TrendsDialog(teams, Task.WhenAll(teams.Select(team => read(team.Team))), DateTimeOffset.Now);
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
     }
 
     /// <summary>Beside the graph so the axis ends at today.</summary>

@@ -23,10 +23,10 @@ public class AboutDialogTests
         using var dialog = new AboutDialog("1.2.3");
 
         dialog.NewKeyDownEvent(Key.Enter);
-        Assert.False(dialog.Closed);
+        Assert.False(dialog.HasClosed);
 
         Assert.True(dialog.NewKeyDownEvent(Key.Esc));
-        Assert.True(dialog.Closed);
+        Assert.True(dialog.HasClosed);
     }
 
     [Fact]
