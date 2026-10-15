@@ -9,8 +9,8 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 namespace ATeam.Dashboard;
 
 /// <summary>One drawn row of a log line: the text alone, whether it's the row the icon goes beside, which line drawn
-/// it's from, and where in that line it starts.</summary>
-public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false, int Line = 0, int Start = 0);
+/// it's from, where in that line it starts, and whether a picture covers it.</summary>
+public readonly record struct LogRow(string Text, LogLineKind Kind, bool Wrapped = false, int Line = 0, int Start = 0, bool Pictured = false);
 
 public enum CaretMove { Left, Right, WordLeft, WordRight, Up, Down, PageUp, PageDown, RowStart, RowEnd, Start, End }
 
@@ -39,6 +39,9 @@ public sealed class LogView : View
     private int? _goal;
     private bool _showsCaret;
     private int? _opensAt;
+    private readonly Dictionary<(int Line, string Url), ImageView> _pictures = [];
+    private bool _awaitingPictures;
+    private List<LogRow> _placed = [];
 
     public LogView()
     {
@@ -125,6 +128,12 @@ public sealed class LogView : View
 
     /// <summary>Colours the markdown inside prose rows too: list markers, inline code and bold.</summary>
     public bool ReadsMarkdown { get; init; }
+
+    /// <summary>Draws each image line as its picture, where the terminal can.</summary>
+    public Pictures? Pictures { get; init; }
+
+    /// <summary>The image line the caret is on, or null.</summary>
+    internal ImageLink? ImageAtCaret => _caret is { } caret && caret.Line < Shown().Count ? Pictures.Link(LineText(caret.Line)) : null;
 
     /// <summary>One row per line, elided in the middle rather than wrapped, for a tail nobody can scroll.</summary>
     public bool Elides { get; init; }
@@ -280,7 +289,10 @@ public sealed class LogView : View
         if (rowsBy is { } by)
         {
             _goal ??= column;
-            var target = rows[Math.Clamp(at + by, 0, rows.Count - 1)];
+            var to = Math.Clamp(at + by, 0, rows.Count - 1);
+            while (rows[to].Pictured && to + Math.Sign(by) is var next && next >= 0 && next < rows.Count)
+                to = next;
+            var target = rows[to];
             if (move is CaretMove.PageUp or CaretMove.PageDown)
                 ScrollTo(_top + by);
             _caret = (target.Line, target.Start + Math.Min(_goal.Value, target.Text.Length));
@@ -454,7 +466,8 @@ public sealed class LogView : View
     {
         var at = 0;
         for (var i = 0; i < rows.Count && (rows[i].Line < caret.Line || rows[i].Line == caret.Line && rows[i].Start <= caret.Offset); i++)
-            at = i;
+            if (!rows[i].Pictured)
+                at = i;
         return at;
     }
 
@@ -588,9 +601,86 @@ public sealed class LogView : View
         {
             _opensAt = null;
             ShowLine(line);
+            PlacePictures();
             return;
         }
         ScrollTo(_following ? int.MaxValue : _top);
+        PlacePictures();
+    }
+
+    /// <summary>An image view over each picture's rows, scrolled with them; while any is still being read, the rows
+    /// are laid out again once it is.</summary>
+    private void PlacePictures()
+    {
+        var rows = Pictures is { Drawn: true } ? Rows(Math.Max(1, Viewport.Width)) : [];
+        _placed = rows;
+        var shown = Shown();
+        var kept = new HashSet<(int, string)>();
+        for (var at = 0; at < rows.Count; at++)
+        {
+            if (!rows[at].Pictured || at > 0 && rows[at - 1].Pictured)
+                continue;
+            var height = 1;
+            while (at + height < rows.Count && rows[at + height].Pictured)
+                height++;
+            if (Pictures.Link(_lines[shown[rows[at].Line]].Text) is not { } link || Pictures!.For(link.Url) is not { } picture)
+                continue;
+            var key = (rows[at].Line, link.Url);
+            kept.Add(key);
+            if (!_pictures.TryGetValue(key, out var view))
+            {
+                view = new ImageView { CanFocus = false, Image = picture.Over(GetAttributeForRole(VisualRole.Normal).Background) };
+                view.MouseBindings.Clear();
+                _pictures[key] = view;
+                Add(view);
+            }
+            view.X = 0;
+            view.Y = at;
+            view.Width = Math.Max(1, Viewport.Width);
+            view.Height = height;
+        }
+        foreach (var gone in _pictures.Keys.Where(key => !kept.Contains(key)).ToList())
+        {
+            Remove(_pictures[gone]);
+            _pictures[gone].Dispose();
+            _pictures.Remove(gone);
+        }
+        if (Pictures is not { Reading: true } || _awaitingPictures || App is not { } app)
+            return;
+        _awaitingPictures = true;
+        // Polled rather than Invoked, as the reader's comment is: Invoke can wait on a timer's lock.
+        app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+        {
+            if (Pictures.Reading)
+                return true;
+            _awaitingPictures = false;
+            PicturesRead();
+            return false;
+        });
+    }
+
+    /// <summary>Lays the rows out again with the pictures just read, keeping the line you were reading on top.</summary>
+    internal void PicturesRead()
+    {
+        if (!_following)
+            _top = Kept(_placed, Rows(Math.Max(1, Viewport.Width)), _top);
+        Fit();
+        SetNeedsDraw();
+    }
+
+    /// <summary>The row in <paramref name="after"/> holding what row <paramref name="top"/> of <paramref name="before"/>
+    /// held, or the start of its line where that line has turned into a picture.</summary>
+    internal static int Kept(List<LogRow> before, List<LogRow> after, int top)
+    {
+        if (top >= before.Count)
+            return top;
+        var line = before[top].Line;
+        var was = before.FindIndex(row => row.Line == line);
+        var now = after.FindIndex(row => row.Line == line);
+        if (now < 0)
+            return top;
+        var same = before.Count(row => row.Line == line) == after.Count(row => row.Line == line);
+        return now + (same ? top - was : 0);
     }
 
     private Size Content() => Viewport.Size with
@@ -698,7 +788,13 @@ public sealed class LogView : View
 
     internal List<LogRow> Rows(int width) => Elides
         ? [.. _lines.Select((line, i) => new LogRow(Elide(line.Text, Room(width, line.Kind)), line.Kind, Line: i))]
-        : Wrap(_expanded ? _lines : Collapse(_lines, width), width);
+        : Wrap(_expanded ? _lines : Collapse(_lines, width), width, Pictures is { Drawn: true } ? line => Pictured(line, width) : null);
+
+    /// <summary>The rows an image line's picture takes, where the picture has been read.</summary>
+    private int? Pictured(LogLine line, int width) =>
+        Pictures.Link(line.Text) is { } link && Pictures!.For(link.Url) is { } picture
+            ? Pictures.Rows(picture, width, Viewport.Height - 1)
+            : null;
 
     /// <summary>The cells a line of this kind has left for its text, never fewer than one.</summary>
     private static int Room(int width, LogLineKind kind) => Math.Max(1, width - Lead(kind));
@@ -765,12 +861,19 @@ public sealed class LogView : View
 
     private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
 
-    internal static List<LogRow> Wrap(IReadOnlyList<LogLine> lines, int width)
+    internal static List<LogRow> Wrap(IReadOnlyList<LogLine> lines, int width, Func<LogLine, int?>? pictured = null)
     {
         var rows = new List<LogRow>(lines.Count);
         for (var index = 0; index < lines.Count; index++)
         {
             var line = lines[index];
+            if (pictured?.Invoke(line) is { } height)
+            {
+                for (var row = 0; row < height; row++)
+                    rows.Add(new LogRow("", line.Kind, row > 0, index, Pictured: true));
+                rows.Add(new LogRow("", line.Kind, true, index));
+                continue;
+            }
             var room = Room(width, line.Kind);
             if (line.Text.Length <= room)
             {

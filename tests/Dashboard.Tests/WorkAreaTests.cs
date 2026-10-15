@@ -176,6 +176,32 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Spending_is_in_the_palette_for_every_team_and_Enter_on_a_pitch_opens_its_reader()
+    {
+        IReadOnlyList<string>? teams = null;
+        Action<string, SpendingItem>? open = null;
+        WaitingItem? read = null;
+        WaitingItem? shown = null;
+        using var window = Open(
+            showSpending: (names, opening) => (teams, open) = (names, opening),
+            readBody: item =>
+            {
+                read = item;
+                return Task.FromResult(new Reading("{\"body\": \"## Opportunity\"}", null));
+            },
+            showBody: (item, _, _, _, _, _, _) => shown = item);
+
+        Assert.Contains(window.Commands.Enabled, command => command is { Id: "spending", Label: "Spending" });
+        window.Commands.Execute("spending");
+        open!("team1", new SpendingItem(81, "Which bets the money went on", "https://github.com/o/r/issues/81", "Done", true, null, null));
+        window.Refresh();
+
+        Assert.Equal(["team0", "team1"], teams);
+        Assert.Equal(new WaitingItem(81, "Which bets the money went on", "Done", "https://github.com/o/r/issues/81", "team1", Pitch: true), read);
+        Assert.Equal(81, shown?.Number);
+    }
+
+    [Fact]
     public void Decisions_is_in_the_palette_and_the_View_menu_and_opens_for_the_selected_team()
     {
         var opened = new List<string>();
@@ -3917,6 +3943,7 @@ public class WorkAreaTests : IDisposable
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
         IClipboard? clipboard = null,
         Action<ReaderIdea?, Func<Key, bool>>? showIdea = null,
+        Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
         Action<string>? showDecisions = null)
     {
         Directory.CreateDirectory(_root);
@@ -3951,6 +3978,7 @@ public class WorkAreaTests : IDisposable
             readDocument: readDocument,
             confirmQuit: confirmQuit,
             clipboard: clipboard,
+            showSpending: showSpending,
             showDecisions: showDecisions);
     }
 

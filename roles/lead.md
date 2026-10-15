@@ -181,7 +181,9 @@ otherwise say nothing.
 **`turn`**:
 
 - `"pitch"`: `a-team board {{team}} move lead <item> Exploring` (this labels it `pitch`) and write the pitch
-  (see *Writing a pitch*). Leave it in Exploring; a later run promotes it. It's the
+  (see *Writing a pitch*). Then `a-team board {{team}} theme lead <item> "<heading>"` with the heading of the
+  vision's *Next themes* entry it serves, without its number (`Consistently good UX`), or `none` if it
+  serves none. Leave it in Exploring; a later run promotes it. It's the
   highest-priority Idea, so the stakeholder wants it. Keep the stakeholder's original text at the
   bottom of the body under **Original idea**. If the seed names a solution ("add X"), work out
   the opportunity behind it first: the need or pain that makes X worth having. Then treat X as
@@ -202,6 +204,9 @@ otherwise say nothing.
   **Why it fits**. Then `a-team board {{team}} add lead <n> Idea`. The stakeholder gives it a priority if they
   want it pitched and closes it if not. Don't pitch it yourself.
 - `"none"`: nothing new to start.
+
+**`unthemed`** lists the pitches with no theme yet. Give each one its theme, or `none`, as for a new
+pitch.
 
 **`ready`, `blocked`, `readyLow`, `skipped`**: `ready` is the tasks the Dev can start now, `blocked`
 the Ready ones waiting on a dependency or on the stakeholder, `skipped` the Ideas you've set aside —

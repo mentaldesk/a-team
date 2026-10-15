@@ -70,6 +70,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
+    private readonly Action<IReadOnlyList<string>, Action<string, SpendingItem>>? _showSpending;
     private readonly Action<string>? _showDecisions;
     private readonly Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? _newIdea;
     private readonly Func<Key, Attaching>? _attaching;
@@ -102,6 +103,7 @@ public sealed class DashboardWindow : Window
     private (string Text, WaitingItem? On)? _already;
     private string? _added;
     private ReaderIdea? _idea;
+    private ReaderImage? _image;
     private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
     private Task<Reading[]>? _trending;
@@ -164,9 +166,11 @@ public sealed class DashboardWindow : Window
         WriteQueue? writes = null,
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
         Func<Key, Attaching>? attaching = null,
+        Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
         Action<string>? showDecisions = null)
     {
         _attaching = attaching;
+        _showSpending = showSpending;
         _showDecisions = showDecisions;
         _writes = writes ?? new WriteQueue(run);
         _confirmQuit = confirmQuit ?? ((_, _) => true);
@@ -600,6 +604,7 @@ public sealed class DashboardWindow : Window
             .Register("work.edit", "Edit the document pitch you're reading", () => { }, new Key('e'), isEnabled: () => _shown is { Document: true })
             .Register("work.attach", "Attach image file to what you're writing", () => { }, Key.U.WithCtrl,
                 isEnabled: () => _shown is not null && _attaching is not null)
+            .Register("work.viewImage", () => "View image", () => _image?.View(), isEnabled: () => _image?.Viewable() == true)
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true, scopes: [Regions.Work])
             .Register("work.notNow", "Not now", () => ReadSelected(declining: false, shelving: true), new Key('l'),
@@ -654,6 +659,7 @@ public sealed class DashboardWindow : Window
             }))
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
+            .Register("spending", "Spending", OpenSpending, isEnabled: () => _showSpending is not null)
             .Register("decisions", () => SelectedTeam() is { } team ? $"Decisions… · {team}" : "Decisions…",
                 () => _showDecisions?.Invoke(SelectedTeam()!), isEnabled: () => _showDecisions is not null && SelectedTeam() is not null,
                 menuLabel: () => "Decisions…")
@@ -1184,6 +1190,7 @@ public sealed class DashboardWindow : Window
             _attention.Open(item, WorkView.GateOf(item));
             Seen(item);
             _idea = NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
+            _image = new ReaderImage();
             var chosen = _showBody(item, body, () =>
             {
                 if (url is { Length: > 0 })
@@ -1193,7 +1200,7 @@ public sealed class DashboardWindow : Window
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
                     item.Shelvable ? new ReaderShelve(_commands.KeyFor("work.notNow"), (weeks, reason) => Shelve(item, weeks, reason), shelving) : null,
-                    Attaching()),
+                    Attaching(), _image),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -1203,6 +1210,7 @@ public sealed class DashboardWindow : Window
                 key => (key == _commands.KeyFor("help") || key == _commands.KeyFor("commands")) && _commands.Press(key),
                 rank);
             _idea = null;
+            _image = null;
             _opened.Open(item.Team, item.Number, _clock.GetUtcNow());
             _approvable = null;
             _shown = null;
@@ -1686,7 +1694,7 @@ public sealed class DashboardWindow : Window
 
     /// <summary>While the reader is open, only what works from it: the rest acts on the board underneath.</summary>
     private IReadOnlyList<CommandDescriptor> Offered =>
-        _shown is null ? _commands.Enabled : [.. _commands.Enabled.Where(command => command.Id is "work.new" or "help" or "commands")];
+        _shown is null ? _commands.Enabled : [.. _commands.Enabled.Where(command => command.Id is "work.new" or "work.viewImage" or "help" or "commands")];
 
     /// <summary>Where the window is now, for the keys that work only there.</summary>
     internal CommandScope Region => _area switch
@@ -1705,6 +1713,15 @@ public sealed class DashboardWindow : Window
     /// <summary>What's waiting now is Work's count, once it has read one.</summary>
     private void OpenTrends() =>
         _showTrends?.Invoke([.. _teamNames.Select(team => (team, _readAt is null ? (int?)null : _work.Items.Count(item => item.Team == team)))]);
+
+    private void OpenSpending() => _showSpending?.Invoke(_teamNames, OpenPitch);
+
+    /// <summary>The reader opens over Spending once the pitch has been read.</summary>
+    private void OpenPitch(string team, SpendingItem pitch)
+    {
+        var item = new WaitingItem(pitch.Number, pitch.Title, pitch.Status, pitch.Url, team, Pitch: true);
+        ReadBody(item, (read, body) => ShowBody(read, body, pitch.Url), forReader: true);
+    }
 
     private void OpenSettings(string? page = null, bool newTeam = false)
     {

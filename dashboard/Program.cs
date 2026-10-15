@@ -94,6 +94,7 @@ Handover? Show(Handover? back)
     LogSchemes.Register();
     Handover? handedOver = null;
     var named = wanted.Length > 0 ? wanted : teams.Names();
+    var pictures = Pictures.Of(app);
     using var window = new DashboardWindow(
         [.. named.SelectMany(team => teams.Roles(team).Select(role => (team, role)))],
         stateRoot,
@@ -104,7 +105,8 @@ Handover? Show(Handover? back)
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
         url => Link.OpenUrl(url),
         (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, copyBranch, idea, keys, rank) =>
-            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes, edit, copyBranch, idea, keys),
+            ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes, edit, copyBranch, idea, keys,
+                pictures, url => Link.OpenUrl(url)),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>
@@ -133,6 +135,8 @@ Handover? Show(Handover? back)
         confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
         attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
             new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
+        showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
+            names.SelectMany(teams.Roles), open),
         showDecisions: team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
             change => change.Run(team, command.Read), url => Link.OpenUrl(url)));
     window.Refresh();
