@@ -132,7 +132,9 @@ Handover? Show(Handover? back)
         writes: writes,
         confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
         attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
-            new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)));
+            new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
+        showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
+            names.SelectMany(teams.Roles), open));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

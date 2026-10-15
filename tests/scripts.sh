@@ -3818,6 +3818,109 @@ for label in rank:urgent rank:high rank:medium rank:low; do
   grep -q "created label $label" "$OUT" || fail "setup: no $label in '$(cat "$OUT")'"
 done
 
+# --- themes and Spending ---------------------------------------------------------------------
+case_ "theme labels a pitch with its vision theme, creating the label, and swaps out any other"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" },
+  "project": { "owner": "mentaldesk", "number": 1 }, "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
+JSON
+gh_items <<'ITEMS'
+Exploring 81 A pitch
+Ready 82 A task
+ITEMS
+edit_item 81 '.labels.nodes = [{name: "pitch"}, {name: "theme: Think bigger"}]'
+rm -f "$A_TEAM_STATE/history.db"
+run board demo theme lead 81 "Consistently good UX"
+same "exit" 0 "$STATUS"
+grep -q 'label create theme: Consistently good UX -R mentaldesk/demo --color 5319e7' "$WRITES" || fail "label not created: '$(cat "$WRITES")'"
+grep -q 'issue edit 81 -R mentaldesk/demo --add-label theme: Consistently good UX --remove-label theme: Think bigger' "$WRITES" ||
+  fail "labels: '$(cat "$WRITES")'"
+same "history" "lead theme: Consistently good UX" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
+
+case_ "theme leaves a label that's already there alone, and none takes the theme off"
+echo '[{"name": "theme: Consistently good UX"}]' >"$EMPTY"
+: >"$WRITES"
+run board demo theme lead 81 "Consistently good UX"
+echo '[]' >"$EMPTY"
+same "created" 0 "$(grep -c 'label create' "$WRITES")"
+: >"$WRITES"
+run board demo theme lead 81 none
+same "exit" 0 "$STATUS"
+same "unlabelled" 'issue edit 81 -R mentaldesk/demo --remove-label theme: Think bigger' "$(cat "$WRITES")"
+same "history" "lead no theme" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
+
+case_ "only the Lead sets a theme, only on a pitch, and only one GitHub can make a label of"
+: >"$WRITES"
+for refused in "dev 81 Think" "you 81 Think" "lead 82 Think" "lead 81 Think,bigger" \
+  "lead 81 $(printf 'x%.0s' {1..50})"; do
+  read -r role n heading <<<"$refused"
+  run board demo theme "$role" "$n" "$heading"
+  failed "theme $role $n"
+  one_line "theme $role $n"
+done
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "lead-next lists the pitches with no theme yet: open ones, and done ones with history since runs were recorded"
+gh_items <<'ITEMS'
+Exploring 81 Unthemed and open
+Pitched 82 Themed
+Done 83 Done before the record
+Done 84 Done since
+Building 85 Said to serve none
+Done 86 Declined
+Idea 87 An idea
+ITEMS
+edit_item 82 '.labels.nodes = [{name: "pitch"}, {name: "theme: Think bigger"}]'
+edit_item 83 '.labels.nodes = [{name: "pitch"}]'
+edit_item 84 '.labels.nodes = [{name: "pitch"}]'
+edit_item 86 '.labels.nodes = [{name: "pitch"}] | .stateReason = "NOT_PLANNED"'
+rm -f "$A_TEAM_STATE/history.db"
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
+    at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
+  CREATE TABLE runs (id INTEGER PRIMARY KEY, team TEXT NOT NULL, role TEXT NOT NULL,
+    pid INTEGER NOT NULL, log TEXT NOT NULL, started TEXT NOT NULL, ended TEXT, cost REAL, outcome TEXT);
+  INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'lead', 1, 'a', '2026-10-08T00:00:00Z');
+  INSERT INTO events (team, item, at, who, what) VALUES ('demo', 83, '2026-10-01T00:00:00Z', 'lead', 'closed as done'),
+    ('demo', 84, '2026-10-09T00:00:00Z', 'lead', 'closed as done'),
+    ('demo', 85, '2026-10-09T00:00:00Z', 'lead', 'theme: Think bigger'), ('demo', 85, '2026-10-10T00:00:00Z', 'lead', 'no theme'),
+    ('demo', 81, '2026-10-10T00:00:00Z', 'lead', 'no theme'), ('demo', 81, '2026-10-11T00:00:00Z', 'lead', 'theme: Think bigger');"
+run board --dry-run demo lead-next
+same "exit" 0 "$STATUS"
+same "unthemed" '[81,84]' "$(jq -c .unthemed "$OUT")"
+
+spending() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo spending | jq -c .; }
+
+case_ "with no runs recorded, spending is empty, reads nothing from GitHub, and makes no record file"
+rm -f "$A_TEAM_STATE/history.db"
+: >"$CALLS"
+same "empty" '{"since":null,"runs":[],"items":[]}' "$(spending)"
+same "api calls" 0 "$(grep -c '' <"$CALLS")"
+[ ! -e "$A_TEAM_STATE/history.db" ] || fail "spending: made a record file"
+
+case_ "spending: every run with its cost and items, and the items and the pitches over them, in one read of the board"
+gh_items <<'ITEMS'
+Building 81 A pitch
+Done 517 A task
+Idea 40 An idea
+Done 90 Untouched
+ITEMS
+edit_item 81 '.labels.nodes = [{name: "pitch"}, {name: "theme: Think bigger"}]'
+edit_item 517 '.parent = {number: 81}'
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE runs (id INTEGER PRIMARY KEY, team TEXT NOT NULL, role TEXT NOT NULL,
+    pid INTEGER NOT NULL, log TEXT NOT NULL, started TEXT NOT NULL, ended TEXT, cost REAL, outcome TEXT);
+  CREATE TABLE run_items (run INTEGER NOT NULL, item INTEGER NOT NULL);
+  INSERT INTO runs (id, team, role, pid, log, started, cost) VALUES (1, 'demo', 'dev', 1, 'a', '2026-10-09T00:00:00Z', 1.25),
+    (2, 'demo', 'lead', 2, 'b', '2026-10-08T00:00:00Z', 0.5), (3, 'demo', 'lead', 3, 'c', '2026-10-10T00:00:00Z', NULL),
+    (4, 'other', 'dev', 4, 'd', '2026-10-01T00:00:00Z', 9);
+  INSERT INTO run_items VALUES (1, 517), (3, 40), (3, 999), (4, 90);"
+: >"$CALLS"
+spending >"$OUT"
+same "since" '"2026-10-08T00:00:00Z"' "$(jq -c .since "$OUT")"
+same "runs" '[["lead",0.5,[]],["dev",1.25,[517]],["lead",0,[40,999]]]' "$(jq -c '[.runs[] | [.role, .cost, .items]]' "$OUT")"
+same "items" '[[81,true,null,"Think bigger"],[517,false,81,null],[40,false,null,null]]' \
+  "$(jq -c '[.items[] | [.number, .pitch, .parent, .theme]]' "$OUT")"
+same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
 # --- a-team try -----------------------------------------------------------------------------
 # A throwaway origin holding main and one PR head, a checkout cloned from it that has only main,
 # and a config pointing workdir and checkout at them. `try_fixture [<try command>]`.
