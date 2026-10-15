@@ -76,7 +76,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    - Each task is one reviewable PR with the tests that prove it.
 3. File each task with `a-team board {{team}} task lead <pitch> "<title>" <file>`, which opens it,
    puts it in Ready under the pitch and prints its number. The file is its body:
-   - **Context**: one paragraph and a link to the pitch.
+   - **Context**: one paragraph and a link to the pitch. If it needs a change in another repo
+     first, name the repo, and say whether the Dev can open that PR itself: it can on a repo in
+     the team config's `contributesTo`. Otherwise the task waits on the stakeholder for it.
    - **Acceptance criteria**: a checklist of what the user can do and see once it merges, which
      the stakeholder ticks off as they try it. Each item is an end result, checked by using the
      product the way the vision's user does, never how it's built: no classes, APIs, internal

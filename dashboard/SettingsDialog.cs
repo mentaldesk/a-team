@@ -178,7 +178,7 @@ public sealed class SettingsDialog : Dialog
         EditTeam = (team, settings, save) =>
             App is { } app
                 ? TeamForm.Show(app, team, settings, save, ListProjects, _checks?.Latest(team),
-                    () => Repaired(team), Icons.Resolve(_icons.Current, _auto))
+                    () => Repaired(team), Icons.Resolve(_icons.Current, _auto), _start is { } start ? start.Repos : null)
                 : null;
         CreateTeam = (again, create) =>
         {
@@ -189,9 +189,10 @@ public sealed class SettingsDialog : Dialog
                 ? $"~{_teams.TeamsDirectory[home.Length..]}"
                 : _teams.TeamsDirectory;
             return again is null
-                ? TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Projects, _start.Me())
+                ? TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Projects, _start.Me(),
+                    repos: _start.Repos)
                 : TeamForm.ShowNew(app, _teams.Settings(again), [.. _teams.Names().Where(name => name != again)], directory, create,
-                    _start.Projects, Task.FromResult(""), again);
+                    _start.Projects, Task.FromResult(""), again, _start.Repos);
         };
         FollowTeam = team => App is { } app && _start is not null
             ? _start.Follow(_teams, team, step => StepDialog.Show(app, step), () => VisionFor = team)

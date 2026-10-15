@@ -162,6 +162,30 @@ REVIEWED='def said($role): (.author | '"$LOGIN"') == $bot and ((.body // "") | c
   def answered: [.comments.nodes[]? | if said("reviewer") then "review" elif said("dev") then "dev" else empty end]
     | index("review") as $at | $at != null and (.[$at:] | index("dev")) != null;'
 
+# upstream_reasons: [task, why] for each reason the Dev has to look at one of its PRs on a repo the team
+# contributes to, as `gh pr list` gives it, on the open task its body says it's needed by.
+UPSTREAM='def upstream_reasons:
+    def bot: (.author.login // "" | ltrimstr("app/") | rtrimstr("[bot]")) == $slug;
+    def verdict: (.statusCheckRollup // []) | map(
+        if .__typename == "StatusContext"
+        then {done: (.state | IN("PENDING", "EXPECTED") | not), failed: (.state | IN("FAILURE", "ERROR"))}
+        else {done: (.status == "COMPLETED"),
+              failed: (.conclusion // "" | IN("FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"))} end)
+      | if any(.[]; .failed) then "fail" elif length == 0 or any(.[]; .done | not) then "pending" else "pass" end;
+    select((.body // "") | contains("<!-- a-team:dev -->"))
+    | ([(.body // "") | scan("(?i)needed by ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)")
+        | select(.[0] | ascii_downcase == ($repo | ascii_downcase)) | .[1] | tonumber | select(IN($open[]))] | first) as $n
+    | select($n != null)
+    | "\($upstream)#\(.number)" as $pr
+    | ([.createdAt] + [.comments[]? | select(bot and ((.body // "") | contains("<!-- a-team:dev -->"))) | .createdAt] | max) as $said
+    | ([(.comments[]? | {author: .author.login, at: .createdAt}),
+        (.reviews[]? | select((.body // "") != "" or .state == "CHANGES_REQUESTED") | {author: .author.login, at: .submittedAt})]
+       | map(select((.author | IN($stakeholders[])) and .at > $said) | .at) | max) as $asked
+    | verdict as $verdict
+    | (if $verdict == "fail" then [$n, "CI failed on \($pr) at \(.headRefOid[:7])"] else empty end),
+      (if $verdict == "pass" and .isDraft then [$n, "\($pr) is green but still a draft"] else empty end),
+      (if $asked != null then [$n, "stakeholder feedback on \($pr) (\($asked))"] else empty end);'
+
 # checks: the CI verdict on a commit's check runs, shaped as REST gives them.
 CHECKS='def checks:
     def failed: .conclusion as $c
@@ -2204,6 +2228,27 @@ case "$CMD" in
           task_reason "$n" "$title" "stakeholder answered the Dev's question on #$n ($at)"
         done < <(questions "$held" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" |
           jq -r '.[] | select(.unread != "") | [.number, .unread, .title] | @tsv')
+      fi
+
+      # The Dev's own PRs on the repos the team contributes to, each woken on the task it's needed by.
+      if [ -n "$BOT" ]; then
+        while IFS= read -r upstream; do
+          upstream_prs=$(gh pr list -R "$upstream" --author "app/$(cfg .app.slug)" --state open \
+            --json number,isDraft,headRefOid,body,createdAt,comments,reviews,statusCheckRollup) || continue
+          [ "$upstream_prs" = "[]" ] && continue
+          # An inline-only review has an empty body, so its line comments come from here.
+          line_comments=$(gh api --paginate \
+            "repos/$upstream/pulls/comments?since=$(jq -rn 'now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ")')&per_page=100" \
+            --jq '.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: {login: .user.login}, createdAt: .created_at}' |
+            jq -s .) || line_comments='[]'
+          while IFS=$'\t' read -r n why; do
+            task_reason "$n" "$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .title' <<<"$all")" "$why"
+          done < <(jq -r --arg upstream "$upstream" --arg repo "$REPO" --arg slug "$(cfg .app.slug)" \
+              --argjson stakeholders "$STAKEHOLDERS" --argjson open "$(jq '[.[] | select(.status != "Done") | .number]' <<<"$all")" \
+              --argjson lines "$line_comments" \
+              "$UPSTREAM"'.[] | .number as $pr | .comments += [$lines[] | select(.n == $pr) | del(.n)]
+                | upstream_reasons | @tsv' <<<"$upstream_prs")
+        done < <(jq -r '.contributesTo // [] | .[]' "$CONFIG")
       fi
 
       checkout=$(cfg .checkout)

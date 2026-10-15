@@ -194,6 +194,31 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void Contributes_to_reads_as_none_without_the_key_and_round_trips_once_set()
+    {
+        var before = TeamSettings.Read(Bytes(Config));
+        Assert.Empty(before.ContributesTo);
+        Assert.Equal(Config, Text(before.Write(Bytes(Config), before)));
+
+        var written = (before with { ContributesTo = ["mentaldesk/tui-style-guide"] }).Write(Bytes(Config), before);
+
+        Assert.Equal(["mentaldesk/tui-style-guide"], TeamSettings.Read(written).ContributesTo);
+        Assert.Empty(TeamSettings.Read(Bytes(Config.Replace("\"later\"", "\"contributesTo\": [], \"later\""))).ContributesTo);
+    }
+
+    [Fact]
+    public void Only_the_repos_the_App_reaches_are_offered_its_own_aside_and_a_failure_is_said()
+    {
+        var found = ReachableRepos.Parse(new Reading("mentaldesk/tui-style-guide\nmentaldesk/a-team\nmentaldesk/TuiCode\n", null), "mentaldesk/A-Team");
+
+        Assert.Equal(["mentaldesk/tui-style-guide", "mentaldesk/TuiCode"], found.Names);
+        Assert.Null(found.Failure);
+        Assert.Equal("gh: HTTP 401", ReachableRepos.Parse(new Reading("", "gh: HTTP 401"), "mentaldesk/a-team").Failure);
+        Assert.Equal("Couldn't read the repos the team's App can reach: HTTP 401",
+            ReachableRepos.Parse(new Reading("", "gh: HTTP 401"), "mentaldesk/a-team").Message);
+    }
+
+    [Fact]
     public void A_file_that_still_says_reviewer_shows_that_person_as_its_stakeholder()
     {
         var settings = TeamSettings.Read(Bytes(Config.Replace("\"stakeholders\": [\"jamescrosswell\"]", "\"reviewer\": \"jamescrosswell\"")));

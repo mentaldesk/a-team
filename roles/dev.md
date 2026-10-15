@@ -35,8 +35,9 @@ and give its number in your reply. Don't open one unasked: note it in the PR bod
 List the repo's worktrees (`git worktree list`). A worktree is yours if its branch's PR carries
 your marker. For each of yours whose PR GitHub reports as `MERGED`, `cd` into it and run the
 stakeholder's `wrap-up` skill. Only run it on merged PRs: on anything else it watches CI, which you
-mustn't do here. Leave the worktrees of PRs closed without merging, and list them in your
-summary. This is the one thing you do outside your task.
+mustn't do here. Do the same for your worktrees under `<workdir>/upstream`. Leave the worktrees of
+PRs closed without merging, and list them in your summary. This is the one thing you do outside
+your task.
 
 ### 2. If your task has a PR
 
@@ -77,6 +78,12 @@ whether the reply answers it:
 - If it doesn't, reply with `a-team board {{team}} comment dev <n>`: rephrase the question, or say
   what you still need. Leave it `blocked`, and end the run.
 
+If it's held for a PR you opened on a repo the team contributes to, and this run is for that PR,
+look after it in its worktree as in step 2, using `gh ... -R <repo>`, since `a-team board` only
+reaches {{repo}}: `gh pr checks`, fix what fails, answer each stakeholder comment with
+`gh pr comment` ending in your marker, and `gh pr ready` once it's green. Leave the task `blocked`
+in Ready: it waits for that change to be released.
+
 A task a stakeholder labelled `blocked` themselves, with no question from you, is theirs: leave it
 alone.
 
@@ -94,20 +101,29 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
 2. Read the issue and the pitch it belongs to. If the acceptance criteria are ambiguous or
    contradict the code, comment with the specific question, label it `blocked`, then move it back
    to Ready, and end the run.
-3. Pick it up from its worktree and branch if they exist. Otherwise fetch `origin` and create a
+3. If it needs a change in another repo first, like a shared library, open that before building:
+   - If the repo is in the team config's `contributesTo`, clone it to `<workdir>/upstream/<name>`
+     if it isn't there, and make the change in a worktree beside it, on a new branch from a fresh
+     default branch, following that repo's contributor docs. Open a **draft** PR there whose body
+     says what it adds, has the line `Needed by {{repo}}#<n>`, and ends with your marker. Comment on
+     the task linking it and asking the stakeholder to review and release it, label the task
+     `blocked`, move it back to Ready, and end the run.
+   - Otherwise, comment on the task saying what change it needs where, and that the team doesn't
+     contribute to that repo, label it `blocked`, move it back to Ready, and end the run.
+4. Pick it up from its worktree and branch if they exist. Otherwise fetch `origin` and create a
    fresh worktree from `origin/<default branch>` following the repo's conventions. Implement it.
    Stay inside the task's scope; note anything else you spot in the PR body instead of fixing it.
    A task that changes what the user sees or does updates the user guide page it affects, where
    the repo has one, in the same PR. End every commit message with `Closes #<n>`.
-4. Build and run the tests locally until they pass. If the task changes what the user sees, run the
+5. Build and run the tests locally until they pass. If the task changes what the user sees, run the
    product, look at each screen it changes and check it against the acceptance criteria. The
    team's skills say how.
-5. Push and open a **draft** PR. Body: a short summary of what the user can now do or see,
+6. Push and open a **draft** PR. Body: a short summary of what the user can now do or see,
    `Closes #<n>`, any choice you made that changes what they see or do beyond what the task
    says, and your marker. How you built it goes in the commit messages, not the body. No
    test-plan section. Once the PR has a number, edit the body so it ends, just above the
    marker, with the line `a-team try {{team}} <pr>` for it.
-6. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
-7. Leave the task In progress and end the run. A later run marks the PR ready once CI is green.
+7. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
+8. Leave the task In progress and end the run. A later run marks the PR ready once CI is green.
 
 If it can't be finished, comment why and `a-team board {{team}} move dev <n> Ready`.
