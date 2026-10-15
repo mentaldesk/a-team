@@ -176,6 +176,32 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Spending_is_in_the_palette_for_every_team_and_Enter_on_a_pitch_opens_its_reader()
+    {
+        IReadOnlyList<string>? teams = null;
+        Action<string, SpendingItem>? open = null;
+        WaitingItem? read = null;
+        WaitingItem? shown = null;
+        using var window = Open(
+            showSpending: (names, opening) => (teams, open) = (names, opening),
+            readBody: item =>
+            {
+                read = item;
+                return Task.FromResult(new Reading("{\"body\": \"## Opportunity\"}", null));
+            },
+            showBody: (item, _, _, _, _, _, _) => shown = item);
+
+        Assert.Contains(window.Commands.Enabled, command => command is { Id: "spending", Label: "Spending" });
+        window.Commands.Execute("spending");
+        open!("team1", new SpendingItem(81, "Which bets the money went on", "https://github.com/o/r/issues/81", "Done", true, null, null));
+        window.Refresh();
+
+        Assert.Equal(["team0", "team1"], teams);
+        Assert.Equal(new WaitingItem(81, "Which bets the money went on", "Done", "https://github.com/o/r/issues/81", "team1", Pitch: true), read);
+        Assert.Equal(81, shown?.Number);
+    }
+
+    [Fact]
     public void A_record_that_can_t_be_read_leaves_the_title_with_what_s_waiting_now()
     {
         using var window = Open(readTrend: _ => Task.FromResult(new Reading("", "no record")));
@@ -3893,7 +3919,8 @@ public class WorkAreaTests : IDisposable
         Func<WaitingItem, Task<Reading>>? readDocument = null,
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
         IClipboard? clipboard = null,
-        Action<ReaderIdea?, Func<Key, bool>>? showIdea = null)
+        Action<ReaderIdea?, Func<Key, bool>>? showIdea = null,
+        Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -3926,7 +3953,8 @@ public class WorkAreaTests : IDisposable
             attention: attention,
             readDocument: readDocument,
             confirmQuit: confirmQuit,
-            clipboard: clipboard);
+            clipboard: clipboard,
+            showSpending: showSpending);
     }
 
     private void WriteRun(string team, string role, int pid)

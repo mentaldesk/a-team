@@ -36,6 +36,16 @@ hour of it. Days and weeks before your time was first recorded are left blank, n
 row at the bottom covers every team. A task that entered Ready before its team's
 record began isn't counted in either. `Esc` closes it.
 
+To see what the money bought, open **Spending** in Commands (`Ctrl+E`). It rolls the cost of every
+team's runs up by team, then by the vision theme each pitch serves, then by pitch, over the last 7
+days, the last 30 or everything recorded. Each row shows its runs, what each role cost and the
+total, with `–` for nothing. A pitch counts the runs on its tasks too, and a run on several items is
+split evenly between them, so a team's 7-day total matches Trends. Under each team, *Discovery &
+upkeep* is runs on no item, and *Other items* is runs on Ideas never pitched and on your own items.
+The Lead labels each pitch `theme: <heading>` when it drafts it; relabel it on GitHub and Spending
+follows. `Right` and `Left` expand and collapse a row, `Enter` on a pitch opens its card, and `Esc`
+closes it.
+
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
 wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
 Pitches and 1 in Review, with `?` counting Questions. With `m` on, it counts only your moves, and a
