@@ -2212,13 +2212,21 @@ case "$CMD" in
       # The Dev's own PRs on the repos the team contributes to, each woken on the task it's needed by.
       if [ -n "$BOT" ]; then
         while IFS= read -r upstream; do
+          upstream_prs=$(gh pr list -R "$upstream" --author "app/$(cfg .app.slug)" --state open \
+            --json number,isDraft,headRefOid,body,createdAt,comments,reviews,statusCheckRollup) || continue
+          [ "$upstream_prs" = "[]" ] && continue
+          # An inline-only review has an empty body, so its line comments come from here.
+          line_comments=$(gh api --paginate \
+            "repos/$upstream/pulls/comments?since=$(jq -rn 'now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ")')&per_page=100" \
+            --jq '.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: {login: .user.login}, createdAt: .created_at}' |
+            jq -s .) || line_comments='[]'
           while IFS=$'\t' read -r n why; do
             task_reason "$n" "$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .title' <<<"$all")" "$why"
-          done < <(gh pr list -R "$upstream" --author "app/$(cfg .app.slug)" --state open \
-            --json number,isDraft,headRefOid,body,createdAt,comments,reviews,statusCheckRollup |
-            jq -r --arg upstream "$upstream" --arg repo "$REPO" --arg slug "$(cfg .app.slug)" \
+          done < <(jq -r --arg upstream "$upstream" --arg repo "$REPO" --arg slug "$(cfg .app.slug)" \
               --argjson stakeholders "$STAKEHOLDERS" --argjson open "$(jq '[.[] | select(.status != "Done") | .number]' <<<"$all")" \
-              "$UPSTREAM"'.[] | upstream_reasons | @tsv')
+              --argjson lines "$line_comments" \
+              "$UPSTREAM"'.[] | .number as $pr | .comments += [$lines[] | select(.n == $pr) | del(.n)]
+                | upstream_reasons | @tsv' <<<"$upstream_prs")
         done < <(jq -r '.contributesTo // [] | .[]' "$CONFIG")
       fi
 

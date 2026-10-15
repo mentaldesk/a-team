@@ -183,6 +183,8 @@ RUNS
   UPSTREAM="$BIN/upstream.json" UPSTREAM_CALLS="$BIN/upstream-calls"
   echo '[]' >"$UPSTREAM"
   : >"$UPSTREAM_CALLS"
+  UPSTREAM_LINES="$BIN/upstream-lines.json"
+  echo '[]' >"$UPSTREAM_LINES"
   VOPEN="$BIN/vision-open.json" VCLOSED="$BIN/vision-closed.json" VCOMMITS="$BIN/vision-commits.json"
   VISION_MD="$BIN/vision.md" THEMES="$BIN/themes.json" FILES="$BIN/files.json" CONTENTS="$BIN/contents.json"
   echo '[]' | tee "$VOPEN" "$VCLOSED" "$VCOMMITS" "$FILES" >/dev/null
@@ -244,6 +246,7 @@ case " \$* " in
   *closedByPullRequestsReferences*) page="$PRS" ;;
   *reviews*) page="$REVIEWS" ;;
   *"/issues/comments?since"*) page="$RECENT" ;;
+  *"repos/mentaldesk/style/pulls/comments?since"*) page="$UPSTREAM_LINES" ;;
   *"comments?since"*) page="$EMPTY" ;;
   *"-X POST"*dependencies/blocked_by*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*dependencies/blocked_by*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
@@ -2979,6 +2982,23 @@ same "tasks" '[{"number":13,"title":"Needs a style guide change","reasons":["men
   "$(jq -c .tasks "$OUT")"
 same "one list per repo, of the App's PRs" "pr list -R mentaldesk/style --author app/demo-app|pr list -R mentaldesk/lib --author app/demo-app" \
   "$(sed 's/ --state.*//' "$UPSTREAM_CALLS" | paste -sd '|' -)"
+
+case_ "a stakeholder's line comments on an upstream PR wake the Dev, though their review has no body"
+cat >"$UPSTREAM" <<'JSON'
+[{"number": 77, "isDraft": false, "headRefOid": "eeeeeee", "createdAt": "2026-10-01T09:00:00Z",
+  "body": "Needed by mentaldesk/demo#13\n\n<!-- a-team:dev -->", "comments": [],
+  "reviews": [{"author": {"login": "reviewer"}, "submittedAt": "2026-10-05T09:00:00Z", "state": "COMMENTED", "body": ""}],
+  "statusCheckRollup": [{"__typename": "StatusContext", "state": "PENDING"}]}]
+JSON
+cat >"$UPSTREAM_LINES" <<'JSON'
+[{"pull_request_url": "https://api.github.com/repos/mentaldesk/style/pulls/77", "user": {"login": "reviewer"}, "created_at": "2026-10-05T09:00:00Z"},
+ {"pull_request_url": "https://api.github.com/repos/mentaldesk/style/pulls/80", "user": {"login": "reviewer"}, "created_at": "2026-10-06T09:00:00Z"}]
+JSON
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "tasks" '[{"number":13,"title":"Needs a style guide change","reasons":["stakeholder feedback on mentaldesk/style#77 (2026-10-05T09:00:00Z)"]}]' \
+  "$(jq -c .tasks "$OUT")"
+echo '[]' >"$UPSTREAM_LINES"
 
 case_ "without repos it contributes to, the Dev's triggers list no other repo's PRs"
 jq 'del(.contributesTo)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
