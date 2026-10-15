@@ -544,10 +544,9 @@ priority_field() {
 }
 
 # Reads a JSON array of items on stdin; adds .priority and sorts highest first, unset last, and
-# within each of those by the Lead's recommendation, unless the argument is `strict`.
+# within each of those by the Lead's recommendation.
 by_priority() {
-  local list ranks values strict=false
-  [ "${1:-}" != strict ] || strict=true
+  local list ranks values
   list=$(cat)
   if [ "$(jq length <<<"$list")" -eq 0 ]; then echo '[]'; return; fi
   ranks=$(priority_field | jq -s '[.[0].options[]?.name]')
@@ -557,10 +556,9 @@ by_priority() {
           ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldSingleSelect { name } } } } } }"' <<<"$list")
       } }" | jq --arg f "$PRIORITY" '.data.repository | with_entries(
         .key |= ltrimstr("i") | .value = ([.value.issueFieldValues.nodes[] | select(.field.name == $f) | .name] | first))')
-  jq --argjson ranks "$ranks" --argjson values "$values" --argjson strict "$strict" "$RECOMMENDED"'
+  jq --argjson ranks "$ranks" --argjson values "$values" "$RECOMMENDED"'
     def rank($r): $ranks | index($r) // length;
-    map(.priority = $values[.number | tostring])
-    | sort_by([rank(.priority), if $strict then 0 else rank(recommended) end])' <<<"$list"
+    map(.priority = $values[.number | tostring]) | sort_by([rank(.priority), rank(recommended)])' <<<"$list"
 }
 
 # An issue an agent wrote, from any team, carries its marker in the body.
@@ -639,14 +637,16 @@ pitchable_idea() {
 
 # One swap set for Pitched, from all board items: `promote` are the Exploring pitches that
 # belong in Pitched, `demote` the Pitched ones they displace, paired in order. Sorting Pitched
-# first, and ignoring `rank:`, makes the stable sort displace only on a strictly higher priority, and
+# first within each Priority makes the stable sort displace only on a strictly higher priority, and
 # `demote` never outruns `promote`, so nothing leaves Pitched without a draft taking its slot. A
 # document pitch is a PR, and stays in Pitched whatever the limit.
 pitch_swap() {
-  jq -c '[.[] | select((.labels | index("pitch")) and .type == "Issue" and (.status == "Pitched" or .status == "Exploring"))]
-         | sort_by(.status != "Pitched")' <<<"$1" | by_priority strict |
+  jq -c '[.[] | select((.labels | index("pitch")) and .type == "Issue" and (.status == "Pitched" or .status == "Exploring"))]' <<<"$1" |
+    by_priority |
     jq --argjson limit "$(cfg '.wip.pitched')" '
-      ([.[] | select(.status == "Pitched")] | length) as $pitched
+      map(.priority) as $priorities
+      | sort_by(.priority as $p | [($priorities | index($p)), .status != "Pitched"])
+      | ([.[] | select(.status == "Pitched")] | length) as $pitched
       | if $pitched < $limit
         then {promote: [.[] | select(.status == "Exploring")][:$limit - $pitched], demote: []}
         else [.[:$limit][] | select(.status == "Exploring")] as $promote

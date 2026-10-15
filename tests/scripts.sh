@@ -2387,6 +2387,33 @@ same "swap" '{"demote":[],"promote":[]}' "$(jq -c '{demote: [.demote[].number], 
 run board demo move lead 11 Exploring
 failed "demote a same-Priority pitch"
 
+case_ "lead-next: with room in Pitched, the higher-recommended of two same-Priority drafts goes first"
+gh_items 21 22 <<'ITEMS'
+Exploring 21 High, recommended Low
+Exploring 22 High, recommended High
+ITEMS
+edit_item 21 '.labels.nodes += [{name: "rank:low"}]'
+edit_item 22 '.labels.nodes += [{name: "rank:high"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "swap" '{"demote":[],"promote":[22]}' "$(jq -c '{demote: [.demote[].number], promote: [.promote[].number]}' "$OUT")"
+
+case_ "lead-next: a higher draft displaces the lower-recommended of two same-Priority pitches"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
+JSON
+gh_items 21 <<'ITEMS'
+Pitched 11 Low, recommended Low
+Pitched 12 Low, recommended High
+Exploring 21 High, a draft
+ITEMS
+edit_item 11 '.issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}] | .labels.nodes += [{name: "rank:low"}]'
+edit_item 12 '.issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}] | .labels.nodes += [{name: "rank:high"}]'
+A_TEAM_STATE="$WORK/state" run board demo lead-next
+same "exit" 0 "$STATUS"
+same "swap" '{"demote":[11],"promote":[21]}' "$(jq -c '{demote: [.demote[].number], promote: [.promote[].number]}' "$OUT")"
+
 case_ "a first demote labels the pitch a-team:displaced"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
