@@ -3492,7 +3492,7 @@ public class WorkAreaTests : IDisposable
 
         app.Begin(back);
         Assert.Empty(posted);
-        app.TimedEvents.RunTimers();
+        app.TimedEvents!.RunTimers();
 
         Assert.Equal([null], posted);
         var again = Assert.IsType<TryHandover>(handed[^1]);

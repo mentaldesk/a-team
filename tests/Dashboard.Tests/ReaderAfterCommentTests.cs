@@ -64,7 +64,7 @@ public class ReaderAfterCommentTests
         while (!until() && DateTime.UtcNow < deadline)
         {
             Thread.Sleep(20);
-            app.TimedEvents.RunTimers();
+            app.TimedEvents!.RunTimers();
         }
     }
 
