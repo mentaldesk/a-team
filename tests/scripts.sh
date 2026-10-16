@@ -4279,6 +4279,17 @@ same "exit" 0 "$STATUS"
 grep -q 'as you left it, with 1 changed file' "$OUT" || fail "again: nothing about your change in '$(cat "$OUT")'"
 grep -q 'For a fresh copy.*a-team try demo 7 --clean' "$OUT" || fail "again: no --clean line in '$(cat "$OUT")'"
 
+case_ "once the PR has moved on, the worktree you changed is refused rather than run behind it"
+cp "$TRY_BIN/pull.json" "$TRY_BIN/pull.was"
+jq --arg sha "$(git -C "$CHECKOUT" rev-parse origin/main)" '.head.sha = $sha' "$TRY_BIN/pull.was" >"$TRY_BIN/pull.json"
+rm -f "$TRY_WORK/ran"
+A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 7
+failed "moved on"
+[ ! -e "$TRY_WORK/ran" ] || fail "moved on: it ran the old code"
+[ -e "$TRY_WORK/.try/7/note.md" ] || fail "moved on: your change is gone"
+grep -q "behind .*a-team try demo 7 --clean" "$TRY_WORK/failed" || fail "moved on: '$(cat "$TRY_WORK/failed")'"
+mv "$TRY_BIN/pull.was" "$TRY_BIN/pull.json"
+
 case_ "--clean removes it without running anything, and is happy when there's nothing to remove"
 run try demo 7 --clean
 same "exit" 0 "$STATUS"
@@ -4310,7 +4321,6 @@ run try demo 404
 failed "no such PR"
 one_line "no such PR"
 [ ! -e "$TRY_WORK/.try" ] || fail "no such PR: something was left in .try"
-
 
 case_ "so is one that's already closed"
 try_gh closed

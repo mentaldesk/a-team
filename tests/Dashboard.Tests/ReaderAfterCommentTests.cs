@@ -135,6 +135,111 @@ public class ReaderAfterCommentTests
         Assert.Equal("", dialog.Field.Text);
     }
 
+    private static void StartPosting(IApplication app, ReaderDialog dialog)
+    {
+        app.Begin(dialog);
+        Write(dialog, "looks good");
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+    }
+
+    [Theory]
+    [InlineData("x", true, false)]
+    [InlineData("l", false, true)]
+    public void Decline_or_Not_now_pressed_while_the_comment_posts_opens_once_it_has(string key, bool declining, bool shelving)
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posted = new TaskCompletionSource<string?>();
+        using var dialog = new Card("pitch", _ => posted.Task).Open();
+        StartPosting(app, dialog);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key(key[0])));
+        Assert.Equal((false, false), (dialog.Declining, dialog.Shelving));
+
+        posted.SetResult(null);
+        Pump(app, () => dialog.Declining || dialog.Shelving);
+
+        Assert.Equal((declining, shelving), (dialog.Declining, dialog.Shelving));
+        Assert.Equal("", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void c_pressed_while_the_comment_posts_starts_a_new_one_once_it_has()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posted = new TaskCompletionSource<string?>();
+        using var dialog = new Card("task", _ => posted.Task).Open();
+        StartPosting(app, dialog);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('c')));
+        Assert.False(dialog.Field.HasFocus);
+
+        posted.SetResult(null);
+        Pump(app, () => dialog.Field.HasFocus);
+
+        Assert.True(dialog.CommentShown);
+        Assert.True(dialog.Field.HasFocus);
+        Assert.Equal("", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void Quoting_while_the_comment_posts_starts_a_new_one_with_the_quote_once_it_has()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posted = new TaskCompletionSource<string?>();
+        using var dialog = new Card("task", _ => posted.Task).Open();
+        StartPosting(app, dialog);
+        dialog.NewKeyDownEvent(Key.CursorDown.WithShift);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('q')));
+        Assert.Equal("looks good", dialog.Field.Text);
+
+        posted.SetResult(null);
+        Pump(app, () => dialog.Field.Text.StartsWith('>'));
+
+        Assert.StartsWith(">", dialog.Field.Text);
+        Assert.True(dialog.Field.HasFocus);
+    }
+
+    [Fact]
+    public void Esc_pressed_while_the_comment_posts_closes_the_reader_once_it_has()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posted = new TaskCompletionSource<string?>();
+        using var dialog = new Card("task", _ => posted.Task).Open();
+        StartPosting(app, dialog);
+
+        Assert.True(dialog.NewKeyDownEvent(Key.Esc));
+        Assert.False(dialog.StopRequested);
+
+        posted.SetResult(null);
+        Pump(app, () => dialog.StopRequested);
+
+        Assert.True(dialog.StopRequested);
+    }
+
+    [Fact]
+    public void Enter_pressed_while_the_comment_posts_sets_the_rank_once_it_has()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posted = new TaskCompletionSource<string?>();
+        var item = new WaitingItem(169, "A pitch", "Pitched", "https://x/169", "a-team", Pitch: true);
+        using var dialog = new ReaderDialog(item, new IssueBody(Body), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", _ => posted.Task, new Epoch()),
+            width: 140, rank: Rank.Low);
+        dialog.Layout(new Size(140, 20));
+        StartPosting(app, dialog);
+        dialog.NewKeyDownEvent(Key.CursorRight);
+
+        dialog.NewKeyDownEvent(Key.Enter);
+        Assert.Null(dialog.Chosen);
+
+        posted.SetResult(null);
+        Pump(app, () => dialog.Chosen is not null);
+
+        Assert.Equal(Rank.Medium, dialog.Chosen);
+        Assert.True(dialog.StopRequested);
+    }
+
     [Fact]
     public void A_key_pressed_while_a_comment_posts_is_dropped_if_the_comment_fails_and_the_draft_is_kept()
     {

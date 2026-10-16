@@ -83,7 +83,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string BranchId = "reader.branch";
     private const int BandLines = 3;
     private static readonly string[] WaitForPost =
-        [SetId, ApproveId, AcceptId, CommentId, DeclineId, NotNowId, TryId, EditId, QuoteId, CancelId];
+        [SetId, ApproveId, AcceptId, CommentId, DeclineId, NotNowId, TryId, EditId, CancelId];
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
@@ -783,6 +783,18 @@ public sealed partial class ReaderDialog : DashboardDialog
         var pane = FocusedPane();
         if (pane.MarkedText() is not { Count: > 0 } lines)
             return true;
+        pane.Unmark();
+        // Taken now: the comment posting rewrites the body, and the selection with it.
+        if (_posting is not null)
+        {
+            _afterPost = () => Quote(lines);
+            return true;
+        }
+        return Quote(lines);
+    }
+
+    private bool Quote(IReadOnlyList<string> lines)
+    {
         if (!CommentShown)
         {
             Comment();
@@ -792,7 +804,6 @@ public sealed partial class ReaderDialog : DashboardDialog
         var quoted = Quote(lines, at > 0 && _field.Text[at - 1] != '\n');
         _field.Document!.Insert(at, quoted);
         _field.CaretOffset = at + quoted.Length;
-        pane.Unmark();
         ToComment();
         return true;
     }

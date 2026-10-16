@@ -190,8 +190,8 @@ With no `try` key you get a shell in the worktree instead, with `try:<team>#<pr>
 that PR's `a-team` first on your `PATH`; `Ctrl+D` comes back.
 
 On the way out it removes the worktree and the sandbox state. If you changed a file in there it
-keeps the worktree and tells you; trying that PR again runs it as you left it, and
-`a-team try <team> <pr> --clean` removes it when you're done.
+keeps the worktree and tells you; trying that PR again runs it as you left it, unless the PR has
+moved on since, and `a-team try <team> <pr> --clean` removes it when you're done.
 `try` runs the PR's code on purpose, so it asks before running a branch from a repo that isn't the
 team's own.
 

@@ -89,7 +89,7 @@ if $CLEAN; then
   exit 0
 fi
 
-# Changes you made last time are run again as you left them; anything else left behind is replaced.
+# Changes you made last time run again as you left them, unless the PR has moved on; anything else is replaced.
 changes() { git -C "$TREE" status --porcelain --untracked-files=all | grep -c '' || true; }
 KEPT=0
 if [ -e "$TREE" ]; then
@@ -147,6 +147,10 @@ else
     [ -z "$CHECKLIST" ] || CHECKLIST=$'  What this should let you do\n'"$CHECKLIST"
   fi
   AFTER="Removed the worktree. Merge #$PR if it did what you wanted."
+fi
+
+if [ "$KEPT" -gt 0 ] && [ "$(git -C "$TREE" rev-parse HEAD)" != "$sha" ]; then
+  die "$(tilde "$TREE") has $KEPT changed file$([ "$KEPT" -eq 1 ] || echo s) at $(git -C "$TREE" rev-parse --short=7 HEAD), behind ${AT}. Remove it with: $AGAIN --clean"
 fi
 
 mkdir -p "$WORKDIR/.try" "$SANDBOX"
