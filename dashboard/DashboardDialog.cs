@@ -72,8 +72,11 @@ public abstract class DashboardDialog : AppDialog
     /// <summary>Colours the button of <paramref name="id"/>, where there is one, as <paramref name="kind"/>.</summary>
     protected void Restyle(string id, ButtonKind kind)
     {
-        if (_buttons.TryGetValue(id, out var button))
+        if (_buttons.TryGetValue(id, out var button) && button.SchemeName != SchemeOf(kind))
+        {
             button.SchemeName = SchemeOf(kind);
+            button.SetNeedsDraw();
+        }
     }
 
     internal static string SchemeOf(ButtonKind kind) => kind switch

@@ -1530,6 +1530,22 @@ public class ReaderDialogTests
         Assert.Equal(SchemeNames.ButtonPrimary, Scheme(ranking, "Enter Set"));
     }
 
+    [Fact]
+    public void Close_is_Danger_while_it_would_throw_away_a_comment_not_yet_posted()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        Assert.Equal(SchemeNames.ButtonSecondary, Scheme(dialog, "Esc Back"));
+        dialog.Field.Text = "draft";
+        dialog.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal(SchemeNames.ButtonDanger, Scheme(dialog, "Esc Close"));
+        dialog.NewKeyDownEvent(new Key('c'));
+        dialog.Field.Text = "";
+        dialog.NewKeyDownEvent(Key.Esc);
+        Assert.Equal(SchemeNames.ButtonSecondary, Scheme(dialog, "Esc Close"));
+    }
+
     private static string? Scheme(ReaderDialog dialog, string label) =>
         dialog.Foot.Shown.Single(button => button.Text.Trim() == label).SchemeName;
 

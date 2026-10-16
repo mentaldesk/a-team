@@ -54,6 +54,24 @@ public class NewIdeaDialogTests
     }
 
     [Fact]
+    public void Cancel_is_Danger_once_there_is_an_idea_to_throw_away()
+    {
+        using var dialog = Open();
+        var cancel = dialog.Foot.Shown[^1];
+        Assert.Equal(SchemeNames.ButtonSecondary, cancel.SchemeName);
+
+        dialog.NewKeyDownEvent(new Key('r'));
+        Assert.Equal(SchemeNames.ButtonDanger, cancel.SchemeName);
+        dialog.NewKeyDownEvent(Key.Backspace);
+        Assert.Equal(SchemeNames.ButtonSecondary, cancel.SchemeName);
+        dialog.Description.SetFocus();
+        dialog.NewKeyDownEvent(new Key('w'));
+        Assert.Equal(SchemeNames.ButtonDanger, cancel.SchemeName);
+        dialog.NewKeyDownEvent(Key.Backspace);
+        Assert.Equal(SchemeNames.ButtonSecondary, cancel.SchemeName);
+    }
+
+    [Fact]
     public void The_description_leaves_Tab_to_move_focus_and_Esc_cancels()
     {
         var asked = 0;

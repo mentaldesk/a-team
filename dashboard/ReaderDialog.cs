@@ -594,6 +594,7 @@ public sealed partial class ReaderDialog : DashboardDialog
             Rename(QuoteId, $"Quote {Lines(marked)}");
         Rename(HistoryId, HistoryShown ? "Hide history" : "Show history");
         Rename(CancelId, Writing ? _declining ? "Cancel" : _shelving ? "Comment instead" : "Back" : marked > 0 ? "Clear" : "Close");
+        Restyle(CancelId, !Writing && marked == 0 && !string.IsNullOrWhiteSpace(_field.Text) ? ButtonKind.Danger : ButtonKind.Secondary);
         ShowButtons();
         Hide(CommentId, CommentShown);
         Hide(DeclineId, _declining);

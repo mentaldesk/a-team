@@ -85,6 +85,9 @@ public sealed class NewIdeaDialog : DashboardDialog
         Foot.Y = rankY + 3;
         _message.Y = Pos.Bottom(Foot);
         Add(_team, _title, _description, _rank, Foot, _message);
+        _title.TextChanged += (_, _) => StyleCancel();
+        _description.ContentChanged += (_, _) => StyleCancel();
+        StyleCancel();
         _title.SetFocus();
     }
 
@@ -195,11 +198,15 @@ public sealed class NewIdeaDialog : DashboardDialog
     {
         if (_adding is not null)
             return true;
-        if ((!string.IsNullOrWhiteSpace(_title.Text) || !string.IsNullOrWhiteSpace(_description.Text)) && !_confirmDiscard())
+        if (Written && !_confirmDiscard())
             return true;
         RequestStop();
         return true;
     }
+
+    private bool Written => !string.IsNullOrWhiteSpace(_title.Text) || !string.IsNullOrWhiteSpace(_description.Text);
+
+    private void StyleCancel() => Restyle(CancelId, Written ? ButtonKind.Danger : ButtonKind.Secondary);
 
     private void Say(string text, Schemes scheme)
     {
