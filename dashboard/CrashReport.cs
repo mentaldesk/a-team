@@ -31,7 +31,7 @@ public static class CrashReport
         DateTimeOffset at,
         string version)
     {
-        error.WriteLine($"a-team-dashboard: {Summary(crash)}");
+        error.WriteLine($"ateam: {Summary(crash)}");
         var path = Path.Combine(stateRoot, $"crash-{Stamp(at)}.log");
         try
         {
@@ -52,7 +52,7 @@ public static class CrashReport
     internal static string Details(Exception crash, IReadOnlyList<string> arguments, DateTimeOffset at, string version)
     {
         var details = new StringBuilder();
-        details.AppendLine($"a-team-dashboard {version}");
+        details.AppendLine($"ateam {version}");
         details.AppendLine($"crashed {at.ToUniversalTime().ToString("u", CultureInfo.InvariantCulture)}");
         details.AppendLine($"arguments: {(arguments.Count == 0 ? "(none)" : string.Join(' ', arguments))}");
         details.AppendLine();

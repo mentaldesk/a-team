@@ -4421,11 +4421,11 @@ APP=$(mktemp -d "$WORK/app.XXXXXX")
 mkdir -p "$APP/bin" "$APP/scripts" "$APP/libexec"
 cp "$ROOT/bin/a-team" "$APP/bin/"
 cp "$ROOT"/scripts/*.sh "$APP/scripts/"
-cat >"$APP/libexec/a-team-dashboard" <<SH
+cat >"$APP/libexec/ateam" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$@" >"$WORK/app-args"
 SH
-chmod +x "$APP/libexec/a-team-dashboard"
+chmod +x "$APP/libexec/ateam"
 
 "$APP/bin/a-team" >"$OUT" 2>"$ERR"
 STATUS=$?

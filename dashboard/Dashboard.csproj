@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>a-team-dashboard</AssemblyName>
+    <AssemblyName>ateam</AssemblyName>
     <RootNamespace>ATeam.Dashboard</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
     <PublishAot>true</PublishAot>

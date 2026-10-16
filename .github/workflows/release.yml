@@ -65,7 +65,7 @@ jobs:
           mkdir -p "$stage/libexec" dist
           cp -R bin scripts roles tasks settings examples process.md README.md "$stage/"
           cp LICENSE "$stage/"
-          cp publish/a-team-dashboard "$stage/libexec/"
+          cp publish/ateam "$stage/libexec/"
           echo "$VERSION" > "$stage/VERSION"
           archive="a-team-$VERSION-$RID.tar.gz"
           tar -czf "dist/$archive" -C stage a-team
