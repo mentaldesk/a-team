@@ -261,6 +261,29 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
+    public void The_Terminal_page_comes_after_Dashboard_and_shows_only_when_picked()
+    {
+        using var dialog = Open(out _, out _, terminalKeys: new TerminalPageTests.FakeKeys("kitty"));
+
+        Assert.Equal(["Theme", "Keyboard Shortcuts", "Dashboard", "Terminal", "Teams", "Overseer"], PageNames(dialog));
+        Assert.False(dialog.Terminal!.Visible);
+        OpenPage(dialog, "Terminal");
+        Assert.True(dialog.Terminal.Visible);
+        Assert.False(Themes(dialog).Visible);
+    }
+
+    [Fact]
+    public void What_the_Terminal_page_does_is_said_at_the_foot_of_the_dialog()
+    {
+        using var dialog = Open(out _, out _, terminalKeys: new TerminalPageTests.FakeKeys("kitty"));
+        OpenPage(dialog, "Terminal");
+
+        dialog.Terminal!.InstallButton.InvokeCommand(Command.Accept);
+
+        Assert.Equal("Installed the Mac keys for kitty.", dialog.Message.Says);
+    }
+
+    [Fact]
     public void Only_the_page_the_list_is_on_is_showing()
     {
         using var dialog = Open(out _, out _);
@@ -1200,12 +1223,14 @@ public class SettingsDialogTests : IDisposable
         Func<string, Task<TeamHealth>>? check = null,
         Action<string>? showGuide = null,
         TeamChecks? checks = null,
-        Func<string, Task<Reading>>? today = null)
+        Func<string, Task<Reading>>? today = null,
+        ITerminalKeys? terminalKeys = null)
     {
         theme = new ThemeSetting(BundledThemes.Midnight, _ => { }, keep ?? (_ => { }));
         icons = new IconSetting(iconStyle, apply ?? (_ => { }), new DashboardSettings(_configRoot).WriteIcons);
         var dialog = new SettingsDialog(
-            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check, showGuide: showGuide, checks: checks, today: today);
+            theme, icons, expand, commands ?? Registry(), new TeamConfigs(_configRoot), () => { }, auto, page, check: check, showGuide: showGuide, checks: checks, today: today,
+            terminalKeys: terminalKeys);
         dialog.SetFocus();
         return dialog;
     }

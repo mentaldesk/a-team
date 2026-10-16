@@ -32,7 +32,7 @@ public class CrashReportTests : IDisposable
         Assert.Equal(1, code);
         Assert.True(File.Exists(path));
         Assert.Equal(
-            ["a-team-dashboard: ArgumentException: the popover must have a superview", $"Full details: {path}"],
+            ["ateam: ArgumentException: the popover must have a superview", $"Full details: {path}"],
             Lines());
     }
 
@@ -64,7 +64,7 @@ public class CrashReportTests : IDisposable
         CrashReport.Report(Thrown(), _stateRoot, ["--area", "work"], _error, At, "0.0.9");
 
         var written = Written();
-        Assert.Contains("a-team-dashboard 0.0.9", written);
+        Assert.Contains("ateam 0.0.9", written);
         Assert.Contains("arguments: --area work", written);
         Assert.Contains("crashed 2026-09-24 10:41:08Z", written);
     }
@@ -77,7 +77,7 @@ public class CrashReportTests : IDisposable
         var code = CrashReport.Report(Thrown(), _stateRoot, [], _error, At, "0.0.9");
 
         Assert.Equal(1, code);
-        Assert.Equal("a-team-dashboard: ArgumentException: the popover must have a superview", Lines()[0]);
+        Assert.Equal("ateam: ArgumentException: the popover must have a superview", Lines()[0]);
         Assert.Contains("System.ArgumentException: the popover must have a superview", _error.ToString());
         Assert.Contains(nameof(Thrown), _error.ToString());
         Assert.DoesNotContain("Full details:", _error.ToString());
@@ -99,7 +99,7 @@ public class CrashReportTests : IDisposable
         var code = CrashReport.Guard(() => throw Thrown(), _stateRoot, [], _error);
 
         Assert.Equal(1, code);
-        Assert.StartsWith("a-team-dashboard: ArgumentException:", _error.ToString());
+        Assert.StartsWith("ateam: ArgumentException:", _error.ToString());
         Assert.Single(Directory.GetFiles(_stateRoot));
     }
 

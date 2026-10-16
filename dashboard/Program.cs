@@ -1,11 +1,12 @@
 using System.Globalization;
 using ATeam.Dashboard;
+using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Theming;
 
 var root = FindRepoRoot(AppContext.BaseDirectory) ?? FindRepoRoot(Environment.CurrentDirectory);
 if (root is null)
 {
-    Console.Error.WriteLine("a-team-dashboard: can't find the a-team repo (a folder with bin/a-team and scripts/dispatch.sh).");
+    Console.Error.WriteLine("ateam: can't find the a-team repo (a folder with bin/a-team and scripts/dispatch.sh).");
     return 1;
 }
 
@@ -29,7 +30,7 @@ var teams = new TeamConfigs(configRoot);
 if ((wanted.Length > 0 ? wanted : teams.Names()).Length == 0)
 {
     Console.Error.WriteLine(
-        $"a-team-dashboard: no teams in {teams.TeamsDirectory}. Start from examples/team.json.");
+        $"ateam: no teams in {teams.TeamsDirectory}. Start from examples/team.json.");
     return 1;
 }
 
@@ -51,6 +52,7 @@ var attention = new Attention(TimeProvider.System, visit =>
 });
 var news = new WhatsNew(DateTimeOffset.UtcNow);
 var writes = new WriteQueue(command.Run);
+var macKeys = new MacKeys("ateam");
 
 return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 
@@ -90,6 +92,7 @@ Handover? Show(Handover? back)
     BundledThemes.Load(settings.ReadTheme());
     using var app = Application.Create();
     app.Init();
+    using var active = macKeys.Activate();
     app.Keyboard.KeyDown += (_, _) => attention.Key();
     LogSchemes.Register();
     Handover? handedOver = null;
@@ -136,7 +139,8 @@ Handover? Show(Handover? back)
         attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
             new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
         showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
-            names.SelectMany(teams.Roles), open));
+            names.SelectMany(teams.Roles), open),
+        macKeys: macKeys);
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {
