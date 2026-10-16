@@ -32,6 +32,16 @@ public class CardTests
     }
 
     [Fact]
+    public void A_Dependabot_PR_is_one_row_that_says_it_is_Dependabot_s()
+    {
+        var bump = new Card(new WaitingItem(535, "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "In review",
+            "https://github.com/x/pull/535", "a-team", "you", Pr: 535, PrUrl: "https://github.com/x/pull/535", Dependency: true), false);
+
+        Assert.Empty(bump.Children);
+        Assert.Equal("#535  Dependabot · Bump MentalDesk.Tui from 0.3.8 to 0.3.9", bump.Text(0));
+    }
+
+    [Fact]
     public void A_reviewed_task_says_so_and_how_many_points_it_left_to_consider()
     {
         var clean = Reviewing with { Turn = "you", Reviewed = true };

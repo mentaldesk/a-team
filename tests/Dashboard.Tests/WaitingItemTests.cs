@@ -167,6 +167,18 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void A_Dependabot_PR_is_its_own_PR_to_merge()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 535, "title": "Bump MentalDesk.Tui", "status": "In review", "team": "a-team", "turn": "you",
+              "reason": "awaiting your acceptance", "pr": 535, "dependency": true, "unready": ""}]
+            """));
+
+        Assert.True(item.Dependency);
+        Assert.Equal("", item.Holdup);
+    }
+
+    [Fact]
     public void A_document_pitch_s_branch_is_on_its_own_PR()
     {
         var item = new WaitingItem(60, "Vision review", "Pitched", "https://github.com/x/pull/60", "a-team",
