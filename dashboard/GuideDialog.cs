@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using MentalDesk.Tui.Filtering;
+using MentalDesk.Tui.Dialogs;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using MarkdownView = Terminal.Gui.Views.Markdown;
@@ -8,7 +9,7 @@ namespace ATeam.Dashboard;
 
 /// <summary>A-Team's own guide, the pages in <c>docs/guide</c>, read a page at a time and followed link to link, beside
 /// a Contents tree of its pages and their sections and an Index that filters the sections by name.</summary>
-public sealed class GuideDialog : Dialog
+public sealed class GuideDialog : DashboardDialog
 {
     internal const string Contents = "index.md";
     internal const string Work = "work.md";
@@ -16,12 +17,7 @@ public sealed class GuideDialog : Dialog
     internal const string Teams = "teams.md";
     internal const string Overseer = "overseer.md";
 
-    private const string NextHint = "next";
-    private const string FollowHint = "follow";
-    private const string ContentsHint = "contents";
-    private const string IndexHint = "index";
-    private const string BackHint = "back";
-    private const string CloseHint = "close";
+    private const string BackId = "guide.back";
     private const int Inset = 1;
     private static readonly Key ContentsKey = Key.C.WithCtrl.WithShift;
     private static readonly Key IndexKey = Key.I.WithCtrl.WithShift;
@@ -29,7 +25,6 @@ public sealed class GuideDialog : Dialog
     private readonly string _folder;
     private readonly Action<string> _openUrl;
     private readonly MarkdownView _page;
-    private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private readonly Stack<(string Page, int Line, GuideTopic? At)> _back = [];
     private readonly IReadOnlyList<GuideTopic> _pages;
@@ -50,6 +45,7 @@ public sealed class GuideDialog : Dialog
     /// <param name="folder">Where the guide's pages are.</param>
     /// <param name="openUrl">Where a link to a web page goes.</param>
     public GuideDialog(string folder, Action<string> openUrl, string page = Contents)
+        : base("Guide")
     {
         _folder = folder;
         _openUrl = openUrl;
@@ -126,21 +122,21 @@ public sealed class GuideDialog : Dialog
             _afterLayout = null;
             then?.Invoke();
         };
-        _hints.Y = Pos.Func(_ => HintRow(), this);
-        _hints.Show([
-            new HintedCommand(NextHint, "Tab next link"),
-            new HintedCommand(FollowHint, "Enter follow"),
-            new HintedCommand(ContentsHint, "Ctrl+Shift+C contents"),
-            new HintedCommand(IndexHint, "Ctrl+Shift+I index"),
-            new HintedCommand(BackHint, "Backspace back"),
-            new HintedCommand(CloseHint, "Esc close"),
-        ], Run);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
-        // The focused view hears a key before the dialog does, and the filter would type these.
-        foreach (var view in new View[] { _page, _contents, _filter, _index })
-            view.KeyDown += (_, key) => key.Handled = key == ContentsKey ? ShowContents() : key == IndexKey && ShowIndex();
-        Add(_sidebar, _page, _hints, _message);
+        Bind(BackId, Key.Backspace, "Back", () => Back(), () => !_indexTab.HasFocus);
+        Bind("guide.contents", ContentsKey, "Contents", () => ShowContents());
+        Bind("guide.index", IndexKey, "Index", () => ShowIndex());
+        Bind("guide.previousMatch", Key.CursorUp, "Previous match", () => MoveMatch(-1), () => _indexTab.HasFocus);
+        Bind("guide.nextMatch", Key.CursorDown, "Next match", () => MoveMatch(+1), () => _indexTab.HasFocus);
+        Also("Tab", "Next link", () => _page.HasFocus);
+        Also("Enter", "Follow the link", () => _page.HasFocus);
+        Also("Enter", "Go to the section", () => !_page.HasFocus);
+        Register(CancelId, "Close", () => Close());
+        AddButton(ButtonKind.Secondary, BackId);
+        AddButton(ButtonKind.Secondary, CancelId);
+        Foot.Y = Pos.Func(_ => HintRow(), this);
+        Add(_sidebar, _page, Foot, _message);
         if (!Open(page))
             Title = "Guide";
         else if (page != Contents)
@@ -154,11 +150,9 @@ public sealed class GuideDialog : Dialog
 
     internal MarkdownView View => _page;
 
-    internal StatusBar Hints => _hints;
-
     internal MessageBar Message => _message;
 
-    internal bool Closed { get; private set; }
+    internal bool HasClosed { get; private set; }
 
     internal TreeView<GuideTopic> ContentsTree => _contents;
 
@@ -172,17 +166,6 @@ public sealed class GuideDialog : Dialog
     internal GuideTopic? Chosen => ReferenceEquals(_sidebar.Value, _indexTab) ? Match() : _contents.SelectedObject;
 
     internal bool ShowsIndex => ReferenceEquals(_sidebar.Value, _indexTab);
-
-    /// <summary>Enter reaches a Dialog as Accept and would close it; the guide has nothing to confirm.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => true;
-
-    protected override bool OnKeyDown(Key key) =>
-        key == Key.Esc ? Close()
-        : _indexTab.HasFocus && key == Key.CursorUp ? MoveMatch(-1)
-        : _indexTab.HasFocus && key == Key.CursorDown ? MoveMatch(+1)
-        : _indexTab.HasFocus && key == Key.Backspace ? false
-        : key == Key.Backspace ? Back()
-        : base.OnKeyDown(key);
 
     internal bool ShowContents()
     {
@@ -239,7 +222,7 @@ public sealed class GuideDialog : Dialog
     public static void Show(IApplication app, string folder, Action<string> openUrl, string page = Contents)
     {
         using var dialog = new GuideDialog(folder, openUrl, page);
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
     }
 
     internal static bool IsWeb(string url) =>
@@ -275,7 +258,7 @@ public sealed class GuideDialog : Dialog
 
     private int SidebarWidth() => Math.Clamp(Viewport.Width / 4, 16, 30);
 
-    private int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
+    private int HintRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines);
 
     private void Narrow()
     {
@@ -342,18 +325,8 @@ public sealed class GuideDialog : Dialog
 
     private bool Close()
     {
-        Closed = true;
+        HasClosed = true;
         RequestStop();
         return true;
     }
-
-    private bool Run(string hint) => hint switch
-    {
-        NextHint => _page.AdvanceFocus(NavigationDirection.Forward, TabBehavior.TabStop),
-        FollowHint => _page.InvokeCommand(Command.Accept) == true,
-        ContentsHint => ShowContents(),
-        IndexHint => ShowIndex(),
-        BackHint => Back(),
-        _ => Close(),
-    };
 }

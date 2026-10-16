@@ -6,7 +6,7 @@ public sealed class RepoFilePicker : PathPicker
     internal const string Unreadable = "Type a path to use it.";
 
     public RepoFilePicker(string title, RepoFiles files, int width = 74, int contentRows = 16)
-        : base(title, width, contentRows, files.Paths, files.Where, "pick")
+        : base(title, width, contentRows, files.Paths, files.Where, "Pick")
     {
         Commands.Register(PickId, "Pick", Pick);
         if (files.Failure is not null)
@@ -17,7 +17,7 @@ public sealed class RepoFilePicker : PathPicker
     {
         var (width, rows) = Fit(app.Screen.Width, app.Screen.Height);
         using var picker = new RepoFilePicker(title, files, width, rows);
-        app.Run(picker);
+        DialogHost.Run(app, picker);
         return picker.Picked;
     }
 

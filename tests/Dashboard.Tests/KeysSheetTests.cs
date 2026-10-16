@@ -155,13 +155,19 @@ public class KeysSheetTests : IDisposable
 
         using var wide = KeysSheet.Create(window.Keys, new Size(160, 40));
         using var narrow = KeysSheet.Create(window.Keys, new Size(60, 40));
+        wide.Layout(new Size(160, 40));
+        narrow.Layout(new Size(60, 40));
 
-        Assert.Equal(["Everywhere", "Work"], Headings(wide.Sheet));
-        Assert.Equal(["Work", "Everywhere"], Headings(narrow.Sheet));
+        Assert.Equal("Help", wide.Title);
+        Assert.True(Heading(wide, "Everywhere").X < Heading(wide, "Work").X);
+        Assert.Equal(Heading(wide, "Everywhere").Y, Heading(wide, "Work").Y);
+        Assert.True(Heading(narrow, "Work").Y < Heading(narrow, "Everywhere").Y);
+        Assert.Equal(Heading(narrow, "Work").X, Heading(narrow, "Everywhere").X);
     }
 
-    private static List<string> Headings(KeySheet sheet) =>
-        [.. new[] { sheet.Here, sheet.Everywhere }.OfType<KeyColumn>().Select(column => column.Heading)];
+    /// <summary>Where the column headed <paramref name="text"/> is drawn.</summary>
+    private static Point Heading(KeysDialog dialog, string text) =>
+        dialog.Body.SubViews.SelectMany(column => column.SubViews).OfType<Label>().Single(label => label.Text == text).FrameToScreen().Location;
 
     [Fact]
     public void On_a_short_terminal_the_sheet_scrolls()

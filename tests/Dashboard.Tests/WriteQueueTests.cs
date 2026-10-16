@@ -119,6 +119,14 @@ public class QuitDialogTests
     }
 
     [Fact]
+    public void F1_says_Esc_Stay_as_its_button_does()
+    {
+        using var dialog = QuitDialog.Create(Write("Merging PR #459…", "merging PR #459"), [Write("Approving #457…", "approving #457")]);
+
+        Assert.Equal(("Esc", "Stay"), DialogTests.Rows(DialogTests.F1(dialog))[^1]);
+    }
+
+    [Fact]
     public void Several_queued_are_named_together() =>
         Assert.Equal("Merging PR #459, and approving #457 and setting #6 to High are still queued.\n\nQuitting lets that finish and drops them.",
             QuitDialog.Says(Write("Merging PR #459…", ""), [Write("", "approving #457"), Write("", "setting #6 to High")]));

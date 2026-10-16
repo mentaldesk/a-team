@@ -140,7 +140,9 @@ That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dash
 ## Reading a card
 
 `Enter` opens the issue as it was written, then everything said since on it and on its PR, each
-comment headed by who said it and when. `g` opens it on GitHub, and `Esc` closes it.
+comment headed by who said it and when. What you can do to it, like approving, commenting or
+declining, is a button at its foot with its key; `g` (*GitHub*) opens it on GitHub, and `Esc`
+closes it. `F1` lists every key that works where you are in it.
 
 **Where it opens.** A card you've opened before on this machine opens at the first comment posted
 since you last did, and each comment since then has `new` at the end of its heading. If nothing has

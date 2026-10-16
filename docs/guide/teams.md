@@ -27,9 +27,9 @@ press `Ctrl+Enter` (**Create**). A-Team writes the team's file, paused, then off
 5. Write its vision with you.
 6. Get to work.
 
-Each step says what it will do and waits for `Enter`. `Esc` skips it, and `Backspace` goes back a
-step. The last asks whether to get to work or keep the team paused, and there `Esc` cancels the new
-team.
+Each step says what it will do and waits for `Ctrl+Enter`. `Esc` skips it, and `Backspace` goes back a
+step. The last asks whether to get to work or keep the team paused: `↑`/`↓` choose, `Ctrl+Enter`
+goes ahead with the one chosen, and `Esc` cancels the new team.
 
 One part of the Project is yours to set up on GitHub: under its **Workflows**, turn on **Auto-add
 to project** for the repo, and **Item added to project** with Status set to Idea. Without them, an

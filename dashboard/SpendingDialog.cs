@@ -6,7 +6,7 @@ using Terminal.Gui.Input;
 namespace ATeam.Dashboard;
 
 /// <summary>What the teams' runs cost over a period, by team, then theme, then pitch, with each role's share.</summary>
-public sealed class SpendingDialog : Dialog
+public sealed class SpendingDialog : DashboardDialog
 {
     private const string HintText = "←/→ collapse/expand · Enter open · Esc close";
     private const int Inset = 1;
@@ -31,13 +31,13 @@ public sealed class SpendingDialog : Dialog
 
     public SpendingDialog(IReadOnlyList<string> teams, Task<Reading[]> reading, IEnumerable<string> rolesOn, DateTimeOffset now,
         Action<string, SpendingItem>? open = null)
+        : base("Spending")
     {
         _teams = teams;
         _rolesOn = [.. rolesOn];
         _open = open;
         _now = now;
 
-        Title = "Spending";
         Width = Dim.Func(_ => Fits(Wide + GetAdornmentsThickness().Horizontal, Room()?.Width), this);
         Height = Dim.Func(_ => Fits(30, Room()?.Height), this);
 
@@ -92,6 +92,10 @@ public sealed class SpendingDialog : Dialog
             CanFocus = false,
         };
         hint.Accepting += (_, args) => args.Handled = Close();
+        Register(CancelId, "Close", () => Close());
+        Also("←/→", "Period");
+        Also("↑/↓", "Select a row");
+        Also("Enter", "Read the pitch", () => SelectedRow is { Pitch: not null });
         Add(_period, _table, _message, _footer, hint);
 
         reading.ContinueWith(read =>
@@ -113,7 +117,7 @@ public sealed class SpendingDialog : Dialog
 
     internal IReadOnlyList<string> Columns => _table.Table?.ColumnNames ?? [];
 
-    internal bool Closed { get; private set; }
+    internal bool HasClosed { get; private set; }
 
     internal SpendingRow? SelectedRow =>
         _tree is not null && _table.Table is { Rows: > 0 } && _table.Value?.SelectedCell.Y is { } y && y >= 0 && y < _table.Table.Rows
@@ -122,11 +126,6 @@ public sealed class SpendingDialog : Dialog
 
     /// <summary>The rows as they're shown, expanded or not.</summary>
     internal IReadOnlyList<SpendingRow> Shown => _table.Table is TreeTableSource<SpendingRow> source ? [.. source.GetAllObjects()] : [];
-
-    /// <summary>Enter reaches a Dialog as Accept and would close it; Spending has nothing to confirm.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => true;
-
-    protected override bool OnKeyDown(Key key) => key == Key.Esc ? Close() : base.OnKeyDown(key);
 
     private void Loaded(Reading[]? readings)
     {
@@ -225,7 +224,7 @@ public sealed class SpendingDialog : Dialog
 
     private bool Close()
     {
-        Closed = true;
+        HasClosed = true;
         RequestStop();
         return true;
     }
@@ -234,6 +233,6 @@ public sealed class SpendingDialog : Dialog
         Action<string, SpendingItem> open)
     {
         using var dialog = new SpendingDialog(teams, Task.WhenAll(teams.Select(read)), rolesOn, DateTimeOffset.Now, open);
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
     }
 }

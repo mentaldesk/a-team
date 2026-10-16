@@ -3,8 +3,7 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Builds MentalDesk.Tui's <see cref="ConfirmDialog"/> and gives it its keys, which the library binds only
-/// under an AppShell the dashboard doesn't have.</summary>
+/// <summary>Builds MentalDesk.Tui's <see cref="ConfirmDialog"/> with its keys routed, as an AppShell would.</summary>
 public static class Confirm
 {
     internal const int Wide = 74;
@@ -19,15 +18,12 @@ public static class Confirm
         var dialog = new ConfirmDialog(title, Lines(text, width), [action]);
         if (cancel is not null)
             dialog.CancelButton.Text = $" Esc {cancel} ";
-        // A focused Button presses on Enter before the dialog sees the key, so each button routes the keys too.
-        foreach (var view in dialog.ButtonRow.Prepend<View>(dialog))
-            view.KeyDown += (_, key) => key.Handled = Handle(dialog, action, key);
-        return dialog;
+        return dialog.Routed();
     }
 
     public static bool Ask(IApplication app, ConfirmDialog dialog)
     {
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
         return dialog.Confirmed;
     }
 
@@ -55,27 +51,5 @@ public static class Confirm
         }
         lines.Add(line);
         return lines;
-    }
-
-    private static bool Handle(ConfirmDialog dialog, ConfirmAction action, Key key)
-    {
-        if (key == action.Key)
-            Press(dialog.ButtonFor(action));
-        else if (key == Key.Esc)
-            Press(dialog.CancelButton);
-        else if (key == Key.CursorLeft || key == Key.CursorRight)
-            Move(dialog, key == Key.CursorLeft ? -1 : +1);
-        else
-            return key == Key.Enter;
-        return true;
-    }
-
-    private static void Press(Button button) => button.InvokeCommand(Command.Accept);
-
-    private static void Move(ConfirmDialog dialog, int by)
-    {
-        var buttons = dialog.ButtonRow.ToList();
-        var at = buttons.FindIndex(button => button.HasFocus);
-        buttons[Math.Clamp(at < 0 ? 0 : at + by, 0, buttons.Count - 1)].SetFocus();
     }
 }

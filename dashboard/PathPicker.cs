@@ -1,10 +1,8 @@
 using MentalDesk.Tui.Dialogs;
-using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
-/// <summary>MentalDesk.Tui's <see cref="PickerDialog{T}"/> with a line above its filter saying where it's looking, and
-/// its keys routed to its commands, which the library does only under an AppShell the dashboard doesn't have.</summary>
+/// <summary>MentalDesk.Tui's <see cref="PickerDialog{T}"/> with a line above its filter saying where it's looking.</summary>
 public abstract class PathPicker : PickerDialog<string>
 {
     private const int ScreenMargin = 4;
@@ -20,8 +18,7 @@ public abstract class PathPicker : PickerDialog<string>
         _where = new Label { Text = where, X = 1, Y = 0, Width = Dim.Fill(1) };
         FilterField.Y = 1;
         Add(_where);
-        foreach (var view in new View[] { this, FilterField })
-            view.KeyDown += (_, key) => key.Handled = Route(key);
+        this.Routed();
         FilterField.SetFocus();
     }
 
@@ -53,6 +50,4 @@ public abstract class PathPicker : PickerDialog<string>
         Accept();
     }
 
-    /// <summary>Handles a key the way the AppShell would, plus any the picker adds; true where it took it.</summary>
-    internal virtual bool Route(Key key) => Keys.Handle(key) != MentalDesk.Tui.Keys.KeyResult.Pass;
 }

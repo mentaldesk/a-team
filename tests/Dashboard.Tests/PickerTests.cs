@@ -5,13 +5,37 @@ namespace ATeam.Dashboard.Tests;
 public class PickerTests
 {
     [Fact]
-    public void The_filter_has_focus_and_the_hints_read_Space_mark_Enter_done_Esc_cancel()
+    public void The_filter_has_focus_and_the_buttons_are_Enter_Done_and_Esc_Cancel()
     {
         using var picker = new Picker("Skills for a-team", [], "", "");
         picker.SetFocus();
 
         Assert.True(picker.Filter.HasFocus);
-        Assert.Equal("Space mark · Enter done · Esc cancel", picker.Hints.Says);
+        Assert.Equal(["Enter Done", "Esc Cancel"], picker.ButtonLabels);
+        Assert.Empty(picker.SubViews.OfType<StatusBar>());
+    }
+
+    [Fact]
+    public void F1_lists_marking_moving_and_switching_under_the_picker_s_title()
+    {
+        using var picker = new Picker("Stakeholders", [], "", "");
+
+        var sheet = DialogTests.F1(picker);
+
+        Assert.Equal("Stakeholders", sheet.Here!.Heading);
+        Assert.Equal(
+            [("Enter", "Done"), ("Space", "Mark or unmark"), ("↑", "Previous"), ("↓", "Next"), ("Tab", "Filter or list"), ("Esc", "Cancel")],
+            DialogTests.Rows(sheet));
+    }
+
+    [Fact]
+    public void Clicking_Done_keeps_what_is_marked()
+    {
+        using var picker = new Picker("Skills", ["a-team"], "", "");
+
+        picker.Foot.Shown[0].InvokeCommand(Command.Accept);
+
+        Assert.Equal(["a-team"], picker.Picked);
     }
 
     [Fact]
