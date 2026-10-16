@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Keys;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -701,6 +702,54 @@ public class TeamFormTests
 
         Assert.False(form.Problems.Visible);
         Assert.Equal(["Ctrl+Enter Save", "Esc Cancel"], Buttons(form));
+    }
+
+    [Fact]
+    public void F1_shows_Help_headed_with_the_form_and_listing_every_key_it_binds()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null);
+        KeySheet? shown = null;
+        form.ShowHelp = sheet => shown = sheet;
+
+        Assert.True(form.NewKeyDownEvent(Key.F1));
+
+        Assert.Equal("Team: goose", shown!.Here!.Heading);
+        Assert.Null(shown.Everywhere);
+        Assert.Equal(
+            [("Ctrl+Enter", "Save"), ("Enter", "Pick, on a field with ▸"), ("Tab/Shift+Tab", "Next / previous"), ("Esc", "Cancel")],
+            DialogTests.Rows(shown));
+    }
+
+    [Fact]
+    public void F1_on_a_new_team_lists_Create_and_with_problems_setup_can_put_right_lists_Repair()
+    {
+        using var created = TeamForm.New(Blank, [], "~/.config/a-team/teams", (_, _) => null);
+        using var repairable = new TeamForm("goose", Settings, _ => null) { RepairBoard = () => null };
+        repairable.Watch(Task.FromResult(new TeamHealth([new TeamProblem("labels", "no 'pitch' label, so the team can't tell its pitches from tasks")])));
+        var shown = new List<KeySheet>();
+        created.ShowHelp = repairable.ShowHelp = shown.Add;
+
+        created.NewKeyDownEvent(Key.F1);
+        repairable.NewKeyDownEvent(Key.F1);
+
+        Assert.Equal("New team", shown[0].Here!.Heading);
+        Assert.Equal(("Ctrl+Enter", "Create"), DialogTests.Rows(shown[0])[0]);
+        Assert.DoesNotContain(DialogTests.Rows(shown[0]), row => row.Label == "Repair");
+        Assert.Equal([("Ctrl+Enter", "Save"), ("F12", "Repair")], DialogTests.Rows(shown[1])[..2]);
+    }
+
+    [Fact]
+    public void Closing_Help_puts_focus_back_on_the_field_with_what_was_typed()
+    {
+        using var form = new TeamForm("goose", Settings, _ => null);
+        form.Try.SetFocus();
+        form.Try.Text = "./bin/a-team dash";
+        form.ShowHelp = _ => form.Repo.SetFocus();
+
+        form.NewKeyDownEvent(Key.F1);
+
+        Assert.True(form.Try.HasFocus);
+        Assert.Equal("./bin/a-team dash", form.Try.Text);
     }
 
     [Fact]

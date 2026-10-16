@@ -42,17 +42,26 @@ public static class DialogHost
     }
 
     /// <summary>Focus goes back where it was once Help closes, so a comment half written carries on at its cursor.</summary>
-    internal static void ShowKeys(AppDialog dialog, KeySheet sheet, Action<KeySheet> show)
-    {
-        var focused = dialog.MostFocused;
-        show(dialog switch
+    internal static void ShowKeys(AppDialog dialog, KeySheet sheet, Action<KeySheet> show) =>
+        ShowOver(dialog, dialog switch
         {
             DashboardDialog ours => ours.Sheet,
             ConfirmDialog confirm => Relabel(sheet, "Esc", confirm.CancelButton.Text.Trim()["Esc ".Length..]),
             _ => sheet,
-        });
+        }, show);
+
+    /// <summary>Shows <paramref name="sheet"/> over <paramref name="dialog"/>, and puts its focus back after.</summary>
+    internal static bool ShowOver(View dialog, KeySheet sheet, Action<KeySheet> show)
+    {
+        var focused = dialog.MostFocused;
+        show(sheet);
         focused?.SetFocus();
+        return true;
     }
+
+    /// <summary>The sheet of a dialog whose keys are all its own: one column, headed with <paramref name="heading"/>.</summary>
+    internal static KeySheet Sheet(string heading, IEnumerable<KeyRow> rows) =>
+        new(new KeyColumn(heading, [new KeyGroup(null, [.. rows])]), null);
 
     /// <summary>ConfirmDialog's cancel command is always called Cancel, whatever its button says.</summary>
     private static KeySheet Relabel(KeySheet sheet, string keys, string label) => sheet with

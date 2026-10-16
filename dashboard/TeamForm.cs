@@ -157,6 +157,11 @@ public sealed class TeamForm : Dialog
         FindRepoFiles = RepoFiles.Read;
         PickFolder = (title, typed) => App is { } app ? FolderPicker.Browse(app, title, typed, Home) : null;
         PickRepoFile = (title, files) => App is { } app ? RepoFilePicker.Show(app, title, files) : null;
+        ShowHelp = sheet =>
+        {
+            if (App is { } app)
+                KeysSheet.Show(app, sheet);
+        };
 
         Title = team is null ? "New team" : $"Team: {team}";
         X = 0;
@@ -401,6 +406,19 @@ public sealed class TeamForm : Dialog
 
     internal string Home { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
+    /// <summary>Shows Help over the form.</summary>
+    internal Action<KeySheet> ShowHelp { get; set; }
+
+    /// <summary>What F1 shows: every key the form answers to now.</summary>
+    internal KeySheet Sheet => DialogHost.Sheet(Title,
+    [
+        new(KeyChord.Display(Confirm.Chord), _team is null ? "Create" : "Save"),
+        .. _repair.Visible ? [new KeyRow(KeyChord.Display(RepairKey), "Repair")] : Array.Empty<KeyRow>(),
+        new("Enter", "Pick, on a field with ▸"),
+        new("Tab/Shift+Tab", "Next / previous"),
+        new(KeyChord.Display(Key.Esc), "Cancel"),
+    ]);
+
     internal DropDownList Project => _project;
 
     internal TextField Owner => _owner;
@@ -626,6 +644,8 @@ public sealed class TeamForm : Dialog
             return Close(null);
         if (key == RepairKey)
             return Repair();
+        if (key == Key.F1)
+            return DialogHost.ShowOver(this, Sheet, ShowHelp);
         if (key == Confirm.Chord)
             return Save();
         return base.OnKeyDown(key);
