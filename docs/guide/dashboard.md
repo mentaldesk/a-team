@@ -155,7 +155,8 @@ In iTerm2, kitty or WezTerm, **Settings → Terminal** fixes that: it names the 
 whether the dashboard's Mac keys are *Not installed*, *Installed* or *Out of date*. **Install** adds
 them, **Update** brings them up to date after an a-team upgrade changes them, and **Remove** takes
 them away. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
-and the file it goes in, with **Copy** beside it; reopen the dashboard after adding it.
+and the file it goes in, with **Copy** beside it. After adding it, reload kitty's config with
+`Ctrl+Cmd+,` (kitty reads it only then), or in WezTerm reopen the dashboard.
 
 Once installed, in every text box:
 

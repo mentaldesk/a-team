@@ -66,9 +66,9 @@ public class TerminalPageTests
     }
 
     [Theory]
-    [InlineData("kitty", "include ateam.conf", "~/.config/kitty/kitty.conf")]
-    [InlineData("WezTerm", "require('ateam').apply(config)", "~/.wezterm.lua")]
-    public void In_kitty_and_WezTerm_installing_shows_the_line_to_add_and_Copy_copies_it(string terminal, string line, string file)
+    [InlineData("kitty", "include ateam.conf", "~/.config/kitty/kitty.conf", "reload kitty's config with Ctrl+Cmd+,")]
+    [InlineData("WezTerm", "require('ateam').apply(config)", "~/.wezterm.lua", "reopen the dashboard")]
+    public void In_kitty_and_WezTerm_installing_shows_the_line_to_add_and_Copy_copies_it(string terminal, string line, string file, string then)
     {
         var clipboard = new FakeClipboard();
         using var page = Page(new FakeKeys(terminal, line, file), clipboard);
@@ -77,7 +77,7 @@ public class TerminalPageTests
         page.InstallButton.InvokeCommand(Command.Accept);
 
         Assert.Equal(line, page.ConfigLine);
-        Assert.Equal($"Add this line to {file}, then reopen the dashboard:", page.Note);
+        Assert.Equal($"Add this line to {file},\nthen {then}:", page.Note);
         Assert.True(page.CopyButton.Visible);
         page.CopyButton.InvokeCommand(Command.Accept);
         Assert.Equal(line, clipboard.GetClipboardData());

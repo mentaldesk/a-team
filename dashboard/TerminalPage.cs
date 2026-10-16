@@ -145,7 +145,7 @@ public sealed class TerminalPage : View
         };
         var configLine = supported && state != MacKeysState.NotInstalled ? _keys.ConfigLine : null;
         _note.Text = !supported ? Unsupported()
-            : configLine is not null ? $"Add this line to {_keys.ConfigFile}, then reopen the dashboard:"
+            : configLine is not null ? $"Add this line to {_keys.ConfigFile},\nthen {AfterAdding()}:"
             : Explained;
         _configLine.Text = configLine ?? "";
         _configLine.Y = Pos.Bottom(_note);
@@ -159,6 +159,10 @@ public sealed class TerminalPage : View
         SetNeedsLayout();
         SetNeedsDraw();
     }
+
+    private string AfterAdding() => _keys.Terminal == "kitty"
+        ? "reload kitty's config with Ctrl+Cmd+,"
+        : "reopen the dashboard";
 
     private string Unsupported() => _keys.OnAMac
         ? $"""
