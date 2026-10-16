@@ -30,10 +30,14 @@ public sealed class DashboardWindow : Window
     private const int MinCellHeight = 5;
     private const string AllItems = "All items";
     private const string MyItems = "My items";
+    private const string CopyLines = "log.copyLines";
     private const string LoadingText = "Loading…";
     private const int LoadingPadding = 8;
     private const int LoadingHeight = 5;
     private const int AlertGap = 3;
+
+    // Cmd+C, once the Mac keys are installed.
+    private static readonly Key MacCopy = Key.C.WithCtrl;
     private readonly List<AgentPane> _panes = [];
     private readonly CommandRegistry _commands = new();
     private readonly string _version = Version();
@@ -129,6 +133,7 @@ public sealed class DashboardWindow : Window
     private (IssueBody Body, int Top)? _editFrom;
     private (string Text, Schemes Scheme)? _copied;
     private readonly IClipboard? _clipboard;
+    private readonly MacKeys? _macKeys;
 
     public DashboardWindow(
         IReadOnlyList<(string Team, string Role)> agents,
@@ -165,8 +170,10 @@ public sealed class DashboardWindow : Window
         WriteQueue? writes = null,
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
         Func<Key, Attaching>? attaching = null,
-        Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null)
+        Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
+        MacKeys? macKeys = null)
     {
+        _macKeys = macKeys;
         _attaching = attaching;
         _showSpending = showSpending;
         _writes = writes ?? new WriteQueue(run);
@@ -542,6 +549,8 @@ public sealed class DashboardWindow : Window
             _copied = null;
             ShowMessage();
         }
+        if (key == MacCopy && !_menu.Bar.IsOpen() && _commands.IsEnabled(CopyLines))
+            return _commands.Execute(CopyLines);
         return (!_menu.Bar.IsOpen() && _commands.Press(key)) || base.OnKeyDown(key);
     }
 
@@ -574,7 +583,7 @@ public sealed class DashboardWindow : Window
             .Register("log.top", "Jump to the top of the log", () => Scroll(pane => pane.Home(), log => log.Home()), Key.Home, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
             .Register("log.bottom", "Jump to the bottom of the log", () => Scroll(pane => pane.End(), log => log.End()), Key.End, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
             .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection, scopes: [Regions.Agents, Regions.Log])
-            .Register("log.copyLines", () => "Copy the selected lines", () => Copy(pane => pane.CopySelection()), new Key('l'), isEnabled: Reading,
+            .Register(CopyLines, () => "Copy the selected lines", () => Copy(pane => pane.CopySelection()), new Key('l'), isEnabled: Reading,
                 menuLabel: () => "Copy selected lines", scopes: [Regions.Log])
             .Register("log.copyAll", () => "Copy the whole log", () => Copy(pane => pane.CopyAll()), new Key('L'), isEnabled: Reading,
                 menuLabel: () => "Copy whole log", scopes: [Regions.Log])
@@ -1722,7 +1731,7 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         var before = _teams.Names();
-        var (removed, vision) = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks);
+        var (removed, vision) = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks, _macKeys);
         if (vision is not null && _teams.Names().Contains(vision))
         {
             WriteVision(vision);

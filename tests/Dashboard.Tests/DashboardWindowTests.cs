@@ -613,6 +613,24 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void Cmd_C_copies_the_highlighted_lines_as_l_does()
+    {
+        var clipboard = new FakeClipboard();
+        WriteLog("a-team", "dev", """{"type":"assistant","message":{"content":[{"type":"text","text":"reading"}]}}""",
+            """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}""");
+        using var window = Open(clipboard: clipboard);
+        window.Refresh();
+        SelectAgent(window, 1);
+        window.NewKeyDownEvent(Key.C.WithCtrl);
+        Assert.Equal("", clipboard.GetClipboardData());
+        window.NewKeyDownEvent(Key.Enter);
+
+        Assert.True(window.NewKeyDownEvent(Key.C.WithCtrl));
+
+        Assert.Equal("ls", clipboard.GetClipboardData());
+    }
+
+    [Fact]
     public void L_copies_the_whole_log()
     {
         var clipboard = new FakeClipboard();
