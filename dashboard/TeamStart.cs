@@ -42,6 +42,9 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
     public Task<Reading> Projects(string owner) =>
         gh.Read("project", "list", "--owner", owner, "--format", "json", "--limit", "100");
 
+    /// <summary>The other repos <paramref name="team"/>'s App can reach, for its Contributes to.</summary>
+    public Task<ReachableRepos> Repos(string team, string repo) => ReachableRepos.Read(aTeam, team, repo);
+
     /// <summary>Writes the new team's file, or says why it couldn't.</summary>
     public string? Create(TeamConfigs teams, string team, TeamSettings settings)
     {

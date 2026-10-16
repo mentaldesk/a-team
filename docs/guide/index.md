@@ -13,7 +13,8 @@ and how Ideas and their priorities steer what the Lead does next.
 
 The area that shows everything waiting on you, across every team. What its columns hold, what a card's
 icons and colours say, and how to answer from it: approving a pitch, replying to a question, and
-accepting finished work.
+accepting finished work. Trends, to compare the teams day by day, and Spending, for what their runs
+cost by theme and pitch.
 
 ## [Overseer](overseer.md)
 

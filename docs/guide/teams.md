@@ -72,12 +72,12 @@ next run uses it.
 
 ## A team's settings
 
-`Enter` on a team opens its form: repo, stakeholders, project, vision, workdir, skills, the command
+`Enter` on a team opens its form: repo, stakeholders, the other repos it contributes to, project, vision, workdir, skills, the command
 `a-team try` runs, whether it's working or paused, when it releases, when the Lead
 [reviews the vision](#reviewing-the-vision), which roles it runs, and its limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
 [Customer lead](how-a-team-works.md#the-customer-lead) (see [Turning on the Customer lead](#turning-on-the-customer-lead)),
 and untick it to take it away again. Tick **Reviewer** to have the
-[Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. **Stakeholders** and **Skills** open a list: type to
+[Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. **Stakeholders**, **Contributes to** and **Skills** open a list: type to
 narrow it as in Commands, `Space` marks a name, and `Enter` keeps what's marked. Each
 field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the team's file, leaving everything else in it as it was, and
 `Esc` (**Cancel**) cancels. `Enter` never saves.
@@ -91,6 +91,12 @@ field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the
 - **Vision** and **First page** list the repo's Markdown files on its default branch. Type to narrow the list
   and `Enter` to pick one. Type a path that isn't there and `Enter` uses it anyway: the field then says
   the Lead or Customer lead will draft it.
+
+**Contributes to** lists the other repos the Dev may open draft PRs on, picked from the ones the
+team's GitHub App can reach. When a task needs a change in one of them first, like the style guide,
+the Dev opens that draft PR itself and hands the task back with it linked, for you to review and
+release. It looks after that PR as it does its own and marks it ready once it's green. Merging stays
+yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
 
 `Esc` in a picker leaves the field as it was. A new team's Workdir follows its Name, as
 `~/code/<name>`, until you type or pick one of your own.
@@ -127,6 +133,8 @@ The budget is whole dollars: a config that says `12.5` has none, and the log say
 
 A run's cost counts once it has ended, so **Today** can pass the budget by what the last runs cost.
 
+**Spending**, in [Work](work.md), shows what the money bought: each team's runs by theme and pitch.
+
 ## Removing a team
 
 `x` asks first, and `Ctrl+Enter` removes it: A-Team forgets the team. Its repo, its board and
@@ -160,6 +168,8 @@ away.
   cards wear. *Automatic* names what it decided for the terminal you're in, and decides again every
   time the app starts. *Nerd Font* and *Unicode* are drawn in their own glyphs, so pick the one that
   isn't boxes. The app previews each behind Settings as you move.
+- **Terminal**: the [Mac keys](dashboard.md#mac-keys), installed, updated and removed straight away,
+  like pausing a team.
 - **Overseer**: how long a card may stay in each column before [Overseer](overseer.md) highlights
   it.
 

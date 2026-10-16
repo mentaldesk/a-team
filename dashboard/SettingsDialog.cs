@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.Json;
+using MentalDesk.Tui.Keys;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.Text;
@@ -99,7 +100,8 @@ public sealed class SettingsDialog : Dialog
         Action<string>? showGuide = null,
         TeamChecks? checks = null,
         IReadOnlyDictionary<string, string>? limits = null,
-        Func<string, Task<Reading>>? today = null)
+        Func<string, Task<Reading>>? today = null,
+        ITerminalKeys? terminalKeys = null)
     {
         _showGuide = showGuide ?? (_ => { });
         _limits = [.. OverseerBoard.Columns.Select(column => (column,
@@ -178,7 +180,7 @@ public sealed class SettingsDialog : Dialog
         EditTeam = (team, settings, save) =>
             App is { } app
                 ? TeamForm.Show(app, team, settings, save, ListProjects, _checks?.Latest(team),
-                    () => Repaired(team), Icons.Resolve(_icons.Current, _auto))
+                    () => Repaired(team), Icons.Resolve(_icons.Current, _auto), _start is { } start ? start.Repos : null)
                 : null;
         CreateTeam = (again, create) =>
         {
@@ -189,9 +191,10 @@ public sealed class SettingsDialog : Dialog
                 ? $"~{_teams.TeamsDirectory[home.Length..]}"
                 : _teams.TeamsDirectory;
             return again is null
-                ? TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Projects, _start.Me())
+                ? TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Projects, _start.Me(),
+                    repos: _start.Repos)
                 : TeamForm.ShowNew(app, _teams.Settings(again), [.. _teams.Names().Where(name => name != again)], directory, create,
-                    _start.Projects, Task.FromResult(""), again);
+                    _start.Projects, Task.FromResult(""), again, _start.Repos);
         };
         FollowTeam = team => App is { } app && _start is not null
             ? _start.Follow(_teams, team, step => StepDialog.Show(app, step), () => VisionFor = team)
@@ -214,6 +217,7 @@ public sealed class SettingsDialog : Dialog
             new Page("Theme", [new Placed(themes)], () => []),
             new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint]),
             new Page("Dashboard", DashboardRows(), () => []),
+            .. terminalKeys is null ? [] : new[] { new Page(TerminalPage.Name, [new Placed(Terminal = new TerminalPage(terminalKeys, Say))], () => []) },
             new Page(TeamsPage, [new Placed(_teamHeader), new Placed(_teamList, 0, TeamListRow)], () => SelectedTeam() is { } team
                 ? [team.Paused ? ResumeHint : PauseHint, EditHint, RemoveTeamHint, NewHint]
                 : [NewHint]),
@@ -238,6 +242,11 @@ public sealed class SettingsDialog : Dialog
         _filter.Width = Dim.Fill(Inset);
         _keys.Width = Dim.Fill(Inset);
         _keys.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove - KeysRow), this);
+        if (Terminal is not null)
+        {
+            Terminal.Width = Dim.Fill(Inset);
+            Terminal.Height = content;
+        }
         _teamHeader.Width = Dim.Fill(Inset);
         _teamList.Width = Dim.Fill(Inset);
         _teamList.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove - TeamListRow), this);
@@ -263,6 +272,8 @@ public sealed class SettingsDialog : Dialog
     internal ListView Keys => _keys;
 
     internal ListView Teams => _teamList;
+
+    internal TerminalPage? Terminal { get; }
 
     internal string TeamHeader => _teamHeader.Text;
 
@@ -332,13 +343,14 @@ public sealed class SettingsDialog : Dialog
         TeamStart? start = null,
         bool newTeam = false,
         Action<string>? showGuide = null,
-        TeamChecks? checks = null)
+        TeamChecks? checks = null,
+        MacKeys? macKeys = null)
     {
         var theme = ThemeSetting.Live(settings);
         var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
             theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start, showGuide: showGuide, checks: checks,
-            limits: settings.ReadLimits());
+            limits: settings.ReadLimits(), terminalKeys: macKeys is null ? null : new TerminalKeys(macKeys));
         if (newTeam)
             app.Invoke(() => dialog.NewTeam());
         app.Run(dialog);

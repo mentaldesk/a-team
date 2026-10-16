@@ -208,6 +208,30 @@ REVIEWED='def said($role): (.author | '"$LOGIN"') == $bot and ((.body // "") | c
   def answered: [.comments.nodes[]? | if said("reviewer") then "review" elif said("dev") then "dev" else empty end]
     | index("review") as $at | $at != null and (.[$at:] | index("dev")) != null;'
 
+# upstream_reasons: [task, why] for each reason the Dev has to look at one of its PRs on a repo the team
+# contributes to, as `gh pr list` gives it, on the open task its body says it's needed by.
+UPSTREAM='def upstream_reasons:
+    def bot: (.author.login // "" | ltrimstr("app/") | rtrimstr("[bot]")) == $slug;
+    def verdict: (.statusCheckRollup // []) | map(
+        if .__typename == "StatusContext"
+        then {done: (.state | IN("PENDING", "EXPECTED") | not), failed: (.state | IN("FAILURE", "ERROR"))}
+        else {done: (.status == "COMPLETED"),
+              failed: (.conclusion // "" | IN("FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"))} end)
+      | if any(.[]; .failed) then "fail" elif length == 0 or any(.[]; .done | not) then "pending" else "pass" end;
+    select((.body // "") | contains("<!-- a-team:dev -->"))
+    | ([(.body // "") | scan("(?i)needed by ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)")
+        | select(.[0] | ascii_downcase == ($repo | ascii_downcase)) | .[1] | tonumber | select(IN($open[]))] | first) as $n
+    | select($n != null)
+    | "\($upstream)#\(.number)" as $pr
+    | ([.createdAt] + [.comments[]? | select(bot and ((.body // "") | contains("<!-- a-team:dev -->"))) | .createdAt] | max) as $said
+    | ([(.comments[]? | {author: .author.login, at: .createdAt}),
+        (.reviews[]? | select((.body // "") != "" or .state == "CHANGES_REQUESTED") | {author: .author.login, at: .submittedAt})]
+       | map(select((.author | IN($stakeholders[])) and .at > $said) | .at) | max) as $asked
+    | verdict as $verdict
+    | (if $verdict == "fail" then [$n, "CI failed on \($pr) at \(.headRefOid[:7])"] else empty end),
+      (if $verdict == "pass" and .isDraft then [$n, "\($pr) is green but still a draft"] else empty end),
+      (if $asked != null then [$n, "stakeholder feedback on \($pr) (\($asked))"] else empty end);'
+
 # checks: the CI verdict on a commit's check runs, shaped as REST gives them.
 CHECKS='def checks:
     def failed: .conclusion as $c
@@ -698,14 +722,16 @@ pitchable_idea() {
 
 # One swap set for Pitched, from all board items: `promote` are the Exploring pitches that
 # belong in Pitched, `demote` the Pitched ones they displace, paired in order. Sorting Pitched
-# first makes `by_priority`'s stable sort displace only on a strictly higher priority, and
+# first within each Priority makes the stable sort displace only on a strictly higher priority, and
 # `demote` never outruns `promote`, so nothing leaves Pitched without a draft taking its slot. A
 # document pitch is a PR, and stays in Pitched whatever the limit.
 pitch_swap() {
-  jq -c '[.[] | select((.labels | index("pitch")) and .type == "Issue" and (.status == "Pitched" or .status == "Exploring"))]
-         | sort_by(.status != "Pitched")' <<<"$1" | by_priority |
+  jq -c '[.[] | select((.labels | index("pitch")) and .type == "Issue" and (.status == "Pitched" or .status == "Exploring"))]' <<<"$1" |
+    by_priority |
     jq --argjson limit "$(cfg '.wip.pitched')" '
-      ([.[] | select(.status == "Pitched")] | length) as $pitched
+      map(.priority) as $priorities
+      | sort_by(.priority as $p | [($priorities | index($p)), .status != "Pitched"])
+      | ([.[] | select(.status == "Pitched")] | length) as $pitched
       | if $pitched < $limit
         then {promote: [.[] | select(.status == "Exploring")][:$limit - $pitched], demote: []}
         else [.[:$limit][] | select(.status == "Exploring")] as $promote
@@ -1479,21 +1505,40 @@ case "$CMD" in
     ;;
 
   approve)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM approve <role> <n>"
-    role=$1 n=$2
+    [ $# -eq 2 ] || [ $# -eq 3 ] || die "usage: board.sh $TEAM approve <role> <n> [<file>]"
+    role=$1 n=$2 file=${3:-}
     case "$role" in
-      lead | dev | customer | reviewer) die "$role may not approve a pitch; approving is the stakeholders' own gate" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
+      you) [ $# -eq 2 ] || die "usage: board.sh $TEAM approve you <n>" ;;
+      lead) [ $# -eq 3 ] || die "usage: board.sh $TEAM approve lead <n> <file>" ;;
+      dev | customer | reviewer) die "$role may not approve a pitch; approving is the stakeholders' own gate, or the Lead's on their word" ;;
+      *) die "unknown role '$role' (you | lead)" ;;
     esac
+    if [ "$role" = lead ]; then
+      [ -f "$file" ] || die "no such file: $file"
+      grep -q '[^[:space:]]' "$file" || die "the Lead's approve is its reply: $file is empty"
+    fi
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a pitch to approve"
     jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
     status=$(jq -r .status <<<"$it")
     [ "$status" = Pitched ] || die "only a Pitched pitch can be approved (#$n is in '$status')"
+    if [ "$role" = lead ]; then
+      word=$(unanswered_feedback lead "$n" | jq -c 'max_by(.at) // empty')
+      [ -n "$word" ] || die "lead may approve #$n only on a stakeholder's word (no unanswered stakeholder feedback on #$n)"
+      [ -z "$(gh api "repos/$REPO/issues/$n" --jq '.body // ""' | jq -Rsr "$NEEDS"'needs_answer')" ] ||
+        die "#$n still has questions under Needs your answer: fold the stakeholder's answers into the pitch first, or ask them"
+      body=$(printf '%s\n\n<!-- a-team:lead -->' "$(cat "$file")")
+      [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+      printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
+      ack "$n"
+    fi
     set_status "$(jq -r .id <<<"$it")" Approved
     record "$role" "$n" "Pitched → Approved"
+    if [ "$role" = lead ]; then
+      when=$(jq -r '.at | fromdateiso8601 | "\(strflocaltime("%d %b") | ltrimstr("0")) \(strflocaltime("%H:%M"))"' <<<"$word")
+      record "$role" "$n" "approved on $(jq -r .author <<<"$word")'s word of $when"
+    fi
     say "#$n: Pitched -> Approved"
     ;;
 
@@ -2396,6 +2441,27 @@ case "$CMD" in
           task_reason "$n" "$title" "stakeholder answered the Dev's question on #$n ($at)"
         done < <(questions "$held" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" |
           jq -r '.[] | select(.unread != "") | [.number, .unread, .title] | @tsv')
+      fi
+
+      # The Dev's own PRs on the repos the team contributes to, each woken on the task it's needed by.
+      if [ -n "$BOT" ]; then
+        while IFS= read -r upstream; do
+          upstream_prs=$(gh pr list -R "$upstream" --author "app/$(cfg .app.slug)" --state open \
+            --json number,isDraft,headRefOid,body,createdAt,comments,reviews,statusCheckRollup) || continue
+          [ "$upstream_prs" = "[]" ] && continue
+          # An inline-only review has an empty body, so its line comments come from here.
+          line_comments=$(gh api --paginate \
+            "repos/$upstream/pulls/comments?since=$(jq -rn 'now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ")')&per_page=100" \
+            --jq '.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: {login: .user.login}, createdAt: .created_at}' |
+            jq -s .) || line_comments='[]'
+          while IFS=$'\t' read -r n why; do
+            task_reason "$n" "$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .title' <<<"$all")" "$why"
+          done < <(jq -r --arg upstream "$upstream" --arg repo "$REPO" --arg slug "$(cfg .app.slug)" \
+              --argjson stakeholders "$STAKEHOLDERS" --argjson open "$(jq '[.[] | select(.status != "Done") | .number]' <<<"$all")" \
+              --argjson lines "$line_comments" \
+              "$UPSTREAM"'.[] | .number as $pr | .comments += [$lines[] | select(.n == $pr) | del(.n)]
+                | upstream_reasons | @tsv' <<<"$upstream_prs")
+        done < <(jq -r '.contributesTo // [] | .[]' "$CONFIG")
       fi
 
       checkout=$(cfg .checkout)

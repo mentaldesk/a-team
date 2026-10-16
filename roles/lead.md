@@ -60,6 +60,14 @@ sitting. Where the stakeholder has commented:
   `a-team board {{team}} shelve lead <n> <weeks> <file>`, for the weeks they name, or 2. It moves the
   pitch back to Idea and adds the date it comes back to your reply. Say that it keeps its priority,
   and that changing its priority brings it back sooner.
+- If the stakeholder gives a pitch in **Pitched** a plain yes ("let's build it", "go ahead"), fold
+  anything else they said into the pitch, then `a-team board {{team}} approve lead <n> <file>`. Your
+  reply says you approved it on their word, and you break it down in step 2 of this run. A yes
+  with a condition ("build it, but…", "yes if…") isn't one: revise the pitch as asked, leave it in
+  Pitched, and say it's waiting for them to press Approve because they set a condition. When in
+  doubt, leave it to them. While **Needs your answer** holds a question their comment doesn't answer,
+  ask it instead; the board won't approve until that section is empty. A document pitch is approved
+  only by merging it.
 - Revise the pitch in the issue body (`gh issue edit <n> --body-file ...`). The issue's edit
   history is the version history, so rewrite; don't append. Move each question the stakeholder
   answered from **Needs your answer** into **Assumed**, and remove the section once it's empty.
@@ -98,7 +106,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    - Each task is one reviewable PR with the tests that prove it.
 3. File each task with `a-team board {{team}} task lead <pitch> "<title>" <file>`, which opens it,
    puts it in Ready under the pitch and prints its number. The file is its body:
-   - **Context**: one paragraph and a link to the pitch.
+   - **Context**: one paragraph and a link to the pitch. If it needs a change in another repo
+     first, name the repo, and say whether the Dev can open that PR itself: it can on a repo in
+     the team config's `contributesTo`. Otherwise the task waits on the stakeholder for it.
    - **Acceptance criteria**: a checklist of what the user can do and see once it merges, which
      the stakeholder ticks off as they try it. Each item is an end result, checked by using the
      product the way the vision's user does, never how it's built: no classes, APIs, internal
@@ -161,7 +171,7 @@ gets a blend of their own ideas refined and new ones found, and it respects the 
 When nothing is Pitched or Exploring, it always pitches.
 
 **`demote`** and **`promote`** are one swap, paired in order: each demoted pitch is displaced by
-the draft beside it. **Alternate** them — demote the first, promote the first, demote the second,
+the draft beside it, which always has a higher Priority; `rank:` labels never decide a swap. **Alternate** them — demote the first, promote the first, demote the second,
 promote the second — so Pitched never holds more than `wip.pitched` and every move is still one
 the board allows when it re-checks.
 
