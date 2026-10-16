@@ -2,7 +2,7 @@ using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
-/// <summary>A dialog's buttons at its foot, right-aligned, wrapping onto another row rather than leaving any out. Only
+/// <summary>A dialog's buttons at its foot, centred, wrapping onto another row rather than leaving any out. Only
 /// the visible ones take a place, in the order they were added.</summary>
 public sealed class ButtonBar : View
 {
@@ -58,18 +58,19 @@ public sealed class ButtonBar : View
         var rows = RowsOf(Viewport.Width);
         for (var y = 0; y < rows.Count; y++)
         {
-            var x = Viewport.Width;
-            foreach (var button in rows[y].Reverse())
+            var x = Math.Max(0, (Viewport.Width - RowWidth(rows[y])) / 2);
+            foreach (var button in rows[y])
             {
-                x -= Wide(button);
                 button.Width = Wide(button);
-                button.X = Math.Max(0, x);
+                button.X = x;
                 button.Y = y;
-                x -= Gap;
+                x += Wide(button) + Gap;
             }
         }
         base.OnSubViewLayout(args);
     }
+
+    private static int RowWidth(IReadOnlyList<Button> row) => row.Sum(Wide) + (Gap * (row.Count - 1));
 
     private static int Wide(Button button) => button.Text.GetColumns();
 }

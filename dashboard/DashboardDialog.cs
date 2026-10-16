@@ -2,6 +2,7 @@ using MentalDesk.Tui.Commands;
 using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Shell;
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.Input;
 using KeyBinding = MentalDesk.Tui.Keys.KeyBinding;
 
@@ -67,6 +68,20 @@ public abstract class DashboardDialog : AppDialog
         if (_buttons.TryGetValue(id, out var button))
             button.Enabled = enabled;
     }
+
+    /// <summary>Colours the button of <paramref name="id"/>, where there is one, as <paramref name="kind"/>.</summary>
+    protected void Restyle(string id, ButtonKind kind)
+    {
+        if (_buttons.TryGetValue(id, out var button))
+            button.SchemeName = SchemeOf(kind);
+    }
+
+    internal static string SchemeOf(ButtonKind kind) => kind switch
+    {
+        ButtonKind.Primary => SchemeNames.ButtonPrimary,
+        ButtonKind.Danger => SchemeNames.ButtonDanger,
+        _ => SchemeNames.ButtonSecondary,
+    };
 
     /// <summary>Gives a command, and its button, a new label.</summary>
     protected void Rename(string id, string label)

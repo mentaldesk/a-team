@@ -544,8 +544,9 @@ public sealed partial class ReaderDialog : DashboardDialog
         });
         foreach (var (id, kind) in new[]
         {
-            (SetId, ButtonKind.Secondary), (ApproveId, ButtonKind.Secondary), (AcceptId, ButtonKind.Secondary),
-            (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary), (AttachId, ButtonKind.Secondary), (DeclineId, ButtonKind.Secondary),
+            (SetId, ButtonKind.Primary), (ApproveId, _accept is null ? ButtonKind.Primary : ButtonKind.Secondary),
+            (AcceptId, ButtonKind.Primary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary),
+            (AttachId, ButtonKind.Secondary), (DeclineId, ButtonKind.Danger),
             (NotNowId, ButtonKind.Secondary), (IdeaId, ButtonKind.Secondary), (TryId, ButtonKind.Secondary),
             (EditId, ButtonKind.Secondary), (GitHubId, ButtonKind.Secondary), (CancelId, ButtonKind.Secondary),
         })
@@ -583,7 +584,10 @@ public sealed partial class ReaderDialog : DashboardDialog
         ShowCarets();
         var marked = FocusedPane().Marked;
         if (_comment is not null)
+        {
             Rename(PostId, _declining ? "Decline" : _shelving ? "Not now" : "Post");
+            Restyle(PostId, _declining ? ButtonKind.Danger : ButtonKind.Primary);
+        }
         if (_idea is not null)
             Rename(IdeaId, Quoted() > 0 ? $"Idea from {Lines(Quoted())}" : "Idea");
         if (_comment is not null)

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Drawing;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
@@ -1506,6 +1507,33 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void Decline_is_Danger_and_stays_Danger_as_the_button_that_sends_it()
+    {
+        using var dialog = Declining();
+
+        Assert.Equal(SchemeNames.ButtonDanger, Scheme(dialog, "x Decline"));
+        Assert.Equal(SchemeNames.ButtonSecondary, Scheme(dialog, "c Comment"));
+        dialog.NewKeyDownEvent(new Key('x'));
+        Assert.Equal(SchemeNames.ButtonDanger, Scheme(dialog, "Ctrl+Enter Decline"));
+        dialog.NewKeyDownEvent(Key.Esc);
+        dialog.NewKeyDownEvent(new Key('c'));
+        Assert.Equal(SchemeNames.ButtonPrimary, Scheme(dialog, "Ctrl+Enter Post"));
+    }
+
+    [Fact]
+    public void Approve_and_Set_are_Primary()
+    {
+        using var approving = Open(Pitch, onApprove: () => { });
+        using var ranking = Ranking();
+
+        Assert.Equal(SchemeNames.ButtonPrimary, Scheme(approving, "a Approve"));
+        Assert.Equal(SchemeNames.ButtonPrimary, Scheme(ranking, "Enter Set"));
+    }
+
+    private static string? Scheme(ReaderDialog dialog, string label) =>
+        dialog.Foot.Shown.Single(button => button.Text.Trim() == label).SchemeName;
+
+    [Fact]
     public void Without_anything_to_decline_x_is_neither_hinted_nor_handled()
     {
         using var dialog = Replying();
@@ -1652,7 +1680,7 @@ public class ReaderDialogTests
     [Theory]
     [InlineData(140, 1)]
     [InlineData(60, 2)]
-    public void On_a_narrow_terminal_the_buttons_wrap_right_aligned_and_none_is_dropped(int width, int rows)
+    public void On_a_narrow_terminal_the_buttons_wrap_centred_and_none_is_dropped(int width, int rows)
     {
         using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { }, () => { },
             comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null), new Epoch(),
@@ -1665,7 +1693,7 @@ public class ReaderDialogTests
         Assert.Equal(["a Approve", "c Comment", "x Decline", "l Not now", "n Idea", "g GitHub", "Esc Close"], dialog.ButtonLabels);
         Assert.Equal(rows, shown.Select(button => button.Frame.Y).Distinct().Count());
         foreach (var row in shown.GroupBy(button => button.Frame.Y))
-            Assert.Equal(dialog.Foot.Viewport.Width, row.Max(button => button.Frame.Right));
+            Assert.InRange(row.Min(button => button.Frame.X) - (dialog.Foot.Viewport.Width - row.Max(button => button.Frame.Right)), -1, 1);
         Assert.Equal(dialog.Foot.Frame.Bottom, dialog.Body.SuperView!.Frame.Bottom + rows);
         Assert.Equal(shown[^1], shown.MaxBy(button => (button.Frame.Y, button.Frame.X)));
     }
