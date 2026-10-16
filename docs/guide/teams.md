@@ -1,7 +1,7 @@
 # Teams
 
 Your teams are in **Settings → Teams**: `s` opens Settings, and **Teams** in Commands (`Ctrl+E`)
-opens it on that page. `F1` in Settings opens this page.
+opens it on that page. `Ctrl+G` in Settings opens this page.
 
 ## The Teams page
 
@@ -80,7 +80,7 @@ and untick it to take it away again. Tick **Reviewer** to have the
 [Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. **Stakeholders**, **Contributes to** and **Skills** open a list: type to
 narrow it as in Commands, `Space` marks a name, and `Enter` keeps what's marked. Each
 field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the team's file, leaving everything else in it as it was, and
-`Esc` (**Cancel**) cancels. `Enter` never saves.
+`Esc` (**Cancel**) cancels. `Enter` never saves. `F1` lists every key the form takes.
 
 **Workdir**, **Vision** and **First page** take typing, and `Enter` on one opens a picker:
 
@@ -158,7 +158,7 @@ it found.
 
 Settings is a page at a time: the pages down the left, the one you picked on the right. `Tab` goes
 into the page and back out. `Ctrl+Enter` keeps what you picked, on any page, and `Esc` throws it
-away.
+away. `F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
 
 - **Theme**: Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode.
 - **Keyboard Shortcuts**: a row per command and the key that runs it. `Enter` on a row takes the
