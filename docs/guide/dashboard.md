@@ -83,7 +83,7 @@ new output until you press `End`, and paging brings it with you.
 
 `l` copies the highlighted lines and `L` the whole log, each line in full: the whole command or error,
 not the clipped row on screen. A folded run of tool calls copies the one it shows. The status bar
-says how much went.
+says how much went. With the [Mac keys](#mac-keys) installed, `Cmd+C` copies as `l` does.
 
 ## Reading the whole session
 
@@ -152,6 +152,32 @@ can change its key under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-
 
 The menus list everything, wherever you are. An item that can't run here is dimmed, with its key
 beside it, and does nothing. `q` quits the app.
+
+## Mac keys
+
+A Mac terminal keeps `Cmd` to itself, so out of the box `Cmd+←` and the rest do nothing in the app.
+In iTerm2, kitty or WezTerm, **Settings → Terminal** fixes that: it names the terminal you're in and
+whether the dashboard's Mac keys are *Not installed*, *Installed* or *Out of date*. **Install** adds
+them, **Update** brings them up to date after an a-team upgrade changes them, and **Remove** takes
+them away. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
+and the file it goes in, with **Copy** beside it. After adding it, reload kitty's config with
+`Ctrl+Cmd+,` (kitty reads it only then), or in WezTerm reopen the dashboard.
+
+Once installed, in every text box:
+
+| Keys | Does |
+|---|---|
+| `Cmd+←` / `Cmd+→` | Start / end of the line |
+| `Cmd+↑` / `Cmd+↓` | Start / end of the text |
+| `Option+←` / `Option+→` | Previous / next word |
+| Any of those with `Shift` | Select as it moves |
+| `Cmd+Backspace` / `Option+Backspace` | Delete to the start of the line / the previous word |
+| `Cmd+A`, `Cmd+C`, `Cmd+X`, `Cmd+Z` | Select all, copy, cut, undo |
+
+They apply only while the dashboard is in front: your shell, TuiCode and anything else in the same
+terminal keep their own keys, and TuiCode's own Mac keys are a separate install that removing these
+leaves alone. Ghostty, Alacritty and Terminal.app can't change keys for one app, so there the page
+says so; `Option+←`/`→` and `fn+←`/`→` work in them without it.
 
 ## The Guide
 
