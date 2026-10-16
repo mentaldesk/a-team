@@ -3466,6 +3466,43 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Back_from_a_try_the_reader_reopens_once_the_window_runs_and_t_in_it_tries_again_after_a_comment()
+    {
+        var handed = new List<Handover>();
+        var shown = new IssueBody("## Opportunity");
+        using var first = Open(
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, _, tryIt) => tryIt!.Run(shown, 7));
+        OpenTheTaskInReview(first);
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posted = new List<string?>();
+        using var back = Open(
+            handOver: handover =>
+            {
+                handed.Add(handover);
+                app.RequestStop();
+            },
+            showBody: (_, body, _, _, _, comment, tryIt) =>
+            {
+                posted.Add(comment!.Post("looks good").GetAwaiter().GetResult());
+                tryIt!.Run(body, 9);
+            },
+            resume: handed.Single());
+
+        app.Begin(back);
+        Assert.Empty(posted);
+        app.TimedEvents.RunTimers();
+
+        Assert.Equal([null], posted);
+        var again = Assert.IsType<TryHandover>(handed[^1]);
+        Assert.Equal(2, handed.Count);
+        Assert.Equal(["try", "team0", "122"], again.Arguments);
+        Assert.Equal(9, again.Reader?.Top);
+        Assert.True(back.StopRequested);
+    }
+
+    [Fact]
     public void A_try_from_the_reader_that_failed_says_so_in_the_reopened_reader()
     {
         var handed = new List<Handover>();

@@ -216,7 +216,8 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   rather than hiding History.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,
   with its acceptance criteria printed first; quit it to come back. If you were reading the task,
-  it opens again where you left it, ready for `a` or `c`, and says there if the try failed.
+  it opens again where you left it, ready for `a`, `c` or another `t`, and says there why the try
+  failed if it did. A key pressed while your comment is still posting waits for it to post.
 - **Edit a document pitch.** Reading a vision draft, a vision review or a docs proposal, which shows
   the file it proposes under its description, press `e`. The file opens in your editor (`$VISUAL`,
   else `$EDITOR`). Save and quit, and your change is committed to the pitch as you, and the reader

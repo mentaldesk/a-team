@@ -4272,6 +4272,13 @@ same "exit" 0 "$STATUS"
 grep -q 'you changed 1 file there' "$OUT" || fail "kept: nothing about what you changed in '$(cat "$OUT")'"
 grep -q 'a-team try demo 7 --clean' "$OUT" || fail "kept: no --clean line in '$(cat "$OUT")'"
 
+case_ "trying it again runs the worktree you changed as you left it, and says how to get a fresh one"
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/.try/7/note.md" ] || fail "again: your change is gone"
+grep -q 'as you left it, with 1 changed file' "$OUT" || fail "again: nothing about your change in '$(cat "$OUT")'"
+grep -q 'For a fresh copy.*a-team try demo 7 --clean' "$OUT" || fail "again: no --clean line in '$(cat "$OUT")'"
+
 case_ "--clean removes it without running anything, and is happy when there's nothing to remove"
 run try demo 7 --clean
 same "exit" 0 "$STATUS"
@@ -4282,6 +4289,20 @@ run try demo 7 --clean
 same "exit" 0 "$STATUS"
 grep -q 'Nothing to remove' "$OUT" || fail "--clean twice: '$(cat "$OUT")'"
 
+case_ "a worktree left behind with nothing changed in it is replaced by a fresh one"
+try_fixture record
+try_gh
+git -C "$CHECKOUT" fetch -q origin pull/7/head
+git -C "$CHECKOUT" worktree add -q --detach "$TRY_WORK/.try/7" origin/main
+run try demo 7
+same "exit" 0 "$STATUS"
+same "commit" "$TRY_SHA" "$(sed -n 2p "$TRY_WORK/ran")"
+same "worktrees left" "" "$(worktrees)"
+mkdir -p "$TRY_WORK/.try/7"
+run try demo 7
+same "not a worktree" 0 "$STATUS"
+same "not a worktree: commit" "$TRY_SHA" "$(sed -n 2p "$TRY_WORK/ran")"
+
 case_ "a PR that isn't there is refused in one line, leaving nothing behind"
 try_fixture record
 try_gh
@@ -4289,6 +4310,7 @@ run try demo 404
 failed "no such PR"
 one_line "no such PR"
 [ ! -e "$TRY_WORK/.try" ] || fail "no such PR: something was left in .try"
+
 
 case_ "so is one that's already closed"
 try_gh closed
@@ -4304,6 +4326,16 @@ failed "fork"
 grep -q 'someone-else/demo' "$OUT" || fail "fork: it doesn't say whose branch it is"
 [ ! -e "$TRY_WORK/.try" ] || fail "fork: something was left in .try"
 git -C "$CHECKOUT" cat-file -e "$TRY_SHA" 2>/dev/null && fail "fork: it fetched the PR anyway"
+
+case_ "with A_TEAM_TRY_FAILED set, why it failed goes in that file too"
+A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 404
+failed "failure file"
+same "failure file" "no PR #404 on mentaldesk/demo" "$(cat "$TRY_WORK/failed")"
+try_fixture false
+try_gh
+A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 7
+failed "command failed"
+same "command failure file" "false exited 1" "$(cat "$TRY_WORK/failed")"
 
 case_ "a PR that closes an issue shows its acceptance criteria, unticked and in order, before running"
 try_fixture record

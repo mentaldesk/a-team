@@ -4,12 +4,17 @@
 # as it is on origin, in a scratch worktree, with its own state and nothing it can write to the
 # board, and takes the worktree away again afterwards.
 # What runs the product is the team config's "try"; without one you get a shell in the worktree.
+# With A_TEAM_TRY_FAILED set, why it failed is also written to that file, for the dashboard to show.
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-die() { echo "a-team try: $*" >&2; exit 1; }
+die() {
+  echo "a-team try: $*" >&2
+  [ -z "${A_TEAM_TRY_FAILED:-}" ] || echo "$*" >"$A_TEAM_TRY_FAILED"
+  exit 1
+}
 refuse() { echo "a-team try: $*" >&2; echo "usage: a-team try <team> [<pr>] [--clean]" >&2; exit 2; }
 tilde() { echo "${1/#$HOME/\~}"; }
 
@@ -84,7 +89,15 @@ if $CLEAN; then
   exit 0
 fi
 
-[ ! -e "$TREE" ] || die "$(tilde "$TREE") is already there. Remove it with: $AGAIN --clean"
+# Changes you made last time are run again as you left them; anything else left behind is replaced.
+changes() { git -C "$TREE" status --porcelain --untracked-files=all | grep -c '' || true; }
+KEPT=0
+if [ -e "$TREE" ]; then
+  if [ "$(git -C "$TREE" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$TREE" && pwd -P)" ]; then
+    KEPT=$(changes)
+  fi
+  [ "$KEPT" -gt 0 ] || remove
+fi
 
 if [ -z "$PR" ]; then
   branch=$(git -C "$CHECKOUT" ls-remote --symref origin HEAD 2>/dev/null |
@@ -136,10 +149,14 @@ else
   AFTER="Removed the worktree. Merge #$PR if it did what you wanted."
 fi
 
-mkdir -p "$WORKDIR/.try"
-git -C "$CHECKOUT" worktree add --detach --quiet "$TREE" "$sha" || die "could not make a worktree at $TREE"
-mkdir -p "$SANDBOX"
-echo "Worktree $(tilde "$TREE") at $AT"
+mkdir -p "$WORKDIR/.try" "$SANDBOX"
+if [ "$KEPT" -gt 0 ]; then
+  echo "Worktree $(tilde "$TREE") as you left it, with $KEPT changed file$([ "$KEPT" -eq 1 ] || echo s)."
+  echo "For a fresh copy at ${AT}: $AGAIN --clean, then try again."
+else
+  git -C "$CHECKOUT" worktree add --detach --quiet "$TREE" "$sha" || die "could not make a worktree at $TREE"
+  echo "Worktree $(tilde "$TREE") at $AT"
+fi
 echo
 [ -z "${CHECKLIST:-}" ] || printf '%s\n\n' "$CHECKLIST"
 echo "  Sandbox: A_TEAM_STATE=$(tilde "$SANDBOX") · A_TEAM_DRY_RUN=1 (nothing can write to the board)"
@@ -158,7 +175,7 @@ else
 fi
 
 echo
-changed=$(git -C "$TREE" status --porcelain --untracked-files=all | grep -c '' || true)
+changed=$(changes)
 if [ "$changed" -gt 0 ]; then
   echo "Kept $(tilde "$TREE"): you changed $changed file$([ "$changed" -eq 1 ] || echo s) there."
   echo "Remove it with: $AGAIN --clean"

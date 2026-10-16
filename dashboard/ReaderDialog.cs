@@ -82,6 +82,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string QuoteId = "reader.quote";
     private const string BranchId = "reader.branch";
     private const int BandLines = 3;
+    private static readonly string[] WaitForPost =
+        [SetId, ApproveId, AcceptId, CommentId, DeclineId, NotNowId, TryId, EditId, QuoteId, CancelId];
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
@@ -114,6 +116,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly OptionSelector<Rank>? _ranks;
     private LogView _scrolled;
     private Task<string?>? _posting;
+    private Func<bool>? _afterPost;
     private bool _declining;
     private bool _shelving;
     private readonly MessageBar _message = new();
@@ -505,11 +508,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     private void AddKeys()
     {
         bool Reads() => !Writing;
-        void Bind(string id, Key key, string label, Func<bool> run, Func<bool> when) => base.Bind(id, key, label, () =>
-        {
-            run();
-            Offer();
-        }, when);
+        void Bind(string id, Key key, string label, Func<bool> run, Func<bool> when) =>
+            base.Bind(id, key, label, () => Run(id, run), when);
         if (_ranks is not null)
             Bind(SetId, Key.Enter, "Set", Set, Reads);
         if (_onApprove is not null)
@@ -534,14 +534,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (_edit is not null)
             Bind(EditId, _edit.Key, "Edit", Edit, Reads);
         Bind(GitHubId, new Key('g'), "GitHub", OnGitHub, Reads);
-        Register(CancelId, "Close", () =>
-        {
-            if (Writing)
-                Unfocus();
-            else
-                Escape();
-            Offer();
-        });
+        Register(CancelId, "Close", () => Run(CancelId, () => Writing ? Unfocus() : Escape()));
         foreach (var (id, kind) in new[]
         {
             (SetId, ButtonKind.Primary), (ApproveId, _accept is null ? ButtonKind.Primary : ButtonKind.Secondary),
@@ -572,6 +565,16 @@ public sealed partial class ReaderDialog : DashboardDialog
         Also("Ctrl+X", "Cut", () => _field.HasFocus);
         Also("Ctrl+Z", "Undo", () => _field.HasFocus);
         Also("↑/↓", "Weeks", () => _weeks.HasFocus);
+    }
+
+    /// <summary>One that would change the comment or close the reader waits for a comment that's posting.</summary>
+    private void Run(string id, Func<bool> run)
+    {
+        if (_posting is not null && WaitForPost.Contains(id))
+            _afterPost = run;
+        else
+            run();
+        Offer();
     }
 
     private static string Capital(string label) => label.Length == 0 ? label : char.ToUpperInvariant(label[0]) + label[1..];
@@ -962,27 +965,36 @@ public sealed partial class ReaderDialog : DashboardDialog
             Settle(posting, text);
             return true;
         }
+        // Off the field, so a key pressed while it posts isn't typed into what's being posted.
+        var written = _field.HasFocus;
+        if (written)
+            Back();
         // Polled rather than Invoked: the reader opens inside a timer, and Invoke waits on that timer's lock.
         App?.AddTimeout(PollEvery, () =>
         {
             if (!posting.IsCompleted)
                 return true;
-            Settle(posting, text);
+            Settle(posting, text, written);
             return false;
         });
         return true;
     }
 
     /// <summary>A comment that didn't post leaves the pane open, with what you wrote still in it.</summary>
-    private void Settle(Task<string?> done, string text)
+    private void Settle(Task<string?> done, string text, bool written = false)
     {
         _posting = null;
+        var after = _afterPost;
+        _afterPost = null;
         var failure = done.Status == TaskStatus.RanToCompletion
             ? done.Result
             : done.Exception?.GetBaseException().Message ?? "the comment didn't post";
         if (failure is { Length: > 0 })
         {
             _message.Show(failure, Schemes.Error);
+            if (written)
+                ToComment();
+            Offer();
             SetNeedsLayout();
             return;
         }
@@ -1013,6 +1025,11 @@ public sealed partial class ReaderDialog : DashboardDialog
         _message.Show($"commented on #{_number}", Schemes.Accent);
         SetNeedsLayout();
         SetNeedsDraw();
+        if (after is not null)
+        {
+            after();
+            Offer();
+        }
     }
 
     private bool Set() => Leave(() =>

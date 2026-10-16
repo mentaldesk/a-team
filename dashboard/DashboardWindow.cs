@@ -994,7 +994,12 @@ public sealed class DashboardWindow : Window
         if (newIsRunning)
         {
             FocusResumed();
-            App?.Invoke(ReopenReader);
+            // Invoke would run it here, before the run loop starts, and the loop would then drop a try's RequestStop.
+            App?.AddTimeout(TimeSpan.Zero, () =>
+            {
+                ReopenReader();
+                return false;
+            });
             App?.AddTimeout(OverseerView.SpinEvery, () =>
             {
                 if (_area == Area.Overseer)

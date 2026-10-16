@@ -74,6 +74,7 @@ int Run()
                 arguments => command.Run(arguments).GetAwaiter().GetResult(),
                 Path.Combine(stateRoot, "edits"),
                 DateTimeOffset.Now),
+            TryHandover tried => tried.Open((arguments, environment) => command.Hand(arguments, environment: environment)),
             _ => handover with { Failure = command.Hand(handover.Arguments) },
         };
     }
