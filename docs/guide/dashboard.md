@@ -151,7 +151,8 @@ this page is one of those commands, so anything you can press you can also run b
 can change its key under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
 
 The menus list everything, wherever you are. An item that can't run here is dimmed, with its key
-beside it, and does nothing. `q` quits the app.
+beside it, and does nothing. With a menu open, each item's underlined letter is its own: press it to
+run that item. `q` quits the app.
 
 ## Mac keys
 

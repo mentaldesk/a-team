@@ -567,6 +567,10 @@ public sealed class DashboardWindow : Window
         bool Scrollable() => Selection() || (OnDashboard() && _dispatcherExpanded);
         bool OnGrid() => AnyAgents() && _expanded is null;
         bool Reading() => Selection() && _expanded is not null;
+        string[] details = ["Show details", "Show the whole lane"];
+        string[] hold = ["Pause this role", "Let this role start again"];
+        string[] interrupt = ["Interrupt", "Let it start again"];
+        string[] mine = ["Show only mine", "Show all"];
         _commands
             .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
             .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
@@ -623,7 +627,7 @@ public sealed class DashboardWindow : Window
             .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: NewIdeaEnabled)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
-                menuLabel: () => _work.OnlyMine ? "Show all" : "Show only mine", scopes: [Regions.Work])
+                menuLabel: () => mine[_work.OnlyMine ? 1 : 0], scopes: [Regions.Work], menuLabels: mine)
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
                 menuLabel: () => "Refresh", scopes: [Regions.Work])
             .Register("overseer.right", "Select the chip to the right", () => _overseer.MoveColumn(+1), Key.CursorRight, isEnabled: OnOverseer, scopes: [Regions.Overseer])
@@ -634,8 +638,8 @@ public sealed class DashboardWindow : Window
             .Register("overseer.previousLane", "Select the previous team's lane", () => _overseer.MoveLane(-1), Key.Tab.WithShift, isEnabled: OnOverseer, scopes: [Regions.Overseer])
             .Register("overseer.pageDown", "Scroll the lanes down", () => _overseer.Page(+1), Key.PageDown, isEnabled: OnOverseer, scopes: [Regions.Overseer])
             .Register("overseer.pageUp", "Scroll the lanes up", () => _overseer.Page(-1), Key.PageUp, isEnabled: OnOverseer, scopes: [Regions.Overseer])
-            .Register("overseer.details", () => _overseer.Board.OnMore ? "Show the whole lane" : "Show details", OverseerEnter, Key.Enter,
-                isEnabled: () => OnOverseer() && _overseer.Board.Selected is not null, scopes: [Regions.Overseer])
+            .Register("overseer.details", () => details[_overseer.Board.OnMore ? 1 : 0], OverseerEnter, Key.Enter,
+                isEnabled: () => OnOverseer() && _overseer.Board.Selected is not null, scopes: [Regions.Overseer], menuLabels: details)
             .Register("overseer.fold", () => "Fold the lane", () => _overseer.Fold(), Key.Esc,
                 isEnabled: () => OnOverseer() && _overseer.CanFold, scopes: [Regions.Overseer])
             .Register("overseer.github", () => "Open on GitHub", OpenChip, new Key('g'),
@@ -650,10 +654,10 @@ public sealed class DashboardWindow : Window
             .Register("work.whatsNew", "Go to what's new", GoToNew, new Key('u'), isEnabled: () => _news.Newest is not null)
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
                 isEnabled: () => OnDashboard() && Selected() is not null,
-                menuLabel: () => UnlessHeld("Pause this role", "Let this role start again"), scopes: [Regions.Agents, Regions.Log])
+                menuLabel: () => UnlessHeld(hold[0], hold[1]), scopes: [Regions.Agents, Regions.Log], menuLabels: hold)
             .Register("agent.interrupt", () => UnlessStopped("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
                 isEnabled: () => OnDashboard() && Selected() is { Running: true } or { Held: true } or { RunHeld: true },
-                menuLabel: () => UnlessStopped("Interrupt", "Let it start again"), scopes: [Regions.Agents, Regions.Log])
+                menuLabel: () => UnlessStopped(interrupt[0], interrupt[1]), scopes: [Regions.Agents, Regions.Log], menuLabels: interrupt)
             .Register("dispatch.pass", "Run a dispatch pass now", PassNow)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", () => OpenSettings(), new Key('s'), isEnabled: HasApp)
