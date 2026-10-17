@@ -875,7 +875,7 @@ turns() {
       . as $item
       | (if .dependency then "lead" else .role // if .status == "Pitched" then "lead" else "dev" end end) as $role
       | ($comments | map(select(.n == $item.number))) as $theirs
-      | ($prs | map(select(.n == $item.number and ((.self | not) or $item.role == "customer" or $item.dependency)))
+      | ($prs | map(select(.n == $item.number and ((.self | not) or $item.role == "customer" or $item.status == "In review")))
          | first) as $pr
       | ($prs | map(select(.n == $item.number and .self)) | first) as $own
       | ($theirs | said("<!-- a-team:\($role) -->")) as $said
@@ -1695,15 +1695,14 @@ case "$CMD" in
       say "#$n: merged docs PR #$n"
       exit 0
     fi
-    if jq -e '.dependabot' <<<"$it" >/dev/null; then
-      [ "$status" = "In review" ] || die "only a Dependabot PR In review can be accepted (#$n is in '$status')"
+    if [ "$(jq -r .type <<<"$it")" = PullRequest ]; then
+      [ "$status" = "In review" ] || die "only a PR In review can be accepted (#$n is in '$status')"
       merge "$n"
       set_status "$(jq -r .id <<<"$it")" Done
       record "$role" "$n" "accepted · PR #$n merged"
-      say "#$n: merged Dependabot PR #$n"
+      say "#$n: merged PR #$n"
       exit 0
     fi
-    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a task to accept"
     if jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
       [ "$status" = "In review" ] || die "only a pitch In review can be accepted (#$n is in '$status')"
       close_pitch "$n"
@@ -2203,6 +2202,23 @@ case "$CMD" in
         --argjson unranked "$(unranked_ideas "$all" "$said")" --argjson upstream "$upstream" '. + $asked + $unranked + $upstream')
     snapshot "$(jq 'map(select(.turn != "upstream")) | length' <<<"$waiting")"
     printf '%s\n' "$waiting"
+    ;;
+
+  adopt)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM adopt"
+    slug=$(cfg .app.slug)
+    [ -n "$slug" ] || exit 0
+    prs=$(gh pr list -R "$REPO" --author "app/$slug" --state open --json id,number,isDraft,body,projectItems)
+    while IFS=$'\t' read -r n node; do
+      id=$(board_add "#$n" "$node")
+      set_status "${id:-new-item}" "In review"
+      record dev "$n" "added as In review"
+      say "#$n: added as In review"
+    done < <(jq -r --arg repo "$REPO" '.[] | select((.isDraft | not) and .projectItems == []
+        and ((.body // "") | contains("<!-- a-team:dev -->"))
+        and any((.body // "") | scan("(?i)needed by ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#[0-9]+")[0];
+                ascii_downcase != ($repo | ascii_downcase)))
+      | [.number, .id] | @tsv' <<<"$prs")
     ;;
 
   overview)

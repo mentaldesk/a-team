@@ -12,8 +12,8 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/common.sh"
-DRY_RUN=false
-[ "${1:-}" = --dry-run ] && DRY_RUN=true
+DRY_RUN=false dry=''
+[ "${1:-}" = --dry-run ] && DRY_RUN=true dry=--dry-run
 mkdir -p "$STATE"
 # A pass run off schedule, from the app, leaves the scheduled one's countdown alone.
 if [ -z "${A_TEAM_UNSCHEDULED:-}" ]; then
@@ -361,6 +361,12 @@ for team in $(team_names); do
   fi
   passing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$team: running again"
   free_waits "$team"
+  if adopted=$("$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" adopt 2>&1); then
+    passing "$STATE/$team/adopt-failing" "$STATE/$team/adopt-failed-once" "$team: adopting upstream PRs again"
+    [ -z "$adopted" ] || log "$team: ${adopted//$'\n'/; }"
+  else
+    failing "$STATE/$team/adopt-failing" "$STATE/$team/adopt-failed-once" "${adopted//$'\n'/ }" "$team: adopt failed"
+  fi
   now=$(date +%s)
   $DRY_RUN || settle_runs
   held=false

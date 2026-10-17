@@ -43,7 +43,7 @@ Idea → Exploring → Pitched → Approved → Building ───────�
 | Building | Its tasks are in flight |
 | Ready | A task the Dev can pick up |
 | In progress | The Dev is building it |
-| In review | A PR waiting for you: a task's, the Customer lead's docs PR, or a Dependabot update |
+| In review | A PR waiting for you: a task's, the Customer lead's docs PR, a Dependabot update, or another team's Dev's change to this repo |
 | Done | Merged or closed, or a pitch whose tasks have all closed |
 
 A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. The Lead also labels

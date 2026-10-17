@@ -3442,7 +3442,7 @@ reviewable
 echo '{"head": {"sha": "deadbeefcafe", "ref": "dependabot/nuget/MentalDesk.Tui-0.3.9", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
 run board demo accept you 535
 same "exit" 0 "$STATUS"
-same "said" "#535: merged Dependabot PR #535" "$(cat "$OUT")"
+same "said" "#535: merged PR #535" "$(cat "$OUT")"
 grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/535/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
 grep -q 'item=PVTI_535 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
 
@@ -3453,8 +3453,62 @@ ITEMS
 dependabot_pr 535
 run board demo accept you 535
 failed "from Idea"
-grep -q "only a Dependabot PR In review can be accepted (#535 is in 'Idea')" "$ERR" || fail "from Idea: '$(cat "$ERR")'"
+grep -q "only a PR In review can be accepted (#535 is in 'Idea')" "$ERR" || fail "from Idea: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+# Another team's Dev opened this PR for a task of its own; `adopt` puts it In review here.
+upstream_pr() {
+  jq -n --arg body "$1" '[{id: "PR_86", number: 86, isDraft: false, projectItems: [],
+    body: "Makes MenuLetters.Pick public.\n\nNeeded by \($body)\n\n<!-- a-team:dev -->"}]' >"$UPSTREAM"
+}
+
+case_ "adopt puts another repo's Dev PR In review once it's ready"
+reviewable
+upstream_pr "mentaldesk/a-team#538"
+run board demo adopt
+same "exit" 0 "$STATUS"
+same "said" "#86: added as In review" "$(cat "$OUT")"
+grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_new .*option=OPT_review' "$WRITES" || fail "In review: '$(cat "$WRITES")'"
+same "one list of the App's PRs" "pr list -R mentaldesk/demo --author app/demo-app --state open --json id,number,isDraft,body,projectItems" \
+  "$(cat "$UPSTREAM_CALLS")"
+
+case_ "adopt leaves a draft, a PR already on a board, and one for a task in this repo"
+for edit in '.[0].isDraft = true' '.[0].projectItems = [{title: "demo"}]' \
+    '.[0].body |= sub("mentaldesk/a-team#538"; "mentaldesk/demo#12")' '.[0].body |= sub("<!-- a-team:dev -->"; "")'; do
+  upstream_pr "mentaldesk/a-team#538"
+  jq "$edit" "$UPSTREAM" >"$UPSTREAM.new" && mv "$UPSTREAM.new" "$UPSTREAM"
+  : >"$WRITES"
+  run board demo adopt
+  same "exit ($edit)" 0 "$STATUS"
+  same "writes ($edit)" "" "$(cat "$WRITES")"
+done
+
+case_ "waiting shows another repo's Dev PR In review as yours, with itself as the PR to merge"
+gh_items <<'ITEMS'
+In_review 86 Let an app without AppMenu pick menu letters
+ITEMS
+edit_item 86 '.__typename = "PullRequest" | .labels.nodes = [] | del(.issueDependenciesSummary, .issueFieldValues)'
+gh_talk <<TALK
+86 body ${TODAY}T08:00:00Z demo-app[bot] Needed by mentaldesk/a-team#538\n<!-- a-team:dev -->
+TALK
+jq '.data.repository.x86 += {url: "https://github.com/mentaldesk/demo/pull/86", isDraft: false, mergeable: "MERGEABLE",
+      baseRefName: "main", headRefName: "feat/public-menu-letters"}
+    | del(.data.repository.x86.closedByPullRequestsReferences)' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "upstream PR" '{"number":86,"pr":86,"branch":"feat/public-menu-letters","turn":"you","unready":""}' \
+  "$(jq -c '.[] | select(.number == 86) | {number, pr, branch, turn, unready}' "$OUT")"
+
+case_ "accepting another repo's Dev PR squash-merges it and moves it to Done"
+reviewable
+: >"$WRITES"
+echo '{"head": {"sha": "deadbeefcafe", "ref": "feat/public-menu-letters", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
+run board demo accept you 86
+same "exit" 0 "$STATUS"
+same "said" "#86: merged PR #86" "$(cat "$OUT")"
+grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/86/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_86 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
 
 case_ "a stakeholder's comment on the docs PR triggers the Customer lead, and only it"
 gh_items <<'ITEMS'
@@ -4593,12 +4647,17 @@ if [ "$1" = token ] && [ -n "${NOT_INSTALLED:-}" ]; then
   exit 1
 fi
 [ "$1" = board ] && [ "${!#}" = free ] && exit 0
+[ "$1" = board ] && [ "${!#}" = adopt ] && { echo "$*" >>"${ADOPTED:-/dev/null}"; exit 0; }
 echo '{"reasons": ["work to do"], "creative": false}'
 SH
 chmod +x "$APP/bin/a-team"
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch: the lead wasn't started"
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the held dev was started"
+
+case_ "a dispatcher pass adopts each team's upstream PRs, the dry run's in dry run"
+ADOPTED="$WORK/adopted" A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+same "adopt" "board --dry-run demo adopt" "$(cat "$WORK/adopted")"
 
 case_ "a dispatcher pass skips a team with no app key, says it stopped only on the second pass, and runs the others"
 jq 'del(.app) | .dispatch.hold = []' "$TEAM" >"$CONFIG/teams/bare.json"
