@@ -908,7 +908,7 @@ same "status" '"Ready"' "$(jq -c '.[1].status' "$OUT")"
 same "turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "reason" '"asked you since 08:23"' "$(jq -c '.[1].reason' "$OUT")"
 same "question" '"Which marker should it post?"' "$(jq -c '.[1].question' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "once the reviewer replies to the question, it's the Dev's turn"
 gh_talk <<TALK
