@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Fields;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
@@ -62,33 +63,24 @@ public sealed record ReaderIdea(Key Key, Func<string, string?> File)
 }
 
 /// <summary>An item's body as it was written, and its History beside it, to read without leaving the board.</summary>
-public sealed partial class ReaderDialog : Dialog
+public sealed partial class ReaderDialog : DashboardDialog
 {
-    private const string ScrollHint = "scroll";
-    private const string RemarkHint = "remark";
-    private const string ShowHint = "show";
-    private const string ImageHint = "image";
-    private const string SwitchHint = "switch";
-    private const string HistoryHint = "history";
-    private const string SelectHint = "select";
-    private const string CopyHint = "copy";
-    private const string QuoteHint = "quote";
-    private const string IdeaHint = "idea";
-    private const string TryHint = "try";
-    private const string EditHint = "edit";
-    private const string ApproveHint = "approve";
-    private const string AcceptHint = "accept";
-    private const string CommentHint = "comment";
-    private const string PostHint = "post";
-    private const string PasteHint = "paste";
-    private const string AttachHint = "attach";
-    private const string DeclineHint = "decline";
-    private const string NotNowHint = "notNow";
-    private const string RankHint = "rank";
-    private const string SetHint = "set";
-    private const string BranchHint = "branch";
-    private const string GitHubHint = "github";
-    private const string CloseHint = "close";
+    private const string SetId = "reader.set";
+    private const string ApproveId = "reader.approve";
+    private const string AcceptId = "reader.accept";
+    private const string CommentId = "reader.comment";
+    private const string PostId = "reader.post";
+    private const string AttachId = "reader.attach";
+    private const string DeclineId = "reader.decline";
+    private const string NotNowId = "reader.notNow";
+    private const string IdeaId = "reader.idea";
+    private const string TryId = "reader.try";
+    private const string EditId = "reader.edit";
+    private const string GitHubId = "reader.github";
+    private const string HistoryId = "reader.history";
+    private const string CopyId = "reader.copy";
+    private const string QuoteId = "reader.quote";
+    private const string BranchId = "reader.branch";
     private const int BandLines = 3;
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
@@ -124,7 +116,6 @@ public sealed partial class ReaderDialog : Dialog
     private Task<string?>? _posting;
     private bool _declining;
     private bool _shelving;
-    private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private readonly Attaching? _attaching;
     private readonly ImageAttach? _attach;
@@ -154,13 +145,18 @@ public sealed partial class ReaderDialog : Dialog
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
         Action<string>? openUrl = null, Action<Picture, string>? viewImage = null)
+        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch ? " · the Lead's question" : " · the Dev's question")}")
     {
         _pictures = pictures;
         _openUrl = openUrl ?? (_ => { });
         _viewImage = viewImage ?? ((_, _) => { });
         _idea = idea;
         if (idea is not null)
-            idea.Start = () => Run(IdeaHint);
+            idea.Start = () =>
+            {
+                NewIdea();
+                Offer();
+            };
         _window = window ?? (_ => false);
         _url = item.Url;
         _clipboard = clipboard;
@@ -177,14 +173,12 @@ public sealed partial class ReaderDialog : Dialog
         _number = item.Number;
         _width = width;
         _text = body;
-        Title = $"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch ? " · the Lead's question" : " · the Dev's question")}";
         X = 0;
         Y = 0;
         Width = Dim.Fill();
         Height = Dim.Fill();
 
-        int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
-        int PaneRows() => Math.Max(0, HintRow() - (rank is null ? 0 : BandLines));
+        int PaneRows() => Math.Max(0, FootRow() - (rank is null ? 0 : BandLines));
 
         _commentFrame = new FrameView
         {
@@ -200,7 +194,7 @@ public sealed partial class ReaderDialog : Dialog
         _weeks.KeyDown += (_, key) =>
         {
             if (key.Handled = Commenting(key))
-                ShowHints();
+                Offer();
         };
         _weeksRow = new View { Width = Dim.Fill(), Height = 1, CanFocus = true, Visible = false };
         _weeksRow.Add(new Label { Text = "Back in" }, _weeks, new Label { Text = "weeks", X = Pos.Right(_weeks) + 1 });
@@ -209,7 +203,7 @@ public sealed partial class ReaderDialog : Dialog
         _field.KeyDown += (_, key) =>
         {
             if (key.Handled = Commenting(key))
-                ShowHints();
+                Offer();
         };
         _commentFrame.Add(_weeksRow, _field);
         if (comment?.Image is { } image)
@@ -269,9 +263,9 @@ public sealed partial class ReaderDialog : Dialog
             {
                 if (pane.HasFocus && pane != _scrolled)
                     Scroll(pane);
-                ShowHints();
+                Offer();
             };
-            pane.SelectionChanged += (_, _) => ShowHints();
+            pane.SelectionChanged += (_, _) => Offer();
         }
         _history.MouseEvent += (_, mouse) =>
         {
@@ -315,10 +309,11 @@ public sealed partial class ReaderDialog : Dialog
             _body.Top = top;
         else if (OpensAt(item, body) is > 0 and var line)
             _body.ShowLine(line);
-        _hints.Y = Pos.Func(_ => HintRow(), this);
+        Foot.Y = Pos.Func(_ => FootRow(), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
+        AddKeys();
 
-        Add(_commentFrame, _bodyFrame, _historyFrame, _hints, _message);
+        Add(_commentFrame, _bodyFrame, _historyFrame, Foot, _message);
         if (_band is not null)
             Add(_band);
         ShowHistory(_panes.OpensWithHistory(width));
@@ -333,12 +328,12 @@ public sealed partial class ReaderDialog : Dialog
         if (comment?.Decline is { Open: true })
         {
             Decline();
-            ShowHints();
+            Offer();
         }
         else if (comment?.Shelve is { Open: true })
         {
             Shelve();
-            ShowHints();
+            Offer();
         }
     }
 
@@ -375,13 +370,11 @@ public sealed partial class ReaderDialog : Dialog
 
     internal MultiLineField Field => _field;
 
-    internal StatusBar Hints => _hints;
-
     internal MessageBar Message => _message;
 
-    /// <summary>Enter reaches a Dialog as Accept, from the ranks themselves, and never as a key.</summary>
+    /// <summary>A click on the ranks reaches the dialog as Accept.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
-        _ranks is null ? base.OnAccepting(args) : Writing || Set();
+        _ranks is null || Writing || Set();
 
     /// <summary>The keyboard is in the Comment pane: its text, or its weeks while saying Not now.</summary>
     private bool Writing => _field.HasFocus || _weeks.HasFocus;
@@ -390,7 +383,7 @@ public sealed partial class ReaderDialog : Dialog
     {
         var handled = Writing ? Commenting(key) : Reading(key);
         if (handled)
-            ShowHints();
+            Offer();
         return handled || base.OnKeyDown(key) || _window(key);
     }
 
@@ -405,7 +398,7 @@ public sealed partial class ReaderDialog : Dialog
             app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit, copyBranch: copyBranch, idea: idea,
             window: window, pictures: pictures, openUrl: openUrl,
             viewImage: (picture, alt) => ImageViewer.Show(app, picture, alt));
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
         return dialog.Chosen;
     }
 
@@ -457,11 +450,8 @@ public sealed partial class ReaderDialog : Dialog
     }
 
     private bool Commenting(Key key) =>
-        key == Key.Esc ? Unfocus()
-        : key == Key.Enter.WithCtrl ? Post()
-        : key == Key.Tab ? SwitchPane(+1)
+        key == Key.Tab ? SwitchPane(+1)
         : key == Key.Tab.WithShift ? SwitchPane(-1)
-        : _attaching is not null && key == _attaching.Key ? AttachFile()
         : _attach?.Pressed(key) == true;
 
     /// <summary>A paste reaches the app before any view, so a dropped image or a pasted screenshot is caught here.</summary>
@@ -489,15 +479,6 @@ public sealed partial class ReaderDialog : Dialog
         return true;
     }
 
-    /// <summary>What Ctrl+V does in the comment, for a click on its hint.</summary>
-    private bool Paste()
-    {
-        ToComment();
-        if (!_attach!.Pressed(Key.V.WithCtrl))
-            _field.InvokeCommand(Command.Paste);
-        return true;
-    }
-
     private void Say(string text, Schemes scheme)
     {
         _message.Show(text, scheme);
@@ -507,100 +488,119 @@ public sealed partial class ReaderDialog : Dialog
 
     private bool Reading(Key key)
     {
-        if (key == Key.Esc)
-            return Escape();
-        if (_ranks is not null && key == Key.Enter)
-            return Set();
-        if (key == new Key('h') && _ranks is null)
-            return ToggleHistory();
         if (key == Key.Tab)
             return SwitchPane(+1);
         if (key == Key.Tab.WithShift)
             return SwitchPane(-1);
-        if (CommentShown && key == Key.Enter.WithCtrl)
-            return Post();
-        if (_scrolled == _body && (key == Key.CursorUp.WithAlt || key == Key.CursorDown.WithAlt))
-            return ToRemark(key == Key.CursorUp.WithAlt ? -1 : +1);
         if (_ranks is null && _body.HasFocus && key == Key.Enter && _body.ImageAtCaret is { } image)
             return ViewImage(image);
         if (_ranks is null && _history.HasFocus && key == Key.Enter)
             return ShowRemark(_history.Caret?.Line ?? -1);
         if (_ranks is null && Caret(key) is { } move)
             return MoveCaret(move, key.IsShift);
-        if (key == Key.C.WithCtrl)
-            return Copy();
-        if (_comment is not null && key == new Key('q') && FocusedPane().Marked > 0)
-            return Quote();
-        // n is None's hotkey on the row of ranks.
-        if (_idea is not null && _ranks is null && key == _idea.Key)
-            return NewIdea();
-        if (_copyBranch != Key.Empty && key == _copyBranch)
-            return CopyBranch();
-        if (key == new Key('g'))
-            return OnGitHub();
-        if (_try is not null && key == _try.Key)
-            return Try();
-        if (_edit is not null && key == _edit.Key)
-            return Edit();
-        if (key == new Key('a') && _onApprove is not null)
-            return Approve();
-        if (_accept is not null && key == _accept.Key)
-            return Accept();
-        if (_comment?.Decline is { } decline && key == decline.Key)
-            return Decline();
-        if (_comment?.Shelve is { } shelve && key == shelve.Key)
-            return Shelve();
-        if (_comment is not null && key == _comment.Key)
-            return Comment();
         return _ranks is not null && Scroll(key) is { } scroll && Scrolled(scroll);
     }
 
-    private void ShowHints()
+    /// <summary>Each of the reader's own keys, as a button where it acts on the item, else only under F1.</summary>
+    private void AddKeys()
+    {
+        bool Reads() => !Writing;
+        void Bind(string id, Key key, string label, Func<bool> run, Func<bool> when) => base.Bind(id, key, label, () =>
+        {
+            run();
+            Offer();
+        }, when);
+        if (_ranks is not null)
+            Bind(SetId, Key.Enter, "Set", Set, Reads);
+        if (_onApprove is not null)
+            Bind(ApproveId, new Key('a'), "Approve", Approve, Reads);
+        if (_accept is not null)
+            Bind(AcceptId, _accept.Key, Capital(_accept.Hint), AcceptItem, Reads);
+        if (_comment is not null)
+        {
+            Bind(CommentId, _comment.Key, Capital(_comment.Hint), Comment, Reads);
+            Bind(PostId, Key.Enter.WithCtrl, "Post", Post, () => CommentShown);
+        }
+        if (_attaching is not null)
+            Bind(AttachId, _attaching.Key, "Attach file", AttachFile, () => Writing);
+        if (_comment?.Decline is { } decline)
+            Bind(DeclineId, decline.Key, "Decline", Decline, Reads);
+        if (_comment?.Shelve is { } shelve)
+            Bind(NotNowId, shelve.Key, "Not now", Shelve, Reads);
+        if (_idea is not null)
+            Bind(IdeaId, _idea.Key, "Idea", NewIdea, () => Reads() && _ranks is null);
+        if (_try is not null)
+            Bind(TryId, _try.Key, "Try", Try, Reads);
+        if (_edit is not null)
+            Bind(EditId, _edit.Key, "Edit", Edit, Reads);
+        Bind(GitHubId, new Key('g'), "GitHub", OnGitHub, Reads);
+        Register(CancelId, "Close", () =>
+        {
+            if (Writing)
+                Unfocus();
+            else
+                Escape();
+            Offer();
+        });
+        foreach (var (id, kind) in new[]
+        {
+            (SetId, ButtonKind.Primary), (ApproveId, _accept is null ? ButtonKind.Primary : ButtonKind.Secondary),
+            (AcceptId, ButtonKind.Primary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary),
+            (AttachId, ButtonKind.Secondary), (DeclineId, ButtonKind.Danger),
+            (NotNowId, ButtonKind.Secondary), (IdeaId, ButtonKind.Secondary), (TryId, ButtonKind.Secondary),
+            (EditId, ButtonKind.Secondary), (GitHubId, ButtonKind.Secondary), (CancelId, ButtonKind.Secondary),
+        })
+            if (Commands.Find(id) is not null)
+                AddButton(kind, id);
+
+        Bind(HistoryId, new Key('h'), "Show history", ToggleHistory, () => Reads() && _ranks is null);
+        Bind("reader.previousRemark", Key.CursorUp.WithAlt, "Previous remark", () => ToRemark(-1), () => Reads() && _scrolled == _body);
+        Bind("reader.nextRemark", Key.CursorDown.WithAlt, "Next remark", () => ToRemark(+1), () => Reads() && _scrolled == _body);
+        Bind(CopyId, Key.C.WithCtrl, "Copy", Copy, Reads);
+        if (_comment is not null)
+            Bind(QuoteId, new Key('q'), "Quote", Quote, () => Reads() && FocusedPane().Marked > 0);
+        if (_copyBranch != Key.Empty)
+            Bind(BranchId, _copyBranch, "Copy the branch name", CopyBranch, Reads);
+        Also("Tab/Shift+Tab", "Switch pane", () => CommentShown || HistoryShown);
+        Also("↑/↓/PgUp/PgDn", "Scroll", () => _ranks is not null);
+        Also("←/→", "Priority", () => _ranks is not null);
+        Also("Arrows/PgUp/PgDn", "Move", () => Reads() && _ranks is null);
+        Also("Shift+arrows", "Select", () => _ranks is null);
+        Also("Enter", "View the picture", () => Reads() && _ranks is null && _scrolled == _body && _body.ImageAtCaret is not null);
+        Also("Enter", "Show the comment", () => Reads() && _ranks is null && _scrolled == _history);
+        Also("Ctrl+V", "Paste", () => Writing);
+        Also("Ctrl+X", "Cut", () => _field.HasFocus);
+        Also("Ctrl+Z", "Undo", () => _field.HasFocus);
+        Also("↑/↓", "Weeks", () => _weeks.HasFocus);
+    }
+
+    private static string Capital(string label) => label.Length == 0 ? label : char.ToUpperInvariant(label[0]) + label[1..];
+
+    private int FootRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines);
+
+    /// <summary>The buttons, and the labels that change, for where the keyboard is now.</summary>
+    private void Offer()
     {
         ShowCarets();
         var marked = FocusedPane().Marked;
-        var reading = !Writing && marked > 0;
-        _hints.Show([
-            .. _ranks is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ScrollHint, "Up/Down/PgUp/PgDn scroll")],
-            .. _ranks is null && !Writing && _scrolled == _body
-                ? [new HintedCommand(RemarkHint, "Alt+↑/↓ remark")] : Array.Empty<HintedCommand>(),
-            .. _ranks is null && !Writing && _scrolled == _body && _body.ImageAtCaret is not null
-                ? [new HintedCommand(ImageHint, "Enter view image")] : Array.Empty<HintedCommand>(),
-            .. _ranks is null && !Writing && _scrolled == _history
-                ? [new HintedCommand(ShowHint, "Enter show")] : Array.Empty<HintedCommand>(),
-            .. CommentShown || HistoryShown ? [new HintedCommand(SwitchHint, "Tab switch pane")] : Array.Empty<HintedCommand>(),
-            .. _ranks is not null || CommentShown ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(HistoryHint, HistoryShown ? "h hide history" : "h show history")],
-            .. _ranks is null && !reading ? [new HintedCommand(SelectHint, "Shift+arrows select")] : Array.Empty<HintedCommand>(),
-            .. reading ? [new HintedCommand(CopyHint, "Ctrl+C copy")] : Array.Empty<HintedCommand>(),
-            .. reading && _comment is not null ? [new HintedCommand(QuoteHint, $"q quote {Lines(marked)}")] : Array.Empty<HintedCommand>(),
-            .. _idea is null || _ranks is not null || _field.HasFocus ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(IdeaHint, $"{KeyNames.Short(_idea.Key)} {(Quoted() > 0 ? $"idea from {Lines(Quoted())}" : "new idea")}")],
-            .. _ranks is null ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(RankHint, "←/→ rank"), new HintedCommand(SetHint, "Enter set")],
-            .. _try is null ? Array.Empty<HintedCommand>() : [new HintedCommand(TryHint, $"{KeyNames.Short(_try.Key)} try")],
-            .. _edit is null ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(EditHint, $"{KeyNames.Short(_edit.Key)} edit", _edit.Uneditable is null)],
-            .. _onApprove is null ? Array.Empty<HintedCommand>() : [new HintedCommand(ApproveHint, "a approve")],
-            .. _accept is null ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(AcceptHint, $"{KeyNames.Short(_accept.Key)} {_accept.Hint}", _accept.Enabled)],
-            .. _comment is null ? Array.Empty<HintedCommand>()
-                : CommentShown ? [new HintedCommand(PostHint,
-                    _declining ? "Ctrl+Enter decline" : _shelving ? "Ctrl+Enter not now" : "Ctrl+Enter post")]
-                : [new HintedCommand(CommentHint, $"{KeyNames.Short(_comment.Key)} {_comment.Hint}")],
-            .. _attaching is null || !_field.HasFocus ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(PasteHint, "Ctrl+V paste"), new HintedCommand(AttachHint, $"{KeyNames.Short(_attaching.Key)} attach file")],
-            .. _comment?.Decline is not { } decline || _declining ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(DeclineHint, $"{KeyNames.Short(decline.Key)} decline")],
-            .. _comment?.Shelve is not { } shelve || _shelving ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(NotNowHint, $"{KeyNames.Short(shelve.Key)} not now")],
-            .. _copyBranch == Key.Empty ? Array.Empty<HintedCommand>()
-                : [new HintedCommand(BranchHint, $"{KeyNames.Short(_copyBranch)} copy branch")],
-            new HintedCommand(GitHubHint, "g on GitHub"),
-            new HintedCommand(CloseHint,
-                Writing ? _declining ? "Esc cancel" : _shelving ? "Esc comment instead" : "Esc back"
-                : marked > 0 ? "Esc clear" : "Esc close"),
-        ], Run);
+        if (_comment is not null)
+        {
+            Rename(PostId, _declining ? "Decline" : _shelving ? "Not now" : "Post");
+            Restyle(PostId, _declining ? ButtonKind.Danger : ButtonKind.Primary);
+        }
+        if (_idea is not null)
+            Rename(IdeaId, Quoted() > 0 ? $"Idea from {Lines(Quoted())}" : "Idea");
+        if (_comment is not null)
+            Rename(QuoteId, $"Quote {Lines(marked)}");
+        Rename(HistoryId, HistoryShown ? "Hide history" : "Show history");
+        Rename(CancelId, Writing ? _declining ? "Cancel" : _shelving ? "Comment instead" : "Back" : marked > 0 ? "Clear" : "Close");
+        Restyle(CancelId, !Writing && marked == 0 && !string.IsNullOrWhiteSpace(_field.Text) ? ButtonKind.Danger : ButtonKind.Secondary);
+        ShowButtons();
+        Hide(CommentId, CommentShown);
+        Hide(DeclineId, _declining);
+        Hide(NotNowId, _shelving);
+        Grey(AcceptId, _accept?.Enabled != false);
+        Grey(EditId, _edit?.Uneditable is null);
     }
 
     private static string Lines(int count) => $"{count} {(count == 1 ? "line" : "lines")}";
@@ -621,7 +621,7 @@ public sealed partial class ReaderDialog : Dialog
         _bodyFrame.Width = shown ? Dim.Fill(ReaderPanes.HistoryWidth) : Dim.Fill();
         if (!shown && _scrolled == _history)
             Scroll(_body);
-        ShowHints();
+        Offer();
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -866,7 +866,7 @@ public sealed partial class ReaderDialog : Dialog
     });
 
     /// <summary>One that can't go ahead only says why, so it leaves the comment alone.</summary>
-    private bool Accept() => _accept!.Enabled ? Leave(AcceptNow) : AcceptNow();
+    private bool AcceptItem() => _accept!.Enabled ? Leave(AcceptNow) : AcceptNow();
 
     private bool AcceptNow() => !_accept!.Run() || Close();
 
@@ -1009,7 +1009,7 @@ public sealed partial class ReaderDialog : Dialog
         _history.DropCaret();
         ShowHistory(_panes.OpensWithHistory(_width));
         Back();
-        ShowHints();
+        Offer();
         _message.Show($"commented on #{_number}", Schemes.Accent);
         SetNeedsLayout();
         SetNeedsDraw();
@@ -1039,39 +1039,5 @@ public sealed partial class ReaderDialog : Dialog
     {
         RequestStop();
         return true;
-    }
-
-    private bool Run(string hint)
-    {
-        var handled = hint switch
-        {
-            ScrollHint => Scrolled(() => FocusedPane().Page(+1)),
-            RemarkHint => ToRemark(+1),
-            ShowHint => ShowRemark(_history.Caret?.Line ?? -1),
-            ImageHint => ViewImage(_body.ImageAtCaret),
-            SwitchHint => SwitchPane(+1),
-            HistoryHint => ToggleHistory(),
-            SelectHint => MoveCaret(CaretMove.Down, extend: true),
-            CopyHint => Copy(),
-            QuoteHint => Quote(),
-            IdeaHint => NewIdea(),
-            TryHint => Try(),
-            EditHint => Edit(),
-            ApproveHint => Approve(),
-            AcceptHint => Accept(),
-            CommentHint => Comment(),
-            PostHint => Post(),
-            PasteHint => Paste(),
-            AttachHint => AttachFile(),
-            DeclineHint => Decline(),
-            NotNowHint => Shelve(),
-            RankHint => Step(+1),
-            SetHint => Set(),
-            BranchHint => CopyBranch(),
-            GitHubHint => OnGitHub(),
-            _ => Writing ? Unfocus() : Escape(),
-        };
-        ShowHints();
-        return handled;
     }
 }

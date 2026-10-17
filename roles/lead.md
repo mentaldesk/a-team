@@ -152,7 +152,9 @@ For each Dependabot PR your prompt names:
   below, naming the PR under **Evidence**. If the update needs code changes before it builds, say
   so in the Idea: that work ships inside it.
 - Then `a-team board {{team}} comment lead <pr> <file>`, listing the Ideas you filed, or saying
-  there's nothing to adopt. Leave the PR itself to the stakeholder.
+  there's nothing to adopt.
+- Then `a-team board {{team}} add lead <pr> "In review"`, so the stakeholder can merge it from
+  Review. Leave the PR itself to them.
 
 ### 5. Recommend a rank for each Idea
 

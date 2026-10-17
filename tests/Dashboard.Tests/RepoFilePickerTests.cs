@@ -40,7 +40,7 @@ public class RepoFilePickerTests
         using var picker = new RepoFilePicker("Vision", Files);
         picker.FilterField.Text = "vision";
 
-        Assert.True(picker.Route(Key.Enter));
+        Assert.True(picker.NewKeyDownEvent(Key.Enter));
 
         Assert.Equal("docs/vision.md", picker.Picked);
     }
@@ -52,7 +52,7 @@ public class RepoFilePickerTests
         picker.FilterField.Text = "VISION_NEW.txt";
         Assert.True(picker.NoMatches);
 
-        picker.Route(Key.Enter);
+        picker.NewKeyDownEvent(Key.Enter);
 
         Assert.Equal("VISION_NEW.txt", picker.Picked);
     }
@@ -66,7 +66,7 @@ public class RepoFilePickerTests
         Assert.Equal(RepoFilePicker.Unreadable, picker.NoMatchesText);
 
         picker.FilterField.Text = "docs/vision.md";
-        picker.Route(Key.Enter);
+        picker.NewKeyDownEvent(Key.Enter);
         Assert.Equal("docs/vision.md", picker.Picked);
     }
 
@@ -75,7 +75,7 @@ public class RepoFilePickerTests
     {
         using var picker = new RepoFilePicker("Vision", Files);
 
-        picker.Route(Key.Esc);
+        picker.NewKeyDownEvent(Key.Esc);
 
         Assert.Null(picker.Picked);
     }
@@ -83,4 +83,17 @@ public class RepoFilePickerTests
     [Fact]
     public async Task No_repo_yet_is_said_without_asking_GitHub() =>
         Assert.Equal("No Repo yet, so there are no files to pick from.", (await RepoFiles.Read("")).Failure);
+
+    [Fact]
+    public void F1_lists_picking_and_Esc_Cancel_under_its_title()
+    {
+        using var picker = new RepoFilePicker("Vision for a-team", Files);
+
+        var sheet = DialogTests.F1(picker);
+
+        Assert.Equal("Vision for a-team", sheet.Here!.Heading);
+        var rows = DialogTests.Rows(sheet);
+        Assert.Equal(("Enter", "Pick"), rows[0]);
+        Assert.Equal(("Esc", "Cancel"), rows[^1]);
+    }
 }

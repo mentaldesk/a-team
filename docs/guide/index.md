@@ -24,7 +24,7 @@ agent is on, and the time limits that flag a card that has sat too long.
 ## [Dashboard](dashboard.md)
 
 What each agent is doing: its pane and log, tool calls, pausing a role, and interrupting a run to
-step into it.
+step into it. Also the app's keys, and making your Mac's Cmd and Option keys work in it.
 
 ## [Teams](teams.md)
 

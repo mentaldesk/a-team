@@ -31,19 +31,10 @@ internal static class KeysSheet
             new KeyColumn("Everywhere", groups));
     }
 
-    /// <summary>The library binds the dialog's keys only under an AppShell the dashboard doesn't have, so they're
-    /// routed here.</summary>
     internal static KeysDialog Create(KeySheet sheet, Size screen)
     {
-        // TuiCode puts Everywhere on the left, and the place's keys on top once stacked; the library does the reverse.
-        var dialog = new KeysDialog(sheet.Here is { } here ? new KeySheet(sheet.Everywhere, here) : sheet, screen);
-        if (dialog.Stacked)
-        {
-            dialog.Dispose();
-            dialog = new KeysDialog(sheet, screen);
-        }
+        var dialog = new KeysDialog(sheet, screen).Routed();
         dialog.CloseButton.X = Pos.Center();
-        dialog.KeyDown += (_, key) => key.Handled = Handle(dialog, key);
         return dialog;
     }
 
@@ -51,18 +42,6 @@ internal static class KeysSheet
     {
         using var dialog = Create(sheet, app.Screen.Size);
         app.Run(dialog);
-    }
-
-    private static bool Handle(KeysDialog dialog, Key key)
-    {
-        var page = dialog.Body.Viewport.Height;
-        if (key == Key.Esc)
-            dialog.RequestStop();
-        else if (key == Key.CursorUp || key == Key.CursorDown)
-            dialog.Body.ScrollVertical(key == Key.CursorUp ? -1 : 1);
-        else if (key == Key.PageUp || key == Key.PageDown)
-            dialog.Body.ScrollVertical(key == Key.PageUp ? -page : page);
-        return true;
     }
 
     private static KeyRow Row(CommandDescriptor command) => new(KeyNames.Short(command.Key), command.Label);

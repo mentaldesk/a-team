@@ -48,12 +48,31 @@ public partial class GuideDialogTests : IDisposable
     }
 
     [Fact]
-    public void The_hint_row_names_the_keys()
+    public void Back_and_Close_are_buttons_and_F1_lists_the_rest_under_the_page_s_title()
     {
         using var dialog = Open();
 
-        Assert.Equal(["Tab next link", "Enter follow", "Ctrl+Shift+C contents", "Ctrl+Shift+I index", "Backspace back", "Esc close"],
-            dialog.Hints.Hints.Select(hint => hint.Text));
+        Assert.Equal(["Backspace Back", "Esc Close"], dialog.ButtonLabels);
+        Assert.Empty(dialog.SubViews.OfType<StatusBar>());
+        var sheet = DialogTests.F1(dialog);
+        Assert.Equal("Guide · Contents", sheet.Here!.Heading);
+        Assert.Equal(
+            [("Backspace", "Back"), ("Ctrl+Shift+C", "Contents"), ("Ctrl+Shift+I", "Index"), ("Tab", "Next link"),
+                ("Enter", "Follow the link"), ("Esc", "Close")],
+            DialogTests.Rows(sheet));
+    }
+
+    [Fact]
+    public void F1_in_the_Index_lists_moving_between_matches_and_not_Back()
+    {
+        using var dialog = Open();
+        dialog.ShowIndex();
+
+        var rows = DialogTests.Rows(DialogTests.F1(dialog));
+
+        Assert.Contains(("↑", "Previous match"), rows);
+        Assert.Contains(("Enter", "Go to the section"), rows);
+        Assert.DoesNotContain(("Backspace", "Back"), rows);
     }
 
     [Fact]
@@ -66,7 +85,7 @@ public partial class GuideDialogTests : IDisposable
 
         Assert.Equal("work.md", dialog.Page);
         Assert.Equal("Guide · Work", dialog.Title);
-        Assert.False(dialog.Closed);
+        Assert.False(dialog.HasClosed);
     }
 
     [Fact]
@@ -125,7 +144,7 @@ public partial class GuideDialogTests : IDisposable
         dialog.NewKeyDownEvent(Key.Backspace);
 
         Assert.Equal("index.md", dialog.Page);
-        Assert.False(dialog.Closed);
+        Assert.False(dialog.HasClosed);
     }
 
     [Fact]
@@ -136,7 +155,7 @@ public partial class GuideDialogTests : IDisposable
         Assert.True(dialog.NewKeyDownEvent(Key.Backspace));
 
         Assert.Equal("index.md", dialog.Page);
-        Assert.False(dialog.Closed);
+        Assert.False(dialog.HasClosed);
     }
 
     [Fact]
@@ -180,7 +199,7 @@ public partial class GuideDialogTests : IDisposable
 
         Assert.True(dialog.NewKeyDownEvent(Key.Esc));
 
-        Assert.True(dialog.Closed);
+        Assert.True(dialog.HasClosed);
     }
 
     public static TheoryData<string, string> Links() => [.. GuideLinks()];
@@ -279,7 +298,7 @@ public partial class GuideDialogTests : IDisposable
         Assert.Equal("work.md", dialog.Page);
         Assert.True(dialog.View.Viewport.Y > 0);
         Assert.True(dialog.View.HasFocus);
-        Assert.False(dialog.Closed);
+        Assert.False(dialog.HasClosed);
     }
 
     [Fact]

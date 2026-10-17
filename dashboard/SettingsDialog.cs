@@ -20,13 +20,14 @@ public sealed class SettingsDialog : Dialog
     private const int LimitsRow = 2;
     private const int LimitWidth = 10;
     private static readonly Key Apply = Key.Enter.WithCtrl;
+    private static readonly Key GuideKey = Key.G.WithCtrl;
     private const string Prompt = "Press a key…";
     private const string RebindHint = "Enter rebind";
     private const string RemoveHint = "Delete remove";
     private const string FilterHint = "Type to filter";
     private const string KeepHint = "Ctrl+Enter keep";
     private const string CancelHint = "Esc cancel";
-    private const string GuideHint = "F1 guide";
+    private const string GuideHint = "Ctrl+G guide";
     private const string PauseHint = "p pause";
     private const string ResumeHint = "p resume";
     private const string EditHint = "Enter edit";
@@ -104,6 +105,11 @@ public sealed class SettingsDialog : Dialog
         ITerminalKeys? terminalKeys = null)
     {
         _showGuide = showGuide ?? (_ => { });
+        ShowHelp = sheet =>
+        {
+            if (App is { } app)
+                KeysSheet.Show(app, sheet);
+        };
         _limits = [.. OverseerBoard.Columns.Select(column => (column,
             new TextField { Width = LimitWidth, Text = limits is not null && limits.TryGetValue(column, out var limit) ? limit : "" }))];
         _commands = commands;
@@ -214,14 +220,18 @@ public sealed class SettingsDialog : Dialog
 
         _pages =
         [
-            new Page("Theme", [new Placed(themes)], () => []),
-            new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint]),
-            new Page("Dashboard", DashboardRows(), () => []),
-            .. terminalKeys is null ? [] : new[] { new Page(TerminalPage.Name, [new Placed(Terminal = new TerminalPage(terminalKeys, Say))], () => []) },
+            new Page("Theme", [new Placed(themes)], () => [], () => []),
+            new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint],
+                () => [new("Enter", "Rebind"), new("Delete", "Remove its key"), new("Type", "Filter")]),
+            new Page("Dashboard", DashboardRows(), () => [], () => []),
+            .. terminalKeys is null ? [] : new[] { new Page(TerminalPage.Name, [new Placed(Terminal = new TerminalPage(terminalKeys, Say))], () => [], () => []) },
             new Page(TeamsPage, [new Placed(_teamHeader), new Placed(_teamList, 0, TeamListRow)], () => SelectedTeam() is { } team
                 ? [team.Paused ? ResumeHint : PauseHint, EditHint, RemoveTeamHint, NewHint]
-                : [NewHint]),
-            new Page(OverseerPage, LimitRows(), () => [LimitsHint]),
+                : [NewHint],
+                () => SelectedTeam() is { } team
+                    ? [new("p", team.Paused ? "Resume" : "Pause"), new("Enter", "Edit"), new("x", "Remove"), new("n", "New team")]
+                    : [new("n", "New team")]),
+            new Page(OverseerPage, LimitRows(), () => [LimitsHint], () => []),
         ];
 
         var content = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines), this);
@@ -275,6 +285,26 @@ public sealed class SettingsDialog : Dialog
 
     internal TerminalPage? Terminal { get; }
 
+    /// <summary>Shows Help over the dialog.</summary>
+    internal Action<KeySheet> ShowHelp { get; set; }
+
+    /// <summary>What F1 shows: the page's own keys, then the dialog's.</summary>
+    internal KeySheet Sheet
+    {
+        get
+        {
+            var page = _pages[_picker.Value ?? 0];
+            return DialogHost.Sheet(page.Name,
+            [
+                .. page.Keys(),
+                new(KeyNames.Short(Apply), "Keep"),
+                new(KeyNames.Short(GuideKey), "Guide"),
+                new("Tab/Shift+Tab", "Next / previous"),
+                new("Esc", "Cancel"),
+            ]);
+        }
+    }
+
     internal string TeamHeader => _teamHeader.Text;
 
     internal MessageBar Message => _message;
@@ -325,8 +355,10 @@ public sealed class SettingsDialog : Dialog
             return Close(confirmed: true);
         if (key == Key.Esc)
             return Close(confirmed: false);
-        if (key == Key.F1)
+        if (key == GuideKey)
             return Guide();
+        if (key == Key.F1)
+            return DialogHost.ShowOver(this, Sheet, ShowHelp);
         return base.OnKeyDown(key);
     }
 
@@ -912,7 +944,7 @@ public sealed class SettingsDialog : Dialog
     /// <summary>A view on a page, at the row and indent the page wants it.</summary>
     private sealed record Placed(View View, int X = 0, int Y = 0);
 
-    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, Func<string[]> Hints);
+    private sealed record Page(string Name, IReadOnlyList<Placed> Rows, Func<string[]> Hints, Func<KeyRow[]> Keys);
 
     /// <summary>A list that can take a key literally. ListView's own type-ahead answers a letter before any
     /// handler the dialog could attach, so neither the capture nor the filter would ever see it.</summary>

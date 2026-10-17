@@ -1,3 +1,5 @@
+using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -5,7 +7,6 @@ namespace ATeam.Dashboard;
 /// <summary>One folder's subfolders, to go into, go up from, or use: the Workdir picker, a level at a time.</summary>
 public sealed class FolderPicker : PathPicker
 {
-    internal const string UseText = "Use this folder (Ctrl+Enter)";
     private const string UseId = "folder.use";
     private const string UpId = "folder.up";
     internal const string ParentRow = "../";
@@ -13,20 +14,21 @@ public sealed class FolderPicker : PathPicker
     private readonly string _folder;
 
     public FolderPicker(string title, string folder, string home, int width = 74, int contentRows = 16)
-        : base(title, width, contentRows, Rows(folder), Tilde(folder, home), "open")
+        : base(title, width, contentRows, Rows(folder), Tilde(folder, home), "Open")
     {
         _folder = folder;
-        Commands.Register(PickId, "Open", Open).Register(UseId, "Use this folder", Use).Register(UpId, "Up", Up);
-        Keys.Bind([Key.Enter.WithCtrl], UseId);
+        Commands.Register(PickId, "Open", Open)
+            .Register(UseId, "Use this folder", Use)
+            .Register(UpId, "Up", Up, isEnabled: () => Typed.Length == 0);
+        Keys.Bind([Key.Enter.WithCtrl], UseId)
+            .Bind([Key.Backspace], UpId);
         var list = SubViews.OfType<ListView>().Single();
         list.Height = contentRows - 4;
-        UseButton = new Button { Text = UseText, X = Pos.Center(), Y = contentRows - 1 };
-        UseButton.Accepting += (_, args) =>
-        {
-            Use();
-            args.Handled = true;
-        };
-        Add(UseButton);
+        // Ctrl+Enter is this picker's Primary, not Enter.
+        PickButton.SchemeName = SchemeNames.ButtonSecondary;
+        PickButton.IsDefault = false;
+        UseButton = CommandButton(ButtonKind.Primary, UseId);
+        AddButtonRow(contentRows - 1, PickButton, UseButton, CancelButton);
         FilterField.SetFocus();
     }
 
@@ -86,7 +88,7 @@ public sealed class FolderPicker : PathPicker
         while (true)
         {
             using var picker = new FolderPicker(title, folder, home, width, rows);
-            app.Run(picker);
+            DialogHost.Run(app, picker);
             if (picker.Picked is { } used)
                 return used;
             if (picker.Next is not { } next)
@@ -94,9 +96,6 @@ public sealed class FolderPicker : PathPicker
             folder = next;
         }
     }
-
-    internal override bool Route(Key key) =>
-        key == Key.Backspace && Typed.Length == 0 ? Run(Up) : base.Route(key);
 
     internal void Open()
     {
@@ -118,11 +117,5 @@ public sealed class FolderPicker : PathPicker
     {
         Next = folder;
         RequestStop();
-    }
-
-    private static bool Run(Action action)
-    {
-        action();
-        return true;
     }
 }

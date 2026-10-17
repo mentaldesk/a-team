@@ -1,9 +1,11 @@
 using System.Drawing;
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
 
 /// <summary>The New idea dialog: its fields, what Ctrl+Enter adds, and what Esc throws away.</summary>
+[Collection("StaticConfiguration")]
 public class NewIdeaDialogTests
 {
     private static NewIdeaDialog Open(
@@ -52,6 +54,24 @@ public class NewIdeaDialogTests
     }
 
     [Fact]
+    public void Cancel_is_Danger_once_there_is_an_idea_to_throw_away()
+    {
+        using var dialog = Open();
+        var cancel = dialog.Foot.Shown[^1];
+        Assert.Equal(SchemeNames.ButtonSecondary, cancel.SchemeName);
+
+        dialog.NewKeyDownEvent(new Key('r'));
+        Assert.Equal(SchemeNames.ButtonDanger, cancel.SchemeName);
+        dialog.NewKeyDownEvent(Key.Backspace);
+        Assert.Equal(SchemeNames.ButtonSecondary, cancel.SchemeName);
+        dialog.Description.SetFocus();
+        dialog.NewKeyDownEvent(new Key('w'));
+        Assert.Equal(SchemeNames.ButtonDanger, cancel.SchemeName);
+        dialog.NewKeyDownEvent(Key.Backspace);
+        Assert.Equal(SchemeNames.ButtonSecondary, cancel.SchemeName);
+    }
+
+    [Fact]
     public void The_description_leaves_Tab_to_move_focus_and_Esc_cancels()
     {
         var asked = 0;
@@ -80,9 +100,10 @@ public class NewIdeaDialogTests
     }
 
     [Fact]
-    public void Left_and_Right_set_the_rank_with_the_keyboard_on_it()
+    public void Left_and_Right_set_the_rank_with_the_keyboard_on_it_without_Space()
     {
         using var dialog = Open();
+        using var app = DialogTests.Begin(dialog);
         dialog.Ranks.SetFocus();
 
         dialog.NewKeyDownEvent(Key.CursorRight);
@@ -95,11 +116,37 @@ public class NewIdeaDialogTests
     }
 
     [Fact]
-    public void The_hints_are_the_comment_s()
+    public void Its_actions_are_buttons_with_Add_the_Primary_on_Ctrl_Enter_and_no_hint_row()
     {
         using var dialog = Open();
 
-        Assert.Equal("Ctrl+Enter add · Esc cancel", dialog.Hints.Says);
+        Assert.Equal(["Ctrl+Enter Add", "Esc Cancel"], dialog.ButtonLabels);
+        Assert.Equal(SchemeNames.ButtonPrimary, dialog.Foot.Shown[0].SchemeName);
+        Assert.Empty(dialog.SubViews.OfType<StatusBar>());
+    }
+
+    [Fact]
+    public void F1_lists_every_key_under_New_idea()
+    {
+        using var dialog = Open();
+
+        var sheet = DialogTests.F1(dialog);
+
+        Assert.Equal("New idea", sheet.Here!.Heading);
+        Assert.Equal(
+            [("Ctrl+Enter", "Add"), ("Ctrl+V", "Paste"), ("←/→", "Priority"), ("Tab/Shift+Tab", "Next / previous"), ("Esc", "Cancel")],
+            DialogTests.Rows(sheet));
+    }
+
+    [Fact]
+    public void Clicking_Add_adds_the_idea()
+    {
+        using var dialog = Open();
+        dialog.IdeaTitle.Text = "Remember my lane";
+
+        dialog.Foot.Shown[0].InvokeCommand(Command.Accept);
+
+        Assert.Equal(("team1", 77), dialog.Added);
     }
 
     private static NewIdeaDialog OpenAttaching(
@@ -118,11 +165,12 @@ public class NewIdeaDialogTests
     }
 
     [Fact]
-    public void With_attaching_the_hints_offer_paste_and_attach_file()
+    public void With_attaching_Attach_file_is_a_button_too()
     {
         using var dialog = OpenAttaching([], () => null);
 
-        Assert.Equal("Ctrl+Enter add · Ctrl+V paste · Ctrl+U attach file · Esc cancel", dialog.Hints.Says);
+        Assert.Equal(["Ctrl+Enter Add", "Ctrl+U Attach file", "Esc Cancel"], dialog.ButtonLabels);
+        Assert.Contains(("Ctrl+U", "Attach file"), DialogTests.Rows(DialogTests.F1(dialog)));
     }
 
     [Fact]

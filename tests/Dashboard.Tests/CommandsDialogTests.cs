@@ -30,7 +30,7 @@ public class CommandsDialogTests
     }
 
     [Fact]
-    public void A_filter_nothing_matches_says_so_in_the_list_and_drops_Enter_from_the_hints()
+    public void A_filter_nothing_matches_says_so_in_the_list_and_drops_the_Enter_button()
     {
         using var dialog = Open(out _);
         Assert.False(dialog.NoMatches);
@@ -42,6 +42,23 @@ public class CommandsDialogTests
         Assert.Null(dialog.List.Value);
         Assert.True(dialog.NoMatches);
         Assert.False(dialog.OffersEnter);
+        Assert.Equal(["Esc Cancel"], dialog.ButtonLabels);
+        Assert.DoesNotContain(("Enter", "Run"), DialogTests.Rows(DialogTests.F1(dialog)));
+    }
+
+    [Fact]
+    public void Its_actions_are_buttons_and_F1_lists_moving_through_the_list_too()
+    {
+        using var dialog = Open(out _);
+
+        Assert.Equal(["Enter Run", "Esc Cancel"], dialog.ButtonLabels);
+        Assert.Empty(dialog.SubViews.OfType<Terminal.Gui.Views.StatusBar>());
+        var sheet = DialogTests.F1(dialog);
+        Assert.Equal("Commands", sheet.Here!.Heading);
+        Assert.Equal(
+            [("Enter", "Run"), ("↑", "Previous"), ("↓", "Next"), ("PgUp", "Page up"), ("PgDn", "Page down"), ("Home", "First"),
+                ("End", "Last"), ("Tab", "Filter or list"), ("Esc", "Cancel")],
+            DialogTests.Rows(sheet));
     }
 
     [Fact]

@@ -385,7 +385,7 @@ public class TeamStartTests : IDisposable
         Assert.Equal(("write it now", "later"), (offered!.Yes, offered.No));
         Assert.Null(offered.Work);
         using var dialog = new StepDialog(offered);
-        Assert.Equal("Enter write it now · Esc later · Backspace back", dialog.Hints.Says);
+        Assert.Equal(["Ctrl+Enter Write it now", "Backspace Back", "Esc Later"], dialog.ButtonLabels);
         Assert.Equal(1, written);
         Assert.Equal(("fretty is working.", Schemes.Base), said);
     }
@@ -480,7 +480,7 @@ public class TeamStartTests : IDisposable
     }
 
     [Fact]
-    public void A_step_s_work_runs_on_Enter_and_a_skip_runs_nothing()
+    public void A_step_s_work_runs_on_Ctrl_Enter_not_Enter_and_a_skip_runs_nothing()
     {
         var ran = 0;
         var step = new Step("Clone?", ["line"], "clone", "skip", line =>
@@ -491,28 +491,32 @@ public class TeamStartTests : IDisposable
         }, ShowOutput: true);
 
         using var skipped = new StepDialog(step);
-        Assert.Equal("Enter clone · Esc skip · Backspace back", skipped.Hints.Says);
+        Assert.Equal(["Ctrl+Enter Clone", "Backspace Back", "Esc Skip"], skipped.ButtonLabels);
+        skipped.NewKeyDownEvent(Key.Enter);
+        Assert.Equal(0, ran);
         skipped.NewKeyDownEvent(Key.Esc);
         Assert.False(skipped.Done);
         Assert.Equal(0, ran);
 
         using var dialog = new StepDialog(step);
-        dialog.Yes();
+        Assert.True(dialog.NewKeyDownEvent(Key.Enter.WithCtrl));
         Assert.Equal(1, ran);
         Assert.True(dialog.Done);
         Assert.Equal(["Cloning into 'main'..."], dialog.Printed);
-        Assert.Equal("Enter continue", dialog.Hints.Says);
+        Assert.Equal(["Ctrl+Enter Continue"], dialog.ButtonLabels);
     }
 
     [Fact]
-    public void A_choice_step_does_the_option_chosen_on_Enter_and_cancels_on_Esc()
+    public void A_choice_step_does_the_option_chosen_on_Ctrl_Enter_and_cancels_on_Esc()
     {
         var step = new Step("Get to work?", ["line"], "Get to work", "Keep the team paused for now", Choose: true);
 
         using var yes = new StepDialog(step);
         Assert.Equal(["Get to work", "Keep the team paused for now"], yes.Choice!.Labels);
-        Assert.Equal("Enter choose · Esc cancel new team · Backspace back", yes.Hints.Says);
-        yes.Yes();
+        Assert.Equal(["Ctrl+Enter Choose", "Backspace Back", "Esc Cancel new team"], yes.ButtonLabels);
+        yes.NewKeyDownEvent(Key.Enter);
+        Assert.False(yes.Done);
+        yes.NewKeyDownEvent(Key.Enter.WithCtrl);
         Assert.True(yes.Done);
 
         using var no = new StepDialog(step);
@@ -536,7 +540,7 @@ public class TeamStartTests : IDisposable
 
         Assert.False(dialog.Done);
         Assert.Equal("fatal: repository not found", dialog.Message.Says);
-        Assert.Equal("Enter clone · Esc skip · Backspace back", dialog.Hints.Says);
+        Assert.Equal(["Ctrl+Enter Clone", "Backspace Back", "Esc Skip"], dialog.ButtonLabels);
     }
 
     [Fact]
@@ -553,7 +557,7 @@ public class TeamStartTests : IDisposable
         dialog.Yes();
 
         Assert.False(ran);
-        Assert.Equal("Esc skip · Backspace back", dialog.Hints.Says);
+        Assert.Equal(["Backspace Back", "Esc Skip"], dialog.ButtonLabels);
         Assert.Equal("Can't set up fretty's board: no field", dialog.Message.Says);
     }
 

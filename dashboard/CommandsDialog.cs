@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using MentalDesk.Tui.Filtering;
+using MentalDesk.Tui.Dialogs;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
@@ -7,7 +8,7 @@ namespace ATeam.Dashboard;
 
 /// <summary>Everything the dashboard can do, or any other list of names, narrowed by typing and picked by name. The
 /// best match comes first, as in every MentalDesk app's lists.</summary>
-public sealed class CommandsDialog : Dialog
+public sealed class CommandsDialog : DashboardDialog
 {
     private readonly IReadOnlyList<CommandDescriptor> _commands;
     private readonly List<CommandDescriptor> _matches = [];
@@ -15,16 +16,14 @@ public sealed class CommandsDialog : Dialog
     private readonly TextField _filter;
     private readonly ListView _list;
     private readonly Label _noMatches;
-    private readonly Shortcut _enter;
-    private readonly Shortcut _esc;
-    private readonly Terminal.Gui.Views.StatusBar _hints;
+    private readonly Button _enter;
 
-    public CommandsDialog(IReadOnlyList<CommandDescriptor> commands, string title = "Commands", string verb = "run")
+    public CommandsDialog(IReadOnlyList<CommandDescriptor> commands, string title = "Commands", string verb = "Run")
+        : base(title)
     {
         _commands = commands;
         _labelWidth = commands.Count == 0 ? 0 : commands.Max(command => command.Label.Length);
 
-        Title = title;
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);
 
@@ -33,13 +32,21 @@ public sealed class CommandsDialog : Dialog
         // The filter binds Home/End to its own cursor, so the list would never see them.
         _filter.KeyBindings.Remove(Key.Home);
         _filter.KeyBindings.Remove(Key.End);
-        _list = new ListView { X = 0, Y = Pos.Bottom(_filter), Width = Dim.Fill(), Height = Dim.Fill(1) };
+        _list = new ListView { X = 0, Y = Pos.Bottom(_filter), Width = Dim.Fill(), Height = Dim.Fill(Dim.Func(_ => Foot.Rows + 1, this)) };
         _noMatches = new Label { X = 0, Y = Pos.Bottom(_filter), Text = "(no matches)", Enabled = false, Visible = false };
-        _enter = Shortcut("Enter", verb, () => Run());
-        _esc = Shortcut("Esc", "cancel", () => Cancel());
-        // Terminal.Gui's bar, not the window's own StatusBar next door.
-        _hints = new Terminal.Gui.Views.StatusBar([Shortcut("Up/Down/PgUp/PgDn/Home/End", "select", () => Move(+1)), _enter, _esc]);
-        Add(_filter, _list, _noMatches, _hints);
+        Bind("commands.run", Key.Enter, verb, () => Run(), () => _matches.Count > 0);
+        Bind("commands.up", Key.CursorUp, "Previous", () => Move(-1));
+        Bind("commands.down", Key.CursorDown, "Next", () => Move(+1));
+        Bind("commands.pageUp", Key.PageUp, "Page up", () => Move(-Page));
+        Bind("commands.pageDown", Key.PageDown, "Page down", () => Move(+Page));
+        Bind("commands.home", Key.Home, "First", () => MoveTo(0));
+        Bind("commands.end", Key.End, "Last", () => MoveTo(_matches.Count - 1));
+        Bind("commands.switch", Key.Tab, "Filter or list", () => MoveFocus());
+        Register(CancelId, "Cancel", () => Dismiss());
+        _enter = AddButton(ButtonKind.Primary, "commands.run");
+        AddButton(ButtonKind.Secondary, CancelId);
+        Foot.Y = Pos.Func(_ => Viewport.Height - Foot.Rows, this);
+        Add(_filter, _list, _noMatches, Foot);
 
         Narrow();
         _filter.SetFocus();
@@ -55,38 +62,10 @@ public sealed class CommandsDialog : Dialog
 
     internal bool NoMatches => _noMatches.Visible;
 
-    internal bool OffersEnter => _enter.SuperView is not null;
+    internal bool OffersEnter => _enter.Visible;
 
-    /// <summary>Enter reaches a Dialog as Accept, from the filter or the list alike, and never as a key.</summary>
+    /// <summary>A double-click on a row reaches the dialog as Accept.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => Run();
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing && !OffersEnter)
-            _enter.Dispose();
-        base.Dispose(disposing);
-    }
-
-    protected override bool OnKeyDown(Key key)
-    {
-        if (key == Key.Esc)
-            return Cancel();
-        if (key == Key.CursorUp)
-            return Move(-1);
-        if (key == Key.CursorDown)
-            return Move(+1);
-        if (key == Key.PageUp)
-            return Move(-Page);
-        if (key == Key.PageDown)
-            return Move(+Page);
-        if (key == Key.Home)
-            return MoveTo(0);
-        if (key == Key.End)
-            return MoveTo(_matches.Count - 1);
-        if (key == Key.Tab)
-            return MoveFocus();
-        return base.OnKeyDown(key);
-    }
 
     private void Narrow()
     {
@@ -95,20 +74,7 @@ public sealed class CommandsDialog : Dialog
         _list.SetSource(new ObservableCollection<string>(_matches.Select(Row)));
         _list.Value = _matches.Count == 0 ? null : 0;
         _noMatches.Visible = _matches.Count == 0;
-        OfferEnter(_matches.Count > 0);
-    }
-
-    /// <summary>Taken off the bar rather than hidden, since the bar still spaces out a hidden shortcut.</summary>
-    private void OfferEnter(bool offer)
-    {
-        if (OffersEnter == offer)
-            return;
-        _hints.Remove(_esc);
-        if (offer)
-            _hints.Add(_enter);
-        else
-            _hints.Remove(_enter);
-        _hints.Add(_esc);
+        ShowButtons();
     }
 
     private string Row(CommandDescriptor command) =>
@@ -144,34 +110,30 @@ public sealed class CommandsDialog : Dialog
         return true;
     }
 
-    private bool Cancel()
+    private bool Dismiss()
     {
         Chosen = null;
         RequestStop();
         return true;
     }
 
-    /// <summary>A StatusBar draws its Shortcuts help-first, so the keys go in the help and the verb in the title.</summary>
-    private static Shortcut Shortcut(string keys, string what, Action action) =>
-        new() { Title = what, HelpText = keys, Key = Key.Empty, Action = action, CanFocus = false };
-
     /// <summary>Runs what was picked only once the dialog has closed, so Quit stops the dashboard and not this.</summary>
     public static void Show(IApplication app, CommandRegistry commands, IReadOnlyList<CommandDescriptor>? offered = null)
     {
         using var dialog = new CommandsDialog(offered ?? commands.Enabled);
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
         if (dialog.Chosen is { } id)
             commands.Execute(id);
     }
 
     internal static CommandsDialog ForNames(string title, IReadOnlyList<string> names) =>
-        new([.. names.Select(name => new CommandDescriptor(name, name, Key.Empty))], title, "go");
+        new([.. names.Select(name => new CommandDescriptor(name, name, Key.Empty))], title, "Go");
 
     /// <summary>One of <paramref name="names"/>, or null when the dialog is cancelled.</summary>
     public static string? Pick(IApplication app, string title, IReadOnlyList<string> names)
     {
         using var dialog = ForNames(title, names);
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
         return dialog.Chosen;
     }
 }

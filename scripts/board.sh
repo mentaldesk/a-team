@@ -257,7 +257,7 @@ allowed() {
     "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
     "lead:Pitched>Exploring" | \
     "lead:Approved>Building" | \
-    "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
+    "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | "lead:None>In review" | \
     "dev:None>Idea" | "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
     "customer:None>Idea" | "customer:None>Pitched" | "customer:None>In review" | \
     "you:None>Idea")
@@ -393,7 +393,8 @@ items() {
                              issueDependenciesSummary { blockedBy }
                              issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue {
                                name field { ... on IssueFieldSingleSelect { name } } } } } }
-              ... on PullRequest { id number title url repository { nameWithOwner } labels(first: 20) { nodes { name } } }
+              ... on PullRequest { id number title url repository { nameWithOwner } labels(first: 20) { nodes { name } }
+                                   author { login } }
             } } } } } }" -F field="$FIELD" -f filter="${1:-}" --paginate |
     jq -s --arg kind "$KIND" --arg repo "$REPO" --arg priority "$PRIORITY" \
       --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" \
@@ -418,7 +419,8 @@ items() {
                       elif $rev[$raw] then $rev[$raw]
                       elif ($states | index($raw)) then $raw
                       else "?" + $raw end)
-           } + (if .content.stateReason then {closed: .content.stateReason} else {} end)]'
+           } + (if .content.stateReason then {closed: .content.stateReason} else {} end)
+             + (if .content.author.login == "dependabot" then {dependabot: true} else {} end)]'
 }
 
 item() {
@@ -909,19 +911,21 @@ gated_blocked() {
 # stakeholders' until one comments; from then it is the role's, the same test `unanswered_feedback`
 # makes. A PR that is failing, conflicting, not yet known to merge, still running CI or still a draft
 # is the Dev's too, or the Reviewer's while a green draft waits for its review, but an unanswered
-# comment outranks them all: the answer is owed before a green build means anything.
+# comment outranks them all: the answer is owed before a green build means anything. A Dependabot PR
+# stays the stakeholders': no role answers on it or fixes it.
 turns() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson prs "$3" --argjson stakeholders "$STAKEHOLDERS" \
     --argjson reviewerOn "$(reviewer_on && echo true || echo false)" \
     --arg ackFrom "$ACK_FROM" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$UNANSWERED$SINCE$NEEDS$CONSIDERED"'
     $items | map(
       . as $item
-      | (.role // if .status == "Pitched" then "lead" else "dev" end) as $role
+      | (if .dependency then "lead" else .role // if .status == "Pitched" then "lead" else "dev" end end) as $role
       | ($comments | map(select(.n == $item.number))) as $theirs
-      | ($prs | map(select(.n == $item.number and ((.self | not) or $item.role == "customer"))) | first) as $pr
+      | ($prs | map(select(.n == $item.number and ((.self | not) or $item.role == "customer" or $item.dependency)))
+         | first) as $pr
       | ($prs | map(select(.n == $item.number and .self)) | first) as $own
       | ($theirs | said("<!-- a-team:\($role) -->")) as $said
-      | ($theirs | unanswered($said) | map(.at) | max // "") as $asked
+      | (if .dependency then "" else $theirs | unanswered($said) | map(.at) | max // "" end) as $asked
       | ($theirs | map(select(.kind == "body") | .at) | max // "") as $opened
       | (if .status == "Pitched" and (.pitch or .document)
          then $theirs | map(select(.kind == "body")) | first | .body // "" | needs_answer else "" end) as $question
@@ -944,7 +948,7 @@ turns() {
       | if $asked != ""
         then . + {turn: $role, reason: "answering your feedback\(since($asked))"}
         elif $wrong != null
-        then . + {turn: ($wrong.turn // $role), trouble: $wrong.trouble,
+        then . + {turn: ($wrong.turn // if $item.dependency then "you" else $role end), trouble: $wrong.trouble,
                   reason: "\($wrong.trouble)\(since($wrong.at))"}
         else (if $said != "" then $said else $opened end) as $waited
              | (if $question != "" then "asked you"
@@ -1359,6 +1363,12 @@ case "$CMD" in
       limit=$(cfg '.wip.ideas // 0')
       [ "$found" -lt "$limit" ] ||
         die "$found discovered Ideas are waiting for triage (wip.ideas is $limit): leave #$n off the board"
+    elif [ "$role:$to" = "lead:In review" ]; then
+      gh api "repos/$REPO/issues/$n" --jq '.pull_request != null and .state == "open" and .user.login == "dependabot[bot]"' |
+        grep -qx true || die "lead may only add an open Dependabot PR to In review (#$n isn't one)"
+      gh api --paginate "repos/$REPO/issues/$n/comments" --jq ".[] | select(.user.login == \"$BOT\")
+          | .body | contains(\"<!-- a-team:lead -->\")" | grep -qx true ||
+        die "say what Dependabot PR #$n brings (comment lead) before adding it"
     elif [ "$role:$to" = "lead:Ready" ]; then
       parent=$(parent_of "$n")
       { [ -n "$parent" ] && items | jq -e --argjson p "$parent" "any(.[]; .number == \$p and $FILEABLE)" >/dev/null; } ||
@@ -1371,7 +1381,7 @@ case "$CMD" in
       if [ "$role" = you ]; then
         ! gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:" ||
           die "#$n is already on the board and is a role's, not yours (use move)"
-      else
+      elif [ "$role:$to" != "lead:In review" ]; then
         gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:$role -->" ||
           die "#$n is already on the board and isn't $role's (use move)"
       fi
@@ -1645,6 +1655,14 @@ case "$CMD" in
       set_status "$(jq -r .id <<<"$it")" Done
       record "$role" "$n" "accepted · PR #$n merged"
       say "#$n: merged docs PR #$n"
+      exit 0
+    fi
+    if jq -e '.dependabot' <<<"$it" >/dev/null; then
+      [ "$status" = "In review" ] || die "only a Dependabot PR In review can be accepted (#$n is in '$status')"
+      merge "$n"
+      set_status "$(jq -r .id <<<"$it")" Done
+      record "$role" "$n" "accepted · PR #$n merged"
+      say "#$n: merged Dependabot PR #$n"
       exit 0
     fi
     [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a task to accept"
@@ -2053,6 +2071,7 @@ case "$CMD" in
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)}
         + if .labels | index("a-team:customer") then {role: "customer"} else {} end
+        + if .dependabot and .status == "In review" then {dependency: true} else {} end
         + if .type == "PullRequest" and .status == "Pitched" and ((.labels | index("pitch")) or (.labels | index("a-team:customer")))
           then {document: true} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)

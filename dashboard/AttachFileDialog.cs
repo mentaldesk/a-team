@@ -1,30 +1,30 @@
+using MentalDesk.Tui.Dialogs;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
 /// <summary>The image file to attach, for one you'd rather type the path of than drop.</summary>
-public sealed class AttachFileDialog : Dialog
+public sealed class AttachFileDialog : DashboardDialog
 {
     internal const string Name = "Attach image file";
-    private const string AttachHint = "attach";
-    private const string CancelHint = "cancel";
+    private const string AttachId = "attach.attach";
     private const int Wide = 60;
 
     private readonly TextField _file;
-    private readonly StatusBar _hints = new();
 
     public AttachFileDialog()
+        : base(Name)
     {
-        Title = Name;
         Width = Dim.Func(_ => Math.Min(Wide, SuperView?.Viewport.Width ?? Wide), this);
-        Height = 3 + GetAdornmentsThickness().Vertical;
+        Height = Dim.Func(_ => 2 + Foot.Rows + GetAdornmentsThickness().Vertical, this);
         Add(new Label { Text = "File", X = 1, Y = 0 });
         _file = new TextField { X = 7, Y = 0, Width = Dim.Fill(1) };
-        _hints.Y = 2;
-        Add(_file, _hints);
-        _file.KeyDown += (_, key) => key.Handled = key.Handled || Pressed(key);
-        _hints.Show([new HintedCommand(AttachHint, "Ctrl+Enter attach"), new HintedCommand(CancelHint, "Esc cancel")],
-            hint => hint == AttachHint ? Done(_file.Text) : Done(null));
+        Bind(AttachId, Key.Enter.WithCtrl, "Attach", () => Done(_file.Text));
+        Register(CancelId, "Cancel", () => Done(null));
+        AddButton(ButtonKind.Primary, AttachId);
+        AddButton(ButtonKind.Secondary, CancelId);
+        Foot.Y = 2;
+        Add(_file, Foot);
         _file.SetFocus();
     }
 
@@ -37,23 +37,13 @@ public sealed class AttachFileDialog : Dialog
     public static string? Show(IApplication app)
     {
         using var dialog = new AttachFileDialog();
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
         return dialog.Chosen;
     }
 
-    /// <summary>Enter doesn't attach: that's Ctrl+Enter, as in every dialog.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => true;
-
-    protected override bool OnKeyDown(Key key) => Pressed(key) || base.OnKeyDown(key);
-
-    private bool Pressed(Key key) =>
-        key == Key.Enter.WithCtrl ? Done(_file.Text)
-        : key == Key.Esc && Done(null);
-
-    private bool Done(string? path)
+    private void Done(string? path)
     {
         Chosen = string.IsNullOrWhiteSpace(path) ? null : path.Trim();
         RequestStop();
-        return true;
     }
 }

@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
@@ -37,7 +38,34 @@ public sealed class FolderPickerTests : IDisposable
         Assert.Equal("~/code", picker.Where);
         Assert.Equal(Pos.Absolute(1).ToString(), picker.FilterField.Y.ToString());
         Assert.Equal([FolderPicker.ParentRow, "a-team", "TuiCode"], picker.Labels);
-        Assert.Equal(FolderPicker.UseText, picker.UseButton.Text);
+        Assert.Equal(" Ctrl+Enter Use this folder ", picker.UseButton.Text);
+    }
+
+    [Fact]
+    public void Its_buttons_are_Open_then_Use_this_folder_the_Primary_then_Cancel()
+    {
+        using var picker = new FolderPicker("Workdir", At("code"), _home);
+
+        Assert.Equal([" Enter Open ", " Ctrl+Enter Use this folder ", " Esc Cancel "],
+            new[] { picker.PickButton, picker.UseButton, picker.CancelButton }.Select(button => button.Text));
+        Assert.Equal(SchemeNames.ButtonSecondary, picker.PickButton.SchemeName);
+        Assert.Equal(SchemeNames.ButtonPrimary, picker.UseButton.SchemeName);
+    }
+
+    [Fact]
+    public void F1_lists_its_keys_under_its_title_Up_only_while_the_filter_is_empty()
+    {
+        using var picker = new FolderPicker("Workdir for a-team", At("code"), _home);
+
+        var sheet = DialogTests.F1(picker);
+
+        Assert.Equal("Workdir for a-team", sheet.Here!.Heading);
+        Assert.Equal(
+            [("Enter", "Open"), ("↑", "Previous"), ("↓", "Next"), ("PgUp", "Page up"), ("PgDn", "Page down"),
+                ("Ctrl+Enter", "Use this folder"), ("Backspace", "Up"), ("Esc", "Cancel")],
+            DialogTests.Rows(sheet));
+        picker.FilterField.Text = "a";
+        Assert.DoesNotContain(("Backspace", "Up"), DialogTests.Rows(DialogTests.F1(picker)));
     }
 
     [Fact]
@@ -56,7 +84,7 @@ public sealed class FolderPickerTests : IDisposable
         using var picker = new FolderPicker("Workdir", At("code"), _home);
         picker.FilterField.Text = "tui";
 
-        Assert.True(picker.Route(Key.Enter));
+        Assert.True(picker.NewKeyDownEvent(Key.Enter));
 
         Assert.Equal(At("code/TuiCode"), picker.Next);
         Assert.Null(picker.Picked);
@@ -67,7 +95,7 @@ public sealed class FolderPickerTests : IDisposable
     {
         using var picker = new FolderPicker("Workdir", At("code/a-team"), _home);
 
-        Assert.True(picker.Route(Key.Enter));
+        Assert.True(picker.NewKeyDownEvent(Key.Enter));
 
         Assert.Equal(At("code"), picker.Next);
     }
@@ -84,13 +112,15 @@ public sealed class FolderPickerTests : IDisposable
     public void Backspace_in_an_empty_filter_goes_up_a_level_and_otherwise_deletes()
     {
         using var picker = new FolderPicker("Workdir", At("code/a-team"), _home);
+        picker.FilterField.SetFocus();
         picker.FilterField.Text = "m";
+        picker.FilterField.InsertionPoint = 1;
 
-        Assert.False(picker.Route(Key.Backspace));
+        Assert.True(picker.NewKeyDownEvent(Key.Backspace));
+        Assert.Equal("", picker.FilterField.Text);
         Assert.Null(picker.Next);
 
-        picker.FilterField.Text = "";
-        Assert.True(picker.Route(Key.Backspace));
+        Assert.True(picker.NewKeyDownEvent(Key.Backspace));
         Assert.Equal(At("code"), picker.Next);
     }
 
@@ -99,7 +129,7 @@ public sealed class FolderPickerTests : IDisposable
     {
         using var picker = new FolderPicker("Workdir", At("code/a-team"), _home);
 
-        Assert.True(picker.Route(Key.Enter.WithCtrl));
+        Assert.True(picker.NewKeyDownEvent(Key.Enter.WithCtrl));
 
         Assert.Equal("~/code/a-team", picker.Picked);
     }
@@ -109,7 +139,7 @@ public sealed class FolderPickerTests : IDisposable
     {
         using var picker = new FolderPicker("Workdir", At("code"), _home);
 
-        Assert.True(picker.Route(Key.Esc));
+        Assert.True(picker.NewKeyDownEvent(Key.Esc));
 
         Assert.Null(picker.Picked);
         Assert.Null(picker.Next);

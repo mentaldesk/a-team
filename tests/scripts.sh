@@ -3357,6 +3357,94 @@ TALK
 run board demo conversation 9
 same "who" '[{"who":"customer","body":"Covered #48"}]' "$(jq -c 'map({who, body})' "$OUT")"
 
+# A Dependabot PR: the Lead puts it In review once it has read it, and accepting it merges it.
+# `dependabot_pr <n>`: #<n> on the page gh_items wrote is a PR Dependabot opened.
+dependabot_pr() {
+  edit_item "$1" '.__typename = "PullRequest" | .author = {login: "dependabot"} | .labels.nodes = []
+    | del(.issueDependenciesSummary, .issueFieldValues)'
+}
+reviewable() {
+  jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
+    "$META" >"$META.new" && mv "$META.new" "$META"
+}
+
+case_ "the Lead adds an open Dependabot PR to In review, once it has said what the update brings"
+gh_items <<'ITEMS'
+In_progress 7 A task being built
+ITEMS
+reviewable
+jq -n '{node_id: "PR_535", number: 535, state: "open", pull_request: {}, user: {login: "dependabot[bot]"},
+        body: "Bumps MentalDesk.Tui from 0.3.8 to 0.3.9."}' >"$ISSUE"
+echo '[]' >"$THREAD"
+run board demo add lead 535 "In review"
+failed "before the Lead's comment"
+grep -q "say what Dependabot PR #535 brings (comment lead) before adding it" "$ERR" || fail "uncommented: '$(cat "$ERR")'"
+jq -n '[{user: {login: "demo-app[bot]"}, body: "Nothing new to adopt.\n\n<!-- a-team:lead -->"}]' >"$THREAD"
+run board demo add lead 535 "In review"
+same "exit" 0 "$STATUS"
+grep -q 'option=OPT_review' "$WRITES" || fail "add: no move in '$(cat "$WRITES")'"
+grep -q 'labels' "$WRITES" && fail "add: labelled it in '$(cat "$WRITES")'"
+
+case_ "the Lead may add no other PR to In review"
+: >"$WRITES"
+jq '.user.login = "someone"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"
+run board demo add lead 535 "In review"
+failed "someone else's PR"
+grep -q "lead may only add an open Dependabot PR to In review (#535 isn't one)" "$ERR" || fail "not Dependabot's: '$(cat "$ERR")'"
+jq '.user.login = "dependabot[bot]" | .state = "closed"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"
+run board demo add lead 535 "In review"
+failed "a closed PR"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "waiting shows a Dependabot PR In review as yours, with itself as the PR to merge"
+gh_items <<'ITEMS'
+In_review 535 Bump MentalDesk.Tui from 0.3.8 to 0.3.9
+ITEMS
+dependabot_pr 535
+dependabot_talk() {
+  gh_talk <<TALK
+535 body ${TODAY}T08:00:00Z dependabot[bot] Bumps MentalDesk.Tui.
+535 comment ${TODAY}T08:05:00Z demo-app[bot] Nothing new to adopt.\n<!-- a-team:lead -->
+535 comment ${TODAY}T08:10:00Z reviewer Looks fine.
+TALK
+  jq '.data.repository.x535 += {url: "https://github.com/mentaldesk/demo/pull/535", isDraft: false, mergeable: "MERGEABLE",
+        baseRefName: "main", headRefName: "dependabot/nuget/MentalDesk.Tui-0.3.9"}
+      | del(.data.repository.x535.closedByPullRequestsReferences)' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
+}
+dependabot_talk
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "Dependabot PR" '{"number":535,"dependency":true,"pr":535,"turn":"you","unready":"","reason":"awaiting your acceptance since 08:05"}' \
+  "$(jq -c '.[] | select(.number == 535) | {number, dependency, pr, turn, unready, reason}' "$OUT")"
+
+case_ "a Dependabot PR whose CI fails is still yours"
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+run board demo waiting
+same "failing" '{"turn":"you","trouble":"CI failing","unready":"CI failing"}' \
+  "$(jq -c '.[] | select(.number == 535) | {turn, trouble, unready}' "$OUT")"
+
+case_ "accepting a Dependabot PR squash-merges it and moves it to Done"
+reviewable
+: >"$WRITES"
+echo '{"head": {"sha": "deadbeefcafe", "ref": "dependabot/nuget/MentalDesk.Tui-0.3.9", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
+run board demo accept you 535
+same "exit" 0 "$STATUS"
+same "said" "#535: merged Dependabot PR #535" "$(cat "$OUT")"
+grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/535/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_535 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+
+case_ "a Dependabot PR is accepted only from In review"
+gh_items <<'ITEMS'
+Idea 535 Bump MentalDesk.Tui from 0.3.8 to 0.3.9
+ITEMS
+dependabot_pr 535
+run board demo accept you 535
+failed "from Idea"
+grep -q "only a Dependabot PR In review can be accepted (#535 is in 'Idea')" "$ERR" || fail "from Idea: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
 case_ "a stakeholder's comment on the docs PR triggers the Customer lead, and only it"
 gh_items <<'ITEMS'
 In_review 9 Docs: what's changed since 28 Sep

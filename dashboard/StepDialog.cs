@@ -1,17 +1,16 @@
+using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Fields;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Asks one <see cref="Step"/>, and runs its work in place on Enter, showing what the work prints.</summary>
-public sealed class StepDialog : Dialog
+/// <summary>Asks one <see cref="Step"/>, and runs its work in place on Ctrl+Enter, showing what the work prints.</summary>
+public sealed class StepDialog : DashboardDialog
 {
-    private const string YesHint = "yes";
-    private const string NoHint = "no";
-    private const string ContinueHint = "continue";
-    private const string ChooseHint = "choose";
-    private const string BackHint = "back";
+    private const string YesId = "step.yes";
+    private const string BackId = "step.back";
     private const int Inset = 1;
     private const int OutputLines = 8;
 
@@ -19,16 +18,16 @@ public sealed class StepDialog : Dialog
     private readonly Label _body;
     private readonly Label _output;
     private readonly List<string> _printed = [];
-    private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private readonly OptionSelector? _choice;
     private bool _ready;
     private bool _running;
+    private bool? _offered;
 
     public StepDialog(Step step)
+        : base(step.Title)
     {
         _step = step;
-        Title = step.Title;
         X = 0;
         Y = 0;
         Width = Dim.Fill();
@@ -49,9 +48,16 @@ public sealed class StepDialog : Dialog
             Height = Dim.Func(_ => _printed.Count == 0 ? 0 : Math.Min(OutputLines, _printed.Count), this),
             TextFormatter = { WordWrap = false, MultiLine = true },
         };
-        _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
+        Bind(YesId, Key.Enter.WithCtrl, step.Choose ? "Choose" : Capital(step.Yes), () => Yes(),
+            () => Done ? _step.ShowOutput : _ready && !_running && _offered == true);
+        Bind(BackId, Key.Backspace, "Back", () => Back(), () => !Done && !_running && _offered is not null);
+        Register(CancelId, step.Choose ? "Cancel new team" : Capital(step.No), () => No(), () => !Done && !_running && _offered is not null);
+        AddButton(ButtonKind.Primary, YesId);
+        AddButton(ButtonKind.Secondary, BackId);
+        AddButton(ButtonKind.Secondary, CancelId);
+        Foot.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
-        Add(_body, _output, _hints, _message);
+        Add(_body, _output, Foot, _message);
         if (step.Choose)
         {
             _choice = new OptionSelector
@@ -59,18 +65,20 @@ public sealed class StepDialog : Dialog
                 X = Inset,
                 Y = Pos.Bottom(_body) + 1,
                 Orientation = Orientation.Vertical,
-                TabBehavior = TabBehavior.NoStop,
                 Labels = [step.Yes, step.No],
                 Value = 0,
-            };
+            }.SelectOnArrows();
             Add(_choice);
+            // SelectOnArrows misses the arrows when the options are the dialog's first focus.
+            Bind("step.previous", Key.CursorUp, "Previous option", () => Choose(0), () => _choice.HasFocus);
+            Bind("step.next", Key.CursorDown, "Next option", () => Choose(1), () => _choice.HasFocus);
             _choice.SetFocus();
         }
         ShowLines(step.Lines);
 
         if (step.Load is { } load)
         {
-            ShowHints(false);
+            Offer(false);
             load().ContinueWith(read =>
             {
                 var (lines, failure) = read.Status == TaskStatus.RanToCompletion ? read.Result : (null, read.Exception?.InnerException?.Message);
@@ -80,7 +88,7 @@ public sealed class StepDialog : Dialog
         else
         {
             _ready = true;
-            ShowHints(true);
+            Offer(true);
         }
     }
 
@@ -96,8 +104,6 @@ public sealed class StepDialog : Dialog
 
     internal IReadOnlyList<string> Printed => _printed;
 
-    internal StatusBar Hints => _hints;
-
     internal MessageBar Message => _message;
 
     /// <summary>Whether Backspace left it, for the step before.</summary>
@@ -107,15 +113,9 @@ public sealed class StepDialog : Dialog
     public static Answer Show(IApplication app, Step step)
     {
         using var dialog = new StepDialog(step);
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
         return dialog.WentBack ? Answer.Back : dialog.Cancelled ? Answer.Cancelled : dialog.Done ? Answer.Done : Answer.Skipped;
     }
-
-    /// <summary>Enter reaches a Dialog as Accept, and never as a key.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => Yes();
-
-    protected override bool OnKeyDown(Key key) =>
-        key == Key.Esc ? No() : key == Key.Backspace ? Back() : base.OnKeyDown(key);
 
     internal bool Yes()
     {
@@ -133,7 +133,7 @@ public sealed class StepDialog : Dialog
         _running = true;
         _printed.Clear();
         ShowOutput();
-        ShowHints(null);
+        Offer(null);
         Say("Working…", Schemes.Base);
         work(line => OnUi(() => Print(line))).ContinueWith(ran =>
         {
@@ -173,7 +173,7 @@ public sealed class StepDialog : Dialog
             _message.Clear();
         }
         _ready = failure is null;
-        ShowHints(_ready);
+        Offer(_ready);
     }
 
     private void Print(string line)
@@ -188,7 +188,7 @@ public sealed class StepDialog : Dialog
         if (failure is not null)
         {
             Say(failure, Schemes.Error);
-            ShowHints(true);
+            Offer(true);
             return;
         }
         Done = true;
@@ -198,7 +198,8 @@ public sealed class StepDialog : Dialog
             return;
         }
         _message.Clear();
-        _hints.Show([new HintedCommand(ContinueHint, "Enter continue")], _ => Close());
+        Rename(YesId, "Continue");
+        ShowButtons();
         Refresh();
     }
 
@@ -216,34 +217,20 @@ public sealed class StepDialog : Dialog
     }
 
     /// <summary>Yes and no where <paramref name="yes"/> is true, only no where it's false, and nothing while working.</summary>
-    private void ShowHints(bool? yes)
+    private void Offer(bool? yes)
     {
-        List<HintedCommand> hints = [];
-        if (_choice is not null)
-        {
-            _hints.Show(
-                [new HintedCommand(ChooseHint, "Enter choose"), new HintedCommand(NoHint, "Esc cancel new team"), new HintedCommand(BackHint, "Backspace back")],
-                Answered);
-            Refresh();
-            return;
-        }
-        if (yes == true)
-            hints.Add(new HintedCommand(YesHint, $"Enter {_step.Yes}"));
-        if (yes is not null)
-        {
-            hints.Add(new HintedCommand(NoHint, $"Esc {_step.No}"));
-            hints.Add(new HintedCommand(BackHint, "Backspace back"));
-        }
-        _hints.Show(hints, Answered);
+        _offered = _choice is not null ? true : yes;
+        ShowButtons();
         Refresh();
     }
 
-    private bool Answered(string hint) => hint switch
+    private void Choose(int option)
     {
-        YesHint or ChooseHint => Yes(),
-        BackHint => Back(),
-        _ => No(),
-    };
+        _choice!.Value = option;
+        _choice.SubViews.OfType<CheckBox>().ElementAt(option).SetFocus();
+    }
+
+    private static string Capital(string label) => label.Length == 0 ? label : char.ToUpperInvariant(label[0]) + label[1..];
 
     private void OnUi(Action action)
     {

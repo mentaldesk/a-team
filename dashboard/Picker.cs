@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Dialogs;
 using System.Collections.ObjectModel;
 using MentalDesk.Tui.Filtering;
 using Terminal.Gui.Drawing;
@@ -7,11 +8,9 @@ using Terminal.Gui.ViewBase;
 namespace ATeam.Dashboard;
 
 /// <summary>Several names picked from a list narrowed by typing, where typing a name the list hasn't got adds it.</summary>
-public sealed class Picker : Dialog
+public sealed class Picker : DashboardDialog
 {
-    private const string MarkHint = "mark";
-    private const string DoneHint = "done";
-    private const string CancelHint = "cancel";
+    private const string DoneId = "picker.done";
 
     private readonly string _unlisted;
     private readonly List<string> _chosen;
@@ -21,18 +20,17 @@ public sealed class Picker : Dialog
     private readonly TextField _filter;
     private readonly ListView _list;
     private readonly Label _noMatches;
-    private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private bool _closed;
 
     /// <summary><paramref name="unlisted"/> follows a chosen name the list doesn't offer, like <c>(not installed)</c>.</summary>
     public Picker(string title, IReadOnlyList<string> chosen, string unlisted, string message)
+        : base(title)
     {
         _unlisted = unlisted;
         _chosen = [.. chosen];
         _kept = [.. chosen];
 
-        Title = title;
         X = 0;
         Y = 0;
         Width = Dim.Fill();
@@ -46,24 +44,28 @@ public sealed class Picker : Dialog
         };
         _filter.KeyBindings.Remove(Key.Home);
         _filter.KeyBindings.Remove(Key.End);
-        _filter.KeyDown += (_, key) => key.Handled = key == Key.Space && Toggle();
         _list = new ListView
         {
             X = Pos.Absolute(1),
             Y = Pos.Bottom(_filter),
             Width = Dim.Fill(1),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - 2 - _message.Lines), this),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - 2 - Foot.Rows - _message.Lines), this),
             ShowMarks = true,
             MarkMultiple = true,
         };
-        _list.KeyDown += (_, key) => key.Handled = key == Key.Space && Toggle();
         _noMatches = new Label { X = Pos.Absolute(1), Y = Pos.Bottom(_filter), Text = "(no matches)", Enabled = false, Visible = false };
 
-        _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
-        _hints.Show([new HintedCommand(MarkHint, "Space mark"), new HintedCommand(DoneHint, "Enter done"),
-            new HintedCommand(CancelHint, "Esc cancel")], Run);
+        Bind(DoneId, Key.Enter, "Done", () => Done());
+        Bind("picker.mark", Key.Space, "Mark or unmark", () => Toggle());
+        Bind("picker.up", Key.CursorUp, "Previous", () => MoveTo((_list.Value ?? 0) - 1));
+        Bind("picker.down", Key.CursorDown, "Next", () => MoveTo((_list.Value ?? -1) + 1));
+        Bind("picker.switch", Key.Tab, "Filter or list", () => (_filter.HasFocus ? (View)_list : _filter).SetFocus());
+        Register(CancelId, "Cancel", () => Close(null));
+        AddButton(ButtonKind.Primary, DoneId);
+        AddButton(ButtonKind.Secondary, CancelId);
+        Foot.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
-        Add(_filter, _list, _noMatches, _hints, _message);
+        Add(_filter, _list, _noMatches, Foot, _message);
 
         Narrow();
         Say(message, Schemes.Base);
@@ -76,8 +78,6 @@ public sealed class Picker : Dialog
     internal TextField Filter => _filter;
 
     internal ListView List => _list;
-
-    internal StatusBar Hints => _hints;
 
     internal bool NoMatches => _noMatches.Visible;
 
@@ -101,22 +101,6 @@ public sealed class Picker : Dialog
 
     /// <summary>Enter reaches a Dialog as Accept, from the filter or the list alike, and never as a key.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => Done();
-
-    protected override bool OnKeyDown(Key key)
-    {
-        if (key == Key.Esc)
-            return Close(null);
-        if (key == Key.CursorUp)
-            return MoveTo((_list.Value ?? 0) - 1);
-        if (key == Key.CursorDown)
-            return MoveTo((_list.Value ?? -1) + 1);
-        if (key == Key.Tab)
-        {
-            (_filter.HasFocus ? (View)_list : _filter).SetFocus();
-            return true;
-        }
-        return base.OnKeyDown(key);
-    }
 
     /// <summary>Marks the selected row, or unmarks it.</summary>
     internal bool Toggle()
@@ -142,7 +126,7 @@ public sealed class Picker : Dialog
     /// <summary>Runs the picker, and returns what was picked, or null where it was cancelled.</summary>
     public static IReadOnlyList<string>? Show(IApplication app, Picker picker)
     {
-        app.Run(picker);
+        DialogHost.Run(app, picker);
         return picker.Picked;
     }
 
@@ -153,13 +137,6 @@ public sealed class Picker : Dialog
         RequestStop();
         return true;
     }
-
-    private bool Run(string hint) => hint switch
-    {
-        MarkHint => Toggle(),
-        DoneHint => Done(),
-        _ => Close(null),
-    };
 
     /// <summary>Takes the marks off the rows on show into what's chosen, before the rows change.</summary>
     private void Harvest()

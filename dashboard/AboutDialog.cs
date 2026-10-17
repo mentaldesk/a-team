@@ -6,7 +6,7 @@ using Terminal.Gui.Input;
 namespace ATeam.Dashboard;
 
 /// <summary>What this is and which version of it you're running.</summary>
-public sealed class AboutDialog : Dialog
+public sealed class AboutDialog : DashboardDialog
 {
     private const string HintText = "Esc close";
     private const int Inset = 2;
@@ -18,12 +18,12 @@ public sealed class AboutDialog : Dialog
     private readonly int _textTall;
 
     public AboutDialog(string version)
+        : base("About")
     {
         var rows = Rows(version);
         _textWide = Math.Max(rows.Max(row => row.Length), HintText.Length) + (Inset * 2);
         _textTall = rows.Count + 2;
 
-        Title = "About";
         Width = Dim.Func(_ => Fits(Wanted().Width, Room()?.Width), this);
         Height = Dim.Func(_ => Fits(Wanted().Height, Room()?.Height), this);
 
@@ -51,11 +51,12 @@ public sealed class AboutDialog : Dialog
         _hint.Accepting += (_, args) => args.Handled = Close();
         SubViewLayout += (_, _) =>
         {
-            if (!Closed && Roomy())
+            if (!HasClosed && Roomy())
                 _van.Start();
             else
                 _van.Stop();
         };
+        Register(CancelId, "Close", () => Close());
         Add(_van, _about, _hint);
     }
 
@@ -63,12 +64,7 @@ public sealed class AboutDialog : Dialog
 
     internal Label About => _about;
 
-    internal bool Closed { get; private set; }
-
-    /// <summary>Enter reaches a Dialog as Accept and would close it; About has nothing to confirm.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => true;
-
-    protected override bool OnKeyDown(Key key) => key == Key.Esc ? Close() : base.OnKeyDown(key);
+    internal bool HasClosed { get; private set; }
 
     internal static List<string> Rows(string version) =>
     [
@@ -102,7 +98,7 @@ public sealed class AboutDialog : Dialog
 
     private bool Close()
     {
-        Closed = true;
+        HasClosed = true;
         _van.Stop();
         RequestStop();
         return true;
@@ -111,6 +107,6 @@ public sealed class AboutDialog : Dialog
     public static void Show(IApplication app, string version)
     {
         using var dialog = new AboutDialog(version);
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
     }
 }

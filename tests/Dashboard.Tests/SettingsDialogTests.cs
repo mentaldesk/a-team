@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Keys;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using System.Drawing;
@@ -55,7 +56,7 @@ public class SettingsDialogTests : IDisposable
     {
         using var dialog = Laid(Registry(), 80, 24);
 
-        Assert.Equal(["Enter rebind · Delete remove · Type to filter", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
+        Assert.Equal(["Enter rebind · Delete remove · Type to filter", "Ctrl+Enter keep · Esc cancel · Ctrl+G guide"], HintRows(dialog));
     }
 
     [Fact]
@@ -322,13 +323,13 @@ public class SettingsDialogTests : IDisposable
         using var dialog = Laid(Registry(), 80, 24);
 
         OpenPage(dialog, "Theme");
-        Assert.Equal(["Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
+        Assert.Equal(["Ctrl+Enter keep · Esc cancel · Ctrl+G guide"], HintRows(dialog));
 
         OpenPage(dialog, "Keyboard Shortcuts");
         Assert.Equal(2, HintRows(dialog).Count);
 
         OpenPage(dialog, "Dashboard");
-        Assert.Equal(["Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
+        Assert.Equal(["Ctrl+Enter keep · Esc cancel · Ctrl+G guide"], HintRows(dialog));
     }
 
     [Fact]
@@ -716,13 +717,13 @@ public class SettingsDialogTests : IDisposable
     {
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
         using var dialog = Open(out _, out _, page: "Teams");
-        Assert.Equal(["p pause · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
+        Assert.Equal(["p pause · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · Ctrl+G guide"], HintRows(dialog));
 
         Assert.True(dialog.Teams.NewKeyDownEvent(new Key('p')));
 
         Assert.Equal(["alpha  mentaldesk/alpha  paused"], TeamRows(dialog));
         Assert.True(new TeamConfigs(_configRoot).IsPaused("alpha"));
-        Assert.Equal(["p resume · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
+        Assert.Equal(["p resume · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · Ctrl+G guide"], HintRows(dialog));
 
         Hint(dialog, "p resume").InvokeCommand(Command.Accept);
 
@@ -1107,13 +1108,13 @@ public class SettingsDialogTests : IDisposable
         WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
         using var dialog = Open(out _, out _, page: "Teams");
         dialog.ConfirmRemove = (_, _, _) => true;
-        Assert.Equal(["p pause · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
+        Assert.Equal(["p pause · Enter edit · x remove · n new", "Ctrl+Enter keep · Esc cancel · Ctrl+G guide"], HintRows(dialog));
 
         dialog.Teams.NewKeyDownEvent(new Key('x'));
 
         Assert.Empty(TeamRows(dialog));
         Assert.Null(dialog.Teams.Value);
-        Assert.Equal(["n new", "Ctrl+Enter keep · Esc cancel · F1 guide"], HintRows(dialog));
+        Assert.Equal(["n new", "Ctrl+Enter keep · Esc cancel · Ctrl+G guide"], HintRows(dialog));
     }
 
     private void WriteTeam(string team, string config)
@@ -1193,16 +1194,57 @@ public class SettingsDialogTests : IDisposable
     }
 
     [Fact]
-    public void F1_opens_the_guide_on_the_Teams_page_from_any_page()
+    public void Ctrl_G_opens_the_guide_on_the_Teams_page_from_any_page_and_F1_no_longer_does()
     {
         var opened = new List<string>();
         using var dialog = Open(out _, out _, showGuide: opened.Add);
+        dialog.ShowHelp = _ => { };
 
+        Assert.True(dialog.NewKeyDownEvent(Key.G.WithCtrl));
+        Hint(dialog, "Ctrl+G guide").InvokeCommand(Command.Accept);
         Assert.True(dialog.NewKeyDownEvent(Key.F1));
-        Hint(dialog, "F1 guide").InvokeCommand(Command.Accept);
 
         Assert.Equal([GuideDialog.Teams, GuideDialog.Teams], opened);
         Assert.False(dialog.Confirmed);
+    }
+
+    [Fact]
+    public void F1_on_every_page_shows_Help_headed_with_the_page_and_listing_its_keys_and_the_dialogs()
+    {
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "dispatch": {"enabled": true}}""");
+        using var dialog = Open(out _, out _);
+        var shown = new List<KeySheet>();
+        dialog.ShowHelp = shown.Add;
+        (string, string)[] dialogKeys = [("Ctrl+Enter", "Keep"), ("Ctrl+G", "Guide"), ("Tab/Shift+Tab", "Next / previous"), ("Esc", "Cancel")];
+
+        var pages = PageNames(dialog).ToList();
+        foreach (var page in pages)
+        {
+            OpenPage(dialog, page);
+            Assert.True(dialog.NewKeyDownEvent(Key.F1));
+        }
+
+        Assert.Equal(pages, shown.Select(sheet => sheet.Here!.Heading));
+        Assert.All(shown, sheet => Assert.Null(sheet.Everywhere));
+        Assert.Equal(dialogKeys, DialogTests.Rows(shown[pages.IndexOf("Theme")]));
+        Assert.Equal([("Enter", "Rebind"), ("Delete", "Remove its key"), ("Type", "Filter"), .. dialogKeys],
+            DialogTests.Rows(shown[pages.IndexOf("Keyboard Shortcuts")]));
+        Assert.Equal([("p", "Pause"), ("Enter", "Edit"), ("x", "Remove"), ("n", "New team"), .. dialogKeys],
+            DialogTests.Rows(shown[pages.IndexOf(SettingsDialog.TeamsPage)]));
+    }
+
+    [Fact]
+    public void Closing_Help_puts_focus_back_on_the_field_with_what_was_typed()
+    {
+        using var dialog = Open(out _, out _, page: "Keyboard Shortcuts");
+        dialog.Filter.SetFocus();
+        dialog.Filter.Text = "comm";
+        dialog.ShowHelp = _ => dialog.Pages.SetFocus();
+
+        Assert.True(dialog.NewKeyDownEvent(Key.F1));
+
+        Assert.True(dialog.Filter.HasFocus);
+        Assert.Equal("comm", dialog.Filter.Text);
     }
 
     private static CommandRegistry Registry() => new CommandRegistry()
