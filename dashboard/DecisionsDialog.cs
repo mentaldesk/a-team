@@ -1,22 +1,20 @@
 using System.Drawing;
+using MentalDesk.Tui.Dialogs;
 using Terminal.Gui.Drawing;
-using MentalDesk.Tui.Keys;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
 /// <summary>What the team remembers you deciding, to read, search and correct: the selected team's entries and all
 /// teams', newest confirmed first, with the selected one in full below.</summary>
-public sealed class DecisionsDialog : Dialog
+public sealed class DecisionsDialog : DashboardDialog
 {
-    internal const string OpenHint = "open";
-    internal const string EditHint = "edit";
-    internal const string KindHint = "kind";
-    internal const string WidenHint = "widen";
-    internal const string RetireHint = "retire";
-    internal const string SaveHint = "save";
-    internal const string CancelHint = "cancel";
-    internal const string CloseHint = "close";
+    internal const string OpenId = "decisions.open";
+    internal const string EditId = "decisions.edit";
+    internal const string KindId = "decisions.kind";
+    internal const string WidenId = "decisions.widen";
+    internal const string RetireId = "decisions.retire";
+    internal const string SaveId = "decisions.save";
     private const int DetailRows = 6;
 
     private readonly string _team;
@@ -31,24 +29,23 @@ public sealed class DecisionsDialog : Dialog
     private readonly Line _rule = new() { X = 0, Width = Dim.Fill() };
     private readonly LogView _detail = new() { X = 1, Width = Dim.Fill(1), Height = DetailRows, CanFocus = false };
     private readonly TextField _editor = new() { X = 1, Width = Dim.Fill(1), Visible = false };
-    private readonly StatusBar _hints = new();
     private readonly MessageBar _message = new();
     private IReadOnlyList<Decision> _shown = [];
     private int? _keep;
 
     public DecisionsDialog(string team, Func<Task<Reading>> read, Func<DecisionChange, Task<string?>> change, Action<string> openUrl)
+        : base($"Decisions · {team}")
     {
         _team = team;
         _read = read;
         _change = change;
         _openUrl = openUrl;
-        Title = $"Decisions · {team}";
         X = 0;
         Y = 0;
         Width = Dim.Fill();
         Height = Dim.Fill();
 
-        int HintRow() => Math.Max(0, Viewport.Height - 1 - _message.Lines);
+        int FootRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines);
 
         _allTeams.X = Pos.Right(_search) + 3;
         _replaced.X = Pos.Right(_allTeams) + 3;
@@ -57,7 +54,7 @@ public sealed class DecisionsDialog : Dialog
             X = 0,
             Y = 2,
             Width = Dim.Fill(),
-            Height = Dim.Func(_ => Math.Max(1, HintRow() - 2 - DetailRows - 2), this),
+            Height = Dim.Func(_ => Math.Max(1, FootRow() - 2 - DetailRows - 2), this),
             FullRowSelect = true,
             Style = { ShowVerticalCellLines = false, ShowVerticalHeaderLines = false, ShowHorizontalHeaderOverline = false,
                 ShowHorizontalBottomLine = false, ExpandLastColumn = false },
@@ -65,7 +62,7 @@ public sealed class DecisionsDialog : Dialog
         _rule.Y = Pos.Bottom(_table);
         _detail.Y = Pos.Bottom(_rule);
         _editor.Y = Pos.Top(_detail);
-        _hints.Y = Pos.Func(_ => HintRow(), this);
+        Foot.Y = Pos.Func(_ => FootRow(), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
 
         _search.ValueChanged += (_, _) => Show();
@@ -73,10 +70,22 @@ public sealed class DecisionsDialog : Dialog
         _allTeams.ValueChanged += (_, _) => Show();
         _replaced.ValueChanged += (_, _) => Show();
         _table.ValueChanged += (_, _) => ShowSelected();
-        _table.KeyDown += (_, key) => key.Handled = Browsing(key);
         _editor.KeyDown += (_, key) => key.Handled = Editing(key);
-        Add(new Label { X = 0, Y = 0, Text = "Search:" }, _search, _allTeams, _replaced, _table, _empty, _rule, _detail, _editor, _hints, _message);
-        Register = new DecisionRegister([]);
+        Add(new Label { X = 0, Y = 0, Text = "Search:" }, _search, _allTeams, _replaced, _table, _empty, _rule, _detail, _editor, Foot, _message);
+        Bind(OpenId, Key.Enter, "Open on GitHub", () => Open(), () => !_editor.Visible && Selected is not null);
+        Bind(EditId, Key.E, "Edit", () => StartEditing(), Browsing);
+        Bind(KindId, Key.K, "Rule/lean", () => Correct(entry => DecisionChange.Kind(entry.Id)), Browsing);
+        Bind(WidenId, Key.W, "All teams", () => Correct(entry => DecisionChange.Widen(entry.Id)), Browsing);
+        Bind(RetireId, Key.R, "Retire", () => Correct(entry => DecisionChange.Retire(entry.Id)), Browsing);
+        Register(SaveId, "Save", () => Save(), () => _editor.Visible);
+        Also("Enter", "Save", () => _editor.Visible);
+        Also("Up/Down", "Select a decision", () => !_editor.Visible);
+        Also("Tab", "Move between the search, the checkboxes and the list", () => !_editor.Visible);
+        Register(CancelId, "Close", () => { if (_editor.Visible) StopEditing(); else Close(); });
+        foreach (var id in new[] { OpenId, EditId, KindId, WidenId, RetireId, SaveId })
+            AddButton(id == SaveId || id == OpenId ? ButtonKind.Primary : ButtonKind.Secondary, id);
+        AddButton(ButtonKind.Secondary, CancelId);
+        Decisions = new DecisionRegister([]);
         _empty.Text = "Reading the register…";
         _empty.Visible = true;
         _table.Visible = false;
@@ -84,7 +93,7 @@ public sealed class DecisionsDialog : Dialog
         Reload();
     }
 
-    internal DecisionRegister Register { get; private set; }
+    internal DecisionRegister Decisions { get; private set; }
 
     internal IReadOnlyList<Decision> Shown => _shown;
 
@@ -105,43 +114,13 @@ public sealed class DecisionsDialog : Dialog
 
     internal Label Empty => _empty;
 
-    internal StatusBar Hints => _hints;
-
     internal MessageBar Message => _message;
-
-    /// <summary>Every key the dialog binds, as F1 lists them and the hints name them.</summary>
-    internal static IReadOnlyList<(string Keys, string Label)> Keys =>
-    [
-        ("Enter", "Open where it was said on GitHub"),
-        ("e", "Edit the decision's wording"),
-        ("k", "Make it a rule or a lean"),
-        ("w", "Widen it to all teams, or narrow it again"),
-        ("r", "Retire it, or bring it back"),
-        ("Up/Down", "Select a decision"),
-        ("Tab", "Move between the search, the checkboxes and the list"),
-        ("Esc", "Close"),
-    ];
-
-    protected override bool OnKeyDown(Key key)
-    {
-        if (key == Key.F1)
-        {
-            ShowKeys();
-            return true;
-        }
-        if (key == Key.Esc)
-            return _editor.Visible ? StopEditing() : Close();
-        return base.OnKeyDown(key);
-    }
-
-    /// <summary>Enter reaches a Dialog as Accept, from the table and the field alike.</summary>
-    protected override bool OnAccepting(CommandEventArgs args) => _editor.Visible ? Save() : Open();
 
     /// <summary>The first read puts focus on the list, where e, k, w and r work; later ones leave it where it is.</summary>
     internal void Loaded(DecisionRegister register)
     {
-        var first = Register.Entries.Count == 0;
-        Register = register;
+        var first = Decisions.Entries.Count == 0;
+        Decisions = register;
         if (register.Failure is { Length: > 0 } failure)
         {
             _message.Show(failure, Schemes.Error);
@@ -157,10 +136,10 @@ public sealed class DecisionsDialog : Dialog
     {
         var keep = _keep ?? Selected?.Id;
         _keep = null;
-        _shown = Register.Shown(_search.Text, _allTeams.Value == CheckState.Checked, _replaced.Value == CheckState.Checked);
-        if (Register.Entries.Count == 0)
+        _shown = Decisions.Shown(_search.Text, _allTeams.Value == CheckState.Checked, _replaced.Value == CheckState.Checked);
+        if (Decisions.Entries.Count == 0)
         {
-            if (Register.Failure is null)
+            if (Decisions.Failure is null)
                 _empty.Text = DecisionRegister.Empty;
             _empty.Y = 2;
             _empty.Visible = true;
@@ -182,19 +161,6 @@ public sealed class DecisionsDialog : Dialog
         ShowSelected();
     }
 
-    internal bool Run(string hint) => hint switch
-    {
-        OpenHint => Open(),
-        EditHint => StartEditing(),
-        KindHint => Correct(entry => DecisionChange.Kind(entry.Id)),
-        WidenHint => Correct(entry => DecisionChange.Widen(entry.Id)),
-        RetireHint => Correct(entry => DecisionChange.Retire(entry.Id)),
-        SaveHint => Save(),
-        CancelHint => StopEditing(),
-        CloseHint => Close(),
-        _ => false,
-    };
-
     internal bool StartEditing()
     {
         if (Selected is not { } entry)
@@ -210,44 +176,22 @@ public sealed class DecisionsDialog : Dialog
     private void ShowSelected()
     {
         _detail.Lines = Selected is { } entry
-            ? [.. Register.Detail(entry).Select(line => new LogLine(line, LogLineKind.Prose))]
+            ? [.. Decisions.Detail(entry).Select(line => new LogLine(line, LogLineKind.Prose))]
             : [];
         ShowHints();
     }
 
     private void ShowHints()
     {
-        if (_editor.Visible)
-        {
-            _hints.Show([new HintedCommand(SaveHint, "Enter save"), new HintedCommand(CancelHint, "Esc cancel")], Run);
-            return;
-        }
         var entry = Selected;
-        var some = entry is not null;
-        _hints.Show([
-            new HintedCommand(OpenHint, "Enter open on GitHub", some),
-            new HintedCommand(EditHint, "e edit", some),
-            new HintedCommand(KindHint, "k rule/lean", some),
-            new HintedCommand(WidenHint, entry is { Everyone: true } ? "w this team only" : "w all teams", some),
-            new HintedCommand(RetireHint, entry is { Retired: not null } ? "r bring back" : "r retire", some),
-            new HintedCommand(CloseHint, "Esc close"),
-        ], Run);
+        Rename(WidenId, entry is { Everyone: true } ? "This team only" : "All teams");
+        Rename(RetireId, entry is { Retired: not null } ? "Bring back" : "Retire");
+        Rename(CancelId, _editor.Visible ? "Cancel" : "Close");
+        ShowButtons();
     }
 
-    private bool Browsing(Key key)
-    {
-        if (key == Key.Enter)
-            return Open();
-        if (key == Key.E)
-            return StartEditing();
-        if (key == Key.K)
-            return Run(KindHint);
-        if (key == Key.W)
-            return Run(WidenHint);
-        if (key == Key.R)
-            return Run(RetireHint);
-        return false;
-    }
+    /// <summary>The list's own keys, which typing in the search or the editor leaves alone.</summary>
+    private bool Browsing() => !_editor.Visible && !_search.HasFocus && Selected is not null;
 
     /// <summary>Typing never leaves the search: the arrows move the selection, and Enter opens it.</summary>
     private bool Searching(Key key)
@@ -322,13 +266,6 @@ public sealed class DecisionsDialog : Dialog
             ? DecisionRegister.Of(read.Result) : new DecisionRegister([], "couldn't read the register"))),
             TaskContinuationOptions.ExecuteSynchronously);
 
-    private void ShowKeys()
-    {
-        var sheet = new KeySheet(null, new KeyColumn(Title, [new KeyGroup(null, [.. Keys.Select(key => new KeyRow(key.Keys, key.Label))])]));
-        if (App is { } app)
-            KeysSheet.Show(app, sheet);
-    }
-
     private void OnUi(Action action)
     {
         if (App is { } app)
@@ -346,6 +283,6 @@ public sealed class DecisionsDialog : Dialog
     public static void Show(IApplication app, string team, Func<Task<Reading>> read, Func<DecisionChange, Task<string?>> change, Action<string> openUrl)
     {
         using var dialog = new DecisionsDialog(team, read, change, openUrl);
-        app.Run(dialog);
+        DialogHost.Run(app, dialog);
     }
 }

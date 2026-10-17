@@ -193,7 +193,7 @@ public class DecisionsTests
         var opened = new List<string>();
         using var dialog = Open(Register, opened: opened);
 
-        dialog.Run(DecisionsDialog.OpenHint);
+        dialog.Table.NewKeyDownEvent(Key.Enter);
 
         Assert.Equal(["https://github.com/mentaldesk/a-team/issues/34"], opened);
     }
@@ -243,27 +243,28 @@ public class DecisionsTests
     }
 
     [Fact]
-    public void The_hints_name_each_key_and_follow_the_selected_entry()
+    public void The_buttons_name_each_key_and_follow_the_selected_entry()
     {
         using var dialog = Open(Register);
 
-        Assert.Equal(["Enter open on GitHub", "e edit", "k rule/lean", "w this team only", "r retire", "Esc close"],
-            dialog.Hints.Hints.Select(hint => hint.Text));
+        Assert.Equal(["Enter Open on GitHub", "e Edit", "k Rule/lean", "w This team only", "r Retire", "Esc Close"],
+            dialog.ButtonLabels);
         dialog.AllTeams.Value = CheckState.UnChecked;
         dialog.Replaced.Value = CheckState.Checked;
         dialog.Table.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal(4, dialog.Selected?.Id);
-        Assert.Equal(["Enter open on GitHub", "e edit", "k rule/lean", "w all teams", "r bring back", "Esc close"],
-            dialog.Hints.Hints.Select(hint => hint.Text));
+        Assert.Equal(["Enter Open on GitHub", "e Edit", "k Rule/lean", "w All teams", "r Bring back", "Esc Close"],
+            dialog.ButtonLabels);
         dialog.StartEditing();
-        Assert.Equal(["Enter save", "Esc cancel"], dialog.Hints.Hints.Select(hint => hint.Text));
+        Assert.Equal(["Save", "Esc Cancel"], dialog.ButtonLabels);
     }
 
     [Fact]
-    public void F1_lists_every_key_the_hints_name()
+    public void F1_lists_every_key_the_buttons_name()
     {
-        var keys = DecisionsDialog.Keys.Select(key => key.Keys).ToList();
+        using var dialog = Open(Register);
 
-        Assert.Equal(["Enter", "e", "k", "w", "r", "Up/Down", "Tab", "Esc"], keys);
+        Assert.Equal(["Enter", "e", "k", "w", "r", "Up/Down", "Tab", "Esc"],
+            DialogTests.Rows(DialogTests.F1(dialog)).Select(row => row.Keys));
     }
 }
