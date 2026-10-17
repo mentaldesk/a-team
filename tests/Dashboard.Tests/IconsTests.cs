@@ -64,6 +64,7 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.Docs] = "\U0001F4C4",
                 [Icon.Question] = "?",
                 [Icon.Writing] = "⋯",
+                [Icon.Chain] = "⛓",
             },
             Enum.GetValues<Icon>().ToDictionary(icon => icon, icon => Icons.Glyph(icon, IconStyle.Unicode)));
 

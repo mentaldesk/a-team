@@ -8,8 +8,15 @@ public sealed record WaitingItem(
     int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
     string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0, string Role = "",
     string Recommendation = "", bool Reviewed = false, int Consider = 0, bool Document = false, string Branch = "",
-    bool Dependency = false, string Upstream = "")
+    bool Dependency = false, string Upstream = "", IReadOnlyList<IReadOnlyList<ChainLink>>? Chains = null,
+    IReadOnlyList<int>? Frees = null)
 {
+    /// <summary>The tasks this card holds up, found across every team's cards by <see cref="Holds.Tag"/>.</summary>
+    public IReadOnlyList<Hold> Holding { get; init; } = [];
+
+    /// <summary>On a task waiting on another repo, the link of its chain holding it now, as its card says it.</summary>
+    public string WaitsOn { get; init; } = "";
+
     /// <summary>Whether it's a task waiting on a change in another repo, which frees itself and asks nobody anything.</summary>
     public bool WaitsUpstream => Upstream.Length > 0;
 
@@ -70,8 +77,8 @@ public sealed record WaitingItem(
     public bool Mine => Turn.Length == 0 || Turn == "you";
 
     /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's,
-    /// and the PR it hands over to at the end.</summary>
-    public string Line => string.Join(" · ",
+    /// and the PR it hands over to at the end; or the chain, for a card holding up a task or a task held up.</summary>
+    public string Line => Holding.Count > 0 ? Holds.Chain(this) : WaitsOn.Length > 0 ? Holds.Waiting(this) : string.Join(" · ",
         new[] { $"#{Number}", Mine ? "" : Turn, Suggested, Reason, PrBranch.Length > 0 ? PrBranch : Pr == 0 ? "" : $"PR #{Pr}" }.Where(part => part.Length > 0));
 
     /// <summary>What that command printed. Anything that isn't an item with a number is left out.</summary>
@@ -94,7 +101,9 @@ public sealed record WaitingItem(
                         Text(item, "unready"), Text(item, "base"),
                         Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0, Text(item, "role"),
                         Text(item, "recommendation"), Flag(item, "reviewed"), Numbered(item, "consider") ?? 0,
-                        Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream")))
+                        Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream"),
+                        Linked(item) is { Count: > 0 } chains ? chains : null,
+                        Numbers(item, "frees") is { Count: > 0 } frees ? frees : null))
             ];
         }
         catch (JsonException)
@@ -104,6 +113,20 @@ public sealed record WaitingItem(
     }
 
     private static int? Numbered(JsonElement item) => Numbered(item, "number");
+
+    private static IReadOnlyList<IReadOnlyList<ChainLink>> Linked(JsonElement item) =>
+        item.TryGetProperty("chains", out var chains) && chains.ValueKind == JsonValueKind.Array
+            ? [.. chains.EnumerateArray().Where(chain => chain.ValueKind == JsonValueKind.Array)
+                .Select(chain => (IReadOnlyList<ChainLink>)[.. chain.EnumerateArray().Where(link => link.ValueKind == JsonValueKind.Object)
+                    .Select(link => new ChainLink(Text(link, "team"), Numbers(link, "refs"), Text(link, "what"), Text(link, "shown")))])
+                .Where(chain => chain.Count > 0)]
+            : [];
+
+    private static IReadOnlyList<int> Numbers(JsonElement item, string name) =>
+        item.TryGetProperty(name, out var numbers) && numbers.ValueKind == JsonValueKind.Array
+            ? [.. numbers.EnumerateArray().Where(number => number.ValueKind == JsonValueKind.Number && number.TryGetInt32(out _))
+                .Select(number => number.GetInt32())]
+            : [];
 
     private static int? Numbered(JsonElement item, string name) =>
         item.TryGetProperty(name, out var number) && number.TryGetInt32(out var value) ? value : null;
