@@ -1675,10 +1675,7 @@ public sealed class DashboardWindow : Window
         if (Selected() is not { } pane)
             return;
         var copied = copy(pane);
-        var clipboard = _clipboard ?? App?.Clipboard;
-        _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(copied.Text)
-            ? (copied.Said, Schemes.Accent)
-            : ("there's no clipboard to copy to", Schemes.Error);
+        _copied = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, copied.Text), truncated: copied.Capped);
         ShowMessage();
     }
 
@@ -1686,10 +1683,7 @@ public sealed class DashboardWindow : Window
     {
         if (_work.Selected is not { Branch.Length: > 0 } card)
             return;
-        var clipboard = _clipboard ?? App?.Clipboard;
-        _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(card.Branch)
-            ? ($"Copied {card.Branch}", Schemes.Accent)
-            : ("there's no clipboard to copy to", Schemes.Error);
+        _copied = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, card.Branch), card.Branch);
         ShowMessage();
     }
 

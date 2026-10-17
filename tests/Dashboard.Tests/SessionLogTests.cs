@@ -109,16 +109,7 @@ public class SessionLogTests : IDisposable
 
         Assert.Equal(SessionLog.MaxCopied, line.Copied.Length);
         Assert.True(line.Capped);
-        Assert.EndsWith("(line truncated)", LogCopy.Of([line]).Said, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Copying_says_how_many_lines_and_characters()
-    {
-        Assert.Equal("copied 3,914 characters", LogCopy.Of([new LogLine("x", LogLineKind.ToolCall, new string('y', 3914))]).Said);
-        Assert.Equal(
-            "copied 3 lines, 4,102 characters",
-            LogCopy.Of([new(new string('a', 1000), LogLineKind.Prose), new(new string('b', 2000), LogLineKind.Prose), new(new string('c', 1100), LogLineKind.Prose)]).Said);
+        Assert.True(LogCopy.Of([line]).Capped);
     }
 
     [Fact]
