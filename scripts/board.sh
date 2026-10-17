@@ -365,6 +365,8 @@ COVERED="$STATE/$TEAM/customer/covered"
 # When the Customer lead last finished auditing the docs as a whole, in seconds since the epoch.
 AUDITED="$STATE/$TEAM/customer/audited"
 AUDIT_EVERY=$((7 * 24 * 60 * 60))
+# Present once the Lead has seeded the decision register from closed pitches, so it does it once.
+SEEDED="$STATE/$TEAM/lead/seeded"
 
 KIND=$(cfg .project.ownerType)
 KIND=${KIND:-organization}
@@ -1273,12 +1275,13 @@ case "$CMD" in
     fi
     jq -n --argjson promote "$promote" --argjson demote "$demote" --arg turn "$turn" --argjson item "$idea" \
       --argjson room "$(($(cfg '.wip.ideas') - found))" --argjson ready "$ready" --argjson blocked "$blocked" \
-      --argjson floor "$(cfg '.wip.readyFloor // 0')" --argjson skipped "$skipped" --argjson unthemed "$(unthemed "$all")" '
+      --argjson floor "$(cfg '.wip.readyFloor // 0')" --argjson skipped "$skipped" --argjson unthemed "$(unthemed "$all")" \
+      --argjson seed "$([ -e "$SEEDED" ] && echo false || echo true)" '
       {promote: $promote, demote: $demote, turn: $turn}
       + (if $turn == "pitch" then {item: $item}
          elif $turn == "discover" then {room: $room}
          else {reason: "Exploring and the discovery queue are both full, or there is no Idea to pitch"} end)
-      + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor), skipped: $skipped, unthemed: $unthemed}'
+      + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor), skipped: $skipped, unthemed: $unthemed, seed: $seed}'
     ;;
 
   move)
@@ -2287,12 +2290,24 @@ case "$CMD" in
     replacing=$(live_decision "$old")
     newer=$(live_decision "$new")
     replaceable "$replacing" "$(jq -r .who <<<"$newer")" "$(jq -r .scope <<<"$newer")"
+    jq -e --argjson old "$replacing" '.said >= $old.said' <<<"$newer" >/dev/null ||
+      die "decision $new was said before decision $old, so the newer one is $old: replace $new with $old"
     if [ -n "$DRY_RUN" ]; then
       echo "dry-run: would mark decision $old replaced by decision $new" >&2
       exit 0
     fi
     decisions_sql "UPDATE decisions SET replaced_by = $new WHERE id = $old;" >/dev/null
     say "decision $old replaced by decision $new"
+    ;;
+
+  seeded)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM seeded lead"
+    [ "$1" = lead ] || die "only lead seeds the decision register"
+    if [ -z "$DRY_RUN" ]; then
+      mkdir -p "$(dirname "$SEEDED")"
+      date -u +%FT%TZ >"$SEEDED"
+    fi
+    say "decision register seeded: lead-next won't ask again"
     ;;
 
   reconfirm)

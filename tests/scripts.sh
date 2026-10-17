@@ -6652,9 +6652,12 @@ run board demo decide lead you lean all 41 "$WORK/decision" --replaces 1
 failed "replacing a replaced entry"
 one_line "replacing a replaced entry"
 
-case_ "replace marks one live entry replaced by another, and reconfirm dates what a pitch cited"
+case_ "replace marks one live entry replaced by a newer one, and reconfirm dates what a pitch cited"
 said "Hint bars follow TuiCode"
-run board demo decide lead lead lean team 50 "$WORK/decision" --said 2026-10-02
+run board demo decide lead lead lean team 50 "$WORK/decision" --said 2026-10-12
+run board demo replace lead 5 2
+failed "replacing with an older entry"
+one_line "replacing with an older entry"
 run board demo replace lead 2 5
 same "exit" 0 "$STATUS"
 same "live" '[5,4]' "$(ids)"
@@ -6735,6 +6738,25 @@ rm -f "$A_TEAM_STATE/history.db"
 run board --dry-run demo decide lead you lean team 80 "$WORK/decision"
 same "dry run with no record" 0 "$STATUS"
 unrecorded "dry run decide"
+
+case_ "lead-next says seed until the Lead has seeded the register once"
+jq '.wip = {pitched: 3, exploring: 4, ideas: 4}' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+gh_items <<'ITEMS'
+Idea 87 An idea
+ITEMS
+rm -rf "$A_TEAM_STATE/demo/lead/seeded"
+run board demo lead-next
+same "seed" true "$(jq .seed "$OUT")"
+run board --dry-run demo seeded lead
+same "dry run" 0 "$STATUS"
+run board demo lead-next
+same "still seed after a dry run" true "$(jq .seed "$OUT")"
+run board demo seeded dev
+failed "dev seeding"
+run board demo seeded lead
+same "exit" 0 "$STATUS"
+run board demo lead-next
+same "seeded" false "$(jq .seed "$OUT")"
 rm -f "$CONFIG/teams/other.json"
 unset A_TEAM_STATE
 

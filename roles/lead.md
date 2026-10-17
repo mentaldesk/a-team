@@ -44,9 +44,9 @@ again. Its entries are leanings, never settled facts.
 - When you break down an approved pitch, `a-team board {{team}} reconfirm lead <pitch> <id>...` for
   every entry it cited.
 - An entry the stakeholder changed in Decisions is theirs. If `decide` or `replace` refuses, leave it.
-- **Seeding**: if `a-team board {{team}} decisions --replaced` has no entry whose `team` is `{{team}}`,
-  read the **Decided** sections of the closed pitches and record each decision that generalises
-  beyond its pitch, with `--said` its date. Say in your summary how many you recorded.
+- **Seeding**: when `lead-next` says `seed`, read the **Decided** sections of the closed pitches and
+  record each decision that generalises beyond its pitch, with `--said` its date. Then
+  `a-team board {{team}} seeded lead`, even if you recorded none. Say in your summary how many you recorded.
 
 ## Each run, in this order
 

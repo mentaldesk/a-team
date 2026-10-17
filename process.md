@@ -122,7 +122,10 @@ a-team board {{team}} decisions [--replaced] [<words>...]  # the decision regist
 a-team board {{team}} decide lead <you|lead> <rule|lean> <team|all> <n|url> <file> [--said <date>] [--replaces <id>]
                                                 # Lead only: record a decision said on #<n> or at <url>;
                                                 # <file>'s first line is the decision, the rest why
-a-team board {{team}} replace lead <old> <new>  # Lead only: mark entry <old> replaced by entry <new>
+a-team board {{team}} replace lead <old> <new>  # Lead only: mark entry <old> replaced by entry <new>,
+                                                # said no earlier than <old>
+a-team board {{team}} seeded lead               # Lead only: the register is seeded from closed pitches,
+                                                # so `lead-next` stops saying `seed`
 a-team board {{team}} reconfirm lead <n> <id>...  # Lead only: approved pitch #<n> cited these entries
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
                                                 # done pitch #<n>
