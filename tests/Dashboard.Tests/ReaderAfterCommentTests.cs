@@ -241,6 +241,29 @@ public class ReaderAfterCommentTests
     }
 
     [Fact]
+    public void Clicking_a_rank_while_the_comment_posts_sets_it_once_it_has()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posted = new TaskCompletionSource<string?>();
+        var item = new WaitingItem(169, "A pitch", "Pitched", "https://x/169", "a-team", Pitch: true);
+        using var dialog = new ReaderDialog(item, new IssueBody(Body), () => { },
+            comment: new ReaderComment(new Key('c'), "comment", _ => posted.Task, new Epoch()),
+            width: 140, rank: Rank.Low);
+        dialog.Layout(new Size(140, 20));
+        StartPosting(app, dialog);
+
+        dialog.Ranks!.Value = Rank.High;
+        dialog.Ranks.SubViews.ElementAt((int)Rank.High).InvokeCommand(Command.Accept);
+        Assert.Null(dialog.Chosen);
+
+        posted.SetResult(null);
+        Pump(app, () => dialog.Chosen is not null);
+
+        Assert.Equal(Rank.High, dialog.Chosen);
+        Assert.True(dialog.StopRequested);
+    }
+
+    [Fact]
     public void A_key_pressed_while_a_comment_posts_is_dropped_if_the_comment_fails_and_the_draft_is_kept()
     {
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);

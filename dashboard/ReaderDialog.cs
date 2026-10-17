@@ -377,7 +377,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     /// <summary>A click on the ranks reaches the dialog as Accept.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
-        _ranks is null || Writing || Set();
+        _ranks is null || Writing || Run(SetId, Set);
 
     /// <summary>The keyboard is in the Comment pane: its text, or its weeks while saying Not now.</summary>
     private bool Writing => _field.HasFocus || _weeks.HasFocus;
@@ -568,13 +568,14 @@ public sealed partial class ReaderDialog : DashboardDialog
     }
 
     /// <summary>One that would change the comment or close the reader waits for a comment that's posting.</summary>
-    private void Run(string id, Func<bool> run)
+    private bool Run(string id, Func<bool> run)
     {
         if (_posting is not null && WaitForPost.Contains(id))
             _afterPost = run;
         else
             run();
         Offer();
+        return true;
     }
 
     private static string Capital(string label) => label.Length == 0 ? label : char.ToUpperInvariant(label[0]) + label[1..];
