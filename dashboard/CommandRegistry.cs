@@ -5,12 +5,15 @@ namespace ATeam.Dashboard;
 
 /// <summary>A command as the registry holds it. <paramref name="OnCard"/> marks one that acts on the Work area's
 /// selected card, which is what puts it in the Cards menu. <paramref name="MenuLabel"/> is how it reads in the menu,
-/// where the title it sits under can say the rest. <paramref name="Scopes"/> are the regions it works in, where it
-/// belongs to some; one with none is global.</summary>
+/// where the title it sits under can say the rest, and <paramref name="MenuLabels"/> every one it can read as there.
+/// <paramref name="Scopes"/> are the regions it works in, where it belongs to some; one with none is global.</summary>
 public sealed record CommandDescriptor(
-    string Id, string Label, Key Key, bool OnCard = false, string? MenuLabel = null, IReadOnlyList<CommandScope>? Scopes = null)
+    string Id, string Label, Key Key, bool OnCard = false, string? MenuLabel = null, IReadOnlyList<CommandScope>? Scopes = null,
+    IReadOnlyList<string>? MenuLabels = null)
 {
     public string MenuLabel { get; init; } = MenuLabel ?? Label;
+
+    public IReadOnlyList<string> MenuLabels { get; init; } = MenuLabels ?? [MenuLabel ?? Label];
 
     public IReadOnlyList<CommandScope> Scopes { get; init; } = Scopes ?? [];
 }
@@ -21,7 +24,7 @@ public sealed class CommandRegistry
     private readonly List<Entry> _entries = [];
 
     public IReadOnlyList<CommandDescriptor> Registered =>
-        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.OnCard, entry.MenuLabel?.Invoke(), entry.Scopes))];
+        [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), entry.Key, entry.OnCard, entry.MenuLabel?.Invoke(), entry.Scopes, entry.MenuLabels))];
 
     public CommandRegistry Register(
         string id,
@@ -33,7 +36,8 @@ public sealed class CommandRegistry
         CommandScope[]? scopes = null) =>
         Register(id, () => label, handler, key, isEnabled, onCard, scopes: scopes);
 
-    /// <summary>A command whose label depends on what it would do now, like pausing the selected team.</summary>
+    /// <summary>A command whose label depends on what it would do now, like pausing the selected team. Its
+    /// <paramref name="menuLabels"/> are every label the menu can show it under, so its letter is one they all have.</summary>
     public CommandRegistry Register(
         string id,
         Func<string> label,
@@ -43,9 +47,10 @@ public sealed class CommandRegistry
         bool onCard = false,
         Func<string>? menuLabel = null,
         Func<bool>? inMenu = null,
-        CommandScope[]? scopes = null)
+        CommandScope[]? scopes = null,
+        string[]? menuLabels = null)
     {
-        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, isEnabled, onCard, menuLabel, inMenu, scopes ?? []));
+        _entries.Add(new Entry(id, label, handler, key ?? Key.Empty, isEnabled, onCard, menuLabel, inMenu, scopes ?? [], menuLabels));
         return this;
     }
 
@@ -96,5 +101,5 @@ public sealed class CommandRegistry
 
     private sealed record Entry(
         string Id, Func<string> Label, Action Handler, Key Key, Func<bool>? IsEnabled, bool OnCard, Func<string>? MenuLabel,
-        Func<bool>? InMenu, CommandScope[] Scopes);
+        Func<bool>? InMenu, CommandScope[] Scopes, string[]? MenuLabels);
 }
