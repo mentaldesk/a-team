@@ -30,6 +30,19 @@ public class WaitingItemTests
         Assert.Equal("#192 · asked you since 08:23", item.Line);
     }
 
+    [Fact]
+    public void A_task_waiting_on_another_repo_brings_how_far_that_has_got()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 469, "title": "Multi-line boxes keep what I type in view", "status": "Ready", "team": "a-team",
+              "turn": "upstream", "upstream": "tui-style-guide#63: merged, not released",
+              "reason": "waiting on tui-style-guide#63: merged, not released"}]
+            """));
+
+        Assert.True(item.WaitsUpstream);
+        Assert.Equal("tui-style-guide#63: merged, not released", item.Upstream);
+    }
+
     [Theory]
     [InlineData(true, "Pitched", true)]
     [InlineData(false, "Pitched", false)]

@@ -495,7 +495,9 @@ CYCLES='def move: if startswith("added as ") then {from: null, to: .[9:]}
             | .dev = ($m.to | IN("In progress", "In review")) and (.dev or ($e.who == "dev" and $m.to == "In progress"))
             | .asked = (.asked and $m.to == "Ready"))
         elif $e.what | test("^blocked by #[0-9]+$") then .items[$n].deps += [$e.what[12:] | tonumber]
+        elif $e.what | test("^blocked by [^ #]+#[0-9]+$") then .items[$n].deps += [$e.what[11:]]
         elif $e.what | test("^no longer blocked by #[0-9]+$") then .items[$n].deps -= [$e.what[22:] | tonumber]
+        elif $e.what | test("^no longer blocked by [^ #]+#[0-9]+$") then .items[$n].deps -= [$e.what[21:]]
         elif $e.what | test("^(accepted · |closed|declined)") then .items[$n] |= (.status = "Done" | .dev = false)
           | .items |= map_values(.deps -= [$e.item])
         elif $e.what == "handed back with a question" then .items[$n].asked = true
@@ -1081,6 +1083,75 @@ depend_note() {
   printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
 }
 
+# A task waiting on another repo carries UPSTREAM_LABEL, and each wait is a marker in one of the team's comments on it.
+UPSTREAM_LABEL=a-team:upstream
+UPSTREAM_REF='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$'
+wait_marker() { printf '<!-- a-team:%s repo=%s n=%s%s -->' "$1" "$2" "$3" "${4:+ until=$4}"; }
+
+# waits_on <n>: what task #n still waits on in other repos, as [{ref, repo, n, until}].
+waits_on() {
+  gh api --paginate "repos/$REPO/issues/$1/comments" |
+    jq -s --arg bot "$BOT" '[add // [] | .[] | select(.user.login == $bot) | .body // ""
+      | scan("<!-- a-team:(wait|unwait) repo=([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+) n=([0-9]+)(?: until=(closed|released))? -->")]
+      | reduce .[] as $m ([]; "\($m[1])#\($m[2])" as $ref | map(select(.ref != $ref))
+          + if $m[0] == "wait" then [{ref: $ref, repo: $m[1], n: ($m[2] | tonumber), until: $m[3]}] else [] end)'
+}
+
+# released_in <repo> <sha>: the earliest published release whose tag contains <sha>, as {tag, at}, or nothing.
+# A pre-release or a draft doesn't count.
+released_in() {
+  local tag at found='' status
+  while IFS=$'\t' read -r tag at; do
+    [ -n "$tag" ] || continue
+    status=$(gh api "repos/$1/compare/$tag...$2" --jq .status 2>/dev/null) || break
+    case "$status" in behind | identical) found=$(jq -cn --arg tag "$tag" --arg at "$at" '{tag: $tag, at: $at}') ;; *) break ;; esac
+  done < <(gh api "repos/$1/releases?per_page=30" --jq '[.[] | select((.draft or .prerelease) | not)]
+    | sort_by(.published_at) | reverse | .[] | [.tag_name, .published_at] | @tsv' 2>/dev/null)
+  printf '%s' "$found"
+}
+
+# upstream_state <waits>: each wait with how far it's got, `shown` as a card says it, and whether it's `met`.
+upstream_state() {
+  local repo query n page found='[]' row release
+  for repo in $(jq -r '[.[].repo] | unique[]' <<<"$1"); do
+    query=''
+    for n in $(jq -r --arg r "$repo" '.[] | select(.repo == $r) | .n' <<<"$1"); do
+      query+=" i$n: issueOrPullRequest(number: $n) { __typename
+        ... on Issue { state timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) { nodes { ... on ClosedEvent {
+            closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } } } }
+          closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { merged mergeCommit { oid } } } }
+        ... on PullRequest { state merged mergeCommit { oid } } }"
+    done
+    page=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -f query="query UpstreamWaits(\$owner: String!, \$name: String!) {
+      repository(owner: \$owner, name: \$name) {$query} }" 2>/dev/null) || true
+    # An item that's gone fails the call but still comes back with the others.
+    jq -e . <<<"$page" >/dev/null 2>&1 || page='{}'
+    found=$(jq -c --argjson waits "$1" --arg repo "$repo" '(.data.repository // {}) as $got | [$waits[] | select(.repo == $repo)
+      | $got["i\(.n)"] as $it
+      | ($it | if . == null then null elif .__typename == "PullRequest" then (if .merged then .mergeCommit.oid else null end)
+          else ([.timelineItems.nodes[]?.closer | select(. != null) | if .__typename == "Commit" then .oid
+                 elif .merged then .mergeCommit.oid else empty end]
+                + [.closedByPullRequestsReferences.nodes[]? | select(.merged) | .mergeCommit.oid] | first) end) as $sha
+      | . + {kind: ($it.__typename // null), sha: $sha,
+             state: (if $it == null then "unknown" elif $it.state == "OPEN" then "open" elif $sha != null then "merged"
+                     elif $it.__typename == "PullRequest" then "unmerged" else "closed" end)}]' <<<"$page" | jq -c --argjson was "$found" '$was + .')
+  done
+  while IFS= read -r row; do
+    release=$(released_in "$(jq -r .repo <<<"$row")" "$(jq -r .sha <<<"$row")")
+    [ -z "$release" ] || found=$(jq -c --arg ref "$(jq -r .ref <<<"$row")" --argjson r "$release" \
+      'map(if .ref == $ref then . + {state: "released", release: $r} else . end)' <<<"$found")
+  done < <(jq -c '.[] | select(.until == "released" and .state == "merged")' <<<"$found")
+  jq -c 'map(. + {met: (if .until == "released" then .state == "released" else .state | IN("open", "unknown") | not end),
+    shown: ({open: "open", unknown: "can'"'"'t read it", closed: "closed without a merge", unmerged: "closed without merging",
+             merged: (if .until == "released" then "merged, not released" else "merged" end),
+             released: "released in \(.release.tag // "")"}[.state])})' <<<"$found"
+}
+
+# upstream_line <waits>: how far a task's waits have got, as a card says it: `tui-style-guide#84: open`.
+upstream_line() {
+  jq -r 'map("\(.repo | split("/") | last)#\(.n): \(.shown)") | join("; ")' <<<"$1"
+}
+
 # close_pitch <n> [built]: closes pitch #n once all its tasks are closed; `built` also needs it to have some.
 close_pitch() {
   local subs open refused
@@ -1126,13 +1197,15 @@ merge() {
   fi
 }
 
-BLOCKED='((.labels | index("blocked")) or .blockedBy > 0)'
+BLOCKED='((.labels | index("blocked")) or (.labels | index("a-team:upstream")) or .blockedBy > 0)'
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
 STARTABLE="$READY_TASK and ($BLOCKED | not)"
 UNSTARTABLE="$READY_TASK and $BLOCKED"
 # Ready tasks labelled `blocked`: handed back with a question, or held by a stakeholder.
 HELD="$READY_TASK and (.labels | index(\"blocked\"))"
+# Ready tasks waiting on a change in another repo.
+UPSTREAM_HELD="$READY_TASK and (.labels | index(\"a-team:upstream\"))"
 # A pitch the Lead may file tasks under.
 FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "Building")'
 # The Dev's tasks that take up one of wip.worktrees.
@@ -1812,11 +1885,40 @@ case "$CMD" in
     ;;
 
   depends)
-    [ $# -eq 4 ] || die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\""
-    role=$1 task=$2 prereq=$3 why=$4
+    [ $# -eq 4 ] || { [ $# -eq 5 ] && [[ $3 =~ $UPSTREAM_REF ]]; } ||
+      die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\", or <role> <task> <owner/repo#n> <closed|released> \"<why>\""
+    role=$1 task=$2 prereq=$3
     check_role "$role"
     case "$role" in customer | reviewer) die "$role may not change what a task waits on" ;; esac
     own_task "$role" "$task"
+    if [[ $prereq =~ $UPSTREAM_REF ]]; then
+      upstream=${BASH_REMATCH[1]} up_n=${BASH_REMATCH[2]}
+      [ $# -eq 5 ] || die "say whether #$task waits for $prereq to close or to be released: depends $role $task $prereq <closed|released> \"<why>\""
+      until=$4 why=$5
+      case "$until" in closed | released) ;; *) die "#$task waits for $prereq to be closed or released, not '$until'" ;; esac
+      [ "$(tr '[:upper:]' '[:lower:]' <<<"$upstream")" != "$(tr '[:upper:]' '[:lower:]' <<<"$REPO")" ] ||
+        die "$prereq is in $REPO itself: depends $role $task $up_n \"<why>\""
+      trouble=$(mktemp)
+      up=$(gh api "repos/$upstream/issues/$up_n" --jq '{id, pr: (.pull_request != null)}' 2>"$trouble") ||
+        { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read $prereq (${reason#gh: })"; }
+      rm -f "$trouble"
+      link() { gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" -F "issue_id=$1" >/dev/null 2>&1; }
+      linked=
+      [ "$(jq -r .pr <<<"$up")" = true ] || ! write "block #$task on $prereq" link "$(jq -r .id <<<"$up")" || linked=1
+      if ! gh label list -R "$REPO" --search "$UPSTREAM_LABEL" --json name --jq '.[].name' | grep -qxF "$UPSTREAM_LABEL"; then
+        write "create label $UPSTREAM_LABEL" gh label create "$UPSTREAM_LABEL" -R "$REPO" --color fbca04 \
+          --description "Waiting on a change in another repo; frees itself once that's closed or released" >/dev/null
+      fi
+      write "label #$task $UPSTREAM_LABEL" gh issue edit "$task" -R "$REPO" --add-label "$UPSTREAM_LABEL" >/dev/null
+      note="Blocked by $prereq, until $until: $why"
+      [ -n "$linked" ] || note+=$'\n\n'"GitHub can't link $prereq as a dependency, so the wait is recorded here."
+      depend_note "$role" "$task" "$note"$'\n\n'"$(wait_marker wait "$upstream" "$up_n" "$until")"
+      record "$role" "$task" "blocked by $prereq"
+      say "#$task now waits for $prereq to be $until, and said why on #$task"
+      exit 0
+    fi
+    [ $# -eq 4 ] || die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\""
+    why=$4
     write "block #$task on #$prereq" gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" \
       -F "issue_id=$(gh api "repos/$REPO/issues/$prereq" --jq .id)" >/dev/null
     depend_note "$role" "$task" "Blocked by #$prereq: $why"
@@ -1830,6 +1932,22 @@ case "$CMD" in
     check_role "$role"
     case "$role" in customer | reviewer) die "$role may not change what a task waits on" ;; esac
     own_task "$role" "$task"
+    if [[ $prereq =~ $UPSTREAM_REF ]]; then
+      upstream=${BASH_REMATCH[1]} up_n=${BASH_REMATCH[2]}
+      waits=$(waits_on "$task")
+      jq -e --arg ref "$prereq" 'any(.[]; .ref == $ref)' <<<"$waits" >/dev/null || die "#$task is not waiting on $prereq"
+      prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
+        jq -r --arg repo "$upstream" --argjson n "$up_n" '[.[] | select(.number == $n
+          and (.repository_url // "" | ascii_downcase | endswith("/" + ($repo | ascii_downcase)))) | .id] | first // empty')
+      [ -z "$prereq_id" ] || write "unblock #$task from $prereq" \
+        gh api -X DELETE "repos/$REPO/issues/$task/dependencies/blocked_by/$prereq_id" >/dev/null
+      depend_note "$role" "$task" "No longer blocked by $prereq: $why"$'\n\n'"$(wait_marker unwait "$upstream" "$up_n")"
+      jq -e --arg ref "$prereq" 'any(.[]; .ref != $ref)' <<<"$waits" >/dev/null ||
+        write "unlabel #$task $UPSTREAM_LABEL" gh issue edit "$task" -R "$REPO" --remove-label "$UPSTREAM_LABEL" >/dev/null
+      record "$role" "$task" "no longer blocked by $prereq"
+      say "#$task no longer waits on $prereq, and said why on #$task"
+      exit 0
+    fi
     prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
       jq -r --argjson n "$prereq" '[.[] | select(.number == $n) | .id] | first // empty')
     [ -n "$prereq_id" ] || die "#$task is not blocked by #$prereq"
@@ -1838,6 +1956,26 @@ case "$CMD" in
     depend_note "$role" "$task" "No longer blocked by #$prereq: $why"
     record "$role" "$task" "no longer blocked by #$prereq"
     say "#$task is no longer blocked by #$prereq, and said why on #$task"
+    ;;
+
+  free)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM free"
+    for n in $(gh api "repos/$REPO/issues?labels=$UPSTREAM_LABEL&state=open&per_page=100" --jq '.[] | select(.pull_request == null) | .number'); do
+      waits=$(waits_on "$n")
+      [ "$waits" != "[]" ] || continue
+      waits=$(upstream_state "$waits")
+      jq -e 'all(.[]; .met)' <<<"$waits" >/dev/null || continue
+      write "unlabel #$n $UPSTREAM_LABEL" gh issue edit "$n" -R "$REPO" --remove-label "$UPSTREAM_LABEL" >/dev/null || continue
+      depend_note dev "$n" "$(jq -r '[.[] | select(.state == "released") | .release.tag | ltrimstr("v")] as $versions
+        | (map(if .state == "released"
+            then "\(.ref) is in \(.release.tag) (released \(.release.at | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")))."
+            else "\(.ref) has \(if .state == "merged" then "merged" else "closed" end)." end) | join(" "))
+        + " No longer blocked"
+        + if $versions == [] then "." else ": upgrade to \($versions | join(" and ")) first." end' <<<"$waits")"$'\n\n'"$(
+        jq -r '.[] | "\(.repo)\t\(.n)"' <<<"$waits" | while IFS=$'\t' read -r repo up_n; do wait_marker unwait "$repo" "$up_n"; done)"
+      for ref in $(jq -r '.[].ref' <<<"$waits"); do record dev "$n" "no longer blocked by $ref"; done
+      say "#$n: no longer waiting on $(jq -r 'map(.ref) | join(", ")' <<<"$waits")"
+    done
     ;;
 
   unlink)
@@ -2027,6 +2165,14 @@ case "$CMD" in
           then {document: true} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
+    upstream='[]'
+    for n in $(jq -r "map(select($UPSTREAM_HELD and (.labels | index(\"blocked\") | not))) | .[].number" <<<"$all"); do
+      waits=$(waits_on "$n")
+      [ "$waits" != "[]" ] || continue
+      line=$(upstream_line "$(upstream_state "$waits")")
+      upstream=$(jq -c --arg team "$TEAM" --argjson n "$n" --arg line "$line" --argjson was "$upstream" '$was + [.[] | select(.number == $n)
+        | {number, title, status, url, team: $team, priority, pitch: false, turn: "upstream", upstream: $line, reason: "waiting on \($line)"}]' <<<"$all")
+    done
     recommended=$(jq "$RECOMMENDED"'map(select(.status == "Idea" and .type == "Issue" and .priority == null
       and recommended != null) | {number})' <<<"$all")
     talk=$(gated_talk "$(jq -s add <<<"$gated$held$recommended")" checks)
@@ -2035,8 +2181,8 @@ case "$CMD" in
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
       jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
-        --argjson unranked "$(unranked_ideas "$all" "$said")" '. + $asked + $unranked')
-    snapshot "$(jq length <<<"$waiting")"
+        --argjson unranked "$(unranked_ideas "$all" "$said")" --argjson upstream "$upstream" '. + $asked + $unranked + $upstream')
+    snapshot "$(jq 'map(select(.turn != "upstream")) | length' <<<"$waiting")"
     printf '%s\n' "$waiting"
     ;;
 

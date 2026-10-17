@@ -1257,6 +1257,16 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void A_task_waiting_on_another_repo_isn_t_a_question_nor_waiting_on_you()
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)));
+        window.Refresh();
+
+        Assert.Equal(1, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Questions").Count);
+        Assert.Equal("Work · 1 waiting on you", window.WorkTitle);
+    }
+
+    [Fact]
     public void A_question_reads_its_body_conversation_and_history_like_any_other_card()
     {
         var at = new DateTimeOffset(2026, 9, 29, 4, 31, 0, TimeSpan.Zero);
@@ -3744,6 +3754,17 @@ public class WorkAreaTests : IDisposable
         [{"number": 192, "title": "I can reply to a pitch", "status": "Ready",
           "url": "https://github.com/mentaldesk/team0/issues/192", "team": "team0",
           "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"}]
+        """;
+
+    /// <summary>That question, and a task waiting on a change in another repo.</summary>
+    private const string QuestionAndUpstream =
+        """
+        [{"number": 192, "title": "I can reply to a pitch", "status": "Ready",
+          "url": "https://github.com/mentaldesk/team0/issues/192", "team": "team0",
+          "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"},
+         {"number": 469, "title": "Multi-line boxes keep what I type in view", "status": "Ready",
+          "url": "https://github.com/mentaldesk/team0/issues/469", "team": "team0", "turn": "upstream",
+          "upstream": "tui-style-guide#63: open", "reason": "waiting on tui-style-guide#63: open"}]
         """;
 
     /// <summary>A pitch the Lead needs an answer on, and nothing else.</summary>

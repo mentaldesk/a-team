@@ -362,6 +362,24 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_task_waiting_on_another_repo_says_how_far_that_has_got()
+    {
+        var task = Card(469, "Ready", days: 2) with { Kind = CardKind.Task };
+        var state = OverseerState.Empty with
+        {
+            Now = Now,
+            Waiting = (_, number) => number == 469
+                ? new WaitingItem(469, "", "Ready", "", "a", "upstream", "waiting on tui-style-guide#63: merged, not released",
+                    Upstream: "tui-style-guide#63: merged, not released")
+                : null,
+        };
+
+        Assert.Equal(
+            ["Task · Unranked · a · Ready for 2d 0h 0m", "Waiting on tui-style-guide#63: merged, not released"],
+            OverseerView.Describe(task, [task], state));
+    }
+
+    [Fact]
     public void A_task_s_details_say_unranked_and_no_limit()
     {
         var task = Card(387, "Ready", days: 2) with { Kind = CardKind.Task };
