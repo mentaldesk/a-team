@@ -34,4 +34,11 @@ public class AcceptDialogTests
             "Merges the Customer lead's docs PR #352 into main, squashed. The next pitch that's done starts a new one.",
             AcceptDialog.Says(new(352, "Docs: what's changed since 28 Sep", "In review",
                 "https://github.com/x/pull/352", "a-team", Pr: 352, Base: "main", Role: "customer")));
+
+    [Fact]
+    public void It_says_accepting_a_Dependabot_PR_merges_it_and_closes_nothing() =>
+        Assert.Equal(
+            "Merges Dependabot's PR #535 into main, squashed.\n\nMerged work reaches the teams when you next release.",
+            AcceptDialog.Says(new(535, "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "In review",
+                "https://github.com/x/pull/535", "a-team", Pr: 535, Base: "main", Dependency: true)));
 }
