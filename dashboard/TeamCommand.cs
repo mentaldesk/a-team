@@ -55,12 +55,14 @@ public sealed class TeamCommand(string executable, IReadOnlyDictionary<string, s
 
     /// <summary>Runs a command that owns the terminal until it quits, Ctrl+C included. Null once it has run;
     /// otherwise how it failed, once the user has read what it printed.</summary>
-    public string? Hand(string[] arguments, string? said = null)
+    public string? Hand(string[] arguments, string? said = null, IReadOnlyDictionary<string, string>? environment = null)
     {
         said ??= string.Join(' ', arguments);
         var start = new ProcessStartInfo(executable);
         foreach (var argument in arguments)
             start.ArgumentList.Add(argument);
+        foreach (var (name, value) in environment ?? new Dictionary<string, string>())
+            start.Environment[name] = value;
         ConsoleCancelEventHandler stay = (_, e) => e.Cancel = true;
         Console.CancelKeyPress += stay;
         string? failure;

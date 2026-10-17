@@ -78,8 +78,9 @@ public sealed class DashboardWindow : Window
     private readonly Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? _newIdea;
     private readonly Func<Key, Attaching>? _attaching;
     private readonly Action<string> _openUrl;
-    private readonly Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> _showBody;
+    private readonly Func<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
+    private readonly Func<WaitingItem, bool> _confirmApprove;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Action<string> _showGuide;
     private readonly Action<Handover>? _handOver;
@@ -144,7 +145,7 @@ public sealed class DashboardWindow : Window
         Func<string, Task<Reading>> readWaiting,
         Func<WaitingItem, Task<Reading>> readBody,
         Action<string> openUrl,
-        Func<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> showBody,
+        Func<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -171,7 +172,8 @@ public sealed class DashboardWindow : Window
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
         Func<Key, Attaching>? attaching = null,
         Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
-        MacKeys? macKeys = null)
+        MacKeys? macKeys = null,
+        Func<WaitingItem, bool>? confirmApprove = null)
     {
         _macKeys = macKeys;
         _attaching = attaching;
@@ -206,6 +208,7 @@ public sealed class DashboardWindow : Window
         _openUrl = openUrl;
         _showBody = showBody;
         _confirmAccept = confirmAccept ?? (_ => false);
+        _confirmApprove = confirmApprove ?? (_ => false);
         _confirmStop = confirmStop ?? (_ => false);
         _handOver = handOver;
         _area = area;
@@ -604,7 +607,7 @@ public sealed class DashboardWindow : Window
                 () => WriteVision(SelectedTeam()), isEnabled: () => _handOver is not null && SelectedTeam() is not null)
             .Register("team.visionReview", () => SelectedTeam() is { } team ? $"Review the vision · {team}" : "Review the vision",
                 () => ReviewVision(SelectedTeam()), isEnabled: () => SelectedTeam() is not null)
-            .Register("work.approve", "Approve the pitch you're reading", Approve, new Key('a'), isEnabled: () => _approvable is not null)
+            .Register("work.approve", "Approve the pitch you're reading", () => Approve(), new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
             .Register("work.edit", "Edit the document pitch you're reading", () => { }, new Key('e'), isEnabled: () => _shown is { Document: true })
@@ -994,7 +997,12 @@ public sealed class DashboardWindow : Window
         if (newIsRunning)
         {
             FocusResumed();
-            App?.Invoke(ReopenReader);
+            // Invoke would run it here, before the run loop starts, and the loop would then drop a try's RequestStop.
+            App?.AddTimeout(TimeSpan.Zero, () =>
+            {
+                ReopenReader();
+                return false;
+            });
             App?.AddTimeout(OverseerView.SpinEvery, () =>
             {
                 if (_area == Area.Overseer)
@@ -1198,7 +1206,7 @@ public sealed class DashboardWindow : Window
             {
                 if (url is { Length: > 0 })
                     _openUrl(url);
-            }, _approvable is null ? null : () => _commands.Execute("work.approve"),
+            }, _approvable is null ? null : Approve,
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
@@ -1266,14 +1274,20 @@ public sealed class DashboardWindow : Window
         return _added;
     }
 
-    /// <summary>Approves the pitch the reader is showing. Like a rank, the card stays put until the board takes it.</summary>
-    private void Approve()
+    /// <summary>Approves the pitch the reader is showing once you've said so. Like a rank, the card stays put until the
+    /// board takes it. True once it's under way, or already was.</summary>
+    private bool Approve()
     {
-        if (_approvable is not { } item || Already(Write.KeyOf(item)))
-            return;
+        if (_approvable is not { } item)
+            return false;
+        if (Already(Write.KeyOf(item)))
+            return true;
+        if (!_confirmApprove(item))
+            return false;
         _attention.Did("approved");
         Queue(new Write(WriteKind.Approve, Write.KeyOf(item), ["board", item.Team, "approve", "you", item.Number.ToString()],
             $"Approving #{item.Number}…", $"#{item.Number} is already being approved", $"approving #{item.Number}", item));
+        return true;
     }
 
     private void Approved(WaitingItem item)

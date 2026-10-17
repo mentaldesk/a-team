@@ -50,7 +50,7 @@ public class ReaderDialogTests
     private static Button ButtonFor(ReaderDialog dialog, string label) =>
         dialog.Foot.Shown.Single(button => button.Text.Trim() == label);
 
-    private static ReaderDialog Open(string body, Action? onGitHub = null, int height = 20, Action? onApprove = null)
+    private static ReaderDialog Open(string body, Action? onGitHub = null, int height = 20, Func<bool>? onApprove = null)
     {
         var dialog = new ReaderDialog(Item, new IssueBody(body), onGitHub ?? (() => { }), onApprove);
         dialog.Layout(new Size(60, height));
@@ -128,16 +128,16 @@ public class ReaderDialogTests
     [Fact]
     public void A_pitch_to_approve_puts_Approve_first()
     {
-        using var dialog = Open(Pitch, onApprove: () => { });
+        using var dialog = Open(Pitch, onApprove: () => true);
 
         Assert.Equal("a Approve · g GitHub · Esc Close", Buttons(dialog));
     }
 
     [Fact]
-    public void a_approves_at_once()
+    public void a_approves()
     {
         var approved = 0;
-        using var dialog = Open(Pitch, onApprove: () => approved++);
+        using var dialog = Open(Pitch, onApprove: () => ++approved > 0);
 
         Assert.True(dialog.NewKeyDownEvent(new Key('a')));
 
@@ -148,7 +148,7 @@ public class ReaderDialogTests
     public void Clicking_Approve_approves()
     {
         var approved = 0;
-        using var dialog = Open(Pitch, onApprove: () => approved++);
+        using var dialog = Open(Pitch, onApprove: () => ++approved > 0);
 
         ButtonFor(dialog, "a Approve").InvokeCommand(Command.Accept);
 
@@ -194,7 +194,7 @@ public class ReaderDialogTests
     [Fact]
     public void Comment_sits_after_Approve_and_before_GitHub()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { }, () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { }, () => true,
             comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
@@ -546,7 +546,7 @@ public class ReaderDialogTests
     }
 
     private static ReaderDialog Ranking(
-        string body = Pitch, Rank rank = Rank.None, int width = 60, int height = 20, Action? onApprove = null,
+        string body = Pitch, Rank rank = Rank.None, int width = 60, int height = 20, Func<bool>? onApprove = null,
         ReaderComment? comment = null, Action? onGitHub = null, IssueBody? read = null)
     {
         var dialog = new ReaderDialog(Item, read ?? new IssueBody(body), onGitHub ?? (() => { }), onApprove,
@@ -719,7 +719,7 @@ public class ReaderDialogTests
     [Fact]
     public void The_ranks_add_Set_and_leave_h_to_High()
     {
-        using var dialog = Ranking(onApprove: () => { }, comment: Commenting(),
+        using var dialog = Ranking(onApprove: () => true, comment: Commenting(),
             width: 120);
 
         Assert.Equal("Enter Set · a Approve · c Comment · g GitHub · Esc Close", Buttons(dialog));
@@ -763,7 +763,7 @@ public class ReaderDialogTests
     {
         var opened = 0;
         var approved = 0;
-        using var dialog = Ranking(onGitHub: () => opened++, onApprove: () => approved++);
+        using var dialog = Ranking(onGitHub: () => opened++, onApprove: () => ++approved > 0);
 
         Assert.True(dialog.NewKeyDownEvent(new Key('g')));
         Assert.True(dialog.NewKeyDownEvent(new Key('a')));
@@ -799,7 +799,7 @@ public class ReaderDialogTests
 
     private static ReaderDialog Replying(
         int width = 140, Func<string, Task<string?>>? post = null, Func<bool>? confirmDiscard = null,
-        Action? onApprove = null, ReaderCommand? accept = null, string? body = null, int height = 20)
+        Func<bool>? onApprove = null, ReaderCommand? accept = null, string? body = null, int height = 20)
     {
         var dialog = new ReaderDialog(Item, new IssueBody(body ?? Long(), History: Recorded), () => { }, onApprove,
             accept, Commenting(post), width: width, confirmDiscard: confirmDiscard);
@@ -1300,7 +1300,7 @@ public class ReaderDialogTests
     {
         var opened = 0;
         var approved = 0;
-        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => opened++, () => approved++,
+        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => opened++, () => ++approved > 0,
             comment: Commenting(), width: 140);
         dialog.Layout(new Size(140, 20));
         var body = dialog.Body.Lines;
@@ -1409,7 +1409,7 @@ public class ReaderDialogTests
         var asked = 0;
         var approved = 0;
         var accepted = 0;
-        using var dialog = Replying(confirmDiscard: () => ++asked < 0, onApprove: () => approved++,
+        using var dialog = Replying(confirmDiscard: () => ++asked < 0, onApprove: () => ++approved > 0,
             accept: new ReaderCommand(new Key('m'), "accept", () => ++accepted > 0));
         Open(dialog);
         dialog.Field.Text = "half a thought";
@@ -1429,7 +1429,7 @@ public class ReaderDialogTests
     public void Leaving_with_a_draft_goes_ahead_once_you_discard_it()
     {
         var approved = 0;
-        using var dialog = Replying(confirmDiscard: () => true, onApprove: () => approved++);
+        using var dialog = Replying(confirmDiscard: () => true, onApprove: () => ++approved > 0);
         Open(dialog);
         dialog.Field.Text = "half a thought";
         dialog.NewKeyDownEvent(Key.Tab);
@@ -1444,7 +1444,7 @@ public class ReaderDialogTests
     {
         var asked = 0;
         var approved = 0;
-        using var dialog = Replying(confirmDiscard: () => ++asked < 0, onApprove: () => approved++);
+        using var dialog = Replying(confirmDiscard: () => ++asked < 0, onApprove: () => ++approved > 0);
         Open(dialog);
         dialog.NewKeyDownEvent(Key.Tab);
 
@@ -1523,7 +1523,7 @@ public class ReaderDialogTests
     [Fact]
     public void Approve_and_Set_are_Primary()
     {
-        using var approving = Open(Pitch, onApprove: () => { });
+        using var approving = Open(Pitch, onApprove: () => true);
         using var ranking = Ranking();
 
         Assert.Equal(SchemeNames.ButtonPrimary, Scheme(approving, "a Approve"));
@@ -1698,7 +1698,7 @@ public class ReaderDialogTests
     [InlineData(60, 2)]
     public void On_a_narrow_terminal_the_buttons_wrap_centred_and_none_is_dropped(int width, int rows)
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { }, () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { }, () => true,
             comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null), new Epoch(),
                 new ReaderDecline(new Key('x'), _ => Task.FromResult<string?>(null)),
                 new ReaderShelve(new Key('l'), (_, _) => Task.FromResult<string?>(null))),
