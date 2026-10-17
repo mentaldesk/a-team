@@ -88,7 +88,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
     private readonly Action _onGitHub;
-    private readonly Action? _onApprove;
+    private readonly Func<bool>? _onApprove;
     private readonly ReaderCommand? _accept;
     private readonly ReaderComment? _comment;
     private readonly ReaderTry? _try;
@@ -143,7 +143,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     /// <param name="openUrl">Opens an image on GitHub where it can't be drawn.</param>
     /// <param name="viewImage">Shows a picture full-window, under its alt text.</param>
     public ReaderDialog(
-        WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
+        WaitingItem item, IssueBody body, Action onGitHub, Func<bool>? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0,
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
@@ -392,7 +392,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     /// <returns>The rank Enter set on the row of ranks, or null.</returns>
     public static Rank? Show(
-        IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
+        IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Func<bool>? onApprove, ReaderCommand? accept,
         ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
         Action<string>? openUrl = null)
@@ -874,11 +874,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         });
     }
 
-    private bool Approve() => Leave(() =>
-    {
-        _onApprove!();
-        return Close();
-    });
+    private bool Approve() => Leave(() => !_onApprove!() || Close());
 
     /// <summary>One that can't go ahead only says why, so it leaves the comment alone.</summary>
     private bool AcceptItem() => _accept!.Enabled ? Leave(AcceptNow) : AcceptNow();

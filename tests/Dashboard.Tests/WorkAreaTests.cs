@@ -1421,6 +1421,38 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void a_in_the_reader_asks_first_and_approves_nothing_if_you_say_no()
+    {
+        var calls = new List<string[]>();
+        var asked = new List<int>();
+        bool? went = null;
+        using var window = Open(
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, onApprove, _, _, _) => went = onApprove!(),
+            confirmApprove: item =>
+            {
+                asked.Add(item.Number);
+                return false;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([107], asked);
+        Assert.False(went);
+        Assert.Empty(calls);
+        Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
     public void A_failed_approve_leaves_the_card_where_it_was_and_says_why_in_the_error_colour()
     {
         using var window = Open(
@@ -3939,7 +3971,7 @@ public class WorkAreaTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?, Rank?>? chooseRank = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
-        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
+        Action<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
@@ -3957,7 +3989,8 @@ public class WorkAreaTests : IDisposable
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
         IClipboard? clipboard = null,
         Action<ReaderIdea?, Func<Key, bool>>? showIdea = null,
-        Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null)
+        Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
+        Func<WaitingItem, bool>? confirmApprove = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -3991,7 +4024,8 @@ public class WorkAreaTests : IDisposable
             readDocument: readDocument,
             confirmQuit: confirmQuit,
             clipboard: clipboard,
-            showSpending: showSpending);
+            showSpending: showSpending,
+            confirmApprove: confirmApprove ?? (_ => true));
     }
 
     private void WriteRun(string team, string role, int pid)

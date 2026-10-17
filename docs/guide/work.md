@@ -176,8 +176,8 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
 
 ## Answering from a card
 
-- **Approve a pitch.** Reading a pitch in Pitches, press `a`. It's approved there and then, and
-  the card leaves.
+- **Approve a pitch.** Reading a pitch in Pitches, press `a`. It asks first ([Confirming](dashboard.md#confirming)):
+  `Ctrl+Enter` approves it and the card leaves, `Esc` keeps reading.
 - **Reply.** Reading any card, press `c` to write a comment. It opens in a **Comment** pane on the
   left, with the body and History still beside it. `Tab` and `Shift+Tab` move between the panes,
   `Esc` in the comment goes back to the pane you came from, and `c` comes back to what you'd written.

@@ -32,7 +32,11 @@ public class ReaderAfterCommentTests
             };
             var pitch = kind is "pitch" or "document";
             var dialog = new ReaderDialog(item, new IssueBody(Body), () => Did.Add("github"),
-                kind == "pitch" ? () => Did.Add("approved") : null,
+                kind == "pitch" ? () =>
+                {
+                    Did.Add("approved");
+                    return true;
+                } : null,
                 kind is "task" or "document" ? new ReaderCommand(new Key('a'), "accept", () =>
                 {
                     Did.Add("accepted");

@@ -137,6 +137,7 @@ Handover? Show(Handover? back)
         readDocument: item => command.Read("board", item.Team, "document", item.Number.ToString()),
         writes: writes,
         confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
+        confirmApprove: item => ApproveDialog.Show(app, item),
         attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
             new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
         showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
