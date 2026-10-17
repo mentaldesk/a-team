@@ -39,6 +39,7 @@ public enum Icon
     Docs,
     Question,
     Writing,
+    Chain,
 }
 
 /// <summary>A card's icon for whose move it is, and the scheme its colour comes from.</summary>
@@ -76,6 +77,7 @@ public static class Icons
         [Icon.Docs] = "\U000F0219",    // nf-md-file_document
         [Icon.Question] = "\U000F02D7", // nf-md-help_circle
         [Icon.Writing] = "\U000F01D8", // nf-md-dots_horizontal
+        [Icon.Chain] = "\U000F0337",   // nf-md-link
     };
 
     private static readonly Dictionary<Icon, string> UnicodeGlyphs = new()
@@ -103,6 +105,7 @@ public static class Icons
         [Icon.Docs] = "\U0001F4C4",
         [Icon.Question] = "?",
         [Icon.Writing] = "⋯",
+        [Icon.Chain] = "⛓",
     };
 
     /// <summary>The meanings a style's sample shows, in the order Settings names them underneath.</summary>

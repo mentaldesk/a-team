@@ -21,13 +21,14 @@ public sealed class WorkView : View
     [
         ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && !item.Document && item.Status is "Idea" or "Pitched", null),
         ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs || item.Document) && item.Question.Length == 0, null),
-        ("Questions", null, Icon.Question, item => item.Status == "Ready" && !item.WaitsUpstream || item.Status == "Pitched" && item.Question.Length > 0, null),
+        ("Questions", null, Icon.Question, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
         ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
     ];
 
-    /// <summary>The gate a card waits at, as your time on it is split by; Other for one at none of them.</summary>
+    /// <summary>The gate a card waits at, as your time on it is split by; Other for one at none of them, like a task
+    /// waiting on another repo, which shows under Questions but asks you nothing.</summary>
     internal static string GateOf(WaitingItem item) =>
-        Gates.FirstOrDefault(gate => gate.Holds(item) || gate.Aside?.Invoke(item) == true).Name ?? Attention.Other;
+        item.WaitsUpstream ? Attention.Other : Gates.FirstOrDefault(gate => gate.Holds(item) || gate.Aside?.Invoke(item) == true).Name ?? Attention.Other;
 
     private readonly TeamTabs _tabs = new();
     private readonly List<WorkLane> _lanes = [];
@@ -109,7 +110,7 @@ public sealed class WorkView : View
             _tabs.Remove(lane);
             lane.Dispose();
         }
-        _items = [.. _items.Where(item => !teams.Contains(item.Team))];
+        _items = Holds.Tag([.. _items.Where(item => !teams.Contains(item.Team))]);
         Lay(follow: false);
         if (current is not null && _lanes.Contains(current))
             Pick(current);
@@ -266,7 +267,7 @@ public sealed class WorkView : View
     {
         var focused = At() is { } at ? _lanes[at.Lane] : null;
         var first = Unread;
-        _items = items;
+        _items = Holds.Tag(items);
         Lay(follow);
         if (first && focused is not null)
             FocusFirstCard();
@@ -455,9 +456,11 @@ public sealed class WorkLane : View
     /// <summary>The column the keyboard was last in on this tab, kept while the tab is behind another.</summary>
     internal WorkColumn? LastColumn { get; private set; }
 
-    /// <summary>A team's name, then how many cards wait in each column that has any, after the column's icon.</summary>
-    internal static string Heading(string team, IEnumerable<(Icon Tally, int Count)> columns, IconStyle style) =>
-        string.Join(" ", [team, .. columns.Where(column => column.Count > 0).Select(column => $"{Icons.Field(column.Tally, style)}{column.Count}")]);
+    /// <summary>A team's name, how many of its cards hold up a task where any do, then how many cards wait in each
+    /// column that has any, after the column's icon.</summary>
+    internal static string Heading(string team, int holding, IEnumerable<(Icon Tally, int Count)> columns, IconStyle style) =>
+        string.Join(" ", [team, .. holding > 0 ? [$"{Icons.Field(Icon.Chain, style)}{holding}"] : Array.Empty<string>(),
+            .. columns.Where(column => column.Count > 0).Select(column => $"{Icons.Field(column.Tally, style)}{column.Count}")]);
 
     internal void ShowIcons(IconStyle style)
     {
@@ -468,7 +471,7 @@ public sealed class WorkLane : View
     }
 
     private void Retitle() =>
-        TeamTabs.Retitle(this, Heading(Team, _columns.Select(column => (column.Tally, column.Count)), _icons));
+        TeamTabs.Retitle(this, Heading(Team, _columns.Sum(column => column.Holding), _columns.Select(column => (column.Tally, column.Count)), _icons));
 
     /// <summary>Lays out the team's cards, keeping the selection on the card it was on, found again by number in
     /// whichever column it's now in when <paramref name="follow"/>, and otherwise on the row it was on.</summary>
@@ -481,7 +484,8 @@ public sealed class WorkLane : View
         var team = items.Where(item => item.Team == Team).ToList();
         foreach (var each in _columns)
         {
-            each.Show([.. team.Where(each.Holds).OrderByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)], isNew, isWriting);
+            each.Show([.. team.Where(each.Holds).OrderByDescending(item => item.Holding.Count > 0)
+                .ThenByDescending(Priorities.Of).ThenByDescending(Priorities.Recommended)], [.. team.Where(each.SetsAside)], isNew, isWriting);
             each.Visible = each.Lines > 0;
         }
         Retitle();
@@ -619,6 +623,9 @@ public sealed class WorkColumn : FrameView
 
     /// <summary>How many items the column holds, which is what its title counts.</summary>
     internal int Count => _items.Count;
+
+    /// <summary>How many of them hold up a task.</summary>
+    internal int Holding => _items.Count(item => item.Holding.Count > 0);
 
     /// <summary>How many rows it draws them in: the items and the PRs under them.</summary>
     internal int Nodes => _nodes.Count;

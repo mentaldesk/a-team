@@ -188,6 +188,8 @@ RUNS
   WAITING_ON="$BIN/waiting-on.json" UPSTREAM_ITEMS="$BIN/upstream-items.json" RELEASES="$BIN/releases.json"
   echo '[]' | tee "$WAITING_ON" "$RELEASES" >/dev/null
   echo '{"data": {"repository": {}}}' >"$UPSTREAM_ITEMS"
+  REACH="$BIN/reach.json" PREREQUISITES="$BIN/prerequisites.json"
+  echo '{"data": {"repository": {}}}' | tee "$REACH" "$PREREQUISITES" >/dev/null
   : >"$BIN/contains"
   VOPEN="$BIN/vision-open.json" VCLOSED="$BIN/vision-closed.json" VCOMMITS="$BIN/vision-commits.json"
   VISION_MD="$BIN/vision.md" THEMES="$BIN/themes.json" FILES="$BIN/files.json" CONTENTS="$BIN/contents.json"
@@ -201,6 +203,8 @@ echo call >>"$CALLS"
 case " \$* " in
   *"issues?labels=a-team:upstream"*) page="$WAITING_ON" ;;
   *UpstreamWaits*) page="$UPSTREAM_ITEMS" ;;
+  *UpstreamReach*) page="$REACH" ;;
+  *Prerequisites*) page="$PREREQUISITES" ;;
   *"/releases?"*) page="$RELEASES" ;;
   *"/compare/"*) all="\$*"; tag=\${all##*/compare/}; tag=\${tag%%...*}
                  jq -n --arg s "\$(sed -n "s/^\$tag //p" "$BIN/contains")" '{status: (if \$s == "" then "ahead" else \$s end)}' >"$BIN/compared.json"
@@ -904,7 +908,7 @@ same "status" '"Ready"' "$(jq -c '.[1].status' "$OUT")"
 same "turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "reason" '"asked you since 08:23"' "$(jq -c '.[1].reason' "$OUT")"
 same "question" '"Which marker should it post?"' "$(jq -c '.[1].question' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "once the reviewer replies to the question, it's the Dev's turn"
 gh_talk <<TALK
@@ -7478,6 +7482,148 @@ step=$(sed -n '/^3\. If it needs a change in another repo first/,/^4\./p' "$ROOT
 grep -qF 'depends dev <n> <owner/repo>#<pr> released <package> "<why>"' <<<"$step" || fail "dev.md: no upstream wait in '$step'"
 grep -qF "Don't label it \`blocked\`" <<<"$step" || fail "dev.md: still labels it blocked"
 grep -qF 'depends lead <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"' "$ROOT/roles/lead.md" || fail "lead.md: no upstream wait"
+
+# other_team <name> <repo> <slug>: another team on this machine.
+other_team() {
+  jq -n --arg repo "$2" --arg slug "$3" '{repo: $repo, app: {slug: $slug}, project: {owner: "mentaldesk", number: 2}}' \
+    >"$CONFIG/teams/$1.json"
+}
+
+case_ "waiting follows a held task's wait on an open issue to its pitch and PR, then the release and the bump"
+waiting_upstream
+other_team style mentaldesk/style style-app
+waits <<<"mentaldesk/style#81 released MentalDesk.Tui"
+upstream_items <<<"81 Issue OPEN"
+jq -n '{data: {repository: {i81: {parent: {number: 71}, subIssues: {nodes: []},
+  closedByPullRequestsReferences: {nodes: [{number: 84, state: "OPEN"}, {number: 80, state: "CLOSED"}]}}}}}' >"$REACH"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "chains" '[[{"team":"style","refs":[71,81,84],"what":"style#84","shown":"open"},{"team":"style","refs":[],"what":"MentalDesk.Tui'"'"'s release","shown":"yours"},{"team":"demo","refs":[],"what":"demo'"'"'s bump","shown":"yours"}]]' \
+  "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
+jq -n '{data: {repository: {i81: {parent: null, closedByPullRequestsReferences: {nodes: []}, subIssues: {nodes: [
+  {number: 82, state: "OPEN", closedByPullRequestsReferences: {nodes: [{number: 85, state: "OPEN"}]}},
+  {number: 83, state: "CLOSED", closedByPullRequestsReferences: {nodes: [{number: 86, state: "MERGED"}]}}]}}}}}' >"$REACH"
+run board demo waiting
+same "a pitch's task" '{"team":"style","refs":[81,82,85],"what":"style#85","shown":"open"}' "$(jq -c '.[] | select(.number == 11) | .chains[0][0]' "$OUT")"
+rm "$CONFIG/teams/style.json"
+run board demo waiting
+same "no team" '{"team":null,"refs":[81,82,85],"what":"style#85","shown":"open"}' "$(jq -c '.[] | select(.number == 11) | .chains[0][0]' "$OUT")"
+
+case_ "waiting: a merged change waits on its release, a released one on the open bump that brings it, and a met wait on nothing"
+waiting_upstream
+other_team style mentaldesk/style style-app
+waits <<<"mentaldesk/style#84 released"
+upstream_items <<<"84 PullRequest MERGED abc123"
+run board demo waiting
+same "merged" '[[{"team":"style","refs":[],"what":"style'"'"'s release","shown":"yours"}]]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
+waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
+releases <<<"v0.3.9 2026-10-16T12:00:00Z"
+contains v0.3.9
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": []},
+       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0", "projectItems": []}]' >"$UPDATES"
+run board demo waiting
+same "bump" '[[{"team":"demo","refs":[535],"what":"#535","shown":"yours"}]]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
+echo '[]' >"$UPDATES"
+run board demo waiting
+same "met" '[]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
+
+case_ "free holds a released task while Dependabot's bump of its package is open, and brings that bump into Review"
+waiting_upstream
+reviewable
+waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
+upstream_items <<<"84 PullRequest MERGED abc123"
+releases <<<"v0.3.9 2026-10-16T12:00:00Z"
+contains v0.3.9
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": []},
+       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0", "projectItems": []}]' >"$UPDATES"
+echo '[{"id": "PR_534", "number": 534, "title": "Bump MentalDesk.Tui.Testing from 0.3.8 to 0.3.9", "projectItems": []}]' >"$UPDATES"
+run board demo free
+same "another package" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
+grep -q "content=PR_534" "$WRITES" && fail "bump: a package that only starts with the wait's came onto the board"
+waiting_upstream
+reviewable
+waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
+upstream_items <<<"84 PullRequest MERGED abc123"
+releases <<<"v0.3.9 2026-10-16T12:00:00Z"
+contains v0.3.9
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": []},
+       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0", "projectItems": []}]' >"$UPDATES"
+run board demo free
+same "exit" 0 "$STATUS"
+same "said" "#535: added as In review, since #11 waits on it" "$(cat "$OUT")"
+grep -q "^ADD .*content=PR_535" "$WRITES" || fail "bump: not on the board in '$(cat "$WRITES")'"
+grep -q "content=PR_536" "$WRITES" && fail "bump: another Dependabot PR came onto the board"
+grep -q -- "--remove-label" "$WRITES" && fail "bump: freed while the bump is open"
+same "posted" "" "$(cat "$POSTED")"
+: >"$WRITES"
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": [{"id": "PVTI_535"}]}]' >"$UPDATES"
+run board demo free
+same "on the board already" "" "$(cat "$OUT")$(cat "$WRITES")"
+echo '[]' >"$UPDATES"
+run board demo free
+same "bump merged" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
+
+case_ "waiting tags a prerequisite with the Ready tasks on its own team waiting on it"
+waiting_upstream
+gh_items <<'ITEMS'
+Ready 12 Waits on 13
+In_review 13 The prerequisite
+ITEMS
+edit_item 12 '.issueDependenciesSummary.blockedBy = 1'
+jq -n '{data: {repository: {i12: {blockedBy: {nodes: [{number: 13, state: "OPEN", repository: {nameWithOwner: "mentaldesk/demo"}},
+  {number: 9, state: "OPEN", repository: {nameWithOwner: "mentaldesk/style"}}, {number: 8, state: "CLOSED", repository: {nameWithOwner: "mentaldesk/demo"}}]}}}}}' \
+  >"$PREREQUISITES"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "frees" '[{"number":13,"frees":[12]}]' "$(jq -c 'map(select(.frees) | {number, frees})' "$OUT")"
+
+# holding_team: demo, with a Ready task ranked High and one another team's task waits on.
+holding_team() {
+  fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 3, "pitched": 3, "exploring": 2, "ideas": 4 } }
+JSON
+  gh_items "$1" <<ITEMS
+$2 20 Ranked high
+$2 21 Unranked, and another team waits on it
+ITEMS
+  other_team app mentaldesk/app app-bot
+  echo '[{"number": 5}]' >"$WAITING_ON"
+  gh_thread <<<'comment 2026-10-10T09:00:00Z app-bot[bot] 0 Blocked by mentaldesk/demo#21.\n\n<!-- a-team:wait repo=mentaldesk/demo n=21 until=released -->'
+}
+
+case_ "the Dev takes a task another team waits on before a higher Priority, and otherwise as before"
+holding_team 20 Ready
+run board demo next
+same "next" 21 "$(jq -r .number "$OUT")"
+claimable
+run board demo claim dev
+same "claimed" '{"number":21,"title":"Unranked, and another team waits on it"}' "$(cat "$OUT")"
+rm "$CONFIG/teams/app.json"
+run board demo next
+same "nothing waits" 20 "$(jq -r .number "$OUT")"
+
+case_ "the Dev takes a task its own team's Ready task waits on first"
+holding_team 20 Ready
+rm "$CONFIG/teams/app.json"
+gh_items 20 <<'ITEMS'
+Ready 20 Ranked high
+Ready 21 The prerequisite
+Ready 22 Waits on 21
+ITEMS
+edit_item 22 '.issueDependenciesSummary.blockedBy = 1'
+jq -n '{data: {repository: {i22: {blockedBy: {nodes: [{number: 21, state: "OPEN", repository: {nameWithOwner: "mentaldesk/demo"}}]}}}}}' >"$PREREQUISITES"
+run board demo next
+same "next" 21 "$(jq -r .number "$OUT")"
+
+case_ "the Lead pitches an Idea another team waits on before a higher Priority"
+holding_team 20 Idea
+run board demo lead-next
+same "turn" pitch "$(jq -r .turn "$OUT")"
+same "pitches" 21 "$(jq -r .item.number "$OUT")"
+rm "$CONFIG/teams/app.json"
+run board demo lead-next
+same "nothing waits" 20 "$(jq -r .item.number "$OUT")"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

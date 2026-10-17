@@ -674,7 +674,7 @@ pitchable_idea() {
       if .priority == $next.priority and recommended != ($next | recommended)
       then . + {actedOn: recommended} else . end' <<<"$chosen")
     break
-  done < <(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$1" | by_priority | jq -c '.[]')
+  done < <(jq 'map(select(.status == "Idea" and .type == "Issue"))' <<<"$1" | by_priority | first_held "$1" | jq -c '.[]')
   echo "${chosen:-null}"
 }
 
@@ -1088,10 +1088,10 @@ UPSTREAM_LABEL=a-team:upstream
 UPSTREAM_REF='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$'
 wait_marker() { printf '<!-- a-team:%s repo=%s n=%s%s%s -->' "$1" "$2" "$3" "${4:+ until=$4}" "${5:+ package=$5}"; }
 
-# waits_on <n>: what task #n still waits on in other repos, as [{ref, repo, n, until, package}].
+# waits_on <n> [<repo> <bot>]: what task #n still waits on in other repos, as [{ref, repo, n, until, package}].
 waits_on() {
-  gh api --paginate "repos/$REPO/issues/$1/comments" |
-    jq -s --arg bot "$BOT" '[add // [] | .[] | select(.user.login == $bot) | .body // ""
+  gh api --paginate "repos/${2:-$REPO}/issues/$1/comments" |
+    jq -s --arg bot "${3:-$BOT}" '[add // [] | .[] | select(.user.login == $bot) | .body // ""
       | scan("<!-- a-team:(wait|unwait) repo=([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+) n=([0-9]+)(?: until=(closed|released))?(?: package=([A-Za-z0-9_.-]+))? -->")]
       | reduce .[] as $m ([]; "\($m[1])#\($m[2])" as $ref | map(select(.ref != $ref))
           + if $m[0] == "wait" then [{ref: $ref, repo: $m[1], n: ($m[2] | tonumber), until: $m[3], package: $m[4]}] else [] end)'
@@ -1165,6 +1165,110 @@ upstream_state() {
 upstream_line() {
   jq -r 'map("\(.repo | split("/") | last)#\(.n): \(.shown)") | join("; ")' <<<"$1"
 }
+
+# team_of <repo>: the team on this machine that works in <repo>, or nothing.
+team_of() {
+  local config want
+  want=$(tr '[:upper:]' '[:lower:]' <<<"$1")
+  for config in "$CONFIG_DIR"/teams/*.json; do
+    [ -f "$config" ] && [ "$(jq -r '.repo // "" | ascii_downcase' "$config" 2>/dev/null)" = "$want" ] &&
+      { basename "$config" .json; return 0; }
+  done
+  return 0
+}
+
+# bumps: this repo's open Dependabot PRs, as [{id, number, title, projectItems}].
+bumps() { gh pr list -R "$REPO" --author app/dependabot --state open --json id,number,title,projectItems 2>/dev/null || echo '[]'; }
+
+# with_bumps <waits> <bumps>: a released wait naming a package is still held while a Dependabot PR bumping it is open.
+with_bumps() {
+  jq -c --argjson bumps "$2" 'map(if .state == "released" and .package then
+      (.package | ascii_downcase) as $p | ([$bumps[] | select(.title | ascii_downcase | [splits("[ ,]+")] | index([$p]))] | first) as $bump
+      | if $bump then . + {met: false, bump: $bump} else . end
+    else . end)' <<<"$1"
+}
+
+# upstream_reach <waits>: for each open upstream issue, the cards that stand for it: its pitch, its open tasks and
+# their open PRs, as {ref: {refs, pr}}, `pr` the first of those PRs.
+upstream_reach() {
+  local repo query n page reach='{}' prs='closedByPullRequestsReferences(first: 5) { nodes { number state } }'
+  for repo in $(jq -r '[.[] | select(.state == "open" and .kind == "Issue") | .repo] | unique[]' <<<"$1"); do
+    query=''
+    for n in $(jq -r --arg r "$repo" '.[] | select(.repo == $r and .state == "open" and .kind == "Issue") | .n' <<<"$1"); do
+      query+=" i$n: issue(number: $n) { parent { number } $prs
+        subIssues(first: 20) { nodes { number state $prs } } }"
+    done
+    page=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -f query="query UpstreamReach(\$owner: String!, \$name: String!) {
+      repository(owner: \$owner, name: \$name) {$query} }" 2>/dev/null) || true
+    jq -e . <<<"$page" >/dev/null 2>&1 || page='{}'
+    reach=$(jq -c --arg repo "$repo" --argjson was "$reach" 'def open_prs: [.closedByPullRequestsReferences.nodes[]? | select(.state == "OPEN") | .number];
+      $was + ((.data.repository // {}) | with_entries(select(.value != null)
+        | .key |= "\($repo)#\(ltrimstr("i"))"
+        | .value |= ([.subIssues.nodes[]? | select(.state == "OPEN")] as $subs
+          | (open_prs + [$subs[] | open_prs[]]) as $open
+          | {refs: ([.parent.number // empty] + [$subs[].number] + $open), pr: ($open | first)})))' <<<"$page")
+  done
+  printf '%s' "$reach"
+}
+
+# chains <waits> <reach>: for each wait not yet met, the links still to go, the one holding the task now first:
+# [{team, refs, what, shown}], `team` the team working in that link's repo, `refs` the numbers of its cards there.
+chains() {
+  local teams='{}' repo
+  for repo in $(jq -r '[.[].repo] | unique[]' <<<"$1"); do
+    teams=$(jq -c --arg repo "$repo" --arg team "$(team_of "$repo")" '. + {($repo): (if $team == "" then null else $team end)}' <<<"$teams")
+  done
+  jq -c --argjson reach "$2" --argjson teams "$teams" --arg team "$TEAM" 'map(select(.met | not)
+    | $teams[.repo] as $up | (.repo | split("/") | last) as $name | ($reach[.ref] // {refs: [], pr: null}) as $r
+    | (if .until == "released" then [{team: $up, refs: [], what: "\(.package // $name)'"'"'s release", shown: "yours"}]
+         + if .package then [{team: $team, refs: [], what: "\($team)'"'"'s bump", shown: "yours"}] else [] end
+       else [] end) as $after
+    | if .bump then [{team: $team, refs: [.bump.number], what: "#\(.bump.number)", shown: "yours"}]
+      elif .state | IN("open", "unknown") then [{team: $up, refs: ([.n] + $r.refs | unique), what: "\($name)#\($r.pr // .n)", shown}] + $after
+      elif .state | IN("merged", "closed") then $after
+      else [{team: $up, refs: [], what: "\($name)#\(.n)", shown}] end)' <<<"$1"
+}
+
+# prerequisites <numbers>: what those tasks wait on in this repo, as {prerequisite: [the tasks waiting on it]}.
+prerequisites() {
+  [ "$(jq length <<<"$1")" -gt 0 ] || { echo '{}'; return; }
+  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="query Prerequisites(\$owner: String!, \$name: String!) {
+      repository(owner: \$owner, name: \$name) {
+        $(jq -r '.[] | "i\(.): issue(number: \(.)) { blockedBy(first: 10) { nodes { number state repository { nameWithOwner } } } }"' <<<"$1")
+      } }" 2>/dev/null | jq -c --arg repo "$REPO" '[(.data.repository // {}) | to_entries[] | (.key | ltrimstr("i") | tonumber) as $n
+      | .value.blockedBy.nodes[]? | select(.state == "OPEN" and (.repository.nameWithOwner | ascii_downcase) == ($repo | ascii_downcase))
+      | {prereq: .number, n: $n}] | group_by(.prereq) | map({key: "\(.[0].prereq)", value: map(.n)}) | from_entries' 2>/dev/null || echo '{}'
+}
+
+# holding <items>: the numbers of this repo's items some team's task waits on: what another team's task names, its pitch
+# and tasks, and what this team's own Ready tasks are blocked by.
+holding() {
+  local config repo bot n named='[]'
+  for config in "$CONFIG_DIR"/teams/*.json; do
+    [ -f "$config" ] || continue
+    repo=$(jq -r '.repo // empty' "$config" 2>/dev/null) bot=$(jq -r '.app.slug // empty' "$config" 2>/dev/null)
+    [ -n "$repo" ] && [ -n "$bot" ] && [ "$(tr '[:upper:]' '[:lower:]' <<<"$repo")" != "$(tr '[:upper:]' '[:lower:]' <<<"$REPO")" ] || continue
+    for n in $(gh api "repos/$repo/issues?labels=$UPSTREAM_LABEL&state=open&per_page=100" \
+      --jq '.[] | select(.pull_request == null) | .number' 2>/dev/null); do
+      named=$(jq -c --argjson was "$named" --arg repo "$REPO" '$was + [.[] | select((.repo | ascii_downcase) == ($repo | ascii_downcase)) | .n]' \
+        <<<"$(waits_on "$n" "$repo" "${bot}[bot]" 2>/dev/null || echo '[]')")
+    done
+  done
+  named=$(jq -c --argjson was "$named" 'keys | map(tonumber) + $was' <<<"$(prerequisites "$(jq -c "[.[] | select($READY_TASK and .blockedBy > 0) | .number]" <<<"$1")")")
+  jq -c --argjson named "$named" '. as $all | [$named[] as $n | $n, ($all[] | select(.number == $n) | .parent // empty),
+    ($all[] | select(.parent == $n) | .number)] | unique' <<<"$1"
+}
+
+# first_held <items>: a JSON array of some of <items> on stdin, those another task waits on first, each part in its order.
+first_held() {
+  local list
+  list=$(cat)
+  [ "$(jq length <<<"$list")" -gt 0 ] || { echo '[]'; return; }
+  jq --argjson holding "$(holding "$1")" 'sort_by(.number | IN($holding[]) | not)' <<<"$list"
+}
+
+# startable <items>: the Ready tasks the Dev can start now, in the order it takes them.
+startable() { jq "map(select($STARTABLE))" <<<"$1" | by_priority | first_held "$1"; }
 
 # close_pitch <n> [built]: closes pitch #n once all its tasks are closed; `built` also needs it to have some.
 close_pitch() {
@@ -1256,14 +1360,14 @@ case "$CMD" in
     ;;
 
   next)
-    items | jq "map(select($STARTABLE))" | by_priority | jq first
+    startable "$(items)" | jq first
     ;;
 
   claim)
     [ $# -ge 1 ] && [ $# -le 2 ] || die "usage: board.sh $TEAM claim dev [<n>]"
     [ "$1" = dev ] || die "only dev claims a task"
     all=$(items)
-    startable=$(jq "map(select($STARTABLE))" <<<"$all" | by_priority)
+    startable=$(startable "$all")
     if [ $# -eq 2 ]; then
       it=$(jq --argjson n "$2" 'map(select(.number == $n)) | first // empty' <<<"$startable")
       [ -n "$it" ] || die "#$2 isn't a Ready task the Dev can start: it's claimed, blocked or not Ready"
@@ -1976,10 +2080,22 @@ case "$CMD" in
 
   free)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM free"
+    open_bumps=
     for n in $(gh api "repos/$REPO/issues?labels=$UPSTREAM_LABEL&state=open&per_page=100" --jq '.[] | select(.pull_request == null) | .number'); do
       waits=$(waits_on "$n")
       [ "$waits" != "[]" ] || continue
       waits=$(upstream_state "$waits")
+      if jq -e 'any(.[]; .state == "released" and .package)' <<<"$waits" >/dev/null; then
+        open_bumps=${open_bumps:-$(bumps)}
+        waits=$(with_bumps "$waits" "$open_bumps")
+        while IFS=$'\t' read -r bump node; do
+          id=$(board_add "#$bump" "$node")
+          set_status "${id:-new-item}" "In review"
+          record lead "$bump" "added as In review"
+          say "#$bump: added as In review, since #$n waits on it"
+          open_bumps=$(jq -c --argjson n "$bump" 'map(if .number == $n then .projectItems = [{}] else . end)' <<<"$open_bumps")
+        done < <(jq -r '[.[] | select(.bump and .bump.projectItems == []) | .bump] | unique_by(.number)[] | [.number, .id] | @tsv' <<<"$waits")
+      fi
       jq -e 'all(.[]; .met)' <<<"$waits" >/dev/null || continue
       write "unlabel #$n $UPSTREAM_LABEL" gh issue edit "$n" -R "$REPO" --remove-label "$UPSTREAM_LABEL" >/dev/null || continue
       depend_note dev "$n" "$(jq -r 'def day: fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0");
@@ -2183,14 +2299,22 @@ case "$CMD" in
           then {document: true} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
-    upstream='[]'
+    upstream='[]' open_bumps=
     for n in $(jq -r "map(select($UPSTREAM_HELD and (.labels | index(\"blocked\") | not))) | .[].number" <<<"$all"); do
       waits=$(waits_on "$n")
       [ "$waits" != "[]" ] || continue
-      line=$(upstream_line "$(upstream_state "$waits")")
-      upstream=$(jq -c --arg team "$TEAM" --argjson n "$n" --arg line "$line" --argjson was "$upstream" '$was + [.[] | select(.number == $n)
-        | {number, title, status, url, team: $team, priority, pitch: false, turn: "upstream", upstream: $line, reason: "waiting on \($line)"}]' <<<"$all")
+      waits=$(upstream_state "$waits")
+      if jq -e 'any(.[]; .state == "released" and .package)' <<<"$waits" >/dev/null; then
+        open_bumps=${open_bumps:-$(bumps)}
+        waits=$(with_bumps "$waits" "$open_bumps")
+      fi
+      line=$(upstream_line "$waits")
+      upstream=$(jq -c --arg team "$TEAM" --argjson n "$n" --arg line "$line" --argjson chains "$(chains "$waits" "$(upstream_reach "$waits")")" \
+        --argjson was "$upstream" '$was + [.[] | select(.number == $n)
+        | {number, title, status, url, team: $team, priority, pitch: false, turn: "upstream", upstream: $line, reason: "waiting on \($line)",
+           chains: $chains}]' <<<"$all")
     done
+    frees=$(prerequisites "$(jq -c "[.[] | select($READY_TASK and .blockedBy > 0) | .number]" <<<"$all")")
     recommended=$(jq "$RECOMMENDED"'map(select(.status == "Idea" and .type == "Issue" and .priority == null
       and recommended != null) | {number})' <<<"$all")
     talk=$(gated_talk "$(jq -s add <<<"$gated$held$recommended")" checks)
@@ -2199,7 +2323,9 @@ case "$CMD" in
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
       jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
-        --argjson unranked "$(unranked_ideas "$all" "$said")" --argjson upstream "$upstream" '. + $asked + $unranked + $upstream')
+        --argjson unranked "$(unranked_ideas "$all" "$said")" --argjson upstream "$upstream" '. + $asked + $unranked + $upstream' |
+      jq --argjson frees "$frees" 'map((($frees["\(.number)"] // []) + ($frees["\(.pr // 0)"] // [])) as $f
+        | if $f == [] then . else . + {frees: ($f | unique)} end)')
     snapshot "$(jq 'map(select(.turn != "upstream")) | length' <<<"$waiting")"
     printf '%s\n' "$waiting"
     ;;

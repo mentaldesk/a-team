@@ -48,7 +48,9 @@ closes it.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
 wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
-Pitches and 1 in Review, with `?` counting Questions. With `m` on, it counts only your moves, and a
+Pitches and 1 in Review, with `?` counting Questions. A `⛓` first counts the cards holding up a
+task ([below](#holding-up-a-task)), like `tui ⛓ 1 ◇ 1 PR2`, so one on a tab you're not looking at
+still shows. With `m` on, it counts only your moves, and a
 column with nothing showing isn't counted. Work opens on the first team with something waiting. Each tab has up to four
 columns, left to right in the order work moves through them. A column with nothing in it is hidden,
 and the one you're on takes half the tab. Only that column highlights its card, the one your keys act
@@ -60,10 +62,11 @@ on; the others, and the other tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. A task waiting on a change in another repo isn't here: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
-| Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings, or another team's Dev's PR to this repo once it's ready. |
+| Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. A task waiting on a change in another repo is here too, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
+| Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings or as soon as it brings a release a task waits on, or another team's Dev's PR to this repo once it's ready. |
 
-Each column's heading counts its cards. Under the Review cards, a line sums up the work that's in
+Each column's heading counts its cards, and orders them with the ones [holding up a
+task](#holding-up-a-task) first, then by Priority. Under the Review cards, a line sums up the work that's in
 review but not ready for you yet, grouped by whose move it is, like
 `1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`.
 
@@ -113,6 +116,30 @@ In every area, at the top right beside the menus, an alert like `? #481 +2` says
 opened the app: a pitch in Pitched, a PR in review or the Dev's question, the newest and how many
 others. `u` (**View → Go to what's new**) or a click takes you to it, and each new card wears a `●`
 before its title until you open it.
+
+## Holding up a task
+
+When a task waits on something, on its own team or another's, the card that would free it says
+so after its number, wherever it is: Pitches, Questions or Review.
+
+```
+✓ ‹› #81 ⛓ frees a-team #499  An app without AppShell can install the clipboard
+     └ PR #84  An app without AppShell can install the clipboard
+```
+
+That's the card for the issue the task waits on, its pitch, or the PR that closes it, and it sits
+at the top of its column. Selecting it puts the rest of the chain on the status bar, like
+`a-team #499 waits on this · then MentalDesk.Tui's release · then a-team's bump`. The tag moves along
+as each link is done, and drops off once the task is free.
+
+The task's own card, in Questions, says which link it waits on now and whose move that is, like
+`#499 ⛓ waits on tui-style-guide#84 · in review, yours`, then `#499 ⛓ waits on MentalDesk.Tui's
+release · yours`. Once that release is out, Dependabot's PR bringing it in comes into Review,
+tagged `⛓ frees #499`, and **Accept** merges it like a task. Other Dependabot PRs still wait for the
+Lead. A link in a repo no team here works in still shows on the task's card, but there's no tab to
+tag.
+
+The tag wears a link glyph where the icons are a Nerd Font's.
 
 ## Moving around
 
