@@ -8,8 +8,11 @@ public sealed record WaitingItem(
     int Pr = 0, string PrUrl = "", string Trouble = "", string Priority = "", bool Pitch = false,
     string Question = "", string Unready = "", string Base = "", int Tasks = 0, int OpenTasks = 0, string Role = "",
     string Recommendation = "", bool Reviewed = false, int Consider = 0, bool Document = false, string Branch = "",
-    bool Dependency = false)
+    bool Dependency = false, string Upstream = "")
 {
+    /// <summary>Whether it's a task waiting on a change in another repo, which frees itself and asks nobody anything.</summary>
+    public bool WaitsUpstream => Upstream.Length > 0;
+
     /// <summary>The PR its branch is on: the one that closes it, or a document pitch itself; 0 where there's none.</summary>
     public int BranchPr => Branch.Length == 0 ? 0 : Pr > 0 ? Pr : Number;
 
@@ -91,7 +94,7 @@ public sealed record WaitingItem(
                         Text(item, "unready"), Text(item, "base"),
                         Numbered(item, "tasks") ?? 0, Numbered(item, "openTasks") ?? 0, Text(item, "role"),
                         Text(item, "recommendation"), Flag(item, "reviewed"), Numbered(item, "consider") ?? 0,
-                        Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency")))
+                        Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream")))
             ];
         }
         catch (JsonException)

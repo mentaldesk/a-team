@@ -1555,7 +1555,7 @@ public sealed class DashboardWindow : Window
 
     private void ShowTitle()
     {
-        var title = WorkTrend.Title(_readAt is null ? null : _work.Items.Count, _trends, _clock.GetUtcNow());
+        var title = WorkTrend.Title(_readAt is null ? null : _work.Items.Count(item => !item.WaitsUpstream), _trends, _clock.GetUtcNow());
         if (_title.Text != title)
             _title.Text = title;
     }
@@ -1729,7 +1729,7 @@ public sealed class DashboardWindow : Window
 
     /// <summary>What's waiting now is Work's count, once it has read one.</summary>
     private void OpenTrends() =>
-        _showTrends?.Invoke([.. _teamNames.Select(team => (team, _readAt is null ? (int?)null : _work.Items.Count(item => item.Team == team)))]);
+        _showTrends?.Invoke([.. _teamNames.Select(team => (team, _readAt is null ? (int?)null : _work.Items.Count(item => item.Team == team && !item.WaitsUpstream)))]);
 
     private void OpenSpending() => _showSpending?.Invoke(_teamNames, OpenPitch);
 

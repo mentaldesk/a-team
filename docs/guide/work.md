@@ -60,7 +60,7 @@ on; the others, and the other tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. |
+| Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. A task waiting on a change in another repo isn't here: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings, or another team's Dev's PR to this repo once it's ready. |
 
 Each column's heading counts its cards. Under the Review cards, a line sums up the work that's in

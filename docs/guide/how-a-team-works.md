@@ -51,6 +51,16 @@ it `theme: <heading>` for the vision theme it serves, which you can change on Gi
 pull request that changes something you can see or do. A task that needs another merged first is
 blocked by it on GitHub, and becomes ready to start by itself when that one closes.
 
+A task that needs a change in another repo first, like a fix in a shared library, waits on that
+repo's issue or PR instead, labelled `a-team:upstream`. It waits either until that closes or until a
+published release carries the change; a pre-release doesn't count. The board checks every couple
+of minutes, and once the wait is over it takes the label off and says so on the task, naming the
+release and the package to upgrade, so the Dev can pick it up with no click from you. An issue
+closed by hand, with no change linked to it, counts as released in the first release after it
+closed. Until then it isn't in
+**Questions**: it's asking you nothing, and the [Overseer](overseer.md) shows on its card how far
+the change has got, like `waiting on tui-style-guide#84: merged, not released`.
+
 A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a
 draft pull request in Pitched instead. You agree to it by merging it, with `a` in
 [Work](work.md#answering-from-a-card), where `e` also edits it.

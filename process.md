@@ -45,8 +45,11 @@ Two kinds of item share the board:
 - A **task** is a single PR that ships something a user can notice (never a layer or a
   technical milestone on its own), and travels Ready → In progress → In review → Done.
   A task that needs another merged first is recorded as blocked by it, a GitHub issue
-  dependency, and becomes available by itself when that one closes. The `blocked` label is
-  for a task waiting on the stakeholder: for an answer, or because they're holding it.
+  dependency, and becomes available by itself when that one closes. A task that needs a change
+  in another repo is recorded as waiting on that repo's issue or PR, until it closes or until a
+  published release carries it, and is labelled `a-team:upstream`; the board frees it by itself
+  when that happens. The `blocked` label is for a task waiting on the stakeholder: for an answer,
+  or because they're holding it.
 - A **docs PR** is the Customer lead's, labelled `a-team:customer`: one open at a time, which it
   adds to after each pitch is done. It goes straight to In review, and accepting it merges it.
   While the team config's `docs` page isn't in the repo, a **docs proposal** comes first: a
@@ -112,8 +115,13 @@ a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child>
 a-team board {{team}} depends <role> <task> <prereq> "<why>"
                                                 # <task> can't start until <prereq> closes; <why>
                                                 # is posted on <task>
+a-team board {{team}} depends <role> <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"
+                                                # <task> waits on another repo's issue or PR until
+                                                # it closes, or until a published release has it;
+                                                # <package> is named when the board frees <task>
 a-team board {{team}} undepend <role> <task> <prereq> "<why>"
-                                                # drop that dependency again, saying why on <task>
+                                                # drop that dependency again, saying why on <task>;
+                                                # <prereq> may be <owner/repo>#<n>
 a-team board {{team}} unblock <role> <n>        # Dev only: clear `blocked` on a task it handed back,
                                                 # once a stakeholder has replied to its question
 a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON, with
@@ -136,7 +144,8 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 `overview` is what its Overseer reads, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
-how it asks for a vision review. Don't run them.
+how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in
+another repo has closed or been released. Don't run them.
 
 Run it exactly as written here, one command per call. Don't put it in a shell variable or
 chain it with other commands: the permission check approves what it can read, and it can't

@@ -78,11 +78,12 @@ whether the reply answers it:
 - If it doesn't, reply with `a-team board {{team}} comment dev <n>`: rephrase the question, or say
   what you still need. Leave it `blocked`, and end the run.
 
-If it's held for a PR you opened on a repo the team contributes to, and this run is for that PR,
-look after it in its worktree as in step 2, using `gh ... -R <repo>`, since `a-team board` only
-reaches {{repo}}: `gh pr checks`, fix what fails, answer each stakeholder comment with
-`gh pr comment` ending in your marker, and `gh pr ready` once it's green. Leave the task `blocked`
-in Ready: it waits for that change to be released.
+If it's Ready and labelled `a-team:upstream`, it waits on a change in another repo. If that's a PR
+you opened on a repo the team contributes to, and this run is for that PR, look after it in its
+worktree as in step 2, using `gh ... -R <repo>`, since `a-team board` only reaches {{repo}}:
+`gh pr checks`, fix what fails, answer each stakeholder comment with `gh pr comment` ending in your
+marker, and `gh pr ready` once it's green. Leave the task in Ready: the board frees it by itself once
+the change is closed or released, and says on the task which release to upgrade to.
 
 A task a stakeholder labelled `blocked` themselves, with no question from you, is theirs: leave it
 alone.
@@ -106,10 +107,14 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
      if it isn't there, and make the change in a worktree beside it, on a new branch from a fresh
      default branch, following that repo's contributor docs. Open a **draft** PR there whose body
      says what it adds, has the line `Needed by {{repo}}#<n>`, and ends with your marker. Comment on
-     the task linking it and asking the stakeholder to review and release it, label the task
-     `blocked`, move it back to Ready, and end the run.
+     the task linking it and asking the stakeholder to review and release it. Then record the wait
+     with `a-team board {{team}} depends dev <n> <owner/repo>#<pr> released <package> "<why>"`, naming
+     the package the task upgrades, or `closed` with no package if the task needs it merged but not
+     released, move it back to Ready,
+     and end the run. Don't label it `blocked`: the board frees it when the change lands.
    - Otherwise, comment on the task saying what change it needs where, and that the team doesn't
-     contribute to that repo, label it `blocked`, move it back to Ready, and end the run.
+     contribute to that repo. If an issue or PR for it is already open there, record the wait on it
+     as above; if not, label the task `blocked`. Move it back to Ready, and end the run.
 4. Pick it up from its worktree and branch if they exist. Otherwise fetch `origin` and create a
    fresh worktree from `origin/<default branch>` following the repo's conventions. Implement it.
    Stay inside the task's scope; note anything else you spot in the PR body instead of fixing it.

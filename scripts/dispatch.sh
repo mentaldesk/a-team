@@ -315,6 +315,19 @@ run_release() {
   printf '%s\n' "$said" >"$file"
 }
 
+# free_waits <team>: frees the team's tasks whose wait on another repo is met, commenting as its App.
+free_waits() {
+  local args=(board) said
+  $DRY_RUN && args+=(--dry-run)
+  mkdir -p "$STATE/$1"
+  if said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$1 "$ROOT/bin/a-team" "${args[@]}" "$1" free 2>"$STATE/$1/free.err"); then
+    passing "$STATE/$1/free-failing" "$STATE/$1/free-failed-once" "$1: freeing tasks working again"
+    [ -z "$said" ] || log "$1: ${said//$'\n'/; }"
+  else
+    failing "$STATE/$1/free-failing" "$STATE/$1/free-failed-once" "$(tr '\n' ' ' <"$STATE/$1/free.err")" "$1: freeing tasks failed"
+  fi
+}
+
 # cannot_run <team> <config>: why the team can't run, if it can't. It runs only as its own App.
 cannot_run() {
   local why
@@ -347,6 +360,7 @@ for team in $(team_names); do
     continue
   fi
   passing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$team: running again"
+  free_waits "$team"
   if adopted=$("$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" adopt 2>&1); then
     passing "$STATE/$team/adopt-failing" "$STATE/$team/adopt-failed-once" "$team: adopting upstream PRs again"
     [ -z "$adopted" ] || log "$team: ${adopted//$'\n'/; }"

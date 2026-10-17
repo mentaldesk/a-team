@@ -60,7 +60,9 @@ behind a count, as in `+7`.
 
 The details pane gives the card's title, what it is, its Priority, team and column, how long it has
 been there in full (`6d 2h 10m`), the column's limit if it has one, and why it's waiting where Work
-says. For a pitch, it lists the open tasks under it, each with its column and age.
+says. For a task waiting on a change in another repo, that's how far the change has got:
+`Waiting on tui-style-guide#84: merged, not released`. For a pitch, it lists the open tasks under it,
+each with its column and age.
 
 Overseer reads the boards when you open it and on `F5`, and the status bar says how long ago that
 was. Ages and animations keep moving between reads.
