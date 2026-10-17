@@ -41,4 +41,11 @@ public class AcceptDialogTests
             "Merges Dependabot's PR #535 into main, squashed.\n\nMerged work reaches the teams when you next release.",
             AcceptDialog.Says(new(535, "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "In review",
                 "https://github.com/x/pull/535", "a-team", Pr: 535, Base: "main", Dependency: true)));
+
+    [Fact]
+    public void It_says_accepting_a_PR_that_is_the_item_merges_it_and_closes_nothing() =>
+        Assert.Equal(
+            "Merges PR #86 into main, squashed.\n\nMerged work reaches the teams when you next release.",
+            AcceptDialog.Says(new(86, "Let an app without AppMenu pick menu letters", "In review",
+                "https://github.com/x/pull/86", "tui", Pr: 86, Base: "main")));
 }

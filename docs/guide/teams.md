@@ -95,8 +95,8 @@ field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the
 **Contributes to** lists the other repos the Dev may open draft PRs on, picked from the ones the
 team's GitHub App can reach. When a task needs a change in one of them first, like the style guide,
 the Dev opens that draft PR itself and hands the task back with it linked, for you to review and
-release. It looks after that PR as it does its own and marks it ready once it's green. Merging stays
-yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
+release. It looks after that PR as it does its own and marks it ready once it's green. It then
+shows in Review on the team that runs that repo, where `a` merges it. Releasing stays yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
 
 `Esc` in a picker leaves the field as it was. A new team's Workdir follows its Name, as
 `~/code/<name>`, until you type or pick one of your own.

@@ -110,6 +110,13 @@ public class AttentionTests
         Assert.Equal("Other", WorkView.GateOf(new WaitingItem(10, "", "Done", "", "t")));
     }
 
+    [Fact]
+    public void A_task_waiting_on_another_repo_is_at_no_gate_while_a_question_still_is()
+    {
+        Assert.Equal("Other", WorkView.GateOf(new WaitingItem(11, "", "Ready", "", "t", "upstream", Upstream: "tui-style-guide#84: open")));
+        Assert.Equal("Questions", WorkView.GateOf(new WaitingItem(12, "", "Ready", "", "t", "you", Question: "Which?")));
+    }
+
     private sealed class Clock : TimeProvider
     {
         internal DateTimeOffset Now { get; set; } = new(2026, 10, 2, 9, 0, 0, TimeSpan.Zero);

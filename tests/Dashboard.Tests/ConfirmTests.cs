@@ -10,13 +10,14 @@ public class ConfirmTests
     private static readonly WaitingItem Task =
         new(49, "I can't change any of the keys", "In review", "https://github.com/x/49", "a-team", Pr: 122, Base: "main");
 
-    public static TheoryData<string> Dialogs => ["accept", "remove", "stop", "discard"];
+    public static TheoryData<string> Dialogs => ["accept", "approve", "remove", "stop", "discard"];
 
     private static ConfirmDialog Open(string which)
     {
         var dialog = which switch
         {
             "accept" => AcceptDialog.Create(Task),
+            "approve" => ApproveDialog.Create(Task),
             "remove" => RemoveTeamDialog.Create("goose", "o/r", "goose.json.removed"),
             "stop" => StopRunDialog.Create(new RunTask(244, "Choose whose comments count")),
             _ => DiscardDialog.Create(DiscardDialog.Comment),
@@ -75,7 +76,7 @@ public class ConfirmTests
 
         var rows = DialogTests.Rows(DialogTests.F1(dialog));
 
-        Assert.Contains(("Ctrl+Enter", which switch { "accept" => "Accept", "remove" => "Remove", "stop" => "Stop", _ => "Discard" }), rows);
+        Assert.Contains(("Ctrl+Enter", which switch { "accept" => "Accept", "approve" => "Approve", "remove" => "Remove", "stop" => "Stop", _ => "Discard" }), rows);
         Assert.Equal(("Esc", which == "discard" ? DiscardDialog.KeepWriting : "Cancel"), rows[^1]);
         Assert.True(Action(dialog).HasFocus);
     }
@@ -142,9 +143,10 @@ public class ConfirmTests
         Assert.Null(typeof(Confirm).Assembly.GetType("ATeam.Dashboard.ConfirmDialog"));
 
     [Fact]
-    public void Accept_is_primary_and_the_others_are_danger()
+    public void Accept_and_Approve_are_primary_and_the_others_are_danger()
     {
         Assert.Equal(ButtonKind.Primary, AcceptDialog.Accept.Kind);
+        Assert.Equal(ButtonKind.Primary, ApproveDialog.Approve.Kind);
         Assert.All([RemoveTeamDialog.Remove, StopRunDialog.Stop, DiscardDialog.Discard],
             action => Assert.Equal(ButtonKind.Danger, action.Kind));
     }

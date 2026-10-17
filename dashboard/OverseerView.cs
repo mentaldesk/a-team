@@ -255,7 +255,9 @@ public sealed class OverseerView : View
         [
             string.Join(Separator, card.KindName, card.Priority.Length > 0 ? card.Priority : "Unranked", card.Team, $"{card.Status}{age}{limit}"),
         ];
-        if (state.Waiting(card.Team, card.Number) is { Reason.Length: > 0 } waiting)
+        if (state.Waiting(card.Team, card.Number) is { WaitsUpstream: true } upstream)
+            lines.Add($"Waiting on {upstream.Upstream}");
+        else if (state.Waiting(card.Team, card.Number) is { Reason.Length: > 0 } waiting)
             lines.Add($"Waiting: {(waiting.Mine ? "" : $"{waiting.Turn} · ")}{waiting.Reason}");
         if (card.Kind == CardKind.Pitch)
         {

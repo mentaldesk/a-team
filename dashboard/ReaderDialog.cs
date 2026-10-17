@@ -82,11 +82,13 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string QuoteId = "reader.quote";
     private const string BranchId = "reader.branch";
     private const int BandLines = 3;
+    private static readonly string[] WaitForPost =
+        [SetId, ApproveId, AcceptId, CommentId, DeclineId, NotNowId, TryId, EditId, CancelId];
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
     private readonly Action _onGitHub;
-    private readonly Action? _onApprove;
+    private readonly Func<bool>? _onApprove;
     private readonly ReaderCommand? _accept;
     private readonly ReaderComment? _comment;
     private readonly ReaderTry? _try;
@@ -114,6 +116,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly OptionSelector<Rank>? _ranks;
     private LogView _scrolled;
     private Task<string?>? _posting;
+    private Func<bool>? _afterPost;
     private bool _declining;
     private bool _shelving;
     private readonly MessageBar _message = new();
@@ -140,7 +143,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     /// <param name="openUrl">Opens an image on GitHub where it can't be drawn.</param>
     /// <param name="viewImage">Shows a picture full-window, under its alt text.</param>
     public ReaderDialog(
-        WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove = null, ReaderCommand? accept = null,
+        WaitingItem item, IssueBody body, Action onGitHub, Func<bool>? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0,
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
@@ -374,7 +377,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     /// <summary>A click on the ranks reaches the dialog as Accept.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
-        _ranks is null || Writing || Set();
+        _ranks is null || Writing || Run(SetId, Set);
 
     /// <summary>The keyboard is in the Comment pane: its text, or its weeks while saying Not now.</summary>
     private bool Writing => _field.HasFocus || _weeks.HasFocus;
@@ -389,7 +392,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     /// <returns>The rank Enter set on the row of ranks, or null.</returns>
     public static Rank? Show(
-        IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Action? onApprove, ReaderCommand? accept,
+        IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Func<bool>? onApprove, ReaderCommand? accept,
         ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
         Action<string>? openUrl = null)
@@ -505,11 +508,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     private void AddKeys()
     {
         bool Reads() => !Writing;
-        void Bind(string id, Key key, string label, Func<bool> run, Func<bool> when) => base.Bind(id, key, label, () =>
-        {
-            run();
-            Offer();
-        }, when);
+        void Bind(string id, Key key, string label, Func<bool> run, Func<bool> when) =>
+            base.Bind(id, key, label, () => Run(id, run), when);
         if (_ranks is not null)
             Bind(SetId, Key.Enter, "Set", Set, Reads);
         if (_onApprove is not null)
@@ -534,14 +534,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (_edit is not null)
             Bind(EditId, _edit.Key, "Edit", Edit, Reads);
         Bind(GitHubId, new Key('g'), "GitHub", OnGitHub, Reads);
-        Register(CancelId, "Close", () =>
-        {
-            if (Writing)
-                Unfocus();
-            else
-                Escape();
-            Offer();
-        });
+        Register(CancelId, "Close", () => Run(CancelId, () => Writing ? Unfocus() : Escape()));
         foreach (var (id, kind) in new[]
         {
             (SetId, ButtonKind.Primary), (ApproveId, _accept is null ? ButtonKind.Primary : ButtonKind.Secondary),
@@ -572,6 +565,17 @@ public sealed partial class ReaderDialog : DashboardDialog
         Also("Ctrl+X", "Cut", () => _field.HasFocus);
         Also("Ctrl+Z", "Undo", () => _field.HasFocus);
         Also("↑/↓", "Weeks", () => _weeks.HasFocus);
+    }
+
+    /// <summary>One that would change the comment or close the reader waits for a comment that's posting.</summary>
+    private bool Run(string id, Func<bool> run)
+    {
+        if (_posting is not null && WaitForPost.Contains(id))
+            _afterPost = run;
+        else
+            run();
+        Offer();
+        return true;
     }
 
     private static string Capital(string label) => label.Length == 0 ? label : char.ToUpperInvariant(label[0]) + label[1..];
@@ -780,6 +784,18 @@ public sealed partial class ReaderDialog : DashboardDialog
         var pane = FocusedPane();
         if (pane.MarkedText() is not { Count: > 0 } lines)
             return true;
+        pane.Unmark();
+        // Taken now: the comment posting rewrites the body, and the selection with it.
+        if (_posting is not null)
+        {
+            _afterPost = () => Quote(lines);
+            return true;
+        }
+        return Quote(lines);
+    }
+
+    private bool Quote(IReadOnlyList<string> lines)
+    {
         if (!CommentShown)
         {
             Comment();
@@ -789,7 +805,6 @@ public sealed partial class ReaderDialog : DashboardDialog
         var quoted = Quote(lines, at > 0 && _field.Text[at - 1] != '\n');
         _field.Document!.Insert(at, quoted);
         _field.CaretOffset = at + quoted.Length;
-        pane.Unmark();
         ToComment();
         return true;
     }
@@ -859,11 +874,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         });
     }
 
-    private bool Approve() => Leave(() =>
-    {
-        _onApprove!();
-        return Close();
-    });
+    private bool Approve() => Leave(() => !_onApprove!() || Close());
 
     /// <summary>One that can't go ahead only says why, so it leaves the comment alone.</summary>
     private bool AcceptItem() => _accept!.Enabled ? Leave(AcceptNow) : AcceptNow();
@@ -962,27 +973,36 @@ public sealed partial class ReaderDialog : DashboardDialog
             Settle(posting, text);
             return true;
         }
+        // Off the field, so a key pressed while it posts isn't typed into what's being posted.
+        var written = _field.HasFocus;
+        if (written)
+            Back();
         // Polled rather than Invoked: the reader opens inside a timer, and Invoke waits on that timer's lock.
         App?.AddTimeout(PollEvery, () =>
         {
             if (!posting.IsCompleted)
                 return true;
-            Settle(posting, text);
+            Settle(posting, text, written);
             return false;
         });
         return true;
     }
 
     /// <summary>A comment that didn't post leaves the pane open, with what you wrote still in it.</summary>
-    private void Settle(Task<string?> done, string text)
+    private void Settle(Task<string?> done, string text, bool written = false)
     {
         _posting = null;
+        var after = _afterPost;
+        _afterPost = null;
         var failure = done.Status == TaskStatus.RanToCompletion
             ? done.Result
             : done.Exception?.GetBaseException().Message ?? "the comment didn't post";
         if (failure is { Length: > 0 })
         {
             _message.Show(failure, Schemes.Error);
+            if (written)
+                ToComment();
+            Offer();
             SetNeedsLayout();
             return;
         }
@@ -1013,6 +1033,11 @@ public sealed partial class ReaderDialog : DashboardDialog
         _message.Show($"commented on #{_number}", Schemes.Accent);
         SetNeedsLayout();
         SetNeedsDraw();
+        if (after is not null)
+        {
+            after();
+            Offer();
+        }
     }
 
     private bool Set() => Leave(() =>

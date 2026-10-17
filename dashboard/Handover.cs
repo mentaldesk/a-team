@@ -19,6 +19,24 @@ public sealed record TryHandover(
     public override string[] Arguments => Item.Pr > 0 ? ["try", Item.Team, Item.Pr.ToString()] : ["try", Item.Team];
 
     public override Area Area => Area.Work;
+
+    /// <summary>Waits for <paramref name="hand"/> to give the terminal back, given the file try says why it failed in.
+    /// A failure says what the try said, where it said anything.</summary>
+    public TryHandover Open(Func<string[], IReadOnlyDictionary<string, string>, string?> hand)
+    {
+        var file = System.IO.Path.GetTempFileName();
+        try
+        {
+            if (hand(Arguments, new Dictionary<string, string> { ["A_TEAM_TRY_FAILED"] = file }) is not { } failure)
+                return this;
+            var why = System.IO.File.ReadAllText(file).Trim();
+            return this with { Failure = why.Length > 0 ? $"try of {(Item.Pr > 0 ? $"#{Item.Pr}" : Item.Team)} failed: {why}" : failure };
+        }
+        finally
+        {
+            System.IO.File.Delete(file);
+        }
+    }
 }
 
 /// <summary>The agent handed to <c>a-team attach</c>, or just its run on <paramref name="Task"/>, selected again on

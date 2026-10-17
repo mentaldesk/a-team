@@ -1280,6 +1280,16 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void A_task_waiting_on_another_repo_isn_t_a_question_nor_waiting_on_you()
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)));
+        window.Refresh();
+
+        Assert.Equal(1, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Questions").Count);
+        Assert.Equal("Work · 1 waiting on you", window.WorkTitle);
+    }
+
+    [Fact]
     public void A_question_reads_its_body_conversation_and_history_like_any_other_card()
     {
         var at = new DateTimeOffset(2026, 9, 29, 4, 31, 0, TimeSpan.Zero);
@@ -1441,6 +1451,38 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(108, window.Work.Selected?.Number);
         Assert.Equal(before, reads);
         Assert.Equal("#107 approved", window.Message.Says);
+    }
+
+    [Fact]
+    public void a_in_the_reader_asks_first_and_approves_nothing_if_you_say_no()
+    {
+        var calls = new List<string[]>();
+        var asked = new List<int>();
+        bool? went = null;
+        using var window = Open(
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, onApprove, _, _, _) => went = onApprove!(),
+            confirmApprove: item =>
+            {
+                asked.Add(item.Number);
+                return false;
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([107], asked);
+        Assert.False(went);
+        Assert.Empty(calls);
+        Assert.Equal(107, window.Work.Selected?.Number);
     }
 
     [Fact]
@@ -3489,6 +3531,43 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Back_from_a_try_the_reader_reopens_once_the_window_runs_and_t_in_it_tries_again_after_a_comment()
+    {
+        var handed = new List<Handover>();
+        var shown = new IssueBody("## Opportunity");
+        using var first = Open(
+            handOver: handed.Add,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (_, _, _, _, _, _, tryIt) => tryIt!.Run(shown, 7));
+        OpenTheTaskInReview(first);
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var posted = new List<string?>();
+        using var back = Open(
+            handOver: handover =>
+            {
+                handed.Add(handover);
+                app.RequestStop();
+            },
+            showBody: (_, body, _, _, _, comment, tryIt) =>
+            {
+                posted.Add(comment!.Post("looks good").GetAwaiter().GetResult());
+                tryIt!.Run(body, 9);
+            },
+            resume: handed.Single());
+
+        app.Begin(back);
+        Assert.Empty(posted);
+        app.TimedEvents!.RunTimers();
+
+        Assert.Equal([null], posted);
+        var again = Assert.IsType<TryHandover>(handed[^1]);
+        Assert.Equal(2, handed.Count);
+        Assert.Equal(["try", "team0", "122"], again.Arguments);
+        Assert.Equal(9, again.Reader?.Top);
+        Assert.True(back.StopRequested);
+    }
+
+    [Fact]
     public void A_try_from_the_reader_that_failed_says_so_in_the_reopened_reader()
     {
         var handed = new List<Handover>();
@@ -3769,6 +3848,17 @@ public class WorkAreaTests : IDisposable
           "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"}]
         """;
 
+    /// <summary>That question, and a task waiting on a change in another repo.</summary>
+    private const string QuestionAndUpstream =
+        """
+        [{"number": 192, "title": "I can reply to a pitch", "status": "Ready",
+          "url": "https://github.com/mentaldesk/team0/issues/192", "team": "team0",
+          "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"},
+         {"number": 469, "title": "Multi-line boxes keep what I type in view", "status": "Ready",
+          "url": "https://github.com/mentaldesk/team0/issues/469", "team": "team0", "turn": "upstream",
+          "upstream": "tui-style-guide#63: open", "reason": "waiting on tui-style-guide#63: open"}]
+        """;
+
     /// <summary>A pitch the Lead needs an answer on, and nothing else.</summary>
     private const string PitchQuestion =
         """
@@ -3925,7 +4015,7 @@ public class WorkAreaTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?, Rank?>? chooseRank = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
-        Action<WaitingItem, IssueBody, Action, Action?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
+        Action<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
@@ -3944,7 +4034,8 @@ public class WorkAreaTests : IDisposable
         IClipboard? clipboard = null,
         Action<ReaderIdea?, Func<Key, bool>>? showIdea = null,
         Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
-        Action<string>? showDecisions = null)
+        Action<string>? showDecisions = null,
+        Func<WaitingItem, bool>? confirmApprove = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -3979,7 +4070,8 @@ public class WorkAreaTests : IDisposable
             confirmQuit: confirmQuit,
             clipboard: clipboard,
             showSpending: showSpending,
-            showDecisions: showDecisions);
+            showDecisions: showDecisions,
+            confirmApprove: confirmApprove ?? (_ => true));
     }
 
     private void WriteRun(string team, string role, int pid)

@@ -191,7 +191,7 @@ so `pau` finds *Pausing a role* and *Pausing a team*, and `Enter` opens the one 
 
 ## Confirming
 
-Accepting work, stopping a run, removing a team and throwing away something you've written all ask
+Approving a pitch, accepting work, stopping a run, removing a team and throwing away something you've written all ask
 first. `Ctrl+Enter` goes ahead, `Esc` cancels, and `Enter` does nothing, so a stray one can't.
 `Tab` or `←`/`→` move between the buttons and `Space` presses one; the `Esc` button starts focused. In a
 terminal that can't tell `Ctrl+Enter` from `Enter`, such as macOS Terminal, `Tab` to the action's

@@ -185,6 +185,10 @@ RUNS
   : >"$UPSTREAM_CALLS"
   UPSTREAM_LINES="$BIN/upstream-lines.json"
   echo '[]' >"$UPSTREAM_LINES"
+  WAITING_ON="$BIN/waiting-on.json" UPSTREAM_ITEMS="$BIN/upstream-items.json" RELEASES="$BIN/releases.json"
+  echo '[]' | tee "$WAITING_ON" "$RELEASES" >/dev/null
+  echo '{"data": {"repository": {}}}' >"$UPSTREAM_ITEMS"
+  : >"$BIN/contains"
   VOPEN="$BIN/vision-open.json" VCLOSED="$BIN/vision-closed.json" VCOMMITS="$BIN/vision-commits.json"
   VISION_MD="$BIN/vision.md" THEMES="$BIN/themes.json" FILES="$BIN/files.json" CONTENTS="$BIN/contents.json"
   echo '[]' | tee "$VOPEN" "$VCLOSED" "$VCOMMITS" "$FILES" >/dev/null
@@ -195,6 +199,12 @@ RUNS
 #!/usr/bin/env bash
 echo call >>"$CALLS"
 case " \$* " in
+  *"issues?labels=a-team:upstream"*) page="$WAITING_ON" ;;
+  *UpstreamWaits*) page="$UPSTREAM_ITEMS" ;;
+  *"/releases?"*) page="$RELEASES" ;;
+  *"/compare/"*) all="\$*"; tag=\${all##*/compare/}; tag=\${tag%%...*}
+                 jq -n --arg s "\$(sed -n "s/^\$tag //p" "$BIN/contains")" '{status: (if \$s == "" then "ahead" else \$s end)}' >"$BIN/compared.json"
+                 page="$BIN/compared.json" ;;
   *"/contents/"*"?ref=a-team/attachments"*vnd.github.raw*) echo "RAW \$*" >>"$WRITES"; echo PNG; exit 0 ;;
   *"/contents/"*"?ref=a-team/attachments"*) [ -e "$BIN/stored" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"git/ref/heads/a-team/attachments"*) [ -e "$BIN/branched" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; echo HEAD1; exit 0 ;;
@@ -248,7 +258,8 @@ case " \$* " in
   *"/issues/comments?since"*) page="$RECENT" ;;
   *"repos/mentaldesk/style/pulls/comments?since"*) page="$UPSTREAM_LINES" ;;
   *"comments?since"*) page="$EMPTY" ;;
-  *"-X POST"*dependencies/blocked_by*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
+  *"-X POST"*dependencies/blocked_by*) [ ! -e "$BIN/link-refused" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
+                                      echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*dependencies/blocked_by*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *dependencies/blocked_by*) page="$BLOCKED" ;;
   *"/issues/"*"/comments"*) page="$THREAD" ;;
@@ -3431,7 +3442,7 @@ reviewable
 echo '{"head": {"sha": "deadbeefcafe", "ref": "dependabot/nuget/MentalDesk.Tui-0.3.9", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
 run board demo accept you 535
 same "exit" 0 "$STATUS"
-same "said" "#535: merged Dependabot PR #535" "$(cat "$OUT")"
+same "said" "#535: merged PR #535" "$(cat "$OUT")"
 grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/535/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
 grep -q 'item=PVTI_535 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
 
@@ -3442,8 +3453,62 @@ ITEMS
 dependabot_pr 535
 run board demo accept you 535
 failed "from Idea"
-grep -q "only a Dependabot PR In review can be accepted (#535 is in 'Idea')" "$ERR" || fail "from Idea: '$(cat "$ERR")'"
+grep -q "only a PR In review can be accepted (#535 is in 'Idea')" "$ERR" || fail "from Idea: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+# Another team's Dev opened this PR for a task of its own; `adopt` puts it In review here.
+upstream_pr() {
+  jq -n --arg body "$1" '[{id: "PR_86", number: 86, isDraft: false, projectItems: [],
+    body: "Makes MenuLetters.Pick public.\n\nNeeded by \($body)\n\n<!-- a-team:dev -->"}]' >"$UPSTREAM"
+}
+
+case_ "adopt puts another repo's Dev PR In review once it's ready"
+reviewable
+upstream_pr "mentaldesk/a-team#538"
+run board demo adopt
+same "exit" 0 "$STATUS"
+same "said" "#86: added as In review" "$(cat "$OUT")"
+grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_new .*option=OPT_review' "$WRITES" || fail "In review: '$(cat "$WRITES")'"
+same "one list of the App's PRs" "pr list -R mentaldesk/demo --author app/demo-app --state open --json id,number,isDraft,body,projectItems" \
+  "$(cat "$UPSTREAM_CALLS")"
+
+case_ "adopt leaves a draft, a PR already on a board, and one for a task in this repo"
+for edit in '.[0].isDraft = true' '.[0].projectItems = [{title: "demo"}]' \
+    '.[0].body |= sub("mentaldesk/a-team#538"; "mentaldesk/demo#12")' '.[0].body |= sub("<!-- a-team:dev -->"; "")'; do
+  upstream_pr "mentaldesk/a-team#538"
+  jq "$edit" "$UPSTREAM" >"$UPSTREAM.new" && mv "$UPSTREAM.new" "$UPSTREAM"
+  : >"$WRITES"
+  run board demo adopt
+  same "exit ($edit)" 0 "$STATUS"
+  same "writes ($edit)" "" "$(cat "$WRITES")"
+done
+
+case_ "waiting shows another repo's Dev PR In review as yours, with itself as the PR to merge"
+gh_items <<'ITEMS'
+In_review 86 Let an app without AppMenu pick menu letters
+ITEMS
+edit_item 86 '.__typename = "PullRequest" | .labels.nodes = [] | del(.issueDependenciesSummary, .issueFieldValues)'
+gh_talk <<TALK
+86 body ${TODAY}T08:00:00Z demo-app[bot] Needed by mentaldesk/a-team#538\n<!-- a-team:dev -->
+TALK
+jq '.data.repository.x86 += {url: "https://github.com/mentaldesk/demo/pull/86", isDraft: false, mergeable: "MERGEABLE",
+      baseRefName: "main", headRefName: "feat/public-menu-letters"}
+    | del(.data.repository.x86.closedByPullRequestsReferences)' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "upstream PR" '{"number":86,"pr":86,"branch":"feat/public-menu-letters","turn":"you","unready":""}' \
+  "$(jq -c '.[] | select(.number == 86) | {number, pr, branch, turn, unready}' "$OUT")"
+
+case_ "accepting another repo's Dev PR squash-merges it and moves it to Done"
+reviewable
+: >"$WRITES"
+echo '{"head": {"sha": "deadbeefcafe", "ref": "feat/public-menu-letters", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
+run board demo accept you 86
+same "exit" 0 "$STATUS"
+same "said" "#86: merged PR #86" "$(cat "$OUT")"
+grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/86/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_86 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
 
 case_ "a stakeholder's comment on the docs PR triggers the Customer lead, and only it"
 gh_items <<'ITEMS'
@@ -4360,6 +4425,24 @@ same "exit" 0 "$STATUS"
 grep -q 'you changed 1 file there' "$OUT" || fail "kept: nothing about what you changed in '$(cat "$OUT")'"
 grep -q 'a-team try demo 7 --clean' "$OUT" || fail "kept: no --clean line in '$(cat "$OUT")'"
 
+case_ "trying it again runs the worktree you changed as you left it, and says how to get a fresh one"
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/.try/7/note.md" ] || fail "again: your change is gone"
+grep -q 'as you left it, with 1 changed file' "$OUT" || fail "again: nothing about your change in '$(cat "$OUT")'"
+grep -q 'For a fresh copy.*a-team try demo 7 --clean' "$OUT" || fail "again: no --clean line in '$(cat "$OUT")'"
+
+case_ "once the PR has moved on, the worktree you changed is refused rather than run behind it"
+cp "$TRY_BIN/pull.json" "$TRY_BIN/pull.was"
+jq --arg sha "$(git -C "$CHECKOUT" rev-parse origin/main)" '.head.sha = $sha' "$TRY_BIN/pull.was" >"$TRY_BIN/pull.json"
+rm -f "$TRY_WORK/ran"
+A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 7
+failed "moved on"
+[ ! -e "$TRY_WORK/ran" ] || fail "moved on: it ran the old code"
+[ -e "$TRY_WORK/.try/7/note.md" ] || fail "moved on: your change is gone"
+grep -q "behind .*a-team try demo 7 --clean" "$TRY_WORK/failed" || fail "moved on: '$(cat "$TRY_WORK/failed")'"
+mv "$TRY_BIN/pull.was" "$TRY_BIN/pull.json"
+
 case_ "--clean removes it without running anything, and is happy when there's nothing to remove"
 run try demo 7 --clean
 same "exit" 0 "$STATUS"
@@ -4369,6 +4452,20 @@ same "worktrees left" "" "$(worktrees)"
 run try demo 7 --clean
 same "exit" 0 "$STATUS"
 grep -q 'Nothing to remove' "$OUT" || fail "--clean twice: '$(cat "$OUT")'"
+
+case_ "a worktree left behind with nothing changed in it is replaced by a fresh one"
+try_fixture record
+try_gh
+git -C "$CHECKOUT" fetch -q origin pull/7/head
+git -C "$CHECKOUT" worktree add -q --detach "$TRY_WORK/.try/7" origin/main
+run try demo 7
+same "exit" 0 "$STATUS"
+same "commit" "$TRY_SHA" "$(sed -n 2p "$TRY_WORK/ran")"
+same "worktrees left" "" "$(worktrees)"
+mkdir -p "$TRY_WORK/.try/7"
+run try demo 7
+same "not a worktree" 0 "$STATUS"
+same "not a worktree: commit" "$TRY_SHA" "$(sed -n 2p "$TRY_WORK/ran")"
 
 case_ "a PR that isn't there is refused in one line, leaving nothing behind"
 try_fixture record
@@ -4392,6 +4489,16 @@ failed "fork"
 grep -q 'someone-else/demo' "$OUT" || fail "fork: it doesn't say whose branch it is"
 [ ! -e "$TRY_WORK/.try" ] || fail "fork: something was left in .try"
 git -C "$CHECKOUT" cat-file -e "$TRY_SHA" 2>/dev/null && fail "fork: it fetched the PR anyway"
+
+case_ "with A_TEAM_TRY_FAILED set, why it failed goes in that file too"
+A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 404
+failed "failure file"
+same "failure file" "no PR #404 on mentaldesk/demo" "$(cat "$TRY_WORK/failed")"
+try_fixture false
+try_gh
+A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 7
+failed "command failed"
+same "command failure file" "false exited 1" "$(cat "$TRY_WORK/failed")"
 
 case_ "a PR that closes an issue shows its acceptance criteria, unticked and in order, before running"
 try_fixture record
@@ -4581,12 +4688,18 @@ if [ "$1" = token ] && [ -n "${NOT_INSTALLED:-}" ]; then
   echo "a-team token: app 7 isn't installed on mentaldesk/$2: install it at https://github.com/apps/demo-app/installations/new" >&2
   exit 1
 fi
+[ "$1" = board ] && [ "${!#}" = free ] && exit 0
+[ "$1" = board ] && [ "${!#}" = adopt ] && { echo "$*" >>"${ADOPTED:-/dev/null}"; exit 0; }
 echo '{"reasons": ["work to do"], "creative": false}'
 SH
 chmod +x "$APP/bin/a-team"
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch: the lead wasn't started"
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the held dev was started"
+
+case_ "a dispatcher pass adopts each team's upstream PRs, the dry run's in dry run"
+ADOPTED="$WORK/adopted" A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+same "adopt" "board --dry-run demo adopt" "$(cat "$WORK/adopted")"
 
 case_ "a dispatcher pass skips a team with no app key, says it stopped only on the second pass, and runs the others"
 jq 'del(.app) | .dispatch.hold = []' "$TEAM" >"$CONFIG/teams/bare.json"
@@ -4765,9 +4878,13 @@ dev_dispatcher() {
   echo null >"$CLAIMED"
   echo '{"reasons": [], "creative": false}' >"$CUSTOMER_TRIGGERS"
   echo '{"reasons": [], "creative": false, "tasks": [], "ready": null, "chores": []}' >"$REVIEWER_TRIGGERS"
+  FREES="$DISPATCH/frees" FREED="$DISPATCH/freed"
+  : >"$FREES"
+  : >"$FREED"
   cat >"$DISPATCH/bin/a-team" <<SH
 #!/usr/bin/env bash
 case " \$* " in
+  *" free "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$FREES"; cat "$FREED" ;;
   *" claim dev "*) echo "\$*" >>"$CLAIMS"; cat "$CLAIMED" ;;
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
   *" triggers lead"*) cat "$LEAD_TRIGGERS" ;;
@@ -4796,6 +4913,16 @@ grep -q 'demo dev: would start: #12: CI failed on PR #912 at deadbee;PR #900 has
   "$A_TEAM_STATE/dispatch.log" || fail "in hand: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 same "claims" "" "$(cat "$CLAIMS")"
 same "task" '{"number":12,"title":"Fix the pane"}' "$(cat "$A_TEAM_STATE/demo/dev/dry-task")"
+
+case_ "every pass frees the tasks whose wait on another repo is met, as the team's App, and logs what it freed"
+same "frees" "board --dry-run demo free as demo $DISPATCH/bin" "$(cat "$FREES")"
+: >"$FREES"
+: >"$A_TEAM_STATE/dispatch.log"
+printf '(dry run) #13: no longer waiting on mentaldesk/style#84\n' >"$FREED"
+dispatch_dev --dry-run
+grep -q 'demo: (dry run) #13: no longer waiting on mentaldesk/style#84$' "$A_TEAM_STATE/dispatch.log" ||
+  fail "freed: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+: >"$FREED"
 
 case_ "the same reasons again wait, and the next task with something new gets the run"
 jq '.tasks += [{number: 14, title: "Answer the review", reasons: ["stakeholder feedback on #914 (2025-09-19T09:00:00Z)"]}]' \
@@ -7282,6 +7409,241 @@ gh_talk <<TALK
 TALK
 run board demo waiting
 same "unreviewed" null "$(jq -c '.[0].reviewed' "$OUT")"
+
+# What #11 waits on in other repos, as the team's comments on it record them: lines of "<owner/repo#n> <until> [<package>]".
+waits() {
+  local ref until package rows=''
+  while read -r ref until package; do
+    rows+="comment 2026-10-10T09:00:00Z demo-app[bot] 0 Blocked by $ref.\n\n<!-- a-team:wait repo=${ref%#*} n=${ref#*#} until=$until${package:+ package=$package} -->"$'\n'
+  done
+  printf '%s' "$rows" | gh_thread
+}
+
+# Where each upstream item has got to, from lines of "<n> <Issue|PullRequest> <OPEN|CLOSED|MERGED> [<merge commit>|notplanned]".
+# An issue closed by hand closed on 15 Oct, between the fixture releases v0.3.8 and v0.3.9.
+upstream_items() {
+  jq -R -s 'split("\n") | map(select(length > 0) | split(" ")) | map({key: "i\(.[0])", value:
+    (if .[1] == "PullRequest"
+     then {__typename: "PullRequest", state: .[2], merged: (.[2] == "MERGED"), mergeCommit: (if .[3] then {oid: .[3]} else null end)}
+     else (.[3] == "notplanned") as $dropped | (if $dropped then null else .[3] end) as $sha
+       | {__typename: "Issue", state: .[2], stateReason: (if $dropped then "NOT_PLANNED" elif .[2] == "CLOSED" then "COMPLETED" else null end),
+          closedAt: (if .[2] == "CLOSED" then "2026-10-15T18:00:00Z" else null end), closedByPullRequestsReferences: {nodes: []},
+          timelineItems: {nodes: (if $sha then [{closer: {__typename: "PullRequest", merged: true, mergeCommit: {oid: $sha}}}] else [] end)}} end)})
+    | {data: {repository: from_entries}}' >"$UPSTREAM_ITEMS"
+}
+
+# The upstream repo's releases, from lines of "<tag> <published> [pre]", and which tags contain the merge commit.
+releases() {
+  jq -R -s 'split("\n") | map(select(length > 0) | split(" ")
+    | {tag_name: .[0], published_at: .[1], prerelease: (.[2] == "pre"), draft: false})' >"$RELEASES"
+}
+contains() { printf '%s behind\n' "$@" >"$BIN/contains"; }
+
+waiting_upstream() {
+  fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 3 } }
+JSON
+  gh_items <<'ITEMS'
+Building 10 A pitch
+Ready 11 Needs the Mac keys
+ITEMS
+  edit_item 11 '.labels.nodes = [{name: "a-team:upstream"}]'
+  echo '[{"number": 11}]' >"$WAITING_ON"
+}
+
+case_ "a task can wait on another repo's issue until it's released: GitHub links them, and the task says so"
+waiting_upstream
+edit_item 11 '.labels.nodes = []'
+echo '{"id": 9084, "number": 84}' >"$ISSUE"
+run board demo depends dev 11 mentaldesk/style#84 released "needs the Mac word keys in MentalDesk.Tui"
+same "exit" 0 "$STATUS"
+same "said" "#11 now waits for mentaldesk/style#84 to be released, and said why on #11" "$(cat "$OUT")"
+grep -q "^POST .*/issues/11/dependencies/blocked_by -F issue_id=9084" "$WRITES" || fail "depends upstream: no link in '$(cat "$WRITES")'"
+grep -q "issue edit 11 -R mentaldesk/demo --add-label a-team:upstream" "$WRITES" || fail "depends upstream: not labelled in '$(cat "$WRITES")'"
+grep -q "^label create a-team:upstream" "$WRITES" || fail "depends upstream: no label made in '$(cat "$WRITES")'"
+grep -qx "Blocked by mentaldesk/style#84, until released: needs the Mac word keys in MentalDesk.Tui" "$POSTED" ||
+  fail "depends upstream: '$(cat "$POSTED")'"
+grep -qF '<!-- a-team:wait repo=mentaldesk/style n=84 until=released -->' "$POSTED" || fail "depends upstream: no wait in '$(cat "$POSTED")'"
+run board demo depends dev 11 mentaldesk/style#84 released MentalDesk.Tui "needs the Mac word keys"
+same "package exit" 0 "$STATUS"
+grep -qx "Blocked by mentaldesk/style#84, until released: needs the Mac word keys" "$POSTED" || fail "package: '$(cat "$POSTED")'"
+grep -qF '<!-- a-team:wait repo=mentaldesk/style n=84 until=released package=MentalDesk.Tui -->' "$POSTED" ||
+  fail "package: no package in '$(cat "$POSTED")'"
+grep -q "GitHub can't link" "$POSTED" && fail "depends upstream: said it couldn't link"
+grep -q '<!-- a-team:dev -->' "$POSTED" || fail "depends upstream: no dev marker"
+same "recorded" "dev blocked by mentaldesk/style#84" "$(history_of 11 | head -1)"
+
+case_ "a wait on an upstream PR, or one GitHub won't link, is recorded on the task alone"
+: >"$WRITES"
+echo '{"id": 9085, "number": 85, "pull_request": {}}' >"$ISSUE"
+run board demo depends lead 11 mentaldesk/style#85 closed "the guide's PR has the new rule"
+same "exit" 0 "$STATUS"
+grep -q "dependencies/blocked_by" "$WRITES" && fail "upstream PR: linked as a dependency"
+grep -qx "Blocked by mentaldesk/style#85, until closed: the guide's PR has the new rule" "$POSTED" || fail "upstream PR: '$(cat "$POSTED")'"
+grep -q "GitHub can't link mentaldesk/style#85 as a dependency, so the wait is recorded here." "$POSTED" || fail "upstream PR: no fallback in '$(cat "$POSTED")'"
+grep -qF '<!-- a-team:wait repo=mentaldesk/style n=85 until=closed -->' "$POSTED" || fail "upstream PR: no wait"
+: >"$WRITES"
+echo '{"id": 9084, "number": 84}' >"$ISSUE"
+touch "$BIN/link-refused"
+run board demo depends dev 11 mentaldesk/style#84 closed "needs it"
+same "refused link exit" 0 "$STATUS"
+grep -q "GitHub can't link mentaldesk/style#84" "$POSTED" || fail "refused link: no fallback in '$(cat "$POSTED")'"
+grep -q -- "--add-label a-team:upstream" "$WRITES" || fail "refused link: not labelled"
+rm "$BIN/link-refused"
+
+case_ "an upstream wait says how long it waits, in another repo, and is refused in one line otherwise"
+for args in "mentaldesk/style#84 why" "mentaldesk/style#84 someday why" "mentaldesk/demo#21 closed why" \
+  "mentaldesk/style#84 closed MentalDesk.Tui why" "mentaldesk/style#84 released Mental/Desk why"; do
+  : >"$WRITES"
+  # shellcheck disable=SC2086
+  run board demo depends dev 11 $args
+  failed "depends $args"
+  one_line "depends $args"
+  same "writes for $args" "" "$(cat "$WRITES")"
+done
+run board demo depends dev 11 mentaldesk/style#84 someday "why"
+grep -q "closed or released, not 'someday'" "$ERR" || fail "until: '$(cat "$ERR")'"
+run board demo depends dev 11 mentaldesk/demo#21 closed "why"
+grep -q "is in mentaldesk/demo itself" "$ERR" || fail "same repo: '$(cat "$ERR")'"
+
+case_ "a task waiting on another repo isn't offered to the Dev"
+waiting_upstream
+run board demo next
+same "next" null "$(cat "$OUT")"
+run board demo claim dev 11
+failed "claim"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "free leaves a task whose upstream change isn't there yet, whatever state it's in"
+for state in "closed:84 Issue OPEN" "released:84 Issue CLOSED" "released:84 Issue CLOSED notplanned" "released:84 PullRequest CLOSED" \
+  "released:84 PullRequest MERGED abc123" "released:84 Issue CLOSED abc123"; do
+  waiting_upstream
+  waits <<<"mentaldesk/style#84 ${state%%:*}"
+  upstream_items <<<"${state#*:}"
+  releases <<'RELEASES'
+v0.3.9 2026-10-16T12:00:00Z pre
+v0.3.8 2026-10-15T12:00:00Z
+RELEASES
+  contains v0.3.9
+  run board demo free
+  same "exit for $state" 0 "$STATUS"
+  same "said for $state" "" "$(cat "$OUT")"
+  same "writes for $state" "" "$(cat "$WRITES")"
+  same "posted for $state" "" "$(cat "$POSTED")"
+done
+
+case_ "free frees a task once its upstream issue closes, or its change is in a published release, and says which"
+waiting_upstream
+waits <<<"mentaldesk/style#84 closed"
+upstream_items <<<"84 Issue CLOSED"
+run board demo free
+same "exit" 0 "$STATUS"
+same "said" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
+grep -q "issue edit 11 -R mentaldesk/demo --remove-label a-team:upstream" "$WRITES" || fail "closed: not unlabelled in '$(cat "$WRITES")'"
+grep -qx "mentaldesk/style#84 has closed. No longer blocked." "$POSTED" || fail "closed: '$(cat "$POSTED")'"
+grep -qF '<!-- a-team:unwait repo=mentaldesk/style n=84 -->' "$POSTED" || fail "closed: no unwait in '$(cat "$POSTED")'"
+same "recorded" "dev no longer blocked by mentaldesk/style#84" "$(history_of 11 | head -1)"
+for case in "v0.3.9:v0.3.9" "v0.3.9 v0.3.8:v0.3.8"; do
+  waiting_upstream
+  waits <<<"mentaldesk/style#84 released"
+  upstream_items <<<"84 Issue CLOSED abc123"
+  releases <<'RELEASES'
+v0.3.9 2026-10-16T12:00:00Z
+v0.4.0-beta 2026-10-17T12:00:00Z pre
+v0.3.8 2026-10-15T12:00:00Z
+v0.3.7 2026-10-14T12:00:00Z
+RELEASES
+  # shellcheck disable=SC2086
+  contains ${case%%:*} v0.4.0-beta
+  tag=${case#*:}
+  run board demo free
+  same "exit in $tag" 0 "$STATUS"
+  day=$(jq -rn --arg t "$tag" '{"v0.3.9": "2026-10-16T12:00:00Z", "v0.3.8": "2026-10-15T12:00:00Z"}[$t] | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")')
+  grep -qx "mentaldesk/style#84 is in $tag (released $day). No longer blocked: upgrade to ${tag#v} first." "$POSTED" ||
+    fail "released in $tag: '$(cat "$POSTED")'"
+done
+
+case_ "free names the package to upgrade where the wait recorded one"
+waiting_upstream
+printf 'mentaldesk/style#84 released MentalDesk.Tui\n' | waits
+upstream_items <<<"84 Issue CLOSED abc123"
+releases <<<"v0.3.9 2026-10-16T12:00:00Z"
+contains v0.3.9
+run board demo free
+day=$(jq -rn '"2026-10-16T12:00:00Z" | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")')
+grep -qx "mentaldesk/style#84 is in v0.3.9 (released $day). No longer blocked: upgrade MentalDesk.Tui to 0.3.9 first." "$POSTED" ||
+  fail "package: '$(cat "$POSTED")'"
+
+case_ "an issue closed by hand frees a task waiting for a release once a published release follows it"
+waiting_upstream
+waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
+upstream_items <<<"84 Issue CLOSED"
+releases <<'RELEASES'
+v0.4.0 2026-10-17T12:00:00Z
+v0.3.9 2026-10-16T12:00:00Z
+v0.3.9-beta 2026-10-15T20:00:00Z pre
+v0.3.8 2026-10-15T12:00:00Z
+RELEASES
+run board demo free
+same "said" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
+closed=$(jq -rn '"2026-10-15T18:00:00Z" | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")')
+grep -qx "mentaldesk/style#84 closed on $closed, and v0.3.9 (released $day) is the first release since. No longer blocked: upgrade MentalDesk.Tui to 0.3.9 first." "$POSTED" ||
+  fail "closed by hand: '$(cat "$POSTED")'"
+
+case_ "free says nothing again once it has freed a task, nor while one of its waits is still open"
+waiting_upstream
+waits <<<"mentaldesk/style#84 closed"
+upstream_items <<<"84 Issue CLOSED"
+run board demo free
+{ jq -r '.[] | "comment \(.created_at) \(.user.login) 0 \(.body | gsub("\n"; "\\n"))"' "$THREAD"
+  printf 'comment 2026-10-12T09:00:00Z demo-app[bot] 0 %s\n' "$(sed 's/$/\\n/' "$POSTED" | tr -d '\n')"; } | gh_thread
+: >"$POSTED"
+: >"$WRITES"
+run board demo free
+same "again" "" "$(cat "$OUT")$(cat "$POSTED")$(cat "$WRITES")"
+waiting_upstream
+printf 'mentaldesk/style#84 closed\nmentaldesk/lib#9 closed\n' | waits
+upstream_items <<<"84 Issue CLOSED"
+run board demo free
+same "one still open" "" "$(cat "$OUT")$(cat "$POSTED")$(cat "$WRITES")"
+
+case_ "--dry-run free says what it would free and changes nothing"
+waiting_upstream
+waits <<<"mentaldesk/style#84 closed"
+upstream_items <<<"84 Issue CLOSED"
+run board --dry-run demo free
+same "said" "(dry run) #11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
+same "writes" "" "$(cat "$WRITES")$(cat "$POSTED")"
+
+case_ "undepend drops an upstream wait, its GitHub link, and the label once nothing's left"
+waiting_upstream
+waits <<<"mentaldesk/style#84 released"
+echo '[{"number": 84, "id": 9084, "repository_url": "https://api.github.com/repos/mentaldesk/style"}]' >"$BLOCKED"
+run board demo undepend dev 11 mentaldesk/style#84 "MentalDesk.Tui has it already"
+same "exit" 0 "$STATUS"
+same "said" "#11 no longer waits on mentaldesk/style#84, and said why on #11" "$(cat "$OUT")"
+grep -q "DELETE .*/issues/11/dependencies/blocked_by/9084" "$WRITES" || fail "undepend upstream: '$(cat "$WRITES")'"
+grep -q -- "--remove-label a-team:upstream" "$WRITES" || fail "undepend upstream: still labelled"
+grep -qF '<!-- a-team:unwait repo=mentaldesk/style n=84 -->' "$POSTED" || fail "undepend upstream: no unwait"
+run board demo undepend dev 11 mentaldesk/style#99 "why"
+failed "not waiting"
+one_line "not waiting"
+
+case_ "waiting shows a task waiting on another repo with how far that's got, out of the questions"
+waiting_upstream
+waits <<<"mentaldesk/style#84 released"
+upstream_items <<<"84 PullRequest MERGED abc123"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "upstream" '[{"number":11,"turn":"upstream","upstream":"style#84: merged, not released","reason":"waiting on style#84: merged, not released"}]' \
+  "$(jq -c 'map(select(.number == 11) | {number, turn, upstream, reason})' "$OUT")"
+
+case_ "the Dev and the Lead record a wait on another repo's change, and the Dev doesn't label it blocked"
+step=$(sed -n '/^3\. If it needs a change in another repo first/,/^4\./p' "$ROOT/roles/dev.md")
+grep -qF 'depends dev <n> <owner/repo>#<pr> released <package> "<why>"' <<<"$step" || fail "dev.md: no upstream wait in '$step'"
+grep -qF "Don't label it \`blocked\`" <<<"$step" || fail "dev.md: still labels it blocked"
+grep -qF 'depends lead <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"' "$ROOT/roles/lead.md" || fail "lead.md: no upstream wait"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"
