@@ -7536,6 +7536,18 @@ releases <<<"v0.3.9 2026-10-16T12:00:00Z"
 contains v0.3.9
 echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": []},
        {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0", "projectItems": []}]' >"$UPDATES"
+echo '[{"id": "PR_534", "number": 534, "title": "Bump MentalDesk.Tui.Testing from 0.3.8 to 0.3.9", "projectItems": []}]' >"$UPDATES"
+run board demo free
+same "another package" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
+grep -q "content=PR_534" "$WRITES" && fail "bump: a package that only starts with the wait's came onto the board"
+waiting_upstream
+reviewable
+waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
+upstream_items <<<"84 PullRequest MERGED abc123"
+releases <<<"v0.3.9 2026-10-16T12:00:00Z"
+contains v0.3.9
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": []},
+       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0", "projectItems": []}]' >"$UPDATES"
 run board demo free
 same "exit" 0 "$STATUS"
 same "said" "#535: added as In review, since #11 waits on it" "$(cat "$OUT")"

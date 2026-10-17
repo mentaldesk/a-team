@@ -1183,7 +1183,7 @@ bumps() { gh pr list -R "$REPO" --author app/dependabot --state open --json id,n
 # with_bumps <waits> <bumps>: a released wait naming a package is still held while a Dependabot PR bumping it is open.
 with_bumps() {
   jq -c --argjson bumps "$2" 'map(if .state == "released" and .package then
-      (.package | ascii_downcase) as $p | ([$bumps[] | select(.title | ascii_downcase | contains($p))] | first) as $bump
+      (.package | ascii_downcase) as $p | ([$bumps[] | select(.title | ascii_downcase | [splits("[ ,]+")] | index([$p]))] | first) as $bump
       | if $bump then . + {met: false, bump: $bump} else . end
     else . end)' <<<"$1"
 }
