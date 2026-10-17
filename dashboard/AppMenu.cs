@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Chrome;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -5,7 +6,7 @@ namespace ATeam.Dashboard;
 /// <summary>The menu across the top of both areas. Every item runs a registered command by id, so the menu,
 /// the key and the Commands dialog are three doors into one list. Titles and items carry a hot letter, marked
 /// in the label with <c>_</c> and drawn underlined: Alt opens a menu, and a bare letter picks from the one
-/// that's open.</summary>
+/// that's open. No two items in a menu share a letter, following the style guide's <i>Menu letters</i>.</summary>
 internal sealed class AppMenu
 {
     /// <summary>Holds whatever commands the registry marks as acting on the selected card, then its own group under a line.</summary>
@@ -25,10 +26,14 @@ internal sealed class AppMenu
         ("_Help", ["help", "guide", "commands", "about"]),
     ];
 
+    /// <summary>Items that take each other's place in a menu, sharing a letter so it stays put as they swap.</summary>
+    internal static readonly (string Id, string Other)[] Swaps = [("agent.expand", "agent.collapse")];
+
     private readonly CommandRegistry _commands;
     private readonly List<(string Id, DimmedMenuItem Item)> _items = [];
     private readonly List<MenuBarItem> _menus = [];
     private readonly Dictionary<MenuBarItem, List<View>> _order = [];
+    private readonly Dictionary<DimmedMenuItem, Dictionary<string, string>> _titles = [];
     private readonly MenuBarItem _cards;
     private readonly MenuBarItem _agents;
 
@@ -64,18 +69,21 @@ internal sealed class AppMenu
 
     /// <summary>Keeps each item reading as its command does now, like holding the selected agent's role, and
     /// showing the key it's bound to now. Setting the title sets the hot letter with it. A card command registered
-    /// since the menu was built joins Cards.</summary>
+    /// since the menu was built joins Cards, and Cards picks its letters again.</summary>
     internal void Refresh()
     {
-        foreach (var id in CardIds().Where(id => !_items.Exists(entry => entry.Id == id)))
+        var added = CardIds().Where(id => !_items.Exists(entry => entry.Id == id)).ToList();
+        foreach (var id in added)
             AddCard(Item(id));
+        if (added.Count > 0)
+            Letter(_cards);
         var registered = _commands.Registered;
         foreach (var (id, item) in _items)
         {
             if (registered.FirstOrDefault(entry => entry.Id == id) is not { } command)
                 continue;
-            if (item.Title != Hot(command.MenuLabel, command.Key))
-                item.Title = Hot(command.MenuLabel, command.Key);
+            if (item.Title != Title(item, command.MenuLabel))
+                item.Title = Title(item, command.MenuLabel);
             if (item.Key != command.Key)
                 item.Key = command.Key;
         }
@@ -95,6 +103,7 @@ internal sealed class AppMenu
         List<View> views = [.. ids.Select(id => id == Separator ? new Line() : (View)Item(id))];
         var menu = new MenuBarItem(entry.Title, [.. views]);
         _order[menu] = views;
+        Letter(menu);
         menu.HotKeyBindings.Remove(menu.HotKey);
         menu.HotKeyBindings.Remove(menu.HotKey.WithShift);
         // The app's quit key took Esc off the framework's Quit command, and the menu's close with it.
@@ -139,6 +148,89 @@ internal sealed class AppMenu
         shown.ForEach(view => root.Add(view));
     }
 
+    /// <summary>Picks the menu's letters once over every item it can show, so none moves as items dim or swap.</summary>
+    private void Letter(MenuBarItem menu)
+    {
+        var registered = _commands.Registered;
+        var items = _items.Where(entry => _order[menu].Contains(entry.Item)).ToList();
+        var slots = items
+            .Where(entry => !Swaps.Any(swap => swap.Other == entry.Id && items.Exists(other => other.Id == swap.Id)))
+            .Select(entry => (Ids: (string[])[entry.Id, .. Swaps.Where(swap => swap.Id == entry.Id).Select(swap => swap.Other)], entry.Item))
+            .ToList();
+        var titles = Letters([.. slots.Select(slot => (
+            (IReadOnlyList<string>)[.. slot.Ids.SelectMany(id => registered.FirstOrDefault(command => command.Id == id)?.MenuLabels ?? [id]).Distinct()],
+            _commands.KeyFor(slot.Ids[0])))]);
+        foreach (var ((ids, _), picked) in slots.Zip(titles))
+        {
+            foreach (var (_, item) in items.Where(entry => ids.Contains(entry.Id)))
+                _titles[item] = picked;
+        }
+        foreach (var (id, item) in items)
+            item.Title = Title(item, registered.FirstOrDefault(command => command.Id == id)?.MenuLabel ?? id);
+    }
+
+    private string Title(DimmedMenuItem item, string label) =>
+        _titles.TryGetValue(item, out var titles) && titles.TryGetValue(label, out var title) ? title : label;
+
+    /// <summary>Each slot's labels, with the letter they share marked: one a label marks itself, then its command's
+    /// own letter key where every label has it, unless an earlier slot marked that letter, then the guide's first
+    /// letter, later word or any letter. A slot is an item, and any item it swaps with. A shifted key only matches
+    /// its capital.</summary>
+    internal static Dictionary<string, string>[] Letters(IReadOnlyList<(IReadOnlyList<string> Labels, Key Key)> slots)
+    {
+        var titles = slots.Select(slot => slot.Labels[0]).ToArray();
+        var taken = titles.Select(Marked).OfType<char>().Select(char.ToLowerInvariant).ToHashSet();
+        for (var i = 0; i < titles.Length; i++)
+        {
+            if (Marked(titles[i]) is null && KeyLetter(slots[i]) is { } letter && taken.Add(char.ToLowerInvariant(letter)))
+                titles[i] = titles[i].Insert(At(titles[i], letter, slots[i].Key.IsShift), "_");
+        }
+        var none = new HashSet<int>();
+        while (true)
+        {
+            var picked = MenuLetters.Pick(titles);
+            var split = Enumerable.Range(0, slots.Count)
+                .FirstOrDefault(i => Marked(titles[i]) is null && Marked(picked[i]) is { } letter && !slots[i].Labels.All(label => Has(label, letter, false)), -1);
+            if (split < 0)
+                return [.. slots.Select((slot, i) => slot.Labels.ToDictionary(
+                    label => label,
+                    label => none.Contains(i) ? label : label == slot.Labels[0] ? picked[i] : Mark(label, Marked(picked[i]))))];
+            // A letter the swapped-in label lacks would move, so the slot takes one they all have.
+            var others = picked.Where((_, i) => i != split).Select(Marked).OfType<char>().Select(char.ToLowerInvariant).ToHashSet();
+            var at = titles[split].ToList().FindIndex(c =>
+                char.IsLetterOrDigit(c) && !others.Contains(char.ToLowerInvariant(c)) && slots[split].Labels.All(label => Has(label, c, false)));
+            if (at < 0)
+                none.Add(split);
+            titles[split] = at < 0 ? "" : titles[split].Insert(at, "_");
+        }
+    }
+
+    private static char? KeyLetter((IReadOnlyList<string> Labels, Key Key) slot)
+    {
+        var key = slot.Key;
+        if (!key.IsKeyCodeAtoZ || key.IsCtrl || key.IsAlt)
+            return null;
+        var letter = (char)key.NoShift.KeyCode;
+        return slot.Labels.All(label => Has(label, letter, key.IsShift)) ? key.IsShift ? letter : char.ToLowerInvariant(letter) : null;
+    }
+
+    private static char? Marked(string title) =>
+        title.IndexOf('_') is var at and >= 0 && at + 1 < title.Length ? title[at + 1] : null;
+
+    private static bool Has(string label, char letter, bool exact) =>
+        label.Contains(letter, exact ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+
+    private static string Mark(string label, char? letter) =>
+        label.Contains('_') || letter is not { } found || !Has(label, found, false) ? label : label.Insert(At(label, found, false), "_");
+
+    /// <summary>Where <paramref name="letter"/> starts a word in the label, else where it first appears.</summary>
+    private static int At(string label, char letter, bool exact)
+    {
+        var comparison = exact ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var all = Enumerable.Range(0, label.Length).Where(at => string.Compare(label, at, letter.ToString(), 0, 1, comparison) == 0).ToList();
+        return all.FirstOrDefault(at => at == 0 || !char.IsLetterOrDigit(label[at - 1]), all[0]);
+    }
+
     /// <summary>A card command goes last in the first group, above the line.</summary>
     private void AddCard(DimmedMenuItem item)
     {
@@ -154,9 +246,6 @@ internal sealed class AppMenu
     {
         var item = new DimmedMenuItem
         {
-            Title = _commands.Registered.FirstOrDefault(command => command.Id == id) is { } command
-                ? Hot(command.MenuLabel, command.Key)
-                : Hot(id, Key.Empty),
             Key = _commands.KeyFor(id),
             // The key is a label here: the window's registry already runs it, and a second binding would run it twice.
             BindKeyToApplication = false,
@@ -164,20 +253,5 @@ internal sealed class AppMenu
         };
         _items.Add((id, item));
         return item;
-    }
-
-    /// <summary>The label with its command's own letter key marked as the hot one where the label has it, and its
-    /// first letter otherwise, past any mark in front of it. A shifted letter only matches its capital. A label that
-    /// marks its own letter keeps it.</summary>
-    private static string Hot(string label, Key key)
-    {
-        if (label.Contains('_'))
-            return label;
-        var at = key.IsKeyCodeAtoZ && !key.IsCtrl && !key.IsAlt
-            ? key.IsShift
-                ? label.IndexOf((char)key.NoShift.KeyCode, StringComparison.Ordinal)
-                : label.IndexOf((char)key.NoShift.KeyCode, StringComparison.OrdinalIgnoreCase)
-            : -1;
-        return label.Insert(at < 0 ? Math.Max(0, label.ToList().FindIndex(char.IsLetterOrDigit)) : at, "_");
     }
 }
