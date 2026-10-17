@@ -114,7 +114,7 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   Pitched or Exploring, so the stakeholder always has a pitch to decide on.
 - **Dependency updates.** A Dependabot PR the Lead hasn't commented on starts a Lead run. It
   reads what the new version brings, files an Idea for each change the product should adopt (a
-  style guide's new rule, say), and lists them on the PR. Merging the PR stays yours.
+  style guide's new rule, say), and lists them on the PR, then puts it in Review in Work. Merging it stays yours.
 - **Feedback is never too old to start a run.** The two-minute check reads the last day of
   comments repo-wide, so every `dispatch.sweepEvery` minutes (30 by default) a role's own items
   are read in full instead, however old the comments on them are. The gap is elapsed time, not
@@ -165,8 +165,8 @@ a-team                      the area you were last in
 a-team dashboard [team...]  straight to the agents
 ```
 
-The app has two areas: **Work**, everything waiting on you across every team, and **Dashboard**, what
-each agent is doing. **Help → Guide** explains them inside the app, and the same pages are in [`docs/guide`](docs/guide/index.md).
+The app has three areas: **Work**, everything waiting on you across every team, **Overseer**, every
+team's board on one screen, and **Dashboard**, what each agent is doing. **Help → Guide** explains them inside the app, and the same pages are in [`docs/guide`](docs/guide/index.md).
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.
