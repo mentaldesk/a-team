@@ -7143,22 +7143,25 @@ TALK
 run board demo waiting
 same "unreviewed" null "$(jq -c '.[0].reviewed' "$OUT")"
 
-# What #11 waits on in other repos, as the team's comments on it record them: lines of "<owner/repo#n> <until>".
+# What #11 waits on in other repos, as the team's comments on it record them: lines of "<owner/repo#n> <until> [<package>]".
 waits() {
-  local ref until rows=''
-  while read -r ref until; do
-    rows+="comment 2026-10-10T09:00:00Z demo-app[bot] 0 Blocked by $ref.\n\n<!-- a-team:wait repo=${ref%#*} n=${ref#*#} until=$until -->"$'\n'
+  local ref until package rows=''
+  while read -r ref until package; do
+    rows+="comment 2026-10-10T09:00:00Z demo-app[bot] 0 Blocked by $ref.\n\n<!-- a-team:wait repo=${ref%#*} n=${ref#*#} until=$until${package:+ package=$package} -->"$'\n'
   done
   printf '%s' "$rows" | gh_thread
 }
 
-# Where each upstream item has got to, from lines of "<n> <Issue|PullRequest> <OPEN|CLOSED|MERGED> [<merge commit>]".
+# Where each upstream item has got to, from lines of "<n> <Issue|PullRequest> <OPEN|CLOSED|MERGED> [<merge commit>|notplanned]".
+# An issue closed by hand closed on 15 Oct, between the fixture releases v0.3.8 and v0.3.9.
 upstream_items() {
   jq -R -s 'split("\n") | map(select(length > 0) | split(" ")) | map({key: "i\(.[0])", value:
     (if .[1] == "PullRequest"
      then {__typename: "PullRequest", state: .[2], merged: (.[2] == "MERGED"), mergeCommit: (if .[3] then {oid: .[3]} else null end)}
-     else {__typename: "Issue", state: .[2], closedByPullRequestsReferences: {nodes: []},
-           timelineItems: {nodes: (if .[3] then [{closer: {__typename: "PullRequest", merged: true, mergeCommit: {oid: .[3]}}}] else [] end)}} end)})
+     else (.[3] == "notplanned") as $dropped | (if $dropped then null else .[3] end) as $sha
+       | {__typename: "Issue", state: .[2], stateReason: (if $dropped then "NOT_PLANNED" elif .[2] == "CLOSED" then "COMPLETED" else null end),
+          closedAt: (if .[2] == "CLOSED" then "2026-10-15T18:00:00Z" else null end), closedByPullRequestsReferences: {nodes: []},
+          timelineItems: {nodes: (if $sha then [{closer: {__typename: "PullRequest", merged: true, mergeCommit: {oid: $sha}}}] else [] end)}} end)})
     | {data: {repository: from_entries}}' >"$UPSTREAM_ITEMS"
 }
 
@@ -7195,6 +7198,11 @@ grep -q "^label create a-team:upstream" "$WRITES" || fail "depends upstream: no 
 grep -qx "Blocked by mentaldesk/style#84, until released: needs the Mac word keys in MentalDesk.Tui" "$POSTED" ||
   fail "depends upstream: '$(cat "$POSTED")'"
 grep -qF '<!-- a-team:wait repo=mentaldesk/style n=84 until=released -->' "$POSTED" || fail "depends upstream: no wait in '$(cat "$POSTED")'"
+run board demo depends dev 11 mentaldesk/style#84 released MentalDesk.Tui "needs the Mac word keys"
+same "package exit" 0 "$STATUS"
+grep -qx "Blocked by mentaldesk/style#84, until released: needs the Mac word keys" "$POSTED" || fail "package: '$(cat "$POSTED")'"
+grep -qF '<!-- a-team:wait repo=mentaldesk/style n=84 until=released package=MentalDesk.Tui -->' "$POSTED" ||
+  fail "package: no package in '$(cat "$POSTED")'"
 grep -q "GitHub can't link" "$POSTED" && fail "depends upstream: said it couldn't link"
 grep -q '<!-- a-team:dev -->' "$POSTED" || fail "depends upstream: no dev marker"
 same "recorded" "dev blocked by mentaldesk/style#84" "$(history_of 11 | head -1)"
@@ -7218,7 +7226,8 @@ grep -q -- "--add-label a-team:upstream" "$WRITES" || fail "refused link: not la
 rm "$BIN/link-refused"
 
 case_ "an upstream wait says how long it waits, in another repo, and is refused in one line otherwise"
-for args in "mentaldesk/style#84 why" "mentaldesk/style#84 someday why" "mentaldesk/demo#21 closed why"; do
+for args in "mentaldesk/style#84 why" "mentaldesk/style#84 someday why" "mentaldesk/demo#21 closed why" \
+  "mentaldesk/style#84 closed MentalDesk.Tui why" "mentaldesk/style#84 released Mental/Desk why"; do
   : >"$WRITES"
   # shellcheck disable=SC2086
   run board demo depends dev 11 $args
@@ -7240,7 +7249,7 @@ failed "claim"
 same "writes" "" "$(cat "$WRITES")"
 
 case_ "free leaves a task whose upstream change isn't there yet, whatever state it's in"
-for state in "closed:84 Issue OPEN" "released:84 Issue CLOSED" "released:84 PullRequest CLOSED" \
+for state in "closed:84 Issue OPEN" "released:84 Issue CLOSED" "released:84 Issue CLOSED notplanned" "released:84 PullRequest CLOSED" \
   "released:84 PullRequest MERGED abc123" "released:84 Issue CLOSED abc123"; do
   waiting_upstream
   waits <<<"mentaldesk/style#84 ${state%%:*}"
@@ -7287,6 +7296,33 @@ RELEASES
   grep -qx "mentaldesk/style#84 is in $tag (released $day). No longer blocked: upgrade to ${tag#v} first." "$POSTED" ||
     fail "released in $tag: '$(cat "$POSTED")'"
 done
+
+case_ "free names the package to upgrade where the wait recorded one"
+waiting_upstream
+printf 'mentaldesk/style#84 released MentalDesk.Tui\n' | waits
+upstream_items <<<"84 Issue CLOSED abc123"
+releases <<<"v0.3.9 2026-10-16T12:00:00Z"
+contains v0.3.9
+run board demo free
+day=$(jq -rn '"2026-10-16T12:00:00Z" | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")')
+grep -qx "mentaldesk/style#84 is in v0.3.9 (released $day). No longer blocked: upgrade MentalDesk.Tui to 0.3.9 first." "$POSTED" ||
+  fail "package: '$(cat "$POSTED")'"
+
+case_ "an issue closed by hand frees a task waiting for a release once a published release follows it"
+waiting_upstream
+waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
+upstream_items <<<"84 Issue CLOSED"
+releases <<'RELEASES'
+v0.4.0 2026-10-17T12:00:00Z
+v0.3.9 2026-10-16T12:00:00Z
+v0.3.9-beta 2026-10-15T20:00:00Z pre
+v0.3.8 2026-10-15T12:00:00Z
+RELEASES
+run board demo free
+same "said" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
+closed=$(jq -rn '"2026-10-15T18:00:00Z" | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")')
+grep -qx "mentaldesk/style#84 closed on $closed, and v0.3.9 (released $day) is the first release since. No longer blocked: upgrade MentalDesk.Tui to 0.3.9 first." "$POSTED" ||
+  fail "closed by hand: '$(cat "$POSTED")'"
 
 case_ "free says nothing again once it has freed a task, nor while one of its waits is still open"
 waiting_upstream
@@ -7338,9 +7374,9 @@ same "upstream" '[{"number":11,"turn":"upstream","upstream":"style#84: merged, n
 
 case_ "the Dev and the Lead record a wait on another repo's change, and the Dev doesn't label it blocked"
 step=$(sed -n '/^3\. If it needs a change in another repo first/,/^4\./p' "$ROOT/roles/dev.md")
-grep -qF 'depends dev <n> <owner/repo>#<pr> released "<why>"' <<<"$step" || fail "dev.md: no upstream wait in '$step'"
+grep -qF 'depends dev <n> <owner/repo>#<pr> released <package> "<why>"' <<<"$step" || fail "dev.md: no upstream wait in '$step'"
 grep -qF "Don't label it \`blocked\`" <<<"$step" || fail "dev.md: still labels it blocked"
-grep -qF 'depends lead <task> <owner/repo>#<n> <closed|released> "<why>"' "$ROOT/roles/lead.md" || fail "lead.md: no upstream wait"
+grep -qF 'depends lead <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"' "$ROOT/roles/lead.md" || fail "lead.md: no upstream wait"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

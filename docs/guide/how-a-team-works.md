@@ -55,7 +55,9 @@ A task that needs a change in another repo first, like a fix in a shared library
 repo's issue or PR instead, labelled `a-team:upstream`. It waits either until that closes or until a
 published release carries the change; a pre-release doesn't count. The board checks every couple
 of minutes, and once the wait is over it takes the label off and says so on the task, naming the
-release to upgrade to, so the Dev can pick it up with no click from you. Until then it isn't in
+release and the package to upgrade, so the Dev can pick it up with no click from you. An issue
+closed by hand, with no change linked to it, counts as released in the first release after it
+closed. Until then it isn't in
 **Questions**: it's asking you nothing, and the [Overseer](overseer.md) shows on its card how far
 the change has got, like `waiting on tui-style-guide#84: merged, not released`.
 

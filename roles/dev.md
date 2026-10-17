@@ -108,8 +108,9 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
      default branch, following that repo's contributor docs. Open a **draft** PR there whose body
      says what it adds, has the line `Needed by {{repo}}#<n>`, and ends with your marker. Comment on
      the task linking it and asking the stakeholder to review and release it. Then record the wait
-     with `a-team board {{team}} depends dev <n> <owner/repo>#<pr> released "<why>"`, or `closed`
-     in place of `released` if the task needs it merged but not released, move it back to Ready,
+     with `a-team board {{team}} depends dev <n> <owner/repo>#<pr> released <package> "<why>"`, naming
+     the package the task upgrades, or `closed` with no package if the task needs it merged but not
+     released, move it back to Ready,
      and end the run. Don't label it `blocked`: the board frees it when the change lands.
    - Otherwise, comment on the task saying what change it needs where, and that the team doesn't
      contribute to that repo. If an issue or PR for it is already open there, record the wait on it

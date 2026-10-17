@@ -1086,15 +1086,15 @@ depend_note() {
 # A task waiting on another repo carries UPSTREAM_LABEL, and each wait is a marker in one of the team's comments on it.
 UPSTREAM_LABEL=a-team:upstream
 UPSTREAM_REF='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$'
-wait_marker() { printf '<!-- a-team:%s repo=%s n=%s%s -->' "$1" "$2" "$3" "${4:+ until=$4}"; }
+wait_marker() { printf '<!-- a-team:%s repo=%s n=%s%s%s -->' "$1" "$2" "$3" "${4:+ until=$4}" "${5:+ package=$5}"; }
 
-# waits_on <n>: what task #n still waits on in other repos, as [{ref, repo, n, until}].
+# waits_on <n>: what task #n still waits on in other repos, as [{ref, repo, n, until, package}].
 waits_on() {
   gh api --paginate "repos/$REPO/issues/$1/comments" |
     jq -s --arg bot "$BOT" '[add // [] | .[] | select(.user.login == $bot) | .body // ""
-      | scan("<!-- a-team:(wait|unwait) repo=([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+) n=([0-9]+)(?: until=(closed|released))? -->")]
+      | scan("<!-- a-team:(wait|unwait) repo=([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+) n=([0-9]+)(?: until=(closed|released))?(?: package=([A-Za-z0-9_.-]+))? -->")]
       | reduce .[] as $m ([]; "\($m[1])#\($m[2])" as $ref | map(select(.ref != $ref))
-          + if $m[0] == "wait" then [{ref: $ref, repo: $m[1], n: ($m[2] | tonumber), until: $m[3]}] else [] end)'
+          + if $m[0] == "wait" then [{ref: $ref, repo: $m[1], n: ($m[2] | tonumber), until: $m[3], package: $m[4]}] else [] end)'
 }
 
 # released_in <repo> <sha>: the earliest published release whose tag contains <sha>, as {tag, at}, or nothing.
@@ -1110,6 +1110,12 @@ released_in() {
   printf '%s' "$found"
 }
 
+# released_after <repo> <time>: the first published release since <time>, as {tag, at}, or nothing.
+released_after() {
+  gh api "repos/$1/releases?per_page=30" 2>/dev/null | jq -c --arg since "$2" '[.[] | select((.draft or .prerelease | not)
+    and .published_at >= $since)] | sort_by(.published_at) | first // empty | {tag: .tag_name, at: .published_at}'
+}
+
 # upstream_state <waits>: each wait with how far it's got, `shown` as a card says it, and whether it's `met`.
 upstream_state() {
   local repo query n page found='[]' row release
@@ -1117,7 +1123,7 @@ upstream_state() {
     query=''
     for n in $(jq -r --arg r "$repo" '.[] | select(.repo == $r) | .n' <<<"$1"); do
       query+=" i$n: issueOrPullRequest(number: $n) { __typename
-        ... on Issue { state timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) { nodes { ... on ClosedEvent {
+        ... on Issue { state stateReason closedAt timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) { nodes { ... on ClosedEvent {
             closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } } } }
           closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { merged mergeCommit { oid } } } }
         ... on PullRequest { state merged mergeCommit { oid } } }"
@@ -1132,17 +1138,25 @@ upstream_state() {
           else ([.timelineItems.nodes[]?.closer | select(. != null) | if .__typename == "Commit" then .oid
                  elif .merged then .mergeCommit.oid else empty end]
                 + [.closedByPullRequestsReferences.nodes[]? | select(.merged) | .mergeCommit.oid] | first) end) as $sha
-      | . + {kind: ($it.__typename // null), sha: $sha,
+      | . + {kind: ($it.__typename // null), sha: $sha, closed: ($it.closedAt // null),
              state: (if $it == null then "unknown" elif $it.state == "OPEN" then "open" elif $sha != null then "merged"
-                     elif $it.__typename == "PullRequest" then "unmerged" else "closed" end)}]' <<<"$page" | jq -c --argjson was "$found" '$was + .')
+                     elif $it.__typename == "PullRequest" then "unmerged" elif $it.stateReason == "NOT_PLANNED" then "dropped"
+                     else "closed" end)}]' <<<"$page" | jq -c --argjson was "$found" '$was + .')
   done
   while IFS= read -r row; do
     release=$(released_in "$(jq -r .repo <<<"$row")" "$(jq -r .sha <<<"$row")")
     [ -z "$release" ] || found=$(jq -c --arg ref "$(jq -r .ref <<<"$row")" --argjson r "$release" \
       'map(if .ref == $ref then . + {state: "released", release: $r} else . end)' <<<"$found")
   done < <(jq -c '.[] | select(.until == "released" and .state == "merged")' <<<"$found")
+  # An issue closed by hand has no commit to look for, so the first release after it closed carries it.
+  while IFS= read -r row; do
+    release=$(released_after "$(jq -r .repo <<<"$row")" "$(jq -r .closed <<<"$row")")
+    [ -z "$release" ] || found=$(jq -c --arg ref "$(jq -r .ref <<<"$row")" --argjson r "$release" \
+      'map(if .ref == $ref then . + {state: "released", release: $r, after: true} else . end)' <<<"$found")
+  done < <(jq -c '.[] | select(.until == "released" and .state == "closed" and .closed != null)' <<<"$found")
   jq -c 'map(. + {met: (if .until == "released" then .state == "released" else .state | IN("open", "unknown") | not end),
-    shown: ({open: "open", unknown: "can'"'"'t read it", closed: "closed without a merge", unmerged: "closed without merging",
+    shown: ({open: "open", unknown: "can'"'"'t read it", unmerged: "closed without merging", dropped: "closed as not planned",
+             closed: (if .until == "released" then "closed, not released" else "closed" end),
              merged: (if .until == "released" then "merged, not released" else "merged" end),
              released: "released in \(.release.tag // "")"}[.state])})' <<<"$found"
 }
@@ -1885,17 +1899,20 @@ case "$CMD" in
     ;;
 
   depends)
-    [ $# -eq 4 ] || { [ $# -eq 5 ] && [[ $3 =~ $UPSTREAM_REF ]]; } ||
-      die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\", or <role> <task> <owner/repo#n> <closed|released> \"<why>\""
+    [ $# -eq 4 ] || { [ $# -ge 5 ] && [ $# -le 6 ] && [[ $3 =~ $UPSTREAM_REF ]]; } ||
+      die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\", or <role> <task> <owner/repo#n> <closed|released [<package>]> \"<why>\""
     role=$1 task=$2 prereq=$3
     check_role "$role"
     case "$role" in customer | reviewer) die "$role may not change what a task waits on" ;; esac
     own_task "$role" "$task"
     if [[ $prereq =~ $UPSTREAM_REF ]]; then
       upstream=${BASH_REMATCH[1]} up_n=${BASH_REMATCH[2]}
-      [ $# -eq 5 ] || die "say whether #$task waits for $prereq to close or to be released: depends $role $task $prereq <closed|released> \"<why>\""
-      until=$4 why=$5
+      [ $# -ge 5 ] || die "say whether #$task waits for $prereq to close or to be released: depends $role $task $prereq <closed|released> \"<why>\""
+      until=$4 package='' why=$5
+      [ $# -eq 5 ] || package=$5 why=$6
       case "$until" in closed | released) ;; *) die "#$task waits for $prereq to be closed or released, not '$until'" ;; esac
+      [ -z "$package" ] || [ "$until" = released ] || die "only a wait until released names a package to upgrade"
+      [[ -z $package || $package =~ ^[A-Za-z0-9_.-]+$ ]] || die "'$package' isn't a package name"
       [ "$(tr '[:upper:]' '[:lower:]' <<<"$upstream")" != "$(tr '[:upper:]' '[:lower:]' <<<"$REPO")" ] ||
         die "$prereq is in $REPO itself: depends $role $task $up_n \"<why>\""
       trouble=$(mktemp)
@@ -1912,7 +1929,7 @@ case "$CMD" in
       write "label #$task $UPSTREAM_LABEL" gh issue edit "$task" -R "$REPO" --add-label "$UPSTREAM_LABEL" >/dev/null
       note="Blocked by $prereq, until $until: $why"
       [ -n "$linked" ] || note+=$'\n\n'"GitHub can't link $prereq as a dependency, so the wait is recorded here."
-      depend_note "$role" "$task" "$note"$'\n\n'"$(wait_marker wait "$upstream" "$up_n" "$until")"
+      depend_note "$role" "$task" "$note"$'\n\n'"$(wait_marker wait "$upstream" "$up_n" "$until" "$package")"
       record "$role" "$task" "blocked by $prereq"
       say "#$task now waits for $prereq to be $until, and said why on #$task"
       exit 0
@@ -1966,12 +1983,14 @@ case "$CMD" in
       waits=$(upstream_state "$waits")
       jq -e 'all(.[]; .met)' <<<"$waits" >/dev/null || continue
       write "unlabel #$n $UPSTREAM_LABEL" gh issue edit "$n" -R "$REPO" --remove-label "$UPSTREAM_LABEL" >/dev/null || continue
-      depend_note dev "$n" "$(jq -r '[.[] | select(.state == "released") | .release.tag | ltrimstr("v")] as $versions
-        | (map(if .state == "released"
-            then "\(.ref) is in \(.release.tag) (released \(.release.at | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")))."
+      depend_note dev "$n" "$(jq -r 'def day: fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0");
+        [.[] | select(.state == "released") | (.release.tag | ltrimstr("v")) as $v | if .package then "\(.package) to \($v)" else "to \($v)" end] as $versions
+        | (map(if .state == "released" and .after
+            then "\(.ref) closed on \(.closed | day), and \(.release.tag) (released \(.release.at | day)) is the first release since."
+          elif .state == "released" then "\(.ref) is in \(.release.tag) (released \(.release.at | day))."
             else "\(.ref) has \(if .state == "merged" then "merged" else "closed" end)." end) | join(" "))
         + " No longer blocked"
-        + if $versions == [] then "." else ": upgrade to \($versions | join(" and ")) first." end' <<<"$waits")"$'\n\n'"$(
+        + if $versions == [] then "." else ": upgrade \($versions | join(" and ")) first." end' <<<"$waits")"$'\n\n'"$(
         jq -r '.[] | "\(.repo)\t\(.n)"' <<<"$waits" | while IFS=$'\t' read -r repo up_n; do wait_marker unwait "$repo" "$up_n"; done)"
       for ref in $(jq -r '.[].ref' <<<"$waits"); do record dev "$n" "no longer blocked by $ref"; done
       say "#$n: no longer waiting on $(jq -r 'map(.ref) | join(", ")' <<<"$waits")"

@@ -113,9 +113,10 @@ a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child>
 a-team board {{team}} depends <role> <task> <prereq> "<why>"
                                                 # <task> can't start until <prereq> closes; <why>
                                                 # is posted on <task>
-a-team board {{team}} depends <role> <task> <owner/repo>#<n> <closed|released> "<why>"
+a-team board {{team}} depends <role> <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"
                                                 # <task> waits on another repo's issue or PR until
-                                                # it closes, or until a published release has it
+                                                # it closes, or until a published release has it;
+                                                # <package> is named when the board frees <task>
 a-team board {{team}} undepend <role> <task> <prereq> "<why>"
                                                 # drop that dependency again, saying why on <task>;
                                                 # <prereq> may be <owner/repo>#<n>

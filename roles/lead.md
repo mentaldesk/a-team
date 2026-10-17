@@ -90,8 +90,8 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    `a-team board {{team}} depends lead <task> <prerequisite> "<why>"` and name the prerequisite in
    its body. It becomes available to the Dev by itself when the prerequisite
    closes. For a task that waits on an issue or PR already open in another repo,
-   `a-team board {{team}} depends lead <task> <owner/repo>#<n> <closed|released> "<why>"`: `released`
-   when the task needs a published release carrying the change, as it does to upgrade a package. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
+   `a-team board {{team}} depends lead <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"`:
+   `released <package>` when the task upgrades a package and needs a published release carrying the change. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
    independent of each other if they touch different parts of the code. Make the later one depend
    on the earlier when both would make major changes to the same file or the same part of the
    code; two unrelated behaviour changes that only brush a shared file run in parallel. Don't plan
