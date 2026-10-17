@@ -75,6 +75,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
     private readonly Action<IReadOnlyList<string>, Action<string, SpendingItem>>? _showSpending;
+    private readonly Action<string>? _showDecisions;
     private readonly Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? _newIdea;
     private readonly Func<Key, Attaching>? _attaching;
     private readonly Action<string> _openUrl;
@@ -172,12 +173,14 @@ public sealed class DashboardWindow : Window
         Func<Write?, IReadOnlyList<Write>, bool>? confirmQuit = null,
         Func<Key, Attaching>? attaching = null,
         Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
+        Action<string>? showDecisions = null,
         MacKeys? macKeys = null,
         Func<WaitingItem, bool>? confirmApprove = null)
     {
         _macKeys = macKeys;
         _attaching = attaching;
         _showSpending = showSpending;
+        _showDecisions = showDecisions;
         _writes = writes ?? new WriteQueue(run);
         _confirmQuit = confirmQuit ?? ((_, _) => true);
         _readMoves = readMoves;
@@ -673,6 +676,9 @@ public sealed class DashboardWindow : Window
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
             .Register("spending", "Spending", OpenSpending, isEnabled: () => _showSpending is not null)
+            .Register("decisions", () => SelectedTeam() is { } team ? $"Decisions… · {team}" : "Decisions…",
+                () => _showDecisions?.Invoke(SelectedTeam()!), isEnabled: () => _showDecisions is not null && SelectedTeam() is not null,
+                menuLabel: () => "Decisions…")
             .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
                 inMenu: () => _expanded is not null || _dispatcherExpanded, scopes: [Regions.Log])

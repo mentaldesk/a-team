@@ -142,6 +142,8 @@ Handover? Show(Handover? back)
             new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
         showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
             names.SelectMany(teams.Roles), open),
+        showDecisions: team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
+            change => change.Run(team, command.Read), url => Link.OpenUrl(url)),
         macKeys: macKeys);
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>

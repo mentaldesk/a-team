@@ -805,7 +805,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
                 "Show details", "Fold the lane", "Open on GitHub", "Go to the agent's session", "Read every board again",
                 "Dashboard", "Work", "Overseer", "Go to what's new",
-                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "About", "Trends", "Spending", "Back to the agent grid", "Quit",
+                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "About", "Trends", "Spending", "Decisions…", "Back to the agent grid", "Quit",
                 "Go to team0", "Go to team1", "Go to team 3", "Go to team 4", "Go to team 5", "Go to team 6", "Go to team 7",
                 "Go to team 8", "Go to team 9",
             ],
