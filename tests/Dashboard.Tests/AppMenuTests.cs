@@ -196,38 +196,119 @@ public class AppMenuTests : IDisposable
         Assert.True(ran);
     }
 
-    [Fact]
-    public void No_two_items_that_can_run_in_a_menu_share_a_letter()
+    [Theory]
+    [InlineData(Area.Dashboard)]
+    [InlineData(Area.Work)]
+    [InlineData(Area.Overseer)]
+    public void No_two_items_in_a_menu_share_a_letter_dimmed_ones_included(Area area)
     {
-        using var window = Open();
+        using var window = Open(area);
         window.Refresh();
 
         Assert.Equal(['v', 'c', 'a', 'h'], window.Menus.Select(menu => Letter(menu.HotKey)));
         foreach (var menu in window.Menus)
         {
-            var ids = Under(window, menu).Where(id => !Item(window, id).Dimmed);
-            var letters = ids.Select(id => Letter(Item(window, id).HotKey)).ToList();
+            var letters = Under(window, menu).Select(id => Letter(Item(window, id).HotKey)).ToList();
+            Assert.DoesNotContain('\0', letters);
             Assert.Equal(letters.Count, letters.Distinct().Count());
         }
+    }
+
+    [Fact]
+    public void View_on_the_Overseer_wears_the_letters_of_the_pitch_s_mockup()
+    {
+        using var window = Open(Area.Overseer);
+        window.Refresh();
+
+        Assert.Equal(
+            ["_Dashboard", "_Work", "_Overseer", "Go _to what's new", "S_how details", "_Fold the lane", "Open on _GitHub",
+                "Go to the _agent's session", "_Refresh", "_Next team", "_Previous team", "Go to t_eam…", "Open team's _board on GitHub",
+                "_Settings", "_Quit"],
+            Under(window, View(window)).Select(id => Item(window, id).Title));
     }
 
     [Theory]
     [InlineData(Area.Work)]
     [InlineData(Area.Dashboard)]
-    public void A_dimmed_item_passes_its_letter_on_to_the_next_item_with_it(Area area)
+    public void A_dimmed_item_keeps_its_letter_and_pressing_it_runs_nothing(Area area)
     {
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
         using var window = Open(area);
         app.Begin(window);
-        var opened = false;
-        Item(window, "settings").Action = () => opened = true;
+        var ran = new List<string>();
+        foreach (var (id, item) in window.MenuItems)
+            item.Action = () => ran.Add(id);
 
         window.NewKeyDownEvent(new Key('v').WithAlt);
         Assert.True(Item(window, "overseer.details").Dimmed);
-        Assert.Equal(new Key('s'), Item(window, "overseer.details").HotKey);
-        app.Keyboard.RaiseKeyDownEvent(new Key('s'));
+        Assert.Equal(new Key('h'), Item(window, "overseer.details").HotKey);
+        app.Keyboard.RaiseKeyDownEvent(new Key('h'));
 
-        Assert.True(opened);
+        Assert.Empty(ran);
+    }
+
+    [Fact]
+    public void Letters_stay_put_as_items_dim_enable_or_swap()
+    {
+        using var window = Open();
+        window.Refresh();
+        var before = window.MenuItems.ToDictionary(entry => entry.Id, entry => entry.Item.HotKey);
+
+        window.NewKeyDownEvent(Key.Tab);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.All(window.MenuItems, entry => Assert.Equal(before[entry.Id], entry.Item.HotKey));
+        Assert.Equal(Item(window, "agent.expand").HotKey, Item(window, "agent.collapse").HotKey);
+    }
+
+    [Fact]
+    public void A_command_s_key_letter_wins_over_first_letters()
+    {
+        Assert.Equal(["S_ave", "_Settings"], Titles(("Save", Key.Empty), ("Settings", new Key('s'))));
+    }
+
+    [Fact]
+    public void A_key_letter_an_earlier_item_marked_goes_to_the_earlier_item()
+    {
+        Assert.Equal(["_Show", "S_ettings"], Titles(("Show", new Key('s')), ("Settings", new Key('s'))));
+    }
+
+    [Fact]
+    public void A_letter_the_label_marks_itself_beats_a_key_letter()
+    {
+        Assert.Equal(["_Show kind", "Show _keys"], Titles(("Show kind", new Key('k')), ("Show _keys", Key.F1)));
+    }
+
+    [Fact]
+    public void A_shifted_key_only_matches_its_capital()
+    {
+        Assert.Equal(["Copy whole _log", "_Copy whole log"], Titles(("Copy whole log", new Key('l')), ("Copy whole log", new Key('L'))));
+    }
+
+    [Fact]
+    public void Labels_that_swap_share_a_letter_they_all_have()
+    {
+        var slots = AppMenu.Letters([(["Expand", "Back to all agents"], Key.Enter), (["Open in editor"], new Key('e'))]);
+
+        Assert.Equal("Exp_and", slots[0]["Expand"]);
+        Assert.Equal("Back to _all agents", slots[0]["Back to all agents"]);
+        Assert.Equal("Open in _editor", slots[1]["Open in editor"]);
+    }
+
+    [Fact]
+    public void A_key_letter_one_swapped_label_lacks_gives_way_to_one_they_share()
+    {
+        var slots = AppMenu.Letters([(["Show only mine", "Show all"], new Key('m'))]);
+
+        Assert.Equal(["_Show only mine", "_Show all"], slots[0].Values);
+    }
+
+    [Fact]
+    public void An_item_with_no_letter_free_gets_none()
+    {
+        Assert.Equal(["_Ab", "_Ba", "Ab"], Titles(("Ab", Key.Empty), ("Ba", Key.Empty), ("Ab", Key.Empty)));
     }
 
     [Fact]
@@ -240,7 +321,7 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void No_two_items_in_an_expanded_agent_s_menu_share_a_letter()
+    public void No_two_items_in_an_expanded_agent_s_menu_share_a_letter_or_take_one_from_what_they_swapped_out()
     {
         using var window = Open();
         window.NewKeyDownEvent(Key.Tab);
@@ -250,6 +331,7 @@ public class AppMenuTests : IDisposable
 
         var letters = Under(window, Agents(window)).Select(id => Letter(Item(window, id).HotKey)).ToList();
         Assert.Equal(letters.Count, letters.Distinct().Count());
+        Assert.Contains(Letter(Item(window, "agent.expand").HotKey), letters);
     }
 
     [Fact]
@@ -271,7 +353,7 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            ["_Open", "Set _priority", "_Try", "Cop_y branch name", "Open on _GitHub", "_Accept", "_Decline", "_Not now", "_New idea", "_Refresh", "Show only _mine"],
+            ["_Open", "Set _priority", "_Try", "Cop_y branch name", "Open on _GitHub", "_Accept", "_Decline", "Not no_w", "_New idea", "_Refresh", "_Show only mine"],
             Under(window, Cards(window)).Select(id => Item(window, id).Title));
     }
 
@@ -401,7 +483,7 @@ public class AppMenuTests : IDisposable
         window.Refresh();
 
         Assert.Equal(["agent.expand", "log.toolCalls", "log.copyLines", "log.copyAll", "log.editor"], Below(window, Agents(window)));
-        Assert.Equal(["_Expand", "Show _tool calls in full"], Below(window, Agents(window)).Take(2).Select(id => Item(window, id).Title));
+        Assert.Equal(["Exp_and", "Show _tool calls in full"], Below(window, Agents(window)).Take(2).Select(id => Item(window, id).Title));
         Assert.Equal([Key.Enter, new Key('t'), new Key('l'), new Key('L'), new Key('e')], Below(window, Agents(window)).Select(id => Item(window, id).Key));
         Assert.Equal([false, false, true, true, true], Below(window, Agents(window)).Select(id => Item(window, id).Dimmed));
     }
@@ -418,7 +500,7 @@ public class AppMenuTests : IDisposable
         Assert.Equal(["log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"], Below(window, Agents(window)));
         Assert.Equal("Open whole log in editor", Item(window, "log.editor").Title.Replace("_", ""));
         Assert.Equal(new Key('e'), Item(window, "log.editor").Key);
-        Assert.Equal("_Back to all agents", Item(window, "agent.collapse").Title);
+        Assert.Equal("Back to _all agents", Item(window, "agent.collapse").Title);
         Assert.Equal(Key.Esc, Item(window, "agent.collapse").Key);
         Assert.Equal(["Copy selected lines", "Copy whole log"], new[] { "log.copyLines", "log.copyAll" }.Select(id => Item(window, id).Title.Replace("_", "")));
         Assert.Equal([new Key('l'), new Key('L')], new[] { "log.copyLines", "log.copyAll" }.Select(id => Item(window, id).Key));
@@ -533,6 +615,9 @@ public class AppMenuTests : IDisposable
         [.. window.Menu.SubViews.OfType<MenuBarItem>().Select(menu => menu.Title)];
 
     private static char Letter(Key key) => char.ToLowerInvariant((char)key);
+
+    private static List<string> Titles(params (string Label, Key Key)[] items) =>
+        [.. AppMenu.Letters([.. items.Select(item => ((IReadOnlyList<string>)[item.Label], item.Key))]).Select((titles, i) => titles[items[i].Label])];
 
     /// <summary>The titles that have been asked to open, in the order they were.</summary>
     private static List<string> Opened(DashboardWindow window)

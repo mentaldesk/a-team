@@ -3944,7 +3944,7 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open();
         window.Refresh();
-        Assert.Equal("Show only _mine", FilterTitle(window));
+        Assert.Equal("_Show only mine", FilterTitle(window));
 
         MenuItem(window, "work.mine").Action!();
         Assert.True(window.Work.OnlyMine);
@@ -3952,7 +3952,27 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(new Key('m'));
         Assert.False(window.Work.OnlyMine);
-        Assert.Equal("Show only _mine", FilterTitle(window));
+        Assert.Equal("_Show only mine", FilterTitle(window));
+    }
+
+    public static TheoryData<string> CardKinds() =>
+        [Waiting("team0"), Review(), Question, PitchQuestion, DocumentPitch(), ReviewPitch(), Queue];
+
+    [Theory]
+    [MemberData(nameof(CardKinds))]
+    public void Cards_repeats_no_letter_whichever_card_is_selected(string cards)
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? cards : "[]", null)));
+        window.Refresh();
+        var cardsMenu = window.Menus.Single(menu => menu.Title == AppMenu.Cards);
+
+        for (var step = 0; step < 6; step++)
+        {
+            window.Refresh();
+            var letters = cardsMenu.PopoverMenu!.Root!.SubViews.OfType<MenuItem>().Select(item => char.ToLowerInvariant((char)item.HotKey)).ToList();
+            Assert.Equal(letters.Count, letters.Distinct().Count());
+            window.NewKeyDownEvent(step % 2 == 0 ? Key.CursorRight : Key.CursorDown);
+        }
     }
 
     [Fact]
