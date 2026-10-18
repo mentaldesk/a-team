@@ -1257,12 +1257,12 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void A_task_waiting_on_another_repo_isn_t_a_question_nor_waiting_on_you()
+    public void A_task_waiting_on_another_repo_shows_under_Questions_but_isn_t_waiting_on_you()
     {
         using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)));
         window.Refresh();
 
-        Assert.Equal(1, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Questions").Count);
+        Assert.Equal(2, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Questions").Count);
         Assert.Equal("Work · 1 waiting on you", window.WorkTitle);
     }
 

@@ -866,7 +866,10 @@ public sealed class DashboardWindow : Window
             running.SelectMany(pane => pane.Working.Select(number => (Card: (pane.Team, number), pane.Role)))
                 .DistinctBy(worked => worked.Card).ToDictionary(worked => worked.Card, worked => worked.Role),
             running.GroupBy(pane => pane.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(pane => pane.Role)]),
-            (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number)));
+            (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number))
+        {
+            Holding = Holds.Holders(_work.Items),
+        });
     }
 
     private void OverseerEnter()
@@ -1585,7 +1588,7 @@ public sealed class DashboardWindow : Window
             : _writes.Status() is { Length: > 0 } writing ? (writing, Schemes.Accent)
             : _pass.Progress is { } passing ? (passing, Schemes.Accent)
             : _said is { Length: > 0 } ? (_said, Schemes.Accent)
-            : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
+            : _area == Area.Work && _work.Selected is { } card && (card.Reason.Length > 0 || card.Holding.Count > 0) ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : _area == Area.Overseer && _boarding is not null ? ("Reading…", Schemes.Accent)
             : _area == Area.Overseer && _overseer.Region is { } chip ? (chip, Schemes.Base)
