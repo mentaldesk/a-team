@@ -56,9 +56,12 @@ public static class Holds
         return string.Join(" · ", [waiting, .. item.Holding[0].Then.Select(link => $"then {link.What}")]);
     }
 
-    /// <summary>A held task for the status bar: the link holding it now, then each link still to go after it.</summary>
+    /// <summary>A held task for the status bar: the link holding it now, each link still to go after it, then its PR
+    /// where it has one.</summary>
     public static string Waiting(WaitingItem item) =>
-        string.Join(" · ", [$"#{item.Number}", item.WaitsOn, .. (item.Chains is [var chain, ..] ? chain.Skip(1) : []).Select(link => $"then {link.What}")]);
+        string.Join(" · ", new[] { $"#{item.Number}", item.WaitsOn }
+            .Concat((item.Chains is [var chain, ..] ? chain.Skip(1) : []).Select(link => $"then {link.What}"))
+            .Append(item.PrBranch).Where(part => part.Length > 0));
 
     private static string Name(WaitingItem item, Hold hold) =>
         hold.Team == item.Team ? $"#{hold.Number}" : $"{hold.Team} #{hold.Number}";

@@ -7530,6 +7530,28 @@ echo '[]' >"$UPDATES"
 run board demo waiting
 same "met" '[]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
 
+case_ "waiting gives a task In review that waits on another repo its chain, on its own card, and the upstream card frees it"
+waiting_upstream
+other_team style mentaldesk/style style-app
+jq '(.data.organization.projectV2.items.nodes[] | select(.content.number == 11) | .fieldValueByName.name) = "In review"
+  | (.data.organization.projectV2.items.nodes[].content | select(.number == 11) | .labels.nodes) = [{name: "a-team:dev"}, {name: "a-team:upstream"}]' \
+  "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+waits <<<"mentaldesk/style#81 released MentalDesk.Tui"
+upstream_items <<<"81 Issue OPEN"
+jq -n '{data: {repository: {i81: {parent: null, subIssues: {nodes: []},
+  closedByPullRequestsReferences: {nodes: [{number: 84, state: "OPEN"}]}}}}}' >"$REACH"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "one card" '[{"status":"In review","turn":"you"}]' "$(jq -c 'map(select(.number == 11) | {status, turn})' "$OUT")"
+same "chains" '[[{"team":"style","refs":[81,84],"what":"style#84","shown":"open"},{"team":"style","refs":[],"what":"MentalDesk.Tui'"'"'s release","shown":"yours"},{"team":"demo","refs":[],"what":"demo'"'"'s bump","shown":"yours"}]]' \
+  "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
+upstream_items <<<"81 Issue CLOSED"
+releases <<<"v0.3.9 2026-10-16T12:00:00Z"
+contains v0.3.9
+echo '[]' >"$UPDATES"
+run board demo waiting
+same "met" 'null' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
+
 case_ "free holds a released task while Dependabot's bump of its package is open, and brings that bump into Review"
 waiting_upstream
 reviewable
