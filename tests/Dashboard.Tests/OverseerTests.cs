@@ -1,6 +1,8 @@
 using System.Drawing;
 using Terminal.Gui;
 using Terminal.Gui.App;
+using Terminal.Gui.Configuration;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -121,6 +123,55 @@ public class OverseerTests : IDisposable
         Assert.Equal("◆404  ｱ#ﾘ", OverseerView.ChipText(new Chip(card), Now, "ｱ#ﾘ", IconStyle.Unicode));
         Assert.Equal("◆404    ✺", OverseerView.ChipText(new Chip(card), Now, "  ✺", IconStyle.Unicode));
         Assert.Equal("+7", OverseerView.ChipText(new Chip(null, 7), Now, null, IconStyle.Unicode));
+    }
+
+    [Fact]
+    public void A_chip_another_task_waits_on_wears_a_warning_before_its_age()
+    {
+        var card = Card(81, "In review", days: 6);
+
+        Assert.Equal("◆81  ⚠ 6d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode, holding: true));
+        Assert.Equal("◆81  ⚠ｱ#ﾘ", OverseerView.ChipText(new Chip(card), Now, "ｱ#ﾘ", IconStyle.Unicode, holding: true));
+    }
+
+    [Theory]
+    [InlineData(IconStyle.Unicode)]
+    [InlineData(IconStyle.NerdFont)]
+    public void The_warning_is_drawn_in_amber(IconStyle style)
+    {
+        LogSchemes.Register();
+        using var app = Terminal.Gui.App.Application.Create().Init(Terminal.Gui.Drivers.DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(120, 10);
+        var window = new Terminal.Gui.Views.Window();
+        var view = new OverseerView(["a"]) { Width = Terminal.Gui.ViewBase.Dim.Fill(), Height = Terminal.Gui.ViewBase.Dim.Fill() };
+        window.Add(view);
+        app.Begin(window);
+        view.ShowIcons(style);
+        view.Show([Card(1, "Idea", days: 1), Card(81, "In review", days: 6)]);
+        view.Show(OverseerState.Empty with { Now = Now, Holding = new HashSet<(string, int)> { ("a", 81) } });
+
+        app.LayoutAndDraw(forceRedraw: true);
+
+        var warning = Icons.Glyph(Icon.Warning, style);
+        var cells = app.Driver.Contents!;
+        var found = Enumerable.Range(0, cells.GetLength(0)).SelectMany(row => Enumerable.Range(0, cells.GetLength(1)).Select(column => cells[row, column]))
+            .Single(cell => cell.Grapheme == warning);
+        Assert.Equal(SchemeManager.GetScheme(LogSchemes.Overdue).GetAttributeForRole(VisualRole.Normal), found.Attribute);
+    }
+
+    [Fact]
+    public void A_card_another_task_waits_on_gives_the_chain_in_its_details()
+    {
+        var card = Card(81, "In review", days: 1) with { Kind = CardKind.Task };
+        var held = new WaitingItem(81, "", "In review", "", "a", "you", "awaiting your acceptance")
+        {
+            Holding = [new Hold("b", 499, [new ChainLink("tui", [], "MentalDesk.Tui's release", "yours")])],
+        };
+        var state = OverseerState.Empty with { Now = Now, Waiting = (_, number) => number == 81 ? held : null };
+
+        Assert.Equal(
+            ["Task · Unranked · a · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "b #499 waits on this · then MentalDesk.Tui's release"],
+            OverseerView.Describe(card, [card], state));
     }
 
     [Fact]

@@ -36,6 +36,17 @@ public class HoldsTests
     }
 
     [Fact]
+    public void Holders_are_the_cards_a_task_waits_on_now_whether_or_not_work_shows_them()
+    {
+        var prerequisite = new WaitingItem(530, "", "In review", "", "a-team", "you", "", Frees: [531]);
+        var items = Holds.Tag([Held([new("tui", [81, 84], "tui-style-guide#84", "open"), Release]), InReview, Other, prerequisite]);
+
+        Assert.Equal(
+            new HashSet<(string, int)> { ("tui", 81), ("tui", 84), ("a-team", 530) },
+            Holds.Holders(items));
+    }
+
+    [Fact]
     public void A_card_is_found_by_its_PR_too()
     {
         var byPr = InReview with { Number = 90 };

@@ -33,6 +33,12 @@ public static class Holds
         ];
     }
 
+    /// <summary>Every card a task waits on now, on any team's board, whether or not Work shows it.</summary>
+    public static IReadOnlySet<(string Team, int Number)> Holders(IReadOnlyList<WaitingItem> items) =>
+        items.SelectMany(item => (item.Chains ?? []).SelectMany(chain => chain[0].Team.Length > 0 ? chain[0].Refs.Select(number => (chain[0].Team, number)) : []))
+            .Concat(items.Where(item => item.Holding.Count > 0 || item.Frees is { Count: > 0 }).Select(item => (item.Team, item.Number)))
+            .ToHashSet();
+
     private static bool Same(IReadOnlyList<Hold> one, IReadOnlyList<Hold> other) =>
         one.Count == other.Count && one.Zip(other).All(pair =>
             pair.First.Team == pair.Second.Team && pair.First.Number == pair.Second.Number && pair.First.Then.SequenceEqual(pair.Second.Then));

@@ -18,6 +18,9 @@ public sealed record OverseerState(
     public static readonly OverseerState Empty = new(
         DateTimeOffset.MinValue, new Dictionary<string, string>(), new Dictionary<(string, int), string>(),
         new Dictionary<string, IReadOnlyList<string>>(), (_, _) => null);
+
+    /// <summary>The cards another task waits on, which wear a warning.</summary>
+    public IReadOnlySet<(string Team, int Number)> Holding { get; init; } = new HashSet<(string, int)>();
 }
 
 /// <summary>Where a busy role's header frame goes in its lane's title, in columns from the title's start.</summary>
@@ -236,14 +239,14 @@ public sealed class OverseerView : View
         _ => role,
     };
 
-    /// <summary>A chip as drawn: its mark and number, then its age, or its animation frame while an agent is on it,
-    /// right-aligned in three cells.</summary>
-    internal static string ChipText(Chip chip, DateTimeOffset now, string? playing, IconStyle style)
+    /// <summary>A chip as drawn: its mark and number, a warning where another task waits on it, then its age, or its
+    /// animation frame while an agent is on it, right-aligned in three cells.</summary>
+    internal static string ChipText(Chip chip, DateTimeOffset now, string? playing, IconStyle style, bool holding = false)
     {
         if (chip.Card is not { } card)
             return $"+{chip.Hidden}";
         var age = playing ?? (card.Age(now) is { } waited ? Ages.Short(waited) : "");
-        return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)} {age,AgeWidth}";
+        return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)}{(holding ? Icons.Glyph(Icon.Warning, style) : " ")}{age,AgeWidth}";
     }
 
     /// <summary>The details pane's lines for <paramref name="card"/>.</summary>
@@ -259,6 +262,8 @@ public sealed class OverseerView : View
             lines.Add($"Waiting on {upstream.Upstream}");
         else if (state.Waiting(card.Team, card.Number) is { Reason.Length: > 0 } waiting)
             lines.Add($"Waiting: {(waiting.Mine ? "" : $"{waiting.Turn} · ")}{waiting.Reason}");
+        if (state.Waiting(card.Team, card.Number) is { Holding.Count: > 0 } holding)
+            lines.Add(Holds.Chain(holding));
         if (card.Kind == CardKind.Pitch)
         {
             var tasks = all.Where(task => task.Team == card.Team && task.Parent == card.Number).OrderBy(task => task.Number).ToList();
@@ -394,6 +399,11 @@ public sealed class OverseerView : View
         return GetAttributeForRole(VisualRole.Normal);
     }
 
+    private Attribute WarningAttribute(bool selected) =>
+        !selected && SchemeManager.TryGetScheme(LogSchemes.Overdue, out var overdue)
+            ? overdue.GetAttributeForRole(VisualRole.Normal)
+            : GetAttributeForRole(selected ? VisualRole.Focus : VisualRole.Normal);
+
     /// <summary>The colour a cell of a role's animation is drawn in, on <paramref name="under"/>'s background.</summary>
     internal static Attribute ToneAttribute(RoleAnimation animation, Tone tone, Attribute under) =>
         under with { Foreground = animation.Colour(tone, under) };
@@ -450,13 +460,20 @@ public sealed class OverseerView : View
                         ? RoleAnimation.For(role)
                         : null;
                     var frame = animation?.Chip(elapsed, chip.Card!.Number);
-                    var full = ChipText(chip, state.Now, frame?.Text, overseer._icons);
+                    var holding = chip.Card is { } held && state.Holding.Contains((held.Team, held.Number));
+                    var full = ChipText(chip, state.Now, frame?.Text, overseer._icons, holding);
                     var text = Card.Elide(full, width - 1);
                     var selected = board.Selected is { } place && place.Team == team && place.Column == column
                         && place.Number == chip.Card?.Number;
                     var age = chip.Card is not null && text == full ? AgeWidth : 0;
+                    var warning = holding && age > 0 ? Icons.Glyph(Icon.Warning, overseer._icons).Length : 0;
                     SetAttribute(overseer.ChipAttribute(chip.Card, selected));
-                    AddStr(column * width, row, text[..^age]);
+                    AddStr(column * width, row, text[..^(age + warning)]);
+                    if (warning > 0)
+                    {
+                        SetAttribute(overseer.WarningAttribute(selected));
+                        AddStr(column * width + text[..^(age + warning)].GetColumns(), row, text[^(age + warning)..^age]);
+                    }
                     if (chip.Card is { } shown && age > 0)
                     {
                         var under = overseer.AgeAttribute(shown, selected);
