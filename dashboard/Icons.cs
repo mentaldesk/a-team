@@ -40,6 +40,7 @@ public enum Icon
     Question,
     Writing,
     Chain,
+    Blocked,
 }
 
 /// <summary>A card's icon for whose move it is, and the scheme its colour comes from.</summary>
@@ -78,6 +79,7 @@ public static class Icons
         [Icon.Question] = "\U000F02D7", // nf-md-help_circle
         [Icon.Writing] = "\U000F01D8", // nf-md-dots_horizontal
         [Icon.Chain] = "\U000F0337",   // nf-md-link
+        [Icon.Blocked] = "\uF479",     // nf-oct-blocked
     };
 
     private static readonly Dictionary<Icon, string> UnicodeGlyphs = new()
@@ -106,6 +108,7 @@ public static class Icons
         [Icon.Question] = "?",
         [Icon.Writing] = "⋯",
         [Icon.Chain] = "⛓",
+        [Icon.Blocked] = "⊘",
     };
 
     /// <summary>The meanings a style's sample shows, in the order Settings names them underneath.</summary>

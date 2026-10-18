@@ -89,7 +89,7 @@ public class OverseerTests : IDisposable
               "priority": "High", "since": "2026-10-03T10:00:00Z", "parent": null, "team": "a-team", "kind": "pitch"},
              {"number": 414, "title": "Every board", "url": "u", "status": "Ready", "priority": null,
               "since": "2026-10-08T12:00:00Z", "parent": 404, "team": "a-team", "kind": "task"},
-             {"number": 415, "status": "In review", "team": "a-team", "kind": "docs"},
+             {"number": 415, "status": "In review", "team": "a-team", "kind": "docs", "blocked": true},
              {"number": 395, "status": "Idea", "team": "a-team", "kind": "yours"},
              {"title": "no number"}]
             """);
@@ -100,6 +100,7 @@ public class OverseerTests : IDisposable
         Assert.Equal(404, cards[1].Parent);
         Assert.Equal("", cards[1].Priority);
         Assert.Null(cards[2].Since);
+        Assert.Equal([false, false, true, false], cards.Select(card => card.Blocked));
         Assert.Empty(BoardCard.Parse("not json"));
     }
 
@@ -132,6 +133,16 @@ public class OverseerTests : IDisposable
 
         Assert.Equal("◆81  ⚠ 6d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode, holding: true));
         Assert.Equal("◆81  ⚠ｱ#ﾘ", OverseerView.ChipText(new Chip(card), Now, "ｱ#ﾘ", IconStyle.Unicode, holding: true));
+    }
+
+    [Fact]
+    public void A_blocked_chip_wears_the_blocked_mark_before_its_age_and_any_warning()
+    {
+        var card = Card(82, "Ready", days: 2) with { Blocked = true };
+
+        Assert.Equal("◆82  ⊘ 2d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode));
+        Assert.Equal("◆82  ⊘⚠ 2d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode, holding: true));
+        Assert.Contains("\uF479", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.NerdFont));
     }
 
     [Theory]

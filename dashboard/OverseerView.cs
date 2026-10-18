@@ -239,15 +239,20 @@ public sealed class OverseerView : View
         _ => role,
     };
 
-    /// <summary>A chip as drawn: its mark and number, a warning where another task waits on it, then its age, or its
-    /// animation frame while an agent is on it, right-aligned in three cells.</summary>
+    /// <summary>A chip as drawn: its mark and number, a blocked mark where it's blocked, a warning where another task
+    /// waits on it, then its age, or its animation frame while an agent is on it, right-aligned in three cells.</summary>
     internal static string ChipText(Chip chip, DateTimeOffset now, string? playing, IconStyle style, bool holding = false)
     {
         if (chip.Card is not { } card)
             return $"+{chip.Hidden}";
         var age = playing ?? (card.Age(now) is { } waited ? Ages.Short(waited) : "");
-        return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)}{(holding ? Icons.Glyph(Icon.Warning, style) : " ")}{age,AgeWidth}";
+        var marks = (card.Blocked ? Flag(Icon.Blocked, style) : "") + (holding ? Flag(Icon.Warning, style) : "");
+        return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)}{(marks.Length > 0 ? marks : " ")}{age,AgeWidth}";
     }
+
+    /// <summary>A Nerd Font glyph is drawn two cells wide, so it gets the field a mark does.</summary>
+    private static string Flag(Icon icon, IconStyle style) =>
+        style == IconStyle.NerdFont ? Icons.Field(icon, style) : Icons.Glyph(icon, style);
 
     /// <summary>The details pane's lines for <paramref name="card"/>.</summary>
     internal static IReadOnlyList<string> Describe(BoardCard card, IReadOnlyList<BoardCard> all, OverseerState state)
@@ -466,7 +471,7 @@ public sealed class OverseerView : View
                     var selected = board.Selected is { } place && place.Team == team && place.Column == column
                         && place.Number == chip.Card?.Number;
                     var age = chip.Card is not null && text == full ? AgeWidth : 0;
-                    var warning = holding && age > 0 ? Icons.Glyph(Icon.Warning, overseer._icons).Length : 0;
+                    var warning = holding && age > 0 ? Flag(Icon.Warning, overseer._icons).Length : 0;
                     SetAttribute(overseer.ChipAttribute(chip.Card, selected));
                     AddStr(column * width, row, text[..^(age + warning)]);
                     if (warning > 0)

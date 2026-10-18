@@ -2351,7 +2351,7 @@ case "$CMD" in
     [ $# -eq 0 ] || die "usage: board.sh $TEAM overview"
     # Done only grows, so it's left off; `since` is when the item's Status was last set.
     items "$(not_done)" | jq --arg team "$TEAM" 'map(select(.status != "Done") | {number, title, url, status, priority,
-      since, parent, team: $team,
+      since, parent, team: $team, blocked: '"$BLOCKED"',
       kind: (if .labels | index("pitch") then "pitch" elif .labels | index("a-team:customer") then "docs"
              elif (.labels | index("a-team:dev")) or .parent != null then "task" else "yours" end)})'
     ;;

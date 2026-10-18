@@ -6623,13 +6623,16 @@ jq '.data.organization.projectV2.items.nodes[].fieldValueByName.updatedAt = "202
   mv "$ITEMS.new" "$ITEMS"
 edit_item 414 '.parent = {number: 404}'
 edit_item 415 '.labels.nodes = [{name: "a-team:customer"}]'
+edit_item 395 '.labels.nodes = [{name: "blocked"}]'
+edit_item 414 '.issueDependenciesSummary = {blockedBy: 1}'
 run board demo overview
 same "exit" 0 "$STATUS"
 same "numbers" '[404,414,415,395]' "$(jq -c '[.[].number]' "$OUT")"
 same "kinds" '["pitch","task","docs","yours"]' "$(jq -c '[.[].kind]' "$OUT")"
-same "fields" '["kind","number","parent","priority","since","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "fields" '["blocked","kind","number","parent","priority","since","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "since" '"2026-10-01T08:00:00Z"' "$(jq -c '.[0].since' "$OUT")"
 same "parent" '404' "$(jq -c '.[1].parent' "$OUT")"
+same "blocked" '[false,true,false,true]' "$(jq -c '[.[].blocked]' "$OUT")"
 same "priority" '"High"' "$(jq -c '.[0].priority' "$OUT")"
 same "status" '"In review"' "$(jq -c '.[2].status' "$OUT")"
 same "filter" '-Status:"Done"' "$(cat "$FILTERS")"

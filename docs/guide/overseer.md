@@ -27,7 +27,9 @@ instead: an idea, a pitch, a task or the docs PR.
 
 A chip's mark and number are drawn in its Priority's colour. Its age is in the theme's own colour, and
 turns amber only once the card is past its column's limit. A card another task is waiting on, the one
-[Work](work.md) tags `⛓ frees`, wears an amber `⚠` between its number and its age, as in `●81 ⚠6d`. A card an agent is working on plays
+[Work](work.md) tags `⛓ frees`, wears an amber `⚠` between its number and its age, as in `●81 ⚠6d`. A card that's
+blocked for any reason, waiting on another task, on another repo or on your answer, wears `⊘` there (the Nerd Font
+blocked icon), as in `●82 ⊘2d`. A card an agent is working on plays
 its role's animation in place of its age:
 
 | Role | Animation | Looks like |
