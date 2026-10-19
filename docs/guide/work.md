@@ -199,7 +199,8 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 `PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end, `Option+←`/`→` or
 `Ctrl+←`/`→` for a word), and hold `Shift` to select,
 as in any editor. You can also drag with the mouse, or double-click a word, like an issue number or
-a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
+a URL. `Ctrl+C` copies the selection, and `Esc` clears it. Over SSH it reaches your own computer,
+with the terminal set up as [Copying from a log](dashboard.md#copying-from-a-log) says.
 
 ## Answering from a card
 
