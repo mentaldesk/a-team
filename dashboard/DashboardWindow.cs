@@ -890,7 +890,10 @@ public sealed class DashboardWindow : Window
             running.SelectMany(pane => pane.Working.Select(number => (Card: (pane.Team, number), pane.Role)))
                 .DistinctBy(worked => worked.Card).ToDictionary(worked => worked.Card, worked => worked.Role),
             running.GroupBy(pane => pane.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(pane => pane.Role)]),
-            (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number)));
+            (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number))
+        {
+            Holding = Holds.Holders(_work.Items),
+        });
     }
 
     private void OverseerEnter()
@@ -1609,7 +1612,7 @@ public sealed class DashboardWindow : Window
             : _writes.Status() is { Length: > 0 } writing ? (writing, Schemes.Accent)
             : _pass.Progress is { } passing ? (passing, Schemes.Accent)
             : _said is { Length: > 0 } ? (_said, Schemes.Accent)
-            : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
+            : _area == Area.Work && _work.Selected is { } card && (card.Reason.Length > 0 || card.Holding.Count > 0) ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : _area == Area.Overseer && _boarding is not null ? ("Reading…", Schemes.Accent)
             : _area == Area.Overseer && _overseer.Region is { } chip ? (chip, Schemes.Base)
@@ -1797,10 +1800,7 @@ public sealed class DashboardWindow : Window
         if (Selected() is not { } pane)
             return;
         var copied = copy(pane);
-        var clipboard = _clipboard ?? App?.Clipboard;
-        _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(copied.Text)
-            ? (copied.Said, Schemes.Accent)
-            : ("there's no clipboard to copy to", Schemes.Error);
+        _copied = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, copied.Text), truncated: copied.Capped);
         ShowMessage();
     }
 
@@ -1808,10 +1808,7 @@ public sealed class DashboardWindow : Window
     {
         if (_work.Selected is not { Branch.Length: > 0 } card)
             return;
-        var clipboard = _clipboard ?? App?.Clipboard;
-        _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(card.Branch)
-            ? ($"Copied {card.Branch}", Schemes.Accent)
-            : ("there's no clipboard to copy to", Schemes.Error);
+        _copied = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, card.Branch), card.Branch);
         ShowMessage();
     }
 

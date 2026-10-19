@@ -48,7 +48,7 @@ Two kinds of item share the board:
   dependency, and becomes available by itself when that one closes. A task that needs a change
   in another repo is recorded as waiting on that repo's issue or PR, until it closes or until a
   published release carries it, and is labelled `a-team:upstream`; the board frees it by itself
-  when that happens. The `blocked` label is for a task waiting on the stakeholder: for an answer,
+  when that happens, or, while Dependabot has a PR open bringing that release in, once it merges. The `blocked` label is for a task waiting on the stakeholder: for an answer,
   or because they're holding it.
 - A **docs PR** is the Customer lead's, labelled `a-team:customer`: one open at a time, which it
   adds to after each pitch is done. It goes straight to In review, and accepting it merges it.
@@ -76,8 +76,9 @@ a-team board {{team}} list [STATUS...]          # items, as JSON
 a-team board {{team}} mine <role> [STATUS...]   # items your role owns
 a-team board {{team}} wip                       # counts per status: pitches, dev, stakeholders;
                                                 # the Dev's blocked tasks under dev.blocked
-a-team board {{team}} next                      # the next task Dev should take (or null):
-                                                # highest issue Priority first, unset last
+a-team board {{team}} next                      # the next task Dev should take (or null): one a
+                                                # task waits on first, then highest issue Priority,
+                                                # unset last
 a-team board {{team}} claim dev [<n>]           # move `next` (or Ready task <n>) to In progress for
                                                 # a Dev run, if a worktree is free
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)

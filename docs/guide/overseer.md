@@ -26,7 +26,10 @@ Where a Nerd Font is in effect, a chip wears the icon [Work](work.md) gives the 
 instead: an idea, a pitch, a task or the docs PR.
 
 A chip's mark and number are drawn in its Priority's colour. Its age is in the theme's own colour, and
-turns amber only once the card is past its column's limit. A card an agent is working on plays
+turns amber only once the card is past its column's limit. A card another task is waiting on, the one
+[Work](work.md) tags `⛓ frees`, wears an amber `⚠` between its number and its age, as in `●81 ⚠6d`. A card that's
+blocked for any reason, waiting on another task, on another repo or on your answer, wears `⊘` there (the Nerd Font
+blocked icon), as in `●82 ⊘2d`. A card an agent is working on plays
 its role's animation in place of its age:
 
 | Role | Animation | Looks like |
@@ -61,7 +64,8 @@ behind a count, as in `+7`.
 The details pane gives the card's title, what it is, its Priority, team and column, how long it has
 been there in full (`6d 2h 10m`), the column's limit if it has one, and why it's waiting where Work
 says. For a task waiting on a change in another repo, that's how far the change has got:
-`Waiting on tui-style-guide#84: merged, not released`. For a pitch, it lists the open tasks under it,
+`Waiting on tui-style-guide#84: merged, not released`. For a card another task waits on, it gives the
+chain, as on Work's status bar: `a-team #499 waits on this · then MentalDesk.Tui's release`. For a pitch, it lists the open tasks under it,
 each with its column and age.
 
 Overseer reads the boards when you open it and on `F5`, and the status bar says how long ago that

@@ -57,9 +57,15 @@ published release carries the change; a pre-release doesn't count. The board che
 of minutes, and once the wait is over it takes the label off and says so on the task, naming the
 release and the package to upgrade, so the Dev can pick it up with no click from you. An issue
 closed by hand, with no change linked to it, counts as released in the first release after it
-closed. Until then it isn't in
-**Questions**: it's asking you nothing, and the [Overseer](overseer.md) shows on its card how far
-the change has got, like `waiting on tui-style-guide#84: merged, not released`.
+closed. If Dependabot already has a PR open bringing that release in, the task waits for it to
+merge too, and the PR comes into [Review](work.md#holding-up-a-task) for you to accept. Until then
+the task's card in **Questions** says which link it waits on and whose move that is, though it asks
+you nothing. Open its card's details in the [Overseer](overseer.md) (`Enter`) to see how far the
+change has got, like `Waiting on tui-style-guide#84: merged, not released`.
+
+Whatever another task waits on comes first: the Dev takes a Ready task some task waits on before
+any other, and the Lead pitches such an Idea before any other, whatever their Priority. Priority
+still orders them among themselves, and nobody's Priority changes.
 
 A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a
 draft pull request in Pitched instead. You agree to it by merging it, with `a` in

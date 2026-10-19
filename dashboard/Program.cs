@@ -1,6 +1,7 @@
 using System.Globalization;
 using ATeam.Dashboard;
 using MentalDesk.Tui.Assistant;
+using MentalDesk.Tui.Copying;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Theming;
 
@@ -94,6 +95,7 @@ Handover? Show(Handover? back)
     BundledThemes.Load(settings.ReadTheme());
     using var app = Application.Create();
     app.Init();
+    TerminalClipboard.Install(app);
     using var active = macKeys.Activate();
     app.Keyboard.KeyDown += (_, _) => attention.Key();
     LogSchemes.Register();

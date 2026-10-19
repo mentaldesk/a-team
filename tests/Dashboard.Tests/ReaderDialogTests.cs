@@ -1188,7 +1188,7 @@ public class ReaderDialogTests
         Assert.True(dialog.NewKeyDownEvent(Key.C.WithCtrl));
 
         Assert.Equal("#388", clipboard.GetClipboardData());
-        Assert.Equal("copied 4 characters", dialog.Message.Says);
+        Assert.Equal("Copied 1 line  •  4 characters", dialog.Message.Says);
     }
 
     [Fact]
@@ -1203,7 +1203,7 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.C.WithCtrl);
 
         Assert.Equal("ne\ntwo\nt", clipboard.GetClipboardData());
-        Assert.Equal("copied 8 characters", dialog.Message.Says);
+        Assert.Equal("Copied 3 lines  •  6 characters", dialog.Message.Says);
     }
 
     [Fact]
@@ -1243,7 +1243,7 @@ public class ReaderDialogTests
 
         dialog.NewKeyDownEvent(Key.C.WithCtrl);
 
-        Assert.Equal("there's no clipboard to copy to", dialog.Message.Says);
+        Assert.Equal("Copy failed: there is no clipboard", dialog.Message.Says);
     }
 
     private static ReaderDialog CopyingBranch(FakeClipboard clipboard, string branch)
@@ -1268,13 +1268,31 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void Ctrl_C_and_y_copy_through_the_installed_terminal_clipboard()
+    {
+        using var terminal = new InstalledTerminal();
+        using var dialog = new ReaderDialog(Item with { Pr = 459, Branch = "feat/path-pickers" }, new IssueBody("text"), () => { },
+            clipboard: terminal.Clipboard, copyBranch: new Key('y'));
+        dialog.Layout(new Size(120, 20));
+        dialog.NewKeyDownEvent(Key.End.WithShift);
+
+        dialog.NewKeyDownEvent(Key.C.WithCtrl);
+        Assert.Equal("text", terminal.Platform.Text);
+        Assert.Equal("Copied 1 line  •  4 characters", dialog.Message.Says);
+
+        dialog.NewKeyDownEvent(new Key('y'));
+        Assert.Equal("feat/path-pickers", terminal.Platform.Text);
+        Assert.Equal("Copied feat/path-pickers", dialog.Message.Says);
+    }
+
+    [Fact]
     public void Y_without_a_clipboard_says_so()
     {
         using var dialog = CopyingBranch(new FakeClipboard(isSupportedAlwaysFalse: true), "feat/path-pickers");
 
         dialog.NewKeyDownEvent(new Key('y'));
 
-        Assert.Equal("there's no clipboard to copy to", dialog.Message.Says);
+        Assert.Equal("Copy failed: there is no clipboard", dialog.Message.Says);
     }
 
     [Fact]
@@ -1288,12 +1306,6 @@ public class ReaderDialogTests
 
         Assert.Equal("", clipboard.GetClipboardData() ?? "");
     }
-
-    [Theory]
-    [InlineData("x", "copied 1 character")]
-    [InlineData("ab\nc", "copied 4 characters")]
-    public void The_copy_message_counts_characters(string text, string said) =>
-        Assert.Equal(said, ReaderDialog.Copied(text));
 
     [Fact]
     public void The_reader_s_letters_reach_its_commands_from_either_pane_and_leave_the_text_alone()

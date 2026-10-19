@@ -125,11 +125,8 @@ public sealed class TerminalPage : View
     {
         if (_keys.ConfigLine is not { } line || !CopyButton.Visible)
             return true;
-        var clipboard = _clipboard ?? App?.Clipboard;
-        if (clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(line))
-            _say($"Copied {line}", Schemes.Accent);
-        else
-            _say("there's no clipboard to copy to", Schemes.Error);
+        var (said, scheme) = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, line), line);
+        _say(said, scheme);
         return true;
     }
 
