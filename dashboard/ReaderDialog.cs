@@ -759,24 +759,18 @@ public sealed partial class ReaderDialog : DashboardDialog
     private bool Copy()
     {
         var text = string.Join('\n', FocusedPane().MarkedText());
-        return text.Length == 0 || Copy(text, Copied(text));
+        return text.Length == 0 || Copy(text);
     }
 
-    private bool CopyBranch() => Copy(_branch, $"Copied {_branch}");
+    private bool CopyBranch() => Copy(_branch, _branch);
 
-    private bool Copy(string text, string said)
+    private bool Copy(string text, string? named = null)
     {
-        var clipboard = _clipboard ?? App?.Clipboard;
-        if (clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(text))
-            _message.Show(said, Schemes.Accent);
-        else
-            _message.Show("there's no clipboard to copy to", Schemes.Error);
+        var (said, scheme) = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, text), named);
+        _message.Show(said, scheme);
         SetNeedsLayout();
         return true;
     }
-
-    internal static string Copied(string text) =>
-        text.Length == 1 ? "copied 1 character" : string.Create(CultureInfo.InvariantCulture, $"copied {text.Length:N0} characters");
 
     /// <summary>The selected text goes in at the comment's cursor, and the keyboard follows it there to answer it.</summary>
     private bool Quote()

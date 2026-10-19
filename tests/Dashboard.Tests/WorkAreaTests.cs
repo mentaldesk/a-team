@@ -3166,6 +3166,21 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Y_copies_the_branch_through_the_installed_terminal_clipboard()
+    {
+        using var terminal = new InstalledTerminal();
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
+            clipboard: terminal.Clipboard);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('y'));
+
+        Assert.Equal("feat/keys", terminal.Platform.Text);
+        Assert.Equal("Copied feat/keys", window.Message.Says);
+    }
+
+    [Fact]
     public void Y_without_a_clipboard_says_why_it_couldn_t_copy()
     {
         using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
@@ -3175,7 +3190,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(new Key('y'));
 
-        Assert.Equal("there's no clipboard to copy to", window.Message.Says);
+        Assert.Equal("Copy failed: there is no clipboard", window.Message.Says);
     }
 
     [Fact]
