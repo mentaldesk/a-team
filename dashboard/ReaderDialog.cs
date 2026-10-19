@@ -148,7 +148,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
         Action<string>? openUrl = null, Action<Picture, string>? viewImage = null)
-        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch ? " · the Lead's question" : " · the Dev's question")}")
+        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
     {
         _pictures = pictures;
         _openUrl = openUrl ?? (_ => { });
@@ -416,7 +416,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         return (body.Remarks.FirstOrDefault(said => said.Remark.IsNewSince(opened)) ?? body.Remarks[^1]).Line;
     }
 
-    /// <summary>A Lead's question is its pitch's Needs your answer heading; a Dev's is its comment.</summary>
+    /// <summary>A Lead's question on a pitch is its Needs your answer heading; on a held task, as a Dev's, it's its comment.</summary>
     private static int? Asked(WaitingItem item, IssueBody body)
     {
         if (item.Status == "Pitched")
@@ -426,13 +426,14 @@ public sealed partial class ReaderDialog : DashboardDialog
                 .FirstOrDefault(i => lines[i].Kind == LogLineKind.Heading && NeedsAnswer().IsMatch(lines[i].Text), -1);
             return heading < 0 ? null : heading;
         }
-        var dev = body.Remarks.Where(said => said.Remark.Who == "dev").ToList();
-        return (dev.LastOrDefault(said => DevMarker().Replace(said.Remark.Body, "").Trim() == item.Question.Trim())
-            ?? dev.LastOrDefault())?.Line;
+        var role = item.HeldBy == "lead" ? "lead" : "dev";
+        var asker = body.Remarks.Where(said => said.Remark.Who == role).ToList();
+        return (asker.LastOrDefault(said => Marker().Replace(said.Remark.Body, "").Trim() == item.Question.Trim())
+            ?? asker.LastOrDefault())?.Line;
     }
 
-    [GeneratedRegex(@"\s*<!-- a-team:dev -->\s*$")]
-    private static partial Regex DevMarker();
+    [GeneratedRegex(@"\s*<!-- a-team:(dev|lead) -->\s*$")]
+    private static partial Regex Marker();
 
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex NeedsAnswer();

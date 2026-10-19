@@ -41,7 +41,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(["team0", "team1"], teams);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
     }
 
@@ -532,14 +532,14 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('m')));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(6, window.Work.Selected?.Number);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
     }
 
@@ -690,7 +690,7 @@ public class WorkAreaTests : IDisposable
         LayOut(reopened, 120, 30);
 
         Assert.True(reopened.Work.OnlyMine);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(reopened));
     }
 
@@ -970,7 +970,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal("#6 · set to High", window.Message.Says);
         Assert.Equal(2, reads);
@@ -1033,7 +1033,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal([["board", "team0", "priority", "you", "107", "none"]], calls);
-        Assert.Equal(["\U0001F4A1Triage · 2", "◇ Pitches · 1", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 2", "◇ Pitches · 1", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(108, window.Work.Selected?.Number);
         Assert.Equal("#107 · set to None", window.Message.Says);
@@ -1059,7 +1059,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 0", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 0", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal("#107 · set to High", window.Message.Says);
         Assert.Equal(2, reads);
@@ -1083,7 +1083,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("setting #6 to High: board.sh: API rate limit exceeded", window.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
         Assert.True(window.Message.Frame.X > window.Status.State.Frame.Right);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -1257,12 +1257,12 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void A_task_waiting_on_another_repo_shows_under_Questions_but_isn_t_waiting_on_you()
+    public void A_task_waiting_on_another_repo_shows_under_Blocked_but_isn_t_waiting_on_you()
     {
         using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)));
         window.Refresh();
 
-        Assert.Equal(2, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Questions").Count);
+        Assert.Equal(2, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Blocked").Count);
         Assert.Equal("Work · 1 waiting on you", window.WorkTitle);
     }
 
@@ -1355,8 +1355,8 @@ public class WorkAreaTests : IDisposable
             showBody: (item, body, _, _, _, _, _) => shown = (item, body));
         window.Refresh();
         LayOut(window, 120, 30);
-        Assert.Equal("Questions · team0", window.Work.Region);
-        Assert.Equal("#192 · asked you since 08:23", window.Work.Selected?.Line);
+        Assert.Equal("Blocked · team0", window.Work.Region);
+        Assert.Equal("#192 · held by the Dev · Which marker should it post?", window.Work.Selected?.Line);
 
         Assert.True(window.NewKeyDownEvent(Key.Enter));
         window.Refresh();
@@ -1386,7 +1386,7 @@ public class WorkAreaTests : IDisposable
             });
         window.Refresh();
         LayOut(window, 120, 30);
-        Assert.Equal("Questions · team0", window.Work.Region);
+        Assert.Equal("Blocked · team0", window.Work.Region);
 
         Assert.True(window.NewKeyDownEvent(Key.Enter));
         window.Refresh();
@@ -2696,7 +2696,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -3837,7 +3837,7 @@ public class WorkAreaTests : IDisposable
         """
         [{"number": 192, "title": "I can reply to a pitch", "status": "Ready",
           "url": "https://github.com/mentaldesk/team0/issues/192", "team": "team0",
-          "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"}]
+          "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?", "heldBy": "dev"}]
         """;
 
     /// <summary>That question, and a task waiting on a change in another repo.</summary>

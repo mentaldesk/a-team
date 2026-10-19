@@ -50,11 +50,11 @@ public sealed record Move(int Item, DateTimeOffset At, string Who, string What)
 /// <summary>An item that has become your move since the app started.</summary>
 public sealed record NewItem(string Team, int Number, Arrival Kind, DateTimeOffset At)
 {
-    /// <summary>Whether it waits in Work's <paramref name="gate"/>: a pitch with an open question waits in Questions.</summary>
+    /// <summary>Whether it waits in Work's <paramref name="gate"/>: a pitch with an open question waits in Blocked.</summary>
     internal bool WaitsIn(string gate) => Kind switch
     {
-        Arrival.Pitch => gate is "Pitches" or "Questions",
-        Arrival.Question => gate == "Questions",
+        Arrival.Pitch => gate is "Pitches" or "Blocked",
+        Arrival.Question => gate == "Blocked",
         _ => gate == "Review",
     };
 

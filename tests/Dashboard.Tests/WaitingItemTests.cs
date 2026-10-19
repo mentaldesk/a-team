@@ -19,15 +19,57 @@ public class WaitingItemTests
     }
 
     [Fact]
-    public void A_task_handed_back_with_a_question_brings_the_question()
+    public void A_task_handed_back_with_a_question_brings_the_question_and_says_the_Dev_held_it()
     {
         var item = Assert.Single(WaitingItem.Parse("""
             [{"number": 192, "title": "I can reply to a pitch", "status": "Ready", "team": "a-team",
-              "turn": "you", "reason": "asked you since 08:23", "question": "Which marker?\n\nThe Dev's or none?"}]
+              "turn": "you", "reason": "asked you since 08:23", "question": "Which marker?\n\nThe Dev's or none?", "heldBy": "dev"}]
             """));
 
         Assert.Equal("Which marker?\n\nThe Dev's or none?", item.Question);
-        Assert.Equal("#192 · asked you since 08:23", item.Line);
+        Assert.Equal("#192 · held by the Dev · Which marker? The Dev's or none?", item.Line);
+    }
+
+    [Fact]
+    public void A_task_the_Lead_held_says_so_with_its_ask()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 524, "title": "Confirm dialogs", "status": "Ready", "team": "tuicode", "turn": "you",
+              "reason": "held by the Lead since 12 Oct 09:00", "question": "The hold has cleared: remove blocked.", "heldBy": "lead"}]
+            """));
+
+        Assert.Equal("lead", item.HeldBy);
+        Assert.Equal("#524 · held by the Lead · The hold has cleared: remove blocked.", item.Line);
+        Assert.Equal("Blocked", WorkView.GateOf(item));
+    }
+
+    [Fact]
+    public void A_task_held_with_no_ask_says_no_reason_was_given()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 417, "title": "apt repository", "status": "Ready", "team": "tuicode", "turn": "you",
+              "reason": "held, no reason given since 4 Oct 09:00"}]
+            """));
+
+        Assert.Equal("#417 · held, no reason given", item.Line);
+        Assert.Equal("Blocked", WorkView.GateOf(item));
+    }
+
+    [Fact]
+    public void A_held_task_others_wait_on_says_who_held_it_rather_than_the_chain()
+    {
+        var item = Holds.Tag([new WaitingItem(524, "Confirm dialogs", "Ready", "", "tuicode", "you", Question: "Ask", Frees: [572], HeldBy: "lead")])[0];
+
+        Assert.Equal("frees #572", Holds.Frees(item));
+        Assert.Equal("#524 · held by the Lead · Ask", item.Line);
+    }
+
+    [Fact]
+    public void A_held_task_the_Dev_is_reading_the_answer_to_says_so_as_before()
+    {
+        var item = new WaitingItem(192, "", "Ready", "", "a-team", "dev", "reading your answer since 10:50", Question: "Which?", HeldBy: "dev");
+
+        Assert.Equal("#192 · dev · reading your answer since 10:50", item.Line);
     }
 
     [Fact]

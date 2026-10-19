@@ -186,6 +186,18 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_held_task_says_in_its_details_that_it_s_Blocked_and_who_held_it()
+    {
+        var card = Card(524, "Ready", days: 1) with { Kind = CardKind.Task };
+        var held = new WaitingItem(524, "", "Ready", "", "a", "you", "held by the Lead since 09:00", Question: "Install the SDK.", HeldBy: "lead");
+        var state = OverseerState.Empty with { Now = Now, Waiting = (_, number) => number == 524 ? held : null };
+
+        Assert.Equal(
+            ["Task · Unranked · a · Ready for 1d 0h 0m", "Blocked: held by the Lead · Install the SDK."],
+            OverseerView.Describe(card, [card], state));
+    }
+
+    [Fact]
     public void Columns_run_in_flow_order_with_no_Done() =>
         Assert.Equal(["Idea", "Exploring", "Pitched", "Approved", "Building", "Ready", "In progress", "In review"], OverseerBoard.Columns);
 

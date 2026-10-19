@@ -881,7 +881,20 @@ same "exit" 0 "$STATUS"
 same "questions" '[[263,null],[264,"## Needs your answer\n\n1. **Which?** Real."],[265,"## Needs your answer\n\n1. **Which?** Like:\n\n   ```\n   # not a heading\n   ```\n\n2. **And?** More."],[266,null]]' \
   "$(jq -c '[.[] | [.number, .question]]' "$OUT")"
 
-case_ "a task the Dev handed back with a question waits on the reviewer, with the question"
+case_ "everything at a gate of process.md's, or held for the reviewer, comes out of waiting"
+statuses=$(sed -n 's/^| \([A-Z][a-z]*\( [a-z]*\)\{0,1\}\)\( ⛔\)\{0,1\} | .*/\1/p' "$ROOT/process.md" | grep -vx -e Status -e Done)
+gates=$(sed -n 's/^| \([A-Za-z ]*\) ⛔ | .*/\1/p' "$ROOT/process.md" | jq -R . | jq -sc .)
+same "process.md's gates" '["Pitched","In review"]' "$gates"
+gh_items < <(awk '{ status = $0; gsub(/ /, "_", status); print status, 300 + NR, $0 }' <<<"$statuses")
+edit_item "$((300 + $(grep -nx Ready <<<"$statuses" | cut -d: -f1)))" '.labels.nodes = [{name: "blocked"}]'
+yours=$(jq -c --argjson gates "$gates" '[.data.organization.projectV2.items.nodes[]
+  | select((.fieldValueByName.name | IN($gates[])) or any(.content.labels.nodes[]; .name == "blocked")) | .content.number]' "$ITEMS")
+same "one at each gate, and one held" 3 "$(jq length <<<"$yours")"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "all in waiting" '[]' "$(jq -c --argjson yours "$yours" '$yours - [.[].number]' "$OUT")"
+
+case_ "every held task waits on the reviewer, and one the Dev handed back with a question brings it"
 gh_items <<'ITEMS'
 In_review 115 I can change any of the keys
 Ready 192 I can reply to a pitch
@@ -903,12 +916,35 @@ TALK
 : >"$CALLS"
 run board demo waiting
 same "exit" 0 "$STATUS"
-same "numbers" '[115,192]' "$(jq -c '[.[].number]' "$OUT")"
+same "numbers" '[115,192,195]' "$(jq -c '[.[].number]' "$OUT")"
 same "status" '"Ready"' "$(jq -c '.[1].status' "$OUT")"
 same "turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "reason" '"asked you since 08:23"' "$(jq -c '.[1].reason' "$OUT")"
 same "question" '"Which marker should it post?"' "$(jq -c '.[1].question' "$OUT")"
+same "held by" '"dev"' "$(jq -c '.[1].heldBy' "$OUT")"
 same "api calls" 4 "$(grep -c '' <"$CALLS")"
+
+case_ "a held task with no ask from either agent since it was labelled is held for no reason given"
+same "turn" '"you"' "$(jq -c '.[2].turn' "$OUT")"
+same "reason" '"held, no reason given since 09:00"' "$(jq -c '.[2].reason' "$OUT")"
+same "no question" '[null,null]' "$(jq -c '.[2] | [.question, .heldBy]' "$OUT")"
+
+case_ "a task the Lead held waits on the reviewer, with the Lead's latest ask as its question"
+gh_talk <<TALK
+195 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 comment ${TODAY}T07:05:00Z demo-app[bot] Split off from #194.\n<!-- a-team:lead -->
+195 comment ${TODAY}T08:58:00Z demo-app[bot] Holding this: it needs a GPG key.\n<!-- a-team:lead -->
+195 labeled ${TODAY}T09:00:00Z demo-app[bot] blocked
+195 comment ${TODAY}T09:10:00Z demo-app[bot] Holding this until you have a GPG key, and the SDK.\n\n<!-- a-team:lead -->
+195 comment ${TODAY}T09:20:00Z reviewer Noted, I will get one.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "held" '{"turn":"you","reason":"held by the Lead since 09:10","question":"Holding this until you have a GPG key, and the SDK.","heldBy":"lead"}' \
+  "$(jq -c '.[] | select(.number == 195) | {turn, reason, question, heldBy}' "$OUT")"
+run board demo triggers dev
+same "no Dev run for a Lead hold" '[]' "$(jq -c .reasons "$OUT")"
+
 
 case_ "once the reviewer replies to the question, it's the Dev's turn"
 gh_talk <<TALK
@@ -922,7 +958,7 @@ same "exit" 0 "$STATUS"
 same "turn" '"dev"' "$(jq -c '.[] | select(.number == 192) | .turn' "$OUT")"
 same "reason" '"reading your answer since 10:50"' "$(jq -c '.[] | select(.number == 192) | .reason' "$OUT")"
 
-case_ "a Dev comment long before the task was labelled blocked is no question"
+case_ "a Dev comment long before the task was labelled blocked is no question, but the task is still held"
 gh_talk <<TALK
 192 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 192 comment ${TODAY}T07:10:00Z demo-app[bot] Draft PR #9 is up.\n<!-- a-team:dev -->
@@ -930,7 +966,9 @@ gh_talk <<TALK
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
-same "numbers" '[115]' "$(jq -c '[.[].number]' "$OUT")"
+same "numbers" '[115,192,195]' "$(jq -c '[.[].number]' "$OUT")"
+same "no question" '[null,null]' "$(jq -c '.[1] | [.question, .heldBy]' "$OUT")"
+same "reason" '"held, no reason given since 09:00"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a reply to the Dev's question starts a Dev run, and a held task's comment doesn't"
 gh_talk <<TALK
@@ -4167,7 +4205,7 @@ failed "approved"
 grep -q "#61 isn't a document pitch in Pitched" "$ERR" || fail "approved: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
-case_ "waiting marks a document pitch, and its Needs your answer waits under Questions"
+case_ "waiting marks a document pitch, and its Needs your answer waits under Blocked"
 document_pitch 60
 gh_talk <<TALK
 60 body ${TODAY}T08:14:00Z demo-app[bot] ## Why now\n\nThemes ran dry.\n\n## Needs your answer\n\n- Move fewer decisions up?\n\n<!-- a-team:lead -->
@@ -7579,6 +7617,14 @@ jq -n '{data: {repository: {i12: {blockedBy: {nodes: [{number: 13, state: "OPEN"
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "frees" '[{"number":13,"frees":[12]}]' "$(jq -c 'map(select(.frees) | {number, frees})' "$OUT")"
+
+case_ "waiting tags a held task with the Ready tasks waiting on it"
+edit_item 13 '.labels.nodes = [{name: "blocked"}]'
+jq '(.data.organization.projectV2.items.nodes[] | select(.content.number == 13) | .fieldValueByName.name) = "Ready"' \
+  "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "frees" '[{"number":13,"status":"Ready","frees":[12]}]' "$(jq -c 'map(select(.frees) | {number, status, frees})' "$OUT")"
 
 # holding_team: demo, with a Ready task ranked High and one another team's task waits on.
 holding_team() {
