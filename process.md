@@ -49,7 +49,8 @@ Two kinds of item share the board:
   in another repo is recorded as waiting on that repo's issue or PR, until it closes or until a
   published release carries it, and is labelled `a-team:upstream`; the board frees it by itself
   when that happens, or, while Dependabot has a PR open bringing that release in, once it merges. The `blocked` label is for a task waiting on the stakeholder: for an answer,
-  or because they're holding it.
+  or because they're holding it. Never for a wait on another repo. The agent that held a task
+  reads the stakeholder's reply on it and clears the hold itself, never asking them to.
 - A **docs PR** is the Customer lead's, labelled `a-team:customer`: one open at a time, which it
   adds to after each pitch is done. It goes straight to In review, and accepting it merges it.
   While the team config's `docs` page isn't in the repo, a **docs proposal** comes first: a
@@ -123,8 +124,11 @@ a-team board {{team}} depends <role> <task> <owner/repo>#<n> <closed|released [<
 a-team board {{team}} undepend <role> <task> <prereq> "<why>"
                                                 # drop that dependency again, saying why on <task>;
                                                 # <prereq> may be <owner/repo>#<n>
-a-team board {{team}} unblock <role> <n>        # Dev only: clear `blocked` on a task it handed back,
-                                                # once a stakeholder has replied to its question
+a-team board {{team}} unblock <role> <n>        # Dev or Lead: clear `blocked` on a task it held, once a
+                                                # stakeholder has replied (Lead: or it waits on another repo)
+a-team board {{team}} hold you <n> <file>       # stakeholder only: hold Ready task <n>, <file> saying why
+a-team board {{team}} release you <n>           # stakeholder only: take the hold off Ready task <n>,
+                                                # whoever set it
 a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON, with
                                                 # `images` where it has screenshots attached
 a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON

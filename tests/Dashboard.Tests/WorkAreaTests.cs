@@ -1709,6 +1709,157 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void H_on_a_held_card_releases_it_and_the_card_leaves_for_the_Dev_s_queue()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Question : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(192, window.Work.Selected?.Number);
+
+        var hold = window.Commands.Registered.Single(command => command.Id == "work.hold");
+        Assert.Equal(new Key('h'), hold.Key);
+        Assert.True(hold.OnCard);
+        Assert.Equal("Release hold", window.Commands.Registered.Single(command => command.Id == "work.hold").Label);
+        Assert.True(window.NewKeyDownEvent(new Key('h')));
+        window.Refresh();
+
+        Assert.Equal([["board", "team0", "release", "you", "192"]], calls);
+        Assert.Equal(0, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Blocked").Count);
+        Assert.Equal("#192 back in the Dev's queue", window.Message.Says);
+    }
+
+    [Fact]
+    public void H_on_a_Ready_card_that_isn_t_held_asks_why_then_holds_it_and_reads_Work_again()
+    {
+        var calls = new List<string[]>();
+        var posted = "";
+        var asked = new List<int>();
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null));
+            },
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                posted = File.ReadAllText(arguments[^1]);
+                return Task.FromResult<string?>(null);
+            },
+            askHold: item =>
+            {
+                asked.Add(item.Number);
+                return "wait for the designer";
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(469, window.Work.Selected?.Number);
+        Assert.Equal("Hold", window.Commands.Registered.Single(command => command.Id == "work.hold").Label);
+        var before = reads;
+
+        Assert.True(window.NewKeyDownEvent(new Key('h')));
+        window.Refresh();
+
+        Assert.Equal([469], asked);
+        Assert.Equal(["board", "team0", "hold", "you", "469"], calls.Single()[..5]);
+        Assert.Equal("wait for the designer", posted);
+        Assert.True(reads > before);
+    }
+
+    [Fact]
+    public void Cancelling_Hold_holds_nothing()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            askHold: _ => null);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorDown);
+
+        window.NewKeyDownEvent(new Key('h'));
+        window.Refresh();
+
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void Hold_is_only_on_Ready_tasks()
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Review() : "[]", null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.NotNull(window.Work.Selected);
+        Assert.False(window.Commands.IsEnabled("work.hold"));
+    }
+
+    [Fact]
+    public void The_reader_offers_Release_hold_on_a_held_task_only()
+    {
+        var offered = new List<(int Number, ReaderRelease? Release)>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (item, _, _, _, _, comment, _) => offered.Add((item.Number, comment?.Release)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([192, 469], offered.Select(each => each.Number));
+        Assert.NotNull(offered[0].Release);
+        Assert.Null(offered[1].Release);
+    }
+
+    [Fact]
+    public void Release_hold_from_the_reader_posts_what_you_wrote_then_releases()
+    {
+        var calls = new List<string[]>();
+        var posted = "";
+        ReaderRelease? release = null;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Question : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                if (arguments[2] == "comment")
+                    posted = File.ReadAllText(arguments[^1]);
+                return Task.FromResult<string?>(null);
+            },
+            showBody: (_, _, _, _, _, comment, _) => release = comment?.Release);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Null(release!.Run("Installed.").Result);
+        window.Refresh();
+
+        Assert.Equal(["comment", "release"], calls.Select(call => call[2]));
+        Assert.Equal("Installed.", posted);
+    }
+
+    [Fact]
     public void work_notNow_is_on_l_in_the_Cards_menu_and_the_reader_offers_it_on_pitches_only()
     {
         var offered = new List<(int Number, ReaderShelve? Shelve)>();
@@ -3096,7 +3247,7 @@ public class WorkAreaTests : IDisposable
             [
                 "view.dashboard", "view.work", "view.overseer", "work.whatsNew", "overseer.details", "overseer.fold", "overseer.github",
                 "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
+                "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
@@ -4046,7 +4197,8 @@ public class WorkAreaTests : IDisposable
         IClipboard? clipboard = null,
         Action<ReaderIdea?, Func<Key, bool>>? showIdea = null,
         Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
-        Func<WaitingItem, bool>? confirmApprove = null)
+        Func<WaitingItem, bool>? confirmApprove = null,
+        Func<WaitingItem, string?>? askHold = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -4081,7 +4233,8 @@ public class WorkAreaTests : IDisposable
             confirmQuit: confirmQuit,
             clipboard: clipboard,
             showSpending: showSpending,
-            confirmApprove: confirmApprove ?? (_ => true));
+            confirmApprove: confirmApprove ?? (_ => true),
+            askHold: askHold);
     }
 
     private void WriteRun(string team, string role, int pid)

@@ -101,6 +101,16 @@ The Lead may hold a task with the same label while it breaks a pitch down, and a
 **Needs your answer** in its description. All of them wait in **Blocked** in the Work area until you
 answer: a held task with the latest ask on it, or `held, no reason given` where no agent said why.
 
+You never take `blocked` off a task an agent held. Reply on it instead, from the reader or on GitHub:
+the agent that held it reads your reply on its next run and, if it says the thing is done, takes the
+hold off and the task goes back in the Dev's queue. If your reply doesn't say so, it asks again in a
+line and the task stays held. A task that waits on a change in another repo is never held: it's
+recorded as waiting on that repo, and frees itself ([The board](#the-board)).
+
+To hold a task yourself, select its card in Work and press `h` (**Hold**), and say why. To take any
+hold off, yours or an agent's, press `h` again (**Release hold**), or use **Release hold** in the
+reader ([Work](work.md#answering-from-a-card)).
+
 ## The Customer lead
 
 The Customer lead makes sure what the team ships is documented, so someone who didn't watch it being

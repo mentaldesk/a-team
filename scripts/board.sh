@@ -314,6 +314,8 @@ vision_due() {
   [ -z "$reason" ] || echo "$reason"
 }
 
+# Set once the Lead has been asked to turn the holds from before `unblock lead` into dependencies.
+HOLDS_REVIEWED="$STATE/$TEAM/lead/holds-reviewed"
 # The done pitches the Customer lead has already checked the docs against, one number a line.
 COVERED="$STATE/$TEAM/customer/covered"
 # When the Customer lead last finished auditing the docs as a whole, in seconds since the epoch.
@@ -938,22 +940,31 @@ questions() {
 }
 
 # holds <items> <comments> <blocked>: every Ready task labelled `blocked`, and who held it: the Dev with its
-# question as `questions` reads it, else the Lead with its newest comment since then, else nobody who said why.
+# question as `questions` reads it, else whichever of the Lead or a stakeholder spoke first since then: the Lead
+# with its newest comment, its turn once a stakeholder replies; a stakeholder with the reason `hold` posted. Else
+# nobody who said why.
 holds() {
-  jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" \
+  jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" --argjson stakeholders "$STAKEHOLDERS" \
     --argjson asked "$(questions "$1" "$2" "$3" | jq 'map(del(.unread) + {heldBy: "dev"})')" \
     --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE"'
     $items | map(
       . as $item
       | ($asked | map(select(.number == $item.number)) | first) // (
         ($blocked[$item.number | tostring] // null) as $labelled
-        | (if $labelled == null then null
-           else $comments | map(select(.n == $item.number and .kind == "comment" and team("<!-- a-team:lead -->")
-                                       and (.at | fromdateiso8601) >= ($labelled | fromdateiso8601) - $before))
-                | max_by(.at) end) as $lead
-        | if $lead != null
-          then . + {heldBy: "lead", question: ($lead.body | sub("\\s*<!-- a-team:lead -->\\s*$"; "")),
-                    turn: "you", reason: "held by the Lead\(since($lead.at))"}
+        | ($comments | map(select(.n == $item.number and .kind == "comment" and $labelled != null
+                                  and (.at | fromdateiso8601) >= ($labelled | fromdateiso8601) - $before))) as $since
+        | ($since | map(select(team("<!-- a-team:lead -->"))) | max_by(.at)) as $lead
+        | ($since | map(select((.author | IN($stakeholders[])) and (team("<!-- a-team:") | not)))) as $theirs
+        | if $lead != null and ($theirs == [] or ($theirs | min_by(.at) | .at) > ($since | map(select(team("<!-- a-team:lead -->"))) | min_by(.at) | .at))
+          then ($theirs | map(select(.at > $lead.at))) as $replies
+               | ($replies | map(.at) | max // "") as $replied
+               | . + {heldBy: "lead", question: ($lead.body | sub("\\s*<!-- a-team:lead -->\\s*$"; "")),
+                      unread: ($replies | map(select((.eyes // 0) == 0) | .at) | max // "")}
+               | if $replied != "" then . + {turn: "lead", reason: "reading your answer\(since($replied))"}
+                 else . + {turn: "you", reason: "held by the Lead\(since($lead.at))"} end
+          elif $theirs != []
+          then ($theirs | min_by(.at)) as $why
+               | . + {heldBy: "you", question: $why.body, turn: "you", reason: "held by you\(since($why.at))"}
           else . + {turn: "you", reason: "held, no reason given\(if $labelled == null then "" else since($labelled) end)"} end))'
 }
 
@@ -2179,19 +2190,69 @@ case "$CMD" in
     [ $# -eq 2 ] || die "usage: board.sh $TEAM unblock <role> <n>"
     role=$1 n=$2
     check_role "$role"
-    [ "$role" = dev ] || die "only dev may unblock a task, and only one it handed back with a question"
+    case "$role" in
+      dev | lead) ;;
+      *) die "only dev or lead may unblock a task, and only one it held" ;;
+    esac
     own_task "$role" "$n"
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a Ready task labelled blocked"
     talk=$(gated_talk "[$it]")
-    turn=$(questions "[$it]" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" | jq -r '.[0].turn // empty')
-    [ -n "$turn" ] || die "#$n has no question from dev: a stakeholder is holding it, so leave it to them"
-    [ "$turn" = dev ] || die "no stakeholder has replied to dev's question on #$n since it was handed back"
+    hold=$(holds "[$it]" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" | jq -c '.[0]')
+    case "$(jq -r '.heldBy // "you"' <<<"$hold")" in
+      "$role") ;;
+      you) die "#$n has no hold from $role: a stakeholder is holding it, so leave it to them" ;;
+      *) die "#$n has no hold from $role: $(jq -r .heldBy <<<"$hold") held it, so leave it to them" ;;
+    esac
+    if [ "$role" = lead ] && jq -e '.labels | index($l)' --arg l "$UPSTREAM_LABEL" <<<"$it" >/dev/null; then
+      what="hold now waits on another repo"
+    elif [ "$(jq -r .turn <<<"$hold")" = "$role" ]; then
+      what=$([ "$role" = dev ] && echo "question answered" || echo "hold answered")
+    else
+      die "no stakeholder has replied to $role's ask on #$n since it was held"
+    fi
     write "remove blocked from #$n" gh issue edit "$n" -R "$REPO" --remove-label blocked >/dev/null
-    record "$role" "$n" "question answered"
+    record "$role" "$n" "$what"
     ack "$n"
     say "#$n: no longer blocked"
+    ;;
+
+  hold)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM hold <role> <n> <file>"
+    role=$1 n=$2 file=$3
+    case "$role" in
+      lead | dev | customer | reviewer) die "$role may not hold a task this way; hold is the stakeholders' own" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    [ -f "$file" ] || die "no such file: $file"
+    [ -n "$(tr -d '[:space:]' <"$file")" ] || die "say why you're holding #$n"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    jq -e "$READY_TASK" <<<"$it" >/dev/null || die "only a Ready task can be held (#$n is in '$(jq -r .status <<<"$it")')"
+    ! jq -e '.labels | index("blocked")' <<<"$it" >/dev/null || die "#$n is already held"
+    [ -z "$DRY_RUN" ] || sed 's/^/  | /' "$file" >&2
+    write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - <"$file" >/dev/null
+    write "label #$n blocked" gh issue edit "$n" -R "$REPO" --add-label blocked >/dev/null
+    record "$role" "$n" "held"
+    say "#$n: held"
+    ;;
+
+  release)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM release <role> <n>"
+    role=$1 n=$2
+    case "$role" in
+      lead | dev | customer | reviewer) die "$role may not release a hold this way; an agent clears its own with unblock" ;;
+      you) ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a Ready task labelled blocked"
+    write "remove blocked from #$n" gh issue edit "$n" -R "$REPO" --remove-label blocked >/dev/null
+    record "$role" "$n" "hold released"
+    say "#$n: hold released"
     ;;
 
   covered)
@@ -2349,7 +2410,7 @@ case "$CMD" in
     waiting=$(turns "$gated" "$said" "$(gated_prs "$talk")" |
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
-      jq --argjson asked "$(holds "$held" "$said" "$(gated_blocked "$talk")")" \
+      jq --argjson asked "$(holds "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
         --argjson unranked "$(unranked_ideas "$all" "$said")" --argjson upstream "$upstream" '. + $asked + $unranked + $upstream' |
       jq --argjson frees "$frees" 'map((($frees["\(.number)"] // []) + ($frees["\(.pr // 0)"] // [])) as $f
         | if $f == [] then . else . + {frees: ($f | unique)} end)' |
@@ -2695,6 +2756,20 @@ case "$CMD" in
         fi
         [ "${#reasons[@]}" -eq "$had" ] || items+=("$n")
       done < <(jq -c '.[] | select((.labels | index("pitch")) and .status != "Idea" and .status != "Done")' <<<"$all")
+
+      held=$(jq -c "map(select($HELD))" <<<"$all")
+      if [ "$held" != "[]" ]; then
+        talk=$(gated_talk "$held")
+        mine=$(holds "$held" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" | jq -c 'map(select(.heldBy == "lead"))')
+        while IFS=$'\t' read -r n at; do
+          reasons+=("stakeholder answered the Lead's hold on #$n ($at)")
+          items+=("$n")
+        done < <(jq -r '.[] | select(.unread != "") | [.number, .unread] | @tsv' <<<"$mine")
+        if [ ! -f "$HOLDS_REVIEWED" ] && [ "$mine" != "[]" ]; then
+          reasons+=("tasks you held before holds cleared themselves ($(jq -r 'map("#\(.number)") | join(", ")' <<<"$mine")): make those waiting on another repo dependencies")
+        fi
+      fi
+      [ -f "$HOLDS_REVIEWED" ] || [ -n "$DRY_RUN" ] || { mkdir -p "$(dirname "$HOLDS_REVIEWED")" && date +%s >"$HOLDS_REVIEWED"; }
 
       updates=$(gh pr list -R "$REPO" --author app/dependabot --state open --json number,title,comments)
       while IFS=$'\t' read -r n title; do
