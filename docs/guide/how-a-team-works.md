@@ -59,7 +59,7 @@ release and the package to upgrade, so the Dev can pick it up with no click from
 closed by hand, with no change linked to it, counts as released in the first release after it
 closed. If Dependabot already has a PR open bringing that release in, the task waits for it to
 merge too, and the PR comes into [Review](work.md#holding-up-a-task) for you to accept. Until then
-the task's card in **Questions** says which link it waits on and whose move that is, though it asks
+the task's card in **Blocked** says which link it waits on and whose move that is, though it asks
 you nothing. If its PR is already up, its card stays in **Review** and says the same. Open its
 card's details in the [Overseer](overseer.md) (`Enter`) to see how far the change has got, like
 `Waiting on tui-style-guide#84: merged, not released`.
@@ -97,8 +97,9 @@ reaction is yours. A comment you make while a run is going gets a run of its own
 is missed.
 
 When the Dev can't go on without you, it hands its task back with a question and the `blocked` label.
-The Lead asks on a pitch under **Needs your answer** in its description. Both wait in **Questions**
-in the Work area until you answer.
+The Lead may hold a task with the same label while it breaks a pitch down, and asks on a pitch under
+**Needs your answer** in its description. All of them wait in **Blocked** in the Work area until you
+answer: a held task with the latest ask on it, or `held, no reason given` where no agent said why.
 
 ## The Customer lead
 

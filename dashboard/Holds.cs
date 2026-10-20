@@ -80,7 +80,7 @@ public static class Holds
         {
             "Triage" => "to rank",
             "Pitches" => "pitched",
-            "Questions" => "a question",
+            "Blocked" => "blocked",
             "Review" => "in review",
             _ => "",
         };

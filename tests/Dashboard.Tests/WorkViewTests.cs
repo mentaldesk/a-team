@@ -27,7 +27,7 @@ public class WorkViewTests
         using var view = Open(["a-team", "tuicode"]);
 
         Assert.Equal(["a-team", "tuicode"], view.Lanes.Select(lane => lane.Team));
-        Assert.All(view.Lanes, lane => Assert.Equal(["Triage", "Pitches", "Questions", "Review"], lane.Columns.Select(column => column.Gate)));
+        Assert.All(view.Lanes, lane => Assert.Equal(["Triage", "Pitches", "Blocked", "Review"], lane.Columns.Select(column => column.Gate)));
     }
 
     [Fact]
@@ -38,12 +38,12 @@ public class WorkViewTests
         view.Show(Waiting);
         LayOut(view, 120, 20);
 
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"], Titles(view));
         Assert.Equal([true, true, false, true, false, true, false, false], Visible(view));
     }
 
     [Fact]
-    public void Questions_holds_the_tasks_the_Dev_handed_back_and_nothing_else_moves()
+    public void Blocked_holds_the_tasks_the_Dev_handed_back_and_nothing_else_moves()
     {
         using var view = Open(["a-team", "tuicode"]);
 
@@ -51,11 +51,11 @@ public class WorkViewTests
             "dev", "reading your answer since 10:50", Question: "Which marker?")]);
         LayOut(view, 120, 20);
 
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 1", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 1", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"], Titles(view));
     }
 
     [Fact]
-    public void A_pitch_the_Lead_needs_an_answer_on_waits_in_Questions_whatever_its_rank()
+    public void A_pitch_the_Lead_needs_an_answer_on_waits_in_Blocked_whatever_its_rank()
     {
         using var view = Open(["a-team", "tuicode"]);
         WaitingItem Asking(int number, string priority) =>
@@ -65,7 +65,7 @@ public class WorkViewTests
         view.Show([.. Waiting, Asking(257, "High"), Asking(258, "")]);
         LayOut(view, 120, 20);
 
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 2", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 2", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"], Titles(view));
     }
 
     [Fact]
@@ -133,13 +133,21 @@ public class WorkViewTests
     }
 
     [Fact]
-    public void A_tab_tallies_questions_under_their_own_icon()
+    public void A_tab_tallies_held_tasks_under_the_Blocked_icon_whoever_held_them()
     {
         using var view = Open(["a-team"]);
 
-        view.Show([new(77, "Which key?", "Ready", "https://github.com/x/7", "a-team", "you", "asked", Question: "Which key?")]);
+        view.Show([
+            new(77, "Which key?", "Ready", "https://github.com/x/77", "a-team", "you", "asked", Question: "Which key?", HeldBy: "dev"),
+            new(78, "Held by the Lead", "Ready", "https://github.com/x/78", "a-team", "you", "held by the Lead", Question: "A key", HeldBy: "lead"),
+            new(79, "Held, no reason", "Ready", "https://github.com/x/79", "a-team", "you", "held, no reason given"),
+        ]);
+        LayOut(view, 120, 20);
 
-        Assert.Equal("a-team ? 1", view.Lanes[0].Title);
+        Assert.Equal("a-team ⊘ 3", view.Lanes[0].Title);
+        Assert.Equal("Blocked · 3", Titles(view).ElementAt(2));
+        Assert.Equal(["#77  Which key?", "#78  Held by the Lead", "#79  Held, no reason"],
+            view.Lanes[0].Columns.Single(column => column.Gate == "Blocked").CardText.Select(text => text.TrimEnd()));
     }
 
     [Fact]
@@ -329,14 +337,14 @@ public class WorkViewTests
         LayOut(view, 120, 20);
 
         Assert.True(view.OnlyMine);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"], Titles(view));
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"], Titles(view));
         Assert.Equal([true, true, false, false, false, true, false, false], Visible(view));
 
         view.ShowOnlyMine(false);
         LayOut(view, 120, 20);
 
         Assert.False(view.OnlyMine);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(view));
     }
 

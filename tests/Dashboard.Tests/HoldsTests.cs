@@ -181,8 +181,8 @@ public class HoldsTests
         Assert.StartsWith("#79  ", cards[1]);
         Assert.StartsWith("#78  ", cards[2]);
         Assert.Equal("tui ⛓ 1 PR3", view.Lanes[1].Title);
-        Assert.Equal("a-team ? 1", view.Lanes[0].Title);
-        var questions = view.Lanes[0].Columns.Single(column => column.Gate == "Questions");
+        Assert.Equal("a-team ⊘ 1", view.Lanes[0].Title);
+        var questions = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
         Assert.StartsWith("#499 ⛓ waits on tui-style-guide#84 · in review, yours  Copies", questions.CardText[0]);
     }
 

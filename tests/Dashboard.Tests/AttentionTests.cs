@@ -104,7 +104,7 @@ public class AttentionTests
     {
         Assert.Equal("Triage", WorkView.GateOf(new WaitingItem(6, "", "Idea", "", "t")));
         Assert.Equal("Pitches", WorkView.GateOf(new WaitingItem(7, "", "Pitched", "", "t", Priority: "High", Pitch: true)));
-        Assert.Equal("Questions", WorkView.GateOf(new WaitingItem(8, "", "Ready", "", "t", Question: "Which?")));
+        Assert.Equal("Blocked", WorkView.GateOf(new WaitingItem(8, "", "Ready", "", "t", Question: "Which?")));
         Assert.Equal("Review", WorkView.GateOf(Task49));
         Assert.Equal("Review", WorkView.GateOf(new WaitingItem(9, "", "In review", "", "t")));
         Assert.Equal("Other", WorkView.GateOf(new WaitingItem(10, "", "Done", "", "t")));
@@ -114,7 +114,7 @@ public class AttentionTests
     public void A_task_waiting_on_another_repo_is_at_no_gate_while_a_question_still_is()
     {
         Assert.Equal("Other", WorkView.GateOf(new WaitingItem(11, "", "Ready", "", "t", "upstream", Upstream: "tui-style-guide#84: open")));
-        Assert.Equal("Questions", WorkView.GateOf(new WaitingItem(12, "", "Ready", "", "t", "you", Question: "Which?")));
+        Assert.Equal("Blocked", WorkView.GateOf(new WaitingItem(12, "", "Ready", "", "t", "you", Question: "Which?")));
     }
 
     private sealed class Clock : TimeProvider

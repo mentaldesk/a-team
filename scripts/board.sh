@@ -937,6 +937,26 @@ questions() {
         else . + {turn: "you", reason: "asked you\(since($asked.at))"} end)'
 }
 
+# holds <items> <comments> <blocked>: every Ready task labelled `blocked`, and who held it: the Dev with its
+# question as `questions` reads it, else the Lead with its newest comment since then, else nobody who said why.
+holds() {
+  jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" \
+    --argjson asked "$(questions "$1" "$2" "$3" | jq 'map(del(.unread) + {heldBy: "dev"})')" \
+    --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE"'
+    $items | map(
+      . as $item
+      | ($asked | map(select(.number == $item.number)) | first) // (
+        ($blocked[$item.number | tostring] // null) as $labelled
+        | (if $labelled == null then null
+           else $comments | map(select(.n == $item.number and .kind == "comment" and team("<!-- a-team:lead -->")
+                                       and (.at | fromdateiso8601) >= ($labelled | fromdateiso8601) - $before))
+                | max_by(.at) end) as $lead
+        | if $lead != null
+          then . + {heldBy: "lead", question: ($lead.body | sub("\\s*<!-- a-team:lead -->\\s*$"; "")),
+                    turn: "you", reason: "held by the Lead\(since($lead.at))"}
+          else . + {turn: "you", reason: "held, no reason given\(if $labelled == null then "" else since($labelled) end)"} end))'
+}
+
 # unranked_ideas <items> <comments>: the Ideas with no Priority, which never get pitched until a stakeholder
 # gives them one. They come off the page `waiting` has already read, so they cost no call of their own. One
 # the Lead has recommended a rank for carries it, and the case from its newest `recommend` comment.
@@ -2329,7 +2349,7 @@ case "$CMD" in
     waiting=$(turns "$gated" "$said" "$(gated_prs "$talk")" |
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
-      jq --argjson asked "$(questions "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
+      jq --argjson asked "$(holds "$held" "$said" "$(gated_blocked "$talk")")" \
         --argjson unranked "$(unranked_ideas "$all" "$said")" --argjson upstream "$upstream" '. + $asked + $unranked + $upstream' |
       jq --argjson frees "$frees" 'map((($frees["\(.number)"] // []) + ($frees["\(.pr // 0)"] // [])) as $f
         | if $f == [] then . else . + {frees: ($f | unique)} end)' |
@@ -2476,7 +2496,7 @@ case "$CMD" in
     [[ $n =~ ^[0-9]+$ || $n == - ]] || die "#$n isn't an item number"
     [[ $at =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "'$at' isn't a UTC time"
     [[ $seconds =~ ^[0-9]+$ ]] || die "'$seconds' isn't a number of seconds"
-    case $gate in Triage | Pitches | Questions | Review | Other) ;; *) die "unknown gate '$gate'" ;; esac
+    case $gate in Triage | Pitches | Blocked | Review | Other) ;; *) die "unknown gate '$gate'" ;; esac
     if [ -n "$DRY_RUN" ]; then
       echo "dry-run: would record ${seconds}s of yours on ${n/#-/other}" >&2
       exit 0
