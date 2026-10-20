@@ -186,6 +186,32 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void The_card_a_task_in_review_waits_on_wears_the_warning_and_gives_the_chain()
+    {
+        var card = Card(100, "In review", days: 1) with { Kind = CardKind.Task };
+        var items = Holds.Tag([
+            new WaitingItem(541, "", "In review", "", "b", "you", "awaiting your acceptance", Pr: 551,
+                Chains: [[new ChainLink("a", [100], "tui-style-guide#100", "open"), new ChainLink("a", [], "MentalDesk.Tui's release", "yours")]]),
+            new WaitingItem(100, "", "In review", "", "a", "you", "awaiting your acceptance"),
+        ]);
+        var state = OverseerState.Empty with
+        {
+            Now = Now,
+            Waiting = (team, number) => items.FirstOrDefault(item => item.Team == team && item.Number == number),
+            Holding = Holds.Holders(items),
+        };
+
+        Assert.Contains(("a", 100), state.Holding);
+        Assert.Equal(
+            ["Task · Unranked · a · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "b #541 waits on this · then MentalDesk.Tui's release"],
+            OverseerView.Describe(card, [card], state));
+        var held = Card(541, "In review", days: 1) with { Team = "b", Kind = CardKind.Task };
+        Assert.Equal(
+            ["Task · Unranked · b · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "Also waits on tui-style-guide#100 · in review, yours"],
+            OverseerView.Describe(held, [held], state));
+    }
+
+    [Fact]
     public void Columns_run_in_flow_order_with_no_Done() =>
         Assert.Equal(["Idea", "Exploring", "Pitched", "Approved", "Building", "Ready", "In progress", "In review"], OverseerBoard.Columns);
 
