@@ -137,10 +137,12 @@ at the top of its column. Selecting it puts the rest of the chain on the status 
 `a-team #499 waits on this · then MentalDesk.Tui's release · then a-team's bump`. The tag moves along
 as each link is done, and drops off once the task is free.
 
-The task's own card, in Blocked, says which link it waits on now and whose move that is, like
+The task's own card says which link it waits on now and whose move that is, like
 `#499 ⛓ waits on tui-style-guide#84 · in review, yours`, then `#499 ⛓ waits on MentalDesk.Tui's
-release · yours`. Once that release is out, Dependabot's PR bringing it in comes into Review,
-tagged `⛓ frees #499`, and **Accept** merges it like a task. Other Dependabot PRs still wait for the
+release · yours`. That card is in Blocked while the task is Ready, and stays in Review if its PR
+is already up, so you can see that accepting it now would come before the change it needs. Once
+that release is out, Dependabot's PR bringing it in comes into Review, tagged `⛓ frees #499`, and
+**Accept** merges it like a task. Other Dependabot PRs still wait for the
 Lead. A link in a repo no team here works in still shows on the task's card, but there's no tab to
 tag.
 
@@ -204,7 +206,8 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 `PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end, `Option+←`/`→` or
 `Ctrl+←`/`→` for a word), and hold `Shift` to select,
 as in any editor. You can also drag with the mouse, or double-click a word, like an issue number or
-a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
+a URL. `Ctrl+C` copies the selection, and `Esc` clears it. Over SSH it reaches your own computer,
+with the terminal set up as [Copying from a log](dashboard.md#copying-from-a-log) says.
 
 ## Answering from a card
 

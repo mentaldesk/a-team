@@ -1344,6 +1344,8 @@ UNSTARTABLE="$READY_TASK and $BLOCKED"
 HELD="$READY_TASK and (.labels | index(\"blocked\"))"
 # Ready tasks waiting on a change in another repo.
 UPSTREAM_HELD="$READY_TASK and (.labels | index(\"a-team:upstream\"))"
+# Tasks In review waiting on a change in another repo, which stay at the stakeholder's gate.
+UPSTREAM_REVIEWED='.status == "In review" and .type == "Issue" and (.labels | index("a-team:upstream"))'
 # A pitch the Lead may file tasks under.
 FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "Building")'
 # The Dev's tasks that take up one of wip.worktrees.
@@ -2319,14 +2321,19 @@ case "$CMD" in
           then {document: true} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
-    upstream='[]' open_bumps=
-    for n in $(jq -r "map(select($UPSTREAM_HELD and (.labels | index(\"blocked\") | not))) | .[].number" <<<"$all"); do
+    upstream='[]' reviewed='{}' open_bumps=
+    for n in $(jq -r "map(select(($UPSTREAM_HELD or $UPSTREAM_REVIEWED) and (.labels | index(\"blocked\") | not))) | .[].number" <<<"$all"); do
       waits=$(waits_on "$n")
       [ "$waits" != "[]" ] || continue
       waits=$(upstream_state "$waits")
       if jq -e 'any(.[]; .state == "released" and .package)' <<<"$waits" >/dev/null; then
         open_bumps=${open_bumps:-$(bumps)}
         waits=$(with_bumps "$waits" "$open_bumps")
+      fi
+      if jq -e --argjson n "$n" "any(.[]; .number == \$n and ($UPSTREAM_REVIEWED))" <<<"$all" >/dev/null; then
+        reviewed=$(jq -c --arg n "$n" --argjson chains "$(chains "$waits" "$(upstream_reach "$waits")")" \
+          '. + if $chains == [] then {} else {($n): $chains} end' <<<"$reviewed")
+        continue
       fi
       line=$(upstream_line "$waits")
       upstream=$(jq -c --arg team "$TEAM" --argjson n "$n" --arg line "$line" --argjson chains "$(chains "$waits" "$(upstream_reach "$waits")")" \
@@ -2345,7 +2352,8 @@ case "$CMD" in
       jq --argjson asked "$(holds "$held" "$said" "$(gated_blocked "$talk")")" \
         --argjson unranked "$(unranked_ideas "$all" "$said")" --argjson upstream "$upstream" '. + $asked + $unranked + $upstream' |
       jq --argjson frees "$frees" 'map((($frees["\(.number)"] // []) + ($frees["\(.pr // 0)"] // [])) as $f
-        | if $f == [] then . else . + {frees: ($f | unique)} end)')
+        | if $f == [] then . else . + {frees: ($f | unique)} end)' |
+      jq --argjson reviewed "$reviewed" 'map(if .status == "In review" and $reviewed["\(.number)"] then . + {chains: $reviewed["\(.number)"]} else . end)')
     snapshot "$(jq 'map(select(.turn != "upstream")) | length' <<<"$waiting")"
     printf '%s\n' "$waiting"
     ;;

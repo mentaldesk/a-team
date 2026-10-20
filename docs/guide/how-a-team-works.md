@@ -60,8 +60,9 @@ closed by hand, with no change linked to it, counts as released in the first rel
 closed. If Dependabot already has a PR open bringing that release in, the task waits for it to
 merge too, and the PR comes into [Review](work.md#holding-up-a-task) for you to accept. Until then
 the task's card in **Blocked** says which link it waits on and whose move that is, though it asks
-you nothing. Open its card's details in the [Overseer](overseer.md) (`Enter`) to see how far the
-change has got, like `Waiting on tui-style-guide#84: merged, not released`.
+you nothing. If its PR is already up, its card stays in **Review** and says the same. Open its
+card's details in the [Overseer](overseer.md) (`Enter`) to see how far the change has got, like
+`Waiting on tui-style-guide#84: merged, not released`.
 
 Whatever another task waits on comes first: the Dev takes a Ready task some task waits on before
 any other, and the Lead pitches such an Idea before any other, whatever their Priority. Priority
