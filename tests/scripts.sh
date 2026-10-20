@@ -394,7 +394,7 @@ gh_talk() {
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
          author: who($body.author // ""), reactions: {totalCount: 0},
          timelineItems: {nodes: ($rows | map(select(.kind == "labeled")
-           | {createdAt: .at, label: {name: .body}}))},
+           | {createdAt: .at, label: {name: .body}, actor: who(.author)}))},
          comments: {nodes: ($rows | map(select(.kind == "comment")) | to_entries | map(.key as $i | .value
            | seen + {createdAt: .at, body: .body, url: "\($url)#issuecomment-\($i + 1)", author: who(.author)}))},
          reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
@@ -1153,6 +1153,26 @@ same "still yours" '"you"' "$(jq -c '.[] | select(.number == 196) | .heldBy' "$O
 run board demo unblock lead 196
 failed "the Lead clearing your hold"
 grep -q "a stakeholder is holding it" "$ERR" || fail "lead on your hold: '$(cat "$ERR")'"
+
+case_ "a Lead comment just before you hold a task doesn't make the hold the Lead's"
+gh_talk <<TALK
+195 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 comment ${TODAY}T10:55:00Z demo-app[bot] Waits on tui-style-guide#44 being released.\n<!-- a-team:lead -->
+195 comment ${TODAY}T11:00:00Z reviewer wait until I've talked to the designer
+195 labeled ${TODAY}T11:00:02Z reviewer blocked
+TALK
+edit_item 195 '.labels.nodes = [{name: "blocked"}, {name: "a-team:upstream"}]'
+run board demo waiting
+same "held by you" '{"turn":"you","reason":"held by you since 11:00","heldBy":"you"}' \
+  "$(jq -c '.[] | select(.number == 195) | {turn, reason, heldBy}' "$OUT")"
+run board demo triggers lead
+same "no Lead run" '[]' "$(jq -c '[.reasons[] | select(contains("#195"))]' "$OUT")"
+: >"$WRITES"
+run board demo unblock lead 195
+failed "the Lead clearing your hold on an upstream task"
+grep -q "a stakeholder is holding it" "$ERR" || fail "lead on your upstream hold: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+edit_item 195 '.labels.nodes = [{name: "blocked"}]'
 
 case_ "a hold needs a reason, a Ready task, and you"
 : >"$WRITES"

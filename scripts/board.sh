@@ -790,7 +790,7 @@ gated_talk() {
   for n in $(jq -r '.[].number' <<<"$1"); do
     query+=" x$n: issueOrPullRequest(number: $n) {
       ... on Issue { $said subIssuesSummary { total completed }
-        timelineItems(last: 50, itemTypes: [LABELED_EVENT]) { nodes { ... on LabeledEvent { createdAt label { name } } } }
+        timelineItems(last: 50, itemTypes: [LABELED_EVENT]) { nodes { ... on LabeledEvent { createdAt label { name } actor { __typename login } } } }
         closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { $reviewed } } }
       ... on PullRequest { $reviewed } }"
   done
@@ -855,11 +855,12 @@ gated_tasks() {
       | from_entries' <<<"$1"
 }
 
-# gated_blocked <talk>: when each of those items was last labelled `blocked`, as {"<n>": at}.
+# gated_blocked <talk>: when each of those items was last labelled `blocked`, and by whom, as {"<n>": {at, by}}.
 gated_blocked() {
-  jq '[.data.repository | to_entries[].value | select(. != null)
+  jq "def login: $LOGIN;"'[.data.repository | to_entries[].value | select(. != null)
        | {key: (.number | tostring),
-          value: ([.timelineItems.nodes[]? | select(.label.name == "blocked") | .createdAt] | max)}
+          value: ([.timelineItems.nodes[]? | select(.label.name == "blocked")] | max_by(.createdAt)
+                  | if . == null then null else {at: .createdAt, by: (.actor | login)} end)}
        | select(.value != null)] | from_entries' <<<"$1"
 }
 
@@ -915,15 +916,17 @@ turns() {
 
 # questions <items> <comments> <blocked>: the Ready tasks the Dev handed back with a question, the
 # Dev's turn once a stakeholder replies, and `unread` the newest reply no run has left a 👀 on.
-# The Dev asks just before labelling `blocked`, hence ASKED_BEFORE.
+# The Dev asks just before labelling `blocked`, hence ASKED_BEFORE. A stakeholder who labelled it is holding it.
 ASKED_BEFORE=600
+YOURS='def yours: .at >= $appFrom and (.by | IN($stakeholders[]));'
 questions() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" --argjson stakeholders "$STAKEHOLDERS" \
-    --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE"'
+    --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE$YOURS"'
     $items | map(
       . as $item
-      | ($blocked[$item.number | tostring] // null) as $labelled
-      | select($labelled != null)
+      | ($blocked[$item.number | tostring] // null) as $held
+      | select($held != null and ($held | yours | not))
+      | $held.at as $labelled
       | ($comments | map(select(.n == $item.number))) as $theirs
       | ($theirs | map(select(.kind == "comment" and team("<!-- a-team:dev -->")
                                and (.at | fromdateiso8601) >= ($labelled | fromdateiso8601) - $before))
@@ -941,21 +944,22 @@ questions() {
 
 # holds <items> <comments> <blocked>: every Ready task labelled `blocked`, and who held it: the Dev with its
 # question as `questions` reads it, else whichever of the Lead or a stakeholder spoke first since then: the Lead
-# with its newest comment, its turn once a stakeholder replies; a stakeholder with the reason `hold` posted. Else
-# nobody who said why.
+# with its newest comment, its turn once a stakeholder replies, unless a stakeholder added the label; a
+# stakeholder with the reason `hold` posted. Else nobody who said why.
 holds() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" --argjson stakeholders "$STAKEHOLDERS" \
     --argjson asked "$(questions "$1" "$2" "$3" | jq 'map(del(.unread) + {heldBy: "dev"})')" \
-    --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE"'
+    --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE$YOURS"'
     $items | map(
       . as $item
       | ($asked | map(select(.number == $item.number)) | first) // (
-        ($blocked[$item.number | tostring] // null) as $labelled
+        ($blocked[$item.number | tostring] // null) as $held
+        | $held.at as $labelled
         | ($comments | map(select(.n == $item.number and .kind == "comment" and $labelled != null
                                   and (.at | fromdateiso8601) >= ($labelled | fromdateiso8601) - $before))) as $since
         | ($since | map(select(team("<!-- a-team:lead -->"))) | max_by(.at)) as $lead
         | ($since | map(select((.author | IN($stakeholders[])) and (team("<!-- a-team:") | not)))) as $theirs
-        | if $lead != null and ($theirs == [] or ($theirs | min_by(.at) | .at) > ($since | map(select(team("<!-- a-team:lead -->"))) | min_by(.at) | .at))
+        | if $lead != null and ($held | yours | not) and ($theirs == [] or ($theirs | min_by(.at) | .at) > ($since | map(select(team("<!-- a-team:lead -->"))) | min_by(.at) | .at))
           then ($theirs | map(select(.at > $lead.at))) as $replies
                | ($replies | map(.at) | max // "") as $replied
                | . + {heldBy: "lead", question: ($lead.body | sub("\\s*<!-- a-team:lead -->\\s*$"; "")),
