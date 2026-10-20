@@ -1831,7 +1831,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Release_hold_from_the_reader_posts_what_you_wrote_then_releases()
+    public async Task Release_hold_from_the_reader_posts_what_you_wrote_then_releases()
     {
         var calls = new List<string[]>();
         var posted = "";
@@ -1852,7 +1852,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.Enter);
         window.Refresh();
 
-        Assert.Null(release!.Run("Installed.").Result);
+        Assert.Null(await release!.Run("Installed."));
         window.Refresh();
 
         Assert.Equal(["comment", "release"], calls.Select(call => call[2]));
