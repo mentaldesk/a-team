@@ -94,7 +94,8 @@ Run the **Release** workflow from the Actions tab. Leave *bump* on `auto` to pic
 the labels of PRs merged since the last release (`breaking` for major, `enhancement` for minor,
 otherwise patch), or choose one. It builds the dashboard for each platform, publishes the GitHub
 release with generated notes, and opens a PR updating the formula in `mentaldesk/homebrew-tap`,
-set to merge by itself once the tap's CI has installed and tested it on every platform. The tag is the version: nothing in the repo holds a
+set to merge by itself once the tap's CI has installed and tested it on every platform, and closes
+any older release's formula PR still open. The tag is the version: nothing in the repo holds a
 version number. PRs that touch the dashboard, packaging or the workflow run the build part to
 check packaging.
 
