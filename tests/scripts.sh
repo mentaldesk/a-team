@@ -4,7 +4,7 @@
 #
 set -uo pipefail
 # As in CI: a run's own team would otherwise reach every test's gh and git.
-unset A_TEAM_RUN_TEAM
+unset A_TEAM_RUN_TEAM A_TEAM_RUN_TASK A_TEAM_RUN_STARTED
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 A_TEAM="$ROOT/bin/a-team"
@@ -394,7 +394,7 @@ gh_talk() {
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
          author: who($body.author // ""), reactions: {totalCount: 0},
          timelineItems: {nodes: ($rows | map(select(.kind == "labeled")
-           | {createdAt: .at, label: {name: .body}}))},
+           | {createdAt: .at, label: {name: .body}, actor: who(.author)}))},
          comments: {nodes: ($rows | map(select(.kind == "comment")) | to_entries | map(.key as $i | .value
            | seen + {createdAt: .at, body: .body, url: "\($url)#issuecomment-\($i + 1)", author: who(.author)}))},
          reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
@@ -936,14 +936,77 @@ gh_talk <<TALK
 195 comment ${TODAY}T08:58:00Z demo-app[bot] Holding this: it needs a GPG key.\n<!-- a-team:lead -->
 195 labeled ${TODAY}T09:00:00Z demo-app[bot] blocked
 195 comment ${TODAY}T09:10:00Z demo-app[bot] Holding this until you have a GPG key, and the SDK.\n\n<!-- a-team:lead -->
-195 comment ${TODAY}T09:20:00Z reviewer Noted, I will get one.
 TALK
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "held" '{"turn":"you","reason":"held by the Lead since 09:10","question":"Holding this until you have a GPG key, and the SDK.","heldBy":"lead"}' \
   "$(jq -c '.[] | select(.number == 195) | {turn, reason, question, heldBy}' "$OUT")"
+same "no unread in waiting" 'null' "$(jq -c '.[] | select(.number == 195) | .unread' "$OUT")"
 run board demo triggers dev
 same "no Dev run for a Lead hold" '[]' "$(jq -c .reasons "$OUT")"
+run board --dry-run demo unblock lead 195
+failed "the Lead clearing its hold before a reply"
+grep -q "no stakeholder has replied to lead's ask" "$ERR" || fail "lead before a reply: '$(cat "$ERR")'"
+
+case_ "a reply on a task the Lead held is the Lead's to read, and starts a Lead run naming it"
+gh_talk <<TALK
+195 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 labeled ${TODAY}T09:00:00Z demo-app[bot] blocked
+195 comment ${TODAY}T09:10:00Z demo-app[bot] Reply here once the SDK is in.\n\n<!-- a-team:lead -->
+195 comment ${TODAY}T09:20:00Z reviewer Installed.
+TALK
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "held" '{"turn":"lead","reason":"reading your answer since 09:20","heldBy":"lead"}' \
+  "$(jq -c '.[] | select(.number == 195) | {turn, reason, heldBy}' "$OUT")"
+mkdir -p "$A_TEAM_STATE/demo/lead"
+touch "$A_TEAM_STATE/demo/lead/holds-reviewed"
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" "[\"stakeholder answered the Lead's hold on #195 (${TODAY}T09:20:00Z)\"]" "$(jq -c '[.reasons[] | select(contains("hold"))]' "$OUT")"
+same "items" "[195]" "$(jq -c .items "$OUT")"
+
+case_ "the Lead may clear a hold it set once a stakeholder has replied"
+gh_thread <<THREAD
+body ${TODAY}T07:00:00Z demo-app[bot] 0 The task\n<!-- a-team:lead -->
+comment ${TODAY}T09:10:00Z demo-app[bot] 0 Reply here once the SDK is in.\n<!-- a-team:lead -->
+comment ${TODAY}T09:20:00Z reviewer 0 Installed.
+THREAD
+: >"$WRITES"
+: >"$ACKED"
+A_TEAM_RUN_STARTED=${TODAY}T23:59:59Z run board demo unblock lead 195
+same "exit" 0 "$STATUS"
+same "writes" "issue edit 195 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
+same "acked" "IC_2" "$(cat "$ACKED")"
+same "recorded" '"hold answered"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 195 | jq -c '.events[0].what')"
+run board demo unblock dev 195
+failed "the Dev clearing the Lead's hold"
+grep -q "lead held it" "$ERR" || fail "dev on a Lead hold: '$(cat "$ERR")'"
+
+case_ "the Lead may clear a hold it set once the task waits on another repo instead, reply or not"
+gh_talk <<TALK
+195 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 labeled ${TODAY}T09:00:00Z demo-app[bot] blocked
+195 comment ${TODAY}T09:10:00Z demo-app[bot] Remove blocked once tui-style-guide#44 is released.\n<!-- a-team:lead -->
+TALK
+edit_item 195 '.labels.nodes = [{name: "blocked"}, {name: "a-team:upstream"}]'
+: >"$WRITES"
+run board demo unblock lead 195
+same "exit" 0 "$STATUS"
+same "writes" "issue edit 195 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
+same "recorded" '"hold now waits on another repo"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 195 | jq -c '.events[0].what')"
+edit_item 195 '.labels.nodes = [{name: "blocked"}]'
+
+case_ "the Lead's first run after holds clear themselves is asked to turn its holds on another repo into dependencies, once"
+rm -f "$A_TEAM_STATE/demo/lead/holds-reviewed"
+run board --dry-run demo triggers lead
+same "dry-run leaves it to ask" false "$([ -f "$A_TEAM_STATE/demo/lead/holds-reviewed" ] && echo true || echo false)"
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '["tasks you held before holds cleared themselves (#195): make those waiting on another repo dependencies"]' \
+  "$(jq -c '[.reasons[] | select(startswith("tasks you held"))]' "$OUT")"
+run board demo triggers lead
+same "only once" '[]' "$(jq -c '[.reasons[] | select(startswith("tasks you held"))]' "$OUT")"
 
 
 case_ "once the reviewer replies to the question, it's the Dev's turn"
@@ -1047,10 +1110,95 @@ TALK
 run board demo unblock dev 195
 failed "held task"
 grep -q "a stakeholder is holding it" "$ERR" || fail "held task: '$(cat "$ERR")'"
+run board demo unblock lead 195
+failed "lead on a stakeholder's hold"
+grep -q "a stakeholder is holding it" "$ERR" || fail "lead on a stakeholder's hold: '$(cat "$ERR")'"
 run board demo unblock lead 192
 failed "lead"
 run board demo unblock dev 115
 failed "a task in review"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "you can hold a Ready task with a reason, which the card in waiting says"
+gh_talk <<TALK
+196 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+TALK
+echo "wait until I've talked to the designer" >"$WORK/why"
+: >"$WRITES"
+: >"$POSTED"
+run board demo hold you 196 "$WORK/why"
+same "exit" 0 "$STATUS"
+same "posted" "wait until I've talked to the designer" "$(cat "$POSTED")"
+same "writes" "issue edit 196 -R mentaldesk/demo --add-label blocked" "$(cat "$WRITES")"
+same "recorded" '"held"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 196 | jq -c '.events[0].what')"
+edit_item 196 '.labels.nodes = [{name: "blocked"}]'
+gh_talk <<TALK
+196 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+196 comment ${TODAY}T11:00:00Z reviewer wait until I've talked to the designer
+196 labeled ${TODAY}T11:00:02Z reviewer blocked
+TALK
+run board demo waiting
+same "held by you" '{"turn":"you","reason":"held by you since 11:00","question":"wait until I'"'"'ve talked to the designer","heldBy":"you"}' \
+  "$(jq -c '.[] | select(.number == 196) | {turn, reason, question, heldBy}' "$OUT")"
+
+case_ "the Lead commenting on a task you held doesn't make the hold its own"
+gh_talk <<TALK
+196 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+196 comment ${TODAY}T11:00:00Z reviewer wait until I've talked to the designer
+196 labeled ${TODAY}T11:00:02Z reviewer blocked
+196 comment ${TODAY}T12:00:00Z demo-app[bot] Blocked by #11: the picker first.\n<!-- a-team:lead -->
+TALK
+run board demo waiting
+same "still yours" '"you"' "$(jq -c '.[] | select(.number == 196) | .heldBy' "$OUT")"
+run board demo unblock lead 196
+failed "the Lead clearing your hold"
+grep -q "a stakeholder is holding it" "$ERR" || fail "lead on your hold: '$(cat "$ERR")'"
+
+case_ "a Lead comment just before you hold a task doesn't make the hold the Lead's"
+gh_talk <<TALK
+195 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 comment ${TODAY}T10:55:00Z demo-app[bot] Waits on tui-style-guide#44 being released.\n<!-- a-team:lead -->
+195 comment ${TODAY}T11:00:00Z reviewer wait until I've talked to the designer
+195 labeled ${TODAY}T11:00:02Z reviewer blocked
+TALK
+edit_item 195 '.labels.nodes = [{name: "blocked"}, {name: "a-team:upstream"}]'
+run board demo waiting
+same "held by you" '{"turn":"you","reason":"held by you since 11:00","heldBy":"you"}' \
+  "$(jq -c '.[] | select(.number == 195) | {turn, reason, heldBy}' "$OUT")"
+run board demo triggers lead
+same "no Lead run" '[]' "$(jq -c '[.reasons[] | select(contains("#195"))]' "$OUT")"
+: >"$WRITES"
+run board demo unblock lead 195
+failed "the Lead clearing your hold on an upstream task"
+grep -q "a stakeholder is holding it" "$ERR" || fail "lead on your upstream hold: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+edit_item 195 '.labels.nodes = [{name: "blocked"}]'
+
+case_ "a hold needs a reason, a Ready task, and you"
+: >"$WRITES"
+printf '  \n' >"$WORK/blank"
+run board demo hold you 192 "$WORK/blank"
+failed "no reason"
+grep -q "say why" "$ERR" || fail "no reason: '$(cat "$ERR")'"
+run board demo hold you 115 "$WORK/why"
+failed "not Ready"
+run board demo hold lead 192 "$WORK/why"
+failed "lead"
+run board demo hold you 196 "$WORK/why"
+failed "already held"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "you can release any hold, an agent's included, but no agent can release one this way"
+: >"$WRITES"
+run board demo release you 192
+same "exit" 0 "$STATUS"
+same "writes" "issue edit 192 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
+same "recorded" '"hold released"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 192 | jq -c '.events[0].what')"
+: >"$WRITES"
+run board demo release dev 195
+failed "dev"
+run board demo release you 115
+failed "not held"
 same "writes" "" "$(cat "$WRITES")"
 
 case_ "a board whose Done is called something else has that left off instead"
@@ -1644,6 +1792,10 @@ grep -q "issue edit 7 -R mentaldesk/demo --remove-label a-team:shelved" "$WRITES
 
 case_ "the agents' settings deny shelving as you"
 grep -qF '"Bash(a-team board * shelve you *)"' "$ROOT/settings/agents.json" || fail "no shelve deny rule"
+
+case_ "the agents' settings deny holding and releasing, which are yours"
+grep -qF '"Bash(a-team board * hold *)"' "$ROOT/settings/agents.json" || fail "no hold deny rule"
+grep -qF '"Bash(a-team board * release *)"' "$ROOT/settings/agents.json" || fail "no release deny rule"
 
 # Accepting: the app's merge, the gate a task leaves by.
 case_ "accept squash-merges the task's PR and deletes its branch"
@@ -7523,6 +7675,12 @@ step=$(sed -n '/^3\. If it needs a change in another repo first/,/^4\./p' "$ROOT
 grep -qF 'depends dev <n> <owner/repo>#<pr> released <package> "<why>"' <<<"$step" || fail "dev.md: no upstream wait in '$step'"
 grep -qF "Don't label it \`blocked\`" <<<"$step" || fail "dev.md: still labels it blocked"
 grep -qF 'depends lead <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"' "$ROOT/roles/lead.md" || fail "lead.md: no upstream wait"
+
+case_ "the Lead holds on another repo with depends, never blocked, and reads replies on the tasks it held"
+grep -qF 'Never hold a task on another repo with the `blocked` label' "$ROOT/roles/lead.md" || fail "lead.md: still holds on another repo with blocked"
+grep -qF 'feedback lead <task>' "$ROOT/roles/lead.md" || fail "lead.md: doesn't read replies on its holds"
+grep -qF 'unblock lead <task>' "$ROOT/roles/lead.md" || fail "lead.md: doesn't clear its holds"
+grep -qF 'unblock lead <n>' "$ROOT/tasks/lead.md" || fail "task prompt: Lead not authorised to clear its holds"
 
 # other_team <name> <repo> <slug>: another team on this machine.
 other_team() {

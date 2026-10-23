@@ -7,6 +7,8 @@ public enum WriteKind
     Rank,
     Decline,
     Shelve,
+    HoldTask,
+    Release,
     VisionReview,
     Hold,
     Interrupt,
