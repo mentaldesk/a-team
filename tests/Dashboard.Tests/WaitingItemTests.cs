@@ -73,6 +73,28 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void A_held_task_the_Lead_is_reading_your_answer_to_says_so()
+    {
+        var item = new WaitingItem(563, "", "Ready", "", "tuicode", "lead", "reading your answer since 10:50", Question: "Reply once it's in.", HeldBy: "lead");
+
+        Assert.Equal("#563 · lead · reading your answer since 10:50", item.Line);
+        Assert.Equal("Blocked", WorkView.GateOf(item));
+    }
+
+    [Fact]
+    public void A_task_you_held_says_so_with_your_reason()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 575, "title": "Picker", "status": "Ready", "team": "tuicode", "turn": "you",
+              "reason": "held by you since 09:00", "question": "wait until I've talked to the designer", "heldBy": "you"}]
+            """));
+
+        Assert.Equal("#575 · held by you · wait until I've talked to the designer", item.Line);
+        Assert.True(item.Held);
+        Assert.True(item.Holdable);
+    }
+
+    [Fact]
     public void A_task_waiting_on_another_repo_brings_how_far_that_has_got()
     {
         var item = Assert.Single(WaitingItem.Parse("""

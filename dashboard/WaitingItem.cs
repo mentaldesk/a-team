@@ -23,11 +23,15 @@ public sealed record WaitingItem(
     /// <summary>Whether it's a Ready task someone labelled blocked, which waits on you whoever held it.</summary>
     public bool Held => Status == "Ready" && !WaitsUpstream;
 
+    /// <summary>Whether it's a Ready task you could hold, or release where it's <see cref="Held"/>.</summary>
+    public bool Holdable => Status == "Ready" && !Pitch;
+
     /// <summary>Who held it and why, as the status bar says it: <c>held by the Lead · &lt;its ask&gt;</c>.</summary>
     public string Hold => HeldBy switch
     {
         "dev" => $"held by the Dev · {Asked}",
         "lead" => $"held by the Lead · {Asked}",
+        "you" => $"held by you · {Asked}",
         _ => "held, no reason given",
     };
 

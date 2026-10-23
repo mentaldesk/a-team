@@ -343,7 +343,7 @@ public class AppMenuTests : IDisposable
         Assert.Equal(
             window.Commands.Registered.Where(command => command.OnCard).Select(command => command.Id),
             Above(window, Cards(window)));
-        Assert.Equal(["work.read", "work.priority", "work.try", "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow"], Above(window, Cards(window)));
+        Assert.Equal(["work.read", "work.priority", "work.try", "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold"], Above(window, Cards(window)));
         Assert.All(Under(window, Cards(window)), id => Assert.Equal(window.Commands.KeyFor(id), Item(window, id).Key));
     }
 
@@ -353,7 +353,7 @@ public class AppMenuTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            ["_Open", "Set _priority", "_Try", "Cop_y branch name", "Open on _GitHub", "_Accept", "_Decline", "Not no_w", "_New idea", "_Refresh", "_Show only mine"],
+            ["_Open", "Set _priority", "_Try", "Cop_y branch name", "Open on _GitHub", "_Accept", "_Decline", "Not no_w", "_Hold", "_New idea", "_Refresh", "_Show only mine"],
             Under(window, Cards(window)).Select(id => Item(window, id).Title));
     }
 

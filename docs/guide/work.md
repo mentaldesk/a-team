@@ -65,7 +65,7 @@ on; the others, and the other tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Blocked | Every task held for you with the `blocked` label, whoever held it: the Dev with a question, the Lead while breaking a pitch down, or nobody who said why. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
+| Blocked | Every task held for you with the `blocked` label, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings or as soon as it brings a release a task waits on, or another team's Dev's PR to this repo once it's ready. |
 
 Each column's heading counts its cards, and orders them with the ones [holding up a
@@ -95,7 +95,9 @@ A card reads as the issue's number, then its title:
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
 - **Who held it.** Selecting a held task in Blocked puts who held it and why on the status bar, like
-  `#524 · held by the Lead · The hold has cleared…`, or `#417 · held, no reason given`.
+  `#524 · held by the Lead · Reply here once…`, `#575 · held by you · wait until…`, or
+  `#417 · held, no reason given`. Once you've replied to the Lead, its card reads
+  `#563 · lead · reading your answer` until the Lead has read it.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
 - **Its branch.** Selecting a card with a PR (a task, the docs PR or a document pitch) ends the
   status bar line with the PR and its branch, like `PR #459 · feat/path-pickers`, and the reader
@@ -225,7 +227,14 @@ with the terminal set up as [Copying from a log](dashboard.md#copying-from-a-log
   as they read a quote reply on GitHub, and takes you to the comment below it to write your answer;
   `Esc` goes back for the next part. Closing the reader with something unposted in the comment asks
   before throwing it away: `Ctrl+Enter` discards it, and `Esc` keeps writing.
-- **Answer a question.** Read it in Blocked, and reply with `c`.
+- **Answer a question.** Read it in Blocked, and reply with `c`. On a held task, reply that it's
+  done and the agent that held it takes the hold off itself.
+- **Hold a task.** On a Ready task's card, press `h` (**Cards → Hold**). **Hold #n** asks `Why:`;
+  `Enter` or **Hold** posts your reason on the task and the card moves to Blocked, where the Dev
+  leaves it alone. It won't hold without a reason. `Esc` holds nothing.
+- **Release a hold.** On a held card, the same `h` reads **Release hold**: it takes the hold off,
+  whoever set it, and the card leaves Blocked for the Dev's queue. Reading a held task,
+  `Ctrl+R` (**Release hold**, beside **Post**) does the same, posting anything you'd written first.
 - **Decline it.** On an Idea or a pitch, reading it or with its card selected, press `x`. The
   Comment pane opens as **Decline #n: why?**, keeping anything you'd already written, and you can
   quote into it with `q` as into a comment. `Ctrl+Enter` posts your reason as a comment, closes the

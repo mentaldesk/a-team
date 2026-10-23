@@ -91,7 +91,10 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    its body. It becomes available to the Dev by itself when the prerequisite
    closes. For a task that waits on an issue or PR already open in another repo,
    `a-team board {{team}} depends lead <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"`:
-   `released <package>` when the task upgrades a package and needs a published release carrying the change. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
+   `released <package>` when the task upgrades a package and needs a published release carrying the change.
+   Never hold a task on another repo with the `blocked` label: the board frees a `depends` by itself.
+   Only where the change has no issue or PR there yet, draft one in the task, label it `blocked`,
+   and ask the stakeholder in a comment to file it and reply. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
    independent of each other if they touch different parts of the code. Make the later one depend
    on the earlier when both would make major changes to the same file or the same part of the
    code; two unrelated behaviour changes that only brush a shared file run in parallel. Don't plan
@@ -112,6 +115,12 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
   - close it with `a-team board {{team}} finish lead <pitch> <file>`, the file saying in a line or
     two what you tried. The stakeholder has already tried and merged every task, so the pitch
     doesn't come back to them.
+- For each task you held that your prompt names (a Ready task labelled `blocked`, your comment
+  saying why), read `a-team board {{team}} feedback lead <task>`. If the stakeholder's reply says the
+  thing is done, `a-team board {{team}} unblock lead <task>`, and it goes back in the Dev's queue. If
+  it doesn't, or you can't tell, ask again in one line with `a-team board {{team}} comment lead <task>`.
+- A task you held that waits on a change in another repo becomes a dependency, as in step 2:
+  `depends lead <task> <owner/repo>#<n> ...`, then `unblock lead <task>`. The rest stay held.
 
 ### 4. Read dependency updates
 
