@@ -18,6 +18,7 @@
   <ItemGroup>
     <EmbeddedResource Include="themes.json" LogicalName="themes.json" />
     <EmbeddedResource Include="loading.anim" LogicalName="loading.anim" />
+    <EmbeddedResource Include="../docs/guide/**/*.md" LogicalName="guide/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

@@ -7,7 +7,7 @@ using MarkdownView = Terminal.Gui.Views.Markdown;
 
 namespace ATeam.Dashboard;
 
-/// <summary>A-Team's own guide, the pages in <c>docs/guide</c>, read a page at a time and followed link to link, beside
+/// <summary>A-Team's own guide, the pages of <c>docs/guide</c> built into the app, read a page at a time and followed link to link, beside
 /// a Contents tree of its pages and their sections and an Index that filters the sections by name.</summary>
 public sealed class GuideDialog : DashboardDialog
 {
@@ -22,7 +22,7 @@ public sealed class GuideDialog : DashboardDialog
     private static readonly Key ContentsKey = Key.C.WithCtrl.WithShift;
     private static readonly Key IndexKey = Key.I.WithCtrl.WithShift;
 
-    private readonly string _folder;
+    private readonly IReadOnlyDictionary<string, string> _guide;
     private readonly Action<string> _openUrl;
     private readonly MarkdownView _page;
     private readonly MessageBar _message = new();
@@ -42,19 +42,19 @@ public sealed class GuideDialog : DashboardDialog
     private int _lineBefore;
     private Action? _afterLayout;
 
-    /// <param name="folder">Where the guide's pages are.</param>
+    /// <param name="guide">Each page's Markdown, by its path in the guide.</param>
     /// <param name="openUrl">Where a link to a web page goes.</param>
-    public GuideDialog(string folder, Action<string> openUrl, string page = Contents)
+    public GuideDialog(IReadOnlyDictionary<string, string> guide, Action<string> openUrl, string page = Contents)
         : base("Guide")
     {
-        _folder = folder;
+        _guide = guide;
         _openUrl = openUrl;
         X = 0;
         Y = 0;
         Width = Dim.Fill();
         Height = Dim.Fill();
 
-        _pages = GuideTopics.Read(folder);
+        _pages = GuideTopics.Read(guide);
         _sections = [.. _pages.SelectMany(topic => topic.Sections)];
         _contents = new TreeView<GuideTopic>(new DelegateTreeBuilder<GuideTopic>(topic => topic.Sections, topic => topic.Sections.Count > 0))
         {
@@ -145,7 +145,7 @@ public sealed class GuideDialog : DashboardDialog
         _page.SetFocus();
     }
 
-    /// <summary>The page showing, relative to the guide's folder.</summary>
+    /// <summary>The page showing, by its path in the guide.</summary>
     internal string Page => _current;
 
     internal MarkdownView View => _page;
@@ -197,7 +197,7 @@ public sealed class GuideDialog : DashboardDialog
             return;
         }
         var (path, anchor) = Split(url);
-        var page = path.Length == 0 ? _current : Resolve(path);
+        var page = path.Length == 0 ? _current : GuidePages.Resolve(_current, path);
         var from = (_current, page == _current && anchor.Length > 0 ? _lineBefore : _page.Viewport.Y, _at);
         if (page != _current && !Open(page))
             return;
@@ -219,9 +219,9 @@ public sealed class GuideDialog : DashboardDialog
         return true;
     }
 
-    public static void Show(IApplication app, string folder, Action<string> openUrl, string page = Contents)
+    public static void Show(IApplication app, IReadOnlyDictionary<string, string> guide, Action<string> openUrl, string page = Contents)
     {
-        using var dialog = new GuideDialog(folder, openUrl, page);
+        using var dialog = new GuideDialog(guide, openUrl, page);
         DialogHost.Run(app, dialog);
     }
 
@@ -287,20 +287,9 @@ public sealed class GuideDialog : DashboardDialog
             Go(topic);
     }
 
-    private string Resolve(string path)
-    {
-        var full = Path.GetFullPath(Path.Combine(_folder, Path.GetDirectoryName(_current) ?? "", Uri.UnescapeDataString(path)));
-        return Path.GetRelativePath(_folder, full);
-    }
-
     private bool Open(string page)
     {
-        string text;
-        try
-        {
-            text = File.ReadAllText(Path.Combine(_folder, page));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        if (!_guide.TryGetValue(page, out var text))
         {
             _message.Show($"There's no {page} in the guide", Schemes.Error);
             SetNeedsLayout();
