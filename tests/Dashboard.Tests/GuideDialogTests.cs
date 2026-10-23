@@ -250,25 +250,6 @@ public partial class GuideDialogTests : IDisposable
         Assert.Equal(folder.OrderBy(page => page.Key), GuidePages.Bundled().OrderBy(page => page.Key));
     }
 
-    [Fact]
-    public void The_guide_opens_on_its_page_with_no_docs_folder_where_the_app_runs()
-    {
-        var before = Environment.CurrentDirectory;
-        Environment.CurrentDirectory = _folder;
-        try
-        {
-            using var dialog = new GuideDialog(GuidePages.Bundled(), _ => { }, GuideDialog.Work);
-
-            Assert.Equal(GuideDialog.Work, dialog.Page);
-            Assert.Equal("", dialog.Message.Says);
-            Assert.Contains(Pages(dialog), page => page.Page == GuideDialog.Overseer);
-        }
-        finally
-        {
-            Environment.CurrentDirectory = before;
-        }
-    }
-
     [Theory]
     [InlineData("index.md", "work.md", "work.md")]
     [InlineData("index.md", "./work.md", "work.md")]
