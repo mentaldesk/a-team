@@ -124,7 +124,7 @@ Handover? Show(Handover? back)
         start,
         item => command.Read("board", item.Team, "conversation", item.Number.ToString()),
         item => AcceptDialog.Show(app, item),
-        showGuide: page => GuideDialog.Show(app, Path.Combine(root, "docs", "guide"), url => Link.OpenUrl(url), page),
+        showGuide: page => GuideDialog.Show(app, GuidePages.Bundled(), url => Link.OpenUrl(url), page),
         confirmStop: task => StopRunDialog.Show(app, task),
         readHistory: item => command.Read("board", item.Team, "history", item.Number.ToString()),
         pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),

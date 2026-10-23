@@ -11,14 +11,12 @@ internal static class GuideTopics
 {
     /// <summary>The pages the contents page links to, in its order, then any others by name. The contents page is left
     /// out: the sidebar does its job.</summary>
-    internal static IReadOnlyList<GuideTopic> Read(string folder)
+    internal static IReadOnlyList<GuideTopic> Read(IReadOnlyDictionary<string, string> guide)
     {
-        if (!Directory.Exists(folder))
-            return [];
-        var pages = Directory.GetFiles(folder, "*.md").Select(Path.GetFileName).OfType<string>()
-            .Where(page => page != GuideDialog.Contents).Order(StringComparer.Ordinal).ToList();
-        var linked = Linked(Path.Combine(folder, GuideDialog.Contents)).Where(pages.Contains).Distinct().ToList();
-        return [.. linked.Concat(pages.Except(linked)).Select(page => Parse(page, File.ReadAllText(Path.Combine(folder, page))))];
+        var pages = guide.Keys.Where(page => page != GuideDialog.Contents).Order(StringComparer.Ordinal).ToList();
+        var linked = (guide.TryGetValue(GuideDialog.Contents, out var contents) ? Linked(contents) : [])
+            .Where(pages.Contains).Distinct().ToList();
+        return [.. linked.Concat(pages.Except(linked)).Select(page => Parse(page, guide[page]))];
     }
 
     internal static GuideTopic Parse(string page, string markdown)
@@ -47,9 +45,7 @@ internal static class GuideTopics
 
     private static IEnumerable<string> Linked(string contents)
     {
-        if (!File.Exists(contents))
-            yield break;
-        foreach (var line in File.ReadLines(contents))
+        foreach (var line in contents.Split('\n'))
             for (var at = line.IndexOf("](", StringComparison.Ordinal); at >= 0; at = line.IndexOf("](", at + 2, StringComparison.Ordinal))
                 if (line.IndexOf(')', at) is var end and > 0)
                     yield return GuideDialog.Split(line[(at + 2)..end]).Path;
