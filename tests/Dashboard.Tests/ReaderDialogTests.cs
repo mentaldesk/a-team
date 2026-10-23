@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Drawing;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Links;
 using MentalDesk.Tui.Theming;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
@@ -50,9 +51,9 @@ public class ReaderDialogTests
     private static Button ButtonFor(ReaderDialog dialog, string label) =>
         dialog.Foot.Shown.Single(button => button.Text.Trim() == label);
 
-    private static ReaderDialog Open(string body, Action? onGitHub = null, int height = 20, Func<bool>? onApprove = null)
+    private static ReaderDialog Open(string body, Func<LinkOutcome?>? onGitHub = null, int height = 20, Func<bool>? onApprove = null)
     {
-        var dialog = new ReaderDialog(Item, new IssueBody(body), onGitHub ?? (() => { }), onApprove);
+        var dialog = new ReaderDialog(Item, new IssueBody(body), onGitHub ?? (() => null), onApprove);
         dialog.Layout(new Size(60, height));
         return dialog;
     }
@@ -61,7 +62,7 @@ public class ReaderDialogTests
     public void A_question_s_title_names_the_task_and_says_it_is_the_Dev_s_question()
     {
         var question = Item with { Status = "Ready", Question = "Which marker?" };
-        using var dialog = new ReaderDialog(question, new IssueBody(question.Question), () => { });
+        using var dialog = new ReaderDialog(question, new IssueBody(question.Question), () => null);
 
         Assert.Equal("#180  The dashboard tells me a pitch needs me · the Dev's question", dialog.Title);
         Assert.Equal(["Which marker?"], dialog.Body.Lines.Select(line => line.Text));
@@ -71,7 +72,7 @@ public class ReaderDialogTests
     public void A_pitch_s_question_is_the_Lead_s()
     {
         var question = Item with { Pitch = true, Question = "## Needs your answer" };
-        using var dialog = new ReaderDialog(question, new IssueBody(question.Question), () => { });
+        using var dialog = new ReaderDialog(question, new IssueBody(question.Question), () => null);
 
         Assert.Equal("#180  The dashboard tells me a pitch needs me · the Lead's question", dialog.Title);
     }
@@ -158,7 +159,7 @@ public class ReaderDialogTests
     [Fact]
     public void A_task_to_accept_has_an_Accept_button()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null,
             accept: new ReaderCommand(new Key('A'), "accept", () => true));
         dialog.Layout(new Size(60, 20));
 
@@ -170,7 +171,7 @@ public class ReaderDialogTests
     public void Accept_on_a_PR_in_trouble_is_greyed_but_its_key_still_says_why()
     {
         var ran = 0;
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null,
             accept: new ReaderCommand(new Key('A'), "accept", () => ++ran < 0, Enabled: false));
         dialog.Layout(new Size(60, 20));
 
@@ -183,7 +184,7 @@ public class ReaderDialogTests
     public void Accept_follows_its_key_not_a()
     {
         var ran = 0;
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null,
             accept: new ReaderCommand(new Key('z'), "accept", () => ++ran > 0));
 
         Assert.False(dialog.NewKeyDownEvent(new Key('A')));
@@ -194,7 +195,7 @@ public class ReaderDialogTests
     [Fact]
     public void Comment_sits_after_Approve_and_before_GitHub()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { }, () => true,
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null, () => true,
             comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
@@ -204,7 +205,7 @@ public class ReaderDialogTests
     [Fact]
     public void Without_a_pitch_to_approve_comment_is_still_offered()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null,
             comment: Commenting());
         dialog.Layout(new Size(80, 20));
 
@@ -214,7 +215,7 @@ public class ReaderDialogTests
     [Fact]
     public void A_posted_comment_leaves_the_reader_open_saying_so()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => null,
             comment: Commenting());
         dialog.Layout(new Size(60, 10));
 
@@ -226,7 +227,7 @@ public class ReaderDialogTests
     [Fact]
     public void A_posted_comment_joins_the_end_of_the_conversation_in_view()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => null,
             comment: Commenting());
         dialog.Layout(new Size(60, 10));
         var before = dialog.Body.Lines.Count;
@@ -255,7 +256,11 @@ public class ReaderDialogTests
     public void Clicking_a_button_runs_its_key()
     {
         var opened = 0;
-        using var dialog = Open(Pitch, () => opened++);
+        using var dialog = Open(Pitch, () =>
+        {
+            opened++;
+            return null;
+        });
 
         ButtonFor(dialog, "g GitHub").InvokeCommand(Command.Accept);
 
@@ -309,15 +314,20 @@ public class ReaderDialogTests
         Assert.Equal(["line "], dialog.Body.MarkedText());
     }
 
-    [Fact]
-    public void g_opens_the_item_on_GitHub()
+    [Theory]
+    [InlineData("opened")]
+    [InlineData("copied")]
+    [InlineData("failed")]
+    public void g_opens_the_item_on_GitHub_and_says_what_happened_on_the_message_line(string did)
     {
-        var opened = 0;
-        using var dialog = Open(Pitch, () => opened++);
+        List<string> opened = [];
+        using var dialog = Open(Pitch, () => Opening.Into(opened, did)(Item.Url));
 
         Assert.True(dialog.NewKeyDownEvent(new Key('g')));
 
-        Assert.Equal(1, opened);
+        Assert.Equal([Item.Url], opened);
+        Assert.Equal(Opening.Outcome(did, Item.Url).Message, dialog.Message.Says);
+        Assert.Equal(Opening.SchemeOf(did), dialog.Message.SchemeName);
     }
 
     [Fact]
@@ -331,7 +341,7 @@ public class ReaderDialogTests
     [Fact]
     public void A_task_with_a_PR_puts_Try_after_Accept()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null,
             accept: new ReaderCommand(new Key('a'), "accept", () => true),
             tryIt: new ReaderTry(new Key('t'), (_, _) => { }));
         dialog.Layout(new Size(60, 20));
@@ -353,7 +363,7 @@ public class ReaderDialogTests
     {
         var tried = new List<(IssueBody Body, int Top)>();
         var body = new IssueBody(Long());
-        using var dialog = new ReaderDialog(Item, body, () => { },
+        using var dialog = new ReaderDialog(Item, body, () => null,
             tryIt: new ReaderTry(new Key('T'), (shown, top) => tried.Add((shown, top))));
         dialog.Layout(new Size(60, 10));
         dialog.NewKeyDownEvent(Key.PageDown);
@@ -368,7 +378,7 @@ public class ReaderDialogTests
     [Fact]
     public void Reopened_after_a_try_it_opens_where_it_was_saying_what_went_wrong()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => null,
             tryIt: new ReaderTry(new Key('t'), (_, _) => { }, Top: 12, Failure: "try team0 122 exited 1"));
         dialog.Layout(new Size(60, 10));
 
@@ -382,7 +392,7 @@ public class ReaderDialogTests
     {
         var edited = new List<(IssueBody Body, int Top)>();
         var body = new IssueBody(Long());
-        using var dialog = new ReaderDialog(Item, body, () => { },
+        using var dialog = new ReaderDialog(Item, body, () => null,
             accept: new ReaderCommand(new Key('a'), "accept", () => true),
             edit: new ReaderEdit(new Key('e'), (shown, top) => edited.Add((shown, top))));
         dialog.Layout(new Size(80, 10));
@@ -399,7 +409,7 @@ public class ReaderDialogTests
     public void One_it_can_t_edit_says_why_and_stays_open()
     {
         var edited = 0;
-        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null,
             edit: new ReaderEdit(new Key('e'), (_, _) => edited++, "#180 changes 2 files, so it can't be edited here: g opens it on GitHub"));
         dialog.Layout(new Size(80, 20));
 
@@ -413,7 +423,7 @@ public class ReaderDialogTests
     [Fact]
     public void Reopened_after_an_edit_it_opens_where_it_was_saying_what_became_of_it()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long()), () => null,
             edit: new ReaderEdit(new Key('e'), (_, _) => { }, Top: 12, Said: "committed your edit to docs/vision.md"));
         dialog.Layout(new Size(60, 10));
 
@@ -439,7 +449,7 @@ public class ReaderDialogTests
 
     private static ReaderDialog Wide(ReaderPanes? panes = null, int width = 120)
     {
-        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { }, panes: panes,
+        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => null, panes: panes,
             width: width);
         dialog.Layout(new Size(width, 20));
         return dialog;
@@ -448,7 +458,7 @@ public class ReaderDialogTests
     [Fact]
     public void A_posted_comment_tops_History_without_reopening_the_reader()
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => null,
             comment: Commenting(), width: 120);
         dialog.Layout(new Size(120, 20));
 
@@ -462,7 +472,7 @@ public class ReaderDialogTests
     public void A_posted_comment_leaves_a_History_that_wouldnt_read_saying_so()
     {
         using var dialog = new ReaderDialog(Item,
-            new IssueBody(Long(), History: new History([], Failure: "couldn't read #180's history")), () => { },
+            new IssueBody(Long(), History: new History([], Failure: "couldn't read #180's history")), () => null,
             comment: Commenting(), width: 120);
 
         Say(dialog, Said.Body);
@@ -547,9 +557,9 @@ public class ReaderDialogTests
 
     private static ReaderDialog Ranking(
         string body = Pitch, Rank rank = Rank.None, int width = 60, int height = 20, Func<bool>? onApprove = null,
-        ReaderComment? comment = null, Action? onGitHub = null, IssueBody? read = null)
+        ReaderComment? comment = null, Func<LinkOutcome?>? onGitHub = null, IssueBody? read = null)
     {
-        var dialog = new ReaderDialog(Item, read ?? new IssueBody(body), onGitHub ?? (() => { }), onApprove,
+        var dialog = new ReaderDialog(Item, read ?? new IssueBody(body), onGitHub ?? (() => null), onApprove,
             comment: comment, width: width, rank: rank);
         dialog.Layout(new Size(width, height));
         return dialog;
@@ -763,7 +773,11 @@ public class ReaderDialogTests
     {
         var opened = 0;
         var approved = 0;
-        using var dialog = Ranking(onGitHub: () => opened++, onApprove: () => ++approved > 0);
+        using var dialog = Ranking(onGitHub: () =>
+        {
+            opened++;
+            return null;
+        }, onApprove: () => ++approved > 0);
 
         Assert.True(dialog.NewKeyDownEvent(new Key('g')));
         Assert.True(dialog.NewKeyDownEvent(new Key('a')));
@@ -801,7 +815,7 @@ public class ReaderDialogTests
         int width = 140, Func<string, Task<string?>>? post = null, Func<bool>? confirmDiscard = null,
         Func<bool>? onApprove = null, ReaderCommand? accept = null, string? body = null, int height = 20)
     {
-        var dialog = new ReaderDialog(Item, new IssueBody(body ?? Long(), History: Recorded), () => { }, onApprove,
+        var dialog = new ReaderDialog(Item, new IssueBody(body ?? Long(), History: Recorded), () => null, onApprove,
             accept, Commenting(post), width: width, confirmDiscard: confirmDiscard);
         dialog.Layout(new Size(width, height));
         return dialog;
@@ -1170,7 +1184,7 @@ public class ReaderDialogTests
 
     private static ReaderDialog Copying(FakeClipboard clipboard, string body, int width = 60)
     {
-        var dialog = new ReaderDialog(Item, new IssueBody(body), () => { }, clipboard: clipboard);
+        var dialog = new ReaderDialog(Item, new IssueBody(body), () => null, clipboard: clipboard);
         dialog.Layout(new Size(width, 20));
         return dialog;
     }
@@ -1224,7 +1238,7 @@ public class ReaderDialogTests
     public void Ctrl_C_copies_from_History_too()
     {
         var clipboard = new FakeClipboard();
-        using var dialog = new ReaderDialog(Item, new IssueBody("body", History: Recorded), () => { }, width: 140,
+        using var dialog = new ReaderDialog(Item, new IssueBody("body", History: Recorded), () => null, width: 140,
             clipboard: clipboard);
         dialog.Layout(new Size(140, 20));
         dialog.NewKeyDownEvent(Key.Tab);
@@ -1248,7 +1262,7 @@ public class ReaderDialogTests
 
     private static ReaderDialog CopyingBranch(FakeClipboard clipboard, string branch)
     {
-        var dialog = new ReaderDialog(Item with { Pr = 459, Branch = branch }, new IssueBody("text"), () => { },
+        var dialog = new ReaderDialog(Item with { Pr = 459, Branch = branch }, new IssueBody("text"), () => null,
             clipboard: clipboard, copyBranch: new Key('y'));
         dialog.Layout(new Size(120, 20));
         return dialog;
@@ -1271,7 +1285,7 @@ public class ReaderDialogTests
     public void Ctrl_C_and_y_copy_through_the_installed_terminal_clipboard()
     {
         using var terminal = new InstalledTerminal();
-        using var dialog = new ReaderDialog(Item with { Pr = 459, Branch = "feat/path-pickers" }, new IssueBody("text"), () => { },
+        using var dialog = new ReaderDialog(Item with { Pr = 459, Branch = "feat/path-pickers" }, new IssueBody("text"), () => null,
             clipboard: terminal.Clipboard, copyBranch: new Key('y'));
         dialog.Layout(new Size(120, 20));
         dialog.NewKeyDownEvent(Key.End.WithShift);
@@ -1312,7 +1326,11 @@ public class ReaderDialogTests
     {
         var opened = 0;
         var approved = 0;
-        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => opened++, () => ++approved > 0,
+        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () =>
+        {
+            opened++;
+            return null;
+        }, () => ++approved > 0,
             comment: Commenting(), width: 140);
         dialog.Layout(new Size(140, 20));
         var body = dialog.Body.Lines;
@@ -1470,7 +1488,7 @@ public class ReaderDialogTests
     public void Too_narrow_for_three_panes_History_hides_while_you_comment_and_h_still_shows_it()
     {
         var panes = new ReaderPanes();
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => null,
             comment: Commenting(), panes: panes, width: ReaderPanes.NarrowestThree - 1);
         Assert.True(dialog.HistoryShown);
 
@@ -1504,7 +1522,7 @@ public class ReaderDialogTests
     private static ReaderDialog Declining(
         Func<string, Task<string?>>? decline = null, bool open = false, WaitingItem? item = null, int width = 140)
     {
-        var dialog = new ReaderDialog(item ?? Item, new IssueBody(Long(), History: Recorded), () => { },
+        var dialog = new ReaderDialog(item ?? Item, new IssueBody(Long(), History: Recorded), () => null,
             comment: Commenting(decline: decline ?? (_ => Task.FromResult<string?>(null)), open: open), width: width);
         dialog.Layout(new Size(width, 20));
         return dialog;
@@ -1644,7 +1662,7 @@ public class ReaderDialogTests
     {
         var reasons = new List<string>();
         var posted = 0;
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => null,
             comment: Commenting(_ => Task.FromResult<string?>(++posted < 0 ? "" : null),
                 reason => { reasons.Add(reason); return Task.FromResult<string?>(null); }), width: 140);
         dialog.NewKeyDownEvent(new Key('x'));
@@ -1696,7 +1714,7 @@ public class ReaderDialogTests
     private static ReaderDialog Shelving(
         Func<int, string, Task<string?>>? shelve = null, bool open = false, Func<string, Task<string?>>? post = null)
     {
-        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { },
+        var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => null,
             comment: new ReaderComment(new Key('c'), "comment", post ?? (_ => Task.FromResult<string?>(null)), new Epoch(),
                 new ReaderDecline(new Key('x'), _ => Task.FromResult<string?>(null)),
                 new ReaderShelve(new Key('l'), shelve ?? ((_, _) => Task.FromResult<string?>(null)), open)),
@@ -1710,7 +1728,7 @@ public class ReaderDialogTests
     [InlineData(60, 2)]
     public void On_a_narrow_terminal_the_buttons_wrap_centred_and_none_is_dropped(int width, int rows)
     {
-        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => { }, () => true,
+        using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => null, () => true,
             comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null), new Epoch(),
                 new ReaderDecline(new Key('x'), _ => Task.FromResult<string?>(null)),
                 new ReaderShelve(new Key('l'), (_, _) => Task.FromResult<string?>(null))),
@@ -1942,7 +1960,7 @@ public class ReaderDialogTests
 
     private static ReaderDialog Telling(IssueBody body, WaitingItem? item = null, int width = 60)
     {
-        var dialog = new ReaderDialog(item ?? Item, body, () => { }, width: width);
+        var dialog = new ReaderDialog(item ?? Item, body, () => null, width: width);
         dialog.Layout(new Size(width, 14));
         return dialog;
     }
@@ -1992,7 +2010,7 @@ public class ReaderDialogTests
     public void A_task_to_try_opens_where_any_card_would()
     {
         var body = Told(Then.AddMinutes(30));
-        using var dialog = new ReaderDialog(Item with { Pr = 9 }, body, () => { }, tryIt: new ReaderTry(new Key('t'), (_, _) => { }));
+        using var dialog = new ReaderDialog(Item with { Pr = 9 }, body, () => null, tryIt: new ReaderTry(new Key('t'), (_, _) => { }));
         dialog.Layout(new Size(60, 14));
 
         Assert.Equal(body.Remarks[2].Line, dialog.Body.TopLine);
@@ -2131,7 +2149,7 @@ public class ReaderDialogTests
 
     private static ReaderDialog Attaching(List<(string Team, string File)> uploads, Func<string, Task<string?>>? post = null)
     {
-        var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => { },
+        var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null,
             comment: Commenting(post) with
             {
                 Attach = new Attaching(Key.U.WithCtrl, (team, file) =>
@@ -2258,7 +2276,7 @@ public class ReaderDialogTests
 
     private static ReaderDialog Ideas(List<string> filed, Func<string, string?>? file = null, Rank? rank = null)
     {
-        var dialog = new ReaderDialog(Item, Talked, () => { }, rank: rank,
+        var dialog = new ReaderDialog(Item, Talked, () => null, rank: rank,
             idea: new ReaderIdea(new Key('n'), description =>
             {
                 filed.Add(description);
@@ -2321,7 +2339,7 @@ public class ReaderDialogTests
     public void Idea_is_a_button_that_counts_the_lines_it_would_quote()
     {
         using var dialog = Replying();
-        using var ideas = new ReaderDialog(Item, Talked, () => { }, comment: Commenting(null),
+        using var ideas = new ReaderDialog(Item, Talked, () => null, comment: Commenting(null),
             idea: new ReaderIdea(new Key('n'), _ => null));
         ideas.Layout(new Size(140, 20));
 
@@ -2340,7 +2358,7 @@ public class ReaderDialogTests
             filed.Add(description);
             return null;
         });
-        using var dialog = new ReaderDialog(Item, Talked, () => { }, idea: idea);
+        using var dialog = new ReaderDialog(Item, Talked, () => null, idea: idea);
         dialog.Layout(new Size(140, 20));
 
         idea.Start!();
@@ -2364,7 +2382,7 @@ public class ReaderDialogTests
     public void Keys_the_reader_leaves_alone_go_to_the_window()
     {
         var passed = new List<Key>();
-        using var dialog = new ReaderDialog(Item, Talked, () => { }, window: key =>
+        using var dialog = new ReaderDialog(Item, Talked, () => null, window: key =>
         {
             passed.Add(key);
             return key == Key.F1;

@@ -90,6 +90,11 @@ terminal, and the status bar ends `through the terminal`. In tmux that needs `se
 in `~/.tmux.conf`, and in iTerm2 *Applications in terminal may access clipboard* (Settings → General
 → Selection).
 
+Opening a link works the same way. Locally it opens in your browser and the status bar says
+`Opened` and the address. Over SSH there's no browser to open it in, so the link is copied to your
+own clipboard instead, with the same terminal setup, and the status bar says
+`Copied <link> (no browser over SSH)`.
+
 ## Reading the whole session
 
 The pane keeps only the last 500 lines. `e`, in the expanded view, opens the whole session as text

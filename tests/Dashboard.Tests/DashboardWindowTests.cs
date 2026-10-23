@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Text;
+using MentalDesk.Tui.Links;
 using Terminal.Gui;
 using Terminal.Gui.App;
 using Terminal.Gui.Configuration;
@@ -349,14 +350,14 @@ public class DashboardWindowTests : IDisposable
     {
         WriteTeam("team1", """{"project": {"owner": "someone", "number": 4, "ownerType": "user"}}""");
         var opened = new List<string>();
-        using var window = Open(agents: Agents(4), openUrl: opened.Add);
+        using var window = Open(agents: Agents(4), openUrl: Opening.Into(opened));
         LayOut(window, 120, 30);
         SelectAgent(window, 2);
 
         Assert.True(window.NewKeyDownEvent(new Key('b')));
 
         Assert.Equal(["https://github.com/users/someone/projects/4"], opened);
-        Assert.Equal("Opened team1's board", window.Message.Says);
+        Assert.Equal("Opened https://github.com/users/someone/projects/4", window.Message.Says);
     }
 
     [Fact]
@@ -1924,7 +1925,7 @@ public class DashboardWindowTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         string? keys = null,
         Func<string, Task<Reading>>? readWaiting = null,
-        Action<string>? openUrl = null,
+        Func<string, LinkOutcome>? openUrl = null,
         Area area = Area.Dashboard,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
@@ -1952,7 +1953,7 @@ public class DashboardWindowTests : IDisposable
             run ?? (_ => Task.FromResult<string?>(null)),
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
             _ => Task.FromResult(new Reading("{}", null)),
-            openUrl ?? (_ => { }),
+            openUrl ?? Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             area,
             auto,

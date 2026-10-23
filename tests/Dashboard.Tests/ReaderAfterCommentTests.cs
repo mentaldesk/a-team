@@ -31,7 +31,11 @@ public class ReaderAfterCommentTests
                 _ => new WaitingItem(531, "A question", "Ready", "https://x/531", "a-team", Question: "Which one?"),
             };
             var pitch = kind is "pitch" or "document";
-            var dialog = new ReaderDialog(item, new IssueBody(Body), () => Did.Add("github"),
+            var dialog = new ReaderDialog(item, new IssueBody(Body), () =>
+                {
+                    Did.Add("github");
+                    return null;
+                },
                 kind == "pitch" ? () =>
                 {
                     Did.Add("approved");
@@ -227,7 +231,7 @@ public class ReaderAfterCommentTests
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
         var posted = new TaskCompletionSource<string?>();
         var item = new WaitingItem(169, "A pitch", "Pitched", "https://x/169", "a-team", Pitch: true);
-        using var dialog = new ReaderDialog(item, new IssueBody(Body), () => { },
+        using var dialog = new ReaderDialog(item, new IssueBody(Body), () => null,
             comment: new ReaderComment(new Key('c'), "comment", _ => posted.Task, new Epoch()),
             width: 140, rank: Rank.Low);
         dialog.Layout(new Size(140, 20));
@@ -250,7 +254,7 @@ public class ReaderAfterCommentTests
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
         var posted = new TaskCompletionSource<string?>();
         var item = new WaitingItem(169, "A pitch", "Pitched", "https://x/169", "a-team", Pitch: true);
-        using var dialog = new ReaderDialog(item, new IssueBody(Body), () => { },
+        using var dialog = new ReaderDialog(item, new IssueBody(Body), () => null,
             comment: new ReaderComment(new Key('c'), "comment", _ => posted.Task, new Epoch()),
             width: 140, rank: Rank.Low);
         dialog.Layout(new Size(140, 20));
@@ -324,7 +328,7 @@ public class ReaderAfterCommentTests
     public void After_a_comment_Enter_still_sets_the_rank()
     {
         var item = new WaitingItem(169, "A pitch", "Pitched", "https://x/169", "a-team", Pitch: true);
-        using var dialog = new ReaderDialog(item, new IssueBody(Body), () => { },
+        using var dialog = new ReaderDialog(item, new IssueBody(Body), () => null,
             comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null), new Epoch()),
             width: 140, rank: Rank.Low);
         dialog.Layout(new Size(140, 20));
