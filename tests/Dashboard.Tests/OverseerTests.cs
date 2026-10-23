@@ -1,3 +1,4 @@
+using MentalDesk.Tui;
 using System.Drawing;
 using MentalDesk.Tui.Links;
 using Terminal.Gui;
@@ -536,7 +537,7 @@ public class OverseerTests : IDisposable
         clock.Now += TimeSpan.FromMinutes(3);
         window.Refresh();
 
-        Assert.Equal("Overseer · read 3m ago", window.Status.State.Text);
+        Assert.Equal("Overseer · read 3m ago", window.Status.FocusWord);
         Assert.True(window.NewKeyDownEvent(Key.F5));
         Assert.Equal(4, reads);
     }
@@ -570,8 +571,8 @@ public class OverseerTests : IDisposable
         window.NewKeyDownEvent(new Key('g'));
 
         Assert.Equal([url], opened);
-        Assert.Equal(Opening.Outcome(did, url).Message, window.Message.Says);
-        Assert.Equal(did == "failed", Opening.InErrorColour(window.Message.SchemeName));
+        Assert.Equal(Opening.Outcome(did, url).Message, window.Says());
+        Assert.Equal(did == "failed", window.Status.MessageSeverity == Severity.Error);
         window.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal(("team1", 21), (window.Overseer.Board.Selected!.Value.Team, window.Overseer.Board.SelectedCard?.Number));
     }

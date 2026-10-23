@@ -173,6 +173,14 @@ is the only key it names. The rest of it starts with where you are (Work's filte
 when the board was last read, then says what's selected or going on. The app's version is in
 *Help → About*.
 
+A message on the status bar, like `#512 approved` or `Copied 3 lines`, stays for 5 seconds, or
+until your next key if it answers one you just pressed. An error stays until you press a key, and
+one that comes by itself, like a failed read, outlasts the keys you press in its first 5 seconds.
+One that stops being true, like a team's failed check once it passes, comes off. Errors you
+haven't seen count in `⚠ n`, just left of *Press F1 for help*. *Help → Messages…*, **Messages**
+in Commands, or clicking `⚠ n` lists this session's messages, newest first, with their times;
+`Ctrl+C` copies the selected one.
+
 In a dialog, what you can do to it is a row of buttons at its foot, each with its key first, like
 *Ctrl+Enter Add* or *Esc Cancel*; click one or press its key. `F1` there shows that dialog's keys,
 headed with its title, including the ones with no button, like scrolling, selecting and copying.

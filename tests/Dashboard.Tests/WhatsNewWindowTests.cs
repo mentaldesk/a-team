@@ -61,7 +61,7 @@ public class WhatsNewWindowTests : IDisposable
 
         Settle(window);
 
-        Assert.DoesNotContain("#133", window.Status.Message.Says + window.Status.State.Text);
+        Assert.DoesNotContain("#133", window.Says() + window.Status.FocusWord);
     }
 
     [Fact]
