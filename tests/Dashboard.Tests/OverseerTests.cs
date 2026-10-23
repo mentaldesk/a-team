@@ -1,6 +1,8 @@
 using System.Drawing;
 using Terminal.Gui;
 using Terminal.Gui.App;
+using Terminal.Gui.Configuration;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -87,7 +89,7 @@ public class OverseerTests : IDisposable
               "priority": "High", "since": "2026-10-03T10:00:00Z", "parent": null, "team": "a-team", "kind": "pitch"},
              {"number": 414, "title": "Every board", "url": "u", "status": "Ready", "priority": null,
               "since": "2026-10-08T12:00:00Z", "parent": 404, "team": "a-team", "kind": "task"},
-             {"number": 415, "status": "In review", "team": "a-team", "kind": "docs"},
+             {"number": 415, "status": "In review", "team": "a-team", "kind": "docs", "blocked": true},
              {"number": 395, "status": "Idea", "team": "a-team", "kind": "yours"},
              {"title": "no number"}]
             """);
@@ -98,6 +100,7 @@ public class OverseerTests : IDisposable
         Assert.Equal(404, cards[1].Parent);
         Assert.Equal("", cards[1].Priority);
         Assert.Null(cards[2].Since);
+        Assert.Equal([false, false, true, false], cards.Select(card => card.Blocked));
         Assert.Empty(BoardCard.Parse("not json"));
     }
 
@@ -121,6 +124,103 @@ public class OverseerTests : IDisposable
         Assert.Equal("◆404  ｱ#ﾘ", OverseerView.ChipText(new Chip(card), Now, "ｱ#ﾘ", IconStyle.Unicode));
         Assert.Equal("◆404    ✺", OverseerView.ChipText(new Chip(card), Now, "  ✺", IconStyle.Unicode));
         Assert.Equal("+7", OverseerView.ChipText(new Chip(null, 7), Now, null, IconStyle.Unicode));
+    }
+
+    [Fact]
+    public void A_chip_another_task_waits_on_wears_a_warning_before_its_age()
+    {
+        var card = Card(81, "In review", days: 6);
+
+        Assert.Equal("◆81  ⚠ 6d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode, holding: true));
+        Assert.Equal("◆81  ⚠ｱ#ﾘ", OverseerView.ChipText(new Chip(card), Now, "ｱ#ﾘ", IconStyle.Unicode, holding: true));
+    }
+
+    [Fact]
+    public void A_blocked_chip_wears_the_blocked_mark_before_its_age_and_any_warning()
+    {
+        var card = Card(82, "Ready", days: 2) with { Blocked = true };
+
+        Assert.Equal("◆82  ⊘ 2d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode));
+        Assert.Equal("◆82  ⊘⚠ 2d", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode, holding: true));
+        Assert.Contains("\uF479", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.NerdFont));
+    }
+
+    [Theory]
+    [InlineData(IconStyle.Unicode)]
+    [InlineData(IconStyle.NerdFont)]
+    public void The_warning_is_drawn_in_amber(IconStyle style)
+    {
+        LogSchemes.Register();
+        using var app = Terminal.Gui.App.Application.Create().Init(Terminal.Gui.Drivers.DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(120, 10);
+        var window = new Terminal.Gui.Views.Window();
+        var view = new OverseerView(["a"]) { Width = Terminal.Gui.ViewBase.Dim.Fill(), Height = Terminal.Gui.ViewBase.Dim.Fill() };
+        window.Add(view);
+        app.Begin(window);
+        view.ShowIcons(style);
+        view.Show([Card(1, "Idea", days: 1), Card(81, "In review", days: 6)]);
+        view.Show(OverseerState.Empty with { Now = Now, Holding = new HashSet<(string, int)> { ("a", 81) } });
+
+        app.LayoutAndDraw(forceRedraw: true);
+
+        var warning = Icons.Glyph(Icon.Warning, style);
+        var cells = app.Driver.Contents!;
+        var found = Enumerable.Range(0, cells.GetLength(0)).SelectMany(row => Enumerable.Range(0, cells.GetLength(1)).Select(column => cells[row, column]))
+            .Single(cell => cell.Grapheme == warning);
+        Assert.Equal(SchemeManager.GetScheme(LogSchemes.Overdue).GetAttributeForRole(VisualRole.Normal), found.Attribute);
+    }
+
+    [Fact]
+    public void A_card_another_task_waits_on_gives_the_chain_in_its_details()
+    {
+        var card = Card(81, "In review", days: 1) with { Kind = CardKind.Task };
+        var held = new WaitingItem(81, "", "In review", "", "a", "you", "awaiting your acceptance")
+        {
+            Holding = [new Hold("b", 499, [new ChainLink("tui", [], "MentalDesk.Tui's release", "yours")])],
+        };
+        var state = OverseerState.Empty with { Now = Now, Waiting = (_, number) => number == 81 ? held : null };
+
+        Assert.Equal(
+            ["Task · Unranked · a · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "b #499 waits on this · then MentalDesk.Tui's release"],
+            OverseerView.Describe(card, [card], state));
+    }
+
+    [Fact]
+    public void A_held_task_says_in_its_details_that_it_s_Blocked_and_who_held_it()
+    {
+        var card = Card(524, "Ready", days: 1) with { Kind = CardKind.Task };
+        var held = new WaitingItem(524, "", "Ready", "", "a", "you", "held by the Lead since 09:00", Question: "Install the SDK.", HeldBy: "lead");
+        var state = OverseerState.Empty with { Now = Now, Waiting = (_, number) => number == 524 ? held : null };
+
+        Assert.Equal(
+            ["Task · Unranked · a · Ready for 1d 0h 0m", "Blocked: held by the Lead · Install the SDK."],
+            OverseerView.Describe(card, [card], state));
+    }
+
+    [Fact]
+    public void The_card_a_task_in_review_waits_on_wears_the_warning_and_gives_the_chain()
+    {
+        var card = Card(100, "In review", days: 1) with { Kind = CardKind.Task };
+        var items = Holds.Tag([
+            new WaitingItem(541, "", "In review", "", "b", "you", "awaiting your acceptance", Pr: 551,
+                Chains: [[new ChainLink("a", [100], "tui-style-guide#100", "open"), new ChainLink("a", [], "MentalDesk.Tui's release", "yours")]]),
+            new WaitingItem(100, "", "In review", "", "a", "you", "awaiting your acceptance"),
+        ]);
+        var state = OverseerState.Empty with
+        {
+            Now = Now,
+            Waiting = (team, number) => items.FirstOrDefault(item => item.Team == team && item.Number == number),
+            Holding = Holds.Holders(items),
+        };
+
+        Assert.Contains(("a", 100), state.Holding);
+        Assert.Equal(
+            ["Task · Unranked · a · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "b #541 waits on this · then MentalDesk.Tui's release"],
+            OverseerView.Describe(card, [card], state));
+        var held = Card(541, "In review", days: 1) with { Team = "b", Kind = CardKind.Task };
+        Assert.Equal(
+            ["Task · Unranked · b · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "Also waits on tui-style-guide#100 · in review, yours"],
+            OverseerView.Describe(held, [held], state));
     }
 
     [Fact]

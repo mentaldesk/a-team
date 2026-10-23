@@ -85,6 +85,11 @@ new output until you press `End`, and paging brings it with you.
 not the clipped row on screen. A folded run of tool calls copies the one it shows. The status bar
 says how much went. With the [Mac keys](#mac-keys) installed, `Cmd+C` copies as `l` does.
 
+Over SSH, every copy in the dashboard reaches your own computer's clipboard, sent through the
+terminal, and the status bar ends `through the terminal`. In tmux that needs `set -g set-clipboard on`
+in `~/.tmux.conf`, and in iTerm2 *Applications in terminal may access clipboard* (Settings → General
+→ Selection).
+
 ## Reading the whole session
 
 The pane keeps only the last 500 lines. `e`, in the expanded view, opens the whole session as text

@@ -141,8 +141,19 @@ public class TrendsDialogTests
         Assert.True(dialog.Gates.Visible);
         Assert.Equal(["This week", "a-team", "tuicode"], dialog.Gates.Table!.ColumnNames);
         Assert.Equal(
-            [["Triage", "10m", "–"], ["Pitches", "0m", "–"], ["Questions", "0m", "–"], ["Review", "25m", "–"], ["Other", "5m", "–"]],
+            [["Triage", "10m", "–"], ["Pitches", "0m", "–"], ["Blocked", "0m", "–"], ["Review", "25m", "–"], ["Other", "5m", "–"]],
             Enumerable.Range(0, 5).Select(row => Cells(dialog.Gates, row, 0, 1, 2)));
+    }
+
+    [Fact]
+    public void Time_recorded_under_Questions_counts_as_Blocked()
+    {
+        using var dialog = Open(("a-team", 4, Timed.Replace("\"Other\"", "\"Questions\"")), ("tuicode", null, Nothing));
+
+        dialog.Measure.Value = 3;
+
+        Assert.Equal(["Blocked", "5m", "–"], Cells(dialog.Gates, 2, 0, 1, 2));
+        Assert.Equal(["Other", "0m", "–"], Cells(dialog.Gates, 4, 0, 1, 2));
     }
 
     [Fact]

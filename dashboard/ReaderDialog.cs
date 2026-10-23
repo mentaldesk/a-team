@@ -17,7 +17,14 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 /// wasn't.</summary>
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
-    ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null);
+    ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null, ReaderRelease? Release = null);
+
+/// <summary>Taking the hold off a held task from the reader: Run posts what's in the Comment pane, if anything, then
+/// releases it, with null once it's under way or else why not.</summary>
+public sealed record ReaderRelease(Func<string, Task<string?>> Run)
+{
+    public static readonly Key Key = Key.R.WithCtrl;
+}
 
 /// <summary>Viewing the image line at the comment's cursor, for Commands to run. The reader sets both.</summary>
 public sealed class ReaderImage
@@ -73,6 +80,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string AttachId = "reader.attach";
     private const string DeclineId = "reader.decline";
     private const string NotNowId = "reader.notNow";
+    private const string ReleaseId = "reader.release";
     private const string IdeaId = "reader.idea";
     private const string TryId = "reader.try";
     private const string EditId = "reader.edit";
@@ -83,7 +91,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string BranchId = "reader.branch";
     private const int BandLines = 3;
     private static readonly string[] WaitForPost =
-        [SetId, ApproveId, AcceptId, CommentId, DeclineId, NotNowId, TryId, EditId, CancelId];
+        [SetId, ApproveId, AcceptId, CommentId, DeclineId, NotNowId, ReleaseId, TryId, EditId, CancelId];
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
@@ -119,6 +127,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private Func<bool>? _afterPost;
     private bool _declining;
     private bool _shelving;
+    private bool _releasing;
     private readonly MessageBar _message = new();
     private readonly Attaching? _attaching;
     private readonly ImageAttach? _attach;
@@ -148,7 +157,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
         Action<string>? openUrl = null, Action<Picture, string>? viewImage = null)
-        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch ? " · the Lead's question" : " · the Dev's question")}")
+        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
     {
         _pictures = pictures;
         _openUrl = openUrl ?? (_ => { });
@@ -362,6 +371,9 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     internal bool Shelving => _shelving;
 
+    /// <summary>Whether the hold was taken off, which closed the reader.</summary>
+    internal bool Released { get; private set; }
+
     /// <summary>Whether the pitch was shelved, which closed the reader.</summary>
     internal bool Shelved { get; private set; }
 
@@ -416,7 +428,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         return (body.Remarks.FirstOrDefault(said => said.Remark.IsNewSince(opened)) ?? body.Remarks[^1]).Line;
     }
 
-    /// <summary>A Lead's question is its pitch's Needs your answer heading; a Dev's is its comment.</summary>
+    /// <summary>A Lead's question on a pitch is its Needs your answer heading; on a held task, as a Dev's, it's its comment.</summary>
     private static int? Asked(WaitingItem item, IssueBody body)
     {
         if (item.Status == "Pitched")
@@ -426,13 +438,14 @@ public sealed partial class ReaderDialog : DashboardDialog
                 .FirstOrDefault(i => lines[i].Kind == LogLineKind.Heading && NeedsAnswer().IsMatch(lines[i].Text), -1);
             return heading < 0 ? null : heading;
         }
-        var dev = body.Remarks.Where(said => said.Remark.Who == "dev").ToList();
-        return (dev.LastOrDefault(said => DevMarker().Replace(said.Remark.Body, "").Trim() == item.Question.Trim())
-            ?? dev.LastOrDefault())?.Line;
+        var role = item.HeldBy == "lead" ? "lead" : "dev";
+        var asker = body.Remarks.Where(said => said.Remark.Who == role).ToList();
+        return (asker.LastOrDefault(said => Marker().Replace(said.Remark.Body, "").Trim() == item.Question.Trim())
+            ?? asker.LastOrDefault())?.Line;
     }
 
-    [GeneratedRegex(@"\s*<!-- a-team:dev -->\s*$")]
-    private static partial Regex DevMarker();
+    [GeneratedRegex(@"\s*<!-- a-team:(dev|lead) -->\s*$")]
+    private static partial Regex Marker();
 
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex NeedsAnswer();
@@ -527,6 +540,8 @@ public sealed partial class ReaderDialog : DashboardDialog
             Bind(DeclineId, decline.Key, "Decline", Decline, Reads);
         if (_comment?.Shelve is { } shelve)
             Bind(NotNowId, shelve.Key, "Not now", Shelve, Reads);
+        if (_comment?.Release is not null)
+            Bind(ReleaseId, ReaderRelease.Key, "Release hold", Release, () => !_declining && !_shelving);
         if (_idea is not null)
             Bind(IdeaId, _idea.Key, "Idea", NewIdea, () => Reads() && _ranks is null);
         if (_try is not null)
@@ -538,7 +553,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         foreach (var (id, kind) in new[]
         {
             (SetId, ButtonKind.Primary), (ApproveId, _accept is null ? ButtonKind.Primary : ButtonKind.Secondary),
-            (AcceptId, ButtonKind.Primary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary),
+            (AcceptId, ButtonKind.Primary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary), (ReleaseId, ButtonKind.Secondary),
             (AttachId, ButtonKind.Secondary), (DeclineId, ButtonKind.Danger),
             (NotNowId, ButtonKind.Secondary), (IdeaId, ButtonKind.Secondary), (TryId, ButtonKind.Secondary),
             (EditId, ButtonKind.Secondary), (GitHubId, ButtonKind.Secondary), (CancelId, ButtonKind.Secondary),
@@ -759,24 +774,18 @@ public sealed partial class ReaderDialog : DashboardDialog
     private bool Copy()
     {
         var text = string.Join('\n', FocusedPane().MarkedText());
-        return text.Length == 0 || Copy(text, Copied(text));
+        return text.Length == 0 || Copy(text);
     }
 
-    private bool CopyBranch() => Copy(_branch, $"Copied {_branch}");
+    private bool CopyBranch() => Copy(_branch, _branch);
 
-    private bool Copy(string text, string said)
+    private bool Copy(string text, string? named = null)
     {
-        var clipboard = _clipboard ?? App?.Clipboard;
-        if (clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(text))
-            _message.Show(said, Schemes.Accent);
-        else
-            _message.Show("there's no clipboard to copy to", Schemes.Error);
+        var (said, scheme) = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, text), named);
+        _message.Show(said, scheme);
         SetNeedsLayout();
         return true;
     }
-
-    internal static string Copied(string text) =>
-        text.Length == 1 ? "copied 1 character" : string.Create(CultureInfo.InvariantCulture, $"copied {text.Length:N0} characters");
 
     /// <summary>The selected text goes in at the comment's cursor, and the keyboard follows it there to answer it.</summary>
     private bool Quote()
@@ -946,11 +955,19 @@ public sealed partial class ReaderDialog : DashboardDialog
         return true;
     }
 
+    private bool Release()
+    {
+        if (_posting is not null)
+            return true;
+        _releasing = true;
+        return Post();
+    }
+
     private bool Post()
     {
         if (_posting is not null)
             return true;
-        if (!_shelving && string.IsNullOrWhiteSpace(_field.Text))
+        if (!_shelving && !_releasing && string.IsNullOrWhiteSpace(_field.Text))
         {
             _message.Show(_declining ? $"A reason is needed to decline #{_number}" : "Nothing to post: the comment is empty",
                 Schemes.Error);
@@ -959,14 +976,17 @@ public sealed partial class ReaderDialog : DashboardDialog
         }
         if (_attach?.Uploading == true)
         {
+            _releasing = false;
             Say("Wait for the image to finish uploading", Schemes.Error);
             return true;
         }
-        _message.Show(_declining ? $"Declining #{_number}…" : _shelving ? $"Shelving #{_number}…" : "Posting…", Schemes.Accent);
+        _message.Show(_declining ? $"Declining #{_number}…" : _shelving ? $"Shelving #{_number}…"
+            : _releasing ? $"Releasing #{_number}…" : "Posting…", Schemes.Accent);
         SetNeedsLayout();
         var text = _field.Text;
         var posting = _posting = _declining ? _comment!.Decline!.Run(text)
             : _shelving ? _comment!.Shelve!.Run(_weeks.Value, text)
+            : _releasing ? _comment!.Release!.Run(text)
             : _comment!.Post(text);
         if (posting.IsCompleted)
         {
@@ -999,6 +1019,7 @@ public sealed partial class ReaderDialog : DashboardDialog
             : done.Exception?.GetBaseException().Message ?? "the comment didn't post";
         if (failure is { Length: > 0 })
         {
+            _releasing = false;
             _message.Show(failure, Schemes.Error);
             if (written)
                 ToComment();
@@ -1006,10 +1027,11 @@ public sealed partial class ReaderDialog : DashboardDialog
             SetNeedsLayout();
             return;
         }
-        if (_declining || _shelving)
+        if (_declining || _shelving || _releasing)
         {
             Declined = _declining;
             Shelved = _shelving;
+            Released = _releasing;
             Close();
             return;
         }

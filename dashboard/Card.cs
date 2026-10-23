@@ -44,18 +44,20 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool
     /// <summary>The Priority colour the row's number wears, which a PR's row hasn't got.</summary>
     internal PriorityMark Mark(int width) => IsPr ? default : Priorities.Mark(Item, Text(width));
 
-    /// <summary>A card reads as the issue's number, whose move it is when it isn't the reviewer's, the rank the Lead
-    /// recommends, what its PR is in trouble over where that's why, then as much of its title as the column has room for. Its PR's row reads
+    /// <summary>A card reads as the issue's number, the task it frees or the link it waits on, whose move it is when it
+    /// isn't the reviewer's, the rank the Lead recommends, what its PR is in trouble over where that's why, then as much of its title as the column has room for. Its PR's row reads
     /// as the PR's own number and the same title.</summary>
     internal string Text(int width, IconStyle style = IconStyle.Unicode)
     {
         if (IsPr)
             return Elide($"{Icons.Glyph(Icon.PullRequest, style)} #{Item.Pr}  {Item.Title}", width);
-        var said = new[] { Item.Mine ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "",
+        var chained = Item.Holding.Count > 0 ? Holds.Frees(Item) : Item.WaitsOn;
+        var number = chained.Length == 0 ? $"#{Item.Number}" : $"#{Item.Number} {Icons.Glyph(Icon.Chain, style)} {chained}";
+        var said = new[] { Item.Mine || Item.WaitsUpstream ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "",
                 Item.Dependency ? "Dependabot" : "", Item.Review,
                 New ? NewMark + Item.Title : Item.Title }
             .Where(part => part.Length > 0);
-        return Elide($"#{Item.Number}  {string.Join(" · ", said)}", width);
+        return Elide($"{number}  {string.Join(" · ", said)}", width);
     }
 
     /// <summary>Cut a char earlier again rather than through a surrogate pair, which would leave half a rune.</summary>

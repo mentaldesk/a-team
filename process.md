@@ -48,8 +48,9 @@ Two kinds of item share the board:
   dependency, and becomes available by itself when that one closes. A task that needs a change
   in another repo is recorded as waiting on that repo's issue or PR, until it closes or until a
   published release carries it, and is labelled `a-team:upstream`; the board frees it by itself
-  when that happens. The `blocked` label is for a task waiting on the stakeholder: for an answer,
-  or because they're holding it.
+  when that happens, or, while Dependabot has a PR open bringing that release in, once it merges. The `blocked` label is for a task waiting on the stakeholder: for an answer,
+  or because they're holding it. Never for a wait on another repo. The agent that held a task
+  reads the stakeholder's reply on it and clears the hold itself, never asking them to.
 - A **docs PR** is the Customer lead's, labelled `a-team:customer`: one open at a time, which it
   adds to after each pitch is done. It goes straight to In review, and accepting it merges it.
   While the team config's `docs` page isn't in the repo, a **docs proposal** comes first: a
@@ -76,8 +77,9 @@ a-team board {{team}} list [STATUS...]          # items, as JSON
 a-team board {{team}} mine <role> [STATUS...]   # items your role owns
 a-team board {{team}} wip                       # counts per status: pitches, dev, stakeholders;
                                                 # the Dev's blocked tasks under dev.blocked
-a-team board {{team}} next                      # the next task Dev should take (or null):
-                                                # highest issue Priority first, unset last
+a-team board {{team}} next                      # the next task Dev should take (or null): one a
+                                                # task waits on first, then highest issue Priority,
+                                                # unset last
 a-team board {{team}} claim dev [<n>]           # move `next` (or Ready task <n>) to In progress for
                                                 # a Dev run, if a worktree is free
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)
@@ -122,8 +124,11 @@ a-team board {{team}} depends <role> <task> <owner/repo>#<n> <closed|released [<
 a-team board {{team}} undepend <role> <task> <prereq> "<why>"
                                                 # drop that dependency again, saying why on <task>;
                                                 # <prereq> may be <owner/repo>#<n>
-a-team board {{team}} unblock <role> <n>        # Dev only: clear `blocked` on a task it handed back,
-                                                # once a stakeholder has replied to its question
+a-team board {{team}} unblock <role> <n>        # Dev or Lead: clear `blocked` on a task it held, once a
+                                                # stakeholder has replied (Lead: or it waits on another repo)
+a-team board {{team}} hold you <n> <file>       # stakeholder only: hold Ready task <n>, <file> saying why
+a-team board {{team}} release you <n>           # stakeholder only: take the hold off Ready task <n>,
+                                                # whoever set it
 a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON, with
                                                 # `images` where it has screenshots attached
 a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON

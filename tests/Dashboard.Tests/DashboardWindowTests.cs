@@ -603,13 +603,13 @@ public class DashboardWindowTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('l')));
 
         Assert.Equal("cat <<'PY'\nprint(1)\nPY", clipboard.GetClipboardData());
-        Assert.Equal("copied 22 characters", window.Message.Says);
+        Assert.Equal("Copied 3 lines  •  20 characters", window.Message.Says);
 
         window.NewKeyDownEvent(Key.CursorUp);
         window.NewKeyDownEvent(Key.CursorUp.WithShift);
         window.NewKeyDownEvent(new Key('l'));
         Assert.Equal("reading\n", clipboard.GetClipboardData());
-        Assert.Equal("copied 2 lines, 8 characters", window.Message.Says);
+        Assert.Equal("Copied 1 line  •  7 characters", window.Message.Says);
     }
 
     [Fact]
@@ -644,6 +644,26 @@ public class DashboardWindowTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('L')));
 
         Assert.Equal("a\nb", clipboard.GetClipboardData());
+    }
+
+    [Fact]
+    public void l_and_L_copy_through_the_installed_terminal_clipboard()
+    {
+        using var terminal = new InstalledTerminal();
+        WriteLog("a-team", "dev",
+            """{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"a"}},{"type":"tool_use","name":"Read","input":{"file_path":"b"}}]}}""");
+        using var window = Open(clipboard: terminal.Clipboard);
+        window.Refresh();
+        SelectAgent(window, 1);
+        window.NewKeyDownEvent(Key.Enter);
+
+        window.NewKeyDownEvent(new Key('l'));
+        Assert.Equal("b", terminal.Platform.Text);
+        Assert.Equal("Copied 1 line  •  1 character", window.Message.Says);
+
+        window.NewKeyDownEvent(new Key('L'));
+        Assert.Equal("a\nb", terminal.Platform.Text);
+        Assert.Equal("Copied 2 lines  •  2 characters", window.Message.Says);
     }
 
     [Fact]
@@ -729,7 +749,7 @@ public class DashboardWindowTests : IDisposable
 
         window.NewKeyDownEvent(new Key('l'));
 
-        Assert.Equal("there's no clipboard to copy to", window.Message.Says);
+        Assert.Equal("Copy failed: there is no clipboard", window.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
         Assert.Equal("two", window.Panes[1].CopySelection().Text);
     }
@@ -799,7 +819,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Open", "Set priority", "Try", "Copy branch name", "Open on GitHub", "Open team's board on GitHub",
                 "Write the vision with me", "Review the vision", "Approve the pitch you're reading", "Accept",
-                "Comment on the item you're reading", "Edit the document pitch you're reading", "Attach image file to what you're writing", "View image", "Decline", "Not now",
+                "Comment on the item you're reading", "Edit the document pitch you're reading", "Attach image file to what you're writing", "View image", "Decline", "Not now", "Hold",
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read what's waiting again",
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",

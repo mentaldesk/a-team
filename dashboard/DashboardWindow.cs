@@ -82,6 +82,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<WaitingItem, bool> _confirmApprove;
+    private readonly Func<WaitingItem, string?> _askHold;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Action<string> _showGuide;
     private readonly Action<Handover>? _handOver;
@@ -175,7 +176,8 @@ public sealed class DashboardWindow : Window
         Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
         Action<string>? showDecisions = null,
         MacKeys? macKeys = null,
-        Func<WaitingItem, bool>? confirmApprove = null)
+        Func<WaitingItem, bool>? confirmApprove = null,
+        Func<WaitingItem, string?>? askHold = null)
     {
         _macKeys = macKeys;
         _attaching = attaching;
@@ -212,6 +214,7 @@ public sealed class DashboardWindow : Window
         _showBody = showBody;
         _confirmAccept = confirmAccept ?? (_ => false);
         _confirmApprove = confirmApprove ?? (_ => false);
+        _askHold = askHold ?? (_ => null);
         _confirmStop = confirmStop ?? (_ => false);
         _handOver = handOver;
         _area = area;
@@ -574,6 +577,7 @@ public sealed class DashboardWindow : Window
         string[] hold = ["Pause this role", "Let this role start again"];
         string[] interrupt = ["Interrupt", "Let it start again"];
         string[] mine = ["Show only mine", "Show all"];
+        string[] holdTask = ["Hold", "Release hold"];
         _commands
             .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
             .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
@@ -625,6 +629,8 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true, scopes: [Regions.Work])
             .Register("work.notNow", "Not now", () => ReadSelected(declining: false, shelving: true), new Key('l'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Shelvable: true }, onCard: true, scopes: [Regions.Work])
+            .Register("work.hold", () => holdTask[_work.SelectedCard is { Held: true } ? 1 : 0], HoldOrRelease, new Key('h'),
+                isEnabled: () => OnWork() && _work.SelectedCard is { Holdable: true }, onCard: true, scopes: [Regions.Work], menuLabels: holdTask)
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, scopes: [Regions.Work])
@@ -872,7 +878,10 @@ public sealed class DashboardWindow : Window
             running.SelectMany(pane => pane.Working.Select(number => (Card: (pane.Team, number), pane.Role)))
                 .DistinctBy(worked => worked.Card).ToDictionary(worked => worked.Card, worked => worked.Role),
             running.GroupBy(pane => pane.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(pane => pane.Role)]),
-            (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number)));
+            (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number))
+        {
+            Holding = Holds.Holders(_work.Items),
+        });
     }
 
     private void OverseerEnter()
@@ -1221,7 +1230,7 @@ public sealed class DashboardWindow : Window
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
                     item.Shelvable ? new ReaderShelve(_commands.KeyFor("work.notNow"), (weeks, reason) => Shelve(item, weeks, reason), shelving) : null,
-                    Attaching(), _image),
+                    Attaching(), _image, item.Held ? new ReaderRelease(comment => Release(item, comment)) : null),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -1390,6 +1399,73 @@ public sealed class DashboardWindow : Window
         return Task.FromResult<string?>(null);
     }
 
+    /// <summary>Holds the selected Ready task with the reason you give, or takes the hold off one that's held.</summary>
+    private void HoldOrRelease()
+    {
+        if (_work.SelectedCard is not { Holdable: true } item || Already(Write.KeyOf(item)))
+            return;
+        if (item.Held)
+        {
+            Release(item, "");
+            return;
+        }
+        if (_askHold(item) is not { Length: > 0 } reason)
+            return;
+        var file = Path.GetTempFileName();
+        File.WriteAllText(file, reason);
+        _attention.Did("held");
+        Queue(new Write(WriteKind.HoldTask, Write.KeyOf(item), ["board", item.Team, "hold", "you", item.Number.ToString(), file],
+            $"Holding #{item.Number}…", $"#{item.Number} is already being held", $"holding #{item.Number}", item, Scratch: file));
+    }
+
+    /// <summary>Posts what you wrote, if anything, then takes the hold off, whoever set it. Like a decline, the reader
+    /// closes on it at once, and the card leaves once the board has taken it.</summary>
+    private Task<string?> Release(WaitingItem item, string comment)
+    {
+        if (_writes.Holding(Write.KeyOf(item)) is { } already)
+            return Task.FromResult<string?>(already.Already);
+        _attention.Did("released");
+        if (_shown is not null)
+            _leaving = item;
+        var release = new Write(WriteKind.Release, Write.KeyOf(item), ["board", item.Team, "release", "you", item.Number.ToString()],
+            $"Releasing #{item.Number}…", $"#{item.Number} is already being released", $"releasing #{item.Number}", item);
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+            Queue(release);
+            return Task.FromResult<string?>(null);
+        }
+        return PostThenRelease(item, comment, release);
+    }
+
+    private async Task<string?> PostThenRelease(WaitingItem item, string comment, Write release)
+    {
+        var refused = await WithFile(item, "comment", comment).ConfigureAwait(false);
+        if (refused is { Length: > 0 })
+        {
+            _leaving = null;
+            return refused;
+        }
+        Queue(release);
+        return null;
+    }
+
+    private void Held(WaitingItem item)
+    {
+        _added = $"#{item.Number} held";
+        ReadWaiting();
+    }
+
+    private void Released(WaitingItem item)
+    {
+        _leaving = null;
+        _work.Leave(item);
+        _failure = null;
+        _said = $"#{item.Number} back in the Dev's queue";
+        _saidOn = _work.Selected;
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
     private void Shelved(WaitingItem item, int weeks)
     {
         _leaving = null;
@@ -1538,6 +1614,12 @@ public sealed class DashboardWindow : Window
             case WriteKind.Shelve:
                 Shelved(write.Item!, write.Weeks);
                 break;
+            case WriteKind.HoldTask:
+                Held(write.Item!);
+                break;
+            case WriteKind.Release:
+                Released(write.Item!);
+                break;
             case WriteKind.VisionReview:
                 _pass.Start();
                 _said = $"vision review asked for · {write.Team}: the Lead starts it now";
@@ -1591,7 +1673,7 @@ public sealed class DashboardWindow : Window
             : _writes.Status() is { Length: > 0 } writing ? (writing, Schemes.Accent)
             : _pass.Progress is { } passing ? (passing, Schemes.Accent)
             : _said is { Length: > 0 } ? (_said, Schemes.Accent)
-            : _area == Area.Work && _work.Selected is { Reason.Length: > 0 } card ? (card.Line, Schemes.Base)
+            : _area == Area.Work && _work.Selected is { } card && (card.Reason.Length > 0 || card.Holding.Count > 0) ? (card.Line, Schemes.Base)
             : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
             : _area == Area.Overseer && _boarding is not null ? ("Reading…", Schemes.Accent)
             : _area == Area.Overseer && _overseer.Region is { } chip ? (chip, Schemes.Base)
@@ -1681,10 +1763,7 @@ public sealed class DashboardWindow : Window
         if (Selected() is not { } pane)
             return;
         var copied = copy(pane);
-        var clipboard = _clipboard ?? App?.Clipboard;
-        _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(copied.Text)
-            ? (copied.Said, Schemes.Accent)
-            : ("there's no clipboard to copy to", Schemes.Error);
+        _copied = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, copied.Text), truncated: copied.Capped);
         ShowMessage();
     }
 
@@ -1692,10 +1771,7 @@ public sealed class DashboardWindow : Window
     {
         if (_work.Selected is not { Branch.Length: > 0 } card)
             return;
-        var clipboard = _clipboard ?? App?.Clipboard;
-        _copied = clipboard is { IsSupported: true } && clipboard.TrySetClipboardData(card.Branch)
-            ? ($"Copied {card.Branch}", Schemes.Accent)
-            : ("there's no clipboard to copy to", Schemes.Error);
+        _copied = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, card.Branch), card.Branch);
         ShowMessage();
     }
 

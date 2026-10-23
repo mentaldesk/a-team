@@ -57,9 +57,16 @@ published release carries the change; a pre-release doesn't count. The board che
 of minutes, and once the wait is over it takes the label off and says so on the task, naming the
 release and the package to upgrade, so the Dev can pick it up with no click from you. An issue
 closed by hand, with no change linked to it, counts as released in the first release after it
-closed. Until then it isn't in
-**Questions**: it's asking you nothing, and the [Overseer](overseer.md) shows on its card how far
-the change has got, like `waiting on tui-style-guide#84: merged, not released`.
+closed. If Dependabot already has a PR open bringing that release in, the task waits for it to
+merge too, and the PR comes into [Review](work.md#holding-up-a-task) for you to accept. Until then
+the task's card in **Blocked** says which link it waits on and whose move that is, though it asks
+you nothing. If its PR is already up, its card stays in **Review** and says the same. Open its
+card's details in the [Overseer](overseer.md) (`Enter`) to see how far the change has got, like
+`Waiting on tui-style-guide#84: merged, not released`.
+
+Whatever another task waits on comes first: the Dev takes a Ready task some task waits on before
+any other, and the Lead pitches such an Idea before any other, whatever their Priority. Priority
+still orders them among themselves, and nobody's Priority changes.
 
 A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a
 draft pull request in Pitched instead. You agree to it by merging it, with `a` in
@@ -90,8 +97,19 @@ reaction is yours. A comment you make while a run is going gets a run of its own
 is missed.
 
 When the Dev can't go on without you, it hands its task back with a question and the `blocked` label.
-The Lead asks on a pitch under **Needs your answer** in its description. Both wait in **Questions**
-in the Work area until you answer.
+The Lead may hold a task with the same label while it breaks a pitch down, and asks on a pitch under
+**Needs your answer** in its description. All of them wait in **Blocked** in the Work area until you
+answer: a held task with the latest ask on it, or `held, no reason given` where no agent said why.
+
+You never take `blocked` off a task an agent held. Reply on it instead, from the reader or on GitHub:
+the agent that held it reads your reply on its next run and, if it says the thing is done, takes the
+hold off and the task goes back in the Dev's queue. If your reply doesn't say so, it asks again in a
+line and the task stays held. A task that waits on a change in another repo is never held: it's
+recorded as waiting on that repo, and frees itself ([The board](#the-board)).
+
+To hold a task yourself, select its card in Work and press `h` (**Hold**), and say why. To take any
+hold off, yours or an agent's, press `h` again (**Release hold**), or use **Release hold** in the
+reader ([Work](work.md#answering-from-a-card)).
 
 ## What the team remembers
 

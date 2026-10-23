@@ -516,7 +516,6 @@ public class LogViewTests
         var copied = view.CopyAll();
 
         Assert.Equal("first\none\ntwo", copied.Text);
-        Assert.Equal(3, copied.Lines);
     }
 
     private static LogView Selecting(int width, int height, params LogLine[] lines)

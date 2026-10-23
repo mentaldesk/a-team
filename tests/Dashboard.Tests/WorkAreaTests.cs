@@ -41,7 +41,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(["team0", "team1"], teams);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
     }
 
@@ -555,14 +555,14 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('m')));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(6, window.Work.Selected?.Number);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
     }
 
@@ -713,7 +713,7 @@ public class WorkAreaTests : IDisposable
         LayOut(reopened, 120, 30);
 
         Assert.True(reopened.Work.OnlyMine);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(reopened));
     }
 
@@ -993,7 +993,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal("#6 · set to High", window.Message.Says);
         Assert.Equal(2, reads);
@@ -1056,7 +1056,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal([["board", "team0", "priority", "you", "107", "none"]], calls);
-        Assert.Equal(["\U0001F4A1Triage · 2", "◇ Pitches · 1", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 2", "◇ Pitches · 1", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(108, window.Work.Selected?.Number);
         Assert.Equal("#107 · set to None", window.Message.Says);
@@ -1082,7 +1082,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 0", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 0", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal("#107 · set to High", window.Message.Says);
         Assert.Equal(2, reads);
@@ -1106,7 +1106,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("setting #6 to High: board.sh: API rate limit exceeded", window.Message.Says);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
         Assert.True(window.Message.Frame.X > window.Status.State.Frame.Right);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -1280,12 +1280,12 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void A_task_waiting_on_another_repo_isn_t_a_question_nor_waiting_on_you()
+    public void A_task_waiting_on_another_repo_shows_under_Blocked_but_isn_t_waiting_on_you()
     {
         using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)));
         window.Refresh();
 
-        Assert.Equal(1, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Questions").Count);
+        Assert.Equal(2, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Blocked").Count);
         Assert.Equal("Work · 1 waiting on you", window.WorkTitle);
     }
 
@@ -1378,8 +1378,8 @@ public class WorkAreaTests : IDisposable
             showBody: (item, body, _, _, _, _, _) => shown = (item, body));
         window.Refresh();
         LayOut(window, 120, 30);
-        Assert.Equal("Questions · team0", window.Work.Region);
-        Assert.Equal("#192 · asked you since 08:23", window.Work.Selected?.Line);
+        Assert.Equal("Blocked · team0", window.Work.Region);
+        Assert.Equal("#192 · held by the Dev · Which marker should it post?", window.Work.Selected?.Line);
 
         Assert.True(window.NewKeyDownEvent(Key.Enter));
         window.Refresh();
@@ -1409,7 +1409,7 @@ public class WorkAreaTests : IDisposable
             });
         window.Refresh();
         LayOut(window, 120, 30);
-        Assert.Equal("Questions · team0", window.Work.Region);
+        Assert.Equal("Blocked · team0", window.Work.Region);
 
         Assert.True(window.NewKeyDownEvent(Key.Enter));
         window.Refresh();
@@ -1729,6 +1729,157 @@ public class WorkAreaTests : IDisposable
 
         Assert.Contains(window.Work.Items, item => item.Number == 107);
         Assert.Equal(107, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void H_on_a_held_card_releases_it_and_the_card_leaves_for_the_Dev_s_queue()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Question : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        Assert.Equal(192, window.Work.Selected?.Number);
+
+        var hold = window.Commands.Registered.Single(command => command.Id == "work.hold");
+        Assert.Equal(new Key('h'), hold.Key);
+        Assert.True(hold.OnCard);
+        Assert.Equal("Release hold", window.Commands.Registered.Single(command => command.Id == "work.hold").Label);
+        Assert.True(window.NewKeyDownEvent(new Key('h')));
+        window.Refresh();
+
+        Assert.Equal([["board", "team0", "release", "you", "192"]], calls);
+        Assert.Equal(0, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Blocked").Count);
+        Assert.Equal("#192 back in the Dev's queue", window.Message.Says);
+    }
+
+    [Fact]
+    public void H_on_a_Ready_card_that_isn_t_held_asks_why_then_holds_it_and_reads_Work_again()
+    {
+        var calls = new List<string[]>();
+        var posted = "";
+        var asked = new List<int>();
+        var reads = 0;
+        using var window = Open(
+            read: team =>
+            {
+                reads++;
+                return Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null));
+            },
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                posted = File.ReadAllText(arguments[^1]);
+                return Task.FromResult<string?>(null);
+            },
+            askHold: item =>
+            {
+                asked.Add(item.Number);
+                return "wait for the designer";
+            });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(469, window.Work.Selected?.Number);
+        Assert.Equal("Hold", window.Commands.Registered.Single(command => command.Id == "work.hold").Label);
+        var before = reads;
+
+        Assert.True(window.NewKeyDownEvent(new Key('h')));
+        window.Refresh();
+
+        Assert.Equal([469], asked);
+        Assert.Equal(["board", "team0", "hold", "you", "469"], calls.Single()[..5]);
+        Assert.Equal("wait for the designer", posted);
+        Assert.True(reads > before);
+    }
+
+    [Fact]
+    public void Cancelling_Hold_holds_nothing()
+    {
+        var calls = new List<string[]>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            askHold: _ => null);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorDown);
+
+        window.NewKeyDownEvent(new Key('h'));
+        window.Refresh();
+
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void Hold_is_only_on_Ready_tasks()
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Review() : "[]", null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.NotNull(window.Work.Selected);
+        Assert.False(window.Commands.IsEnabled("work.hold"));
+    }
+
+    [Fact]
+    public void The_reader_offers_Release_hold_on_a_held_task_only()
+    {
+        var offered = new List<(int Number, ReaderRelease? Release)>();
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? QuestionAndUpstream : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (item, _, _, _, _, comment, _) => offered.Add((item.Number, comment?.Release)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorDown);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Equal([192, 469], offered.Select(each => each.Number));
+        Assert.NotNull(offered[0].Release);
+        Assert.Null(offered[1].Release);
+    }
+
+    [Fact]
+    public async Task Release_hold_from_the_reader_posts_what_you_wrote_then_releases()
+    {
+        var calls = new List<string[]>();
+        var posted = "";
+        ReaderRelease? release = null;
+        using var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Question : "[]", null)),
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                if (arguments[2] == "comment")
+                    posted = File.ReadAllText(arguments[^1]);
+                return Task.FromResult<string?>(null);
+            },
+            showBody: (_, _, _, _, _, comment, _) => release = comment?.Release);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+
+        Assert.Null(await release!.Run("Installed."));
+        window.Refresh();
+
+        Assert.Equal(["comment", "release"], calls.Select(call => call[2]));
+        Assert.Equal("Installed.", posted);
     }
 
     [Fact]
@@ -2719,7 +2870,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
-        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Questions · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Questions · 0", "Review · 0"],
+        Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.State.Text);
         Assert.Equal(6, window.Work.Selected?.Number);
@@ -3119,7 +3270,7 @@ public class WorkAreaTests : IDisposable
             [
                 "view.dashboard", "view.work", "view.overseer", "work.whatsNew", "overseer.details", "overseer.fold", "overseer.github",
                 "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "decisions", "settings", "quit", "work.read", "work.priority", "work.try",
-                "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
+                "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
@@ -3189,6 +3340,21 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Y_copies_the_branch_through_the_installed_terminal_clipboard()
+    {
+        using var terminal = new InstalledTerminal();
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
+            clipboard: terminal.Clipboard);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('y'));
+
+        Assert.Equal("feat/keys", terminal.Platform.Text);
+        Assert.Equal("Copied feat/keys", window.Message.Says);
+    }
+
+    [Fact]
     public void Y_without_a_clipboard_says_why_it_couldn_t_copy()
     {
         using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
@@ -3198,7 +3364,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(new Key('y'));
 
-        Assert.Equal("there's no clipboard to copy to", window.Message.Says);
+        Assert.Equal("Copy failed: there is no clipboard", window.Message.Says);
     }
 
     [Fact]
@@ -3845,7 +4011,7 @@ public class WorkAreaTests : IDisposable
         """
         [{"number": 192, "title": "I can reply to a pitch", "status": "Ready",
           "url": "https://github.com/mentaldesk/team0/issues/192", "team": "team0",
-          "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?"}]
+          "turn": "you", "reason": "asked you since 08:23", "question": "Which marker should it post?", "heldBy": "dev"}]
         """;
 
     /// <summary>That question, and a task waiting on a change in another repo.</summary>
@@ -4055,7 +4221,8 @@ public class WorkAreaTests : IDisposable
         Action<ReaderIdea?, Func<Key, bool>>? showIdea = null,
         Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
         Action<string>? showDecisions = null,
-        Func<WaitingItem, bool>? confirmApprove = null)
+        Func<WaitingItem, bool>? confirmApprove = null,
+        Func<WaitingItem, string?>? askHold = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -4091,7 +4258,8 @@ public class WorkAreaTests : IDisposable
             clipboard: clipboard,
             showSpending: showSpending,
             showDecisions: showDecisions,
-            confirmApprove: confirmApprove ?? (_ => true));
+            confirmApprove: confirmApprove ?? (_ => true),
+            askHold: askHold);
     }
 
     private void WriteRun(string team, string role, int pid)

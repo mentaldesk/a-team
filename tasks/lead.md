@@ -23,6 +23,9 @@ I authorise you to do all of the following without asking me:
   `a-team board {{team}} approve lead <n> <file>`.
 - Label each pitch with the vision theme it serves, with `a-team board {{team}} theme lead <n> <heading|none>`,
   creating the label if it's new.
+- Clear `blocked` on a task you held, once the stakeholder has replied that it's done or once it waits
+  on another repo with `depends`, with `a-team board {{team}} unblock lead <n>`. Never remove that label
+  any other way.
 - Close a pitch once every one of its tasks has closed, with
   `a-team board {{team}} finish lead <n> <file>`.
 - Search and keep the team's decision register, with `a-team board {{team}} decisions`,

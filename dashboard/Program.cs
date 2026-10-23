@@ -1,5 +1,6 @@
 using System.Globalization;
 using ATeam.Dashboard;
+using MentalDesk.Tui.Copying;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Theming;
 
@@ -93,6 +94,7 @@ Handover? Show(Handover? back)
     BundledThemes.Load(settings.ReadTheme());
     using var app = Application.Create();
     app.Init();
+    TerminalClipboard.Install(app);
     using var active = macKeys.Activate();
     app.Keyboard.KeyDown += (_, _) => attention.Key();
     LogSchemes.Register();
@@ -138,6 +140,7 @@ Handover? Show(Handover? back)
         writes: writes,
         confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
         confirmApprove: item => ApproveDialog.Show(app, item),
+        askHold: item => HoldDialog.Show(app, item),
         attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
             new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
         showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),

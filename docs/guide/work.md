@@ -3,6 +3,9 @@
 Everything waiting on you, across every team. `w` opens it, `d` goes to the Dashboard and `o` to
 [Overseer](overseer.md). The app opens in whichever area you were in last, and on Work the first time.
 
+Anything whose next move is yours is here, in Triage, Pitches, Blocked or Review. Nothing waits on
+you anywhere else.
+
 Work's title says whether the queue is shrinking, how much you've accepted, and how much of your
 time it took, across every team:
 
@@ -26,7 +29,7 @@ To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It char
 one line per team, for what was waiting on you, what you accepted each day, the hours to accept:
 the median time the tasks you accepted that day took from first entering Ready, or **Your time**,
 in minutes a day. With *Your time* chosen, a table beside the legend splits this week's time by gate:
-Triage, Pitches, Questions, Review and Other.
+Triage, Pitches, Blocked, Review and Other.
 `Left`/`Right` switch between them. Days before a team's record began are left blank,
 and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
@@ -48,7 +51,9 @@ closes it.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
 wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
-Pitches and 1 in Review, with `?` counting Questions. With `m` on, it counts only your moves, and a
+Pitches and 1 in Review, with `⊘` counting Blocked. A `⛓` first counts the cards holding up a
+task ([below](#holding-up-a-task)), like `tui ⛓ 1 ◇ 1 PR2`, so one on a tab you're not looking at
+still shows. With `m` on, it counts only your moves, and a
 column with nothing showing isn't counted. Work opens on the first team with something waiting. Each tab has up to four
 columns, left to right in the order work moves through them. A column with nothing in it is hidden,
 and the one you're on takes half the tab. Only that column highlights its card, the one your keys act
@@ -60,10 +65,11 @@ on; the others, and the other tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Questions | Tasks the Dev handed back to ask you something, and pitches the Lead can't go on with until you answer. A task waiting on a change in another repo isn't here: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
-| Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings, or another team's Dev's PR to this repo once it's ready. |
+| Blocked | Every task held for you with the `blocked` label, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
+| Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings or as soon as it brings a release a task waits on, or another team's Dev's PR to this repo once it's ready. |
 
-Each column's heading counts its cards. Under the Review cards, a line sums up the work that's in
+Each column's heading counts its cards, and orders them with the ones [holding up a
+task](#holding-up-a-task) first, then by Priority. Under the Review cards, a line sums up the work that's in
 review but not ready for you yet, grouped by whose move it is, like
 `1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`.
 
@@ -88,6 +94,10 @@ A card reads as the issue's number, then its title:
 - **The Lead's recommendation.** An Idea you haven't ranked shows the rank the Lead would give it
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
+- **Who held it.** Selecting a held task in Blocked puts who held it and why on the status bar, like
+  `#524 · held by the Lead · Reply here once…`, `#575 · held by you · wait until…`, or
+  `#417 · held, no reason given`. Once you've replied to the Lead, its card reads
+  `#563 · lead · reading your answer` until the Lead has read it.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
 - **Its branch.** Selecting a card with a PR (a task, the docs PR or a document pitch) ends the
   status bar line with the PR and its branch, like `PR #459 · feat/path-pickers`, and the reader
@@ -113,6 +123,32 @@ In every area, at the top right beside the menus, an alert like `? #481 +2` says
 opened the app: a pitch in Pitched, a PR in review or the Dev's question, the newest and how many
 others. `u` (**View → Go to what's new**) or a click takes you to it, and each new card wears a `●`
 before its title until you open it.
+
+## Holding up a task
+
+When a task waits on something, on its own team or another's, the card that would free it says
+so after its number, wherever it is: Pitches, Blocked or Review.
+
+```
+✓ ‹› #81 ⛓ frees a-team #499  An app without AppShell can install the clipboard
+     └ PR #84  An app without AppShell can install the clipboard
+```
+
+That's the card for the issue the task waits on, its pitch, or the PR that closes it, and it sits
+at the top of its column. Selecting it puts the rest of the chain on the status bar, like
+`a-team #499 waits on this · then MentalDesk.Tui's release · then a-team's bump`. The tag moves along
+as each link is done, and drops off once the task is free.
+
+The task's own card says which link it waits on now and whose move that is, like
+`#499 ⛓ waits on tui-style-guide#84 · in review, yours`, then `#499 ⛓ waits on MentalDesk.Tui's
+release · yours`. That card is in Blocked while the task is Ready, and stays in Review if its PR
+is already up, so you can see that accepting it now would come before the change it needs. Once
+that release is out, Dependabot's PR bringing it in comes into Review, tagged `⛓ frees #499`, and
+**Accept** merges it like a task. Other Dependabot PRs still wait for the
+Lead. A link in a repo no team here works in still shows on the task's card, but there's no tab to
+tag.
+
+The tag wears a link glyph where the icons are a Nerd Font's.
 
 ## Moving around
 
@@ -147,8 +183,8 @@ closes it. `F1` lists every key that works where you are in it.
 **Where it opens.** A card you've opened before on this machine opens at the first comment posted
 since you last did, and each comment since then has `new` at the end of its heading. If nothing has
 been said since, it opens at the newest comment. A card you've never opened, or one nobody has
-commented on, opens at the top. A card in Questions reads the same, and opens at the question: the
-Dev's comment, or the pitch's **Needs your answer** heading. In the body, `Alt+↑` and `Alt+↓` go to
+commented on, opens at the top. A card in Blocked reads the same, and opens at the question: the
+Dev's or the Lead's comment that holds the task, or the pitch's **Needs your answer** heading. In the body, `Alt+↑` and `Alt+↓` go to
 the previous and next comment's heading, with the top of the body counting as the first.
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
@@ -172,7 +208,8 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 `PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end, `Option+←`/`→` or
 `Ctrl+←`/`→` for a word), and hold `Shift` to select,
 as in any editor. You can also drag with the mouse, or double-click a word, like an issue number or
-a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
+a URL. `Ctrl+C` copies the selection, and `Esc` clears it. Over SSH it reaches your own computer,
+with the terminal set up as [Copying from a log](dashboard.md#copying-from-a-log) says.
 
 ## Answering from a card
 
@@ -190,7 +227,14 @@ a URL. `Ctrl+C` copies the selection, and `Esc` clears it.
   as they read a quote reply on GitHub, and takes you to the comment below it to write your answer;
   `Esc` goes back for the next part. Closing the reader with something unposted in the comment asks
   before throwing it away: `Ctrl+Enter` discards it, and `Esc` keeps writing.
-- **Answer a question.** Read it in Questions, and reply with `c`.
+- **Answer a question.** Read it in Blocked, and reply with `c`. On a held task, reply that it's
+  done and the agent that held it takes the hold off itself.
+- **Hold a task.** On a Ready task's card, press `h` (**Cards → Hold**). **Hold #n** asks `Why:`;
+  `Enter` or **Hold** posts your reason on the task and the card moves to Blocked, where the Dev
+  leaves it alone. It won't hold without a reason. `Esc` holds nothing.
+- **Release a hold.** On a held card, the same `h` reads **Release hold**: it takes the hold off,
+  whoever set it, and the card leaves Blocked for the Dev's queue. Reading a held task,
+  `Ctrl+R` (**Release hold**, beside **Post**) does the same, posting anything you'd written first.
 - **Decline it.** On an Idea or a pitch, reading it or with its card selected, press `x`. The
   Comment pane opens as **Decline #n: why?**, keeping anything you'd already written, and you can
   quote into it with `q` as into a comment. `Ctrl+Enter` posts your reason as a comment, closes the

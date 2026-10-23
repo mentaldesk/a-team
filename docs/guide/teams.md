@@ -62,7 +62,7 @@ proposes a refresh:
 one's due, the dispatcher starts the Lead and says why, like `vision review due: 30 days since it
 last changed`. The Lead opens a draft PR in Pitched, leading with what's happened since the vision
 last changed. It rewrites *Next themes* only, and asks under **Needs your answer** about anything
-else, so the card waits in Questions. While it's open, no other review starts. Close it without
+else, so the card waits in Blocked. While it's open, no other review starts. Close it without
 merging, and the next waits for the vision to change, or for the setting to come due again counting
 from the day you closed it.
 
