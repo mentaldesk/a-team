@@ -113,7 +113,7 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
                     ? spentSince.GetDateTimeOffset() : null,
                 root.TryGetProperty("spent", out var spent) && spent.ValueKind == JsonValueKind.Array
                     ? [.. spent.EnumerateArray().Select(each => new SpentTime(each.GetProperty("at").GetDateTimeOffset(),
-                        TimeSpan.FromSeconds(each.GetProperty("seconds").GetDouble()), each.GetProperty("gate").GetString() ?? Attention.Other))]
+                        TimeSpan.FromSeconds(each.GetProperty("seconds").GetDouble()), Gate(each.GetProperty("gate").GetString())))]
                     : []);
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
@@ -121,6 +121,14 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
             return null;
         }
     }
+
+    /// <summary>Time recorded before Questions was renamed Blocked counts as Blocked's.</summary>
+    private static string Gate(string? gate) => gate switch
+    {
+        null => Attention.Other,
+        "Questions" => "Blocked",
+        _ => gate,
+    };
 }
 
 /// <summary>A row of the Trends table: <paramref name="WaitingNow"/> is Work's own count where it has read one, or

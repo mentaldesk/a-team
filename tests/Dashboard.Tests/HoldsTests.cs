@@ -36,6 +36,41 @@ public class HoldsTests
     }
 
     [Fact]
+    public void A_task_in_review_waiting_on_another_repo_stays_in_Review_and_says_what_it_waits_on()
+    {
+        var reviewed = new WaitingItem(541, "Ask the Assistant pane anything", "In review", "https://github.com/mentaldesk/a-team/issues/541",
+            "a-team", "you", "awaiting your acceptance", Pr: 551, Branch: "feat/assistant-pane",
+            Chains: [[new("tui", [100], "tui-style-guide#100", "open"), Release, Bump]]);
+        var upstreamPr = new WaitingItem(100, "Shared pane", "In review", "https://github.com/mentaldesk/tui-style-guide/pull/100",
+            "tui", "you", "awaiting your acceptance", Pr: 100);
+        var tagged = Holds.Tag([reviewed, upstreamPr, Other]);
+
+        Assert.Equal("frees a-team #541", Holds.Frees(Find(tagged, "tui", 100)));
+        Assert.Equal("a-team #541 waits on this · then MentalDesk.Tui's release · then a-team's bump", Find(tagged, "tui", 100).Line);
+        Assert.Equal("waits on tui-style-guide#100 · in review, yours", Find(tagged, "a-team", 541).WaitsOn);
+        Assert.Equal("#541 · waits on tui-style-guide#100 · in review, yours · then MentalDesk.Tui's release · then a-team's bump"
+            + " · PR #551 · feat/assistant-pane", Find(tagged, "a-team", 541).Line);
+        Assert.Equal("Review", WorkView.GateOf(Find(tagged, "a-team", 541)));
+        Assert.Contains(("tui", 100), Holds.Holders(tagged));
+
+        using var view = new WorkView(["a-team", "tui"]);
+        view.Frame = new Rectangle(0, 0, 160, 20);
+        view.Layout(new Size(160, 20));
+        view.Show([reviewed, Other, upstreamPr]);
+        view.Frame = new Rectangle(0, 0, 160, 20);
+        view.Layout(new Size(160, 20));
+
+        var theirs = view.Lanes[1].Columns.Single(column => column.Gate == "Review").CardText.Where(text => text.StartsWith('#')).ToList();
+        Assert.StartsWith("#100 ⛓ frees a-team #541  ", theirs[0]);
+        Assert.Equal("tui ⛓ 1 PR2", view.Lanes[1].Title);
+        var ours = view.Lanes[0].Columns.Single(column => column.Gate == "Review").CardText;
+        Assert.StartsWith("#541 ⛓ waits on tui-style-guide#100 · in review, yours  ", ours[0]);
+        Assert.Contains(ours, text => text.Contains("#551"));
+
+        Assert.Empty(Holds.Tag([reviewed with { Chains = null }, upstreamPr]).SelectMany(item => item.Holding));
+    }
+
+    [Fact]
     public void Holders_are_the_cards_a_task_waits_on_now_whether_or_not_work_shows_them()
     {
         var prerequisite = new WaitingItem(530, "", "In review", "", "a-team", "you", "", Frees: [531]);
@@ -146,8 +181,8 @@ public class HoldsTests
         Assert.StartsWith("#79  ", cards[1]);
         Assert.StartsWith("#78  ", cards[2]);
         Assert.Equal("tui ⛓ 1 PR3", view.Lanes[1].Title);
-        Assert.Equal("a-team ? 1", view.Lanes[0].Title);
-        var questions = view.Lanes[0].Columns.Single(column => column.Gate == "Questions");
+        Assert.Equal("a-team ⊘ 1", view.Lanes[0].Title);
+        var questions = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
         Assert.StartsWith("#499 ⛓ waits on tui-style-guide#84 · in review, yours  Copies", questions.CardText[0]);
     }
 

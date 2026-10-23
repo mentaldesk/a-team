@@ -101,7 +101,7 @@ public class WhatsNewTests
         [
             new(7, "Ranked", "Pitched", "", "team", Priority: "High", Pitch: true),
             new(8, "Unranked, so in Triage", "Pitched", "", "team", Pitch: true),
-            new(9, "With a question, so in Questions", "Pitched", "", "team", Priority: "High", Pitch: true, Question: "Which?"),
+            new(9, "With a question, so in Blocked", "Pitched", "", "team", Priority: "High", Pitch: true, Question: "Which?"),
         ];
 
         news.Read("team", waiting, Start);

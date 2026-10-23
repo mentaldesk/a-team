@@ -64,7 +64,8 @@ behind a count, as in `+7`.
 The details pane gives the card's title, what it is, its Priority, team and column, how long it has
 been there in full (`6d 2h 10m`), the column's limit if it has one, and why it's waiting where Work
 says. For a task waiting on a change in another repo, that's how far the change has got:
-`Waiting on tui-style-guide#84: merged, not released`. For a card another task waits on, it gives the
+`Waiting on tui-style-guide#84: merged, not released`. A task already in review says so on a line
+of its own: `Also waits on tui-style-guide#100 · in review, yours`. A task held for you says who held it and why, as Work's Blocked card does: `Blocked: held by the Lead · …`. For a card another task waits on, it gives the
 chain, as on Work's status bar: `a-team #499 waits on this · then MentalDesk.Tui's release`. For a pitch, it lists the open tasks under it,
 each with its column and age.
 

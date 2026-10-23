@@ -227,7 +227,7 @@ The pitch lives in the issue body:
   these; the stakeholder comments to change one.
 - **Needs your answer**: only what you can't settle yourself: a change of direction, a trade-off
   with no sensible default, or something only the stakeholder knows. Leave the heading out when
-  there's nothing to ask. A pitch with this section waits under Questions on the stakeholder's board.
+  there's nothing to ask. A pitch with this section waits under Blocked on the stakeholder's board.
 - Your marker.
 
 One good pitch beats three thin ones.

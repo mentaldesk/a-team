@@ -148,6 +148,15 @@ jobs:
           if ! gh pr merge "$branch" --auto --squash --delete-branch; then
             echo "::warning::Auto-merge isn't available on the tap, so the formula PR needs merging by hand once its checks pass: $(gh pr view "$branch" --json url --jq .url)"
           fi
+          url=$(gh pr view "$branch" --json url --jq .url)
+          # An older release's formula PR still open can only conflict with this one now.
+          gh pr list --state open --limit 100 --json number,headRefName --jq '.[] | "\(.number) \(.headRefName)"' |
+            while read -r number head; do
+              old=${head#"$NAME-"}
+              [[ $head == "$NAME-$old" && $old =~ ^[0-9]+(\.[0-9]+)*$ && $old != "$VERSION" ]] || continue
+              [ "$(printf '%s\n' "$old" "$VERSION" | sort -V | head -1)" = "$old" ] || continue
+              gh pr close "$number" --delete-branch --comment "Superseded by $NAME $VERSION: $url"
+            done
 
       - uses: actions/checkout@v7
         if: inputs.scoop != '' && steps.tap.outputs.ok == 'true'

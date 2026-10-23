@@ -265,8 +265,12 @@ public sealed class OverseerView : View
         ];
         if (state.Waiting(card.Team, card.Number) is { WaitsUpstream: true } upstream)
             lines.Add($"Waiting on {upstream.Upstream}");
+        else if (state.Waiting(card.Team, card.Number) is { Held: true, Mine: true } held)
+            lines.Add($"Blocked: {held.Hold}");
         else if (state.Waiting(card.Team, card.Number) is { Reason.Length: > 0 } waiting)
             lines.Add($"Waiting: {(waiting.Mine ? "" : $"{waiting.Turn} · ")}{waiting.Reason}");
+        if (state.Waiting(card.Team, card.Number) is { WaitsUpstream: false, WaitsOn.Length: > 0 } reviewed)
+            lines.Add($"Also {reviewed.WaitsOn}");
         if (state.Waiting(card.Team, card.Number) is { Holding.Count: > 0 } holding)
             lines.Add(Holds.Chain(holding));
         if (card.Kind == CardKind.Pitch)

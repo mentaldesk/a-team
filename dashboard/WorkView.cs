@@ -14,19 +14,19 @@ public sealed class WorkView : View
     /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
     /// Idea or a pitch that carries none is still to rank; by In review it's decided, and a PR waits for
     /// acceptance whatever its rank. A document pitch, the vision or the Customer lead's docs proposal, is a PR, so it
-    /// can't carry one. A question, the Dev's on a Ready task or the Lead's on a pitch, waits in Questions whatever its rank. Review holds only what Accept would take, and sums up the rest under its
+    /// can't carry one. A held task, whoever held it, and a pitch the Lead asks on wait in Blocked whatever their rank. Review holds only what Accept would take, and sums up the rest under its
     /// cards. Triage and Pitches wear the kind they hold in their heading, and only a card of another kind wears
     /// its own. Each tab tallies its columns under the Tally icon.</summary>
     internal static readonly (string Name, Icon? Kind, Icon Tally, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
     [
         ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && !item.Document && item.Status is "Idea" or "Pitched", null),
         ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs || item.Document) && item.Question.Length == 0, null),
-        ("Questions", null, Icon.Question, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
+        ("Blocked", null, Icon.Blocked, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
         ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
     ];
 
     /// <summary>The gate a card waits at, as your time on it is split by; Other for one at none of them, like a task
-    /// waiting on another repo, which shows under Questions but asks you nothing.</summary>
+    /// waiting on another repo, which shows under Blocked but asks you nothing.</summary>
     internal static string GateOf(WaitingItem item) =>
         item.WaitsUpstream ? Attention.Other : Gates.FirstOrDefault(gate => gate.Holds(item) || gate.Aside?.Invoke(item) == true).Name ?? Attention.Other;
 
