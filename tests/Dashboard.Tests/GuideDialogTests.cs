@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Text.RegularExpressions;
+using MentalDesk.Tui.Links;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
@@ -137,7 +138,7 @@ public partial class GuideDialogTests : IDisposable
     [Fact]
     public void Opened_on_a_page_Backspace_goes_to_the_contents_page()
     {
-        using var dialog = new GuideDialog(GuidePages.In(_folder), _ => { }, "work.md");
+        using var dialog = new GuideDialog(GuidePages.In(_folder), Opening.Opened, "work.md");
         dialog.Layout(new Size(60, 12));
 
         Assert.Equal("Guide · Work", dialog.Title);
@@ -158,16 +159,34 @@ public partial class GuideDialogTests : IDisposable
         Assert.False(dialog.HasClosed);
     }
 
+    [Theory]
+    [InlineData("opened")]
+    [InlineData("copied")]
+    [InlineData("failed")]
+    public void A_web_link_opens_in_the_browser_says_what_happened_and_the_page_stays(string did)
+    {
+        const string url = "https://github.com/mentaldesk/a-team";
+        var opened = new List<string>();
+        using var dialog = Open(Opening.Into(opened, did));
+
+        dialog.Follow(url);
+
+        Assert.Equal([url], opened);
+        Assert.Equal("index.md", dialog.Page);
+        Assert.Equal(Opening.Outcome(did, url).Message, dialog.Message.Says);
+        Assert.Equal(Opening.SchemeOf(did), dialog.Message.SchemeName);
+    }
+
     [Fact]
-    public void A_web_link_opens_in_the_browser_and_the_page_stays()
+    public void A_link_to_another_page_opens_nothing_and_says_nothing()
     {
         var opened = new List<string>();
-        using var dialog = Open(opened.Add);
+        using var dialog = Open(Opening.Into(opened));
 
-        dialog.Follow("https://github.com/mentaldesk/a-team");
+        dialog.Follow("work.md");
 
-        Assert.Equal(["https://github.com/mentaldesk/a-team"], opened);
-        Assert.Equal("index.md", dialog.Page);
+        Assert.Empty(opened);
+        Assert.Equal("", dialog.Message.Says);
     }
 
     [Fact]
@@ -186,7 +205,7 @@ public partial class GuideDialogTests : IDisposable
     [Fact]
     public void A_guide_with_no_contents_page_says_so()
     {
-        using var dialog = new GuideDialog(GuidePages.In(Path.Combine(_folder, "gone")), _ => { });
+        using var dialog = new GuideDialog(GuidePages.In(Path.Combine(_folder, "gone")), Opening.Opened);
 
         Assert.Equal("Guide", dialog.Title);
         Assert.Equal("There's no index.md in the guide", dialog.Message.Says);
@@ -208,7 +227,7 @@ public partial class GuideDialogTests : IDisposable
     [MemberData(nameof(Links))]
     public void Every_link_in_the_guide_goes_to_a_page_and_heading_that_exist(string page, string link)
     {
-        using var dialog = new GuideDialog(GuidePages.Bundled(), _ => { }, page);
+        using var dialog = new GuideDialog(GuidePages.Bundled(), Opening.Opened, page);
         dialog.Layout(new Size(100, 40));
 
         dialog.Follow(link);
@@ -236,7 +255,7 @@ public partial class GuideDialogTests : IDisposable
     [InlineData(GuideDialog.Overseer)]
     public void Every_page_the_app_opens_the_guide_on_is_there(string page)
     {
-        using var dialog = new GuideDialog(GuidePages.Bundled(), _ => { }, page);
+        using var dialog = new GuideDialog(GuidePages.Bundled(), Opening.Opened, page);
 
         Assert.Equal(page, dialog.Page);
         Assert.Equal("", dialog.Message.Says);
@@ -283,7 +302,7 @@ public partial class GuideDialogTests : IDisposable
     [Fact]
     public void The_page_it_opens_on_is_expanded_and_selected_in_Contents()
     {
-        using var dialog = new GuideDialog(GuidePages.In(_folder), _ => { }, "work.md");
+        using var dialog = new GuideDialog(GuidePages.In(_folder), Opening.Opened, "work.md");
 
         Assert.True(dialog.ContentsTree.IsExpanded(Pages(dialog).First()));
         Assert.Equal("Work", dialog.ContentsTree.SelectedObject?.Name);
@@ -292,7 +311,7 @@ public partial class GuideDialogTests : IDisposable
     [Fact]
     public void Following_a_link_and_going_back_move_the_Contents_selection_with_you()
     {
-        using var dialog = new GuideDialog(GuidePages.In(_folder), _ => { }, "work.md");
+        using var dialog = new GuideDialog(GuidePages.In(_folder), Opening.Opened, "work.md");
         dialog.Layout(new Size(80, 12));
 
         dialog.Follow("#columns");
@@ -361,7 +380,7 @@ public partial class GuideDialogTests : IDisposable
     [Fact]
     public void Backspace_in_the_Index_edits_the_filter_and_stays_on_the_page()
     {
-        using var dialog = new GuideDialog(GuidePages.In(_folder), _ => { }, "work.md");
+        using var dialog = new GuideDialog(GuidePages.In(_folder), Opening.Opened, "work.md");
         dialog.NewKeyDownEvent(Key.I.WithCtrl.WithShift);
         dialog.IndexFilter.Text = "col";
         dialog.IndexFilter.MoveEnd();
@@ -390,7 +409,7 @@ public partial class GuideDialogTests : IDisposable
     [Fact]
     public void Up_and_Down_in_the_Index_move_from_section_to_section()
     {
-        using var dialog = new GuideDialog(GuidePages.Bundled(), _ => { }, GuideDialog.Work);
+        using var dialog = new GuideDialog(GuidePages.Bundled(), Opening.Opened, GuideDialog.Work);
         dialog.NewKeyDownEvent(Key.I.WithCtrl.WithShift);
         dialog.IndexFilter.Text = "pau";
         Assert.Equal(["Pausing a role", "Pausing a team"], dialog.Matches.Select(topic => topic.Name));
@@ -414,7 +433,7 @@ public partial class GuideDialogTests : IDisposable
     [MemberData(nameof(Sections))]
     public void Every_section_of_the_guide_is_in_Contents_and_the_Index_and_opens_at_its_heading(string page, string heading)
     {
-        using var dialog = new GuideDialog(GuidePages.Bundled(), _ => { }, GuideDialog.Work);
+        using var dialog = new GuideDialog(GuidePages.Bundled(), Opening.Opened, GuideDialog.Work);
         dialog.Layout(new Size(100, 40));
 
         var section = Assert.Single(Pages(dialog).Single(topic => topic.Page == page).Sections, topic => topic.Name == heading);
@@ -431,15 +450,15 @@ public partial class GuideDialogTests : IDisposable
     [Fact]
     public void Contents_and_the_Index_hold_only_the_guide_s_sections()
     {
-        using var dialog = new GuideDialog(GuidePages.Bundled(), _ => { }, GuideDialog.Work);
+        using var dialog = new GuideDialog(GuidePages.Bundled(), Opening.Opened, GuideDialog.Work);
 
         Assert.Equal(Sections().Count, Pages(dialog).Sum(topic => topic.Sections.Count));
         Assert.Equal(Sections().Count, dialog.Matches.Count);
     }
 
-    private GuideDialog Open(Action<string>? openUrl = null)
+    private GuideDialog Open(Func<string, LinkOutcome>? openUrl = null)
     {
-        var dialog = new GuideDialog(GuidePages.In(_folder), openUrl ?? (_ => { }));
+        var dialog = new GuideDialog(GuidePages.In(_folder), openUrl ?? Opening.Opened);
         dialog.Layout(new Size(60, 12));
         return dialog;
     }

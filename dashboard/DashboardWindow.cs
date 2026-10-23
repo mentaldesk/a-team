@@ -3,6 +3,7 @@ using System.Reflection;
 using AssistantPane = MentalDesk.Tui.Assistant.AssistantPane;
 using MentalDesk.Tui.Commands;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Links;
 using Terminal.Gui;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
@@ -79,8 +80,8 @@ public sealed class DashboardWindow : Window
     private readonly Action<IReadOnlyList<string>, Action<string, SpendingItem>>? _showSpending;
     private readonly Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? _newIdea;
     private readonly Func<Key, Attaching>? _attaching;
-    private readonly Action<string> _openUrl;
-    private readonly Func<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> _showBody;
+    private readonly Func<string, LinkOutcome> _openUrl;
+    private readonly Func<WaitingItem, IssueBody, Func<LinkOutcome?>, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> _showBody;
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<WaitingItem, bool> _confirmApprove;
     private readonly Func<WaitingItem, string?> _askHold;
@@ -135,7 +136,7 @@ public sealed class DashboardWindow : Window
     private (IssueBody Body, int Top)? _triedFrom;
     private (WaitingItem Item, ReaderPlace Place, string? Failure, string? Said, bool Reread)? _reopen;
     private (IssueBody Body, int Top)? _editFrom;
-    private (string Text, Schemes Scheme)? _copied;
+    private (string Text, Schemes Scheme)? _reported;
     private readonly IClipboard? _clipboard;
     private readonly MacKeys? _macKeys;
     private readonly AssistantPane? _assistant;
@@ -148,8 +149,8 @@ public sealed class DashboardWindow : Window
         Func<string[], Task<string?>> run,
         Func<string, Task<Reading>> readWaiting,
         Func<WaitingItem, Task<Reading>> readBody,
-        Action<string> openUrl,
-        Func<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> showBody,
+        Func<string, LinkOutcome> openUrl,
+        Func<WaitingItem, IssueBody, Func<LinkOutcome?>, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?, ReaderEdit?, Key, ReaderIdea?, Func<Key, bool>, Rank?, Rank?> showBody,
         Area area,
         IconStyle auto,
         Action<Handover>? handOver = null,
@@ -559,9 +560,9 @@ public sealed class DashboardWindow : Window
     /// <summary>While a menu is open it owns the keyboard: its own keys would otherwise run a command as well.</summary>
     protected override bool OnKeyDown(Key key)
     {
-        if (_copied is not null)
+        if (_reported is not null)
         {
-            _copied = null;
+            _reported = null;
             ShowMessage();
         }
         if (key == MacCopy && !_menu.Bar.IsOpen() && _commands.IsEnabled(CopyLines))
@@ -911,7 +912,13 @@ public sealed class DashboardWindow : Window
     private void OpenChip()
     {
         if (_overseer.Board.SelectedCard is { Url.Length: > 0 } card)
-            _openUrl(card.Url);
+            Open(card.Url);
+    }
+
+    private void Open(string url)
+    {
+        _reported = Copying.Said(_openUrl(url));
+        ShowMessage();
     }
 
     /// <summary>The pane of the agent working on <paramref name="card"/>, if one is.</summary>
@@ -1093,7 +1100,7 @@ public sealed class DashboardWindow : Window
     private void OpenSelected()
     {
         if (_work.SelectedUrl is { Length: > 0 } url)
-            _openUrl(url);
+            Open(url);
     }
 
     /// <summary>The team of the selected column in Work, of the selected chip in Overseer, or of the selected agent
@@ -1134,11 +1141,8 @@ public sealed class DashboardWindow : Window
             ShowMessage();
             return;
         }
-        _openUrl(url);
         _failure = null;
-        _said = $"Opened {team}'s board";
-        _saidOn = _work.Selected;
-        ShowMessage();
+        Open(url);
     }
 
     /// <summary>Opens the reader with the ranks under it, starting on the card's own.</summary>
@@ -1239,11 +1243,7 @@ public sealed class DashboardWindow : Window
             Seen(item);
             _idea = NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
             _image = new ReaderImage();
-            var chosen = _showBody(item, body, () =>
-            {
-                if (url is { Length: > 0 })
-                    _openUrl(url);
-            }, _approvable is null ? null : Approve,
+            var chosen = _showBody(item, body, () => url is { Length: > 0 } ? _openUrl(url) : null, _approvable is null ? null : Approve,
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
@@ -1684,7 +1684,7 @@ public sealed class DashboardWindow : Window
             _already = null;
         var (text, scheme) =
             _failure is { Length: > 0 } ? (_failure, Schemes.Error)
-            : _copied is { } copied ? copied
+            : _reported is { } reported ? reported
             : _reading is not null ? ("Reading…", Schemes.Accent)
             : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
             : _already is { } already ? (already.Text, Schemes.Accent)
@@ -1879,7 +1879,7 @@ public sealed class DashboardWindow : Window
         if (Selected() is not { } pane)
             return;
         var copied = copy(pane);
-        _copied = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, copied.Text), truncated: copied.Capped);
+        _reported = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, copied.Text), truncated: copied.Capped);
         ShowMessage();
     }
 
@@ -1887,7 +1887,7 @@ public sealed class DashboardWindow : Window
     {
         if (_work.Selected is not { Branch.Length: > 0 } card)
             return;
-        _copied = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, card.Branch), card.Branch);
+        _reported = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, card.Branch), card.Branch);
         ShowMessage();
     }
 

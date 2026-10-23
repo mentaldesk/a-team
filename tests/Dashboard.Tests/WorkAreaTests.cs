@@ -1,4 +1,5 @@
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Links;
 using System.Drawing;
 using System.Text.Json.Nodes;
 using Terminal.Gui.Configuration;
@@ -694,28 +695,38 @@ public class WorkAreaTests : IDisposable
             Titles(reopened));
     }
 
-    [Fact]
-    public void g_opens_the_selected_cards_issue()
+    [Theory]
+    [InlineData("opened")]
+    [InlineData("copied")]
+    [InlineData("failed")]
+    public void g_opens_the_selected_cards_issue_and_says_what_happened(string did)
     {
+        const string url = "https://github.com/mentaldesk/team0/issues/107";
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened, did));
         window.Refresh();
         LayOut(window, 120, 30);
 
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.True(window.NewKeyDownEvent(new Key('g')));
 
-        Assert.Equal(["https://github.com/mentaldesk/team0/issues/107"], opened);
+        Assert.Equal([url], opened);
+        Assert.Equal(Opening.Outcome(did, url).Message, window.Message.Says);
+        Assert.Equal(did == "failed", Opening.InErrorColour(window.Message.SchemeName));
     }
 
-    [Fact]
-    public void b_opens_the_board_of_the_selected_cards_team()
+    [Theory]
+    [InlineData("opened")]
+    [InlineData("copied")]
+    [InlineData("failed")]
+    public void b_opens_the_board_of_the_selected_cards_team_and_says_what_happened(string did)
     {
         var teams = Path.Combine(Config, "teams");
         Directory.CreateDirectory(teams);
         File.WriteAllText(Path.Combine(teams, "team0.json"), """{"project": {"owner": "mentaldesk", "number": 9}}""");
+        const string url = "https://github.com/orgs/mentaldesk/projects/9";
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened, did));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -723,15 +734,16 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("team0", window.Work.Selected?.Team);
         Assert.True(window.NewKeyDownEvent(new Key('b')));
 
-        Assert.Equal(["https://github.com/orgs/mentaldesk/projects/9"], opened);
-        Assert.Equal("Opened team0's board", window.Message.Says);
+        Assert.Equal([url], opened);
+        Assert.Equal(Opening.Outcome(did, url).Message, window.Message.Says);
+        Assert.Equal(did == "failed", Opening.InErrorColour(window.Message.SchemeName));
     }
 
     [Fact]
     public void b_says_why_when_the_team_config_names_no_board()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -745,7 +757,7 @@ public class WorkAreaTests : IDisposable
     public void g_on_the_row_under_a_card_opens_its_PR()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -763,7 +775,7 @@ public class WorkAreaTests : IDisposable
     public void An_Idea_has_no_row_under_it_and_hands_over_to_GitHub_on_g()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -780,7 +792,7 @@ public class WorkAreaTests : IDisposable
     public void p_is_no_longer_a_key_the_Work_area_answers()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -2662,7 +2674,7 @@ public class WorkAreaTests : IDisposable
     {
         var opened = new List<string>();
         using var window = Open(
-            openUrl: opened.Add,
+            openUrl: Opening.Into(opened),
             readBody: _ => Task.FromResult(new Reading(Body, null)),
             showBody: (_, _, onGitHub, _, _, _, _) => onGitHub());
         window.Refresh();
@@ -3213,7 +3225,7 @@ public class WorkAreaTests : IDisposable
     public void o_opens_a_card_the_arrows_moved_to()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -4174,11 +4186,11 @@ public class WorkAreaTests : IDisposable
 
     private DashboardWindow Open(
         Func<string, Task<Reading>>? read = null,
-        Action<string>? openUrl = null,
+        Func<string, LinkOutcome>? openUrl = null,
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?, Rank?>? chooseRank = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
-        Action<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
+        Action<WaitingItem, IssueBody, Func<LinkOutcome?>, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
@@ -4209,7 +4221,7 @@ public class WorkAreaTests : IDisposable
             run ?? (_ => Task.FromResult<string?>(null)),
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
-            openUrl ?? (_ => { }),
+            openUrl ?? Opening.Opened,
             (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, _, idea, keys, rank) =>
             {
                 showBody?.Invoke(item, body, onGitHub, onApprove, accept, comment, tryIt);

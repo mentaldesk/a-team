@@ -225,7 +225,7 @@ public class KeysSheetTests : IDisposable
             _ => Task.FromResult<string?>(null),
             _ => Task.FromResult(new Reading("[]", null)),
             _ => Task.FromResult(new Reading("{}", null)),
-            _ => { },
+            Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             area,
             IconStyle.Unicode);

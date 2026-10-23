@@ -1,5 +1,7 @@
 using System.Globalization;
+using MentalDesk.Tui;
 using MentalDesk.Tui.Copying;
+using MentalDesk.Tui.Links;
 using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
@@ -24,6 +26,9 @@ public static class Copying
                     + (truncated ? " (line truncated)" : ""), Schemes.Accent),
             _ => (outcome.Message, Schemes.Error),
         };
+
+    public static (string Text, Schemes Scheme) Said(LinkOutcome outcome) =>
+        (outcome.Message, outcome.Severity == Severity.Error ? Schemes.Error : Schemes.Accent);
 
     private static CopyOutcome.Copied Counted(string text)
     {

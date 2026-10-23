@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using MentalDesk.Tui.Filtering;
 using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Links;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using MarkdownView = Terminal.Gui.Views.Markdown;
@@ -23,7 +24,7 @@ public sealed class GuideDialog : DashboardDialog
     private static readonly Key IndexKey = Key.I.WithCtrl.WithShift;
 
     private readonly IReadOnlyDictionary<string, string> _guide;
-    private readonly Action<string> _openUrl;
+    private readonly Func<string, LinkOutcome> _openUrl;
     private readonly MarkdownView _page;
     private readonly MessageBar _message = new();
     private readonly Stack<(string Page, int Line, GuideTopic? At)> _back = [];
@@ -44,7 +45,7 @@ public sealed class GuideDialog : DashboardDialog
 
     /// <param name="guide">Each page's Markdown, by its path in the guide.</param>
     /// <param name="openUrl">Where a link to a web page goes.</param>
-    public GuideDialog(IReadOnlyDictionary<string, string> guide, Action<string> openUrl, string page = Contents)
+    public GuideDialog(IReadOnlyDictionary<string, string> guide, Func<string, LinkOutcome> openUrl, string page = Contents)
         : base("Guide")
     {
         _guide = guide;
@@ -193,7 +194,9 @@ public sealed class GuideDialog : DashboardDialog
     {
         if (IsWeb(url))
         {
-            _openUrl(url);
+            var (said, scheme) = Copying.Said(_openUrl(url));
+            _message.Show(said, scheme);
+            SetNeedsLayout();
             return;
         }
         var (path, anchor) = Split(url);
@@ -219,7 +222,7 @@ public sealed class GuideDialog : DashboardDialog
         return true;
     }
 
-    public static void Show(IApplication app, IReadOnlyDictionary<string, string> guide, Action<string> openUrl, string page = Contents)
+    public static void Show(IApplication app, IReadOnlyDictionary<string, string> guide, Func<string, LinkOutcome> openUrl, string page = Contents)
     {
         using var dialog = new GuideDialog(guide, openUrl, page);
         DialogHost.Run(app, dialog);
