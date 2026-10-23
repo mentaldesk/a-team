@@ -100,7 +100,8 @@ version number. PRs that touch the dashboard, packaging or the workflow run the 
 check packaging.
 
 Release publishes only from `main`. The tap token is a fine-grained personal access token with
-access to `mentaldesk/homebrew-tap` only (Contents and Pull requests: read and write), stored as
+access to `mentaldesk/homebrew-tap`, `mentaldesk/scoop-bucket` and `mentaldesk/apt` (Contents:
+read and write, plus Pull requests on the tap), stored as
 `PACKAGES_TOKEN` in a `release` environment on this repo and on TuiCode. The environment lets only
 `main` deploy, so a workflow on any other branch can't read the token. When it expires, releases
 still publish but the formula step fails: regenerate it under your GitHub settings → Developer
@@ -121,13 +122,13 @@ the artifacts it uploaded.
 | Secrets | None. Uses the caller's `GITHUB_TOKEN`. |
 | Permissions the caller must grant | `contents: read`, `pull-requests: read` (`auto` reads merged PR labels). |
 
-**`release-publish.yml`** — the tag, the release, the tap PR and, optionally, the Scoop manifest.
+**`release-publish.yml`** — the tag, the release, the tap PR and, optionally, the Scoop manifest and the apt repository.
 
 | | |
 |---|---|
-| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `artifacts` (artifact name pattern, default `*`), and — added after `v0.0.4` — `scoop` (Scoop manifest template path in the caller; omitted, no Scoop step runs) and `bucket` (default `mentaldesk/scoop-bucket`), and — added after `v0.1.2` — `environment` (an environment in the caller the job runs in; omitted, none). |
+| Inputs | `name` (package name), `version`, `tag`, `formula` (template path in the caller), `tap` (default `mentaldesk/homebrew-tap`), `artifacts` (artifact name pattern, default `*`), and — added after `v0.0.4` — `scoop` (Scoop manifest template path in the caller; omitted, no Scoop step runs) and `bucket` (default `mentaldesk/scoop-bucket`), and — added after `v0.1.2` — `environment` (an environment in the caller the job runs in; omitted, none), and — added after `v0.1.94` — `apt` (boolean, default `false`) and `apt-repo` (default `mentaldesk/apt`). |
 | Outputs | None. |
-| Secrets | `packages-token` (optional): write access to `tap` and `bucket`. With `environment`, that environment's `PACKAGES_TOKEN` secret is used instead, and the caller passes `secrets: inherit`: it's the only way an environment's secrets reach a called workflow. Without either, the release still publishes and the packaging steps warn. |
+| Secrets | `packages-token` (optional): write access to `tap`, `bucket` and `apt-repo`. With `environment`, that environment's `PACKAGES_TOKEN` secret is used instead, and the caller passes `secrets: inherit`: it's the only way an environment's secrets reach a called workflow. Without either, the release still publishes and the packaging steps warn. With `apt`, also `APT_GPG_PRIVATE_KEY` and `APT_GPG_PASSPHRASE` from the same environment; without the key, the apt step warns and skips. |
 | Permissions the caller must grant | `contents: write`. Permissions are not inherited, so the calling job declares them. |
 
 Both templates are rendered from the artifacts, not from a list of platforms: `{{version}}`,
@@ -140,6 +141,15 @@ bucket updated in the same run. That one is **committed straight to the bucket's
 not opened as a PR**: the bucket has no CI to gate one. a-team passes no `scoop`, so none of it
 runs for a-team's own release.
 
+A caller that attaches `<name>_<version>_<arch>.deb` packages passes `apt: true`, and the same run
+replaces its package in `apt-repo`'s `pool/main/<name>/`, keeping other callers' packages, then
+rebuilds and signs `dists/stable` and serves the public key as `key.asc`. `apt-repo` is published
+on GitHub Pages from its default branch, so users add
+`https://<owner>.github.io/<repo> stable main`. Each publish **force-pushes a single orphan
+commit**, so the repo holds only the current packages rather than every release's. Every caller
+publishing to one `apt-repo` signs with the same key, since users trust the one `key.asc`; it's
+in TuiCode's `release` environment.
+
 **Which release to pin.** Pin an exact release, never a branch or a moving tag: before v1.0.0
 nothing here is promised across releases (*What callers can rely on*). The tables above describe
 the newest release, so that's the one to take from
@@ -149,9 +159,9 @@ The example pins `v0.0.4` because that's its **floor**: the oldest release that 
 input it passes. A later release adding an input raises the floor only for a caller that passes
 it, so the example runs as copied and stays right without being bumped each release. Pin newer
 freely; pin older only against that release's own copy of the file, e.g.
-`git show v0.0.4:.github/workflows/release-publish.yml`. Three inputs sit above the example's
-floor: `scoop` and `bucket`, added after `v0.0.4`, and `environment`, added after `v0.1.2`, each
-first carried by the next release after it.
+`git show v0.0.4:.github/workflows/release-publish.yml`. Five inputs sit above the example's
+floor: `scoop` and `bucket`, added after `v0.0.4`, `environment`, added after `v0.1.2`, and `apt`
+and `apt-repo`, added after `v0.1.94`, each first carried by the next release after it.
 
 ```yaml
 jobs:
@@ -173,6 +183,7 @@ jobs:
       formula: packaging/tuicode.rb
       # scoop: packaging/tuicode.json          # needs a newer pin than v0.0.4; omit it, no Scoop step runs
       # environment: release                   # needs a newer pin than v0.1.2; then `secrets: inherit` below
+      # apt: true                              # needs a newer pin than v0.1.94; the key comes through `secrets: inherit`
     secrets:
       packages-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 ```

@@ -2,7 +2,8 @@ name: Release publish
 
 # Reusable: tags the commit, publishes the GitHub release from the caller's build artifacts, opens
 # a Homebrew tap PR with the rendered formula, and, for a caller that passes a Scoop manifest
-# template, commits that to its bucket in the same run. See AGENTS.md, "Releasing".
+# template or turns on apt, commits those to its bucket and its apt repository in the same run.
+# See AGENTS.md, "Releasing".
 on:
   workflow_call:
     inputs:
@@ -34,6 +35,14 @@ on:
         description: Scoop bucket repository the manifest is committed to.
         type: string
         default: mentaldesk/scoop-bucket
+      apt:
+        description: Publish the caller's <name>_<version>_<arch>.deb artifacts to apt-repo, signed with APT_GPG_PRIVATE_KEY. Off, no apt step runs.
+        type: boolean
+        default: false
+      apt-repo:
+        description: Repository served on GitHub Pages as the signed apt repository. The release replaces its own package there and keeps the others.
+        type: string
+        default: mentaldesk/apt
       artifacts:
         description: Pattern matching the caller's uploaded build artifacts.
         type: string
@@ -44,10 +53,16 @@ on:
         default: ''
     secrets:
       packages-token:
-        description: Token with contents and pull-requests write on the tap, and contents write on the bucket. Without it the release still publishes and the packaging steps warn.
+        description: Token with contents and pull-requests write on the tap, and contents write on the bucket and apt-repo. Without it the release still publishes and the packaging steps warn.
         required: false
       PACKAGES_TOKEN:
         description: 'The same token, from the environment named by `environment`. It only resolves when the caller passes `secrets: inherit`.'
+        required: false
+      APT_GPG_PRIVATE_KEY:
+        description: ASCII-armoured private key that signs apt-repo. Every caller publishing to the same apt-repo must use the same key, since users trust the one key.asc it serves.
+        required: false
+      APT_GPG_PASSPHRASE:
+        description: Passphrase for APT_GPG_PRIVATE_KEY.
         required: false
 
 jobs:
@@ -106,11 +121,13 @@ jobs:
         env:
           TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.packages-token }}
           SCOOP: ${{ inputs.scoop }}
+          APT: ${{ inputs.apt }}
         run: |
-          what="the formula wasn't"
-          if [ -n "$SCOOP" ]; then what="the formula and the Scoop manifest weren't"; fi
+          what="the formula"
+          if [ -n "$SCOOP" ]; then what="$what, the Scoop manifest"; fi
+          if [ "$APT" = true ]; then what="$what, the apt repository"; fi
           if [ -n "$TOKEN" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
-          else echo "::warning::No packages token, so $what updated. Set PACKAGES_TOKEN in the environment this job runs in, or the secret your release workflow passes as packages-token, then re-run this job."; fi
+          else echo "::warning::No packages token, so these weren't updated: $what. Set PACKAGES_TOKEN in the environment this job runs in, or the secret your release workflow passes as packages-token, then re-run this job."; fi
 
       - uses: actions/checkout@v7
         if: steps.tap.outputs.ok == 'true'
@@ -185,3 +202,76 @@ jobs:
           git commit -m "$NAME $VERSION"
           # The bucket has no CI to gate a PR, so this is a commit on its default branch.
           git push
+
+      - name: Check for the apt signing key
+        id: apt
+        if: inputs.apt && steps.tap.outputs.ok == 'true'
+        env:
+          KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          NAME: ${{ inputs.name }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          shopt -s nullglob
+          debs=(dist/"${NAME}_${VERSION}"_*.deb)
+          if [ ${#debs[@]} -eq 0 ]; then
+            echo "::error::apt is on, but no artifact is named ${NAME}_${VERSION}_<arch>.deb."
+            exit 1
+          fi
+          if [ -n "$KEY" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::No APT_GPG_PRIVATE_KEY, so the apt repository wasn't updated. Set it and APT_GPG_PASSPHRASE in the environment this job runs in, then re-run this job."; fi
+
+      - uses: actions/checkout@v7
+        if: steps.apt.outputs.ok == 'true'
+        with:
+          repository: ${{ inputs.apt-repo }}
+          token: ${{ secrets.PACKAGES_TOKEN || secrets.packages-token }}
+          path: apt-repo
+
+      - name: Publish apt repository
+        if: steps.apt.outputs.ok == 'true'
+        env:
+          NAME: ${{ inputs.name }}
+          VERSION: ${{ inputs.version }}
+          ORIGIN: ${{ github.repository_owner }}
+          GPG_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          command -v apt-ftparchive >/dev/null || sudo apt-get install -y -qq apt-utils
+          cd apt-repo
+          pool="pool/main/$NAME"
+          mkdir -p "$pool"
+          rm -f "$pool"/*.deb
+          cp ../dist/"${NAME}_${VERSION}"_*.deb "$pool/"
+          arches=$(for deb in pool/main/*/*.deb; do dpkg-deb -f "$deb" Architecture; done | grep -vx all | sort -u | tr '\n' ' ')
+          rm -rf dists
+          for arch in $arches; do
+            dir="dists/stable/main/binary-$arch"
+            mkdir -p "$dir"
+            apt-ftparchive --arch "$arch" packages pool > "$dir/Packages"
+            gzip -9kn "$dir/Packages"
+          done
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin="$ORIGIN" -o APT::FTPArchive::Release::Label="$ORIGIN" \
+            -o APT::FTPArchive::Release::Suite=stable -o APT::FTPArchive::Release::Codename=stable \
+            -o APT::FTPArchive::Release::Components=main -o APT::FTPArchive::Release::Architectures="${arches% }" \
+            release dists/stable > "$RUNNER_TEMP/Release"
+          mv "$RUNNER_TEMP/Release" dists/stable/Release
+
+          GNUPGHOME=$(mktemp -d)
+          export GNUPGHOME
+          printf '%s\n' "$GPG_KEY" | gpg --batch --import
+          sign() { gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 "$@" 3<<<"$GPG_PASSPHRASE"; }
+          sign --clearsign -o dists/stable/InRelease dists/stable/Release
+          sign --armor --detach-sign -o dists/stable/Release.gpg dists/stable/Release
+          gpg --armor --export > key.asc
+          touch .nojekyll
+
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          old=$(git rev-parse HEAD)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # One orphan commit, so the repo holds only the current packages rather than every release's.
+          git checkout -q --orphan publish
+          git add -A
+          git commit -qm "$NAME $VERSION"
+          git push --force-with-lease="$branch:$old" origin "HEAD:$branch"
