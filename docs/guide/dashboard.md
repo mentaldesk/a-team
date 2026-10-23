@@ -134,11 +134,35 @@ While any of these is going, a line at the foot of the window says so. If one fa
 why, in red. Pausing and interrupting never make you wait: they queue behind anything else being
 written to the board, as in [Work](work.md#while-its-being-written).
 
+## The Assistant
+
+**View → Assistant**, or **Assistant** in Commands, opens a Claude Code conversation down the right of
+whichever area you're in, with the cursor in its question box. Choosing it again closes it. It has
+no key of its own; give it one under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
+It stays open as you move between Work, Overseer and the Dashboard.
+
+Ask it anything about your teams: why a card has sat so long, what a team spent yesterday, why a
+Dev hasn't run since lunch. It already knows how a-team works, where each team's config, logs and
+run record are, and what you're looking at: the line above the box says what the next question is
+about, like *on #499 in Work*, and your question's heading repeats it, so you never have to name the
+card or agent. With more than one team, the card's team is named too.
+
+The answer streams in, with a `▸` line for each thing it looks at. It runs in Claude Code's Auto
+mode, so it reads and runs commands without asking unless Auto's check flags one. Then it asks you,
+in a dialog titled *Claude Code wants to run a command*:
+`Ctrl+Enter` allows that one command, and `Esc` denies it. Deny starts focused. To change anything it
+goes through the board as you do, so it can't make a move you couldn't.
+
+`Enter` sends, `Esc` stops the answer and keeps what has arrived, and `Ctrl+L` starts a new
+conversation. `F6` moves between the Assistant and the area beside it. The last conversation is
+there again the next time you open the app. If Claude Code can't start or isn't signed in, the pane
+says so in a line, with the command that signs you in.
+
 ## Commands and keys
 
 `F1` shows the keys. *Everywhere*, on the left, lists the ones that work anywhere, under the menu
-that holds them. Beside it, headed with where you are (Work, Overseer, the agent grid or an expanded
-log), are the ones for there. *Help → Show keys* and **Show keys** in Commands open it too, and
+that holds them. Beside it, headed with where you are (Work, Overseer, the agent grid, an expanded
+log or the Assistant), are the ones for there. *Help → Show keys* and **Show keys** in Commands open it too, and
 `Esc` or its *Esc Close* button closes it. *Press F1 for help*, at the right end of the status bar,
 is the only key it names. The rest of it starts with where you are (Work's filter, or Overseer) and
 when the board was last read, then says what's selected or going on. The app's version is in

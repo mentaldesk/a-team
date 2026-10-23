@@ -810,6 +810,7 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal(
             [
+                "Send question", "Stop answering", "Start a new conversation", "Next pane", "Previous pane",
                 "Select the next agent", "Select the previous agent", "Select the agent to the right",
                 "Select the agent to the left", "Select the agent below", "Select the agent above",
                 "Select the next line of the log", "Select the line above in the log", "Extend the selection down",
@@ -824,7 +825,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
                 "Show details", "Fold the lane", "Open on GitHub", "Go to the agent's session", "Read every board again",
-                "Dashboard", "Work", "Overseer", "Go to what's new",
+                "Dashboard", "Work", "Overseer", "Assistant", "Go to what's new",
                 "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "About", "Trends", "Spending", "Decisions…", "Back to the agent grid", "Quit",
                 "Go to team0", "Go to team1", "Go to team 3", "Go to team 4", "Go to team 5", "Go to team 6", "Go to team 7",
                 "Go to team 8", "Go to team 9",

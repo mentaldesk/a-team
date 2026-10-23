@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Reflection;
+using AssistantPane = MentalDesk.Tui.Assistant.AssistantPane;
 using MentalDesk.Tui.Commands;
 using MentalDesk.Tui.Keys;
 using Terminal.Gui;
@@ -35,6 +36,7 @@ public sealed class DashboardWindow : Window
     private const int LoadingPadding = 8;
     private const int LoadingHeight = 5;
     private const int AlertGap = 3;
+    private const int AssistantColumns = 48;
 
     // Cmd+C, once the Mac keys are installed.
     private static readonly Key MacCopy = Key.C.WithCtrl;
@@ -137,6 +139,7 @@ public sealed class DashboardWindow : Window
     private (string Text, Schemes Scheme)? _copied;
     private readonly IClipboard? _clipboard;
     private readonly MacKeys? _macKeys;
+    private readonly AssistantPane? _assistant;
 
     public DashboardWindow(
         IReadOnlyList<(string Team, string Role)> agents,
@@ -177,7 +180,8 @@ public sealed class DashboardWindow : Window
         Action<string>? showDecisions = null,
         MacKeys? macKeys = null,
         Func<WaitingItem, bool>? confirmApprove = null,
-        Func<WaitingItem, string?>? askHold = null)
+        Func<WaitingItem, string?>? askHold = null,
+        AssistantSetup? assistant = null)
     {
         _macKeys = macKeys;
         _attaching = attaching;
@@ -227,7 +231,7 @@ public sealed class DashboardWindow : Window
         {
             X = 0,
             Y = MenuLines,
-            Width = Dim.Fill(),
+            Width = Dim.Func(_ => BesideAssistant(), this),
             Height = Dim.Func(_ => Math.Max(0, Viewport.Height - Foot() - MenuLines), this),
             CanFocus = true,
             Visible = area == Area.Dashboard,
@@ -265,7 +269,7 @@ public sealed class DashboardWindow : Window
             Title = "dispatcher",
             X = 0,
             Y = Pos.Func(_ => _dispatcherExpanded ? MenuLines : Math.Max(0, Viewport.Height - Foot()), this),
-            Width = Dim.Fill(),
+            Width = Dim.Func(_ => BesideAssistant(), this),
             Height = Dim.Func(_ => _dispatcherExpanded ? Math.Max(0, Viewport.Height - MenuLines - StatusLines) : DispatchLines + 2, this),
             CanFocus = true,
             Visible = area == Area.Dashboard,
@@ -283,13 +287,13 @@ public sealed class DashboardWindow : Window
         _dispatchFrame.Add(_dispatch, _dispatchAll);
         Add(_dispatchFrame);
 
-        _title = new Label { X = 1, Y = MenuLines, Width = Dim.Fill(1), Text = "Work", Visible = area == Area.Work };
+        _title = new Label { X = 1, Y = MenuLines, Width = Dim.Func(_ => Math.Max(0, BesideAssistant() - 1), this), Text = "Work", Visible = area == Area.Work };
         Add(_title);
         _work = new WorkView(_teamNames)
         {
             X = 0,
             Y = MenuLines + TitleLines,
-            Width = Dim.Fill(),
+            Width = Dim.Func(_ => BesideAssistant(), this),
             Height = Dim.Func(_ => WorkHeight(), this),
             Visible = area == Area.Work,
         };
@@ -300,7 +304,7 @@ public sealed class DashboardWindow : Window
         {
             X = 0,
             Y = MenuLines,
-            Width = Dim.Fill(),
+            Width = Dim.Func(_ => BesideAssistant(), this),
             Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this),
             Visible = area == Area.Overseer,
         };
@@ -317,6 +321,8 @@ public sealed class DashboardWindow : Window
         _loading.Add(new Label { Text = LoadingText, X = Pos.Center(), Y = Pos.Center() });
         Add(_loading);
         ShowIcons(settings.ReadIcons());
+        if (assistant is not null)
+            Add(_assistant = NewAssistant(assistant));
 
         _status.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
         Add(_status);
@@ -379,6 +385,8 @@ public sealed class DashboardWindow : Window
 
     internal CommandRegistry Commands => _commands;
 
+    internal AssistantPane? Assistant => _assistant;
+
     internal FrameView Loading => _loading;
 
     /// <summary>How long Work, in front with nothing over it, goes before it reads again by itself.</summary>
@@ -423,6 +431,7 @@ public sealed class DashboardWindow : Window
 
         ShowOverseer(now);
         ShowNews();
+        ShowAsking();
         _menu.Refresh();
         ShowMessage();
         ShowLoading();
@@ -560,6 +569,13 @@ public sealed class DashboardWindow : Window
         }
         if (key == MacCopy && !_menu.Bar.IsOpen() && _commands.IsEnabled(CopyLines))
             return _commands.Execute(CopyLines);
+        if (InAssistant && IsTyping(key))
+            return base.OnKeyDown(key);
+        if (InAssistant && key == Key.Esc)
+        {
+            _assistant!.Stop();
+            return true;
+        }
         return (!_menu.Bar.IsOpen() && _commands.Press(key)) || base.OnKeyDown(key);
     }
 
@@ -579,6 +595,13 @@ public sealed class DashboardWindow : Window
         string[] mine = ["Show only mine", "Show all"];
         string[] holdTask = ["Hold", "Release hold"];
         _commands
+            .Register("assistant.send", "Send question", () => _assistant?.Send(), Key.Enter, isEnabled: () => InAssistant, scopes: [Regions.Assistant])
+            .Register("assistant.stop", "Stop answering", () => _assistant?.Stop(), Key.Esc,
+                isEnabled: () => InAssistant && _assistant!.Controller.IsAnswering, scopes: [Regions.Assistant])
+            .Register("assistant.clear", "Start a new conversation", () => _assistant?.Clear(), Key.L.WithCtrl, isEnabled: () => InAssistant,
+                scopes: [Regions.Assistant])
+            .Register("pane.next", "Next pane", SwitchPane, Key.F6, isEnabled: () => _assistant is { Visible: true })
+            .Register("pane.previous", "Previous pane", SwitchPane, Key.F6.WithShift, isEnabled: () => _assistant is { Visible: true })
             .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
             .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
             .Register("agent.right", "Select the agent to the right", () => MoveSelection(0, +1), Key.CursorRight, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
@@ -660,6 +683,7 @@ public sealed class DashboardWindow : Window
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
             .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
             .Register("view.overseer", "Overseer", () => Show(Area.Overseer), new Key('o'))
+            .Register("assistant", () => "Assistant", ToggleAssistant, isEnabled: () => _assistant is not null, menuLabel: () => "Ass_istant")
             .Register("work.whatsNew", "Go to what's new", GoToNew, new Key('u'), isEnabled: () => _news.Newest is not null)
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
                 isEnabled: () => OnDashboard() && Selected() is not null,
@@ -1684,7 +1708,7 @@ public sealed class DashboardWindow : Window
             Area.Overseer => Stamped(_boardReadAt, _clock.GetUtcNow()),
             _ => "",
         };
-        var place = _area switch
+        var place = InAssistant ? "Assistant" : _area switch
         {
             Area.Work => _work.OnlyMine ? MyItems : AllItems,
             Area.Overseer => "Overseer",
@@ -1752,10 +1776,108 @@ public sealed class DashboardWindow : Window
         }
         else
             _panes.FirstOrDefault()?.SetFocus();
+        ShowAsking();
         ShowMessage();
         ShowLoading();
         SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    /// <summary>Claude Code down the right of whichever area is showing, working in the state folder.</summary>
+    private AssistantPane NewAssistant(AssistantSetup setup)
+    {
+        var pane = setup.Pane(_stateRoot, action => App?.Invoke(action), () => App);
+        pane.X = Pos.Func(_ => BesideAssistant(), this);
+        pane.Y = MenuLines;
+        pane.Width = Dim.Func(_ => AssistantWidth(), this);
+        pane.Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this);
+        pane.Visible = false;
+        pane.HasFocusChanged += (_, _) => ShowMessage();
+        return pane;
+    }
+
+    private int AssistantWidth() => _assistant is { Visible: true } ? Math.Min(AssistantColumns, Viewport.Width / 2) : 0;
+
+    private int BesideAssistant() => Math.Max(0, Viewport.Width - AssistantWidth());
+
+    private bool InAssistant => _assistant is { Visible: true, HasFocus: true };
+
+    /// <summary>A key the question box would type, which mustn't reach a single-letter command instead.</summary>
+    private static bool IsTyping(Key key) => !key.IsCtrl && !key.IsAlt && key.AsRune.Value >= ' ';
+
+    /// <summary>Opens the pane with focus in its question box and the agent starting, or closes it.</summary>
+    private void ToggleAssistant()
+    {
+        if (_assistant is not { } pane)
+            return;
+        pane.Visible = !pane.Visible;
+        if (pane.Visible)
+        {
+            ShowAsking();
+            pane.FocusInput();
+            _ = pane.Controller.EnsureStartedAsync().ContinueWith(started => _ = started.Exception, TaskScheduler.Default);
+        }
+        else
+            FocusArea();
+        ShowMessage();
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
+    /// <summary>Between the area and the Assistant, the only two panes there are while it's open.</summary>
+    private void SwitchPane()
+    {
+        if (_assistant is not { Visible: true } pane)
+            return;
+        if (pane.HasFocus)
+            FocusArea();
+        else
+            pane.FocusInput();
+        ShowMessage();
+    }
+
+    private void FocusArea()
+    {
+        switch (_area)
+        {
+            case Area.Work:
+                _work.SetFocus();
+                break;
+            case Area.Overseer:
+                _overseer.SetFocus();
+                break;
+            default:
+                if (_onDispatcher)
+                    _dispatchFrame.SetFocus();
+                else
+                    (Selected() ?? _panes.FirstOrDefault())?.SetFocus();
+                break;
+        }
+    }
+
+    /// <summary>What the next question is about, above the question box.</summary>
+    private void ShowAsking()
+    {
+        if (_assistant is not { Visible: true } pane)
+            return;
+        var context = AssistantBrief.Context(_area, AskingAbout(), _teamNames.Count > 1);
+        if (pane.NextContext != context)
+            pane.NextContext = context;
+    }
+
+    private AskedAbout? AskingAbout() => _area switch
+    {
+        Area.Work => _work.Selected is { } item ? new AskedAbout(item.Team, item.Number) : _work.Team is { } team ? new AskedAbout(team) : null,
+        Area.Overseer => _overseer.Board.SelectedCard is { } card ? new AskedAbout(card.Team, card.Number)
+            : _overseer.Board.Selected is { } chip ? new AskedAbout(chip.Team) : null,
+        _ => _onDispatcher ? new AskedAbout(null, Dispatcher: true) : Selected() is { } pane ? new AskedAbout(pane.Team, Role: pane.Role) : null,
+    };
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _assistant?.Controller.Dispose();
+        base.Dispose(disposing);
     }
 
     private void Copy(Func<AgentPane, LogCopy> copy)
@@ -1800,7 +1922,7 @@ public sealed class DashboardWindow : Window
         _shown is null ? _commands.Enabled : [.. _commands.Enabled.Where(command => command.Id is "work.new" or "work.viewImage" or "help" or "commands")];
 
     /// <summary>Where the window is now, for the keys that work only there.</summary>
-    internal CommandScope Region => _area switch
+    internal CommandScope Region => InAssistant ? Regions.Assistant : _area switch
     {
         Area.Work => Regions.Work,
         Area.Overseer => Regions.Overseer,

@@ -1,5 +1,6 @@
 using System.Globalization;
 using ATeam.Dashboard;
+using MentalDesk.Tui.Assistant;
 using MentalDesk.Tui.Copying;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Theming;
@@ -147,7 +148,9 @@ Handover? Show(Handover? back)
             names.SelectMany(teams.Roles), open),
         showDecisions: team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
             change => change.Run(team, command.Read), url => Link.OpenUrl(url)),
-        macKeys: macKeys);
+        macKeys: macKeys,
+        assistant: new AssistantSetup(new ProcessLauncher(), AssistantBrief.For(root, teams.TeamsDirectory, stateRoot, named),
+            Path.Combine(stateRoot, "assistant.json")));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {
