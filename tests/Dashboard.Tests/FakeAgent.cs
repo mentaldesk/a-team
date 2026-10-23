@@ -18,6 +18,9 @@ internal sealed class FakeAgent : IAgentLauncher
     // Answers session/new with this error, as an agent that isn't signed in does.
     public (int Code, string Message)? NewSessionError { get; set; }
 
+    // The permission modes a session offers, the first being the one it opens in; none when empty.
+    public List<string> Modes { get; } = [];
+
     public Func<FakeAgent, JsonNode?, Task> OnPrompt { get; set; } = (agent, _) =>
     {
         agent.Say("Hello");
@@ -76,11 +79,13 @@ internal sealed class FakeAgent : IAgentLauncher
             case "session/new":
                 if (NewSessionError is { } error) throw new JsonRpcException(error.Code, error.Message);
                 SessionId = $"session-{Interlocked.Increment(ref _sessions)}";
-                return new JsonObject { ["sessionId"] = SessionId };
+                return new JsonObject { ["sessionId"] = SessionId, ["modes"] = SessionModes() };
             case "session/load":
                 SessionId = parameters!["sessionId"]!.GetValue<string>();
                 foreach (var (user, text) in History) Update(user ? "user_message_chunk" : "agent_message_chunk", Text(text));
-                return null;
+                return new JsonObject { ["modes"] = SessionModes() };
+            case "session/set_mode":
+                return new JsonObject();
             case "session/prompt":
                 Cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 await OnPrompt(this, parameters);
@@ -89,6 +94,12 @@ internal sealed class FakeAgent : IAgentLauncher
                 throw new JsonRpcException(JsonRpcConnection.MethodNotFound, method);
         }
     }
+
+    private JsonObject? SessionModes() => Modes.Count == 0 ? null : new JsonObject
+    {
+        ["currentModeId"] = Modes[0],
+        ["availableModes"] = new JsonArray([.. Modes.Select(mode => (JsonNode)new JsonObject { ["id"] = mode, ["name"] = mode })]),
+    };
 
     public void Say(string text) => Update("agent_message_chunk", Text(text));
 

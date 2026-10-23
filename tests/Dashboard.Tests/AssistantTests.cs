@@ -239,6 +239,18 @@ public sealed class AssistantTests : IDisposable
     }
 
     [Fact]
+    public async Task The_session_switches_to_Claude_Codes_Auto_mode()
+    {
+        _agent.Modes.AddRange(["default", "acceptEdits", "auto"]);
+        using var window = Open();
+        window.Commands.Execute("assistant");
+
+        await Until(() => _agent.Received("session/set_mode").Any());
+
+        Assert.Equal("auto", (string?)_agent.Received("session/set_mode").Single()!["modeId"]);
+    }
+
+    [Fact]
     public async Task Esc_stops_the_answer_and_keeps_what_arrived()
     {
         using var window = Open();

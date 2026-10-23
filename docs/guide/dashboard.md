@@ -147,8 +147,9 @@ run record are, and what you're looking at: the line above the box says what the
 about, like *on #499 in Work*, and your question's heading repeats it, so you never have to name the
 card or agent. With more than one team, the card's team is named too.
 
-The answer streams in, with a `▸` line for each thing it looks at. It reads without asking, but
-before it runs any command it asks you, in a dialog titled *Claude Code wants to run a command*:
+The answer streams in, with a `▸` line for each thing it looks at. It runs in Claude Code's Auto
+mode, so it reads and runs commands without asking unless Auto's check flags one. Then it asks you,
+in a dialog titled *Claude Code wants to run a command*:
 `Ctrl+Enter` allows that one command, and `Esc` denies it. Deny starts focused. To change anything it
 goes through the board as you do, so it can't make a move you couldn't.
 

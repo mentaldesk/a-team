@@ -9,12 +9,13 @@ namespace ATeam.Dashboard;
 public sealed record AssistantSetup(
     IAgentLauncher Launcher, string Brief, string Sessions, Func<PermissionRequest, bool>? Ask = null, Action<Action>? Post = null)
 {
-    /// <summary>The pane, working in <paramref name="folder"/>: reads go ahead, anything else asks first.</summary>
+    /// <summary>The pane, working in <paramref name="folder"/> in Claude Code's Auto mode: only what its check flags asks first.</summary>
     internal AssistantPane Pane(string folder, Action<Action> post, Func<IApplication?> app)
     {
         var controller = new AssistantController(Launcher, new AssistantSessions(Sessions), Post ?? post, new MentalDesk.Tui.Assistant.Conversation())
         {
             SessionMeta = AssistantBrief.Meta(Brief),
+            SessionMode = "auto",
         };
         controller.Configure(AgentSpec.ClaudeCode);
         controller.OpenFolder(folder);
