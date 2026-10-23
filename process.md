@@ -133,6 +133,17 @@ a-team board {{team}} body <n>                  # an issue's number, title and b
                                                 # `images` where it has screenshots attached
 a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON
 a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
+a-team board {{team}} decisions [--replaced] [<words>...]  # the decision register: this team's entries and
+                                                # all teams', newest-confirmed first, as JSON; words
+                                                # narrow it; --replaced adds replaced and retired ones
+a-team board {{team}} decide lead <you|lead> <rule|lean> <team|all> <n|url> <file> [--said <date>] [--replaces <id>]
+                                                # Lead only: record a decision said on #<n> or at <url>;
+                                                # <file>'s first line is the decision, the rest why
+a-team board {{team}} replace lead <old> <new>  # Lead only: mark entry <old> replaced by entry <new>,
+                                                # said no earlier than <old>
+a-team board {{team}} seeded lead               # Lead only: the register is seeded from closed pitches,
+                                                # so `lead-next` stops saying `seed`
+a-team board {{team}} reconfirm lead <n> <id>...  # Lead only: approved pitch #<n> cited these entries
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
                                                 # done pitch #<n>
 a-team board {{team}} audited customer          # Customer lead only: the docs as a whole are
@@ -146,7 +157,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend`, `trends`, `spending` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
-`overview` is what its Overseer reads, `new` is how it opens an Idea, `attach` is how it uploads a
+`overview` is what its Overseer reads, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in

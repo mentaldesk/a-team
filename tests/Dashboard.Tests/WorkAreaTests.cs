@@ -203,6 +203,29 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
+    public void Decisions_is_in_the_palette_and_the_View_menu_and_opens_for_the_selected_team()
+    {
+        var opened = new List<string>();
+        using var window = Open(showDecisions: opened.Add);
+        window.Refresh();
+
+        Assert.Contains(window.Commands.Enabled, command => command is { Id: "decisions", Label: "Decisions… · team0" });
+        Assert.Contains("decisions", AppMenu.Layout.Single(menu => menu.Title == "_View").Ids);
+        window.Commands.Execute("decisions");
+
+        Assert.Equal(["team0"], opened);
+    }
+
+    [Fact]
+    public void Decisions_isn_t_offered_without_a_team_selected()
+    {
+        using var window = Open(read: _ => Task.FromResult(new Reading("", "offline")), showDecisions: _ => { });
+        window.Refresh();
+
+        Assert.DoesNotContain(window.Commands.Enabled, command => command.Id == "decisions");
+    }
+
+    [Fact]
     public void A_record_that_can_t_be_read_leaves_the_title_with_what_s_waiting_now()
     {
         using var window = Open(readTrend: _ => Task.FromResult(new Reading("", "no record")));
@@ -3258,7 +3281,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "view.dashboard", "view.work", "view.overseer", "assistant", "work.whatsNew", "overseer.details", "overseer.fold", "overseer.github",
-                "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit", "work.read", "work.priority", "work.try",
+                "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "decisions", "settings", "quit", "work.read", "work.priority", "work.try",
                 "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
             ],
@@ -4209,6 +4232,7 @@ public class WorkAreaTests : IDisposable
         IClipboard? clipboard = null,
         Action<ReaderIdea?, Func<Key, bool>>? showIdea = null,
         Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
+        Action<string>? showDecisions = null,
         Func<WaitingItem, bool>? confirmApprove = null,
         Func<WaitingItem, string?>? askHold = null)
     {
@@ -4245,6 +4269,7 @@ public class WorkAreaTests : IDisposable
             confirmQuit: confirmQuit,
             clipboard: clipboard,
             showSpending: showSpending,
+            showDecisions: showDecisions,
             confirmApprove: confirmApprove ?? (_ => true),
             askHold: askHold);
     }

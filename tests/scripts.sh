@@ -7004,6 +7004,172 @@ done
 run board --dry-run demo spent you 7 "$m30" 60 Review read
 same "dry run" 0 "$STATUS"
 unrecorded "dry run"
+
+# A decision file: its first line, then why.
+said() { printf '%s\n' "$@" >"$WORK/decision"; }
+ids() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board "${1:-demo}" decisions "${@:2}" | jq -c '[.[].id]'; }
+
+case_ "decisions with nothing recorded is empty, with no record file to read"
+rm -f "$A_TEAM_STATE/history.db"
+run board demo decisions
+same "exit" 0 "$STATUS"
+same "empty" '[]' "$(cat "$OUT")"
+unrecorded "decisions"
+
+case_ "decide records an entry for this team or all teams, newest-confirmed first, and words narrow it"
+said "Card commands go in the Cards menu, not the hint bar" "" "The menu and the palette advertise them."
+run board demo decide lead you lean all 34 "$WORK/decision" --said 2026-09-26
+same "exit" 0 "$STATUS"
+same "said" "decision 1 recorded" "$(cat "$OUT")"
+said "Ctrl+PgDn switches teams"
+run board demo decide lead you rule team https://github.com/mentaldesk/demo/issues/356#issuecomment-9 "$WORK/decision" --said 2026-10-09
+same "exit" 0 "$STATUS"
+cp "$TEAM" "$CONFIG/teams/other.json"
+said "Other's own call"
+run board other decide lead lead lean team 7 "$WORK/decision" --said 2026-09-01
+same "exit" 0 "$STATUS"
+run board demo decisions
+same "first" '{"id":2,"team":"demo","scope":"team","decision":"Ctrl+PgDn switches teams","why":"","who":"you","kind":"rule","item":356,"link":"https://github.com/mentaldesk/demo/issues/356#issuecomment-9","confirmed":"2026-10-09T00:00:00Z","confirmedOn":null,"replacedBy":null,"retired":null,"yours":null}' \
+  "$(jq -c '.[0] | del(.said, .recorded)' "$OUT")"
+same "why" '"The menu and the palette advertise them."' "$(jq -c '.[1].why' "$OUT")"
+same "link" '"https://github.com/mentaldesk/demo/issues/34"' "$(jq -c '.[1].link' "$OUT")"
+same "other team sees all-teams" '[1,3]' "$(ids other)"
+same "search" '[1]' "$(ids demo hint card)"
+same "search by prefix" '[2]' "$(ids demo switch)"
+same "no match" '[]' "$(ids demo nothing)"
+same "in history" '"lead recorded decision 1"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 34 | jq -c '.events[0] | "\(.who) \(.what)"')"
+
+case_ "decide refuses another role, a bad kind, scope or place, and an empty decision"
+for args in "dev you lean team 1" "you you lean team 1" "lead them lean team 1" "lead you law team 1" \
+  "lead you lean world 1" "lead you lean team x" "lead you lean team https://github.com/mentaldesk/elsewhere/issues/1"; do
+  read -r -a words <<<"$args"
+  run board demo decide "${words[@]}" "$WORK/decision"
+  failed "decide $args"
+  one_line "decide $args"
+done
+said "" "  "
+run board demo decide lead you lean team 1 "$WORK/decision"
+failed "empty"
+same "unchanged" '[2,1]' "$(ids)"
+
+case_ "the latest word replaces an entry, which only --replaced still lists, and says what it replaced"
+said "Card commands show in the hint bar too"
+run board demo decide lead you lean all 40 "$WORK/decision" --replaces 1 --said 2026-10-01
+same "exit" 0 "$STATUS"
+same "said" "decision 4 recorded; it replaces decision 1, what you said on #34 on 26 Sep" "$(cat "$OUT")"
+same "live" '[2,4]' "$(ids)"
+same "replaced" '[2,4,1]' "$(ids demo --replaced)"
+same "linked" 4 "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo decisions --replaced | jq '.[] | select(.id == 1) | .replacedBy')"
+run board demo decide lead you lean all 41 "$WORK/decision" --replaces 1
+failed "replacing a replaced entry"
+one_line "replacing a replaced entry"
+
+case_ "replace marks one live entry replaced by a newer one, and reconfirm dates what a pitch cited"
+said "Hint bars follow TuiCode"
+run board demo decide lead lead lean team 50 "$WORK/decision" --said 2026-10-12
+run board demo replace lead 5 2
+failed "replacing with an older entry"
+one_line "replacing with an older entry"
+run board demo replace lead 2 5
+same "exit" 0 "$STATUS"
+same "live" '[5,4]' "$(ids)"
+run board demo replace lead 2 5
+failed "already replaced"
+run board demo reconfirm lead 60 4
+same "exit" 0 "$STATUS"
+same "reconfirmed" '[4,5]' "$(ids)"
+same "on" 60 "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo decisions | jq '.[0].confirmedOn')"
+run board demo reconfirm lead 60 4 2
+failed "reconfirming a replaced entry"
+run board demo reconfirm dev 60 4
+failed "dev reconfirming"
+
+case_ "you edit, rule/lean, widen and retire an entry, each one undone the same way"
+printf 'Pane hints mirror TuiCode, colours included\n' >"$WORK/wording"
+run board demo decision you 5 edit "$WORK/wording"
+same "exit" 0 "$STATUS"
+same "search finds the new wording" '[5]' "$(ids demo colours)"
+same "nor the old" '[]' "$(ids demo follow)"
+run board demo decision you 5 kind
+same "rule" '"rule"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo decisions | jq '.[] | select(.id == 5) | .kind')"
+run board demo decision you 5 widen
+same "other sees it" '[4,5,3]' "$(ids other)"
+run board other decision you 5 widen
+failed "narrowing another team's entry"
+run board demo decision you 5 widen
+same "narrowed" '[4,3]' "$(ids other)"
+run board demo decision you 5 retire
+same "retired" '[4]' "$(ids)"
+same "still there" true "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo decisions --replaced | jq '.[] | select(.id == 5) | .retired != null')"
+run board demo decision you 5 retire
+same "back" '[4,5]' "$(ids)"
+for args in "lead 5 retire" "dev 5 kind" "you 99 kind" "you 5 delete" "you 5 edit"; do
+  read -r -a words <<<"$args"
+  run board demo decision "${words[@]}"
+  failed "decision $args"
+  one_line "decision $args"
+done
+printf 'one\ntwo\n' >"$WORK/wording"
+run board demo decision you 5 edit "$WORK/wording"
+failed "two lines"
+
+case_ "an entry you changed refuses the Lead's overwrite, but not your own newer word"
+said "Hint bars don't follow TuiCode"
+run board demo decide lead lead lean team 70 "$WORK/decision" --replaces 5
+failed "lead overwriting yours"
+one_line "lead overwriting yours"
+run board demo decide lead lead lean team 70 "$WORK/decision"
+run board demo replace lead 5 6
+failed "lead replacing yours"
+same "yours stands" '[6,4,5]' "$(ids)"
+run board demo decide lead you lean team 71 "$WORK/decision" --replaces 5
+same "your word" 0 "$STATUS"
+
+case_ "one team's entry doesn't replace an all-teams one"
+said "This team's cards keep their commands in the hint bar"
+run board demo decide lead you lean team 72 "$WORK/decision" --replaces 4
+failed "team entry replacing all-teams"
+one_line "team entry replacing all-teams"
+run board demo replace lead 4 6
+failed "replace all-teams with team"
+one_line "replace all-teams with team"
+same "other keeps it" '[4,3]' "$(ids other)"
+
+case_ "a dry run of every decision write changes nothing"
+before=$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo decisions --replaced)
+said "Dry"
+for args in "decide lead you lean all 80 $WORK/decision --replaces 4" "replace lead 6 7" "reconfirm lead 80 4" \
+  "decision you 4 kind" "decision you 4 widen" "decision you 4 retire" "decision you 4 edit $WORK/decision"; do
+  read -r -a words <<<"$args"
+  run board --dry-run demo "${words[@]}"
+  same "dry run $args" 0 "$STATUS"
+  grep -q "would" "$ERR" || fail "dry run $args: nothing about the change in '$(cat "$ERR")'"
+done
+same "unchanged" "$before" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo decisions --replaced)"
+rm -f "$A_TEAM_STATE/history.db"
+run board --dry-run demo decide lead you lean team 80 "$WORK/decision"
+same "dry run with no record" 0 "$STATUS"
+unrecorded "dry run decide"
+
+case_ "lead-next says seed until the Lead has seeded the register once"
+jq '.wip = {pitched: 3, exploring: 4, ideas: 4}' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+gh_items <<'ITEMS'
+Idea 87 An idea
+ITEMS
+rm -rf "$A_TEAM_STATE/demo/lead/seeded"
+run board demo lead-next
+same "seed" true "$(jq .seed "$OUT")"
+run board --dry-run demo seeded lead
+same "dry run" 0 "$STATUS"
+run board demo lead-next
+same "still seed after a dry run" true "$(jq .seed "$OUT")"
+run board demo seeded dev
+failed "dev seeding"
+run board demo seeded lead
+same "exit" 0 "$STATUS"
+run board demo lead-next
+same "seeded" false "$(jq .seed "$OUT")"
+rm -f "$CONFIG/teams/other.json"
 unset A_TEAM_STATE
 
 # install.sh against a HOME and state of its own, with launchctl and the tools it checks for stubbed.

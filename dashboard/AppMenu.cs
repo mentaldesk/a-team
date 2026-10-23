@@ -20,7 +20,7 @@ internal sealed class AppMenu
     internal static readonly (string Title, string[] Ids)[] Layout =
     [
         ("_View", ["view.dashboard", "view.work", "view.overseer", "assistant", "work.whatsNew", Separator, "overseer.details", "overseer.fold", "overseer.github",
-            "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "settings", "quit"]),
+            "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "decisions", "settings", "quit"]),
         (Cards, [Separator, "work.new", "work.refresh", "work.mine"]),
         (Agents, ["agent.hold", "agent.interrupt", "dispatch.pass", Separator, "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
         ("_Help", ["help", "guide", "commands", "about"]),

@@ -28,6 +28,8 @@ I authorise you to do all of the following without asking me:
   any other way.
 - Close a pitch once every one of its tasks has closed, with
   `a-team board {{team}} finish lead <n> <file>`.
+- Search and keep the team's decision register, with `a-team board {{team}} decisions`,
+  `decide lead`, `replace lead`, `reconfirm lead` and `seeded lead`.
 
 You must never merge a PR, push to the default branch, force-push, approve a pitch except on the
 stakeholder's yes, close an issue other than through `finish`, or change anything outside
