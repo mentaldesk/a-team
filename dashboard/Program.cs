@@ -1,5 +1,6 @@
 using System.Globalization;
 using ATeam.Dashboard;
+using MentalDesk.Tui.Assistant;
 using MentalDesk.Tui.Copying;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Theming;
@@ -145,7 +146,9 @@ Handover? Show(Handover? back)
             new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
         showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
             names.SelectMany(teams.Roles), open),
-        macKeys: macKeys);
+        macKeys: macKeys,
+        assistant: new AssistantSetup(new ProcessLauncher(), AssistantBrief.For(root, teams.TeamsDirectory, stateRoot, named),
+            Path.Combine(stateRoot, "assistant.json")));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {
