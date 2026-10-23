@@ -39,17 +39,18 @@ public sealed class TeamChecks(Func<string, Task<TeamHealth>> check, Func<string
         return _answered.GetValueOrDefault(team)?.Fatal.FirstOrDefault();
     }
 
-    /// <summary>The message bar's line for each check that has answered since the last call and found the team can't run.</summary>
-    public IReadOnlyList<string> Answered()
+    /// <summary>Each check that has answered since the last call, with the status bar's line if it found the team
+    /// can't run, or null if it passed.</summary>
+    public IReadOnlyList<(string Team, string? Failed)> Answered()
     {
-        List<string> failed = [];
+        List<(string, string?)> answered = [];
         foreach (var (team, (_, health)) in _checks)
         {
             if (!health.IsCompleted || !_announced.Add(health))
                 continue;
-            if (health.Status == TaskStatus.RanToCompletion && health.Result.Failed(team) is { } line)
-                failed.Add(line);
+            if (health.Status == TaskStatus.RanToCompletion)
+                answered.Add((team, health.Result.Failed(team)));
         }
-        return failed;
+        return answered;
     }
 }
