@@ -70,7 +70,7 @@ public class TeamChecksTests
     }
 
     [Fact]
-    public void A_check_that_answers_with_fatal_problems_is_announced_once()
+    public void A_check_that_answers_is_announced_once_with_its_failure_if_it_has_one()
     {
         var checks = Checks();
         checks.Follow(["a-team", "tuicode"]);
@@ -79,7 +79,7 @@ public class TeamChecksTests
         _pending["a-team"].SetResult(new TeamHealth([new TeamProblem("labels", "no 'pitch' label")]));
         _pending["tuicode"].SetResult(new TeamHealth([new TeamProblem("checkout", "isn't there"), new TeamProblem("status", "missing")]));
 
-        Assert.Equal(["tuicode: 2 checks failed — checkout, status"], checks.Answered());
+        Assert.Equal([("a-team", null), ("tuicode", "tuicode: 2 checks failed — checkout, status")], checks.Answered());
         Assert.Empty(checks.Answered());
     }
 

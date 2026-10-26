@@ -1,6 +1,8 @@
 using System.Drawing;
 using System.Reflection;
 using AssistantPane = MentalDesk.Tui.Assistant.AssistantPane;
+using MentalDesk.Tui;
+using MentalDesk.Tui.Chrome;
 using MentalDesk.Tui.Commands;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Links;
@@ -45,7 +47,7 @@ public sealed class DashboardWindow : Window
     private readonly CommandRegistry _commands = new();
     private readonly string _version = Version();
     private readonly AppMenu _menu;
-    private readonly StatusBar _status = new();
+    private readonly AppStatusBar _bar = new();
     private readonly MoveAlert _alert = new();
     private readonly View _agents;
     private readonly FrameView _dispatchFrame;
@@ -107,19 +109,18 @@ public sealed class DashboardWindow : Window
     private WaitingItem? _approvable;
     private WaitingItem? _shown;
     private WaitingItem? _leaving;
-    private string? _said;
-    private (string Text, WaitingItem? On)? _already;
     private string? _added;
     private ReaderIdea? _idea;
     private ReaderImage? _image;
-    private WaitingItem? _saidOn;
     private Task<Reading[]>? _reading;
     private Task<Reading[]>? _trending;
     private IReadOnlyList<WorkTrend> _trends = [];
     private (WaitingItem Item, Task<IssueBody> Read, Action<WaitingItem, IssueBody> Then)? _readingBody;
     private DateTimeOffset? _readAt;
     private DateTimeOffset? _askedAt;
-    private string? _failure;
+    private StatusMessage? _readFailure;
+    private StatusMessage? _boardFailure;
+    private readonly Dictionary<string, StatusMessage> _checkFailures = [];
     private string? _progress;
     private int? _expanded;
     private bool _onDispatcher;
@@ -136,7 +137,6 @@ public sealed class DashboardWindow : Window
     private (IssueBody Body, int Top)? _triedFrom;
     private (WaitingItem Item, ReaderPlace Place, string? Failure, string? Said, bool Reread)? _reopen;
     private (IssueBody Body, int Top)? _editFrom;
-    private (string Text, Schemes Scheme)? _reported;
     private readonly IClipboard? _clipboard;
     private readonly MacKeys? _macKeys;
     private readonly AssistantPane? _assistant;
@@ -201,6 +201,8 @@ public sealed class DashboardWindow : Window
         _showGuide = showGuide ?? (_ => { });
         _start = start;
         _clock = clock ?? TimeProvider.System;
+        _bar.Clock = _clock;
+        _bar.MessagesRequested += (_, _) => _commands.Execute("messages");
         _attention = attention ?? new Attention(_clock, _ => { });
         _news = whatsNew ?? new WhatsNew(_clock.GetUtcNow());
         _opened = new Opened(stateRoot);
@@ -322,8 +324,8 @@ public sealed class DashboardWindow : Window
         if (assistant is not null)
             Add(_assistant = NewAssistant(assistant));
 
-        _status.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
-        Add(_status);
+        _bar.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
+        Add(_bar);
 
         RegisterCommands();
         _commands.Apply(settings.ReadKeys());
@@ -365,9 +367,7 @@ public sealed class DashboardWindow : Window
 
     internal OverseerView Overseer => _overseer;
 
-    internal MessageBar Message => _status.Message;
-
-    internal StatusBar Status => _status;
+    internal AppStatusBar Status => _bar;
 
     internal MoveAlert Alert => _alert;
 
@@ -413,8 +413,7 @@ public sealed class DashboardWindow : Window
             : null;
         var paused = _panes.Select(pane => pane.Team).Distinct().ToDictionary(team => team, _teams.IsPaused);
         _checks?.Follow(paused.Keys);
-        if (_checks?.Answered() is [.., var failed])
-            _failure = failed;
+        ShowChecks();
         var passing = DispatcherState.Passing(_stateRoot);
         foreach (var pane in _panes)
             pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role), _checks?.Fatal(pane.Team), passing);
@@ -433,6 +432,18 @@ public sealed class DashboardWindow : Window
         _menu.Refresh();
         ShowMessage();
         ShowLoading();
+    }
+
+    /// <summary>A team's failed check stays on the bar as news until a later check passes.</summary>
+    private void ShowChecks()
+    {
+        foreach (var (team, failed) in _checks?.Answered() ?? [])
+        {
+            if (_checkFailures.Remove(team, out var was))
+                _bar.Withdraw(was);
+            if (failed is not null)
+                _checkFailures[team] = Announce(failed, Severity.Error);
+        }
     }
 
     /// <summary>Reads every team's moves since start whenever the record has been written to.</summary>
@@ -560,11 +571,7 @@ public sealed class DashboardWindow : Window
     /// <summary>While a menu is open it owns the keyboard: its own keys would otherwise run a command as well.</summary>
     protected override bool OnKeyDown(Key key)
     {
-        if (_reported is not null)
-        {
-            _reported = null;
-            ShowMessage();
-        }
+        _bar.KeyPressed();
         if (key == MacCopy && !_menu.Bar.IsOpen() && _commands.IsEnabled(CopyLines))
             return _commands.Execute(CopyLines);
         if (InAssistant && IsTyping(key))
@@ -701,6 +708,7 @@ public sealed class DashboardWindow : Window
                 Area.Overseer => GuideDialog.Overseer,
                 _ => GuideDialog.Dashboard,
             }))
+            .Register("messages", () => "Messages", OpenMessages, isEnabled: HasApp, menuLabel: () => "Messages…")
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
             .Register("spending", "Spending", OpenSpending, isEnabled: () => _showSpending is not null)
@@ -742,17 +750,13 @@ public sealed class DashboardWindow : Window
     {
         if (_writes.Holding(key) is not { } already)
             return false;
-        _failure = null;
-        _already = (already.Already, _work.Selected);
-        ShowMessage();
+        Reply(already.Already);
         return true;
     }
 
     /// <summary>Queues <paramref name="write"/> behind any already under way, so nothing waits on it.</summary>
     private void Queue(Write write)
     {
-        _failure = null;
-        _already = null;
         _writes.Add(write);
         _work.ShowWriting(Writing());
         ShowMessage();
@@ -766,7 +770,7 @@ public sealed class DashboardWindow : Window
     private void ShowKeysHint()
     {
         var key = _commands.KeyFor("help");
-        _status.Help(key == Key.Empty ? "" : $"Press {KeyNames.Short(key)} for help", () => _commands.Execute("help"));
+        _bar.Hints.Show(key == Key.Empty ? [] : [($"Press {KeyNames.Short(key)} for help", () => _commands.Execute("help"))]);
     }
 
     private void ToggleHold()
@@ -781,8 +785,6 @@ public sealed class DashboardWindow : Window
 
     private void PassNow()
     {
-        _failure = null;
-        _said = null;
         _pass.Start();
         ShowMessage();
     }
@@ -826,8 +828,7 @@ public sealed class DashboardWindow : Window
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            _failure = $"couldn't write the log for your editor: {e.Message}";
-            ShowMessage();
+            Reply($"couldn't write the log for your editor: {e.Message}", Severity.Error);
             return;
         }
         _handOver?.Invoke(new EditorHandover(
@@ -847,6 +848,7 @@ public sealed class DashboardWindow : Window
             _activityRead = Activity();
             _reading = Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
         }
+        ShowTitle();
         ShowMessage();
         ShowLoading();
     }
@@ -878,9 +880,11 @@ public sealed class DashboardWindow : Window
             : readings.Select(reading => reading.Failure).FirstOrDefault(line => line is { Length: > 0 });
         if (failure is { Length: > 0 })
         {
-            _failure = failure;
+            Withdraw(ref _boardFailure);
+            _boardFailure = Announce(failure, Severity.Error);
             return;
         }
+        Withdraw(ref _boardFailure);
         _boardReadAt = _clock.GetUtcNow();
         _overseer.Show([.. readings!.SelectMany(reading => BoardCard.Parse(reading.Output))]);
     }
@@ -917,8 +921,7 @@ public sealed class DashboardWindow : Window
 
     private void Open(string url)
     {
-        _reported = Copying.Said(_openUrl(url));
-        ShowMessage();
+        Reply(Copying.Said(_openUrl(url)));
     }
 
     /// <summary>The pane of the agent working on <paramref name="card"/>, if one is.</summary>
@@ -989,8 +992,7 @@ public sealed class DashboardWindow : Window
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             _attention.Close();
-            _failure = $"couldn't write {document.Path} for your editor: {e.Message}";
-            ShowMessage();
+            Reply($"couldn't write {document.Path} for your editor: {e.Message}", Severity.Error);
             return;
         }
         _attention.Did("edited");
@@ -1004,7 +1006,7 @@ public sealed class DashboardWindow : Window
     private void Resume(Handover handover)
     {
         _resume = handover;
-        _failure = handover.Failure;
+        var failure = handover.Failure;
         if (handover is TeamsChanged changed)
             _left = changed.Left;
         if (handover is VisionHandover vision)
@@ -1019,8 +1021,8 @@ public sealed class DashboardWindow : Window
             ReadTrend();
             if (tried.Reader is { } place)
             {
-                _reopen = (tried.Item, place, _failure, null, false);
-                _failure = null;
+                _reopen = (tried.Item, place, failure, null, false);
+                failure = null;
             }
         }
         if (handover is DocumentHandover edited)
@@ -1029,9 +1031,11 @@ public sealed class DashboardWindow : Window
             _readAt = _askedAt = edited.ReadAt;
             _work.Show(edited.Items);
             ReadTrend();
-            _reopen = (edited.Item, edited.Reader, _failure, edited.Said, edited.Committed);
-            _failure = null;
+            _reopen = (edited.Item, edited.Reader, failure, edited.Said, edited.Committed);
+            failure = null;
         }
+        if (failure is { Length: > 0 })
+            Reply(failure, Severity.Error);
         ShowMessage();
     }
 
@@ -1137,11 +1141,9 @@ public sealed class DashboardWindow : Window
             return;
         if (_teams.BoardUrl(team) is not { } url)
         {
-            _failure = $"{team}'s config names no project board";
-            ShowMessage();
+            Reply($"{team}'s config names no project board", Severity.Error);
             return;
         }
-        _failure = null;
         Open(url);
     }
 
@@ -1179,7 +1181,6 @@ public sealed class DashboardWindow : Window
     {
         if (_readingBody is not null)
             return;
-        _failure = null;
         _progress = $"Reading #{item.Number}…";
         ShowMessage();
         _readingBody = (item, Read(item, forReader), then);
@@ -1232,9 +1233,9 @@ public sealed class DashboardWindow : Window
         Rank? rank = null, bool declining = false, string? said = null, bool shelving = false)
     {
         if (rank is null && body.Failure is { Length: > 0 } unread)
-            _failure = unread;
+            Reply(unread, Severity.Error);
         else if (rank is null && string.IsNullOrWhiteSpace(body.Text))
-            _failure = $"#{item.Number} has no description";
+            Reply($"#{item.Number} has no description", Severity.Error);
         else
         {
             _approvable = item.Approvable ? item : null;
@@ -1305,7 +1306,6 @@ public sealed class DashboardWindow : Window
     {
         if (_newIdea?.Invoke(_teamNames, team, description, Attaching()) is not { } added)
             return null;
-        _failure = null;
         _added = $"#{added.Number} added to {added.Team}'s ideas";
         ReadWaiting();
         return _added;
@@ -1330,8 +1330,7 @@ public sealed class DashboardWindow : Window
     private void Approved(WaitingItem item)
     {
         _work.Approved(item);
-        _said = $"#{item.Number} approved";
-        _saidOn = _work.Selected;
+        Announce($"#{item.Number} approved");
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -1350,8 +1349,7 @@ public sealed class DashboardWindow : Window
             return true;
         if (item.Unacceptable is { Length: > 0 } why)
         {
-            _failure = why;
-            ShowMessage();
+            Reply(why, Severity.Error);
             return false;
         }
         if (!_confirmAccept(item))
@@ -1393,9 +1391,7 @@ public sealed class DashboardWindow : Window
     {
         _leaving = null;
         _work.Leave(item);
-        _failure = null;
-        _said = $"#{item.Number} declined";
-        _saidOn = _work.Selected;
+        Announce($"#{item.Number} declined");
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -1477,9 +1473,7 @@ public sealed class DashboardWindow : Window
     {
         _leaving = null;
         _work.Leave(item);
-        _failure = null;
-        _said = $"#{item.Number} back in the Dev's queue";
-        _saidOn = _work.Selected;
+        Announce($"#{item.Number} back in the Dev's queue");
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -1488,9 +1482,7 @@ public sealed class DashboardWindow : Window
     {
         _leaving = null;
         _work.Leave(item);
-        _failure = null;
-        _said = $"#{item.Number} back on {ReaderShelve.BackOn(_clock.GetUtcNow(), weeks)}";
-        _saidOn = _work.Selected;
+        Announce($"#{item.Number} back on {ReaderShelve.BackOn(_clock.GetUtcNow(), weeks)}");
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -1512,8 +1504,7 @@ public sealed class DashboardWindow : Window
     private void Merged(WaitingItem item)
     {
         _work.Leave(item);
-        _said = item.Document ? $"merged #{item.Number}" : item.Pitch ? $"accepted #{item.Number}" : $"merged PR #{item.Pr}";
-        _saidOn = _work.Selected;
+        Announce(item.Document ? $"merged #{item.Number}" : item.Pitch ? $"accepted #{item.Number}" : $"merged PR #{item.Pr}");
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -1529,13 +1520,11 @@ public sealed class DashboardWindow : Window
             item, rank));
     }
 
-    /// <summary>What the board took: the card moves to the column its new Priority puts it in, and the bar says
-    /// so until the selection moves off the card the selection was left on.</summary>
+    /// <summary>What the board took: the card moves to the column its new Priority puts it in, and the bar says so.</summary>
     private void Ranked(WaitingItem item, Rank rank)
     {
         _work.Ranked(item, rank);
-        _said = $"#{item.Number} · set to {rank}";
-        _saidOn = _work.Selected;
+        Announce($"#{item.Number} · set to {rank}");
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -1544,15 +1533,7 @@ public sealed class DashboardWindow : Window
     private void Settle()
     {
         if (_pass.Finished() is { } passed)
-        {
-            if (passed.Scheme == Schemes.Error)
-                _failure = passed.Text;
-            else
-            {
-                _said = passed.Text;
-                _saidOn = _work.Selected;
-            }
-        }
+            Announce(passed.Text, SeverityOf(passed.Scheme));
 
         if (_readingBody is { Read.IsCompleted: true } body)
         {
@@ -1571,10 +1552,11 @@ public sealed class DashboardWindow : Window
         if (failure is { Length: > 0 })
         {
             // Nothing is cleared: the cards and the stamp stay as they were.
-            _failure = failure;
+            Withdraw(ref _readFailure);
+            _readFailure = Announce(failure, Severity.Error);
             return;
         }
-        _failure = null;
+        Withdraw(ref _readFailure);
         _readAt = _clock.GetUtcNow();
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
         foreach (var team in _teamNames)
@@ -1586,12 +1568,10 @@ public sealed class DashboardWindow : Window
             _left = null;
         }
         GoToWaiting();
-        // Said once the cards are laid out again: laying them out moves the selection, which clears what's said.
         if (_added is { } added)
         {
             _added = null;
-            _said = added;
-            _saidOn = _work.Selected;
+            Announce(added);
         }
         ReadTrend();
     }
@@ -1602,14 +1582,13 @@ public sealed class DashboardWindow : Window
         var settled = _writes.Settle();
         if (settled.Count == 0)
             return;
-        _already = null;
         _work.ShowWriting(Writing());
         foreach (var (write, refused) in settled.Where(done => done.Failure is not { Length: > 0 }))
             Settled(write);
         var refusals = settled.Where(done => done.Failure is { Length: > 0 })
             .Select(done => $"{done.Write.Queued}: {done.Failure}").ToList();
         if (refusals.Count > 0)
-            _failure = string.Join(" · ", refusals);
+            Announce(string.Join(" · ", refusals), Severity.Error);
     }
 
     /// <summary>Nothing moves until the board has taken it: a refused write leaves its card as it was.</summary>
@@ -1640,8 +1619,7 @@ public sealed class DashboardWindow : Window
                 break;
             case WriteKind.VisionReview:
                 _pass.Start();
-                _said = $"vision review asked for · {write.Team}: the Lead starts it now";
-                _saidOn = _work.Selected;
+                Announce($"vision review asked for · {write.Team}: the Lead starts it now");
                 break;
         }
     }
@@ -1666,36 +1644,25 @@ public sealed class DashboardWindow : Window
     private void ShowTitle()
     {
         var title = WorkTrend.Title(_readAt is null ? null : _work.Items.Count(item => !item.WaitsUpstream), _trends, _clock.GetUtcNow());
+        if (_reading is not null && !_work.Unread)
+            title += " · Reading…";
         if (_title.Text != title)
             _title.Text = title;
     }
 
     internal string WorkTitle => _title.Text;
 
-    /// <summary>What went wrong, then what's running, then the region focus is in.</summary>
+    /// <summary>Where you are and when it was read, then what's running or what's selected, under any message.</summary>
     private void ShowMessage()
     {
-        if (_said is { Length: > 0 } && _work.Selected != _saidOn)
-        {
-            _said = null;
-            _saidOn = null;
-        }
-        if (_already is { } moved && _work.Selected != moved.On)
-            _already = null;
-        var (text, scheme) =
-            _failure is { Length: > 0 } ? (_failure, Schemes.Error)
-            : _reported is { } reported ? reported
-            : _reading is not null ? ("Reading…", Schemes.Accent)
-            : _progress is { Length: > 0 } ? (_progress, Schemes.Accent)
-            : _already is { } already ? (already.Text, Schemes.Accent)
-            : _writes.Status() is { Length: > 0 } writing ? (writing, Schemes.Accent)
-            : _pass.Progress is { } passing ? (passing, Schemes.Accent)
-            : _said is { Length: > 0 } ? (_said, Schemes.Accent)
-            : _area == Area.Work && _work.Selected is { } card && (card.Reason.Length > 0 || card.Holding.Count > 0) ? (card.Line, Schemes.Base)
-            : _area == Area.Work && _work.Region is { } region ? (region, Schemes.Base)
-            : _area == Area.Overseer && _boarding is not null ? ("Reading…", Schemes.Accent)
-            : _area == Area.Overseer && _overseer.Region is { } chip ? (chip, Schemes.Base)
-            : ("", Schemes.Base);
+        var resting =
+            _progress is { Length: > 0 } ? _progress
+            : _writes.Status() is { Length: > 0 } writing ? writing
+            : _pass.Progress is { } passing ? passing
+            : _area == Area.Work && _work.Selected is { } card && (card.Reason.Length > 0 || card.Holding.Count > 0) ? card.Line
+            : _area == Area.Work && _work.Region is { } region ? region
+            : _area == Area.Overseer && _overseer.Region is { } chip ? chip
+            : "";
         var stamp = _area switch
         {
             Area.Work => Stamped(_readAt, _clock.GetUtcNow()),
@@ -1708,29 +1675,38 @@ public sealed class DashboardWindow : Window
             Area.Overseer => "Overseer",
             _ => "",
         };
-        _status.ShowState(place, stamp);
-        if (_status.Message.Says == text)
-            return;
-        if (text.Length == 0)
-            Hush();
-        else
-            Say(text, scheme);
+        var focus = string.Join(" · ", new[] { place, stamp }.Where(part => part.Length > 0));
+        if (_bar.FocusWord != focus)
+            _bar.SetFocusWord(focus);
+        if (_bar.RestingText != resting)
+            _bar.RestingText = resting;
     }
 
-    private void Say(string message, Schemes scheme)
+    private void Reply((string Text, Schemes Scheme) said) => Reply(said.Text, SeverityOf(said.Scheme));
+
+    private StatusMessage Reply(string text, Severity severity = Severity.Info) => _bar.ShowMessage(FirstLine(text), severity);
+
+    private StatusMessage Announce(string text, Severity severity = Severity.Info) => _bar.ShowNews(FirstLine(text), severity);
+
+    private static string FirstLine(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
+
+    private static Severity SeverityOf(Schemes scheme) => scheme == Schemes.Error ? Severity.Error : Severity.Info;
+
+    /// <summary>News that has stopped being true comes off the bar.</summary>
+    private void Withdraw(ref StatusMessage? message)
     {
-        _status.Say(message, scheme);
-        SetNeedsLayout();
-        SetNeedsDraw();
+        if (message is not null)
+            _bar.Withdraw(message);
+        message = null;
     }
 
-    private void Hush()
+    private void OpenMessages()
     {
-        if (_status.Message.Lines == 0)
+        if (App is not { } app)
             return;
-        _status.Message.Clear();
-        SetNeedsLayout();
-        SetNeedsDraw();
+        using var dialog = new MessagesDialog(_bar).Routed();
+        DialogHost.Run(app, dialog);
     }
 
     private int Foot() => DispatchLines + 2 + StatusLines;
@@ -1748,7 +1724,6 @@ public sealed class DashboardWindow : Window
             _left = _work.Place;
         _area = area;
         _settings.WriteArea(area);
-        _failure = null;
         if (_dispatcherExpanded)
             SetDispatcherExpanded(false);
         _agents.Visible = _dispatchFrame.Visible = area == Area.Dashboard;
@@ -1879,16 +1854,14 @@ public sealed class DashboardWindow : Window
         if (Selected() is not { } pane)
             return;
         var copied = copy(pane);
-        _reported = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, copied.Text), truncated: copied.Capped);
-        ShowMessage();
+        Reply(Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, copied.Text), truncated: copied.Capped));
     }
 
     private void CopyBranch()
     {
         if (_work.Selected is not { Branch.Length: > 0 } card)
             return;
-        _reported = Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, card.Branch), card.Branch);
-        ShowMessage();
+        Reply(Copying.Said(Copying.Copy(_clipboard ?? App?.Clipboard, card.Branch), card.Branch));
     }
 
     private void OpenCommands()
