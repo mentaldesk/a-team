@@ -27,7 +27,7 @@ it happens: what the agent said, the tools it called, any errors, and how the ru
 The dashboard checks each team when it starts and again whenever the team's file changes, the same
 check **Settings → Teams** shows. If something stops the team running, all its panes wear `⚠` in
 the error colour, their status row says what's wrong (as in `misconfigured: checkout
-~/code/TuiCode/main isn't there: …`), and the message bar says which checks failed. Fix it in
+~/code/TuiCode/main isn't there: …`), and the status bar says which checks failed. Fix it in
 **Settings → Teams** or in the file, and the `⚠` clears. A missing vision, docs page or label is only a note,
 and changes nothing here.
 
@@ -62,7 +62,7 @@ dispatcher's own output since then ──`.
 Answered something a team was waiting on? **Run a dispatch pass now**, in the Commands palette
 (`Ctrl+E`) or under **Agents**, has that dispatcher check for work straight away instead of at its
 next pass. It starts only what that pass would have, within the same limits, and leaves the
-countdown alone. The message bar says what it started, or `Pass done: nothing to start.`
+countdown alone. The status bar says what it started, or `Pass done: nothing to start.`
 
 ## Reading a log
 
