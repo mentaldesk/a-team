@@ -7854,5 +7854,91 @@ rm "$CONFIG/teams/app.json"
 run board demo lead-next
 same "nothing waits" 20 "$(jq -r .item.number "$OUT")"
 
+# release-version.yml's "Next version" step, run as Actions runs it, against a repo of its own.
+NEXT_VERSION="$WORK/next-version.sh" RELEASE_BIN="$WORK/release-bin"
+awk '/id: next$/ { step = 1 } step && /run: \|$/ { body = 1; next }
+  body && /^ *[^ ]/ && !/^          / { exit } body { sub(/^          /, ""); print }' \
+  "$ROOT/.github/workflows/release-version.yml" >"$NEXT_VERSION"
+mkdir -p "$RELEASE_BIN"
+printf '#!/usr/bin/env bash\ncat "%s/merged.json"\n' "$RELEASE_BIN" >"$RELEASE_BIN/gh"
+chmod +x "$RELEASE_BIN/gh"
+echo '[]' >"$RELEASE_BIN/merged.json"
+
+release_repo() {
+  RELEASE_REPO=$(mktemp -d "$WORK/release.XXXXXX")
+  git -C "$RELEASE_REPO" init -q
+  git -C "$RELEASE_REPO" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false \
+    commit -q --allow-empty -m init
+  for tag in "$@"; do git -C "$RELEASE_REPO" -c tag.gpgSign=false tag "$tag"; done
+}
+
+# next_version <version> <bump> [<pr>]: the step's outputs on stdout as "version tag".
+next_version() {
+  : >"$WORK/github-output"
+  (cd "$RELEASE_REPO" && PATH="$RELEASE_BIN:$PATH" GITHUB_OUTPUT="$WORK/github-output" \
+    GITHUB_REPOSITORY=mentaldesk/demo BASE=main VERSION=$1 BUMP=$2 PR=${3:-} \
+    bash --noprofile --norc -eo pipefail "$NEXT_VERSION") >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+released() { echo "$(sed -n 's/^version=//p' "$WORK/github-output") $(sed -n 's/^tag=//p' "$WORK/github-output")"; }
+
+case_ "an exact version above the last release is released as it is, whatever bump says"
+release_repo v0.1.97 v0.1.98
+next_version 0.9.0 major
+same "exit" 0 "$STATUS"
+same "released" "0.9.0 v0.9.0" "$(released)"
+next_version 0.1.100 auto
+same "0.1.100" "0.1.100 v0.1.100" "$(released)"
+
+case_ "an exact version equal to the last release is refused, naming it"
+next_version 0.1.98 auto
+failed "equal"
+grep -qF "version 0.1.98 isn't higher than the last release, v0.1.98." "$OUT" || fail "equal: '$(cat "$OUT")'"
+same "nothing released" " " "$(released)"
+
+case_ "an exact version below the last release is refused, compared as numbers"
+next_version 0.1.9 auto
+failed "0.1.9"
+grep -qF "version 0.1.9 isn't higher than the last release, v0.1.98." "$OUT" || fail "0.1.9: '$(cat "$OUT")'"
+next_version 0.1.50 patch
+failed "0.1.50"
+same "nothing released" " " "$(released)"
+
+case_ "a version that isn't x.y.z is refused"
+for version in 0.9 v0.9.0 1.0.0-rc.1 01.0.0 1.0.0.0; do
+  next_version "$version" auto
+  failed "$version"
+  grep -qF "version must be x.y.z, like 1.0.0, not '$version'." "$OUT" || fail "$version: '$(cat "$OUT")'"
+  same "$version released" " " "$(released)"
+done
+
+case_ "with no version, bump picks it as before"
+release_repo v0.1.98
+for bump in "patch 0.1.99" "minor 0.2.0" "major 1.0.0"; do
+  next_version '' "${bump% *}"
+  same "${bump% *} exit" 0 "$STATUS"
+  same "${bump% *}" "${bump#* } v${bump#* }" "$(released)"
+done
+echo '[{"mergedAt": "2999-01-01T00:00:00Z", "labels": [{"name": "enhancement"}]}]' >"$RELEASE_BIN/merged.json"
+next_version '' auto
+same "auto" "0.2.0 v0.2.0" "$(released)"
+echo '[]' >"$RELEASE_BIN/merged.json"
+next_version '' auto
+same "auto, nothing labelled" "0.1.99 v0.1.99" "$(released)"
+
+case_ "with no releases yet, an exact version is released as it is"
+release_repo
+next_version 0.9.0 auto
+same "exit" 0 "$STATUS"
+same "released" "0.9.0 v0.9.0" "$(released)"
+
+case_ "a pull request builds 0.0.0-pr<n> and ignores the version"
+release_repo v0.1.98
+next_version 0.9.0 auto 42
+same "exit" 0 "$STATUS"
+same "released" "0.0.0-pr42 " "$(released)"
+next_version 0.1 auto 42
+same "bad version on a PR" "0.0.0-pr42 " "$(released)"
+
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"
