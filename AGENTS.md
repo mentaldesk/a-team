@@ -92,12 +92,13 @@ draw loop, so cover the logic behind the views instead.
 
 Run the **Release** workflow from the Actions tab. Leave *bump* on `auto` to pick the version from
 the labels of PRs merged since the last release (`breaking` for major, `enhancement` for minor,
-otherwise patch), or choose one. It builds the dashboard for each platform, publishes the GitHub
-release with generated notes, and opens a PR updating the formula in `mentaldesk/homebrew-tap`,
-set to merge by itself once the tap's CI has installed and tested it on every platform, and closes
-any older release's formula PR still open. The tag is the version: nothing in the repo holds a
-version number. PRs that touch the dashboard, packaging or the workflow run the build part to
-check packaging.
+otherwise patch), or choose one. To release an exact version instead, like `1.0.0`, type it in
+*version*: it overrides *bump*, and must be `x.y.z` and higher than the last release. It builds the
+dashboard for each platform, publishes the GitHub release with generated notes, and opens a PR
+updating the formula in `mentaldesk/homebrew-tap`, set to merge by itself once the tap's CI has
+installed and tested it on every platform, and closes any older release's formula PR still open. The
+tag is the version: nothing in the repo holds a version number. PRs that touch the dashboard,
+packaging or the workflow run the build part to check packaging.
 
 Release publishes only from `main`. The tap token is a fine-grained personal access token with
 access to `mentaldesk/homebrew-tap`, `mentaldesk/scoop-bucket` and `mentaldesk/apt` (Contents:
@@ -117,7 +118,7 @@ the artifacts it uploaded.
 
 | | |
 |---|---|
-| Inputs | `bump` (string, default `auto`): `auto`, `patch`, `minor` or `major`. |
+| Inputs | `bump` (string, default `auto`): `auto`, `patch`, `minor` or `major`, and — added after `v0.1.98` — `version` (string, default empty): an exact `x.y.z` to release instead, higher than the last release. |
 | Outputs | `version` (no leading `v`; `0.0.0-pr<n>` on a pull request), `tag` (empty on a pull request). |
 | Secrets | None. Uses the caller's `GITHUB_TOKEN`. |
 | Permissions the caller must grant | `contents: read`, `pull-requests: read` (`auto` reads merged PR labels). |

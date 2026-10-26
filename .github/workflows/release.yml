@@ -10,6 +10,10 @@ on:
         type: choice
         options: [auto, patch, minor, major]
         default: auto
+      version:
+        description: The exact version to release, like 1.0.0. Overrides bump. Leave it empty to use bump.
+        type: string
+        default: ''
   pull_request:
     paths:
       - .github/workflows/release*.yml
@@ -29,6 +33,7 @@ jobs:
       pull-requests: read
     with:
       bump: ${{ inputs.bump || 'auto' }}
+      version: ${{ inputs.version }}
 
   build:
     name: Build ${{ matrix.rid }}
