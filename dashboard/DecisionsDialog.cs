@@ -1,5 +1,6 @@
 using System.Drawing;
 using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Links;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 
@@ -20,7 +21,7 @@ public sealed class DecisionsDialog : DashboardDialog
     private readonly string _team;
     private readonly Func<Task<Reading>> _read;
     private readonly Func<DecisionChange, Task<string?>> _change;
-    private readonly Action<string> _openUrl;
+    private readonly Func<string, LinkOutcome> _openUrl;
     private readonly TextField _search = new() { X = 8, Y = 0, Width = 28 };
     private readonly CheckBox _allTeams = new() { Text = "Include all-teams", Value = CheckState.Checked, Y = 0 };
     private readonly CheckBox _replaced = new() { Text = "Show replaced", Value = CheckState.UnChecked, Y = 0 };
@@ -33,7 +34,7 @@ public sealed class DecisionsDialog : DashboardDialog
     private IReadOnlyList<Decision> _shown = [];
     private int? _keep;
 
-    public DecisionsDialog(string team, Func<Task<Reading>> read, Func<DecisionChange, Task<string?>> change, Action<string> openUrl)
+    public DecisionsDialog(string team, Func<Task<Reading>> read, Func<DecisionChange, Task<string?>> change, Func<string, LinkOutcome> openUrl)
         : base($"Decisions · {team}")
     {
         _team = team;
@@ -214,8 +215,10 @@ public sealed class DecisionsDialog : DashboardDialog
 
     private bool Open()
     {
-        if (Selected is { Link.Length: > 0 } entry)
-            _openUrl(entry.Link);
+        if (Selected is not { Link.Length: > 0 } entry)
+            return true;
+        var (said, scheme) = Copying.Said(_openUrl(entry.Link));
+        _message.Show(said, scheme);
         return true;
     }
 
@@ -280,7 +283,7 @@ public sealed class DecisionsDialog : DashboardDialog
         return true;
     }
 
-    public static void Show(IApplication app, string team, Func<Task<Reading>> read, Func<DecisionChange, Task<string?>> change, Action<string> openUrl)
+    public static void Show(IApplication app, string team, Func<Task<Reading>> read, Func<DecisionChange, Task<string?>> change, Func<string, LinkOutcome> openUrl)
     {
         using var dialog = new DecisionsDialog(team, read, change, openUrl);
         DialogHost.Run(app, dialog);

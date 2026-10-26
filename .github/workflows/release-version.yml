@@ -1,7 +1,7 @@
 name: Release version
 
-# Reusable: works out the next version from the last v* tag. Call it from a repo's own release
-# workflow; see AGENTS.md, "Releasing".
+# Reusable: works out the next version from the last v* tag, or checks the one it's given. Call it
+# from a repo's own release workflow; see AGENTS.md, "Releasing".
 on:
   workflow_call:
     inputs:
@@ -9,6 +9,10 @@ on:
         description: 'Part of the version to bump: auto, patch, minor or major. "auto" reads the labels of PRs merged since the last release (breaking = major, enhancement = minor, otherwise patch).'
         type: string
         default: auto
+      version:
+        description: The exact version to release, like 1.0.0. Overrides bump. Leave it empty to use bump.
+        type: string
+        default: ''
     outputs:
       version:
         description: The next version, without a leading "v". On a pull request, 0.0.0-pr<n>.
@@ -36,6 +40,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUMP: ${{ inputs.bump }}
+          VERSION: ${{ inputs.version }}
           PR: ${{ github.event.pull_request.number }}
           BASE: ${{ github.event.repository.default_branch }}
         run: |
@@ -46,6 +51,21 @@ jobs:
           fi
           BUMP=${BUMP:-auto}
           last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+          if [ -n "$VERSION" ]; then
+            if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "::error::version must be x.y.z, like 1.0.0, not '$VERSION'."
+              exit 1
+            fi
+            highest=$(printf '%s\n' "${last#v}" "$VERSION" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
+            if [ -n "$last" ] && { [ "$VERSION" = "${last#v}" ] || [ "$highest" != "$VERSION" ]; }; then
+              echo "::error::version $VERSION isn't higher than the last release, $last."
+              exit 1
+            fi
+            echo "Last release: ${last:-none}. Version: v$VERSION"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$BUMP" = auto ]; then
             since=$([ -n "$last" ] && git log -1 --format=%cI "$last" || echo 1970-01-01T00:00:00Z)
             labels=$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --base "${BASE:-main}" --limit 500 \

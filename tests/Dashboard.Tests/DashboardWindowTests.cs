@@ -1,5 +1,7 @@
+using MentalDesk.Tui;
 using System.Drawing;
 using System.Text;
+using MentalDesk.Tui.Links;
 using Terminal.Gui;
 using Terminal.Gui.App;
 using Terminal.Gui.Configuration;
@@ -39,10 +41,34 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
 
         Assert.All(window.Panes, pane => Assert.StartsWith(Icons.Field(Icon.Misconfigured, IconStyle.Unicode), pane.Title));
-        Assert.Equal("a-team: 2 checks failed — checkout, status", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("a-team: 2 checks failed — checkout, status", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
         window.Refresh();
         Assert.Equal(1, ran);
+    }
+
+    [Fact]
+    public void A_failed_check_comes_off_the_bar_once_the_team_passes()
+    {
+        var answers = new Queue<TaskCompletionSource<TeamHealth>>([new(), new()]);
+        var asked = new List<TaskCompletionSource<TeamHealth>>();
+        var checks = new TeamChecks(_ =>
+        {
+            asked.Add(answers.Dequeue());
+            return asked[^1].Task;
+        }, _ => "{}");
+        using var window = Open(checks: checks);
+        window.Refresh();
+        asked[0].SetResult(new TeamHealth([new TeamProblem("checkout", "~/code/a-team/main isn't there")]));
+        window.Refresh();
+        Assert.Equal("a-team: 1 check failed — checkout", window.Says());
+
+        checks.Check("a-team");
+        asked[1].SetResult(new TeamHealth([]));
+        window.Refresh();
+
+        Assert.Null(window.Status.Message);
+        Assert.Equal(1, window.Status.UnreadErrors);
     }
 
     [Fact]
@@ -349,14 +375,14 @@ public class DashboardWindowTests : IDisposable
     {
         WriteTeam("team1", """{"project": {"owner": "someone", "number": 4, "ownerType": "user"}}""");
         var opened = new List<string>();
-        using var window = Open(agents: Agents(4), openUrl: opened.Add);
+        using var window = Open(agents: Agents(4), openUrl: Opening.Into(opened));
         LayOut(window, 120, 30);
         SelectAgent(window, 2);
 
         Assert.True(window.NewKeyDownEvent(new Key('b')));
 
         Assert.Equal(["https://github.com/users/someone/projects/4"], opened);
-        Assert.Equal("Opened team1's board", window.Message.Says);
+        Assert.Equal("Opened https://github.com/users/someone/projects/4", window.Says());
     }
 
     [Fact]
@@ -603,13 +629,13 @@ public class DashboardWindowTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('l')));
 
         Assert.Equal("cat <<'PY'\nprint(1)\nPY", clipboard.GetClipboardData());
-        Assert.Equal("Copied 3 lines  •  20 characters", window.Message.Says);
+        Assert.Equal("Copied 3 lines  •  20 characters", window.Says());
 
         window.NewKeyDownEvent(Key.CursorUp);
         window.NewKeyDownEvent(Key.CursorUp.WithShift);
         window.NewKeyDownEvent(new Key('l'));
         Assert.Equal("reading\n", clipboard.GetClipboardData());
-        Assert.Equal("Copied 1 line  •  7 characters", window.Message.Says);
+        Assert.Equal("Copied 1 line  •  7 characters", window.Says());
     }
 
     [Fact]
@@ -659,11 +685,11 @@ public class DashboardWindowTests : IDisposable
 
         window.NewKeyDownEvent(new Key('l'));
         Assert.Equal("b", terminal.Platform.Text);
-        Assert.Equal("Copied 1 line  •  1 character", window.Message.Says);
+        Assert.Equal("Copied 1 line  •  1 character", window.Says());
 
         window.NewKeyDownEvent(new Key('L'));
         Assert.Equal("a\nb", terminal.Platform.Text);
-        Assert.Equal("Copied 2 lines  •  2 characters", window.Message.Says);
+        Assert.Equal("Copied 2 lines  •  2 characters", window.Says());
     }
 
     [Fact]
@@ -733,8 +759,8 @@ public class DashboardWindowTests : IDisposable
         window.FocusResumed();
 
         Assert.Equal(1, window.ExpandedAgent);
-        Assert.Equal("vim exited 1", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("vim exited 1", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Fact]
@@ -749,8 +775,8 @@ public class DashboardWindowTests : IDisposable
 
         window.NewKeyDownEvent(new Key('l'));
 
-        Assert.Equal("Copy failed: there is no clipboard", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("Copy failed: there is no clipboard", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
         Assert.Equal("two", window.Panes[1].CopySelection().Text);
     }
 
@@ -826,7 +852,7 @@ public class DashboardWindowTests : IDisposable
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
                 "Show details", "Fold the lane", "Open on GitHub", "Go to the agent's session", "Read every board again",
                 "Dashboard", "Work", "Overseer", "Assistant", "Go to what's new",
-                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "About", "Trends", "Spending", "Decisions…", "Back to the agent grid", "Quit",
+                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "Messages", "About", "Trends", "Spending", "Decisions…", "Back to the agent grid", "Quit",
                 "Go to team0", "Go to team1", "Go to team 3", "Go to team 4", "Go to team 5", "Go to team 6", "Go to team 7",
                 "Go to team 8", "Go to team 9",
             ],
@@ -943,7 +969,7 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open(agents: Agents(4), keys: "{ \"help\": \"F2\" }");
 
-        Assert.Equal("Press F2 for help", window.Status.HelpHint.Text);
+        Assert.Equal("Press F2 for help", window.Status.Hints.Says);
     }
 
     [Fact]
@@ -955,11 +981,11 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal(new Rectangle(0, window.Viewport.Height - 1, window.Viewport.Width, 1), window.Status.Frame);
         Assert.Equal(StatusBar.Scheme, window.Status.SchemeName);
-        Assert.Equal(0, window.Message.Lines);
+        Assert.Null(window.Status.Message);
     }
 
     [Fact]
-    public void A_message_shows_at_the_left_of_the_status_bar_in_its_colours_and_takes_no_row_of_its_own()
+    public void What_is_running_shows_on_the_status_bar_and_takes_no_row_of_its_own()
     {
         using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
         LayOut(window, 120, 30);
@@ -970,26 +996,18 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("agent.hold");
         LayOut(window, 120, 30);
 
-        Assert.Equal("Pausing this role…", window.Message.Says);
-        Assert.Same(window.Status, window.Message.SuperView);
-        var right = "Press F1 for help".Length + 3;
-        Assert.Equal(new Rectangle(0, 0, window.Status.Viewport.Width - right, 1), window.Message.Frame);
-        Assert.Equal(StatusBar.Scheme, window.Message.SchemeName);
+        Assert.Equal("Pausing this role…", window.Says());
+        Assert.Null(window.Status.MessageSeverity);
         Assert.Equal(status, window.Status.Frame);
         Assert.Equal(dispatcher, window.Dispatcher.Frame);
     }
 
     [Fact]
-    public void Clicking_the_help_hint_runs_what_it_was_given()
+    public void The_help_hint_is_a_button_you_can_click()
     {
-        using var bar = new StatusBar();
-        var ran = 0;
-        bar.Help("Press F1 for help", () => ran++);
-        bar.Help("Press F1 for help", () => ran++);
+        using var window = Open(agents: Agents(4));
 
-        bar.HelpHint.InvokeCommand(Command.Accept);
-
-        Assert.Equal(1, ran);
+        Assert.Equal("Press F1 for help", Assert.IsType<Button>(window.Status.Hints.SubViews.Single()).Text);
     }
 
     [Fact]
@@ -1181,7 +1199,7 @@ public class DashboardWindowTests : IDisposable
         var line = Assert.Single(window.DispatchLog.Lines);
         Assert.Equal("(the dispatcher hasn't run yet)", line.Text);
         Assert.Equal(LogLineKind.Prose, line.Kind);
-        Assert.Equal(0, window.Message.Lines);
+        Assert.Equal("", window.Says());
         Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
     }
 
@@ -1206,8 +1224,7 @@ public class DashboardWindowTests : IDisposable
 
         LayOut(window, 120, 30);
 
-        Assert.Equal(0, window.Message.Lines);
-        Assert.Equal(0, window.Message.Frame.Height);
+        Assert.Equal("", window.Says());
         Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
     }
 
@@ -1221,7 +1238,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("agent.hold");
         var after = LayOut(window, 120, 30);
 
-        Assert.Equal("Pausing this role…", window.Message.Says);
+        Assert.Equal("Pausing this role…", window.Says());
         Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
         Assert.Equal(before, after);
         AssertTiles(AgentArea(window), after);
@@ -1244,14 +1261,14 @@ public class DashboardWindowTests : IDisposable
 
         window.Commands.Execute("dispatch.pass");
 
-        Assert.Equal("Running a pass…", window.Message.Says);
-        Assert.Equal(StatusBar.Scheme, window.Message.SchemeName);
+        Assert.Equal("Running a pass…", window.Says());
+        Assert.Null(window.Status.MessageSeverity);
 
         WriteDispatchLog("2026-10-04T10:02:00Z a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build");
         finish.SetResult(new Reading("", null));
         window.Refresh();
 
-        Assert.Equal("Pass done: started 1 run.", window.Message.Says);
+        Assert.Equal("Pass done: started 1 run.", window.Says());
         Assert.Equal("10:02 a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build", Assert.Single(window.DispatchLog.Lines).Text);
     }
 
@@ -1263,8 +1280,8 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("dispatch.pass");
         window.Refresh();
 
-        Assert.Equal("a-team: no such command", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("a-team: no such command", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Fact]
@@ -1281,7 +1298,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("dispatch.pass");
 
         Assert.Equal(1, calls);
-        Assert.Equal("A pass is already running.", window.Message.Says);
+        Assert.Equal("A pass is already running.", window.Says());
     }
 
     [Fact]
@@ -1299,7 +1316,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("agent.hold");
         window.Commands.Execute("agent.hold");
         Assert.Equal(1, calls);
-        Assert.Equal("team0's lead is already being paused", window.Message.Says);
+        Assert.Equal("team0's lead is already being paused", window.Says());
 
         finish.SetResult(null);
         window.Refresh();
@@ -1332,7 +1349,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("agent.hold");
 
         Assert.Equal([["stop", "team1", "dev"]], calls);
-        Assert.Equal("Interrupting… · 2 more queued", window.Message.Says);
+        Assert.Equal("Interrupting… · 2 more queued", window.Says());
 
         for (var i = 0; i < 3; i++)
         {
@@ -1353,7 +1370,7 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(0, window.Message.Lines);
+        Assert.Equal("", window.Says());
         Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
     }
 
@@ -1369,8 +1386,8 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("pausing team0's lead: a-team pause: can't write /nope/team0.json", window.Message.Says);
-        Assert.Equal(1, window.Message.Lines);
+        Assert.Equal("pausing team0's lead: a-team pause: can't write /nope/team0.json", window.Says());
+        Assert.NotEqual("", window.Says());
         Assert.True(window.NewKeyDownEvent(Key.Tab));
         Assert.Equal(1, Selected(window));
     }
@@ -1403,7 +1420,7 @@ public class DashboardWindowTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('h')));
 
         Assert.Equal([["pause", "team1", "dev"]], calls);
-        Assert.Equal("Pausing this role…", window.Message.Says);
+        Assert.Equal("Pausing this role…", window.Says());
     }
 
     [Fact]
@@ -1450,7 +1467,7 @@ public class DashboardWindowTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('i')));
 
         Assert.Equal([["stop", "team1", "dev"]], calls);
-        Assert.Equal("Interrupting…", window.Message.Says);
+        Assert.Equal("Interrupting…", window.Says());
     }
 
     [Fact]
@@ -1562,8 +1579,8 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("agent.interrupt");
         window.Refresh();
 
-        Assert.Equal("interrupting team0's dev: a-team stop: can't write /nope/team0.json", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("interrupting team0's dev: a-team stop: can't write /nope/team0.json", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
         Assert.False(window.Panes[1].Held);
         Assert.Equal("Interrupt selected agent", Label(window, "agent.interrupt"));
     }
@@ -1673,7 +1690,7 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
 
         Assert.Equal(0, passes);
-        Assert.Equal("asking for team1's vision review: board.sh: team1.json names no vision", window.Message.Says);
+        Assert.Equal("asking for team1's vision review: board.sh: team1.json names no vision", window.Says());
     }
 
     [Fact]
@@ -1719,7 +1736,7 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal(3, Selected(window));
         Assert.True(window.Agents.Visible);
-        Assert.Equal("", window.Message.Says);
+        Assert.Equal("", window.Says());
     }
 
     [Fact]
@@ -1733,8 +1750,8 @@ public class DashboardWindowTests : IDisposable
         window.FocusResumed();
 
         Assert.Equal(3, Selected(window));
-        Assert.Equal("attach team1 dev exited 1", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("attach team1 dev exited 1", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Fact]
@@ -1780,7 +1797,7 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("agent.interrupt");
 
         Assert.Equal(0, calls);
-        Assert.Equal("", window.Message.Says);
+        Assert.Equal("", window.Says());
     }
 
     [Fact]
@@ -1893,9 +1910,9 @@ public class DashboardWindowTests : IDisposable
     private static void AssertOnlyKeysHint(DashboardWindow window)
     {
         LayOut(window, 120, 30);
-        Assert.Equal("Press F1 for help", window.Status.HelpHint.Text);
-        Assert.Equal(window.Status.Viewport.Width, window.Status.HelpHint.Frame.Right);
-        Assert.DoesNotContain("a-team", window.Message.Says);
+        Assert.Equal("Press F1 for help", window.Status.Hints.Says);
+        Assert.Equal(window.Status.FrameToScreen().Right - 1, window.Status.Hints.FrameToScreen().Right);
+        Assert.DoesNotContain("a-team", window.Says());
     }
 
     private const int Dispatcher = -2;
@@ -1924,7 +1941,7 @@ public class DashboardWindowTests : IDisposable
         Func<string[], Task<string?>>? run = null,
         string? keys = null,
         Func<string, Task<Reading>>? readWaiting = null,
-        Action<string>? openUrl = null,
+        Func<string, LinkOutcome>? openUrl = null,
         Area area = Area.Dashboard,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
@@ -1952,7 +1969,7 @@ public class DashboardWindowTests : IDisposable
             run ?? (_ => Task.FromResult<string?>(null)),
             readWaiting ?? (_ => Task.FromResult(new Reading("[]", null))),
             _ => Task.FromResult(new Reading("{}", null)),
-            openUrl ?? (_ => { }),
+            openUrl ?? Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             area,
             auto,

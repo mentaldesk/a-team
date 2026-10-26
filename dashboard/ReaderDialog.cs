@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Fields;
+using MentalDesk.Tui.Links;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
@@ -95,7 +96,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
-    private readonly Action _onGitHub;
+    private readonly Func<LinkOutcome?> _onGitHub;
     private readonly Func<bool>? _onApprove;
     private readonly ReaderCommand? _accept;
     private readonly ReaderComment? _comment;
@@ -132,7 +133,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly Attaching? _attaching;
     private readonly ImageAttach? _attach;
     private readonly Pictures? _pictures;
-    private readonly Action<string> _openUrl;
+    private readonly Func<string, LinkOutcome>? _openUrl;
     private readonly Action<Picture, string> _viewImage;
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
@@ -152,15 +153,15 @@ public sealed partial class ReaderDialog : DashboardDialog
     /// <param name="openUrl">Opens an image on GitHub where it can't be drawn.</param>
     /// <param name="viewImage">Shows a picture full-window, under its alt text.</param>
     public ReaderDialog(
-        WaitingItem item, IssueBody body, Action onGitHub, Func<bool>? onApprove = null, ReaderCommand? accept = null,
+        WaitingItem item, IssueBody body, Func<LinkOutcome?> onGitHub, Func<bool>? onApprove = null, ReaderCommand? accept = null,
         ReaderComment? comment = null, ReaderTry? tryIt = null, ReaderPanes? panes = null, int width = 0,
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
-        Action<string>? openUrl = null, Action<Picture, string>? viewImage = null)
+        Func<string, LinkOutcome>? openUrl = null, Action<Picture, string>? viewImage = null)
         : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
     {
         _pictures = pictures;
-        _openUrl = openUrl ?? (_ => { });
+        _openUrl = openUrl;
         _viewImage = viewImage ?? ((_, _) => { });
         _idea = idea;
         if (idea is not null)
@@ -404,10 +405,10 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     /// <returns>The rank Enter set on the row of ranks, or null.</returns>
     public static Rank? Show(
-        IApplication app, WaitingItem item, IssueBody body, Action onGitHub, Func<bool>? onApprove, ReaderCommand? accept,
+        IApplication app, WaitingItem item, IssueBody body, Func<LinkOutcome?> onGitHub, Func<bool>? onApprove, ReaderCommand? accept,
         ReaderComment? comment, ReaderTry? tryIt, Rank? rank, ReaderPanes panes, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
-        Action<string>? openUrl = null)
+        Func<string, LinkOutcome>? openUrl = null)
     {
         using var dialog = new ReaderDialog(item, body, onGitHub, onApprove, accept, comment, tryIt, panes,
             app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit, copyBranch: copyBranch, idea: idea,
@@ -849,7 +850,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (_pictures is { Drawn: true } && _pictures.For(image.Url) is { } picture)
             _viewImage(picture, image.Alt);
         else if (image.Url.StartsWith("https://", StringComparison.Ordinal))
-            _openUrl(image.Url);
+            Say(_openUrl?.Invoke(image.Url));
         else
             Say($"{image.Alt} hasn't finished uploading", Schemes.Error);
         return true;
@@ -857,8 +858,16 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     private bool OnGitHub()
     {
-        _onGitHub();
+        Say(_onGitHub());
         return true;
+    }
+
+    private void Say(LinkOutcome? outcome)
+    {
+        if (outcome is null)
+            return;
+        var (said, scheme) = Copying.Said(outcome);
+        Say(said, scheme);
     }
 
     private bool Try() => Leave(() =>

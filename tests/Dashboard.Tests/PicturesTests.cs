@@ -135,9 +135,9 @@ public class PicturesTests
             rows);
     }
 
-    private static ReaderDialog Reader(string body, Pictures pictures, List<string> opened, List<string> viewed)
+    private static ReaderDialog Reader(string body, Pictures pictures, List<string> opened, List<string> viewed, string did = "opened")
     {
-        var dialog = new ReaderDialog(Item, new IssueBody(body), () => { }, pictures: pictures, openUrl: opened.Add,
+        var dialog = new ReaderDialog(Item, new IssueBody(body), () => null, pictures: pictures, openUrl: Opening.Into(opened, did),
             viewImage: (_, alt) => viewed.Add(alt));
         dialog.Layout(new Size(60, 20));
         return dialog;
@@ -159,13 +159,16 @@ public class PicturesTests
         Assert.Empty(opened);
     }
 
-    [Fact]
-    public async Task Without_graphics_the_line_stays_text_and_Enter_opens_it_on_GitHub()
+    [Theory]
+    [InlineData("opened")]
+    [InlineData("copied")]
+    [InlineData("failed")]
+    public async Task Without_graphics_the_line_stays_text_and_Enter_opens_it_on_GitHub_saying_what_happened(string did)
     {
         var fetcher = new Fetcher();
         var pictures = await Read(Drawing(graphics: false, fetcher), Attached);
         List<string> opened = [], viewed = [];
-        using var dialog = Reader($"Before\n\n![shot]({Attached})", pictures, opened, viewed);
+        using var dialog = Reader($"Before\n\n![shot]({Attached})", pictures, opened, viewed, did);
 
         Assert.DoesNotContain(dialog.Body.Rows(40), row => row.Pictured);
         dialog.NewKeyDownEvent(Key.End.WithCtrl);
@@ -173,6 +176,8 @@ public class PicturesTests
 
         Assert.Equal([Attached], opened);
         Assert.Empty(viewed);
+        Assert.Equal(Opening.Outcome(did, Attached).Message, dialog.Message.Says);
+        Assert.Equal(Opening.SchemeOf(did), dialog.Message.SchemeName);
     }
 
     [Fact]
@@ -222,7 +227,7 @@ public class PicturesTests
         var pictures = await Read(Drawing(graphics: true), Attached);
         var image = new ReaderImage();
         List<string> viewed = [];
-        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => null,
             comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null), Image: image),
             pictures: pictures, viewImage: (_, alt) => viewed.Add(alt));
         dialog.Layout(new Size(80, 20));
@@ -242,7 +247,7 @@ public class PicturesTests
     public void Commands_opens_from_the_comment_so_View_image_can_be_picked()
     {
         List<Key> passed = [];
-        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => null,
             comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null), Image: new ReaderImage()),
             window: key =>
             {
@@ -262,7 +267,7 @@ public class PicturesTests
     public void Enter_in_the_comment_stays_a_newline()
     {
         var image = new ReaderImage();
-        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => { },
+        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => null,
             comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null), Image: image),
             pictures: Drawing(graphics: true));
         dialog.Layout(new Size(80, 20));

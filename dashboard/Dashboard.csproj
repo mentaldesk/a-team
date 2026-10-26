@@ -18,6 +18,7 @@
   <ItemGroup>
     <EmbeddedResource Include="themes.json" LogicalName="themes.json" />
     <EmbeddedResource Include="loading.anim" LogicalName="loading.anim" />
+    <EmbeddedResource Include="../docs/guide/**/*.md" LogicalName="guide/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,7 +27,7 @@
 
   <ItemGroup>
     <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All" />
-    <PackageReference Include="MentalDesk.Tui" Version="0.3.15" />
+    <PackageReference Include="MentalDesk.Tui" Version="0.4.0" />
     <PackageReference Include="StbImageSharp" Version="2.30.16" />
     <PackageReference Include="Terminal.Gui" Version="2.5.0" />
   </ItemGroup>

@@ -144,7 +144,11 @@ public class DecisionsTests
             changes?.Add(change);
             return Task.FromResult<string?>(null);
         },
-        url => opened?.Add(url));
+        url =>
+        {
+            opened?.Add(url);
+            return Opening.Opened(url);
+        });
 
     [Fact]
     public void The_dialog_is_titled_for_the_team_and_selects_the_newest()

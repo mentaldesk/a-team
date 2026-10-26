@@ -23,7 +23,7 @@ internal sealed class AppMenu
             "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "decisions", "settings", "quit"]),
         (Cards, [Separator, "work.new", "work.refresh", "work.mine"]),
         (Agents, ["agent.hold", "agent.interrupt", "dispatch.pass", Separator, "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
-        ("_Help", ["help", "guide", "commands", "about"]),
+        ("_Help", ["help", "guide", "messages", "commands", "about"]),
     ];
 
     /// <summary>Items that take each other's place in a menu, sharing a letter so it stays put as they swap.</summary>

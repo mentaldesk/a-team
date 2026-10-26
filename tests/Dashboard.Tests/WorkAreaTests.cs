@@ -1,4 +1,7 @@
+using MentalDesk.Tui.Chrome;
+using MentalDesk.Tui;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Links;
 using System.Drawing;
 using System.Text.Json.Nodes;
 using Terminal.Gui.Configuration;
@@ -136,7 +139,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(before + 2, reads);
-        Assert.Equal("#412 added to team1's ideas", window.Message.Says);
+        Assert.Equal("#412 added to team1's ideas", window.Says());
     }
 
     [Fact]
@@ -387,7 +390,7 @@ public class WorkAreaTests : IDisposable
         clock.Now += TimeSpan.FromSeconds(1);
         window.Refresh();
         Assert.Equal(2, reads);
-        Assert.Equal("gh: API rate limit exceeded", window.Message.Says);
+        Assert.Equal("gh: API rate limit exceeded", window.Says());
 
         clock.Now += DashboardWindow.ReadEvery;
         window.Refresh();
@@ -511,7 +514,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(6, window.Work.Selected?.Number);
-        Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
+        Assert.Equal("#6 · waiting to be ranked", window.Says());
     }
 
     [Fact]
@@ -522,14 +525,14 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
+        Assert.Equal("#107 · awaiting your approval since 08:14", window.Says());
 
         window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Message.Says);
+        Assert.Equal("#108 · lead · answering your feedback since 09:30", window.Says());
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("#49 · dev · answering your feedback since 10:15 · PR #122", window.Message.Says);
+        Assert.Equal("#49 · dev · answering your feedback since 10:15 · PR #122", window.Says());
     }
 
     [Fact]
@@ -542,7 +545,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(12, window.Work.Selected?.Number);
-        Assert.Equal("Triage · team0", window.Message.Says);
+        Assert.Equal("Triage · team0", window.Says());
     }
 
     [Fact]
@@ -573,13 +576,12 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("All items · read <1m ago", window.Status.State.Text);
-        Assert.Equal(0, window.Status.State.Frame.X);
+        Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
 
         window.NewKeyDownEvent(new Key('m'));
         LayOut(window, 120, 30);
 
-        Assert.Equal("My items · read <1m ago", window.Status.State.Text);
+        Assert.Equal("My items · read <1m ago", window.Status.FocusWord);
     }
 
     [Fact]
@@ -589,10 +591,10 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
-        Assert.Equal(window.Message.Says, window.Message.Text);
-        Assert.Equal("All items · read <1m ago".Length + 3, window.Message.Frame.X);
-        Assert.Equal(window.Status.Viewport.Width, window.Status.HelpHint.Frame.Right);
+        Assert.Equal("#6 · waiting to be ranked", window.Status.RestingText);
+        Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
+        Assert.Equal("Press F1 for help", window.Status.Hints.Says);
+        Assert.Equal(window.Status.FrameToScreen().Right - 1, window.Status.Hints.FrameToScreen().Right);
         Assert.DoesNotContain(window.Status.SubViews, view => view.Visible && view.Text.Contains("a-team "));
     }
 
@@ -603,13 +605,13 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal(1, window.Message.Lines);
+        Assert.NotEqual("", window.Says());
         Assert.Equal(window.Viewport.Height - 1, window.Status.Frame.Y);
 
         window.NewKeyDownEvent(new Key('d'));
         LayOut(window, 120, 30);
 
-        Assert.Equal(0, window.Message.Lines);
+        Assert.Equal("", window.Says());
         Assert.Equal(window.Viewport.Height - 1, window.Status.Frame.Y);
     }
 
@@ -625,9 +627,8 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 80, 30);
 
-        Assert.StartsWith("setting #6 to High: board.sh: xxx", window.Message.Says);
-        Assert.Equal(80 - window.Message.Frame.X - "Press F1 for help".Length - 3, window.Message.Frame.Width);
-        Assert.Equal(80, window.Status.HelpHint.Frame.Right);
+        Assert.StartsWith("setting #6 to High: board.sh: xxx", window.Says());
+        Assert.Equal(79, window.Status.Hints.FrameToScreen().Right);
     }
 
     [Fact]
@@ -639,7 +640,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(new Key('d'));
 
-        Assert.Equal("", window.Status.State.Text);
+        Assert.Equal("", window.Status.FocusWord);
     }
 
     [Fact]
@@ -717,28 +718,38 @@ public class WorkAreaTests : IDisposable
             Titles(reopened));
     }
 
-    [Fact]
-    public void g_opens_the_selected_cards_issue()
+    [Theory]
+    [InlineData("opened")]
+    [InlineData("copied")]
+    [InlineData("failed")]
+    public void g_opens_the_selected_cards_issue_and_says_what_happened(string did)
     {
+        const string url = "https://github.com/mentaldesk/team0/issues/107";
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened, did));
         window.Refresh();
         LayOut(window, 120, 30);
 
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.True(window.NewKeyDownEvent(new Key('g')));
 
-        Assert.Equal(["https://github.com/mentaldesk/team0/issues/107"], opened);
+        Assert.Equal([url], opened);
+        Assert.Equal(Opening.Outcome(did, url).Message, window.Says());
+        Assert.Equal(did == "failed", window.Status.MessageSeverity == Severity.Error);
     }
 
-    [Fact]
-    public void b_opens_the_board_of_the_selected_cards_team()
+    [Theory]
+    [InlineData("opened")]
+    [InlineData("copied")]
+    [InlineData("failed")]
+    public void b_opens_the_board_of_the_selected_cards_team_and_says_what_happened(string did)
     {
         var teams = Path.Combine(Config, "teams");
         Directory.CreateDirectory(teams);
         File.WriteAllText(Path.Combine(teams, "team0.json"), """{"project": {"owner": "mentaldesk", "number": 9}}""");
+        const string url = "https://github.com/orgs/mentaldesk/projects/9";
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened, did));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -746,29 +757,30 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("team0", window.Work.Selected?.Team);
         Assert.True(window.NewKeyDownEvent(new Key('b')));
 
-        Assert.Equal(["https://github.com/orgs/mentaldesk/projects/9"], opened);
-        Assert.Equal("Opened team0's board", window.Message.Says);
+        Assert.Equal([url], opened);
+        Assert.Equal(Opening.Outcome(did, url).Message, window.Says());
+        Assert.Equal(did == "failed", window.Status.MessageSeverity == Severity.Error);
     }
 
     [Fact]
     public void b_says_why_when_the_team_config_names_no_board()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
         Assert.True(window.NewKeyDownEvent(new Key('b')));
 
         Assert.Empty(opened);
-        Assert.Equal("team0's config names no project board", window.Message.Says);
+        Assert.Equal("team0's config names no project board", window.Says());
     }
 
     [Fact]
     public void g_on_the_row_under_a_card_opens_its_PR()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -786,11 +798,11 @@ public class WorkAreaTests : IDisposable
     public void An_Idea_has_no_row_under_it_and_hands_over_to_GitHub_on_g()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
+        Assert.Equal("#6 · waiting to be ranked", window.Says());
 
         Assert.True(window.NewKeyDownEvent(new Key('g')));
         Assert.Equal(["https://github.com/mentaldesk/team0/issues/6"], opened);
@@ -803,7 +815,7 @@ public class WorkAreaTests : IDisposable
     public void p_is_no_longer_a_key_the_Work_area_answers()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -813,7 +825,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Empty(opened);
         Assert.DoesNotContain("work.pr", window.Commands.Registered.Select(command => command.Id));
-        Assert.Equal("#107 · awaiting your approval since 08:14", window.Message.Says);
+        Assert.Equal("#107 · awaiting your approval since 08:14", window.Says());
     }
 
     [Fact]
@@ -949,7 +961,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal([["board", "team0", "priority", "you", "6", "Low"]], calls);
         Assert.Equal("\U0001F4A1Triage · 0", window.Work.Lanes[0].Columns[0].Title);
-        Assert.Equal("#6 · set to Low", window.Message.Says);
+        Assert.Equal("#6 · set to Low", window.Says());
     }
 
     [Fact]
@@ -966,12 +978,12 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
-        Assert.Equal("Reading #6…", window.Message.Says);
+        Assert.Equal("Reading #6…", window.Says());
 
         window.Refresh();
 
         Assert.Equal([["board", "team0", "priority", "you", "6", "High"]], calls);
-        Assert.Equal("Setting #6 to High…", window.Message.Says);
+        Assert.Equal("Setting #6 to High…", window.Says());
     }
 
     [Fact]
@@ -995,7 +1007,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
-        Assert.Equal("#6 · set to High", window.Message.Says);
+        Assert.Equal("#6 · set to High", window.Says());
         Assert.Equal(2, reads);
     }
 
@@ -1019,19 +1031,23 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_message_goes_as_soon_as_the_selection_does()
+    public void What_the_board_took_stays_as_the_selection_moves_and_goes_after_five_seconds()
     {
-        using var window = Open(chooseRank: (_, _, _) => Rank.High);
+        var clock = new Clock();
+        using var window = Open(chooseRank: (_, _, _) => Rank.High, clock: clock);
         window.Refresh();
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.priority");
         window.Refresh();
         window.Refresh();
-        Assert.Equal("#6 · set to High", window.Message.Says);
+        Assert.Equal("#6 · set to High", window.Says());
 
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("#49 · dev · answering your feedback since 10:15 · PR #122", window.Message.Says);
+        Assert.Equal("#6 · set to High", window.Says());
+
+        clock.Now += AppStatusBar.Lifetime;
+        Assert.Equal("#49 · dev · answering your feedback since 10:15 · PR #122", window.Says());
     }
 
     [Fact]
@@ -1059,7 +1075,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(["\U0001F4A1Triage · 2", "◇ Pitches · 1", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(108, window.Work.Selected?.Number);
-        Assert.Equal("#107 · set to None", window.Message.Says);
+        Assert.Equal("#107 · set to None", window.Says());
     }
 
     [Fact]
@@ -1084,7 +1100,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(["\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 0", "Blocked · 0", "Review · 0"],
             Titles(window));
-        Assert.Equal("#107 · set to High", window.Message.Says);
+        Assert.Equal("#107 · set to High", window.Says());
         Assert.Equal(2, reads);
     }
 
@@ -1096,19 +1112,18 @@ public class WorkAreaTests : IDisposable
             chooseRank: (_, _, _) => Rank.High);
         window.Refresh();
         LayOut(window, 120, 30);
-        var stamp = window.Status.State.Text;
+        var stamp = window.Status.FocusWord;
 
         window.Commands.Execute("work.priority");
         window.Refresh();
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("setting #6 to High: board.sh: API rate limit exceeded", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
-        Assert.True(window.Message.Frame.X > window.Status.State.Frame.Right);
+        Assert.Equal("setting #6 to High: board.sh: API rate limit exceeded", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
         Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
-        Assert.Equal(stamp, window.Status.State.Text);
+        Assert.Equal(stamp, window.Status.FocusWord);
         Assert.Equal(6, window.Work.Selected?.Number);
     }
 
@@ -1450,7 +1465,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("◇ Pitches · 1", window.Work.Lanes[0].Columns[1].Title);
         Assert.Equal(108, window.Work.Selected?.Number);
         Assert.Equal(before, reads);
-        Assert.Equal("#107 approved", window.Message.Says);
+        Assert.Equal("#107 approved", window.Says());
     }
 
     [Fact]
@@ -1502,8 +1517,8 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("◇ Pitches · 2", window.Work.Lanes[0].Columns[1].Title);
         Assert.Equal(107, window.Work.Selected?.Number);
-        Assert.Equal("approving #107: board.sh: only a Pitched pitch can be approved (#107 is in 'Approved')", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("approving #107: board.sh: only a Pitched pitch can be approved (#107 is in 'Approved')", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Theory]
@@ -1610,7 +1625,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(["Covered by #46."], reasons);
         Assert.DoesNotContain(window.Work.Items, item => item.Number == 6);
         Assert.Equal(before, reads);
-        Assert.Equal("#6 declined", window.Message.Says);
+        Assert.Equal("#6 declined", window.Says());
     }
 
     [Fact]
@@ -1710,7 +1725,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal("board team0 shelve you 107 3", string.Join(' ', Assert.Single(calls)[..6]));
         Assert.Equal([""], reasons);
         Assert.DoesNotContain(window.Work.Items, item => item.Number == 107);
-        Assert.Equal("#107 back on 23 Oct", window.Message.Says);
+        Assert.Equal("#107 back on 23 Oct", window.Says());
     }
 
     [Fact]
@@ -1755,7 +1770,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal([["board", "team0", "release", "you", "192"]], calls);
         Assert.Equal(0, window.Work.Lanes[0].Columns.Single(column => column.Gate == "Blocked").Count);
-        Assert.Equal("#192 back in the Dev's queue", window.Message.Says);
+        Assert.Equal("#192 back in the Dev's queue", window.Says());
     }
 
     [Fact]
@@ -1959,7 +1974,7 @@ public class WorkAreaTests : IDisposable
         var before = reads;
 
         Assert.True(window.NewKeyDownEvent(new Key('a')));
-        Assert.Equal("Merging PR #122…", window.Message.Says);
+        Assert.Equal("Merging PR #122…", window.Says());
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -1967,7 +1982,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal([["board", "team0", "accept", "you", "49"]], calls);
         Assert.Equal(["Review · 0"], Titles(window).Take(4).Where(title => title.StartsWith("Review")));
         Assert.Equal(before, reads);
-        Assert.Equal("merged PR #122", window.Message.Says);
+        Assert.Equal("merged PR #122", window.Says());
     }
 
     /// <summary>Each board write it's asked for, left running until the test finishes it.</summary>
@@ -2038,7 +2053,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(["49"], writes.Calls.Select(call => call[^1]));
-        Assert.Equal("Merging PR #122… · 1 more queued", window.Message.Says);
+        Assert.Equal("Merging PR #122… · 1 more queued", window.Says());
         Assert.Equal(["⋯", "⋯"], window.Work.Lanes[0].Columns[3].CardIcons.Where((_, row) => row % 2 == 0).Select(icon => icon.Glyph));
 
         writes.Finishes[0].SetResult(null);
@@ -2047,13 +2062,14 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(["49", "50"], writes.Calls.Select(call => call[^1]));
         Assert.Equal([50], Reviewing(window));
-        Assert.Equal("Merging PR #123…", window.Message.Says);
+        Assert.Equal("merged PR #122", window.Says());
+        Assert.Equal("Merging PR #123…", window.Status.RestingText);
 
         writes.Finishes[1].SetResult(null);
         window.Refresh();
 
         Assert.Empty(Reviewing(window));
-        Assert.Equal("merged PR #123", window.Message.Says);
+        Assert.Equal("merged PR #123", window.Says());
     }
 
     [Fact]
@@ -2069,7 +2085,7 @@ public class WorkAreaTests : IDisposable
         writes.Finishes[0].SetResult("board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))");
         window.Refresh();
 
-        Assert.Equal("merging PR #122: board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))", window.Message.Says);
+        Assert.Equal("merging PR #122: board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))", window.Says());
         Assert.Equal(["49", "50"], writes.Calls.Select(call => call[^1]));
 
         writes.Finishes[1].SetResult(null);
@@ -2091,7 +2107,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(new Key('a'));
         window.Refresh();
 
-        Assert.Equal("merging PR #122: the command didn't finish · merging PR #123: gh: HTTP 502", window.Message.Says);
+        Assert.Equal("merging PR #122: the command didn't finish · merging PR #123: gh: HTTP 502", window.Says());
     }
 
     [Fact]
@@ -2106,7 +2122,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(1, asked);
         Assert.Single(writes.Calls);
-        Assert.Equal("#49 is already being merged", window.Message.Says);
+        Assert.Equal("#49 is already being merged", window.Says());
 
         writes.Finishes[0].SetResult(null);
         window.Refresh();
@@ -2196,7 +2212,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(new Key('x'));
         window.Refresh();
 
-        Assert.Equal("Setting #6 to High… · 2 more queued", window.Message.Says);
+        Assert.Equal("Setting #6 to High… · 2 more queued", window.Says());
         Assert.Equal(["priority"], writes.Calls.Select(call => call[2]));
 
         writes.Finishes[0].SetResult(null);
@@ -2237,7 +2253,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.Equal([["board", "team0", "accept", "you", "352"]], calls);
-        Assert.Equal("merged PR #352", window.Message.Says);
+        Assert.Equal("merged PR #352", window.Says());
     }
 
     [Fact]
@@ -2293,8 +2309,8 @@ public class WorkAreaTests : IDisposable
 
         Assert.Contains("Review · 1", Titles(window));
         Assert.Equal(49, window.Work.Selected?.Number);
-        Assert.Equal("merging PR #122: board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("merging PR #122: board.sh: can't merge PR #122 (gh: Pull Request is not mergeable (HTTP 405))", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Theory]
@@ -2350,14 +2366,14 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(174, window.Work.Selected?.Number);
 
         Assert.True(window.NewKeyDownEvent(new Key('a')));
-        Assert.Equal("Closing #174…", window.Message.Says);
+        Assert.Equal("Closing #174…", window.Says());
         window.Refresh();
         LayOut(window, 120, 30);
 
         Assert.Equal([(174, 3)], asked.Select(item => (item.Number, item.Tasks)));
         Assert.Equal([["board", "team0", "accept", "you", "174"]], calls);
         Assert.DoesNotContain("Review · 1", Titles(window));
-        Assert.Equal("accepted #174", window.Message.Says);
+        Assert.Equal("accepted #174", window.Says());
     }
 
     [Theory]
@@ -2402,8 +2418,8 @@ public class WorkAreaTests : IDisposable
 
         Assert.Contains("Review · 1", Titles(window));
         Assert.Equal(174, window.Work.Selected?.Number);
-        Assert.Equal("closing #174: board.sh: can't close #174 (gh: Resource not accessible (HTTP 403))", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("closing #174: board.sh: can't close #174 (gh: Resource not accessible (HTTP 403))", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Fact]
@@ -2484,7 +2500,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal([true], closes);
         Assert.Equal([["board", "team0", "accept", "you", "49"]], calls);
-        Assert.Equal("merged PR #122", window.Message.Says);
+        Assert.Equal("merged PR #122", window.Says());
     }
 
     [Fact]
@@ -2514,7 +2530,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(60, Assert.Single(asked).Number);
         Assert.Equal("Merges #60 into main, squashed. The Lead's next run reads it.", AcceptDialog.Says(asked[0]));
         Assert.Equal([["board", "team0", "accept", "you", "60"]], calls);
-        Assert.Equal("merged #60", window.Message.Says);
+        Assert.Equal("merged #60", window.Says());
     }
 
     [Fact]
@@ -2685,7 +2701,7 @@ public class WorkAreaTests : IDisposable
     {
         var opened = new List<string>();
         using var window = Open(
-            openUrl: opened.Add,
+            openUrl: Opening.Into(opened),
             readBody: _ => Task.FromResult(new Reading(Body, null)),
             showBody: (_, _, onGitHub, _, _, _, _) => onGitHub());
         window.Refresh();
@@ -2742,8 +2758,8 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.False(shown);
-        Assert.Equal("board.sh: can't read #6 (gh: Not Found (HTTP 404))", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("board.sh: can't read #6 (gh: Not Found (HTTP 404))", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Fact]
@@ -2759,8 +2775,8 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.False(shown);
-        Assert.Equal("#107 has no description", window.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Message.SchemeName);
+        Assert.Equal("#107 has no description", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Fact]
@@ -2811,7 +2827,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
 
         Assert.Equal(0, calls);
-        Assert.Equal("#6 · waiting to be ranked", window.Message.Says);
+        Assert.Equal("#6 · waiting to be ranked", window.Says());
     }
 
     [Fact]
@@ -2845,11 +2861,11 @@ public class WorkAreaTests : IDisposable
     {
         var now = DateTimeOffset.UtcNow;
         using var window = Open();
-        Assert.Equal("All items", window.Status.State.Text);
+        Assert.Equal("All items", window.Status.FocusWord);
 
         window.Refresh();
 
-        Assert.Equal("All items · read <1m ago", window.Status.State.Text);
+        Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
         Assert.Equal("read 2m ago", DashboardWindow.Stamped(now, now.AddMinutes(2)));
     }
 
@@ -2862,17 +2878,17 @@ public class WorkAreaTests : IDisposable
             : new Reading(Waiting(team), null)));
         window.Refresh();
         LayOut(window, 120, 30);
-        var stamp = window.Status.State.Text;
+        var stamp = window.Status.FocusWord;
 
         failing = true;
         window.NewKeyDownEvent(Key.F5);
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("a-team board: API rate limit exceeded", window.Message.Says);
+        Assert.Equal("a-team board: API rate limit exceeded", window.Says());
         Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
-        Assert.Equal(stamp, window.Status.State.Text);
+        Assert.Equal(stamp, window.Status.FocusWord);
         Assert.Equal(6, window.Work.Selected?.Number);
     }
 
@@ -2888,7 +2904,8 @@ public class WorkAreaTests : IDisposable
         });
 
         window.NewKeyDownEvent(Key.F5);
-        Assert.Equal("Reading…", window.Message.Says);
+        Assert.True(window.Loading.Visible);
+        Assert.DoesNotContain("Reading…", window.Says());
         window.NewKeyDownEvent(Key.F5);
 
         Assert.Equal(2, reads);
@@ -2937,7 +2954,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(2, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
         Assert.NotNull(window.Work.SelectedCard);
-        Assert.EndsWith("read 4m ago", window.Status.State.Text);
+        Assert.EndsWith("read 4m ago", window.Status.FocusWord);
     }
 
     [Fact]
@@ -3024,7 +3041,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(4, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
-        Assert.EndsWith("read <1m ago", window.Status.State.Text);
+        Assert.EndsWith("read <1m ago", window.Status.FocusWord);
     }
 
     [Fact]
@@ -3236,7 +3253,7 @@ public class WorkAreaTests : IDisposable
     public void o_opens_a_card_the_arrows_moved_to()
     {
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -3256,7 +3273,7 @@ public class WorkAreaTests : IDisposable
 
         LayOut(window, 120, 30);
 
-        Assert.Equal(1, window.Message.Lines);
+        Assert.NotEqual("", window.Says());
         Assert.Equal(new Rectangle(0, 0, window.Viewport.Width, 1), window.Menu.Frame);
         Assert.Equal(new Rectangle(0, 2, window.Viewport.Width, window.Viewport.Height - 3), window.Work.Frame);
     }
@@ -3271,7 +3288,7 @@ public class WorkAreaTests : IDisposable
                 "view.dashboard", "view.work", "view.overseer", "assistant", "work.whatsNew", "overseer.details", "overseer.fold", "overseer.github",
                 "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "decisions", "settings", "quit", "work.read", "work.priority", "work.try",
                 "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
-                "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "commands", "about",
+                "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "messages", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>
@@ -3336,7 +3353,103 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(new Key('y'));
 
         Assert.Equal("feat/keys", clipboard.GetClipboardData());
-        Assert.Equal("Copied feat/keys", window.Message.Says);
+        Assert.Equal("Copied feat/keys", window.Says());
+    }
+
+    [Fact]
+    public void A_reply_goes_at_the_next_key()
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
+            clipboard: new FakeClipboard());
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('y'));
+        Assert.Equal("Copied feat/keys", window.Says());
+
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Null(window.Status.Message);
+    }
+
+    [Fact]
+    public void A_newer_message_replaces_an_older_one()
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? Branched() : "[]", null)),
+            clipboard: new FakeClipboard());
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.Commands.Execute("work.copyBranch");
+        window.Commands.Execute("work.github");
+
+        Assert.StartsWith("Opened https://", window.Says());
+        Assert.Equal(["Copied feat/keys", window.Says()], window.Status.History.Select(message => message.Text));
+    }
+
+    [Fact]
+    public void An_error_waits_for_a_key_however_long_that_takes()
+    {
+        var clock = new Clock();
+        using var window = Open(read: _ => Task.FromResult(new Reading("", "gh: API rate limit exceeded")), clock: clock);
+        window.Refresh();
+
+        clock.Now += TimeSpan.FromMinutes(1);
+        Assert.Equal("gh: API rate limit exceeded", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Null(window.Status.Message);
+    }
+
+    [Fact]
+    public void Error_news_outlasts_keys_pressed_in_its_first_five_seconds()
+    {
+        var clock = new Clock();
+        using var window = Open(read: _ => Task.FromResult(new Reading("", "gh: API rate limit exceeded")), clock: clock);
+        window.Refresh();
+
+        clock.Now += TimeSpan.FromSeconds(2);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal("gh: API rate limit exceeded", window.Says());
+
+        clock.Now += AppStatusBar.Lifetime;
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Null(window.Status.Message);
+    }
+
+    [Fact]
+    public void A_failed_read_comes_off_the_bar_once_a_read_works()
+    {
+        var reads = 0;
+        using var window = Open(read: team => Task.FromResult(reads++ < 2 ? new Reading("", "gh: API rate limit exceeded") : new Reading(Waiting(team), null)));
+        window.Refresh();
+        Assert.Equal("gh: API rate limit exceeded", window.Says());
+
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Null(window.Status.Message);
+        Assert.Equal("#6 · waiting to be ranked", window.Says());
+    }
+
+    [Fact]
+    public void Unseen_errors_count_on_the_bar_until_Messages_lists_them_newest_first()
+    {
+        var reads = 0;
+        using var window = Open(read: team => Task.FromResult(reads++ < 2 ? new Reading("", "gh: API rate limit exceeded") : new Reading(Waiting(team), null)));
+        window.Refresh();
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.Commands.Execute("work.github");
+
+        Assert.Equal(1, window.Status.UnreadErrors);
+        Assert.Equal("⚠ 1", window.Status.UnreadButton.Text);
+
+        using var messages = new MessagesDialog(window.Status);
+
+        Assert.Equal(0, window.Status.UnreadErrors);
+        Assert.Equal([window.Says(), "gh: API rate limit exceeded"], messages.Rows.Select(row => row.Text));
     }
 
     [Fact]
@@ -3351,7 +3464,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(new Key('y'));
 
         Assert.Equal("feat/keys", terminal.Platform.Text);
-        Assert.Equal("Copied feat/keys", window.Message.Says);
+        Assert.Equal("Copied feat/keys", window.Says());
     }
 
     [Fact]
@@ -3364,7 +3477,7 @@ public class WorkAreaTests : IDisposable
 
         window.NewKeyDownEvent(new Key('y'));
 
-        Assert.Equal("Copy failed: there is no clipboard", window.Message.Says);
+        Assert.Equal("Copy failed: there is no clipboard", window.Says());
     }
 
     [Fact]
@@ -3561,8 +3674,8 @@ public class WorkAreaTests : IDisposable
         LayOut(back, 120, 30);
         back.FocusResumed();
 
-        Assert.Equal("try team0 122 exited 1", back.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), back.Message.SchemeName);
+        Assert.Equal("try team0 122 exited 1", back.Says());
+        Assert.Equal(Severity.Error, back.Status.MessageSeverity);
     }
 
     [Fact]
@@ -3753,7 +3866,7 @@ public class WorkAreaTests : IDisposable
         back.ReopenReader();
 
         Assert.Equal("try team0 122 exited 1", reopened?.Failure);
-        Assert.NotEqual("try team0 122 exited 1", back.Message.Says);
+        Assert.NotEqual("try team0 122 exited 1", back.Says());
     }
 
     [Fact]
@@ -3861,8 +3974,8 @@ public class WorkAreaTests : IDisposable
         LayOut(back, 120, 30);
         back.FocusResumed();
 
-        Assert.Equal("try team0 exited 1", back.Message.Says);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), back.Message.SchemeName);
+        Assert.Equal("try team0 exited 1", back.Says());
+        Assert.Equal(Severity.Error, back.Status.MessageSeverity);
     }
 
     [Theory]
@@ -4046,7 +4159,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(6, window.Work.Selected?.Number);
-        Assert.Equal("#6 · High? · theme 2, small · clears the queue", window.Message.Says);
+        Assert.Equal("#6 · High? · theme 2, small · clears the queue", window.Says());
 
         window.Commands.Execute("work.priority");
         window.Refresh();
@@ -4197,11 +4310,11 @@ public class WorkAreaTests : IDisposable
 
     private DashboardWindow Open(
         Func<string, Task<Reading>>? read = null,
-        Action<string>? openUrl = null,
+        Func<string, LinkOutcome>? openUrl = null,
         Func<string[], Task<string?>>? run = null,
         Func<WaitingItem, IssueBody, Rank?, Rank?>? chooseRank = null,
         Func<WaitingItem, Task<Reading>>? readBody = null,
-        Action<WaitingItem, IssueBody, Action, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
+        Action<WaitingItem, IssueBody, Func<LinkOutcome?>, Func<bool>?, ReaderCommand?, ReaderComment?, ReaderTry?>? showBody = null,
         Area area = Area.Work,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
@@ -4233,7 +4346,7 @@ public class WorkAreaTests : IDisposable
             run ?? (_ => Task.FromResult<string?>(null)),
             read ?? (team => Task.FromResult(new Reading(Waiting(team), null))),
             readBody ?? (_ => Task.FromResult(new Reading("{\"body\": \"\"}", null))),
-            openUrl ?? (_ => { }),
+            openUrl ?? Opening.Opened,
             (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, _, idea, keys, rank) =>
             {
                 showBody?.Invoke(item, body, onGitHub, onApprove, accept, comment, tryIt);
@@ -4273,9 +4386,53 @@ public class WorkAreaTests : IDisposable
     /// <summary>A clock the test moves by hand.</summary>
     private sealed class Clock : TimeProvider
     {
-        internal DateTimeOffset Now { get; set; } = new(2026, 10, 2, 9, 0, 0, TimeSpan.Zero);
+        private readonly List<Timer> _timers = [];
+        private DateTimeOffset _now = new(2026, 10, 2, 9, 0, 0, TimeSpan.Zero);
+
+        /// <summary>Moving it fires every timer that has come due.</summary>
+        internal DateTimeOffset Now
+        {
+            get => _now;
+            set
+            {
+                _now = value;
+                foreach (var timer in _timers.Where(timer => timer.Due <= _now).ToList())
+                {
+                    _timers.Remove(timer);
+                    timer.Fire();
+                }
+            }
+        }
 
         public override DateTimeOffset GetUtcNow() => Now;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new Timer(this, () => callback(state), _now + dueTime);
+            _timers.Add(timer);
+            return timer;
+        }
+
+        private sealed class Timer(Clock clock, Action fire, DateTimeOffset due) : ITimer
+        {
+            internal DateTimeOffset Due { get; private set; } = due;
+
+            internal void Fire() => fire();
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                Due = clock._now + dueTime;
+                return true;
+            }
+
+            public void Dispose() => clock._timers.Remove(this);
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 
     private string Config => Path.Combine(_root, "config");

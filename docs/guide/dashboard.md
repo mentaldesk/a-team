@@ -90,6 +90,11 @@ terminal, and the status bar ends `through the terminal`. In tmux that needs `se
 in `~/.tmux.conf`, and in iTerm2 *Applications in terminal may access clipboard* (Settings → General
 → Selection).
 
+Opening a link works the same way. Locally it opens in your browser and the status bar says
+`Opened` and the address. Over SSH there's no browser to open it in, so the link is copied to your
+own clipboard instead, with the same terminal setup, and the status bar says
+`Copied <link> (no browser over SSH)`.
+
 ## Reading the whole session
 
 The pane keeps only the last 500 lines. `e`, in the expanded view, opens the whole session as text
@@ -167,6 +172,14 @@ log or the Assistant), are the ones for there. *Help → Show keys* and **Show k
 is the only key it names. The rest of it starts with where you are (Work's filter, or Overseer) and
 when the board was last read, then says what's selected or going on. The app's version is in
 *Help → About*.
+
+A message on the status bar, like `#512 approved` or `Copied 3 lines`, stays for 5 seconds, or
+until your next key if it answers one you just pressed. An error stays until you press a key, and
+one that comes by itself, like a failed read, outlasts the keys you press in its first 5 seconds.
+One that stops being true, like a team's failed check once it passes, comes off. Errors you
+haven't seen count in `⚠ n`, just left of *Press F1 for help*. *Help → Messages…*, **Messages**
+in Commands, or clicking `⚠ n` lists this session's messages, newest first, with their times;
+`Ctrl+C` copies the selected one.
 
 In a dialog, what you can do to it is a row of buttons at its foot, each with its key first, like
 *Ctrl+Enter Add* or *Esc Cancel*; click one or press its key. `F1` there shows that dialog's keys,

@@ -1,4 +1,6 @@
+using MentalDesk.Tui;
 using System.Drawing;
+using MentalDesk.Tui.Links;
 using Terminal.Gui;
 using Terminal.Gui.App;
 using Terminal.Gui.Configuration;
@@ -535,7 +537,7 @@ public class OverseerTests : IDisposable
         clock.Now += TimeSpan.FromMinutes(3);
         window.Refresh();
 
-        Assert.Equal("Overseer · read 3m ago", window.Status.State.Text);
+        Assert.Equal("Overseer · read 3m ago", window.Status.FocusWord);
         Assert.True(window.NewKeyDownEvent(Key.F5));
         Assert.Equal(4, reads);
     }
@@ -553,18 +555,24 @@ public class OverseerTests : IDisposable
         Assert.Equal(Area.Overseer, window.CurrentArea);
     }
 
-    [Fact]
-    public void The_arrows_move_between_chips_and_g_opens_the_card()
+    [Theory]
+    [InlineData("opened")]
+    [InlineData("copied")]
+    [InlineData("failed")]
+    public void The_arrows_move_between_chips_and_g_opens_the_card_and_says_what_happened(string did)
     {
+        const string url = "https://github.com/o/team0/issues/12";
         var opened = new List<string>();
-        using var window = Open(openUrl: opened.Add);
+        using var window = Open(openUrl: Opening.Into(opened, did));
         window.NewKeyDownEvent(new Key('o'));
         window.Refresh();
 
         window.NewKeyDownEvent(Key.CursorRight);
         window.NewKeyDownEvent(new Key('g'));
 
-        Assert.Equal(["https://github.com/o/team0/issues/12"], opened);
+        Assert.Equal([url], opened);
+        Assert.Equal(Opening.Outcome(did, url).Message, window.Says());
+        Assert.Equal(did == "failed", window.Status.MessageSeverity == Severity.Error);
         window.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal(("team1", 21), (window.Overseer.Board.Selected!.Value.Team, window.Overseer.Board.SelectedCard?.Number));
     }
@@ -706,7 +714,7 @@ public class OverseerTests : IDisposable
           """;
 
     private DashboardWindow Open(
-        Func<string, Task<Reading>>? readBoard = null, Action<string>? openUrl = null, TimeProvider? clock = null, int height = 30)
+        Func<string, Task<Reading>>? readBoard = null, Func<string, LinkOutcome>? openUrl = null, TimeProvider? clock = null, int height = 30)
     {
         Directory.CreateDirectory(_root);
         var window = new DashboardWindow(
@@ -717,7 +725,7 @@ public class OverseerTests : IDisposable
             _ => Task.FromResult<string?>(null),
             _ => Task.FromResult(new Reading("[]", null)),
             _ => Task.FromResult(new Reading("{\"body\": \"\"}", null)),
-            openUrl ?? (_ => { }),
+            openUrl ?? Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             Area.Dashboard,
             IconStyle.Unicode,

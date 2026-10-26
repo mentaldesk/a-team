@@ -312,11 +312,11 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void Help_holds_show_keys_guide_commands_and_about_each_with_its_letter()
+    public void Help_holds_show_keys_guide_messages_commands_and_about_each_with_its_letter()
     {
         using var window = Open();
 
-        Assert.Equal(["Show _keys", "_Guide", "_Commands", "_About"], Under(window, Help(window)).Select(id => Item(window, id).Title));
+        Assert.Equal(["Show _keys", "_Guide", "_Messages…", "_Commands", "_About"], Under(window, Help(window)).Select(id => Item(window, id).Title));
         Assert.Equal(Key.F1, Item(window, "help").Key);
     }
 
@@ -642,7 +642,7 @@ public class AppMenuTests : IDisposable
             run ?? (_ => Task.FromResult<string?>(null)),
             _ => Task.FromResult(new Reading("[]", null)),
             _ => Task.FromResult(new Reading("{}", null)),
-            _ => { },
+            Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             area,
             IconStyle.Unicode);

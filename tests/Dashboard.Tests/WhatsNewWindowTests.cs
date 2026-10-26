@@ -61,7 +61,7 @@ public class WhatsNewWindowTests : IDisposable
 
         Settle(window);
 
-        Assert.DoesNotContain("#133", window.Status.Message.Says + window.Status.State.Text);
+        Assert.DoesNotContain("#133", window.Says() + window.Status.FocusWord);
     }
 
     [Fact]
@@ -226,7 +226,7 @@ public class WhatsNewWindowTests : IDisposable
                 return Task.FromResult(new Reading(Waiting(team), null));
             },
             _ => Task.FromResult(new Reading("""{"body": "What it's about"}""", null)),
-            _ => { },
+            Opening.Opened,
             (item, _, _, _, _, _, _, _, _, _, _, _) =>
             {
                 _opened.Add(item);

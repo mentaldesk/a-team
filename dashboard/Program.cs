@@ -3,6 +3,7 @@ using ATeam.Dashboard;
 using MentalDesk.Tui.Assistant;
 using MentalDesk.Tui.Copying;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Links;
 using MentalDesk.Tui.Theming;
 
 var root = FindRepoRoot(AppContext.BaseDirectory) ?? FindRepoRoot(Environment.CurrentDirectory);
@@ -95,7 +96,7 @@ Handover? Show(Handover? back)
     BundledThemes.Load(settings.ReadTheme());
     using var app = Application.Create();
     app.Init();
-    TerminalClipboard.Install(app);
+    var opener = new LinkOpener(TerminalClipboard.Install(app));
     using var active = macKeys.Activate();
     app.Keyboard.KeyDown += (_, _) => attention.Key();
     LogSchemes.Register();
@@ -110,10 +111,10 @@ Handover? Show(Handover? back)
         command.Run,
         team => command.Read("board", team, "waiting"),
         item => command.Read("board", item.Team, "body", item.Number.ToString()),
-        url => Link.OpenUrl(url),
+        opener.Open,
         (item, body, onGitHub, onApprove, accept, comment, tryIt, edit, copyBranch, idea, keys, rank) =>
             ReaderDialog.Show(app, item, body, onGitHub, onApprove, accept, comment, tryIt, rank, readerPanes, edit, copyBranch, idea, keys,
-                pictures, url => Link.OpenUrl(url)),
+                pictures, opener.Open),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
         handover =>
@@ -125,7 +126,7 @@ Handover? Show(Handover? back)
         start,
         item => command.Read("board", item.Team, "conversation", item.Number.ToString()),
         item => AcceptDialog.Show(app, item),
-        showGuide: page => GuideDialog.Show(app, Path.Combine(root, "docs", "guide"), url => Link.OpenUrl(url), page),
+        showGuide: page => GuideDialog.Show(app, GuidePages.Bundled(), opener.Open, page),
         confirmStop: task => StopRunDialog.Show(app, task),
         readHistory: item => command.Read("board", item.Team, "history", item.Number.ToString()),
         pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),
@@ -147,7 +148,7 @@ Handover? Show(Handover? back)
         showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
             names.SelectMany(teams.Roles), open),
         showDecisions: team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
-            change => change.Run(team, command.Read), url => Link.OpenUrl(url)),
+            change => change.Run(team, command.Read), opener.Open),
         macKeys: macKeys,
         assistant: new AssistantSetup(new ProcessLauncher(), AssistantBrief.For(root, teams.TeamsDirectory, stateRoot, named),
             Path.Combine(stateRoot, "assistant.json")));

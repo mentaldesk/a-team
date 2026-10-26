@@ -41,11 +41,13 @@ takes it from there.
 The app opens only once there's a team, so your first one starts by hand:
 
 1. Make sure `gh` can manage projects: `gh auth refresh -s project`.
-2. Create or pick a Project for the repo. Its Status field needs the nine options in
-   `process.md`, or a `statusMap` in the team config from those names to the ones it has. Under
+2. Create or pick a Project for the repo. Its Status field needs nine options, Idea, Exploring,
+   Pitched, Approved, Building, Ready, In progress, In review and Done, or a `statusMap` in the team
+   config from those names to the ones it has. Under
    its **Workflows**, turn on **Auto-add to project** for the repo, and **Item added to project**
    with Status set to Idea, so an issue opened outside the team reaches Triage.
-3. Copy `examples/team.json` to `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
+3. Copy `examples/team.json` (`a-team teams` says where it is while you have no team) to
+   `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
    your GitHub login in `stakeholders`, the Project, and where the product is checked out on this
    machine (`workdir` for its worktrees, `checkout` for its main clone), and optionally `try`,
    the command that runs the product from a worktree, and `roles` to turn on the Customer lead or
