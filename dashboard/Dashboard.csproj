@@ -27,7 +27,7 @@
 
   <ItemGroup>
     <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All" />
-    <PackageReference Include="MentalDesk.Tui" Version="0.4.0" />
+    <PackageReference Include="MentalDesk.Tui" Version="0.4.1" />
     <PackageReference Include="StbImageSharp" Version="2.30.16" />
     <PackageReference Include="Terminal.Gui" Version="2.5.0" />
   </ItemGroup>
