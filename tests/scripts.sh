@@ -7880,21 +7880,21 @@ next_version() {
     bash --noprofile --norc -eo pipefail "$NEXT_VERSION") >"$OUT" 2>"$ERR"
   STATUS=$?
 }
-released() { echo "$(sed -n 's/^version=//p' "$WORK/github-output") $(sed -n 's/^tag=//p' "$WORK/github-output")"; }
+picked() { echo "$(sed -n 's/^version=//p' "$WORK/github-output") $(sed -n 's/^tag=//p' "$WORK/github-output")"; }
 
 case_ "an exact version above the last release is released as it is, whatever bump says"
 release_repo v0.1.97 v0.1.98
 next_version 0.9.0 major
 same "exit" 0 "$STATUS"
-same "released" "0.9.0 v0.9.0" "$(released)"
+same "released" "0.9.0 v0.9.0" "$(picked)"
 next_version 0.1.100 auto
-same "0.1.100" "0.1.100 v0.1.100" "$(released)"
+same "0.1.100" "0.1.100 v0.1.100" "$(picked)"
 
 case_ "an exact version equal to the last release is refused, naming it"
 next_version 0.1.98 auto
 failed "equal"
 grep -qF "version 0.1.98 isn't higher than the last release, v0.1.98." "$OUT" || fail "equal: '$(cat "$OUT")'"
-same "nothing released" " " "$(released)"
+same "nothing released" " " "$(picked)"
 
 case_ "an exact version below the last release is refused, compared as numbers"
 next_version 0.1.9 auto
@@ -7902,14 +7902,14 @@ failed "0.1.9"
 grep -qF "version 0.1.9 isn't higher than the last release, v0.1.98." "$OUT" || fail "0.1.9: '$(cat "$OUT")'"
 next_version 0.1.50 patch
 failed "0.1.50"
-same "nothing released" " " "$(released)"
+same "nothing released" " " "$(picked)"
 
 case_ "a version that isn't x.y.z is refused"
 for version in 0.9 v0.9.0 1.0.0-rc.1 01.0.0 1.0.0.0; do
   next_version "$version" auto
   failed "$version"
   grep -qF "version must be x.y.z, like 1.0.0, not '$version'." "$OUT" || fail "$version: '$(cat "$OUT")'"
-  same "$version released" " " "$(released)"
+  same "$version released" " " "$(picked)"
 done
 
 case_ "with no version, bump picks it as before"
@@ -7917,28 +7917,28 @@ release_repo v0.1.98
 for bump in "patch 0.1.99" "minor 0.2.0" "major 1.0.0"; do
   next_version '' "${bump% *}"
   same "${bump% *} exit" 0 "$STATUS"
-  same "${bump% *}" "${bump#* } v${bump#* }" "$(released)"
+  same "${bump% *}" "${bump#* } v${bump#* }" "$(picked)"
 done
 echo '[{"mergedAt": "2999-01-01T00:00:00Z", "labels": [{"name": "enhancement"}]}]' >"$RELEASE_BIN/merged.json"
 next_version '' auto
-same "auto" "0.2.0 v0.2.0" "$(released)"
+same "auto" "0.2.0 v0.2.0" "$(picked)"
 echo '[]' >"$RELEASE_BIN/merged.json"
 next_version '' auto
-same "auto, nothing labelled" "0.1.99 v0.1.99" "$(released)"
+same "auto, nothing labelled" "0.1.99 v0.1.99" "$(picked)"
 
 case_ "with no releases yet, an exact version is released as it is"
 release_repo
 next_version 0.9.0 auto
 same "exit" 0 "$STATUS"
-same "released" "0.9.0 v0.9.0" "$(released)"
+same "released" "0.9.0 v0.9.0" "$(picked)"
 
 case_ "a pull request builds 0.0.0-pr<n> and ignores the version"
 release_repo v0.1.98
 next_version 0.9.0 auto 42
 same "exit" 0 "$STATUS"
-same "released" "0.0.0-pr42 " "$(released)"
+same "released" "0.0.0-pr42 " "$(picked)"
 next_version 0.1 auto 42
-same "bad version on a PR" "0.0.0-pr42 " "$(released)"
+same "bad version on a PR" "0.0.0-pr42 " "$(picked)"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"
