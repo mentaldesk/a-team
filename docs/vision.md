@@ -187,31 +187,35 @@ borrow and what to avoid, and for newer ones.
 
 ## Next themes
 
-In order. Each is a direction, not a commitment; pitches turn them into work.
+In order. Each is a direction, not a commitment; pitches turn them into work. Reviewed 12 October
+2026.
 
 ### Now: super slick for developers like the creator
 
 1. **Consistently good UX.** Designs that are right first time and consistent with the rest of the
    product, using and improving the tui-style-guide, so the stakeholder stops correcting details.
+   A-Team still feels very limited compared to TuiCode and the tui-style-guide. The AI Assistant in
+   TuiCode is more capable, TuiCode allows more flexible key bindings, the editor is more capable,
+   etc. A-Team needs to catch up just in terms of basic UI.
 2. **Agents verify their own work.** See what they built the way a user would, including
-   capturing what a TUI looks like across terminals, so the stakeholder isn't the first to find
-   what's broken.
-3. **Think bigger.** Bold pitches for whole new parts of a product that solve problems it doesn't
-   solve yet, and longer stretches of work without needing the stakeholder.
-4. **Fewer small decisions.** The task gate is user testing, not code review; everything that
-   isn't direction or judging the result moves off the stakeholder.
+   capturing what a TUI looks like across terminals (using tuirec), so the stakeholder isn't the 
+   first to find what's broken. The Reviewer now reads every task PR before the stakeholder does (#83). 
+   Nothing open yet makes an agent *look* at what it built; that's the next step here.
+3. **A-Team Projects** Currently our state machine is GitHub projects. We should replace this with our
+   own custom workflow that allows us to store the kind of metadata we need for the tasks and issues
+   that we're working on. 
 
 ### Next
 
-5. **Beyond TUIs.** Build web apps, and try them locally without deploying via Vercel first.
-6. **Multiple stakeholders.** Teams shared by several people, coordinated by a hosted coordinator
-   and project service: free for one user, paid for teams, eventually replacing GitHub Projects.
+6. **Beyond TUIs.** Build web apps, and try them locally without deploying via Vercel first.
+7. **Multiple stakeholders.** Teams shared by several people, coordinated by a hosted coordinator
+   and project service.
 
 ### Later
 
-7. **Deploy to production.** Web apps shipped to real infrastructure by the team.
-8. **Non-coders.** A web interface, for people who have never written code.
-9. **Mobile apps.**
+8. **Deploy to production.** Web apps shipped to real infrastructure by the team.
+9. **Non-coders.** A web interface, for people who have never written code.
+10. **Mobile apps.**
 
 ## How to judge a proposal
 
