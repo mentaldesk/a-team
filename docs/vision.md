@@ -194,36 +194,22 @@ In order. Each is a direction, not a commitment; pitches turn them into work. Re
 
 1. **Consistently good UX.** Designs that are right first time and consistent with the rest of the
    product, using and improving the tui-style-guide, so the stakeholder stops correcting details.
-   Most of the stakeholder's own Ideas land here, and the keys a Mac user expects keep coming up:
-   fix them in the style guide once rather than per field. Open: the Commands palette (#430),
-   scrolling multi-line boxes (#457), Mac shortcuts (#468), the *your move* alert (#470), the
-   Guide (#446), Work freezing on accept (#461), a card's history when answering (#475), a PR's
-   branch (#476), Work when the board can't be read (#431), copying over SSH (#429), images in
-   comments (#478).
+   A-Team still feels very limited compared to TuiCode and the tui-style-guide. The AI Assistant in
+   TuiCode is more capable, TuiCode allows more flexible key bindings, the editor is more capable,
+   etc. A-Team needs to catch up just in terms of basic UI.
 2. **Agents verify their own work.** See what they built the way a user would, including
-   capturing what a TUI looks like across terminals, so the stakeholder isn't the first to find
-   what's broken. The Reviewer now reads every task PR before the stakeholder does (#83). Nothing
-   open yet makes an agent *look* at what it built; that's the next step here.
-3. **Think bigger.** Bold pitches for whole new parts of a product that solve problems it doesn't
-   solve yet, and longer stretches of work without needing the stakeholder. Only one Idea is open:
-   keeping up with similar products (#76).
-4. **Fewer small decisions.** The task gate is user testing, not code review; everything that
-   isn't direction or judging the result moves off the stakeholder. Done since 10 October: an
-   alert when something becomes the stakeholder's move (#425), a second look before destructive
-   keys (#397), team tasks kept out of Triage (#301), docs PRs reaching Review straight away
-   (#450). Open: the board takes pitches out of Pitched that the stakeholder shelved, endorsed or
-   hasn't read yet (#435, #471, #474), decisions carrying over to the next pitch (#169), secrets
-   only the stakeholder holds (#427), a false *can't run* warning (#449).
-5. **Getting started in minutes.** A new team, from a repo to its first pitch, without knowing
-   how a-team works inside. Done: the vision interview when a team starts (#41). Open: getting in
-   without a team set up by hand (#183), picking a team's folders and files (#441), the Customer
-   lead's docs home (#444).
+   capturing what a TUI looks like across terminals (using tuirec), so the stakeholder isn't the 
+   first to find what's broken. The Reviewer now reads every task PR before the stakeholder does (#83). 
+   Nothing open yet makes an agent *look* at what it built; that's the next step here.
+3. **A-Team Projects** Currently our state machine is GitHub projects. We should replace this with our
+   own custom workflow that allows us to store the kind of metadata we need for the tasks and issues
+   that we're working on. 
 
 ### Next
 
 6. **Beyond TUIs.** Build web apps, and try them locally without deploying via Vercel first.
 7. **Multiple stakeholders.** Teams shared by several people, coordinated by a hosted coordinator
-   and project service: free for one user, paid for teams, eventually replacing GitHub Projects.
+   and project service.
 
 ### Later
 
