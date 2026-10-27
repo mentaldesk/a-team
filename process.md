@@ -150,7 +150,8 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in
-another repo has closed or been released. Don't run them.
+another repo has closed or been released, and `update` is how it brings a PR In review that's behind
+its base up to date. Don't run them.
 
 Run it exactly as written here, one command per call. Don't put it in a shell variable or
 chain it with other commands: the permission check approves what it can read, and it can't
