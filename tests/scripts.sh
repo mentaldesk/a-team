@@ -741,6 +741,10 @@ same "exit" 0 "$STATUS"
 same "task turn" '"reviewer"' "$(jq -c '.[1].turn' "$OUT")"
 same "task trouble" '"awaiting review"' "$(jq -c '.[1].trouble' "$OUT")"
 same "task reason" '"awaiting review"' "$(jq -c '.[1].reason' "$OUT")"
+jq '(.. | objects | select(has("isDraft"))) += {mergeStateStatus: "BEHIND"}' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
+run board demo waiting
+same "behind turn" '"reviewer"' "$(jq -c '.[1].turn' "$OUT")"
+same "behind trouble" '"awaiting review"' "$(jq -c '.[1].trouble' "$OUT")"
 gh_runs <<RUNS
 in_progress - - build
 RUNS

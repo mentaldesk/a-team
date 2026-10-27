@@ -894,7 +894,7 @@ turns() {
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
-         elif $pr.behind then {trouble: "behind \($pr.base)", at: ""}
+         elif $pr.behind and ($pr.draft | not) then {trouble: "behind \($pr.base)", at: ""}
          elif $pr.resolving then {trouble: "resolving mergeable status", at: ""}
          elif $pr.checks == "pending" then {trouble: "CI running", at: ""}
          elif $pr.draft and $reviewerOn and $role == "dev" and $review == null
