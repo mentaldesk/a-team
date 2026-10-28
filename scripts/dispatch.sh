@@ -71,6 +71,10 @@ dispatch() {
     -ge $(($(cfg '.dispatch.sweepEvery // 30') * 60)) ] && sweep=--sweep
 
   if ! triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" ${sweep:+"$sweep"} 2>&1); then
+    if [[ $triggers =~ incomplete\ \(([0-9]+\ of\ [0-9]+)\ items\) ]]; then
+      log "$team $role: board read incomplete (${BASH_REMATCH[1]} items), twice; trying again next check"
+      return
+    fi
     failing "$dir/${prefix}triggers-failing" "$dir/${prefix}triggers-failed-once" \
       "${triggers//$'\n'/ }" "$team $role: triggers failed"
     return

@@ -180,7 +180,8 @@ Each team's tab is read on its own. While its first read takes more than a momen
 spinner and `Reading a-team's board…`. A team with nothing waiting says `Nothing waiting on you`,
 and adds how many cards *Only mine* hides, as in `· 3 hidden by Only mine`, when that's why. A team
 whose read fails says why in its tab, in red, with `r retry` under it, and the other tabs keep their
-cards. A read again with cards on screen keeps them, with a spinner at the right of the tabs' top
+cards. A board GitHub sent back with items missing, twice, fails rather than showing some of its
+cards, and says so: `Board read incomplete (100 of 358 items)`. A read again with cards on screen keeps them, with a spinner at the right of the tabs' top
 border; if it fails, the cards stay and the foot says so in red. The foot's `read 2m ago` is for
 the team whose tab is in front.
 

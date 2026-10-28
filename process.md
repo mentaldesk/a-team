@@ -208,6 +208,8 @@ out stops everyone.
   after pushing" rule you've been given elsewhere.
 - If any `gh` or `a-team board` call reports a rate limit, stop the run straight away and say so
   in your summary. Don't retry.
+- If an `a-team board` call says the board read came back incomplete, do the same: it has
+  already read twice and changed nothing.
 
 ## Never
 

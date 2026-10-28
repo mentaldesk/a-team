@@ -297,6 +297,16 @@ while [ \$# -gt 0 ]; do
   [ "\$1" = --jq ] && { filter=\$2; break; }
   shift
 done
+# A board page holds every item unless short-reads says how many reads come back short, and with how many items.
+if [ "\$page" = "$ITEMS" ]; then
+  jq '.data.organization.projectV2.items |= (.totalCount //= (.nodes | length))' "\$page" >"\$page.counted"
+  if read -r times keep 2>/dev/null <"$BIN/short-reads" && [ "\$times" -gt 0 ]; then
+    echo "\$((times - 1)) \$keep" >"$BIN/short-reads"
+    jq --argjson keep "\$keep" '.data.organization.projectV2.items.nodes |= .[:\$keep]' "\$page.counted" >"\$page.short"
+    mv "\$page.short" "\$page.counted"
+  fi
+  page="\$page.counted"
+fi
 if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
   chmod +x "$BIN/gh"
@@ -3264,6 +3274,77 @@ grep -q "would label #13 a-team:dev" "$ERR" || fail "dry run: no label in '$(cat
 grep -q "would set item PVTI_13 to 'In progress'" "$ERR" || fail "dry run: no move in '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
+# short_reads <times> <keep>: the next <times> board reads come back with only their first <keep> items.
+short_reads() { echo "$1 $2" >"$BIN/short-reads"; }
+SHORT='the board read came back incomplete (1 of 3 items), twice. Nothing was changed'
+
+case_ "a board read that comes back short once is read again and carries on, filtered or not"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+In_review 14 Waiting on you
+Done 15 Merged
+ITEMS
+run board demo list
+complete=$(cat "$OUT")
+short_reads 1 1
+run board demo list
+same "exit" 0 "$STATUS"
+same "items" "$complete" "$(cat "$OUT")"
+same "stderr" "" "$(cat "$ERR")"
+short_reads 1 0
+run board demo waiting
+same "filtered exit" 0 "$STATUS"
+same "filtered stderr" "" "$(cat "$ERR")"
+
+case_ "a board read short twice, or empty with items to read, ends the command saying so, and changes nothing"
+short_reads 2 1
+run board demo list
+failed "short twice"
+one_line "short twice"
+grep -qF "board.sh: $SHORT" "$ERR" || fail "short twice: '$(cat "$ERR")'"
+same "stdout" "" "$(cat "$OUT")"
+short_reads 2 0
+run board demo waiting
+failed "empty"
+grep -qF 'incomplete (0 of 3 items), twice' "$ERR" || fail "empty: '$(cat "$ERR")'"
+
+case_ "next and claim on a short board read claim nothing"
+claimable
+short_reads 2 1
+run board demo next
+failed "next"
+same "next stdout" "" "$(cat "$OUT")"
+grep -qF "$SHORT" "$ERR" || fail "next: '$(cat "$ERR")'"
+short_reads 2 1
+run board demo claim dev
+failed "claim"
+grep -qF "$SHORT" "$ERR" || fail "claim: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "lead-next on a short board read uses up no turn"
+mkdir -p "$A_TEAM_STATE/demo" && echo discover >"$A_TEAM_STATE/demo/lead-turn"
+short_reads 2 1
+run board demo lead-next
+failed "lead-next"
+grep -qF "$SHORT" "$ERR" || fail "lead-next: '$(cat "$ERR")'"
+same "turn" discover "$(cat "$A_TEAM_STATE/demo/lead-turn")"
+
+case_ "a truly empty board reads as empty, and other repos' items on a shared project count towards its total"
+gh_items </dev/null
+run board demo list
+same "empty exit" 0 "$STATUS"
+same "empty" "[]" "$(jq -c . "$OUT")"
+same "empty stderr" "" "$(cat "$ERR")"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+Ready 14 Another team's task
+ITEMS
+edit_item 14 '.repository.nameWithOwner = "mentaldesk/other"'
+run board demo list
+same "shared exit" 0 "$STATUS"
+same "shared" "[13]" "$(jq -c 'map(.number)' "$OUT")"
+same "shared stderr" "" "$(cat "$ERR")"
+
 case_ "a run bound to a task can hand it back, and can't touch another"
 gh_items <<'ITEMS'
 In_progress 12 This run's task
@@ -5343,6 +5424,18 @@ dispatch_dev --dry-run
 dispatch_dev --dry-run
 same "working again" 1 "$(grep -c 'demo dev: triggers working again$' "$A_TEAM_STATE/dispatch.log")"
 same "lines" 3 "$(grep -c . "$A_TEAM_STATE/dispatch.log")"
+
+case_ "a board read short twice is logged at once in one line, and the role tries again on its next check"
+: >"$A_TEAM_STATE/dispatch.log"
+echo "board.sh: the board read came back incomplete (100 of 358 items), twice. Nothing was changed: end this run, and the next one reads the board again." >"$FAILS"
+dispatch_dev --dry-run
+same "logged" "demo dev: board read incomplete (100 of 358 items), twice; trying again next check" \
+  "$(grep 'demo dev' "$A_TEAM_STATE/dispatch.log" | cut -d' ' -f2-)"
+: >"$FAILS"
+: >"$A_TEAM_STATE/dispatch.log"
+cp "$DISPATCH/ready.json" "$DEV_TRIGGERS"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start: #13' "$A_TEAM_STATE/dispatch.log" || fail "next check: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 rm "$CONFIG/teams/other.json"
 
 case_ "merged worktrees alone start no Dev run"
@@ -6275,7 +6368,7 @@ case " \$* " in
     [ -z "\${NO_FIELD:-}" ] || { echo '{"data": {"organization": {"projectV2": {"id": "PVT_1", "field": null}}}}'
       echo "gh: Could not resolve to a Unions::ProjectV2FieldConfiguration with the name Status" >&2; exit 1; }
     page="$APP_BIN/board/meta.json" ;;
-  *totalCount*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
+  *"items(first: 1) { totalCount }"*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
                 page="$APP_BIN/board/items.json" ;;
   *issueFields*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PRIORITY_UNREADABLE:-}" ] || refused
                  page="$APP_BIN/board/fields.json" ;;

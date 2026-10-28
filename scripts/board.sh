@@ -334,12 +334,28 @@ gql() {
   gh api graphql -F owner="$OWNER" -F number="$NUMBER" "$@" -f query="$query"
 }
 
+# board_pages <query> <args...>: every page of the board, read again once if short; short twice ends the whole command.
+board_pages() {
+  local pages short
+  for _ in 1 2; do
+    pages=$(gql "$@" --paginate)
+    short=$(jq -rs --arg kind "$KIND" '[.[].data[$kind].projectV2.items] | [(map(.nodes | length) | add // 0),
+      (map(.totalCount // 0) | max // 0)] | select(.[0] < .[1]) | "\(.[0]) of \(.[1])"' <<<"$pages")
+    [ -n "$short" ] || { printf '%s\n' "$pages"; return; }
+  done
+  echo "board.sh: the board read came back incomplete ($short items), twice. Nothing was changed: end this run, and the next one reads the board again." >&2
+  kill -USR1 $$
+  exit 1
+}
+trap 'exit 1' USR1
+
 # items [<filter>]: the board's items, or only the ones a project filter such as `not_done` matches.
 items() {
-  gql "query(\$owner: String!, \$number: Int!, \$field: String!, \$endCursor: String, \$filter: String) {
+  local pages
+  pages=$(board_pages "query(\$owner: String!, \$number: Int!, \$field: String!, \$endCursor: String, \$filter: String) {
       $KIND(login: \$owner) { projectV2(number: \$number) {
         items(first: 100, after: \$endCursor, query: \$filter) {
-          pageInfo { hasNextPage endCursor }
+          totalCount pageInfo { hasNextPage endCursor }
           nodes {
             id
             fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } }
@@ -352,32 +368,32 @@ items() {
                                name field { ... on IssueFieldSingleSelect { name } } } } } }
               ... on PullRequest { id number title url repository { nameWithOwner } labels(first: 20) { nodes { name } }
                                    author { login } }
-            } } } } } }" -F field="$FIELD" -f filter="${1:-}" --paginate |
-    jq -s --arg kind "$KIND" --arg repo "$REPO" --arg priority "$PRIORITY" \
-      --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" \
-      --slurpfile cfg "$CONFIG" '
-      ($cfg[0].project.statusMap // {} | to_entries | map({key: .value, value: .key}) | from_entries) as $rev
-      | [.[].data[$kind].projectV2.items.nodes[]
-         | select(.content.repository.nameWithOwner == $repo)
-         | .fieldValueByName.name as $raw
-         | {
-             id,
-             number: .content.number,
-             node: (.content.id // ""),
-             type: .content.__typename,
-             title: .content.title,
-             url: .content.url,
-             labels: [.content.labels.nodes[].name],
-             blockedBy: (.content.issueDependenciesSummary.blockedBy // 0),
-             priority: ([.content.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
-             since: .fieldValueByName.updatedAt,
-             parent: .content.parent.number,
-             status: (if $raw == null then "None"
-                      elif $rev[$raw] then $rev[$raw]
-                      elif ($states | index($raw)) then $raw
-                      else "?" + $raw end)
-           } + (if .content.stateReason then {closed: .content.stateReason} else {} end)
-             + (if .content.author.login == "dependabot" then {dependabot: true} else {} end)]'
+            } } } } } }" -F field="$FIELD" -f filter="${1:-}") || exit 1
+  jq -s --arg kind "$KIND" --arg repo "$REPO" --arg priority "$PRIORITY" \
+    --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" \
+    --slurpfile cfg "$CONFIG" '
+    ($cfg[0].project.statusMap // {} | to_entries | map({key: .value, value: .key}) | from_entries) as $rev
+    | [.[].data[$kind].projectV2.items.nodes[]
+       | select(.content.repository.nameWithOwner == $repo)
+       | .fieldValueByName.name as $raw
+       | {
+           id,
+           number: .content.number,
+           node: (.content.id // ""),
+           type: .content.__typename,
+           title: .content.title,
+           url: .content.url,
+           labels: [.content.labels.nodes[].name],
+           blockedBy: (.content.issueDependenciesSummary.blockedBy // 0),
+           priority: ([.content.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
+           since: .fieldValueByName.updatedAt,
+           parent: .content.parent.number,
+           status: (if $raw == null then "None"
+                    elif $rev[$raw] then $rev[$raw]
+                    elif ($states | index($raw)) then $raw
+                    else "?" + $raw end)
+         } + (if .content.stateReason then {closed: .content.stateReason} else {} end)
+           + (if .content.author.login == "dependabot" then {dependabot: true} else {} end)]' <<<"$pages"
 }
 
 item() {
@@ -1402,7 +1418,8 @@ case "$CMD" in
     ;;
 
   next)
-    startable "$(items)" | jq first
+    all=$(items)
+    startable "$all" | jq first
     ;;
 
   claim)
