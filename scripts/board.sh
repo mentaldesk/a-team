@@ -747,12 +747,24 @@ against_main() {
   jq --argjson main "$2" "$MAIN_RED"'if .verdict == "fail" and main_red($main) then .verdict = "main-red" else . end' <<<"$1"
 }
 
-# ci <pr>: the CI verdict for <pr>'s head commit, reading the default branch's only when the PR fails.
+# ci <pr>: the CI verdict for <pr>'s head commit, reading the default branch's only when the PR fails. A fix's own PR
+# never reads `main-red`, or nothing would wake the Dev to finish it.
 ci() {
-  local checks
+  local checks main
   checks=$(pr_checks "$1") || exit 1
   [ "$(jq -r .verdict <<<"$checks")" = fail ] || { printf '%s\n' "$checks"; return; }
-  against_main "$checks" "$(main_red)"
+  main=$(main_red)
+  if [ "$main" != null ] && fix_pr "$1"; then main=null; fi
+  against_main "$checks" "$main"
+}
+
+# fix_pr <pr>: whether <pr> is the open PR of a fix task.
+fix_pr() {
+  local n
+  for n in $(items | jq -r ".[] | select($FIX and .closed == null) | .number"); do
+    [ "$(pr_for "$n" | jq -r '.number // empty')" = "$1" ] && return 0
+  done
+  return 1
 }
 
 # main_red: the default branch's head as {branch, sha, since, failing} while its latest completed CI there has failed, else
@@ -876,18 +888,18 @@ gated_comments() {
        | . + {n: $n}]' <<<"$1"
 }
 
-# gated_prs <talk> <main>: the open PR that closes each of those items, or that is the item, as {n, pr, prUrl,
-# draft, conflicting, behind, resolving, base, head, checks, failedAt, self}, off a page read with `checks`, and <main>
-# as `main_red` reads it.
+# gated_prs <talk> <main> <fixes>: the open PR that closes each of those items, or that is the item, as {n, pr, prUrl,
+# draft, conflicting, behind, resolving, base, head, checks, failedAt, self}, off a page read with `checks`, <main>
+# as `main_red` reads it, and <fixes> the fix tasks' numbers, whose PRs are never `main-red`.
 # UNKNOWN means GitHub hasn't finished computing it, so it's `resolving` rather than a conflict. GitHub reports
 # BEHIND only where the base requires branches to be up to date.
 gated_prs() {
-  jq --argjson main "${2:-null}" "$CHECKS$MAIN_RED"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
+  jq --argjson main "${2:-null}" --argjson fixes "${3:-[]}" "$CHECKS$MAIN_RED"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
        | (if has("isDraft") then . else .closedByPullRequestsReferences.nodes[]? end)
        | ([.commits.nodes[0].commit.checkSuites.nodes[]?.checkRuns.nodes[]
            | {name, status: (.status | ascii_downcase), conclusion: (.conclusion // "" | ascii_downcase),
               completed_at: .completedAt, html_url: .url}] | checks
-           | if .verdict == "fail" and main_red($main) then .verdict = "main-red" else . end) as $ci
+           | if .verdict == "fail" and ($fixes | index($n) | not) and main_red($main) then .verdict = "main-red" else . end) as $ci
        | {n: $n, pr: .number, prUrl: .url, draft: .isDraft, self: (.number == $n),
           conflicting: (.mergeable == "CONFLICTING"), behind: (.mergeStateStatus == "BEHIND"), resolving: (.mergeable == "UNKNOWN"), base: .baseRefName,
           head: .headRefName, checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
@@ -2497,7 +2509,7 @@ case "$CMD" in
     talk=$(gated_talk "$(jq -s add <<<"$gated$held$recommended")" checks)
     said=$(gated_comments "$talk")
     main=$(main_red)
-    waiting=$(turns "$gated" "$said" "$(gated_prs "$talk" "$main")" |
+    waiting=$(turns "$gated" "$said" "$(gated_prs "$talk" "$main" "$(jq -c "[.[] | select($FIX) | .number]" <<<"$all")")" |
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
       jq --argjson asked "$(holds "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
@@ -2733,7 +2745,7 @@ case "$CMD" in
           numbers+=("$p")
           recent=$(jq -s 'add' <(echo "$recent") <(pr_reviews "$p"))
           checks=$(pr_checks "$p")
-          if [ "$(jq -r .verdict <<<"$checks")" = fail ]; then
+          if [ "$(jq -r .verdict <<<"$checks")" = fail ] && ! jq -e "$FIX" <<<"$row" >/dev/null; then
             main=${main:-$(main_red)}
             checks=$(against_main "$checks" "$main")
           fi

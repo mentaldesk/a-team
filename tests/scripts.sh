@@ -685,6 +685,8 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "fix" '{"number":115,"status":"In review"}' "$(jq -c 'last.red.fix' "$OUT")"
 same "fix flag" '[null,true]' "$(jq -c '[.[0:2][].fix]' "$OUT")"
+same "fix checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
+same "fix trouble" '"CI failing"' "$(jq -c '.[1].trouble' "$OUT")"
 edit_item 115 '.labels.nodes -= [{name: "a-team:fix"}]'
 
 case_ "red since stays the head it was first seen red on while later heads stay red"
@@ -3385,6 +3387,14 @@ same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 run board demo checks 912
 same "verdict" '"main-red"' "$(jq -c .verdict "$OUT")"
+
+case_ "a fix's PR failing what main fails is still the Dev's to fix"
+edit_item 12 '.labels.nodes += [{name: "a-team:fix"}]'
+run board demo triggers dev
+same "reasons" '["CI failed on PR #912 at deadbee"]' "$(jq -c .reasons "$OUT")"
+run board demo checks 912
+same "verdict" '"fail"' "$(jq -c .verdict "$OUT")"
+edit_item 12 '.labels.nodes -= [{name: "a-team:fix"}]'
 
 case_ "a PR failing a job main passes is the Dev's to fix"
 gh_runs <<'RUNS'
