@@ -54,7 +54,7 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool
         var chained = Item.Holding.Count > 0 ? Holds.Frees(Item) : Item.WaitsOn;
         var number = chained.Length == 0 ? $"#{Item.Number}" : $"#{Item.Number} {Icons.Glyph(Icon.Chain, style)} {chained}";
         var said = new[] { Item.Mine || Item.WaitsUpstream ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "",
-                Item.Dependency ? "Dependabot" : "", Item.Review,
+                Item.Fix ? "fix" : "", Item.Dependency ? "Dependabot" : "", Item.Review,
                 New ? NewMark + Item.Title : Item.Title }
             .Where(part => part.Length > 0);
         return Elide($"{number}  {string.Join(" · ", said)}", width);

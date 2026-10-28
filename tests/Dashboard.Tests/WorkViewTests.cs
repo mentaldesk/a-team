@@ -795,6 +795,39 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void The_summary_says_which_PRs_wait_while_main_is_red_apart_from_the_Dev_s_own_failures()
+    {
+        WaitingItem[] aside =
+        [
+            Reviewing(246, "CI failing") with { Base = "main" },
+            Reviewing(247, "main is red") with { Base = "main" },
+            Reviewing(248, "main is red") with { Base = "main" },
+        ];
+
+        Assert.Equal("1 with the Dev: #246 CI failing · 2 waiting while main is red: #247 · #248", WorkColumn.Summarise(aside, 100));
+    }
+
+    [Fact]
+    public void A_red_main_puts_a_line_above_the_team_s_columns_until_it_goes_green()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show([Waiting[2], Reviewing(244, "conflicts with main")]);
+
+        view.ShowRed([new RedMain("a-team", "main", "b8f5bdd0c0ffee", 624, "In progress")]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal("⚠ main is red since b8f5bdd · fix #624 is with the Dev", view.Lanes[0].Red);
+        Assert.Equal(1, view.Lanes[0].Columns[3].Frame.Y);
+        Assert.Equal("", view.Lanes[1].Red);
+
+        view.ShowRed([], "a-team");
+        LayOut(view, 120, 20);
+
+        Assert.Equal("", view.Lanes[0].Red);
+        Assert.Equal(0, view.Lanes[0].Columns[3].Frame.Y);
+    }
+
+    [Fact]
     public void The_summary_is_cut_to_the_column_it_is_drawn_in()
     {
         using var view = Open(["a-team"]);

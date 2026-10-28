@@ -492,6 +492,7 @@ public sealed class DashboardWindow : Window
             var items = WaitingItem.Parse(read.Result.Output);
             _news.Read(team, items, asked);
             _work.Show([.. _work.Items.Where(item => item.Team != team), .. items]);
+            _work.ShowRed(RedMain.Parse(read.Result.Output), team);
             GoToWaiting();
         }
     }
@@ -1559,6 +1560,7 @@ public sealed class DashboardWindow : Window
         Withdraw(ref _readFailure);
         _readAt = _clock.GetUtcNow();
         _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
+        _work.ShowRed([.. readings!.SelectMany(reading => RedMain.Parse(reading.Output))]);
         foreach (var team in _teamNames)
             _news.Read(team, _work.Items, _readingAsked);
         if (_area == Area.Work && _work.Selected is null)
