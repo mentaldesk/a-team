@@ -328,6 +328,19 @@ free_waits() {
   fi
 }
 
+# update_branches <team>: merges the base into each of the team's PRs In review that's behind it, as its App so CI runs.
+update_branches() {
+  local args=(board) said
+  $DRY_RUN && args+=(--dry-run)
+  mkdir -p "$STATE/$1"
+  if said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$1 "$ROOT/bin/a-team" "${args[@]}" "$1" update 2>&1); then
+    passing "$STATE/$1/update-failing" "$STATE/$1/update-failed-once" "$1: updating branches working again"
+    [ -z "$said" ] || log "$1: ${said//$'\n'/; }"
+  else
+    failing "$STATE/$1/update-failing" "$STATE/$1/update-failed-once" "${said//$'\n'/ }" "$1: updating branches failed"
+  fi
+}
+
 # cannot_run <team> <config>: why the team can't run, if it can't. It runs only as its own App.
 cannot_run() {
   local why
@@ -367,6 +380,7 @@ for team in $(team_names); do
   else
     failing "$STATE/$team/adopt-failing" "$STATE/$team/adopt-failed-once" "${adopted//$'\n'/ }" "$team: adopt failed"
   fi
+  update_branches "$team"
   now=$(date +%s)
   $DRY_RUN || settle_runs
   held=false

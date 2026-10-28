@@ -110,7 +110,9 @@ A card reads as the issue's number, then its title:
   draft is the Dev's to fix, and the card says which, like `#124  dev · CI failing · ...`. With the
   Reviewer on, a green draft it hasn't reviewed yet is its turn instead: `#124  reviewer · awaiting
   review · ...`. A PR whose base just moved shows `resolving mergeable status` until GitHub has worked out whether it
-  still merges.
+  still merges. Where the base requires branches to be up to date, a PR that falls behind it reads
+  `behind main` until the dispatcher, within a pass, merges `main` into it, then `CI running` until CI passes on
+  the result. Only one that conflicts wakes a Dev.
 
 In kitty, WezTerm and Ghostty, which bundle a Nerd Font, the icons are that font's glyphs instead,
 and a PR row wears a pull request glyph in place of `PR`. No terminal says which font it has, so if
