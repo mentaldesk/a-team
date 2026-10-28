@@ -44,6 +44,12 @@ passing() {
   rm -f "$1" "$2"
 }
 
+# short_read <output> <team role>: logs board.sh's board read short twice in one line; fails on any other output.
+short_read() {
+  [[ $1 =~ incomplete\ \(([0-9]+\ of\ [0-9]+)\ items\) ]] || return 1
+  log "$2: board read incomplete (${BASH_REMATCH[1]} items), twice; trying again next check"
+}
+
 dispatch() {
   local team=$1 role=$2 config=$3
   local dir="$STATE/$team/$role" now triggers reasons creative last live limit pid at
@@ -71,10 +77,7 @@ dispatch() {
     -ge $(($(cfg '.dispatch.sweepEvery // 30') * 60)) ] && sweep=--sweep
 
   if ! triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" ${sweep:+"$sweep"} 2>&1); then
-    if [[ $triggers =~ incomplete\ \(([0-9]+\ of\ [0-9]+)\ items\) ]]; then
-      log "$team $role: board read incomplete (${BASH_REMATCH[1]} items), twice; trying again next check"
-      return
-    fi
+    short_read "$triggers" "$team $role" && return
     failing "$dir/${prefix}triggers-failing" "$dir/${prefix}triggers-failed-once" \
       "${triggers//$'\n'/ }" "$team $role: triggers failed"
     return
@@ -299,7 +302,7 @@ pick_task() {
   [ "$role" = dev ] && [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
   if ! claimed=$("$ROOT/bin/a-team" board ${prefix:+--dry-run} "$1" claim dev 2>"$2/claim.err"); then
     # Once a run has started this pass, the worktrees running out is expected.
-    [ "$started" -gt 0 ] && grep -q 'no free worktree' "$2/claim.err" ||
+    short_read "$(<"$2/claim.err")" "$1 dev" || { [ "$started" -gt 0 ] && grep -q 'no free worktree' "$2/claim.err"; } ||
       log "$1 dev: claim failed: $(tr '\n' ' ' <"$2/claim.err")"
     return 1
   fi

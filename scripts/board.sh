@@ -3105,12 +3105,12 @@ case "$CMD" in
     { [ "${1:-}" = --dry-run ] || [ -n "$DRY_RUN" ]; } && { dry_run=true; DRY_RUN=1; }
     field=$(project_meta | jq '.field // empty')
     jq -e '.id' <<<"$field" >/dev/null 2>&1 || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
-    used=$(gql "query(\$owner: String!, \$number: Int!, \$field: String!, \$endCursor: String) {
+    pages=$(board_pages "query(\$owner: String!, \$number: Int!, \$field: String!, \$endCursor: String) {
         $KIND(login: \$owner) { projectV2(number: \$number) {
-          items(first: 100, after: \$endCursor) { pageInfo { hasNextPage endCursor }
+          items(first: 100, after: \$endCursor) { totalCount pageInfo { hasNextPage endCursor }
             nodes { fieldValueByName(name: \$field) { ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }" \
-      -F field="$FIELD" --paginate |
-      jq -s --arg kind "$KIND" '[.[].data[$kind].projectV2.items.nodes[].fieldValueByName.name // empty] | unique')
+      -F field="$FIELD")
+    used=$(jq -s --arg kind "$KIND" '[.[].data[$kind].projectV2.items.nodes[].fieldValueByName.name // empty] | unique' <<<"$pages")
     input=$(jq -n --argjson field "$field" --argjson used "$used" --slurpfile cfg "$CONFIG" '
       [ ["Idea", "GRAY", "A seed worth a look"],
         ["Exploring", "PURPLE", "Lead is researching and writing a pitch"],

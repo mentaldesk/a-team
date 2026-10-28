@@ -3405,6 +3405,14 @@ failed "lead-next"
 grep -qF "$SHORT" "$ERR" || fail "lead-next: '$(cat "$ERR")'"
 same "turn" discover "$(cat "$A_TEAM_STATE/demo/lead-turn")"
 
+case_ "setup on a short board read drops no Status option"
+short_reads 2 1
+rm -f "$BIN/mutation.json"
+run board demo setup
+failed "setup"
+grep -qF "$SHORT" "$ERR" || fail "setup: '$(cat "$ERR")'"
+[ ! -e "$BIN/mutation.json" ] || fail "setup: Status options changed"
+
 case_ "a truly empty board reads as empty, and other repos' items on a shared project count towards its total"
 gh_items </dev/null
 run board demo list
@@ -5553,6 +5561,11 @@ dispatch_dev --dry-run
 grep -q 'demo dev: claim failed: board.sh: no free worktree for #13' "$A_TEAM_STATE/dispatch.log" ||
   fail "refused: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 grep -q 'would start' "$A_TEAM_STATE/dispatch.log" && fail "refused: a run started"
+sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: the board read came back incomplete (100 of 358 items), twice. Nothing was changed: end this run, and the next one reads the board again." >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+same "short claim" "demo dev: board read incomplete (100 of 358 items), twice; trying again next check" \
+  "$(cut -d' ' -f2- "$A_TEAM_STATE/dispatch.log")"
 
 case_ "a Reviewer run is for one waiting PR at a time, named in the log, and claims nothing"
 fixture <<'JSON'
