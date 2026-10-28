@@ -1,4 +1,5 @@
 using System.Drawing;
+using MentalDesk.Tui.Loading;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -20,6 +21,79 @@ public class WorkViewTests
         new(6, "The agents can't say what they'd change", "Idea", "https://github.com/x/5", "a-team",
             "you", "waiting to be ranked"),
     ];
+
+    [Fact]
+    public void A_tab_goes_from_loading_to_its_cards_or_to_empty()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        Assert.All(view.Lanes, lane => Assert.Equal(LoadState.Loading, lane.Load.State));
+
+        view.Show("a-team", [.. Waiting.Where(item => item.Team == "a-team")]);
+        view.Show("tuicode", []);
+
+        Assert.Equal([LoadState.Loaded, LoadState.Empty], view.Lanes.Select(lane => lane.Load.State));
+        Assert.Equal("Nothing waiting on you", view.Lanes[1].Load.Says);
+    }
+
+    [Fact]
+    public void A_failed_tab_says_why_and_a_retry_brings_its_cards()
+    {
+        using var view = Open(["a-team", "tuicode"]);
+        view.Show("a-team", [.. Waiting.Where(item => item.Team == "a-team")]);
+
+        Assert.False(view.Fail("tuicode", "gh: Not Found", "R retry", () => { }));
+        view.Pick("tuicode");
+        Assert.True(view.Failed);
+        Assert.Equal("gh: Not Found", view.Lanes[1].Load.Says);
+
+        view.Reading("tuicode");
+        Assert.Equal(LoadState.Loading, view.Lanes[1].Load.State);
+        view.Show("tuicode", [.. Waiting.Where(item => item.Team == "tuicode")]);
+
+        Assert.Equal(LoadState.Loaded, view.Lanes[1].Load.State);
+        Assert.False(view.Failed);
+        Assert.Equal(4, view.Items.Count(item => item.Team == "a-team"));
+    }
+
+    [Fact]
+    public void A_re_read_that_fails_keeps_the_cards_and_leaves_the_failure_to_the_caller()
+    {
+        using var view = Open(["a-team"]);
+        view.Show("a-team", Waiting);
+
+        view.Reading("a-team");
+        Assert.True(view.Lanes[0].Load.Reloading);
+
+        Assert.True(view.Fail("a-team", "gh: rate limited", "R retry", () => { }));
+        Assert.Equal(LoadState.Loaded, view.Lanes[0].Load.State);
+        Assert.False(view.Lanes[0].Load.Reloading);
+        Assert.True(view.Lanes[0].Count > 0);
+    }
+
+    [Fact]
+    public void An_empty_tab_counts_what_Only_mine_hides_and_only_then()
+    {
+        var theirs = Waiting.Where(item => !item.Mine && item.Team == "a-team").ToArray();
+        using var view = Open(["a-team"]);
+        view.Show("a-team", theirs);
+        Assert.Equal(LoadState.Loaded, view.Lanes[0].Load.State);
+
+        view.ShowOnlyMine(true);
+
+        Assert.Equal(LoadState.Empty, view.Lanes[0].Load.State);
+        Assert.Equal($"Nothing waiting on you · {theirs.Length} hidden by Only mine", view.Lanes[0].Load.Says);
+
+        view.ShowOnlyMine(false);
+
+        Assert.Equal(LoadState.Loaded, view.Lanes[0].Load.State);
+    }
+
+    [Fact]
+    public void An_empty_tab_with_Only_mine_hiding_nothing_doesn_t_count()
+    {
+        Assert.Equal("Nothing waiting on you", WorkLane.Empty(0));
+        Assert.Equal("Nothing waiting on you · 3 hidden by Only mine", WorkLane.Empty(3));
+    }
 
     [Fact]
     public void Every_team_gets_a_tab_and_every_tab_a_column_per_gate()
@@ -287,7 +361,7 @@ public class WorkViewTests
             view.MoveCard(+1);
 
         Assert.Equal(12, view.Selected?.Number);
-        Assert.True(view.Lanes[0].Viewport.Y > 0);
+        Assert.True(view.Lanes[0].Scrolled > 0);
     }
 
     [Theory]

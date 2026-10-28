@@ -59,6 +59,7 @@ behind a count, as in `+7`.
 | `g` | Opens the card on GitHub |
 | `b` | Opens the card's team's Project board on GitHub |
 | `r` | Goes to the agent's session: the Dashboard, with the agent working on the card expanded |
+| `r` | Reads again the boards that couldn't be read, when the card has no agent on it |
 | `F5` | Reads every board again |
 
 The details pane gives the card's title, what it is, its Priority, team and column, how long it has
@@ -69,8 +70,10 @@ of its own: `Also waits on tui-style-guide#100 · in review, yours`. A task held
 chain, as on Work's status bar: `a-team #499 waits on this · then MentalDesk.Tui's release`. For a pitch, it lists the open tasks under it,
 each with its column and age.
 
-Overseer reads the boards when you open it and on `F5`, and the status bar says how long ago that
-was. Ages and animations keep moving between reads.
+Overseer reads the boards when you open it and on `F5`, and the status bar says how long ago the
+selected card's board was read. Ages and animations keep moving between reads. Each lane is read on
+its own, and says so in the lane while it reads, when its board has nothing on it, or when it
+couldn't be read, with `r retry` under the reason; the other lanes keep their cards.
 
 ## Time limits
 

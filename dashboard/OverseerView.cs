@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using MentalDesk.Tui.Loading;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Text;
@@ -103,20 +104,74 @@ public sealed class OverseerView : View
 
     internal IReadOnlyList<string> LaneTitles => [.. _laneViews.Select(lane => lane.Title)];
 
-    /// <summary>Whether no read has landed yet, so there are no cards to look at.</summary>
-    internal bool Unread { get; private set; } = true;
+    internal const string NothingOnTheBoard = "Nothing on the board";
+
+    /// <summary>Whether any lane couldn't be read, so <c>R</c> would read it again.</summary>
+    internal bool Failed => _laneViews.Any(lane => lane.Load.State == LoadState.Failed);
+
+    /// <summary>The teams whose lanes couldn't be read.</summary>
+    internal IReadOnlyList<string> FailedTeams =>
+        [.. _laneViews.Where(lane => lane.Load.State == LoadState.Failed).Select(LaneTeam)];
+
+    /// <summary>Whether <paramref name="team"/>'s lane is reading, empty, failed or showing its chips.</summary>
+    internal LoadStateView? LoadOf(string team) => LaneOf(team)?.Load;
 
     /// <summary>The team and column the selection is in, for the status bar.</summary>
     internal string? Region => _board.Selected is { } place ? $"{OverseerBoard.Columns[place.Column]} · {place.Team}" : null;
 
     public void Show(IReadOnlyList<BoardCard> cards)
     {
-        Unread = false;
         _board.Show(cards);
+        foreach (var lane in _laneViews)
+            Landed(lane);
         if (_board.Selected is null)
             _board.SelectFirst();
         Changed();
     }
+
+    /// <summary>Replaces <paramref name="team"/>'s chips alone, leaving every other lane as it was.</summary>
+    public void Show(string team, IReadOnlyList<BoardCard> cards)
+    {
+        _board.Show([.. _board.Cards.Where(card => card.Team != team), .. cards]);
+        if (LaneOf(team) is { } lane)
+            Landed(lane);
+        if (_board.Selected is null)
+            _board.SelectFirst();
+        Changed();
+    }
+
+    /// <summary>A read of <paramref name="team"/> has started. A lane showing chips keeps them while it reads.</summary>
+    public void Reading(string team)
+    {
+        if (LaneOf(team)?.Load is { State: not LoadState.Empty } load)
+            load.ShowLoading();
+    }
+
+    /// <summary>A read of <paramref name="team"/> failed. Reports whether it kept chips already on screen, which
+    /// leaves the failure for the status bar to say.</summary>
+    public bool Fail(string team, string message, string retry, Action run)
+    {
+        if (LaneOf(team)?.Load is not { } load)
+            return false;
+        if (load.State == LoadState.Loaded)
+        {
+            load.ShowContent();
+            return true;
+        }
+        load.ShowFailed(message, (retry, run));
+        Changed();
+        return false;
+    }
+
+    private void Landed(Lane lane)
+    {
+        if (_board.Cards.Any(card => card.Team == LaneTeam(lane)))
+            lane.Load.ShowContent();
+        else
+            lane.Load.ShowEmpty(NothingOnTheBoard);
+    }
+
+    private Lane? LaneOf(string team) => _laneViews.FirstOrDefault(lane => LaneTeam(lane) == team);
 
     public void Forget(IReadOnlyList<string> teams)
     {
@@ -299,7 +354,7 @@ public sealed class OverseerView : View
         {
             if (lane.Slots.Count > 0)
                 lane.SetNeedsDraw();
-            lane.SubViews.First().SetNeedsDraw();
+            lane.Load.Content.SetNeedsDraw();
         }
     }
 
@@ -340,8 +395,10 @@ public sealed class OverseerView : View
     {
         var lane = new Lane(this, _laneViews.Count) { X = 0, Width = Dim.Fill(), CanFocus = false, Title = Heading(team, [], 0).Title, Data = team };
         lane.Y = Pos.Func(_ => Top(lane), _lanes);
-        lane.Height = Dim.Func(_ => _board.Rows(team) + FrameRows, _lanes);
-        lane.Add(new ChipGrid(this, team) { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() });
+        lane.Height = Dim.Func(_ => Rows(lane) + FrameRows, _lanes);
+        lane.Load = new LoadStateView(new ChipGrid(this, team) { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() },
+            $"Reading {team}'s board…") { CanFocus = false };
+        lane.Add(lane.Load);
         _laneViews.Add(lane);
         _lanes.Add(lane);
     }
@@ -349,9 +406,13 @@ public sealed class OverseerView : View
     private static string LaneTeam(View lane) => (string)lane.Data!;
 
     private int Top(Lane lane) =>
-        _laneViews.TakeWhile(each => each != lane).Sum(each => _board.Rows(LaneTeam(each)) + FrameRows);
+        _laneViews.TakeWhile(each => each != lane).Sum(each => Rows(each) + FrameRows);
 
-    private int Tall() => _laneViews.Sum(lane => _board.Rows(LaneTeam(lane)) + FrameRows);
+    private int Tall() => _laneViews.Sum(lane => Rows(lane) + FrameRows);
+
+    /// <summary>A failed lane keeps a second row for its retry.</summary>
+    private int Rows(Lane lane) =>
+        Math.Max(_board.Rows(LaneTeam(lane)), lane.Load.State == LoadState.Failed ? 2 : 1);
 
     private void FitLanes()
     {
@@ -431,6 +492,8 @@ public sealed class OverseerView : View
     private sealed class Lane(OverseerView overseer, int index) : FrameView
     {
         public IReadOnlyList<HeaderSlot> Slots { get; set; } = [];
+
+        public LoadStateView Load { get; set; } = null!;
 
         protected override void OnDrawComplete(DrawContext? context)
         {
