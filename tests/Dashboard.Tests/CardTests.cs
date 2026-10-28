@@ -42,6 +42,15 @@ public class CardTests
     }
 
     [Fact]
+    public void A_fix_for_a_red_main_says_it_is_one()
+    {
+        var fix = new Card(new WaitingItem(624, "Main builds again", "In review", "https://github.com/x/624", "a-team", "you",
+            Pr: 630, PrUrl: "https://github.com/x/pull/630") { Fix = true }, false);
+
+        Assert.Equal("#624  fix · Main builds again", fix.Text(0));
+    }
+
+    [Fact]
     public void A_reviewed_task_says_so_and_how_many_points_it_left_to_consider()
     {
         var clean = Reviewing with { Turn = "you", Reviewed = true };

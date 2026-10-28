@@ -78,6 +78,7 @@ RANK_LABELS="rank:urgent|c1408d|The a-team Lead recommends Urgent; your Priority
 rank:high|d4323c|The a-team Lead recommends High; your Priority still decides
 rank:medium|9a6700|The a-team Lead recommends Medium; your Priority still decides
 rank:low|21833d|The a-team Lead recommends Low; your Priority still decides"
+FIX_LABEL="a-team:fix|d73a4a|Makes the red default branch green again; the Dev takes it first"
 
 # recommended: the rank the Lead recommends for an item, from its rank:* label, or null.
 RECOMMENDED='def recommended: [.labels[]? | {"rank:urgent": "Urgent", "rank:high": "High",
@@ -185,6 +186,9 @@ UPSTREAM='def upstream_reasons:
     | (if $verdict == "fail" then [$n, "CI failed on \($pr) at \(.headRefOid[:7])"] else empty end),
       (if $verdict == "pass" and .isDraft then [$n, "\($pr) is green but still a draft"] else empty end),
       (if $asked != null then [$n, "stakeholder feedback on \($pr) (\($asked))"] else empty end);'
+
+# main_red($main): a PR's checks fail only jobs that fail on the default branch too, read by `main_red`.
+MAIN_RED='def main_red($main): $main != null and .failing != [] and all(.failing[].name; IN($main.failing[]));'
 
 # checks: the CI verdict on a commit's check runs, shaped as REST gives them.
 CHECKS='def checks:
@@ -324,6 +328,8 @@ AUDIT_EVERY=$((7 * 24 * 60 * 60))
 # The PRs `update` has merged their base into, as "<pr> <head it was updated from> <when>", one a line.
 UPDATED="$STATE/$TEAM/updated"
 UPDATE_SETTLES=600
+# The default branch's head when it was first seen red, until it's green again.
+RED_SINCE="$STATE/$TEAM/red-since"
 
 KIND=$(cfg .project.ownerType)
 KIND=${KIND:-organization}
@@ -744,12 +750,59 @@ pr_for() {
         else . + {review: (if answered then "answered" elif reviewed then "posted" elif $on then "waiting" else "off" end)} | del(.body, .comments) end'
 }
 
-# ci <pr>: the CI verdict for <pr>'s head commit.
-ci() {
+# pr_checks <pr>: the CI verdict for <pr>'s head commit.
+pr_checks() {
   local sha
   sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
   gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]' |
     jq -s "$CHECKS checks"
+}
+
+# against_main <checks> <main>: those checks, `main-red` where every job they fail also fails on the default branch.
+against_main() {
+  jq --argjson main "$2" "$MAIN_RED"'if .verdict == "fail" and main_red($main) then .verdict = "main-red" else . end' <<<"$1"
+}
+
+# ci <pr>: the CI verdict for <pr>'s head commit, reading the default branch's only when the PR fails. A fix's own PR
+# never reads `main-red`, or nothing would wake the Dev to finish it.
+ci() {
+  local checks main
+  checks=$(pr_checks "$1") || exit 1
+  [ "$(jq -r .verdict <<<"$checks")" = fail ] || { printf '%s\n' "$checks"; return; }
+  main=$(main_red)
+  if [ "$main" != null ] && fix_pr "$1"; then main=null; fi
+  against_main "$checks" "$main"
+}
+
+# fix_pr <pr>: whether <pr> is the open PR of a fix task.
+fix_pr() {
+  local n
+  for n in $(items | jq -r ".[] | select($FIX and .closed == null) | .number"); do
+    [ "$(pr_for "$n" | jq -r '.number // empty')" = "$1" ] && return 0
+  done
+  return 1
+}
+
+# main_red: the default branch's head as {branch, sha, since, failing} while its latest completed CI there has failed, else
+# null. A run still going, or no CI at all, isn't red. `since` is the head it was first seen red on.
+main_red() {
+  local red branch since
+  red=$(gh api --paginate "repos/$REPO/commits/HEAD/check-runs?per_page=100" --jq '.check_runs[]' |
+    jq -cs "$CHECKS"'(first.head_sha // "") as $sha | checks
+      | if .verdict == "fail" then {sha: $sha, failing: (.failing | map(.name) | unique)} else null end') ||
+    die "could not read the default branch's CI"
+  if [ "$red" = null ]; then
+    [ -n "$DRY_RUN" ] || rm -f "$RED_SINCE"
+    echo null
+    return
+  fi
+  branch=$(gh api "repos/$REPO" --jq .default_branch) || die "could not read $REPO's default branch"
+  since=$(cat "$RED_SINCE" 2>/dev/null || true)
+  if [ -z "$since" ]; then
+    since=$(jq -r .sha <<<"$red")
+    [ -n "$DRY_RUN" ] || { mkdir -p "$(dirname "$RED_SINCE")" && printf '%s' "$since" >"$RED_SINCE"; }
+  fi
+  jq -c --arg branch "$branch" --arg since "$since" '{branch: $branch} + . + {since: $since}' <<<"$red"
 }
 
 # Conversation and line comments across the whole repo from the last day, as
@@ -851,16 +904,18 @@ gated_comments() {
        | . + {n: $n}]' <<<"$1"
 }
 
-# gated_prs <talk>: the open PR that closes each of those items, or that is the item, as {n, pr, prUrl,
-# draft, conflicting, behind, resolving, base, head, checks, failedAt, self}, off a page read with `checks`.
+# gated_prs <talk> <main> <fixes>: the open PR that closes each of those items, or that is the item, as {n, pr, prUrl,
+# draft, conflicting, behind, resolving, base, head, checks, failedAt, self}, off a page read with `checks`, <main>
+# as `main_red` reads it, and <fixes> the fix tasks' numbers, whose PRs are never `main-red`.
 # UNKNOWN means GitHub hasn't finished computing it, so it's `resolving` rather than a conflict. GitHub reports
 # BEHIND only where the base requires branches to be up to date.
 gated_prs() {
-  jq "$CHECKS"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
+  jq --argjson main "${2:-null}" --argjson fixes "${3:-[]}" "$CHECKS$MAIN_RED"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
        | (if has("isDraft") then . else .closedByPullRequestsReferences.nodes[]? end)
        | ([.commits.nodes[0].commit.checkSuites.nodes[]?.checkRuns.nodes[]
            | {name, status: (.status | ascii_downcase), conclusion: (.conclusion // "" | ascii_downcase),
-              completed_at: .completedAt, html_url: .url}] | checks) as $ci
+              completed_at: .completedAt, html_url: .url}] | checks
+           | if .verdict == "fail" and ($fixes | index($n) | not) and main_red($main) then .verdict = "main-red" else . end) as $ci
        | {n: $n, pr: .number, prUrl: .url, draft: .isDraft, self: (.number == $n),
           conflicting: (.mergeable == "CONFLICTING"), behind: (.mergeStateStatus == "BEHIND"), resolving: (.mergeable == "UNKNOWN"), base: .baseRefName,
           head: .headRefName, checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
@@ -909,6 +964,7 @@ turns() {
       | ([$theirs[] | select(.kind == "comment" and team("<!-- a-team:reviewer -->"))] | last) as $review
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
+         elif $pr.checks == "main-red" then {trouble: "\($pr.base) is red", at: ""}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
          elif $pr.behind and ($pr.draft | not) then {trouble: "behind \($pr.base)", at: ""}
          elif $pr.resolving then {trouble: "resolving mergeable status", at: ""}
@@ -1323,8 +1379,8 @@ first_held() {
   jq --argjson holding "$(holding "$1")" 'sort_by(.number | IN($holding[]) | not)' <<<"$list"
 }
 
-# startable <items>: the Ready tasks the Dev can start now, in the order it takes them.
-startable() { jq "map(select($STARTABLE))" <<<"$1" | by_priority | first_held "$1"; }
+# startable <items>: the Ready tasks the Dev can start now, in the order it takes them: a fix for a red default branch first.
+startable() { jq "map(select($STARTABLE))" <<<"$1" | by_priority | first_held "$1" | jq "sort_by($FIX | not)"; }
 
 # close_pitch <n> [built]: closes pitch #n once all its tasks are closed; `built` also needs it to have some.
 close_pitch() {
@@ -1382,6 +1438,8 @@ HELD="$READY_TASK and (.labels | index(\"blocked\"))"
 UPSTREAM_HELD="$READY_TASK and (.labels | index(\"a-team:upstream\"))"
 # Tasks In review waiting on a change in another repo, which stay at the stakeholder's gate.
 UPSTREAM_REVIEWED='.status == "In review" and .type == "Issue" and (.labels | index("a-team:upstream"))'
+# A task that makes a red default branch green again.
+FIX='(.labels | index("a-team:fix") != null)'
 # A pitch the Lead may file tasks under.
 FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "Building")'
 # The Dev's tasks that take up one of wip.worktrees.
@@ -1436,7 +1494,7 @@ case "$CMD" in
     fi
     used=$(jq "[.[] | select($WORKING)] | length" <<<"$all")
     limit=$(cfg .wip.worktrees)
-    [ "$used" -lt "$limit" ] || { [ "$used" -lt $((limit + 1)) ] && [ "$(jq -r .priority <<<"$it")" = Urgent ]; } ||
+    [ "$used" -lt "$limit" ] || { [ "$used" -lt $((limit + 1)) ] && jq -e ".priority == \"Urgent\" or $FIX" <<<"$it" >/dev/null; } ||
       die "no free worktree for #$(jq -r .number <<<"$it") ($used in use, wip.worktrees is $limit)"
     n=$(jq -r .number <<<"$it")
     write "label #$n a-team:dev" gh issue edit "$n" -R "$REPO" --add-label a-team:dev >/dev/null
@@ -1680,6 +1738,39 @@ case "$CMD" in
     set_status "${id:-new-item}" Ready
     record "$role" "$n" "filed as Ready under #$pitch"
     say "#$n: filed as Ready under #$pitch"
+    ;;
+
+  fix)
+    [ $# -eq 3 ] || die "usage: board.sh $TEAM fix lead <title> <file>"
+    role=$1 title=$2 file=$3
+    check_role "$role"
+    [ "$role" = lead ] || die "$role may not file a fix; only lead files one, when the default branch is red"
+    [ -f "$file" ] || die "no such file: $file"
+    [ -n "${title//[[:space:]]/}" ] || die "a fix needs a title"
+    open=$(items | jq -r "[.[] | select($FIX and .closed == null and .status != \"Done\") | \"#\(.number)\"] | join(\", \")")
+    [ -z "$open" ] || die "$open is already the fix for the default branch: one at a time"
+    main=$(main_red)
+    [ "$main" != null ] || die "the default branch isn't red: its latest completed CI passed, is still running, or there's none"
+    label=${FIX_LABEL%%|*}
+    if ! gh label list -R "$REPO" --search "$label" --json name --jq '.[].name' | grep -qxF "$label"; then
+      IFS='|' read -r _ color description <<<"$FIX_LABEL"
+      write "create label $label" gh label create "$label" -R "$REPO" --color "$color" --description "$description" >/dev/null
+    fi
+    body=$(cat "$file")
+    grep -qF "<!-- a-team:$role -->" <<<"$body" || body=$(printf '%s\n\n<!-- a-team:%s -->' "$body" "$role")
+    [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
+    url=$(printf '%s\n' "$body" | write "open an issue titled '$title', labelled $label" \
+      gh issue create -R "$REPO" --title "$title" --label "$label" --body-file -) || die "can't open the issue on $REPO"
+    if [ -n "$DRY_RUN" ]; then
+      n=new node=''
+    else
+      n=${url##*/}
+      node=$(gh api "repos/$REPO/issues/$n" --jq .node_id)
+    fi
+    id=$(board_add "#$n" "$node")
+    set_status "${id:-new-item}" Ready
+    record "$role" "$n" "filed as Ready to make $(jq -r .branch <<<"$main") green"
+    echo "$n"
     ;;
 
   priority)
@@ -1945,7 +2036,7 @@ case "$CMD" in
     ! jq -e --arg bot "$BOT" "$REVIEWED reviewed" <<<"$it" >/dev/null ||
       die "#$pr has its review already: a PR is reviewed once"
     jq -e .isDraft <<<"$it" >/dev/null || die "#$pr is ready for review already: it went to the stakeholders unreviewed"
-    [ "$(ci "$pr" | jq -r .verdict)" = pass ] || die "#$pr isn't green: it's reviewed once CI passes"
+    [ "$(pr_checks "$pr" | jq -r .verdict)" = pass ] || die "#$pr isn't green: it's reviewed once CI passes"
     body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$pr" gh pr comment "$pr" -R "$REPO" --body-file -
@@ -2403,6 +2494,7 @@ case "$CMD" in
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)}
         + if .labels | index("a-team:customer") then {role: "customer"} else {} end
+        + if '"$FIX"' then {fix: true} else {} end
         + if .dependabot and .status == "In review" then {dependency: true} else {} end
         + if .type == "PullRequest" and .status == "Pitched" and ((.labels | index("pitch")) or (.labels | index("a-team:customer")))
           then {document: true} else {} end)' <<<"$all")
@@ -2433,7 +2525,8 @@ case "$CMD" in
       and recommended != null) | {number})' <<<"$all")
     talk=$(gated_talk "$(jq -s add <<<"$gated$held$recommended")" checks)
     said=$(gated_comments "$talk")
-    waiting=$(turns "$gated" "$said" "$(gated_prs "$talk")" |
+    main=$(main_red)
+    waiting=$(turns "$gated" "$said" "$(gated_prs "$talk" "$main" "$(jq -c "[.[] | select($FIX) | .number]" <<<"$all")")" |
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
       jq --argjson asked "$(holds "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
@@ -2442,6 +2535,11 @@ case "$CMD" in
         | if $f == [] then . else . + {frees: ($f | unique)} end)' |
       jq --argjson reviewed "$reviewed" 'map(if .status == "In review" and $reviewed["\(.number)"] then . + {chains: $reviewed["\(.number)"]} else . end)')
     snapshot "$(jq 'map(select(.turn != "upstream")) | length' <<<"$waiting")"
+    # A red default branch rides along as an entry with no number, which readers of the items pass over.
+    if [ "$main" != null ]; then
+      waiting=$(jq --argjson main "$main" --arg team "$TEAM" --argjson fix "$(jq "[.[] | select($FIX and .closed == null and .status != \"Done\")
+        | {number, status}] | first" <<<"$all")" '. + [{team: $team, red: ($main + {fix: $fix})}]' <<<"$waiting")
+    fi
     printf '%s\n' "$waiting"
     ;;
 
@@ -2644,7 +2742,7 @@ case "$CMD" in
     reasons=()
     recent='[]'
     case "$role" in lead | dev) recent=$(recent_comments) ;; esac
-    tasks='[]' chores=() ready='' items=() card=''
+    tasks='[]' chores=() ready='' items=() card='' main=''
     # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
     task_reason() {
       reasons+=("$3")
@@ -2663,7 +2761,11 @@ case "$CMD" in
           p=$(jq -r .number <<<"$pr")
           numbers+=("$p")
           recent=$(jq -s 'add' <(echo "$recent") <(pr_reviews "$p"))
-          checks=$(ci "$p")
+          checks=$(pr_checks "$p")
+          if [ "$(jq -r .verdict <<<"$checks")" = fail ] && ! jq -e "$FIX" <<<"$row" >/dev/null; then
+            main=${main:-$(main_red)}
+            checks=$(against_main "$checks" "$main")
+          fi
           verdict=$(jq -r .verdict <<<"$checks")
           # Changes once the rest settle, so a run starts that can re-run a transient failure.
           running=$(jq -r 'if .pending == [] then "" else ", other checks still running" end' <<<"$checks")
@@ -2732,7 +2834,11 @@ case "$CMD" in
       limit=$(cfg .wip.worktrees)
       startable=$(jq "[.[] | select($STARTABLE)]" <<<"$all")
       first=$(jq -r '.[0].number // empty' <<<"$startable")
-      if [ -n "$first" ]; then
+      fix=$(jq -r "[.[] | select($FIX)][0].number // empty" <<<"$startable")
+      if [ -n "$fix" ] && [ "$used" -lt $((limit + 1)) ]; then
+        ready=$fix
+        reasons+=("Ready fix task #$ready for the red default branch: take it first")
+      elif [ -n "$first" ]; then
         if [ "$used" -lt "$limit" ]; then
           ready=$first
           reasons+=("Ready task available (e.g. #$ready) and a free worktree")
@@ -2750,7 +2856,7 @@ case "$CMD" in
           pr=$(pr_for "$n")
           [ -n "$pr" ] && [ "$pr" != null ] && [ "$(jq -r '.isDraft and .review == "waiting"' <<<"$pr")" = true ] || continue
           p=$(jq -r .number <<<"$pr")
-          [ "$(ci "$p" | jq -r .verdict)" = pass ] &&
+          [ "$(pr_checks "$p" | jq -r .verdict)" = pass ] &&
             task_reason "$n" "$(jq -r .title <<<"$row")" "PR #$p is green and waiting for its review"
         done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
       fi
@@ -2833,6 +2939,11 @@ case "$CMD" in
 
       due=$(vision_due)
       [ -z "$due" ] || reasons+=("$due")
+
+      if ! jq -e "any(.[]; $FIX and .closed == null and .status != \"Done\")" <<<"$all" >/dev/null; then
+        main=$(main_red)
+        [ "$main" = null ] || reasons+=("$(jq -r '"\(.branch) is red since \(.since[:7]): \(.failing | join(", ")) failing. File a fix"' <<<"$main")")
+      fi
 
       pitched=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Pitched")] | length' <<<"$all")
       exploring=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")] | length' <<<"$all")
