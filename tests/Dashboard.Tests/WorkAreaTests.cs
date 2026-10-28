@@ -2,6 +2,7 @@ using MentalDesk.Tui.Chrome;
 using MentalDesk.Tui;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Links;
+using MentalDesk.Tui.Loading;
 using System.Drawing;
 using System.Text.Json.Nodes;
 using Terminal.Gui.Configuration;
@@ -216,45 +217,145 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Work_says_Loading_until_the_first_read_lands()
+    public void Each_tab_is_loading_until_its_own_read_lands()
     {
-        var finish = new TaskCompletionSource<Reading>();
-        using var window = Open(read: _ => finish.Task);
+        var finish = new Dictionary<string, TaskCompletionSource<Reading>> { ["team0"] = new(), ["team1"] = new() };
+        using var window = Open(read: team => finish[team].Task);
 
-        Assert.True(window.Loading.Visible);
+        Assert.All(window.Work.Lanes, lane => Assert.Equal(LoadState.Loading, lane.Load.State));
 
-        finish.SetResult(new Reading(Waiting("team0"), null));
+        finish["team1"].SetResult(new Reading(Waiting("team1"), null));
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.False(window.Loading.Visible);
+        Assert.Equal([LoadState.Loading, LoadState.Loaded], window.Work.Lanes.Select(lane => lane.Load.State));
+        Assert.All(window.Work.Items, item => Assert.Equal("team1", item.Team));
     }
 
     [Fact]
-    public void Loading_is_a_still_untitled_frame_in_the_middle_of_the_Work_area_and_no_van()
+    public void One_team_failing_leaves_the_others_cards_and_says_so_only_in_its_own_tab()
+    {
+        using var window = Open(read: team => Task.FromResult(team == "team1"
+            ? new Reading("", "gh: API rate limit exceeded for mentaldesk/TuiCode\nmore")
+            : new Reading(Waiting(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        var (good, bad) = (window.Work.Lanes[0], window.Work.Lanes[1]);
+        Assert.Equal(LoadState.Loaded, good.Load.State);
+        Assert.True(good.Count > 0);
+        Assert.Equal(LoadState.Failed, bad.Load.State);
+        Assert.Equal("gh: API rate limit exceeded for mentaldesk/TuiCode", bad.Load.Says);
+        Assert.Equal(0, window.Status.UnreadErrors);
+        Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
+
+        window.Work.Pick("team1");
+        window.Refresh();
+
+        Assert.Equal("All items", window.Status.FocusWord);
+    }
+
+    [Fact]
+    public void R_in_a_failed_tab_reads_only_that_team_again_and_its_cards_appear()
+    {
+        var reads = new List<string>();
+        var failing = true;
+        using var window = Open(read: team =>
+        {
+            reads.Add(team);
+            return Task.FromResult(team == "team1" && failing ? new Reading("", "offline") : new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.Work.Pick("team1");
+        Assert.Contains(window.Keys.Here!.Groups.SelectMany(group => group.Rows), row => row.Label == "Read this team again");
+        reads.Clear();
+        failing = false;
+
+        window.NewKeyDownEvent(new Key('r'));
+        window.Refresh();
+
+        Assert.Equal(["team1"], reads);
+        Assert.Equal(LoadState.Loaded, window.Work.Lanes[1].Load.State);
+        Assert.Contains(window.Work.Items, item => item.Number == 133);
+    }
+
+    [Fact]
+    public void R_reads_nothing_in_a_tab_that_isn_t_failed()
+    {
+        var reads = 0;
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        window.NewKeyDownEvent(new Key('r'));
+        window.Refresh();
+
+        Assert.Equal(2, reads);
+        Assert.False(window.Commands.IsEnabled("work.retry"));
+        Assert.DoesNotContain(window.Keys.Here!.Groups.SelectMany(group => group.Rows), row => row.Label == "Read this team again");
+    }
+
+    [Fact]
+    public void F5_still_reads_every_team_from_a_failed_tab()
+    {
+        var reads = new List<string>();
+        using var window = Open(read: team =>
+        {
+            reads.Add(team);
+            return Task.FromResult(team == "team1" ? new Reading("", "offline") : new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+        window.Work.Pick("team1");
+        reads.Clear();
+
+        window.NewKeyDownEvent(Key.F5);
+
+        Assert.Equal(["team0", "team1"], reads);
+    }
+
+    [Fact]
+    public void A_team_with_nothing_waiting_says_so()
+    {
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team1" ? "[]" : Waiting(team), null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal(LoadState.Empty, window.Work.Lanes[1].Load.State);
+        Assert.Equal("Nothing waiting on you", window.Work.Lanes[1].Load.Says);
+    }
+
+    [Fact]
+    public void The_old_Loading_box_and_the_van_are_gone_from_Work()
     {
         using var window = Open(read: _ => new TaskCompletionSource<Reading>().Task);
 
         LayOut(window, 120, 40);
 
-        var frame = window.Loading.Frame;
-        Assert.Equal("", window.Loading.Title);
-        Assert.Equal("Loading…", Assert.IsType<Label>(Assert.Single(window.Loading.SubViews)).Text);
-        Assert.InRange(frame.X - (120 - frame.Right), -1, 1);
-        Assert.InRange(frame.Y - 2 - (40 - 1 - frame.Bottom), -1, 1);
+        Assert.DoesNotContain(Descendants(window).OfType<Label>(), label => label.Text == "Loading…");
         Assert.Empty(Descendants(window).OfType<LoadingView>());
     }
 
     [Fact]
-    public void A_later_read_leaves_the_cards_already_on_screen_rather_than_covering_them()
+    public void A_later_read_keeps_the_cards_on_screen_with_a_spinner_on_the_tab()
     {
-        using var window = Open();
+        var reads = 0;
+        using var window = Open(read: team => team == "team0" && reads++ > 0
+            ? new TaskCompletionSource<Reading>().Task
+            : Task.FromResult(new Reading(Waiting(team), null)));
         window.Refresh();
         LayOut(window, 120, 30);
 
         window.Commands.Execute("work.refresh");
 
-        Assert.False(window.Loading.Visible);
+        var lane = window.Work.Lanes[0];
+        Assert.Equal(LoadState.Loaded, lane.Load.State);
+        Assert.True(lane.Load.Reloading);
+        Assert.True(lane.Count > 0);
     }
 
     [Fact]
@@ -367,7 +468,7 @@ public class WorkAreaTests : IDisposable
         clock.Now += TimeSpan.FromSeconds(1);
         window.Refresh();
         Assert.Equal(2, reads);
-        Assert.Equal("gh: API rate limit exceeded", window.Says());
+        Assert.All(window.Work.Lanes, lane => Assert.Equal(LoadState.Failed, lane.Load.State));
 
         clock.Now += DashboardWindow.ReadEvery;
         window.Refresh();
@@ -463,23 +564,17 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Leaving_Work_while_it_is_still_reading_takes_Loading_with_it()
+    public void Opening_on_the_Dashboard_reads_nothing()
     {
-        var finish = new TaskCompletionSource<Reading>();
-        using var window = Open(read: _ => finish.Task);
-        Assert.True(window.Loading.Visible);
+        var reads = 0;
+        using var window = Open(area: Area.Dashboard, read: _ =>
+        {
+            reads++;
+            return new TaskCompletionSource<Reading>().Task;
+        });
 
-        window.Commands.Execute("view.dashboard");
-
-        Assert.False(window.Loading.Visible);
-    }
-
-    [Fact]
-    public void Opening_on_the_Dashboard_reads_nothing_and_shows_no_Loading()
-    {
-        using var window = Open(area: Area.Dashboard, read: _ => new TaskCompletionSource<Reading>().Task);
-
-        Assert.False(window.Loading.Visible);
+        Assert.Equal(0, reads);
+        Assert.False(window.Work.Visible);
     }
 
     [Fact]
@@ -2863,7 +2958,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("a-team board: API rate limit exceeded", window.Says());
+        Assert.Equal("team1: a-team board: API rate limit exceeded", window.Says());
         Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(stamp, window.Status.FocusWord);
@@ -2882,7 +2977,7 @@ public class WorkAreaTests : IDisposable
         });
 
         window.NewKeyDownEvent(Key.F5);
-        Assert.True(window.Loading.Visible);
+        Assert.All(window.Work.Lanes, lane => Assert.Equal(LoadState.Loading, lane.Load.State));
         Assert.DoesNotContain("Reading…", window.Says());
         window.NewKeyDownEvent(Key.F5);
 
@@ -3368,11 +3463,15 @@ public class WorkAreaTests : IDisposable
     public void An_error_waits_for_a_key_however_long_that_takes()
     {
         var clock = new Clock();
-        using var window = Open(read: _ => Task.FromResult(new Reading("", "gh: API rate limit exceeded")), clock: clock);
+        var reads = 0;
+        using var window = Open(read: team => Task.FromResult(team == "team0" && reads++ > 0
+            ? new Reading("", "gh: API rate limit exceeded") : new Reading(Waiting(team), null)), clock: clock);
+        window.Refresh();
+        window.Commands.Execute("work.refresh");
         window.Refresh();
 
         clock.Now += TimeSpan.FromMinutes(1);
-        Assert.Equal("gh: API rate limit exceeded", window.Says());
+        Assert.Equal("team0: gh: API rate limit exceeded", window.Says());
         Assert.Equal(Severity.Error, window.Status.MessageSeverity);
 
         window.NewKeyDownEvent(Key.CursorRight);
@@ -3383,12 +3482,16 @@ public class WorkAreaTests : IDisposable
     public void Error_news_outlasts_keys_pressed_in_its_first_five_seconds()
     {
         var clock = new Clock();
-        using var window = Open(read: _ => Task.FromResult(new Reading("", "gh: API rate limit exceeded")), clock: clock);
+        var reads = 0;
+        using var window = Open(read: team => Task.FromResult(team == "team0" && reads++ > 0
+            ? new Reading("", "gh: API rate limit exceeded") : new Reading(Waiting(team), null)), clock: clock);
+        window.Refresh();
+        window.Commands.Execute("work.refresh");
         window.Refresh();
 
         clock.Now += TimeSpan.FromSeconds(2);
         window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("gh: API rate limit exceeded", window.Says());
+        Assert.Equal("team0: gh: API rate limit exceeded", window.Says());
 
         clock.Now += AppStatusBar.Lifetime;
         window.NewKeyDownEvent(Key.CursorRight);
@@ -3396,12 +3499,15 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void A_failed_read_comes_off_the_bar_once_a_read_works()
+    public void A_failed_re_read_comes_off_the_bar_once_a_read_works()
     {
         var reads = 0;
-        using var window = Open(read: team => Task.FromResult(reads++ < 2 ? new Reading("", "gh: API rate limit exceeded") : new Reading(Waiting(team), null)));
+        using var window = Open(read: team => Task.FromResult(team == "team0" && reads++ == 1
+            ? new Reading("", "gh: API rate limit exceeded") : new Reading(Waiting(team), null)));
         window.Refresh();
-        Assert.Equal("gh: API rate limit exceeded", window.Says());
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+        Assert.Equal("team0: gh: API rate limit exceeded", window.Says());
 
         window.Commands.Execute("work.refresh");
         window.Refresh();
@@ -3414,7 +3520,10 @@ public class WorkAreaTests : IDisposable
     public void Unseen_errors_count_on_the_bar_until_Messages_lists_them_newest_first()
     {
         var reads = 0;
-        using var window = Open(read: team => Task.FromResult(reads++ < 2 ? new Reading("", "gh: API rate limit exceeded") : new Reading(Waiting(team), null)));
+        using var window = Open(read: team => Task.FromResult(team == "team0" && reads++ == 1
+            ? new Reading("", "gh: API rate limit exceeded") : new Reading(Waiting(team), null)));
+        window.Refresh();
+        window.Commands.Execute("work.refresh");
         window.Refresh();
         window.Commands.Execute("work.refresh");
         window.Refresh();
@@ -3427,7 +3536,7 @@ public class WorkAreaTests : IDisposable
         using var messages = new MessagesDialog(window.Status);
 
         Assert.Equal(0, window.Status.UnreadErrors);
-        Assert.Equal([window.Says(), "gh: API rate limit exceeded"], messages.Rows.Select(row => row.Text));
+        Assert.Equal([window.Says(), "team0: gh: API rate limit exceeded"], messages.Rows.Select(row => row.Text));
     }
 
     [Fact]
@@ -3632,7 +3741,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(titles, Titles(back));
         Assert.Equal(49, back.Work.Selected?.Number);
         Assert.Equal(onPr, back.Work.SelectedCard is null);
-        Assert.False(back.Loading.Visible);
+        Assert.All(back.Work.Lanes, lane => Assert.NotEqual(LoadState.Loading, lane.Load.State));
     }
 
     [Fact]

@@ -165,6 +165,7 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 | `p` | Read the card and set its Priority |
 | `m` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `u` | Go to the newest card that has become your move |
+| `r` | In a tab that couldn't be read, read that team again |
 | `F5` | Read what's waiting again |
 
 To pick a team by name, open **Go to team…** from Commands (`Ctrl+E`) or the View menu, and type
@@ -173,7 +174,15 @@ to narrow the list as in Commands.
 The cards are read when you open Work, when you press `F5`, and by themselves every five minutes
 while Work is in front. Coming back from the Dashboard puts you on the card you left, and reads again
 only if an agent has started or finished a run, or five minutes have passed, since the last read.
-That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dashboard reads nothing. If a read fails, the foot says so in red and the cards stay as they were.
+That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dashboard reads nothing.
+
+Each team's tab is read on its own. While its first read takes more than a moment, it shows a
+spinner and `Reading a-team's board…`. A team with nothing waiting says `Nothing waiting on you`,
+and adds how many cards *Only mine* hides, as in `· 3 hidden by Only mine`, when that's why. A team
+whose read fails says why in its tab, in red, with `r retry` under it, and the other tabs keep their
+cards. A read again with cards on screen keeps them, with a spinner at the right of the tabs' top
+border; if it fails, the cards stay and the foot says so in red. The foot's `read 2m ago` is for
+the team whose tab is in front.
 
 ## Reading a card
 
