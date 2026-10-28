@@ -98,8 +98,9 @@ a-team board {{team}} decline <role> <n> <file> # stakeholder only: comment <fil
 a-team board {{team}} shelve <role> <n> <weeks> <file>  # stakeholder, or the Lead when they ask: Pitched pitch
                                                 # #<n> back to Idea, not pitched again for <weeks>; <file>
                                                 # is the comment, and the board adds the date
-a-team board {{team}} finish <role> <n> <file>  # Lead only: once every task of pitch #<n> has closed,
-                                                # comment <file> on it and close it as done
+a-team board {{team}} finish <role> <n> <file> [<pr>...]  # Lead only: once every task of pitch #<n> has
+                                                # closed, or, with no tasks, naming the merged PRs that
+                                                # built it, comment <file> on it and close it as done
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours
                                                 # (as `you`, stakeholder only: no marker, no 👀)
 a-team board {{team}} review reviewer <pr> <file>  # Reviewer only: post the one review on a green

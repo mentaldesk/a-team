@@ -128,6 +128,10 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
   - close it with `a-team board {{team}} finish lead <pitch> <file>`, the file saying in a line or
     two what you tried. The stakeholder has already tried and merged every task, so the pitch
     doesn't come back to them.
+- A pitch with no tasks may already be built by another pitch's task. Check it on `origin/main` the
+  same way, and if it is, close it with `a-team board {{team}} finish lead <pitch> <file> <pr>...`,
+  naming the merged PRs that built it, the file saying which PRs did and what you tried. Never ask
+  the stakeholder to close it.
 - For each task you held that your prompt names (a Ready task labelled `blocked`, your comment
   saying why), read `a-team board {{team}} feedback lead <task>`. If the stakeholder's reply says the
   thing is done, `a-team board {{team}} unblock lead <task>`, and it goes back in the Dev's queue. If

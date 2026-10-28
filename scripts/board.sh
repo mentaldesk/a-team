@@ -1366,11 +1366,21 @@ first_held() {
 # startable <items>: the Ready tasks the Dev can start now, in the order it takes them: a fix for a red default branch first.
 startable() { jq "map(select($STARTABLE))" <<<"$1" | by_priority | first_held "$1" | jq "sort_by($FIX | not)"; }
 
-# close_pitch <n> [built]: closes pitch #n once all its tasks are closed; `built` also needs it to have some.
+# close_pitch <n> [built [<pr>...]]: closes pitch #n once all its tasks are closed. `built` also needs it to have
+# some, or, with none, the merged PRs that built it, which it lists in BUILT_BY.
 close_pitch() {
-  local subs open refused
+  local subs open refused pr
+  BUILT_BY=
   subs=$(gh api --paginate "repos/$REPO/issues/$1/sub_issues" | jq -s 'add // []')
-  [ "${2:-}" != built ] || [ "$(jq length <<<"$subs")" -gt 0 ] || die "#$1 has no tasks, so nothing was built"
+  if [ "${2:-}" = built ] && [ "$(jq length <<<"$subs")" -eq 0 ]; then
+    [ $# -gt 2 ] || die "#$1 has no tasks: name the merged PRs that built it"
+    for pr in "${@:3}"; do
+      pr=${pr#\#}
+      [[ $pr =~ ^[0-9]+$ ]] && [ "$(gh api "repos/$REPO/pulls/$pr" --jq .merged 2>/dev/null)" = true ] ||
+        die "#$pr isn't merged, so it can't have built #$1"
+      BUILT_BY="${BUILT_BY:+$BUILT_BY, }#$pr"
+    done
+  fi
   open=$(jq 'map(select(.state == "open")) | length' <<<"$subs")
   [ "$open" -eq 0 ] || die "#$1 has $open open task$([ "$open" -eq 1 ] || echo s)"
   close() { { gh issue close "$1" -R "$REPO" --reason completed >/dev/null; } 2>&1; }
@@ -1956,8 +1966,9 @@ case "$CMD" in
     ;;
 
   finish)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM finish <role> <n> <file>"
+    [ $# -ge 3 ] || die "usage: board.sh $TEAM finish <role> <n> <file> [<pr>...]"
     role=$1 n=$2 file=$3
+    shift 3
     check_role "$role"
     [ "$role" = lead ] || die "only lead may close a pitch as done"
     [ -f "$file" ] || die "no such file: $file"
@@ -1966,13 +1977,13 @@ case "$CMD" in
     jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
     status=$(jq -r .status <<<"$it")
     [ "$status" = Building ] || die "only a pitch in Building can be closed as done (#$n is in '$status')"
-    close_pitch "$n" built
+    close_pitch "$n" built "$@"
     body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     ack "$n"
-    record "$role" "$n" "closed as done"
-    say "#$n: closed as done"
+    record "$role" "$n" "closed as done${BUILT_BY:+ · built by $BUILT_BY}"
+    say "#$n: closed as done${BUILT_BY:+ (built by $BUILT_BY)}"
     ;;
 
   comment)
