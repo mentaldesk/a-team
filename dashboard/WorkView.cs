@@ -124,6 +124,14 @@ public sealed class WorkView : View
 
     private int Hidden(WorkLane lane) => OnlyMine ? _items.Count(item => item.Team == lane.Team && !item.Mine) : 0;
 
+    /// <summary>Shows which teams' default branches are red, above their columns: every team's, or only
+    /// <paramref name="team"/>'s after a read of that team alone.</summary>
+    public void ShowRed(IReadOnlyList<RedMain> reds, string? team = null)
+    {
+        foreach (var lane in _lanes.Where(lane => team is null || lane.Team == team))
+            lane.ShowRed(reds.FirstOrDefault(red => red.Team == lane.Team));
+    }
+
     /// <summary>Drops the tabs and the cards of teams that have been removed.</summary>
     public void Forget(IReadOnlyList<string> teams)
     {
@@ -449,6 +457,7 @@ public sealed class WorkLane : View
     internal const string NothingWaiting = "Nothing waiting on you";
 
     private readonly List<WorkColumn> _columns = [];
+    private readonly Label _red;
     private readonly View _body = new() { Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = true };
     private WorkColumn? _wide;
     private IconStyle _icons = IconStyle.Unicode;
@@ -459,6 +468,8 @@ public sealed class WorkLane : View
         Title = team;
         CanFocus = true;
         _body.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+        _red = new Label { X = 1, Y = 0, Width = Dim.Fill(1), CanFocus = false, Visible = false, SchemeName = LogSchemes.Warning };
+        Add(_red);
         for (var i = 0; i < WorkView.Gates.Length; i++)
         {
             var index = i;
@@ -475,7 +486,7 @@ public sealed class WorkLane : View
             _body.Add(column);
         }
         _body.SubViewLayout += (_, _) => Fit();
-        Load = new LoadStateView(_body, $"Reading {team}'s board…");
+        Load = new LoadStateView(_body, $"Reading {team}'s board…") { Y = Pos.Func(_ => Top), Height = Dim.Fill() };
         Add(Load);
     }
 
@@ -545,6 +556,23 @@ public sealed class WorkLane : View
 
     /// <summary>The column the keyboard was last in on this tab, kept while the tab is behind another.</summary>
     internal WorkColumn? LastColumn { get; private set; }
+
+    /// <summary>The line above the columns while the team's default branch is red, or nothing.</summary>
+    internal string Red => _red.Visible ? _red.Text : "";
+
+    /// <summary>The rows above the columns: one for a red default branch.</summary>
+    private int Top => _red.Visible ? 1 : 0;
+
+    /// <summary>Shows the team's default branch is red, or takes the line away once it's green.</summary>
+    internal void ShowRed(RedMain? red)
+    {
+        var line = red?.Line ?? "";
+        if (line == Red)
+            return;
+        _red.Text = line;
+        _red.Visible = line.Length > 0;
+        SetNeedsLayout();
+    }
 
     /// <summary>A team's name, how many of its cards hold up a task where any do, then how many cards wait in each
     /// column that has any, after the column's icon.</summary>
@@ -801,11 +829,13 @@ public sealed class WorkColumn : FrameView
     internal static string Summarise(IReadOnlyList<WaitingItem> items, int width)
     {
         var reviewer = items.Where(item => item.Turn == "reviewer").ToList();
-        var dev = items.Where(item => item.Turn != "reviewer").ToList();
+        var red = items.Where(item => item.Turn != "reviewer" && item.Unready == $"{item.Base} is red").ToList();
+        var dev = items.Where(item => item.Turn != "reviewer" && !red.Contains(item)).ToList();
         var groups = new[]
         {
             reviewer.Count == 0 ? "" : $"{reviewer.Count} with the Reviewer: {string.Join(" · ", reviewer.Select(item => $"#{item.Number}"))}",
             dev.Count == 0 ? "" : $"{dev.Count} with the Dev: {string.Join(" · ", dev.Select(item => $"#{item.Number} {item.Holdup}"))}",
+            red.Count == 0 ? "" : $"{red.Count} waiting while {red[0].Base} is red: {string.Join(" · ", red.Select(item => $"#{item.Number}"))}",
         };
         return Card.Elide(string.Join(" · ", groups.Where(group => group.Length > 0)), width);
     }

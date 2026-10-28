@@ -490,6 +490,7 @@ public sealed class DashboardWindow : Window
         _teamReadAt[team] = _clock.GetUtcNow();
         _news.Read(team, items, asked);
         _work.Show(team, items);
+        _work.ShowRed(RedMain.Parse(read.Output), team);
         GoToWaiting();
     }
 

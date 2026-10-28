@@ -20,6 +20,19 @@ Your marker is `<!-- a-team:lead -->`.
 
 ## Each run, in this order
 
+### First: a red default branch
+
+When your prompt says the default branch is red, deal with that before anything else:
+
+1. Find what broke it: the failing jobs' logs on its head commit (`gh run view <run-id> --log-failed`),
+   and the merges since the last green commit that touch what fails.
+2. If the failure is clearly transient (network, runner), re-run it with `gh run rerun <run-id> --failed`
+   and file nothing.
+3. Otherwise file the fix with `a-team board {{team}} fix lead "<title>" <file>`. It has no pitch: the
+   body names the commits and the PRs that broke it, with their pitches, the failing jobs, and what
+   *green again* means. The Dev takes it before anything else. The board refuses it while the branch
+   is green, or while another fix is open.
+
 ### 1. Answer feedback on pitches
 
 For each item in `a-team board {{team}} mine lead Pitched Approved Building "In review"`, run `feedback`.

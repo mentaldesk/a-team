@@ -73,6 +73,17 @@ task](#holding-up-a-task) first, then by Priority. Under the Review cards, a lin
 review but not ready for you yet, grouped by whose move it is, like
 `1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`.
 
+## When main is red
+
+When the latest CI on the default branch's head commit has failed, a line above the columns says so
+within a dispatcher pass, like `⚠ main is red since b8f5bdd`. A run of the Lead starts for it and files
+one fix task, labelled `a-team:fix`, naming the merges that broke it. The line then adds
+`· fix #624 is with the Dev`, and the Dev takes that task before any other, or
+`· fix #624 is waiting for you` once its PR is in Review, where its card says `fix`. Accept it as
+usual. While the branch is red, a PR failing only the jobs the branch fails isn't the Dev's to fix:
+the line under Review counts it as `2 waiting while main is red: #14 · #15`. Once the fix merges and
+CI passes on the branch, the line goes away, and a PR still failing is the Dev's again, to bring up to date with the fix.
+
 ## A card
 
 A card reads as the issue's number, then its title:
