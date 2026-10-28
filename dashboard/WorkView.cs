@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Text;
 using MentalDesk.Tui.Focus;
+using MentalDesk.Tui.Loading;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Attribute = Terminal.Gui.Drawing.Attribute;
@@ -86,6 +87,9 @@ public sealed class WorkView : View
     /// <summary>Whether no read has landed yet, so there are no cards to look at.</summary>
     internal bool Unread => _items.Count == 0;
 
+    /// <summary>Whether the tab in front couldn't be read, so <c>R</c> would read it again.</summary>
+    internal bool Failed => Current?.Load.State == LoadState.Failed;
+
     /// <summary>Whether the cards that aren't the reviewer's move are hidden.</summary>
     internal bool OnlyMine { get; private set; }
 
@@ -94,7 +98,31 @@ public sealed class WorkView : View
 
     /// <summary>Lays the cards out again, hiding the columns a team has nothing in. A re-read brings each tab's
     /// selected card back with its reason moved on, so it's found again by team and number, in whichever column it's now in.</summary>
-    public void Show(IReadOnlyList<WaitingItem> items) => Keep(items, follow: true);
+    public void Show(IReadOnlyList<WaitingItem> items)
+    {
+        Keep(items, follow: true);
+        foreach (var lane in _lanes)
+            lane.Landed(Hidden(lane));
+    }
+
+    /// <summary>Replaces <paramref name="team"/>'s cards alone, leaving every other tab as it was.</summary>
+    public void Show(string team, IReadOnlyList<WaitingItem> items)
+    {
+        Keep([.. _items.Where(item => item.Team != team), .. items], follow: true);
+        LaneOf(team)?.Landed(Hidden(LaneOf(team)!));
+    }
+
+    /// <summary>A read of <paramref name="team"/> has started: a spinner, once it takes a moment.</summary>
+    public void Reading(string team) => LaneOf(team)?.Reading();
+
+    /// <summary>A read of <paramref name="team"/> failed. Reports whether it kept cards already on screen, which
+    /// leaves the failure for the status bar to say.</summary>
+    public bool Fail(string team, string message, string retry, Action run) =>
+        LaneOf(team)?.Fail(message, (retry, run)) ?? false;
+
+    private WorkLane? LaneOf(string team) => _lanes.FirstOrDefault(lane => lane.Team == team);
+
+    private int Hidden(WorkLane lane) => OnlyMine ? _items.Count(item => item.Team == lane.Team && !item.Mine) : 0;
 
     /// <summary>Shows which teams' default branches are red, above their columns: every team's, or only
     /// <paramref name="team"/>'s after a read of that team alone.</summary>
@@ -291,7 +319,10 @@ public sealed class WorkView : View
     {
         var shown = OnlyMine ? _items.Where(item => item.Mine).ToList() : _items;
         foreach (var lane in _lanes)
+        {
             lane.Show(shown, follow, IsNew, IsWriting);
+            lane.Settle(Hidden(lane));
+        }
         SetNeedsLayout();
         SetNeedsDraw();
     }
@@ -417,14 +448,17 @@ internal sealed class TeamTabs : Tabs
 }
 
 /// <summary>One team's tab: a column per gate that has anything in it, titled with the team and how many cards
-/// each column shows.</summary>
+/// each column shows, or why it shows none.</summary>
 public sealed class WorkLane : View
 {
     /// <summary>The rows a column spends on its frame.</summary>
     private const int FrameRows = 2;
 
+    internal const string NothingWaiting = "Nothing waiting on you";
+
     private readonly List<WorkColumn> _columns = [];
     private readonly Label _red;
+    private readonly View _body = new() { Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = true };
     private WorkColumn? _wide;
     private IconStyle _icons = IconStyle.Unicode;
 
@@ -433,7 +467,7 @@ public sealed class WorkLane : View
         Team = team;
         Title = team;
         CanFocus = true;
-        VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+        _body.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
         _red = new Label { X = 1, Y = 0, Width = Dim.Fill(1), CanFocus = false, Visible = false, SchemeName = LogSchemes.Warning };
         Add(_red);
         for (var i = 0; i < WorkView.Gates.Length; i++)
@@ -442,19 +476,75 @@ public sealed class WorkLane : View
             var (name, kind, tally, holds, aside) = WorkView.Gates[i];
             var column = new WorkColumn(team, name, kind, tally, holds, aside, focusChanged)
             {
-                X = Pos.Func(_ => Left(index), this),
-                Y = Pos.Func(_ => Top, this),
-                Width = Dim.Func(_ => ColumnWidth(index), this),
-                Height = Dim.Func(_ => Tall(), this),
+                X = Pos.Func(_ => Left(index), _body),
+                Y = 0,
+                Width = Dim.Func(_ => ColumnWidth(index), _body),
+                Height = Dim.Func(_ => Tall(), _body),
                 Visible = false,
             };
             _columns.Add(column);
-            Add(column);
+            _body.Add(column);
         }
-        SubViewLayout += (_, _) => Fit();
+        _body.SubViewLayout += (_, _) => Fit();
+        Load = new LoadStateView(_body, $"Reading {team}'s board…") { Y = Pos.Func(_ => Top), Height = Dim.Fill() };
+        Add(Load);
     }
 
     internal string Team { get; }
+
+    // LoadStateView puts its re-read spinner on the border's first row, which on a tab is the header's top.
+    public override void EndInit()
+    {
+        base.EndInit();
+        foreach (var spinner in Border.View?.SubViews.OfType<SpinnerView>() ?? [])
+            spinner.Y = Pos.Func(_ => Math.Max(0, Border.Thickness.Top - 1));
+    }
+
+    /// <summary>Whether the tab is reading, empty, failed or showing its cards.</summary>
+    internal LoadStateView Load { get; }
+
+    /// <summary>Whether any column has something to draw, a card or a summary.</summary>
+    internal bool HasContent => _columns.Any(column => column.Lines > 0);
+
+    /// <summary>What an empty tab says, counting what <i>Only mine</i> hides where it hides anything.</summary>
+    internal static string Empty(int hidden) =>
+        hidden > 0 ? $"{NothingWaiting} · {hidden} hidden by Only mine" : NothingWaiting;
+
+    /// <summary>A tab already showing what it read keeps it on screen while it reads again.</summary>
+    internal void Reading()
+    {
+        if (Load.State != LoadState.Empty)
+            Load.ShowLoading();
+    }
+
+    /// <summary>A read landed: the cards, or what the tab has none of.</summary>
+    internal void Landed(int hidden)
+    {
+        if (HasContent)
+            Load.ShowContent();
+        else
+            Load.ShowEmpty(Empty(hidden));
+    }
+
+    /// <summary>The cards changed with no read, by a filter or a write: a tab that has read follows them.</summary>
+    internal void Settle(int hidden)
+    {
+        if (Load.State == LoadState.Empty || Load.State == LoadState.Loaded && !HasContent)
+            Landed(hidden);
+    }
+
+    /// <summary>Cards already on screen stay there, and the caller says so elsewhere; otherwise the tab says it
+    /// failed, with a retry.</summary>
+    internal bool Fail(string message, (string Text, Action Run) retry)
+    {
+        if (Load.State == LoadState.Loaded)
+        {
+            Load.ShowContent();
+            return true;
+        }
+        Load.ShowFailed(message, retry);
+        return false;
+    }
 
     internal IReadOnlyList<WorkColumn> Columns => _columns;
 
@@ -553,28 +643,31 @@ public sealed class WorkLane : View
             .Cast<int?>()
             .FirstOrDefault();
 
+    /// <summary>How far down the tab's cards are scrolled.</summary>
+    internal int Scrolled => _body.Viewport.Y;
+
     /// <summary>The row the keyboard is on has to be in the part of the tab that's shown.</summary>
     internal void ScrollIntoView(int gate)
     {
         var column = _columns[gate];
         var row = column.Frame.Y + column.Row;
-        if (row < Viewport.Y)
-            Viewport = Viewport with { Y = row };
-        else if (row >= Viewport.Y + Viewport.Height)
-            Viewport = Viewport with { Y = row - Viewport.Height + 1 };
+        if (row < _body.Viewport.Y)
+            _body.Viewport = _body.Viewport with { Y = row };
+        else if (row >= _body.Viewport.Y + _body.Viewport.Height)
+            _body.Viewport = _body.Viewport with { Y = row - _body.Viewport.Height + 1 };
     }
 
     /// <summary>Every column runs the height of the tab, or of the fullest one's cards where they're taller.</summary>
-    private int Tall() => Math.Max(Viewport.Height - Top, Rows + FrameRows);
+    private int Tall() => Math.Max(_body.Viewport.Height, Rows + FrameRows);
 
     private void Fit()
     {
         // A second pass: the scroll bar takes a column off the area the first one measured.
-        for (var pass = 0; pass < 2 && GetContentSize() != Content(); pass++)
-            SetContentSize(Content());
+        for (var pass = 0; pass < 2 && _body.GetContentSize() != Content(); pass++)
+            _body.SetContentSize(Content());
     }
 
-    private Size Content() => Viewport.Size with { Height = Top + Tall() };
+    private Size Content() => _body.Viewport.Size with { Height = Tall() };
 
     private int Left(int index) => Enumerable.Range(0, index).Sum(ColumnWidth);
 
@@ -586,11 +679,11 @@ public sealed class WorkLane : View
             return 0;
         var shown = _columns.Where(each => each.Visible).ToList();
         var wide = shown.Count > 1 && _wide is { Visible: true } ? _wide : null;
-        var half = Viewport.Width / 2;
+        var half = _body.Viewport.Width / 2;
         if (column == wide)
             return half;
         var rest = shown.Where(each => each != wide).ToList();
-        var room = wide is null ? Viewport.Width : Viewport.Width - half;
+        var room = wide is null ? _body.Viewport.Width : _body.Viewport.Width - half;
         var at = rest.IndexOf(column);
         return room * (at + 1) / rest.Count - room * at / rest.Count;
     }

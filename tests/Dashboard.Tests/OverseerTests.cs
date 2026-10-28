@@ -1,6 +1,7 @@
 using MentalDesk.Tui;
 using System.Drawing;
 using MentalDesk.Tui.Links;
+using MentalDesk.Tui.Loading;
 using Terminal.Gui;
 using Terminal.Gui.App;
 using Terminal.Gui.Configuration;
@@ -701,6 +702,57 @@ public class OverseerTests : IDisposable
         var board = new OverseerBoard(teams ?? ["a"]);
         board.Show(cards);
         return board;
+    }
+
+    [Fact]
+    public void One_board_failing_leaves_the_other_lanes_and_says_so_in_its_own()
+    {
+        using var window = Open(readBoard: team => Task.FromResult(team == "team1"
+            ? new Reading("", "gh: Could not resolve to a Repository") : new Reading(Overview(team), null)));
+        window.Commands.Execute("view.overseer");
+        window.Refresh();
+
+        Assert.Equal([11, 12], window.Overseer.Board.Cards.Select(card => card.Number));
+        Assert.Equal(LoadState.Loaded, window.Overseer.LoadOf("team0")!.State);
+        Assert.Equal(LoadState.Failed, window.Overseer.LoadOf("team1")!.State);
+        Assert.Equal("gh: Could not resolve to a Repository", window.Overseer.LoadOf("team1")!.Says);
+        Assert.Equal(0, window.Status.UnreadErrors);
+    }
+
+    [Fact]
+    public void R_in_Overseer_reads_only_the_boards_that_failed()
+    {
+        var reads = new List<string>();
+        var failing = true;
+        using var window = Open(readBoard: team =>
+        {
+            reads.Add(team);
+            return Task.FromResult(team == "team1" && failing ? new Reading("", "offline") : new Reading(Overview(team), null));
+        });
+        window.Commands.Execute("view.overseer");
+        window.Refresh();
+        Assert.True(window.Commands.IsEnabled("overseer.retry"));
+        reads.Clear();
+        failing = false;
+
+        window.NewKeyDownEvent(new Key('r'));
+        window.Refresh();
+
+        Assert.Equal(["team1"], reads);
+        Assert.Equal(LoadState.Loaded, window.Overseer.LoadOf("team1")!.State);
+        Assert.Equal([11, 12, 21, 22], window.Overseer.Board.Cards.Select(card => card.Number).Order());
+        Assert.False(window.Commands.IsEnabled("overseer.retry"));
+    }
+
+    [Fact]
+    public void A_board_with_nothing_on_it_says_so()
+    {
+        using var window = Open(readBoard: team => Task.FromResult(new Reading(team == "team1" ? "[]" : Overview(team), null)));
+        window.Commands.Execute("view.overseer");
+        window.Refresh();
+
+        Assert.Equal(LoadState.Empty, window.Overseer.LoadOf("team1")!.State);
+        Assert.Equal("Nothing on the board", window.Overseer.LoadOf("team1")!.Says);
     }
 
     private static string Overview(string team) => team == "team0"
