@@ -2316,6 +2316,7 @@ public class WorkAreaTests : IDisposable
     [Theory]
     [InlineData("CI failing", 122, "#49 CI failing")]
     [InlineData("conflicts with main", 122, "#49 conflicts with main")]
+    [InlineData("behind main", 122, "#49 behind main")]
     [InlineData("CI running", 122, "#49 CI running")]
     [InlineData("still a draft", 122, "#49 still a draft")]
     [InlineData("", 0, "#49 no PR to merge")]

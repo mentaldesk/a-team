@@ -369,6 +369,9 @@ AUDITED="$STATE/$TEAM/customer/audited"
 AUDIT_EVERY=$((7 * 24 * 60 * 60))
 # Present once the Lead has seeded the decision register from closed pitches, so it does it once.
 SEEDED="$STATE/$TEAM/lead/seeded"
+# The PRs `update` has merged their base into, as "<pr> <head it was updated from> <when>", one a line.
+UPDATED="$STATE/$TEAM/updated"
+UPDATE_SETTLES=600
 
 KIND=$(cfg .project.ownerType)
 KIND=${KIND:-organization}
@@ -758,11 +761,11 @@ pr_for() {
       repository(owner: \$owner, name: \$name) {
         issue(number: \$n) {
           closedByPullRequestsReferences(first: 10, includeClosedPrs: false) {
-            nodes { number url isDraft headRefName mergeable $said }
+            nodes { number url isDraft headRefName mergeable mergeStateStatus $said }
           }
         }
         pullRequests(states: OPEN, first: 100) {
-          nodes { number url isDraft headRefName mergeable body $said }
+          nodes { number url isDraft headRefName mergeable mergeStateStatus body $said }
         }
       }
     }" | jq -c --argjson n "$1" --arg bot "$BOT" --argjson on "$(reviewer_on && echo true || echo false)" \
@@ -832,7 +835,7 @@ gated_talk() {
     checkRuns(first: 100, filterBy: {checkType: LATEST}) { nodes { name status conclusion completedAt url } } } } } } }'
   said="number createdAt body author { __typename login }
         comments(last: 50) { nodes { createdAt body url author { __typename login } $seen } }"
-  reviewed="$said"" url isDraft mergeable baseRefName headRefName $runs
+  reviewed="$said"" url isDraft mergeable mergeStateStatus baseRefName headRefName $runs
               reviews(last: 50) { nodes { createdAt body state author { __typename login } $seen
               comments(first: 50) { nodes { createdAt body author { __typename login } $seen } } } }"
   for n in $(jq -r '.[].number' <<<"$1"); do
@@ -881,8 +884,9 @@ gated_comments() {
 }
 
 # gated_prs <talk>: the open PR that closes each of those items, or that is the item, as {n, pr, prUrl,
-# draft, conflicting, resolving, base, head, checks, failedAt, self}, off a page read with `checks`. UNKNOWN
-# means GitHub hasn't finished computing it, so it's `resolving` rather than a conflict.
+# draft, conflicting, behind, resolving, base, head, checks, failedAt, self}, off a page read with `checks`.
+# UNKNOWN means GitHub hasn't finished computing it, so it's `resolving` rather than a conflict. GitHub reports
+# BEHIND only where the base requires branches to be up to date.
 gated_prs() {
   jq "$CHECKS"'[.data.repository | to_entries[].value | select(. != null) | .number as $n
        | (if has("isDraft") then . else .closedByPullRequestsReferences.nodes[]? end)
@@ -890,7 +894,7 @@ gated_prs() {
            | {name, status: (.status | ascii_downcase), conclusion: (.conclusion // "" | ascii_downcase),
               completed_at: .completedAt, html_url: .url}] | checks) as $ci
        | {n: $n, pr: .number, prUrl: .url, draft: .isDraft, self: (.number == $n),
-          conflicting: (.mergeable == "CONFLICTING"), resolving: (.mergeable == "UNKNOWN"), base: .baseRefName,
+          conflicting: (.mergeable == "CONFLICTING"), behind: (.mergeStateStatus == "BEHIND"), resolving: (.mergeable == "UNKNOWN"), base: .baseRefName,
           head: .headRefName, checks: $ci.verdict, failedAt: ($ci.failing | map(.at // empty) | max // "")}]' <<<"$1"
 }
 
@@ -914,7 +918,7 @@ gated_blocked() {
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
 # stakeholders' until one comments; from then it is the role's, the same test `unanswered_feedback`
-# makes. A PR that is failing, conflicting, not yet known to merge, still running CI or still a draft
+# makes. A PR that is failing, conflicting, behind its base, not yet known to merge, still running CI or still a draft
 # is the Dev's too, or the Reviewer's while a green draft waits for its review, but an unanswered
 # comment outranks them all: the answer is owed before a green build means anything. A Dependabot PR
 # stays the stakeholders': no role answers on it or fixes it.
@@ -938,6 +942,7 @@ turns() {
       | (if $pr == null then null
          elif $pr.checks == "fail" then {trouble: "CI failing", at: $pr.failedAt}
          elif $pr.conflicting then {trouble: "conflicts with \($pr.base)", at: ""}
+         elif $pr.behind and ($pr.draft | not) then {trouble: "behind \($pr.base)", at: ""}
          elif $pr.resolving then {trouble: "resolving mergeable status", at: ""}
          elif $pr.checks == "pending" then {trouble: "CI running", at: ""}
          elif $pr.draft and $reviewerOn and $role == "dev" and $review == null
@@ -2487,6 +2492,32 @@ case "$CMD" in
         and any((.body // "") | scan("(?i)needed by ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#[0-9]+")[0];
                 ascii_downcase != ($repo | ascii_downcase)))
       | [.number, .id] | @tsv' <<<"$prs")
+    ;;
+
+  update)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM update"
+    slug=$(cfg .app.slug)
+    [ -n "$slug" ] || exit 0
+    # GitHub merges in the background, so a PR reads BEHIND for a while after on the head it was updated from.
+    kept='' now=$(date +%s)
+    prs=$(gh pr list -R "$REPO" --author "app/$slug" --state open --json number,isDraft,mergeStateStatus,headRefOid,baseRefName)
+    while IFS=$'\t' read -r p sha base; do
+      at=$(awk -v p="$p" -v sha="$sha" '$1 == p && $2 == sha { print $3 }' "$UPDATED" 2>/dev/null || true)
+      if [ -n "$at" ] && [ $((now - at)) -lt $UPDATE_SETTLES ]; then
+        kept+="$p $sha $at"$'\n'
+        continue
+      fi
+      if write "merge $base into PR #$p" gh api -X PUT "repos/$REPO/pulls/$p/update-branch" -f "expected_head_sha=$sha" >/dev/null; then
+        kept+="$p $sha $now"$'\n'
+        say "PR #$p: merged $base into it"
+      else
+        say "PR #$p: couldn't merge $base into it"
+      fi
+    done < <(jq -r '.[] | select((.isDraft | not) and .mergeStateStatus == "BEHIND") | [.number, .headRefOid, .baseRefName] | @tsv' <<<"$prs")
+    if [ -z "$DRY_RUN" ]; then
+      mkdir -p "$(dirname "$UPDATED")"
+      printf '%s' "$kept" >"$UPDATED"
+    fi
     ;;
 
   overview)

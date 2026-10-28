@@ -268,6 +268,8 @@ case " \$* " in
   *dependencies/blocked_by*) page="$BLOCKED" ;;
   *"/issues/"*"/comments"*) page="$THREAD" ;;
   *"/pulls/"*"/comments"*) page="$LINE" ;;
+  *"-X PUT"*"/update-branch"*) [ ! -e "$BIN/update-fails" ] || { echo "gh: merge conflict between base and head (HTTP 422)" >&2; exit 1; }
+                              echo "PUT \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X PUT"*"/merge"*) [ ! -e "$BIN/merge-fails" ] || { echo "gh: Pull Request is not mergeable (HTTP 405)" >&2; exit 1; }
                       echo "PUT \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
@@ -681,6 +683,32 @@ same "conflicting" true "$(jq -c '.[1].conflicting' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"conflicts with main"' "$(jq -c '.[1].reason' "$OUT")"
 
+case_ "a green PR behind its base is the Dev's turn, not yours to accept"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+TALK
+jq '(.. | objects | select(has("isDraft"))) += {mergeStateStatus: "BEHIND"}' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "unready" '"behind main"' "$(jq -c '.[1].unready' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task reason" '"behind main"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a PR behind its base that also conflicts or fails CI says that first"
+jq '(.. | objects | select(has("isDraft"))) += {mergeable: "CONFLICTING"}' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
+run board demo waiting
+same "conflicting" '"conflicts with main"' "$(jq -c '.[1].unready' "$OUT")"
+gh_runs <<RUNS
+completed failure ${TODAY}T09:00:00Z build
+RUNS
+run board demo waiting
+same "failing" '"CI failing"' "$(jq -c '.[1].unready' "$OUT")"
+gh_runs <<RUNS
+completed success ${TODAY}T09:00:00Z build
+RUNS
+
 case_ "a PR GitHub hasn't worked the conflict out for yet isn't ready to accept"
 gh_talk false UNKNOWN <<TALK
 106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
@@ -713,6 +741,10 @@ same "exit" 0 "$STATUS"
 same "task turn" '"reviewer"' "$(jq -c '.[1].turn' "$OUT")"
 same "task trouble" '"awaiting review"' "$(jq -c '.[1].trouble' "$OUT")"
 same "task reason" '"awaiting review"' "$(jq -c '.[1].reason' "$OUT")"
+jq '(.. | objects | select(has("isDraft"))) += {mergeStateStatus: "BEHIND"}' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
+run board demo waiting
+same "behind turn" '"reviewer"' "$(jq -c '.[1].turn' "$OUT")"
+same "behind trouble" '"awaiting review"' "$(jq -c '.[1].trouble' "$OUT")"
 gh_runs <<RUNS
 in_progress - - build
 RUNS
@@ -3678,6 +3710,69 @@ for edit in '.[0].isDraft = true' '.[0].projectItems = [{title: "demo"}]' \
   same "writes ($edit)" "" "$(cat "$WRITES")"
 done
 
+# The App's open PRs `update` reads, from lines of "<number> <draft> <mergeStateStatus> <head>".
+app_prs() {
+  jq -R -s 'split("\n") | map(select(length > 0) | split(" ")
+    | {number: (.[0] | tonumber), isDraft: (.[1] == "true"), mergeStateStatus: .[2], headRefOid: .[3], baseRefName: "main"})' >"$UPSTREAM"
+}
+
+case_ "update merges main into each of the App's ready PRs that's behind it, and nothing else"
+rm -f "$A_TEAM_STATE/demo/updated"
+app_prs <<'PRS'
+912 false BEHIND aaa1111
+913 true BEHIND bbb2222
+914 false CLEAN ccc3333
+915 false BLOCKED ddd4444
+916 false DIRTY eee5555
+PRS
+: >"$WRITES"
+run board demo update
+same "exit" 0 "$STATUS"
+same "said" "PR #912: merged main into it" "$(cat "$OUT")"
+same "writes" "PUT api -X PUT repos/mentaldesk/demo/pulls/912/update-branch -f expected_head_sha=aaa1111" "$(cat "$WRITES")"
+same "only the App's PRs" "pr list -R mentaldesk/demo --author app/demo-app --state open --json number,isDraft,mergeStateStatus,headRefOid,baseRefName" \
+  "$(tail -n 1 "$UPSTREAM_CALLS")"
+
+case_ "update doesn't merge main in again while GitHub still reads the PR it updated as behind"
+: >"$WRITES"
+run board demo update
+same "exit" 0 "$STATUS"
+same "said" "" "$(cat "$OUT")"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "update merges main in again once the PR has a new head and has fallen behind again"
+app_prs <<'PRS'
+912 false BEHIND fff6666
+PRS
+run board demo update
+same "said" "PR #912: merged main into it" "$(cat "$OUT")"
+grep -q 'pulls/912/update-branch -f expected_head_sha=fff6666' "$WRITES" || fail "again: '$(cat "$WRITES")'"
+
+case_ "update says which PR it couldn't bring up to date, and tries it again on the next pass"
+rm -f "$A_TEAM_STATE/demo/updated"
+app_prs <<'PRS'
+912 false BEHIND aaa1111
+PRS
+touch "$BIN/update-fails"
+run board demo update
+same "exit" 0 "$STATUS"
+same "said" "PR #912: couldn't merge main into it" "$(cat "$OUT")"
+grep -q "merge conflict between base and head" "$ERR" || fail "why: '$(cat "$ERR")'"
+rm "$BIN/update-fails"
+: >"$WRITES"
+run board demo update
+same "said" "PR #912: merged main into it" "$(cat "$OUT")"
+
+case_ "--dry-run update says what it would merge and merges nothing"
+rm -f "$A_TEAM_STATE/demo/updated"
+: >"$WRITES"
+run board --dry-run demo update
+same "exit" 0 "$STATUS"
+same "said" "(dry run) PR #912: merged main into it" "$(cat "$OUT")"
+grep -q "dry-run: would merge main into PR #912" "$ERR" || fail "dry run: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+[ ! -e "$A_TEAM_STATE/demo/updated" ] || fail "dry run remembered an update"
+
 case_ "waiting shows another repo's Dev PR In review as yours, with itself as the PR to merge"
 gh_items <<'ITEMS'
 In_review 86 Let an app without AppMenu pick menu letters
@@ -4882,7 +4977,7 @@ if [ "$1" = token ] && [ -n "${NOT_INSTALLED:-}" ]; then
   echo "a-team token: app 7 isn't installed on mentaldesk/$2: install it at https://github.com/apps/demo-app/installations/new" >&2
   exit 1
 fi
-[ "$1" = board ] && [ "${!#}" = free ] && exit 0
+[ "$1" = board ] && { [ "${!#}" = free ] || [ "${!#}" = update ]; } && exit 0
 [ "$1" = board ] && [ "${!#}" = adopt ] && { echo "$*" >>"${ADOPTED:-/dev/null}"; exit 0; }
 echo '{"reasons": ["work to do"], "creative": false}'
 SH
@@ -5075,10 +5170,14 @@ dev_dispatcher() {
   FREES="$DISPATCH/frees" FREED="$DISPATCH/freed"
   : >"$FREES"
   : >"$FREED"
+  UPDATES_RUN="$DISPATCH/updates-run" UPDATED_SAID="$DISPATCH/updated-said"
+  : >"$UPDATES_RUN"
+  : >"$UPDATED_SAID"
   cat >"$DISPATCH/bin/a-team" <<SH
 #!/usr/bin/env bash
 case " \$* " in
   *" free "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$FREES"; cat "$FREED" ;;
+  *" update"*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$UPDATES_RUN"; cat "$UPDATED_SAID" ;;
   *" claim dev "*) echo "\$*" >>"$CLAIMS"; cat "$CLAIMED" ;;
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;
   *" triggers lead"*) cat "$LEAD_TRIGGERS" ;;
@@ -5117,6 +5216,16 @@ dispatch_dev --dry-run
 grep -q 'demo: (dry run) #13: no longer waiting on mentaldesk/style#84$' "$A_TEAM_STATE/dispatch.log" ||
   fail "freed: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 : >"$FREED"
+
+case_ "every pass brings the team's PRs behind their base up to date, as the team's App, and logs what it merged"
+same "updates" "board --dry-run demo update as demo $DISPATCH/bin" "$(tail -n 1 "$UPDATES_RUN")"
+: >"$UPDATES_RUN"
+: >"$A_TEAM_STATE/dispatch.log"
+printf '(dry run) PR #912: merged main into it\n' >"$UPDATED_SAID"
+dispatch_dev --dry-run
+grep -q 'demo: (dry run) PR #912: merged main into it$' "$A_TEAM_STATE/dispatch.log" ||
+  fail "updated: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+: >"$UPDATED_SAID"
 
 case_ "the same reasons again wait, and the next task with something new gets the run"
 jq '.tasks += [{number: 14, title: "Answer the review", reasons: ["stakeholder feedback on #914 (2025-09-19T09:00:00Z)"]}]' \

@@ -708,6 +708,7 @@ public class WorkViewTests
 
     [Theory]
     [InlineData("conflicts with main", 122, false)]
+    [InlineData("behind main", 122, false)]
     [InlineData("CI failing", 122, false)]
     [InlineData("CI running", 122, false)]
     [InlineData("still a draft", 122, false)]
