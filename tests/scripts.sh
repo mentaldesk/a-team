@@ -299,6 +299,7 @@ while [ \$# -gt 0 ]; do
 done
 # A board page holds every item unless short-reads says how many reads come back short, and with how many items.
 if [ "\$page" = "$ITEMS" ]; then
+  [ ! -e "$BIN/read-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
   jq '.data.organization.projectV2.items |= (.totalCount //= (.nodes | length))' "\$page" >"\$page.counted"
   if read -r times keep 2>/dev/null <"$BIN/short-reads" && [ "\$times" -gt 0 ]; then
     echo "\$((times - 1)) \$keep" >"$BIN/short-reads"
@@ -3307,6 +3308,13 @@ short_reads 2 0
 run board demo waiting
 failed "empty"
 grep -qF 'incomplete (0 of 3 items), twice' "$ERR" || fail "empty: '$(cat "$ERR")'"
+
+case_ "a board read gh fails on ends the command, rather than reading as an empty board"
+touch "$BIN/read-fails"
+run board demo list
+rm "$BIN/read-fails"
+failed "read fails"
+same "stdout" "" "$(cat "$OUT")"
 
 case_ "next and claim on a short board read claim nothing"
 claimable

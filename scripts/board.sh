@@ -338,7 +338,7 @@ gql() {
 board_pages() {
   local pages short
   for _ in 1 2; do
-    pages=$(gql "$@" --paginate)
+    pages=$(gql "$@" --paginate) || exit 1
     short=$(jq -rs --arg kind "$KIND" '[.[].data[$kind].projectV2.items] | [(map(.nodes | length) | add // 0),
       (map(.totalCount // 0) | max // 0)] | select(.[0] < .[1]) | "\(.[0]) of \(.[1])"' <<<"$pages")
     [ -n "$short" ] || { printf '%s\n' "$pages"; return; }
