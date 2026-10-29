@@ -1369,15 +1369,18 @@ startable() { jq "map(select($STARTABLE))" <<<"$1" | by_priority | first_held "$
 # close_pitch <n> [built [<pr>...]]: closes pitch #n once all its tasks are closed. `built` also needs it to have
 # some, or, with none, the merged PRs that built it, which it lists in BUILT_BY.
 close_pitch() {
-  local subs open refused pr
+  local subs open refused pr merged
   BUILT_BY=
   subs=$(gh api --paginate "repos/$REPO/issues/$1/sub_issues" | jq -s 'add // []')
   if [ "${2:-}" = built ] && [ "$(jq length <<<"$subs")" -eq 0 ]; then
     [ $# -gt 2 ] || die "#$1 has no tasks: name the merged PRs that built it"
     for pr in "${@:3}"; do
       pr=${pr#\#}
-      [[ $pr =~ ^[0-9]+$ ]] && [ "$(gh api "repos/$REPO/pulls/$pr" --jq .merged 2>/dev/null)" = true ] ||
-        die "#$pr isn't merged, so it can't have built #$1"
+      merged=
+      if [[ $pr =~ ^[0-9]+$ ]] && ! merged=$(gh api "repos/$REPO/pulls/$pr" --jq .merged 2>&1); then
+        [[ $merged == *"HTTP 404"* ]] || die "can't tell whether #$pr is merged ($(head -1 <<<"$merged"))"
+      fi
+      [ "$merged" = true ] || die "#$pr isn't merged, so it can't have built #$1"
       BUILT_BY="${BUILT_BY:+$BUILT_BY, }#$pr"
     done
   fi

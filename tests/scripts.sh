@@ -279,7 +279,8 @@ case " \$* " in
   *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   *"/contents/"*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
-  *"/pulls/"[0-9]*) [ ! -e "$BIN/not-a-pull" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; page="$PULL" ;;
+  *"/pulls/"[0-9]*) [ ! -e "$BIN/not-a-pull" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    [ ! -e "$BIN/pull-fails" ] || { echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; }; page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
   *) page="$ITEMS" ;;
 esac
@@ -2113,6 +2114,12 @@ run board demo finish lead 7 "$WORK/built" 513
 failed "finish naming an issue"
 grep -q "#513 isn't merged, so it can't have built #7" "$ERR" || fail "finish naming an issue: '$(cat "$ERR")'"
 rm "$BIN/not-a-pull"
+touch "$BIN/pull-fails"
+run board demo finish lead 7 "$WORK/built" 532
+failed "finish when GitHub fails"
+grep -q "can't tell whether #532 is merged (gh: API rate limit exceeded (HTTP 403))" "$ERR" ||
+  fail "finish when GitHub fails: '$(cat "$ERR")'"
+rm "$BIN/pull-fails"
 run board demo finish lead 7 "$WORK/built" mentaldesk/style#5
 failed "finish naming a PR elsewhere"
 grep -q "mentaldesk/style#5 isn't merged" "$ERR" || fail "finish naming a PR elsewhere: '$(cat "$ERR")'"
