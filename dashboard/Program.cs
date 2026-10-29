@@ -156,6 +156,7 @@ Handover? Show(Handover? back)
         window.Refresh();
         return true;
     });
+    app.Keyboard.KeyDown += (_, key) => key.Handled = key.Handled || window.Chording(key);
     app.Run(window);
     return handedOver;
 }

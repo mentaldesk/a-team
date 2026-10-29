@@ -76,7 +76,7 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open();
 
-        Assert.Equal(new Key('q'), Application.GetDefaultKey(Command.Quit));
+        Assert.Equal(Key.Q.WithCtrl, Application.GetDefaultKey(Command.Quit));
     }
 
     [Fact]
@@ -88,12 +88,12 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Pressing_t_expands_the_selected_pane_and_nothing_else()
+    public void Ctrl_T_T_expands_the_selected_pane_and_nothing_else()
     {
         using var window = Open();
         window.NewKeyDownEvent(Key.Tab);
 
-        Assert.True(window.NewKeyDownEvent(new Key('t')));
+        Assert.True(window.Press("Ctrl+T T"));
 
         Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));
     }
@@ -111,13 +111,13 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Tab_moves_the_selection_on_and_t_follows_it()
+    public void Tab_moves_the_selection_on_and_Ctrl_T_T_follows_it()
     {
         using var window = Open();
         window.NewKeyDownEvent(Key.Tab);
         window.NewKeyDownEvent(Key.Tab);
 
-        window.NewKeyDownEvent(new Key('t'));
+        window.Press("Ctrl+T T");
 
         Assert.Equal([false, true], window.Panes.Select(pane => pane.Expanded));
     }
@@ -146,12 +146,12 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void A_pane_that_started_expanded_still_folds_up_on_t()
+    public void A_pane_that_started_expanded_still_folds_up_on_Ctrl_T_T()
     {
         using var window = Open(expandToolCalls: true);
         window.NewKeyDownEvent(Key.Tab);
 
-        window.NewKeyDownEvent(new Key('t'));
+        window.Press("Ctrl+T T");
 
         Assert.Equal([false, true], window.Panes.Select(pane => pane.Expanded));
     }
@@ -554,13 +554,13 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Esc_with_nothing_expanded_does_nothing_and_q_is_the_way_out()
+    public void Esc_with_nothing_expanded_does_nothing_and_Ctrl_Q_is_the_way_out()
     {
         using var window = Open(agents: Agents(4));
         window.NewKeyDownEvent(Key.Tab);
 
         Assert.False(window.NewKeyDownEvent(Key.Esc));
-        Assert.True(window.NewKeyDownEvent(new Key('q')));
+        Assert.True(window.NewKeyDownEvent(Key.Q.WithCtrl));
     }
 
     [Fact]
@@ -657,7 +657,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void L_copies_the_whole_log()
+    public void a_copies_the_whole_log()
     {
         var clipboard = new FakeClipboard();
         WriteLog("a-team", "dev",
@@ -667,13 +667,13 @@ public class DashboardWindowTests : IDisposable
         SelectAgent(window, 1);
         window.NewKeyDownEvent(Key.Enter);
 
-        Assert.True(window.NewKeyDownEvent(new Key('L')));
+        Assert.True(window.NewKeyDownEvent(new Key('a')));
 
         Assert.Equal("a\nb", clipboard.GetClipboardData());
     }
 
     [Fact]
-    public void l_and_L_copy_through_the_installed_terminal_clipboard()
+    public void l_and_a_copy_through_the_installed_terminal_clipboard()
     {
         using var terminal = new InstalledTerminal();
         WriteLog("a-team", "dev",
@@ -687,7 +687,7 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal("b", terminal.Platform.Text);
         Assert.Equal("Copied 1 line  •  1 character", window.Says());
 
-        window.NewKeyDownEvent(new Key('L'));
+        window.NewKeyDownEvent(new Key('a'));
         Assert.Equal("a\nb", terminal.Platform.Text);
         Assert.Equal("Copied 2 lines  •  2 characters", window.Says());
     }
@@ -800,7 +800,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Scrolling_and_t_still_reach_the_expanded_agent()
+    public void Scrolling_and_Ctrl_T_T_still_reach_the_expanded_agent()
     {
         using var window = Open(agents: Agents(4));
         window.NewKeyDownEvent(Key.Tab);
@@ -810,7 +810,7 @@ public class DashboardWindowTests : IDisposable
         Assert.True(window.NewKeyDownEvent(Key.PageDown));
         Assert.True(window.NewKeyDownEvent(Key.Home));
         Assert.True(window.NewKeyDownEvent(Key.End));
-        Assert.True(window.NewKeyDownEvent(new Key('t')));
+        Assert.True(window.Press("Ctrl+T T"));
 
         Assert.Equal([true, false, false, false], window.Panes.Select(pane => pane.Expanded));
     }
@@ -860,11 +860,93 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void Partway_through_a_chord_the_status_bar_shows_it_and_finishing_it_runs_the_command()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.True(window.NewKeyDownEvent(Key.G.WithCtrl));
+        Assert.Equal("Ctrl+G…", window.Status.Says);
+        Assert.Equal(Area.Dashboard, window.CurrentArea);
+
+        window.NewKeyDownEvent(new Key('w'));
+
+        Assert.Equal(Area.Work, window.CurrentArea);
+        Assert.NotEqual("Ctrl+G…", window.Status.Says);
+    }
+
+    [Fact]
+    public void A_key_that_finishes_no_chord_cancels_it_says_so_and_does_nothing_else()
+    {
+        using var window = Open(agents: Agents(4));
+        window.NewKeyDownEvent(Key.Tab);
+
+        window.NewKeyDownEvent(Key.G.WithCtrl);
+        Assert.True(window.NewKeyDownEvent(Key.Tab));
+
+        Assert.Equal("Ctrl+G Tab isn't a key", window.Says());
+        Assert.Equal(Area.Dashboard, window.CurrentArea);
+        Assert.Equal(0, Selected(window));
+    }
+
+    [Fact]
+    public void Esc_partway_through_a_chord_cancels_it()
+    {
+        using var window = Open(agents: Agents(4));
+
+        window.NewKeyDownEvent(Key.T.WithCtrl);
+        window.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal("Ctrl+T cancelled", window.Says());
+    }
+
+    [Theory]
+    [InlineData('d')]
+    [InlineData('w')]
+    [InlineData('o')]
+    [InlineData('s')]
+    [InlineData('n')]
+    [InlineData('q')]
+    [InlineData('u')]
+    [InlineData('m')]
+    public void The_bare_letters_the_defaults_dropped_do_nothing_now(char letter)
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.False(window.NewKeyDownEvent(new Key(letter)));
+        Assert.Equal(Area.Dashboard, window.CurrentArea);
+    }
+
+    [Fact]
+    public void The_default_keys_follow_TuiCode_s_families()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.Equal(
+            [
+                ("view.dashboard", "Ctrl+G D"), ("view.work", "Ctrl+G W"), ("view.overseer", "Ctrl+G O"), ("assistant", "Ctrl+G A"),
+                ("work.team", "Ctrl+G T"), ("work.whatsNew", "Ctrl+G N"), ("log.toolCalls", "Ctrl+T T"), ("work.mine", "Ctrl+T M"),
+                ("commands", "Ctrl+E"), ("settings", "Ctrl+,"), ("work.new", "Ctrl+N"), ("quit", "Ctrl+Q"), ("assistant.clear", "Ctrl+L"),
+            ],
+            new[] { "view.dashboard", "view.work", "view.overseer", "assistant", "work.team", "work.whatsNew", "log.toolCalls", "work.mine", "commands",
+                "settings", "work.new", "quit", "assistant.clear" }.Select(id => (id, window.Commands.KeysFor(id))));
+    }
+
+    [Fact]
+    public void The_card_and_log_keys_stay_single_letters()
+    {
+        using var window = Open(agents: Agents(4));
+
+        Assert.Equal(["A", "T", "P", "X", "L", "H", "G", "Y", "C", "E", "I"],
+            new[] { "work.accept", "work.try", "work.priority", "work.decline", "work.notNow", "work.hold", "work.github", "work.copyBranch", "work.comment",
+                "log.editor", "agent.interrupt" }.Select(id => window.Commands.KeysFor(id)));
+    }
+
+    [Fact]
     public void Help_opens_with_F1()
     {
         using var window = Open(agents: Agents(4));
 
-        Assert.Equal(Key.F1, window.Commands.Registered.Single(c => c.Id == "help").Key);
+        Assert.Equal("F1", window.Commands.Registered.Single(c => c.Id == "help").Keys);
     }
 
     [Theory]
@@ -882,13 +964,13 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Settings_opens_with_s_and_Ctrl_comma_is_gone()
+    public void Settings_opens_with_Ctrl_comma_and_s_is_gone()
     {
         using var window = Open(agents: Agents(4));
 
-        Assert.Equal(new Key('s'), window.Commands.Registered.Single(c => c.Id == "settings").Key);
-        Assert.DoesNotContain(window.Commands.Registered, c => c.Key == new Key(',').WithCtrl);
-        Assert.False(window.NewKeyDownEvent(new Key(',').WithCtrl));
+        Assert.Equal("Ctrl+,", window.Commands.Registered.Single(c => c.Id == "settings").Keys);
+        Assert.DoesNotContain(window.Commands.Registered, c => c.Keys == "S");
+        Assert.False(window.NewKeyDownEvent(new Key('s')));
     }
 
     [Fact]
@@ -898,7 +980,8 @@ public class DashboardWindowTests : IDisposable
         window.NewKeyDownEvent(Key.Tab);
 
         Assert.True(window.NewKeyDownEvent(new Key('z')));
-        Assert.False(window.NewKeyDownEvent(new Key('t')));
+        window.NewKeyDownEvent(Key.T.WithCtrl);
+        window.NewKeyDownEvent(new Key('t'));
 
         Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));
     }
@@ -908,31 +991,29 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open(keys: "{ \"log.toolCalls\": \"x\" }");
 
-        Assert.Equal(Key.F1, window.Commands.Registered.Single(command => command.Id == "help").Key);
+        Assert.Equal("F1", window.Commands.Registered.Single(command => command.Id == "help").Keys);
     }
 
     [Theory]
     [InlineData("{}")]
     [InlineData("{ \"nobody.registered.this\": \"F4\" }")]
     [InlineData("{ \"settings\": \"nonsense\" }")]
-    [InlineData("{ \"settings\": \"t\" }")]
     public void An_override_we_cannot_use_is_ignored_on_its_own_and_leaves_every_default_alone(string keys)
     {
         using var window = Open(keys: keys);
 
-        Assert.Equal(new Key('s'), window.Commands.Registered.Single(command => command.Id == "settings").Key);
-        Assert.Equal(new Key('t'), window.Commands.Registered.Single(command => command.Id == "log.toolCalls").Key);
+        Assert.Equal("Ctrl+,", window.Commands.Registered.Single(command => command.Id == "settings").Keys);
+        Assert.Equal("Ctrl+T T", window.Commands.KeysFor("log.toolCalls"));
     }
 
     [Theory]
     [InlineData("{ \"nobody.registered.this\": \"F4\", \"help\": \"F2\" }")]
     [InlineData("{ \"settings\": \"nonsense\", \"help\": \"F2\" }")]
-    [InlineData("{ \"settings\": \"t\", \"help\": \"F2\" }")]
     public void The_rest_of_the_file_still_applies_around_an_override_we_cannot_use(string keys)
     {
         using var window = Open(keys: keys);
 
-        Assert.Equal(Key.F2, window.Commands.Registered.Single(command => command.Id == "help").Key);
+        Assert.Equal("F2", window.Commands.Registered.Single(command => command.Id == "help").Keys);
     }
 
     [Fact]
@@ -942,7 +1023,7 @@ public class DashboardWindowTests : IDisposable
 
         using var dialog = new CommandsDialog(window.Commands.Registered);
 
-        Assert.Contains(dialog.Matches.Select(command => command.Key), key => key == Key.K.WithCtrl);
+        Assert.Contains(dialog.Matches.Select(command => command.Keys), keys => keys == "Ctrl+K");
     }
 
     [Fact]

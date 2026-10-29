@@ -1,6 +1,6 @@
 # Teams
 
-Your teams are in **Settings → Teams**: `s` opens Settings, and **Teams** in Commands (`Ctrl+E`)
+Your teams are in **Settings → Teams**: `Ctrl+,` opens Settings, and **Teams** in Commands (`Ctrl+E`)
 opens it on that page. `Ctrl+G` in Settings opens this page.
 
 ## The Teams page
@@ -161,9 +161,13 @@ into the page and back out. `Ctrl+Enter` keeps what you picked, on any page, and
 away. `F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
 
 - **Theme**: Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode.
-- **Keyboard Shortcuts**: a row per command and the key that runs it. `Enter` on a row takes the
-  next key you press, and a key another command already holds is refused, naming the one that holds
-  it. `Delete` takes the key off. Type to narrow the list.
+- **Keyboard Shortcuts**: a row per key, with the command it runs and where it works: *Everywhere*,
+  or a region like Work or Log. A command can have more than one. `Enter` on a row shows
+  `Press keys…` and records a chord a key at a time, like `Ctrl+G` then `S`; `Enter` again adds it
+  to that command and `Esc` leaves the row as it was. A chord another command has in the same place
+  asks which command keeps it, and one that starts another, or carries on from one, is refused on
+  the row, naming the other command. `Del` removes the selected key, and `Ctrl+R` puts every key back
+  to its default. Type to narrow the list.
 - **Dashboard**: whether panes start with every tool call showing, and which icons the panes and
   cards wear. *Automatic* names what it decided for the terminal you're in, and decides again every
   time the app starts. *Nerd Font* and *Unicode* are drawn in their own glyphs, so pick the one that
@@ -179,14 +183,19 @@ time.
 ### Keys by hand
 
 Keys can be set in that file too, which is the way out of a key your terminal or multiplexer
-swallows. A `keys` object maps a command's id, the ones Commands lists, to a key name, spelled as
-Terminal.Gui spells it (`PageUp`, not the `PgUp` Settings shortens it to):
+swallows. A `keymap` object maps a command's id to its keys, each spelled as Terminal.Gui spells it
+(`PageUp`, not the `PgUp` Settings shortens it to), with a space between the keys of a chord. `""`
+leaves the command with none, and a list gives it several; a key for one region is
+`{ "key": "x", "where": "Log" }`:
 
 ```json
-{ "theme": "Midnight", "keys": { "settings": "Ctrl+,", "log.toolCalls": "d" } }
+{ "theme": "Midnight", "keymap": { "settings": "Ctrl+G S", "view.work": ["Ctrl+G W", "F2"] } }
 ```
 
-A command named there is reached by that key instead of the one it ships with, and only by that key.
-An id nothing is registered under, a name that isn't a key, and a key another command already holds
-are each ignored on their own: that command keeps the key it had, and the rest of the file still
-applies.
+A command named there runs on those keys instead of the ones it ships with. An id nothing is
+registered under, or an entry with a name that isn't a key, is ignored on its own: that command keeps
+its keys, and the rest of the file still applies.
+
+Keys saved by a version before chords, in a `keys` object of one key per command, carry over until
+you next keep Settings: each still runs its command, even a bare letter the new defaults dropped,
+and takes its key from any command it now clashes with.

@@ -36,14 +36,15 @@ public class CommandRegistryTests
     }
 
     [Fact]
-    public void What_is_registered_reads_back_with_its_key_and_blank_where_it_has_none()
+    public void What_is_registered_reads_back_with_its_keys_and_blank_where_it_has_none()
     {
         var commands = new CommandRegistry()
             .Register("greet", "Say hello", () => { }, Key.F1)
+            .Register("go", "Go", () => { }, chord: "Ctrl+G W")
             .Register("quit", "Quit", () => { });
 
-        Assert.Equal([("greet", "Say hello", Key.F1), ("quit", "Quit", Key.Empty)],
-            commands.Registered.Select(command => (command.Id, command.Label, command.Key)));
+        Assert.Equal([("greet", "Say hello", "F1"), ("go", "Go", "Ctrl+G W"), ("quit", "Quit", "")],
+            commands.Registered.Select(command => (command.Id, command.Label, command.Keys)));
     }
 
     [Fact]
@@ -117,102 +118,149 @@ public class CommandRegistryTests
     }
 
     [Fact]
-    public void A_rebound_command_runs_on_its_new_key_and_not_on_its_old_one()
+    public void A_chord_runs_its_command_once_it_is_finished_and_not_before()
     {
         var ran = 0;
-        var commands = new CommandRegistry().Register("greet", "Say hello", () => ran++, Key.F1);
+        var commands = new CommandRegistry().Register("work", "Work", () => ran++, chord: "Ctrl+G W");
 
-        commands.Apply([("greet", Key.F2)]);
-
-        Assert.True(commands.Press(Key.F2));
-        Assert.False(commands.Press(Key.F1));
+        Assert.True(commands.Press(Key.G.WithCtrl));
+        Assert.Equal("Ctrl+G", commands.PendingChord);
+        Assert.Equal(0, ran);
+        Assert.True(commands.Press(new Key('w')));
+        Assert.Null(commands.PendingChord);
         Assert.Equal(1, ran);
     }
 
     [Fact]
-    public void A_command_nobody_rebound_keeps_the_key_it_was_registered_with()
+    public void A_key_that_finishes_no_chord_cancels_it_says_so_and_runs_nothing()
     {
+        var ran = 0;
         var commands = new CommandRegistry()
-            .Register("greet", "Say hello", () => { }, Key.F1)
-            .Register("quit", "Quit", () => { }, Key.F3);
+            .Register("work", "Work", () => ran++, chord: "Ctrl+G W")
+            .Register("x", "Something else", () => ran++, new Key('x'));
 
-        commands.Apply([("greet", Key.F2)]);
+        commands.Press(Key.G.WithCtrl);
 
-        Assert.Equal(Key.F3, commands.Registered.Single(command => command.Id == "quit").Key);
+        Assert.True(commands.Press(new Key('x'), out var cancelled));
+        Assert.True(cancelled);
+        Assert.Null(commands.PendingChord);
+        Assert.Equal(0, ran);
     }
 
     [Fact]
-    public void Rebinding_an_id_nobody_registered_changes_nothing()
+    public void A_finished_chord_is_not_a_cancelled_one()
+    {
+        var commands = new CommandRegistry().Register("work", "Work", () => { }, chord: "Ctrl+G W");
+
+        commands.Press(Key.G.WithCtrl);
+        commands.Press(new Key('w'), out var cancelled);
+
+        Assert.False(cancelled);
+    }
+
+    [Fact]
+    public void A_region_key_runs_only_while_that_region_has_focus_and_wins_over_the_same_key_everywhere()
+    {
+        var ran = new List<string>();
+        var here = Regions.Work;
+        var commands = new CommandRegistry()
+            .Register("everywhere", "Everywhere", () => ran.Add("everywhere"), new Key('a'))
+            .Register("work", "In Work", () => ran.Add("work"), new Key('a'), scopes: [Regions.Work]);
+        commands.Keys.FocusedScope = () => here;
+
+        commands.Press(new Key('a'));
+        here = Regions.Overseer;
+        commands.Press(new Key('a'));
+
+        Assert.Equal(["work", "everywhere"], ran);
+    }
+
+    [Fact]
+    public void A_command_in_several_regions_has_its_key_in_each_of_them()
+    {
+        var ran = 0;
+        var here = Regions.Agents;
+        var commands = new CommandRegistry().Register("hold", "Hold", () => ran++, new Key('h'), scopes: [Regions.Agents, Regions.Log]);
+        commands.Keys.FocusedScope = () => here;
+
+        commands.Press(new Key('h'));
+        here = Regions.Log;
+        commands.Press(new Key('h'));
+        here = Regions.Work;
+        commands.Press(new Key('h'));
+
+        Assert.Equal(2, ran);
+        Assert.Equal("H", commands.KeysFor("hold"));
+    }
+
+    [Fact]
+    public void Two_defaults_on_one_key_in_one_place_are_refused()
     {
         var commands = new CommandRegistry().Register("greet", "Say hello", () => { }, Key.F1);
 
-        commands.Apply([("farewell", Key.F2), ("greet", Key.F3)]);
-
-        Assert.Equal([("greet", Key.F3)], commands.Registered.Select(command => (command.Id, command.Key)));
+        Assert.Throws<InvalidOperationException>(() => commands.Register("wave", "Wave", () => { }, Key.F1));
     }
 
     [Fact]
-    public void Rebinding_to_no_key_leaves_the_command_unbound_even_beside_other_unbound_ones()
+    public void A_chord_is_not_a_single_key_to_answer_in_a_dialog()
     {
-        var commands = new CommandRegistry()
-            .Register("greet", "Say hello", () => { }, Key.F1)
-            .Register("quit", "Quit", () => { });
+        var commands = new CommandRegistry().Register("work", "Work", () => { }, chord: "Ctrl+G W");
 
-        commands.Apply([("greet", Key.Empty)]);
-
-        Assert.Equal(Key.Empty, commands.KeyFor("greet"));
-        Assert.False(commands.Press(Key.F1));
+        Assert.Equal(Key.Empty, commands.KeyFor("work"));
+        Assert.Equal("Ctrl+G W", commands.KeysFor("work"));
     }
 
     [Fact]
-    public void A_key_another_command_holds_is_refused_and_leaves_both_where_they_were()
+    public void A_key_saved_before_the_keymap_replaces_its_command_default_in_each_region_it_works_in()
     {
         var commands = new CommandRegistry()
-            .Register("greet", "Say hello", () => { }, Key.F1)
-            .Register("quit", "Quit", () => { }, Key.F2);
+            .Register("work", "Work", () => { }, chord: "Ctrl+G W")
+            .Register("hold", "Hold", () => { }, new Key('h'), scopes: [Regions.Agents, Regions.Log]);
 
-        commands.Apply([("greet", Key.F2)]);
+        var carried = SavedKeys.Carry([("work", new Key('w')), ("hold", new Key('z'))], commands);
 
-        Assert.Equal([("greet", Key.F1), ("quit", Key.F2)],
-            commands.Registered.Select(command => (command.Id, command.Key)));
+        Assert.Equal("w", carried["work"]!.GetValue<string>());
+        Assert.Equal(["Agents", "Log"], carried["hold"]!.AsArray().Select(entry => entry!["where"]!.GetValue<string>()));
     }
 
     [Fact]
-    public void A_key_an_earlier_rebinding_took_is_refused_the_second_time()
+    public void A_saved_bare_letter_the_defaults_dropped_still_runs_its_command_once_loaded()
     {
-        var commands = new CommandRegistry()
-            .Register("greet", "Say hello", () => { }, Key.F1)
-            .Register("quit", "Quit", () => { }, Key.F2);
+        var ran = 0;
+        var commands = new CommandRegistry().Register("work", "Work", () => ran++, chord: "Ctrl+G W");
+        var saved = SavedKeys.Carry([("work", new Key('w'))], commands);
+        var overrides = new MentalDesk.Tui.Keys.KeyOverrides(commands.Library, commands.Keys, () => saved, _ => { });
 
-        commands.Apply([("greet", Key.F3), ("quit", Key.F3)]);
+        overrides.Load();
+        commands.Press(new Key('w'));
 
-        Assert.Equal([("greet", Key.F3), ("quit", Key.F2)],
-            commands.Registered.Select(command => (command.Id, command.Key)));
+        Assert.Equal(1, ran);
     }
 
     [Fact]
-    public void The_key_a_rebinding_freed_is_there_for_the_next_one_to_take()
+    public void A_saved_key_wins_over_a_new_default_it_clashes_with()
     {
+        var ran = new List<string>();
         var commands = new CommandRegistry()
-            .Register("greet", "Say hello", () => { }, Key.F1)
-            .Register("quit", "Quit", () => { }, Key.F2);
+            .Register("new", "New idea", () => ran.Add("new"), Key.N.WithCtrl)
+            .Register("next", "Next", () => ran.Add("next"), Key.F2);
+        var saved = SavedKeys.Carry([("next", Key.N.WithCtrl)], commands);
+        var overrides = new MentalDesk.Tui.Keys.KeyOverrides(commands.Library, commands.Keys, () => saved, _ => { });
 
-        commands.Apply([("greet", Key.F3), ("quit", Key.F1)]);
+        overrides.Load();
+        commands.Press(Key.N.WithCtrl);
 
-        Assert.Equal([("greet", Key.F3), ("quit", Key.F1)],
-            commands.Registered.Select(command => (command.Id, command.Key)));
+        Assert.Equal(["next"], ran);
+        Assert.Equal("", commands.KeysFor("new"));
     }
 
     [Fact]
-    public void Rebinding_nothing_leaves_every_key_as_it_was()
+    public void A_saved_empty_key_leaves_its_command_with_none()
     {
-        var commands = new CommandRegistry()
-            .Register("greet", "Say hello", () => { }, Key.F1)
-            .Register("quit", "Quit", () => { }, Key.F2);
+        var commands = new CommandRegistry().Register("work", "Work", () => { }, chord: "Ctrl+G W");
+        var saved = SavedKeys.Carry([("work", Key.Empty)], commands);
+        new MentalDesk.Tui.Keys.KeyOverrides(commands.Library, commands.Keys, () => saved, _ => { }).Load();
 
-        commands.Apply([]);
-
-        Assert.Equal([("greet", Key.F1), ("quit", Key.F2)],
-            commands.Registered.Select(command => (command.Id, command.Key)));
+        Assert.Equal("", commands.KeysFor("work"));
     }
 }

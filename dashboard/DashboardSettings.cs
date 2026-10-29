@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using MentalDesk.Tui.Keys;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -6,6 +8,8 @@ namespace ATeam.Dashboard;
 /// <summary>The dashboard's settings, in a-team's own config directory beside <c>teams/</c>.</summary>
 public sealed class DashboardSettings
 {
+    private const string KeymapSection = "keymap";
+
     private readonly string _path;
 
     public DashboardSettings(string configRoot) => _path = Path.Combine(configRoot, "dashboard.json");
@@ -95,7 +99,8 @@ public sealed class DashboardSettings
         writer.WriteEndObject();
     });
 
-    /// <summary>The key each command is to run on instead of its default, in the order the file gives them.
+    /// <summary>The key each command was to run on instead of its default, as the dashboard saved them before it moved
+    /// onto MentalDesk.Tui's keymap, in the order the file gives them.
     /// An empty name unbinds the command, and one <see cref="Key.TryParse(string?, out Key)"/> rejects is left out. Never
     /// writes, whatever it finds.</summary>
     public IReadOnlyList<(string Id, Key Key)> ReadKeys()
@@ -116,26 +121,16 @@ public sealed class DashboardSettings
     private static Key? KeyNamed(string name) =>
         name.Length == 0 ? Key.Empty : Key.TryParse(name, out var key) && key != Key.Empty ? key : null;
 
-    /// <summary>Writes these overrides, keeping any others the file already holds.</summary>
-    public void WriteKeys(IEnumerable<(string Id, Key Key)> keys)
-    {
-        var merged = ReadKeys().ToList();
-        foreach (var binding in keys)
-        {
-            var index = merged.FindIndex(existing => existing.Id == binding.Id);
-            if (index < 0)
-                merged.Add(binding);
-            else
-                merged[index] = binding;
-        }
+    /// <summary>The keys the user changed. Until any are kept, those saved before the keymap carry over. Create it once
+    /// every default key is bound.</summary>
+    public KeyOverrides KeyOverrides(CommandRegistry commands) =>
+        new(commands.Library, commands.Keys, () => ReadKeymap() ?? (ReadKeys() is { Count: > 0 } saved ? SavedKeys.Carry(saved, commands) : null),
+            overrides => Write(KeymapSection, writer => overrides.WriteTo(writer)));
 
-        Write("keys", writer =>
-        {
-            writer.WriteStartObject();
-            foreach (var (id, key) in merged)
-                writer.WriteString(id, key == Key.Empty ? "" : key.ToString());
-            writer.WriteEndObject();
-        });
+    private JsonObject? ReadKeymap()
+    {
+        using var file = Parse();
+        return Setting(file, KeymapSection) is { ValueKind: JsonValueKind.Object } keymap ? JsonNode.Parse(keymap.GetRawText()) as JsonObject : null;
     }
 
     /// <summary>Writes one setting, carrying over every other one the file already holds.</summary>

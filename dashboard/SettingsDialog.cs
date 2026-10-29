@@ -1,12 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.Json;
+using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Keys;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.Text;
 using Terminal.Gui.ViewBase;
-using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace ATeam.Dashboard;
 
@@ -21,10 +21,8 @@ public sealed class SettingsDialog : Dialog
     private const int LimitWidth = 10;
     private static readonly Key Apply = Key.Enter.WithCtrl;
     private static readonly Key GuideKey = Key.G.WithCtrl;
-    private const string Prompt = "Press a key…";
-    private const string RebindHint = "Enter rebind";
-    private const string RemoveHint = "Delete remove";
-    private const string FilterHint = "Type to filter";
+    private static readonly Key ResetKey = Key.R.WithCtrl;
+    internal const string KeysPageName = "Keyboard Shortcuts";
     private const string KeepHint = "Ctrl+Enter keep";
     private const string CancelHint = "Esc cancel";
     private const string GuideHint = "Ctrl+G guide";
@@ -46,10 +44,8 @@ public sealed class SettingsDialog : Dialog
     private const int Gap = 1;
     private const int StatusLines = 1;
     private const int Indent = 2;
-    private const int KeysRow = 2;
     private const int TeamListRow = 1;
     private const int PageHintsAbove = 2;
-    private const double StripeTint = 0.1;
     private const int IconsHeadingRow = 2;
     private const int IconStylesRow = IconsHeadingRow + 1;
 
@@ -58,18 +54,12 @@ public sealed class SettingsDialog : Dialog
 
     private static readonly int IconLegendRow = IconStylesRow + IconChoices.Length + 1;
 
-    private readonly CommandRegistry _commands;
-    private readonly List<(string Id, string Label, Key Key)> _bindings;
-    private readonly List<(string Id, Key Key)> _changed = [];
-    private readonly List<int> _shown = [];
-    private readonly int _labelWidth;
+    private readonly InputScopes _scopes = new();
     private readonly List<Page> _pages;
     private readonly List<View> _hints = [];
     private readonly ListView _picker = new();
     private readonly CheckBox _toolCalls;
     private readonly OptionSelector _iconStyles;
-    private readonly TextField _filter = new();
-    private readonly KeyList _keys;
     private readonly TeamConfigs _teams;
     private readonly TeamStart? _start;
     private readonly IconSetting _icons;
@@ -85,7 +75,6 @@ public sealed class SettingsDialog : Dialog
     private readonly Action<string> _showGuide;
     private readonly List<(string Column, TextField Field)> _limits;
     private bool _refreshingTeams;
-    private bool _capturing;
 
     public SettingsDialog(
         ThemeSetting theme,
@@ -102,7 +91,8 @@ public sealed class SettingsDialog : Dialog
         TeamChecks? checks = null,
         IReadOnlyDictionary<string, string>? limits = null,
         Func<string, Task<Reading>>? today = null,
-        ITerminalKeys? terminalKeys = null)
+        ITerminalKeys? terminalKeys = null,
+        KeyOverrides? keys = null)
     {
         _showGuide = showGuide ?? (_ => { });
         ShowHelp = sheet =>
@@ -112,7 +102,6 @@ public sealed class SettingsDialog : Dialog
         };
         _limits = [.. OverseerBoard.Columns.Select(column => (column,
             new TextField { Width = LimitWidth, Text = limits is not null && limits.TryGetValue(column, out var limit) ? limit : "" }))];
-        _commands = commands;
         _teams = teams;
         _start = start;
         _icons = icons;
@@ -121,8 +110,13 @@ public sealed class SettingsDialog : Dialog
         _checks = checks ?? (check is null ? null : new TeamChecks(check, teams.Stamp));
         _readToday = today ?? (start is null ? null : start.Today);
         _teamRows = [.. teams.Names().Select(teams.Row)];
-        _bindings = [.. commands.Registered.Select(command => (command.Id, command.Label, command.Key))];
-        _labelWidth = _bindings.Count == 0 ? 0 : _bindings.Max(binding => binding.Label.Length);
+        Confirm = confirm =>
+        {
+            if (App is { } app)
+                app.Run(confirm);
+        };
+        keys ??= new KeyOverrides(commands.Library, commands.Keys, () => null, _ => { });
+        KeysPage = new KeysPage(commands.Library, _scopes, keys, scope => scope.Name, confirm => Confirm(confirm));
 
         Title = "Settings";
         X = 0;
@@ -163,21 +157,6 @@ public sealed class SettingsDialog : Dialog
                 redraw();
             }
         };
-        _keys = new KeyList();
-        _keys.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
-        _keys.Captured = OnKeysKey;
-        _keys.RowRender += (_, e) => e.RowAttribute = Stripe(e.Row, _keys.Value, _keys.GetAttributeForRole(VisualRole.Normal));
-        _filter.TextChanged += (_, _) =>
-        {
-            _keys.Value = null;
-            ShowKeys();
-        };
-        _filter.KeyDown += (_, key) =>
-        {
-            if (key == Key.CursorDown)
-                key.Handled = _keys.SetFocus();
-        };
-
         _teamList.Pause = TogglePause;
         _teamList.New = () => NewTeam();
         _teamList.Drop = RemoveTeam;
@@ -221,8 +200,8 @@ public sealed class SettingsDialog : Dialog
         _pages =
         [
             new Page("Theme", [new Placed(themes)], () => [], () => []),
-            new Page("Keyboard Shortcuts", [new Placed(_filter), new Placed(_keys, 0, KeysRow)], () => [RebindHint, RemoveHint, FilterHint],
-                () => [new("Enter", "Rebind"), new("Delete", "Remove its key"), new("Type", "Filter")]),
+            new Page(KeysPageName, [new Placed(KeysPage)], () => [],
+                () => [new("Enter", "Add a key"), new("Del", "Remove the key"), new(KeyNames.Short(ResetKey), "Reset to defaults…"), new("Type", "Filter")]),
             new Page("Dashboard", DashboardRows(), () => [], () => []),
             .. terminalKeys is null ? [] : new[] { new Page(TerminalPage.Name, [new Placed(Terminal = new TerminalPage(terminalKeys, Say))], () => [], () => []) },
             new Page(TeamsPage, [new Placed(_teamHeader), new Placed(_teamList, 0, TeamListRow)], () => SelectedTeam() is { } team
@@ -249,9 +228,8 @@ public sealed class SettingsDialog : Dialog
             placed.View.X = Pos.Right(rule) + Gap + placed.X;
             placed.View.Y = placed.Y;
         }
-        _filter.Width = Dim.Fill(Inset);
-        _keys.Width = Dim.Fill(Inset);
-        _keys.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove - KeysRow), this);
+        KeysPage.Width = Dim.Fill(Inset);
+        KeysPage.Height = Dim.Func(_ => Math.Max(1, Viewport.Height - 1 - _message.Lines - PageHintsAbove), this);
         if (Terminal is not null)
         {
             Terminal.Width = Dim.Fill(Inset);
@@ -266,7 +244,6 @@ public sealed class SettingsDialog : Dialog
         foreach (var placed in _pages.SelectMany(page => page.Rows))
             Add(placed.View);
         Add(_message);
-        ShowKeys();
         ShowTeams();
         ShowPage();
         if (page == TeamsPage)
@@ -279,7 +256,9 @@ public sealed class SettingsDialog : Dialog
 
     internal ListView Pages => _picker;
 
-    internal ListView Keys => _keys;
+    internal KeysPage KeysPage { get; }
+
+    internal Action<ConfirmDialog> Confirm { get; set; }
 
     internal ListView Teams => _teamList;
 
@@ -308,12 +287,6 @@ public sealed class SettingsDialog : Dialog
     internal string TeamHeader => _teamHeader.Text;
 
     internal MessageBar Message => _message;
-
-    internal TextField Filter => _filter;
-
-    internal IReadOnlyList<string> Rows => [.. _shown.Select(index => Row(_bindings[index]))];
-
-    internal IReadOnlyList<(string Id, Key Key)> Changed => _changed;
 
     internal IReadOnlyList<(string Column, TextField Field)> LimitFields => _limits;
 
@@ -347,10 +320,15 @@ public sealed class SettingsDialog : Dialog
     /// <summary>Enter reaches a Dialog as Accept, from any of its lists alike, and never as a key.
     /// The hints close the dialog from their own Accepting, so nothing here does.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
-        _teamList.HasFocus ? OpenTeam() : !_keys.HasFocus || Rebind();
+        !_teamList.HasFocus || OpenTeam();
+
+    /// <summary>The app hands each key here before any view, so the Keys page records it, as AppShell does.</summary>
+    internal bool Route(Key key) => _scopes.Top is not null && _scopes.Handle(key) != KeyResult.Pass;
 
     protected override bool OnKeyDown(Key key)
     {
+        if (key == ResetKey && KeysPage.Visible)
+            return KeysPage.ResetButton.InvokeCommand(Command.Accept) is not false;
         if (key == Apply)
             return Close(confirmed: true);
         if (key == Key.Esc)
@@ -368,6 +346,7 @@ public sealed class SettingsDialog : Dialog
         IApplication app,
         DashboardSettings settings,
         CommandRegistry commands,
+        KeyOverrides keys,
         Action<IconStyle> showIcons,
         IconStyle auto,
         TeamConfigs teams,
@@ -382,10 +361,19 @@ public sealed class SettingsDialog : Dialog
         var icons = new IconSetting(settings.ReadIcons(), showIcons, settings.WriteIcons);
         using var dialog = new SettingsDialog(
             theme, icons, settings.ReadExpandToolCalls(), commands, teams, () => app.LayoutAndDraw(true), auto, page, start, showGuide: showGuide, checks: checks,
-            limits: settings.ReadLimits(), terminalKeys: macKeys is null ? null : new TerminalKeys(macKeys));
+            limits: settings.ReadLimits(), terminalKeys: macKeys is null ? null : new TerminalKeys(macKeys), keys: keys);
         if (newTeam)
             app.Invoke(() => dialog.NewTeam());
-        app.Run(dialog);
+        EventHandler<Key> route = (_, key) => key.Handled = key.Handled || dialog.Route(key);
+        app.Keyboard.KeyDown += route;
+        try
+        {
+            app.Run(dialog);
+        }
+        finally
+        {
+            app.Keyboard.KeyDown -= route;
+        }
         dialog.Store(theme, icons, settings);
         return (dialog.RemovedTeams, dialog.VisionFor);
     }
@@ -397,27 +385,15 @@ public sealed class SettingsDialog : Dialog
         {
             theme.Cancel();
             icons.Cancel();
+            KeysPage.Revert();
             return;
         }
         theme.Keep();
         icons.Keep();
         settings.WriteExpandToolCalls(ExpandToolCalls);
         settings.WriteLimits(Limits);
-        if (_changed.Count == 0)
-            return;
-        settings.WriteKeys(_changed);
-        _commands.Apply(_changed);
-    }
-
-    /// <summary>Starts waiting for the key the selected command is to run on.</summary>
-    internal bool Rebind()
-    {
-        if (Selected() is null)
-            return true;
-        _capturing = true;
-        Say("");
-        ShowKeys();
-        return true;
+        if (KeysPage.IsChanged)
+            KeysPage.Keep();
     }
 
     internal bool Guide()
@@ -425,68 +401,6 @@ public sealed class SettingsDialog : Dialog
         _showGuide(GuideDialog.Teams);
         return true;
     }
-
-    internal bool Unbind()
-    {
-        if (Selected() is { } index)
-            Bind(index, Key.Empty);
-        return true;
-    }
-
-    /// <summary>Typing on the keys list edits the filter, so it narrows the list without leaving it.</summary>
-    private bool OnKeysKey(Key key)
-    {
-        if (_capturing)
-            return Capture(key);
-        if (key == Key.Delete)
-            return Unbind();
-        if (key == Key.Backspace && _filter.Text.Length > 0)
-        {
-            _filter.Text = _filter.Text[..^1];
-            return true;
-        }
-        if (key.IsCtrl || key.IsAlt || !key.TryGetPrintableRune(out var typed))
-            return false;
-        _filter.Text += typed.ToString();
-        _filter.MoveEnd();
-        return true;
-    }
-
-    private bool Capture(Key key)
-    {
-        _capturing = false;
-        if (key == Key.Esc || Selected() is not { } index)
-        {
-            ShowKeys();
-            return true;
-        }
-
-        var taken = _bindings.FindIndex(binding => binding.Key == key && binding.Id != _bindings[index].Id);
-        if (taken >= 0)
-        {
-            Say($"{KeyNames.Short(key)} already runs {_bindings[taken].Label}.");
-            ShowKeys();
-            return true;
-        }
-
-        Bind(index, key);
-        return true;
-    }
-
-    private void Bind(int index, Key key)
-    {
-        var (id, label, _) = _bindings[index];
-        _bindings[index] = (id, label, key);
-        var change = _changed.FindIndex(binding => binding.Id == id);
-        if (change < 0)
-            _changed.Add((id, key));
-        else
-            _changed[change] = (id, key);
-        ShowKeys();
-    }
-
-    private int? Selected() =>
-        _keys.Value is { } row && row >= 0 && row < _shown.Count ? _shown[row] : null;
 
     /// <summary>Starts the selected team if it's paused and pauses it if it's working, straight away: it's the
     /// team's own file, not a setting the dialog keeps or cancels.</summary>
@@ -766,38 +680,6 @@ public sealed class SettingsDialog : Dialog
         SetNeedsDraw();
     }
 
-    private void ShowKeys()
-    {
-        var selected = _keys.Value;
-        var filter = _filter.Text.Trim();
-        _shown.Clear();
-        _shown.AddRange(Enumerable.Range(0, _bindings.Count).Where(index => Matches(_bindings[index], filter)));
-        var rows = Rows.ToList();
-        if (_capturing && selected is { } row && row >= 0 && row < rows.Count)
-            rows[row] = $"{_bindings[_shown[row]].Label.PadRight(_labelWidth)}  {Prompt}";
-        _keys.SetSource(new ObservableCollection<string>(rows));
-        _keys.Value = rows.Count == 0 ? null : Math.Clamp(selected ?? 0, 0, rows.Count - 1);
-        _keys.EnsureSelectedItemVisible();
-        SetNeedsLayout();
-        SetNeedsDraw();
-    }
-
-    private static bool Matches((string Id, string Label, Key Key) binding, string filter) =>
-        binding.Label.Contains(filter, StringComparison.OrdinalIgnoreCase)
-        || KeyNames.Short(binding.Key).Contains(filter, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Null leaves the row to the list, so the selected row keeps its highlight.</summary>
-    internal static Attribute? Stripe(int row, int? selected, Attribute normal) =>
-        row % 2 == 1 && row != selected ? normal with { Background = Blend(normal.Background, normal.Foreground) } : null;
-
-    private static Color Blend(Color from, Color to) =>
-        new(Mix(from.R, to.R), Mix(from.G, to.G), Mix(from.B, to.B));
-
-    private static int Mix(byte from, byte to) => (int)Math.Round(from + (to - from) * StripeTint);
-
-    private string Row((string Id, string Label, Key Key) binding) =>
-        $"{binding.Label.PadRight(_labelWidth)}  {KeyNames.Short(binding.Key)}";
-
     private void Say(string message, Schemes scheme = Schemes.Error)
     {
         _message.Show(message, scheme);
@@ -829,7 +711,7 @@ public sealed class SettingsDialog : Dialog
         }
         _hints.Clear();
         var dialogRow = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
-        _hints.AddRange(Hints(page, _keys.X, dialogRow - PageHintsAbove));
+        _hints.AddRange(Hints(page, KeysPage.X, dialogRow - PageHintsAbove));
         _hints.AddRange(Hints([KeepHint, CancelHint, GuideHint], Inset, dialogRow));
         foreach (var hint in _hints)
             Add(hint);
@@ -888,21 +770,7 @@ public sealed class SettingsDialog : Dialog
             RemoveTeam();
             return true;
         }
-        switch (hint)
-        {
-            case RebindHint:
-                _keys.SetFocus();
-                return Rebind();
-            case RemoveHint:
-                _keys.SetFocus();
-                return Unbind();
-            case FilterHint:
-                return _filter.SetFocus();
-            case GuideHint:
-                return Guide();
-            default:
-                return Close(confirmed: hint == KeepHint);
-        }
+        return hint == GuideHint ? Guide() : Close(confirmed: hint == KeepHint);
     }
 
     /// <summary>The first column whose limit isn't one Overseer can read, or null when they all are.</summary>
@@ -946,16 +814,8 @@ public sealed class SettingsDialog : Dialog
 
     private sealed record Page(string Name, IReadOnlyList<Placed> Rows, Func<string[]> Hints, Func<KeyRow[]> Keys);
 
-    /// <summary>A list that can take a key literally. ListView's own type-ahead answers a letter before any
-    /// handler the dialog could attach, so neither the capture nor the filter would ever see it.</summary>
-    private sealed class KeyList : ListView
-    {
-        public Func<Key, bool>? Captured { get; set; }
-
-        protected override bool OnKeyDown(Key key) => Captured?.Invoke(key) == true || base.OnKeyDown(key);
-    }
-
-    /// <summary>A list that answers <c>p</c>, <c>x</c> and <c>n</c> itself, for the same reason as <see cref="KeyList"/>.</summary>
+    /// <summary>A list that answers <c>p</c>, <c>x</c> and <c>n</c> itself: ListView's own type-ahead answers a letter
+    /// before any handler the dialog could attach.</summary>
     private sealed class TeamList : ListView
     {
         public Action? Pause { get; set; }

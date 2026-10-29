@@ -78,7 +78,7 @@ public sealed class CommandsDialog : DashboardDialog
     }
 
     private string Row(CommandDescriptor command) =>
-        $"{command.Label.PadRight(_labelWidth)}  {(command.Key == Key.Empty ? "" : command.Key.ToString())}";
+        $"{command.Label.PadRight(_labelWidth)}  {command.Keys}";
 
     private int Page => Math.Max(1, _list.Viewport.Height);
 
@@ -127,7 +127,7 @@ public sealed class CommandsDialog : DashboardDialog
     }
 
     internal static CommandsDialog ForNames(string title, IReadOnlyList<string> names) =>
-        new([.. names.Select(name => new CommandDescriptor(name, name, Key.Empty))], title, "Go");
+        new([.. names.Select(name => new CommandDescriptor(name, name))], title, "Go");
 
     /// <summary>One of <paramref name="names"/>, or null when the dialog is cancelled.</summary>
     public static string? Pick(IApplication app, string title, IReadOnlyList<string> names)

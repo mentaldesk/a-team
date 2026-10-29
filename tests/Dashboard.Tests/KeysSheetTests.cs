@@ -29,10 +29,10 @@ public class KeysSheetTests : IDisposable
         Assert.Equal("Work", here.Heading);
         Assert.Equal(
             [
-                ("CursorRight", "Select the column to the right"), ("CursorLeft", "Select the column to the left"),
-                ("CursorDown", "Select the card below"), ("CursorUp", "Select the card above"),
-                ("Ctrl+PageDown", "Next team"), ("Ctrl+PageUp", "Previous team"),
-                ("m", "Show only what's your move"), ("F5", "Read what's waiting again"), ("1", "Go to a-team"),
+                ("→", "Select the column to the right"), ("←", "Select the column to the left"),
+                ("↓", "Select the card below"), ("↑", "Select the card above"),
+                ("Ctrl+PgDn", "Next team"), ("Ctrl+PgUp", "Previous team"), ("Ctrl+G T", "Go to team…"),
+                ("Ctrl+T M", "Show only what's your move"), ("F5", "Read what's waiting again"), ("1", "Go to a-team"),
             ],
             Rows(here));
     }
@@ -47,8 +47,8 @@ public class KeysSheetTests : IDisposable
         Assert.Equal("Overseer", here.Heading);
         Assert.Equal(
             [
-                ("CursorRight", "Select the chip to the right"), ("CursorLeft", "Select the chip to the left"),
-                ("CursorDown", "Select the chip below"), ("CursorUp", "Select the chip above"),
+                ("→", "Select the chip to the right"), ("←", "Select the chip to the left"),
+                ("↓", "Select the chip below"), ("↑", "Select the chip above"),
                 ("Tab", "Select the next team's lane"), ("Shift+Tab", "Select the previous team's lane"),
                 ("PgDn", "Scroll the lanes down"), ("PgUp", "Scroll the lanes up"), ("F5", "Read every board again"),
             ],
@@ -83,10 +83,10 @@ public class KeysSheetTests : IDisposable
         var here = window.Keys.Here!;
 
         Assert.Equal("Log", here.Heading);
-        Assert.Contains(("Shift+CursorDown", "Extend the selection down"), Rows(here));
-        Assert.Contains(("l", "Copy the selected lines"), Rows(here));
-        Assert.Contains(("L", "Copy the whole log"), Rows(here));
-        Assert.Contains(("e", "Open the whole log in your editor"), Rows(here));
+        Assert.Contains(("Shift+↓", "Extend the selection down"), Rows(here));
+        Assert.Contains(("L", "Copy the selected lines"), Rows(here));
+        Assert.Contains(("A", "Copy the whole log"), Rows(here));
+        Assert.Contains(("E", "Open the whole log in your editor"), Rows(here));
         Assert.Contains(("Esc", "Back to the agent grid"), Rows(here));
         Assert.DoesNotContain(Rows(here), row => row.Label == "Expand the selected agent");
     }
@@ -118,11 +118,10 @@ public class KeysSheetTests : IDisposable
         Assert.NotNull(everywhere);
 
         Assert.Equal("Everywhere", everywhere.Heading);
-        Assert.Equal(["View", "Help"], everywhere.Groups.Select(group => group.Heading));
-        Assert.Equal(
-            [("d", "Dashboard"), ("w", "Work"), ("o", "Overseer"), ("s", "Settings"), ("q", "Quit")],
-            Rows(everywhere.Groups[0]));
-        Assert.Equal([("F1", "Show keys"), ("Ctrl+E", "Commands")], Rows(everywhere.Groups[1]));
+        Assert.Equal(["View", "Go", "Help"], everywhere.Groups.Select(group => group.Heading));
+        Assert.Equal([("Ctrl+,", "Settings"), ("Ctrl+Q", "Quit")], Rows(everywhere.Groups[0]));
+        Assert.Equal([("Ctrl+G D", "Dashboard"), ("Ctrl+G W", "Work"), ("Ctrl+G O", "Overseer")], Rows(everywhere.Groups[1]));
+        Assert.Equal([("F1", "Show keys"), ("Ctrl+E", "Commands")], Rows(everywhere.Groups[2]));
         Assert.DoesNotContain(everywhere.Groups.SelectMany(group => group.Rows), row => row.Label == "Next team");
     }
 
@@ -130,10 +129,10 @@ public class KeysSheetTests : IDisposable
     public void A_rebound_key_shows_as_it_is_bound()
     {
         Directory.CreateDirectory(Config);
-        new DashboardSettings(Config).WriteKeys([("work.mine", new Key('z'))]);
+        OldKeys.Save(Config, ("work.mine", "z"));
         using var window = Open(Area.Work);
 
-        Assert.Contains(("z", "Show only what's your move"), Rows(window.Keys.Here!));
+        Assert.Contains(("Z", "Show only what's your move"), Rows(window.Keys.Here!));
     }
 
     [Fact]

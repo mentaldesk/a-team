@@ -1,7 +1,7 @@
 # Dashboard
 
-What each agent is doing, one pane per agent. `d` opens it, `w` goes back to [Work](work.md) and `o`
-to [Overseer](overseer.md).
+What each agent is doing, one pane per agent. `Ctrl+G D` opens it, `Ctrl+G W` goes back to [Work](work.md) and
+`Ctrl+G O` to [Overseer](overseer.md).
 It shows every team you have, paused or not. `a-team dashboard [team...]` opens the app here, on
 just the teams you name.
 
@@ -81,7 +81,7 @@ In the expanded view one line of the log is highlighted, starting on the last. `
 it a line at a time, and `Shift+Up`, `Shift+Down` take in more. Moving it stops the log following
 new output until you press `End`, and paging brings it with you.
 
-`l` copies the highlighted lines and `L` the whole log, each line in full: the whole command or error,
+`l` copies the highlighted lines and `a` the whole log, each line in full: the whole command or error,
 not the clipped row on screen. A folded run of tool calls copies the one it shows. The status bar
 says how much went. With the [Mac keys](#mac-keys) installed, `Cmd+C` copies as `l` does.
 
@@ -105,8 +105,8 @@ with an error, the status bar says so.
 
 ## Tool calls
 
-A run of tool calls draws as a single row, so the agent's own words aren't pushed off the top. `t`
-shows every call in the selected pane, and its title says `[tool calls]`; `t` again folds them back
+A run of tool calls draws as a single row, so the agent's own words aren't pushed off the top. `Ctrl+T T`
+shows every call in the selected pane, and its title says `[tool calls]`; `Ctrl+T T` again folds them back
 up. To start every pane with its calls showing, tick *Show tool calls in full* under
 [Settings → Dashboard](teams.md#the-rest-of-settings).
 
@@ -141,9 +141,8 @@ written to the board, as in [Work](work.md#while-its-being-written).
 
 ## The Assistant
 
-**View → Assistant**, or **Assistant** in Commands, opens a Claude Code conversation down the right of
-whichever area you're in, with the cursor in its question box. Choosing it again closes it. It has
-no key of its own; give it one under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
+`Ctrl+G A`, **Go → Assistant** or **Assistant** in Commands opens a Claude Code conversation down the right of
+whichever area you're in, with the cursor in its question box. Pressing or choosing it again closes it.
 It stays open as you move between Work, Overseer and the Dashboard.
 
 Ask it anything about your teams: why a card has sat so long, what a team spent yesterday, why a
@@ -164,6 +163,16 @@ there again the next time you open the app. If Claude Code can't start or isn't 
 says so in a line, with the command that signs you in.
 
 ## Commands and keys
+
+The keys come in TuiCode's families. `Ctrl+G` then a letter goes somewhere: `Ctrl+G D` the
+Dashboard, `Ctrl+G W` Work, `Ctrl+G O` Overseer, `Ctrl+G A` the Assistant, `Ctrl+G T` a team and
+`Ctrl+G N` what's new. `Ctrl+T` then a letter turns something on or off: `Ctrl+T T` tool calls and
+`Ctrl+T M` only your moves. Everyday commands are a Ctrl key: `Ctrl+E` Commands, `Ctrl+,` Settings,
+`Ctrl+N` a new idea, `Ctrl+Q` quit, and `Ctrl+L` a new conversation in the Assistant. The keys for a
+selected card or log line, like `a` to accept or `l` to copy, stay single letters.
+
+Partway through a chord, the status bar shows what you've pressed so far, like `Ctrl+G…`. A key that
+finishes no chord cancels it, says so on the status bar, and does nothing else; so does `Esc`.
 
 `F1` shows the keys. *Everywhere*, on the left, lists the ones that work anywhere, under the menu
 that holds them. Beside it, headed with where you are (Work, Overseer, the agent grid, an expanded
@@ -194,7 +203,8 @@ can change its key under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-
 
 The menus list everything, wherever you are. An item that can't run here is dimmed, with its key
 beside it, and does nothing. With a menu open, each item's underlined letter is its own: press it to
-run that item. `q` quits the app.
+run that item. **Go** holds the screens and the Assistant, with the one you're on and a showing
+Assistant marked `●`, then a team and what's new. `Ctrl+Q` quits the app.
 
 ## Mac keys
 
