@@ -8093,7 +8093,7 @@ a-team try demo 912
 
 case_ "pictures again replaces the section rather than adding to it"
 printf 'fixed screen' >"$WORK/fixed.png"
-gh_reviewing "$(jq -Rs '".body = \(.)"' "$BIN/pr-body")"
+gh_reviewing "$(jq -Rrs '".body = \(tojson)"' "$BIN/pr-body")"
 run board demo pictures dev 912 "$WORK/fixed.png" "Save is left-aligned, in the accent colour"
 same "exit" 0 "$STATUS"
 same "one section" 1 "$(grep -c '^## What it looks like$' "$BIN/pr-body")"
