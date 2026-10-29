@@ -230,6 +230,7 @@ case " \$* " in
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
   *"-X POST"*"/issues/"*"/comments"*) cat >"$POSTED"; echo IC_posted; exit 0 ;;
   *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
+  *"pr edit"*) echo "PR EDIT \$*" >>"$WRITES"; cat >"$BIN/pr-body"; exit 0 ;;
   *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
                     echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;
   *"pr ready"*) echo "READY \$*" >>"$WRITES"; exit 0 ;;
@@ -8057,6 +8058,124 @@ run board demo review dev 912 "$WORK/review"
 failed "dev review"
 grep -qF "only reviewer reviews a task's PR" "$ERR" || fail "dev review: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+case_ "dev pictures stores each image and puts it under What it looks like, captioned, above the try line"
+MONTH=$(date -u +%Y-%m)
+printf 'first screen' >"$WORK/save.png"
+printf 'second screen' >"$WORK/remove.png"
+picture_link() { echo "https://github.com/mentaldesk/demo/blob/a-team/attachments/$MONTH/$(shasum -a 256 <"$1" | cut -c1-16).png?raw=true"; }
+gh_pr 912 true
+gh_reviewing '.body = "Settings buttons sit left.\n\nCloses #12\n\na-team try demo 912\n\n<!-- a-team:dev -->"'
+: >"$WRITES"
+rm -f "$BIN/git.json" "$BIN/pr-body"
+run board demo pictures dev 912 "$WORK/save.png" "Save is left-aligned, in the accent colour" "$WORK/remove.png" "Remove team is in the danger colour"
+same "exit" 0 "$STATUS"
+same "said" "#912: 2 picture(s) under What it looks like" "$(cat "$OUT")"
+same "stored" 2 "$(jq -r 'select(.kind == "blobs") | .content' "$BIN/git.json" | grep -c '')"
+grep -q "^PR EDIT pr edit 912 -R mentaldesk/demo --body-file -" "$WRITES" || fail "pictures: no PR edit in '$(cat "$WRITES")'"
+same "body" "Settings buttons sit left.
+
+Closes #12
+
+## What it looks like
+
+Save is left-aligned, in the accent colour
+
+![Save is left-aligned, in the accent colour]($(picture_link "$WORK/save.png"))
+
+Remove team is in the danger colour
+
+![Remove team is in the danger colour]($(picture_link "$WORK/remove.png"))
+
+a-team try demo 912
+
+<!-- a-team:dev -->" "$(cat "$BIN/pr-body")"
+
+case_ "pictures again replaces the section rather than adding to it"
+printf 'fixed screen' >"$WORK/fixed.png"
+gh_reviewing "$(jq -Rs '".body = \(.)"' "$BIN/pr-body")"
+run board demo pictures dev 912 "$WORK/fixed.png" "Save is left-aligned, in the accent colour"
+same "exit" 0 "$STATUS"
+same "one section" 1 "$(grep -c '^## What it looks like$' "$BIN/pr-body")"
+same "pictures" "![Save is left-aligned, in the accent colour]($(picture_link "$WORK/fixed.png"))" "$(grep '^!\[' "$BIN/pr-body")"
+same "try line kept" "a-team try demo 912" "$(grep '^a-team try' "$BIN/pr-body")"
+same "marker last" "<!-- a-team:dev -->" "$(tail -1 "$BIN/pr-body")"
+
+case_ "a body with no try line gets the section just above the marker"
+gh_reviewing '.body = "Closes #12\n\n<!-- a-team:dev -->"'
+run board demo pictures dev 912 "$WORK/save.png" "Save is left-aligned"
+same "exit" 0 "$STATUS"
+same "body" "Closes #12
+
+## What it looks like
+
+Save is left-aligned
+
+![Save is left-aligned]($(picture_link "$WORK/save.png"))
+
+<!-- a-team:dev -->" "$(cat "$BIN/pr-body")"
+
+case_ "pictures is the Dev's alone, on its own open task PR, for images of a size GitHub takes"
+refused_pictures() {
+  : >"$WRITES"
+  rm -f "$BIN/git.json"
+  run board demo pictures "${@:3}"
+  failed "$1"
+  one_line "$1"
+  grep -qF "$2" "$ERR" || fail "$1: '$(cat "$ERR")'"
+  same "$1 writes" "" "$(cat "$WRITES")"
+  [ ! -e "$BIN/git.json" ] || fail "$1: stored something"
+}
+gh_reviewing
+for role in lead customer reviewer you; do
+  refused_pictures "$role pictures" "$role may not put pictures on a PR; only dev does, on its own task PR" \
+    "$role" 912 "$WORK/save.png" "Save"
+done
+printf 'notes' >"$WORK/notes.txt"
+refused_pictures "not an image" "notes.txt isn't a .png, .jpg, .gif or .webp" dev 912 "$WORK/notes.txt" "Save"
+head -c $((10 * 1024 * 1024 + 1)) /dev/zero >"$WORK/huge.png"
+refused_pictures "over 10 MB" "huge.png is over 10 MB" dev 912 "$WORK/huge.png" "Save"
+refused_pictures "no caption" "save.png needs a caption" dev 912 "$WORK/save.png" " "
+gh_reviewing '.body = "My own change"'
+refused_pictures "stakeholder's PR" "dev puts pictures only on its own open task PRs" dev 912 "$WORK/save.png" "Save"
+gh_reviewing '.state = "MERGED"'
+refused_pictures "merged PR" "dev puts pictures only on its own open task PRs" dev 912 "$WORK/save.png" "Save"
+gh_reviewing '.labels.nodes = [{name: "a-team:customer"}]'
+refused_pictures "docs PR" "dev puts pictures only on its own open task PRs" dev 912 "$WORK/save.png" "Save"
+gh_reviewing
+
+case_ "pictures --dry-run shows the body it would write and writes nothing"
+: >"$WRITES"
+rm -f "$BIN/git.json" "$BIN/pr-body"
+run board --dry-run demo pictures dev 912 "$WORK/save.png" "Save is left-aligned"
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+[ ! -e "$BIN/git.json" ] || fail "pictures dry run: stored something"
+[ ! -e "$BIN/pr-body" ] || fail "pictures dry run: edited the PR"
+grep -q "would put 1 picture(s) on #912" "$ERR" || fail "pictures dry run: '$(cat "$ERR")'"
+grep -qF "  | ![Save is left-aligned]" "$ERR" || fail "pictures dry run: no body in '$(cat "$ERR")'"
+
+case_ "the Dev puts what it looked at on its PR, again after a fix on screen, and the Reviewer checks each picture"
+step=$(sed -n '/^5\. Build and run the tests/,/^7\./p' "$ROOT/roles/dev.md")
+grep -qF 'Keep a snapshot of each screen the acceptance criteria name' <<<"$step" || fail "dev.md: doesn't keep its snapshots"
+grep -qF 'pictures dev <pr> <image> "<criterion>"' <<<"$step" || fail "dev.md: doesn't put its snapshots on the PR"
+grep -qF 'run `pictures` as in step' "$ROOT/roles/dev.md" || fail "dev.md: doesn't replace the pictures after a fix"
+grep -qF 'pictures dev ...' "$ROOT/tasks/dev.md" || fail "task prompt: Dev not authorised to put pictures on its PR"
+grep -qF 'body <pr>` lists in `images`' "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't read the pictures"
+grep -qF "each picture against its caption and the contributor docs' UI" "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't check them"
+grep -qF 'that changes what the user sees with no pictures' "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't flag a UI task with none"
+
+case_ "body on a PR brings a local copy of each picture under What it looks like, for the Reviewer"
+export TMPDIR="$WORK/tmp"
+mkdir -p "$TMPDIR"
+SHOT_LINK=$(picture_link "$WORK/save.png")
+gh_thread pull <<TALK
+body ${TODAY}T08:00:00Z demo-app[bot] 0 ## What it looks like\\n\\nSave is left-aligned\\n\\n![Save is left-aligned]($SHOT_LINK)
+TALK
+run board demo body 912
+same "exit" 0 "$STATUS"
+same "images" "[\"$WORK/tmp/a-team-attachments/mentaldesk/demo/$MONTH/$(shasum -a 256 <"$WORK/save.png" | cut -c1-16).png\"]" "$(jq -c .images "$OUT")"
+unset TMPDIR
 
 case_ "with the Reviewer off, a green draft goes to the Dev as before, and review is refused"
 fixture <<'JSON'

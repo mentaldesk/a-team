@@ -8,7 +8,8 @@ Run one a-team shift as the Dev for {{repo}}.
 
 I authorise you to do all of the following without asking me:
 
-- Run `a-team board {{team}} ...` to read the board, and to claim and move items.
+- Run `a-team board {{team}} ...` to read the board, to claim and move items, and to put the
+  snapshots you took on your own task PR with `a-team board {{team}} pictures dev ...`.
 - Create git worktrees and branches under {{workdir}}, build, test and try out the product there,
   commit, and push branches other than the default branch to {{repo}}.
 - Open draft PRs on {{repo}}, mark your own PRs ready for review once CI is green, and comment

@@ -70,6 +70,8 @@ Find it with `a-team board {{team}} pr <n>`, then:
   general rule that PRs stay in draft. While `pr` reports `"review": "waiting"`, leave it a draft:
   the Reviewer reads it first. After pushing fixes for a review, end the run: a later run marks
   it ready once CI is green again.
+- When a fix changes something on screen, snapshot each screen again and run `pictures` as in step
+  4 with all of them, so the PR shows what it does now.
 - Leave it there and end the run. The stakeholder merges.
 
 ### 3. If your task is Ready, labelled `blocked`
@@ -126,12 +128,15 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
    the repo has one, in the same PR. End every commit message with `Closes #<n>`.
 5. Build and run the tests locally until they pass. If the task changes what the user sees, run the
    product, look at each screen it changes and check it against the acceptance criteria. The
-   team's skills say how.
+   team's skills say how. Keep a snapshot of each screen the acceptance criteria name.
 6. Push and open a **draft** PR. Body: a short summary of what the user can now do or see,
    `Closes #<n>`, any choice you made that changes what they see or do beyond what the task
    says, and your marker. How you built it goes in the commit messages, not the body. No
    test-plan section. Once the PR has a number, edit the body so it ends, just above the
-   marker, with the line `a-team try {{team}} <pr>` for it.
+   marker, with the line `a-team try {{team}} <pr>` for it. If the task changes what the user sees,
+   put your snapshots on it with `a-team board {{team}} pictures dev <pr> <image> "<criterion>" ...`,
+   one per screen, each captioned with the acceptance criterion it shows. It replaces any pictures
+   the PR had. A task with nothing on screen gets none.
 7. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
 8. Leave the task In progress and end the run. A later run marks the PR ready once CI is green.
 
