@@ -279,7 +279,8 @@ case " \$* " in
   *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   *"/contents/"*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
-  *"/pulls/"[0-9]*) page="$PULL" ;;
+  *"/pulls/"[0-9]*) [ ! -e "$BIN/not-a-pull" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    [ ! -e "$BIN/pull-fails" ] || { echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; }; page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
   *) page="$ITEMS" ;;
 esac
@@ -2090,12 +2091,67 @@ run board demo finish lead 7 "$WORK/checked"
 failed "finish with a task open"
 one_line "finish with a task open"
 grep -q "#7 has 1 open task$" "$ERR" || fail "finish with a task open: '$(cat "$ERR")'"
-echo '[]' >"$SUBS"
-run board demo finish lead 7 "$WORK/checked"
-failed "finish with no tasks"
-grep -q "#7 has no tasks, so nothing was built" "$ERR" || fail "finish with no tasks: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
+
+case_ "finish closes a pitch with no tasks once it names the merged PRs that built it"
+echo '[]' >"$SUBS"
+echo '{"merged": true}' >"$PULL"
+: >"$WRITES"
+: >"$POSTED"
+echo "Built by #532. Tried it on main: it works." >"$WORK/built"
+run board demo finish lead 7 "$WORK/built" 532 '#540'
+same "exit" 0 "$STATUS"
+same "said" "#7: closed as done (built by #532, #540)" "$(cat "$OUT")"
+same "writes" "CLOSE issue close 7 -R mentaldesk/demo --reason completed" "$(cat "$WRITES")"
+same "posted" "Built by #532. Tried it on main: it works." "$(head -1 "$POSTED")"
+
+case_ "finish refuses a pitch with no tasks unless every PR it names is merged here, and changes nothing"
+: >"$WRITES"
+rm -f "$A_TEAM_STATE/history.db"
+: >"$POSTED"
+run board demo finish lead 7 "$WORK/built"
+failed "finish naming no PR"
+one_line "finish naming no PR"
+grep -q "#7 has no tasks: name the merged PRs that built it" "$ERR" || fail "finish naming no PR: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+echo '{"merged": false}' >"$PULL"
+run board demo finish lead 7 "$WORK/built" 540
+failed "finish naming an unmerged PR"
+grep -q "#540 isn't merged, so it can't have built #7" "$ERR" || fail "finish naming an unmerged PR: '$(cat "$ERR")'"
+echo '{"merged": true}' >"$PULL"
+touch "$BIN/not-a-pull"
+run board demo finish lead 7 "$WORK/built" 513
+failed "finish naming an issue"
+grep -q "#513 isn't merged, so it can't have built #7" "$ERR" || fail "finish naming an issue: '$(cat "$ERR")'"
+rm "$BIN/not-a-pull"
+touch "$BIN/pull-fails"
+run board demo finish lead 7 "$WORK/built" 532
+failed "finish when GitHub fails"
+grep -q "can't tell whether #532 is merged (gh: API rate limit exceeded (HTTP 403))" "$ERR" ||
+  fail "finish when GitHub fails: '$(cat "$ERR")'"
+rm "$BIN/pull-fails"
+run board demo finish lead 7 "$WORK/built" mentaldesk/style#5
+failed "finish naming a PR elsewhere"
+grep -q "mentaldesk/style#5 isn't merged" "$ERR" || fail "finish naming a PR elsewhere: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+[ ! -e "$A_TEAM_STATE/history.db" ] || fail "finish refused: recorded '$(sqlite3 "$A_TEAM_STATE/history.db" 'SELECT what FROM events')'"
+
+case_ "finish judges a pitch with tasks on its tasks alone, whatever PRs it names"
+echo '[{"number": 11, "state": "closed"}, {"number": 12, "state": "open"}]' >"$SUBS"
+run board demo finish lead 7 "$WORK/built" 532
+failed "finish with a task open and a merged PR"
+grep -q "#7 has 1 open task$" "$ERR" || fail "finish with a task open and a merged PR: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+echo '[{"number": 11, "state": "closed"}]' >"$SUBS"
+echo '{"merged": false}' >"$PULL"
+run board demo finish lead 7 "$WORK/built" 540
+same "exit" 0 "$STATUS"
+same "said" "#7: closed as done" "$(cat "$OUT")"
+same "writes" "CLOSE issue close 7 -R mentaldesk/demo --reason completed" "$(cat "$WRITES")"
+: >"$WRITES"
+: >"$POSTED"
 
 case_ "the Lead closes a finished pitch itself rather than moving it to In review"
 run board demo move lead 7 "In review"
@@ -7001,6 +7057,10 @@ ITEMS
 echo '[{"number": 11, "state": "closed"}]' >"$SUBS"
 run board demo finish lead 7 "$WORK/reply"
 recorded "finish" 7 "lead closed as done"
+echo '[]' >"$SUBS"
+echo '{"merged": true}' >"$PULL"
+run board demo finish lead 7 "$WORK/reply" 532
+recorded "finish built by" 7 "lead closed as done · built by #532"
 gh_items <<'ITEMS'
 Building 10 A pitch
 Ready 40 A task

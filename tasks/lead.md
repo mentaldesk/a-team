@@ -29,7 +29,8 @@ I authorise you to do all of the following without asking me:
 - When the default branch is red, re-run a clearly transient failure with `gh run rerun`, or file one
   fix task for it with `a-team board {{team}} fix lead "<title>" <file>`.
 - Close a pitch once every one of its tasks has closed, with
-  `a-team board {{team}} finish lead <n> <file>`.
+  `a-team board {{team}} finish lead <n> <file>`, or one with no tasks that merged PRs already built,
+  with `a-team board {{team}} finish lead <n> <file> <pr>...`.
 
 You must never merge a PR, push to the default branch, force-push, approve a pitch except on the
 stakeholder's yes, close an issue other than through `finish`, or change anything outside

@@ -89,7 +89,8 @@ Work waits for you in two places, and no agent moves it on without you.
   word and says so. A yes with a condition leaves the pitch for you to approve once it's revised.
 - **In review.** You merge a task's PR. Nothing is done until you say so. Once every task of a
   pitch has closed, the Lead checks the whole and closes it, so a finished pitch doesn't come back
-  to you.
+  to you. A pitch another pitch's work already built, the Lead closes too, naming the merged PRs
+  that built it.
 
 Both are in the [Work](work.md) area, where you can answer them without leaving the app.
 
