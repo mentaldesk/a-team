@@ -35,9 +35,6 @@ public sealed class DashboardWindow : Window
     private const string AllItems = "All items";
     private const string MyItems = "My items";
     private const string CopyLines = "log.copyLines";
-    private const string LoadingText = "Loading…";
-    private const int LoadingPadding = 8;
-    private const int LoadingHeight = 5;
     private const int AlertGap = 3;
     private const int AssistantColumns = 48;
 
@@ -56,8 +53,8 @@ public sealed class DashboardWindow : Window
     private readonly WorkView _work;
     private readonly OverseerView _overseer;
     private readonly Func<string, Task<Reading>>? _readBoard;
-    private Task<Reading[]>? _boarding;
-    private DateTimeOffset? _boardReadAt;
+    private TeamReads? _boarding;
+    private readonly Dictionary<string, DateTimeOffset> _boardReadAt = [];
     private IReadOnlyDictionary<string, string> _limits;
     private readonly List<string> _teamNames;
     private readonly string _dispatchLog;
@@ -92,7 +89,6 @@ public sealed class DashboardWindow : Window
     private readonly Action<string> _showGuide;
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
-    private readonly FrameView _loading;
     private readonly Label _title;
     private readonly TimeProvider _clock;
     private readonly Attention _attention;
@@ -113,14 +109,15 @@ public sealed class DashboardWindow : Window
     private string? _added;
     private ReaderIdea? _idea;
     private ReaderImage? _image;
-    private Task<Reading[]>? _reading;
+    private TeamReads? _reading;
+    private readonly Dictionary<string, DateTimeOffset> _teamReadAt = [];
     private Task<Reading[]>? _trending;
     private IReadOnlyList<WorkTrend> _trends = [];
     private (WaitingItem Item, Task<IssueBody> Read, Action<WaitingItem, IssueBody> Then)? _readingBody;
     private DateTimeOffset? _readAt;
     private DateTimeOffset? _askedAt;
-    private StatusMessage? _readFailure;
-    private StatusMessage? _boardFailure;
+    private readonly Dictionary<string, StatusMessage> _readFailures = [];
+    private readonly Dictionary<string, StatusMessage> _boardFailures = [];
     private readonly Dictionary<string, StatusMessage> _checkFailures = [];
     private string? _progress;
     private int? _expanded;
@@ -312,17 +309,6 @@ public sealed class DashboardWindow : Window
             Visible = area == Area.Overseer,
         };
         Add(_overseer);
-        _loading = new FrameView
-        {
-            X = Pos.Center(),
-            Y = Pos.Func(_ => MenuLines + TitleLines + Math.Max(0, (WorkHeight() - LoadingHeight) / 2), this),
-            Width = LoadingText.Length + (LoadingPadding * 2) + 2,
-            Height = LoadingHeight,
-            CanFocus = false,
-            Visible = false,
-        };
-        _loading.Add(new Label { Text = LoadingText, X = Pos.Center(), Y = Pos.Center() });
-        Add(_loading);
         ShowIcons(settings.ReadIcons());
         if (assistant is not null)
             Add(_assistant = NewAssistant(assistant));
@@ -388,8 +374,6 @@ public sealed class DashboardWindow : Window
 
     internal AssistantPane? Assistant => _assistant;
 
-    internal FrameView Loading => _loading;
-
     /// <summary>How long Work, in front with nothing over it, goes before it reads again by itself.</summary>
     internal static readonly TimeSpan ReadEvery = TimeSpan.FromMinutes(5);
 
@@ -434,7 +418,6 @@ public sealed class DashboardWindow : Window
         ShowAsking();
         _menu.Refresh();
         ShowMessage();
-        ShowLoading();
     }
 
     /// <summary>A team's failed check stays on the bar as news until a later check passes.</summary>
@@ -484,20 +467,44 @@ public sealed class DashboardWindow : Window
             _teamReads[team] = (_readWaiting(team), _clock.GetUtcNow());
     }
 
-    /// <summary>A team's own read replaces only its cards. One that fails leaves them as they were.</summary>
+    /// <summary>A team's own read replaces only its cards.</summary>
     private void SettleTeamReads()
     {
         foreach (var (team, (read, asked)) in _teamReads.Where(entry => entry.Value.Read.IsCompleted).ToList())
         {
             _teamReads.Remove(team);
-            if (read.Status != TaskStatus.RanToCompletion || read.Result.Failure is { Length: > 0 })
-                continue;
-            var items = WaitingItem.Parse(read.Result.Output);
-            _news.Read(team, items, asked);
-            _work.Show([.. _work.Items.Where(item => item.Team != team), .. items]);
-            GoToWaiting();
+            SettleTeam(team, TeamReads.Of(read), asked);
         }
     }
+
+    /// <summary>One team's read: its cards replace only its own, and one that failed says so in its tab, or on the
+    /// bar where it keeps cards already on screen.</summary>
+    private void SettleTeam(string team, Reading read, DateTimeOffset asked)
+    {
+        if (_readFailures.Remove(team, out var was))
+            _bar.Withdraw(was);
+        if (read.Failure is { Length: > 0 } failure)
+        {
+            if (_work.Fail(team, FirstLine(failure), RetryHint("work.retry"), () => RetryTeam(team)))
+                _readFailures[team] = Announce($"{team}: {failure}", Severity.Error);
+            return;
+        }
+        var items = WaitingItem.Parse(read.Output);
+        _teamReadAt[team] = _clock.GetUtcNow();
+        _news.Read(team, items, asked);
+        _work.Show(team, items);
+        _work.ShowRed(RedMain.Parse(read.Output), team);
+        GoToWaiting();
+    }
+
+    private void RetryTeam(string team)
+    {
+        _work.Reading(team);
+        ReadTeam(team);
+        ShowMessage();
+    }
+
+    private string RetryHint(string id) => $"{KeyNames.Short(_commands.KeyFor(id))} retry";
 
     private void ShowNews()
     {
@@ -668,6 +675,8 @@ public sealed class DashboardWindow : Window
             .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: NewIdeaEnabled)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
                 menuLabel: () => mine[_work.OnlyMine ? 1 : 0], scopes: [Regions.Work], menuLabels: mine)
+            .Register("work.retry", () => "Read this team again", () => RetryTeam(_work.Current!.Team), new Key('r'),
+                isEnabled: () => OnWork() && _work.Failed, scopes: [Regions.Work])
             .Register("work.refresh", () => "Read what's waiting again", ReadWaiting, Key.F5, isEnabled: OnWork,
                 menuLabel: () => "Refresh", scopes: [Regions.Work])
             .Register("overseer.right", "Select the chip to the right", () => _overseer.MoveColumn(+1), Key.CursorRight, isEnabled: OnOverseer, scopes: [Regions.Overseer])
@@ -686,6 +695,8 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, scopes: [Regions.Overseer])
             .Register("overseer.session", () => "Go to the agent's session", GoToSession, new Key('r'),
                 isEnabled: () => OnOverseer() && SessionFor(_overseer.Board.SelectedCard) is not null, scopes: [Regions.Overseer])
+            .Register("overseer.retry", () => "Read the boards that failed again", () => RetryBoards(_overseer.FailedTeams), new Key('r'),
+                isEnabled: () => OnOverseer() && _overseer.Failed, scopes: [Regions.Overseer])
             .Register("overseer.refresh", () => "Read every board again", ReadBoards, Key.F5, isEnabled: OnOverseer,
                 menuLabel: () => "Refresh", scopes: [Regions.Overseer])
             .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
@@ -852,11 +863,12 @@ public sealed class DashboardWindow : Window
         {
             _readingAsked = _askedAt.Value;
             _activityRead = Activity();
-            _reading = Task.WhenAll(_teamNames.Select(team => _readWaiting(team)));
+            _reading = new TeamReads(_teamNames, _readWaiting);
+            foreach (var team in _teamNames)
+                _work.Reading(team);
         }
         ShowTitle();
         ShowMessage();
-        ShowLoading();
     }
 
     private string[] Activity() => [.. _panes.Select(pane => pane.Activity)];
@@ -867,32 +879,52 @@ public sealed class DashboardWindow : Window
     {
         if (_readBoard is null)
             return;
-        _boarding ??= Task.WhenAll(_teamNames.Select(team => _readBoard(team)));
+        if (_boarding is null)
+        {
+            _boarding = new TeamReads(_teamNames, _readBoard);
+            foreach (var team in _teamNames)
+                _overseer.Reading(team);
+        }
         if (_reading is null)
             ReadWaiting();
         ShowMessage();
-        ShowLoading();
     }
 
-    /// <summary>A read that failed leaves the chips and the stamp as they were.</summary>
+    /// <summary>Reads again only the boards that couldn't be read.</summary>
+    private void RetryBoards(IReadOnlyList<string> teams)
+    {
+        if (_readBoard is null)
+            return;
+        _boarding ??= new TeamReads([], _readBoard);
+        foreach (var team in teams)
+        {
+            _overseer.Reading(team);
+            _boarding.Add(team);
+        }
+        ShowMessage();
+    }
+
+    /// <summary>Each board as it lands: one that failed says so in its lane, or on the bar where it keeps chips
+    /// already on screen, and leaves the other lanes and their stamps as they were.</summary>
     private void SettleBoards()
     {
-        if (_boarding is not { IsCompleted: true } read)
+        if (_boarding is not { } boarding)
             return;
-        _boarding = null;
-        var readings = read.Status == TaskStatus.RanToCompletion ? read.Result : null;
-        var failure = readings is null
-            ? read.Exception?.GetBaseException().Message ?? "the read didn't finish"
-            : readings.Select(reading => reading.Failure).FirstOrDefault(line => line is { Length: > 0 });
-        if (failure is { Length: > 0 })
+        foreach (var (team, read) in boarding.Landed())
         {
-            Withdraw(ref _boardFailure);
-            _boardFailure = Announce(failure, Severity.Error);
-            return;
+            if (_boardFailures.Remove(team, out var was))
+                _bar.Withdraw(was);
+            if (read.Failure is { Length: > 0 } failure)
+            {
+                if (_overseer.Fail(team, FirstLine(failure), RetryHint("overseer.retry"), () => RetryBoards([team])))
+                    _boardFailures[team] = Announce($"{team}: {failure}", Severity.Error);
+                continue;
+            }
+            _boardReadAt[team] = _clock.GetUtcNow();
+            _overseer.Show(team, BoardCard.Parse(read.Output));
         }
-        Withdraw(ref _boardFailure);
-        _boardReadAt = _clock.GetUtcNow();
-        _overseer.Show([.. readings!.SelectMany(reading => BoardCard.Parse(reading.Output))]);
+        if (boarding.Done)
+            _boarding = null;
     }
 
     /// <summary>What Overseer draws besides the cards: the limits, and which cards and roles the agents are on.</summary>
@@ -950,12 +982,6 @@ public sealed class DashboardWindow : Window
     private bool UpToDate() =>
         _askedAt is { } asked && _readAt >= asked && _clock.GetUtcNow() - asked < ReadEvery
         && _activityRead.SequenceEqual(Activity());
-
-    /// <summary>There are no cards to look at until the first read lands; a later read leaves the ones already
-    /// on screen where they are.</summary>
-    private void ShowLoading() => _loading.Visible =
-        _area == Area.Work && _reading is not null && _work.Unread
-        || _area == Area.Overseer && _boarding is not null && _overseer.Unread;
 
     private void ToggleOnlyMine()
     {
@@ -1023,6 +1049,7 @@ public sealed class DashboardWindow : Window
             if (tried.Reader is null)
                 _attention.Close();
             _readAt = _askedAt = tried.ReadAt;
+            Stamp(tried.ReadAt);
             _work.Show(tried.Items);
             ReadTrend();
             if (tried.Reader is { } place)
@@ -1035,6 +1062,7 @@ public sealed class DashboardWindow : Window
         {
             _attention.TakeBack();
             _readAt = _askedAt = edited.ReadAt;
+            Stamp(edited.ReadAt);
             _work.Show(edited.Items);
             ReadTrend();
             _reopen = (edited.Item, edited.Reader, failure, edited.Said, edited.Committed);
@@ -1043,6 +1071,15 @@ public sealed class DashboardWindow : Window
         if (failure is { Length: > 0 })
             Reply(failure, Severity.Error);
         ShowMessage();
+    }
+
+    /// <summary>Cards handed back from before a restart were all read at once.</summary>
+    private void Stamp(DateTimeOffset? readAt)
+    {
+        if (readAt is not { } at)
+            return;
+        foreach (var team in _teamNames)
+            _teamReadAt[team] = at;
     }
 
     protected override void OnIsRunningChanged(bool newIsRunning)
@@ -1548,25 +1585,16 @@ public sealed class DashboardWindow : Window
             body.Then(body.Item, body.Read.Result);
         }
 
-        if (_reading is not { IsCompleted: true } read)
+        if (_reading is not { } reading)
+            return;
+        foreach (var (team, read) in reading.Landed())
+            SettleTeam(team, read, _readingAsked);
+        if (!reading.Done)
             return;
         _reading = null;
-        var readings = read.Status == TaskStatus.RanToCompletion ? read.Result : null;
-        var failure = readings is null
-            ? read.Exception?.GetBaseException().Message ?? "the read didn't finish"
-            : readings.Select(reading => reading.Failure).FirstOrDefault(line => line is { Length: > 0 });
-        if (failure is { Length: > 0 })
-        {
-            // Nothing is cleared: the cards and the stamp stay as they were.
-            Withdraw(ref _readFailure);
-            _readFailure = Announce(failure, Severity.Error);
+        if (!reading.AnyRead)
             return;
-        }
-        Withdraw(ref _readFailure);
         _readAt = _clock.GetUtcNow();
-        _work.Show([.. readings!.SelectMany(reading => WaitingItem.Parse(reading.Output))]);
-        foreach (var team in _teamNames)
-            _news.Read(team, _work.Items, _readingAsked);
         if (_area == Area.Work && _work.Selected is null)
         {
             if (_left is not { } left || !_work.Focus(left))
@@ -1671,8 +1699,8 @@ public sealed class DashboardWindow : Window
             : "";
         var stamp = _area switch
         {
-            Area.Work => Stamped(_readAt, _clock.GetUtcNow()),
-            Area.Overseer => Stamped(_boardReadAt, _clock.GetUtcNow()),
+            Area.Work => Stamped(_work.Current is { } lane && _teamReadAt.TryGetValue(lane.Team, out var read) ? read : null, _clock.GetUtcNow()),
+            Area.Overseer => Stamped(BoardReadAt(), _clock.GetUtcNow()),
             _ => "",
         };
         var place = InAssistant ? "Assistant" : _area switch
@@ -1688,6 +1716,11 @@ public sealed class DashboardWindow : Window
             _bar.RestingText = resting;
     }
 
+    /// <summary>When the selected lane's board was last read, or the latest board where none is selected.</summary>
+    private DateTimeOffset? BoardReadAt() =>
+        _overseer.Board.Selected is { } place && _boardReadAt.TryGetValue(place.Team, out var read) ? read
+        : _boardReadAt.Count > 0 ? _boardReadAt.Values.Max() : null;
+
     private void Reply((string Text, Schemes Scheme) said) => Reply(said.Text, SeverityOf(said.Scheme));
 
     private StatusMessage Reply(string text, Severity severity = Severity.Info) => _bar.ShowMessage(FirstLine(text), severity);
@@ -1698,14 +1731,6 @@ public sealed class DashboardWindow : Window
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
 
     private static Severity SeverityOf(Schemes scheme) => scheme == Schemes.Error ? Severity.Error : Severity.Info;
-
-    /// <summary>News that has stopped being true comes off the bar.</summary>
-    private void Withdraw(ref StatusMessage? message)
-    {
-        if (message is not null)
-            _bar.Withdraw(message);
-        message = null;
-    }
 
     private void OpenMessages()
     {
@@ -1753,7 +1778,6 @@ public sealed class DashboardWindow : Window
             _panes.FirstOrDefault()?.SetFocus();
         ShowAsking();
         ShowMessage();
-        ShowLoading();
         SetNeedsLayout();
         SetNeedsDraw();
     }

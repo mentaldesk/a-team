@@ -26,8 +26,11 @@ I authorise you to do all of the following without asking me:
 - Clear `blocked` on a task you held, once the stakeholder has replied that it's done or once it waits
   on another repo with `depends`, with `a-team board {{team}} unblock lead <n>`. Never remove that label
   any other way.
+- When the default branch is red, re-run a clearly transient failure with `gh run rerun`, or file one
+  fix task for it with `a-team board {{team}} fix lead "<title>" <file>`.
 - Close a pitch once every one of its tasks has closed, with
-  `a-team board {{team}} finish lead <n> <file>`.
+  `a-team board {{team}} finish lead <n> <file>`, or one with no tasks that merged PRs already built,
+  with `a-team board {{team}} finish lead <n> <file> <pr>...`.
 - Search and keep the team's decision register, with `a-team board {{team}} decisions`,
   `decide lead`, `replace lead`, `reconfirm lead` and `seeded lead`.
 

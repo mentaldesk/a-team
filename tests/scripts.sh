@@ -171,6 +171,8 @@ gh_items() {
   gh_runs <<'RUNS'
 completed success 2025-09-19T09:00:00Z build
 RUNS
+  MAIN_RUNS="$BIN/main-runs.json"
+  echo '{"check_runs": []}' >"$MAIN_RUNS"
   PRS="$BIN/prs.json" PULL="$BIN/pull.json" REVIEWING="$BIN/reviewing.json"
   gh_pr
   echo '{"head": {"sha": "deadbeefcafe"}}' >"$PULL"
@@ -252,7 +254,9 @@ case " \$* " in
   *"/files"*) page="$FILES" ;;
   *"/contents/"*"?ref="*) page="$CONTENTS" ;;
   *vnd.github.raw*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; cat "$VISION_MD"; exit 0 ;;
+  *"commits/HEAD/check-runs"*) page="$MAIN_RUNS" ;;
   *check-runs*) page="$RUNS" ;;
+  *"repos/mentaldesk/demo --jq .default_branch"*) echo main; exit 0 ;;
   *IssueEvents*) printf '%s\n' "\$@" >"$BIN/caught-args"; echo >>"$BIN/caught-calls"; page="$CAUGHT" ;;
   *issueOrPullRequest*) page="$TALK" ;;
   *"isDraft body labels"*) page="$REVIEWING" ;;
@@ -275,7 +279,8 @@ case " \$* " in
   *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   *"/contents/"*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
-  *"/pulls/"[0-9]*) page="$PULL" ;;
+  *"/pulls/"[0-9]*) [ ! -e "$BIN/not-a-pull" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    [ ! -e "$BIN/pull-fails" ] || { echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; }; page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
   *) page="$ITEMS" ;;
 esac
@@ -297,6 +302,17 @@ while [ \$# -gt 0 ]; do
   [ "\$1" = --jq ] && { filter=\$2; break; }
   shift
 done
+# A board page holds every item unless short-reads says how many reads come back short, and with how many items.
+if [ "\$page" = "$ITEMS" ]; then
+  [ ! -e "$BIN/read-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+  jq '.data.organization.projectV2.items |= (.totalCount //= (.nodes | length))' "\$page" >"\$page.counted"
+  if read -r times keep 2>/dev/null <"$BIN/short-reads" && [ "\$times" -gt 0 ]; then
+    echo "\$((times - 1)) \$keep" >"$BIN/short-reads"
+    jq --argjson keep "\$keep" '.data.organization.projectV2.items.nodes |= .[:\$keep]' "\$page.counted" >"\$page.short"
+    mv "\$page.short" "\$page.counted"
+  fi
+  page="\$page.counted"
+fi
 if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
   chmod +x "$BIN/gh"
@@ -346,6 +362,15 @@ gh_runs() {
        conclusion: (if $f[1] == "-" then null else $f[1] end),
        completed_at: (if $f[2] == "-" then null else $f[2] end)})
     | {check_runs: .}' >"$RUNS"
+}
+
+# The check runs on the default branch's head commit, from lines as gh_runs reads them; none, by default.
+gh_main_runs() {
+  local runs=$RUNS
+  RUNS=$MAIN_RUNS
+  gh_runs
+  RUNS=$runs
+  jq '.check_runs |= map(. + {head_sha: "b8f5bdd0c0ffee"})' "$MAIN_RUNS" >"$MAIN_RUNS.new" && mv "$MAIN_RUNS.new" "$MAIN_RUNS"
 }
 
 # `gh_pr <number> <draft> [<issue>]`: the open PR that closes every issue `pr` asks about. No
@@ -496,7 +521,7 @@ same "fields" '["number","pitch","priority","reason","status","team","title","tu
 same "title" '"Both gates are mine"' "$(jq -c '.[0].title' "$OUT")"
 same "url" '"https://github.com/mentaldesk/demo/issues/106"' "$(jq -c '.[0].url' "$OUT")"
 same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
-same "api calls" 2 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 # The read above began the record, so every read from here also catches up from GitHub: one call more.
 case_ "waiting asks GitHub for the board without what's Done"
@@ -563,7 +588,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "so it is when GitHub hasn't linked that PR to the task, and only its body closes it"
 gh_talk false MERGEABLE unlinked <<TALK
@@ -577,7 +602,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 5 "$(grep -c '' <"$CALLS")"
 
 case_ "but a PR the Dev didn't open isn't taken for the task's on its word"
 gh_talk false MERGEABLE unlinked <<TALK
@@ -652,6 +677,61 @@ same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task trouble" '"CI failing"' "$(jq -c '.[1].trouble' "$OUT")"
 same "task reason" '"CI failing since 09:02"' "$(jq -c '.[1].reason' "$OUT")"
+
+case_ "a PR failing only the jobs main fails reads main is red, and the red main rides along with no number"
+gh_main_runs <<RUNS
+completed failure ${TODAY}T08:50:00Z build
+completed success ${TODAY}T08:50:00Z lint
+RUNS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "checks" '"main-red"' "$(jq -c '.[1].checks' "$OUT")"
+same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
+same "task trouble" '"main is red"' "$(jq -c '.[1].trouble' "$OUT")"
+same "red" '{"team":"demo","red":{"branch":"main","sha":"b8f5bdd0c0ffee","failing":["build"],"since":"b8f5bdd0c0ffee","fix":null}}' \
+  "$(jq -c 'last' "$OUT")"
+
+case_ "the red main names its fix, and the fix's card says it's one"
+edit_item 115 '.labels.nodes += [{name: "a-team:fix"}]'
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "fix" '{"number":115,"status":"In review"}' "$(jq -c 'last.red.fix' "$OUT")"
+same "fix flag" '[null,true]' "$(jq -c '[.[0:2][].fix]' "$OUT")"
+same "fix checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
+same "fix trouble" '"CI failing"' "$(jq -c '.[1].trouble' "$OUT")"
+edit_item 115 '.labels.nodes -= [{name: "a-team:fix"}]'
+
+case_ "red since stays the head it was first seen red on while later heads stay red"
+jq '.check_runs |= map(.head_sha = "c0ffee1234")' "$MAIN_RUNS" >"$MAIN_RUNS.new" && mv "$MAIN_RUNS.new" "$MAIN_RUNS"
+run board demo waiting
+same "since" '"b8f5bdd0c0ffee"' "$(jq -c 'last.red.since' "$OUT")"
+same "sha" '"c0ffee1234"' "$(jq -c 'last.red.sha' "$OUT")"
+
+case_ "a PR failing a job main passes is its own failure"
+gh_runs <<RUNS
+completed failure ${TODAY}T09:02:00Z build
+completed failure ${TODAY}T09:02:00Z lint
+RUNS
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
+same "task trouble" '"CI failing"' "$(jq -c '.[1].trouble' "$OUT")"
+
+case_ "main still running, or with no CI at all, isn't red"
+gh_runs <<RUNS
+completed failure ${TODAY}T09:02:00Z build
+RUNS
+gh_main_runs <<RUNS
+in_progress - - build
+RUNS
+run board demo waiting
+same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
+same "no red" '[]' "$(jq -c 'map(select(.red))' "$OUT")"
+[ ! -e "$A_TEAM_STATE/demo/red-since" ] || fail "green main: red-since left behind"
+echo '{"check_runs": []}' >"$MAIN_RUNS"
+run board demo waiting
+same "checks, no CI on main" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
+same "no red, no CI on main" '[]' "$(jq -c 'map(select(.red))' "$OUT")"
 
 case_ "an unanswered comment outranks the failing build it hasn't been answered with"
 gh_talk <<TALK
@@ -809,7 +889,7 @@ ITEMS
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
-same "api calls" 2 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a gated item carries the Priority the cards colour its number by"
 gh_items 106 <<'ITEMS'
@@ -844,7 +924,7 @@ same "idea turn" '"you"' "$(jq -c '.[2].turn' "$OUT")"
 same "idea reason" '"waiting to be ranked"' "$(jq -c '.[2].reason' "$OUT")"
 same "idea fields" '["number","reason","status","team","title","turn","url"]' "$(jq -c '.[2] | keys' "$OUT")"
 same "idea url" '"https://github.com/mentaldesk/demo/issues/6"' "$(jq -c '.[2].url' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "a team whose every Idea is ranked has none of them waiting"
 gh_items 6 26 <<'ITEMS'
@@ -854,7 +934,7 @@ ITEMS
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
-same "api calls" 2 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a pitch that needs the reviewer's answer comes with that section as its question"
 gh_items <<'ITEMS'
@@ -954,7 +1034,7 @@ same "turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "reason" '"asked you since 08:23"' "$(jq -c '.[1].reason' "$OUT")"
 same "question" '"Which marker should it post?"' "$(jq -c '.[1].question' "$OUT")"
 same "held by" '"dev"' "$(jq -c '.[1].heldBy' "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 5 "$(grep -c '' <"$CALLS")"
 
 case_ "a held task with no ask from either agent since it was labelled is held for no reason given"
 same "turn" '"you"' "$(jq -c '.[2].turn' "$OUT")"
@@ -2011,12 +2091,67 @@ run board demo finish lead 7 "$WORK/checked"
 failed "finish with a task open"
 one_line "finish with a task open"
 grep -q "#7 has 1 open task$" "$ERR" || fail "finish with a task open: '$(cat "$ERR")'"
-echo '[]' >"$SUBS"
-run board demo finish lead 7 "$WORK/checked"
-failed "finish with no tasks"
-grep -q "#7 has no tasks, so nothing was built" "$ERR" || fail "finish with no tasks: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
+
+case_ "finish closes a pitch with no tasks once it names the merged PRs that built it"
+echo '[]' >"$SUBS"
+echo '{"merged": true}' >"$PULL"
+: >"$WRITES"
+: >"$POSTED"
+echo "Built by #532. Tried it on main: it works." >"$WORK/built"
+run board demo finish lead 7 "$WORK/built" 532 '#540'
+same "exit" 0 "$STATUS"
+same "said" "#7: closed as done (built by #532, #540)" "$(cat "$OUT")"
+same "writes" "CLOSE issue close 7 -R mentaldesk/demo --reason completed" "$(cat "$WRITES")"
+same "posted" "Built by #532. Tried it on main: it works." "$(head -1 "$POSTED")"
+
+case_ "finish refuses a pitch with no tasks unless every PR it names is merged here, and changes nothing"
+: >"$WRITES"
+rm -f "$A_TEAM_STATE/history.db"
+: >"$POSTED"
+run board demo finish lead 7 "$WORK/built"
+failed "finish naming no PR"
+one_line "finish naming no PR"
+grep -q "#7 has no tasks: name the merged PRs that built it" "$ERR" || fail "finish naming no PR: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+echo '{"merged": false}' >"$PULL"
+run board demo finish lead 7 "$WORK/built" 540
+failed "finish naming an unmerged PR"
+grep -q "#540 isn't merged, so it can't have built #7" "$ERR" || fail "finish naming an unmerged PR: '$(cat "$ERR")'"
+echo '{"merged": true}' >"$PULL"
+touch "$BIN/not-a-pull"
+run board demo finish lead 7 "$WORK/built" 513
+failed "finish naming an issue"
+grep -q "#513 isn't merged, so it can't have built #7" "$ERR" || fail "finish naming an issue: '$(cat "$ERR")'"
+rm "$BIN/not-a-pull"
+touch "$BIN/pull-fails"
+run board demo finish lead 7 "$WORK/built" 532
+failed "finish when GitHub fails"
+grep -q "can't tell whether #532 is merged (gh: API rate limit exceeded (HTTP 403))" "$ERR" ||
+  fail "finish when GitHub fails: '$(cat "$ERR")'"
+rm "$BIN/pull-fails"
+run board demo finish lead 7 "$WORK/built" mentaldesk/style#5
+failed "finish naming a PR elsewhere"
+grep -q "mentaldesk/style#5 isn't merged" "$ERR" || fail "finish naming a PR elsewhere: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+same "posted" "" "$(cat "$POSTED")"
+[ ! -e "$A_TEAM_STATE/history.db" ] || fail "finish refused: recorded '$(sqlite3 "$A_TEAM_STATE/history.db" 'SELECT what FROM events')'"
+
+case_ "finish judges a pitch with tasks on its tasks alone, whatever PRs it names"
+echo '[{"number": 11, "state": "closed"}, {"number": 12, "state": "open"}]' >"$SUBS"
+run board demo finish lead 7 "$WORK/built" 532
+failed "finish with a task open and a merged PR"
+grep -q "#7 has 1 open task$" "$ERR" || fail "finish with a task open and a merged PR: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+echo '[{"number": 11, "state": "closed"}]' >"$SUBS"
+echo '{"merged": false}' >"$PULL"
+run board demo finish lead 7 "$WORK/built" 540
+same "exit" 0 "$STATUS"
+same "said" "#7: closed as done" "$(cat "$OUT")"
+same "writes" "CLOSE issue close 7 -R mentaldesk/demo --reason completed" "$(cat "$WRITES")"
+: >"$WRITES"
+: >"$POSTED"
 
 case_ "the Lead closes a finished pitch itself rather than moving it to In review"
 run board demo move lead 7 "In review"
@@ -3264,6 +3399,232 @@ grep -q "would label #13 a-team:dev" "$ERR" || fail "dry run: no label in '$(cat
 grep -q "would set item PVTI_13 to 'In progress'" "$ERR" || fail "dry run: no move in '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
+# short_reads <times> <keep>: the next <times> board reads come back with only their first <keep> items.
+short_reads() { echo "$1 $2" >"$BIN/short-reads"; }
+SHORT='the board read came back incomplete (1 of 3 items), twice. Nothing was changed'
+
+case_ "a board read that comes back short once is read again and carries on, filtered or not"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+In_review 14 Waiting on you
+Done 15 Merged
+ITEMS
+run board demo list
+complete=$(cat "$OUT")
+short_reads 1 1
+run board demo list
+same "exit" 0 "$STATUS"
+same "items" "$complete" "$(cat "$OUT")"
+same "stderr" "" "$(cat "$ERR")"
+short_reads 1 0
+run board demo waiting
+same "filtered exit" 0 "$STATUS"
+same "filtered stderr" "" "$(cat "$ERR")"
+
+case_ "a board read short twice, or empty with items to read, ends the command saying so, and changes nothing"
+short_reads 2 1
+run board demo list
+failed "short twice"
+one_line "short twice"
+grep -qF "board.sh: $SHORT" "$ERR" || fail "short twice: '$(cat "$ERR")'"
+same "stdout" "" "$(cat "$OUT")"
+short_reads 2 0
+run board demo waiting
+failed "empty"
+grep -qF 'incomplete (0 of 3 items), twice' "$ERR" || fail "empty: '$(cat "$ERR")'"
+
+case_ "a board read gh fails on ends the command, rather than reading as an empty board"
+touch "$BIN/read-fails"
+run board demo list
+rm "$BIN/read-fails"
+failed "read fails"
+same "stdout" "" "$(cat "$OUT")"
+
+case_ "next and claim on a short board read claim nothing"
+claimable
+short_reads 2 1
+run board demo next
+failed "next"
+same "next stdout" "" "$(cat "$OUT")"
+grep -qF "$SHORT" "$ERR" || fail "next: '$(cat "$ERR")'"
+short_reads 2 1
+run board demo claim dev
+failed "claim"
+grep -qF "$SHORT" "$ERR" || fail "claim: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "lead-next on a short board read uses up no turn"
+mkdir -p "$A_TEAM_STATE/demo" && echo discover >"$A_TEAM_STATE/demo/lead-turn"
+short_reads 2 1
+run board demo lead-next
+failed "lead-next"
+grep -qF "$SHORT" "$ERR" || fail "lead-next: '$(cat "$ERR")'"
+same "turn" discover "$(cat "$A_TEAM_STATE/demo/lead-turn")"
+
+case_ "setup on a short board read drops no Status option"
+short_reads 2 1
+rm -f "$BIN/mutation.json"
+run board demo setup
+failed "setup"
+grep -qF "$SHORT" "$ERR" || fail "setup: '$(cat "$ERR")'"
+[ ! -e "$BIN/mutation.json" ] || fail "setup: Status options changed"
+
+case_ "a truly empty board reads as empty, and other repos' items on a shared project count towards its total"
+gh_items </dev/null
+run board demo list
+same "empty exit" 0 "$STATUS"
+same "empty" "[]" "$(jq -c . "$OUT")"
+same "empty stderr" "" "$(cat "$ERR")"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+Ready 14 Another team's task
+ITEMS
+edit_item 14 '.repository.nameWithOwner = "mentaldesk/other"'
+run board demo list
+same "shared exit" 0 "$STATUS"
+same "shared" "[13]" "$(jq -c 'map(.number)' "$OUT")"
+same "shared stderr" "" "$(cat "$ERR")"
+
+case_ "next and claim take a fix first, even over an Urgent task, and in the extra worktree"
+gh_items 14 <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+In_progress 15 Three
+Ready 13 Something to start
+Ready 14 Something pressing
+Ready 16 Main builds again
+ITEMS
+edit_item 14 '.issueFieldValues.nodes = [{name: "Urgent", field: {name: "Priority"}}]'
+edit_item 16 '.labels.nodes += [{name: "a-team:fix"}]'
+claimable
+run board demo next
+same "next" 16 "$(jq -c .number "$OUT")"
+run board demo triggers dev
+same "ready" 16 "$(jq -c .ready "$OUT")"
+jq -e '.reasons | index("Ready fix task #16 for the red default branch: take it first")' "$OUT" >/dev/null ||
+  fail "triggers: no fix reason in '$(jq -c .reasons "$OUT")'"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":16,"title":"Main builds again"}' "$(cat "$OUT")"
+
+case_ "a fix gets one extra worktree, not two"
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+In_progress 15 Three
+In_progress 17 Four
+Ready 16 Main builds again
+ITEMS
+edit_item 16 '.labels.nodes += [{name: "a-team:fix"}]'
+claimable
+run board demo claim dev
+failed "no extra worktree"
+grep -q "no free worktree for #16" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
+run board demo triggers dev
+same "ready" null "$(jq -c .ready "$OUT")"
+
+case_ "a PR failing only what main fails starts no Dev run, and checks says main-red"
+gh_items <<'ITEMS'
+In_progress 12 A task with its draft PR up
+ITEMS
+gh_pr 912 true
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+gh_main_runs <<'RUNS'
+completed failure 2025-09-19T08:00:00Z build
+completed success 2025-09-19T08:00:00Z lint
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+run board demo checks 912
+same "verdict" '"main-red"' "$(jq -c .verdict "$OUT")"
+
+case_ "a fix's PR failing what main fails is still the Dev's to fix"
+edit_item 12 '.labels.nodes += [{name: "a-team:fix"}]'
+run board demo triggers dev
+same "reasons" '["CI failed on PR #912 at deadbee"]' "$(jq -c .reasons "$OUT")"
+run board demo checks 912
+same "verdict" '"fail"' "$(jq -c .verdict "$OUT")"
+edit_item 12 '.labels.nodes -= [{name: "a-team:fix"}]'
+
+case_ "a PR failing a job main passes is the Dev's to fix"
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+completed failure 2025-09-19T09:00:00Z lint
+RUNS
+run board demo triggers dev
+same "reasons" '["CI failed on PR #912 at deadbee"]' "$(jq -c .reasons "$OUT")"
+run board demo checks 912
+same "verdict" '"fail"' "$(jq -c .verdict "$OUT")"
+
+case_ "a red main starts the Lead until a fix is open"
+gh_items <<'ITEMS'
+Done 10 Something shipped
+ITEMS
+gh_main_runs <<'RUNS'
+completed failure 2025-09-19T08:00:00Z build
+RUNS
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '["main is red since b8f5bdd: build failing. File a fix"]' "$(jq -c .reasons "$OUT")"
+gh_items <<'ITEMS'
+Ready 16 Main builds again
+ITEMS
+edit_item 16 '.labels.nodes += [{name: "a-team:fix"}]'
+gh_main_runs <<'RUNS'
+completed failure 2025-09-19T08:00:00Z build
+RUNS
+run board demo triggers lead
+same "reasons with a fix open" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "fix opens a Ready task labelled a-team:fix with no pitch, and prints its number"
+gh_items <<'ITEMS'
+Done 10 Something shipped
+ITEMS
+gh_main_runs <<'RUNS'
+completed failure 2025-09-19T08:00:00Z build
+RUNS
+claimable
+printf 'build fails since #880 and #881 merged.\n' >"$WORK/fix"
+run board demo fix dev "Main builds again" "$WORK/fix"
+failed "dev files a fix"
+run board demo fix lead "Main builds again" "$WORK/fix"
+same "exit" 0 "$STATUS"
+same "number" 77 "$(cat "$OUT")"
+grep -q 'label create a-team:fix' "$WRITES" || fail "fix: no label created in '$(cat "$WRITES")'"
+grep -q 'CREATE issue create -R mentaldesk/demo --title Main builds again --label a-team:fix' "$WRITES" ||
+  fail "fix: no labelled issue in '$(cat "$WRITES")'"
+grep -q 'option=OPT_ready' "$WRITES" || fail "fix: not put in Ready in '$(cat "$WRITES")'"
+grep -q 'sub_issues' "$WRITES" && fail "fix: made a sub-issue in '$(cat "$WRITES")'"
+grep -qF '<!-- a-team:lead -->' "$POSTED" || fail "fix: no marker in '$(cat "$POSTED")'"
+
+case_ "fix is refused while another fix is open"
+gh_items <<'ITEMS'
+Ready 16 Main builds again
+ITEMS
+gh_main_runs <<'RUNS'
+completed failure 2025-09-19T08:00:00Z build
+RUNS
+edit_item 16 '.labels.nodes += [{name: "a-team:fix"}]'
+run board demo fix lead "Main builds again" "$WORK/fix"
+failed "second fix"
+grep -q "#16 is already the fix" "$ERR" || fail "second fix: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "fix is refused while main is green"
+gh_items <<'ITEMS'
+Done 10 Something shipped
+ITEMS
+echo '{"check_runs": []}' >"$MAIN_RUNS"
+run board demo fix lead "Main builds again" "$WORK/fix"
+failed "green main"
+grep -q "isn't red" "$ERR" || fail "green main: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+run board demo triggers lead
+same "no reason while green" '[]' "$(jq -c .reasons "$OUT")"
+
 case_ "a run bound to a task can hand it back, and can't touch another"
 gh_items <<'ITEMS'
 In_progress 12 This run's task
@@ -4212,7 +4573,7 @@ run board demo waiting
 same "exit" 0 "$STATUS"
 same "ideas" '[[6,"High","theme 2, small · clears the queue"],[7,null,"waiting to be ranked"]]' \
   "$(jq -c 'map(select(.status == "Idea") | [.number, .recommendation, .reason])' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 days_ago() { ago $(($1 * 1440)); }
 vision_team() {
@@ -5256,6 +5617,11 @@ dispatch_dev --dry-run
 grep -q 'demo dev: claim failed: board.sh: no free worktree for #13' "$A_TEAM_STATE/dispatch.log" ||
   fail "refused: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 grep -q 'would start' "$A_TEAM_STATE/dispatch.log" && fail "refused: a run started"
+sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: the board read came back incomplete (100 of 358 items), twice. Nothing was changed: end this run, and the next one reads the board again." >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+same "short claim" "demo dev: board read incomplete (100 of 358 items), twice; trying again next check" \
+  "$(cut -d' ' -f2- "$A_TEAM_STATE/dispatch.log")"
 
 case_ "a Reviewer run is for one waiting PR at a time, named in the log, and claims nothing"
 fixture <<'JSON'
@@ -5343,6 +5709,18 @@ dispatch_dev --dry-run
 dispatch_dev --dry-run
 same "working again" 1 "$(grep -c 'demo dev: triggers working again$' "$A_TEAM_STATE/dispatch.log")"
 same "lines" 3 "$(grep -c . "$A_TEAM_STATE/dispatch.log")"
+
+case_ "a board read short twice is logged at once in one line, and the role tries again on its next check"
+: >"$A_TEAM_STATE/dispatch.log"
+echo "board.sh: the board read came back incomplete (100 of 358 items), twice. Nothing was changed: end this run, and the next one reads the board again." >"$FAILS"
+dispatch_dev --dry-run
+same "logged" "demo dev: board read incomplete (100 of 358 items), twice; trying again next check" \
+  "$(grep 'demo dev' "$A_TEAM_STATE/dispatch.log" | cut -d' ' -f2-)"
+: >"$FAILS"
+: >"$A_TEAM_STATE/dispatch.log"
+cp "$DISPATCH/ready.json" "$DEV_TRIGGERS"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start: #13' "$A_TEAM_STATE/dispatch.log" || fail "next check: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 rm "$CONFIG/teams/other.json"
 
 case_ "merged worktrees alone start no Dev run"
@@ -6275,7 +6653,7 @@ case " \$* " in
     [ -z "\${NO_FIELD:-}" ] || { echo '{"data": {"organization": {"projectV2": {"id": "PVT_1", "field": null}}}}'
       echo "gh: Could not resolve to a Unions::ProjectV2FieldConfiguration with the name Status" >&2; exit 1; }
     page="$APP_BIN/board/meta.json" ;;
-  *totalCount*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
+  *"items(first: 1) { totalCount }"*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
                 page="$APP_BIN/board/items.json" ;;
   *issueFields*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PRIORITY_UNREADABLE:-}" ] || refused
                  page="$APP_BIN/board/fields.json" ;;
@@ -6679,6 +7057,10 @@ ITEMS
 echo '[{"number": 11, "state": "closed"}]' >"$SUBS"
 run board demo finish lead 7 "$WORK/reply"
 recorded "finish" 7 "lead closed as done"
+echo '[]' >"$SUBS"
+echo '{"merged": true}' >"$PULL"
+run board demo finish lead 7 "$WORK/reply" 532
+recorded "finish built by" 7 "lead closed as done · built by #532"
 gh_items <<'ITEMS'
 Building 10 A pitch
 Ready 40 A task

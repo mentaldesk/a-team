@@ -73,6 +73,17 @@ task](#holding-up-a-task) first, then by Priority. Under the Review cards, a lin
 review but not ready for you yet, grouped by whose move it is, like
 `1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`.
 
+## When main is red
+
+When the latest CI on the default branch's head commit has failed, a line above the columns says so
+within a dispatcher pass, like `⚠ main is red since b8f5bdd`. A run of the Lead starts for it and files
+one fix task, labelled `a-team:fix`, naming the merges that broke it. The line then adds
+`· fix #624 is with the Dev`, and the Dev takes that task before any other, or
+`· fix #624 is waiting for you` once its PR is in Review, where its card says `fix`. Accept it as
+usual. While the branch is red, a PR failing only the jobs the branch fails isn't the Dev's to fix:
+the line under Review counts it as `2 waiting while main is red: #14 · #15`. Once the fix merges and
+CI passes on the branch, the line goes away, and a PR still failing is the Dev's again, to bring up to date with the fix.
+
 ## A card
 
 A card reads as the issue's number, then its title:
@@ -165,6 +176,7 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 | `p` | Read the card and set its Priority |
 | `m` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `u` | Go to the newest card that has become your move |
+| `r` | In a tab that couldn't be read, read that team again |
 | `F5` | Read what's waiting again |
 
 To pick a team by name, open **Go to team…** from Commands (`Ctrl+E`) or the View menu, and type
@@ -173,7 +185,16 @@ to narrow the list as in Commands.
 The cards are read when you open Work, when you press `F5`, and by themselves every five minutes
 while Work is in front. Coming back from the Dashboard puts you on the card you left, and reads again
 only if an agent has started or finished a run, or five minutes have passed, since the last read.
-That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dashboard reads nothing. If a read fails, the foot says so in red and the cards stay as they were.
+That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dashboard reads nothing.
+
+Each team's tab is read on its own. While its first read takes more than a moment, it shows a
+spinner and `Reading a-team's board…`. A team with nothing waiting says `Nothing waiting on you`,
+and adds how many cards *Only mine* hides, as in `· 3 hidden by Only mine`, when that's why. A team
+whose read fails says why in its tab, in red, with `r retry` under it, and the other tabs keep their
+cards. A board GitHub sent back with items missing, twice, fails rather than showing some of its
+cards, and says so: `Board read incomplete (100 of 358 items)`. A read again with cards on screen keeps them, with a spinner at the right of the tabs' top
+border; if it fails, the cards stay and the foot says so in red. The foot's `read 2m ago` is for
+the team whose tab is in front.
 
 ## Reading a card
 

@@ -51,6 +51,9 @@ Two kinds of item share the board:
   when that happens, or, while Dependabot has a PR open bringing that release in, once it merges. The `blocked` label is for a task waiting on the stakeholder: for an answer,
   or because they're holding it. Never for a wait on another repo. The agent that held a task
   reads the stakeholder's reply on it and clears the hold itself, never asking them to.
+- A **fix** is a task labelled `a-team:fix` that makes a red default branch green again. The Lead
+  files it, with no pitch, when the board says the branch is red, one at a time. The Dev takes it
+  before any other task, and the stakeholder accepts it like any other.
 - A **docs PR** is the Customer lead's, labelled `a-team:customer`: one open at a time, which it
   adds to after each pitch is done. It goes straight to In review, and accepting it merges it.
   While the team config's `docs` page isn't in the repo, a **docs proposal** comes first: a
@@ -77,9 +80,9 @@ a-team board {{team}} list [STATUS...]          # items, as JSON
 a-team board {{team}} mine <role> [STATUS...]   # items your role owns
 a-team board {{team}} wip                       # counts per status: pitches, dev, stakeholders;
                                                 # the Dev's blocked tasks under dev.blocked
-a-team board {{team}} next                      # the next task Dev should take (or null): one a
-                                                # task waits on first, then highest issue Priority,
-                                                # unset last
+a-team board {{team}} next                      # the next task Dev should take (or null): a fix
+                                                # first, then one a task waits on, then highest
+                                                # issue Priority, unset last
 a-team board {{team}} claim dev [<n>]           # move `next` (or Ready task <n>) to In progress for
                                                 # a Dev run, if a worktree is free
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)
@@ -95,8 +98,9 @@ a-team board {{team}} decline <role> <n> <file> # stakeholder only: comment <fil
 a-team board {{team}} shelve <role> <n> <weeks> <file>  # stakeholder, or the Lead when they ask: Pitched pitch
                                                 # #<n> back to Idea, not pitched again for <weeks>; <file>
                                                 # is the comment, and the board adds the date
-a-team board {{team}} finish <role> <n> <file>  # Lead only: once every task of pitch #<n> has closed,
-                                                # comment <file> on it and close it as done
+a-team board {{team}} finish <role> <n> <file> [<pr>...]  # Lead only: once every task of pitch #<n> has
+                                                # closed, or, with no tasks, naming the merged PRs that
+                                                # built it, comment <file> on it and close it as done
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours
                                                 # (as `you`, stakeholder only: no marker, no ðŸ‘€)
 a-team board {{team}} review reviewer <pr> <file>  # Reviewer only: post the one review on a green
@@ -111,6 +115,9 @@ a-team board {{team}} feedback <role> <n>       # stakeholder comments with no ð
                                                 # `images` where it has screenshots attached
 a-team board {{team}} task lead <pitch> "<title>" <file>  # Lead only: open a task, put it in Ready
                                                 # under Approved or Building <pitch>, print its number
+a-team board {{team}} fix lead "<title>" <file>  # Lead only: while the default branch is red and no fix
+                                                # is open, open one labelled `a-team:fix`, with no pitch,
+                                                # put it in Ready, print its number
 a-team board {{team}} link <parent> <child>     # make task <child> a sub-issue of <parent>
 a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again
                                                 # (an idea under a pitch: says so on both)
@@ -150,7 +157,8 @@ a-team board {{team}} audited customer          # Customer lead only: the docs a
                                                 # audited, so the next audit is a week later
 a-team board {{team}} pr <n>                    # the open PR that closes issue <n>, whether it conflicts,
                                                 # and its review: waiting | posted | answered | off
-a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending
+a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending | main-red, where
+                                                # every job it fails fails on the default branch too
 a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a run for;
                                                 # --sweep also reads old feedback on your items
 ```
@@ -195,8 +203,8 @@ tell what `$B` will run.
    in one line and stop. An empty run should cost almost nothing.
 3. Finish existing work before starting new work. Respect the WIP limits in the team config:
    - `worktrees`: the Dev's tasks In progress + In review, one worktree each. Blocked tasks,
-     either way, wait without taking a slot. While an unblocked Ready task is Urgent, one extra
-     worktree is allowed, until it leaves Ready. The dispatcher claims a Ready task for a Dev run
+     either way, wait without taking a slot. While an unblocked Ready task is Urgent or a fix, one
+     extra worktree is allowed, until it leaves Ready. The dispatcher claims a Ready task for a Dev run
      only while a slot is free, and each Dev run works on that one task.
    - `devs`: how many Dev runs go at once, each on its own task. Only the stakeholder sets it.
    - `pitched`: pitches in front of the stakeholder
@@ -219,6 +227,8 @@ out stops everyone.
   after pushing" rule you've been given elsewhere.
 - If any `gh` or `a-team board` call reports a rate limit, stop the run straight away and say so
   in your summary. Don't retry.
+- If an `a-team board` call says the board read came back incomplete, do the same: it has
+  already read twice and changed nothing.
 
 ## Never
 

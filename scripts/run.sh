@@ -25,6 +25,8 @@ if [ "${healthy:-0}" -ne 0 ] && [ "$healthy" -ne 2 ]; then
   exit 3
 fi
 
+board=$("$ROOT/bin/a-team" board "$TEAM" wip) || exit 3
+
 # Nothing else updates the product checkout, and a run reads the vision and the code from it.
 CHECKOUT=$(jq -r '.checkout // ((.workdir // "" | rtrimstr("/")) + "/main")' "$CONFIG")
 CHECKOUT=${CHECKOUT/#\~/$HOME}
@@ -57,7 +59,7 @@ $(cat "$CONFIG")
 ## Board right now
 
 \`\`\`json
-$("$ROOT/bin/a-team" board "$TEAM" wip)
+$board
 \`\`\`
 
 EOF

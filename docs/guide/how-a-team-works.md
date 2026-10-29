@@ -68,6 +68,13 @@ Whatever another task waits on comes first: the Dev takes a Ready task some task
 any other, and the Lead pitches such an Idea before any other, whatever their Priority. Priority
 still orders them among themselves, and nobody's Priority changes.
 
+One kind of task has no pitch: a **fix**. When CI fails on the default branch, say after two PRs
+that each passed broke it together, the Lead files one task, labelled `a-team:fix`, that makes it
+green again. It goes straight to Ready, skipping Pitched since it only restores work you've already
+accepted, and the Dev takes it before anything else. You still accept its PR. Meanwhile a PR failing
+only what the branch fails isn't counted as the Dev's failure. [Work](work.md#when-main-is-red) shows
+all of this on one line.
+
 A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a
 draft pull request in Pitched instead. You agree to it by merging it, with `a` in
 [Work](work.md#answering-from-a-card), where `e` also edits it.
@@ -82,7 +89,8 @@ Work waits for you in two places, and no agent moves it on without you.
   word and says so. A yes with a condition leaves the pitch for you to approve once it's revised.
 - **In review.** You merge a task's PR. Nothing is done until you say so. Once every task of a
   pitch has closed, the Lead checks the whole and closes it, so a finished pitch doesn't come back
-  to you.
+  to you. A pitch another pitch's work already built, the Lead closes too, naming the merged PRs
+  that built it.
 
 Both are in the [Work](work.md) area, where you can answer them without leaving the app.
 

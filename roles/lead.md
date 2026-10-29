@@ -50,6 +50,19 @@ again. Its entries are leanings, never settled facts.
 
 ## Each run, in this order
 
+### First: a red default branch
+
+When your prompt says the default branch is red, deal with that before anything else:
+
+1. Find what broke it: the failing jobs' logs on its head commit (`gh run view <run-id> --log-failed`),
+   and the merges since the last green commit that touch what fails.
+2. If the failure is clearly transient (network, runner), re-run it with `gh run rerun <run-id> --failed`
+   and file nothing.
+3. Otherwise file the fix with `a-team board {{team}} fix lead "<title>" <file>`. It has no pitch: the
+   body names the commits and the PRs that broke it, with their pitches, the failing jobs, and what
+   *green again* means. The Dev takes it before anything else. The board refuses it while the branch
+   is green, or while another fix is open.
+
 ### 1. Answer feedback on pitches
 
 For each item in `a-team board {{team}} mine lead Pitched Approved Building "In review"`, run `feedback`.
@@ -145,6 +158,10 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
   - close it with `a-team board {{team}} finish lead <pitch> <file>`, the file saying in a line or
     two what you tried. The stakeholder has already tried and merged every task, so the pitch
     doesn't come back to them.
+- A pitch with no tasks may already be built by another pitch's task. Check it on `origin/main` the
+  same way, and if it is, close it with `a-team board {{team}} finish lead <pitch> <file> <pr>...`,
+  naming the merged PRs that built it, the file saying which PRs did and what you tried. Never ask
+  the stakeholder to close it.
 - For each task you held that your prompt names (a Ready task labelled `blocked`, your comment
   saying why), read `a-team board {{team}} feedback lead <task>`. If the stakeholder's reply says the
   thing is done, `a-team board {{team}} unblock lead <task>`, and it goes back in the Dev's queue. If

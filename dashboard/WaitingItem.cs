@@ -11,6 +11,9 @@ public sealed record WaitingItem(
     bool Dependency = false, string Upstream = "", IReadOnlyList<IReadOnlyList<ChainLink>>? Chains = null,
     IReadOnlyList<int>? Frees = null, string HeldBy = "")
 {
+    /// <summary>Whether it's the task that makes the team's red default branch green again.</summary>
+    public bool Fix { get; init; }
+
     /// <summary>The tasks this card holds up, found across every team's cards by <see cref="Holds.Tag"/>.</summary>
     public IReadOnlyList<Hold> Holding { get; init; } = [];
 
@@ -121,7 +124,8 @@ public sealed record WaitingItem(
                         Text(item, "recommendation"), Flag(item, "reviewed"), Numbered(item, "consider") ?? 0,
                         Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream"),
                         Linked(item) is { Count: > 0 } chains ? chains : null,
-                        Numbers(item, "frees") is { Count: > 0 } frees ? frees : null, Text(item, "heldBy")))
+                        Numbers(item, "frees") is { Count: > 0 } frees ? frees : null, Text(item, "heldBy"))
+                    { Fix = Flag(item, "fix") })
             ];
         }
         catch (JsonException)
