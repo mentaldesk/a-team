@@ -62,6 +62,7 @@
       "Bash(a-team board * hold *)",
       "Bash(a-team board * release *)",
       "Bash(a-team board * edit *)",
+      "Bash(a-team board * decision *)",
       "Bash(a-team board * vision-review *)",
       "Bash(gh issue edit *--remove-label*)",
       "Bash(a-team dispatch*)",

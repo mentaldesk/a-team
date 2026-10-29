@@ -224,7 +224,7 @@ public class AppMenuTests : IDisposable
 
         Assert.Equal(
             ["_Show details", "_Fold the lane", "Open on _GitHub", "Go _to the agent's session", "_Refresh", "_Next team", "_Previous team",
-                "Open team's _board on GitHub", "S_ettings", "_Quit"],
+                "Open team's _board on GitHub", "_Decisions…", "S_ettings", "_Quit"],
             Under(window, View(window)).Select(id => Item(window, id).Title));
     }
 
