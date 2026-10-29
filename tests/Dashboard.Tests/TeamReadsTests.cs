@@ -29,6 +29,15 @@ public class TeamReadsTests
     }
 
     [Fact]
+    public void A_board_that_came_back_short_says_how_short()
+    {
+        var reads = new TeamReads(["a"], _ => Task.FromResult(new Reading("",
+            "board.sh: the board read came back incomplete (100 of 358 items), twice. Nothing was changed: end this run, and the next one reads the board again.")));
+
+        Assert.Equal([("a", new Reading("", "Board read incomplete (100 of 358 items)"))], reads.Landed());
+    }
+
+    [Fact]
     public void A_team_already_being_read_isn_t_read_twice()
     {
         var asked = 0;

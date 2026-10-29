@@ -73,7 +73,9 @@ each with its column and age.
 Overseer reads the boards when you open it and on `F5`, and the status bar says how long ago the
 selected card's board was read. Ages and animations keep moving between reads. Each lane is read on
 its own, and says so in the lane while it reads, when its board has nothing on it, or when it
-couldn't be read, with `r retry` under the reason; the other lanes keep their cards.
+couldn't be read, with `r retry` under the reason; the other lanes keep their cards. A board that
+came back with items missing says `Board read incomplete (<got> of <total> items)` instead of
+showing some of its cards.
 
 ## Time limits
 

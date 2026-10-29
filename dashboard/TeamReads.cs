@@ -1,8 +1,10 @@
+using System.Text.RegularExpressions;
+
 namespace ATeam.Dashboard;
 
 /// <summary>Reads of several teams at once, each handed back on its own as it lands, so one that fails or lags
 /// holds up none of the others.</summary>
-internal sealed class TeamReads
+internal sealed partial class TeamReads
 {
     private readonly Func<string, Task<Reading>> _read;
     private readonly Dictionary<string, Task<Reading>> _left = [];
@@ -41,6 +43,15 @@ internal sealed class TeamReads
 
     internal static Reading Of(Task<Reading> read) =>
         read.Status == TaskStatus.RanToCompletion
-            ? read.Result
+            ? read.Result with { Failure = Said(read.Result.Failure) }
             : new Reading("", read.Exception?.GetBaseException().Message ?? "the read didn't finish");
+
+    /// <summary>How a failed read reads on screen: a board that came back short says only how short.</summary>
+    internal static string? Said(string? failure) =>
+        failure is not null && Incomplete().Match(failure) is { Success: true } match
+            ? $"Board read incomplete ({match.Groups[1].Value} items)"
+            : failure;
+
+    [GeneratedRegex(@"board read came back incomplete \((\d+ of \d+) items\)")]
+    private static partial Regex Incomplete();
 }
