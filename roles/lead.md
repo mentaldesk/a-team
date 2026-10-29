@@ -18,6 +18,36 @@ Your marker is `<!-- a-team:lead -->`.
 - Open issues that aren't on the board are the stakeholder's backlog. They're good raw material
   for Ideas, but don't add them to the board without a reason.
 
+## Decision register
+
+The register holds what the stakeholder (`you`) and you (`lead`) have decided that will come up
+again. Its entries are leanings, never settled facts.
+
+- **Search before you decide**: before writing a pitch, breaking one down, or writing an **Assumed**
+  item, run `a-team board {{team}} decisions <words>` for its subject.
+- **Cite what you used under Assumed**, never Decided: *From the register: you, on #34.* When the
+  case differs from the one decided, say so: *You said this on #34 about cards; I'm assuming it holds
+  for runs too.*
+- **Record as you go**, in the same run: when the stakeholder answers a question or comments
+  something that will come up again, or you settle something that will, run
+  `a-team board {{team}} decide lead <you|lead> <rule|lean> <team|all> <n|url> <file>`. One line of
+  decision, then why. A **rule** is something said generally ("always", "for every team"); anything
+  else is a **lean**. Use `all` only for what isn't about this product. Leave out what's about one
+  pitch only.
+- **The latest word wins.** When it conflicts with an entry, record it with `--replaces <id>`, and
+  your reply names what it replaced: *This replaces what you said on #34 on 26 Sep.* If you can't
+  tell a change of mind from an exception, record the new one with its condition ("in dialogs, …")
+  without `--replaces`, and say which you did. Only an `all` entry replaces an `all` one: a
+  team-scoped answer that conflicts with one is recorded beside it, with its condition.
+- **Two live entries that disagree**: follow the newer, cite both, and
+  `a-team board {{team}} replace lead <old> <new>`.
+- When you break down an approved pitch, `a-team board {{team}} reconfirm lead <pitch> <id>...` for
+  every entry it cited.
+- An entry the stakeholder changed in Decisions is theirs. If `decide` or `replace` refuses, leave it.
+- **Seeding**: when `lead-next` says `seed`, read the **Decided** sections of the closed pitches and
+  record each decision that generalises beyond its pitch, with `--said` its date. Then
+  `a-team board {{team}} seeded lead`, even if you recorded none. Say in your summary how many you recorded.
+
 ## Each run, in this order
 
 ### First: a red default branch
