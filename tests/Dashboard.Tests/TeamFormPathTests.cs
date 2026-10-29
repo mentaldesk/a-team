@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Loading;
 using Terminal.Gui.Input;
 using Terminal.Gui.Views;
 
@@ -75,10 +76,10 @@ public sealed class TeamFormPathTests : IDisposable
             asked = repo;
             return Task.FromResult(Files);
         };
-        (string Title, RepoFiles Files)? opened = null;
-        form.PickRepoFile = (title, files) =>
+        (string Title, IReadOnlyList<string> Labels)? opened = null;
+        form.RunFilePicker = picker =>
         {
-            opened = (title, files);
+            opened = (picker.Title, picker.Labels);
             return "docs/guide/index.md";
         };
         form.SetFocus();
@@ -87,7 +88,8 @@ public sealed class TeamFormPathTests : IDisposable
         Assert.True(form.Vision.NewKeyDownEvent(Key.Enter));
 
         Assert.Equal("mentaldesk/a-team", asked);
-        Assert.Equal(("Vision for a-team", Files), opened);
+        Assert.Equal("Vision for a-team", opened?.Title);
+        Assert.Equal(Files.Paths, opened?.Labels);
         Assert.Equal("docs/guide/index.md", form.Vision.Text);
         Assert.Equal(TeamForm.VisionCaption, form.Hints.Message.Says);
     }
@@ -98,7 +100,7 @@ public sealed class TeamFormPathTests : IDisposable
         using var form = new TeamForm("a-team", Settings with { Customer = true, Docs = "" }, _ => null)
         {
             FindRepoFiles = _ => Task.FromResult(Files),
-            PickRepoFile = (_, _) => "docs/user-guide.md",
+            RunFilePicker = _ => "docs/user-guide.md",
         };
         form.SetFocus();
         form.UserDocs.Value = DocsChoice.Existing;
@@ -107,7 +109,7 @@ public sealed class TeamFormPathTests : IDisposable
         Assert.Equal("docs/user-guide.md isn't in mentaldesk/a-team yet: the Customer lead will draft the docs for you to approve.",
             form.Hints.Message.Says);
 
-        form.PickRepoFile = (_, _) => "VISION.md";
+        form.RunFilePicker = _ => "VISION.md";
         form.PickVision();
         Assert.Equal("VISION.md isn't in mentaldesk/a-team yet: the Lead will draft it for you to approve.", form.Hints.Message.Says);
 
@@ -119,7 +121,7 @@ public sealed class TeamFormPathTests : IDisposable
     [Fact]
     public void The_repo_s_files_are_read_once_and_again_only_after_a_failure()
     {
-        using var form = new TeamForm("a-team", Settings, _ => null) { PickRepoFile = (_, _) => null };
+        using var form = new TeamForm("a-team", Settings, _ => null) { RunFilePicker = _ => null };
         var reads = 0;
         form.FindRepoFiles = repo =>
         {
@@ -135,23 +137,98 @@ public sealed class TeamFormPathTests : IDisposable
     }
 
     [Fact]
-    public void A_failed_read_reaches_the_picker_as_a_line_saying_so()
+    public void The_file_picker_opens_before_the_files_are_read_and_the_form_shows_no_reading_hint()
     {
+        var read = new TaskCompletionSource<RepoFiles>();
+        using var form = new TeamForm("a-team", Settings, _ => null) { FindRepoFiles = _ => read.Task };
+        LoadState? state = null;
+        string? where = null;
+        form.RunFilePicker = picker =>
+        {
+            state = picker.State;
+            where = picker.Where;
+            return null;
+        };
+        form.SetFocus();
+        form.Vision.SetFocus();
+        var hint = form.Hints.Message.Says;
+
+        form.PickVision();
+
+        Assert.Equal(LoadState.Loading, state);
+        Assert.Equal("Markdown files in mentaldesk/a-team", where);
+        Assert.Equal(hint, form.Hints.Message.Says);
+        read.SetResult(Files);
+    }
+
+    [Fact]
+    public void A_failed_read_shows_in_the_picker_and_R_reads_again_without_closing_it()
+    {
+        var reads = 0;
         using var form = new TeamForm("a-team", Settings, _ => null)
         {
-            FindRepoFiles = _ => Task.FromException<RepoFiles>(new InvalidOperationException("gh isn't installed")),
+            FindRepoFiles = _ => ++reads == 1
+                ? Task.FromException<RepoFiles>(new InvalidOperationException("gh isn't installed"))
+                : Task.FromResult(Files),
         };
-        RepoFiles? shown = null;
-        form.PickRepoFile = (_, files) =>
+        LoadState? failed = null;
+        IReadOnlyList<string>? labels = null;
+        form.RunFilePicker = picker =>
         {
-            shown = files;
+            failed = picker.State;
+            picker.SetFocus();
+            picker.FilterField.NewKeyDownEvent(Key.R);
+            labels = picker.Labels;
             return null;
         };
 
         form.PickVision();
 
-        Assert.Equal("Couldn't read mentaldesk/a-team: gh isn't installed", shown?.Failure);
+        Assert.Equal(LoadState.Failed, failed);
+        Assert.Equal(2, reads);
+        Assert.Equal(Files.Paths, labels);
         Assert.Equal("docs/vision.md", form.Vision.Text);
+    }
+
+    [Fact]
+    public void Files_read_for_Vision_list_at_once_in_First_page()
+    {
+        using var form = new TeamForm("a-team", Settings with { Customer = true }, _ => null) { FindRepoFiles = _ => Task.FromResult(Files) };
+        LoadState? state = null;
+        form.RunFilePicker = _ => null;
+        form.PickVision();
+
+        form.FindRepoFiles = _ => new TaskCompletionSource<RepoFiles>().Task;
+        form.RunFilePicker = picker =>
+        {
+            state = picker.State;
+            return null;
+        };
+        form.PickDocs();
+
+        Assert.Equal(LoadState.Loaded, state);
+    }
+
+    [Fact]
+    public void A_read_that_finishes_after_the_picker_closed_is_kept_for_the_next_one()
+    {
+        var read = new TaskCompletionSource<RepoFiles>();
+        var reads = 0;
+        using var form = new TeamForm("a-team", Settings, _ => null)
+        {
+            FindRepoFiles = _ =>
+            {
+                reads++;
+                return read.Task;
+            },
+            RunFilePicker = _ => null,
+        };
+
+        form.PickVision();
+        read.SetResult(Files);
+        form.PickVision();
+
+        Assert.Equal(1, reads);
     }
 
     [Fact]
@@ -190,7 +267,7 @@ public sealed class TeamFormPathTests : IDisposable
     {
         using var form = new TeamForm("a-team", Settings, _ => null)
         {
-            Home = _home, FindRepoFiles = _ => Task.FromResult(Files), PickRepoFile = (_, _) => "VISION.md",
+            Home = _home, FindRepoFiles = _ => Task.FromResult(Files), RunFilePicker = _ => "VISION.md",
         };
         form.Workdir.Text = "~/code/a-team";
 

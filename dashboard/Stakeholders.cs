@@ -32,18 +32,23 @@ public static class Stakeholders
         }
     }
 
-    /// <summary>Asks GitHub who can push to <paramref name="repo"/>, and who's signed in to put them first.</summary>
+    /// <summary>Asks GitHub who can push to <paramref name="repo"/>, and who's signed in to put them first; throws
+    /// where GitHub says why it can't.</summary>
     public static async Task<IReadOnlyList<string>?> Read(string repo)
     {
         var gh = new TeamCommand("gh");
         var me = gh.Read("api", "user", "--jq", ".login");
-        var collaborators = gh.Read("api", $"repos/{repo}/collaborators?per_page=100");
-        return Parse(await collaborators, (await me).Output.Trim());
+        var collaborators = await gh.Read("api", $"repos/{repo}/collaborators?per_page=100");
+        if (collaborators.Failure is { } failure)
+            throw new InvalidOperationException(failure.StartsWith("gh: ", StringComparison.Ordinal) ? failure[4..] : failure);
+        return Parse(collaborators, (await me).Output.Trim());
     }
 
-    /// <summary>What the picker says once the list has come back, or not.</summary>
-    public static string Message(IReadOnlyList<string>? found, string repo) =>
-        found is null
-            ? $"Couldn't reach GitHub to see who can push to {repo}. Type a login to add one."
-            : $"{found.Count} can push to {repo}. Type a login to add one that isn't listed.";
+    /// <summary>What the picker says once the list has come back.</summary>
+    public static string Message(IReadOnlyList<string> found, string repo) =>
+        $"{found.Count} can push to {repo}. Type a login to add one that isn't listed.";
+
+    /// <summary>What the picker says where the list couldn't be read, and why where that's known.</summary>
+    public static string Failed(string repo, string? why) =>
+        why is null ? $"Couldn't read who can push to {repo}." : $"Couldn't read who can push to {repo}: {why}";
 }

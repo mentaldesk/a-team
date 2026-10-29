@@ -9,23 +9,31 @@ public abstract class PathPicker : PickerDialog<string>
     private const int Widest = 90;
 
     private readonly Label _where;
-    private readonly Label _noMatches;
 
     protected PathPicker(string title, int width, int contentRows, IReadOnlyList<string> rows, string where, string verb)
         : base(title, width, contentRows, rows, row => row, verb)
     {
-        _noMatches = SubViews.OfType<Label>().Single(label => label.Text == "(no matches)");
-        _where = new Label { Text = where, X = 1, Y = 0, Width = Dim.Fill(1) };
+        _where = Lay(where);
+    }
+
+    /// <summary>Opens before its rows are in, saying <paramref name="loading"/> in the list.</summary>
+    protected PathPicker(string title, int width, int contentRows, string loading, string where, string verb)
+        : base(title, width, contentRows, loading, row => row, verb)
+    {
+        _where = Lay(where);
+    }
+
+    private Label Lay(string where)
+    {
+        var above = new Label { Text = where, X = 1, Y = 0, Width = Dim.Fill(1) };
         FilterField.Y = 1;
-        Add(_where);
+        Add(above);
         this.Routed();
         FilterField.SetFocus();
+        return above;
     }
 
     internal string Where => _where.Text;
-
-    /// <summary>What <see cref="PickerDialog{T}.NoMatches"/> shows in place of the list.</summary>
-    internal string NoMatchesText => _noMatches.Text;
 
     /// <summary>The path picked, or null where it was cancelled.</summary>
     internal string? Picked { get; private set; }
@@ -33,16 +41,14 @@ public abstract class PathPicker : PickerDialog<string>
     internal string Typed => FilterField.Text.Trim();
 
     /// <summary>The row the list has selected, or null where it shows none.</summary>
-    protected string? Selected => Shown.Count > 0 && SubViews.OfType<ListView>().Single().SelectedItem is { } at && at < Shown.Count
-        ? Shown[at]
-        : null;
+    protected string? Selected => SelectedIndex is { } at && at < Shown.Count ? Shown[at] : null;
 
     /// <summary>The widest a picker can be on a screen <paramref name="columns"/> wide, and how many rows it can show
     /// on one <paramref name="lines"/> high.</summary>
     internal static (int Width, int Rows) Fit(int columns, int lines) =>
         (Math.Clamp(columns - ScreenMargin, 20, Widest), Math.Clamp(lines - ScreenMargin - 2, 6, 24));
 
-    protected void Say(string text) => _noMatches.Text = text;
+    protected void ShowWhere(string text) => _where.Text = text;
 
     protected void Take(string path)
     {

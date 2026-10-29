@@ -98,6 +98,10 @@ the Dev opens that draft PR itself and hands the task back with it linked, for y
 release. It looks after that PR as it does its own and marks it ready once it's green. It then
 shows in Review on the team that runs that repo, where `a` merges it. Releasing stays yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
 
+Vision, First page, Stakeholders and Contributes to open at once and load from GitHub in their
+list. Until the rows are in, the pick or Done button is dimmed and `Enter` does nothing. If the read
+fails, the list says why, and `R` reads again without closing the picker.
+
 `Esc` in a picker leaves the field as it was. A new team's Workdir follows its Name, as
 `~/code/<name>`, until you type or pick one of your own.
 
