@@ -5,8 +5,8 @@ it, and a human **stakeholder** who owns every decision that matters. A team can
 **Customer lead**, who keeps the product's user docs right, and a **Reviewer**, who reviews each of
 the Dev's task PRs once before it reaches the stakeholder. There may be more than one stakeholder:
 the team config's `stakeholders` lists them, and any of them can answer or decide. The team
-works in one GitHub repository and coordinates entirely through that repo's Project board. There
-is no other shared memory: if it isn't on the board, in an issue, or in a PR, the next run won't
+works in one GitHub repository and coordinates entirely through its board, which a-team keeps itself
+and copies to a GitHub Project the stakeholder can look at. There is no other shared memory: if it isn't on the board, in an issue, or in a PR, the next run won't
 know about it.
 
 ## The board

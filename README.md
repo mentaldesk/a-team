@@ -1,7 +1,7 @@
 # a-team
 
 A small team of Claude agents that works on one GitHub repository and coordinates through
-that repo's Project board:
+its own board, which you can also see as a GitHub Project:
 
 - **Lead** researches opportunities, pitches them to you with a mockup, revises them on your
   feedback, breaks approved pitches into tasks, and checks the finished feature.
@@ -41,7 +41,8 @@ takes it from there.
 The app opens only once there's a team, so your first one starts by hand:
 
 1. Make sure `gh` can manage projects: `gh auth refresh -s project`.
-2. Create or pick a Project for the repo. Its Status field needs nine options, Idea, Exploring,
+2. Create or pick a Project for the repo to mirror the board to, or set `"mirror": false` in step 3
+   to go without one. Its Status field needs nine options, Idea, Exploring,
    Pitched, Approved, Building, Ready, In progress, In review and Done, or a `statusMap` in the team
    config from those names to the ones it has. Under
    its **Workflows**, turn on **Auto-add to project** for the repo, and **Item added to project**

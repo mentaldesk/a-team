@@ -70,6 +70,9 @@ public sealed partial record TeamSettings(
 
     public VisionReview VisionReview { get; init; } = new();
 
+    /// <summary>Whether a-team copies the board to a GitHub Project: <c>mirror</c>, on unless it's <c>false</c>.</summary>
+    public bool Mirror { get; init; } = true;
+
     /// <summary>Other repos the Dev may open draft PRs on: <c>contributesTo</c>.</summary>
     public IReadOnlyList<string> ContributesTo { get; init; } = [];
 
@@ -111,6 +114,7 @@ public sealed partial record TeamSettings(
             Docs = Text(root, "docs"),
             Budget = Number(root, "dispatch", "budget") ?? 0,
             ContributesTo = Names(root, "contributesTo"),
+            Mirror = Find(root, "mirror") is not { ValueKind: JsonValueKind.False },
             VisionReview = new VisionReview(
                 Text(root, "visionReview", "trigger") switch
                 {
@@ -183,6 +187,7 @@ public sealed partial record TeamSettings(
             config = ConfigEdit.Set(config, ["stakeholders"], Stakeholders);
         if (!ContributesTo.SequenceEqual(before.ContributesTo))
             config = ConfigEdit.Set(config, ["contributesTo"], ContributesTo);
+        SetFlag(Mirror, before.Mirror, "mirror");
         Set(ProjectOwner, before.ProjectOwner, "project", "owner");
         SetNumber(ProjectNumber, before.ProjectNumber, "project", "number");
         Set(Vision, before.Vision, "vision");
@@ -213,12 +218,11 @@ public sealed partial record TeamSettings(
         return config;
     }
 
-    /// <summary>Why the form won't save these, or null when it will. <paramref name="projectOptional"/> lets a new
-    /// team leave its project out, to be created for it.</summary>
-    public string? Refusal(bool projectOptional = false) =>
+    /// <summary>Why the form won't save these, or null when it will. A team with no project has one made for it.</summary>
+    public string? Refusal() =>
         Repo.Trim().Length == 0 ? "Repo is required."
         : !RepoShape().IsMatch(Repo.Trim()) ? $"Repo must be owner/repo, like mentaldesk/a-team, not {Repo.Trim()}."
-        : !(projectOptional && NoProject) && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null) ? "Project is required."
+        : Mirror && !NoProject && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null) ? "Mirror needs an owner and a number."
         : ProjectNumber <= 0 ? "Project number must be above 0."
         : Vision.Trim().Length == 0 ? "Vision is required."
         : Workdir.Trim().Length == 0 ? "Workdir is required."
@@ -257,6 +261,9 @@ public sealed partial record TeamSettings(
         Checkout is { } checkout && checkout.TrimEnd('/') != $"{Workdir.TrimEnd('/')}/main" ? checkout : null;
 
     public bool NoProject => ProjectOwner.Trim().Length == 0 && ProjectNumber is null;
+
+    /// <summary>A mirror to make: on, with no project named yet.</summary>
+    public bool NewMirror => Mirror && NoProject;
 
     public string RepoOwner => Repo.Split('/')[0].Trim();
 

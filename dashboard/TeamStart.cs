@@ -98,7 +98,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         [
             () => Cloned() ? null : CloneStep(teams.Settings(team), TeamSettings.Expand(Checkout(), home)),
             App,
-            () => teams.Settings(team).NoProject ? ProjectStep(teams, team, teams.Settings(team)) : null,
+            () => teams.Settings(team).NewMirror ? ProjectStep(teams, team, teams.Settings(team)) : null,
             () => BoardStep(team, teams.Settings(team)),
             () => VisionStep(team),
             () => teams.HasApp(team) ? WorkStep(team) : null,
@@ -131,8 +131,8 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
                 uninstalled = answer != Answer.Done;
             if (at == visionStep)
                 vision = answer == Answer.Done;
-            if (at == projectStep && teams.Settings(team).NoProject)
-                return ($"{team} is paused: it has no project to move its work across. Pick one in its settings.", Schemes.Accent);
+            if (at == projectStep && teams.Settings(team).NewMirror)
+                return ($"{team} is paused: it has no project to copy its board to. Pick one, or None, in its settings.", Schemes.Accent);
             if (at == steps.Count - 1)
             {
                 if (answer == Answer.Cancelled)
@@ -174,6 +174,9 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
     /// <summary>Setting the board up again, which puts right its Status options and labels.</summary>
     public Step Repair(string team, TeamSettings settings) => BoardStep(team, settings);
 
+    /// <summary>Making the project a team copies its board to, once its settings ask for a new one.</summary>
+    public Step NewMirror(TeamConfigs teams, string team) => ProjectStep(teams, team, teams.Settings(team));
+
     private Step BoardStep(string team, TeamSettings settings) =>
         new(
             $"Set up {team}'s board?",
@@ -184,7 +187,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             async () =>
             {
                 var plan = aTeam.Read("board", team, "setup", "--dry-run");
-                var project = Project(settings);
+                var project = settings.Mirror ? Project(settings) : Task.FromResult<ProjectChoice?>(null);
                 return (await plan).Failure is { } failure
                     ? (null, $"Can't set up {team}'s board: {failure}")
                     : (SetupPlan((await plan).Output, await project, settings.Repo), null);
@@ -236,7 +239,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         return new Step(
             $"Create a project for {team}?",
             [
-                $"{team} moves its work across a GitHub Project's board, and hasn't got one yet.",
+                $"{team} copies its board to a GitHub Project, so you can see it on GitHub, and hasn't got one yet.",
                 $"gh project create --owner {owner} --title {team}",
                 $"Then link it to {settings.Repo}.",
             ],
@@ -281,7 +284,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
     }
 
     /// <summary>The team's project with its title, or with none where the list can't be read.</summary>
-    private async Task<ProjectChoice> Project(TeamSettings settings)
+    private async Task<ProjectChoice?> Project(TeamSettings settings)
     {
         var number = settings.ProjectNumber ?? 0;
         var listed = ProjectChoice.Parse(await Projects(settings.ProjectOwner), settings.ProjectOwner);
@@ -290,7 +293,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
 
     /// <summary>What <c>board setup --dry-run</c> printed, as the confirmation lists it: the Status options it would
     /// add or keep, then the labels it would create or update.</summary>
-    public static IReadOnlyList<string> SetupPlan(string output, ProjectChoice project, string repo)
+    public static IReadOnlyList<string> SetupPlan(string output, ProjectChoice? project, string repo)
     {
         List<string> options = [];
         List<string> labels = [];
@@ -303,8 +306,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         }
         return
         [
-            $"On project {project}, field '{StatusField}':",
-            .. options,
+            .. project is null ? Array.Empty<string>() : [$"On project {project}, field '{StatusField}':", .. options],
             $"On {repo}:",
             .. labels.Count == 0 ? ["  labels already set up"] : labels,
         ];

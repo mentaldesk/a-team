@@ -202,13 +202,14 @@ public sealed class TeamConfigs
         }
     }
 
-    /// <summary>The team's Project board on GitHub, or null when its config doesn't name one.</summary>
+    /// <summary>The team's Project board on GitHub, or null when its config doesn't name one or has no mirror.</summary>
     public string? BoardUrl(string team)
     {
         try
         {
             using var config = JsonDocument.Parse(File.ReadAllText(PathOf(team)));
             if (config.RootElement.ValueKind != JsonValueKind.Object ||
+                config.RootElement.TryGetProperty("mirror", out var mirror) && mirror.ValueKind == JsonValueKind.False ||
                 !config.RootElement.TryGetProperty("project", out var project) ||
                 project.ValueKind != JsonValueKind.Object ||
                 !project.TryGetProperty("owner", out var owner) || owner.ValueKind != JsonValueKind.String ||

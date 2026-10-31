@@ -1,8 +1,9 @@
 # How a team works
 
 A team is two agents working on one GitHub repository, and you. You can add the
-[Customer lead](#the-customer-lead) and the [Reviewer](#the-reviewer). They coordinate through that repo's
-Project board: if it isn't on the board, in an issue or in a PR, the team doesn't know about it.
+[Customer lead](#the-customer-lead) and the [Reviewer](#the-reviewer). They coordinate through the team's
+board: if it isn't on the board, in an issue or in a PR, the team doesn't know about it. A-Team keeps the board on
+this machine, and copies it to a GitHub Project, its mirror, so you can see it on GitHub too.
 
 ## Who does what
 

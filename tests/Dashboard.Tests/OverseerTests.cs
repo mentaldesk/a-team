@@ -446,6 +446,22 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_lane_whose_mirror_is_behind_says_by_how_much_and_why()
+    {
+        var retry = new DateTimeOffset(2026, 10, 31, 11, 20, 0, TimeSpan.Zero);
+        var lag = MirrorLag.Parse("""
+            [{"number": 7, "team": "a-team"},
+             {"team": "a-team", "mirror": {"behind": 3, "failed": "GitHub rate limit", "retry": "2026-10-31T11:20:00Z"}}]
+            """);
+
+        Assert.Equal($"mirror 3 moves behind (GitHub rate limit, retry {retry.ToLocalTime():HH:mm})", lag!.Note);
+        Assert.Equal($"a-team · idle · {lag.Note}", OverseerView.Heading("a-team", [], 0, lag.Note).Title);
+        Assert.Equal("mirror 1 move behind", new MirrorLag(1).Note);
+        Assert.Null(MirrorLag.Parse("""[{"number": 7, "team": "a-team"}]"""));
+        Assert.Single(BoardCard.Parse("""[{"number": 7, "team": "a-team"}, {"team": "a-team", "mirror": {"behind": 3}}]"""));
+    }
+
+    [Fact]
     public void A_pitch_s_details_list_its_open_tasks_and_its_column_s_limit()
     {
         var pitch = Card(46, "Building", days: 30) with { Priority = "High", Title = "Ranking" };
