@@ -480,7 +480,7 @@ reconcile() {
     --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" --slurpfile cfg "$CONFIG" '
     def q: if . == null then "NULL" else $sq + (tostring | gsub($sq; $sq + $sq)) + $sq end;
     ($cfg[0].project.statusMap // {} | to_entries | map({key: .value, value: .key}) | from_entries) as $rev
-    | def state: if . == null then "None" elif $rev[.] then $rev[.] elif ($states | index(.)) then . else "?" + . end;
+    | def state: if . == null then "None" elif $rev[.] then $rev[.] elif (. as $s | $states | index($s)) then . else "?" + . end;
     ($rows | map({key: "\(.item)", value: .}) | from_entries) as $had
     | [$nodes[] | select(.content.repository.nameWithOwner == $repo) | .content as $c
        | ($had["\($c.number)"]) as $row
@@ -488,10 +488,10 @@ reconcile() {
        | {n: $c.number, node: $c.id, row: $row, shut: $shut,
           shown: (if .project then .project.status | state else null end), item: .project.id, since: (.project.since // $now),
           ranked: ([$c.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
-          content: {type: $c.__typename, title: $c.title, url: $c.url, labels: [$c.labels.nodes[]?.name],
+          content: ({type: $c.__typename, title: $c.title, url: $c.url, labels: [$c.labels.nodes[]?.name],
                     blockedBy: ($c.issueDependenciesSummary.blockedBy // 0), parent: $c.parent.number}
             + (if $shut then {shut: true} else {} end) + (if $shut and $c.stateReason then {closed: $c.stateReason} else {} end)
-            + (if $c.author.login == "dependabot" then {dependabot: true} else {} end)}] as $found
+            + (if $c.author.login == "dependabot" then {dependabot: true} else {} end))}] as $found
     | ($found | map(select(.row == null and .shown != null))) as $new
     | ($found | map(select(.row != null))) as $known
     | {sql: ([$new[] | "INSERT INTO board (team, item, node, status, priority, since, content, mirror, mirrored_status,
@@ -2939,7 +2939,7 @@ case "$CMD" in
       since, parent, team: $team, blocked: '"$BLOCKED"',
       kind: (if .labels | index("pitch") then "pitch" elif .labels | index("a-team:customer") then "docs"
              elif (.labels | index("a-team:dev")) or .parent != null then "task" else "yours" end)})
-      + if $lag then [{team: $team, mirror: $lag}] else [] end' <<<"$all"
+      + (if $lag then [{team: $team, mirror: $lag}] else [] end)' <<<"$all"
     ;;
 
   trend)
