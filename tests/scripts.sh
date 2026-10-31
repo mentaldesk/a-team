@@ -8115,6 +8115,31 @@ Save is left-aligned
 
 <!-- a-team:dev -->" "$(cat "$BIN/pr-body")"
 
+case_ "pictures leaves blank lines elsewhere in the body as the Dev wrote them"
+gh_reviewing '.body = "Run:\n\n```\na\n\n\nb\n```\n\nCloses #12\n\n\n\na-team try demo 912\n\n<!-- a-team:dev -->"'
+run board demo pictures dev 912 "$WORK/save.png" "Save is left-aligned"
+same "exit" 0 "$STATUS"
+same "body" "Run:
+
+\`\`\`
+a
+
+
+b
+\`\`\`
+
+Closes #12
+
+## What it looks like
+
+Save is left-aligned
+
+![Save is left-aligned]($(picture_link "$WORK/save.png"))
+
+a-team try demo 912
+
+<!-- a-team:dev -->" "$(cat "$BIN/pr-body")"
+
 case_ "pictures is the Dev's alone, on its own open task PR, for images of a size GitHub takes"
 refused_pictures() {
   : >"$WRITES"

@@ -1189,12 +1189,17 @@ keep_image() {
 # `a-team try` line and the marker.
 with_section() {
   awk '
-    /^## What it looks like[[:space:]]*$/ { skipping = 1; next }
+    function emit(line) {
+      if (seam) { if (out) print "" } else while (blanks-- > 0) print ""
+      blanks = 0; seam = 0; out = 1; print line
+    }
+    /^## What it looks like[[:space:]]*$/ { skipping = 1; seam = 1; next }
     skipping && (/^#{1,2} / || /^a-team try / || /^<!-- a-team:/) { skipping = 0 }
     skipping { next }
-    !placed && (/^a-team try / || /^<!-- a-team:dev -->/) { print ENVIRON["SECTION"]; print ""; placed = 1 }
-    { print }
-    END { if (!placed) { print ""; print ENVIRON["SECTION"] } }' | cat -s
+    /^$/ { blanks++; next }
+    !placed && (/^a-team try / || /^<!-- a-team:dev -->/) { seam = 1; emit(ENVIRON["SECTION"]); seam = 1; placed = 1 }
+    { emit($0) }
+    END { if (!placed) { seam = 1; emit(ENVIRON["SECTION"]) } }'
 }
 
 # task_pr <pr>: PR <pr>'s state, draft, body, labels and comments, or nothing when it isn't a PR.
