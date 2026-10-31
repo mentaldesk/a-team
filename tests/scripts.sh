@@ -241,8 +241,9 @@ case " \$* " in
   *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
   *"pr list"*"app/demo-app"*) echo "\$*" >>"$UPSTREAM_CALLS"; page="$UPSTREAM" ;;
   *ProjectV2SingleSelectField*) page="$META" ;;
-  *BoardRefresh*) jq '{data: {nodes: [.data.organization.projectV2.items.nodes[] | .content + {projectItems: {nodes: [
-                        {id, project: {number: 1, owner: {login: "mentaldesk"}}, fieldValueByName}]}}]}}' "$ITEMS"; exit 0 ;;
+  *BoardRefresh*) jq --argjson off "\$(cat "$BIN/off-mirror" 2>/dev/null || echo '[]')" '{data: {nodes: [.data.organization.projectV2.items.nodes[]
+                        | .content + {projectItems: {nodes: (if .content.number | IN(\$off[]) then [] else [
+                        {id, project: {number: 1, owner: {login: "mentaldesk"}}, fieldValueByName}] end)}}]}}' "$ITEMS"; exit 0 ;;
   *issueFields*) page="$FIELDS" ;;
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
@@ -3428,7 +3429,8 @@ kept() { KEEP_BOARD=1 run "$@"; }
 history_of() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history "$1" | jq -r '.events | reverse[] | "\(.who) \(.what)"'; }
 # drag <n> <status>: a stakeholder moves #n's card on the mirror.
 drag() {
-  jq --arg i "PVTI_$1" --arg s "$2" '(.data.organization.projectV2.items.nodes[] | select(.id == $i)).fieldValueByName = {name: $s}' \
+  jq --arg i "PVTI_$1" --arg s "$2" '(.data.organization.projectV2.items.nodes[] | select(.id == $i)).fieldValueByName =
+      {name: $s, updatedAt: (now + 1 | todate)}' \
     "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
 }
 every_status() {
@@ -3510,6 +3512,31 @@ A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
 drag 21 Done
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
 same "read from the open items too" '"Done"' "$(jq -c '.[] | select(.number == 21) | .status' "$OUT")"
+
+case_ "a role's move isn't read back as a drag from a mirror read taken before it, and a later drag still is"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo list
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo claim dev
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
+same "kept" '"In progress"' "$(jq -c '.[0].status' "$OUT")"
+same "not yours" 0 "$(history_of 13 | grep -c '^you')"
+drag 13 Ready
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
+same "dragged" '"Ready"' "$(jq -c '.[0].status' "$OUT")"
+
+case_ "an item whose card was taken off the mirror is put back on it with its next move"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo list
+echo '[13]' >"$BIN/off-mirror"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo claim dev
+grep -q '^ADD .*content=I_13' "$WRITES" || fail "not added back in '$(cat "$WRITES")'"
+grep -q 'item=PVTI_new .*option=OPT_progress' "$WRITES" || fail "not moved on the new card in '$(cat "$WRITES")'"
 
 case_ "a move on the mirror the board wouldn't allow is set back, and the item's history says why"
 gh_items <<'ITEMS'

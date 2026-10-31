@@ -473,10 +473,10 @@ fresh_nodes() {
 # `adopt` it takes the mirror's Status and Priority as they are; otherwise a change there is a stakeholder's move.
 reconcile() {
   local rows plan n from to why
-  rows=$(history_sql -json "SELECT item, status, priority, mirror, mirrored_status, mirrored_priority,
+  rows=$(history_sql -json "SELECT item, status, priority, since, mirror, mirrored_status, mirrored_priority,
       json_extract(content, '$.shut') AS shut FROM board WHERE team = $(sql "$TEAM");" | jq -s '.[0] // []')
   plan=$(jq -n --argjson nodes "$1" --argjson rows "$rows" --arg repo "$REPO" --arg team "$TEAM" --arg sq "'" \
-    --arg priority "$PRIORITY" --arg now "$(date -u +%FT%TZ)" --argjson adopt "$([ "${2:-}" = adopt ] && echo true || echo false)" \
+    --arg priority "$PRIORITY" --arg mirror "$MIRROR" --arg now "$(date -u +%FT%TZ)" --argjson adopt "$([ "${2:-}" = adopt ] && echo true || echo false)" \
     --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" --slurpfile cfg "$CONFIG" '
     def q: if . == null then "NULL" else $sq + (tostring | gsub($sq; $sq + $sq)) + $sq end;
     ($cfg[0].project.statusMap // {} | to_entries | map({key: .value, value: .key}) | from_entries) as $rev
@@ -486,7 +486,8 @@ reconcile() {
        | ($had["\($c.number)"]) as $row
        | (if $c.state then ($c.state | IN("CLOSED", "MERGED")) else ($c.stateReason // "REOPENED") != "REOPENED" end) as $shut
        | {n: $c.number, node: $c.id, row: $row, shut: $shut,
-          shown: (if .project then .project.status | state else null end), item: .project.id, since: (.project.since // $now),
+          shown: (if .project then .project.status | state else null end), item: .project.id, changed: .project.since,
+          since: (.project.since // $now),
           ranked: ([$c.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
           content: ({type: $c.__typename, title: $c.title, url: $c.url, labels: [$c.labels.nodes[]?.name],
                     blockedBy: ($c.issueDependenciesSummary.blockedBy // 0), parent: $c.parent.number}
@@ -499,7 +500,7 @@ reconcile() {
                  \(.ranked | q), \(.since | q), \(.content | tojson | q), \(.item | q), \(.shown | q), \(.ranked // "none" | q));"]
            + [$known[] | (.ranked // "none") as $r
                | "UPDATE board SET content = \(.content | tojson | q), node = \(.node | q)\(
-               if .item then ", mirror = \(.item | q)" else "" end)\(
+               if .item then ", mirror = \(.item | q)" elif $mirror != "" then ", mirror = NULL, mirrored_status = NULL" else "" end)\(
                if .shown != null and ($adopt or .row.mirrored_status == null or .shown == .row.status)
                then ", mirrored_status = \(.shown | q)" else "" end)\(
                if .content.type == "Issue" and ($adopt or .row.mirrored_priority == null or $r == (.row.priority // "none"))
@@ -511,7 +512,8 @@ reconcile() {
                | "UPDATE board SET status = \("Done" | q), since = \($now | q) WHERE team = \($team | q) AND item = \(.n);"]
            | join("\n")),
        drags: (if $adopt then [] else [$known[] | select((.shut | not) and .shown != null and .row.mirrored_status != null
-           and .shown != .row.mirrored_status and .shown != .row.status) | [.n, .row.status, .shown] | @tsv] end),
+           and .shown != .row.mirrored_status and .shown != .row.status and .changed > .row.since)
+         | [.n, .row.status, .shown] | @tsv] end),
        ranks: (if $adopt then [] else [$known[] | select(.content.type == "Issue" and .ranked != null
            and .row.mirrored_priority != null and .ranked != .row.mirrored_priority and .ranked != .row.priority)
          | [.n, .ranked] | @tsv] end)}')
