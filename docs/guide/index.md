@@ -29,5 +29,5 @@ your Mac's Cmd and Option keys work in it.
 
 ## [Teams](teams.md)
 
-Starting a team from inside A-Team, a team's settings and roles, pausing or removing one, a daily budget for what its runs cost, what Settings says
+Starting a team from inside A-Team, writing its vision with you and having the Lead review it, a team's settings and roles, pausing or removing one, a daily budget for what its runs cost, what Settings says
 when a team can't run, and the rest of Settings.
