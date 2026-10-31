@@ -39,20 +39,20 @@ public sealed record TryHandover(
     }
 }
 
-/// <summary>The agent handed to <c>a-team attach</c>, or just its run on <paramref name="Task"/>, selected again on
-/// the grid once you quit, or on <see cref="Card"/> in Overseer where it was interrupted from there.</summary>
+/// <summary>The agent handed to <c>a-team attach</c>, or just its run on <paramref name="Task"/>, back in Overseer once
+/// you quit: on <see cref="Card"/> where it was interrupted from there, or else on the team's panel with the role chosen.</summary>
 public sealed record AttachHandover(string Team, string Role, int? Task = null) : Handover
 {
     public int? Card { get; init; }
 
     public override string[] Arguments => Task is { } task ? ["attach", Team, Role, task.ToString()] : ["attach", Team, Role];
 
-    public override Area Area => Card is null ? Area.Dashboard : Area.Overseer;
+    public override Area Area => Area.Overseer;
 }
 
 /// <summary>A team's vision interview, from the area it was started in: back on the card <paramref name="Left"/> names in
-/// Work, or the agent <paramref name="Role"/> names on the grid.</summary>
-public sealed record VisionHandover(string Team, Area Shown, Place? Left = null, string? Role = null) : Handover
+/// Work.</summary>
+public sealed record VisionHandover(string Team, Area Shown, Place? Left = null) : Handover
 {
     public override string[] Arguments => ["vision", Team];
 
@@ -68,15 +68,15 @@ public sealed record TeamsChanged(Area Shown, Place? Left = null) : Handover
     public override Area Area => Shown;
 }
 
-/// <summary>An agent's whole session, written to <paramref name="File"/> and handed to <paramref name="Editor"/>; the
-/// pane opens expanded at <paramref name="Place"/> once you quit, or <see cref="Card"/>'s session in Overseer.</summary>
-public sealed record EditorHandover(string Team, string Role, PanePlace Place, string File, string[] Editor) : Handover
+/// <summary>An agent's whole session, written to <paramref name="File"/> and handed to <paramref name="Editor"/>; once
+/// you quit, <see cref="Card"/>'s session, or else the role's, opens full-screen in Overseer at <paramref name="Place"/>.</summary>
+public sealed record EditorHandover(string Team, string Role, LogPlace Place, string File, string[] Editor) : Handover
 {
     public int? Card { get; init; }
 
     public override string[] Arguments => [.. Editor[1..], File];
 
-    public override Area Area => Card is null ? Area.Dashboard : Area.Overseer;
+    public override Area Area => Area.Overseer;
 
     /// <summary>Waits for the editor to quit, then deletes the file. Null once it has; otherwise how it failed.</summary>
     public string? Open()

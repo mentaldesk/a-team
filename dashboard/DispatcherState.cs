@@ -62,9 +62,9 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
         var passed = Time(Path.Combine(stateRoot, record.DryRun ? "dry-next-pass" : "next-pass")) - interval;
         var last = passed is { } pass && pass > record.InstalledAt ? pass : record.InstalledAt;
         if (now - last > interval + Grace && !Passing(stateRoot, record.DryRun))
-            return new(null, $"stopped {AgentPane.Ago(now - last)} ago", true);
+            return new(null, $"stopped {Ages.Ago(now - last)} ago", true);
 
-        var next = $"next pass {AgentPane.Clock(Max(last + interval - now, TimeSpan.Zero))}";
+        var next = $"next pass {Ages.Clock(Max(last + interval - now, TimeSpan.Zero))}";
         return record.DryRun
             ? new(null, $"dry run: nothing will actually start · {next}", true)
             : new($"{Home(record.Bin, home)} {record.Version}", next, false);

@@ -164,11 +164,11 @@ the next pass would do, and `dispatch.log` records each change in what it says.
 
 ```
 a-team                      the area you were last in
-a-team dashboard [team...]  straight to the agents
+a-team dashboard [team...]  straight to Overseer
 ```
 
-The app has three areas: **Work**, everything waiting on you across every team, **Overseer**, every
-team's board on one screen, and **Dashboard**, what each agent is doing. **Help → Guide** explains them inside the app, and the same pages are in [`docs/guide`](docs/guide/index.md).
+The app has two areas: **Work**, everything waiting on you across every team, and **Overseer**, every
+team's board on one screen with what each agent is doing. **Help → Guide** explains them inside the app, and the same pages are in [`docs/guide`](docs/guide/index.md).
 
 Releases include a native build. Run from a clone, it's built from source and needs the
 .NET 10 SDK.

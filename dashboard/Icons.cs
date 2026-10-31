@@ -132,17 +132,17 @@ public static class Icons
     /// <summary>A style drawn in its own vocabulary, so a row can be picked by looking at it.</summary>
     public static string Sample(IconStyle style) => string.Join(" ", Sampled.Select(icon => Field(icon, style)));
 
-    public static Icon For(PaneStatus status) => status switch
+    public static Icon For(RoleStatus status) => status switch
     {
-        PaneStatus.Running => Icon.Running,
-        PaneStatus.NeverRun => Icon.NeverRun,
-        PaneStatus.Paused => Icon.Paused,
-        PaneStatus.Held => Icon.Held,
-        PaneStatus.StoppedByYou => Icon.StoppedByYou,
-        PaneStatus.Ok => Icon.Ok,
-        PaneStatus.Failed => Icon.Failed,
-        PaneStatus.CutShort => Icon.CutShort,
-        PaneStatus.Misconfigured => Icon.Misconfigured,
+        RoleStatus.Running => Icon.Running,
+        RoleStatus.NeverRun => Icon.NeverRun,
+        RoleStatus.Paused => Icon.Paused,
+        RoleStatus.Held => Icon.Held,
+        RoleStatus.StoppedByYou => Icon.StoppedByYou,
+        RoleStatus.Ok => Icon.Ok,
+        RoleStatus.Failed => Icon.Failed,
+        RoleStatus.CutShort => Icon.CutShort,
+        RoleStatus.Misconfigured => Icon.Misconfigured,
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, "No icon for this status."),
     };
 

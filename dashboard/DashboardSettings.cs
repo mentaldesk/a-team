@@ -41,11 +41,16 @@ public sealed class DashboardSettings
     public Area ReadArea()
     {
         using var file = Parse();
-        return Setting(file, "area") is { ValueKind: JsonValueKind.String } area &&
-               Enum.TryParse<Area>(area.GetString(), ignoreCase: true, out var named) && Enum.IsDefined(named)
+        return Setting(file, "area") is { ValueKind: JsonValueKind.String } area && ParseArea(area.GetString()) is { } named
             ? named
             : Area.Work;
     }
+
+    /// <summary>An area by name. The Dashboard screen is gone, so a file or command that still names it gets Overseer.</summary>
+    public static Area? ParseArea(string? name) =>
+        string.Equals(name, "dashboard", StringComparison.OrdinalIgnoreCase) ? Area.Overseer
+        : Enum.TryParse<Area>(name, ignoreCase: true, out var named) && Enum.IsDefined(named) ? named
+        : null;
 
     public void WriteArea(Area area) => Write("area", writer => writer.WriteStringValue(area.ToString()));
 
@@ -70,7 +75,7 @@ public sealed class DashboardSettings
 
     public void WriteIcons(IconStyle style) => Write("icons", writer => writer.WriteStringValue(style.ToString()));
 
-    /// <summary>Whether panes start with every tool call showing. Off unless the file says otherwise.</summary>
+    /// <summary>Whether sessions start with every tool call showing. Off unless the file says otherwise.</summary>
     public bool ReadExpandToolCalls()
     {
         using var file = Parse();

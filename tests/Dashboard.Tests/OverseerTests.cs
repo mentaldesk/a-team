@@ -360,7 +360,7 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
-    public void Up_and_down_go_along_a_column_then_on_into_the_next_lane_with_cards()
+    public void Up_and_down_go_along_a_column_and_through_each_lane_s_heading_into_the_next()
     {
         var board = Board(
             [Card(1, "Ready", days: 2), Card(2, "Ready", days: 1), Card(5, "Building", days: 1, team: "c"), Card(6, "Ready", days: 1, team: "c")],
@@ -370,26 +370,66 @@ public class OverseerTests : IDisposable
         board.MoveRow(+1);
         Assert.Equal(2, board.SelectedCard?.Number);
         board.MoveRow(+1);
+        Assert.Equal(("b", true), (board.Selected!.Value.Team, board.OnHeading));
+        board.MoveRow(+1);
+        Assert.Equal(("c", true), (board.Selected!.Value.Team, board.OnHeading));
+        board.MoveRow(+1);
         Assert.Equal(("c", 6), (board.Selected!.Value.Team, board.SelectedCard?.Number));
         board.MoveRow(+1);
         Assert.Equal(6, board.SelectedCard?.Number);
+        board.MoveRow(-1);
+        Assert.Equal(("c", true), (board.Selected!.Value.Team, board.OnHeading));
+        board.MoveRow(-1);
+        Assert.Equal(("b", true), (board.Selected!.Value.Team, board.OnHeading));
         board.MoveRow(-1);
         Assert.Equal(("a", 2), (board.Selected!.Value.Team, board.SelectedCard?.Number));
     }
 
     [Fact]
-    public void Down_into_a_lane_without_that_column_lands_on_the_nearest_one_with_cards()
+    public void Up_from_a_lane_s_top_row_selects_its_heading_and_down_goes_back_to_the_cards()
+    {
+        var board = Board([Card(1, "Ready", days: 2), Card(2, "Ready", days: 1), Card(3, "Idea", days: 1)], ["a", "b"]);
+        board.Select("a", 1);
+
+        board.MoveRow(-1);
+
+        Assert.True(board.OnHeading);
+        Assert.Equal("a", board.Selected!.Value.Team);
+        Assert.Null(board.SelectedCard);
+        Assert.False(board.OnMore);
+        board.MoveRow(-1);
+        Assert.True(board.OnHeading);
+        board.MoveColumn(-1);
+        Assert.True(board.OnHeading);
+        board.MoveRow(+1);
+        Assert.Equal(1, board.SelectedCard?.Number);
+    }
+
+    [Fact]
+    public void A_new_read_keeps_a_heading_selected()
+    {
+        var board = Board([Card(1, "Ready", days: 1)], ["a", "b"]);
+        board.SelectHeading("b");
+
+        board.Show([Card(1, "Ready", days: 1), Card(2, "Idea", days: 1, team: "b")]);
+
+        Assert.Equal(("b", true), (board.Selected!.Value.Team, board.OnHeading));
+    }
+
+    [Fact]
+    public void Down_from_a_heading_into_a_lane_without_that_column_lands_on_the_nearest_one_with_cards()
     {
         var board = Board([Card(1, "Ready", days: 1), Card(5, "In review", days: 1, team: "b"), Card(6, "Idea", days: 1, team: "b")], ["a", "b"]);
         board.Select("a", 1);
 
+        board.MoveRow(+1);
         board.MoveRow(+1);
 
         Assert.Equal(5, board.SelectedCard?.Number);
     }
 
     [Fact]
-    public void Down_from_a_folded_column_s_count_goes_on_to_the_next_lane()
+    public void Down_from_a_folded_column_s_count_goes_on_to_the_next_lane_s_heading()
     {
         var board = Board([.. Enumerable.Range(1, 5).Select(n => Card(n, "Ready", days: 10 - n)), Card(9, "Ready", days: 1, team: "b")], ["a", "b"]);
         board.Select("a", 2);
@@ -397,8 +437,11 @@ public class OverseerTests : IDisposable
         Assert.True(board.OnMore);
 
         board.MoveRow(+1);
+        Assert.Equal(("b", true), (board.Selected!.Value.Team, board.OnHeading));
+        board.MoveRow(+1);
 
         Assert.Equal(9, board.SelectedCard?.Number);
+        board.MoveRow(-1);
         board.MoveRow(-1);
         Assert.True(board.OnMore);
     }
@@ -520,8 +563,6 @@ public class OverseerTests : IDisposable
         Assert.Equal(["team0 · idle", "team1 · idle"], window.Overseer.LaneTitles);
         Assert.True(window.Press("Ctrl+G W"));
         Assert.Equal(Area.Work, window.CurrentArea);
-        Assert.True(window.Press("Ctrl+G D"));
-        Assert.Equal(Area.Dashboard, window.CurrentArea);
     }
 
     [Fact]
@@ -575,6 +616,7 @@ public class OverseerTests : IDisposable
         Assert.Equal([url], opened);
         Assert.Equal(Opening.Outcome(did, url).Message, window.Says());
         Assert.Equal(did == "failed", window.Status.MessageSeverity == Severity.Error);
+        window.NewKeyDownEvent(Key.CursorDown);
         window.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal(("team1", 21), (window.Overseer.Board.Selected!.Value.Team, window.Overseer.Board.SelectedCard?.Number));
     }
@@ -726,6 +768,74 @@ public class OverseerTests : IDisposable
         Assert.Equal(12, window.Overseer.Board.SelectedCard?.Number);
     }
 
+    [Theory]
+    [InlineData(160, true)]
+    [InlineData(120, false)]
+    public void Up_from_a_lane_s_top_row_shows_the_team_beside_the_lanes_or_at_their_foot_and_Down_goes_back(int width, bool beside)
+    {
+        Directory.CreateDirectory(Path.Combine(Config, "teams"));
+        File.WriteAllText(Path.Combine(Config, "teams", "team0.json"), """{"dispatch": {"enabled": true}}""");
+        WriteRun("team0", "dev", 12);
+        using var window = Open(width: width, clock: new Clock());
+        window.Press("Ctrl+G O");
+        window.Refresh();
+
+        Assert.True(window.NewKeyDownEvent(Key.CursorUp));
+        window.Layout(new Size(width, 30));
+
+        Assert.True(window.Overseer.Board.OnHeading);
+        Assert.Equal("team0", window.Overseer.Region);
+        Assert.True(window.Team.Visible);
+        Assert.False(window.Card.Visible);
+        Assert.Equal("team0", window.Team.Title);
+        Assert.Equal(beside ? width * 2 / 5 : width, window.Team.Frame.Width);
+        Assert.Equal(beside ? 1 : 30 - 1 - window.Team.Rows, window.Team.Frame.Y);
+        Assert.Equal(beside ? 30 - 2 : 30 - 2 - window.Team.Rows, window.Overseer.Frame.Height);
+        Assert.Equal(2, window.Team.Lines.Count);
+        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run · dispatcher hasn't run", window.Team.Lines[0]);
+        Assert.StartsWith(Icons.Field(Icon.Running, IconStyle.Unicode) + "Dev           running ", window.Team.Lines[1], StringComparison.Ordinal);
+        Assert.EndsWith(" · #12", window.Team.Lines[1], StringComparison.Ordinal);
+        Assert.Equal("F6 choose a role · h pause", window.Team.Hint);
+
+        Assert.True(window.NewKeyDownEvent(Key.CursorDown));
+
+        Assert.Equal(11, window.Overseer.Board.SelectedCard?.Number);
+        Assert.False(window.Team.Visible);
+        Assert.Equal(beside, window.Card.Visible);
+    }
+
+    [Fact]
+    public void Enter_on_a_role_chosen_in_the_team_s_panel_opens_its_latest_session_full_screen_and_Esc_comes_back_to_the_team()
+    {
+        WriteRun("team0", "dev", 12);
+        WriteLog(Path.Combine(_root, "team0", "dev"), "Reading the task");
+        using var window = Open(width: 160);
+        window.Press("Ctrl+G O");
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorUp);
+        Assert.False(window.Commands.IsEnabled("overseer.details"));
+
+        Assert.True(window.NewKeyDownEvent(Key.F6));
+        Assert.Equal("Team", window.Region.Name);
+        Assert.True(window.NewKeyDownEvent(Key.CursorDown));
+        Assert.Equal("dev", window.Team.Role);
+        Assert.True(window.Overseer.Board.OnHeading);
+        Assert.Equal("Enter latest log · h pause · i interrupt", window.Team.Hint);
+
+        Assert.True(window.NewKeyDownEvent(Key.Enter));
+
+        Assert.True(window.SessionFull);
+        Assert.True(window.Card is { Visible: true, Full: true });
+        Assert.Equal("team0 · Dev", window.Card.Title);
+        Assert.StartsWith("Dev · running ", window.Card.Session, StringComparison.Ordinal);
+        Assert.Contains(window.Card.Lines, line => line.Text == "Reading the task");
+        Assert.Equal("Log", window.Region.Name);
+        Assert.True(window.NewKeyDownEvent(Key.Esc));
+        Assert.False(window.SessionFull);
+        Assert.True(window.Team is { Visible: true, HasFocus: true });
+        Assert.Equal("dev", window.Team.Role);
+    }
+
     [Fact]
     public void i_on_a_card_whose_run_has_a_conversation_hands_you_to_it_to_come_back_to_the_card()
     {
@@ -779,7 +889,7 @@ public class OverseerTests : IDisposable
     {
         WriteRun("team0", "dev", 12);
         var place = new LogPlace([], 0, true, 0, 0, false);
-        using var window = Open(resume: new EditorHandover("team0", "dev", new PanePlace(null, place), "log", ["less"]) { Card = 12 });
+        using var window = Open(resume: new EditorHandover("team0", "dev", place, "log", ["less"]) { Card = 12 });
         window.Refresh();
 
         Assert.Equal(12, window.Overseer.Board.SelectedCard?.Number);
@@ -787,24 +897,18 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
-    public void r_is_enabled_only_on_a_card_an_agent_is_on_and_takes_you_to_its_session()
+    public void r_reads_the_boards_that_failed_again_and_does_nothing_else()
     {
         WriteRun("team0", "dev", 12);
         using var window = Open();
         window.Press("Ctrl+G O");
         window.Refresh();
-
-        Assert.False(window.Commands.IsEnabled("overseer.session"));
         window.NewKeyDownEvent(Key.CursorRight);
+
         Assert.Equal(12, window.Overseer.Board.SelectedCard?.Number);
-        Assert.True(window.Commands.IsEnabled("overseer.session"));
-        Assert.Equal(["team0 · Dev  ", "team1 · idle"], window.Overseer.LaneTitles);
-
-        Assert.True(window.NewKeyDownEvent(new Key('r')));
-
-        Assert.Equal(Area.Dashboard, window.CurrentArea);
-        Assert.Equal(1, window.ExpandedAgent);
-        Assert.True(window.Panes[1].HasFocus);
+        Assert.False(window.Commands.IsEnabled("overseer.retry"));
+        Assert.False(window.NewKeyDownEvent(new Key('r')));
+        Assert.Equal(Area.Overseer, window.CurrentArea);
     }
 
     [Fact]
@@ -817,12 +921,10 @@ public class OverseerTests : IDisposable
         window.Refresh();
 
         Assert.Equal(11, window.Overseer.Board.SelectedCard?.Number);
-        Assert.True(window.Commands.IsEnabled("overseer.session"));
+        Assert.StartsWith("Lead · running", window.Card.Session, StringComparison.Ordinal);
         Assert.Equal(["team0 · Lead  ", "team1 · Lead  "], window.Overseer.LaneTitles);
-        window.NewKeyDownEvent(Key.CursorDown);
-        window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal("team1", window.Overseer.Board.Selected!.Value.Team);
-        Assert.False(window.Commands.IsEnabled("overseer.session"));
+        window.Overseer.Select("team1", 22);
+        Assert.Equal("No agent has run on this card yet", window.Card.Session);
     }
 
     [Fact]
@@ -943,7 +1045,7 @@ public class OverseerTests : IDisposable
             _ => Task.FromResult(new Reading("{\"body\": \"\"}", null)),
             openUrl ?? Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
-            resume?.Area ?? Area.Dashboard,
+            resume?.Area ?? Area.Work,
             IconStyle.Unicode,
             handOver: handOver,
             resume: resume,

@@ -50,7 +50,7 @@ nothing to restart.
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
 | `scripts/pause.sh` | `a-team pause` / `a-team resume` / `a-team stop`: turns a team's dispatch off and on, or holds one role |
 | `scripts/attach.sh` | `a-team attach`: stops and holds a role, then resumes its last run's conversation |
-| `dashboard/` | `a-team`: the app, with a Work area, Overseer and the agent Dashboard |
+| `dashboard/` | `a-team`: the app, with a Work area and Overseer |
 | `tasks/<role>.md` | The prompt a run starts with, including what the role is authorised to do |
 | `settings/agents.json` | Permission rules for every run |
 | `settings/<role>.json` | Rules one role's runs add to those |

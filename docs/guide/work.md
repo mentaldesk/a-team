@@ -1,7 +1,7 @@
 # Work
 
-Everything waiting on you, across every team. `Ctrl+G W` opens it, `Ctrl+G D` goes to the Dashboard and
-`Ctrl+G O` to [Overseer](overseer.md). The app opens in whichever area you were in last, and on Work the first time.
+Everything waiting on you, across every team. `Ctrl+G W` opens it and `Ctrl+G O` goes to
+[Overseer](overseer.md). The app opens in whichever area you were in last, and on Work the first time.
 
 Anything whose next move is yours is here, in Triage, Pitches, Blocked or Review. Nothing waits on
 you anywhere else.
@@ -22,8 +22,8 @@ has, and with nothing recorded yet the title shows only what's waiting.
 each hour of it. a-team times you only here, never on GitHub, and only while you're active: after 5
 minutes with no key pressed it stops counting until the next one. Time with a card's reader open,
 commenting included, counts against that card, and a try counts in full, up to 30 minutes. Time in
-Work with no reader open counts as *other* for the team whose lane is selected. Time on the
-Dashboard and Overseer doesn't count. Neither figure shows until some time has been recorded.
+Work with no reader open counts as *other* for the team whose lane is selected. Time in
+Overseer doesn't count. Neither figure shows until some time has been recorded.
 
 To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It charts the last 14 days,
 one line per team, for what was waiting on you, what you accepted each day, the hours to accept:
@@ -184,9 +184,9 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 to narrow the list as in Commands.
 
 The cards are read when you open Work, when you press `F5`, and by themselves every five minutes
-while Work is in front. Coming back from the Dashboard puts you on the card you left, and reads again
+while Work is in front. Coming back from Overseer puts you on the card you left, and reads again
 only if an agent has started or finished a run, or five minutes have passed, since the last read.
-That costs about 250 of the 5,000 GraphQL points an hour GitHub allows; the Dashboard reads nothing.
+That costs about 250 of the 5,000 GraphQL points an hour GitHub allows.
 
 Each team's tab is read on its own. While its first read takes more than a moment, it shows a
 spinner and `Reading a-team's board…`. A team with nothing waiting says `Nothing waiting on you`,
@@ -233,11 +233,11 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 `Ctrl+←`/`→` for a word), and hold `Shift` to select,
 as in any editor. You can also drag with the mouse, or double-click a word, like an issue number or
 a URL. `Ctrl+C` copies the selection, and `Esc` clears it. Over SSH it reaches your own computer,
-with the terminal set up as [Copying from a log](dashboard.md#copying-from-a-log) says.
+with the terminal set up as [Copying and links](app.md#copying-and-links) says.
 
 ## Answering from a card
 
-- **Approve a pitch.** Reading a pitch in Pitches, press `a`. It asks first ([Confirming](dashboard.md#confirming)):
+- **Approve a pitch.** Reading a pitch in Pitches, press `a`. It asks first ([Confirming](app.md#confirming)):
   `Ctrl+Enter` approves it and the card leaves, `Esc` keeps reading.
 - **Reply.** Reading any card, press `c` to write a comment. It opens in a **Comment** pane on the
   left, with the body and History still beside it. `Tab` and `Shift+Tab` move between the panes,
@@ -294,14 +294,14 @@ with the terminal set up as [Copying from a log](dashboard.md#copying-from-a-log
   A pitch that changes more than one file can't be edited here; `g` opens it on GitHub.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. It asks first:
   `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't
-  ([Confirming](dashboard.md#confirming)). For a task, its PR is squash-merged and its
+  ([Confirming](app.md#confirming)). For a task, its PR is squash-merged and its
   branch deleted. The Customer lead's docs PR, a Dependabot PR and another team's PR are merged the same way, and so is a document pitch,
   from Pitches: the card leaves, and the Lead's next run reads the new vision. If it isn't ready yet,
   `a` says why instead.
 
 ### While it's being written
 
-Approving, accepting, ranking or declining a card, and on the Dashboard pausing or interrupting
+Approving, accepting, ranking or declining a card, and in Overseer pausing or interrupting
 an agent or asking for a vision review, never makes you wait: carry straight on to the next card.
 Each one is written to the board in the background, one at a time in the order you made them. The
 card wears `⋯` in place of its `✓` until the board has taken it, then leaves or moves as above,
@@ -315,7 +315,7 @@ The one being written finishes either way.
 ## Adding an idea
 
 Press `Ctrl+N`, or pick **New idea** from the Cards menu or Commands (`Ctrl+E`). **Team** starts on the
-lane you're in, or the first team from the Dashboard. Type a **Title**, and a **Description** if
+lane you're in, or the first team from Overseer. Type a **Title**, and a **Description** if
 you like; `Tab` moves between the fields. **Priority** starts on **None**, which puts the idea in
 that team's Triage to rank later; pick another with `←`/`→` and it goes straight into the Lead's
 queue.

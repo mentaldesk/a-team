@@ -34,11 +34,29 @@ public class DashboardSettingsTests : IDisposable
     [Fact]
     public void The_area_written_is_the_area_the_next_run_opens_in()
     {
-        new DashboardSettings(_configRoot).WriteArea(Area.Dashboard);
+        new DashboardSettings(_configRoot).WriteArea(Area.Overseer);
 
-        Assert.Equal(Area.Dashboard, new DashboardSettings(_configRoot).ReadArea());
+        Assert.Equal(Area.Overseer, new DashboardSettings(_configRoot).ReadArea());
         Assert.Contains("\"area\"", File.ReadAllText(Path.Combine(_configRoot, "dashboard.json")));
     }
+
+    [Theory]
+    [InlineData("{\"area\": \"Dashboard\"}")]
+    [InlineData("{\"area\": \"dashboard\"}")]
+    public void A_saved_Dashboard_opens_on_Overseer(string contents)
+    {
+        Write(contents);
+
+        Assert.Equal(Area.Overseer, new DashboardSettings(_configRoot).ReadArea());
+    }
+
+    [Theory]
+    [InlineData("dashboard", Area.Overseer)]
+    [InlineData("Overseer", Area.Overseer)]
+    [InlineData("work", Area.Work)]
+    [InlineData("nowhere", null)]
+    public void The_command_line_s_area_named_Dashboard_is_Overseer(string name, Area? area) =>
+        Assert.Equal(area, DashboardSettings.ParseArea(name));
 
     [Theory]
     [InlineData(null)]

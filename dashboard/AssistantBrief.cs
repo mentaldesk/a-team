@@ -20,8 +20,8 @@ internal static class AssistantBrief
         - dispatch.log, dispatcher.json, next-pass and launchd.log: the dispatcher's log and state. `a-team status` sums up what each
           role is doing.
 
-        Each question starts with what the stakeholder is looking at, in brackets: the area of the dashboard (Work, Overseer or the
-        Dashboard) and the card, agent or team selected there, like `[on a-team #499 in Work]`. Answer about that without asking
+        Each question starts with what the stakeholder is looking at, in brackets: the area of the dashboard (Work or Overseer) and
+        the card, role or team selected there, or the dispatcher's log, like `[on a-team #499 in Work]`. Answer about that without asking
         which they mean.
 
         Look things up with the files above, `a-team status`, `gh`, and `a-team board <team> <command>`, whose commands process.md
@@ -52,12 +52,7 @@ internal static class AssistantBrief
     /// when there's more than one, since a number alone would then be ambiguous.</summary>
     internal static string Context(Area area, AskedAbout? about, bool manyTeams)
     {
-        var where = area switch
-        {
-            Area.Work => "in Work",
-            Area.Overseer => "in Overseer",
-            _ => "in the Dashboard",
-        };
+        var where = area == Area.Work ? "in Work" : "in Overseer";
         var on = about switch
         {
             { Number: { } number } => manyTeams ? $"{about.Team} #{number}" : $"#{number}",
@@ -72,5 +67,5 @@ internal static class AssistantBrief
     private static string Capitalised(string role) => role.Length == 0 ? role : char.ToUpperInvariant(role[0]) + role[1..];
 }
 
-/// <summary>The selection a question is about: a card, an agent, the dispatcher, or just a team.</summary>
+/// <summary>The selection a question is about: a card, a role, the dispatcher, or just a team.</summary>
 internal sealed record AskedAbout(string? Team, int? Number = null, string? Role = null, bool Dispatcher = false);

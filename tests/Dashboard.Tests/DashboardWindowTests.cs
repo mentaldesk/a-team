@@ -28,19 +28,21 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void A_team_whose_check_fails_says_so_on_its_panes_and_once_in_the_message_bar()
+    public void A_team_whose_check_fails_says_so_in_its_panel_on_each_role_and_once_in_the_message_bar()
     {
         var answer = new TaskCompletionSource<TeamHealth>();
         var ran = 0;
         var checks = new TeamChecks(_ => { ran++; return answer.Task; }, _ => "{}");
         using var window = Open(checks: checks);
-        window.Refresh();
-        Assert.All(window.Panes, pane => Assert.DoesNotContain("⚠", pane.Title));
+        SelectAgent(window, 0);
+        Assert.Equal("", window.Team.Problem);
+        Assert.All(window.Team.Lines, line => Assert.DoesNotContain("⚠", line));
 
         answer.SetResult(new TeamHealth([new TeamProblem("checkout", "~/code/a-team/main isn't there"), new TeamProblem("status", "missing")]));
         window.Refresh();
 
-        Assert.All(window.Panes, pane => Assert.StartsWith(Icons.Field(Icon.Misconfigured, IconStyle.Unicode), pane.Title));
+        Assert.Equal("misconfigured: checkout ~/code/a-team/main isn't there", window.Team.Problem);
+        Assert.All(window.Team.Lines, line => Assert.StartsWith(Icons.Field(Icon.Misconfigured, IconStyle.Unicode), line));
         Assert.Equal("a-team: 2 checks failed — checkout, status", window.Says());
         Assert.Equal(Severity.Error, window.Status.MessageSeverity);
         window.Refresh();
@@ -88,295 +90,57 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Ctrl_T_T_expands_the_selected_pane_and_nothing_else()
-    {
-        using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
-
-        Assert.True(window.Press("Ctrl+T T"));
-
-        Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));
-    }
-
-    [Fact]
-    public void Pressing_t_again_collapses_that_pane()
-    {
-        using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
-
-        window.NewKeyDownEvent(new Key('t'));
-        window.NewKeyDownEvent(new Key('t'));
-
-        Assert.All(window.Panes, pane => Assert.False(pane.Expanded));
-    }
-
-    [Fact]
-    public void Tab_moves_the_selection_on_and_Ctrl_T_T_follows_it()
-    {
-        using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Tab);
-
-        window.Press("Ctrl+T T");
-
-        Assert.Equal([false, true], window.Panes.Select(pane => pane.Expanded));
-    }
-
-    [Fact]
-    public void The_keys_t_does_not_shadow_still_do_what_they_did()
-    {
-        using var window = Open();
-
-        Assert.True(window.NewKeyDownEvent(Key.Tab));
-        Assert.True(window.NewKeyDownEvent(Key.PageUp));
-        Assert.True(window.NewKeyDownEvent(Key.PageDown));
-        Assert.True(window.NewKeyDownEvent(Key.Home));
-        Assert.True(window.NewKeyDownEvent(Key.End));
-        Assert.True(window.NewKeyDownEvent(Key.CursorRight));
-        Assert.True(window.NewKeyDownEvent(Key.Tab.WithShift));
-        Assert.All(window.Panes, pane => Assert.False(pane.Expanded));
-    }
-
-    [Fact]
-    public void Panes_start_expanded_when_that_is_what_the_settings_file_says()
-    {
-        using var window = Open(expandToolCalls: true);
-
-        Assert.All(window.Panes, pane => Assert.True(pane.Expanded));
-    }
-
-    [Fact]
-    public void A_pane_that_started_expanded_still_folds_up_on_Ctrl_T_T()
-    {
-        using var window = Open(expandToolCalls: true);
-        window.NewKeyDownEvent(Key.Tab);
-
-        window.Press("Ctrl+T T");
-
-        Assert.Equal([false, true], window.Panes.Select(pane => pane.Expanded));
-    }
-
-    [Theory]
-    [InlineData(2, 1, 2)]
-    [InlineData(4, 2, 2)]
-    [InlineData(6, 3, 2)]
-    public void Agents_are_a_row_per_team_and_a_column_per_role(int count, int rows, int columns)
-    {
-        using var window = Open(agents: Agents(count));
-
-        var cells = LayOut(window, 120, 30);
-
-        Assert.Equal(rows, cells.Select(cell => cell.Y).Distinct().Count());
-        Assert.Equal(columns, cells.Select(cell => cell.X).Distinct().Count());
-    }
-
-    [Theory]
-    [InlineData(2, 120, 30)]
-    [InlineData(4, 120, 30)]
-    [InlineData(6, 120, 30)]
-    [InlineData(4, 101, 41)]
-    [InlineData(6, 101, 41)]
-    [InlineData(3, 120, 30)]
-    [InlineData(5, 101, 41)]
-    public void The_cells_divide_the_agent_area_with_nothing_left_over(int count, int width, int height)
-    {
-        using var window = Open(agents: Agents(count));
-
-        var cells = LayOut(window, width, height);
-
-        AssertTiles(AgentArea(window), cells);
-    }
-
-    [Fact]
-    public void Resizing_lays_the_grid_out_again_over_the_new_area()
-    {
-        using var window = Open(agents: Agents(4));
-        LayOut(window, 120, 30);
-
-        var cells = LayOut(window, 101, 25);
-
-        AssertTiles(AgentArea(window), cells);
-    }
-
-    [Fact]
-    public void Forgetting_a_removed_team_takes_its_agents_off_the_grid_and_its_lane_out_of_the_Work_area()
+    public void Forgetting_a_removed_team_takes_its_roles_and_its_lanes_out_of_Work_and_Overseer()
     {
         using var window = Open(agents: Agents(6));
-        LayOut(window, 120, 30);
 
         window.Forget(["team0"]);
-        var cells = LayOut(window, 120, 30);
 
-        Assert.Equal(["team1", "team1", "team2", "team2"], window.Panes.Select(pane => pane.Team));
+        Assert.Equal(["team1", "team1", "team2", "team2"], window.Watches.Select(watch => watch.Team));
         Assert.Equal(["team1", "team2"], window.Work.Lanes.Select(lane => lane.Team));
-        AssertTiles(AgentArea(window), cells);
+        Assert.Equal(["team1 · idle", "team2 · idle"], window.Overseer.LaneTitles);
     }
 
-    [Fact]
-    public void Two_teams_at_120_by_30_give_each_agent_a_readable_width()
+    [Theory]
+    [InlineData(Area.Work)]
+    [InlineData(Area.Overseer)]
+    public void View_Dispatcher_log_opens_the_whole_log_full_screen_and_Esc_comes_back(Area area)
     {
-        using var window = Open(agents: Agents(4));
-
-        var cells = LayOut(window, 120, 30);
-
-        Assert.All(cells, cell => Assert.Equal(60, cell.Width));
-    }
-
-    [Fact]
-    public void The_dispatcher_strip_stays_at_the_bottom_full_width()
-    {
-        using var window = Open(agents: Agents(4));
+        WriteDispatchLog([.. Enumerable.Range(1, 100).Select(n => $"2026-10-04T10:00:00Z a-team dev: line {n}")]);
+        using var window = Open(area: area);
         LayOut(window, 120, 30);
 
-        var strip = window.Dispatcher.Frame;
-
-        Assert.Equal(new Rectangle(0, window.Viewport.Height - 7, window.Viewport.Width, 6), strip);
-    }
-
-    [Fact]
-    public void Tab_steps_through_every_agent_in_reading_order_then_the_dispatcher_and_wraps()
-    {
-        using var window = Open(agents: Agents(4));
-
-        var visited = Enumerable.Range(0, 6).Select(_ =>
-        {
-            window.NewKeyDownEvent(Key.Tab);
-            return Stop(window);
-        });
-
-        Assert.Equal([0, 1, 2, 3, Dispatcher, 0], visited);
-    }
-
-    [Fact]
-    public void Shift_Tab_steps_back_through_reading_order_and_wraps()
-    {
-        using var window = Open(agents: Agents(4));
-
-        var visited = Enumerable.Range(0, 6).Select(_ =>
-        {
-            window.NewKeyDownEvent(Key.Tab.WithShift);
-            return Stop(window);
-        });
-
-        Assert.Equal([Dispatcher, 3, 2, 1, 0, Dispatcher], visited);
-    }
-
-    [Fact]
-    public void A_team_with_a_Customer_lead_has_a_third_column_and_one_without_keeps_its_own_row()
-    {
-        using var window = Open(agents:
-            [("alpha", "lead"), ("alpha", "dev"), ("beta", "lead"), ("beta", "dev"), ("beta", "customer")]);
-
-        var cells = LayOut(window, 120, 30);
-
-        Assert.Equal(["alpha · lead", "alpha · dev", "beta · lead", "beta · dev", "beta · customer"],
-            window.Panes.Select(pane => $"{pane.Team} · {pane.Role}"));
-        Assert.Equal(cells[0].Y, cells[1].Y);
-        Assert.Equal([cells[2].Y, cells[2].Y], [cells[3].Y, cells[4].Y]);
-        Assert.Equal(3, cells.Skip(2).Select(cell => cell.X).Distinct().Count());
-        Assert.Equal([cells[2].X, cells[3].X], [cells[0].X, cells[1].X]);
-        Assert.Equal(cells[4].Right, cells[1].Right);
-        AssertTiles(AgentArea(window), cells);
-    }
-
-    [Fact]
-    public void The_arrows_keep_to_a_team_s_row_when_rows_differ_in_length()
-    {
-        using var window = Open(agents:
-            [("alpha", "lead"), ("alpha", "dev"), ("beta", "lead"), ("beta", "dev"), ("beta", "customer")]);
-        window.NewKeyDownEvent(Key.Tab);
-
-        window.NewKeyDownEvent(Key.CursorDown);
-        window.NewKeyDownEvent(Key.CursorRight);
-        window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal(4, Selected(window));
-        window.NewKeyDownEvent(Key.CursorUp);
-        Assert.Equal(1, Selected(window));
-    }
-
-    [Fact]
-    public void The_arrows_move_by_row_and_by_column()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-
-        window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal(2, Selected(window));
-        window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal(3, Selected(window));
-        window.NewKeyDownEvent(Key.CursorUp);
-        Assert.Equal(1, Selected(window));
-        window.NewKeyDownEvent(Key.CursorLeft);
-        Assert.Equal(0, Selected(window));
-    }
-
-    [Fact]
-    public void The_arrows_do_not_fall_off_the_edges()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-
-        Assert.True(window.NewKeyDownEvent(Key.CursorUp));
-        Assert.True(window.NewKeyDownEvent(Key.CursorLeft));
-        Assert.Equal(0, Selected(window));
-
-        window.NewKeyDownEvent(Key.CursorDown);
-        window.NewKeyDownEvent(Key.CursorRight);
-        Assert.True(window.NewKeyDownEvent(Key.CursorRight));
-        Assert.Equal(3, Selected(window));
-    }
-
-    [Fact]
-    public void Down_from_the_bottom_row_selects_the_dispatcher_and_Up_goes_back()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.CursorDown);
-        window.NewKeyDownEvent(Key.CursorRight);
-
-        Assert.True(window.NewKeyDownEvent(Key.CursorDown));
-        Assert.Equal(Dispatcher, Stop(window));
-        Assert.StartsWith(Icons.Field(Icon.Selected, IconStyle.Unicode), window.Dispatcher.Title);
-        Assert.True(window.NewKeyDownEvent(Key.CursorDown));
-        Assert.Equal(Dispatcher, Stop(window));
-
-        window.NewKeyDownEvent(Key.CursorUp);
-        Assert.Equal(3, Stop(window));
-        Assert.DoesNotContain(Icons.Field(Icon.Selected, IconStyle.Unicode), window.Dispatcher.Title);
-    }
-
-    [Fact]
-    public void Enter_on_the_dispatcher_expands_it_over_the_agents_and_Esc_collapses_it()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab.WithShift);
+        window.Commands.Execute("view.dispatcher");
         LayOut(window, 120, 30);
-        var collapsed = window.Dispatcher.Frame;
+        window.Refresh();
 
-        Assert.True(window.NewKeyDownEvent(Key.Enter));
-        LayOut(window, 120, 30);
-
-        Assert.True(window.DispatcherExpanded);
-        Assert.False(window.Agents.Visible);
+        Assert.True(window.DispatcherOpen);
         Assert.Equal(new Rectangle(0, 1, window.Viewport.Width, window.Viewport.Height - 2), window.Dispatcher.Frame);
-        Assert.True(window.WholeDispatchLog.Visible);
+        Assert.False(window.Overseer.Visible || window.Work.Visible);
+        Assert.Equal("Log", window.Region.Name);
+        Assert.Equal(100, window.WholeDispatchLog.Lines.Count);
+        Assert.Equal(ScrollBarVisibilityMode.Auto, window.WholeDispatchLog.VerticalScrollBar.VisibilityMode);
+        Assert.True(window.WholeDispatchLog.Following);
+        Assert.True(window.NewKeyDownEvent(Key.Home));
+        Assert.False(window.WholeDispatchLog.Following);
+        Assert.True(window.NewKeyDownEvent(Key.PageDown));
+        Assert.True(window.NewKeyDownEvent(Key.End));
+        Assert.True(window.WholeDispatchLog.Following);
 
         Assert.True(window.NewKeyDownEvent(Key.Esc));
-        LayOut(window, 120, 30);
 
-        Assert.False(window.DispatcherExpanded);
-        Assert.True(window.Agents.Visible);
-        Assert.Equal(collapsed, window.Dispatcher.Frame);
-        Assert.Equal(Dispatcher, Stop(window));
+        Assert.False(window.DispatcherOpen);
+        Assert.False(window.Dispatcher.Visible);
+        Assert.Equal(area, window.CurrentArea);
+        Assert.True(area == Area.Work ? window.Work.Visible : window.Overseer.Visible);
     }
 
     [Fact]
-    public void b_opens_the_selected_agents_team_board_and_says_so()
+    public void b_opens_the_selected_heading_s_team_board_and_says_so()
     {
         WriteTeam("team1", """{"project": {"owner": "someone", "number": 4, "ownerType": "user"}}""");
         var opened = new List<string>();
         using var window = Open(agents: Agents(4), openUrl: Opening.Into(opened));
-        LayOut(window, 120, 30);
         SelectAgent(window, 2);
 
         Assert.True(window.NewKeyDownEvent(new Key('b')));
@@ -386,70 +150,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Opening_a_board_is_greyed_out_until_an_agent_is_selected_and_again_on_the_dispatcher()
-    {
-        using var window = Open(agents: Agents(4));
-        LayOut(window, 120, 30);
-
-        Assert.False(window.Commands.IsEnabled("team.board"));
-        SelectAgent(window, 3);
-        Assert.True(window.Commands.IsEnabled("team.board"));
-        window.NewKeyDownEvent(Key.Tab);
-
-        Assert.True(window.DispatcherSelected);
-        Assert.False(window.Commands.IsEnabled("team.board"));
-    }
-
-    [Fact]
-    public void The_dispatcher_opens_collapsed_and_unselected()
-    {
-        using var window = Open(agents: Agents(4));
-
-        Assert.False(window.DispatcherExpanded);
-        Assert.False(window.DispatcherSelected);
-        Assert.False(window.Commands.IsEnabled("agent.collapse"));
-    }
-
-    [Fact]
-    public void Expanded_the_dispatcher_shows_the_whole_log_and_scrolls_it()
-    {
-        WriteDispatchLog([.. Enumerable.Range(1, 100).Select(n => $"2026-10-04T10:00:00Z a-team dev: line {n}")]);
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab.WithShift);
-        window.NewKeyDownEvent(Key.Enter);
-        LayOut(window, 120, 30);
-        window.Refresh();
-
-        Assert.Equal(100, window.WholeDispatchLog.Lines.Count);
-        Assert.Equal(ScrollBarVisibilityMode.Auto, window.WholeDispatchLog.VerticalScrollBar.VisibilityMode);
-        Assert.True(window.WholeDispatchLog.Following);
-
-        Assert.True(window.NewKeyDownEvent(Key.Home));
-        Assert.False(window.WholeDispatchLog.Following);
-        Assert.True(window.NewKeyDownEvent(Key.PageDown));
-        Assert.True(window.NewKeyDownEvent(Key.End));
-        Assert.True(window.WholeDispatchLog.Following);
-    }
-
-    [Fact]
-    public void Tab_from_an_expanded_agent_reads_the_dispatcher_expanded_and_on_round_to_the_first_agent()
-    {
-        using var window = Open(agents: Agents(2));
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-
-        window.NewKeyDownEvent(Key.Tab);
-        Assert.Null(window.ExpandedAgent);
-        Assert.True(window.DispatcherExpanded);
-
-        window.NewKeyDownEvent(Key.Tab);
-        Assert.False(window.DispatcherExpanded);
-        Assert.Equal(0, window.ExpandedAgent);
-    }
-
-    [Fact]
-    public void Output_newer_than_the_last_dispatch_line_fails_the_title_and_shows_at_the_foot_of_the_whole_log()
+    public void A_pass_that_broke_before_it_could_log_says_so_on_the_bar_and_at_the_foot_of_the_dispatcher_s_log()
     {
         WriteDispatchLog("2026-10-04T10:00:00Z a-team dev: started 1 on 0.1.12");
         File.SetLastWriteTimeUtc(Path.Combine(_root, "dispatch.log"), DateTime.UtcNow.AddMinutes(-3));
@@ -457,13 +158,13 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(2));
         window.Refresh();
 
+        Assert.Equal("dispatcher: last pass failed · jq: parse error", window.Says());
+        Assert.Equal(Severity.Error, window.Status.MessageSeverity);
+
+        window.Commands.Execute("view.dispatcher");
+
         Assert.EndsWith(" · last pass failed", window.Dispatcher.Title);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Dispatcher.SchemeName);
-
-        window.NewKeyDownEvent(Key.Tab.WithShift);
-        window.NewKeyDownEvent(Key.Enter);
-
-        Assert.DoesNotContain("last pass failed", window.Dispatcher.Title);
         Assert.Equal(
             [
                 new LogLine("10:00 a-team dev: started 1 on 0.1.12", LogLineKind.Prose),
@@ -471,6 +172,10 @@ public class DashboardWindowTests : IDisposable
                 new LogLine("jq: parse error", LogLineKind.DispatchFailed),
             ],
             window.WholeDispatchLog.Lines);
+
+        WriteDispatchLog("2026-10-04T10:02:00Z a-team dev: started 2 on 0.1.12");
+        window.Refresh();
+        Assert.Null(window.Status.Message);
     }
 
     [Fact]
@@ -483,135 +188,20 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(2));
         window.Refresh();
 
+        Assert.Null(window.Status.Message);
+        window.Commands.Execute("view.dispatcher");
         Assert.DoesNotContain("last pass failed", window.Dispatcher.Title);
-        window.NewKeyDownEvent(Key.Tab.WithShift);
-        window.NewKeyDownEvent(Key.Enter);
         Assert.Single(window.WholeDispatchLog.Lines);
     }
 
     [Fact]
-    public void Up_and_down_step_through_a_panes_runs_before_moving_on_to_the_next_pane()
-    {
-        WriteRun("team0", "dev", 246, 100);
-        WriteRun("team0", "dev", 303, 300);
-        using var window = Open(agents: Agents(4));
-        window.Refresh();
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.CursorRight);
-
-        window.NewKeyDownEvent(Key.CursorUp);
-        Assert.Equal(1, Selected(window));
-        Assert.EndsWith("#246 Task 246", window.Panes[1].Title);
-
-        window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal(1, Selected(window));
-        Assert.EndsWith("#303 Task 303", window.Panes[1].Title);
-
-        window.NewKeyDownEvent(Key.CursorDown);
-        Assert.Equal(3, Selected(window));
-    }
-
-    [Fact]
-    public void An_odd_agent_out_stays_selectable_from_the_row_above()
-    {
-        using var window = Open(agents: Agents(3));
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.CursorRight);
-
-        window.NewKeyDownEvent(Key.CursorDown);
-
-        Assert.Equal(2, Selected(window));
-    }
-
-    [Fact]
-    public void Enter_expands_the_selected_agent_over_the_whole_agent_area()
+    public void Esc_with_nothing_full_screen_does_nothing_and_Ctrl_Q_is_the_way_out()
     {
         using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Tab);
-
-        Assert.True(window.NewKeyDownEvent(Key.Enter));
-        var cells = LayOut(window, 120, 30);
-
-        Assert.Equal(1, window.ExpandedAgent);
-        Assert.Equal(AgentArea(window), cells[1]);
-    }
-
-    [Fact]
-    public void Esc_puts_the_grid_back_the_way_it_was()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-        var grid = LayOut(window, 120, 30);
-
-        window.NewKeyDownEvent(Key.Enter);
-        LayOut(window, 120, 30);
-        Assert.True(window.NewKeyDownEvent(Key.Esc));
-        var back = LayOut(window, 120, 30);
-
-        Assert.Null(window.ExpandedAgent);
-        Assert.Equal(grid, back);
-    }
-
-    [Fact]
-    public void Esc_with_nothing_expanded_does_nothing_and_Ctrl_Q_is_the_way_out()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
+        SelectAgent(window, 0);
 
         Assert.False(window.NewKeyDownEvent(Key.Esc));
         Assert.True(window.NewKeyDownEvent(Key.Q.WithCtrl));
-    }
-
-    [Fact]
-    public void Tab_and_Shift_Tab_read_the_next_agent_without_leaving_the_expanded_view()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-
-        window.NewKeyDownEvent(Key.Tab);
-        Assert.Equal(1, window.ExpandedAgent);
-        Assert.Equal(1, Selected(window));
-
-        window.NewKeyDownEvent(Key.Tab.WithShift);
-        Assert.Equal(0, window.ExpandedAgent);
-        Assert.Equal(0, Selected(window));
-    }
-
-    [Fact]
-    public void The_arrows_do_nothing_while_expanded()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-
-        foreach (var arrow in new[] { Key.CursorDown, Key.CursorRight, Key.CursorUp, Key.CursorLeft })
-            Assert.True(window.NewKeyDownEvent(arrow));
-
-        Assert.Equal(0, window.ExpandedAgent);
-        Assert.Equal(0, Selected(window));
-    }
-
-    [Fact]
-    public void Up_and_down_select_agents_on_the_grid_and_log_lines_while_expanded()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-
-        Assert.True(window.Commands.IsEnabled("agent.up"));
-        Assert.True(window.Commands.IsEnabled("agent.down"));
-        Assert.False(window.Commands.IsEnabled("log.lineUp"));
-        Assert.False(window.Commands.IsEnabled("log.copyLines"));
-
-        window.NewKeyDownEvent(Key.Enter);
-
-        Assert.False(window.Commands.IsEnabled("agent.up"));
-        Assert.False(window.Commands.IsEnabled("agent.down"));
-        Assert.DoesNotContain(window.Commands.Enabled, command => command.Id is "agent.up" or "agent.down");
-        Assert.All(
-            new[] { "log.lineUp", "log.lineDown", "log.extendUp", "log.extendDown", "log.copyLines", "log.copyAll" },
-            id => Assert.True(window.Commands.IsEnabled(id), id));
     }
 
     [Fact]
@@ -710,7 +300,7 @@ public class DashboardWindowTests : IDisposable
         var handover = Assert.IsType<EditorHandover>(Assert.Single(handed));
         try
         {
-            Assert.Equal(("a-team", "dev", Area.Dashboard), (handover.Team, handover.Role, handover.Area));
+            Assert.Equal(("a-team", "dev", Area.Overseer, null), (handover.Team, handover.Role, handover.Area, handover.Card));
             Assert.Equal(handover.File, handover.Arguments[^1]);
             Assert.Equal(["reading", "", "Bash cat <<'PY'", "print(1)", "PY"], File.ReadAllLines(handover.File));
         }
@@ -721,7 +311,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Back_from_the_editor_the_pane_is_expanded_where_you_left_it()
+    public void Back_from_the_editor_the_role_s_session_is_full_screen_where_you_left_it()
     {
         var handed = new List<Handover>();
         WriteLog("a-team", "dev", """{"type":"assistant","message":{"content":[{"type":"text","text":"one\ntwo\nthree"}]}}""");
@@ -741,24 +331,23 @@ public class DashboardWindowTests : IDisposable
         using var back = Open(resume: handover);
         back.Refresh();
         LayOut(back, 120, 40);
-        back.FocusResumed();
 
-        Assert.Equal(1, back.ExpandedAgent);
-        Assert.Equal(1, Selected(back));
-        Assert.Equal("one\ntwo", back.Panes[1].CopySelection().Text);
-        Assert.Contains("[scrolled]", back.Panes[1].Title, StringComparison.Ordinal);
+        Assert.Equal(Area.Overseer, back.CurrentArea);
+        Assert.True(back.SessionFull);
+        Assert.Equal(("a-team", "dev"), (back.Overseer.Board.Selected?.Team, back.Team.Role));
+        Assert.Equal("one\ntwo", back.Card.CopySelection().Text);
     }
 
     [Fact]
     public void An_editor_that_failed_says_so_in_red_once_you_re_back()
     {
-        var place = new PanePlace(null, new LogPlace([], 0, true, 0, 0, false));
+        WriteLog("a-team", "dev", """{"type":"assistant","message":{"content":[{"type":"text","text":"one"}]}}""");
+        var place = new LogPlace([], 0, true, 0, 0, false);
         using var window = Open(resume: new EditorHandover("a-team", "dev", place, "x.log", ["vim"]) { Failure = "vim exited 1" });
         window.Refresh();
         LayOut(window, 120, 40);
-        window.FocusResumed();
 
-        Assert.Equal(1, window.ExpandedAgent);
+        Assert.True(window.SessionFull);
         Assert.Equal("vim exited 1", window.Says());
         Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
@@ -777,56 +366,7 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal("Copy failed: there is no clipboard", window.Says());
         Assert.Equal(Severity.Error, window.Status.MessageSeverity);
-        Assert.Equal("two", window.Panes[1].CopySelection().Text);
-    }
-
-    [Fact]
-    public void Expanding_again_starts_at_the_tail_following()
-    {
-        WriteLog("a-team", "dev", """{"type":"assistant","message":{"content":[{"type":"text","text":"one\ntwo\nthree"}]}}""");
-        using var window = Open();
-        window.Refresh();
-        SelectAgent(window, 1);
-        window.NewKeyDownEvent(Key.Enter);
-        window.NewKeyDownEvent(Key.CursorUp);
-        window.NewKeyDownEvent(Key.CursorUp);
-
-        window.NewKeyDownEvent(Key.Esc);
-        window.NewKeyDownEvent(Key.Enter);
-
-        Assert.DoesNotContain("[scrolled]", window.Panes[1].Title, StringComparison.Ordinal);
-        window.NewKeyDownEvent(Key.CursorUp);
-        Assert.Equal("three", window.Panes[1].CopySelection().Text);
-    }
-
-    [Fact]
-    public void Scrolling_and_Ctrl_T_T_still_reach_the_expanded_agent()
-    {
-        using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-
-        Assert.True(window.NewKeyDownEvent(Key.PageUp));
-        Assert.True(window.NewKeyDownEvent(Key.PageDown));
-        Assert.True(window.NewKeyDownEvent(Key.Home));
-        Assert.True(window.NewKeyDownEvent(Key.End));
-        Assert.True(window.Press("Ctrl+T T"));
-
-        Assert.Equal([true, false, false, false], window.Panes.Select(pane => pane.Expanded));
-    }
-
-    [Fact]
-    public void The_dispatcher_strip_keeps_its_place_while_an_agent_is_expanded()
-    {
-        using var window = Open(agents: Agents(4));
-        LayOut(window, 120, 30);
-        var grid = window.Dispatcher.Frame;
-
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-        LayOut(window, 120, 30);
-
-        Assert.Equal(grid, window.Dispatcher.Frame);
+        Assert.Equal("two", window.Card.CopySelection().Text);
     }
 
     [Fact]
@@ -837,10 +377,8 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(
             [
                 "Send question", "Stop answering", "Start a new conversation", "Next pane", "Previous pane",
-                "Select the next agent", "Select the previous agent", "Select the agent to the right",
-                "Select the agent to the left", "Select the agent below", "Select the agent above",
                 "Select the next line of the log", "Select the line above in the log", "Extend the selection down",
-                "Extend the selection up", "Expand the selected agent", "Scroll the log up", "Scroll the log down",
+                "Extend the selection up", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
@@ -850,9 +388,9 @@ public class DashboardWindowTests : IDisposable
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read this team again", "Read what's waiting again",
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
-                "Show the session full-screen", "Fold the lane", "Open on GitHub", "Go to the agent's session", "Read the boards that failed again", "Read every board again",
-                "Dashboard", "Work", "Overseer", "Assistant", "Details", "Go to what's new",
-                "Pause selected agent's role", "Interrupt selected agent", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "Messages", "About", "Trends", "Spending", "Decisions…", "Back to the agent grid", "Quit",
+                "Show the session full-screen", "Fold the lane", "Open on GitHub", "Read the boards that failed again", "Read every board again",
+                "Choose the role below", "Choose the role above", "Work", "Overseer", "Assistant", "Details", "Dispatcher log", "Go to what's new",
+                "Pause this role", "Interrupt the agent on this card", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "Messages", "About", "Trends", "Spending", "Decisions…", "Back to Overseer", "Quit",
                 "Go to team0", "Go to team1", "Go to team 3", "Go to team 4", "Go to team 5", "Go to team 6", "Go to team 7",
                 "Go to team 8", "Go to team 9",
             ],
@@ -866,7 +404,7 @@ public class DashboardWindowTests : IDisposable
 
         Assert.True(window.NewKeyDownEvent(Key.G.WithCtrl));
         Assert.Equal("Ctrl+G…", window.Status.Says);
-        Assert.Equal(Area.Dashboard, window.CurrentArea);
+        Assert.Equal(Area.Overseer, window.CurrentArea);
 
         window.NewKeyDownEvent(new Key('w'));
 
@@ -878,14 +416,14 @@ public class DashboardWindowTests : IDisposable
     public void A_key_that_finishes_no_chord_cancels_it_says_so_and_does_nothing_else()
     {
         using var window = Open(agents: Agents(4));
-        window.NewKeyDownEvent(Key.Tab);
+        SelectAgent(window, 0);
 
         window.NewKeyDownEvent(Key.G.WithCtrl);
         Assert.True(window.NewKeyDownEvent(Key.Tab));
 
         Assert.Equal("Ctrl+G Tab isn't a key", window.Says());
-        Assert.Equal(Area.Dashboard, window.CurrentArea);
-        Assert.Equal(0, Selected(window));
+        Assert.Equal(Area.Overseer, window.CurrentArea);
+        Assert.True(window.Overseer.Board.OnHeading);
     }
 
     [Fact]
@@ -893,10 +431,10 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open(agents: Agents(4));
 
-        window.NewKeyDownEvent(Key.T.WithCtrl);
+        window.NewKeyDownEvent(Key.G.WithCtrl);
         window.NewKeyDownEvent(Key.Esc);
 
-        Assert.Equal("Ctrl+T cancelled", window.Says());
+        Assert.Equal("Ctrl+G cancelled", window.Says());
     }
 
     [Theory]
@@ -913,7 +451,7 @@ public class DashboardWindowTests : IDisposable
         using var window = Open(agents: Agents(4));
 
         Assert.False(window.NewKeyDownEvent(new Key(letter)));
-        Assert.Equal(Area.Dashboard, window.CurrentArea);
+        Assert.Equal(Area.Overseer, window.CurrentArea);
     }
 
     [Fact]
@@ -923,11 +461,11 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal(
             [
-                ("view.dashboard", "Ctrl+G D"), ("view.work", "Ctrl+G W"), ("view.overseer", "Ctrl+G O"), ("assistant", "Ctrl+G A"),
+                ("view.work", "Ctrl+G W"), ("view.overseer", "Ctrl+G O"), ("assistant", "Ctrl+G A"),
                 ("work.team", "Ctrl+G T"), ("work.whatsNew", "Ctrl+G N"), ("log.toolCalls", "Ctrl+T T"), ("work.mine", "Ctrl+T M"),
                 ("commands", "Ctrl+E"), ("settings", "Ctrl+,"), ("work.new", "Ctrl+N"), ("quit", "Ctrl+Q"), ("assistant.clear", "Ctrl+L"),
             ],
-            new[] { "view.dashboard", "view.work", "view.overseer", "assistant", "work.team", "work.whatsNew", "log.toolCalls", "work.mine", "commands",
+            new[] { "view.work", "view.overseer", "assistant", "work.team", "work.whatsNew", "log.toolCalls", "work.mine", "commands",
                 "settings", "work.new", "quit", "assistant.clear" }.Select(id => (id, window.Commands.KeysFor(id))));
     }
 
@@ -951,7 +489,7 @@ public class DashboardWindowTests : IDisposable
 
     [Theory]
     [InlineData(Area.Work, GuideDialog.Work)]
-    [InlineData(Area.Dashboard, GuideDialog.Dashboard)]
+    [InlineData(Area.Overseer, GuideDialog.Overseer)]
     public void Guide_opens_on_the_page_for_the_area_and_has_no_key(Area area, string page)
     {
         var opened = new List<string>();
@@ -976,14 +514,14 @@ public class DashboardWindowTests : IDisposable
     [Fact]
     public void A_key_the_file_names_runs_that_command_and_the_one_in_the_source_no_longer_does()
     {
-        using var window = Open(keys: "{ \"log.toolCalls\": \"z\" }");
-        window.NewKeyDownEvent(Key.Tab);
+        using var window = Open(keys: "{ \"view.work\": \"z\" }");
 
         Assert.True(window.NewKeyDownEvent(new Key('z')));
-        window.NewKeyDownEvent(Key.T.WithCtrl);
-        window.NewKeyDownEvent(new Key('t'));
+        Assert.Equal(Area.Work, window.CurrentArea);
+        window.Commands.Execute("view.overseer");
+        window.Press("Ctrl+G W");
 
-        Assert.Equal([true, false], window.Panes.Select(pane => pane.Expanded));
+        Assert.Equal(Area.Overseer, window.CurrentArea);
     }
 
     [Fact]
@@ -1027,15 +565,15 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_s_one_hint_is_press_F1_for_help_at_its_right_end_on_the_grid_expanded_in_Work_and_in_Overseer()
+    public void The_status_bar_s_one_hint_is_press_F1_for_help_at_its_right_end_in_Overseer_a_full_screen_log_and_Work()
     {
         using var window = Open(agents: Agents(4));
         AssertOnlyKeysHint(window);
 
-        window.NewKeyDownEvent(Key.Tab);
+        SelectAgent(window, 0);
         AssertOnlyKeysHint(window);
 
-        window.NewKeyDownEvent(Key.Enter);
+        window.Commands.Execute("view.dispatcher");
         AssertOnlyKeysHint(window);
 
         window.Commands.Execute("view.work");
@@ -1070,9 +608,10 @@ public class DashboardWindowTests : IDisposable
     {
         using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
         LayOut(window, 120, 30);
-        var status = window.Status.Frame;
-        var dispatcher = window.Dispatcher.Frame;
         SelectAgent(window, 0);
+        LayOut(window, 120, 30);
+        var status = window.Status.Frame;
+        var lanes = window.Overseer.Frame;
 
         window.Commands.Execute("agent.hold");
         LayOut(window, 120, 30);
@@ -1080,7 +619,7 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal("Pausing this role…", window.Says());
         Assert.Null(window.Status.MessageSeverity);
         Assert.Equal(status, window.Status.Frame);
-        Assert.Equal(dispatcher, window.Dispatcher.Frame);
+        Assert.Equal(lanes, window.Overseer.Frame);
     }
 
     [Fact]
@@ -1105,110 +644,6 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void A_cell_never_shrinks_below_five_rows()
-    {
-        using var window = Open(agents: Agents(6));
-
-        var cells = LayOut(window, 120, 20);
-
-        Assert.All(cells, cell => Assert.Equal(5, cell.Height));
-        Assert.True(window.Agents.GetContentSize().Height > window.Agents.Viewport.Height);
-    }
-
-    [Theory]
-    [InlineData(8, 120, 30, false)]
-    [InlineData(10, 120, 30, true)]
-    [InlineData(4, 120, 20, false)]
-    [InlineData(6, 120, 20, true)]
-    public void The_grid_scrolls_from_a_fifth_team_at_120_by_30_and_a_third_on_a_20_row_window(
-        int count, int width, int height, bool scrolls)
-    {
-        using var window = Open(agents: Agents(count));
-
-        LayOut(window, width, height);
-
-        Assert.Equal(scrolls, window.Agents.VerticalScrollBar.Visible);
-        Assert.Equal(scrolls, window.Agents.GetContentSize().Height > window.Agents.Viewport.Height);
-    }
-
-    [Fact]
-    public void A_scrolling_grid_still_tiles_its_content_with_nothing_left_over()
-    {
-        using var window = Open(agents: Agents(10));
-
-        var cells = LayOut(window, 120, 30);
-
-        AssertTiles(new Rectangle(Point.Empty, window.Agents.GetContentSize()), cells);
-    }
-
-    [Fact]
-    public void Selecting_an_agent_below_the_fold_scrolls_it_into_view_and_back_again()
-    {
-        using var window = Open(agents: Agents(6));
-        LayOut(window, 120, 20);
-
-        SelectAgent(window, 4);
-        Assert.True(window.Agents.Viewport.Y > 0);
-        Assert.True(InView(window, 4));
-
-        window.NewKeyDownEvent(Key.CursorUp);
-        window.NewKeyDownEvent(Key.CursorUp);
-        Assert.Equal(0, Selected(window));
-        Assert.Equal(0, window.Agents.Viewport.Y);
-    }
-
-    [Fact]
-    public void Scrolling_keys_stay_with_the_selected_panes_log_and_leave_the_grid_where_it_is()
-    {
-        using var window = Open(agents: Agents(6));
-        LayOut(window, 120, 20);
-        SelectAgent(window, 4);
-        var top = window.Agents.Viewport.Y;
-
-        Assert.True(window.NewKeyDownEvent(Key.PageUp));
-        Assert.True(window.NewKeyDownEvent(Key.PageDown));
-        Assert.True(window.NewKeyDownEvent(Key.Home));
-        Assert.True(window.NewKeyDownEvent(Key.End));
-
-        Assert.Equal(top, window.Agents.Viewport.Y);
-    }
-
-    [Fact]
-    public void Expanding_from_a_scrolled_grid_fills_the_area_and_Esc_comes_back_to_that_agent()
-    {
-        using var window = Open(agents: Agents(6));
-        LayOut(window, 120, 20);
-        SelectAgent(window, 4);
-
-        window.NewKeyDownEvent(Key.Enter);
-        var expanded = LayOut(window, 120, 20);
-        Assert.Equal(0, window.Agents.Viewport.Y);
-        Assert.False(window.Agents.VerticalScrollBar.Visible);
-        Assert.Equal(new Rectangle(Point.Empty, window.Agents.Viewport.Size), expanded[4]);
-
-        window.NewKeyDownEvent(Key.Esc);
-        LayOut(window, 120, 20);
-        Assert.Equal(4, Selected(window));
-        Assert.True(InView(window, 4));
-    }
-
-    [Fact]
-    public void Resizing_down_to_where_the_floor_bites_and_back_keeps_the_selection_in_view()
-    {
-        using var window = Open(agents: Agents(6));
-        LayOut(window, 120, 30);
-        SelectAgent(window, 4);
-        Assert.Equal(0, window.Agents.Viewport.Y);
-
-        LayOut(window, 120, 20);
-        Assert.True(InView(window, 4));
-
-        var back = LayOut(window, 120, 30);
-        Assert.Equal(0, window.Agents.Viewport.Y);
-        AssertTiles(AgentArea(window), back);
-    }
-
-    [Fact]
     public void Every_dispatcher_line_gets_one_row_of_its_own_coloured_by_what_it_says()
     {
         WriteDispatchLog(
@@ -1216,86 +651,30 @@ public class DashboardWindowTests : IDisposable
             "2026-09-20T17:01:17Z tuicode dev: triggers failed: gh: Not Found (HTTP 404)",
             "2026-09-20T17:04:02Z tuicode dev: started 41234: 1 task Ready");
         using var window = Open(agents: Agents(4));
-        LayOut(window, 120, 30);
 
-        window.Refresh();
+        window.Commands.Execute("view.dispatcher");
 
         Assert.Equal(
             ["16:53 a-team lead: would start: 3 Ideas to shape",
              "17:01 tuicode dev: triggers failed: gh: Not Found (HTTP 404)",
              "17:04 tuicode dev: started 41234: 1 task Ready"],
-            window.DispatchLog.Lines.Select(line => line.Text));
+            window.WholeDispatchLog.Lines.Select(line => line.Text));
         Assert.Equal(
             [LogLineKind.DispatchSkipped, LogLineKind.DispatchFailed, LogLineKind.Prose],
-            window.DispatchLog.Lines.Select(line => line.Kind));
+            window.WholeDispatchLog.Lines.Select(line => line.Kind));
     }
 
     [Fact]
-    public void With_nothing_installed_the_dispatcher_frame_says_so_in_Error_and_its_lines_do_not()
+    public void With_nothing_installed_the_dispatcher_s_log_says_so_in_Error_and_its_lines_do_not()
     {
         using var window = Open(agents: Agents(4));
         LayOut(window, 120, 30);
 
-        window.Refresh();
+        window.Commands.Execute("view.dispatcher");
 
         Assert.Equal("dispatcher · nothing installed · run: a-team install", window.Dispatcher.Title);
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Dispatcher.SchemeName);
-        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Base), window.DispatchLog.SchemeName);
-    }
-
-    [Fact]
-    public void The_last_four_lines_fill_four_rows_of_the_panes_width_at_any_size()
-    {
-        WriteDispatchLog([.. Enumerable.Range(1, 6).Select(n =>
-            $"2026-09-20T17:0{n}:17Z tuicode dev: triggers failed: " + new string('x', 400))]);
-        using var window = Open(agents: Agents(4));
-        LayOut(window, 120, 30);
-
-        window.Refresh();
-
-        Assert.Equal(4, window.DispatchLog.Lines.Count);
-        Assert.Equal(118, window.DispatchLog.Viewport.Width);
-        AssertFourRowsOfTheWidth(window);
-
-        LayOut(window, 80, 30);
-        Assert.Equal(78, window.DispatchLog.Viewport.Width);
-        AssertFourRowsOfTheWidth(window);
-    }
-
-    private static void AssertFourRowsOfTheWidth(DashboardWindow window)
-    {
-        var rows = window.DispatchLog.Rows(window.DispatchLog.Viewport.Width);
-        Assert.Equal(4, rows.Count);
-        Assert.All(rows, row => Assert.Equal(window.DispatchLog.Viewport.Width, row.Text.Length));
-    }
-
-    [Fact]
-    public void A_dispatcher_that_has_never_run_says_so_below_a_grid_the_message_bar_still_sits_under()
-    {
-        using var window = Open(agents: Agents(4));
-        LayOut(window, 120, 30);
-
-        window.Refresh();
-
-        var line = Assert.Single(window.DispatchLog.Lines);
-        Assert.Equal("(the dispatcher hasn't run yet)", line.Text);
-        Assert.Equal(LogLineKind.Prose, line.Kind);
-        Assert.Equal("", window.Says());
-        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
-    }
-
-    [Fact]
-    public void The_dispatcher_strip_does_not_scroll_with_the_grid()
-    {
-        using var window = Open(agents: Agents(6));
-        LayOut(window, 120, 20);
-        var strip = window.Dispatcher.Frame;
-
-        SelectAgent(window, 4);
-        LayOut(window, 120, 20);
-
-        Assert.True(window.Agents.Viewport.Y > 0);
-        Assert.Equal(strip, window.Dispatcher.Frame);
+        Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Base), window.WholeDispatchLog.SchemeName);
     }
 
     [Fact]
@@ -1306,23 +685,7 @@ public class DashboardWindowTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("", window.Says());
-        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
-    }
-
-    [Fact]
-    public void A_message_leaves_the_grid_its_full_height()
-    {
-        using var window = Open(agents: Agents(4), run: _ => new TaskCompletionSource<string?>().Task);
-        var before = LayOut(window, 120, 30);
-        SelectAgent(window, 0);
-
-        window.Commands.Execute("agent.hold");
-        var after = LayOut(window, 120, 30);
-
-        Assert.Equal("Pausing this role…", window.Says());
-        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
-        Assert.Equal(before, after);
-        AssertTiles(AgentArea(window), after);
+        Assert.Equal(window.Viewport.Height - 2, window.Overseer.Frame.Height);
     }
 
     [Fact]
@@ -1350,7 +713,8 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
 
         Assert.Equal("Pass done: started 1 run.", window.Says());
-        Assert.Equal("10:02 a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build", Assert.Single(window.DispatchLog.Lines).Text);
+        window.Commands.Execute("view.dispatcher");
+        Assert.Equal("10:02 a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build", Assert.Single(window.WholeDispatchLog.Lines).Text);
     }
 
     [Fact]
@@ -1424,9 +788,7 @@ public class DashboardWindowTests : IDisposable
         SelectAgent(window, 3);
         window.Commands.Execute("agent.interrupt");
         window.Commands.Execute("team.visionReview");
-        for (var i = 0; i < 3; i++)
-            window.NewKeyDownEvent(Key.Tab.WithShift);
-        Assert.Equal(0, Selected(window));
+        SelectAgent(window, 0);
         window.Commands.Execute("agent.hold");
 
         Assert.Equal([["stop", "team1", "dev"]], calls);
@@ -1451,8 +813,8 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("", window.Says());
-        Assert.Equal(window.Viewport.Height - 7, window.Dispatcher.Frame.Y);
+        Assert.Equal("team0", window.Says());
+        Assert.Null(window.Status.Message);
     }
 
     [Fact]
@@ -1468,9 +830,8 @@ public class DashboardWindowTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("pausing team0's lead: a-team pause: can't write /nope/team0.json", window.Says());
-        Assert.NotEqual("", window.Says());
-        Assert.True(window.NewKeyDownEvent(Key.Tab));
-        Assert.Equal(1, Selected(window));
+        Assert.True(window.NewKeyDownEvent(Key.CursorDown));
+        Assert.Equal(("team1", true), (window.Overseer.Board.Selected?.Team, window.Overseer.Board.OnHeading));
     }
 
     [Fact]
@@ -1518,13 +879,14 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
         SelectAgent(window, 1);
         Assert.True(window.Commands.IsEnabled("agent.hold"));
-        Assert.Equal("Pause selected agent's role", Label(window, "agent.hold"));
+        Assert.Equal("Pause this role", Label(window, "agent.hold"));
 
         window.Commands.Execute("agent.hold");
         window.Refresh();
 
-        Assert.True(window.Panes[1].Held);
-        Assert.Equal("Let selected agent's role start again", Label(window, "agent.hold"));
+        Assert.True(window.Watches[1].Held);
+        Assert.StartsWith(Icons.Field(Icon.StoppedByYou, IconStyle.Unicode) + "Dev           paused", window.Team.Lines[1], StringComparison.Ordinal);
+        Assert.Equal("Let this role start again", Label(window, "agent.hold"));
         Assert.Equal("Let t_his role start again", window.MenuItems.Single(item => item.Id == "agent.hold").Item.Title);
 
         window.Commands.Execute("agent.hold");
@@ -1552,7 +914,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Interrupting_a_run_reaches_its_pane_on_the_next_refresh()
+    public void Interrupting_a_run_reaches_its_line_on_the_next_refresh()
     {
         using var window = Open(agents: Agents(2), run: arguments =>
         {
@@ -1566,8 +928,8 @@ public class DashboardWindowTests : IDisposable
         window.Commands.Execute("agent.interrupt");
         window.Refresh();
 
-        Assert.True(window.Panes[1].Held);
-        Assert.Equal("Let selected agent start again", Label(window, "agent.interrupt"));
+        Assert.True(window.Watches[1].Held);
+        Assert.Equal("Let the chosen role start again", Label(window, "agent.interrupt"));
     }
 
     [Fact]
@@ -1583,7 +945,7 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
         SelectAgent(window, 1);
 
-        Assert.Equal("Let selected agent start again", Label(window, "agent.interrupt"));
+        Assert.Equal("Let the chosen role start again", Label(window, "agent.interrupt"));
         Assert.True(window.NewKeyDownEvent(new Key('i')));
 
         Assert.Equal([["resume", "team0", "dev"]], calls);
@@ -1598,35 +960,13 @@ public class DashboardWindowTests : IDisposable
         window.Refresh();
         Assert.False(window.Commands.IsEnabled("agent.interrupt"));
 
-        var enabled = Enumerable.Range(0, 4).Select(_ =>
+        var enabled = Enumerable.Range(0, 4).Select(index =>
         {
-            window.NewKeyDownEvent(Key.Tab);
+            SelectAgent(window, index);
             return window.Commands.IsEnabled("agent.interrupt");
         }).ToList();
 
         Assert.Equal([false, true, true, false], enabled);
-    }
-
-    [Fact]
-    public void Interrupt_stays_on_the_selected_agent_while_the_menu_has_focus()
-    {
-        var calls = new List<string[]>();
-        using var window = Open(agents: Agents(2), run: arguments =>
-        {
-            calls.Add(arguments);
-            return Task.FromResult<string?>(null);
-        });
-        WriteRunning("team0", "dev");
-        window.Refresh();
-        SelectAgent(window, 1);
-
-        window.HasFocus = false;
-        window.Refresh();
-
-        Assert.DoesNotContain(window.Panes, pane => pane.HasFocus);
-        Assert.True(window.Commands.IsEnabled("agent.interrupt"));
-        window.Commands.Execute("agent.interrupt");
-        Assert.Equal([["stop", "team0", "dev"]], calls);
     }
 
     [Fact]
@@ -1662,8 +1002,8 @@ public class DashboardWindowTests : IDisposable
 
         Assert.Equal("interrupting team0's dev: a-team stop: can't write /nope/team0.json", window.Says());
         Assert.Equal(Severity.Error, window.Status.MessageSeverity);
-        Assert.False(window.Panes[1].Held);
-        Assert.Equal("Interrupt selected agent", Label(window, "agent.interrupt"));
+        Assert.False(window.Watches[1].Held);
+        Assert.Equal("Interrupt the chosen role", Label(window, "agent.interrupt"));
     }
 
     [Fact]
@@ -1685,7 +1025,7 @@ public class DashboardWindowTests : IDisposable
 
         var handover = Assert.IsType<AttachHandover>(Assert.Single(handed));
         Assert.Equal(["attach", "team1", "dev"], handover.Arguments);
-        Assert.Equal(Area.Dashboard, handover.Area);
+        Assert.Equal((Area.Overseer, null), (handover.Area, handover.Card));
         Assert.Empty(calls);
     }
 
@@ -1791,57 +1131,51 @@ public class DashboardWindowTests : IDisposable
 
         var handover = Assert.IsType<VisionHandover>(Assert.Single(handed));
         Assert.Equal(["vision", "team1"], handover.Arguments);
-        Assert.Equal(Area.Dashboard, handover.Area);
-        Assert.Equal("dev", handover.Role);
+        Assert.Equal(Area.Overseer, handover.Area);
     }
 
     [Fact]
-    public void Back_from_the_vision_interview_the_grid_has_the_same_agent_selected()
-    {
-        using var window = Open(agents: Agents(4), resume: new VisionHandover("team1", Area.Dashboard, Role: "dev"));
-        window.Refresh();
-        LayOut(window, 120, 40);
-        window.FocusResumed();
-
-        Assert.Equal(3, Selected(window));
-        Assert.True(window.Agents.Visible);
-    }
-
-    [Fact]
-    public void Back_from_an_interrupt_the_grid_has_the_same_agent_selected()
-    {
-        using var window = Open(agents: Agents(4), resume: new AttachHandover("team1", "dev"));
-        window.Refresh();
-        LayOut(window, 120, 40);
-        window.FocusResumed();
-
-        Assert.Equal(3, Selected(window));
-        Assert.True(window.Agents.Visible);
-        Assert.Equal("", window.Says());
-    }
-
-    [Fact]
-    public void A_session_that_would_not_resume_says_so_in_red_once_you_re_back()
+    public void Back_from_a_session_that_would_not_resume_the_team_s_panel_has_the_role_chosen_and_says_so_in_red()
     {
         using var window = Open(
             agents: Agents(4),
             resume: new AttachHandover("team1", "dev") { Failure = "attach team1 dev exited 1" });
         window.Refresh();
         LayOut(window, 120, 40);
-        window.FocusResumed();
 
-        Assert.Equal(3, Selected(window));
+        Assert.Equal(Area.Overseer, window.CurrentArea);
+        Assert.Equal(("team1", "dev"), (window.Overseer.Board.Selected?.Team, window.Team.Role));
+        Assert.False(window.SessionFull);
         Assert.Equal("attach team1 dev exited 1", window.Says());
         Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
     [Fact]
-    public void With_two_runs_i_asks_to_stop_the_shown_run_by_its_task_and_stops_only_that_one()
+    public void With_several_runs_i_says_to_interrupt_one_from_its_card()
+    {
+        var calls = 0;
+        WriteRun("team0", "dev", 246, 100);
+        WriteRun("team0", "dev", 303, 300);
+        using var window = Open(agents: Agents(2), confirmStop: _ => throw new InvalidOperationException(), run: _ =>
+        {
+            calls++;
+            return Task.FromResult<string?>(null);
+        });
+        SelectAgent(window, 1);
+
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        Assert.Equal(0, calls);
+        Assert.Equal("team0's dev is on 2 cards: interrupt one from its card", window.Says());
+        Assert.EndsWith(" · #246, #303", window.Team.Lines[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void With_one_run_on_a_task_i_asks_to_stop_that_run_alone_as_on_its_card()
     {
         var calls = new List<string[]>();
         var asked = new List<RunTask>();
         WriteRun("team0", "dev", 246, 100);
-        WriteRun("team0", "dev", 303, 300);
         using var window = Open(agents: Agents(2), confirmStop: task =>
         {
             asked.Add(task);
@@ -1851,13 +1185,11 @@ public class DashboardWindowTests : IDisposable
             calls.Add(arguments);
             return Task.FromResult<string?>(null);
         });
-        window.Refresh();
         SelectAgent(window, 1);
-        window.NewKeyDownEvent(Key.CursorUp);
 
-        Assert.True(window.NewKeyDownEvent(new Key('i')));
+        window.Commands.Execute("agent.interrupt");
 
-        Assert.Equal(246, Assert.Single(asked).Number);
+        Assert.Equal(new RunTask(246, "Task 246"), Assert.Single(asked));
         Assert.Equal([["stop", "team0", "dev", "246"]], calls);
     }
 
@@ -1866,127 +1198,41 @@ public class DashboardWindowTests : IDisposable
     {
         var calls = 0;
         WriteRun("team0", "dev", 246, 100);
-        WriteRun("team0", "dev", 303, 300);
         using var window = Open(agents: Agents(2), confirmStop: _ => false, run: _ =>
         {
             calls++;
             return Task.FromResult<string?>(null);
         });
-        window.Refresh();
         SelectAgent(window, 1);
 
         window.Commands.Execute("agent.interrupt");
 
         Assert.Equal(0, calls);
-        Assert.Equal("", window.Says());
-    }
-
-    [Fact]
-    public void With_two_runs_i_steps_into_the_shown_run_alone()
-    {
-        var handed = new List<Handover>();
-        WriteRun("team0", "dev", 246, 100);
-        WriteRun("team0", "dev", 303, 300);
-        WriteSession("team0", "dev", 303);
-        using var window = Open(agents: Agents(2), handOver: handed.Add, confirmStop: _ => throw new InvalidOperationException());
-        window.Refresh();
-        SelectAgent(window, 1);
-
-        Assert.True(window.NewKeyDownEvent(new Key('i')));
-
-        Assert.Equal(["attach", "team0", "dev", "303"], Assert.IsType<AttachHandover>(Assert.Single(handed)).Arguments);
-    }
-
-    [Fact]
-    public void A_run_stopped_by_task_is_offered_Let_it_start_again_which_lets_only_that_task_go()
-    {
-        var calls = new List<string[]>();
-        WriteRun("team0", "dev", 246, 100);
-        WriteRun("team0", "dev", 303, 300);
-        WriteRunHeld("team0", "dev", 303);
-        using var window = Open(agents: Agents(2), run: arguments =>
-        {
-            calls.Add(arguments);
-            return Task.FromResult<string?>(null);
-        });
-        window.Refresh();
-        SelectAgent(window, 1);
-
-        Assert.False(window.Panes[1].Held);
-        Assert.Equal("Let selected agent start again", Label(window, "agent.interrupt"));
-        Assert.Equal("Pause selected agent's role", Label(window, "agent.hold"));
-        Assert.True(window.NewKeyDownEvent(new Key('i')));
-
-        Assert.Equal([["resume", "team0", "dev", "303"]], calls);
-    }
-
-    [Fact]
-    public void h_still_holds_the_whole_role_with_two_runs_going()
-    {
-        var calls = new List<string[]>();
-        WriteRun("team0", "dev", 246, 100);
-        WriteRun("team0", "dev", 303, 300);
-        using var window = Open(agents: Agents(2), run: arguments =>
-        {
-            calls.Add(arguments);
-            return Task.FromResult<string?>(null);
-        });
-        window.Refresh();
-        SelectAgent(window, 1);
-        window.NewKeyDownEvent(Key.CursorUp);
-
-        window.Commands.Execute("agent.hold");
-
-        Assert.Equal([["pause", "team0", "dev"]], calls);
-    }
-
-    [Fact]
-    public void With_one_run_i_stops_the_role_as_before_without_asking()
-    {
-        var calls = new List<string[]>();
-        WriteRun("team0", "dev", 246, 100);
-        using var window = Open(agents: Agents(2), confirmStop: _ => throw new InvalidOperationException(), run: arguments =>
-        {
-            calls.Add(arguments);
-            return Task.FromResult<string?>(null);
-        });
-        window.Refresh();
-        SelectAgent(window, 1);
-
-        window.Commands.Execute("agent.interrupt");
-
-        Assert.Equal([["stop", "team0", "dev"]], calls);
+        Assert.Null(window.Status.Message);
     }
 
     private static string Label(DashboardWindow window, string id) =>
         window.Commands.Registered.Single(command => command.Id == id).Label;
 
+    /// <summary>Selects the agent's lane heading and chooses its role in the team's panel.</summary>
     private static void SelectAgent(DashboardWindow window, int index)
     {
-        for (var i = 0; i <= index; i++)
-            window.NewKeyDownEvent(Key.Tab);
-        Assert.Equal(index, Selected(window));
-    }
-
-    private static bool InView(DashboardWindow window, int index)
-    {
-        var cell = window.Panes[index].Frame;
-        var view = window.Agents.Viewport;
-        return cell.Top >= view.Y && cell.Bottom <= view.Y + view.Height;
+        var watch = window.Watches[index];
+        Assert.True(window.Overseer.SelectHeading(watch.Team));
+        window.Refresh();
+        window.Team.Choose(watch.Role);
+        window.Refresh();
+        Assert.Equal(watch.Role, window.Team.Role);
     }
 
     private static (string, string)[] Agents(int count) =>
         [.. Enumerable.Range(0, count).Select(i => ($"team{i / 2}", i % 2 == 0 ? "lead" : "dev"))];
 
-    private static Rectangle[] LayOut(DashboardWindow window, int width, int height)
+    private static void LayOut(DashboardWindow window, int width, int height)
     {
         window.Frame = new Rectangle(0, 0, width, height);
         window.Layout(new Size(width, height));
-        return [.. window.Panes.Select(pane => pane.Frame)];
     }
-
-    private static Rectangle AgentArea(DashboardWindow window) =>
-        new(0, 0, window.Viewport.Width, window.Dispatcher.Frame.Y - window.Agents.Frame.Y);
 
     private static void AssertOnlyKeysHint(DashboardWindow window)
     {
@@ -1996,26 +1242,6 @@ public class DashboardWindowTests : IDisposable
         Assert.DoesNotContain("a-team", window.Says());
     }
 
-    private const int Dispatcher = -2;
-
-    private static int Stop(DashboardWindow window) => window.DispatcherSelected ? Dispatcher : Selected(window);
-
-    private static int Selected(DashboardWindow window) =>
-        window.Panes.ToList().FindIndex(pane => pane.HasFocus);
-
-    private static void AssertTiles(Rectangle area, IReadOnlyList<Rectangle> cells)
-    {
-        var covered = new HashSet<(int X, int Y)>();
-        foreach (var cell in cells)
-        {
-            Assert.True(area.Contains(cell), $"{cell} overhangs {area}");
-            for (var x = cell.Left; x < cell.Right; x++)
-                for (var y = cell.Top; y < cell.Bottom; y++)
-                    Assert.True(covered.Add((x, y)), $"{cell} overlaps another at {x},{y}");
-        }
-        Assert.Equal(area.Width * area.Height, covered.Count);
-    }
-
     private DashboardWindow Open(
         bool expandToolCalls = false,
         IReadOnlyList<(string, string)>? agents = null,
@@ -2023,7 +1249,7 @@ public class DashboardWindowTests : IDisposable
         string? keys = null,
         Func<string, Task<Reading>>? readWaiting = null,
         Func<string, LinkOutcome>? openUrl = null,
-        Area area = Area.Dashboard,
+        Area area = Area.Overseer,
         IconStyle auto = IconStyle.Unicode,
         Action<Handover>? handOver = null,
         Handover? resume = null,

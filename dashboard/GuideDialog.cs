@@ -14,7 +14,7 @@ public sealed class GuideDialog : DashboardDialog
 {
     internal const string Contents = "index.md";
     internal const string Work = "work.md";
-    internal const string Dashboard = "dashboard.md";
+    internal const string App = "app.md";
     internal const string Teams = "teams.md";
     internal const string Overseer = "overseer.md";
 

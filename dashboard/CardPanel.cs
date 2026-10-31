@@ -3,30 +3,10 @@ using Terminal.Gui.Drawing;
 
 namespace ATeam.Dashboard;
 
-/// <summary>A view showing one agent session's log, which the log keys act on: an expanded agent's pane, or the
-/// selected card's session in Overseer.</summary>
-internal interface ISessionView
-{
-    void Page(int direction);
-
-    void Home();
-
-    void End();
-
-    void MoveLine(int step, bool extend);
-
-    LogCopy CopySelection();
-
-    LogCopy CopyAll();
-
-    void ToggleToolCalls();
-
-    string? LogPath { get; }
-}
-
 /// <summary>Overseer's panel for the selected card: its details, then the session of the agent on it, following
-/// live. Full-screen, it drops the details and selects lines like an expanded agent's pane.</summary>
-public sealed class CardPanel : FrameView, ISessionView
+/// live. Full-screen, it drops the details and its log's lines can be selected and copied. A role chosen in the team's
+/// panel opens its latest session here full-screen.</summary>
+public sealed class CardPanel : FrameView
 {
     private static readonly string BaseScheme = SchemeManager.SchemesToSchemeName(Schemes.Base)!;
 
@@ -87,7 +67,6 @@ public sealed class CardPanel : FrameView, ISessionView
     /// when it's still the same log.</summary>
     public void Show(BoardCard card, IReadOnlyList<string> details, CardRun? run, string says, string hint)
     {
-        Set(this, $"#{card.Number} {card.Title}");
         var text = string.Join("\n", details);
         if (_details.Text != text)
         {
@@ -95,11 +74,18 @@ public sealed class CardPanel : FrameView, ISessionView
             if (!_full)
                 _details.Height = DetailRows;
         }
-        if (_session.Text != says)
-            _session.Text = says;
         if (_hint.Text != hint)
             _hint.Text = hint;
-        var path = run?.State.LogPath;
+        Show($"#{card.Number} {card.Title}", run?.State.LogPath, says);
+    }
+
+    /// <summary>Shows the session at <paramref name="path"/> under <paramref name="title"/>, read on from where it was
+    /// when it's still the same log.</summary>
+    public void Show(string title, string? path, string says)
+    {
+        Set(this, title);
+        if (_session.Text != says)
+            _session.Text = says;
         var switched = path != _shown;
         _shown = path;
         if (_read.Refresh(path) || switched)

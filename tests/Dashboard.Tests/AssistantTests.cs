@@ -23,7 +23,7 @@ public sealed class AssistantTests : IDisposable
 
     private string Sessions => Path.Combine(_root, "assistant.json");
 
-    private DashboardWindow Open(IReadOnlyList<(string, string)>? agents = null, int width = 0)
+    private DashboardWindow Open(IReadOnlyList<(string, string)>? agents = null, int width = 0, Area area = Area.Work)
     {
         Directory.CreateDirectory(_root);
         var config = Path.Combine(_root, "config");
@@ -46,7 +46,7 @@ public sealed class AssistantTests : IDisposable
             _ => Task.FromResult(new Reading("{}", null)),
             Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
-            Area.Dashboard,
+            area,
             IconStyle.Unicode,
             assistant: setup);
         if (width > 0)
@@ -120,8 +120,8 @@ public sealed class AssistantTests : IDisposable
     [InlineData(Area.Work, "a-team", null, null, false, true, "on a-team in Work")]
     [InlineData(Area.Overseer, "tuicode", 12, null, false, true, "on tuicode #12 in Overseer")]
     [InlineData(Area.Overseer, "tuicode", null, null, false, true, "on tuicode in Overseer")]
-    [InlineData(Area.Dashboard, "a-team", null, "dev", false, false, "on a-team's Dev in the Dashboard")]
-    [InlineData(Area.Dashboard, null, null, null, true, true, "on the dispatcher in the Dashboard")]
+    [InlineData(Area.Overseer, "a-team", null, "dev", false, false, "on a-team's Dev in Overseer")]
+    [InlineData(Area.Work, null, null, null, true, true, "on the dispatcher in Work")]
     public void Each_question_says_where_it_was_asked_and_what_was_selected(
         Area area, string? team, int? number, string? role, bool dispatcher, bool manyTeams, string expected) =>
         Assert.Equal(expected, AssistantBrief.Context(area, new AskedAbout(team, number, role, dispatcher), manyTeams));
@@ -129,7 +129,6 @@ public sealed class AssistantTests : IDisposable
     [Theory]
     [InlineData(Area.Work, "in Work")]
     [InlineData(Area.Overseer, "in Overseer")]
-    [InlineData(Area.Dashboard, "in the Dashboard")]
     public void With_nothing_selected_a_question_says_only_the_area(Area area, string expected) =>
         Assert.Equal(expected, AssistantBrief.Context(area, null, manyTeams: true));
 
@@ -175,9 +174,8 @@ public sealed class AssistantTests : IDisposable
         using var window = Open();
         window.Commands.Execute("assistant");
 
-        window.Commands.Execute("view.work");
         window.Commands.Execute("view.overseer");
-        window.Commands.Execute("view.dashboard");
+        window.Commands.Execute("view.work");
 
         Assert.True(window.Assistant!.Visible);
     }
@@ -186,11 +184,10 @@ public sealed class AssistantTests : IDisposable
     public void F6_moves_between_the_Assistant_and_the_area_beside_it()
     {
         using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
         window.Commands.Execute("assistant");
 
         window.NewKeyDownEvent(Key.F6);
-        var away = (window.Assistant!.HasFocus, window.Panes[0].HasFocus);
+        var away = (window.Assistant!.HasFocus, window.Work.HasFocus);
         window.NewKeyDownEvent(Key.F6);
 
         Assert.Equal((false, true), away);
@@ -288,7 +285,7 @@ public sealed class AssistantTests : IDisposable
 
         Type(window, "why q");
 
-        Assert.Equal(Area.Dashboard, window.CurrentArea);
+        Assert.Equal(Area.Work, window.CurrentArea);
         Assert.Equal("why q", window.Assistant!.Question);
     }
 
@@ -306,10 +303,11 @@ public sealed class AssistantTests : IDisposable
     }
 
     [Fact]
-    public async Task A_question_carries_the_selected_agent_and_its_answer_streams_in_with_a_line_per_lookup()
+    public async Task A_question_carries_the_chosen_role_and_its_answer_streams_in_with_a_line_per_lookup()
     {
-        using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
+        using var window = Open(area: Area.Overseer);
+        window.Overseer.SelectHeading("a-team");
+        window.Refresh();
         window.Commands.Execute("assistant");
         _agent.OnPrompt = async (agent, _) =>
         {
@@ -322,9 +320,9 @@ public sealed class AssistantTests : IDisposable
         await Ask(window, "Why?");
         await Until(() => Chat(window).Contains("waiting on CI") && !window.Assistant!.Controller.IsAnswering);
 
-        Assert.Equal("You · on a-team's Lead in the Dashboard\nWhy?\n\nClaude Code\nIt's\n▸ Read latest.jsonl\nwaiting on CI.", Chat(window));
+        Assert.Equal("You · on a-team's Lead in Overseer\nWhy?\n\nClaude Code\nIt's\n▸ Read latest.jsonl\nwaiting on CI.", Chat(window));
         var sent = (string?)_agent.Received("session/prompt").Single()!["prompt"]![0]!["text"];
-        Assert.Equal("[on a-team's Lead in the Dashboard]\n\nWhy?", sent);
+        Assert.Equal("[on a-team's Lead in Overseer]\n\nWhy?", sent);
     }
 
     [Fact]
@@ -427,7 +425,7 @@ public sealed class AssistantTests : IDisposable
             await Ask(first, "Hi");
             await Until(() => Chat(first).Contains("Hello") && !first.Assistant!.Controller.IsAnswering);
         }
-        _agent.History.Add((true, "[in the Dashboard]\n\nHi"));
+        _agent.History.Add((true, "[in Work]\n\nHi"));
         _agent.History.Add((false, "Hello"));
 
         using var again = Open();
@@ -435,7 +433,7 @@ public sealed class AssistantTests : IDisposable
         await Until(() => Chat(again).Contains("Hello"));
 
         Assert.Equal("session-1", (string?)_agent.Received("session/load").Single()!["sessionId"]);
-        Assert.StartsWith("You · in the Dashboard\nHi", Chat(again));
+        Assert.StartsWith("You · in Work\nHi", Chat(again));
 
         again.NewKeyDownEvent(Key.L.WithCtrl);
 
