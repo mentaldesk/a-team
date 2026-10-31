@@ -23,7 +23,7 @@ public sealed class AssistantTests : IDisposable
 
     private string Sessions => Path.Combine(_root, "assistant.json");
 
-    private DashboardWindow Open(IReadOnlyList<(string, string)>? agents = null)
+    private DashboardWindow Open(IReadOnlyList<(string, string)>? agents = null, int width = 0)
     {
         Directory.CreateDirectory(_root);
         var config = Path.Combine(_root, "config");
@@ -36,7 +36,7 @@ public sealed class AssistantTests : IDisposable
             lock (_gate)
                 action();
         });
-        return new DashboardWindow(
+        var window = new DashboardWindow(
             agents ?? [("a-team", "lead"), ("a-team", "dev")],
             _root,
             new DashboardSettings(config),
@@ -49,6 +49,12 @@ public sealed class AssistantTests : IDisposable
             Area.Dashboard,
             IconStyle.Unicode,
             assistant: setup);
+        if (width > 0)
+        {
+            window.Frame = new System.Drawing.Rectangle(0, 0, width, 30);
+            window.Layout(new System.Drawing.Size(width, 30));
+        }
+        return window;
     }
 
     private async Task Until(Func<bool> condition)
@@ -189,6 +195,89 @@ public sealed class AssistantTests : IDisposable
 
         Assert.Equal((false, true), away);
         Assert.True(window.Assistant.InputHasFocus);
+    }
+
+    [Fact]
+    public void Wide_in_Overseer_the_Assistant_and_the_details_are_tabs_of_one_panel()
+    {
+        using var window = Open(width: 160);
+        window.Press("Ctrl+G O");
+
+        window.Press("Ctrl+G A");
+
+        Assert.True(window.Tabbed);
+        Assert.False(window.DetailsInFront);
+        Assert.True(window.Assistant!.InputHasFocus);
+        window.Press("Ctrl+G I");
+        Assert.True(window.DetailsInFront);
+        Assert.True(window.Card.HasFocus);
+        window.Press("Ctrl+G A");
+        Assert.False(window.DetailsInFront);
+        Assert.True(window.Assistant.InputHasFocus);
+    }
+
+    [Fact]
+    public void F6_moves_between_the_lanes_and_the_tab_in_front()
+    {
+        using var window = Open(width: 160);
+        window.Press("Ctrl+G O");
+        window.Press("Ctrl+G A");
+        window.Press("Ctrl+G I");
+
+        window.NewKeyDownEvent(Key.F6);
+        var lanes = window.Overseer.HasFocus;
+        window.NewKeyDownEvent(Key.F6);
+
+        Assert.True(lanes);
+        Assert.True(window.Card.HasFocus);
+        window.Press("Ctrl+G A");
+        window.NewKeyDownEvent(Key.F6);
+        Assert.True(window.Overseer.HasFocus);
+        window.NewKeyDownEvent(Key.F6);
+        Assert.True(window.Assistant!.InputHasFocus);
+    }
+
+    [Fact]
+    public void Closing_the_Assistant_leaves_the_details_beside_the_lanes()
+    {
+        using var window = Open(width: 160);
+        window.Press("Ctrl+G O");
+        window.Press("Ctrl+G A");
+
+        window.Press("Ctrl+G A");
+
+        Assert.False(window.Tabbed);
+        Assert.False(window.Assistant!.Visible);
+        Assert.True(window.Card.Visible);
+        Assert.True(window.Overseer.HasFocus);
+    }
+
+    [Fact]
+    public void Narrower_than_140_columns_the_Assistant_stays_on_the_right_on_its_own()
+    {
+        using var window = Open(width: 139);
+        window.Press("Ctrl+G O");
+
+        window.Press("Ctrl+G A");
+
+        Assert.False(window.Tabbed);
+        Assert.False(window.Card.Visible);
+        Assert.False(window.Commands.IsEnabled("view.details"));
+        Assert.True(window.Assistant!.InputHasFocus);
+    }
+
+    [Fact]
+    public void Typing_card_keys_to_the_Assistant_beside_Overseer_types_them()
+    {
+        using var window = Open(width: 160);
+        window.Press("Ctrl+G O");
+        window.Press("Ctrl+G A");
+
+        Type(window, "ietlL");
+
+        Assert.Equal("ietlL", window.Assistant!.Question);
+        Assert.Equal("Assistant", window.Keys.Here!.Heading);
+        Assert.False(window.SessionFull);
     }
 
     [Fact]

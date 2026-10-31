@@ -16,7 +16,7 @@ public enum CardKind
 /// the column it's in.</summary>
 public sealed record BoardCard(
     string Team, int Number, string Title, string Url, string Status, string Priority, CardKind Kind,
-    DateTimeOffset? Since, int? Parent = null, bool Blocked = false)
+    DateTimeOffset? Since, int? Parent = null, bool Blocked = false, LastRun? LastRun = null)
 {
     /// <summary>The mark its chip wears: Work's icon for the card in a Nerd Font, and a one-cell shape otherwise.</summary>
     public string Mark(IconStyle style) => style == IconStyle.NerdFont
@@ -64,7 +64,8 @@ public sealed record BoardCard(
                         Text(item, "team"), Numbered(item, "number")!.Value, Text(item, "title"), Text(item, "url"),
                         Text(item, "status"), Text(item, "priority"), KindOf(Text(item, "kind")), Time(item, "since"),
                         Numbered(item, "parent"),
-                        item.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True))
+                        item.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True,
+                        LastRunOf(item)))
             ];
         }
         catch (JsonException)
@@ -81,6 +82,12 @@ public sealed record BoardCard(
         _ => CardKind.Yours,
     };
 
+    private static LastRun? LastRunOf(JsonElement item) =>
+        item.TryGetProperty("lastRun", out var run) && run.ValueKind == JsonValueKind.Object
+        && Text(run, "role") is { Length: > 0 } role && Time(run, "started") is { } started
+            ? new LastRun(role, Text(run, "log"), started)
+            : null;
+
     private static int? Numbered(JsonElement item, string name) =>
         item.TryGetProperty(name, out var number) && number.ValueKind == JsonValueKind.Number && number.TryGetInt32(out var value)
             ? value
@@ -96,6 +103,9 @@ public sealed record BoardCard(
             ? value.GetString() ?? ""
             : "";
 }
+
+/// <summary>The last run the run record has on a card, whichever role it was.</summary>
+public sealed record LastRun(string Role, string Log, DateTimeOffset Started);
 
 /// <summary>How long a card has waited: in its largest unit on a chip, in full in the details.</summary>
 public static class Ages

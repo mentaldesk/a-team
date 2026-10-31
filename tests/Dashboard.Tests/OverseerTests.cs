@@ -1,3 +1,4 @@
+using System.Globalization;
 using MentalDesk.Tui;
 using System.Drawing;
 using MentalDesk.Tui.Links;
@@ -608,20 +609,181 @@ public class OverseerTests : IDisposable
         Assert.Equal("team0", window.Overseer.Board.Selected!.Value.Team);
     }
 
-    [Fact]
-    public void Enter_toggles_the_details_of_the_selected_card()
+    [Theory]
+    [InlineData(160, true)]
+    [InlineData(140, true)]
+    [InlineData(139, false)]
+    public void At_140_columns_or_wider_the_details_are_in_a_panel_beside_the_lanes_and_below_at_the_foot(int width, bool beside)
     {
-        using var window = Open();
+        using var window = Open(width: width);
+        window.Press("Ctrl+G O");
+        window.Refresh();
+        window.Layout(new Size(width, 30));
+
+        Assert.Equal(beside, window.Card.Visible);
+        Assert.Equal(!beside, window.Overseer.DetailsShown);
+        Assert.Equal(beside ? width * 2 / 5 : 0, window.Card.Visible ? window.Card.Frame.Width : 0);
+        Assert.Equal("#11 Eleven", beside ? window.Card.Title : window.Overseer.DetailsTitle);
+        Assert.StartsWith("Yours · Unranked · team0 · Idea for ", beside ? window.Card.Details : window.Overseer.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_panel_shows_who_is_running_on_the_card_and_follows_the_selection()
+    {
+        WriteRun("team0", "dev", 12);
+        WriteLog(Path.Combine(_root, "team0", "dev"), "Reading the task");
+        using var window = Open(width: 160);
+        window.Press("Ctrl+G O");
+        window.Refresh();
+        Assert.Equal("No agent has run on this card yet", window.Card.Session);
+
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        Assert.Equal("#12 Twelve", window.Card.Title);
+        Assert.StartsWith("Dev · running ", window.Card.Session, StringComparison.Ordinal);
+        Assert.EndsWith(" · why: claimed #12", window.Card.Session, StringComparison.Ordinal);
+        Assert.Contains(window.Card.Lines, line => line.Text == "Reading the task");
+        Assert.Equal("Enter full log · i interrupt · g GitHub", window.Card.Hint);
+    }
+
+    [Fact]
+    public void With_nothing_running_the_panel_shows_the_last_run_on_the_card_and_when()
+    {
+        var run = WriteFinished("team1", "dev", 21, Now - TimeSpan.FromHours(3));
+        WriteLog(run, "Draft PR is up");
+        using var window = Open(width: 160, clock: new Clock());
         window.Press("Ctrl+G O");
         window.Refresh();
 
+        window.Overseer.Select("team1", 21);
+
+        Assert.Equal("#21 Twenty-one", window.Card.Title);
+        Assert.Equal("Dev · last ran 3h00m ago · why: claimed #21", window.Card.Session);
+        Assert.Contains(window.Card.Lines, line => line.Text == "Draft PR is up");
+        Assert.False(window.Commands.IsEnabled("agent.interrupt"));
+    }
+
+    [Fact]
+    public void A_Lead_run_that_has_moved_on_to_another_card_still_shows_from_the_run_record()
+    {
+        WriteRun("team1", "lead", card: 21);
+        var logs = Path.Combine(_root, "team1", "lead", "logs");
+        Directory.CreateDirectory(logs);
+        WriteLog(logs, "Pitched it");
+        var log = Path.Combine(logs, "latest.jsonl");
+        var started = (Now - TimeSpan.FromHours(2)).ToString("O", CultureInfo.InvariantCulture);
+        using var window = Open(width: 160, clock: new Clock(), readBoard: team => Task.FromResult(new Reading(team == "team1"
+            ? Overview(team).Replace("\"kind\": \"pitch\"", $$"""
+              "kind": "pitch", "lastRun": {"role": "lead", "log": {{System.Text.Json.JsonSerializer.Serialize(log)}}, "started": "{{started}}"}
+              """, StringComparison.Ordinal)
+            : Overview(team), null)));
+        window.Press("Ctrl+G O");
+        window.Refresh();
+
+        window.Overseer.Select("team1", 22);
+
+        Assert.Equal("Lead · last ran 2h00m ago", window.Card.Session);
+        Assert.Contains(window.Card.Lines, line => line.Text == "Pitched it");
+        Assert.Null(CardRun.For(_root, "team1", ["lead", "dev"], 11));
+    }
+
+    [Fact]
+    public void The_live_run_wins_over_an_older_one_by_another_role()
+    {
+        WriteFinished("team0", "reviewer", 12, Now - TimeSpan.FromHours(1));
+        WriteRun("team0", "dev", 12);
+
+        var run = CardRun.For(_root, "team0", ["lead", "dev", "reviewer"], 12);
+
+        Assert.Equal(("dev", true, false), (run!.Role, run.State.Running, run.OnTask));
+        Assert.Null(CardRun.For(_root, "team0", ["lead", "dev", "reviewer"], 11));
+    }
+
+    [Theory]
+    [InlineData(120)]
+    [InlineData(160)]
+    public void Enter_opens_the_card_s_session_full_screen_and_Esc_comes_back_to_the_same_card(int width)
+    {
+        WriteRun("team0", "dev", 12);
+        using var window = Open(width: width);
+        window.Press("Ctrl+G O");
+        window.Refresh();
+        Assert.False(window.Commands.IsEnabled("overseer.details"));
+        window.NewKeyDownEvent(Key.CursorRight);
+
         Assert.True(window.NewKeyDownEvent(Key.Enter));
 
-        Assert.True(window.Overseer.DetailsShown);
-        Assert.Equal("#11 Eleven", window.Overseer.DetailsTitle);
-        Assert.StartsWith("Yours · Unranked · team0 · Idea for ", window.Overseer.Details, StringComparison.Ordinal);
-        window.NewKeyDownEvent(Key.Enter);
-        Assert.False(window.Overseer.DetailsShown);
+        Assert.True(window.SessionFull);
+        Assert.True(window.Card is { Visible: true, Full: true });
+        Assert.False(window.Overseer.Visible);
+        Assert.Equal("Log", window.Region.Name);
+        Assert.True(window.Commands.IsEnabled("log.copyLines"));
+        Assert.True(window.Commands.IsEnabled("log.editor"));
+        Assert.True(window.Commands.IsEnabled("log.toolCalls"));
+        Assert.True(window.NewKeyDownEvent(Key.Esc));
+        Assert.False(window.SessionFull);
+        Assert.True(window.Overseer.Visible);
+        Assert.Equal(12, window.Overseer.Board.SelectedCard?.Number);
+    }
+
+    [Fact]
+    public void i_on_a_card_whose_run_has_a_conversation_hands_you_to_it_to_come_back_to_the_card()
+    {
+        WriteRun("team0", "dev", 12);
+        WriteLog(Path.Combine(_root, "team0", "dev"), "Reading the task", session: "s1");
+        Handover? handed = null;
+        using var window = Open(handOver: handover => handed = handover);
+        window.Press("Ctrl+G O");
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        Assert.True(window.NewKeyDownEvent(new Key('i')));
+
+        var attach = Assert.IsType<AttachHandover>(handed);
+        Assert.Equal(["attach", "team0", "dev"], attach.Arguments);
+        Assert.Equal((12, Area.Overseer), (attach.Card, attach.Area));
+    }
+
+    [Fact]
+    public void i_on_a_task_s_run_too_new_for_a_conversation_asks_before_stopping_that_run_alone()
+    {
+        WriteFinished("team0", "dev", 12, Now, Environment.ProcessId);
+        RunTask? asked = null;
+        using var window = Open(confirmStop: task =>
+        {
+            asked = task;
+            return false;
+        });
+        window.Press("Ctrl+G O");
+        window.Refresh();
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        window.NewKeyDownEvent(new Key('i'));
+
+        Assert.Equal(new RunTask(12, "Twelve"), asked);
+    }
+
+    [Fact]
+    public void Back_from_the_conversation_Overseer_is_on_the_same_card()
+    {
+        using var window = Open(resume: new AttachHandover("team0", "dev") { Card = 12 });
+        window.Refresh();
+
+        Assert.Equal(Area.Overseer, window.CurrentArea);
+        Assert.Equal(12, window.Overseer.Board.SelectedCard?.Number);
+        Assert.False(window.SessionFull);
+    }
+
+    [Fact]
+    public void Back_from_the_editor_the_card_s_session_is_full_screen_again()
+    {
+        WriteRun("team0", "dev", 12);
+        var place = new LogPlace([], 0, true, 0, 0, false);
+        using var window = Open(resume: new EditorHandover("team0", "dev", new PanePlace(null, place), "log", ["less"]) { Card = 12 });
+        window.Refresh();
+
+        Assert.Equal(12, window.Overseer.Board.SelectedCard?.Number);
+        Assert.True(window.SessionFull);
     }
 
     [Fact]
@@ -766,7 +928,9 @@ public class OverseerTests : IDisposable
           """;
 
     private DashboardWindow Open(
-        Func<string, Task<Reading>>? readBoard = null, Func<string, LinkOutcome>? openUrl = null, TimeProvider? clock = null, int height = 30)
+        Func<string, Task<Reading>>? readBoard = null, Func<string, LinkOutcome>? openUrl = null, TimeProvider? clock = null, int height = 30,
+        int width = 120, Action<Handover>? handOver = null, Func<RunTask, bool>? confirmStop = null, Handover? resume = null,
+        Func<string[], Task<string?>>? run = null)
     {
         Directory.CreateDirectory(_root);
         var window = new DashboardWindow(
@@ -774,17 +938,20 @@ public class OverseerTests : IDisposable
             _root,
             new DashboardSettings(Config),
             new TeamConfigs(Config),
-            _ => Task.FromResult<string?>(null),
+            run ?? (_ => Task.FromResult<string?>(null)),
             _ => Task.FromResult(new Reading("[]", null)),
             _ => Task.FromResult(new Reading("{\"body\": \"\"}", null)),
             openUrl ?? Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
-            Area.Dashboard,
+            resume?.Area ?? Area.Dashboard,
             IconStyle.Unicode,
+            handOver: handOver,
+            resume: resume,
             clock: clock,
+            confirmStop: confirmStop,
             readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))));
-        window.Frame = new Rectangle(0, 0, 120, height);
-        window.Layout(new Size(120, height));
+        window.Frame = new Rectangle(0, 0, width, height);
+        window.Layout(new Size(width, height));
         window.Refresh();
         return window;
     }
@@ -797,10 +964,30 @@ public class OverseerTests : IDisposable
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "pid"), Environment.ProcessId.ToString());
         File.WriteAllText(Path.Combine(dir, "last-start"), "100");
+        File.WriteAllText(Path.Combine(dir, "last-reasons"), task is null ? "" : $"claimed #{task}");
         if (task is not null)
             File.WriteAllText(Path.Combine(dir, "task"), $$"""{"number": {{task}}, "title": "a task"}""");
         if (card is not null)
             File.WriteAllText(Path.Combine(dir, "card"), $$"""{"number": {{card}}}""");
+    }
+
+    /// <summary>A Dev or Reviewer run on <paramref name="task"/> under runs/, started at <paramref name="started"/>: finished,
+    /// unless <paramref name="pid"/> is a live process.</summary>
+    private string WriteFinished(string team, string role, int task, DateTimeOffset started, int pid = int.MaxValue)
+    {
+        var dir = Path.Combine(_root, team, role, "runs", task.ToString(CultureInfo.InvariantCulture));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "pid"), pid.ToString(CultureInfo.InvariantCulture));
+        File.WriteAllText(Path.Combine(dir, "last-start"), started.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+        File.WriteAllText(Path.Combine(dir, "last-reasons"), $"claimed #{task}");
+        return dir;
+    }
+
+    private static void WriteLog(string dir, string said, string? session = null)
+    {
+        var init = session is null ? "" : $$"""{"type": "system", "subtype": "init", "session_id": "{{session}}"}""" + "\n";
+        File.WriteAllText(Path.Combine(dir, "latest.jsonl"),
+            init + $$$"""{"type": "assistant", "message": {"content": [{"type": "text", "text": "{{{said}}}"}]}}""" + "\n");
     }
 
     private sealed class Clock : TimeProvider

@@ -3382,7 +3382,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [
                 "overseer.details", "overseer.fold", "overseer.github", "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "team.board",
-                "decisions", "settings", "quit", "view.dashboard", "view.work", "view.overseer", "assistant", "work.team", "work.whatsNew", "work.read", "work.priority", "work.try",
+                "decisions", "settings", "quit", "view.dashboard", "view.work", "view.overseer", "assistant", "view.details", "work.team", "work.whatsNew", "work.read", "work.priority", "work.try",
                 "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "messages", "commands", "about",
             ],
