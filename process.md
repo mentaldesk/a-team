@@ -105,6 +105,9 @@ a-team board {{team}} comment <role> <n> <file> # post a comment, marked as your
                                                 # (as `you`, stakeholder only: no marker, no 👀)
 a-team board {{team}} review reviewer <pr> <file>  # Reviewer only: post the one review on a green
                                                 # draft task PR
+a-team board {{team}} pictures dev <pr> <image> "<caption>" [<image> "<caption>"...]
+                                                # Dev only: store each image as an attached screenshot
+                                                # is, and make them the task PR's What it looks like
 a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass
                                                 # over it from now on
 a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
@@ -136,8 +139,8 @@ a-team board {{team}} unblock <role> <n>        # Dev or Lead: clear `blocked` o
 a-team board {{team}} hold you <n> <file>       # stakeholder only: hold Ready task <n>, <file> saying why
 a-team board {{team}} release you <n>           # stakeholder only: take the hold off Ready task <n>,
                                                 # whoever set it
-a-team board {{team}} body <n>                  # an issue's number, title and body, as JSON, with
-                                                # `images` where it has screenshots attached
+a-team board {{team}} body <n>                  # an issue's or PR's number, title and body, as JSON,
+                                                # with `images` where it has screenshots attached
 a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON
 a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
 a-team board {{team}} decisions [--replaced] [<words>...]  # the decision register: this team's entries and

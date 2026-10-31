@@ -1164,6 +1164,56 @@ with_images() {
     | if length == 0 then $said else $said + {images: .} end)' <<<"$json"
 }
 
+# image_path <file>: where <file> goes on the attachments branch, named by its content, once it's an image of a
+# size GitHub takes.
+image_path() {
+  local file=$1 ext size hash
+  [ -f "$file" ] || die "no such file: $file"
+  ext=$(tr '[:upper:]' '[:lower:]' <<<"${file##*.}")
+  [ "$ext" != jpeg ] || ext=jpg
+  grep -qxE "$IMAGE_TYPES" <<<"$ext" || die "$(basename "$file") isn't a .png, .jpg, .gif or .webp"
+  size=$(wc -c <"$file" | tr -d ' ')
+  [ "$size" -le $((10 * 1024 * 1024)) ] || die "$(basename "$file") is over 10 MB"
+  hash=$({ shasum -a 256 || sha256sum; } <"$file" 2>/dev/null | cut -c1-16)
+  echo "$(date -u +%Y-%m)/$hash.$ext"
+}
+
+# keep_image <file> <path>: stores <file> as <path> on the attachments branch, unless it's there already.
+keep_image() {
+  gh api "repos/$REPO/contents/$2?ref=$ATTACHMENTS" --silent >/dev/null 2>&1 && return 0
+  write "commit $(basename "$1") to $2 on $ATTACHMENTS" store_attachment "$1" "$2" ||
+    die "can't store $(basename "$1") on $REPO's $ATTACHMENTS branch"
+}
+
+# with_section: the PR body on stdin with its What it looks like section swapped for $SECTION, just above the
+# `a-team try` line and the marker.
+with_section() {
+  awk '
+    function emit(line) {
+      if (seam) { if (out) print "" } else while (blanks-- > 0) print ""
+      blanks = 0; seam = 0; out = 1; print line
+    }
+    /^## What it looks like[[:space:]]*$/ { skipping = 1; seam = 1; next }
+    skipping && (/^#{1,2} / || /^a-team try / || /^<!-- a-team:/) { skipping = 0 }
+    skipping { next }
+    /^$/ { blanks++; next }
+    !placed && (/^a-team try / || /^<!-- a-team:dev -->/) { seam = 1; emit(ENVIRON["SECTION"]); seam = 1; placed = 1 }
+    { emit($0) }
+    END { if (!placed) { seam = 1; emit(ENVIRON["SECTION"]) } }'
+}
+
+# task_pr <pr>: PR <pr>'s state, draft, body, labels and comments, or nothing when it isn't a PR.
+task_pr() {
+  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
+    query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
+      pullRequest(number: $n) { state isDraft body labels(first: 20) { nodes { name } }
+        comments(last: 100) { nodes { body author { __typename login } } } } } }' 2>/dev/null |
+    jq -c '.data.repository.pullRequest // empty' || true
+}
+
+DEV_TASK_PR='.state == "OPEN" and ((.body // "") | contains("<!-- a-team:dev -->"))
+  and ([.labels.nodes[].name] | index("pitch") or index("a-team:customer") | not)'
+
 # git_post <path> <jq filter> [jq args...]: POST to the repo's git database, printing the new object's sha.
 git_post() {
   local path=$1 filter=$2 input
@@ -1756,20 +1806,43 @@ case "$CMD" in
       you) ;;
       *) die "unknown role '$role' (you)" ;;
     esac
-    [ -f "$file" ] || die "no such file: $file"
-    ext=$(tr '[:upper:]' '[:lower:]' <<<"${file##*.}")
-    [ "$ext" != jpeg ] || ext=jpg
-    grep -qxE "$IMAGE_TYPES" <<<"$ext" || die "$(basename "$file") isn't a .png, .jpg, .gif or .webp"
-    size=$(wc -c <"$file" | tr -d ' ')
-    [ "$size" -le $((10 * 1024 * 1024)) ] || die "$(basename "$file") is over 10 MB"
-    hash=$({ shasum -a 256 || sha256sum; } <"$file" 2>/dev/null | cut -c1-16)
-    path="$(date -u +%Y-%m)/$hash.$ext"
-    if ! gh api "repos/$REPO/contents/$path?ref=$ATTACHMENTS" --silent >/dev/null 2>&1; then
-      write "commit $(basename "$file") to $path on $ATTACHMENTS" store_attachment "$file" "$path" ||
-        die "can't store $(basename "$file") on $REPO's $ATTACHMENTS branch"
-    fi
+    path=$(image_path "$file") || exit 1
+    keep_image "$file" "$path"
     attachment_link "$path"
     echo
+    ;;
+
+  pictures)
+    [ $# -ge 4 ] && [ $(($# % 2)) -eq 0 ] || die "usage: board.sh $TEAM pictures dev <pr> <image> <caption> [<image> <caption>...]"
+    role=$1 pr=$2
+    case "$role" in
+      dev) ;;
+      lead | customer | reviewer | you) die "$role may not put pictures on a PR; only dev does, on its own task PR" ;;
+      *) die "unknown role '$role' (dev)" ;;
+    esac
+    shift 2
+    shots=() images=() captions=()
+    while [ $# -gt 0 ]; do
+      grep -q '[^[:space:]]' <<<"$2" || die "$(basename "$1") needs a caption: the acceptance criterion it shows"
+      [ "$(wc -l <<<"$2")" -eq 1 ] || die "a caption is one line: '$2'"
+      path=$(image_path "$1") || exit 1
+      shots+=("$1") images+=("$path") captions+=("$2")
+      shift 2
+    done
+    own_task "$role" "$pr"
+    it=$(task_pr "$pr")
+    [ -n "$it" ] || die "#$pr isn't a PR"
+    jq -e "$DEV_TASK_PR" <<<"$it" >/dev/null || die "dev puts pictures only on its own open task PRs (#$pr isn't one)"
+    section="## What it looks like"
+    for i in "${!images[@]}"; do
+      keep_image "${shots[$i]}" "${images[$i]}"
+      section+=$'\n\n'"${captions[$i]}"$'\n\n'"![${captions[$i]//[\[\]]/}]($(attachment_link "${images[$i]}"))"
+    done
+    body=$(jq -r '.body // ""' <<<"$it" | SECTION=$section with_section)
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "put ${#images[@]} picture(s) on #$pr" gh pr edit "$pr" -R "$REPO" --body-file - >/dev/null
+    record "$role" "${A_TEAM_RUN_TASK:-$pr}" "put ${#images[@]} picture(s) on PR #$pr"
+    say "#$pr: ${#images[@]} picture(s) under What it looks like"
     ;;
 
   task)
@@ -2087,14 +2160,9 @@ case "$CMD" in
     [ -f "$file" ] || die "no such file: $file"
     [ -n "$(grep -v '^[[:space:]]*$' "$file" || true)" ] || die "the review is empty: $file"
     own_task "$role" "$pr"
-    it=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$pr" -f query='
-      query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
-        pullRequest(number: $n) { state isDraft body labels(first: 20) { nodes { name } }
-          comments(last: 100) { nodes { body author { __typename login } } } } } }' 2>/dev/null |
-      jq -c '.data.repository.pullRequest // empty') || true
+    it=$(task_pr "$pr")
     [ -n "$it" ] || die "#$pr isn't a PR"
-    jq -e '.state == "OPEN" and ((.body // "") | contains("<!-- a-team:dev -->"))
-        and ([.labels.nodes[].name] | index("pitch") or index("a-team:customer") | not)' <<<"$it" >/dev/null ||
+    jq -e "$DEV_TASK_PR" <<<"$it" >/dev/null ||
       die "reviewer reviews only the Dev's open task PRs (#$pr isn't one)"
     ! jq -e --arg bot "$BOT" "$REVIEWED reviewed" <<<"$it" >/dev/null ||
       die "#$pr has its review already: a PR is reviewed once"

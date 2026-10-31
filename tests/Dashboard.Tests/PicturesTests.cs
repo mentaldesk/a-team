@@ -159,6 +159,27 @@ public class PicturesTests
         Assert.Empty(opened);
     }
 
+    [Fact]
+    public async Task The_PR_description_draws_its_pictures_under_their_captions_and_Enter_on_one_opens_the_viewer()
+    {
+        var pictures = await Read(Drawing(graphics: true), Attached);
+        List<string> opened = [], viewed = [];
+        var description = new Remark("dev", DateTimeOffset.UnixEpoch,
+            $"## What it looks like\n\nSave is left-aligned\n\n![Save is left-aligned]({Attached})", Pr: 532, Description: true);
+        using var dialog = new ReaderDialog(Item, new IssueBody("The task").With(new Conversation([description])), () => null,
+            pictures: pictures, openUrl: Opening.Into(opened, "opened"), viewImage: (_, alt) => viewed.Add(alt));
+        dialog.Layout(new Size(60, 20));
+
+        var rows = dialog.Body.Rows(40).ToList();
+        Assert.Single(rows, row => row.Text.Contains("Save is left-aligned"));
+        Assert.InRange(rows.FindIndex(row => row.Text.Contains("Save is left-aligned")), 0, rows.FindIndex(row => row.Pictured) - 1);
+        dialog.NewKeyDownEvent(Key.End.WithCtrl);
+        Assert.True(dialog.NewKeyDownEvent(Key.Enter));
+
+        Assert.Equal(["Save is left-aligned"], viewed);
+        Assert.Empty(opened);
+    }
+
     [Theory]
     [InlineData("opened")]
     [InlineData("copied")]

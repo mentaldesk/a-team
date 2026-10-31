@@ -23,7 +23,8 @@ and nothing else.
 2. Read the task (`a-team board {{team}} body <n>`), the pitch it belongs to (the issue's parent,
    `gh issue view <n> --json parent`, then its `body`), the PR (`gh pr view <pr>`) and its diff
    (`gh pr diff <pr>`). Read the code around the change from a fresh `origin/<default branch>`,
-   without creating a worktree or branch.
+   without creating a worktree or branch. `a-team board {{team}} body <pr>` lists in `images` a
+   local copy of each picture under the PR's **What it looks like**: read every one.
 3. Check:
    - **Does it do what the task says**: the cause, or only the visible symptom? A fix at the wrong
      layer usually still passes the task's own example.
@@ -31,6 +32,9 @@ and nothing else.
      how this codebase already solves the same kind of problem, and who maintains it afterwards.
    - **What it doesn't cover**: cases the approach can't handle, acceptance criteria it misses, and
      whether the tests exercise the failure or only the happy path.
+   - **What it looks like**: each picture against its caption and the contributor docs' UI
+     conventions. Anything off is **Needs changing**, naming the picture by its caption. So is a task
+     that changes what the user sees with no pictures.
 4. Write the review to a temporary file, in at most two sections, leaving out anything that's fine
    and any section with nothing in it:
 

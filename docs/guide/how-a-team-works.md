@@ -186,6 +186,10 @@ Dashboard. Each review is a run, so it costs one run per task.
 
 - **When it runs.** Once a task's PR goes green and is still a draft, the Reviewer reads it before
   the Dev marks it ready. It reads the task and its pitch as well as the diff, and changes no code.
+- **What it looks at.** For a task that changes what you see, the Dev puts a picture of each screen
+  the task names in the PR's description, under **What it looks like**, captioned with what it
+  shows. The Reviewer checks each one against its caption and the style guide, and a task that
+  changes the screen with no pictures is a **Needs changing** point of its own.
 - **What it says.** One comment on the PR, in two sections: **Needs changing**, each point with the
   file and line and why, and **Worth considering**, for what needn't hold the PR up. It leaves out
   whatever is fine. If nothing needs changing, it says so in one line.
