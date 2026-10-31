@@ -41,7 +41,7 @@ sql() { printf "'%s'" "${1//\'/\'\'}"; }
 
 # history_sql [sqlite3 options...] <statement>: the record, created on first use.
 history_sql() {
-  sqlite3 -cmd '.timeout 5000' "${@:1:$#-1}" "$STATE/history.db" "CREATE TABLE IF NOT EXISTS events (
+  sqlite3 -cmd '.timeout 5000' "${@:1:$#-1}" "${HISTORY:-$STATE/history.db}" "CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL, at TEXT NOT NULL,
     who TEXT NOT NULL, what TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY, team TEXT NOT NULL, role TEXT NOT NULL,
@@ -54,7 +54,12 @@ history_sql() {
     PRIMARY KEY (team, id));
   CREATE TABLE IF NOT EXISTS queue (team TEXT NOT NULL, at TEXT NOT NULL, waiting INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS spent (team TEXT NOT NULL, item INTEGER, at TEXT NOT NULL, seconds INTEGER NOT NULL,
-    gate TEXT NOT NULL, what TEXT NOT NULL); ${*: -1}"
+    gate TEXT NOT NULL, what TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS board (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL, status TEXT NOT NULL,
+    priority TEXT, since TEXT NOT NULL, content TEXT NOT NULL DEFAULT '{}', mirror TEXT, mirrored_status TEXT,
+    mirrored_priority TEXT, PRIMARY KEY (team, item));
+  CREATE TABLE IF NOT EXISTS boards (team TEXT PRIMARY KEY, project TEXT NOT NULL, read TEXT, failed TEXT, retry TEXT);
+  ${*: -1}"
 }
 
 # run_outcome <team> <role> <pid> <outcome>: why that run, still going, will have ended.

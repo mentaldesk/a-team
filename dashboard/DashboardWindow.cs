@@ -947,7 +947,7 @@ public sealed class DashboardWindow : Window
                 continue;
             }
             _boardReadAt[team] = _clock.GetUtcNow();
-            _overseer.Show(team, BoardCard.Parse(read.Output));
+            _overseer.Show(team, BoardCard.Parse(read.Output), MirrorLag.Parse(read.Output));
         }
         if (boarding.Done)
             _boarding = null;

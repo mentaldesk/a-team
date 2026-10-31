@@ -111,7 +111,7 @@ public class TeamFormTests
         form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode"), new ProjectChoice("mentaldesk", 3, "a-team")]);
 
         Assert.Equal("a-team (mentaldesk #3)", form.Project.Text);
-        Assert.Equal(["TuiCode (mentaldesk #4)", "a-team (mentaldesk #3)"], Choices(form));
+        Assert.Equal([TeamForm.NoMirror, TeamForm.NewProject, "TuiCode (mentaldesk #4)", "a-team (mentaldesk #3)"], Choices(form));
         form.Project.Text = "TuiCode (mentaldesk #4)";
         Assert.Equal(("mentaldesk", 4), (form.Current().ProjectOwner, form.Current().ProjectNumber));
     }
@@ -123,7 +123,7 @@ public class TeamFormTests
 
         form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
 
-        Assert.Equal(["someone #3", "TuiCode (mentaldesk #4)"], Choices(form));
+        Assert.Equal([TeamForm.NoMirror, TeamForm.NewProject, "someone #3", "TuiCode (mentaldesk #4)"], Choices(form));
         Assert.Equal("someone #3", form.Project.Text);
     }
 
@@ -310,14 +310,14 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void Stakeholders_sit_between_Repo_and_Project_and_Skills_between_Workdir_and_Try()
+    public void Stakeholders_sit_between_Repo_and_Mirror_and_Skills_between_Workdir_and_Try()
     {
         using var form = new TeamForm("a-team", Settings with { Skills = [] }, _ => null);
 
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Contributes to", "Project", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Limits"],
+            ["Repo", "Stakeholders", "Contributes to", "Mirror", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -628,7 +628,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Ctrl+Enter Create", "Esc Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Contributes to", "Project", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Contributes to", "Mirror", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -705,13 +705,49 @@ public class TeamFormTests
         form.Repo.Text = "mentaldesk/fretty";
         form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
 
-        Assert.Equal([TeamForm.NewProject, "TuiCode (mentaldesk #4)"], Choices(form));
+        Assert.Equal([TeamForm.NoMirror, TeamForm.NewProject, "TuiCode (mentaldesk #4)"], Choices(form));
         Assert.Equal(TeamForm.NewProject, form.Project.Text);
         form.Project.Text = "TuiCode (mentaldesk #4)";
         form.Project.Text = TeamForm.NewProject;
         form.Save();
 
-        Assert.Equal(("", (int?)null), (created?.ProjectOwner, created?.ProjectNumber));
+        Assert.Equal(("", (int?)null, true), (created?.ProjectOwner, created?.ProjectNumber, created?.Mirror));
+    }
+
+    [Fact]
+    public void Mirror_None_saves_a_team_with_no_project_at_all()
+    {
+        TeamSettings? created = null;
+        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (_, settings) =>
+        {
+            created = settings;
+            return null;
+        });
+        form.NameField!.Text = "fretty";
+        form.Repo.Text = "mentaldesk/fretty";
+        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
+
+        form.Project.Text = TeamForm.NoMirror;
+        form.Save();
+
+        Assert.Equal(("", (int?)null, false), (created?.ProjectOwner, created?.ProjectNumber, created?.Mirror));
+    }
+
+    [Fact]
+    public void An_existing_team_s_Mirror_shows_the_project_it_uses_or_None_and_can_be_moved_to_a_new_one()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.ShowProjects([new ProjectChoice("mentaldesk", 3, "a-team")]);
+
+        Assert.Equal("a-team (mentaldesk #3)", form.Project.Text);
+        form.Project.Text = TeamForm.NewProject;
+        Assert.Equal(("", (int?)null, true), (form.Current().ProjectOwner, form.Current().ProjectNumber, form.Current().Mirror));
+
+        using var none = new TeamForm("a-team", Settings with { Mirror = false }, _ => null);
+        none.ShowProjects([new ProjectChoice("mentaldesk", 3, "a-team")]);
+
+        Assert.Equal(TeamForm.NoMirror, none.Project.Text);
+        Assert.False(none.Current().Mirror);
     }
 
     [Fact]

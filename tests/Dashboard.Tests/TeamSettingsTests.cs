@@ -307,8 +307,8 @@ public class TeamSettingsTests : IDisposable
     [InlineData("", "o", 1, "v", "w", "Repo is required.")]
     [InlineData("just-a-name", "o", 1, "v", "w", "Repo must be owner/repo, like mentaldesk/a-team, not just-a-name.")]
     [InlineData("o/r/x", "o", 1, "v", "w", "Repo must be owner/repo, like mentaldesk/a-team, not o/r/x.")]
-    [InlineData("o/r", "", 1, "v", "w", "Project is required.")]
-    [InlineData("o/r", "o", null, "v", "w", "Project is required.")]
+    [InlineData("o/r", "", 1, "v", "w", "Mirror needs an owner and a number.")]
+    [InlineData("o/r", "o", null, "v", "w", "Mirror needs an owner and a number.")]
     [InlineData("o/r", "o", 0, "v", "w", "Project number must be above 0.")]
     [InlineData("o/r", "o", 1, "", "w", "Vision is required.")]
     [InlineData("o/r", "o", 1, "v", "", "Workdir is required.")]
@@ -328,11 +328,26 @@ public class TeamSettingsTests : IDisposable
         Assert.Equal(refusal, (Settings() with { Customer = customer, Docs = docs }).Refusal());
 
     [Theory]
-    [InlineData("", null, null)]
-    [InlineData("o", null, "Project is required.")]
-    [InlineData("", 1, "Project is required.")]
-    public void A_new_team_may_leave_its_project_out_but_not_half_filled(string owner, int? number, string? refusal) =>
-        Assert.Equal(refusal, (Settings() with { Repo = "o/r", ProjectOwner = owner, ProjectNumber = number }).Refusal(projectOptional: true));
+    [InlineData(true, "", null, null)]
+    [InlineData(true, "o", null, "Mirror needs an owner and a number.")]
+    [InlineData(true, "", 1, "Mirror needs an owner and a number.")]
+    [InlineData(false, "o", null, null)]
+    public void A_team_may_leave_its_project_to_be_made_or_have_none_but_not_name_half_of_one(
+        bool mirror, string owner, int? number, string? refusal) =>
+        Assert.Equal(refusal, (Settings() with { Repo = "o/r", Mirror = mirror, ProjectOwner = owner, ProjectNumber = number }).Refusal());
+
+    [Fact]
+    public void Mirror_None_is_written_as_mirror_false_and_read_back()
+    {
+        const string config = """{"repo": "o/r", "project": {"owner": "o", "number": 3}}""";
+        var before = TeamSettings.Read(Bytes(config));
+
+        var after = (before with { Mirror = false }).Write(Bytes(config), before);
+
+        Assert.True(before.Mirror);
+        Assert.False(TeamSettings.Read(after).Mirror);
+        Assert.Contains("\"mirror\": false", Text(after));
+    }
 
     [Fact]
     public void A_workdir_that_is_not_there_warns()
