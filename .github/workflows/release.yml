@@ -44,7 +44,7 @@ jobs:
       matrix:
         include:
           - rid: osx-arm64
-            runner: macos-14
+            runner: macos-15
           - rid: linux-x64
             runner: ubuntu-latest
           - rid: linux-arm64
