@@ -567,7 +567,7 @@ CYCLES='def move: if startswith("added as ") then {from: null, to: .[9:]}
       | ([$e.what | move] | first) as $m
       | .items[$n] //= {status: null, dev: false, deps: [], asked: false}
       | if $m != null then .items[$n] |= (.status = $m.to
-            | .dev = ($m.to | IN("In progress", "In review")) and (.dev or ($e.who == "dev" and $m.to == "In progress"))
+            | .dev = ($m.to | IN("In progress", "In review")) and (.dev or ($e.who == "dev" and $m.from == "Ready" and $m.to == "In progress"))
             | .asked = (.asked and $m.to == "Ready"))
         elif $e.what | test("^blocked by #[0-9]+$") then .items[$n].deps += [$e.what[12:] | tonumber]
         elif $e.what | test("^blocked by [^ #]+#[0-9]+$") then .items[$n].deps += [$e.what[11:]]
@@ -2611,16 +2611,24 @@ case "$CMD" in
     slug=$(cfg .app.slug)
     [ -n "$slug" ] || exit 0
     prs=$(gh pr list -R "$REPO" --author "app/$slug" --state open --json id,number,isDraft,body,projectItems)
-    while IFS=$'\t' read -r n node; do
+    while IFS=$'\t' read -r n node to from; do
       id=$(board_add "#$n" "$node")
-      set_status "${id:-new-item}" "In review"
-      record dev "$n" "added as In review"
-      say "#$n: added as In review"
-    done < <(jq -r --arg repo "$REPO" '.[] | select((.isDraft | not) and .projectItems == []
-        and ((.body // "") | contains("<!-- a-team:dev -->"))
+      set_status "${id:-new-item}" "$to"
+      if [ -n "$from" ]; then
+        record dev "$n" "$from → $to"
+        say "#$n: $from → $to"
+      else
+        record dev "$n" "added as $to"
+        say "#$n: added as $to"
+      fi
+    done < <(jq -r --arg repo "$REPO" --arg working "$(jq -r '.project.statusMap["In progress"] // "In progress"' "$CONFIG")" '
+      .[] | select(((.body // "") | contains("<!-- a-team:dev -->"))
         and any((.body // "") | scan("(?i)needed by ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#[0-9]+")[0];
                 ascii_downcase != ($repo | ascii_downcase)))
-      | [.number, .id] | @tsv' <<<"$prs")
+      | if .projectItems == [] then [.number, .id, (if .isDraft then "In progress" else "In review" end), ""]
+        elif (.isDraft | not) and any(.projectItems[]; .status.name == $working) then [.number, .id, "In review", "In progress"]
+        else empty end
+      | @tsv' <<<"$prs")
     ;;
 
   update)

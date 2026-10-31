@@ -21,7 +21,7 @@ Every item's Status is one of:
 | Approved | Stakeholder agreed; Lead to break it down | **Stakeholder**, or the Lead on their plain yes (`approve`) |
 | Building | Broken into tasks; tasks are in flight | Lead |
 | Ready | A task Dev can pick up | Lead (or stakeholder) |
-| In progress | Dev is working on it | Dev |
+| In progress | Dev is working on it, or another team's Dev on a draft upstream PR | Dev, or the dispatcher for an upstream PR |
 | In review ⛔ | A PR (task, docs, dependency or upstream) is waiting on the stakeholder | Dev, Customer lead, Lead for a Dependabot PR, or the dispatcher for an upstream PR |
 | Done | Merged, or a pitch whose tasks have all closed | **Stakeholder**, or the Lead for a pitch (`finish`) |
 
@@ -62,7 +62,8 @@ Two kinds of item share the board:
 - A **dependency PR** is one Dependabot opened. Once the Lead has said what the update brings, it
   goes straight to In review, and accepting it merges it.
 - An **upstream PR** is one another team's Dev opened here for a task of its own (`Needed by
-  <repo>#<n>`). Once it's out of draft, the dispatcher puts it In review, and accepting it merges it.
+  <repo>#<n>`). The dispatcher puts it In progress while it's a draft, then In review once it's out of
+  draft, and accepting it merges it.
 
 The stakeholder uses the same board for their own work. Pitches carry the `pitch` label, tasks
 the Dev has claimed carry `a-team:dev`, and the docs PR `a-team:customer`; anything else past Ready
