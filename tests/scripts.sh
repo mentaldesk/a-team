@@ -162,7 +162,7 @@ gh_items() {
     {id: "OP_medium", name: "Medium"}, {id: "OP_low", name: "Low"}]}]}}}}' >"$FIELDS"
   echo '[]' >"$EMPTY"
   META="$BIN/meta.json"
-  jq -n '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options: [
+  jq -n '{data: {organization: {projectV2: {id: "PVT_1", title: "demo", field: {id: "PVTSSF_status", options: [
     {id: "OPT_exploring", name: "Exploring"}, {id: "OPT_pitched", name: "Pitched"},
     {id: "OPT_approved", name: "Approved"}, {id: "OPT_done", name: "Done"}]}}}}}' >"$META"
   gh_thread </dev/null
@@ -4102,6 +4102,15 @@ upstream_edit '.[0].isDraft = true'
 run board demo adopt
 same "exit" 0 "$STATUS"
 same "draft writes" "" "$(cat "$WRITES")"
+
+case_ "adopt goes by this team's board, not another one the PR is on"
+upstream_pr "mentaldesk/a-team#538"
+upstream_edit '.[0].projectItems = [{title: "elsewhere", status: {name: "In progress"}}]'
+: >"$WRITES"
+run board demo adopt
+same "exit" 0 "$STATUS"
+same "said" "#86: added as In review" "$(cat "$OUT")"
+grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
 
 case_ "adopt leaves a stakeholder's draft, a PR already In review, and one for a task in this repo"
 for edit in '.[0].projectItems = [{title: "demo", status: {name: "In review"}}]' \
