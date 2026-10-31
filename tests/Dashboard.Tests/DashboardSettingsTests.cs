@@ -249,16 +249,6 @@ public class DashboardSettingsTests : IDisposable
         Assert.Equal([("settings", Key.Empty)], new DashboardSettings(_configRoot).ReadKeys());
     }
 
-    [Fact]
-    public void A_command_left_with_no_key_reads_back_the_same()
-    {
-        var settings = new DashboardSettings(_configRoot);
-
-        settings.WriteKeys([("settings", Key.Empty), ("help", Key.F2)]);
-
-        Assert.Equal([("settings", Key.Empty), ("help", Key.F2)], settings.ReadKeys());
-    }
-
     [Theory]
     [InlineData("\"PgUp\"")]
     [InlineData("\"nonsense\"")]
@@ -294,27 +284,41 @@ public class DashboardSettingsTests : IDisposable
     }
 
     [Fact]
-    public void A_key_written_is_the_key_the_next_run_reads()
-    {
-        new DashboardSettings(_configRoot).WriteKeys([("settings", new Key(',').WithCtrl)]);
-
-        Assert.Equal([("settings", new Key(',').WithCtrl)], new DashboardSettings(_configRoot).ReadKeys());
-    }
-
-    [Fact]
-    public void Writing_a_key_keeps_the_keys_and_the_settings_already_in_the_file()
+    public void Kept_keys_are_the_keys_the_next_run_reads_and_the_other_settings_stay()
     {
         var settings = new DashboardSettings(_configRoot);
         settings.WriteTheme(BundledThemes.Daylight);
-        settings.WriteExpandToolCalls(true);
-        settings.WriteKeys([("settings", Key.F2)]);
+        var commands = Commands();
+        var keys = settings.KeyOverrides(commands);
 
-        settings.WriteKeys([("help", Key.F3), ("settings", Key.F4)]);
+        keys.Keep([.. keys.Current.Where(binding => binding.CommandId != "settings"),
+            new MentalDesk.Tui.Keys.KeyBinding(MentalDesk.Tui.Keys.KeyChord.Parse("Ctrl+G S"), "settings", MentalDesk.Tui.Commands.CommandScope.Global)]);
 
-        Assert.Equal([("settings", Key.F4), ("help", Key.F3)], settings.ReadKeys());
+        var next = Commands();
+        new DashboardSettings(_configRoot).KeyOverrides(next).Load();
+        Assert.Equal("Ctrl+G S", next.KeysFor("settings"));
         Assert.Equal(BundledThemes.Daylight, settings.ReadTheme());
-        Assert.True(settings.ReadExpandToolCalls());
     }
+
+    [Fact]
+    public void Keys_saved_before_the_keymap_carry_over_until_the_keymap_has_its_own()
+    {
+        Write("{ \"keys\": { \"settings\": \"s\" } }");
+        var commands = Commands();
+        var keys = new DashboardSettings(_configRoot).KeyOverrides(commands);
+
+        keys.Load();
+        Assert.Equal("S", commands.KeysFor("settings"));
+
+        keys.Keep([.. keys.Defaults]);
+        var next = Commands();
+        new DashboardSettings(_configRoot).KeyOverrides(next).Load();
+        Assert.Equal("Ctrl+,", next.KeysFor("settings"));
+    }
+
+    private static CommandRegistry Commands() => new CommandRegistry()
+        .Register("settings", "Settings", () => { }, chord: "Ctrl+,")
+        .Register("help", "Show keys", () => { }, Key.F1);
 
     private string Write(string contents)
     {

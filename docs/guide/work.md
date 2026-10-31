@@ -1,7 +1,7 @@
 # Work
 
-Everything waiting on you, across every team. `w` opens it, `d` goes to the Dashboard and `o` to
-[Overseer](overseer.md). The app opens in whichever area you were in last, and on Work the first time.
+Everything waiting on you, across every team. `Ctrl+G W` opens it, `Ctrl+G D` goes to the Dashboard and
+`Ctrl+G O` to [Overseer](overseer.md). The app opens in whichever area you were in last, and on Work the first time.
 
 Anything whose next move is yours is here, in Triage, Pitches, Blocked or Review. Nothing waits on
 you anywhere else.
@@ -13,7 +13,7 @@ time it took, across every team:
 Work · 7 waiting on you (12 a week ago) · 23 accepted in 7 days · 3h 10m of yours · 7.3 per hour
 ```
 
-*Waiting on you* counts every card in Work, including those `m` hides. *Accepted* counts the task
+*Waiting on you* counts every card in Work, including those `Ctrl+T M` hides. *Accepted* counts the task
 PRs merged and the pitches accepted, whether from here or on GitHub. a-team counts from the day it's
 installed: until it has a week's record the comparison is left out and *accepted* covers the days it
 has, and with nothing recorded yet the title shows only what's waiting.
@@ -53,7 +53,7 @@ Each team has a tab, in the order the teams are set up, titled with the team and
 wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
 Pitches and 1 in Review, with `⊘` counting Blocked. A `⛓` first counts the cards holding up a
 task ([below](#holding-up-a-task)), like `tui ⛓ 1 ◇ 1 PR2`, so one on a tab you're not looking at
-still shows. With `m` on, it counts only your moves, and a
+still shows. With `Ctrl+T M` on, it counts only your moves, and a
 column with nothing showing isn't counted. Work opens on the first team with something waiting. Each tab has up to four
 columns, left to right in the order work moves through them. A column with nothing in it is hidden,
 and the one you're on takes half the tab. Only that column highlights its card, the one your keys act
@@ -134,7 +134,7 @@ The line at the foot says why the card you're on is where it is, like
 
 In every area, at the top right beside the menus, an alert like `? #481 +2` says what has become your move since you
 opened the app: a pitch in Pitched, a PR in review or the Dev's question, the newest and how many
-others. `u` (**View → Go to what's new**) or a click takes you to it, and each new card wears a `●`
+others. `Ctrl+G N` (**Go → What's new**) or a click takes you to it, and each new card wears a `●`
 before its title until you open it.
 
 ## Holding up a task
@@ -174,12 +174,13 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 | `g` | Open the card, or the PR row you're on, on GitHub |
 | `b` | Open the team's Project board on GitHub, for everything that isn't waiting on you |
 | `p` | Read the card and set its Priority |
-| `m` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
-| `u` | Go to the newest card that has become your move |
+| `Ctrl+T M` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
+| `Ctrl+G N` | Go to the newest card that has become your move |
+| `Ctrl+G T` | Pick a team by name |
 | `r` | In a tab that couldn't be read, read that team again |
 | `F5` | Read what's waiting again |
 
-To pick a team by name, open **Go to team…** from Commands (`Ctrl+E`) or the View menu, and type
+`Ctrl+G T`, **Go → Team…** or **Go to team…** in Commands (`Ctrl+E`) picks a team by name: type
 to narrow the list as in Commands.
 
 The cards are read when you open Work, when you press `F5`, and by themselves every five minutes
@@ -313,7 +314,7 @@ The one being written finishes either way.
 
 ## Adding an idea
 
-Press `n`, or pick **New idea** from the Cards menu or Commands (`Ctrl+E`). **Team** starts on the
+Press `Ctrl+N`, or pick **New idea** from the Cards menu or Commands (`Ctrl+E`). **Team** starts on the
 lane you're in, or the first team from the Dashboard. Type a **Title**, and a **Description** if
 you like; `Tab` moves between the fields. **Priority** starts on **None**, which puts the idea in
 that team's Triage to rank later; pick another with `←`/`→` and it goes straight into the Lead's
@@ -362,9 +363,9 @@ ideas`. If a step fails, the dialog stays open with what you wrote and says whic
 tries again from there. `Esc` cancels, asking first if you've typed anything: `Ctrl+Enter` discards
 it, and `Esc` keeps writing.
 
-**From what you're reading.** Press `n` in a card's reader, or pick **New idea** from Commands
+**From what you're reading.** Press `Ctrl+N` in a card's reader, or pick **New idea** from Commands
 (`Ctrl+E`) there. **Team** starts on the card's team, and the **Description** on a link back to the
 card. Select lines in the body first and they're quoted above the link, which goes to the comment
 they came from (the first, if they span two). The new issue shows on the card's GitHub timeline as
 "mentioned this", and closing the dialog leaves you in the reader where you were. While the ranks
-show, `n` picks **None**; Commands still files an idea from there.
+show, `Ctrl+N` files none; Commands still files an idea from there.

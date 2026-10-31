@@ -77,12 +77,12 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void New_idea_is_on_n_in_the_palette_and_in_Cards()
+    public void New_idea_is_on_Ctrl_N_in_the_palette_and_in_Cards()
     {
         using var window = Open(newIdea: (_, _, _, _) => null);
 
         Assert.Contains(window.Commands.Enabled, command => command is { Id: "work.new", Label: "New idea" });
-        Assert.Equal(new Key('n'), window.Commands.KeyFor("work.new"));
+        Assert.Equal(Key.N.WithCtrl, window.Commands.KeyFor("work.new"));
         Assert.Contains(window.MenuItems, item => item.Id == "work.new");
     }
 
@@ -99,7 +99,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
         window.Work.Focus(window.Work.Items.Single(item => item.Number == 133), false);
 
-        window.NewKeyDownEvent(new Key('n'));
+        window.Press("Ctrl+N");
 
         Assert.Equal(["team0", "team1"], asked.Single().Teams);
         Assert.Equal("team1", asked.Single().Team);
@@ -650,14 +650,14 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.True(window.NewKeyDownEvent(new Key('m')));
+        Assert.True(window.Press("Ctrl+T M"));
         LayOut(window, 120, 30);
 
         Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 1", "Blocked · 0", "Review · 0", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
             Titles(window));
         Assert.Equal(6, window.Work.Selected?.Number);
 
-        window.NewKeyDownEvent(new Key('m'));
+        window.Press("Ctrl+T M");
         LayOut(window, 120, 30);
 
         Assert.Equal(["\U0001F4A1Triage · 1", "◇ Pitches · 2", "Blocked · 0", "Review · 1", "\U0001F4A1Triage · 0", "◇ Pitches · 1", "Blocked · 0", "Review · 0"],
@@ -673,7 +673,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
 
-        window.NewKeyDownEvent(new Key('m'));
+        window.Press("Ctrl+T M");
         LayOut(window, 120, 30);
 
         Assert.Equal("My items · read <1m ago", window.Status.FocusWord);
@@ -703,7 +703,7 @@ public class WorkAreaTests : IDisposable
         Assert.NotEqual("", window.Says());
         Assert.Equal(window.Viewport.Height - 1, window.Status.Frame.Y);
 
-        window.NewKeyDownEvent(new Key('d'));
+        window.Press("Ctrl+G D");
         LayOut(window, 120, 30);
 
         Assert.Equal("", window.Says());
@@ -733,7 +733,7 @@ public class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.NewKeyDownEvent(new Key('d'));
+        window.Press("Ctrl+G D");
 
         Assert.Equal("", window.Status.FocusWord);
     }
@@ -799,7 +799,7 @@ public class WorkAreaTests : IDisposable
         using (var window = Open())
         {
             window.Refresh();
-            window.NewKeyDownEvent(new Key('m'));
+            window.Press("Ctrl+T M");
         }
 
         Assert.True(new DashboardSettings(Config).ReadOnlyMine());
@@ -1670,7 +1670,7 @@ public class WorkAreaTests : IDisposable
 
         var approve = window.Commands.Registered.Single(command => command.Id == "work.approve");
         Assert.Equal("Approve the pitch you're reading", approve.Label);
-        Assert.Equal(new Key('a'), approve.Key);
+        Assert.Equal("A", approve.Keys);
         Assert.False(window.Commands.IsEnabled("work.approve"));
 
         Assert.False(window.NewKeyDownEvent(new Key('a')));
@@ -1775,9 +1775,9 @@ public class WorkAreaTests : IDisposable
 
         var decline = window.Commands.Registered.Single(command => command.Id == "work.decline");
         Assert.Equal("Decline", decline.Label);
-        Assert.Equal(new Key('x'), decline.Key);
+        Assert.Equal("X", decline.Keys);
         Assert.True(decline.OnCard);
-        Assert.DoesNotContain(window.Commands.Registered, command => command.Id != "work.decline" && command.Key == new Key('x'));
+        Assert.DoesNotContain(window.Commands.Registered, command => command.Id != "work.decline" && command.Keys == "X");
         Assert.True(window.Commands.IsEnabled("work.decline"));
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.True(window.Commands.IsEnabled("work.decline"));
@@ -1857,7 +1857,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(192, window.Work.Selected?.Number);
 
         var hold = window.Commands.Registered.Single(command => command.Id == "work.hold");
-        Assert.Equal(new Key('h'), hold.Key);
+        Assert.Equal("H", hold.Keys);
         Assert.True(hold.OnCard);
         Assert.Equal("Release hold", window.Commands.Registered.Single(command => command.Id == "work.hold").Label);
         Assert.True(window.NewKeyDownEvent(new Key('h')));
@@ -2004,10 +2004,10 @@ public class WorkAreaTests : IDisposable
 
         var notNow = window.Commands.Registered.Single(command => command.Id == "work.notNow");
         Assert.Equal("Not now", notNow.Label);
-        Assert.Equal(new Key('l'), notNow.Key);
+        Assert.Equal("L", notNow.Keys);
         Assert.True(notNow.OnCard);
         Assert.DoesNotContain(window.Commands.Registered,
-            command => command.Id != "work.notNow" && command.Key == new Key('l') && command.Scopes.Contains(Regions.Work));
+            command => command.Id != "work.notNow" && command.Keys == "L" && command.Scopes.Contains(Regions.Work));
         Assert.False(window.Commands.IsEnabled("work.notNow"));
         window.NewKeyDownEvent(Key.Enter);
         window.Refresh();
@@ -2025,7 +2025,7 @@ public class WorkAreaTests : IDisposable
     public void Decline_can_be_rebound_and_the_reader_offers_it_on_the_new_key()
     {
         Directory.CreateDirectory(_root);
-        new DashboardSettings(Config).WriteKeys([("work.decline", new Key('z'))]);
+        OldKeys.Save(Config, ("work.decline", "z"));
         ReaderDecline? offered = null;
         using var window = Open(
             readBody: _ => Task.FromResult(new Reading(Body, null)),
@@ -2527,7 +2527,7 @@ public class WorkAreaTests : IDisposable
 
         var accept = window.Commands.Registered.Single(command => command.Id == "work.accept");
         Assert.Equal("Accept", accept.Label);
-        Assert.Equal(new Key('a'), accept.Key);
+        Assert.Equal("A", accept.Keys);
         Assert.True(accept.OnCard);
         Assert.Equal(6, window.Work.Selected?.Number);
         Assert.False(window.Commands.IsEnabled("work.accept"));
@@ -2542,7 +2542,7 @@ public class WorkAreaTests : IDisposable
     public void Accept_can_be_rebound_and_the_reader_offers_it_on_the_new_key()
     {
         Directory.CreateDirectory(_root);
-        new DashboardSettings(Config).WriteKeys([("work.accept", new Key('z'))]);
+        OldKeys.Save(Config, ("work.accept", "z"));
         var calls = new List<string[]>();
         ReaderCommand? offered = null;
         using var window = Open(
@@ -2737,7 +2737,7 @@ public class WorkAreaTests : IDisposable
 
         var comment = window.Commands.Registered.Single(command => command.Id == "work.comment");
         Assert.Equal("Comment on the item you're reading", comment.Label);
-        Assert.Equal(new Key('c'), comment.Key);
+        Assert.Equal("C", comment.Keys);
         Assert.False(window.Commands.IsEnabled("work.comment"));
     }
 
@@ -2881,10 +2881,10 @@ public class WorkAreaTests : IDisposable
         using var window = Open();
 
         Assert.Equal(
-            [("work.read", "Open", Key.Enter), ("work.github", "Open on GitHub", new Key('g'))],
+            [("work.read", "Open", "Enter"), ("work.github", "Open on GitHub", "G")],
             window.Commands.Registered
                 .Where(command => command.Id is "work.read" or "work.github")
-                .Select(command => (command.Id, command.Label, command.Key)));
+                .Select(command => (command.Id, command.Label, command.Keys)));
     }
 
     [Fact]
@@ -2932,7 +2932,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open();
         window.Refresh();
 
-        Assert.True(window.NewKeyDownEvent(new Key('d')));
+        Assert.True(window.Press("Ctrl+G D"));
 
         Assert.Equal(Area.Dashboard, window.CurrentArea);
         Assert.True(window.Agents.Visible);
@@ -2945,10 +2945,10 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open();
 
-        window.NewKeyDownEvent(new Key('d'));
+        window.Press("Ctrl+G D");
 
         Assert.Equal(Area.Dashboard, new DashboardSettings(Config).ReadArea());
-        Assert.True(window.NewKeyDownEvent(new Key('w')));
+        Assert.True(window.Press("Ctrl+G W"));
         Assert.Equal(Area.Work, new DashboardSettings(Config).ReadArea());
     }
 
@@ -3042,10 +3042,10 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(107, window.Work.Selected?.Number);
 
-        window.NewKeyDownEvent(new Key('d'));
+        window.Press("Ctrl+G D");
         clock.Now += DashboardWindow.ReadEvery - TimeSpan.FromSeconds(1);
         window.Refresh();
-        window.NewKeyDownEvent(new Key('w'));
+        window.Press("Ctrl+G W");
 
         Assert.Equal(2, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
@@ -3065,8 +3065,8 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
 
-        window.NewKeyDownEvent(new Key('d'));
-        window.NewKeyDownEvent(new Key('w'));
+        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G W");
 
         Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
     }
@@ -3084,9 +3084,9 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
 
-        window.NewKeyDownEvent(new Key('d'));
+        window.Press("Ctrl+G D");
         WriteRun("team1", "lead", Environment.ProcessId);
-        window.NewKeyDownEvent(new Key('w'));
+        window.Press("Ctrl+G W");
         window.Refresh();
 
         Assert.Equal(4, reads);
@@ -3107,9 +3107,9 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
 
-        window.NewKeyDownEvent(new Key('d'));
+        window.Press("Ctrl+G D");
         WriteRun("team0", "dev", 999999);
-        window.NewKeyDownEvent(new Key('w'));
+        window.Press("Ctrl+G W");
         window.Refresh();
 
         Assert.Equal(4, reads);
@@ -3130,9 +3130,9 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
 
-        window.NewKeyDownEvent(new Key('d'));
+        window.Press("Ctrl+G D");
         clock.Now += DashboardWindow.ReadEvery;
-        window.NewKeyDownEvent(new Key('w'));
+        window.Press("Ctrl+G W");
         window.Refresh();
 
         Assert.Equal(4, reads);
@@ -3151,8 +3151,8 @@ public class WorkAreaTests : IDisposable
         });
         window.Refresh();
 
-        window.NewKeyDownEvent(new Key('d'));
-        window.NewKeyDownEvent(new Key('w'));
+        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G W");
 
         Assert.Equal(4, reads);
     }
@@ -3340,7 +3340,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(["team0 \U0001F4A11 ◇ 2 PR1", "team1 ◇ 1"], window.Work.Lanes.Select(lane => lane.Title));
 
-        window.NewKeyDownEvent(new Key('m'));
+        window.Press("Ctrl+T M");
 
         Assert.Equal(["team0 \U0001F4A11 ◇ 1", "team1 ◇ 1"], window.Work.Lanes.Select(lane => lane.Title));
     }
@@ -3381,8 +3381,8 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(
             [
-                "view.dashboard", "view.work", "view.overseer", "assistant", "work.whatsNew", "overseer.details", "overseer.fold", "overseer.github",
-                "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "decisions", "settings", "quit", "work.read", "work.priority", "work.try",
+                "overseer.details", "overseer.fold", "overseer.github", "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "team.board",
+                "decisions", "settings", "quit", "view.dashboard", "view.work", "view.overseer", "assistant", "work.team", "work.whatsNew", "work.read", "work.priority", "work.try",
                 "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
                 "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "messages", "commands", "about",
             ],
@@ -3390,8 +3390,8 @@ public class WorkAreaTests : IDisposable
         Assert.All(window.MenuItems, item =>
         {
             var command = window.Commands.Registered.Single(registered => registered.Id == item.Id);
-            Assert.Equal(command.MenuLabel.Replace("_", ""), item.Item.Title.Replace("_", ""));
-            Assert.Equal(command.Key, item.Item.Key);
+            Assert.Equal(command.MenuLabel.Replace("_", ""), item.Item.Title.Replace("_", "").TrimStart(AppMenu.Check, ' '));
+            Assert.Equal(command.Keys, item.Item.KeyView.Text);
         });
     }
 
@@ -3405,7 +3405,7 @@ public class WorkAreaTests : IDisposable
 
         window.MenuItems.Single(item => item.Id == "view.dashboard").Item.Action!();
         Assert.Equal(Area.Dashboard, window.CurrentArea);
-        Assert.True(window.NewKeyDownEvent(new Key('w')));
+        Assert.True(window.Press("Ctrl+G W"));
         Assert.Equal(Area.Work, window.CurrentArea);
     }
 
@@ -3419,7 +3419,7 @@ public class WorkAreaTests : IDisposable
 
         var command = window.Commands.Registered.Single(registered => registered.Id == "work.copyBranch");
 
-        Assert.Equal(new Key('y'), command.Key);
+        Assert.Equal("Y", command.Keys);
         Assert.True(command.OnCard);
         Assert.Equal("Copy branch name", command.Label);
     }
@@ -3613,7 +3613,7 @@ public class WorkAreaTests : IDisposable
 
         var command = window.Commands.Registered.Single(registered => registered.Id == "work.try");
 
-        Assert.Equal(new Key('t'), command.Key);
+        Assert.Equal("T", command.Keys);
         Assert.True(command.OnCard);
     }
 
@@ -3704,13 +3704,13 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void t_on_the_Dashboard_shows_tool_calls_and_hands_nothing_over()
+    public void Ctrl_T_T_on_the_Dashboard_shows_tool_calls_and_hands_nothing_over()
     {
         var handed = new List<Handover>();
         using var window = Open(handOver: handed.Add, area: Area.Dashboard);
         window.NewKeyDownEvent(Key.Tab);
 
-        Assert.True(window.NewKeyDownEvent(new Key('t')));
+        Assert.True(window.Press("Ctrl+T T"));
 
         Assert.Empty(handed);
         Assert.True(window.Panes[0].Expanded);
@@ -3999,7 +3999,7 @@ public class WorkAreaTests : IDisposable
     public void Try_can_be_rebound_and_the_card_and_the_reader_share_the_new_key()
     {
         Directory.CreateDirectory(_root);
-        new DashboardSettings(Config).WriteKeys([("work.try", new Key('z'))]);
+        OldKeys.Save(Config, ("work.try", "z"));
         var handed = new List<Handover>();
         ReaderTry? offered = null;
         using var window = Open(
@@ -4321,7 +4321,7 @@ public class WorkAreaTests : IDisposable
     {
         var reads = 0;
         Directory.CreateDirectory(Config);
-        new DashboardSettings(Config).WriteKeys([("work.refresh", new Key('z'))]);
+        OldKeys.Save(Config, ("work.refresh", "z"));
         using var window = Open(read: team =>
         {
             reads++;
@@ -4332,7 +4332,7 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.NewKeyDownEvent(new Key('z')));
 
         Assert.Equal(4, reads);
-        Assert.Equal(new Key('z'), MenuItem(window, "work.refresh").Key);
+        Assert.Equal("Z", MenuItem(window, "work.refresh").KeyView.Text);
     }
 
     [Fact]
@@ -4362,7 +4362,7 @@ public class WorkAreaTests : IDisposable
         Assert.True(window.Work.OnlyMine);
         Assert.Equal("_Show all", FilterTitle(window));
 
-        window.NewKeyDownEvent(new Key('m'));
+        window.Press("Ctrl+T M");
         Assert.False(window.Work.OnlyMine);
         Assert.Equal("_Show only mine", FilterTitle(window));
     }

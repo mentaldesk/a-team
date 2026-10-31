@@ -501,7 +501,7 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
-    public void o_opens_Overseer_and_reads_every_team_s_board_once()
+    public void Ctrl_G_O_opens_Overseer_and_reads_every_team_s_board_once()
     {
         var read = new List<string>();
         using var window = Open(team =>
@@ -510,16 +510,16 @@ public class OverseerTests : IDisposable
             return Task.FromResult(new Reading(Overview(team), null));
         });
 
-        Assert.True(window.NewKeyDownEvent(new Key('o')));
+        Assert.True(window.Press("Ctrl+G O"));
         window.Refresh();
 
         Assert.Equal(Area.Overseer, window.CurrentArea);
         Assert.Equal(["team0", "team1"], read);
         Assert.Equal(4, window.Overseer.Board.Cards.Count);
         Assert.Equal(["team0 · idle", "team1 · idle"], window.Overseer.LaneTitles);
-        Assert.True(window.NewKeyDownEvent(new Key('w')));
+        Assert.True(window.Press("Ctrl+G W"));
         Assert.Equal(Area.Work, window.CurrentArea);
-        Assert.True(window.NewKeyDownEvent(new Key('d')));
+        Assert.True(window.Press("Ctrl+G D"));
         Assert.Equal(Area.Dashboard, window.CurrentArea);
     }
 
@@ -533,7 +533,7 @@ public class OverseerTests : IDisposable
             reads++;
             return Task.FromResult(new Reading(Overview(team), null));
         }, clock: clock);
-        window.NewKeyDownEvent(new Key('o'));
+        window.Press("Ctrl+G O");
         window.Refresh();
         clock.Now += TimeSpan.FromMinutes(3);
         window.Refresh();
@@ -547,7 +547,7 @@ public class OverseerTests : IDisposable
     public void Overseer_is_in_the_palette_and_the_View_menu_and_its_key_can_be_rebound()
     {
         Directory.CreateDirectory(Config);
-        new DashboardSettings(Config).WriteKeys([("view.overseer", new Key('v'))]);
+        OldKeys.Save(Config, ("view.overseer", "v"));
         using var window = Open();
 
         Assert.Contains(window.Commands.Registered, command => command is { Id: "view.overseer", Label: "Overseer" });
@@ -565,7 +565,7 @@ public class OverseerTests : IDisposable
         const string url = "https://github.com/o/team0/issues/12";
         var opened = new List<string>();
         using var window = Open(openUrl: Opening.Into(opened, did));
-        window.NewKeyDownEvent(new Key('o'));
+        window.Press("Ctrl+G O");
         window.Refresh();
 
         window.NewKeyDownEvent(Key.CursorRight);
@@ -582,7 +582,7 @@ public class OverseerTests : IDisposable
     public void Tab_and_Shift_Tab_move_between_lanes()
     {
         using var window = Open();
-        window.NewKeyDownEvent(new Key('o'));
+        window.Press("Ctrl+G O");
         window.Refresh();
 
         Assert.True(window.NewKeyDownEvent(Key.Tab));
@@ -595,7 +595,7 @@ public class OverseerTests : IDisposable
     public void PgDn_and_PgUp_scroll_lanes_that_don_t_fit()
     {
         using var window = Open(height: 8);
-        window.NewKeyDownEvent(new Key('o'));
+        window.Press("Ctrl+G O");
         window.Refresh();
         Assert.Equal(0, window.Overseer.ScrolledTo);
 
@@ -612,7 +612,7 @@ public class OverseerTests : IDisposable
     public void Enter_toggles_the_details_of_the_selected_card()
     {
         using var window = Open();
-        window.NewKeyDownEvent(new Key('o'));
+        window.Press("Ctrl+G O");
         window.Refresh();
 
         Assert.True(window.NewKeyDownEvent(Key.Enter));
@@ -629,7 +629,7 @@ public class OverseerTests : IDisposable
     {
         WriteRun("team0", "dev", 12);
         using var window = Open();
-        window.NewKeyDownEvent(new Key('o'));
+        window.Press("Ctrl+G O");
         window.Refresh();
 
         Assert.False(window.Commands.IsEnabled("overseer.session"));
@@ -651,7 +651,7 @@ public class OverseerTests : IDisposable
         WriteRun("team0", "lead", card: 11);
         WriteRun("team1", "lead");
         using var window = Open();
-        window.NewKeyDownEvent(new Key('o'));
+        window.Press("Ctrl+G O");
         window.Refresh();
 
         Assert.Equal(11, window.Overseer.Board.SelectedCard?.Number);
@@ -668,7 +668,7 @@ public class OverseerTests : IDisposable
     {
         using var dialog = new SettingsDialog(
             new ThemeSetting(BundledThemes.Midnight, _ => { }, _ => { }), new IconSetting(IconStyle.Unicode, _ => { }, _ => { }), false,
-            new CommandRegistry(), new TeamConfigs(Config), () => { }, IconStyle.Unicode,
+            new CommandRegistry().Register("quit", "Quit", () => { }), new TeamConfigs(Config), () => { }, IconStyle.Unicode,
             limits: new Dictionary<string, string> { ["Ready"] = "2d" });
 
         Assert.All(dialog.LimitFields.Where(limit => limit.Column != "Ready"), limit => Assert.Equal("", limit.Field.Text));

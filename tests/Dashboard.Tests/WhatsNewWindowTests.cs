@@ -87,8 +87,8 @@ public class WhatsNewWindowTests : IDisposable
 
         var everywhere = window.Keys.Everywhere;
         Assert.NotNull(everywhere);
-        Assert.Contains(everywhere.Groups.Single(group => group.Heading == "View").Rows,
-            row => row is { Keys: "u", Label: "Go to what's new" });
+        Assert.Contains(everywhere.Groups.Single(group => group.Heading == "Go").Rows,
+            row => row is { Keys: "Ctrl+G N", Label: "Go to what's new" });
     }
 
     [Fact]
@@ -121,12 +121,12 @@ public class WhatsNewWindowTests : IDisposable
     }
 
     [Fact]
-    public void U_opens_Work_on_the_team_s_tab_with_the_new_card_selected()
+    public void Ctrl_G_N_opens_Work_on_the_team_s_tab_with_the_new_card_selected()
     {
         using var window = Open(Area.Dashboard);
         Settle(window);
 
-        window.NewKeyDownEvent(new Key('u'));
+        window.Press("Ctrl+G N");
         Settle(window);
 
         Assert.Equal(Area.Work, window.CurrentArea);
@@ -148,13 +148,13 @@ public class WhatsNewWindowTests : IDisposable
     }
 
     [Fact]
-    public void Go_to_what_s_new_is_in_the_View_menu_on_u()
+    public void Go_to_what_s_new_is_in_the_Go_menu_on_Ctrl_G_N()
     {
         using var window = Open(Area.Work);
 
         Assert.Contains(window.MenuItems, item => item.Id == "work.whatsNew");
-        Assert.Equal(new Key('u'), window.Commands.KeyFor("work.whatsNew"));
-        Assert.Contains(AppMenu.Layout.Single(menu => menu.Title == "_View").Ids, id => id == "work.whatsNew");
+        Assert.Equal("Ctrl+G N", window.Commands.KeysFor("work.whatsNew"));
+        Assert.Contains(AppMenu.Layout.Single(menu => menu.Title == AppMenu.Go).Ids, id => id == "work.whatsNew");
     }
 
     [Fact]

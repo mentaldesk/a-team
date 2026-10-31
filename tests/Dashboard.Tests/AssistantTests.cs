@@ -128,13 +128,26 @@ public sealed class AssistantTests : IDisposable
         Assert.Equal(expected, AssistantBrief.Context(area, null, manyTeams: true));
 
     [Fact]
-    public void Assistant_is_in_the_View_menu_with_no_key()
+    public void Assistant_is_in_the_Go_menu_on_Ctrl_G_A()
     {
         using var window = Open();
 
-        Assert.Contains(AppMenu.Layout.Single(menu => menu.Title == "_View").Ids, id => id == "assistant");
+        Assert.Contains(AppMenu.Layout.Single(menu => menu.Title == AppMenu.Go).Ids, id => id == "assistant");
         Assert.Contains(window.Commands.Registered, command => command.Id == "assistant" && command.Label == "Assistant");
-        Assert.Equal(Key.Empty, window.Commands.KeyFor("assistant"));
+        Assert.Equal("Ctrl+G A", window.Commands.KeysFor("assistant"));
+    }
+
+    [Fact]
+    public void Ctrl_G_A_shows_the_Assistant_and_hides_it_while_it_s_showing()
+    {
+        using var window = Open();
+
+        window.Press("Ctrl+G A");
+        var shown = window.Assistant!.Visible;
+        window.Press("Ctrl+G A");
+
+        Assert.True(shown);
+        Assert.False(window.Assistant.Visible);
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 # Overseer
 
-Every team's board on one screen, with how long each card has sat where it is. `o` opens it, `w` goes
-to [Work](work.md) and `d` to the [Dashboard](dashboard.md). It only shows: approving, accepting and
+Every team's board on one screen, with how long each card has sat where it is. `Ctrl+G O` opens it, `Ctrl+G W`
+goes to [Work](work.md) and `Ctrl+G D` to the [Dashboard](dashboard.md). It only shows: approving, accepting and
 commenting stay in Work.
 
 ## Lanes and chips

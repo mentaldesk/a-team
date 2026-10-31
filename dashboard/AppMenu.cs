@@ -14,13 +14,18 @@ internal sealed class AppMenu
 
     internal const string Agents = "_Agents";
 
+    internal const string Go = "_Go";
+
+    internal const char Check = '●';
+
     /// <summary>Stands in the layout for a line between two groups of items.</summary>
     internal const string Separator = "-";
 
     internal static readonly (string Title, string[] Ids)[] Layout =
     [
-        ("_View", ["view.dashboard", "view.work", "view.overseer", "assistant", "work.whatsNew", Separator, "overseer.details", "overseer.fold", "overseer.github",
-            "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "work.team", "team.board", "decisions", "settings", "quit"]),
+        ("_View", ["overseer.details", "overseer.fold", "overseer.github", "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam",
+            "team.board", "decisions", "settings", "quit"]),
+        (Go, ["view.dashboard", "view.work", "view.overseer", "assistant", Separator, "work.team", "work.whatsNew"]),
         (Cards, [Separator, "work.new", "work.refresh", "work.mine"]),
         (Agents, ["agent.hold", "agent.interrupt", "dispatch.pass", Separator, "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
         ("_Help", ["help", "guide", "messages", "commands", "about"]),
@@ -36,10 +41,12 @@ internal sealed class AppMenu
     private readonly Dictionary<DimmedMenuItem, Dictionary<string, string>> _titles = [];
     private readonly MenuBarItem _cards;
     private readonly MenuBarItem _agents;
+    private readonly IReadOnlyDictionary<string, Func<bool>> _checked;
 
-    internal AppMenu(CommandRegistry commands, Area area)
+    internal AppMenu(CommandRegistry commands, Area area, IReadOnlyDictionary<string, Func<bool>>? isChecked = null)
     {
         _commands = commands;
+        _checked = isChecked ?? new Dictionary<string, Func<bool>>();
         Bar = new MenuBar { Menus = [.. Layout.Select(Menu)] };
         _cards = _menus.Single(menu => menu.Title == Cards);
         _agents = _menus.Single(menu => menu.Title == Agents);
@@ -67,8 +74,8 @@ internal sealed class AppMenu
         Bar.Menus = [.. _menus.Where(menu => menu == _cards ? area == Area.Work : menu != _agents || area == Area.Dashboard)];
     }
 
-    /// <summary>Keeps each item reading as its command does now, like holding the selected agent's role, and
-    /// showing the key it's bound to now. Setting the title sets the hot letter with it. A card command registered
+    /// <summary>Keeps each item reading as its command does now, like holding the selected agent's role, checked where
+    /// it's on, and showing the keys it's bound to now, chords included. Setting the title sets the hot letter with it. A card command registered
     /// since the menu was built joins Cards, and Cards picks its letters again.</summary>
     internal void Refresh()
     {
@@ -82,10 +89,10 @@ internal sealed class AppMenu
         {
             if (registered.FirstOrDefault(entry => entry.Id == id) is not { } command)
                 continue;
-            if (item.Title != Title(item, command.MenuLabel))
-                item.Title = Title(item, command.MenuLabel);
-            if (item.Key != command.Key)
-                item.Key = command.Key;
+            if (item.Title != Title(id, item, command.MenuLabel))
+                item.Title = Title(id, item, command.MenuLabel);
+            if (item.KeyView.Text != command.Keys)
+                item.KeyView.Text = command.Keys;
         }
         foreach (var menu in _menus)
         {
@@ -166,11 +173,17 @@ internal sealed class AppMenu
                 _titles[item] = picked;
         }
         foreach (var (id, item) in items)
-            item.Title = Title(item, registered.FirstOrDefault(command => command.Id == id)?.MenuLabel ?? id);
+            item.Title = Title(id, item, registered.FirstOrDefault(command => command.Id == id)?.MenuLabel ?? id);
     }
 
-    private string Title(DimmedMenuItem item, string label) =>
-        _titles.TryGetValue(item, out var titles) && titles.TryGetValue(label, out var title) ? title : label;
+    private string Title(string id, DimmedMenuItem item, string label)
+    {
+        var title = _titles.TryGetValue(item, out var titles) && titles.TryGetValue(label, out var marked) ? marked : label;
+        if (_checked.TryGetValue(id, out var isChecked))
+            return $"{(isChecked() ? Check : ' ')} {title}";
+        // Lined up with the items beside it that can be checked.
+        return Layout.Any(menu => menu.Ids.Contains(id) && menu.Ids.Any(_checked.ContainsKey)) ? $"  {title}" : title;
+    }
 
     /// <summary>Each slot's labels, with the letter they share marked: one a label marks itself, then its command's
     /// own letter key where every label has it, unless an earlier slot marked that letter, then the guide's first
@@ -246,11 +259,11 @@ internal sealed class AppMenu
     {
         var item = new DimmedMenuItem
         {
-            Key = _commands.KeyFor(id),
-            // The key is a label here: the window's registry already runs it, and a second binding would run it twice.
+            // The keys are a label here: the window's keymap already runs them, and a binding would run them twice.
             BindKeyToApplication = false,
             Action = () => _commands.Execute(id),
         };
+        item.KeyView.Text = _commands.Registered.FirstOrDefault(command => command.Id == id)?.Keys ?? "";
         _items.Add((id, item));
         return item;
     }

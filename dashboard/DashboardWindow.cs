@@ -317,10 +317,18 @@ public sealed class DashboardWindow : Window
         Add(_bar);
 
         RegisterCommands();
-        _commands.Apply(settings.ReadKeys());
+        _commands.Keys.FocusedScope = () => Region;
+        KeyOverrides = settings.KeyOverrides(_commands);
+        KeyOverrides.Load();
         SyncQuitKey();
         ShowKeysHint();
-        _menu = new AppMenu(_commands, _area);
+        _menu = new AppMenu(_commands, _area, new Dictionary<string, Func<bool>>
+        {
+            ["view.dashboard"] = () => _area == Area.Dashboard,
+            ["view.work"] = () => _area == Area.Work,
+            ["view.overseer"] = () => _area == Area.Overseer,
+            ["assistant"] = () => _assistant is { Visible: true },
+        });
         _menu.Bar.X = 0;
         _menu.Bar.Y = 0;
         _menu.Bar.SubViewsLaidOut += (_, _) => _alert.SetNeedsLayout();
@@ -371,6 +379,8 @@ public sealed class DashboardWindow : Window
     internal int? ExpandedAgent => _expanded;
 
     internal CommandRegistry Commands => _commands;
+
+    internal KeyOverrides KeyOverrides { get; }
 
     internal AssistantPane? Assistant => _assistant;
 
@@ -504,7 +514,7 @@ public sealed class DashboardWindow : Window
         ShowMessage();
     }
 
-    private string RetryHint(string id) => $"{KeyNames.Short(_commands.KeyFor(id))} retry";
+    private string RetryHint(string id) => $"{_commands.KeysFor(id)} retry";
 
     private void ShowNews()
     {
@@ -584,14 +594,29 @@ public sealed class DashboardWindow : Window
         _bar.KeyPressed();
         if (key == MacCopy && !_menu.Bar.IsOpen() && _commands.IsEnabled(CopyLines))
             return _commands.Execute(CopyLines);
-        if (InAssistant && IsTyping(key))
+        if (InAssistant && _commands.PendingChord is null && IsTyping(key))
             return base.OnKeyDown(key);
         if (InAssistant && key == Key.Esc)
         {
             _assistant!.Stop();
             return true;
         }
-        return (!_menu.Bar.IsOpen() && _commands.Press(key)) || base.OnKeyDown(key);
+        return (!_menu.Bar.IsOpen() && Press(key)) || base.OnKeyDown(key);
+    }
+
+    /// <summary>Partway through a chord, the app hands its next key here before any view, so a question box doesn't type it.</summary>
+    internal bool Chording(Key key) => _commands.PendingChord is not null && !_menu.Bar.IsOpen() && Press(key);
+
+    /// <summary>Runs or carries on a chord, showing it on the status bar while it's partway, and saying so when a key
+    /// ends one without finishing it.</summary>
+    private bool Press(Key key)
+    {
+        var typed = _commands.PendingChord;
+        var handled = _commands.Press(key, out var cancelled);
+        _bar.SetChord(_commands.PendingChord);
+        if (cancelled)
+            Reply(key == Key.Esc ? $"{typed} cancelled" : $"{typed} {KeyChord.Display(key)} isn't a key");
+        return handled;
     }
 
     private void RegisterCommands()
@@ -634,10 +659,10 @@ public sealed class DashboardWindow : Window
             .Register("log.pageDown", "Scroll the log down", () => Scroll(pane => pane.Page(+1), log => log.Page(+1)), Key.PageDown, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
             .Register("log.top", "Jump to the top of the log", () => Scroll(pane => pane.Home(), log => log.Home()), Key.Home, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
             .Register("log.bottom", "Jump to the bottom of the log", () => Scroll(pane => pane.End(), log => log.End()), Key.End, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
-            .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), new Key('t'), isEnabled: Selection, scopes: [Regions.Agents, Regions.Log])
+            .Register("log.toolCalls", "Show tool calls in full", () => Selected()?.ToggleToolCalls(), chord: "Ctrl+T T", isEnabled: Selection, scopes: [Regions.Agents, Regions.Log])
             .Register(CopyLines, () => "Copy the selected lines", () => Copy(pane => pane.CopySelection()), new Key('l'), isEnabled: Reading,
                 menuLabel: () => "Copy selected lines", scopes: [Regions.Log])
-            .Register("log.copyAll", () => "Copy the whole log", () => Copy(pane => pane.CopyAll()), new Key('L'), isEnabled: Reading,
+            .Register("log.copyAll", () => "Copy the whole log", () => Copy(pane => pane.CopyAll()), new Key('a'), isEnabled: Reading,
                 menuLabel: () => "Copy whole log", scopes: [Regions.Log])
             .Register("log.editor", () => "Open the whole log in your editor", OpenInEditor, new Key('e'), isEnabled: Reading,
                 menuLabel: () => "Open whole log in editor", scopes: [Regions.Log])
@@ -653,9 +678,9 @@ public sealed class DashboardWindow : Window
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true, scopes: [Regions.Work])
             .Register("team.board", "Open team's board on GitHub", OpenBoard, new Key('b'), isEnabled: () => SelectedTeam() is not null)
             .Register("team.vision", () => SelectedTeam() is { } team ? $"Write the vision with me · {team}" : "Write the vision with me",
-                () => WriteVision(SelectedTeam()), isEnabled: () => _handOver is not null && SelectedTeam() is not null)
+                () => WriteVision(SelectedTeam()), isEnabled: () => _handOver is not null && SelectedTeam() is not null, name: "Write the vision with me")
             .Register("team.visionReview", () => SelectedTeam() is { } team ? $"Review the vision · {team}" : "Review the vision",
-                () => ReviewVision(SelectedTeam()), isEnabled: () => SelectedTeam() is not null)
+                () => ReviewVision(SelectedTeam()), isEnabled: () => SelectedTeam() is not null, name: "Review the vision")
             .Register("work.approve", "Approve the pitch you're reading", () => Approve(), new Key('a'), isEnabled: () => _approvable is not null)
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
@@ -671,9 +696,9 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnWork() && _work.SelectedCard is { Holdable: true }, onCard: true, scopes: [Regions.Work], menuLabels: holdTask)
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
-            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, scopes: [Regions.Work])
-            .Register("work.new", "New idea", NewIdea, new Key('n'), isEnabled: NewIdeaEnabled)
-            .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, new Key('m'), isEnabled: OnWork,
+            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, menuLabel: () => "Team…", scopes: [Regions.Work], chord: "Ctrl+G T")
+            .Register("work.new", "New idea", NewIdea, Key.N.WithCtrl, isEnabled: NewIdeaEnabled)
+            .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, chord: "Ctrl+T M", isEnabled: OnWork,
                 menuLabel: () => mine[_work.OnlyMine ? 1 : 0], scopes: [Regions.Work], menuLabels: mine)
             .Register("work.retry", () => "Read this team again", () => RetryTeam(_work.Current!.Team), new Key('r'),
                 isEnabled: () => OnWork() && _work.Failed, scopes: [Regions.Work])
@@ -693,17 +718,18 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnOverseer() && _overseer.CanFold, scopes: [Regions.Overseer])
             .Register("overseer.github", () => "Open on GitHub", OpenChip, new Key('g'),
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, scopes: [Regions.Overseer])
-            .Register("overseer.session", () => "Go to the agent's session", GoToSession, new Key('r'),
-                isEnabled: () => OnOverseer() && SessionFor(_overseer.Board.SelectedCard) is not null, scopes: [Regions.Overseer])
-            .Register("overseer.retry", () => "Read the boards that failed again", () => RetryBoards(_overseer.FailedTeams), new Key('r'),
+            .Register("overseer.session", () => "Go to the agent's session", SessionOrRetry, new Key('r'),
+                isEnabled: () => OnOverseer() && (SessionFor(_overseer.Board.SelectedCard) is not null || _overseer.Failed),
+                inMenu: () => SessionFor(_overseer.Board.SelectedCard) is not null || !_overseer.Failed, scopes: [Regions.Overseer])
+            .Register("overseer.retry", () => "Read the boards that failed again", () => RetryBoards(_overseer.FailedTeams),
                 isEnabled: () => OnOverseer() && _overseer.Failed, scopes: [Regions.Overseer])
             .Register("overseer.refresh", () => "Read every board again", ReadBoards, Key.F5, isEnabled: OnOverseer,
                 menuLabel: () => "Refresh", scopes: [Regions.Overseer])
-            .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), new Key('d'))
-            .Register("view.work", "Work", () => Show(Area.Work), new Key('w'))
-            .Register("view.overseer", "Overseer", () => Show(Area.Overseer), new Key('o'))
-            .Register("assistant", () => "Assistant", ToggleAssistant, isEnabled: () => _assistant is not null, menuLabel: () => "Ass_istant")
-            .Register("work.whatsNew", "Go to what's new", GoToNew, new Key('u'), isEnabled: () => _news.Newest is not null)
+            .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), chord: "Ctrl+G D")
+            .Register("view.work", "Work", () => Show(Area.Work), chord: "Ctrl+G W")
+            .Register("view.overseer", "Overseer", () => Show(Area.Overseer), chord: "Ctrl+G O")
+            .Register("assistant", () => "Assistant", ToggleAssistant, isEnabled: () => _assistant is not null, chord: "Ctrl+G A")
+            .Register("work.whatsNew", () => "Go to what's new", GoToNew, isEnabled: () => _news.Newest is not null, menuLabel: () => "What's new", chord: "Ctrl+G N")
             .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
                 isEnabled: () => OnDashboard() && Selected() is not null,
                 menuLabel: () => UnlessHeld(hold[0], hold[1]), scopes: [Regions.Agents, Regions.Log], menuLabels: hold)
@@ -712,7 +738,7 @@ public sealed class DashboardWindow : Window
                 menuLabel: () => UnlessStopped(interrupt[0], interrupt[1]), scopes: [Regions.Agents, Regions.Log], menuLabels: interrupt)
             .Register("dispatch.pass", "Run a dispatch pass now", PassNow)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
-            .Register("settings", "Settings", () => OpenSettings(), new Key('s'), isEnabled: HasApp)
+            .Register("settings", "Settings", () => OpenSettings(), chord: "Ctrl+,", isEnabled: HasApp)
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("teams.new", "New team", () => OpenSettings(SettingsDialog.TeamsPage, newTeam: true), isEnabled: HasApp)
             .Register("help", () => "Show keys", OpenKeys, Key.F1, isEnabled: HasApp, menuLabel: () => "Show _keys")
@@ -732,14 +758,14 @@ public sealed class DashboardWindow : Window
             .Register("agent.collapse", () => "Back to the agent grid", Collapse, Key.Esc,
                 isEnabled: () => OnDashboard() && (_expanded is not null || _dispatcherExpanded), menuLabel: () => "Back to all agents",
                 inMenu: () => _expanded is not null || _dispatcherExpanded, scopes: [Regions.Log])
-            .Register("quit", "Quit", Quit, new Key('q'));
+            .Register("quit", "Quit", Quit, Key.Q.WithCtrl);
         for (var tab = 0; tab < 9; tab++)
         {
             var index = tab;
             _commands.Register($"work.team{index + 1}",
                 () => index < _work.Lanes.Count ? $"Go to {_work.Lanes[index].Team}" : $"Go to team {index + 1}",
                 () => _work.PickTab(index), new Key((char)('1' + index)), isEnabled: () => OnWork() && index < _work.Lanes.Count,
-                scopes: [Regions.Work]);
+                scopes: [Regions.Work], name: $"Go to team {index + 1}");
         }
     }
 
@@ -786,8 +812,8 @@ public sealed class DashboardWindow : Window
     /// <summary>The status bar's one hint, as TuiCode words it: every other key is in the sheet it opens.</summary>
     private void ShowKeysHint()
     {
-        var key = _commands.KeyFor("help");
-        _bar.Hints.Show(key == Key.Empty ? [] : [($"Press {KeyNames.Short(key)} for help", () => _commands.Execute("help"))]);
+        var keys = _commands.Keys.For("help").FirstOrDefault()?.Display;
+        _bar.Hints.Show(keys is null ? [] : [($"Press {keys} for help", () => _commands.Execute("help"))]);
     }
 
     private void ToggleHold()
@@ -916,7 +942,7 @@ public sealed class DashboardWindow : Window
                 _bar.Withdraw(was);
             if (read.Failure is { Length: > 0 } failure)
             {
-                if (_overseer.Fail(team, FirstLine(failure), RetryHint("overseer.retry"), () => RetryBoards([team])))
+                if (_overseer.Fail(team, FirstLine(failure), RetryHint("overseer.session"), () => RetryBoards([team])))
                     _boardFailures[team] = Announce($"{team}: {failure}", Severity.Error);
                 continue;
             }
@@ -965,6 +991,15 @@ public sealed class DashboardWindow : Window
     /// <summary>The pane of the agent working on <paramref name="card"/>, if one is.</summary>
     private AgentPane? SessionFor(BoardCard? card) =>
         card is null ? null : _panes.FirstOrDefault(pane => pane.Team == card.Team && pane.Running && pane.Working.Contains(card.Number));
+
+    /// <summary>One key goes to the session where the selected card has one, and reads failed boards again where not.</summary>
+    private void SessionOrRetry()
+    {
+        if (SessionFor(_overseer.Board.SelectedCard) is not null)
+            GoToSession();
+        else
+            RetryBoards(_overseer.FailedTeams);
+    }
 
     /// <summary>The Dashboard, with the agent on the selected card expanded on the run that's on it.</summary>
     private void GoToSession()
@@ -1912,7 +1947,7 @@ public sealed class DashboardWindow : Window
             KeysSheet.Show(app, Keys);
     }
 
-    internal KeySheet Keys => KeysSheet.For(Offered, Region);
+    internal KeySheet Keys => KeysSheet.For(_commands, Offered, Region);
 
     /// <summary>While the reader is open, only what works from it: the rest acts on the board underneath.</summary>
     private IReadOnlyList<CommandDescriptor> Offered =>
@@ -1950,7 +1985,7 @@ public sealed class DashboardWindow : Window
         if (App is not { } app)
             return;
         var before = _teams.Names();
-        var (removed, vision) = SettingsDialog.Show(app, _settings, _commands, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks, _macKeys);
+        var (removed, vision) = SettingsDialog.Show(app, _settings, _commands, KeyOverrides, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks, _macKeys);
         if (vision is not null && _teams.Names().Contains(vision))
         {
             WriteVision(vision);

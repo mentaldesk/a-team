@@ -14,7 +14,7 @@ public class CommandsDialogTests
         Assert.True(dialog.Filter.HasFocus);
         Assert.Equal(["expand", "scroll", "quit"], dialog.Matches.Select(command => command.Id));
         Assert.Equal(
-            ["Expand the agent  Enter", "Scroll the log    PageUp", "Quit"],
+            ["Expand the agent  Enter", "Scroll the log    PgUp", "Quit"],
             Rows(dialog));
     }
 
