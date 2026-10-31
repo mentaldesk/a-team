@@ -250,7 +250,7 @@ public partial class GuideDialogTests : IDisposable
 
     [Theory]
     [InlineData(GuideDialog.Work)]
-    [InlineData(GuideDialog.App)]
+    [InlineData(GuideDialog.AppPage)]
     [InlineData(GuideDialog.Teams)]
     [InlineData(GuideDialog.Overseer)]
     public void Every_page_the_app_opens_the_guide_on_is_there(string page)
