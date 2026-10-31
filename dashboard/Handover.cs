@@ -40,12 +40,14 @@ public sealed record TryHandover(
 }
 
 /// <summary>The agent handed to <c>a-team attach</c>, or just its run on <paramref name="Task"/>, selected again on
-/// the grid once you quit.</summary>
+/// the grid once you quit, or on <see cref="Card"/> in Overseer where it was interrupted from there.</summary>
 public sealed record AttachHandover(string Team, string Role, int? Task = null) : Handover
 {
+    public int? Card { get; init; }
+
     public override string[] Arguments => Task is { } task ? ["attach", Team, Role, task.ToString()] : ["attach", Team, Role];
 
-    public override Area Area => Area.Dashboard;
+    public override Area Area => Card is null ? Area.Dashboard : Area.Overseer;
 }
 
 /// <summary>A team's vision interview, from the area it was started in: back on the card <paramref name="Left"/> names in
@@ -67,12 +69,14 @@ public sealed record TeamsChanged(Area Shown, Place? Left = null) : Handover
 }
 
 /// <summary>An agent's whole session, written to <paramref name="File"/> and handed to <paramref name="Editor"/>; the
-/// pane opens expanded at <paramref name="Place"/> once you quit.</summary>
+/// pane opens expanded at <paramref name="Place"/> once you quit, or <see cref="Card"/>'s session in Overseer.</summary>
 public sealed record EditorHandover(string Team, string Role, PanePlace Place, string File, string[] Editor) : Handover
 {
+    public int? Card { get; init; }
+
     public override string[] Arguments => [.. Editor[1..], File];
 
-    public override Area Area => Area.Dashboard;
+    public override Area Area => Card is null ? Area.Dashboard : Area.Overseer;
 
     /// <summary>Waits for the editor to quit, then deletes the file. Null once it has; otherwise how it failed.</summary>
     public string? Open()

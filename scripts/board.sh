@@ -2936,11 +2936,17 @@ case "$CMD" in
     [ $# -eq 0 ] || die "usage: board.sh $TEAM overview"
     # Done only grows, so it's left off; `since` is when the item's Status was last set.
     # A mirror that's behind rides along as an entry with no number, which readers of the cards pass over.
+    runs='[]'
+    [ ! -f "$STATE/history.db" ] || runs=$(history_sql -json "SELECT item, role, log, started FROM (SELECT item, role, log,
+        started, ROW_NUMBER() OVER (PARTITION BY item ORDER BY started DESC, runs.id DESC) AS n
+        FROM runs JOIN run_items ON run_items.run = runs.id WHERE team = $(sql "$TEAM")) WHERE n = 1;")
     all=$(items open)
-    jq --arg team "$TEAM" --argjson lag "$(mirror_lag | jq -s 'first')" 'map(select(.status != "Done") | {number, title, url, status, priority,
+    jq --arg team "$TEAM" --argjson runs "${runs:-[]}" --argjson lag "$(mirror_lag | jq -s 'first')" 'INDEX($runs[]; .item | tostring) as $last
+      | map(select(.status != "Done") | {number, title, url, status, priority,
       since, parent, team: $team, blocked: '"$BLOCKED"',
       kind: (if .labels | index("pitch") then "pitch" elif .labels | index("a-team:customer") then "docs"
-             elif (.labels | index("a-team:dev")) or .parent != null then "task" else "yours" end)})
+             elif (.labels | index("a-team:dev")) or .parent != null then "task" else "yours" end),
+      lastRun: ($last[.number | tostring] | if . then {role, log, started} else null end)})
       + (if $lag then [{team: $team, mirror: $lag}] else [] end)' <<<"$all"
     ;;
 

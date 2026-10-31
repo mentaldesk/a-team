@@ -223,7 +223,7 @@ public class AppMenuTests : IDisposable
         window.Refresh();
 
         Assert.Equal(
-            ["_Show details", "_Fold the lane", "Open on _GitHub", "Go _to the agent's session", "_Refresh", "_Next team", "_Previous team",
+            ["_Show the session full-screen", "_Fold the lane", "Open on _GitHub", "Go _to the agent's session", "_Refresh", "_Next team", "_Previous team",
                 "Open team's _board on GitHub", "_Decisions…", "S_ettings", "_Quit"],
             Under(window, View(window)).Select(id => Item(window, id).Title));
     }
@@ -319,9 +319,9 @@ public class AppMenuTests : IDisposable
         window.Refresh();
 
         Assert.Equal(["_View", AppMenu.Go], window.Menus.Take(2).Select(menu => menu.Title));
-        Assert.Equal(["view.dashboard", "view.work", "view.overseer", "assistant"], Above(window, Go(window)));
+        Assert.Equal(["view.dashboard", "view.work", "view.overseer", "assistant", "view.details"], Above(window, Go(window)));
         Assert.Equal(["work.team", "work.whatsNew"], Below(window, Go(window)));
-        Assert.Equal(["Ctrl+G D", "Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G T", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
+        Assert.Equal(["Ctrl+G D", "Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "Ctrl+G T", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
         Assert.DoesNotContain(Under(window, View(window)), id => id.StartsWith("view.", StringComparison.Ordinal) || id is "assistant" or "work.team" or "work.whatsNew");
     }
 

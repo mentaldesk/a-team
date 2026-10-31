@@ -31,7 +31,7 @@ public readonly record struct HeaderSlot(int Column, string Role);
 public sealed record LaneHeading(string Title, IReadOnlyList<HeaderSlot> Slots);
 
 /// <summary>Every team's board on one screen: a framed lane per team under one row of column headings, and the
-/// selected card's details at the foot when they're open.</summary>
+/// selected card's details at the foot unless they're in the panel beside it.</summary>
 public sealed class OverseerView : View
 {
     private const int HeaderRows = 1;
@@ -52,6 +52,7 @@ public sealed class OverseerView : View
     private readonly long _started = Stopwatch.GetTimestamp();
     private string _steps = "";
     private IconStyle _icons = IconStyle.Unicode;
+    private bool _beside;
 
     public OverseerView(IReadOnlyList<string> teams)
     {
@@ -88,6 +89,8 @@ public sealed class OverseerView : View
     }
 
     internal OverseerBoard Board => _board;
+
+    internal OverseerState State => _state;
 
     public void ShowIcons(IconStyle style)
     {
@@ -246,21 +249,35 @@ public sealed class OverseerView : View
         ScrollToSelection();
     }
 
-    /// <summary>Enter: unfolds a lane on its <c>+N</c>, and otherwise opens or closes the details.</summary>
-    public void Enter()
+    /// <summary>Enter on a <c>+N</c>: unfolds its lane.</summary>
+    public void Unfold() => Move(_board.Unfold);
+
+    /// <summary>Selects <paramref name="team"/>'s card <paramref name="number"/>, if it's on the board.</summary>
+    public bool Select(string team, int number)
     {
-        if (_board.OnMore)
-        {
-            Move(_board.Unfold);
-            return;
-        }
-        if (_board.SelectedCard is null)
-            return;
-        _details.Visible = !_details.Visible;
-        ShowDetails();
-        SetNeedsLayout();
-        SetNeedsDraw();
+        if (!_board.Select(team, number))
+            return false;
+        Changed();
+        ScrollToSelection();
+        return true;
     }
+
+    /// <summary>Whether the selected card's details are in the panel beside the lanes, rather than at the foot.</summary>
+    public bool Beside
+    {
+        get => _beside;
+        set
+        {
+            if (_beside == value)
+                return;
+            _beside = value;
+            ShowDetails();
+            SetNeedsLayout();
+        }
+    }
+
+    /// <summary>The selection moved, or the cards under it changed.</summary>
+    public event Action? SelectionChanged;
 
     /// <summary>Esc: folds the selected lane, if it's unfolded.</summary>
     public bool Fold()
@@ -370,6 +387,7 @@ public sealed class OverseerView : View
     private void Changed()
     {
         ShowDetails();
+        SelectionChanged?.Invoke();
         Redraw();
         _lanes.SetNeedsLayout();
         SetNeedsLayout();
@@ -378,14 +396,14 @@ public sealed class OverseerView : View
 
     private void ShowDetails()
     {
-        if (!_details.Visible)
-            return;
-        if (_board.SelectedCard is not { } card)
+        var shown = !_beside && _board.SelectedCard is not null;
+        if (_details.Visible != shown)
         {
-            _details.Visible = false;
+            _details.Visible = shown;
             SetNeedsLayout();
-            return;
         }
+        if (_board.SelectedCard is not { } card || !shown)
+            return;
         var title = $"#{card.Number} {card.Title}";
         if (_details.Title != title)
             _details.Title = title;
