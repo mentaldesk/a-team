@@ -7,7 +7,7 @@ namespace ATeam.Dashboard;
 
 /// <summary>Keys saved before the dashboard moved onto MentalDesk.Tui's keymap, one per command, carried over as that
 /// keymap's overrides. A saved key replaces its command's defaults in each region it works in, and takes the key from
-/// any other command whose default it was.</summary>
+/// any other command whose default it was. One that starts a chord is left out, so its command keeps its defaults.</summary>
 internal static class SavedKeys
 {
     internal static JsonObject Carry(IReadOnlyList<(string Id, Key Key)> saved, CommandRegistry commands)
@@ -18,6 +18,8 @@ internal static class SavedKeys
         foreach (var (id, key) in saved)
         {
             if (registered.FirstOrDefault(command => command.Id == id) is not { } command)
+                continue;
+            if (bindings.Any(binding => binding.Chord is [var first, _, ..] && first == key))
                 continue;
             bindings.RemoveAll(binding => binding.CommandId == id);
             if (key == Key.Empty)

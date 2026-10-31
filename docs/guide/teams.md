@@ -198,4 +198,5 @@ its keys, and the rest of the file still applies.
 
 Keys saved by a version before chords, in a `keys` object of one key per command, carry over until
 you next keep Settings: each still runs its command, even a bare letter the new defaults dropped,
-and takes its key from any command it now clashes with.
+and takes its key from any command it now clashes with. One that now starts a chord, like `Ctrl+G`,
+is left out, and its command keeps the keys it ships with.

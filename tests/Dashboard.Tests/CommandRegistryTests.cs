@@ -263,4 +263,22 @@ public class CommandRegistryTests
 
         Assert.Equal("", commands.KeysFor("work"));
     }
+
+    [Fact]
+    public void A_saved_key_that_starts_a_chord_is_left_out_so_the_chord_still_works()
+    {
+        var ran = new List<string>();
+        var commands = new CommandRegistry()
+            .Register("work", "Work", () => ran.Add("work"), chord: "Ctrl+G W")
+            .Register("next", "Next", () => ran.Add("next"), Key.F2);
+        var saved = SavedKeys.Carry([("next", Key.G.WithCtrl)], commands);
+        var overrides = new MentalDesk.Tui.Keys.KeyOverrides(commands.Library, commands.Keys, () => saved, _ => { });
+
+        overrides.Load();
+        commands.Press(Key.G.WithCtrl);
+        commands.Press(new Key('w'));
+
+        Assert.Equal(["work"], ran);
+        Assert.Equal("F2", commands.KeysFor("next"));
+    }
 }
