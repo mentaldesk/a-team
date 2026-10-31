@@ -6,12 +6,23 @@ namespace ATeam.Dashboard;
 /// Reviewer run kept under <c>runs/&lt;n&gt;</c>, which stops and resumes on its own; any other run is its role's.</summary>
 public sealed record CardRun(string Role, AgentState State, bool OnTask, bool Held)
 {
-    /// <summary>Lead and Customer lead runs are found only while their role's own files still name the card.</summary>
-    public static CardRun? For(string stateRoot, string team, IEnumerable<string> roles, int number) =>
+    /// <summary>A role whose own files have moved on from the card falls back to <paramref name="last"/>, the run
+    /// record's last run on it.</summary>
+    public static CardRun? For(string stateRoot, string team, IEnumerable<string> roles, int number, LastRun? last = null) =>
         roles.Select(role => Of(Path.Combine(stateRoot, team, role), role, number)).OfType<CardRun>()
             .OrderByDescending(run => run.State.Running)
             .ThenByDescending(run => run.State.LastStart)
-            .FirstOrDefault();
+            .FirstOrDefault() ?? Recorded(Path.Combine(stateRoot, team), last);
+
+    private static CardRun? Recorded(string teamDir, LastRun? last)
+    {
+        if (last is null)
+            return null;
+        var log = File.Exists(last.Log) ? new FileInfo(last.Log).FullName : null;
+        var role = AgentState.Read(Path.Combine(teamDir, last.Role));
+        var running = role.Running && log is not null && role.LogPath == log;
+        return new(last.Role, new AgentState(running, last.Started, [], log), OnTask: false, Held: false);
+    }
 
     private static CardRun? Of(string dir, string role, int number)
     {

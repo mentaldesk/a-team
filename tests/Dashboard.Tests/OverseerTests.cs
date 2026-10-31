@@ -664,6 +664,30 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_Lead_run_that_has_moved_on_to_another_card_still_shows_from_the_run_record()
+    {
+        WriteRun("team1", "lead", card: 21);
+        var logs = Path.Combine(_root, "team1", "lead", "logs");
+        Directory.CreateDirectory(logs);
+        WriteLog(logs, "Pitched it");
+        var log = Path.Combine(logs, "latest.jsonl");
+        var started = (Now - TimeSpan.FromHours(2)).ToString("O", CultureInfo.InvariantCulture);
+        using var window = Open(width: 160, clock: new Clock(), readBoard: team => Task.FromResult(new Reading(team == "team1"
+            ? Overview(team).Replace("\"kind\": \"pitch\"", $$"""
+              "kind": "pitch", "lastRun": {"role": "lead", "log": {{System.Text.Json.JsonSerializer.Serialize(log)}}, "started": "{{started}}"}
+              """, StringComparison.Ordinal)
+            : Overview(team), null)));
+        window.Press("Ctrl+G O");
+        window.Refresh();
+
+        window.Overseer.Select("team1", 22);
+
+        Assert.Equal("Lead · last ran 2h00m ago", window.Card.Session);
+        Assert.Contains(window.Card.Lines, line => line.Text == "Pitched it");
+        Assert.Null(CardRun.For(_root, "team1", ["lead", "dev"], 11));
+    }
+
+    [Fact]
     public void The_live_run_wins_over_an_older_one_by_another_role()
     {
         WriteFinished("team0", "reviewer", 12, Now - TimeSpan.FromHours(1));

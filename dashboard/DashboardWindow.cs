@@ -1117,7 +1117,8 @@ public sealed class DashboardWindow : Window
             return;
         }
         var now = _clock.GetUtcNow();
-        _cardRun = CardRun.For(_stateRoot, card.Team, _panes.Where(pane => pane.Team == card.Team).Select(pane => pane.Role), card.Number);
+        _cardRun = CardRun.For(_stateRoot, card.Team, _panes.Where(pane => pane.Team == card.Team).Select(pane => pane.Role), card.Number,
+            card.LastRun);
         _card.Show(card, OverseerView.Describe(card, _overseer.Board.Cards, _overseer.State), _cardRun,
             CardRun.Says(_cardRun, now, CardHeld()), CardHint());
     }

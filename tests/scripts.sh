@@ -7311,7 +7311,7 @@ run board demo overview
 same "exit" 0 "$STATUS"
 same "numbers" '[404,414,415,395]' "$(jq -c '[.[].number]' "$OUT")"
 same "kinds" '["pitch","task","docs","yours"]' "$(jq -c '[.[].kind]' "$OUT")"
-same "fields" '["blocked","kind","number","parent","priority","since","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "fields" '["blocked","kind","lastRun","number","parent","priority","since","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "since" '"2026-10-01T08:00:00Z"' "$(jq -c '.[0].since' "$OUT")"
 same "parent" '404' "$(jq -c '.[1].parent' "$OUT")"
 same "blocked" '[false,true,false,true]' "$(jq -c '[.[].blocked]' "$OUT")"
@@ -7319,6 +7319,18 @@ same "priority" '"High"' "$(jq -c '.[0].priority' "$OUT")"
 same "status" '"In review"' "$(jq -c '.[2].status' "$OUT")"
 same "filter" '-Status:"Done"' "$(cat "$FILTERS")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
+
+case_ "overview: each card's last run, from the run record, whichever role it was"
+rm -f "$A_TEAM_STATE/history.db"
+history_db "INSERT INTO runs (id, team, role, pid, log, started) VALUES
+    (1, 'demo', 'lead', 1, 'old.jsonl', '2026-10-01T08:00:00Z'), (2, 'demo', 'lead', 2, 'new.jsonl', '2026-10-02T08:00:00Z'),
+    (3, 'demo', 'dev', 3, 'dev.jsonl', '2026-10-01T09:00:00Z'), (4, 'other', 'lead', 4, 'other.jsonl', '2026-10-03T08:00:00Z');
+  INSERT INTO run_items (run, item) VALUES (1, 404), (2, 404), (3, 414), (4, 415);"
+run board demo overview
+same "exit" 0 "$STATUS"
+same "last runs" '[{"role":"lead","log":"new.jsonl","started":"2026-10-02T08:00:00Z"},{"role":"dev","log":"dev.jsonl","started":"2026-10-01T09:00:00Z"},null,null]' \
+  "$(jq -c '[.[].lastRun]' "$OUT")"
+rm -f "$A_TEAM_STATE/history.db"
 
 case_ "trend: waiting a week ago, and each item accepted in the last 7 days counted once"
 rm -f "$A_TEAM_STATE/history.db"
