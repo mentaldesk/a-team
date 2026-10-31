@@ -31,7 +31,7 @@ public readonly record struct PaneTitle(string Icons, string Name)
 public sealed record PanePlace(string? Run, LogPlace Log);
 
 /// <summary>One agent: how its last run went and its timing, why it last started, and a tail of its latest session.</summary>
-public sealed class AgentPane : FrameView
+public sealed class AgentPane : FrameView, ISessionView
 {
     private const string Stopped = "dispatcher not running";
     private static readonly string BaseScheme = SchemeManager.SchemesToSchemeName(Schemes.Base)!;
@@ -109,7 +109,7 @@ public sealed class AgentPane : FrameView
 
     public LogCopy CopyAll() => _body.CopyAll();
 
-    internal string? LogPath => _shownLog;
+    public string? LogPath => _shownLog;
 
     internal PanePlace Place => new(_runs.Chosen, _body.Place);
 
