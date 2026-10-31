@@ -54,7 +54,6 @@ public sealed class TeamForm : Dialog
     internal const string ExploringCaption = "How many drafted pitches wait for room in Pitched.";
     internal const string IdeasCaption = "How many of the Lead's ideas wait for you to prioritise them.";
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
-    internal const string ReadingFiles = "Reading the Markdown files in {0}…";
     internal const string BudgetCaption = "Most a day's runs may cost, at API prices, before the team stops starting new ones. 0 for no budget.";
     private const string ProblemsHeading = "Problems";
     private const int BandPadding = 1;
@@ -156,7 +155,7 @@ public sealed class TeamForm : Dialog
         FindSkills = () => SkillsFound.Find(Home, Current().CheckoutPath);
         FindRepoFiles = RepoFiles.Read;
         PickFolder = (title, typed) => App is { } app ? FolderPicker.Browse(app, title, typed, Home) : null;
-        PickRepoFile = (title, files) => App is { } app ? RepoFilePicker.Show(app, title, files) : null;
+        RunFilePicker = picker => App is { } app ? RepoFilePicker.Show(app, picker) : null;
         ShowHelp = sheet =>
         {
             if (App is { } app)
@@ -386,7 +385,7 @@ public sealed class TeamForm : Dialog
     /// <summary>Runs a picker over the form and returns what it picked, or null where it was cancelled.</summary>
     internal Func<Picker, IReadOnlyList<string>?> RunPicker { get; set; }
 
-    /// <summary>Who can push to a repo, or null where GitHub can't say.</summary>
+    /// <summary>Who can push to a repo, or null where GitHub's answer can't be read.</summary>
     internal Func<string, Task<IReadOnlyList<string>?>> FindStakeholders { get; set; }
 
     /// <summary>The repos a team's App can reach, by team name and repo.</summary>
@@ -401,8 +400,8 @@ public sealed class TeamForm : Dialog
     /// cancelled.</summary>
     internal Func<string, string, string?> PickFolder { get; set; }
 
-    /// <summary>Picks one of a repo's files, or a new path, and returns it, or null where it was cancelled.</summary>
-    internal Func<string, RepoFiles, string?> PickRepoFile { get; set; }
+    /// <summary>Runs a file picker over the form and returns the path picked, or null where it was cancelled.</summary>
+    internal Func<RepoFilePicker, string?> RunFilePicker { get; set; }
 
     internal string Home { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
@@ -743,44 +742,68 @@ public sealed class TeamForm : Dialog
     internal void PickStakeholders()
     {
         var repo = Current().Repo;
-        using var picker = new Picker($"Stakeholders for {TeamName}", _stakeholderNames, "", $"Reading who can push to {repo}…");
-        FindStakeholders(repo).ContinueWith(read =>
-        {
-            var found = read.Status == TaskStatus.RanToCompletion ? read.Result : null;
-            void Show() => picker.ShowChoices(found ?? [], Stakeholders.Message(found, repo), found is null ? Schemes.Accent : Schemes.Base);
-            if (App is { } app)
-                app.Invoke(Show);
-            else
-                Show();
-        }, TaskContinuationOptions.ExecuteSynchronously);
+        using var picker = new Picker($"Stakeholders for {TeamName}", _stakeholderNames, "", $"Loading who can push to {repo}…");
+        Read();
         if (RunPicker(picker) is { } picked)
             _stakeholderNames = Show(_stakeholders, picked);
+
+        void Read() => OnRead(FindStakeholders(repo), read =>
+        {
+            if (read.Status == TaskStatus.RanToCompletion && read.Result is { } found)
+                picker.ShowChoices(found, Stakeholders.Message(found, repo));
+            else
+                picker.ShowFailed(Stakeholders.Failed(repo, read.Exception?.InnerException?.Message), Retry);
+        });
+
+        void Retry()
+        {
+            picker.ShowLoading();
+            Read();
+        }
     }
 
     /// <summary>Opens the Contributes to picker, filling it once GitHub says which repos the team's App can reach.</summary>
     internal void PickContributes()
     {
-        using var picker = new Picker($"Contributes to for {TeamName}", _contributesTo, "", "Reading the repos the team's App can reach…");
-        FindRepos(_team ?? _name?.Text.Trim() ?? "", Current().Repo).ContinueWith(read =>
+        using var picker = new Picker($"Contributes to for {TeamName}", _contributesTo, "", "Loading the repos the team's App can reach…");
+        Read();
+        if (RunPicker(picker) is { } picked)
+            _contributesTo = Show(_contributes, picked);
+
+        void Read() => OnRead(FindRepos(_team ?? _name?.Text.Trim() ?? "", Current().Repo), read =>
         {
             var found = read.Status == TaskStatus.RanToCompletion
                 ? read.Result
                 : new ReachableRepos([], read.Exception?.InnerException?.Message ?? "it was cancelled");
-            void Show() => picker.ShowChoices(found.Names, found.Message, found.Failure is null ? Schemes.Base : Schemes.Accent);
-            if (App is { } app)
-                app.Invoke(Show);
+            if (found.Failure is null)
+                picker.ShowChoices(found.Names, found.Message);
             else
-                Show();
-        }, TaskContinuationOptions.ExecuteSynchronously);
-        if (RunPicker(picker) is { } picked)
-            _contributesTo = Show(_contributes, picked);
+                picker.ShowFailed(found.Message, Retry);
+        });
+
+        void Retry()
+        {
+            picker.ShowLoading();
+            Read();
+        }
     }
+
+    /// <summary>Hands <paramref name="read"/> to <paramref name="show"/> once it's done, on the UI thread where
+    /// there is one.</summary>
+    private void OnRead<T>(Task<T> read, Action<Task<T>> show) =>
+        read.ContinueWith(done =>
+        {
+            if (App is { } app)
+                app.Invoke(() => show(done));
+            else
+                show(done);
+        }, TaskContinuationOptions.ExecuteSynchronously);
 
     /// <summary>Opens the skills picker over the skills installed here and the repo's own.</summary>
     internal void PickSkills()
     {
         var found = FindSkills();
-        using var picker = new Picker($"Skills for {TeamName}", _skillNames, "(not installed)", found.Message);
+        using var picker = new Picker($"Skills for {TeamName}", _skillNames, "(not installed)");
         picker.ShowChoices(found.Names, found.Message);
         if (RunPicker(picker) is { } picked)
             _skillNames = Show(_skills, picked);
@@ -806,33 +829,36 @@ public sealed class TeamForm : Dialog
     internal static string DocsMissing(string path, string repo) =>
         $"{path} isn't in {repo} yet: the Customer lead will draft the docs for you to approve.";
 
-    /// <summary>Opens the repo's Markdown files to pick from, once they've been read.</summary>
+    /// <summary>Opens the repo's Markdown files to pick from, loading them unless they've been read already.</summary>
     private void PickFile(TextField field, string label, Func<string> caption)
     {
         var repo = Current().Repo;
+        var (width, rows) = App is { } app ? PathPicker.Fit(app.Screen.Width, app.Screen.Height) : (74, 16);
+        using var picker = new RepoFilePicker($"{label} for {TeamName}", repo, width, rows);
+        var open = true;
         if (_repoFiles is { Failure: null } known && known.Repo == repo)
-        {
-            Pick(known);
-            return;
-        }
-        Hint(string.Format(ReadingFiles, repo));
-        FindRepoFiles(repo).ContinueWith(read =>
+            picker.Show(known, Retry);
+        else
+            Read();
+        if (RunFilePicker(picker) is { } picked)
+            field.Text = picked;
+        open = false;
+        Hint(caption());
+
+        void Read() => OnRead(FindRepoFiles(repo), read =>
         {
             var files = read.Status == TaskStatus.RanToCompletion
                 ? read.Result
                 : RepoFiles.Unread(repo, $"Couldn't read {repo}: {read.Exception?.InnerException?.Message}");
-            if (App is { } app)
-                app.Invoke(() => Pick(files));
-            else
-                Pick(files);
-        }, TaskContinuationOptions.ExecuteSynchronously);
-
-        void Pick(RepoFiles files)
-        {
             _repoFiles = files;
-            if (PickRepoFile($"{label} for {TeamName}", files) is { } picked)
-                field.Text = picked;
-            Hint(caption());
+            if (open)
+                picker.Show(files, Retry);
+        });
+
+        void Retry()
+        {
+            picker.ShowLoading();
+            Read();
         }
     }
 

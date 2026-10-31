@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Loading;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -7,7 +8,7 @@ public class PickerTests
     [Fact]
     public void The_filter_has_focus_and_the_buttons_are_Enter_Done_and_Esc_Cancel()
     {
-        using var picker = new Picker("Skills for a-team", [], "", "");
+        using var picker = new Picker("Skills for a-team", [], "");
         picker.SetFocus();
 
         Assert.True(picker.Filter.HasFocus);
@@ -18,7 +19,7 @@ public class PickerTests
     [Fact]
     public void F1_lists_marking_moving_and_switching_under_the_picker_s_title()
     {
-        using var picker = new Picker("Stakeholders", [], "", "");
+        using var picker = new Picker("Stakeholders", [], "");
 
         var sheet = DialogTests.F1(picker);
 
@@ -31,7 +32,7 @@ public class PickerTests
     [Fact]
     public void Clicking_Done_keeps_what_is_marked()
     {
-        using var picker = new Picker("Skills", ["a-team"], "", "");
+        using var picker = new Picker("Skills", ["a-team"], "");
 
         picker.Foot.Shown[0].InvokeCommand(Command.Accept);
 
@@ -41,9 +42,9 @@ public class PickerTests
     [Fact]
     public void What_is_chosen_is_marked_and_stays_marked_when_the_list_arrives()
     {
-        using var picker = new Picker("Stakeholders", ["jamescrosswell"], "", "Reading…");
+        using var picker = new Picker("Stakeholders", ["jamescrosswell"], "", "Loading…");
 
-        Assert.Equal([("jamescrosswell", true)], picker.Rows);
+        Assert.Empty(picker.Rows);
 
         picker.ShowChoices(["jamescrosswell", "octocat"], "2 can push.");
 
@@ -54,7 +55,7 @@ public class PickerTests
     [Fact]
     public void Space_in_the_filter_marks_the_selected_row_rather_than_typing()
     {
-        using var picker = new Picker("Skills", [], "", "");
+        using var picker = new Picker("Skills", [], "");
         picker.ShowChoices(["a-team", "tuicode"], "");
         picker.SetFocus();
         picker.List.Value = 1;
@@ -68,7 +69,7 @@ public class PickerTests
     [Fact]
     public void Marks_survive_narrowing_the_list_and_Enter_returns_them_in_the_order_chosen()
     {
-        using var picker = new Picker("Skills", ["a-team"], "", "");
+        using var picker = new Picker("Skills", ["a-team"], "");
         picker.ShowChoices(["a-team", "structural-analysis", "tuicode"], "");
 
         picker.Filter.Text = "tui";
@@ -84,7 +85,7 @@ public class PickerTests
     [Fact]
     public void Unmarking_a_chosen_name_drops_it()
     {
-        using var picker = new Picker("Skills", ["a-team", "tuicode"], "", "");
+        using var picker = new Picker("Skills", ["a-team", "tuicode"], "");
         picker.ShowChoices(["a-team", "tuicode"], "");
 
         picker.Toggle();
@@ -96,7 +97,7 @@ public class PickerTests
     [Fact]
     public void Typing_puts_word_starts_before_a_plain_contains()
     {
-        using var picker = new Picker("Skills", [], "", "");
+        using var picker = new Picker("Skills", [], "");
         picker.ShowChoices(["dotnet-tests", "sentry-dotnet", "tuicode"], "");
 
         picker.Filter.Text = "dt";
@@ -115,7 +116,7 @@ public class PickerTests
     [Fact]
     public void A_filter_nothing_matches_says_so_in_the_list()
     {
-        using var picker = new Picker("Skills", [], "", "");
+        using var picker = new Picker("Skills", [], "");
         picker.ShowChoices(["tuicode"], "");
         Assert.False(picker.NoMatches);
 
@@ -127,7 +128,8 @@ public class PickerTests
     [Fact]
     public void An_empty_list_waiting_on_its_names_doesn_t_say_nothing_matches()
     {
-        using var picker = new Picker("Stakeholders", [], "", "Reading…");
+        using var picker = new Picker("Stakeholders", [], "", "Loading…");
+        picker.Filter.Text = "octo";
 
         Assert.False(picker.NoMatches);
     }
@@ -135,7 +137,7 @@ public class PickerTests
     [Fact]
     public void A_typed_name_that_matches_nothing_is_added_on_Enter()
     {
-        using var picker = new Picker("Skills", ["a-team"], "", "");
+        using var picker = new Picker("Skills", ["a-team"], "");
         picker.ShowChoices(["a-team", "tuicode"], "");
 
         picker.Filter.Text = "sentry-dotnet";
@@ -148,7 +150,7 @@ public class PickerTests
     [Fact]
     public void A_typed_name_that_matches_something_adds_nothing()
     {
-        using var picker = new Picker("Skills", [], "", "");
+        using var picker = new Picker("Skills", [], "");
         picker.ShowChoices(["tuicode"], "");
 
         picker.Filter.Text = "tui";
@@ -160,7 +162,7 @@ public class PickerTests
     [Fact]
     public void A_chosen_name_the_list_has_not_got_sits_on_top_and_can_be_unmarked()
     {
-        using var picker = new Picker("Skills", ["gone"], "(not installed)", "");
+        using var picker = new Picker("Skills", ["gone"], "(not installed)");
         picker.ShowChoices(["a-team"], "");
 
         Assert.Equal([("gone (not installed)", true), ("a-team", false)], picker.Rows);
@@ -173,11 +175,110 @@ public class PickerTests
     [Fact]
     public void Esc_cancels_with_nothing_picked()
     {
-        using var picker = new Picker("Skills", ["a-team"], "", "");
+        using var picker = new Picker("Skills", ["a-team"], "");
         picker.Toggle();
 
         Assert.True(picker.NewKeyDownEvent(Key.Esc));
 
         Assert.Null(picker.Picked);
+    }
+
+    [Fact]
+    public void While_loading_it_says_so_in_the_list_not_the_message_bar_and_Done_is_dimmed_and_does_nothing()
+    {
+        using var picker = new Picker("Stakeholders", ["jamescrosswell"], "", "Loading who can push to mentaldesk/a-team…");
+
+        Assert.Equal(LoadState.Loading, picker.State);
+        Assert.Equal("Loading who can push to mentaldesk/a-team…", picker.ListSays);
+        Assert.Equal("", picker.Message.Says);
+        Assert.False(picker.Foot.Shown[0].Enabled);
+
+        picker.NewKeyDownEvent(Key.Enter);
+
+        Assert.Null(picker.Picked);
+    }
+
+    [Fact]
+    public void Once_the_rows_are_in_Done_is_enabled()
+    {
+        using var picker = new Picker("Stakeholders", [], "", "Loading…");
+
+        picker.ShowChoices(["octocat"], "1 can push.");
+
+        Assert.Equal(LoadState.Loaded, picker.State);
+        Assert.True(picker.Foot.Shown[0].Enabled);
+        Assert.Equal("", picker.ListSays);
+    }
+
+    [Fact]
+    public void A_failed_read_says_why_in_the_list_with_R_retry_under_it_and_nothing_in_the_message_bar()
+    {
+        using var picker = new Picker("Stakeholders", [], "", "Loading…");
+
+        picker.ShowFailed("Couldn't read who can push to mentaldesk/a-tem: Not Found", () => { });
+
+        Assert.Equal(LoadState.Failed, picker.State);
+        Assert.Equal("Couldn't read who can push to mentaldesk/a-tem: Not Found", picker.ListSays);
+        Assert.Equal("", picker.Message.Says);
+        Assert.False(picker.Foot.Shown[0].Enabled);
+    }
+
+    [Fact]
+    public void R_retries_while_failed_and_the_rows_appear_once_it_succeeds_with_the_marks_kept()
+    {
+        using var picker = new Picker("Stakeholders", ["jamescrosswell"], "", "Loading…");
+        var retries = 0;
+        picker.ShowFailed("offline", () =>
+        {
+            retries++;
+            picker.ShowLoading();
+            picker.ShowChoices(["jamescrosswell", "octocat"], "2 can push.");
+        });
+        picker.SetFocus();
+
+        Assert.True(picker.Filter.NewKeyDownEvent(Key.R));
+
+        Assert.Equal(1, retries);
+        Assert.Equal("", picker.Filter.Text);
+        Assert.Equal([("jamescrosswell", true), ("octocat", false)], picker.Rows);
+        Assert.Equal("2 can push.", picker.Message.Says);
+    }
+
+    [Fact]
+    public void R_is_typed_into_the_filter_unless_the_read_has_failed()
+    {
+        using var picker = new Picker("Stakeholders", [], "", "Loading…");
+        picker.ShowChoices(["octocat", "rachel"], "");
+        picker.SetFocus();
+
+        picker.Filter.NewKeyDownEvent(Key.R);
+
+        Assert.Equal("r", picker.Filter.Text);
+    }
+
+    [Fact]
+    public void A_login_typed_while_the_read_has_failed_isn_t_taken()
+    {
+        using var picker = new Picker("Stakeholders", ["jamescrosswell"], "", "Loading…");
+        picker.ShowFailed("offline", () => { });
+        picker.Filter.Text = "octocat";
+
+        picker.Done();
+
+        Assert.Null(picker.Picked);
+    }
+
+    [Fact]
+    public void F1_lists_Retry_only_while_the_read_has_failed()
+    {
+        using var picker = new Picker("Stakeholders", [], "", "Loading…");
+
+        Assert.DoesNotContain(("r", "Retry"), DialogTests.Rows(DialogTests.F1(picker)));
+
+        picker.ShowFailed("offline", () => { });
+        Assert.Contains(("r", "Retry"), DialogTests.Rows(DialogTests.F1(picker)));
+
+        picker.ShowChoices(["octocat"], "");
+        Assert.DoesNotContain(("r", "Retry"), DialogTests.Rows(DialogTests.F1(picker)));
     }
 }

@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Loading;
 using MentalDesk.Tui.Keys;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -467,21 +468,52 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void The_Contributes_to_picker_says_why_it_couldn_t_read_the_repos_and_keeps_those_already_chosen()
+    public void The_Contributes_to_picker_says_in_its_list_why_it_couldn_t_read_the_repos_and_keeps_those_already_chosen()
     {
         using var form = new TeamForm("a-team", Settings with { ContributesTo = ["mentaldesk/tui-style-guide"] }, _ => null);
         form.FindRepos = (_, _) => Task.FromResult(new ReachableRepos([], "a-team token: team 'a-team' has no GitHub App"));
-        string? said = null;
+        (string List, string Bar)? said = null;
         form.RunPicker = picker =>
         {
-            said = picker.Message.Says;
-            return picker.Done() ? picker.Picked : null;
+            said = (picker.ListSays, picker.Message.Says);
+            picker.Foot.Shown[1].InvokeCommand(Command.Accept);
+            return picker.Picked;
         };
 
         form.PickContributes();
 
-        Assert.Equal("Couldn't read the repos the team's App can reach: team 'a-team' has no GitHub App", said);
+        Assert.Equal(("Couldn't read the repos the team's App can reach: team 'a-team' has no GitHub App", ""), said);
         Assert.Equal(["mentaldesk/tui-style-guide"], form.Current().ContributesTo);
+    }
+
+    [Fact]
+    public void The_Contributes_to_picker_loads_in_its_list_and_R_reads_again_after_a_failure()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        var reads = 0;
+        var later = new TaskCompletionSource<ReachableRepos>();
+        form.FindRepos = (_, _) => ++reads == 1 ? Task.FromResult(new ReachableRepos([], "offline")) : later.Task;
+        var states = new List<(LoadState, string)>();
+        form.RunPicker = picker =>
+        {
+            states.Add((picker.State, picker.ListSays));
+            picker.SetFocus();
+            picker.Filter.NewKeyDownEvent(Key.R);
+            states.Add((picker.State, picker.ListSays));
+            later.SetResult(new ReachableRepos(["mentaldesk/TuiCode"]));
+            states.Add((picker.State, picker.Message.Says));
+            return null;
+        };
+
+        form.PickContributes();
+
+        Assert.Equal(
+            [
+                (LoadState.Failed, "Couldn't read the repos the team's App can reach: offline"),
+                (LoadState.Loading, "Loading the repos the team's App can reach…"),
+                (LoadState.Loaded, "1 other repos the team's App can reach."),
+            ],
+            states);
     }
 
     [Fact]
@@ -529,14 +561,14 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void The_stakeholders_picker_says_when_GitHub_can_t_be_reached_and_typing_still_works()
+    public void The_stakeholders_picker_says_in_its_list_why_GitHub_couldn_t_be_read_and_doesn_t_take_a_typed_login()
     {
         using var form = new TeamForm("a-team", Settings, _ => null);
-        form.FindStakeholders = _ => Task.FromResult<IReadOnlyList<string>?>(null);
-        string? said = null;
+        form.FindStakeholders = _ => Task.FromException<IReadOnlyList<string>?>(new InvalidOperationException("HTTP 404: Not Found"));
+        (string List, string Bar)? said = null;
         form.RunPicker = picker =>
         {
-            said = picker.Message.Says;
+            said = (picker.ListSays, picker.Message.Says);
             picker.Filter.Text = "octocat";
             picker.Done();
             return picker.Picked;
@@ -544,8 +576,25 @@ public class TeamFormTests
 
         form.PickStakeholders();
 
-        Assert.Equal("Couldn't reach GitHub to see who can push to mentaldesk/a-team. Type a login to add one.", said);
-        Assert.Equal(["jamescrosswell", "octocat"], form.Current().Stakeholders);
+        Assert.Equal(("Couldn't read who can push to mentaldesk/a-team: HTTP 404: Not Found", ""), said);
+        Assert.Equal(["jamescrosswell"], form.Current().Stakeholders);
+    }
+
+    [Fact]
+    public void The_stakeholders_picker_opens_loading_in_its_list_with_Done_dimmed()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.FindStakeholders = _ => new TaskCompletionSource<IReadOnlyList<string>?>().Task;
+        (LoadState, string, string, bool)? seen = null;
+        form.RunPicker = picker =>
+        {
+            seen = (picker.State, picker.ListSays, picker.Message.Says, picker.Foot.Shown[0].Enabled);
+            return null;
+        };
+
+        form.PickStakeholders();
+
+        Assert.Equal((LoadState.Loading, "Loading who can push to mentaldesk/a-team…", "", false), seen);
     }
 
     [Fact]

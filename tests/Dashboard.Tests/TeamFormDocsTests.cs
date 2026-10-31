@@ -164,10 +164,10 @@ public sealed class TeamFormDocsTests : IDisposable
         {
             FindRepoFiles = _ => Task.FromResult(Files),
         };
-        (string Title, RepoFiles Files)? opened = null;
-        form.PickRepoFile = (title, files) =>
+        string? opened = null;
+        form.RunFilePicker = picker =>
         {
-            opened = (title, files);
+            opened = picker.Title;
             return "docs/vision.md";
         };
         form.SetFocus();
@@ -176,7 +176,7 @@ public sealed class TeamFormDocsTests : IDisposable
 
         Assert.True(form.Docs.NewKeyDownEvent(Key.Enter));
 
-        Assert.Equal(("First page of the docs for a-team", Files), opened);
+        Assert.Equal("First page of the docs for a-team", opened);
         Assert.Equal("docs/vision.md", form.Docs.Text);
     }
 }
