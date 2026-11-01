@@ -47,17 +47,17 @@ Two kinds of item share the board:
   A task that needs another merged first is recorded as blocked by it, a GitHub issue
   dependency, and becomes available by itself when that one closes. A task that needs a change
   in another repo is recorded as waiting on that repo's issue or PR, until it closes or until a
-  published release carries it, and is labelled `a-team:upstream`; the board frees it by itself
-  when that happens, or, while Dependabot has a PR open bringing that release in, once it merges. The `blocked` label is for a task waiting on the stakeholder: for an answer,
+  published release carries it; the board frees it by itself
+  when that happens, or, while Dependabot has a PR open bringing that release in, once it merges. A **hold** is for a task waiting on the stakeholder: for an answer,
   or because they're holding it. Never for a wait on another repo. The agent that held a task
   reads the stakeholder's reply on it and clears the hold itself, never asking them to.
-- A **fix** is a task labelled `a-team:fix` that makes a red default branch green again. The Lead
+- A **fix** is a task that makes a red default branch green again. The Lead
   files it, with no pitch, when the board says the branch is red, one at a time. The Dev takes it
   before any other task, and the stakeholder accepts it like any other.
-- A **docs PR** is the Customer lead's, labelled `a-team:customer`: one open at a time, which it
+- A **docs PR** is the Customer lead's: one open at a time, which it
   adds to after each pitch is done. It goes straight to In review, and accepting it merges it.
   While the team config's `docs` page isn't in the repo, a **docs proposal** comes first: a
-  document pitch labelled `a-team:customer`, not `pitch`, that adds that page, and no docs PR goes
+  document pitch of the Customer lead's, not labelled `pitch`, that adds that page, and no docs PR goes
   up until it's merged.
 - A **dependency PR** is one Dependabot opened. Once the Lead has said what the update brings, it
   goes straight to In review, and accepting it merges it.
@@ -65,9 +65,10 @@ Two kinds of item share the board:
   <repo>#<n>`). The dispatcher puts it In progress while it's a draft, then In review once it's out of
   draft, and accepting it merges it.
 
-The stakeholder uses the same board for their own work. Pitches carry the `pitch` label, tasks
-the Dev has claimed carry `a-team:dev`, and the docs PR `a-team:customer`; anything else past Ready
-belongs to the stakeholder.
+The stakeholder uses the same board for their own work. Pitches carry the `pitch` label; the
+tasks the Dev has claimed and the docs PR are a-team's by its own record. Anything else past Ready
+belongs to the stakeholder. The rest of what a-team keeps on an item (the Lead's rank, a theme, a
+hold, a shelve) is in its record too, never a label.
 **Leave the stakeholder's items alone**, even if they look stalled. `a-team board` refuses to move them.
 
 ## The board script
@@ -113,14 +114,14 @@ a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on I
                                                 # over it from now on
 a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
                                                 # for Idea #<n>, <file> its one-line case
-a-team board {{team}} theme lead <n> <heading|none>  # Lead only: label pitch #<n> `theme: <heading>`
+a-team board {{team}} theme lead <n> <heading|none>  # Lead only: set pitch #<n>'s theme to <heading>
                                                 # for the vision theme it serves, or say it serves none
 a-team board {{team}} feedback <role> <n>       # stakeholder comments with no 👀 on them yet, each with
                                                 # `images` where it has screenshots attached
 a-team board {{team}} task lead <pitch> "<title>" <file>  # Lead only: open a task, put it in Ready
                                                 # under Approved or Building <pitch>, print its number
 a-team board {{team}} fix lead "<title>" <file>  # Lead only: while the default branch is red and no fix
-                                                # is open, open one labelled `a-team:fix`, with no pitch,
+                                                # is open, open one, with no pitch,
                                                 # put it in Ready, print its number
 a-team board {{team}} link <parent> <child>     # make task <child> a sub-issue of <parent>
 a-team board {{team}} unlink <role> <parent> <child>   # Lead only: take <child> off <parent> again
@@ -135,9 +136,10 @@ a-team board {{team}} depends <role> <task> <owner/repo>#<n> <closed|released [<
 a-team board {{team}} undepend <role> <task> <prereq> "<why>"
                                                 # drop that dependency again, saying why on <task>;
                                                 # <prereq> may be <owner/repo>#<n>
-a-team board {{team}} unblock <role> <n>        # Dev or Lead: clear `blocked` on a task it held, once a
+a-team board {{team}} hold <role> <n> <file>    # hold task <n>, posting <file>, the question or why: the
+                                                # Dev its own task, the Lead or stakeholder a Ready one
+a-team board {{team}} unblock <role> <n>        # Dev or Lead: clear the hold on a task it held, once a
                                                 # stakeholder has replied (Lead: or it waits on another repo)
-a-team board {{team}} hold you <n> <file>       # stakeholder only: hold Ready task <n>, <file> saying why
 a-team board {{team}} release you <n>           # stakeholder only: take the hold off Ready task <n>,
                                                 # whoever set it
 a-team board {{team}} body <n>                  # an issue's or PR's number, title and body, as JSON,

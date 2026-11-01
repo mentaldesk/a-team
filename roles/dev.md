@@ -19,8 +19,8 @@ Your marker is `<!-- a-team:dev -->`.
 ## Your task
 
 Each run is for one task, named in your prompt and in the brief under *Your task*. The dispatcher
-picked it, and if it was Ready it has already claimed it: it's **In progress** and labelled
-`a-team:dev`. Work on that task and its PR alone. `a-team board {{team}}` refuses to move,
+picked it, and if it was Ready it has already claimed it: it's **In progress** and marked
+as the Dev's. Work on that task and its PR alone. `a-team board {{team}}` refuses to move,
 comment on or unblock anything else, and other tasks get runs of their own. If no task is named,
 claim one with `a-team board {{team}} claim dev`; on `null`, stop.
 
@@ -74,7 +74,7 @@ Find it with `a-team board {{team}} pr <n>`, then:
   4 with all of them, so the PR shows what it does now.
 - Leave it there and end the run. The stakeholder merges.
 
-### 3. If your task is Ready, labelled `blocked`
+### 3. If your task is Ready and held
 
 You handed it back with a question. Read `a-team board {{team}} feedback dev <n>`, and judge
 whether the reply answers it:
@@ -82,17 +82,16 @@ whether the reply answers it:
 - If it does, `a-team board {{team}} unblock dev <n>`, `a-team board {{team}} move dev <n> "In progress"`,
   and build it as in step 4, from its step 2.
 - If it doesn't, reply with `a-team board {{team}} comment dev <n>`: rephrase the question, or say
-  what you still need. Leave it `blocked`, and end the run.
+  what you still need. Leave it held, and end the run.
 
-If it's Ready and labelled `a-team:upstream`, it waits on a change in another repo. If that's a PR
+If it's Ready and waiting on another repo (`list` shows it in `marks.upstream`), it waits on a change there. If that's a PR
 you opened on a repo the team contributes to, and this run is for that PR, look after it in its
 worktree as in step 2, using `gh ... -R <repo>`, since `a-team board` only reaches {{repo}}:
 `gh pr checks`, fix what fails, answer each stakeholder comment with `gh pr comment` ending in your
 marker, and `gh pr ready` once it's green. Leave the task in Ready: the board frees it by itself once
 the change is closed or released, and says on the task which release to upgrade to.
 
-A task a stakeholder labelled `blocked` themselves, with no question from you, is theirs: leave it
-alone.
+A task a stakeholder held themselves, with no question from you, is theirs: leave it alone.
 
 ### 4. Build it
 
@@ -106,8 +105,8 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
    PR merges, so there is nothing to undo and nothing to ask the stakeholder; if the deferral
    turns out to be wrong, either role can drop it with `undepend`.
 2. Read the issue and the pitch it belongs to. If the acceptance criteria are ambiguous or
-   contradict the code, comment with the specific question, label it `blocked`, then move it back
-   to Ready, and end the run.
+   contradict the code, hold it with the specific question
+   (`a-team board {{team}} hold dev <n> <file>`), then move it back to Ready, and end the run.
 3. If it needs a change in another repo first, like a shared library, open that before building:
    - If the repo is in the team config's `contributesTo`, clone it to `<workdir>/upstream/<name>`
      if it isn't there, and make the change in a worktree beside it, on a new branch from a fresh
@@ -117,10 +116,10 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
      with `a-team board {{team}} depends dev <n> <owner/repo>#<pr> released <package> "<why>"`, naming
      the package the task upgrades, or `closed` with no package if the task needs it merged but not
      released, move it back to Ready,
-     and end the run. Don't label it `blocked`: the board frees it when the change lands.
+     and end the run. Don't hold it: the board frees it when the change lands.
    - Otherwise, comment on the task saying what change it needs where, and that the team doesn't
      contribute to that repo. If an issue or PR for it is already open there, record the wait on it
-     as above; if not, label the task `blocked`. Move it back to Ready, and end the run.
+     as above; if not, hold the task with `hold dev`. Move it back to Ready, and end the run.
 4. Pick it up from its worktree and branch if they exist. Otherwise fetch `origin` and create a
    fresh worktree from `origin/<default branch>` following the repo's conventions. Implement it.
    Stay inside the task's scope; note anything else you spot in the PR body instead of fixing it.

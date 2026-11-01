@@ -190,6 +190,19 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_card_s_details_end_their_first_line_with_what_a_team_keeps_of_it()
+    {
+        var card = Assert.Single(BoardCard.Parse("""
+            [{"team": "a", "number": 7, "title": "A pitch for later", "status": "Idea", "priority": "", "kind": "pitch",
+              "facts": "theme: Consistently good UX · shelved until 22 Nov"}]
+            """));
+        var state = OverseerState.Empty with { Now = Now };
+
+        Assert.Equal("Pitch · Unranked · a · Idea · theme: Consistently good UX · shelved until 22 Nov",
+            OverseerView.Describe(card, [card], state)[0]);
+    }
+
+    [Fact]
     public void A_held_task_says_in_its_details_that_it_s_Blocked_and_who_held_it()
     {
         var card = Card(524, "Ready", days: 1) with { Kind = CardKind.Task };

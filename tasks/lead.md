@@ -21,11 +21,11 @@ I authorise you to do all of the following without asking me:
   `a-team board {{team}} shelve lead <n> <weeks> <file>`.
 - Approve a pitch the stakeholder gives a plain yes to in a comment, with
   `a-team board {{team}} approve lead <n> <file>`.
-- Label each pitch with the vision theme it serves, with `a-team board {{team}} theme lead <n> <heading|none>`,
-  creating the label if it's new.
-- Clear `blocked` on a task you held, once the stakeholder has replied that it's done or once it waits
-  on another repo with `depends`, with `a-team board {{team}} unblock lead <n>`. Never remove that label
-  any other way.
+- Set the vision theme each pitch serves, with `a-team board {{team}} theme lead <n> <heading|none>`.
+- Hold a Ready task waiting on the stakeholder, with `a-team board {{team}} hold lead <n> <file>`.
+- Clear the hold on a task you held, once the stakeholder has replied that it's done or once it waits
+  on another repo with `depends`, with `a-team board {{team}} unblock lead <n>`. Never clear it any
+  other way.
 - When the default branch is red, re-run a clearly transient failure with `gh run rerun`, or file one
   fix task for it with `a-team board {{team}} fix lead "<title>" <file>`.
 - Close a pitch once every one of its tasks has closed, with

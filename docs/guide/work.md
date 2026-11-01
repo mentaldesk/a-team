@@ -45,8 +45,7 @@ days, the last 30 or everything recorded. Each row shows its runs, what each rol
 total, with `–` for nothing. A pitch counts the runs on its tasks too, and a run on several items is
 split evenly between them, so a team's 7-day total matches Trends. Under each team, *Discovery &
 upkeep* is runs on no item, and *Other items* is runs on Ideas never pitched and on your own items.
-The Lead labels each pitch `theme: <heading>` when it drafts it; relabel it on GitHub and Spending
-follows. `Right` and `Left` expand and collapse a row, `Enter` on a pitch opens its card, and `Esc`
+The Lead gives each pitch its theme when it drafts it, and Spending follows it. `Right` and `Left` expand and collapse a row, `Enter` on a pitch opens its card, and `Esc`
 closes it.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
@@ -65,7 +64,7 @@ on; the others, and the other tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Blocked | Every task held for you with the `blocked` label, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
+| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings or as soon as it brings a release a task waits on, or another team's Dev's PR to this repo once it's ready. |
 
 Each column's heading counts its cards, and orders them with the ones [holding up a
@@ -77,7 +76,7 @@ review but not ready for you yet, grouped by whose move it is, like
 
 When the latest CI on the default branch's head commit has failed, a line above the columns says so
 within a dispatcher pass, like `⚠ main is red since b8f5bdd`. A run of the Lead starts for it and files
-one fix task, labelled `a-team:fix`, naming the merges that broke it. The line then adds
+one fix task, naming the merges that broke it. The line then adds
 `· fix #624 is with the Dev`, and the Dev takes that task before any other, or
 `· fix #624 is waiting for you` once its PR is in Review, where its card says `fix`. Accept it as
 usual. While the branch is red, a PR failing only the jobs the branch fails isn't the Dev's to fix:

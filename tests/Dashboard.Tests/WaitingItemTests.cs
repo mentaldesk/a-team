@@ -19,6 +19,18 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void What_a_team_keeps_of_an_item_follows_its_Status_and_Priority()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 412, "title": "A seed", "status": "Idea", "team": "a-team",
+              "facts": "Lead recommends Medium · theme: Consistently good UX"}]
+            """));
+
+        Assert.Equal("Idea · Priority none · Lead recommends Medium · theme: Consistently good UX", item.Standing);
+        Assert.Equal("Ready · Priority High", (item with { Status = "Ready", Priority = "High", Facts = "" }).Standing);
+    }
+
+    [Fact]
     public void A_task_handed_back_with_a_question_brings_the_question_and_says_the_Dev_held_it()
     {
         var item = Assert.Single(WaitingItem.Parse("""
