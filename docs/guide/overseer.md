@@ -64,6 +64,15 @@ behind a count, as in `+7`.
 | `r` | Reads again the boards that couldn't be read |
 | `F5` | Reads every board again |
 
+## Reading the boards
+
+Overseer reads the boards when you open it and on `F5`, and the status bar says how long ago the
+selected card's board was read. Ages and animations keep moving between reads. Each lane is read on
+its own, and says so in the lane while it reads, when its board has nothing on it, or when it
+couldn't be read, with `r retry` under the reason; the other lanes keep their cards. A board that
+came back with items missing says `Board read incomplete (<got> of <total> items)` instead of
+showing some of its cards.
+
 ## The card's panel
 
 At 140 columns or wider, the selected card has a panel on the right, about two fifths of the
@@ -80,8 +89,7 @@ each with its column and age.
 Below the details is the session of the agent on the card, following live as it works: who's running,
 for how long and why, as in `Dev · running 14:02 · why: claimed #602`, then the tail of its log. With
 nothing running on the card, it shows the last run there was on it and when, as in
-`Dev · last ran 3h12m ago`, or says no agent has run on it yet. A Lead or Customer lead run is found only
-while it's that role's latest. The panel's last line lists the keys that work on the card. Moving the
+`Dev · last ran 3h12m ago`, or says no agent has run on it yet. The panel's last line lists the keys that work on the card. Moving the
 selection switches the panel to the new card straight away.
 
 `Enter` opens the session full-screen, as [Reading a session](#reading-a-session) describes. `Esc`
@@ -214,13 +222,6 @@ Answered something a team was waiting on? **Run a dispatch pass now**, in the Co
 (`Ctrl+E`) or under **Agents**, has that dispatcher check for work straight away instead of at its
 next pass. It starts only what that pass would have, within the same limits, and leaves the
 countdown alone. The status bar says what it started, or `Pass done: nothing to start.`
-
-Overseer reads the boards when you open it and on `F5`, and the status bar says how long ago the
-selected card's board was read. Ages and animations keep moving between reads. Each lane is read on
-its own, and says so in the lane while it reads, when its board has nothing on it, or when it
-couldn't be read, with `r retry` under the reason; the other lanes keep their cards. A board that
-came back with items missing says `Board read incomplete (<got> of <total> items)` instead of
-showing some of its cards.
 
 ## Time limits
 
