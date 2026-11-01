@@ -302,7 +302,7 @@ public sealed class DashboardWindow : Window
         KeyOverrides = settings.KeyOverrides(_commands);
         KeyOverrides.Load();
         _paneWidths.Keys = id => _commands.Keys.For(id).Select(binding => binding.Chord);
-        _paneWidths.Window = key => key == _commands.KeyFor("commands") && _commands.Press(key);
+        _paneWidths.WindowCommands = (_commands.KeyFor("commands"), OpenCommands);
         SyncQuitKey();
         ShowKeysHint();
         _menu = new AppMenu(_commands, _area, new Dictionary<string, Func<bool>>

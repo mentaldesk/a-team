@@ -50,7 +50,7 @@ public sealed class GuideDialog : DashboardDialog
 
     /// <param name="guide">Each page's Markdown, by its path in the guide.</param>
     /// <param name="openUrl">Where a link to a web page goes.</param>
-    /// <param name="widths">Where Contents' width is kept, and the window's keys that work here too.</param>
+    /// <param name="widths">Where Contents' width is kept, and the window's Commands.</param>
     public GuideDialog(IReadOnlyDictionary<string, string> guide, Func<string, LinkOutcome> openUrl, string page = Contents, PaneWidths? widths = null)
         : base("Guide")
     {
@@ -154,6 +154,8 @@ public sealed class GuideDialog : DashboardDialog
             .AddSide(_contentsPane, PaneWidths.Contents, ContentsWidth)
             .AddMain(_page);
         Resizes(Sides, _widths);
+        if (_widths.WindowCommands.Key != Key.Empty)
+            Bind("guide.commands", _widths.WindowCommands.Key, "Commands", _widths.WindowCommands.Open);
         if (!Open(page))
             Title = "Guide";
         else if (page != Contents)
@@ -248,8 +250,6 @@ public sealed class GuideDialog : DashboardDialog
         using var dialog = new GuideDialog(guide, openUrl, page, widths);
         widths.While(dialog.Sides, () => DialogHost.Run(app, dialog));
     }
-
-    protected override bool OnKeyDown(Key key) => base.OnKeyDown(key) || _widths.Window(key);
 
     internal static bool IsWeb(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "mailto";

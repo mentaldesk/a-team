@@ -483,6 +483,20 @@ public partial class GuideDialogTests : IDisposable
     }
 
     [Fact]
+    public void The_window_s_Commands_opens_from_anywhere_in_the_Guide_even_the_Index_filter()
+    {
+        var opened = 0;
+        var widths = new PaneWidths { WindowCommands = (Key.E.WithCtrl, () => opened++) };
+        using var dialog = new GuideDialog(GuidePages.In(_folder), Opening.Opened, widths: widths);
+        dialog.Layout(new Size(120, 20));
+
+        dialog.ShowIndex();
+        dialog.IndexFilter.NewKeyDownEvent(Key.E.WithCtrl);
+
+        Assert.Equal(1, opened);
+    }
+
+    [Fact]
     public void The_Guide_opens_with_Contents_as_wide_as_it_was_left()
     {
         var widths = new PaneWidths();

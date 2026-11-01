@@ -43,8 +43,8 @@ public sealed class PaneWidths
     /// <summary>The keys each of <see cref="Commands"/> was given on Settings › Keys.</summary>
     public Func<string, IEnumerable<IReadOnlyList<Key>>> Keys { get; set; } = _ => [];
 
-    /// <summary>The window's keys that work over the dialog too.</summary>
-    public Func<Key, bool> Window { get; set; } = _ => false;
+    /// <summary>The window's Commands, which work over the Guide too.</summary>
+    public (Key Key, Action Open) WindowCommands { get; set; } = (Key.Empty, () => { });
 
     public SidePanes For(View row, Func<FocusRegion?> focused, Action<string> say) => new(row, focused, say, _read, _write);
 
