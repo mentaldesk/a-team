@@ -490,6 +490,22 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_lane_whose_mirror_is_behind_says_by_how_much_and_why()
+    {
+        var retry = new DateTimeOffset(2026, 10, 31, 11, 20, 0, TimeSpan.Zero);
+        var lag = MirrorLag.Parse("""
+            [{"number": 7, "team": "a-team"},
+             {"team": "a-team", "mirror": {"behind": 3, "failed": "GitHub rate limit", "retry": "2026-10-31T11:20:00Z"}}]
+            """);
+
+        Assert.Equal($"mirror 3 moves behind (GitHub rate limit, retry {retry.ToLocalTime():HH:mm})", lag!.Note);
+        Assert.Equal($"a-team · idle · {lag.Note}", OverseerView.Heading("a-team", [], 0, lag.Note).Title);
+        Assert.Equal("mirror 1 move behind", new MirrorLag(1).Note);
+        Assert.Null(MirrorLag.Parse("""[{"number": 7, "team": "a-team"}]"""));
+        Assert.Single(BoardCard.Parse("""[{"number": 7, "team": "a-team"}, {"team": "a-team", "mirror": {"behind": 3}}]"""));
+    }
+
+    [Fact]
     public void A_pitch_s_details_list_its_open_tasks_and_its_column_s_limit()
     {
         var pitch = Card(46, "Building", days: 30) with { Priority = "High", Title = "Ranking" };
@@ -1009,6 +1025,34 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_board_shows_from_the_record_then_again_once_synced_with_GitHub()
+    {
+        var synced = false;
+        var syncs = new List<string>();
+        var sync = new TaskCompletionSource<Reading>();
+        using var window = Open(
+            readBoard: team => Task.FromResult(new Reading(team == "team1" && synced ? "[]" : Overview(team), null)),
+            syncBoard: team =>
+            {
+                syncs.Add(team);
+                return sync.Task;
+            });
+        window.Commands.Execute("view.overseer");
+        window.Refresh();
+
+        Assert.Equal([11, 12, 21, 22], window.Overseer.Board.Cards.Select(card => card.Number).Order());
+        Assert.Equal(["team0", "team1"], syncs.Order());
+
+        synced = true;
+        sync.SetResult(new Reading("", null));
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal([11, 12], window.Overseer.Board.Cards.Select(card => card.Number).Order());
+        Assert.Equal(["team0", "team1"], syncs.Order());
+    }
+
+    [Fact]
     public void A_board_with_nothing_on_it_says_so()
     {
         using var window = Open(readBoard: team => Task.FromResult(new Reading(team == "team1" ? "[]" : Overview(team), null)));
@@ -1032,7 +1076,7 @@ public class OverseerTests : IDisposable
     private DashboardWindow Open(
         Func<string, Task<Reading>>? readBoard = null, Func<string, LinkOutcome>? openUrl = null, TimeProvider? clock = null, int height = 30,
         int width = 120, Action<Handover>? handOver = null, Func<RunTask, bool>? confirmStop = null, Handover? resume = null,
-        Func<string[], Task<string?>>? run = null)
+        Func<string[], Task<string?>>? run = null, Func<string, Task<Reading>>? syncBoard = null)
     {
         Directory.CreateDirectory(_root);
         var window = new DashboardWindow(
@@ -1051,7 +1095,8 @@ public class OverseerTests : IDisposable
             resume: resume,
             clock: clock,
             confirmStop: confirmStop,
-            readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))));
+            readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))),
+            syncBoard: syncBoard);
         window.Frame = new Rectangle(0, 0, width, height);
         window.Layout(new Size(width, height));
         window.Refresh();

@@ -29,7 +29,8 @@ public sealed class TeamForm : Dialog
     internal const string RepoCaption = "The GitHub repo the team works on, as owner/repo.";
     internal const string StakeholdersCaption = "Whose comments the team acts on. You, unless you add others.";
     internal const string ContributesCaption = "Other repos the Dev may open draft PRs on. Merging stays yours.";
-    internal const string ProjectCaption = "The GitHub Project whose board the team moves its work across.";
+    internal const string ProjectCaption = "A GitHub Project a-team copies the board to, so you can see it on GitHub. a-team keeps the board itself.";
+    internal const string NoMirror = "None";
     internal const string NewProject = "A new project, named after the team";
     internal const string OwnerCaption = "Who owns the Project: the user or organisation in its URL.";
     internal const string NumberCaption = "The Project's number, the last part of its URL.";
@@ -118,6 +119,7 @@ public sealed class TeamForm : Dialog
     private bool _settingWorkdir;
     private int _wrappedTo;
     private List<ProjectChoice> _projects = [];
+    private bool _mirror;
     private IReadOnlyList<string> _stakeholderNames;
     private IReadOnlyList<string> _contributesTo;
     private IReadOnlyList<string> _skillNames;
@@ -142,6 +144,7 @@ public sealed class TeamForm : Dialog
         string name = "")
     {
         _before = settings;
+        _mirror = settings.Mirror;
         _save = save;
         _team = team;
         _taken = taken;
@@ -195,7 +198,7 @@ public sealed class TeamForm : Dialog
         _stakeholders = Picks("Stakeholders", _stakeholderNames, row++, StakeholdersCaption, PickStakeholders);
         _contributes = Picks("Contributes to", _contributesTo, row++, ContributesCaption, PickContributes);
 
-        Add(new Label { Text = "Project", X = Inset, Y = row });
+        Add(new Label { Text = "Mirror", X = Inset, Y = row });
         _project = new DropDownList { X = FieldX, Y = row, Width = Dim.Fill(Inset), ReadOnly = true };
         _ownedBy = new View { X = FieldX, Y = row, Width = Dim.Fill(Inset), Height = 1, CanFocus = true, Visible = false };
         var ownerLabel = new Label { Text = "Owner", X = 0, Y = 0 };
@@ -553,6 +556,7 @@ public sealed class TeamForm : Dialog
         _before with
         {
             Repo = _repo.Text.Trim(),
+            Mirror = _mirror,
             ProjectOwner = _owner.Text.Trim(),
             ProjectNumber = int.TryParse(_number.Text.Trim(), out var number) ? number : null,
             Vision = _vision.Text.Trim(),
@@ -601,11 +605,9 @@ public sealed class TeamForm : Dialog
             : null;
         if (chosen is not null && !_projects.Contains(chosen))
             _projects.Insert(0, chosen);
-        IEnumerable<string> choices = _projects.Select(project => project.ToString());
-        if (_team is null)
-            choices = choices.Prepend(NewProject);
+        string[] choices = [NoMirror, NewProject, .. _projects.Select(project => project.ToString())];
         _project.Source = new ListWrapper<string>(new ObservableCollection<string>(choices));
-        _project.Text = chosen?.ToString() ?? (_team is null ? NewProject : "");
+        _project.Text = !_mirror ? NoMirror : chosen?.ToString() ?? NewProject;
     }
 
     /// <summary>Fetches the repo owner's projects and puts them in the list when they arrive, again each time the list
@@ -695,7 +697,7 @@ public sealed class TeamForm : Dialog
         var now = Current();
         var name = _team ?? _name?.Text.Trim() ?? "";
         var refusal = _team is null ? TeamSettings.NameRefusal(name, _taken) : null;
-        if ((refusal ?? now.Refusal(projectOptional: _team is null) ?? _save(name, now)) is { } failure)
+        if ((refusal ?? now.Refusal() ?? _save(name, now)) is { } failure)
         {
             Say(failure, Schemes.Error);
             return true;
@@ -719,14 +721,21 @@ public sealed class TeamForm : Dialog
     /// <summary>Keeps the owner and number fields on the project picked, so they're what's saved either way.</summary>
     private void Pick()
     {
-        if (_team is null && _project.Text == NewProject)
+        if (_project.Text == NoMirror)
         {
+            _mirror = false;
+            return;
+        }
+        if (_project.Text == NewProject)
+        {
+            _mirror = true;
             _owner.Text = "";
             _number.Text = "";
             return;
         }
         if (_projects.Find(project => project.ToString() == _project.Text) is not { } picked)
             return;
+        _mirror = true;
         _owner.Text = picked.Owner;
         _number.Text = picked.Number.ToString();
     }

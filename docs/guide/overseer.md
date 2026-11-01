@@ -12,6 +12,9 @@ Exploring, Pitched, Approved, Building, Ready, In progress and In review. Done i
 
 A lane's title names the team and its roles that are running now, each with its animation playing
 beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. Where cards are past their column's limit, it counts them: `2 over`.
+Where the team's GitHub Project hasn't caught up with its board yet, it says how far behind it is and why, as in
+`mirror 3 moves behind (GitHub rate limit, retry 11:20)`. The board itself is never behind: once GitHub is back,
+the Project catches up and the note goes.
 
 Each card is a chip: a mark for what it is, its number, and how long it has been in that column, in
 the largest unit, as in `◆404  6d`.

@@ -38,6 +38,7 @@ public sealed class OverseerView : View
     private const int FrameRows = 2;
     private const int MaxDetailRows = 8;
     private const string Separator = " · ";
+    private readonly Dictionary<string, MirrorLag> _mirrors = [];
     private const int NumberWidth = 5;
     private const int AgeWidth = 3;
 
@@ -134,9 +135,14 @@ public sealed class OverseerView : View
         Changed();
     }
 
-    /// <summary>Replaces <paramref name="team"/>'s chips alone, leaving every other lane as it was.</summary>
-    public void Show(string team, IReadOnlyList<BoardCard> cards)
+    /// <summary>Replaces <paramref name="team"/>'s chips alone, leaving every other lane as it was, and what its
+    /// heading says of its mirror.</summary>
+    public void Show(string team, IReadOnlyList<BoardCard> cards, MirrorLag? mirror = null)
     {
+        if (mirror is null)
+            _mirrors.Remove(team);
+        else
+            _mirrors[team] = mirror;
         _board.Show([.. _board.Cards.Where(card => card.Team != team), .. cards]);
         if (LaneOf(team) is { } lane)
             Landed(lane);
@@ -197,7 +203,8 @@ public sealed class OverseerView : View
         foreach (var lane in _laneViews)
         {
             var team = LaneTeam(lane);
-            var heading = Heading(team, state.Busy.TryGetValue(team, out var busy) ? busy : [], Over(team));
+            var heading = Heading(team, state.Busy.TryGetValue(team, out var busy) ? busy : [], Over(team),
+                _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null);
             lane.Slots = heading.Slots;
             if (lane.Title != heading.Title)
                 lane.Title = heading.Title;
@@ -297,7 +304,7 @@ public sealed class OverseerView : View
 
     /// <summary>A lane's title: the team, its busy roles or <c>idle</c>, and how many of its cards are past their limit.
     /// Each busy role keeps a cell after its name, which the lane paints its header frame into.</summary>
-    internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over)
+    internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over, string? mirror = null)
     {
         var title = team;
         List<HeaderSlot> slots = [];
@@ -311,6 +318,8 @@ public sealed class OverseerView : View
             title += Separator + "idle";
         if (over > 0)
             title += $"{Separator}{over} over";
+        if (mirror is not null)
+            title += Separator + mirror;
         return new(title, slots);
     }
 

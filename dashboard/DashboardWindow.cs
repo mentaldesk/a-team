@@ -50,6 +50,9 @@ public sealed class DashboardWindow : Window
     private readonly OverseerView _overseer;
     private readonly Func<string, Task<Reading>>? _readBoard;
     private TeamReads? _boarding;
+    private readonly Func<string, Task<Reading>>? _syncBoard;
+    private TeamReads? _syncing;
+    private readonly Dictionary<string, DateTimeOffset> _syncedAt = [];
     private readonly Dictionary<string, DateTimeOffset> _boardReadAt = [];
     private IReadOnlyDictionary<string, string> _limits;
     private readonly List<string> _teamNames;
@@ -183,9 +186,11 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, bool>? confirmApprove = null,
         Func<WaitingItem, string?>? askHold = null,
         AssistantSetup? assistant = null,
-        PaneWidths? paneWidths = null)
+        PaneWidths? paneWidths = null,
+        Func<string, Task<Reading>>? syncBoard = null)
     {
         _paneWidths = paneWidths ?? new PaneWidths();
+        _syncBoard = syncBoard;
         _macKeys = macKeys;
         _attaching = attaching;
         _showSpending = showSpending;
@@ -394,6 +399,7 @@ public sealed class DashboardWindow : Window
         SettleMoves();
         ReadMoves();
         SettleBoards();
+        SettleSyncs();
         SettleTrend();
         ShowTitle();
         var now = _clock.GetUtcNow();
@@ -511,6 +517,7 @@ public sealed class DashboardWindow : Window
             return;
         }
         var items = WaitingItem.Parse(read.Output);
+        Sync(team);
         _teamReadAt[team] = _clock.GetUtcNow();
         _news.Read(team, items, asked);
         _work.Show(team, items);
@@ -998,11 +1005,44 @@ public sealed class DashboardWindow : Window
                 continue;
             }
             _boardReadAt[team] = _clock.GetUtcNow();
-            _overseer.Show(team, BoardCard.Parse(read.Output));
+            Sync(team);
+            _overseer.Show(team, BoardCard.Parse(read.Output), MirrorLag.Parse(read.Output));
             BackToCard(team);
         }
         if (boarding.Done)
             _boarding = null;
+    }
+
+    /// <summary>How soon after a team's last sync with GitHub another read of it syncs again.</summary>
+    internal static readonly TimeSpan SyncEvery = TimeSpan.FromMinutes(1);
+
+    /// <summary>Brings <paramref name="team"/>'s record up to date with GitHub behind what's on screen, which the
+    /// reads take from the record as it stands.</summary>
+    private void Sync(string team)
+    {
+        var now = _clock.GetUtcNow();
+        if (_syncBoard is null || _syncedAt.TryGetValue(team, out var at) && now - at < SyncEvery)
+            return;
+        _syncedAt[team] = now;
+        _syncing ??= new TeamReads([], _syncBoard);
+        _syncing.Add(team);
+    }
+
+    /// <summary>A team synced is read again, Overseer's lane only where it has been read.</summary>
+    private void SettleSyncs()
+    {
+        if (_syncing is not { } syncing)
+            return;
+        foreach (var (team, read) in syncing.Landed())
+        {
+            if (read.Failure is { Length: > 0 })
+                continue;
+            ReadTeam(team);
+            if (_readBoard is not null && _boardReadAt.ContainsKey(team))
+                (_boarding ??= new TeamReads([], _readBoard)).Add(team);
+        }
+        if (syncing.Done)
+            _syncing = null;
     }
 
     /// <summary>Back from a conversation or the editor, on the card you left once its board is read, or straight away on
