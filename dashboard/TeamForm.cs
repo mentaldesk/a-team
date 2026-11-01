@@ -154,7 +154,7 @@ public sealed class TeamForm : Dialog
         FindRepos = (_, _) => Task.FromResult(new ReachableRepos([], "nothing here can ask GitHub"));
         FindSkills = () => SkillsFound.Find(Home, Current().CheckoutPath);
         FindRepoFiles = RepoFiles.Read;
-        PickFolder = (title, typed) => App is { } app ? FolderPicker.Browse(app, title, typed, Home) : null;
+        PickFolder = (title, typed) => App is { } app ? WorkdirPicker.Browse(app, title, typed, Home) : null;
         RunFilePicker = picker => App is { } app ? RepoFilePicker.Show(app, picker) : null;
         ShowHelp = sheet =>
         {
@@ -833,7 +833,7 @@ public sealed class TeamForm : Dialog
     private void PickFile(TextField field, string label, Func<string> caption)
     {
         var repo = Current().Repo;
-        var (width, rows) = App is { } app ? PathPicker.Fit(app.Screen.Width, app.Screen.Height) : (74, 16);
+        var (width, rows) = App is { } app ? RepoFilePicker.Fit(app.Screen.Width, app.Screen.Height) : (74, 16);
         using var picker = new RepoFilePicker($"{label} for {TeamName}", repo, width, rows);
         var open = true;
         if (_repoFiles is { Failure: null } known && known.Repo == repo)

@@ -84,9 +84,10 @@ field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the
 
 **Workdir**, **Vision** and **First page** take typing, and `Enter` on one opens a picker:
 
-- **Workdir** browses the folders on this machine, starting from the one typed in. Type to narrow the
-  list, `Enter` goes into a folder, and into `../` at the top (or `Backspace`) to go up. **Use this folder** (`Ctrl+Enter`)
-  puts the folder you're in into Workdir. A Workdir with no `main` checkout in it shows under
+- **Workdir** browses the folders on this machine in one dialog, starting from the one typed in, or
+  the nearest folder above it that's there. `Enter` goes into a folder, and into `../` at the top (or
+  `Backspace`) to go up. Typing searches the folder you're in and every folder below it, and `Enter` on
+  a match goes straight into it. **Use this folder** (`Ctrl+Enter`) puts the folder you're in into Workdir. A Workdir with no `main` checkout in it shows under
   **Problems** before you save.
 - **Vision** and **First page** list the repo's Markdown files on its default branch. Type to narrow the list
   and `Enter` to pick one. Type a path that isn't there and `Enter` uses it anyway: the field then says
