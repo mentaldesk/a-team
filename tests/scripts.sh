@@ -39,7 +39,7 @@ run() {
   local db
   for db in history.db dry-run.db; do
     [ -n "${KEEP_BOARD:-}" ] || [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
-      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board; DELETE FROM boards;" 2>/dev/null
+      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo';" 2>/dev/null
   done
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" "$@" >"$OUT" 2>"$ERR"
   STATUS=$?
@@ -211,6 +211,12 @@ RUNS
   echo '{}' >"$CONTENTS"
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
+# Carrying a-team labels into the record happens once, on upgrade, so it isn't counted with a command's calls.
+case " \$* " in
+  *HeldSince*) printf '%s\n' "\$*" >>"$BIN/args"; cat "$TALK"; exit 0 ;;
+  *"-X DELETE"*"/labels/"*) [ ! -e "$BIN/unlabel-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+                            echo "\$*" >>"$BIN/unlabelled"; exit 0 ;;
+esac
 echo call >>"$CALLS"
 printf '%s\n' "\$*" >>"$BIN/args"
 case " \$* " in
@@ -230,6 +236,8 @@ case " \$* " in
                                   echo "\${kind}-sha"; exit 0 ;;
   *"/git/refs"*"a-team/attachments"*) echo "REF \$*" >>"$WRITES"; exit 0 ;;
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
+  *createProjectV2Field*) printf 'FIELD %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo PVTF_new; exit 0 ;;
+  *clearProjectV2ItemFieldValue*) printf 'CLEAR %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
   *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
   *updateProjectV2ItemFieldValue*)
     [ ! -e "$BIN/mirror-fails" ] || { echo "gh: API rate limit exceeded for installation ID 7 (HTTP 403)" >&2; exit 1; }
@@ -374,6 +382,17 @@ gh_caught() {
         + {timelineItems: {nodes: map(.node)}})
     | {data: {search: {nodes: .}, nodes: []}}' >"$CAUGHT"
 }
+
+# docs_pr_on_board <on|off>: PR #912 on the board as the Customer lead's docs PR, or off it again.
+docs_pr_on_board() {
+  jq --arg on "$1" '.data.organization.projectV2.items.nodes |= (map(select(.id != "PVTI_912")) + if $on == "on" then [{id: "PVTI_912",
+    fieldValueByName: {name: "In review"}, content: {__typename: "PullRequest", id: "PR_912", number: 912, title: "Docs",
+      url: "https://github.com/mentaldesk/demo/pull/912", state: "OPEN", repository: {nameWithOwner: "mentaldesk/demo"},
+      labels: {nodes: [{name: "a-team:customer"}]}}}] else [] end)' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+}
+
+# What the record keeps of #<n> beyond Status and Priority.
+marks() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT COALESCE(marks, '{}') FROM board WHERE team = 'demo' AND item = $1;" | jq -c .; }
 
 # Applies a jq update to the content of #<n> on the page gh_items wrote.
 edit_item() {
@@ -1118,7 +1137,8 @@ THREAD
 : >"$ACKED"
 A_TEAM_RUN_STARTED=${TODAY}T23:59:59Z run board demo unblock lead 195
 same "exit" 0 "$STATUS"
-same "writes" "issue edit 195 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
+same "writes" "" "$(cat "$WRITES")"
+same "held" null "$(marks 195 | jq -c .held)"
 same "acked" "IC_2" "$(cat "$ACKED")"
 same "recorded" '"hold answered"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 195 | jq -c '.events[0].what')"
 run board demo unblock dev 195
@@ -1135,7 +1155,8 @@ edit_item 195 '.labels.nodes = [{name: "blocked"}, {name: "a-team:upstream"}]'
 : >"$WRITES"
 run board demo unblock lead 195
 same "exit" 0 "$STATUS"
-same "writes" "issue edit 195 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
+same "writes" "" "$(cat "$WRITES")"
+same "held" null "$(marks 195 | jq -c .held)"
 same "recorded" '"hold now waits on another repo"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 195 | jq -c '.events[0].what')"
 edit_item 195 '.labels.nodes = [{name: "blocked"}]'
 
@@ -1238,7 +1259,8 @@ same "dry-run writes" "" "$(cat "$WRITES")"
 same "dry-run acked" "" "$(cat "$ACKED")"
 A_TEAM_RUN_STARTED=${TODAY}T23:59:59Z run board demo unblock dev 192
 same "exit" 0 "$STATUS"
-same "writes" "issue edit 192 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
+same "writes" "" "$(cat "$WRITES")"
+same "held" null "$(marks 192 | jq -c .held)"
 same "acked" "IC_2" "$(cat "$ACKED")"
 same "recorded" '"question answered"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 192 | jq -c '.events[0].what')"
 
@@ -1271,7 +1293,8 @@ echo "wait until I've talked to the designer" >"$WORK/why"
 run board demo hold you 196 "$WORK/why"
 same "exit" 0 "$STATUS"
 same "posted" "wait until I've talked to the designer" "$(cat "$POSTED")"
-same "writes" "issue edit 196 -R mentaldesk/demo --add-label blocked" "$(cat "$WRITES")"
+same "writes" "" "$(cat "$WRITES")"
+same "held by" '"you"' "$(marks 196 | jq -c .held.by)"
 same "recorded" '"held"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 196 | jq -c '.events[0].what')"
 edit_item 196 '.labels.nodes = [{name: "blocked"}]'
 gh_talk <<TALK
@@ -1334,7 +1357,8 @@ case_ "you can release any hold, an agent's included, but no agent can release o
 : >"$WRITES"
 run board demo release you 192
 same "exit" 0 "$STATUS"
-same "writes" "issue edit 192 -R mentaldesk/demo --remove-label blocked" "$(cat "$WRITES")"
+same "writes" "" "$(cat "$WRITES")"
+same "held" null "$(marks 192 | jq -c .held)"
 same "recorded" '"hold released"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 192 | jq -c '.events[0].what')"
 : >"$WRITES"
 run board demo release dev 195
@@ -1791,10 +1815,9 @@ same "exit" 0 "$STATUS"
 same "said" "#7: back on $(back_on 3)" "$(cat "$OUT")"
 same "posted" "Cost isn't what I'm watching yet.
 
-Not now: back on $(back_on 3).
-
-<!-- a-team:shelved until=$(weeks_on 3) priority=High -->" "$(cat "$POSTED")"
-grep -q "issues/7/labels -f labels\[\]=a-team:shelved" "$WRITES" || fail "not labelled: '$(cat "$WRITES")'"
+Not now: back on $(back_on 3)." "$(cat "$POSTED")"
+grep -q "label" "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
+same "shelved" "{\"until\":\"$(weeks_on 3)\",\"priority\":\"High\"}" "$(marks 7 | jq -c .shelved)"
 grep -q "item=PVTI_7 .*option=OPT_idea " "$WRITES" || fail "not moved to Idea: '$(cat "$WRITES")'"
 same "acked" "IC_posted" "$(cat "$ACKED")"
 same "history" "you shelved until $(back_on 3)
@@ -1805,9 +1828,7 @@ case_ "a reason is optional: without one the comment is the date alone"
 : >"$WORK/blank"
 run board demo shelve you 7 2 "$WORK/blank"
 same "exit" 0 "$STATUS"
-same "posted" "Not now: back on $(back_on 2).
-
-<!-- a-team:shelved until=$(weeks_on 2) priority=High -->" "$(cat "$POSTED")"
+same "posted" "Not now: back on $(back_on 2)." "$(cat "$POSTED")"
 
 case_ "shelve takes any whole number of weeks from 1, and only a Pitched pitch"
 : >"$WRITES"
@@ -1853,8 +1874,6 @@ same "posted" "Shelved for 3 weeks, as you asked.
 
 Not now: back on $(back_on 3).
 
-<!-- a-team:shelved until=$(weeks_on 3) priority=High -->
-
 <!-- a-team:lead -->" "$(cat "$POSTED")"
 run board demo shelve lead 7 3 "$WORK/blank"
 failed "empty reply"
@@ -1872,7 +1891,7 @@ run board --dry-run demo shelve you 7 2 "$WORK/reason"
 same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
-grep -q "would label #7 a-team:shelved" "$ERR" || fail "shelve dry run: '$(cat "$ERR")'"
+grep -q "would mark #7 shelved" "$ERR" || fail "shelve dry run: '$(cat "$ERR")'"
 [ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
 
 case_ "lead-next passes over a shelved Idea until its date, even when it's the only one with a Priority"
@@ -1922,20 +1941,110 @@ edit_item 11 '.labels.nodes = [{name: "pitch"}, {name: "a-team:displaced"}]'
 A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "promoted" '[11]' "$(jq -c '[.promote[].number]' "$OUT")"
 
-case_ "pitching a shelved Idea takes its a-team:shelved label off"
+case_ "pitching a shelved Idea clears its shelve"
 gh_items 7 <<'ITEMS'
 Idea 7 A pitch for later
 ITEMS
 edit_item 7 '.labels.nodes = [{name: "pitch"}, {name: "a-team:shelved"}]'
 run board demo move lead 7 Exploring
 same "exit" 0 "$STATUS"
-grep -q "issue edit 7 -R mentaldesk/demo --remove-label a-team:shelved" "$WRITES" || fail "label kept: '$(cat "$WRITES")'"
+same "shelved" null "$(marks 7 | jq -c .shelved)"
+
+case_ "upgrading carries the a-team labels on open items into the record, then takes them off, leaving every other label"
+gh_items 7 <<'ITEMS'
+Idea 7 A seed
+Ready 8 A held task
+In_progress 9 Being built
+Done 10 Long done
+ITEMS
+edit_item 7 '.labels.nodes = [{name: "rank:medium"}, {name: "a-team:idea"}, {name: "mine"}]'
+edit_item 8 '.labels.nodes = [{name: "blocked"}, {name: "a-team:upstream"}, {name: "bug"}]'
+edit_item 10 '.labels.nodes = [{name: "pitch"}, {name: "theme: Good UX"}] | .state = "CLOSED" | .stateReason = "COMPLETED"'
+gh_talk <<TALK
+8 labeled ${TODAY}T09:00:00Z demo-app[bot] blocked
+TALK
+gh_thread <<THREAD
+comment $(ago 60) demo-app[bot] 0 Blocked by mentaldesk/style#44, until released: needs it.\n\n<!-- a-team:wait repo=mentaldesk/style n=44 until=released -->
+THREAD
+rm -f "$BIN/unlabelled"
+run board demo list
+same "exit" 0 "$STATUS"
+same "labels" '[["mine"],["bug"],[],["pitch"]]' "$(jq -c '[.[] | select(.number | IN(7, 8, 9, 10)) | .labels]' "$OUT")"
+same "seed" '{"rank":"Medium","idea":true}' "$(marks 7)"
+same "held" "{\"at\":\"${TODAY}T09:00:00Z\",\"by\":\"team\"}" "$(marks 8 | jq -c .held)"
+same "upstream" '["mentaldesk/style#44"]' "$(marks 8 | jq -c .upstream)"
+same "claimed" '{"dev":true}' "$(marks 9)"
+same "done theme" '"Good UX"' "$(jq -c '.[] | select(.number == 10) | .marks.theme' "$OUT")"
+same "unlabelled" "repos/mentaldesk/demo/issues/7/labels/rank%3Amedium
+repos/mentaldesk/demo/issues/7/labels/a-team%3Aidea
+repos/mentaldesk/demo/issues/8/labels/blocked
+repos/mentaldesk/demo/issues/8/labels/a-team%3Aupstream
+repos/mentaldesk/demo/issues/9/labels/a-team%3Adev" "$(sed 's/^api -X DELETE //' "$BIN/unlabelled")"
+grep -q label "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
+
+case_ "a label GitHub won't take off still leaves its state in the record, and is tried again"
+touch "$BIN/unlabel-fails"
+KEEP_BOARD='' run board demo list
+rm -f "$BIN/unlabel-fails"
+same "exit" 0 "$STATUS"
+same "seed" '{"rank":"Medium","idea":true}' "$(marks 7)"
+same "kept for next time" '["rank:medium","a-team:idea","mine"]' \
+  "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT content FROM board WHERE team = 'demo' AND item = 7;" | jq -c .labels)"
+
+case_ "--dry-run carries the labels over in its own copy and takes none off"
+rm -f "$BIN/unlabelled"
+run board --dry-run demo list
+same "exit" 0 "$STATUS"
+same "seed" '{"rank":"Medium","idea":true}' "$(jq -c '.[] | select(.number == 7) | .marks' "$OUT")"
+[ ! -e "$BIN/unlabelled" ] || fail "dry run took labels off: '$(cat "$BIN/unlabelled")'"
+grep -q "would unlabel #7 rank:medium" "$ERR" || fail "dry run: '$(cat "$ERR")'"
+
+case_ "a shelve carried over keeps the date in its hidden comment"
+gh_items 7 <<'ITEMS'
+Idea 7 A pitch for later
+ITEMS
+edit_item 7 '.labels.nodes = [{name: "pitch"}, {name: "a-team:shelved"}]'
+gh_thread <<THREAD
+comment $(ago 60) reviewer 1 Not now: back on someday.\n\n<!-- a-team:shelved until=2026-12-01 priority=High -->
+THREAD
+run board demo list
+same "shelved" '{"until":"2026-12-01","priority":"High"}' "$(marks 7 | jq -c .shelved)"
+
+case_ "waiting says under each card what a-team keeps of it"
+gh_items <<'ITEMS'
+Idea 41 A seed the Lead found
+ITEMS
+edit_item 41 '.labels.nodes = [{name: "a-team:idea"}, {name: "rank:medium"}, {name: "a-team:skipped"}]'
+run board demo waiting
+same "exit" 0 "$STATUS"
+same "facts" '"Lead recommends Medium · skipped"' "$(jq -c '.[] | select(.number == 41) | .facts' "$OUT")"
+
+case_ "the Dev holds its own task with its question, as its, and moves it back to Ready"
+gh_items <<'ITEMS'
+In_progress 9 Being built
+In_progress 12 Someone else's
+ITEMS
+edit_item 12 '.labels.nodes = []'
+echo "Which marker should it post?" >"$WORK/ask"
+: >"$POSTED"
+: >"$WRITES"
+KEEP_BOARD='' run board demo hold dev 9 "$WORK/ask"
+same "exit" 0 "$STATUS"
+same "posted" "Which marker should it post?
+
+<!-- a-team:dev -->" "$(cat "$POSTED")"
+same "held by" '"dev"' "$(marks 9 | jq -c .held.by)"
+grep -q label "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
+run board demo hold dev 12 "$WORK/ask"
+failed "not the Dev's"
+run board demo hold customer 9 "$WORK/ask"
+failed "customer"
 
 case_ "the agents' settings deny shelving as you"
 grep -qF '"Bash(a-team board * shelve you *)"' "$ROOT/settings/agents.json" || fail "no shelve deny rule"
 
-case_ "the agents' settings deny holding and releasing, which are yours"
-grep -qF '"Bash(a-team board * hold *)"' "$ROOT/settings/agents.json" || fail "no hold deny rule"
+case_ "the agents' settings deny holding as you, and releasing, which are yours"
+grep -qF '"Bash(a-team board * hold you *)"' "$ROOT/settings/agents.json" || fail "no hold deny rule"
 grep -qF '"Bash(a-team board * release *)"' "$ROOT/settings/agents.json" || fail "no release deny rule"
 
 # Accepting: the app's merge, the gate a task leaves by.
@@ -2822,7 +2931,7 @@ A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "exit" 0 "$STATUS"
 same "swap" '{"demote":[11],"promote":[21]}' "$(jq -c '{demote: [.demote[].number], promote: [.promote[].number]}' "$OUT")"
 
-case_ "a first demote labels the pitch a-team:displaced"
+case_ "a first demote marks the pitch displaced"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "pitched": 1 } }
@@ -2833,10 +2942,11 @@ Exploring 21 A higher draft
 ITEMS
 run board demo move lead 11 Exploring
 same "exit" 0 "$STATUS"
-same "label" 1 "$(grep -c 'issues/11/labels -f labels\[\]=a-team:displaced' "$WRITES")"
+same "displaced" true "$(marks 11 | jq -c .displaced)"
+grep -q '/labels' "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
 grep -q "option=OPT_exploring" "$WRITES" || fail "status not set: '$(cat "$WRITES")'"
 
-case_ "a repeat demote moves without labelling again"
+case_ "a repeat demote moves without marking again"
 edit_item 11 '.labels.nodes += [{name: "a-team:displaced"}]'
 : >"$WRITES"
 run board demo move lead 11 Exploring
@@ -2844,18 +2954,18 @@ same "exit" 0 "$STATUS"
 same "label" 0 "$(grep -c '/labels' "$WRITES")"
 grep -q "option=OPT_exploring" "$WRITES" || fail "status not set: '$(cat "$WRITES")'"
 
-case_ "--dry-run says it would label a first demote, and labels nothing"
+case_ "--dry-run says it would mark a first demote, and marks nothing"
 edit_item 11 '.labels.nodes -= [{name: "a-team:displaced"}]'
 : >"$WRITES"
 run board --dry-run demo move lead 11 Exploring
 same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
-grep -q "would label #11 a-team:displaced" "$ERR" || fail "dry run: nothing about the label in '$(cat "$ERR")'"
+grep -q "would mark #11 displaced true" "$ERR" || fail "dry run: nothing about the mark in '$(cat "$ERR")'"
 
-case_ "setup creates the a-team:displaced label"
+case_ "setup creates no a-team label but pitch"
 run board --dry-run demo setup
 same "exit" 0 "$STATUS"
-grep -q "created label a-team:displaced" "$OUT" || fail "setup: '$(cat "$OUT")'"
+same "labels" "(dry run) created label pitch" "$(grep 'created label' "$OUT")"
 
 case_ "setup drops the Todo and In Progress GitHub made, unless an item has one"
 cp "$META" "$BIN/meta.saved"
@@ -3383,7 +3493,7 @@ claimable
 run board demo claim dev
 same "exit" 0 "$STATUS"
 same "claimed" '{"number":14,"title":"Something more pressing"}' "$(cat "$OUT")"
-grep -q 'issue edit 14 -R mentaldesk/demo --add-label a-team:dev' "$WRITES" || fail "claim: no label in '$(cat "$WRITES")'"
+same "claimed by the Dev" true "$(marks 14 | jq -c .dev)"
 grep -q 'item=PVTI_14 .*option=OPT_progress' "$WRITES" || fail "claim: no move in '$(cat "$WRITES")'"
 
 case_ "claim refuses a task that's already claimed, and claims nothing"
@@ -3441,7 +3551,7 @@ claimable
 run board --dry-run demo claim dev
 same "exit" 0 "$STATUS"
 same "would claim" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
-grep -q "would label #13 a-team:dev" "$ERR" || fail "dry run: no label in '$(cat "$ERR")'"
+grep -q "would mark #13 dev true" "$ERR" || fail "dry run: no mark in '$(cat "$ERR")'"
 grep -q "would set #13 to 'In progress'" "$ERR" || fail "dry run: no move in '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
@@ -3833,7 +3943,7 @@ RUNS
 run board demo triggers lead
 same "reasons with a fix open" '[]' "$(jq -c .reasons "$OUT")"
 
-case_ "fix opens a Ready task labelled a-team:fix with no pitch, and prints its number"
+case_ "fix opens a Ready task marked as the fix, with no pitch, and prints its number"
 gh_items <<'ITEMS'
 Done 10 Something shipped
 ITEMS
@@ -3847,9 +3957,10 @@ failed "dev files a fix"
 run board demo fix lead "Main builds again" "$WORK/fix"
 same "exit" 0 "$STATUS"
 same "number" 77 "$(cat "$OUT")"
-grep -q 'label create a-team:fix' "$WRITES" || fail "fix: no label created in '$(cat "$WRITES")'"
-grep -q 'CREATE issue create -R mentaldesk/demo --title Main builds again --label a-team:fix' "$WRITES" ||
-  fail "fix: no labelled issue in '$(cat "$WRITES")'"
+grep -q 'CREATE issue create -R mentaldesk/demo --title Main builds again --body-file' "$WRITES" ||
+  fail "fix: no issue in '$(cat "$WRITES")'"
+grep -q 'label' "$WRITES" && fail "fix: labelled in '$(cat "$WRITES")'"
+same "fix" true "$(marks 77 | jq -c .fix)"
 grep -q 'option=OPT_ready' "$WRITES" || fail "fix: not put in Ready in '$(cat "$WRITES")'"
 grep -q 'sub_issues' "$WRITES" && fail "fix: made a sub-issue in '$(cat "$WRITES")'"
 grep -qF '<!-- a-team:lead -->' "$POSTED" || fail "fix: no marker in '$(cat "$POSTED")'"
@@ -4109,7 +4220,7 @@ failed "auditing while off"
 customer_on
 echo $(($(date +%s))) >"$AUDITED"
 
-case_ "the Customer lead adds its own open docs PR to In review, labelled as its"
+case_ "the Customer lead adds its own open docs PR to In review, marked as its"
 gh_items <<'ITEMS'
 In_progress 7 A task being built
 In_review 9 Docs: what's changed since 28 Sep
@@ -4123,7 +4234,7 @@ jq -n '{node_id: "PR_9", number: 9, state: "open", pull_request: {},
         body: "- Help → Guide covers the Customer lead (#48)\n\n<!-- a-team:customer -->"}' >"$ISSUE"
 run board demo add customer 9 "In review"
 same "exit" 0 "$STATUS"
-grep -q 'issues/9/labels -f labels\[\]=a-team:customer' "$WRITES" || fail "add: no label in '$(cat "$WRITES")'"
+same "the Customer lead's" true "$(marks 9 | jq -c .customer)"
 grep -q 'item=PVTI_9 .*option=OPT_review' "$WRITES" || fail "add: no move in '$(cat "$WRITES")'"
 
 case_ "it may add nothing but its own open docs PR, and only one at a time"
@@ -4503,7 +4614,7 @@ failed "a docs PR with no docs page"
 grep -q "docs/index.md isn't in mentaldesk/demo yet: propose the docs before writing any" "$ERR" ||
   fail "docs PR with no docs page: '$(cat "$ERR")'"
 
-case_ "the Customer lead puts its own draft docs proposal in Pitched, labelled as its"
+case_ "the Customer lead puts its own draft docs proposal in Pitched, marked as its"
 : >"$WRITES"
 gh_items <<'ITEMS'
 Pitched 12 Docs proposal: where the user docs live
@@ -4516,7 +4627,7 @@ proposal_pr 12
 run board demo add customer 12 Pitched
 same "exit" 0 "$STATUS"
 same "said" "#12: added as Pitched" "$(cat "$OUT")"
-grep -q 'issues/12/labels -f labels\[\]=a-team:customer' "$WRITES" || fail "propose: no label in '$(cat "$WRITES")'"
+same "the Customer lead's" true "$(marks 12 | jq -c .customer)"
 grep -q 'labels\[\]=pitch' "$WRITES" && fail "propose: labelled a pitch, which is the Lead's"
 grep -q 'item=PVTI_12 .*option=OPT_pitched' "$WRITES" || fail "propose: no move in '$(cat "$WRITES")'"
 
@@ -4661,7 +4772,7 @@ jq '.docs = "docs/index.md"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 # `customer_issue <n> <body>`: #<n> is an open issue with <body>.
 customer_issue() { gh_child "$1" - - "$2" && jq '.state = "open"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"; }
 
-case_ "the Customer lead files a feature nobody can find as an Idea, labelled as a discovery"
+case_ "the Customer lead files a feature nobody can find as an Idea, marked as a discovery"
 jq '.wip = {pitched: 2, exploring: 4, ideas: 2}' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 gh_items <<'ITEMS'
 Idea 41 I can't find how to pause one role
@@ -4672,8 +4783,7 @@ customer_issue 41 "**Evidence**: the guide's Dashboard page doesn't say.
 <!-- a-team:customer -->"
 run board demo add customer 41 Idea
 same "exit" 0 "$STATUS"
-grep -q 'issues/41/labels -f labels\[\]=a-team:idea' "$WRITES" || fail "no discovery label in '$(cat "$WRITES")'"
-grep -q 'a-team:customer' "$WRITES" && fail "labelled as the docs PR: '$(cat "$WRITES")'"
+same "a discovery" '{"idea":true}' "$(marks 41)"
 same "added" "#41: added as Idea" "$(cat "$OUT")"
 
 case_ "the Customer lead adds nothing past Idea but its docs proposal, and no issue it didn't open"
@@ -4742,7 +4852,7 @@ run board demo waiting
 same "triage" '[42]' "$(jq -c 'map(select(.reason == "waiting to be ranked") | .number)' "$OUT")"
 
 # --- the Lead's recommended rank -------------------------------------------------------------
-case_ "recommend labels an Idea with its rank, drops the others, and posts the case as the Lead"
+case_ "recommend records an Idea's rank, shows it on the mirror, and posts the case as the Lead"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" },
   "project": { "owner": "mentaldesk", "number": 1 }, "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
@@ -4755,22 +4865,17 @@ edit_item 41 '.labels.nodes = [{name: "rank:low"}]'
 echo 'theme 3, small · a stack trace is the only error path there is' >"$WORK/case"
 run board demo recommend lead 41 High "$WORK/case"
 same "exit" 0 "$STATUS"
-grep -q 'label create rank:high -R mentaldesk/demo --color d4323c' "$WRITES" || fail "label not created: '$(cat "$WRITES")'"
-grep -q 'issue edit 41 -R mentaldesk/demo --add-label rank:high --remove-label rank:low' "$WRITES" ||
-  fail "labels: '$(cat "$WRITES")'"
+same "marks" '{"rank":"High"}' "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT marks FROM board WHERE team = 'demo' AND item = 41;")"
+grep -q 'label' "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
+grep -q 'FIELD .*name=Lead rank' "$WRITES" || fail "no Lead rank field made: '$(cat "$WRITES")'"
+grep -q 'updateProjectV2ItemFieldValue.*field=PVTF_new.*text=High\|item=PVTI_41 -F field=PVTF_new -f text=High' "$WRITES" ||
+  fail "rank not mirrored: '$(cat "$WRITES")'"
 same "posted" 'Recommended: **High** · theme 3, small · a stack trace is the only error path there is
 
 <!-- a-team:lead -->' "$(cat "$POSTED")"
 
-case_ "recommend leaves a rank label that's already there alone"
-echo '[{"name": "rank:high"}]' >"$EMPTY"
-: >"$WRITES"
-run board demo recommend lead 41 high "$WORK/case"
-echo '[]' >"$EMPTY"
-same "exit" 0 "$STATUS"
-same "created" 0 "$(grep -c 'label create' "$WRITES")"
-
 case_ "only the Lead recommends, only on an Idea, and only with a one-line case"
+edit_item 41 '.labels.nodes = []'
 : >"$WRITES"
 : >"$POSTED"
 for role in you dev customer; do
@@ -5138,15 +5243,9 @@ same "exit" 0 "$STATUS"
 same "demote" '[]' "$(jq -c '[.demote[].number]' "$OUT")"
 same "promote" '[73]' "$(jq -c '[.promote[].number]' "$OUT")"
 
-case_ "setup creates the rank labels in the Priority colours"
-run board --dry-run demo setup
-same "exit" 0 "$STATUS"
-for label in rank:urgent rank:high rank:medium rank:low; do
-  grep -q "created label $label" "$OUT" || fail "setup: no $label in '$(cat "$OUT")'"
-done
 
 # --- themes and Spending ---------------------------------------------------------------------
-case_ "theme labels a pitch with its vision theme, creating the label, and swaps out any other"
+case_ "theme records a pitch's vision theme in place of any other, and shows it on the mirror"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" },
   "project": { "owner": "mentaldesk", "number": 1 }, "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
@@ -5157,29 +5256,27 @@ Ready 82 A task
 ITEMS
 edit_item 81 '.labels.nodes = [{name: "pitch"}, {name: "theme: Think bigger"}]'
 rm -f "$A_TEAM_STATE/history.db"
-run board demo theme lead 81 "Consistently good UX"
+KEEP_BOARD=1 run board demo theme lead 81 "Consistently good UX"
 same "exit" 0 "$STATUS"
-grep -q 'label create theme: Consistently good UX -R mentaldesk/demo --color 5319e7' "$WRITES" || fail "label not created: '$(cat "$WRITES")'"
-grep -q 'issue edit 81 -R mentaldesk/demo --add-label theme: Consistently good UX --remove-label theme: Think bigger' "$WRITES" ||
-  fail "labels: '$(cat "$WRITES")'"
+same "theme" '"Consistently good UX"' "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT json_extract(marks, '$.theme') FROM board WHERE team = 'demo' AND item = 81;" | jq -R .)"
+grep -q 'label' "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
+grep -q 'text=Consistently good UX' "$WRITES" || fail "theme not mirrored: '$(cat "$WRITES")'"
+grep -q 'labels/theme%3A%20Think%20bigger' "$BIN/unlabelled" || fail "old label kept: '$(cat "$BIN/unlabelled")'"
 same "history" "lead theme: Consistently good UX" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
 
-case_ "theme leaves a label that's already there alone, and none takes the theme off"
-echo '[{"name": "theme: Consistently good UX"}]' >"$EMPTY"
+case_ "none takes the theme off, on the mirror too"
+jq '.data.organization.projectV2.theme = {id: "PVTF_theme"}' "$META" >"$META.new" && mv "$META.new" "$META"
 : >"$WRITES"
-run board demo theme lead 81 "Consistently good UX"
-echo '[]' >"$EMPTY"
-same "created" 0 "$(grep -c 'label create' "$WRITES")"
-: >"$WRITES"
-run board demo theme lead 81 none
+KEEP_BOARD=1 run board demo theme lead 81 none
 same "exit" 0 "$STATUS"
-same "unlabelled" 'issue edit 81 -R mentaldesk/demo --remove-label theme: Think bigger' "$(cat "$WRITES")"
+same "theme" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT json_extract(marks, '$.theme') FROM board WHERE team = 'demo' AND item = 81;")"
+grep -q 'CLEAR .*item=PVTI_81' "$WRITES" || fail "theme left on the mirror: '$(cat "$WRITES")'"
 same "history" "lead no theme" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
 
-case_ "only the Lead sets a theme, only on a pitch, and only one GitHub can make a label of"
+case_ "only the Lead sets a theme, and only on a pitch"
+edit_item 81 '.labels.nodes = [{name: "pitch"}]'
 : >"$WRITES"
-for refused in "dev 81 Think" "you 81 Think" "lead 82 Think" "lead 81 Think,bigger" \
-  "lead 81 $(printf 'x%.0s' {1..50})"; do
+for refused in "dev 81 Think" "you 81 Think" "lead 82 Think" "lead 81 Think,bigger"; do
   read -r role n heading <<<"$refused"
   run board demo theme "$role" "$n" "$heading"
   failed "theme $role $n"
@@ -5226,7 +5323,7 @@ same "api calls" 0 "$(grep -c '' <"$CALLS")"
 
 case_ "spending: every run with its cost and items, and the items and the pitches over them, in one read of the board"
 gh_items <<'ITEMS'
-Building 81 A pitch
+Done 81 A pitch
 Done 517 A task
 Idea 40 An idea
 Done 90 Untouched
@@ -7032,13 +7129,10 @@ NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
 LEAD_VISION=1 checked
 says 2 "vision    drafted by the Lead: Write the vision with me replaces it"
-board_labels pitch a-team:dev blocked
+board_labels
 checked
-says 2 "labels    no 'a-team:idea' label, so the Lead can't flag the ideas it finds for you
-labels    no 'a-team:skipped' label, so the Lead can't pass over an idea, and keeps coming back to it
-labels    no 'a-team:displaced' label, so the Lead tells you every time it bumps a pitch out of Pitched, not just the first
-labels    no 'a-team:shelved' label, so the Lead pitches again a pitch you've just said Not now to"
-board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
+says 2 "labels    no 'pitch' label, so the team can't tell its pitches from tasks"
+board_labels pitch
 
 case_ "with a Customer lead, a docs page that's missing or not named is a problem the team can still run with"
 jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
@@ -7083,12 +7177,12 @@ says 0 ""
 board_workflows "Auto-add to project" "Item added to project" "Item closed"
 
 case_ "check reports every problem it finds, not just the first"
-board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:shelved blocked
+board_labels
 NO_VISION=1 NO_FIELD=1 checked
 says 1 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
 project   no single-select field 'Status' on mentaldesk project 1
-labels    no 'a-team:displaced' label, so the Lead tells you every time it bumps a pitch out of Pitched, not just the first"
-board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
+labels    no 'pitch' label, so the team can't tell its pitches from tasks"
+board_labels pitch
 
 case_ "check reports a config it can't read, or one with no repo or project, as problems"
 before=$(cat "$TEAM")
@@ -8330,8 +8424,10 @@ refused_review "ready PR" "#912 is ready for review already"
 gh_pr 912 true
 gh_reviewing '.labels.nodes = [{name: "pitch"}]'
 refused_review "pitch" "reviewer reviews only the Dev's open task PRs"
-gh_reviewing '.labels.nodes = [{name: "a-team:customer"}]'
+gh_reviewing
+docs_pr_on_board on
 refused_review "docs PR" "reviewer reviews only the Dev's open task PRs"
+docs_pr_on_board off
 gh_reviewing '.body = "My own change"'
 refused_review "stakeholder's PR" "reviewer reviews only the Dev's open task PRs"
 gh_reviewing '.state = "CLOSED"'
@@ -8467,8 +8563,10 @@ gh_reviewing '.body = "My own change"'
 refused_pictures "stakeholder's PR" "dev puts pictures only on its own open task PRs" dev 912 "$WORK/save.png" "Save"
 gh_reviewing '.state = "MERGED"'
 refused_pictures "merged PR" "dev puts pictures only on its own open task PRs" dev 912 "$WORK/save.png" "Save"
-gh_reviewing '.labels.nodes = [{name: "a-team:customer"}]'
+gh_reviewing
+docs_pr_on_board on
 refused_pictures "docs PR" "dev puts pictures only on its own open task PRs" dev 912 "$WORK/save.png" "Save"
+docs_pr_on_board off
 gh_reviewing
 
 case_ "pictures --dry-run shows the body it would write and writes nothing"
@@ -8594,8 +8692,8 @@ run board demo depends dev 11 mentaldesk/style#84 released "needs the Mac word k
 same "exit" 0 "$STATUS"
 same "said" "#11 now waits for mentaldesk/style#84 to be released, and said why on #11" "$(cat "$OUT")"
 grep -q "^POST .*/issues/11/dependencies/blocked_by -F issue_id=9084" "$WRITES" || fail "depends upstream: no link in '$(cat "$WRITES")'"
-grep -q "issue edit 11 -R mentaldesk/demo --add-label a-team:upstream" "$WRITES" || fail "depends upstream: not labelled in '$(cat "$WRITES")'"
-grep -q "^label create a-team:upstream" "$WRITES" || fail "depends upstream: no label made in '$(cat "$WRITES")'"
+same "depends upstream" '["mentaldesk/style#84"]' "$(marks 11 | jq -c .upstream)"
+grep -q "label" "$WRITES" && fail "depends upstream: labelled in '$(cat "$WRITES")'"
 grep -qx "Blocked by mentaldesk/style#84, until released: needs the Mac word keys in MentalDesk.Tui" "$POSTED" ||
   fail "depends upstream: '$(cat "$POSTED")'"
 grep -qF '<!-- a-team:wait repo=mentaldesk/style n=84 until=released -->' "$POSTED" || fail "depends upstream: no wait in '$(cat "$POSTED")'"
@@ -8623,7 +8721,7 @@ touch "$BIN/link-refused"
 run board demo depends dev 11 mentaldesk/style#84 closed "needs it"
 same "refused link exit" 0 "$STATUS"
 grep -q "GitHub can't link mentaldesk/style#84" "$POSTED" || fail "refused link: no fallback in '$(cat "$POSTED")'"
-grep -q -- "--add-label a-team:upstream" "$WRITES" || fail "refused link: not labelled"
+same "refused link" '["mentaldesk/style#84"]' "$(marks 11 | jq -c .upstream)"
 rm "$BIN/link-refused"
 
 case_ "an upstream wait says how long it waits, in another repo, and is refused in one line otherwise"
@@ -8674,7 +8772,7 @@ upstream_items <<<"84 Issue CLOSED"
 run board demo free
 same "exit" 0 "$STATUS"
 same "said" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
-grep -q "issue edit 11 -R mentaldesk/demo --remove-label a-team:upstream" "$WRITES" || fail "closed: not unlabelled in '$(cat "$WRITES")'"
+same "closed" null "$(marks 11 | jq -c .upstream)"
 grep -qx "mentaldesk/style#84 has closed. No longer blocked." "$POSTED" || fail "closed: '$(cat "$POSTED")'"
 grep -qF '<!-- a-team:unwait repo=mentaldesk/style n=84 -->' "$POSTED" || fail "closed: no unwait in '$(cat "$POSTED")'"
 same "recorded" "dev no longer blocked by mentaldesk/style#84" "$(history_of 11 | head -1)"
@@ -8754,11 +8852,12 @@ case_ "undepend drops an upstream wait, its GitHub link, and the label once noth
 waiting_upstream
 waits <<<"mentaldesk/style#84 released"
 echo '[{"number": 84, "id": 9084, "repository_url": "https://api.github.com/repos/mentaldesk/style"}]' >"$BLOCKED"
-run board demo undepend dev 11 mentaldesk/style#84 "MentalDesk.Tui has it already"
+run board demo list
+KEEP_BOARD=1 run board demo undepend dev 11 mentaldesk/style#84 "MentalDesk.Tui has it already"
 same "exit" 0 "$STATUS"
 same "said" "#11 no longer waits on mentaldesk/style#84, and said why on #11" "$(cat "$OUT")"
 grep -q "DELETE .*/issues/11/dependencies/blocked_by/9084" "$WRITES" || fail "undepend upstream: '$(cat "$WRITES")'"
-grep -q -- "--remove-label a-team:upstream" "$WRITES" || fail "undepend upstream: still labelled"
+same "undepend upstream" null "$(marks 11 | jq -c .upstream)"
 grep -qF '<!-- a-team:unwait repo=mentaldesk/style n=84 -->' "$POSTED" || fail "undepend upstream: no unwait"
 run board demo undepend dev 11 mentaldesk/style#99 "why"
 failed "not waiting"
@@ -8773,14 +8872,14 @@ same "exit" 0 "$STATUS"
 same "upstream" '[{"number":11,"turn":"upstream","upstream":"style#84: merged, not released","reason":"waiting on style#84: merged, not released"}]' \
   "$(jq -c 'map(select(.number == 11) | {number, turn, upstream, reason})' "$OUT")"
 
-case_ "the Dev and the Lead record a wait on another repo's change, and the Dev doesn't label it blocked"
+case_ "the Dev and the Lead record a wait on another repo's change, and the Dev doesn't hold it"
 step=$(sed -n '/^3\. If it needs a change in another repo first/,/^4\./p' "$ROOT/roles/dev.md")
 grep -qF 'depends dev <n> <owner/repo>#<pr> released <package> "<why>"' <<<"$step" || fail "dev.md: no upstream wait in '$step'"
-grep -qF "Don't label it \`blocked\`" <<<"$step" || fail "dev.md: still labels it blocked"
+grep -qF "Don't hold it" <<<"$step" || fail "dev.md: still holds it"
 grep -qF 'depends lead <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"' "$ROOT/roles/lead.md" || fail "lead.md: no upstream wait"
 
 case_ "the Lead holds on another repo with depends, never blocked, and reads replies on the tasks it held"
-grep -qF 'Never hold a task on another repo with the `blocked` label' "$ROOT/roles/lead.md" || fail "lead.md: still holds on another repo with blocked"
+grep -qF 'Never hold a task on another repo' "$ROOT/roles/lead.md" || fail "lead.md: still holds on another repo"
 grep -qF 'feedback lead <task>' "$ROOT/roles/lead.md" || fail "lead.md: doesn't read replies on its holds"
 grep -qF 'unblock lead <task>' "$ROOT/roles/lead.md" || fail "lead.md: doesn't clear its holds"
 grep -qF 'unblock lead <n>' "$ROOT/tasks/lead.md" || fail "task prompt: Lead not authorised to clear its holds"
@@ -8920,7 +9019,9 @@ $2 20 Ranked high
 $2 21 Unranked, and another team waits on it
 ITEMS
   other_team app mentaldesk/app app-bot
-  echo '[{"number": 5}]' >"$WAITING_ON"
+  (source "$ROOT/scripts/common.sh"; history_sql "DELETE FROM board WHERE team = 'app';
+    INSERT INTO board (team, item, node, status, since, content, marks) VALUES ('app', 5, 'I_5', 'Ready',
+      '2026-10-10T09:00:00Z', '{\"type\": \"Issue\"}', '{\"upstream\": [\"mentaldesk/demo#21\"]}');" >/dev/null)
   gh_thread <<<'comment 2026-10-10T09:00:00Z app-bot[bot] 0 Blocked by mentaldesk/demo#21.\n\n<!-- a-team:wait repo=mentaldesk/demo n=21 until=released -->'
 }
 

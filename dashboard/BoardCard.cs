@@ -16,7 +16,7 @@ public enum CardKind
 /// the column it's in.</summary>
 public sealed record BoardCard(
     string Team, int Number, string Title, string Url, string Status, string Priority, CardKind Kind,
-    DateTimeOffset? Since, int? Parent = null, bool Blocked = false, LastRun? LastRun = null)
+    DateTimeOffset? Since, int? Parent = null, bool Blocked = false, LastRun? LastRun = null, string Facts = "")
 {
     /// <summary>The mark its chip wears: Work's icon for the card in a Nerd Font, and a one-cell shape otherwise.</summary>
     public string Mark(IconStyle style) => style == IconStyle.NerdFont
@@ -65,7 +65,7 @@ public sealed record BoardCard(
                         Text(item, "status"), Text(item, "priority"), KindOf(Text(item, "kind")), Time(item, "since"),
                         Numbered(item, "parent"),
                         item.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True,
-                        LastRunOf(item)))
+                        LastRunOf(item), Text(item, "facts")))
             ];
         }
         catch (JsonException)

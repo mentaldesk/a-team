@@ -69,6 +69,15 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void Under_the_title_is_where_the_item_stands_and_what_a_team_keeps_of_it()
+    {
+        var idea = Item with { Status = "Idea", Facts = "Lead recommends Medium · skipped" };
+        using var dialog = new ReaderDialog(idea, new IssueBody("A seed"), () => null);
+
+        Assert.Equal("Idea · Priority none · Lead recommends Medium · skipped", dialog.Standing);
+    }
+
+    [Fact]
     public void A_pitch_s_question_is_the_Lead_s()
     {
         var question = Item with { Pitch = true, Question = "## Needs your answer" };
@@ -691,7 +700,7 @@ public class ReaderDialogTests
     [Fact]
     public void The_scrolling_keys_still_scroll_the_body_with_the_ranks_showing()
     {
-        using var dialog = Ranking(Long(), Rank.Low, height: 12);
+        using var dialog = Ranking(Long(), Rank.Low, height: 13);
 
         Assert.True(dialog.NewKeyDownEvent(Key.CursorDown));
         Assert.Equal(1, dialog.Body.Top);
@@ -837,7 +846,7 @@ public class ReaderDialogTests
         Assert.True(dialog.CommentShown);
         Assert.True(dialog.Field.HasFocus);
         Assert.True(dialog.Field.WordWrap);
-        Assert.Equal(new Rectangle(0, 0, ReaderPanes.CommentWidth, dialog.Body.SuperView!.Frame.Height),
+        Assert.Equal(new Rectangle(0, 1, ReaderPanes.CommentWidth, dialog.Body.SuperView!.Frame.Height),
             dialog.Field.SuperView!.Frame);
         Assert.Equal(ReaderPanes.CommentWidth, dialog.Body.SuperView.Frame.X);
         Assert.True(dialog.HistoryShown);

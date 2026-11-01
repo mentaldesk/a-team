@@ -110,24 +110,33 @@ PRIORITY=${PRIORITY:-Priority}
 STAKEHOLDERS=$(jq -c '.stakeholders // [.reviewer // empty]' "$CONFIG")
 
 # The labels setup creates, as "<name>|<colour>|<description>|<what goes wrong without it>".
-LABELS="pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it|the team can't tell its pitches from tasks
-a-team:dev|0e8a16|Claimed by the a-team Dev|the Dev can't claim tasks
-a-team:customer|1d76db|The a-team Customer lead's docs PR|the Customer lead can't put its docs PR in front of you
-a-team:idea|c5def5|Found by the a-team Lead; give it a Priority to have it pitched|the Lead can't flag the ideas it finds for you
-a-team:skipped|d4c5f9|The Lead found nothing to pitch here; comment on it to put it back in the running|the Lead can't pass over an idea, and keeps coming back to it
-a-team:displaced|d4c5f9|Displaced from Pitched once already; its later moves go unannounced|the Lead tells you every time it bumps a pitch out of Pitched, not just the first
-a-team:shelved|d4c5f9|You said Not now; the Lead won't pitch it again until the date on it|the Lead pitches again a pitch you've just said Not now to
-blocked|fbca04|Waiting on another issue|the Dev can't mark a task that waits on your answer"
-# The Lead's recommended rank for an Idea, in the Priority field's colours. `recommend` creates any that are missing.
-RANK_LABELS="rank:urgent|c1408d|The a-team Lead recommends Urgent; your Priority still decides
-rank:high|d4323c|The a-team Lead recommends High; your Priority still decides
-rank:medium|9a6700|The a-team Lead recommends Medium; your Priority still decides
-rank:low|21833d|The a-team Lead recommends Low; your Priority still decides"
-FIX_LABEL="a-team:fix|d73a4a|Makes the red default branch green again; the Dev takes it first"
+LABELS="pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it|the team can't tell its pitches from tasks"
 
-# recommended: the rank the Lead recommends for an item, from its rank:* label, or null.
-RECOMMENDED='def recommended: [.labels[]? | {"rank:urgent": "Urgent", "rank:high": "High",
-    "rank:medium": "Medium", "rank:low": "Low"}[.] // empty] | first;'
+# What a-team keeps of an item beyond Status and Priority, in the record's `marks`. Before, each was a label on the
+# issue: state_label says which labels those were, and marks_of reads them, for the labels an upgrade carries over.
+MARKS='def state_label: startswith("a-team:") or startswith("rank:") or startswith("theme: ") or . == "blocked";
+  def marks_of: reduce .[] as $l ({};
+    if $l == "blocked" then .held = {at: null, by: null}
+    elif $l == "a-team:shelved" then .shelved = {until: null, priority: null}
+    elif $l | startswith("a-team:") then .[$l | ltrimstr("a-team:")] = true
+    elif $l | startswith("rank:") then .rank = ($l | ltrimstr("rank:") | (.[:1] | ascii_upcase) + .[1:])
+    elif $l | startswith("theme: ") then .theme = ($l | ltrimstr("theme: "))
+    else . end);'
+RANKS="urgent high medium low"
+
+# facts: what an item's marks say, as the app shows it under the title; "" for none.
+FACTS='def facts: .marks as $m | [
+    (if $m.rank then "Lead recommends \($m.rank)" else empty end),
+    (if $m.theme then "theme: \($m.theme)" else empty end),
+    (if $m.shelved.until then "shelved until \($m.shelved.until | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0"))"
+     elif $m.shelved then "shelved" else empty end),
+    (if $m.skipped then "skipped" else empty end),
+    (if $m.held then "held" else empty end),
+    (if ($m.upstream | type) == "array" and $m.upstream != [] then "waiting on \($m.upstream | join(", "))"
+     elif $m.upstream then "waiting on another repo" else empty end)] | join(" · ");'
+
+# recommended: the rank the Lead recommends for an item, or null.
+RECOMMENDED='def recommended: .marks.rank;'
 
 # A stakeholder comment is answered once a run has left a 👀 on it. ACK_FROM is when that started;
 # older comments keep the marker-time watermark, so an upgrade doesn't reopen answered history.
@@ -273,9 +282,10 @@ check_role() {
   case "$1" in lead | dev | customer | reviewer) ;; *) die "unknown role '$1' (lead | dev | customer | reviewer)" ;; esac
 }
 
-own_label() {
-  case "$1" in lead) echo pitch ;; dev) echo a-team:dev ;; customer) echo a-team:customer ;; esac
-}
+# own($role): whether an item is that role's: a pitch is the Lead's, a claimed task the Dev's, the docs PR the Customer lead's.
+OWN='def own($role): if $role == "lead" then (.labels | index("pitch")) != null
+  elif $role == "dev" then .marks.dev == true elif $role == "customer" then .marks.customer == true else false end;'
+
 
 customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
 
@@ -508,7 +518,7 @@ reconcile() {
                  \(.ranked | q), \(.since | q), \(.content | tojson | q), \(.item | q), \(.shown | q), \(.ranked // "none" | q));"]
            + [$known[] | (.ranked // "none") as $r
                | "UPDATE board SET content = \(.content | tojson | q), node = \(.node | q)\(
-               if .item then ", mirror = \(.item | q)" elif $mirror != "" then ", mirror = NULL, mirrored_status = NULL" else "" end)\(
+               if .item then ", mirror = \(.item | q)" elif $mirror != "" then ", mirror = NULL, mirrored_status = NULL, mirrored_rank = NULL, mirrored_theme = NULL" else "" end)\(
                if .shown != null and ($adopt or .row.mirrored_status == null or .shown == .row.status)
                then ", mirrored_status = \(.shown | q)" else "" end)\(
                if .content.type == "Issue" and ($adopt or .row.mirrored_priority == null or $r == (.row.priority // "none"))
@@ -545,22 +555,86 @@ reconcile() {
 
 # drag_refused <n> <from> <to>: why a stakeholder may not move #n so; fails, saying nothing, when they may.
 drag_refused() {
-  local labels
+  local it
   is_state "$3" || { echo "'$3' isn't one of the board's states"; return 0; }
-  labels=$(history_sql "SELECT content FROM board WHERE team = $(sql "$TEAM") AND item = $1;" | jq -c '.labels // []')
-  jq -e 'index("pitch") or index("a-team:dev") or index("a-team:customer")' <<<"$labels" >/dev/null || return 1
+  it=$(history_sql -json "SELECT content, marks FROM board WHERE team = $(sql "$TEAM") AND item = $1;" |
+    jq -c '.[0] | {labels: (.content | fromjson | .labels // []), marks: (.marks // "{}" | fromjson)}')
+  jq -e '(.labels | index("pitch")) or .marks.dev or .marks.customer' <<<"$it" >/dev/null || return 1
   case "$2>$3" in
     *">Idea" | *">Done" | "Pitched>Approved") return 1 ;;
-    *">Ready") jq -e 'index("pitch")' <<<"$labels" >/dev/null || return 1 ;;
+    *">Ready") jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || return 1 ;;
   esac
   echo "$2 → $3 is the team's move, not a stakeholder's"
+}
+
+# mark <n> <key> <JSON value|null>: sets, or with null clears, one of #n's marks in the record.
+mark() {
+  local to
+  to="json_set(COALESCE(marks, '{}'), '\$.$2', json($(sql "$3")))"
+  [ "$3" != null ] || to="json_remove(COALESCE(marks, '{}'), '\$.$2')"
+  write "$([ "$3" = null ] && echo "clear #$1's $2" || echo "mark #$1 $2 $3")" \
+    history_sql "UPDATE board SET marks = $to WHERE team = $(sql "$TEAM") AND item = $1;" >/dev/null
+}
+
+unlabel() { gh api -X DELETE "repos/$REPO/issues/$1/labels/$(jq -rn --arg l "$2" '$l | @uri')" >/dev/null 2>&1; }
+
+# adopt_labels: carries the a-team labels on open items into the record, then takes them off on GitHub. A `blocked`
+# keeps who added it and when, and a shelve the date in its hidden comment.
+adopt_labels() {
+  local rows held='{}' query='' n labels marks shelf refs label kept
+  rows=$(history_sql -json "SELECT item, marks, content FROM board WHERE team = $(sql "$TEAM") AND status != 'Done'
+      AND json_extract(content, '$.shut') IS NULL;" |
+    jq -sc "$MARKS"'(.[0] // []) | map((.content | fromjson) as $c | select(any($c.labels[]?; state_label))
+      | {n: .item, marks: ((.marks // "{}") | fromjson), labels: ($c.labels | map(select(state_label))),
+         kept: ($c.labels | map(select(state_label | not)))})')
+  [ "$rows" != '[]' ] || return 0
+  for n in $(jq -r '.[] | select(.labels | index("blocked")) | .n' <<<"$rows"); do
+    query+=" x$n: issueOrPullRequest(number: $n) { ... on Issue { timelineItems(last: 50, itemTypes: [LABELED_EVENT]) {
+      nodes { ... on LabeledEvent { createdAt label { name } actor { __typename login } } } } } }"
+  done
+  if [ -n "$query" ]; then
+    held=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="query HeldSince(\$owner: String!, \$name: String!) {
+        repository(owner: \$owner, name: \$name) {$query} }" 2>/dev/null |
+      jq -c --argjson stakeholders "$STAKEHOLDERS" "def login: $LOGIN;"'[.data.repository // {} | to_entries[] | select(.value != null)
+        | {key: (.key | ltrimstr("x")), value: ([.value.timelineItems.nodes[]? | select(.label.name == "blocked")] | max_by(.createdAt)
+            | if . == null then {at: null, by: null}
+              else {at: .createdAt, by: (.actor | login | if IN($stakeholders[]) then "you" else "team" end)} end)}]
+        | from_entries') || held='{}'
+  fi
+  while IFS=$'\t' read -r n labels kept; do
+    shelf=null
+    if jq -e 'index("a-team:shelved")' <<<"$labels" >/dev/null; then
+      shelf=$(shelved "$n" 2>/dev/null | jq -c '{until, priority}') || shelf=
+      shelf=${shelf:-null}
+    fi
+    refs=null
+    if jq -e 'index("a-team:upstream")' <<<"$labels" >/dev/null; then
+      refs=$(waits_on "$n" 2>/dev/null | jq -c 'map(.ref) | select(. != [])') || refs=
+      refs=${refs:-null}
+    fi
+    marks=$(jq -c --argjson held "$held" --argjson shelf "$shelf" --argjson refs "$refs" --arg n "$n" --argjson labels "$labels" "$MARKS"'
+      .marks * ($labels | marks_of)
+      | if .held then .held = ($held[$n] // .held) else . end
+      | if .upstream and $refs != null then .upstream = $refs else . end
+      | if .shelved and $shelf != null then .shelved = $shelf else . end' <<<"$(jq -c --argjson n "$n" '.[] | select(.n == $n)' <<<"$rows")")
+    history_sql "UPDATE board SET marks = $(sql "$marks") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
+    while IFS= read -r label; do
+      write "unlabel #$n $label" unlabel "$n" "$label" || continue 2
+    done < <(jq -r '.[]' <<<"$labels")
+    history_sql "UPDATE board SET content = json_set(content, '$.labels', json($(sql "$kept")))
+      WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
+  done < <(jq -r '.[] | [.n, (.labels | tojson), (.kept | tojson)] | @tsv' <<<"$rows")
 }
 
 # board_ready: moves the board over from the mirror on the first run, and copies it all to a mirror newly pointed at.
 SEEN=
 board_ready() {
-  local was nodes
+  local was nodes column
   mkdir -p "$STATE"
+  for column in marks mirrored_rank mirrored_theme; do
+    history_sql "SELECT name FROM pragma_table_info('board');" | grep -qx "$column" ||
+      history_sql "ALTER TABLE board ADD COLUMN $column TEXT;" >/dev/null
+  done
   was=$(history_sql -json "SELECT project FROM boards WHERE team = $(sql "$TEAM");" | jq -rs '.[0][0].project // "-"')
   if [ "$was" = - ]; then
     if [ -n "$MIRROR" ]; then
@@ -571,17 +645,20 @@ board_ready() {
     history_sql "INSERT INTO boards (team, project, read) VALUES ($(sql "$TEAM"), $(sql "$MIRROR"),
       $([ -n "$MIRROR" ] && sql "$(date -u +%FT%TZ)" || echo NULL));" >/dev/null
   elif [ "$was" != "$MIRROR" ]; then
-    history_sql "UPDATE board SET mirror = NULL, mirrored_status = NULL, mirrored_priority = NULL WHERE team = $(sql "$TEAM");
+    history_sql "UPDATE board SET mirror = NULL, mirrored_status = NULL, mirrored_priority = NULL, mirrored_rank = NULL,
+      mirrored_theme = NULL WHERE team = $(sql "$TEAM");
       UPDATE boards SET project = $(sql "$MIRROR"), read = NULL, failed = NULL, retry = NULL WHERE team = $(sql "$TEAM");" >/dev/null
   fi
 }
 
 # board_sync: once a command, reads the open items, and every READ_EVERY the whole mirror, then catches the mirror up.
-# Where GitHub can't be read, the record stands as it is. With CACHED set, it only moves the board over.
+# Where GitHub can't be read, the record stands as it is. With CACHED set, it only moves the board over and carries
+# any a-team labels into it.
 board_sync() {
   [ ! -e "$SYNCED" ] || return 0
   : >"$SYNCED"
   board_ready
+  adopt_labels
   [ -z "$CACHED" ] || return 0
   local seen=${SEEN:-[]} nodes stale ids
   if [ -n "$MIRROR" ] && [ -z "$SEEN" ]; then
@@ -596,16 +673,19 @@ board_sync() {
   ids=$(history_sql -json "SELECT node FROM board WHERE team = $(sql "$TEAM") AND status != 'Done' AND node != '';" |
     jq -sc --argjson seen "$seen" '(.[0] // []) | map(.node) | unique - $seen')
   [ "$ids" = '[]' ] || { nodes=$(fresh_nodes "$ids" 2>/dev/null) && reconcile "$nodes"; } || true
+  adopt_labels
   mirror_push
 }
 
 # items [open]: the board's items, as the record has them; `open` leaves Done off.
 items() {
   board_sync
-  history_sql -json "SELECT item, node, status, priority, since, content, mirror FROM board
+  history_sql -json "SELECT item, node, status, priority, since, content, mirror, marks FROM board
     WHERE team = $(sql "$TEAM")$([ "${1:-}" = open ] && echo " AND status != 'Done'") ORDER BY rowid;" |
-    jq -s '(.[0] // []) | map((.content | fromjson) as $c
-      | {id: (.mirror // ""), number: .item, node, type: $c.type, title: $c.title, url: $c.url, labels: ($c.labels // []),
+    jq -s "$MARKS"'(.[0] // []) | map((.content | fromjson) as $c
+      | {id: (.mirror // ""), number: .item, node, type: $c.type, title: $c.title, url: $c.url,
+         labels: ($c.labels // [] | map(select(state_label | not))),
+         marks: (if .marks then .marks | fromjson else $c.labels // [] | marks_of end),
          blockedBy: ($c.blockedBy // 0), priority, since, parent: $c.parent, status}
         + (if $c.closed then {closed: $c.closed} else {} end) + (if $c.dependabot then {dependabot: true} else {} end))'
 }
@@ -757,14 +837,21 @@ snapshot() {
 project_raw() {
   gql "query(\$owner: String!, \$number: Int!, \$field: String!) {
       $KIND(login: \$owner) { projectV2(number: \$number) { id title
-        field(name: \$field) { ... on ProjectV2SingleSelectField { id options { id name color description } } } } } }" \
+        field(name: \$field) { ... on ProjectV2SingleSelectField { id options { id name color description } } }
+        rank: field(name: \"$RANK_FIELD\") { ... on ProjectV2Field { id } }
+        theme: field(name: \"$THEME_FIELD\") { ... on ProjectV2Field { id } } } } }" \
     -F field="$FIELD" "$@"
 }
 
 project_meta() { project_raw --jq ".data.$KIND.projectV2"; }
 
-# LAGGING: an item whose Status or Priority the mirror doesn't show yet.
-LAGGING="(mirror IS NULL OR mirrored_status IS NOT status OR mirrored_priority IS NOT COALESCE(priority, 'none'))"
+# The mirror's text fields for the Lead's recommended rank and a pitch's theme.
+RANK_FIELD="Lead rank" THEME_FIELD=Theme
+
+# LAGGING: an item whose Status, Priority, Lead rank or theme the mirror doesn't show yet.
+LAGGING="(mirror IS NULL OR mirrored_status IS NOT status OR mirrored_priority IS NOT COALESCE(priority, 'none')
+  OR COALESCE(mirrored_rank, '') IS NOT COALESCE(json_extract(marks, '$.rank'), '')
+  OR COALESCE(mirrored_theme, '') IS NOT COALESCE(json_extract(marks, '$.theme'), ''))"
 
 # set_status <n> <status>: moves #n on the board, then on its mirror.
 set_status() {
@@ -800,13 +887,15 @@ mirror_failed() {
 # mirror_push [<n>]: copies #n, or once any retry is due up to 20 items, to the mirror; a failure is kept for its lane.
 mirror_push() {
   [ -n "$MIRROR" ] && [ -z "$DRY_RUN" ] || return 0
-  local rows meta pfield err n node status priority mirror shown ranked type option id
+  local rows meta pfield err n node status priority mirror shown ranked type option id key value was field
   if [ -z "${1:-}" ]; then
     [ "$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $(sql "$TEAM") AND retry > $(sql "$(date -u +%FT%TZ)");")" -eq 0 ] ||
       return 0
   fi
   rows=$(history_sql -json "SELECT item, node, status, COALESCE(priority, 'none') AS priority, mirror,
-      mirrored_status AS shown, mirrored_priority AS ranked, json_extract(content, '$.type') AS type FROM board
+      mirrored_status AS shown, mirrored_priority AS ranked, json_extract(content, '$.type') AS type,
+      COALESCE(json_extract(marks, '$.rank'), '') AS rank, COALESCE(mirrored_rank, '') AS shown_rank,
+      COALESCE(json_extract(marks, '$.theme'), '') AS theme, COALESCE(mirrored_theme, '') AS shown_theme FROM board
     WHERE team = $(sql "$TEAM") AND node != '' AND $LAGGING${1:+ AND item = $1}
     ORDER BY status = 'Done', since DESC LIMIT 20;" | jq -c '.[]') || return 0
   [ -n "$rows" ] || { [ -n "${1:-}" ] || history_sql "UPDATE boards SET failed = NULL, retry = NULL WHERE team = $(sql "$TEAM");" >/dev/null; return 0; }
@@ -863,6 +952,34 @@ mirror_push() {
       fi
       history_sql "UPDATE board SET mirrored_priority = $(sql "$priority") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
     fi
+    for key in rank theme; do
+      value=$(jq -r --arg k "$key" '.[$k]' <<<"$row")
+      was=$(jq -r --arg k "shown_$key" '.[$k]' <<<"$row")
+      [ "$value" != "$was" ] || continue
+      field=$(jq -r --arg k "$key" '.[$k].id // empty' <<<"$meta")
+      if [ -z "$field" ]; then
+        [ -n "$value" ] || { history_sql "UPDATE board SET mirrored_$key = '' WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null; continue; }
+        field=$(gh api graphql -F project="$(jq -r .id <<<"$meta")" -f name="$([ "$key" = rank ] && echo "$RANK_FIELD" || echo "$THEME_FIELD")" \
+          -f query='mutation($project: ID!, $name: String!) {
+            createProjectV2Field(input: {projectId: $project, dataType: TEXT, name: $name}) {
+              projectV2Field { ... on ProjectV2Field { id } } } }' --jq .data.createProjectV2Field.projectV2Field.id 2>"$err") || break
+        [ -n "$field" ] && [ "$field" != null ] || { echo "couldn't add a $key field to $OWNER project $NUMBER" >"$err"; break; }
+        meta=$(jq -c --arg k "$key" --arg id "$field" '.[$k] = {id: $id}' <<<"$meta")
+      fi
+      if [ -n "$value" ]; then
+        gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$mirror" -F field="$field" -f text="$value" -f query='
+          mutation($project: ID!, $item: ID!, $field: ID!, $text: String!) {
+            updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field,
+                                                  value: {text: $text}}) { clientMutationId } }' >/dev/null 2>"$err" || break
+      else
+        gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$mirror" -F field="$field" -f query='
+          mutation($project: ID!, $item: ID!, $field: ID!) {
+            clearProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field}) {
+              clientMutationId } }' >/dev/null 2>"$err" || break
+      fi
+      history_sql "UPDATE board SET mirrored_$key = $(sql "$value") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
+    done
+    [ ! -s "$err" ] || break
     : >"$err"
   done <<<"$rows"
   if [ -s "$err" ]; then
@@ -913,8 +1030,8 @@ idea() {
   return 1
 }
 
-# shelved <n>: the newest Not now on #n, as {until, priority}, or nothing. Only a stakeholder or the team
-# can have written it.
+# shelved <n>: the newest Not now on #n from before its date moved into the record, as {until, priority}, or
+# nothing. Only a stakeholder or the team can have written it.
 shelved() {
   gh api --paginate "repos/$REPO/issues/$1/comments" |
     jq -s --argjson stakeholders "$STAKEHOLDERS" --arg bot "$BOT" '
@@ -925,23 +1042,20 @@ shelved() {
 
 # cooling <idea>: inside the cooldown a Not now gave it, at the Priority it had then.
 cooling() {
-  local shelf
-  jq -e '.labels | index("a-team:shelved")' <<<"$1" >/dev/null || return 1
-  shelf=$(shelved "$(jq -r .number <<<"$1")")
-  [ -n "$shelf" ] && jq -e --argjson idea "$1" --arg today "$(date +%F)" \
-    '.until > $today and .priority == $idea.priority' <<<"$shelf" >/dev/null
+  jq -e --arg today "$(date +%F)" '.marks.shelved.until // "" | . > $today' <<<"$1" >/dev/null &&
+    jq -e '.marks.shelved.priority == .priority' <<<"$1" >/dev/null
 }
 
 # pitchable <idea>: a stakeholder's own Idea, or one a stakeholder has prioritised, and not one the Lead
 # has skipped that a stakeholder hasn't since commented on, nor one still cooling after a Not now.
 pitchable() {
-  if jq -e '.labels | index("a-team:skipped")' <<<"$1" >/dev/null &&
+  if jq -e '.marks.skipped' <<<"$1" >/dev/null &&
     [ "$(unanswered_feedback lead "$(jq -r .number <<<"$1")" | jq length)" -eq 0 ]; then
     return 1
   fi
   cooling "$1" && return 1
   if [ "$(jq -r .priority <<<"$1")" = null ] &&
-    { jq -e '.labels | index("a-team:idea")' <<<"$1" >/dev/null ||
+    { jq -e '.marks.idea' <<<"$1" >/dev/null ||
       agent_written "$(jq -r .number <<<"$1")"; }; then
     return 1
   fi
@@ -958,7 +1072,7 @@ unthemed() {
       jq -s 'add // [] | map(.item)')
   fi
   jq -c --argjson recent "$recent" --argjson none "$none" '[.[] | select(.type == "Issue" and (.labels | index("pitch"))
-    and all(.labels[]; startswith("theme: ") | not) and .closed != "NOT_PLANNED"
+    and .marks.theme == null and .closed != "NOT_PLANNED"
     and (.status != "Done" or (.number | IN($recent[]))) and (.number | IN($none[]) | not)) | .number]' <<<"$1"
 }
 
@@ -970,10 +1084,7 @@ pitchable_idea() {
     pitchable "$candidate" || continue
     if [ -z "$chosen" ]; then
       chosen=$candidate
-      if jq -e '.labels | index("a-team:shelved")' <<<"$chosen" >/dev/null; then
-        chosen=$(jq --argjson shelf "$(shelved "$(jq -r .number <<<"$chosen")" | jq -s 'first')" \
-          'if $shelf then . + {shelved: $shelf.until} else . end' <<<"$chosen")
-      fi
+      chosen=$(jq 'if .marks.shelved.until then . + {shelved: .marks.shelved.until} else . end' <<<"$chosen")
       jq -e "$RECOMMENDED"'recommended' <<<"$chosen" >/dev/null || break
       continue
     fi
@@ -1142,7 +1253,6 @@ gated_talk() {
   for n in $(jq -r '.[].number' <<<"$1"); do
     query+=" x$n: issueOrPullRequest(number: $n) {
       ... on Issue { $said subIssuesSummary { total completed }
-        timelineItems(last: 50, itemTypes: [LABELED_EVENT]) { nodes { ... on LabeledEvent { createdAt label { name } actor { __typename login } } } }
         closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { $reviewed } } }
       ... on PullRequest { $reviewed } }"
   done
@@ -1210,13 +1320,9 @@ gated_tasks() {
       | from_entries' <<<"$1"
 }
 
-# gated_blocked <talk>: when each of those items was last labelled `blocked`, and by whom, as {"<n>": {at, by}}.
+# gated_blocked <items>: when each of those items was held, and by whom, as {"<n>": {at, by}}.
 gated_blocked() {
-  jq "def login: $LOGIN;"'[.data.repository | to_entries[].value | select(. != null)
-       | {key: (.number | tostring),
-          value: ([.timelineItems.nodes[]? | select(.label.name == "blocked")] | max_by(.createdAt)
-                  | if . == null then null else {at: .createdAt, by: (.actor | login)} end)}
-       | select(.value != null)] | from_entries' <<<"$1"
+  jq 'map(select(.marks.held.at != null) | {key: "\(.number)", value: .marks.held}) | from_entries' <<<"$1"
 }
 
 # turns <items> <comments> <prs>: each item with its PR, whose move it is and why. A gate is the
@@ -1275,7 +1381,7 @@ turns() {
 # Dev's turn once a stakeholder replies, and `unread` the newest reply no run has left a 👀 on.
 # The Dev asks just before labelling `blocked`, hence ASKED_BEFORE. A stakeholder who labelled it is holding it.
 ASKED_BEFORE=600
-YOURS='def yours: .at >= $appFrom and (.by | IN($stakeholders[]));'
+YOURS='def yours: .by == "you";'
 questions() {
   jq -n --argjson items "$1" --argjson comments "$2" --argjson blocked "$3" --argjson stakeholders "$STAKEHOLDERS" \
     --argjson before "$ASKED_BEFORE" --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID$SINCE$YOURS"'
@@ -1434,17 +1540,19 @@ with_section() {
     END { if (!placed) { seam = 1; emit(ENVIRON["SECTION"]) } }'
 }
 
-# task_pr <pr>: PR <pr>'s state, draft, body, labels and comments, or nothing when it isn't a PR.
+# task_pr <pr>: PR <pr>'s state, draft, body, labels and comments, and whether it's the docs PR, or nothing when it
+# isn't a PR.
 task_pr() {
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
     query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
       pullRequest(number: $n) { state isDraft body labels(first: 20) { nodes { name } }
         comments(last: 100) { nodes { body author { __typename login } } } } } }' 2>/dev/null |
-    jq -c '.data.repository.pullRequest // empty' || true
+    jq -c --argjson marks "$(item "$1" | jq -sc '.[0].marks // {}')" \
+      '.data.repository.pullRequest // empty | . + {customer: ($marks.customer // false)}' || true
 }
 
 DEV_TASK_PR='.state == "OPEN" and ((.body // "") | contains("<!-- a-team:dev -->"))
-  and ([.labels.nodes[].name] | index("pitch") or index("a-team:customer") | not)'
+  and ([.labels.nodes[].name] | index("pitch") | not) and (.customer | not)'
 
 # git_post <path> <jq filter> [jq args...]: POST to the repo's git database, printing the new object's sha.
 git_post() {
@@ -1525,8 +1633,7 @@ depend_note() {
   printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
 }
 
-# A task waiting on another repo carries UPSTREAM_LABEL, and each wait is a marker in one of the team's comments on it.
-UPSTREAM_LABEL=a-team:upstream
+# A task waiting on another repo is marked `upstream`, and each wait is a marker in one of the team's comments on it.
 UPSTREAM_REF='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$'
 wait_marker() { printf '<!-- a-team:%s repo=%s n=%s%s%s -->' "$1" "$2" "$3" "${4:+ until=$4}" "${5:+ package=$5}"; }
 
@@ -1693,8 +1800,9 @@ holding() {
     [ -f "$config" ] || continue
     repo=$(jq -r '.repo // empty' "$config" 2>/dev/null) bot=$(jq -r '.app.slug // empty' "$config" 2>/dev/null)
     [ -n "$repo" ] && [ -n "$bot" ] && [ "$(tr '[:upper:]' '[:lower:]' <<<"$repo")" != "$(tr '[:upper:]' '[:lower:]' <<<"$REPO")" ] || continue
-    for n in $(gh api "repos/$repo/issues?labels=$UPSTREAM_LABEL&state=open&per_page=100" \
-      --jq '.[] | select(.pull_request == null) | .number' 2>/dev/null); do
+    for n in $(history_sql "SELECT item FROM board WHERE team = $(sql "$(basename "$config" .json)") AND status != 'Done'
+        AND json_extract(content, '$.type') = 'Issue' AND (json_extract(marks, '$.upstream') IS NOT NULL
+          OR (marks IS NULL AND EXISTS (SELECT 1 FROM json_each(content, '$.labels') WHERE value = 'a-team:upstream')));" 2>/dev/null); do
       named=$(jq -c --argjson was "$named" --arg repo "$REPO" '$was + [.[] | select((.repo | ascii_downcase) == ($repo | ascii_downcase)) | .n]' \
         <<<"$(waits_on "$n" "$repo" "${bot}[bot]" 2>/dev/null || echo '[]')")
     done
@@ -1751,7 +1859,7 @@ own_task() {
 # own_docs <role> <n>: the Customer lead touches only its own docs PR.
 own_docs() {
   [ "$1" = customer ] || return 0
-  item "$2" | jq -e '.labels | index("a-team:customer")' >/dev/null ||
+  item "$2" | jq -e '.marks.customer' >/dev/null ||
     die "customer only touches its own docs PR (#$2 isn't it)"
 }
 
@@ -1773,23 +1881,23 @@ merge() {
   fi
 }
 
-BLOCKED='((.labels | index("blocked")) or (.labels | index("a-team:upstream")) or .blockedBy > 0)'
+BLOCKED='(.marks.held or .marks.upstream or .blockedBy > 0)'
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
 STARTABLE="$READY_TASK and ($BLOCKED | not)"
 UNSTARTABLE="$READY_TASK and $BLOCKED"
-# Ready tasks labelled `blocked`: handed back with a question, or held by a stakeholder.
-HELD="$READY_TASK and (.labels | index(\"blocked\"))"
+# Held Ready tasks: handed back with a question, or held by the Lead or a stakeholder.
+HELD="$READY_TASK and .marks.held"
 # Ready tasks waiting on a change in another repo.
-UPSTREAM_HELD="$READY_TASK and (.labels | index(\"a-team:upstream\"))"
+UPSTREAM_HELD="$READY_TASK and .marks.upstream"
 # Tasks In review waiting on a change in another repo, which stay at the stakeholder's gate.
-UPSTREAM_REVIEWED='.status == "In review" and .type == "Issue" and (.labels | index("a-team:upstream"))'
+UPSTREAM_REVIEWED='.status == "In review" and .type == "Issue" and .marks.upstream'
 # A task that makes a red default branch green again.
-FIX='(.labels | index("a-team:fix") != null)'
+FIX='(.marks.fix // false)'
 # A pitch the Lead may file tasks under.
 FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "Building")'
 # The Dev's tasks that take up one of wip.worktrees.
-WORKING='(.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
+WORKING='.marks.dev and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
 case "$CMD" in
   list)
@@ -1806,18 +1914,18 @@ case "$CMD" in
     role=$1
     shift
     check_role "$role"
-    items | jq --arg label "$(own_label "$role")" \
-      --argjson want "$(if [ $# -gt 0 ]; then printf '%s\n' "$@" | jq -R . | jq -s .; else echo null; fi)" '
-      map(select((.labels | index($label)) and ($want == null or (.status as $s | $want | index($s)))))'
+    items | jq --arg role "$role" \
+      --argjson want "$(if [ $# -gt 0 ]; then printf '%s\n' "$@" | jq -R . | jq -s .; else echo null; fi)" "$OWN"'
+      map(select(own($role) and ($want == null or (.status as $s | $want | index($s)))))'
     ;;
 
   wip)
     items | jq "def open_blocked: .status != \"Done\" and $BLOCKED;"'
       def counts: group_by(.status) | map({key: .[0].status, value: length}) | from_entries;
       {pitches: map(select(.labels | index("pitch"))) | counts,
-       dev: (map(select(.labels | index("a-team:dev")))
+       dev: (map(select(.marks.dev))
          | (map(select(open_blocked | not)) | counts) + {blocked: map(select(open_blocked)) | length}),
-       stakeholders: map(select((.labels | index("pitch") or index("a-team:dev") or index("a-team:customer")) | not))
+       stakeholders: map(select(((.labels | index("pitch")) or .marks.dev or .marks.customer) | not))
          | counts}'
     ;;
 
@@ -1843,7 +1951,7 @@ case "$CMD" in
     [ "$used" -lt "$limit" ] || { [ "$used" -lt $((limit + 1)) ] && jq -e ".priority == \"Urgent\" or $FIX" <<<"$it" >/dev/null; } ||
       die "no free worktree for #$(jq -r .number <<<"$it") ($used in use, wip.worktrees is $limit)"
     n=$(jq -r .number <<<"$it")
-    write "label #$n a-team:dev" gh issue edit "$n" -R "$REPO" --add-label a-team:dev >/dev/null
+    mark "$n" dev true
     set_status "$(jq -r .number <<<"$it")" "In progress"
     record dev "$n" "Ready → In progress"
     jq -c '{number, title}' <<<"$it"
@@ -1855,11 +1963,11 @@ case "$CMD" in
     count() { jq "[.[] | select($1)] | length" <<<"$all"; }
     pitched=$(count '(.labels | index("pitch")) and .status == "Pitched"')
     exploring=$(count '(.labels | index("pitch")) and .status == "Exploring"')
-    found=$(count '(.labels | index("a-team:idea")) and .status == "Idea"')
-    skipped=$(count '(.labels | index("a-team:skipped")) and .status == "Idea"')
+    found=$(count '.marks.idea and .status == "Idea"')
+    skipped=$(count '.marks.skipped and .status == "Idea"')
     ready=$(count "$STARTABLE")
     blocked=$(count "$UNSTARTABLE")
-    swap=$(pitch_swap "$all" | jq 'map_values(map(. + {announce: (.labels | index("a-team:displaced") | not)}))')
+    swap=$(pitch_swap "$all" | jq 'map_values(map(. + {announce: (.marks.displaced | not)}))')
     promote=$(jq .promote <<<"$swap")
     demote=$(jq .demote <<<"$swap")
     idle=false
@@ -1902,7 +2010,6 @@ case "$CMD" in
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board (use add)"
     from=$(jq -r .status <<<"$it")
-    label=$(own_label "$role")
     allowed "$role" "$from" "$to" || die "$role may not move #$n from '$from' to '$to'"
     own_task "$role" "$n"
     own_docs "$role" "$n"
@@ -1914,22 +2021,22 @@ case "$CMD" in
       die "lead may move #$n out of Pitched only when a higher-priority draft displaces it (nothing in Exploring out-ranks #$n)"
     fi
     case "$role:$from" in
-      "dev:Ready" | "lead:Idea")
-        write "label #$n $label" gh issue edit "$n" -R "$REPO" --add-label "$label" >/dev/null ;;
+      "dev:Ready") mark "$n" dev true ;;
+      "lead:Idea") write "label #$n pitch" gh issue edit "$n" -R "$REPO" --add-label pitch >/dev/null ;;
       *)
-        jq -e --arg l "$label" '.labels | index($l)' <<<"$it" >/dev/null ||
-          die "#$n isn't $role's (no '$label' label); leave it to the stakeholders" ;;
+        jq -e --arg role "$role" "$OWN"'own($role)' <<<"$it" >/dev/null ||
+          die "#$n isn't $role's; leave it to the stakeholders" ;;
     esac
-    if [ "$role:$from>$to" = "lead:Idea>Exploring" ] && jq -e '.labels | index("a-team:shelved")' <<<"$it" >/dev/null; then
-      write "unlabel #$n a-team:shelved" gh issue edit "$n" -R "$REPO" --remove-label a-team:shelved >/dev/null
+    if [ "$role:$from>$to" = "lead:Idea>Exploring" ] && jq -e '.marks.shelved' <<<"$it" >/dev/null; then
+      mark "$n" shelved null
     fi
     if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
-      ! jq -e '.labels | index("a-team:displaced")' <<<"$it" >/dev/null; then
-      write "label #$n a-team:displaced" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:displaced' >/dev/null
+      ! jq -e '.marks.displaced' <<<"$it" >/dev/null; then
+      mark "$n" displaced true
     fi
     set_status "$(jq -r .number <<<"$it")" "$to"
     record "$role" "$n" "$from → $to"
-    if [ "$role:$from>$to" = "dev:In progress>Ready" ] && jq -e '.labels | index("blocked")' <<<"$it" >/dev/null; then
+    if [ "$role:$from>$to" = "dev:In progress>Ready" ] && jq -e '.marks.held' <<<"$it" >/dev/null; then
       record "$role" "$n" "handed back with a question"
     fi
     say "#$n: $from -> $to"
@@ -1946,7 +2053,7 @@ case "$CMD" in
       gh api "repos/$REPO/issues/$n" --jq '.pull_request != null and .state == "open"
           and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
         die "customer may only add its own open docs PR (#$n isn't one)"
-      other=$(items | jq -r --argjson n "$n" '[.[] | select((.labels | index("a-team:customer"))
+      other=$(items | jq -r --argjson n "$n" '[.[] | select(.marks.customer
         and .status == "In review" and .number != $n) | .number] | first // empty')
       [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
       docs_there || die "$(cfg .docs) isn't in $REPO yet: propose the docs before writing any"
@@ -1956,7 +2063,7 @@ case "$CMD" in
           and ((.body // "") | contains("<!-- a-team:customer -->"))' 2>/dev/null | grep -qx true ||
         die "customer may only put its own open draft docs proposal in Pitched (#$n isn't one)"
       ! docs_there || die "$(cfg .docs) is already in $REPO: no docs proposal needed"
-      other=$(items | jq -r --argjson n "$n" '[.[] | select((.labels | index("a-team:customer"))
+      other=$(items | jq -r --argjson n "$n" '[.[] | select(.marks.customer
         and (.status == "In review" or .status == "Pitched") and .number != $n) | .number] | first // empty')
       [ -z "$other" ] || die "customer's #$other is still open: no docs proposal beside it"
     elif [ "$role:$to" = "customer:Idea" ]; then
@@ -1964,7 +2071,7 @@ case "$CMD" in
       gh api "repos/$REPO/issues/$n" --jq '.pull_request == null and .state == "open"
           and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
         die "customer may only add an open issue it opened as an Idea (#$n isn't one)"
-      found=$(items | jq --argjson n "$n" '[.[] | select((.labels | index("a-team:idea"))
+      found=$(items | jq --argjson n "$n" '[.[] | select(.marks.idea
         and .status == "Idea" and .number != $n)] | length')
       limit=$(cfg '.wip.ideas // 0')
       [ "$found" -lt "$limit" ] ||
@@ -1997,10 +2104,12 @@ case "$CMD" in
     fi
     content=$(gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pulls" else "issues" end')
     case "$role:$to" in
-      lead:Idea | customer:Idea) write "label #$n a-team:idea" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:idea' >/dev/null ;;
       lead:Exploring | lead:Pitched) write "label #$n pitch" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
-      "customer:In review" | customer:Pitched)
-        write "label #$n a-team:customer" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:customer' >/dev/null ;;
+    esac
+    [ -n "$existing" ] || board_add "$n" "$(gh api "repos/$REPO/$content/$n" --jq .node_id)"
+    case "$role:$to" in
+      lead:Idea | customer:Idea) mark "$n" idea true ;;
+      "customer:In review" | customer:Pitched) mark "$n" customer true ;;
     esac
     if [ -n "$existing" ]; then
       set_status "$(jq -r .number <<<"$existing")" "$to"
@@ -2008,7 +2117,6 @@ case "$CMD" in
       say "#$n: added as $to"
       exit 0
     fi
-    board_add "$n" "$(gh api "repos/$REPO/$content/$n" --jq .node_id)"
     set_status "$n" "$to"
     record "$role" "$n" "added as $to"
     say "#$n: added as $to"
@@ -2121,16 +2229,11 @@ case "$CMD" in
     [ -z "$open" ] || die "$open is already the fix for the default branch: one at a time"
     main=$(main_red)
     [ "$main" != null ] || die "the default branch isn't red: its latest completed CI passed, is still running, or there's none"
-    label=${FIX_LABEL%%|*}
-    if ! gh label list -R "$REPO" --search "$label" --json name --jq '.[].name' | grep -qxF "$label"; then
-      IFS='|' read -r _ color description <<<"$FIX_LABEL"
-      write "create label $label" gh label create "$label" -R "$REPO" --color "$color" --description "$description" >/dev/null
-    fi
     body=$(cat "$file")
     grep -qF "<!-- a-team:$role -->" <<<"$body" || body=$(printf '%s\n\n<!-- a-team:%s -->' "$body" "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
-    url=$(printf '%s\n' "$body" | write "open an issue titled '$title', labelled $label" \
-      gh issue create -R "$REPO" --title "$title" --label "$label" --body-file -) || die "can't open the issue on $REPO"
+    url=$(printf '%s\n' "$body" | write "open an issue titled '$title'" \
+      gh issue create -R "$REPO" --title "$title" --body-file -) || die "can't open the issue on $REPO"
     if [ -n "$DRY_RUN" ]; then
       n=new node=''
     else
@@ -2138,6 +2241,7 @@ case "$CMD" in
       node=$(gh api "repos/$REPO/issues/$n" --jq .node_id)
     fi
     board_add "$n" "$node"
+    mark "$n" fix true
     set_status "$n" Ready
     record "$role" "$n" "filed as Ready to make $(jq -r .branch <<<"$main") green"
     echo "$n"
@@ -2260,7 +2364,7 @@ case "$CMD" in
     reason=$(cat "$file")
     body=$(
       [ -z "${reason//[[:space:]]/}" ] || printf '%s\n\n' "$reason"
-      printf 'Not now: back on %s.\n\n<!-- a-team:shelved until=%s priority=%s -->' "$back" "$until" "$(jq -r '.priority // "none"' <<<"$it")"
+      printf 'Not now: back on %s.' "$back"
       [ "$role" = you ] || printf '\n\n<!-- a-team:%s -->' "$role"
     )
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
@@ -2272,7 +2376,7 @@ case "$CMD" in
     else
       ack "$n"
     fi
-    write "label #$n a-team:shelved" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=a-team:shelved' >/dev/null
+    mark "$n" shelved "$(jq -c --arg until "$until" '{until: $until, priority}' <<<"$it")"
     set_status "$(jq -r .number <<<"$it")" Idea
     record "$role" "$n" "Pitched → Idea"
     record "$role" "$n" "shelved until $back"
@@ -2292,7 +2396,7 @@ case "$CMD" in
     status=$(jq -r .status <<<"$it")
     # A document pitch, the Lead's or the Customer lead's docs proposal, is accepted from Pitched by merging it.
     if [ "$(jq -r .type <<<"$it")" = PullRequest ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null ||
-      { [ "$status" = Pitched ] && jq -e '.labels | index("a-team:customer")' <<<"$it" >/dev/null; }; then
+      { [ "$status" = Pitched ] && jq -e '.marks.customer' <<<"$it" >/dev/null; }; then
       [ "$status" = Pitched ] || die "only a document pitch in Pitched can be accepted (#$n is in '$status')"
       merge "$n"
       set_status "$(jq -r .number <<<"$it")" Done
@@ -2300,7 +2404,7 @@ case "$CMD" in
       say "#$n: merged document pitch #$n"
       exit 0
     fi
-    if [ "$(jq -r .type <<<"$it")" = PullRequest ] && jq -e '.labels | index("a-team:customer")' <<<"$it" >/dev/null; then
+    if [ "$(jq -r .type <<<"$it")" = PullRequest ] && jq -e '.marks.customer' <<<"$it" >/dev/null; then
       [ "$status" = "In review" ] || die "only a docs PR In review, or a docs proposal in Pitched, can be accepted (#$n is in '$status')"
       merge "$n"
       set_status "$(jq -r .number <<<"$it")" Done
@@ -2413,9 +2517,9 @@ case "$CMD" in
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     ack "$n"
-    write "label #$n a-team:skipped" gh issue edit "$n" -R "$REPO" --add-label a-team:skipped >/dev/null
+    mark "$n" skipped true
     record "$role" "$n" "skipped"
-    say "#$n: skipped; a comment there, or removing the 'a-team:skipped' label, puts it back"
+    say "#$n: skipped; a stakeholder's comment there puts it back"
     ;;
 
   recommend)
@@ -2426,8 +2530,7 @@ case "$CMD" in
       dev | customer | reviewer | you) die "$role may not recommend a rank; recommending is the Lead's, and ranking is the stakeholders'" ;;
       *) die "unknown role '$role' (lead)" ;;
     esac
-    label=rank:$level
-    spec=$(grep -F "$label|" <<<"$RANK_LABELS") || die "unknown rank '$3' (urgent | high | medium | low)"
+    [[ " $RANKS " == *" $level "* ]] || die "unknown rank '$3' (urgent | high | medium | low)"
     [ -f "$file" ] || die "no such file: $file"
     case_line=$(grep -v '^[[:space:]]*$' "$file" || true)
     [ -n "$case_line" ] && [ "$(grep -c '' <<<"$case_line")" -eq 1 ] || die "the case for #$n is one line: $file has $(grep -c '' <<<"$case_line")"
@@ -2435,16 +2538,9 @@ case "$CMD" in
     [ -n "$it" ] || die "#$n is not on the board, so it is not an Idea to recommend"
     [ "$(jq -r .type <<<"$it")" = Issue ] && [ "$(jq -r .status <<<"$it")" = Idea ] ||
       die "recommend is only for Ideas (#$n is in '$(jq -r .status <<<"$it")')"
-    if ! gh label list -R "$REPO" --search rank: --json name --jq '.[].name' | grep -qxF "$label"; then
-      IFS='|' read -r _ color description <<<"$spec"
-      write "create label $label" gh label create "$label" -R "$REPO" --color "$color" --description "$description" >/dev/null
-    fi
-    edit=(--add-label "$label")
-    for stale in $(jq -r --arg l "$label" '.labels[] | select(startswith("rank:") and . != $l)' <<<"$it"); do
-      edit+=(--remove-label "$stale")
-    done
-    write "label #$n $label" gh issue edit "$n" -R "$REPO" "${edit[@]}" >/dev/null
-    name=$(jq -rn --arg l "$label" "$RECOMMENDED"'{labels: [$l]} | recommended')
+    name=$(tr '[:lower:]' '[:upper:]' <<<"${level:0:1}")${level:1}
+    mark "$n" rank "$(jq -cn --arg r "$name" '$r')"
+    mirror_push "$n"
     body=$(printf 'Recommended: **%s** · %s\n\n<!-- a-team:%s -->' "$name" "$case_line" "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
@@ -2464,23 +2560,16 @@ case "$CMD" in
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     jq -e '.type == "Issue" and (.labels | index("pitch"))' <<<"$it" >/dev/null || die "#$n isn't a pitch: only pitches carry a theme"
-    label=
-    [ "$heading" = none ] || label="theme: $heading"
-    [ ${#label} -le 50 ] || die "'$label' is longer than the 50 characters GitHub allows a label"
-    edit=()
-    if [ -n "$label" ]; then
-      if ! gh label list -R "$REPO" --search theme: --limit 100 --json name --jq '.[].name' | grep -qxF "$label"; then
-        write "create label $label" gh label create "$label" -R "$REPO" --color 5319e7 \
-          --description "The vision theme the a-team Lead says this pitch serves" >/dev/null
-      fi
-      edit+=(--add-label "$label")
+    if [ "$heading" = none ]; then
+      mark "$n" theme null
+      record "$role" "$n" "no theme"
+      say "#$n: no theme"
+    else
+      mark "$n" theme "$(jq -cn --arg h "$heading" '$h')"
+      record "$role" "$n" "theme: $heading"
+      say "#$n: theme: $heading"
     fi
-    while IFS= read -r stale; do
-      [ -z "$stale" ] || edit+=(--remove-label "$stale")
-    done < <(jq -r --arg l "$label" '.labels[] | select(startswith("theme: ") and . != $l)' <<<"$it")
-    [ ${#edit[@]} -eq 0 ] || write "label #$n ${label:-with no theme}" gh issue edit "$n" -R "$REPO" "${edit[@]}" >/dev/null
-    record "$role" "$n" "${label:-no theme}"
-    say "#$n: ${label:-no theme}"
+    mirror_push "$n"
     ;;
 
   feedback)
@@ -2530,11 +2619,7 @@ case "$CMD" in
       link() { gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" -F "issue_id=$1" >/dev/null 2>&1; }
       linked=
       [ "$(jq -r .pr <<<"$up")" = true ] || ! write "block #$task on $prereq" link "$(jq -r .id <<<"$up")" || linked=1
-      if ! gh label list -R "$REPO" --search "$UPSTREAM_LABEL" --json name --jq '.[].name' | grep -qxF "$UPSTREAM_LABEL"; then
-        write "create label $UPSTREAM_LABEL" gh label create "$UPSTREAM_LABEL" -R "$REPO" --color fbca04 \
-          --description "Waiting on a change in another repo; frees itself once that's closed or released" >/dev/null
-      fi
-      write "label #$task $UPSTREAM_LABEL" gh issue edit "$task" -R "$REPO" --add-label "$UPSTREAM_LABEL" >/dev/null
+      mark "$task" upstream "$(item "$task" | jq -c --arg ref "$prereq" '(.marks.upstream | arrays // []) + [$ref] | unique')"
       note="Blocked by $prereq, until $until: $why"
       [ -n "$linked" ] || note+=$'\n\n'"GitHub can't link $prereq as a dependency, so the wait is recorded here."
       depend_note "$role" "$task" "$note"$'\n\n'"$(wait_marker wait "$upstream" "$up_n" "$until" "$package")"
@@ -2567,8 +2652,9 @@ case "$CMD" in
       [ -z "$prereq_id" ] || write "unblock #$task from $prereq" \
         gh api -X DELETE "repos/$REPO/issues/$task/dependencies/blocked_by/$prereq_id" >/dev/null
       depend_note "$role" "$task" "No longer blocked by $prereq: $why"$'\n\n'"$(wait_marker unwait "$upstream" "$up_n")"
-      jq -e --arg ref "$prereq" 'any(.[]; .ref != $ref)' <<<"$waits" >/dev/null ||
-        write "unlabel #$task $UPSTREAM_LABEL" gh issue edit "$task" -R "$REPO" --remove-label "$UPSTREAM_LABEL" >/dev/null
+      left=$(jq -c --arg ref "$prereq" 'map(.ref | select(. != $ref))' <<<"$waits")
+      [ "$left" = '[]' ] && left=null
+      mark "$task" upstream "$left"
       record "$role" "$task" "no longer blocked by $prereq"
       say "#$task no longer waits on $prereq, and said why on #$task"
       exit 0
@@ -2586,7 +2672,7 @@ case "$CMD" in
   free)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM free"
     open_bumps=
-    for n in $(gh api "repos/$REPO/issues?labels=$UPSTREAM_LABEL&state=open&per_page=100" --jq '.[] | select(.pull_request == null) | .number'); do
+    for n in $(items open | jq -r '.[] | select(.type == "Issue" and .marks.upstream) | .number'); do
       waits=$(waits_on "$n")
       [ "$waits" != "[]" ] || continue
       waits=$(upstream_state "$waits")
@@ -2602,7 +2688,7 @@ case "$CMD" in
         done < <(jq -r '[.[] | select(.bump and (.bump.onBoard | not)) | .bump] | unique_by(.number)[] | [.number, .id] | @tsv' <<<"$waits")
       fi
       jq -e 'all(.[]; .met)' <<<"$waits" >/dev/null || continue
-      write "unlabel #$n $UPSTREAM_LABEL" gh issue edit "$n" -R "$REPO" --remove-label "$UPSTREAM_LABEL" >/dev/null || continue
+      mark "$n" upstream null
       depend_note dev "$n" "$(jq -r 'def day: fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0");
         [.[] | select(.state == "released") | (.release.tag | ltrimstr("v")) as $v | if .package then "\(.package) to \($v)" else "to \($v)" end] as $versions
         | (map(if .state == "released" and .after
@@ -2669,22 +2755,22 @@ case "$CMD" in
     own_task "$role" "$n"
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
-    jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a Ready task labelled blocked"
+    jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a held Ready task"
     talk=$(gated_talk "[$it]")
-    hold=$(holds "[$it]" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" | jq -c '.[0]')
+    hold=$(holds "[$it]" "$(gated_comments "$talk")" "$(gated_blocked "[$it]")" | jq -c '.[0]')
     case "$(jq -r '.heldBy // "you"' <<<"$hold")" in
       "$role") ;;
       you) die "#$n has no hold from $role: a stakeholder is holding it, so leave it to them" ;;
       *) die "#$n has no hold from $role: $(jq -r .heldBy <<<"$hold") held it, so leave it to them" ;;
     esac
-    if [ "$role" = lead ] && jq -e '.labels | index($l)' --arg l "$UPSTREAM_LABEL" <<<"$it" >/dev/null; then
+    if [ "$role" = lead ] && jq -e '.marks.upstream' <<<"$it" >/dev/null; then
       what="hold now waits on another repo"
     elif [ "$(jq -r .turn <<<"$hold")" = "$role" ]; then
       what=$([ "$role" = dev ] && echo "question answered" || echo "hold answered")
     else
       die "no stakeholder has replied to $role's ask on #$n since it was held"
     fi
-    write "remove blocked from #$n" gh issue edit "$n" -R "$REPO" --remove-label blocked >/dev/null
+    mark "$n" held null
     record "$role" "$n" "$what"
     ack "$n"
     say "#$n: no longer blocked"
@@ -2694,19 +2780,28 @@ case "$CMD" in
     [ $# -eq 3 ] || die "usage: board.sh $TEAM hold <role> <n> <file>"
     role=$1 n=$2 file=$3
     case "$role" in
-      lead | dev | customer | reviewer) die "$role may not hold a task this way; hold is the stakeholders' own" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
+      customer | reviewer) die "$role may not hold a task" ;;
+      you | dev | lead) ;;
+      *) die "unknown role '$role' (you | dev | lead)" ;;
     esac
     [ -f "$file" ] || die "no such file: $file"
-    [ -n "$(tr -d '[:space:]' <"$file")" ] || die "say why you're holding #$n"
+    [ -n "$(tr -d '[:space:]' <"$file")" ] || die "say why #$n is held"
+    own_task "$role" "$n"
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
-    jq -e "$READY_TASK" <<<"$it" >/dev/null || die "only a Ready task can be held (#$n is in '$(jq -r .status <<<"$it")')"
-    ! jq -e '.labels | index("blocked")' <<<"$it" >/dev/null || die "#$n is already held"
-    [ -z "$DRY_RUN" ] || sed 's/^/  | /' "$file" >&2
-    write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - <"$file" >/dev/null
-    write "label #$n blocked" gh issue edit "$n" -R "$REPO" --add-label blocked >/dev/null
+    if [ "$role" = dev ]; then
+      jq -e '.marks.dev and (.status == "In progress" or .status == "Ready")' <<<"$it" >/dev/null ||
+        die "dev holds only its own task, In progress or Ready (#$n is in '$(jq -r .status <<<"$it")')"
+    else
+      jq -e "$READY_TASK" <<<"$it" >/dev/null || die "only a Ready task can be held (#$n is in '$(jq -r .status <<<"$it")')"
+    fi
+    ! jq -e '.marks.held' <<<"$it" >/dev/null || die "#$n is already held"
+    body=$(cat "$file")
+    [ "$role" = you ] || body+=$'\n\n'"<!-- a-team:$role -->"
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
+    [ "$role" = you ] || ack "$n"
+    mark "$n" held "$(jq -cn --arg at "$(date -u +%FT%TZ)" --arg by "$role" '{at: $at, by: $by}')"
     record "$role" "$n" "held"
     say "#$n: held"
     ;;
@@ -2721,8 +2816,8 @@ case "$CMD" in
     esac
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
-    jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a Ready task labelled blocked"
-    write "remove blocked from #$n" gh issue edit "$n" -R "$REPO" --remove-label blocked >/dev/null
+    jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a held Ready task"
+    mark "$n" held null
     record "$role" "$n" "hold released"
     say "#$n: hold released"
     ;;
@@ -2778,7 +2873,7 @@ case "$CMD" in
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     [ "$(jq -r '.type == "PullRequest" and .status == "Pitched"
-        and ((.labels | index("pitch")) or (.labels | index("a-team:customer")))' <<<"$it")" = true ] ||
+        and ((.labels | index("pitch")) or .marks.customer)' <<<"$it")" = true ] ||
       die "#$n isn't a document pitch in Pitched"
     ref=$(gh api "repos/$REPO/pulls/$n" --jq .head.ref)
     put() {
@@ -2849,15 +2944,15 @@ case "$CMD" in
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)}
-        + if .labels | index("a-team:customer") then {role: "customer"} else {} end
+        + if .marks.customer then {role: "customer"} else {} end
         + if '"$FIX"' then {fix: true} else {} end
         + if .dependabot and .status == "In review" then {dependency: true} else {} end
-        + if .type == "PullRequest" and .status == "Pitched" and ((.labels | index("pitch")) or (.labels | index("a-team:customer")))
+        + if .type == "PullRequest" and .status == "Pitched" and ((.labels | index("pitch")) or .marks.customer)
           then {document: true} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
     upstream='[]' reviewed='{}' open_bumps=
-    for n in $(jq -r "map(select(($UPSTREAM_HELD or $UPSTREAM_REVIEWED) and (.labels | index(\"blocked\") | not))) | .[].number" <<<"$all"); do
+    for n in $(jq -r "map(select(($UPSTREAM_HELD or $UPSTREAM_REVIEWED) and (.marks.held | not))) | .[].number" <<<"$all"); do
       waits=$(waits_on "$n")
       [ "$waits" != "[]" ] || continue
       waits=$(upstream_state "$waits")
@@ -2885,11 +2980,13 @@ case "$CMD" in
     waiting=$(turns "$gated" "$said" "$(gated_prs "$talk" "$main" "$(jq -c "[.[] | select($FIX) | .number]" <<<"$all")")" |
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
-      jq --argjson asked "$(holds "$held" "$said" "$(gated_blocked "$talk")" | jq 'map(del(.unread))')" \
+      jq --argjson asked "$(holds "$held" "$said" "$(gated_blocked "$all")" | jq 'map(del(.unread))')" \
         --argjson unranked "$(unranked_ideas "$all" "$said")" --argjson upstream "$upstream" '. + $asked + $unranked + $upstream' |
       jq --argjson frees "$frees" 'map((($frees["\(.number)"] // []) + ($frees["\(.pr // 0)"] // [])) as $f
         | if $f == [] then . else . + {frees: ($f | unique)} end)' |
-      jq --argjson reviewed "$reviewed" 'map(if .status == "In review" and $reviewed["\(.number)"] then . + {chains: $reviewed["\(.number)"]} else . end)')
+      jq --argjson reviewed "$reviewed" 'map(if .status == "In review" and $reviewed["\(.number)"] then . + {chains: $reviewed["\(.number)"]} else . end)' |
+      jq --argjson all "$all" "$FACTS"'INDEX($all[]; .number | tostring) as $by
+        | map(($by["\(.number)"] | if . then facts else "" end) as $facts | if $facts != "" then . + {facts: $facts} else . end)')
     snapshot "$(jq 'map(select(.turn != "upstream")) | length' <<<"$waiting")"
     # A red default branch rides along as an entry with no number, which readers of the items pass over.
     if [ "$main" != null ]; then
@@ -2962,12 +3059,13 @@ case "$CMD" in
         FROM runs JOIN run_items ON run_items.run = runs.id WHERE team = $(sql "$TEAM")) WHERE n = 1;")
     CACHED=1
     all=$(items open)
-    jq --arg team "$TEAM" --argjson runs "${runs:-[]}" --argjson lag "$(mirror_lag | jq -s 'first')" 'INDEX($runs[]; .item | tostring) as $last
+    jq --arg team "$TEAM" --argjson runs "${runs:-[]}" --argjson lag "$(mirror_lag | jq -s 'first')" "$FACTS"'INDEX($runs[]; .item | tostring) as $last
       | map(select(.status != "Done") | {number, title, url, status, priority,
       since, parent, team: $team, blocked: '"$BLOCKED"',
-      kind: (if .labels | index("pitch") then "pitch" elif .labels | index("a-team:customer") then "docs"
-             elif (.labels | index("a-team:dev")) or .parent != null then "task" else "yours" end),
-      lastRun: ($last[.number | tostring] | if . then {role, log, started} else null end)})
+      kind: (if .labels | index("pitch") then "pitch" elif .marks.customer then "docs"
+             elif .marks.dev or .parent != null then "task" else "yours" end),
+      lastRun: ($last[.number | tostring] | if . then {role, log, started} else null end)}
+        + (facts as $facts | if $facts != "" then {facts: $facts} else {} end))
       + (if $lag then [{team: $team, mirror: $lag}] else [] end)' <<<"$all"
     ;;
 
@@ -3036,7 +3134,7 @@ case "$CMD" in
       | {since: $runs[0].started, runs: $runs,
          items: [.[] | select(.number | IN($on[], $over[]))
            | {number, title, url, status, parent, pitch: (.type == "Issue" and (.labels | index("pitch")) != null),
-              theme: ([.labels[] | select(startswith("theme: ")) | ltrimstr("theme: ")] | first)}]}'
+              theme: .marks.theme}]}'
     ;;
 
   today)
@@ -3343,14 +3441,14 @@ case "$CMD" in
           at=$(feedback_at "$recent" dev "$x")
           [ -n "$at" ] && task_reason "$n" "$title" "stakeholder feedback on #$x ($at)"
         done
-      done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
+      done < <(jq -c '.[] | select(.marks.dev and (.status == "In progress" or .status == "In review"))' <<<"$all")
 
       held=$(jq -c "map(select($HELD))" <<<"$all")
       if [ "$held" != "[]" ]; then
         talk=$(gated_talk "$held")
         while IFS=$'\t' read -r n at title; do
           task_reason "$n" "$title" "stakeholder answered the Dev's question on #$n ($at)"
-        done < <(questions "$held" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" |
+        done < <(questions "$held" "$(gated_comments "$talk")" "$(gated_blocked "$held")" |
           jq -r '.[] | select(.unread != "") | [.number, .unread, .title] | @tsv')
       fi
 
@@ -3413,7 +3511,7 @@ case "$CMD" in
           p=$(jq -r .number <<<"$pr")
           [ "$(pr_checks "$p" | jq -r .verdict)" = pass ] &&
             task_reason "$n" "$(jq -r .title <<<"$row")" "PR #$p is green and waiting for its review"
-        done < <(jq -c '.[] | select((.labels | index("a-team:dev")) and (.status == "In progress" or .status == "In review"))' <<<"$all")
+        done < <(jq -c '.[] | select(.marks.dev and (.status == "In progress" or .status == "In review"))' <<<"$all")
       fi
       creative=false
     elif [ "$role" = customer ]; then
@@ -3425,7 +3523,7 @@ case "$CMD" in
           mkdir -p "$(dirname "$COVERED")"
           printf '%s\n' "$accepted" >"$COVERED"
         fi
-        docs=$(jq -r '[.[] | select((.labels | index("a-team:customer"))
+        docs=$(jq -r '[.[] | select(.marks.customer
           and (.status == "In review" or .status == "Pitched"))] | sort_by(.status != "In review")
           | map("\(.status)\t\(.number)") | first // empty' <<<"$all")
         status=${docs%%$'\t'*} n=${docs##*$'\t'}
@@ -3473,7 +3571,7 @@ case "$CMD" in
       held=$(jq -c "map(select($HELD))" <<<"$all")
       if [ "$held" != "[]" ]; then
         talk=$(gated_talk "$held")
-        mine=$(holds "$held" "$(gated_comments "$talk")" "$(gated_blocked "$talk")" | jq -c 'map(select(.heldBy == "lead"))')
+        mine=$(holds "$held" "$(gated_comments "$talk")" "$(gated_blocked "$held")" | jq -c 'map(select(.heldBy == "lead"))')
         while IFS=$'\t' read -r n at; do
           reasons+=("stakeholder answered the Lead's hold on #$n ($at)")
           items+=("$n")
@@ -3502,7 +3600,7 @@ case "$CMD" in
 
       pitched=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Pitched")] | length' <<<"$all")
       exploring=$(jq '[.[] | select((.labels | index("pitch")) and .status == "Exploring")] | length' <<<"$all")
-      found=$(jq '[.[] | select((.labels | index("a-team:idea")) and .status == "Idea")] | length' <<<"$all")
+      found=$(jq '[.[] | select(.marks.idea and .status == "Idea")] | length' <<<"$all")
       ideas=$(jq '[.[] | select(.status == "Idea" and .type == "Issue")] | length' <<<"$all")
       if [ "$exploring" -gt 0 ]; then
         if [ "$pitched" -lt "$(cfg .wip.pitched)" ]; then
@@ -3620,7 +3718,6 @@ case "$CMD" in
         note labels "can't list $REPO's labels: ${have#gh: }"
       else
         while IFS='|' read -r name _ _ without; do
-          [ "$name" != a-team:customer ] || customer_on || continue
           grep -qxF -- "$name" <<<"$have" || note labels "no '$name' label, so $without"
         done <<<"$LABELS"
       fi
@@ -3716,7 +3813,7 @@ case "$CMD" in
       [ -n "$changed" ] || continue
       $dry_run || gh label edit "$name" -R "$REPO" --color "$color" --description "$description" >/dev/null
       say "updated label $name: $changed"
-    done <<<"$LABELS"$'\n'"$RANK_LABELS"
+    done <<<"$LABELS"
     ;;
 
   *)
