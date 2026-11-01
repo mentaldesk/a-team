@@ -549,6 +549,23 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void A_ranked_reader_resizes_History_once_Tab_has_reached_it()
+    {
+        using var dialog = Ranking(read: new IssueBody(Long(), History: Recorded), rank: Rank.Low, width: 120);
+        Assert.False(dialog.Sides.CanResize);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Ranks!.HasFocus);
+        Assert.True(dialog.Sides.CanResize);
+        dialog.Sides.Widen();
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(ReaderPanes.HistoryWidth + SidePanes.Step, dialog.HistoryLog.SuperView!.Frame.Width);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.False(dialog.Sides.CanResize);
+    }
+
+    [Fact]
     public void History_stops_where_the_body_keeps_40_columns_and_says_so()
     {
         using var dialog = Wide();

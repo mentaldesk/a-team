@@ -137,7 +137,6 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly Pictures? _pictures;
     private readonly Func<string, LinkOutcome>? _openUrl;
     private readonly Action<Picture, string> _viewImage;
-    private FocusRegion? _region;
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
@@ -328,19 +327,11 @@ public sealed partial class ReaderDialog : DashboardDialog
         Add(_commentFrame, _bodyFrame, _historyFrame, Foot, _message);
         if (_band is not null)
             Add(_band);
-        Sides = _panes.Widths.For(this, () => _region, said => Say(said, Schemes.Accent))
+        Sides = _panes.Widths.For(this, Region, said => Say(said, Schemes.Accent))
             .AddSide(_commentFrame, PaneWidths.Comment, ReaderPanes.CommentWidth)
             .AddMain(_bodyFrame)
             .AddSide(_historyFrame, PaneWidths.History, ReaderPanes.HistoryWidth);
         Resizes(Sides, _panes.Widths);
-        foreach (var (pane, region) in new (View?, FocusRegion?)[]
-            { (_commentFrame, PaneWidths.Comment), (_bodyFrame, null), (_historyFrame, PaneWidths.History), (_band, null) })
-            if (pane is not null)
-                pane.HasFocusChanged += (_, focus) =>
-                {
-                    if (focus.NewValue)
-                        _region = region;
-                };
         ShowHistory(_panes.OpensWithHistory(width));
         if ((tryIt?.Failure ?? edit?.Failure ?? body.Failure) is { Length: > 0 } failure)
             _message.Show(failure, Schemes.Error);
@@ -701,6 +692,9 @@ public sealed partial class ReaderDialog : DashboardDialog
         _ranks!.SetFocus();
         _ranks.FocusedItem = (int)(_ranks.Value ?? Rank.None);
     }
+
+    private FocusRegion? Region() =>
+        _commentFrame.HasFocus ? PaneWidths.Comment : FocusedPane() == _history ? PaneWidths.History : null;
 
     private LogView FocusedPane() => _history.HasFocus ? _history : _body.HasFocus ? _body : _scrolled;
 
