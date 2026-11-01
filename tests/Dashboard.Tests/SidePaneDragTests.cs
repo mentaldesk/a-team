@@ -42,7 +42,7 @@ public class SidePaneDragTests
     {
         var widths = new PaneWidths();
         using var app = Started();
-        using var dialog = new GuideDialog(GuidePages.Bundled(), _ => default, widths: widths);
+        using var dialog = new GuideDialog(GuidePages.Bundled(), Opening.Opened, widths: widths);
         Drag(app, dialog, dialog.Sidebar, by: 8, right: true);
 
         Assert.Equal(38, dialog.Sidebar.Frame.Width);
