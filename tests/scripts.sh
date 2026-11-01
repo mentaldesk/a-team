@@ -169,7 +169,7 @@ gh_items() {
     {id: "OP_medium", name: "Medium"}, {id: "OP_low", name: "Low"}]}]}}}}' >"$FIELDS"
   echo '[]' >"$EMPTY"
   META="$BIN/meta.json"
-  jq -n '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options: [
+  jq -n '{data: {organization: {projectV2: {id: "PVT_1", title: "demo", field: {id: "PVTSSF_status", options: [
     {id: "OPT_exploring", name: "Exploring"}, {id: "OPT_pitched", name: "Pitched"},
     {id: "OPT_approved", name: "Approved"}, {id: "OPT_done", name: "Done"}]}}}}}' >"$META"
   gh_thread </dev/null
@@ -3413,6 +3413,23 @@ run board demo claim dev
 same "exit" 0 "$STATUS"
 same "nothing" null "$(cat "$OUT")"
 
+case_ "another team's draft PR In progress takes no worktree, and next never offers it"
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+In_progress 86 Make MenuLetters.Pick public
+Ready 13 Something to start
+ITEMS
+edit_item 86 '.__typename = "PullRequest" | .labels.nodes = []'
+claimable
+run board demo wip
+same "dev" '{"In progress":2,"blocked":0}' "$(jq -c .dev "$OUT")"
+run board demo next
+same "next" 13 "$(jq .number "$OUT")"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
+
 case_ "claim --dry-run prints the claim instead of making it"
 gh_items <<'ITEMS'
 Ready 13 Something to start
@@ -4249,11 +4266,12 @@ failed "from Idea"
 grep -q "only a PR In review can be accepted (#535 is in 'Idea')" "$ERR" || fail "from Idea: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 
-# Another team's Dev opened this PR for a task of its own; `adopt` puts it In review here.
+# Another team's Dev opened this PR for a task of its own; `adopt` puts it on the board here.
 upstream_pr() {
   jq -n --arg body "$1" '[{id: "PR_86", number: 86, isDraft: false,
     body: "Makes MenuLetters.Pick public.\n\nNeeded by \($body)\n\n<!-- a-team:dev -->"}]' >"$UPSTREAM"
 }
+upstream_edit() { jq "$1" "$UPSTREAM" >"$UPSTREAM.new" && mv "$UPSTREAM.new" "$UPSTREAM"; }
 
 case_ "adopt puts another repo's Dev PR In review once it's ready"
 reviewable
@@ -4266,11 +4284,22 @@ grep -q 'item=PVTI_new .*option=OPT_review' "$WRITES" || fail "In review: '$(cat
 same "one list of the App's PRs" "pr list -R mentaldesk/demo --author app/demo-app --state open --json id,number,isDraft,body" \
   "$(cat "$UPSTREAM_CALLS")"
 
-case_ "adopt leaves a draft, a PR already on the board, and one for a task in this repo"
-for edit in '.[0].isDraft = true' \
-    '.[0].body |= sub("mentaldesk/a-team#538"; "mentaldesk/demo#12")' '.[0].body |= sub("<!-- a-team:dev -->"; "")'; do
+case_ "adopt puts another repo's Dev PR In progress while it's a draft"
+reviewable
+claimable
+upstream_pr "mentaldesk/a-team#538"
+upstream_edit '.[0].isDraft = true'
+run board demo adopt
+same "exit" 0 "$STATUS"
+same "said" "#86: added as In progress" "$(cat "$OUT")"
+grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_new .*option=OPT_progress' "$WRITES" || fail "In progress: '$(cat "$WRITES")'"
+
+case_ "adopt leaves a stakeholder's draft, a PR already on the board, and one for a task in this repo"
+for edit in '.[0].body |= sub("mentaldesk/a-team#538"; "mentaldesk/demo#12")' '.[0].isDraft = true | .[0].body |= sub("<!-- a-team:dev -->"; "")' \
+    '.[0].body |= sub("<!-- a-team:dev -->"; "")' '.[0].isDraft = true | .[0].body |= sub("Needed by mentaldesk/a-team#538"; "")'; do
   upstream_pr "mentaldesk/a-team#538"
-  jq "$edit" "$UPSTREAM" >"$UPSTREAM.new" && mv "$UPSTREAM.new" "$UPSTREAM"
+  upstream_edit "$edit"
   : >"$WRITES"
   run board demo adopt
   same "exit ($edit)" 0 "$STATUS"
@@ -4284,6 +4313,20 @@ jq '.data.organization.projectV2.items.nodes += [{id: "PVTI_86", fieldValueByNam
 run board demo adopt
 same "exit (on the board)" 0 "$STATUS"
 same "writes (on the board)" "" "$(cat "$WRITES")"
+
+case_ "adopt moves an adopted draft to In review once it's out of draft, and leaves it while it's still one"
+jq '(.data.organization.projectV2.items.nodes[] | select(.id == "PVTI_86") | .fieldValueByName.name) = "In progress"' \
+  "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+: >"$WRITES"
+run board demo adopt
+same "exit" 0 "$STATUS"
+same "said" "#86: In progress → In review" "$(cat "$OUT")"
+grep -q 'item=PVTI_86 .*option=OPT_review' "$WRITES" || fail "In review: '$(cat "$WRITES")'"
+upstream_edit '.[0].isDraft = true'
+: >"$WRITES"
+run board demo adopt
+same "exit" 0 "$STATUS"
+same "draft writes" "" "$(cat "$WRITES")"
 
 # The App's open PRs `update` reads, from lines of "<number> <draft> <mergeStateStatus> <head>".
 app_prs() {
@@ -7665,6 +7708,12 @@ events <<<"$slots
 32 480 dev blocked by #34
 34 400 you accepted · PR #934 merged"
 same "freed" "[$((20 + 100 + 50))]" "$(with_you "\"$(before 600)\"")"
+
+case_ "trends: another team's upstream PR adopted In progress holds no slot"
+events <<<"$slots
+86 650 dev added as In progress
+86 590 dev In progress → In review"
+same "upstream" "[$((200 + 50))]" "$(with_you "\"$(before 600)\"")"
 
 case_ "trends: a Ready task waiting on a prerequisite is the team's, until it's no longer blocked"
 events <<<"$slots
