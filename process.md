@@ -5,8 +5,8 @@ it, and a human **stakeholder** who owns every decision that matters. A team can
 **Customer lead**, who keeps the product's user docs right, and a **Reviewer**, who reviews each of
 the Dev's task PRs once before it reaches the stakeholder. There may be more than one stakeholder:
 the team config's `stakeholders` lists them, and any of them can answer or decide. The team
-works in one GitHub repository and coordinates entirely through that repo's Project board. There
-is no other shared memory: if it isn't on the board, in an issue, or in a PR, the next run won't
+works in one GitHub repository and coordinates entirely through its board, which a-team keeps itself
+and copies to a GitHub Project the stakeholder can look at. There is no other shared memory: if it isn't on the board, in an issue, or in a PR, the next run won't
 know about it.
 
 ## The board
@@ -169,7 +169,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend`, `trends`, `spending` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
-`overview` is what its Overseer reads, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
+`overview` is what its Overseer reads, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in

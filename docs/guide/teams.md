@@ -22,7 +22,7 @@ press `Ctrl+Enter` (**Create**). A-Team writes the team's file, paused, then off
 
 1. Clone the repo.
 2. Give the team its GitHub App, and install it on the repo.
-3. Create its Project.
+3. Create its Project, if **Mirror** says *A new project*.
 4. Set its board up.
 5. Write its vision with you.
 6. Get to work.
@@ -72,7 +72,7 @@ next run uses it.
 
 ## A team's settings
 
-`Enter` on a team opens its form: repo, stakeholders, the other repos it contributes to, project, vision, workdir, skills, the command
+`Enter` on a team opens its form: repo, stakeholders, the other repos it contributes to, mirror, vision, workdir, skills, the command
 `a-team try` runs, whether it's working or paused, when it releases, when the Lead
 [reviews the vision](#reviewing-the-vision), which roles it runs, and its limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
 [Customer lead](how-a-team-works.md#the-customer-lead) (see [Turning on the Customer lead](#turning-on-the-customer-lead)),
@@ -92,6 +92,11 @@ field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the
 - **Vision** and **First page** list the repo's Markdown files on its default branch. Type to narrow the list
   and `Enter` to pick one. Type a path that isn't there and `Enter` uses it anyway: the field then says
   the Lead or Customer lead will draft it.
+
+**Mirror** is the GitHub Project a-team copies the board to, so you can see it on GitHub. A-Team keeps the
+board itself, so the team works the same with *None*, and needs no Project at all. *A new project, named after
+the team* makes one when you save, sets it up and copies the board onto it. Moving a card there, or changing its
+Priority, counts as your move; one the board wouldn't let you make is set back, and the card's History says why.
 
 **Contributes to** lists the other repos the Dev may open draft PRs on, picked from the ones the
 team's GitHub App can reach. When a task needs a change in one of them first, like the style guide,

@@ -13,7 +13,11 @@ trap 'rm -rf "$WORK"' EXIT
 OUT="$WORK/out" ERR="$WORK/err"
 # Board writes record history in the state folder, which mustn't be the real one.
 export A_TEAM_STATE="$WORK/state"
+# Every command reads the whole mirror back, so a test's board page is the board as the stakeholder left it.
+export A_TEAM_BOARD_READ_EVERY=0
 CONFIG=$WORK TEAM='' STATUS=0
+# When the stub's GitHub quota resets: always ahead, so a retry stays due later.
+QUOTA_RESET=$(($(date +%s) + 86400))
 failures=0
 
 case_() { echo "$*"; }
@@ -30,7 +34,13 @@ fixture() {
   cat >"$TEAM"
 }
 
+# Each board command starts from a board moved over afresh from the test's page, unless KEEP_BOARD is set.
 run() {
+  local db
+  for db in history.db dry-run.db; do
+    [ -n "${KEEP_BOARD:-}" ] || [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
+      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board; DELETE FROM boards;" 2>/dev/null
+  done
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" "$@" >"$OUT" 2>"$ERR"
   STATUS=$?
 }
@@ -202,6 +212,7 @@ RUNS
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo call >>"$CALLS"
+printf '%s\n' "\$*" >>"$BIN/args"
 case " \$* " in
   *"issues?labels=a-team:upstream"*) page="$WAITING_ON" ;;
   *UpstreamWaits*) page="$UPSTREAM_ITEMS" ;;
@@ -220,10 +231,24 @@ case " \$* " in
   *"/git/refs"*"a-team/attachments"*) echo "REF \$*" >>"$WRITES"; exit 0 ;;
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
   *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
-  *updateProjectV2ItemFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
+  *updateProjectV2ItemFieldValue*)
+    [ ! -e "$BIN/mirror-fails" ] || { echo "gh: API rate limit exceeded for installation ID 7 (HTTP 403)" >&2; exit 1; }
+    printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"
+    # With live, the page shows the move, as the Project would.
+    if [ -e "$BIN/live" ]; then
+      for arg in "\$@"; do case \$arg in item=*) item=\${arg#item=} ;; option=*) option=\${arg#option=} ;; esac; done
+      jq --arg i "\$item" --arg n "\$(jq -r --arg o "\$option" '[.. | objects | select(.id? == \$o) | .name][0]' "$META")" \
+        '(.data.organization.projectV2.items.nodes[] | select(.id == \$i)).fieldValueByName = {name: \$n}' "$ITEMS" >"$ITEMS.new" &&
+        mv "$ITEMS.new" "$ITEMS"
+    fi
+    echo '{}'; exit 0 ;;
+  *"api rate_limit"*) page="$BIN/rate.json"; echo '{"resources": {"graphql": {"reset": $QUOTA_RESET}, "core": {"reset": $((QUOTA_RESET - 1800))}}}' >"\$page" ;;
   *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
   *"pr list"*"app/demo-app"*) echo "\$*" >>"$UPSTREAM_CALLS"; page="$UPSTREAM" ;;
   *ProjectV2SingleSelectField*) page="$META" ;;
+  *BoardRefresh*) jq --argjson off "\$(cat "$BIN/off-mirror" 2>/dev/null || echo '[]')" '{data: {nodes: [.data.organization.projectV2.items.nodes[]
+                        | .content + {projectItems: {nodes: (if .content.number | IN(\$off[]) then [] else [
+                        {id, project: {number: 1, owner: {login: "mentaldesk"}}, fieldValueByName}] end)}}]}}' "$ITEMS"; exit 0 ;;
   *issueFields*) page="$FIELDS" ;;
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
@@ -241,7 +266,14 @@ case " \$* " in
   *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *sub_issues*) page="$SUBS" ;;
-  *"--remove-label"* | *"--add-label"*) echo "\$*" >>"$WRITES"; exit 0 ;;
+  *"--remove-label"* | *"--add-label"*) echo "\$*" >>"$WRITES"
+    if [ -e "$BIN/live" ]; then
+      set -- \$*
+      jq --argjson n "\$3" --arg l "\${@: -1}" --arg op "\${@: -2:1}" '(.data.organization.projectV2.items.nodes[].content
+        | select(.number == \$n).labels.nodes) |= if \$op == "--add-label" then . + [{name: \$l}] else map(select(.name != \$l)) end' \
+        "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+    fi
+    exit 0 ;;
   *"/labels -f labels[]="*) echo "\$*" >>"$WRITES"; echo '[]'; exit 0 ;;
   *"label list"*) page="$EMPTY" ;;
   *"label create"*) echo "\$*" >>"$WRITES"; exit 0 ;;
@@ -525,9 +557,6 @@ same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
 same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 # The read above began the record, so every read from here also catches up from GitHub: one call more.
-case_ "waiting asks GitHub for the board without what's Done"
-same "filter" '-Status:"Done"' "$(cat "$FILTERS")"
-
 case_ "a gate nobody has answered is the reviewer's, since the item was opened"
 same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
 same "pitch reason" '"awaiting your approval since 19 Sep 08:14"' "$(jq -c '.[0].reason' "$OUT")"
@@ -1323,7 +1352,7 @@ Shipped 99 Already merged
 ITEMS
 run board demo waiting
 same "exit" 0 "$STATUS"
-same "filter" '-Status:"Shipped"' "$(cat "$FILTERS")"
+same "nothing waiting" '[]' "$(cat "$OUT")"
 
 case_ "a status field whose name isn't one word is read whole, since a filter GitHub can't match finds nothing"
 fixture <<'JSON'
@@ -1334,7 +1363,6 @@ Done 99 Already merged
 ITEMS
 run board demo waiting
 same "exit" 0 "$STATUS"
-same "filter" '' "$(cat "$FILTERS")"
 
 case_ "body returns an issue's number, title and body, in one call"
 fixture <<'JSON'
@@ -1442,7 +1470,7 @@ run board demo priority you 6 High
 same "exit" 0 "$STATUS"
 same "said" "#6: Priority set to 'High'" "$(cat "$OUT")"
 same "writes" 1 "$(grep -c '' <"$WRITES")"
-grep -q "issue=IC_0 " "$WRITES" || fail "priority: not the issue's node id in '$(cat "$WRITES")'"
+grep -q "issue=I_6 " "$WRITES" || fail "priority: not the issue's node id in '$(cat "$WRITES")'"
 grep -q "field=IF_priority " "$WRITES" || fail "priority: not the field's id in '$(cat "$WRITES")'"
 grep -q "option=OP_high " "$WRITES" || fail "priority: not the option's id in '$(cat "$WRITES")'"
 grep -q "updateIssueFieldValue" "$WRITES" || fail "priority: not the issue-field mutation"
@@ -1450,7 +1478,7 @@ grep -q "singleSelectOptionId" "$WRITES" || fail "priority: no option in the mut
 
 case_ "none clears it rather than setting an option"
 : >"$WRITES"
-run board demo priority you 6 none
+KEEP_BOARD=1 run board demo priority you 6 none
 same "exit" 0 "$STATUS"
 same "said" "#6: Priority cleared" "$(cat "$OUT")"
 same "writes" 1 "$(grep -c '' <"$WRITES")"
@@ -1504,7 +1532,7 @@ case_ "--dry-run says what it would approve and approves nothing"
 run board --dry-run demo approve you 7
 same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
-grep -q "would set item PVTI_7 to 'Approved'" "$ERR" || fail "approve dry run: '$(cat "$ERR")'"
+grep -q "would set #7 to 'Approved'" "$ERR" || fail "approve dry run: '$(cat "$ERR")'"
 
 case_ "no Dev, Customer lead or Reviewer may approve a pitch"
 for role in dev customer reviewer; do
@@ -1626,7 +1654,7 @@ run board --dry-run demo approve lead 7 "$WORK/reply"
 same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
-grep -q "would set item PVTI_7 to 'Approved'" "$ERR" || fail "dry run: '$(cat "$ERR")'"
+grep -q "would set #7 to 'Approved'" "$ERR" || fail "dry run: '$(cat "$ERR")'"
 [ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
 
 case_ "the Lead's role and the shared rules say when a yes approves"
@@ -2137,7 +2165,7 @@ failed "finish naming a PR elsewhere"
 grep -q "mentaldesk/style#5 isn't merged" "$ERR" || fail "finish naming a PR elsewhere: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
-[ ! -e "$A_TEAM_STATE/history.db" ] || fail "finish refused: recorded '$(sqlite3 "$A_TEAM_STATE/history.db" 'SELECT what FROM events')'"
+same "finish refused: recorded" "" "$(sqlite3 "$A_TEAM_STATE/history.db" 'SELECT what FROM events' 2>/dev/null)"
 
 case_ "finish judges a pitch with tasks on its tasks alone, whatever PRs it names"
 echo '[{"number": 11, "state": "closed"}, {"number": 12, "state": "open"}]' >"$SUBS"
@@ -3414,8 +3442,216 @@ run board --dry-run demo claim dev
 same "exit" 0 "$STATUS"
 same "would claim" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
 grep -q "would label #13 a-team:dev" "$ERR" || fail "dry run: no label in '$(cat "$ERR")'"
-grep -q "would set item PVTI_13 to 'In progress'" "$ERR" || fail "dry run: no move in '$(cat "$ERR")'"
+grep -q "would set #13 to 'In progress'" "$ERR" || fail "dry run: no move in '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+# kept <command...>: a board command that keeps the record as the commands before it left it.
+kept() { KEEP_BOARD=1 run "$@"; }
+# history_of <n>: #n's history, oldest first, as "<who> <what>" lines.
+history_of() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history "$1" | jq -r '.events | reverse[] | "\(.who) \(.what)"'; }
+# drag <n> <status>: a stakeholder moves #n's card on the mirror.
+drag() {
+  jq --arg i "PVTI_$1" --arg s "$2" '(.data.organization.projectV2.items.nodes[] | select(.id == $i)).fieldValueByName =
+      {name: $s, updatedAt: (now + 1 | todate)}' \
+    "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+}
+every_status() {
+  jq '.data.organization.projectV2.field.options = ([["Idea", "idea"], ["Exploring", "exploring"], ["Pitched", "pitched"],
+      ["Approved", "approved"], ["Building", "building"], ["Ready", "ready"], ["In progress", "progress"],
+      ["In review", "review"], ["Done", "done"]] | map({id: "OPT_\(.[1])", name: .[0]}))' "$META" >"$META.new" && mv "$META.new" "$META"
+}
+
+case_ "the first read moves the board over from its mirror, Status and Priority, and later reads don't read the mirror again"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 3 } }
+JSON
+gh_items 14 <<'ITEMS'
+Ready 13 Something to start
+In_review 14 Waiting on you
+Done 15 Merged
+ITEMS
+run board demo list
+same "exit" 0 "$STATUS"
+same "moved over" '[[13,"Ready",null],[14,"In review","High"],[15,"Done",null]]' "$(jq -c 'map([.number, .status, .priority])' "$OUT")"
+: >"$BIN/args"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
+same "the record's board" '[[13,"Ready",null],[14,"In review","High"],[15,"Done",null]]' "$(jq -c 'map([.number, .status, .priority])' "$OUT")"
+same "mirror reads" 0 "$(grep -c 'projectV2(number' "$BIN/args")"
+same "open items read" 1 "$(grep -c BoardRefresh "$BIN/args")"
+
+case_ "overview and waiting read the record as it stands, and sync reads GitHub"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+run board demo list
+: >"$BIN/args"
+kept board demo overview
+kept board demo waiting
+same "board reads" 0 "$(grep -c 'projectV2(number\|BoardRefresh' "$BIN/args")"
+kept board demo sync
+same "exit" 0 "$STATUS"
+same "synced" 1 "$(grep -c 'projectV2(number' "$BIN/args")"
+
+case_ "a dry run with no record yet, as in a try sandbox, moves the board over once"
+rm -f "$A_TEAM_STATE/history.db" "$A_TEAM_STATE/dry-run.db"
+run board --dry-run demo list
+same "moved over" '[[13,"Ready"]]' "$(jq -c 'map([.number, .status])' "$OUT")"
+: >"$BIN/args"
+A_TEAM_BOARD_READ_EVERY=3600 kept board --dry-run demo overview
+same "from its own record" '[[13,"Ready"]]' "$(jq -c 'map(select(.number) | [.number, .status])' "$OUT")"
+same "mirror reads" 0 "$(grep -c 'projectV2(number' "$BIN/args")"
+[ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
+rm -f "$A_TEAM_STATE/dry-run.db"
+
+case_ "a move is the record's, and the mirror shows it after: next, wip and claim all read the record"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+Ready 16 Something else
+ITEMS
+claimable
+touch "$BIN/live"
+run board demo claim dev
+same "claimed" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
+grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "claim: mirror not written in '$(cat "$WRITES")'"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo next
+same "next" 16 "$(jq -c .number "$OUT")"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo wip
+same "wip" '{"In progress":1}' "$(jq -c .dev "$OUT" | jq -c 'del(.blocked)')"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo claim dev 13
+failed "claimed twice"
+
+case_ "with GitHub out of quota a move still happens, the lane says how far behind the mirror is, and it catches up"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+touch "$BIN/mirror-fails"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "card" '"In progress"' "$(jq -c '.[0].status' "$OUT")"
+same "lag" '{"behind":1,"failed":"GitHub rate limit","retry":"'"$(date -u -r "$QUOTA_RESET" +%FT%TZ 2>/dev/null || date -u -d "@$QUOTA_RESET" +%FT%TZ)"'"}' "$(jq -c '.[] | select(.number == null) | .mirror' "$OUT")"
+rm "$BIN/mirror-fails"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "waits for the retry" 1 "$(jq -c '.[] | select(.number == null) | .mirror.behind' "$OUT")"
+same "nothing written yet" "" "$(grep updateProjectV2ItemFieldValue "$WRITES")"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE boards SET retry = '2000-01-01T00:00:00Z';"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "not by overview" 1 "$(jq -c '.[] | select(.number == null) | .mirror.behind' "$OUT")"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "caught up" '[]' "$(jq -c '[.[] | select(.number == null)]' "$OUT")"
+grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "catch-up: mirror not written in '$(cat "$WRITES")'"
+
+case_ "a card moved on the mirror is the stakeholder's move, read back once and not twice"
+gh_items <<'ITEMS'
+Idea 20 Mine to move
+Ready 21 A task
+ITEMS
+every_status
+run board demo list
+drag 20 Ready
+kept board demo list
+same "moved" '"Ready"' "$(jq -c '.[] | select(.number == 20) | .status' "$OUT")"
+kept board demo list
+same "history" "you Idea → Ready" "$(history_of 20)"
+same "nothing written back" "" "$(cat "$WRITES")"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
+drag 21 Done
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
+same "read from the open items too" '"Done"' "$(jq -c '.[] | select(.number == 21) | .status' "$OUT")"
+
+case_ "a role's move isn't read back as a drag from a mirror read taken before it, and a later drag still is"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo list
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo claim dev
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
+same "kept" '"In progress"' "$(jq -c '.[0].status' "$OUT")"
+same "not yours" 0 "$(history_of 13 | grep -c '^you')"
+drag 13 Ready
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
+same "dragged" '"Ready"' "$(jq -c '.[0].status' "$OUT")"
+
+case_ "an item whose card was taken off the mirror is put back on it with its next move"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo list
+echo '[13]' >"$BIN/off-mirror"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo claim dev
+grep -q '^ADD .*content=I_13' "$WRITES" || fail "not added back in '$(cat "$WRITES")'"
+grep -q 'item=PVTI_new .*option=OPT_progress' "$WRITES" || fail "not moved on the new card in '$(cat "$WRITES")'"
+
+case_ "a move on the mirror the board wouldn't allow is set back, and the item's history says why"
+gh_items <<'ITEMS'
+Exploring 22 A pitch being drafted
+ITEMS
+every_status
+touch "$BIN/live"
+run board demo list
+drag 22 Approved
+kept board demo list
+same "kept" '"Exploring"' "$(jq -c '.[0].status' "$OUT")"
+grep -q 'item=PVTI_22 .*option=OPT_exploring' "$WRITES" || fail "set back: mirror not written in '$(cat "$WRITES")'"
+same "history" "you moved to Approved on GitHub, set back: Exploring → Approved is the team's move, not a stakeholder's" "$(history_of 22)"
+: >"$WRITES"
+kept board demo list
+same "once" "" "$(cat "$WRITES")"
+same "still once" 1 "$(history_of 22 | grep -c '')"
+
+case_ "a Priority set on the mirror is read back as the stakeholder's, and one set here is written there"
+gh_items <<'ITEMS'
+Idea 23 An idea
+Idea 24 Another
+ITEMS
+run board demo list
+edit_item 23 '.issueFieldValues.nodes = [{name: "Urgent", field: {name: "Priority"}}]'
+kept board demo list
+same "read back" '"Urgent"' "$(jq -c '.[] | select(.number == 23) | .priority' "$OUT")"
+same "history" "you Priority set to Urgent" "$(history_of 23)"
+kept board demo priority you 24 Low
+grep -q 'issue=I_24 .*option=OP_low' "$WRITES" || fail "priority: not mirrored in '$(cat "$WRITES")'"
+
+case_ "a team with no mirror goes through a whole pitch and task cycle without a GitHub Project"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "mirror": false,
+  "wip": { "worktrees": 3, "pitched": 3, "exploring": 3, "ideas": 3 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 30 A pitch
+Ready 77 Its task
+ITEMS
+echo '{"number": 30, "node_id": "I_30", "body": "An idea"}' >"$ISSUE"
+: >"$BIN/args"
+run board demo add you 30 Idea
+same "added" 0 "$STATUS"
+kept board demo move lead 30 Exploring
+kept board demo move lead 30 Pitched
+kept board demo approve you 30
+kept board demo move lead 30 Building
+same "pitch" '"Building"' "$(KEEP_BOARD=1 A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo list | jq -c '.[] | select(.number == 30) | .status')"
+echo 'A task' >"$WORK/task.md"
+echo '{"id": 77, "number": 77, "node_id": "I_77", "body": "A task\n\n<!-- a-team:lead -->"}' >"$ISSUE"
+kept board demo task lead 30 "Its task" "$WORK/task.md"
+same "filed" 0 "$STATUS"
+claimable
+kept board demo claim dev
+same "claimed" 77 "$(jq -c .number "$OUT")"
+kept board demo move dev 77 "In review"
+edit_item 77 '.state = "CLOSED" | .stateReason = "COMPLETED"'
+kept board demo list
+same "board" '[[30,"Building"],[77,"Done"]]' "$(jq -c 'map([.number, .status])' "$OUT")"
+same "project calls" 0 "$(grep -ci projectv2 "$BIN/args")"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 3 } }
+JSON
 
 # short_reads <times> <keep>: the next <times> board reads come back with only their first <keep> items.
 short_reads() { echo "$1 $2" >"$BIN/short-reads"; }
@@ -3428,11 +3664,11 @@ In_review 14 Waiting on you
 Done 15 Merged
 ITEMS
 run board demo list
-complete=$(cat "$OUT")
+complete=$(jq 'map(del(.since))' "$OUT")
 short_reads 1 1
 run board demo list
 same "exit" 0 "$STATUS"
-same "items" "$complete" "$(cat "$OUT")"
+same "items" "$complete" "$(jq 'map(del(.since))' "$OUT")"
 same "stderr" "" "$(cat "$ERR")"
 short_reads 1 0
 run board demo waiting
@@ -4063,7 +4299,7 @@ same "writes" "" "$(cat "$WRITES")"
 
 # Another team's Dev opened this PR for a task of its own; `adopt` puts it on the board here.
 upstream_pr() {
-  jq -n --arg body "$1" '[{id: "PR_86", number: 86, isDraft: false, projectItems: [],
+  jq -n --arg body "$1" '[{id: "PR_86", number: 86, isDraft: false,
     body: "Makes MenuLetters.Pick public.\n\nNeeded by \($body)\n\n<!-- a-team:dev -->"}]' >"$UPSTREAM"
 }
 upstream_edit() { jq "$1" "$UPSTREAM" >"$UPSTREAM.new" && mv "$UPSTREAM.new" "$UPSTREAM"; }
@@ -4076,7 +4312,7 @@ same "exit" 0 "$STATUS"
 same "said" "#86: added as In review" "$(cat "$OUT")"
 grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
 grep -q 'item=PVTI_new .*option=OPT_review' "$WRITES" || fail "In review: '$(cat "$WRITES")'"
-same "one list of the App's PRs" "pr list -R mentaldesk/demo --author app/demo-app --state open --json id,number,isDraft,body,projectItems" \
+same "one list of the App's PRs" "pr list -R mentaldesk/demo --author app/demo-app --state open --json id,number,isDraft,body" \
   "$(cat "$UPSTREAM_CALLS")"
 
 case_ "adopt puts another repo's Dev PR In progress while it's a draft"
@@ -4090,32 +4326,8 @@ same "said" "#86: added as In progress" "$(cat "$OUT")"
 grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
 grep -q 'item=PVTI_new .*option=OPT_progress' "$WRITES" || fail "In progress: '$(cat "$WRITES")'"
 
-case_ "adopt moves an adopted draft to In review once it's out of draft, and leaves it while it's still one"
-upstream_pr "mentaldesk/a-team#538"
-upstream_edit '.[0].projectItems = [{title: "demo", status: {name: "In progress"}}]'
-: >"$WRITES"
-run board demo adopt
-same "exit" 0 "$STATUS"
-same "said" "#86: In progress → In review" "$(cat "$OUT")"
-grep -q 'item=PVTI_new .*option=OPT_review' "$WRITES" || fail "In review: '$(cat "$WRITES")'"
-upstream_edit '.[0].isDraft = true'
-: >"$WRITES"
-run board demo adopt
-same "exit" 0 "$STATUS"
-same "draft writes" "" "$(cat "$WRITES")"
-
-case_ "adopt goes by this team's board, not another one the PR is on"
-upstream_pr "mentaldesk/a-team#538"
-upstream_edit '.[0].projectItems = [{title: "elsewhere", status: {name: "In progress"}}]'
-: >"$WRITES"
-run board demo adopt
-same "exit" 0 "$STATUS"
-same "said" "#86: added as In review" "$(cat "$OUT")"
-grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
-
-case_ "adopt leaves a stakeholder's draft, a PR already In review, and one for a task in this repo"
-for edit in '.[0].projectItems = [{title: "demo", status: {name: "In review"}}]' \
-    '.[0].body |= sub("mentaldesk/a-team#538"; "mentaldesk/demo#12")' '.[0].isDraft = true | .[0].body |= sub("<!-- a-team:dev -->"; "")' \
+case_ "adopt leaves a stakeholder's draft, a PR already on the board, and one for a task in this repo"
+for edit in '.[0].body |= sub("mentaldesk/a-team#538"; "mentaldesk/demo#12")' '.[0].isDraft = true | .[0].body |= sub("<!-- a-team:dev -->"; "")' \
     '.[0].body |= sub("<!-- a-team:dev -->"; "")' '.[0].isDraft = true | .[0].body |= sub("Needed by mentaldesk/a-team#538"; "")'; do
   upstream_pr "mentaldesk/a-team#538"
   upstream_edit "$edit"
@@ -4124,6 +4336,28 @@ for edit in '.[0].projectItems = [{title: "demo", status: {name: "In review"}}]'
   same "exit ($edit)" 0 "$STATUS"
   same "writes ($edit)" "" "$(cat "$WRITES")"
 done
+upstream_pr "mentaldesk/a-team#538"
+jq '.data.organization.projectV2.items.nodes += [{id: "PVTI_86", fieldValueByName: {name: "In review"},
+    content: {__typename: "PullRequest", id: "PR_86", number: 86, title: "Its PR", url: "https://github.com/mentaldesk/demo/pull/86",
+              repository: {nameWithOwner: "mentaldesk/demo"}, labels: {nodes: []}}}]' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+: >"$WRITES"
+run board demo adopt
+same "exit (on the board)" 0 "$STATUS"
+same "writes (on the board)" "" "$(cat "$WRITES")"
+
+case_ "adopt moves an adopted draft to In review once it's out of draft, and leaves it while it's still one"
+jq '(.data.organization.projectV2.items.nodes[] | select(.id == "PVTI_86") | .fieldValueByName.name) = "In progress"' \
+  "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+: >"$WRITES"
+run board demo adopt
+same "exit" 0 "$STATUS"
+same "said" "#86: In progress → In review" "$(cat "$OUT")"
+grep -q 'item=PVTI_86 .*option=OPT_review' "$WRITES" || fail "In review: '$(cat "$WRITES")'"
+upstream_edit '.[0].isDraft = true'
+: >"$WRITES"
+run board demo adopt
+same "exit" 0 "$STATUS"
+same "draft writes" "" "$(cat "$WRITES")"
 
 # The App's open PRs `update` reads, from lines of "<number> <draft> <mergeStateStatus> <head>".
 app_prs() {
@@ -4440,7 +4674,7 @@ run board demo add customer 41 Idea
 same "exit" 0 "$STATUS"
 grep -q 'issues/41/labels -f labels\[\]=a-team:idea' "$WRITES" || fail "no discovery label in '$(cat "$WRITES")'"
 grep -q 'a-team:customer' "$WRITES" && fail "labelled as the docs PR: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_41 .*option=OPT_idea' "$WRITES" || fail "no move to Idea in '$(cat "$WRITES")'"
+same "added" "#41: added as Idea" "$(cat "$OUT")"
 
 case_ "the Customer lead adds nothing past Idea but its docs proposal, and no issue it didn't open"
 for to in Exploring Ready; do
@@ -6869,7 +7103,7 @@ echo "$before" | jq 'del(.repo, .project.number)' >"$TEAM"
 checked
 same "no repo exit" 1 "$STATUS"
 grep -q '^repo      demo.json names no repo$' "$OUT" || fail "no repo: '$(cat "$OUT")'"
-grep -q '^project   demo.json names no project number$' "$OUT" || fail "no project number: '$(cat "$OUT")'"
+grep -q '^project   demo.json names no GitHub Project to copy the board to' "$OUT" || fail "no project number: '$(cat "$OUT")'"
 echo "$before" >"$TEAM"
 
 case_ "any other command refuses a config it can't read, in one line"
@@ -7046,7 +7280,7 @@ recorded() {
   rm -f "$A_TEAM_STATE/history.db"
 }
 unrecorded() {
-  [ ! -e "$A_TEAM_STATE/history.db" ] || fail "$1: recorded '$(sqlite3 "$A_TEAM_STATE/history.db" 'SELECT * FROM events')'"
+  same "$1: recorded" "" "$(sqlite3 "$A_TEAM_STATE/history.db" 'SELECT * FROM events' 2>/dev/null)"
 }
 
 export A_TEAM_STATE
@@ -7209,9 +7443,7 @@ CAUGHT
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "one query" 1 "$(caught_calls)"
-same "comments and moves" "octocat commented
-you added as Idea
-you Pitched → Approved
+same "comments, and no moves: the board reads those itself" "octocat commented
 you commented
 lead commented" "$(history_of 7)"
 same "merged" "you accepted · PR #908 merged" "$(history_of 8)"
@@ -7223,7 +7455,7 @@ same "when" "$said" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 7 | 
 case_ "catching up again records nothing new"
 run board demo waiting
 same "exit" 0 "$STATUS"
-same "twice" 5 "$(history_of 7 | grep -c '')"
+same "twice" 3 "$(history_of 7 | grep -c '')"
 
 case_ "the catch-up leaves out bots, other projects, and what happened before the record began"
 record_from "$(ago 120)"
@@ -7370,7 +7602,6 @@ same "parent" '404' "$(jq -c '.[1].parent' "$OUT")"
 same "blocked" '[false,true,false,true]' "$(jq -c '[.[].blocked]' "$OUT")"
 same "priority" '"High"' "$(jq -c '.[0].priority' "$OUT")"
 same "status" '"In review"' "$(jq -c '.[2].status' "$OUT")"
-same "filter" '-Status:"Done"' "$(cat "$FILTERS")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
 
 case_ "overview: each card's last run, from the run record, whichever role it was"
@@ -8590,8 +8821,8 @@ same "merged" '[[{"team":"style","refs":[],"what":"style'"'"'s release","shown":
 waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
 releases <<<"v0.3.9 2026-10-16T12:00:00Z"
 contains v0.3.9
-echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": []},
-       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0", "projectItems": []}]' >"$UPDATES"
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9"},
+       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0"}]' >"$UPDATES"
 run board demo waiting
 same "bump" '[[{"team":"demo","refs":[535],"what":"#535","shown":"yours"}]]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
 echo '[]' >"$UPDATES"
@@ -8627,9 +8858,9 @@ waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
 upstream_items <<<"84 PullRequest MERGED abc123"
 releases <<<"v0.3.9 2026-10-16T12:00:00Z"
 contains v0.3.9
-echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": []},
-       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0", "projectItems": []}]' >"$UPDATES"
-echo '[{"id": "PR_534", "number": 534, "title": "Bump MentalDesk.Tui.Testing from 0.3.8 to 0.3.9", "projectItems": []}]' >"$UPDATES"
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9"},
+       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0"}]' >"$UPDATES"
+echo '[{"id": "PR_534", "number": 534, "title": "Bump MentalDesk.Tui.Testing from 0.3.8 to 0.3.9"}]' >"$UPDATES"
 run board demo free
 same "another package" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
 grep -q "content=PR_534" "$WRITES" && fail "bump: a package that only starts with the wait's came onto the board"
@@ -8639,8 +8870,8 @@ waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
 upstream_items <<<"84 PullRequest MERGED abc123"
 releases <<<"v0.3.9 2026-10-16T12:00:00Z"
 contains v0.3.9
-echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": []},
-       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0", "projectItems": []}]' >"$UPDATES"
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9"},
+       {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0"}]' >"$UPDATES"
 run board demo free
 same "exit" 0 "$STATUS"
 same "said" "#535: added as In review, since #11 waits on it" "$(cat "$OUT")"
@@ -8649,8 +8880,8 @@ grep -q "content=PR_536" "$WRITES" && fail "bump: another Dependabot PR came ont
 grep -q -- "--remove-label" "$WRITES" && fail "bump: freed while the bump is open"
 same "posted" "" "$(cat "$POSTED")"
 : >"$WRITES"
-echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9", "projectItems": [{"id": "PVTI_535"}]}]' >"$UPDATES"
-run board demo free
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9"}]' >"$UPDATES"
+KEEP_BOARD=1 run board demo free
 same "on the board already" "" "$(cat "$OUT")$(cat "$WRITES")"
 echo '[]' >"$UPDATES"
 run board demo free

@@ -297,8 +297,24 @@ public class TeamStartTests : IDisposable
         });
 
         Assert.Equal(["Create a project for fretty?"], asked);
-        Assert.Equal(("fretty is paused: it has no project to move its work across. Pick one in its settings.", Schemes.Accent), said);
+        Assert.Equal(("fretty is paused: it has no project to copy its board to. Pick one, or None, in its settings.", Schemes.Accent), said);
         Assert.Empty(Ran());
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public void A_team_with_Mirror_None_is_offered_no_project()
+    {
+        Team("fretty", app: true, checkout: true, project: false, mirror: false);
+        List<string> asked = [];
+
+        Start().Follow(_teams, "fretty", step =>
+        {
+            asked.Add(step.Title);
+            return Answer.Skipped;
+        });
+
+        Assert.DoesNotContain("Create a project for fretty?", asked);
+        Assert.Contains("Set up fretty's board?", asked);
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -611,11 +627,11 @@ public class TeamStartTests : IDisposable
             fi
             """)), Path.Combine(_root, "home"), () => dispatcher);
 
-    private void Team(string name, bool app, bool checkout = false, bool project = true)
+    private void Team(string name, bool app, bool checkout = false, bool project = true, bool mirror = true)
     {
         Directory.CreateDirectory(_teams.TeamsDirectory);
         File.WriteAllText(Path.Combine(_teams.TeamsDirectory, $"{name}.json"), $$$"""
-            {"repo": "mentaldesk/{{{name}}}", "project": {{{(project ? "{\"owner\": \"mentaldesk\", \"number\": 7}" : "{\"owner\": \"\", \"number\": null}")}}}, "vision": "docs/vision.md",
+            {"repo": "mentaldesk/{{{name}}}", {{{(mirror ? "" : "\"mirror\": false,")}}} "project": {{{(project ? "{\"owner\": \"mentaldesk\", \"number\": 7}" : "{\"owner\": \"\", \"number\": null}")}}}, "vision": "docs/vision.md",
              "workdir": "~/code/{{{name}}}", "checkout": "~/code/{{{name}}}/main", {{{(app ? "\"app\": {\"id\": 1, \"slug\": \"a-team-mentaldesk\"}," : "")}}}
              "dispatch": {"enabled": false}}
             """);

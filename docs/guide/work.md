@@ -214,7 +214,7 @@ the previous and next comment's heading, with the top of the body counting as th
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
 accept, decline, Not now, comment, Priority, recommendation, skip, review, link and dependency, with when
 and who (`you`, or the role: `lead`, `dev`, `customer` or `reviewer`). What
-you or anyone else does on GitHub directly (a merge, a close, a comment, a move on the Project board)
+you or anyone else does on GitHub directly (a merge, a close, a comment, a card moved on the team's mirror)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.

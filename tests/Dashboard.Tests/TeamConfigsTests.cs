@@ -71,6 +71,7 @@ public class TeamConfigsTests : IDisposable
     [InlineData("""{"project": {"owner": "mentaldesk", "number": 3, "ownerType": "organization"}}""", "https://github.com/orgs/mentaldesk/projects/3")]
     [InlineData("""{"project": {"owner": "jamescrosswell", "number": 7, "ownerType": "user"}}""", "https://github.com/users/jamescrosswell/projects/7")]
     [InlineData("""{"project": {"owner": "", "number": 3}}""", null)]
+    [InlineData("""{"mirror": false, "project": {"owner": "mentaldesk", "number": 3}}""", null)]
     [InlineData("""{"project": {"owner": "mentaldesk"}}""", null)]
     [InlineData("""{"project": {"owner": "mentaldesk", "number": "3"}}""", null)]
     [InlineData("{}", null)]

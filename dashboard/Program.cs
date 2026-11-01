@@ -149,7 +149,8 @@ Handover? Show(Handover? back)
             change => change.Run(team, command.Read), opener.Open),
         macKeys: macKeys,
         assistant: new AssistantSetup(new ProcessLauncher(), AssistantBrief.For(root, teams.TeamsDirectory, stateRoot, named),
-            Path.Combine(stateRoot, "assistant.json")));
+            Path.Combine(stateRoot, "assistant.json")),
+        syncBoard: team => command.Read("board", team, "sync"));
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

@@ -162,6 +162,9 @@ public sealed class SettingsDialog : Dialog
         _teamList.Drop = RemoveTeam;
         RepairTeam = team => App is { } app && _start is { } start &&
             StepDialog.Show(app, start.Repair(team, _teams.Settings(team))) == Answer.Done;
+        MakeMirror = team => App is { } app && _start is { } start &&
+            StepDialog.Show(app, start.NewMirror(_teams, team)) == Answer.Done &&
+            StepDialog.Show(app, start.Repair(team, _teams.Settings(team))) == Answer.Done;
         EditTeam = (team, settings, save) =>
             App is { } app
                 ? TeamForm.Show(app, team, settings, save, ListProjects, _checks?.Latest(team),
@@ -310,6 +313,9 @@ public sealed class SettingsDialog : Dialog
 
     /// <summary>Sets a team's board up again, once you've seen what that does, and says whether it did.</summary>
     internal Func<string, bool> RepairTeam { get; set; }
+
+    /// <summary>Makes the project a team's settings now ask for, and sets it up; true once both are done.</summary>
+    internal Func<string, bool> MakeMirror { get; set; }
 
     /// <summary>The new team whose vision you chose to write now, which closes the dialog for the interview.</summary>
     internal string? VisionFor { get; private set; }
@@ -475,6 +481,8 @@ public sealed class SettingsDialog : Dialog
         }
         if (EditTeam(team.Name, before, after => SaveTeam(team.Name, before, after)) is not { } saved)
             return true;
+        if (saved.NewMirror && !before.NewMirror)
+            MakeMirror(team.Name);
         _teamRows[index] = _teams.Row(team.Name);
         Check(team.Name);
         ReadToday(team.Name);
