@@ -121,7 +121,9 @@ public sealed class OverseerView : View
     internal LoadStateView? LoadOf(string team) => LaneOf(team)?.Load;
 
     /// <summary>The team and column the selection is in, for the status bar.</summary>
-    internal string? Region => _board.Selected is { } place ? $"{OverseerBoard.Columns[place.Column]} · {place.Team}" : null;
+    internal string? Region => _board.Selected is { } place
+        ? place.Heading ? place.Team : $"{OverseerBoard.Columns[place.Column]} · {place.Team}"
+        : null;
 
     public void Show(IReadOnlyList<BoardCard> cards)
     {
@@ -251,6 +253,16 @@ public sealed class OverseerView : View
 
     /// <summary>Enter on a <c>+N</c>: unfolds its lane.</summary>
     public void Unfold() => Move(_board.Unfold);
+
+    /// <summary>Selects <paramref name="team"/>'s lane heading.</summary>
+    public bool SelectHeading(string team)
+    {
+        if (!_board.SelectHeading(team))
+            return false;
+        Changed();
+        ScrollToSelection();
+        return true;
+    }
 
     /// <summary>Selects <paramref name="team"/>'s card <paramref name="number"/>, if it's on the board.</summary>
     public bool Select(string team, int number)
@@ -389,6 +401,8 @@ public sealed class OverseerView : View
         ShowDetails();
         SelectionChanged?.Invoke();
         Redraw();
+        foreach (var lane in _laneViews)
+            lane.SetNeedsDraw();
         _lanes.SetNeedsLayout();
         SetNeedsLayout();
         SetNeedsDraw();
@@ -451,10 +465,17 @@ public sealed class OverseerView : View
     /// <summary>Keeps the selected chip's row on screen.</summary>
     private void ScrollToSelection()
     {
-        if (_board.Selected is not { } place || _board.SelectedRow is not { } row
-            || _laneViews.FirstOrDefault(lane => LaneTeam(lane) == place.Team) is not { } lane)
+        if (_board.Selected is not { } place || _laneViews.FirstOrDefault(lane => LaneTeam(lane) == place.Team) is not { } lane)
             return;
         var top = Top(lane);
+        if (place.Heading)
+        {
+            if (top < _lanes.Viewport.Y || top >= _lanes.Viewport.Y + _lanes.Viewport.Height)
+                _lanes.Viewport = _lanes.Viewport with { Y = top };
+            return;
+        }
+        if (_board.SelectedRow is not { } row)
+            return;
         var height = _lanes.Viewport.Height;
         var first = top + 1 + row;
         var y = _lanes.Viewport.Y;
@@ -515,7 +536,8 @@ public sealed class OverseerView : View
         }
     }
 
-    /// <summary>A team's framed lane, with each busy role's header frame painted into the cell its title keeps for it.</summary>
+    /// <summary>A team's framed lane, with each busy role's header frame painted into the cell its title keeps for it,
+    /// and its title drawn selected while the selection is on it.</summary>
     private sealed class Lane(OverseerView overseer, int index) : FrameView
     {
         public IReadOnlyList<HeaderSlot> Slots { get; set; } = [];
@@ -526,13 +548,20 @@ public sealed class OverseerView : View
         {
             base.OnDrawComplete(context);
             var shown = Math.Max(0, Frame.Width - 4);
-            var under = GetAttributeForRole(VisualRole.Normal);
+            var selected = overseer._board.Selected is { Heading: true } place && place.Team == LaneTeam(this);
+            var under = GetAttributeForRole(selected ? VisualRole.Focus : VisualRole.Normal);
+            if (selected)
+            {
+                // The border draws the title two cells in from the frame's left edge, on the row above the viewport.
+                Move(1, -1);
+                SetAttribute(under);
+                AddStr(Card.Elide(Title, shown));
+            }
             foreach (var slot in Slots)
             {
                 if (slot.Column >= shown)
                     continue;
                 var animation = RoleAnimation.For(slot.Role);
-                // The border draws the title two cells in from the frame's left edge, on the row above the viewport.
                 Move(1 + slot.Column, -1);
                 PaintFrame(this, animation, animation.Header(overseer.Elapsed, index), under, overseer._icons);
             }
@@ -562,7 +591,7 @@ public sealed class OverseerView : View
                     var holding = chip.Card is { } held && state.Holding.Contains((held.Team, held.Number));
                     var full = ChipText(chip, state.Now, frame?.Text, overseer._icons, holding);
                     var text = Card.Elide(full, width - 1);
-                    var selected = board.Selected is { } place && place.Team == team && place.Column == column
+                    var selected = board.Selected is { Heading: false } place && place.Team == team && place.Column == column
                         && place.Number == chip.Card?.Number;
                     var age = chip.Card is not null && text == full ? AgeWidth : 0;
                     var warning = holding && age > 0 ? Flag(Icon.Warning, overseer._icons).Length : 0;

@@ -151,8 +151,8 @@ The Lead never changes back an entry you've corrected.
 
 The Customer lead makes sure what the team ships is documented, so someone who didn't watch it being
 built can find it and learn it. It's off until you turn it on: tick **Customer lead** under **Roles**
-in the team's settings ([Turning on the Customer lead](teams.md#turning-on-the-customer-lead)), and its pane joins the team's on the
-Dashboard.
+in the team's settings ([Turning on the Customer lead](teams.md#turning-on-the-customer-lead)), and it gets a line in the team's
+panel in [Overseer](overseer.md#the-teams-panel).
 
 - **If the docs' first page isn't in the repo yet**, it proposes the docs first: a draft PR in
   Pitched, `Docs proposal: where <product>'s user docs live`, that adds that page with their outline.
@@ -182,8 +182,8 @@ task, and the next change starts a new one. It never changes code, pitches or ta
 
 The Reviewer gives each of the Dev's task PRs the sanity check you'd otherwise ask a fresh session
 for, before the PR reaches you. It's off until you turn it on: tick **Reviewer** under **Roles** in
-the team's settings ([Teams](teams.md#a-teams-settings)), and its pane joins the team's on the
-Dashboard. Each review is a run, so it costs one run per task.
+the team's settings ([Teams](teams.md#a-teams-settings)), and it gets a line in the team's
+panel in [Overseer](overseer.md#the-teams-panel). Each review is a run, so it costs one run per task.
 
 - **When it runs.** Once a task's PR goes green and is still a draft, the Reviewer reads it before
   the Dev marks it ready. It reads the task and its pitch as well as the diff, and changes no code.

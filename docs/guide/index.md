@@ -19,13 +19,13 @@ cost by theme and pitch.
 ## [Overseer](overseer.md)
 
 Every team's board on one screen: where each card is, how long it has waited there, which ones an
-agent is on, and the time limits that flag a card that has sat too long.
+agent is on, and the time limits that flag a card that has sat too long. What each agent is doing:
+reading its session, pausing a role, interrupting a run to step into it, and the dispatcher's log.
 
-## [Dashboard](dashboard.md)
+## [Around the app](app.md)
 
-What each agent is doing: its pane and log, tool calls, pausing a role, and interrupting a run to
-step into it. Also asking the Assistant about your teams from any area, the app's keys, and making
-your Mac's Cmd and Option keys work in it.
+Asking the Assistant about your teams from any area, the app's keys and menus, copying, making your
+Mac's Cmd and Option keys work in it, this Guide, and confirming.
 
 ## [Teams](teams.md)
 

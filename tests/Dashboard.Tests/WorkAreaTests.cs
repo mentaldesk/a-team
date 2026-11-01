@@ -109,7 +109,7 @@ public class WorkAreaTests : IDisposable
     public void New_idea_off_Work_starts_on_the_first_team()
     {
         var asked = new List<string>();
-        using var window = Open(area: Area.Dashboard, newIdea: (_, team, _, _) =>
+        using var window = Open(area: Area.Overseer, newIdea: (_, team, _, _) =>
         {
             asked.Add(team);
             return null;
@@ -499,7 +499,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_Dashboard_reads_nothing_by_itself()
+    public void Work_reads_nothing_by_itself_while_Overseer_is_in_front()
     {
         var clock = new Clock();
         var reads = 0;
@@ -507,7 +507,7 @@ public class WorkAreaTests : IDisposable
         {
             reads++;
             return Task.FromResult(new Reading(Waiting(team), null));
-        }, area: Area.Dashboard, clock: clock);
+        }, area: Area.Overseer, clock: clock);
 
         clock.Now += DashboardWindow.ReadEvery * 2;
         window.Refresh();
@@ -587,10 +587,10 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Opening_on_the_Dashboard_reads_nothing()
+    public void Opening_on_Overseer_reads_nothing_of_Work_without_a_board_to_read()
     {
         var reads = 0;
-        using var window = Open(area: Area.Dashboard, read: _ =>
+        using var window = Open(area: Area.Overseer, read: _ =>
         {
             reads++;
             return new TaskCompletionSource<Reading>().Task;
@@ -703,7 +703,7 @@ public class WorkAreaTests : IDisposable
         Assert.NotEqual("", window.Says());
         Assert.Equal(window.Viewport.Height - 1, window.Status.Frame.Y);
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
         LayOut(window, 120, 30);
 
         Assert.Equal("", window.Says());
@@ -727,15 +727,15 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_Dashboard_has_no_filter_to_report()
+    public void Overseer_has_no_filter_to_report()
     {
         using var window = Open();
         window.Refresh();
         LayOut(window, 120, 30);
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
 
-        Assert.Equal("", window.Status.FocusWord);
+        Assert.Equal("Overseer", window.Status.FocusWord);
     }
 
     [Fact]
@@ -759,7 +759,6 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal(IconStyle.NerdFont, window.Work.Icons);
-        Assert.All(window.Panes, pane => Assert.InRange(char.ConvertToUtf32(pane.Title, 0), 0xF0001, 0xF1AF0));
         Assert.False(File.Exists(Path.Combine(Config, "dashboard.json")));
     }
 
@@ -790,7 +789,6 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(
             [Icons.Glyph(Icon.YourMove, IconStyle.NerdFont), Icons.Glyph(Icon.TheirMove, IconStyle.NerdFont)],
             window.Work.Lanes[0].Columns[1].CardIcons.Select(icon => icon.Glyph));
-        Assert.All(window.Panes, pane => Assert.InRange(char.ConvertToUtf32(pane.Title, 0), 0xF0001, 0xF1AF0));
     }
 
     [Fact]
@@ -2927,17 +2925,17 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_d_key_goes_back_to_the_Dashboard_and_the_agents_are_there_again()
+    public void Ctrl_G_D_goes_nowhere_now_and_says_it_isn_t_a_key()
     {
         using var window = Open();
         window.Refresh();
 
-        Assert.True(window.Press("Ctrl+G D"));
+        window.Press("Ctrl+G D");
 
-        Assert.Equal(Area.Dashboard, window.CurrentArea);
-        Assert.True(window.Agents.Visible);
-        Assert.True(window.Dispatcher.Visible);
-        Assert.False(window.Work.Visible);
+        Assert.Equal(Area.Work, window.CurrentArea);
+        Assert.Equal("Ctrl+G D isn't a key", window.Says());
+        Assert.DoesNotContain(window.Commands.Registered, command => command.Keys == "Ctrl+G D");
+        Assert.DoesNotContain(window.MenuItems, item => item.Id == "view.dashboard");
     }
 
     [Fact]
@@ -2945,9 +2943,9 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open();
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
 
-        Assert.Equal(Area.Dashboard, new DashboardSettings(Config).ReadArea());
+        Assert.Equal(Area.Overseer, new DashboardSettings(Config).ReadArea());
         Assert.True(window.Press("Ctrl+G W"));
         Assert.Equal(Area.Work, new DashboardSettings(Config).ReadArea());
     }
@@ -3042,7 +3040,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(107, window.Work.Selected?.Number);
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
         clock.Now += DashboardWindow.ReadEvery - TimeSpan.FromSeconds(1);
         window.Refresh();
         window.Press("Ctrl+G W");
@@ -3065,7 +3063,7 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
         window.Press("Ctrl+G W");
 
         Assert.Equal("https://github.com/mentaldesk/team0/pull/122", window.Work.SelectedUrl);
@@ -3084,7 +3082,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
         WriteRun("team1", "lead", Environment.ProcessId);
         window.Press("Ctrl+G W");
         window.Refresh();
@@ -3107,7 +3105,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
         WriteRun("team0", "dev", 999999);
         window.Press("Ctrl+G W");
         window.Refresh();
@@ -3130,7 +3128,7 @@ public class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
         window.NewKeyDownEvent(Key.CursorRight);
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
         clock.Now += DashboardWindow.ReadEvery;
         window.Press("Ctrl+G W");
         window.Refresh();
@@ -3151,7 +3149,7 @@ public class WorkAreaTests : IDisposable
         });
         window.Refresh();
 
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
         window.Press("Ctrl+G W");
 
         Assert.Equal(4, reads);
@@ -3228,7 +3226,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_arrows_move_between_cards_instead_of_between_agents()
+    public void The_arrows_move_between_cards()
     {
         using var window = Open();
         window.Refresh();
@@ -3238,7 +3236,6 @@ public class WorkAreaTests : IDisposable
         window.NewKeyDownEvent(Key.CursorDown);
 
         Assert.Equal(108, window.Work.Selected?.Number);
-        Assert.All(window.Panes, pane => Assert.False(pane.HasFocus));
     }
 
     [Fact]
@@ -3377,14 +3374,15 @@ public class WorkAreaTests : IDisposable
     [Fact]
     public void Every_menu_item_runs_the_command_its_id_names_on_the_key_that_command_has()
     {
-        using var window = Open(area: Area.Dashboard);
+        using var window = Open(area: Area.Overseer);
 
         Assert.Equal(
             [
-                "overseer.details", "overseer.fold", "overseer.github", "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam", "team.board",
-                "decisions", "settings", "quit", "view.dashboard", "view.work", "view.overseer", "assistant", "view.details", "work.team", "work.whatsNew", "work.read", "work.priority", "work.try",
-                "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh", "work.mine", "agent.hold", "agent.interrupt",
-                "dispatch.pass", "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help", "guide", "messages", "commands", "about",
+                "overseer.details", "overseer.fold", "overseer.github", "overseer.retry", "overseer.refresh", "work.nextTeam", "work.previousTeam", "team.board",
+                "view.dispatcher", "decisions", "settings", "quit", "view.work", "view.overseer", "assistant", "view.details", "work.team", "work.whatsNew", "work.read",
+                "work.priority", "work.try", "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh",
+                "work.mine", "agent.hold", "agent.interrupt", "dispatch.pass", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help",
+                "guide", "messages", "commands", "about",
             ],
             window.MenuItems.Select(item => item.Id));
         Assert.All(window.MenuItems, item =>
@@ -3398,13 +3396,13 @@ public class WorkAreaTests : IDisposable
     [Fact]
     public void A_menu_item_and_its_key_do_the_same_thing()
     {
-        using var window = Open(area: Area.Dashboard);
+        using var window = Open(area: Area.Overseer);
 
         window.MenuItems.Single(item => item.Id == "view.work").Item.Action!();
         Assert.Equal(Area.Work, window.CurrentArea);
 
-        window.MenuItems.Single(item => item.Id == "view.dashboard").Item.Action!();
-        Assert.Equal(Area.Dashboard, window.CurrentArea);
+        window.MenuItems.Single(item => item.Id == "view.overseer").Item.Action!();
+        Assert.Equal(Area.Overseer, window.CurrentArea);
         Assert.True(window.Press("Ctrl+G W"));
         Assert.Equal(Area.Work, window.CurrentArea);
     }
@@ -3704,19 +3702,6 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Ctrl_T_T_on_the_Dashboard_shows_tool_calls_and_hands_nothing_over()
-    {
-        var handed = new List<Handover>();
-        using var window = Open(handOver: handed.Add, area: Area.Dashboard);
-        window.NewKeyDownEvent(Key.Tab);
-
-        Assert.True(window.Press("Ctrl+T T"));
-
-        Assert.Empty(handed);
-        Assert.True(window.Panes[0].Expanded);
-    }
-
-    [Fact]
     public void The_card_commands_stay_on_the_selected_card_while_the_menu_has_focus()
     {
         using var window = Open();
@@ -3815,7 +3800,7 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void Time_in_Work_between_cards_is_the_selected_lane_s_and_the_Dashboard_s_is_nobody_s()
+    public void Time_in_Work_between_cards_is_the_selected_lane_s_and_Overseer_s_is_nobody_s()
     {
         var clock = new Clock();
         var visits = new List<Visit>();
@@ -3826,7 +3811,7 @@ public class WorkAreaTests : IDisposable
 
         clock.Now += TimeSpan.FromMinutes(3);
         attention.Key();
-        window.Commands.Execute("view.dashboard");
+        window.Commands.Execute("view.overseer");
         window.Refresh();
         clock.Now += TimeSpan.FromMinutes(4);
         attention.Key();

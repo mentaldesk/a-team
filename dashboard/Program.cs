@@ -24,9 +24,7 @@ var stateRoot = Environment.GetEnvironmentVariable("A_TEAM_STATE") is { Length: 
 
 var configRoot = DashboardSettings.ConfigRoot();
 
-var requested = args is ["--area", var name, ..] && Enum.TryParse<Area>(name, ignoreCase: true, out var chosen)
-    ? chosen
-    : (Area?)null;
+var requested = args is ["--area", var name, ..] ? DashboardSettings.ParseArea(name) : null;
 var wanted = requested is null ? args : args[2..];
 
 var teams = new TeamConfigs(configRoot);

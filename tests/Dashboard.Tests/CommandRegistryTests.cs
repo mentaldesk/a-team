@@ -179,8 +179,8 @@ public class CommandRegistryTests
     public void A_command_in_several_regions_has_its_key_in_each_of_them()
     {
         var ran = 0;
-        var here = Regions.Agents;
-        var commands = new CommandRegistry().Register("hold", "Hold", () => ran++, new Key('h'), scopes: [Regions.Agents, Regions.Log]);
+        var here = Regions.Team;
+        var commands = new CommandRegistry().Register("hold", "Hold", () => ran++, new Key('h'), scopes: [Regions.Team, Regions.Log]);
         commands.Keys.FocusedScope = () => here;
 
         commands.Press(new Key('h'));
@@ -215,12 +215,12 @@ public class CommandRegistryTests
     {
         var commands = new CommandRegistry()
             .Register("work", "Work", () => { }, chord: "Ctrl+G W")
-            .Register("hold", "Hold", () => { }, new Key('h'), scopes: [Regions.Agents, Regions.Log]);
+            .Register("hold", "Hold", () => { }, new Key('h'), scopes: [Regions.Team, Regions.Log]);
 
         var carried = SavedKeys.Carry([("work", new Key('w')), ("hold", new Key('z'))], commands);
 
         Assert.Equal("w", carried["work"]!.GetValue<string>());
-        Assert.Equal(["Agents", "Log"], carried["hold"]!.AsArray().Select(entry => entry!["where"]!.GetValue<string>()));
+        Assert.Equal(["Team", "Log"], carried["hold"]!.AsArray().Select(entry => entry!["where"]!.GetValue<string>()));
     }
 
     [Fact]

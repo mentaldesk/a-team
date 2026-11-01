@@ -43,8 +43,8 @@ public sealed record CardRun(string Role, AgentState State, bool OnTask, bool He
         var state = run.State;
         var role = OverseerView.RoleName(run.Role);
         var when = state.Running
-            ? state.LastStart is { } started ? $"running {AgentPane.Clock(now - started)}" : "running"
-            : state.LastStart is { } last ? $"last ran {AgentPane.Ago(now - last)} ago" : "last ran";
+            ? state.LastStart is { } started ? $"running {Ages.Clock(now - started)}" : "running"
+            : state.LastStart is { } last ? $"last ran {Ages.Ago(now - last)} ago" : "last ran";
         var stopped = held ? " · held" : "";
         var why = state.Reasons.Count == 0 ? "" : " · why: " + string.Join("; ", state.Reasons);
         return $"{role} · {when}{stopped}{why}";

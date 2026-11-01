@@ -1,4 +1,3 @@
-using System.Drawing;
 using System.Globalization;
 using System.Reflection;
 using AssistantPane = MentalDesk.Tui.Assistant.AssistantPane;
@@ -15,10 +14,9 @@ using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The areas the app opens in: the agents, everything waiting on the reviewer, or every team's board.</summary>
+/// <summary>The areas the app opens in: everything waiting on the reviewer, or every team's board.</summary>
 public enum Area
 {
-    Dashboard,
     Work,
     Overseer,
 }
@@ -28,11 +26,9 @@ public sealed class DashboardWindow : Window
     private const int MenuLines = 1;
     private const int StatusLines = 1;
     private const int TitleLines = 1;
-    private const int DispatchLines = 4;
     private const int BrokeLines = 20;
     private const string BrokeRule = "── the dispatcher's own output since then ──";
     private const int TitleMargin = 4;
-    private const int MinCellHeight = 5;
     private const string AllItems = "All items";
     private const string MyItems = "My items";
     private const string CopyLines = "log.copyLines";
@@ -42,15 +38,13 @@ public sealed class DashboardWindow : Window
 
     // Cmd+C, once the Mac keys are installed.
     private static readonly Key MacCopy = Key.C.WithCtrl;
-    private readonly List<AgentPane> _panes = [];
+    private readonly List<RoleWatch> _watches = [];
     private readonly CommandRegistry _commands = new();
     private readonly string _version = Version();
     private readonly AppMenu _menu;
     private readonly AppStatusBar _bar = new();
     private readonly MoveAlert _alert = new();
-    private readonly View _agents;
     private readonly FrameView _dispatchFrame;
-    private readonly LogView _dispatch;
     private readonly LogView _dispatchAll;
     private readonly WorkView _work;
     private readonly OverseerView _overseer;
@@ -124,16 +118,13 @@ public sealed class DashboardWindow : Window
     private readonly Dictionary<string, StatusMessage> _readFailures = [];
     private readonly Dictionary<string, StatusMessage> _boardFailures = [];
     private readonly Dictionary<string, StatusMessage> _checkFailures = [];
+    private StatusMessage? _passFailed;
     private string? _progress;
-    private int? _expanded;
-    private bool _onDispatcher;
-    private bool _dispatcherExpanded;
+    private bool _dispatcherOpen;
     private IReadOnlyList<string> _broke = [];
     private (long Length, DateTime Written) _wholeRead;
     private IReadOnlyList<LogLine> _whole = [];
     private IconStyle _drawn = IconStyle.Unicode;
-    private AgentPane? _lastSelected;
-    private Size _laidOutOver;
     private Handover? _resume;
     private Place? _left;
     private string[] _activityRead = [];
@@ -144,12 +135,14 @@ public sealed class DashboardWindow : Window
     private readonly MacKeys? _macKeys;
     private readonly AssistantPane? _assistant;
     private readonly CardPanel _card;
+    private readonly TeamPanel _team = new() { Visible = false };
     private readonly Tabs _side;
     private readonly View _detailsTab;
     private readonly View _assistantTab;
     private CardRun? _cardRun;
     private bool _sessionFull;
-    private (string Team, int Number, LogPlace? Full)? _backTo;
+    private bool _sessionFromRoles;
+    private (string Team, int? Number, string Role, LogPlace? Full)? _backTo;
 
     public DashboardWindow(
         IReadOnlyList<(string Team, string Role)> agents,
@@ -241,64 +234,21 @@ public sealed class DashboardWindow : Window
         _stateRoot = stateRoot;
         _teamNames = [.. agents.Select(agent => agent.Team).Distinct()];
 
-        _agents = new View
-        {
-            X = 0,
-            Y = MenuLines,
-            Width = Dim.Func(_ => BesideAssistant(), this),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - Foot() - MenuLines), this),
-            CanFocus = true,
-            Visible = area == Area.Dashboard,
-        };
-        _agents.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
-        _agents.SubViewLayout += (_, _) => FitGrid();
-        Add(_agents);
-
-        var expandToolCalls = settings.ReadExpandToolCalls();
-        for (var i = 0; i < agents.Count; i++)
-        {
-            var (team, role) = agents[i];
-            var pane = new AgentPane(team, role, Path.Combine(stateRoot, team, role), expandToolCalls);
-            pane.X = Pos.Func(_ => Cell(_panes.IndexOf(pane)).X, this);
-            pane.Y = Pos.Func(_ => Cell(_panes.IndexOf(pane)).Y, this);
-            pane.Width = Dim.Func(_ => Cell(_panes.IndexOf(pane)).Width, this);
-            pane.Height = Dim.Func(_ => Cell(_panes.IndexOf(pane)).Height, this);
-            pane.HasFocusChanged += (_, e) =>
-            {
-                if (!e.NewValue)
-                    return;
-                _lastSelected = pane;
-                if (_onDispatcher)
-                {
-                    _onDispatcher = false;
-                    ShowDispatcher(_clock.GetUtcNow());
-                }
-            };
-            _panes.Add(pane);
-            _agents.Add(pane);
-        }
+        foreach (var (team, role) in agents)
+            _watches.Add(new RoleWatch(team, role, Path.Combine(stateRoot, team, role)));
 
         _dispatchFrame = new FrameView
         {
             Title = "dispatcher",
             X = 0,
-            Y = Pos.Func(_ => _dispatcherExpanded ? MenuLines : Math.Max(0, Viewport.Height - Foot()), this),
+            Y = MenuLines,
             Width = Dim.Func(_ => BesideAssistant(), this),
-            Height = Dim.Func(_ => _dispatcherExpanded ? Math.Max(0, Viewport.Height - MenuLines - StatusLines) : DispatchLines + 2, this),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this),
             CanFocus = true,
-            Visible = area == Area.Dashboard,
+            Visible = false,
         };
-        _dispatchFrame.HasFocusChanged += (_, e) =>
-        {
-            if (e.NewValue && !_onDispatcher)
-            {
-                _onDispatcher = true;
-                ShowDispatcher(_clock.GetUtcNow());
-            }
-        };
-        _dispatch = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true, SchemeName = BaseScheme };
-        _dispatchAll = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true, Scrolls = true, SchemeName = BaseScheme, Visible = false };
-        _dispatchFrame.Add(_dispatch, _dispatchAll);
+        _dispatchAll = new LogView { Width = Dim.Fill(), Height = Dim.Fill(), Elides = true, Scrolls = true, SchemeName = BaseScheme };
+        _dispatchFrame.Add(_dispatchAll);
         Add(_dispatchFrame);
 
         _title = new Label { X = 1, Y = MenuLines, Width = Dim.Func(_ => Math.Max(0, BesideAssistant() - 1), this), Text = "Work", Visible = area == Area.Work };
@@ -319,12 +269,16 @@ public sealed class DashboardWindow : Window
             X = 0,
             Y = MenuLines,
             Width = Dim.Func(_ => BesideAssistant(), this),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines - TeamFoot()), this),
             Visible = area == Area.Overseer,
         };
-        _overseer.SelectionChanged += ShowCard;
+        _overseer.SelectionChanged += () =>
+        {
+            ShowSelection();
+            Arrange();
+        };
         Add(_overseer);
-        _card = new CardPanel(expandToolCalls) { Visible = false };
+        _card = new CardPanel(settings.ReadExpandToolCalls()) { Visible = false };
         _detailsTab = new View { Title = "Details", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
         _assistantTab = new View { Title = "Assistant", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
         _side = new Tabs
@@ -337,7 +291,7 @@ public sealed class DashboardWindow : Window
             Visible = false,
         };
         _side.Add(_detailsTab, _assistantTab);
-        Add(_card, _side);
+        Add(_card, _team, _side);
         ShowIcons(settings.ReadIcons());
         if (assistant is not null)
             Add(_assistant = NewAssistant(assistant));
@@ -353,7 +307,6 @@ public sealed class DashboardWindow : Window
         ShowKeysHint();
         _menu = new AppMenu(_commands, _area, new Dictionary<string, Func<bool>>
         {
-            ["view.dashboard"] = () => _area == Area.Dashboard,
             ["view.work"] = () => _area == Area.Work,
             ["view.overseer"] = () => _area == Area.Overseer,
             ["assistant"] = () => _assistant is { Visible: true },
@@ -383,19 +336,13 @@ public sealed class DashboardWindow : Window
         };
     }
 
-    internal IReadOnlyList<AgentPane> Panes => _panes;
+    internal IReadOnlyList<RoleWatch> Watches => _watches;
 
     internal View Dispatcher => _dispatchFrame;
 
-    internal LogView DispatchLog => _dispatch;
-
     internal LogView WholeDispatchLog => _dispatchAll;
 
-    internal bool DispatcherSelected => _onDispatcher;
-
-    internal bool DispatcherExpanded => _dispatcherExpanded;
-
-    internal View Agents => _agents;
+    internal bool DispatcherOpen => _dispatcherOpen;
 
     internal WorkView Work => _work;
 
@@ -413,7 +360,6 @@ public sealed class DashboardWindow : Window
 
     internal Area CurrentArea => _area;
 
-    internal int? ExpandedAgent => _expanded;
 
     internal CommandRegistry Commands => _commands;
 
@@ -422,6 +368,8 @@ public sealed class DashboardWindow : Window
     internal AssistantPane? Assistant => _assistant;
 
     internal CardPanel Card => _card;
+
+    internal TeamPanel Team => _team;
 
     /// <summary>Whether the Assistant and the card's details share the panel beside Overseer, as tabs.</summary>
     internal bool Tabbed => _side.Visible;
@@ -452,31 +400,36 @@ public sealed class DashboardWindow : Window
         var now = _clock.GetUtcNow();
         if (_area == Area.Work && Uncovered && (_askedAt is not { } asked || now - asked >= ReadEvery))
             ReadWaiting();
-        DateTimeOffset? nextCheck = long.TryParse(ReadText(_nextPass), out var seconds)
-            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
-            : null;
-        var paused = _panes.Select(pane => pane.Team).Distinct().ToDictionary(team => team, _teams.IsPaused);
-        _checks?.Follow(paused.Keys);
-        ShowChecks();
-        var passing = DispatcherState.Passing(_stateRoot);
-        foreach (var pane in _panes)
-            pane.Refresh(now, nextCheck, paused[pane.Team], _teams.IsHeld(pane.Team, pane.Role), _checks?.Fatal(pane.Team), passing);
+        RefreshWatches(now);
 
-        var tail = ReadTail(_dispatchLog, DispatchLines);
-        if (!_dispatch.Lines.SequenceEqual(tail))
-            _dispatch.Lines = tail;
         _broke = DispatcherState.Broke(_stateRoot, BrokeLines);
-        if (_dispatcherExpanded)
+        ShowPassFailed();
+        if (_dispatcherOpen)
+        {
             ShowWholeLog();
-        ShowDispatcher(now);
+            ShowDispatcher(now);
+        }
 
         ShowOverseer(now);
+        ShowSelection();
         Arrange();
-        ShowCard();
         ShowNews();
         ShowAsking();
         _menu.Refresh();
         ShowMessage();
+    }
+
+    private void RefreshWatches(DateTimeOffset now)
+    {
+        DateTimeOffset? nextCheck = long.TryParse(ReadText(_nextPass), out var seconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+            : null;
+        var paused = _watches.Select(watch => watch.Team).Distinct().ToDictionary(team => team, _teams.IsPaused);
+        _checks?.Follow(paused.Keys);
+        ShowChecks();
+        var passing = DispatcherState.Passing(_stateRoot);
+        foreach (var watch in _watches)
+            watch.Refresh(now, nextCheck, paused[watch.Team], _teams.IsHeld(watch.Team, watch.Role), _checks?.Fatal(watch.Team), passing);
     }
 
     /// <summary>A team's failed check stays on the bar as news until a later check passes.</summary>
@@ -489,6 +442,16 @@ public sealed class DashboardWindow : Window
             if (failed is not null)
                 _checkFailures[team] = Announce(failed, Severity.Error);
         }
+    }
+
+    /// <summary>A pass that broke before it could log why stays on the bar until a later pass logs again.</summary>
+    private void ShowPassFailed()
+    {
+        if (_broke.Count > 0 == _passFailed is not null)
+            return;
+        if (_passFailed is { } was)
+            _bar.Withdraw(was);
+        _passFailed = _broke.Count > 0 ? Announce($"dispatcher: last pass failed · {_broke[^1]}", Severity.Error) : null;
     }
 
     /// <summary>Reads every team's moves since start whenever the record has been written to.</summary>
@@ -605,11 +568,10 @@ public sealed class DashboardWindow : Window
     private void ShowDispatcher(DateTimeOffset now)
     {
         var state = DispatcherState.Read(_stateRoot, now, _home);
-        if (_broke.Count > 0 && !_dispatcherExpanded)
+        if (_broke.Count > 0)
             state = state.Failed();
-        var marker = _onDispatcher ? Icons.Field(Icon.Selected, _drawn) : "";
-        var width = _dispatchFrame.Frame.Width > 0 ? _dispatchFrame.Frame.Width - TitleMargin - marker.GetColumns() : int.MaxValue;
-        var title = marker + state.Title(width);
+        var width = _dispatchFrame.Frame.Width > 0 ? _dispatchFrame.Frame.Width - TitleMargin : int.MaxValue;
+        var title = state.Title(width);
         if (_dispatchFrame.Title != title)
             _dispatchFrame.Title = title;
         var scheme = state.Error ? ErrorScheme : BaseScheme;
@@ -636,7 +598,7 @@ public sealed class DashboardWindow : Window
 
     /// <summary>When the Work area was last read, for the status bar.</summary>
     internal static string Stamped(DateTimeOffset? at, DateTimeOffset now) =>
-        at is { } read ? $"read {AgentPane.Ago(now - read)} ago" : "";
+        at is { } read ? $"read {Ages.Ago(now - read)} ago" : "";
 
     /// <summary>While a menu is open it owns the keyboard: its own keys would otherwise run a command as well.</summary>
     protected override bool OnKeyDown(Key key)
@@ -671,13 +633,9 @@ public sealed class DashboardWindow : Window
 
     private void RegisterCommands()
     {
-        bool OnDashboard() => _area == Area.Dashboard;
         bool OnWork() => _area == Area.Work;
         bool OnOverseer() => _area == Area.Overseer;
-        bool AnyAgents() => OnDashboard() && _panes.Count > 0;
-        bool Selection() => Shown() is not null;
-        bool Scrollable() => Selection() || (OnDashboard() && _dispatcherExpanded);
-        bool OnGrid() => AnyAgents() && _expanded is null;
+        bool Scrollable() => _sessionFull || _dispatcherOpen;
         bool Reading() => Reader() is not null;
         string[] details = ["Show the session full-screen", "Show the whole lane"];
         string[] hold = ["Pause this role", "Let this role start again"];
@@ -690,29 +648,20 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => InAssistant && _assistant!.Controller.IsAnswering, scopes: [Regions.Assistant])
             .Register("assistant.clear", "Start a new conversation", () => _assistant?.Clear(), Key.L.WithCtrl, isEnabled: () => InAssistant,
                 scopes: [Regions.Assistant])
-            .Register("pane.next", "Next pane", SwitchPane, Key.F6, isEnabled: () => _assistant is { Visible: true } || Docked)
-            .Register("pane.previous", "Previous pane", SwitchPane, Key.F6.WithShift, isEnabled: () => _assistant is { Visible: true } || Docked)
-            .Register("agent.next", "Select the next agent", () => Step(+1), Key.Tab, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
-            .Register("agent.previous", "Select the previous agent", () => Step(-1), Key.Tab.WithShift, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
-            .Register("agent.right", "Select the agent to the right", () => MoveSelection(0, +1), Key.CursorRight, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
-            .Register("agent.left", "Select the agent to the left", () => MoveSelection(0, -1), Key.CursorLeft, isEnabled: AnyAgents, scopes: [Regions.Agents, Regions.Log])
-            .Register("agent.down", "Select the agent below", () => MoveSelection(+1, 0), Key.CursorDown, isEnabled: OnGrid, scopes: [Regions.Agents])
-            .Register("agent.up", "Select the agent above", () => MoveSelection(-1, 0), Key.CursorUp, isEnabled: OnGrid, scopes: [Regions.Agents])
+            .Register("pane.next", "Next pane", SwitchPane, Key.F6, isEnabled: () => _assistant is { Visible: true } || PanelShown)
+            .Register("pane.previous", "Previous pane", SwitchPane, Key.F6.WithShift, isEnabled: () => _assistant is { Visible: true } || PanelShown)
             .Register("log.lineDown", "Select the next line of the log", () => Reader()?.MoveLine(+1, extend: false), Key.CursorDown, isEnabled: Reading, scopes: [Regions.Log])
             .Register("log.lineUp", "Select the line above in the log", () => Reader()?.MoveLine(-1, extend: false), Key.CursorUp, isEnabled: Reading, scopes: [Regions.Log])
             .Register("log.extendDown", "Extend the selection down", () => Reader()?.MoveLine(+1, extend: true), Key.CursorDown.WithShift, isEnabled: Reading, scopes: [Regions.Log])
             .Register("log.extendUp", "Extend the selection up", () => Reader()?.MoveLine(-1, extend: true), Key.CursorUp.WithShift, isEnabled: Reading, scopes: [Regions.Log])
-            .Register("agent.expand", () => "Expand the selected agent", () => Expand(), Key.Enter,
-                isEnabled: () => (OnDashboard() && Selected() is not null) || (OnDashboard() && _onDispatcher && !_dispatcherExpanded),
-                menuLabel: () => "Expand", inMenu: () => _expanded is null && !_dispatcherExpanded, scopes: [Regions.Agents])
-            .Register("log.pageUp", "Scroll the log up", () => Scroll(pane => pane.Page(-1), log => log.Page(-1)), Key.PageUp, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
-            .Register("log.pageDown", "Scroll the log down", () => Scroll(pane => pane.Page(+1), log => log.Page(+1)), Key.PageDown, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
-            .Register("log.top", "Jump to the top of the log", () => Scroll(pane => pane.Home(), log => log.Home()), Key.Home, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
-            .Register("log.bottom", "Jump to the bottom of the log", () => Scroll(pane => pane.End(), log => log.End()), Key.End, isEnabled: Scrollable, scopes: [Regions.Agents, Regions.Log])
-            .Register("log.toolCalls", "Show tool calls in full", () => Shown()?.ToggleToolCalls(), chord: "Ctrl+T T", isEnabled: Selection, scopes: [Regions.Agents, Regions.Log])
-            .Register(CopyLines, () => "Copy the selected lines", () => Copy(pane => pane.CopySelection()), new Key('l'), isEnabled: Reading,
+            .Register("log.pageUp", "Scroll the log up", () => Scroll(session => session.Page(-1), log => log.Page(-1)), Key.PageUp, isEnabled: Scrollable, scopes: [Regions.Log])
+            .Register("log.pageDown", "Scroll the log down", () => Scroll(session => session.Page(+1), log => log.Page(+1)), Key.PageDown, isEnabled: Scrollable, scopes: [Regions.Log])
+            .Register("log.top", "Jump to the top of the log", () => Scroll(session => session.Home(), log => log.Home()), Key.Home, isEnabled: Scrollable, scopes: [Regions.Log])
+            .Register("log.bottom", "Jump to the bottom of the log", () => Scroll(session => session.End(), log => log.End()), Key.End, isEnabled: Scrollable, scopes: [Regions.Log])
+            .Register("log.toolCalls", "Show tool calls in full", () => Reader()?.ToggleToolCalls(), chord: "Ctrl+T T", isEnabled: Reading, scopes: [Regions.Log])
+            .Register(CopyLines, () => "Copy the selected lines", () => Copy(session => session.CopySelection()), new Key('l'), isEnabled: Reading,
                 menuLabel: () => "Copy selected lines", scopes: [Regions.Log])
-            .Register("log.copyAll", () => "Copy the whole log", () => Copy(pane => pane.CopyAll()), new Key('a'), isEnabled: Reading,
+            .Register("log.copyAll", () => "Copy the whole log", () => Copy(session => session.CopyAll()), new Key('a'), isEnabled: Reading,
                 menuLabel: () => "Copy whole log", scopes: [Regions.Log])
             .Register("log.editor", () => "Open the whole log in your editor", OpenInEditor, new Key('e'), isEnabled: Reading,
                 menuLabel: () => "Open whole log in editor", scopes: [Regions.Log])
@@ -763,45 +712,41 @@ public sealed class DashboardWindow : Window
             .Register("overseer.pageDown", "Scroll the lanes down", () => _overseer.Page(+1), Key.PageDown, isEnabled: OnOverseer, scopes: [Regions.Overseer])
             .Register("overseer.pageUp", "Scroll the lanes up", () => _overseer.Page(-1), Key.PageUp, isEnabled: OnOverseer, scopes: [Regions.Overseer])
             .Register("overseer.details", () => details[_overseer.Board.OnMore ? 1 : 0], OverseerEnter, Key.Enter,
-                isEnabled: () => OnOverseer() && (_overseer.Board.OnMore || _cardRun is not null), scopes: [Regions.Overseer], menuLabels: details)
+                isEnabled: () => OnOverseer() && (_overseer.Board.OnMore || _cardRun is not null || Chosen() is { LogPath: not null }),
+                scopes: [Regions.Overseer, Regions.Team], menuLabels: details)
             .Register("overseer.fold", () => "Fold the lane", () => _overseer.Fold(), Key.Esc,
                 isEnabled: () => OnOverseer() && _overseer.CanFold, scopes: [Regions.Overseer])
             .Register("overseer.github", () => "Open on GitHub", OpenChip, new Key('g'),
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, scopes: [Regions.Overseer])
-            .Register("overseer.session", () => "Go to the agent's session", SessionOrRetry, new Key('r'),
-                isEnabled: () => OnOverseer() && (SessionFor(_overseer.Board.SelectedCard) is not null || _overseer.Failed),
-                inMenu: () => SessionFor(_overseer.Board.SelectedCard) is not null || !_overseer.Failed, scopes: [Regions.Overseer])
-            .Register("overseer.retry", () => "Read the boards that failed again", () => RetryBoards(_overseer.FailedTeams),
+            .Register("overseer.retry", () => "Read the boards that failed again", () => RetryBoards(_overseer.FailedTeams), new Key('r'),
                 isEnabled: () => OnOverseer() && _overseer.Failed, scopes: [Regions.Overseer])
             .Register("overseer.refresh", () => "Read every board again", ReadBoards, Key.F5, isEnabled: OnOverseer,
                 menuLabel: () => "Refresh", scopes: [Regions.Overseer])
-            .Register("view.dashboard", "Dashboard", () => Show(Area.Dashboard), chord: "Ctrl+G D")
+            .Register("team.down", "Choose the role below", () => MoveRole(+1), Key.CursorDown, isEnabled: () => _team.HasFocus, scopes: [Regions.Team])
+            .Register("team.up", "Choose the role above", () => MoveRole(-1), Key.CursorUp, isEnabled: () => _team.HasFocus, scopes: [Regions.Team])
             .Register("view.work", "Work", () => Show(Area.Work), chord: "Ctrl+G W")
             .Register("view.overseer", "Overseer", () => Show(Area.Overseer), chord: "Ctrl+G O")
             .Register("assistant", () => "Assistant", ToggleAssistant, isEnabled: () => _assistant is not null, chord: "Ctrl+G A")
-            .Register("view.details", () => "Details", FocusDetails, isEnabled: () => Docked, chord: "Ctrl+G I")
+            .Register("view.details", () => "Details", FocusDetails, isEnabled: () => PanelShown, chord: "Ctrl+G I")
+            .Register("view.dispatcher", "Dispatcher log", OpenDispatcher, isEnabled: () => !_dispatcherOpen)
             .Register("work.whatsNew", () => "Go to what's new", GoToNew, isEnabled: () => _news.Newest is not null, menuLabel: () => "What's new", chord: "Ctrl+G N")
-            .Register("agent.hold", () => UnlessHeld("Pause selected agent's role", "Let selected agent's role start again"), ToggleHold, new Key('h'),
-                isEnabled: () => OnDashboard() && Selected() is not null,
-                menuLabel: () => UnlessHeld(hold[0], hold[1]), scopes: [Regions.Agents, Regions.Log], menuLabels: hold)
-            .Register("agent.interrupt", () => OnOverseer()
-                    ? UnlessStopped("Interrupt the agent on this card", "Let the card's agent start again")
-                    : UnlessStopped("Interrupt selected agent", "Let selected agent start again"), ToggleInterrupt, new Key('i'),
-                isEnabled: () => (OnDashboard() && Selected() is { Running: true } or { Held: true } or { RunHeld: true })
-                    || (OnOverseer() && (_cardRun is { State.Running: true } || CardHeld())),
-                menuLabel: () => UnlessStopped(interrupt[0], interrupt[1]), scopes: [Regions.Agents, Regions.Log, Regions.Overseer], menuLabels: interrupt)
+            .Register("agent.hold", () => Chosen() is { Held: true } ? hold[1] : hold[0], ToggleHold, new Key('h'),
+                isEnabled: () => OnOverseer() && _overseer.Board.OnHeading && Chosen() is not null,
+                scopes: [Regions.Overseer, Regions.Team, Regions.Log], menuLabels: hold)
+            .Register("agent.interrupt", () => _overseer.Board.OnHeading
+                    ? UnlessStopped("Interrupt the chosen role", "Let the chosen role start again")
+                    : UnlessStopped("Interrupt the agent on this card", "Let the card's agent start again"), ToggleInterrupt, new Key('i'),
+                isEnabled: () => OnOverseer() && (_overseer.Board.OnHeading
+                    ? Chosen() is { Running: true } or { Held: true }
+                    : _cardRun is { State.Running: true } || CardHeld()),
+                menuLabel: () => UnlessStopped(interrupt[0], interrupt[1]), scopes: [Regions.Overseer, Regions.Team, Regions.Log], menuLabels: interrupt)
             .Register("dispatch.pass", "Run a dispatch pass now", PassNow)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", () => OpenSettings(), chord: "Ctrl+,", isEnabled: HasApp)
             .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
             .Register("teams.new", "New team", () => OpenSettings(SettingsDialog.TeamsPage, newTeam: true), isEnabled: HasApp)
             .Register("help", () => "Show keys", OpenKeys, Key.F1, isEnabled: HasApp, menuLabel: () => "Show _keys")
-            .Register("guide", "Guide", () => _showGuide(_area switch
-            {
-                Area.Work => GuideDialog.Work,
-                Area.Overseer => GuideDialog.Overseer,
-                _ => GuideDialog.Dashboard,
-            }))
+            .Register("guide", "Guide", () => _showGuide(_area == Area.Work ? GuideDialog.Work : GuideDialog.Overseer))
             .Register("messages", () => "Messages", OpenMessages, isEnabled: HasApp, menuLabel: () => "Messages…")
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
             .Register("trends", "Trends", OpenTrends, isEnabled: () => _showTrends is not null)
@@ -809,10 +754,8 @@ public sealed class DashboardWindow : Window
             .Register("decisions", () => SelectedTeam() is { } team ? $"Decisions… · {team}" : "Decisions…",
                 () => _showDecisions?.Invoke(SelectedTeam()!), isEnabled: () => _showDecisions is not null && SelectedTeam() is not null,
                 menuLabel: () => "Decisions…")
-            .Register("agent.collapse", () => OnOverseer() ? "Back to Overseer" : "Back to the agent grid", Collapse, Key.Esc,
-                isEnabled: () => (OnDashboard() && (_expanded is not null || _dispatcherExpanded)) || (OnOverseer() && _sessionFull),
-                menuLabel: () => "Back to all agents",
-                inMenu: () => _expanded is not null || _dispatcherExpanded, scopes: [Regions.Log])
+            .Register("agent.collapse", () => _dispatcherOpen ? "Back from the dispatcher's log" : "Back to Overseer", Collapse, Key.Esc,
+                isEnabled: () => _dispatcherOpen || _sessionFull, menuLabel: () => "Back", scopes: [Regions.Log])
             .Register("quit", "Quit", Quit, Key.Q.WithCtrl);
         for (var tab = 0; tab < 9; tab++)
         {
@@ -871,14 +814,15 @@ public sealed class DashboardWindow : Window
         _bar.Hints.Show(keys is null ? [] : [($"Press {keys} for help", () => _commands.Execute("help"))]);
     }
 
+    /// <summary>Pauses the role chosen in the team's panel, or lets it start again.</summary>
     private void ToggleHold()
     {
-        if (Selected() is not { } pane || Already(RoleKey(pane)))
+        if (Chosen() is not { } watch || Already(RoleKey(watch)))
             return;
-        Queue(new Write(WriteKind.Hold, RoleKey(pane), [pane.Held ? "resume" : "pause", pane.Team, pane.Role],
-            pane.Held ? "Letting it start again…" : "Pausing this role…",
-            $"{pane.Team}'s {pane.Role} is already being {(pane.Held ? "let start again" : "paused")}",
-            $"{(pane.Held ? "letting" : "pausing")} {pane.Team}'s {pane.Role}{(pane.Held ? " start again" : "")}"));
+        Queue(new Write(WriteKind.Hold, RoleKey(watch), [watch.Held ? "resume" : "pause", watch.Team, watch.Role],
+            watch.Held ? "Letting it start again…" : "Pausing this role…",
+            $"{watch.Team}'s {watch.Role} is already being {(watch.Held ? "let start again" : "paused")}",
+            $"{(watch.Held ? "letting" : "pausing")} {watch.Team}'s {watch.Role}{(watch.Held ? " start again" : "")}"));
     }
 
     private void PassNow()
@@ -887,37 +831,46 @@ public sealed class DashboardWindow : Window
         ShowMessage();
     }
 
-    private static string RoleKey(AgentPane pane) => $"{pane.Team}/{pane.Role}";
-
-    private string UnlessHeld(string label, string resume) => Selected() is { Held: true } ? resume : label;
+    private static string RoleKey(RoleWatch watch) => $"{watch.Team}/{watch.Role}";
 
     private string UnlessStopped(string label, string resume) =>
-        (_area == Area.Overseer ? CardHeld() : Selected() is { Held: true } or { RunHeld: true }) ? resume : label;
+        (_overseer.Board.OnHeading ? Chosen() is { Held: true } : CardHeld()) ? resume : label;
 
-    /// <summary>With several Dev runs, acts on the shown run's task alone; otherwise on the role, as with one run.</summary>
     private void ToggleInterrupt()
     {
-        if (_area == Area.Overseer)
-        {
+        if (_overseer.Board.OnHeading)
+            InterruptRole();
+        else
             InterruptCard();
+    }
+
+    /// <summary>The chosen role's run, as on its card: a run with a conversation hands you to it, to come back to the
+    /// team's panel, and one too new for one is stopped, asking first where it's a task's. A held role starts again.</summary>
+    private void InterruptRole()
+    {
+        if (Chosen() is not { } watch || Already(RoleKey(watch)))
             return;
-        }
-        if (Selected() is not { } pane || !(pane.Running || pane.Held || pane.RunHeld) || Already(RoleKey(pane)))
+        var who = $"{watch.Team}'s {watch.Role}";
+        if (!watch.Held && !watch.Running)
             return;
-        var task = pane is { Held: true, RunHeld: false } ? null : pane.RunTask;
-        var resume = pane.Held || pane.RunHeld;
-        if (!resume && pane.SessionId is not null)
+        if (!watch.Held && watch.Runs.Count > 1)
         {
-            _handOver?.Invoke(new AttachHandover(pane.Team, pane.Role, task?.Number));
+            Reply($"{who} is on {watch.Runs.Count} cards: interrupt one from its card", Severity.Error);
             return;
         }
-        if (!resume && task is not null && !_confirmStop(task))
+        var task = watch.Held ? null : watch.Runs.FirstOrDefault()?.Task;
+        if (!watch.Held && watch.SessionId is not null)
+        {
+            _handOver?.Invoke(new AttachHandover(watch.Team, watch.Role, task?.Number));
             return;
-        string[] target = task is null ? [pane.Team, pane.Role] : [pane.Team, pane.Role, task.Number.ToString()];
-        Queue(new Write(WriteKind.Interrupt, RoleKey(pane), [resume ? "resume" : "stop", .. target],
-            resume ? "Letting it start again…" : "Interrupting…",
-            $"{pane.Team}'s {pane.Role} is already being {(resume ? "let start again" : "interrupted")}",
-            $"{(resume ? "letting" : "interrupting")} {pane.Team}'s {pane.Role}{(resume ? " start again" : "")}"));
+        }
+        if (!watch.Held && task is not null && !_confirmStop(task))
+            return;
+        string[] target = task is null ? [watch.Team, watch.Role] : [watch.Team, watch.Role, task.Number.ToString(CultureInfo.InvariantCulture)];
+        Queue(new Write(WriteKind.Interrupt, RoleKey(watch), [watch.Held ? "resume" : "stop", .. target],
+            watch.Held ? "Letting it start again…" : "Interrupting…",
+            $"{who} is already being {(watch.Held ? "let start again" : "interrupted")}",
+            $"{(watch.Held ? "letting" : "interrupting")} {who}{(watch.Held ? " start again" : "")}"));
     }
 
     /// <summary>The card's run, stopped or resumed on its own where it's a task's, or else its role's. A run with a
@@ -953,17 +906,15 @@ public sealed class DashboardWindow : Window
     /// <summary>Writes every line of the shown session to a file and hands the terminal to your editor with it.</summary>
     private void OpenInEditor()
     {
-        if (_area == Area.Overseer)
-        {
-            if (_overseer.Board.SelectedCard is { } card && _cardRun is { } run && _card.LogPath is { } path)
-                Edit(card.Team, run.Role, path, new PanePlace(null, _card.Place), card.Number);
+        if (!_sessionFull || _card.LogPath is not { } path)
             return;
-        }
-        if (Selected() is { LogPath: { } log } pane)
-            Edit(pane.Team, pane.Role, log, pane.Place, null);
+        if (_overseer.Board.SelectedCard is { } card && _cardRun is { } run)
+            Edit(card.Team, run.Role, path, _card.Place, card.Number);
+        else if (Chosen() is { } watch)
+            Edit(watch.Team, watch.Role, path, _card.Place, null);
     }
 
-    private void Edit(string team, string role, string log, PanePlace place, int? card)
+    private void Edit(string team, string role, string log, LogPlace place, int? card)
     {
         var file = Path.Combine(Path.GetTempPath(), $"a-team-{team}-{role}-{_clock.GetUtcNow():yyyyMMddHHmmss}.log");
         try
@@ -997,7 +948,7 @@ public sealed class DashboardWindow : Window
         ShowMessage();
     }
 
-    private string[] Activity() => [.. _panes.Select(pane => pane.Activity)];
+    private string[] Activity() => [.. _watches.Select(watch => watch.Activity)];
 
     /// <summary>Reads every team's whole board at once, and what's waiting for Work's reasons with it. A second go
     /// while one is running is refused, not queued.</summary>
@@ -1042,7 +993,7 @@ public sealed class DashboardWindow : Window
                 _bar.Withdraw(was);
             if (read.Failure is { Length: > 0 } failure)
             {
-                if (_overseer.Fail(team, FirstLine(failure), RetryHint("overseer.session"), () => RetryBoards([team])))
+                if (_overseer.Fail(team, FirstLine(failure), RetryHint("overseer.retry"), () => RetryBoards([team])))
                     _boardFailures[team] = Announce($"{team}: {failure}", Severity.Error);
                 continue;
             }
@@ -1087,15 +1038,23 @@ public sealed class DashboardWindow : Window
             _syncing = null;
     }
 
-    /// <summary>Back from a conversation or the editor, on the card you left, and its session full-screen where it was.</summary>
+    /// <summary>Back from a conversation or the editor, on the card you left once its board is read, or straight away on
+    /// the team's panel with the role chosen, and its session full-screen where it was.</summary>
     private void BackToCard(string team)
     {
         if (_backTo is not { } back || back.Team != team)
             return;
         _backTo = null;
-        if (!_overseer.Select(back.Team, back.Number) || back.Full is not { } place)
+        if (back.Number is { } number ? !_overseer.Select(back.Team, number) : !_overseer.SelectHeading(back.Team))
             return;
-        ShowCard();
+        if (back.Number is null)
+        {
+            ShowSelection();
+            _team.Choose(back.Role);
+        }
+        if (back.Full is not { } place)
+            return;
+        ShowSelection();
         OpenSession();
         _card.Restore(place);
     }
@@ -1105,13 +1064,13 @@ public sealed class DashboardWindow : Window
     {
         if (_area != Area.Overseer)
             return;
-        var running = _panes.Where(pane => pane.Running).ToList();
+        var running = _watches.Where(watch => watch.Running).ToList();
         _overseer.Show(new OverseerState(
             now,
             _limits,
-            running.SelectMany(pane => pane.Working.Select(number => (Card: (pane.Team, number), pane.Role)))
+            running.SelectMany(watch => watch.Working.Select(number => (Card: (watch.Team, number), watch.Role)))
                 .DistinctBy(worked => worked.Card).ToDictionary(worked => worked.Card, worked => worked.Role),
-            running.GroupBy(pane => pane.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(pane => pane.Role)]),
+            running.GroupBy(watch => watch.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
             (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number))
         {
             Holding = Holds.Holders(_work.Items),
@@ -1122,16 +1081,18 @@ public sealed class DashboardWindow : Window
     {
         if (_overseer.Board.OnMore)
             _overseer.Unfold();
-        else if (_cardRun is not null)
+        else if (_cardRun is not null || Chosen() is { LogPath: not null })
             OpenSession();
         ShowMessage();
     }
 
-    /// <summary>The selected card's session, full-screen in place of the lanes.</summary>
+    /// <summary>The selected card's session, or the chosen role's latest, full-screen in place of the lanes.</summary>
     private void OpenSession()
     {
+        _sessionFromRoles = _team.HasFocus;
         _sessionFull = true;
         _card.Full = true;
+        ShowSelection();
         Arrange();
         _card.SetFocus();
         ShowMessage();
@@ -1142,8 +1103,20 @@ public sealed class DashboardWindow : Window
         _sessionFull = false;
         _card.Full = false;
         Arrange();
-        _overseer.SetFocus();
+        if (_sessionFromRoles && _team.Visible)
+            _team.SetFocus();
+        else
+            _overseer.SetFocus();
         ShowMessage();
+    }
+
+    /// <summary>The team's panel for a selected lane heading, or else the selected card's.</summary>
+    private void ShowSelection()
+    {
+        if (_area == Area.Overseer && _overseer.Board.OnHeading)
+            ShowTeam();
+        else
+            ShowCard();
     }
 
     /// <summary>The selected card's details and its run, in the panel beside the lanes or behind the full-screen log.</summary>
@@ -1157,10 +1130,63 @@ public sealed class DashboardWindow : Window
             return;
         }
         var now = _clock.GetUtcNow();
-        _cardRun = CardRun.For(_stateRoot, card.Team, _panes.Where(pane => pane.Team == card.Team).Select(pane => pane.Role), card.Number,
+        _cardRun = CardRun.For(_stateRoot, card.Team, _watches.Where(watch => watch.Team == card.Team).Select(watch => watch.Role), card.Number,
             card.LastRun);
         _card.Show(card, OverseerView.Describe(card, _overseer.Board.Cards, _overseer.State), _cardRun,
             CardRun.Says(_cardRun, now, CardHeld()), CardHint());
+    }
+
+    /// <summary>The selected heading's team: a line per role and anything stopping it running, and the chosen role's
+    /// latest session behind the full-screen log.</summary>
+    private void ShowTeam()
+    {
+        _cardRun = null;
+        var team = _overseer.Board.Selected!.Value.Team;
+        _team.Show(team,
+            [.. _watches.Where(watch => watch.Team == team).Select(watch => (watch.Role, Icons.Field(Icons.For(watch.Status), _drawn), watch.Line))],
+            _checks?.Fatal(team) is { } problem ? RoleWatch.Misconfigured(problem) : null);
+        _team.ShowHint(TeamHint());
+        if (!_sessionFull)
+            return;
+        if (Chosen() is not { } chosen)
+        {
+            CloseSession();
+            return;
+        }
+        var name = OverseerView.RoleName(chosen.Role);
+        _card.Show($"{team} · {name}", chosen.LogPath, $"{name} · {chosen.Line}");
+    }
+
+    /// <summary>The role chosen in the team's panel, while a lane heading is selected.</summary>
+    private RoleWatch? Chosen() =>
+        _area == Area.Overseer && _overseer.Board.Selected is { Heading: true } heading && _team.Team == heading.Team && _team.Role is { } role
+            ? _watches.FirstOrDefault(watch => watch.Team == heading.Team && watch.Role == role)
+            : null;
+
+    private void MoveRole(int step)
+    {
+        _team.MoveRole(step);
+        ShowTeam();
+        ShowMessage();
+    }
+
+    /// <summary>The keys that work on the chosen role, as they're bound now.</summary>
+    private string TeamHint()
+    {
+        List<string> keys = [];
+        if (Tabbed)
+            keys.Add($"{KeyHint("assistant")} Assistant");
+        if (!_team.HasFocus)
+            keys.Add($"{KeyHint("pane.next")} choose a role");
+        if (Chosen() is { } watch)
+        {
+            if (watch.LogPath is not null)
+                keys.Add($"{KeyHint("overseer.details")} latest log");
+            keys.Add($"{KeyHint("agent.hold")} {(watch.Held ? "let it start again" : "pause")}");
+            if (watch.Running && !watch.Held)
+                keys.Add($"{KeyHint("agent.interrupt")} interrupt");
+        }
+        return string.Join(" · ", keys);
     }
 
     /// <summary>The keys that work on the card from the panel, as they're bound now.</summary>
@@ -1190,31 +1216,6 @@ public sealed class DashboardWindow : Window
     private void Open(string url)
     {
         Reply(Copying.Said(_openUrl(url)));
-    }
-
-    /// <summary>The pane of the agent working on <paramref name="card"/>, if one is.</summary>
-    private AgentPane? SessionFor(BoardCard? card) =>
-        card is null ? null : _panes.FirstOrDefault(pane => pane.Team == card.Team && pane.Running && pane.Working.Contains(card.Number));
-
-    /// <summary>One key goes to the session where the selected card has one, and reads failed boards again where not.</summary>
-    private void SessionOrRetry()
-    {
-        if (SessionFor(_overseer.Board.SelectedCard) is not null)
-            GoToSession();
-        else
-            RetryBoards(_overseer.FailedTeams);
-    }
-
-    /// <summary>The Dashboard, with the agent on the selected card expanded on the run that's on it.</summary>
-    private void GoToSession()
-    {
-        if (SessionFor(_overseer.Board.SelectedCard) is not { } pane || _overseer.Board.SelectedCard is not { } card)
-            return;
-        Show(Area.Dashboard);
-        var index = _panes.IndexOf(pane);
-        SetExpanded(index);
-        pane.SetFocus();
-        pane.ShowTask(card.Number);
     }
 
     /// <summary>The last read landed, began under five minutes ago, and no run has started or finished since.</summary>
@@ -1272,7 +1273,7 @@ public sealed class DashboardWindow : Window
             _work.SelectedCard is null, _work.Items, _readAt, reader));
     }
 
-    /// <summary>Back from a try, the cards as they were with no re-read; from an attach, the grid. Either way, what
+    /// <summary>Back from a try, the cards as they were with no re-read; from an attach or the editor, Overseer. Either way, what
     /// went wrong if it failed.</summary>
     private void Resume(Handover handover)
     {
@@ -1282,10 +1283,10 @@ public sealed class DashboardWindow : Window
             _left = changed.Left;
         if (handover is VisionHandover vision)
             _left = vision.Left;
-        if (handover is AttachHandover { Card: { } card } attached)
-            _backTo = (attached.Team, card, null);
-        if (handover is EditorHandover { Card: { } shown } editor)
-            _backTo = (editor.Team, shown, editor.Place.Log);
+        if (handover is AttachHandover attached)
+            _backTo = (attached.Team, attached.Card, attached.Role, null);
+        if (handover is EditorHandover editor)
+            _backTo = (editor.Team, editor.Card, editor.Role, editor.Place);
         if (handover is TryHandover tried)
         {
             _attention.TakeBack();
@@ -1310,6 +1311,11 @@ public sealed class DashboardWindow : Window
             ReadTrend();
             _reopen = (edited.Item, edited.Reader, failure, edited.Said, edited.Committed);
             failure = null;
+        }
+        if (_backTo is { Number: null } role)
+        {
+            RefreshWatches(_clock.GetUtcNow());
+            BackToCard(role.Team);
         }
         if (failure is { Length: > 0 })
             Reply(failure, Severity.Error);
@@ -1373,17 +1379,6 @@ public sealed class DashboardWindow : Window
             case DocumentHandover edited when !_work.Focus(edited.Item, edited.OnPr):
                 _work.FocusFirstCard();
                 break;
-            case EditorHandover { Card: null } edited when _panes.FindIndex(pane => pane.Team == edited.Team && pane.Role == edited.Role) is >= 0 and var index:
-                SetExpanded(index);
-                _panes[index].SetFocus();
-                _panes[index].Restore(edited.Place);
-                break;
-            case AttachHandover { Card: null } attached when _panes.FindIndex(pane => pane.Team == attached.Team && pane.Role == attached.Role) is >= 0 and var index:
-                Select(index);
-                break;
-            case VisionHandover vision when _panes.FindIndex(pane => pane.Team == vision.Team && pane.Role == vision.Role) is >= 0 and var index:
-                Select(index);
-                break;
         }
     }
 
@@ -1393,14 +1388,8 @@ public sealed class DashboardWindow : Window
             Open(url);
     }
 
-    /// <summary>The team of the selected column in Work, of the selected chip in Overseer, or of the selected agent
-    /// on the dashboard.</summary>
-    internal string? SelectedTeam() => _area switch
-    {
-        Area.Work => _work.Team,
-        Area.Overseer => _overseer.Board.Selected?.Team,
-        _ => Selected()?.Team,
-    };
+    /// <summary>The team of the selected column in Work, or of the selected chip or heading in Overseer.</summary>
+    internal string? SelectedTeam() => _area == Area.Work ? _work.Team : _overseer.Board.Selected?.Team;
 
     /// <summary>Hands the terminal to the vision interview for <paramref name="team"/>, to come back where it is now.</summary>
     /// <summary>Asks for a review whatever the team's trigger, then runs a pass so the Lead starts on it now.</summary>
@@ -1417,8 +1406,7 @@ public sealed class DashboardWindow : Window
     {
         if (team is null)
             return;
-        _handOver?.Invoke(new VisionHandover(team, _area, _area == Area.Work ? _work.Place : _left,
-            _area == Area.Dashboard ? Selected()?.Role : null));
+        _handOver?.Invoke(new VisionHandover(team, _area, _area == Area.Work ? _work.Place : _left));
     }
 
     private void OpenBoard()
@@ -1936,21 +1924,20 @@ public sealed class DashboardWindow : Window
             _progress is { Length: > 0 } ? _progress
             : _writes.Status() is { Length: > 0 } writing ? writing
             : _pass.Progress is { } passing ? passing
+            : _dispatcherOpen ? ""
             : _area == Area.Work && _work.Selected is { } card && (card.Reason.Length > 0 || card.Holding.Count > 0) ? card.Line
             : _area == Area.Work && _work.Region is { } region ? region
             : _area == Area.Overseer && _overseer.Region is { } chip ? chip
             : "";
-        var stamp = _area switch
+        var stamp = _dispatcherOpen ? "" : _area switch
         {
             Area.Work => Stamped(_work.Current is { } lane && _teamReadAt.TryGetValue(lane.Team, out var read) ? read : null, _clock.GetUtcNow()),
-            Area.Overseer => Stamped(BoardReadAt(), _clock.GetUtcNow()),
-            _ => "",
+            _ => Stamped(BoardReadAt(), _clock.GetUtcNow()),
         };
-        var place = InAssistant ? "Assistant" : _area switch
+        var place = InAssistant ? "Assistant" : _dispatcherOpen ? "Dispatcher log" : _area switch
         {
             Area.Work => _work.OnlyMine ? MyItems : AllItems,
-            Area.Overseer => "Overseer",
-            _ => "",
+            _ => "Overseer",
         };
         var focus = string.Join(" · ", new[] { place, stamp }.Where(part => part.Length > 0));
         if (_bar.FocusWord != focus)
@@ -1983,8 +1970,6 @@ public sealed class DashboardWindow : Window
         DialogHost.Run(app, dialog);
     }
 
-    private int Foot() => DispatchLines + 2 + StatusLines;
-
     private int MenuTitlesEnd() =>
         _menu.Bar.Frame.X + _menu.Bar.SubViews.Where(view => view.Visible).Select(view => view.Frame.Right).DefaultIfEmpty(0).Max();
 
@@ -1998,10 +1983,7 @@ public sealed class DashboardWindow : Window
             _left = _work.Place;
         _area = area;
         _settings.WriteArea(area);
-        if (_dispatcherExpanded)
-            SetDispatcherExpanded(false);
-        _agents.Visible = _dispatchFrame.Visible = area == Area.Dashboard;
-        _work.Visible = _title.Visible = area == Area.Work;
+        _dispatcherOpen = false;
         if (_sessionFull)
         {
             _sessionFull = false;
@@ -2016,14 +1998,12 @@ public sealed class DashboardWindow : Window
             if (_left is not { } left || !_work.Focus(left))
                 _work.FocusFirstCard();
         }
-        else if (area == Area.Overseer)
+        else
         {
             ReadBoards();
             ShowOverseer(_clock.GetUtcNow());
             _overseer.SetFocus();
         }
-        else
-            _panes.FirstOrDefault()?.SetFocus();
         ShowAsking();
         ShowMessage();
         SetNeedsLayout();
@@ -2050,19 +2030,35 @@ public sealed class DashboardWindow : Window
     /// <summary>About two fifths of the window.</summary>
     internal static int PanelWidth(int width) => width * 2 / 5;
 
-    /// <summary>The card's panel is beside the lanes: Overseer, wide, and no session full-screen.</summary>
-    private bool Docked => _area == Area.Overseer && Wide(Viewport.Width) && !_sessionFull;
+    /// <summary>The selection's panel is beside the lanes: Overseer, wide, and no log full-screen.</summary>
+    private bool Docked => _area == Area.Overseer && Wide(Viewport.Width) && !_sessionFull && !_dispatcherOpen;
 
     private int PanelWidth() => Docked ? PanelWidth(Viewport.Width) : 0;
 
-    /// <summary>Puts the card's panel beside the lanes, in a tab beside the Assistant while that's open too, over the
-    /// lanes full-screen, or nowhere; and the Assistant back on its own wherever they don't share.</summary>
+    private bool OnHeading => _area == Area.Overseer && _overseer.Board.OnHeading;
+
+    /// <summary>Rows the team's panel takes at the foot of the lanes, where the window is too narrow for it beside them.</summary>
+    private int TeamFoot() =>
+        OnHeading && !_sessionFull && !_dispatcherOpen && !Wide(Viewport.Width) ? _team.Rows : 0;
+
+    /// <summary>The selection has a panel of its own, beside the lanes or, for a team, at their foot.</summary>
+    private bool PanelShown => Docked || TeamFoot() > 0;
+
+    /// <summary>The card's or the team's panel, whichever the selection has.</summary>
+    private View Panel => OnHeading ? _team : _card;
+
+    /// <summary>Puts the selection's panel beside the lanes, in a tab beside the Assistant while that's open too, a
+    /// team's at their foot where it's narrow, a session over the lanes full-screen, or nowhere; and the Assistant back
+    /// on its own wherever they don't share.</summary>
     private void Arrange()
     {
         var tabbed = Docked && _assistant is { Visible: true };
-        View? focused = _assistant is { HasFocus: true } ? _assistant : _card.HasFocus ? _card : null;
-        var assistantFront = tabbed && (_side.Visible ? _side.Value == _assistantTab : _assistant!.HasFocus || !_card.HasFocus);
-        Move(_card, tabbed ? _detailsTab : this);
+        var panel = Panel;
+        var other = panel == _team ? (View)_card : _team;
+        View? focused = _assistant is { HasFocus: true } ? _assistant : _card.HasFocus ? _card : _team.HasFocus ? _team : null;
+        var assistantFront = tabbed && (_side.Visible ? _side.Value == _assistantTab : _assistant!.HasFocus || !panel.HasFocus);
+        Move(other, this);
+        Move(panel, tabbed ? _detailsTab : this);
         if (_assistant is not null)
             Move(_assistant, tabbed ? _assistantTab : this);
         if (_side.Visible != tabbed)
@@ -2072,17 +2068,28 @@ public sealed class DashboardWindow : Window
                 _side.Value = assistantFront ? _assistantTab : _detailsTab;
         }
         if (tabbed)
-            Fill(_card);
-        else
+            Fill(panel);
+        if (_card.SuperView == this)
         {
             _card.X = _sessionFull ? 0 : Pos.Func(_ => BesideAssistant(), this);
             _card.Y = MenuLines;
             _card.Width = Dim.Func(_ => _sessionFull ? BesideAssistant() : PanelWidth(), this);
             _card.Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this);
         }
-        _card.Visible = _area == Area.Overseer && (_sessionFull || Docked);
-        _overseer.Visible = _area == Area.Overseer && !_sessionFull;
+        if (_team.SuperView == this)
+        {
+            _team.X = Pos.Func(_ => Docked ? BesideAssistant() : 0, this);
+            _team.Y = Pos.Func(_ => Docked ? MenuLines : Math.Max(0, Viewport.Height - StatusLines - TeamFoot()), this);
+            _team.Width = Dim.Func(_ => Docked ? PanelWidth() : BesideAssistant(), this);
+            _team.Height = Dim.Func(_ => Docked ? Math.Max(0, Viewport.Height - MenuLines - StatusLines) : TeamFoot(), this);
+        }
+        var overseer = _area == Area.Overseer && !_dispatcherOpen;
+        _card.Visible = overseer && (_sessionFull || (Docked && !OnHeading));
+        _team.Visible = overseer && OnHeading && !_sessionFull;
+        _overseer.Visible = overseer && !_sessionFull;
         _overseer.Beside = Docked;
+        _work.Visible = _title.Visible = _area == Area.Work && !_dispatcherOpen;
+        _dispatchFrame.Visible = _dispatcherOpen;
         if (_assistant is not null)
         {
             if (tabbed)
@@ -2124,15 +2131,15 @@ public sealed class DashboardWindow : Window
         pane.Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this);
     }
 
-    /// <summary>Ctrl+G I: the card's details in front, with focus in them.</summary>
+    /// <summary>Ctrl+G I: the card's details or the team's roles in front, with focus in them.</summary>
     private void FocusDetails()
     {
-        if (!Docked)
+        if (!PanelShown)
             return;
         if (Tabbed)
             _side.Value = _detailsTab;
-        _card.SetFocus();
-        ShowCard();
+        Panel.SetFocus();
+        ShowSelection();
         ShowMessage();
     }
 
@@ -2151,7 +2158,7 @@ public sealed class DashboardWindow : Window
         {
             _side.Value = _assistantTab;
             pane.FocusInput();
-            ShowCard();
+            ShowSelection();
             ShowMessage();
             return;
         }
@@ -2175,12 +2182,13 @@ public sealed class DashboardWindow : Window
     /// <summary>Between the area and the panel beside it: the Assistant, or in Overseer whichever of its tabs is in front.</summary>
     private void SwitchPane()
     {
-        if (Docked && (!Tabbed || _side.Value == _detailsTab))
+        if (PanelShown && (!Tabbed || _side.Value == _detailsTab))
         {
-            if (_card.HasFocus)
+            if (Panel.HasFocus)
                 FocusArea();
             else
-                _card.SetFocus();
+                Panel.SetFocus();
+            ShowSelection();
         }
         else if (_assistant is not { Visible: true } pane)
             return;
@@ -2193,24 +2201,14 @@ public sealed class DashboardWindow : Window
 
     private void FocusArea()
     {
-        switch (_area)
-        {
-            case Area.Work:
-                _work.SetFocus();
-                break;
-            case Area.Overseer when _sessionFull:
-                _card.SetFocus();
-                break;
-            case Area.Overseer:
-                _overseer.SetFocus();
-                break;
-            default:
-                if (_onDispatcher)
-                    _dispatchFrame.SetFocus();
-                else
-                    (Selected() ?? _panes.FirstOrDefault())?.SetFocus();
-                break;
-        }
+        if (_dispatcherOpen)
+            _dispatchFrame.SetFocus();
+        else if (_area == Area.Work)
+            _work.SetFocus();
+        else if (_sessionFull)
+            _card.SetFocus();
+        else
+            _overseer.SetFocus();
     }
 
     /// <summary>What the next question is about, above the question box.</summary>
@@ -2223,13 +2221,12 @@ public sealed class DashboardWindow : Window
             pane.NextContext = context;
     }
 
-    private AskedAbout? AskingAbout() => _area switch
-    {
-        Area.Work => _work.Selected is { } item ? new AskedAbout(item.Team, item.Number) : _work.Team is { } team ? new AskedAbout(team) : null,
-        Area.Overseer => _overseer.Board.SelectedCard is { } card ? new AskedAbout(card.Team, card.Number)
-            : _overseer.Board.Selected is { } chip ? new AskedAbout(chip.Team) : null,
-        _ => _onDispatcher ? new AskedAbout(null, Dispatcher: true) : Selected() is { } pane ? new AskedAbout(pane.Team, Role: pane.Role) : null,
-    };
+    private AskedAbout? AskingAbout() =>
+        _dispatcherOpen ? new AskedAbout(null, Dispatcher: true)
+        : _area == Area.Work ? _work.Selected is { } item ? new AskedAbout(item.Team, item.Number) : _work.Team is { } team ? new AskedAbout(team) : null
+        : _overseer.Board.SelectedCard is { } card ? new AskedAbout(card.Team, card.Number)
+        : Chosen() is { } watch ? new AskedAbout(watch.Team, Role: watch.Role)
+        : _overseer.Board.Selected is { } chip ? new AskedAbout(chip.Team) : null;
 
     protected override void Dispose(bool disposing)
     {
@@ -2238,7 +2235,7 @@ public sealed class DashboardWindow : Window
         base.Dispose(disposing);
     }
 
-    private void Copy(Func<ISessionView, LogCopy> copy)
+    private void Copy(Func<CardPanel, LogCopy> copy)
     {
         if (Reader() is not { } pane)
             return;
@@ -2278,12 +2275,12 @@ public sealed class DashboardWindow : Window
         _shown is null ? _commands.Enabled : [.. _commands.Enabled.Where(command => command.Id is "work.new" or "work.viewImage" or "help" or "commands")];
 
     /// <summary>Where the window is now, for the keys that work only there.</summary>
-    internal CommandScope Region => InAssistant ? Regions.Assistant : _area switch
-    {
-        Area.Work => Regions.Work,
-        Area.Overseer => _sessionFull ? Regions.Log : Regions.Overseer,
-        _ => _expanded is not null || _dispatcherExpanded ? Regions.Log : Regions.Agents,
-    };
+    internal CommandScope Region =>
+        InAssistant ? Regions.Assistant
+        : _dispatcherOpen || _sessionFull ? Regions.Log
+        : _area == Area.Work ? Regions.Work
+        : _team.HasFocus ? Regions.Team
+        : Regions.Overseer;
 
     private void OpenAbout()
     {
@@ -2327,240 +2324,73 @@ public sealed class DashboardWindow : Window
         _menu.Refresh();
     }
 
-    /// <summary>Whether a team on the grid now runs other roles than the panes it has.</summary>
+    /// <summary>Whether a team now runs other roles than the ones watched.</summary>
     private bool RolesChanged() =>
         _teamNames.Intersect(_teams.Names()).Any(team =>
-            !_teams.Roles(team).SequenceEqual(_panes.Where(pane => pane.Team == team).Select(pane => pane.Role)));
+            !_teams.Roles(team).SequenceEqual(_watches.Where(watch => watch.Team == team).Select(watch => watch.Role)));
 
-    /// <summary>Takes removed teams off the grid and out of the Work area.</summary>
+    /// <summary>Takes removed teams out of Work and Overseer.</summary>
     internal void Forget(IReadOnlyList<string> teams)
     {
         if (!teams.Any(_teamNames.Contains))
             return;
-        if (_expanded is not null)
-            SetExpanded(null);
-        foreach (var pane in _panes.Where(pane => teams.Contains(pane.Team)).ToList())
-        {
-            _panes.Remove(pane);
-            _agents.Remove(pane);
-            pane.Dispose();
-            if (_lastSelected == pane)
-                _lastSelected = null;
-        }
+        _watches.RemoveAll(watch => teams.Contains(watch.Team));
         _teamNames.RemoveAll(teams.Contains);
         _work.Forget(teams);
         _overseer.Forget(teams);
-        _laidOutOver = Size.Empty;
         SetNeedsLayout();
         SetNeedsDraw();
     }
 
-    /// <summary>The vocabulary the panes and the cards draw their icons from, together, with Auto resolved here
-    /// so no view has to know what this terminal answered.</summary>
+    /// <summary>The vocabulary the cards, the logs and the roles draw their icons from, together, with Auto resolved
+    /// here so no view has to know what this terminal answered.</summary>
     private void ShowIcons(IconStyle style)
     {
         var drawn = Icons.Resolve(style, _auto);
         _drawn = drawn;
         _work.ShowIcons(drawn);
         _overseer.ShowIcons(drawn);
-        foreach (var pane in _panes)
-            pane.ShowIcons(drawn);
-    }
-
-    private void Expand()
-    {
-        if (_onDispatcher)
-        {
-            SetDispatcherExpanded(true);
-            return;
-        }
-        var index = SelectedIndex();
-        if (index >= 0 && _expanded is null)
-            SetExpanded(index);
+        _card.ShowIcons(drawn);
     }
 
     private void Collapse()
     {
-        if (_area == Area.Overseer)
+        if (_dispatcherOpen)
+            CloseDispatcher();
+        else
             CloseSession();
-        else if (_dispatcherExpanded)
-            SetDispatcherExpanded(false);
-        else
-            SetExpanded(null);
     }
 
-    private void SetDispatcherExpanded(bool expanded)
+    /// <summary>View › Dispatcher log: the dispatcher's whole log full-screen over whatever area is showing.</summary>
+    private void OpenDispatcher()
     {
-        _dispatcherExpanded = expanded;
-        _dispatch.Visible = !expanded;
-        _dispatchAll.Visible = expanded;
-        _agents.Visible = _area == Area.Dashboard && !expanded;
-        if (expanded)
-            ShowWholeLog();
+        _dispatcherOpen = true;
+        ShowWholeLog();
         ShowDispatcher(_clock.GetUtcNow());
-        SetNeedsLayout();
-        SetNeedsDraw();
-    }
-
-    /// <summary>Scrolls the selected pane, or the dispatcher's whole log when that is what's expanded.</summary>
-    private void Scroll(Action<ISessionView> pane, Action<LogView> log)
-    {
-        if (_dispatcherExpanded && _area == Area.Dashboard)
-            log(_dispatchAll);
-        else if (Shown() is { } shown)
-            pane(shown);
-    }
-
-    /// <summary>The session the log keys act on: the selected agent's, or the card's in Overseer while it's full-screen.</summary>
-    private ISessionView? Shown() => _area switch
-    {
-        Area.Overseer => _sessionFull ? _card : null,
-        Area.Dashboard => Selected(),
-        _ => null,
-    };
-
-    /// <summary>The session whose lines can be selected: an expanded agent's, or the card's full-screen.</summary>
-    private ISessionView? Reader() => _area == Area.Dashboard && _expanded is null ? null : Shown();
-
-    /// <summary>Takes the frame from wherever the reader was, expanded in place of an expanded agent.</summary>
-    private void SelectDispatcher()
-    {
-        var expanded = _expanded is not null;
-        if (expanded)
-            SetExpanded(null);
+        Arrange();
         _dispatchFrame.SetFocus();
-        if (expanded)
-            SetDispatcherExpanded(true);
+        ShowMessage();
     }
 
-    private void SetExpanded(int? index)
+    private void CloseDispatcher()
     {
-        _expanded = index;
-        for (var i = 0; i < _panes.Count; i++)
-        {
-            _panes[i].Visible = index is null || index == i;
-            _panes[i].Selects = index == i;
-        }
-        var selected = SelectedIndex();
-        if (index is not null)
-            ScrollTo(0);
-        else if (selected >= 0)
-            ScrollIntoView(selected);
-        SetNeedsLayout();
-        SetNeedsDraw();
+        _dispatcherOpen = false;
+        Arrange();
+        FocusArea();
+        ShowMessage();
     }
 
-    /// <summary>Through every agent, then the dispatcher frame as the last stop, and round again.</summary>
-    private void Step(int step)
+    /// <summary>Scrolls the session full-screen, or the dispatcher's log while that's open.</summary>
+    private void Scroll(Action<CardPanel> session, Action<LogView> log)
     {
-        var stops = _panes.Count + 1;
-        var current = _onDispatcher ? _panes.Count : SelectedIndex();
-        var next = current < 0
-            ? step > 0 ? 0 : _panes.Count
-            : (current + step + stops) % stops;
-        if (next == _panes.Count)
-            SelectDispatcher();
-        else
-            Select(next);
+        if (_dispatcherOpen)
+            log(_dispatchAll);
+        else if (_sessionFull)
+            session(_card);
     }
 
-    private void Select(int index)
-    {
-        if (_dispatcherExpanded)
-        {
-            SetDispatcherExpanded(false);
-            SetExpanded(index);
-        }
-        else if (_expanded is not null)
-            SetExpanded(index);
-        else
-            ScrollIntoView(index);
-        _panes[index].SetFocus();
-    }
-
-    private Rectangle Cell(int index) => _expanded is { } only
-        ? only == index ? new Rectangle(Point.Empty, _agents.Viewport.Size) : Rectangle.Empty
-        : AgentGrid.Cell(Grid, index, GridContent());
-
-    private (string Team, string Role)[] Grid => [.. _panes.Select(pane => (pane.Team, pane.Role))];
-
-    /// <summary>The grid tiles a content area tall enough for every cell's floor; the agent area scrolls over it.</summary>
-    private Size GridContent()
-    {
-        var area = _agents.Viewport.Size;
-        if (_expanded is not null)
-            return area;
-        return area with { Height = Math.Max(area.Height, AgentGrid.Rows(Grid) * MinCellHeight) };
-    }
-
-    private void FitGrid()
-    {
-        // A second pass: the scroll bar takes a column off the area the first one measured.
-        for (var pass = 0; pass < 2 && _agents.GetContentSize() != GridContent(); pass++)
-            _agents.SetContentSize(GridContent());
-        ScrollTo(_agents.Viewport.Y);
-        if (_laidOutOver == _agents.Viewport.Size)
-            return;
-        _laidOutOver = _agents.Viewport.Size;
-        var selected = SelectedIndex();
-        if (selected >= 0)
-            ScrollIntoView(selected);
-    }
-
-    private void ScrollIntoView(int index)
-    {
-        var cell = Cell(index);
-        var top = _agents.Viewport.Y;
-        var height = _agents.Viewport.Height;
-        if (cell.Top < top)
-            ScrollTo(cell.Top);
-        else if (cell.Bottom > top + height)
-            ScrollTo(Math.Min(cell.Top, cell.Bottom - height));
-    }
-
-    private void ScrollTo(int top)
-    {
-        var limit = Math.Max(0, GridContent().Height - _agents.Viewport.Height);
-        top = Math.Clamp(top, 0, limit);
-        if (_agents.Viewport.Y != top)
-            _agents.Viewport = _agents.Viewport with { Y = top };
-    }
-
-    private void MoveSelection(int rowStep, int columnStep)
-    {
-        if (_onDispatcher)
-        {
-            if (rowStep < 0 && !_dispatcherExpanded)
-                Select(_lastSelected is { } last && _panes.IndexOf(last) is >= 0 and var index ? index : _panes.Count - 1);
-            return;
-        }
-        if (rowStep != 0 && Selected() is { } pane && pane.MoveRun(rowStep))
-            return;
-        if (_expanded is not null)
-            return;
-        var current = SelectedIndex();
-        if (current < 0)
-        {
-            _panes[0].SetFocus();
-            return;
-        }
-        var grid = Grid;
-        var rows = AgentGrid.Rows(grid);
-        var slot = AgentGrid.Slot(grid, current);
-        if (rowStep > 0 && slot.Y == rows - 1)
-        {
-            SelectDispatcher();
-            return;
-        }
-        Select(AgentGrid.At(grid, Math.Clamp(slot.Y + rowStep, 0, rows - 1), slot.X + columnStep));
-    }
-
-    private int SelectedIndex() => Selected() is { } pane ? _panes.IndexOf(pane) : -1;
-
-    /// <summary>The focused pane, or the last one focused while something else, like an open menu, has focus.</summary>
-    private AgentPane? Selected() => _onDispatcher
-        ? null
-        : _panes.FirstOrDefault(pane => pane.HasFocus) ?? (_area == Area.Dashboard ? _lastSelected : null);
+    /// <summary>The session whose lines can be selected and copied: the card's or the role's, full-screen.</summary>
+    private CardPanel? Reader() => _area == Area.Overseer && _sessionFull && !_dispatcherOpen ? _card : null;
 
     private static string Version() =>
         typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?

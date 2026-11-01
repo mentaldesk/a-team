@@ -29,7 +29,7 @@ public class WhatsNewWindowTests : IDisposable
     [Fact]
     public void Something_new_on_a_team_reads_that_team_again_and_shows_in_the_menu_bar_from_any_area()
     {
-        using var window = Open(Area.Dashboard);
+        using var window = Open(Area.Overseer);
 
         Settle(window);
 
@@ -40,7 +40,6 @@ public class WhatsNewWindowTests : IDisposable
 
     [Theory]
     [InlineData(Area.Work)]
-    [InlineData(Area.Dashboard)]
     [InlineData(Area.Overseer)]
     public void The_alert_sits_at_the_right_end_of_the_menu_bar_in_every_area(Area area)
     {
@@ -57,7 +56,7 @@ public class WhatsNewWindowTests : IDisposable
     [Fact]
     public void The_status_bar_says_nothing_of_the_alert()
     {
-        using var window = Open(Area.Dashboard);
+        using var window = Open(Area.Overseer);
 
         Settle(window);
 
@@ -67,7 +66,7 @@ public class WhatsNewWindowTests : IDisposable
     [Fact]
     public void On_a_narrow_window_the_menu_titles_stay_whole_and_the_alert_is_cut_from_the_left()
     {
-        using var window = Open(Area.Dashboard);
+        using var window = Open(Area.Overseer);
         Settle(window);
         var titles = MenuTitlesEnd(window);
 
@@ -81,7 +80,7 @@ public class WhatsNewWindowTests : IDisposable
     [Fact]
     public void The_alert_s_key_is_listed_under_Everywhere()
     {
-        using var window = Open(Area.Dashboard);
+        using var window = Open(Area.Overseer);
 
         Settle(window);
 
@@ -95,7 +94,7 @@ public class WhatsNewWindowTests : IDisposable
     public void Nothing_new_reads_nothing_and_says_nothing()
     {
         _moves["team1"] = "[]";
-        using var window = Open(Area.Dashboard);
+        using var window = Open(Area.Overseer);
 
         Settle(window);
 
@@ -108,7 +107,7 @@ public class WhatsNewWindowTests : IDisposable
     public void Every_team_s_record_is_read_again_only_once_it_has_been_written_to()
     {
         var asked = 0;
-        using var window = Open(Area.Dashboard, onMoves: () => asked++);
+        using var window = Open(Area.Overseer, onMoves: () => asked++);
         Settle(window);
         Assert.Equal(2, asked);
 
@@ -123,7 +122,7 @@ public class WhatsNewWindowTests : IDisposable
     [Fact]
     public void Ctrl_G_N_opens_Work_on_the_team_s_tab_with_the_new_card_selected()
     {
-        using var window = Open(Area.Dashboard);
+        using var window = Open(Area.Overseer);
         Settle(window);
 
         window.Press("Ctrl+G N");
@@ -178,7 +177,7 @@ public class WhatsNewWindowTests : IDisposable
     [Fact]
     public void Leaving_its_gate_drops_it_from_the_alert()
     {
-        using var window = Open(Area.Dashboard);
+        using var window = Open(Area.Overseer);
         Settle(window);
 
         _moves["team1"] = Pitched[..^1] + """, {"item": 133, "at": "2026-10-02T09:00:40Z", "who": "you", "what": "Pitched → Approved"}]""";

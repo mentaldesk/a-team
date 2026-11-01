@@ -20,10 +20,10 @@ public class AppMenuTests : IDisposable
     }
 
     [Theory]
-    [InlineData(Area.Dashboard, "_View", 'v')]
+    [InlineData(Area.Overseer, "_View", 'v')]
     [InlineData(Area.Work, "_Go", 'g')]
     [InlineData(Area.Work, "_Cards", 'c')]
-    [InlineData(Area.Dashboard, "_Agents", 'a')]
+    [InlineData(Area.Overseer, "_Agents", 'a')]
     [InlineData(Area.Work, "_Help", 'h')]
     public void Alt_and_a_titles_letter_opens_that_menu(Area area, string title, char letter)
     {
@@ -36,7 +36,7 @@ public class AppMenuTests : IDisposable
     }
 
     [Theory]
-    [InlineData(Area.Dashboard, 'c')]
+    [InlineData(Area.Overseer, 'c')]
     [InlineData(Area.Work, 'a')]
     public void Alt_and_a_hidden_menus_letter_opens_nothing(Area area, char letter)
     {
@@ -49,7 +49,7 @@ public class AppMenuTests : IDisposable
     }
 
     [Theory]
-    [InlineData(Area.Dashboard, new[] { "_View", "_Go", "_Agents", "_Help" })]
+    [InlineData(Area.Overseer, new[] { "_View", "_Go", "_Agents", "_Help" })]
     [InlineData(Area.Work, new[] { "_View", "_Go", "_Cards", "_Help" })]
     public void The_bar_shows_only_the_menus_for_the_area(Area area, string[] titles)
     {
@@ -58,24 +58,12 @@ public class AppMenuTests : IDisposable
         Assert.Equal(titles, Shown(window));
     }
 
-    [Fact]
-    public void An_expanded_agent_keeps_the_dashboard_bar()
-    {
-        using var window = Open(Area.Dashboard);
-
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-
-        Assert.NotNull(window.ExpandedAgent);
-        Assert.Equal(["_View", "_Go", "_Agents", "_Help"], Shown(window));
-    }
-
     [Theory]
     [InlineData('W', new[] { "_View", "_Go", "_Cards", "_Help" })]
-    [InlineData('D', new[] { "_View", "_Go", "_Agents", "_Help" })]
+    [InlineData('O', new[] { "_View", "_Go", "_Agents", "_Help" })]
     public void Switching_area_swaps_the_bar(char key, string[] titles)
     {
-        using var window = Open(key == 'W' ? Area.Dashboard : Area.Work);
+        using var window = Open(key == 'W' ? Area.Overseer : Area.Work);
 
         window.Press($"Ctrl+G {key}");
 
@@ -86,7 +74,7 @@ public class AppMenuTests : IDisposable
     public void Switching_area_from_an_open_menu_closes_it_and_shows_the_other_bar()
     {
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
-        using var window = Open(Area.Dashboard);
+        using var window = Open(Area.Overseer);
         app.Begin(window);
         window.NewKeyDownEvent(new Key('v').WithAlt);
         Assert.True(window.Menu.IsOpen());
@@ -99,15 +87,15 @@ public class AppMenuTests : IDisposable
     }
 
     [Theory]
-    [InlineData(Area.Dashboard, 'W')]
-    [InlineData(Area.Work, 'D')]
+    [InlineData(Area.Overseer, 'W')]
+    [InlineData(Area.Work, 'O')]
     public void The_titles_sit_side_by_side_leaving_no_gap_for_the_other_areas_menu(Area area, char other)
     {
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
         using var window = Open(area);
         app.Begin(window);
         window.Press($"Ctrl+G {other}");
-        window.Press(area == Area.Dashboard ? "Ctrl+G D" : "Ctrl+G W");
+        window.Press(area == Area.Overseer ? "Ctrl+G O" : "Ctrl+G W");
         window.Layout();
 
         var frames = window.Menu.SubViews.OfType<MenuBarItem>().Select(menu => menu.Frame).ToList();
@@ -122,7 +110,7 @@ public class AppMenuTests : IDisposable
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
         using var window = Open(Area.Work);
         app.Begin(window);
-        window.Press("Ctrl+G D");
+        window.Press("Ctrl+G O");
 
         window.NewKeyDownEvent(new Key('a').WithAlt);
 
@@ -147,8 +135,9 @@ public class AppMenuTests : IDisposable
     [InlineData('h', true)]
     public void A_bare_title_letter_opens_no_menu_and_the_key_it_would_shadow_still_works(char letter, bool answered)
     {
-        using var window = Open(Area.Dashboard);
-        window.NewKeyDownEvent(Key.Tab);
+        using var window = Open(Area.Overseer);
+        window.Overseer.SelectHeading("a-team");
+        window.Refresh();
         var opened = Opened(window);
 
         Assert.Equal(answered, window.NewKeyDownEvent(new Key(letter)));
@@ -199,7 +188,6 @@ public class AppMenuTests : IDisposable
     }
 
     [Theory]
-    [InlineData(Area.Dashboard)]
     [InlineData(Area.Work)]
     [InlineData(Area.Overseer)]
     public void No_two_items_in_a_menu_share_a_letter_dimmed_ones_included(Area area)
@@ -223,14 +211,14 @@ public class AppMenuTests : IDisposable
         window.Refresh();
 
         Assert.Equal(
-            ["_Show the session full-screen", "_Fold the lane", "Open on _GitHub", "Go _to the agent's session", "_Refresh", "_Next team", "_Previous team",
-                "Open team's _board on GitHub", "_Decisions…", "S_ettings", "_Quit"],
+            ["_Show the session full-screen", "_Fold the lane", "Open on _GitHub", "_Read the boards that failed again", "R_efresh", "_Next team",
+                "_Previous team", "Open team's _board on GitHub", "_Dispatcher log", "De_cisions…", "Se_ttings", "_Quit"],
             Under(window, View(window)).Select(id => Item(window, id).Title));
     }
 
     [Theory]
     [InlineData(Area.Work)]
-    [InlineData(Area.Dashboard)]
+    [InlineData(Area.Overseer)]
     public void A_dimmed_item_keeps_its_letter_and_pressing_it_runs_nothing(Area area)
     {
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
@@ -255,13 +243,12 @@ public class AppMenuTests : IDisposable
         window.Refresh();
         var before = window.MenuItems.ToDictionary(entry => entry.Id, entry => entry.Item.HotKey);
 
-        window.NewKeyDownEvent(Key.Tab);
+        window.Overseer.SelectHeading("a-team");
         window.Refresh();
-        window.NewKeyDownEvent(Key.Enter);
+        window.Commands.Execute("view.dispatcher");
         window.Refresh();
 
         Assert.All(window.MenuItems, entry => Assert.Equal(before[entry.Id], entry.Item.HotKey));
-        Assert.Equal(Item(window, "agent.expand").HotKey, Item(window, "agent.collapse").HotKey);
     }
 
     [Fact]
@@ -319,10 +306,10 @@ public class AppMenuTests : IDisposable
         window.Refresh();
 
         Assert.Equal(["_View", AppMenu.Go], window.Menus.Take(2).Select(menu => menu.Title));
-        Assert.Equal(["view.dashboard", "view.work", "view.overseer", "assistant", "view.details"], Above(window, Go(window)));
+        Assert.Equal(["view.work", "view.overseer", "assistant", "view.details"], Above(window, Go(window)));
         Assert.Equal(["work.team", "work.whatsNew"], Below(window, Go(window)));
-        Assert.Equal(["Ctrl+G D", "Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "Ctrl+G T", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
-        Assert.DoesNotContain(Under(window, View(window)), id => id.StartsWith("view.", StringComparison.Ordinal) || id is "assistant" or "work.team" or "work.whatsNew");
+        Assert.Equal(["Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "Ctrl+G T", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
+        Assert.DoesNotContain(Under(window, View(window)), id => id is "view.work" or "view.overseer" or "view.details" or "assistant" or "work.team" or "work.whatsNew");
     }
 
     [Fact]
@@ -331,12 +318,12 @@ public class AppMenuTests : IDisposable
         using var window = Open(Area.Work);
         window.Refresh();
 
-        Assert.Equal(["  _Dashboard", $"{AppMenu.Check} _Work", "  _Overseer", "  _Team…"], new[] { "view.dashboard", "view.work", "view.overseer", "work.team" }.Select(id => Item(window, id).Title));
+        Assert.Equal([$"{AppMenu.Check} _Work", "  _Overseer", "  _Team…"], new[] { "view.work", "view.overseer", "work.team" }.Select(id => Item(window, id).Title));
 
         window.Press("Ctrl+G O");
         window.Refresh();
 
-        Assert.Equal(["  _Dashboard", "  _Work", $"{AppMenu.Check} _Overseer"], new[] { "view.dashboard", "view.work", "view.overseer" }.Select(id => Item(window, id).Title));
+        Assert.Equal(["  _Work", $"{AppMenu.Check} _Overseer"], new[] { "view.work", "view.overseer" }.Select(id => Item(window, id).Title));
     }
 
     [Fact]
@@ -346,20 +333,6 @@ public class AppMenuTests : IDisposable
 
         Assert.Equal(["Show _keys", "_Guide", "_Messages…", "_Commands", "_About"], Under(window, Help(window)).Select(id => Item(window, id).Title));
         Assert.Equal("F1", Keys(window, "help"));
-    }
-
-    [Fact]
-    public void No_two_items_in_an_expanded_agent_s_menu_share_a_letter_or_take_one_from_what_they_swapped_out()
-    {
-        using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-
-        window.Refresh();
-
-        var letters = Under(window, Agents(window)).Select(id => Letter(Item(window, id).HotKey)).ToList();
-        Assert.Equal(letters.Count, letters.Distinct().Count());
-        Assert.Contains(Letter(Item(window, "agent.expand").HotKey), letters);
     }
 
     [Fact]
@@ -465,17 +438,17 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void View_lists_the_Work_and_Overseer_items_on_the_dashboard_dimmed()
+    public void View_lists_the_Work_and_Overseer_items_in_the_other_area_dimmed()
     {
-        using var window = Open();
+        using var window = Open(Area.Work);
 
         window.Refresh();
 
-        string[] elsewhere = ["overseer.details", "overseer.fold", "overseer.github", "overseer.session", "overseer.refresh",
-            "work.nextTeam", "work.previousTeam", "work.team"];
+        string[] elsewhere = ["overseer.details", "overseer.fold", "overseer.github", "overseer.retry", "overseer.refresh"];
         Assert.Subset(Under(window, View(window)).Concat(Under(window, Go(window))).ToHashSet(), elsewhere.ToHashSet());
         Assert.All(elsewhere, id => Assert.True(Item(window, id).Dimmed, id));
-        Assert.False(Item(window, "view.work").Dimmed);
+        Assert.False(Item(window, "view.overseer").Dimmed);
+        Assert.False(Item(window, "view.dispatcher").Dimmed);
     }
 
 
@@ -504,51 +477,17 @@ public class AppMenuTests : IDisposable
     }
 
     [Fact]
-    public void On_the_grid_Agents_has_expand_and_tool_calls_then_the_log_s_items_dimmed_under_a_line_with_their_keys()
+    public void Agents_has_the_log_s_items_under_a_line_with_their_keys_dimmed_until_a_log_is_full_screen()
     {
         using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
-
-        window.Refresh();
-
-        Assert.Equal(["agent.expand", "log.toolCalls", "log.copyLines", "log.copyAll", "log.editor"], Below(window, Agents(window)));
-        Assert.Equal(["Exp_and", "_Show tool calls in full"], Below(window, Agents(window)).Take(2).Select(id => Item(window, id).Title));
-        Assert.Equal(["Enter", "Ctrl+T T", "L", "A", "E"], Below(window, Agents(window)).Select(id => Keys(window, id)));
-        Assert.Equal([false, false, true, true, true], Below(window, Agents(window)).Select(id => Item(window, id).Dimmed));
-    }
-
-    [Fact]
-    public void Expanded_Agents_has_tool_calls_and_back_in_place_of_expand()
-    {
-        using var window = Open();
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-
         window.Refresh();
 
         Assert.Equal(["log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"], Below(window, Agents(window)));
+        Assert.Equal(["Ctrl+T T", "Esc", "L", "A", "E"], Below(window, Agents(window)).Select(id => Keys(window, id)));
+        Assert.All(Below(window, Agents(window)), id => Assert.True(Item(window, id).Dimmed, id));
+        Assert.Equal("_Back", Item(window, "agent.collapse").Title);
         Assert.Equal("Open whole log in editor", Item(window, "log.editor").Title.Replace("_", ""));
-        Assert.Equal("E", Keys(window, "log.editor"));
-        Assert.Equal("Back to _all agents", Item(window, "agent.collapse").Title);
-        Assert.Equal("Esc", Keys(window, "agent.collapse"));
         Assert.Equal(["Copy selected lines", "Copy whole log"], new[] { "log.copyLines", "log.copyAll" }.Select(id => Item(window, id).Title.Replace("_", "")));
-        Assert.Equal(["L", "A"], new[] { "log.copyLines", "log.copyAll" }.Select(id => Keys(window, id)));
-    }
-
-    [Fact]
-    public void Opening_Agents_after_going_back_to_the_grid_offers_expand_again()
-    {
-        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
-        using var window = Open();
-        app.Begin(window);
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
-        window.Refresh();
-        window.NewKeyDownEvent(Key.Esc);
-
-        window.NewKeyDownEvent(new Key('a').WithAlt);
-
-        Assert.Equal(["agent.expand", "log.toolCalls", "log.copyLines", "log.copyAll", "log.editor"], Below(window, Agents(window)));
     }
 
     [Fact]
@@ -558,21 +497,6 @@ public class AppMenuTests : IDisposable
 
         Assert.Equal(["work.new", "work.refresh", "work.mine"], Below(window, Cards(window)));
         Assert.Equal(["Ctrl+N", "F5", "Ctrl+T M"], Below(window, Cards(window)).Select(id => Keys(window, id)));
-    }
-
-    [Theory]
-    [InlineData(0, new[] { true, true, true, true, true })]
-    [InlineData(1, new[] { false, false, true, true, true })]
-    [InlineData(2, new[] { false, false, false, false, false })]
-    public void Agents_dims_what_needs_a_selected_agent_or_an_expanded_log(int keys, bool[] dimmed)
-    {
-        using var window = Open();
-        foreach (var key in new[] { Key.Tab, Key.Enter }.Take(keys))
-            window.NewKeyDownEvent(key);
-
-        window.Refresh();
-
-        Assert.Equal(dimmed, Below(window, Agents(window)).Select(id => Item(window, id).Dimmed));
     }
 
     [Fact]
@@ -664,7 +588,7 @@ public class AppMenuTests : IDisposable
         return opened;
     }
 
-    private DashboardWindow Open(Area area = Area.Dashboard, Func<string[], Task<string?>>? run = null)
+    private DashboardWindow Open(Area area = Area.Overseer, Func<string[], Task<string?>>? run = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(

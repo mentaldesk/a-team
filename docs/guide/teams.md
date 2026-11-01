@@ -129,8 +129,8 @@ the rows go, but the first page is kept for when you tick it again.
 ## Pausing a team
 
 A paused team picks up no new work, and a run already going finishes. `p` on the Teams page, or the
-team's own form, pauses it and starts it again. To pause one role and not the other, use `h` on the
-[Dashboard](dashboard.md#pausing-a-role).
+team's own form, pauses it and starts it again. To pause one role and not the other, use `h` on its
+team's panel in [Overseer](overseer.md#pausing-a-role).
 
 ## A daily budget
 
@@ -178,11 +178,11 @@ away. `F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
   asks which command keeps it, and one that starts another, or carries on from one, is refused on
   the row, naming the other command. `Del` removes the selected key, and `Ctrl+R` puts every key back
   to its default. Type to narrow the list.
-- **Dashboard**: whether panes start with every tool call showing, and which icons the panes and
+- **Dashboard**: whether sessions start with every tool call showing, and which icons the roles and
   cards wear. *Automatic* names what it decided for the terminal you're in, and decides again every
   time the app starts. *Nerd Font* and *Unicode* are drawn in their own glyphs, so pick the one that
   isn't boxes. The app previews each behind Settings as you move.
-- **Terminal**: the [Mac keys](dashboard.md#mac-keys), installed, updated and removed straight away,
+- **Terminal**: the [Mac keys](app.md#mac-keys), installed, updated and removed straight away,
   like pausing a team.
 - **Overseer**: how long a card may stay in each column before [Overseer](overseer.md) highlights
   it.

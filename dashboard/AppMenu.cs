@@ -23,16 +23,16 @@ internal sealed class AppMenu
 
     internal static readonly (string Title, string[] Ids)[] Layout =
     [
-        ("_View", ["overseer.details", "overseer.fold", "overseer.github", "overseer.session", "overseer.refresh", "work.nextTeam", "work.previousTeam",
-            "team.board", "decisions", "settings", "quit"]),
-        (Go, ["view.dashboard", "view.work", "view.overseer", "assistant", "view.details", Separator, "work.team", "work.whatsNew"]),
+        ("_View", ["overseer.details", "overseer.fold", "overseer.github", "overseer.retry", "overseer.refresh", "work.nextTeam", "work.previousTeam",
+            "team.board", "view.dispatcher", "decisions", "settings", "quit"]),
+        (Go, ["view.work", "view.overseer", "assistant", "view.details", Separator, "work.team", "work.whatsNew"]),
         (Cards, [Separator, "work.new", "work.refresh", "work.mine"]),
-        (Agents, ["agent.hold", "agent.interrupt", "dispatch.pass", Separator, "agent.expand", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
+        (Agents, ["agent.hold", "agent.interrupt", "dispatch.pass", Separator, "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
         ("_Help", ["help", "guide", "messages", "commands", "about"]),
     ];
 
     /// <summary>Items that take each other's place in a menu, sharing a letter so it stays put as they swap.</summary>
-    internal static readonly (string Id, string Other)[] Swaps = [("agent.expand", "agent.collapse")];
+    internal static readonly (string Id, string Other)[] Swaps = [];
 
     private readonly CommandRegistry _commands;
     private readonly List<(string Id, DimmedMenuItem Item)> _items = [];
@@ -65,13 +65,13 @@ internal sealed class AppMenu
     /// <summary>The titles across the bar, each holding the items under it.</summary>
     internal IReadOnlyList<MenuBarItem> Menus => _menus;
 
-    /// <summary>Cards only in Work and Agents only on the dashboard, closing whatever menu is open. The others are
+    /// <summary>Cards only in Work and Agents only in Overseer, closing whatever menu is open. The others are
     /// taken off the bar rather than hidden: the bar still spaces out a hidden title.</summary>
     internal void Show(Area area)
     {
         if (Bar.IsOpen())
             Bar.HideActiveItem();
-        Bar.Menus = [.. _menus.Where(menu => menu == _cards ? area == Area.Work : menu != _agents || area == Area.Dashboard)];
+        Bar.Menus = [.. _menus.Where(menu => menu == _cards ? area == Area.Work : menu != _agents || area == Area.Overseer)];
     }
 
     /// <summary>Keeps each item reading as its command does now, like holding the selected agent's role, checked where
