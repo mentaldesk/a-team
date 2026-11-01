@@ -923,6 +923,34 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_board_shows_from_the_record_then_again_once_synced_with_GitHub()
+    {
+        var synced = false;
+        var syncs = new List<string>();
+        var sync = new TaskCompletionSource<Reading>();
+        using var window = Open(
+            readBoard: team => Task.FromResult(new Reading(team == "team1" && synced ? "[]" : Overview(team), null)),
+            syncBoard: team =>
+            {
+                syncs.Add(team);
+                return sync.Task;
+            });
+        window.Commands.Execute("view.overseer");
+        window.Refresh();
+
+        Assert.Equal([11, 12, 21, 22], window.Overseer.Board.Cards.Select(card => card.Number).Order());
+        Assert.Equal(["team0", "team1"], syncs.Order());
+
+        synced = true;
+        sync.SetResult(new Reading("", null));
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal([11, 12], window.Overseer.Board.Cards.Select(card => card.Number).Order());
+        Assert.Equal(["team0", "team1"], syncs.Order());
+    }
+
+    [Fact]
     public void A_board_with_nothing_on_it_says_so()
     {
         using var window = Open(readBoard: team => Task.FromResult(new Reading(team == "team1" ? "[]" : Overview(team), null)));
@@ -946,7 +974,7 @@ public class OverseerTests : IDisposable
     private DashboardWindow Open(
         Func<string, Task<Reading>>? readBoard = null, Func<string, LinkOutcome>? openUrl = null, TimeProvider? clock = null, int height = 30,
         int width = 120, Action<Handover>? handOver = null, Func<RunTask, bool>? confirmStop = null, Handover? resume = null,
-        Func<string[], Task<string?>>? run = null)
+        Func<string[], Task<string?>>? run = null, Func<string, Task<Reading>>? syncBoard = null)
     {
         Directory.CreateDirectory(_root);
         var window = new DashboardWindow(
@@ -965,7 +993,8 @@ public class OverseerTests : IDisposable
             resume: resume,
             clock: clock,
             confirmStop: confirmStop,
-            readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))));
+            readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))),
+            syncBoard: syncBoard);
         window.Frame = new Rectangle(0, 0, width, height);
         window.Layout(new Size(width, height));
         window.Refresh();

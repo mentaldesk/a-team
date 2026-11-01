@@ -388,14 +388,22 @@ MIRROR=
 READ_EVERY=${A_TEAM_BOARD_READ_EVERY:-900}
 PRIORITIES='["Urgent", "High", "Medium", "Low"]'
 
-# A dry run works on a copy of the record, so it reads as a real run would and changes nothing.
-if [ -n "$DRY_RUN" ]; then
-  HISTORY=$(mktemp "${TMPDIR:-/tmp}/a-team-history.XXXXXX")
-  [ ! -f "$STATE/history.db" ] || cp "$STATE/history.db" "$HISTORY"
+# A dry run works on a copy of the record, so it reads as a real run would and changes nothing. With no record yet, as
+# in a try sandbox, it keeps its own between commands, so the board is moved over once and not on every command.
+SCRATCH=
+if [ -n "$DRY_RUN" ] && [ -f "$STATE/history.db" ]; then
+  SCRATCH=$(mktemp "${TMPDIR:-/tmp}/a-team-history.XXXXXX")
+  cp "$STATE/history.db" "$SCRATCH"
+  HISTORY=$SCRATCH
+elif [ -n "$DRY_RUN" ]; then
+  mkdir -p "$STATE"
+  HISTORY="$STATE/dry-run.db"
 fi
+# Set where a command reads the record as it stands, and the dashboard runs `sync` after it.
+CACHED=
 # Present once this command has brought the record up to date with GitHub.
 SYNCED=$(mktemp -u "${TMPDIR:-/tmp}/a-team-synced.XXXXXX")
-trap 'rm -f "$SYNCED" ${HISTORY:+"$HISTORY"}' EXIT
+trap 'rm -f "$SYNCED" ${SCRATCH:+"$SCRATCH"}' EXIT
 
 gql() {
   local query=$1
@@ -569,11 +577,12 @@ board_ready() {
 }
 
 # board_sync: once a command, reads the open items, and every READ_EVERY the whole mirror, then catches the mirror up.
-# Where GitHub can't be read, the record stands as it is.
+# Where GitHub can't be read, the record stands as it is. With CACHED set, it only moves the board over.
 board_sync() {
   [ ! -e "$SYNCED" ] || return 0
   : >"$SYNCED"
   board_ready
+  [ -z "$CACHED" ] || return 0
   local seen=${SEEN:-[]} nodes stale ids
   if [ -n "$MIRROR" ] && [ -z "$SEEN" ]; then
     stale=$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $(sql "$TEAM")
@@ -2834,6 +2843,7 @@ case "$CMD" in
 
   waiting)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
+    CACHED=1
     all=$(items open)
     catch_up "$all"
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
@@ -2937,6 +2947,11 @@ case "$CMD" in
     fi
     ;;
 
+  sync)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM sync"
+    board_sync
+    ;;
+
   overview)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM overview"
     # Done only grows, so it's left off; `since` is when the item's Status was last set.
@@ -2945,6 +2960,7 @@ case "$CMD" in
     [ ! -f "$STATE/history.db" ] || runs=$(history_sql -json "SELECT item, role, log, started FROM (SELECT item, role, log,
         started, ROW_NUMBER() OVER (PARTITION BY item ORDER BY started DESC, runs.id DESC) AS n
         FROM runs JOIN run_items ON run_items.run = runs.id WHERE team = $(sql "$TEAM")) WHERE n = 1;")
+    CACHED=1
     all=$(items open)
     jq --arg team "$TEAM" --argjson runs "${runs:-[]}" --argjson lag "$(mirror_lag | jq -s 'first')" 'INDEX($runs[]; .item | tostring) as $last
       | map(select(.status != "Done") | {number, title, url, status, priority,

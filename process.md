@@ -169,7 +169,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend`, `trends`, `spending` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
-`overview` is what its Overseer reads, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
+`overview` is what its Overseer reads, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in

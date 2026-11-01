@@ -36,8 +36,11 @@ fixture() {
 
 # Each board command starts from a board moved over afresh from the test's page, unless KEEP_BOARD is set.
 run() {
-  [ -n "${KEEP_BOARD:-}" ] || [ ! -f "${A_TEAM_STATE:-}/history.db" ] ||
-    sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM board; DELETE FROM boards;" 2>/dev/null
+  local db
+  for db in history.db dry-run.db; do
+    [ -n "${KEEP_BOARD:-}" ] || [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
+      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board; DELETE FROM boards;" 2>/dev/null
+  done
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" "$@" >"$OUT" 2>"$ERR"
   STATUS=$?
 }
@@ -3477,6 +3480,30 @@ same "the record's board" '[[13,"Ready",null],[14,"In review","High"],[15,"Done"
 same "mirror reads" 0 "$(grep -c 'projectV2(number' "$BIN/args")"
 same "open items read" 1 "$(grep -c BoardRefresh "$BIN/args")"
 
+case_ "overview and waiting read the record as it stands, and sync reads GitHub"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+run board demo list
+: >"$BIN/args"
+kept board demo overview
+kept board demo waiting
+same "board reads" 0 "$(grep -c 'projectV2(number\|BoardRefresh' "$BIN/args")"
+kept board demo sync
+same "exit" 0 "$STATUS"
+same "synced" 1 "$(grep -c 'projectV2(number' "$BIN/args")"
+
+case_ "a dry run with no record yet, as in a try sandbox, moves the board over once"
+rm -f "$A_TEAM_STATE/history.db" "$A_TEAM_STATE/dry-run.db"
+run board --dry-run demo list
+same "moved over" '[[13,"Ready"]]' "$(jq -c 'map([.number, .status])' "$OUT")"
+: >"$BIN/args"
+A_TEAM_BOARD_READ_EVERY=3600 kept board --dry-run demo overview
+same "from its own record" '[[13,"Ready"]]' "$(jq -c 'map(select(.number) | [.number, .status])' "$OUT")"
+same "mirror reads" 0 "$(grep -c 'projectV2(number' "$BIN/args")"
+[ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
+rm -f "$A_TEAM_STATE/dry-run.db"
+
 case_ "a move is the record's, and the mirror shows it after: next, wip and claim all read the record"
 gh_items <<'ITEMS'
 Ready 13 Something to start
@@ -3506,10 +3533,14 @@ A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
 same "card" '"In progress"' "$(jq -c '.[0].status' "$OUT")"
 same "lag" '{"behind":1,"failed":"GitHub rate limit","retry":"'"$(date -u -r "$QUOTA_RESET" +%FT%TZ 2>/dev/null || date -u -d "@$QUOTA_RESET" +%FT%TZ)"'"}' "$(jq -c '.[] | select(.number == null) | .mirror' "$OUT")"
 rm "$BIN/mirror-fails"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
 same "waits for the retry" 1 "$(jq -c '.[] | select(.number == null) | .mirror.behind' "$OUT")"
 same "nothing written yet" "" "$(grep updateProjectV2ItemFieldValue "$WRITES")"
 sqlite3 "$A_TEAM_STATE/history.db" "UPDATE boards SET retry = '2000-01-01T00:00:00Z';"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "not by overview" 1 "$(jq -c '.[] | select(.number == null) | .mirror.behind' "$OUT")"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
 same "caught up" '[]' "$(jq -c '[.[] | select(.number == null)]' "$OUT")"
 grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "catch-up: mirror not written in '$(cat "$WRITES")'"
