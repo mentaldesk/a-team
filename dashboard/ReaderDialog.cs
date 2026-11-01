@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Fields;
+using MentalDesk.Tui.Focus;
+using MentalDesk.Tui.Layout;
 using MentalDesk.Tui.Links;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
@@ -135,6 +137,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly Pictures? _pictures;
     private readonly Func<string, LinkOutcome>? _openUrl;
     private readonly Action<Picture, string> _viewImage;
+    private FocusRegion? _region;
 
     /// <param name="onApprove">What <c>a</c> does, or null where there's nothing to approve.</param>
     /// <param name="accept">Merging the task's PR, or null where there's no task to accept.</param>
@@ -198,7 +201,6 @@ public sealed partial class ReaderDialog : DashboardDialog
             Title = "Comment",
             X = 0,
             Y = 0,
-            Width = ReaderPanes.CommentWidth,
             Height = Dim.Func(_ => PaneRows(), this),
             Visible = false,
         };
@@ -232,7 +234,6 @@ public sealed partial class ReaderDialog : DashboardDialog
         _bodyFrame = new FrameView
         {
             Title = "Body",
-            X = Pos.Func(_ => _commentFrame.Visible ? ReaderPanes.CommentWidth : 0, this),
             Y = 0,
             Height = Dim.Func(_ => PaneRows(), this),
         };
@@ -253,9 +254,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         _historyFrame = new FrameView
         {
             Title = "History",
-            X = Pos.AnchorEnd(ReaderPanes.HistoryWidth),
             Y = 0,
-            Width = ReaderPanes.HistoryWidth,
             Height = Dim.Func(_ => PaneRows(), this),
         };
         _history = new LogView
@@ -329,6 +328,19 @@ public sealed partial class ReaderDialog : DashboardDialog
         Add(_commentFrame, _bodyFrame, _historyFrame, Foot, _message);
         if (_band is not null)
             Add(_band);
+        Sides = _panes.Widths.For(this, () => _region, said => Say(said, Schemes.Accent))
+            .AddSide(_commentFrame, PaneWidths.Comment, ReaderPanes.CommentWidth)
+            .AddMain(_bodyFrame)
+            .AddSide(_historyFrame, PaneWidths.History, ReaderPanes.HistoryWidth);
+        Resizes(Sides, _panes.Widths);
+        foreach (var (pane, region) in new (View?, FocusRegion?)[]
+            { (_commentFrame, PaneWidths.Comment), (_bodyFrame, null), (_historyFrame, PaneWidths.History), (_band, null) })
+            if (pane is not null)
+                pane.HasFocusChanged += (_, focus) =>
+                {
+                    if (focus.NewValue)
+                        _region = region;
+                };
         ShowHistory(_panes.OpensWithHistory(width));
         if ((tryIt?.Failure ?? edit?.Failure ?? body.Failure) is { Length: > 0 } failure)
             _message.Show(failure, Schemes.Error);
@@ -360,6 +372,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     internal LogView Body => _body;
 
     internal LogView HistoryLog => _history;
+
+    internal SidePanes Sides { get; }
 
     internal bool HistoryShown => _historyFrame.Visible;
 
@@ -414,7 +428,7 @@ public sealed partial class ReaderDialog : DashboardDialog
             app.Screen.Width, rank, () => DiscardDialog.Show(app), edit: edit, copyBranch: copyBranch, idea: idea,
             window: window, pictures: pictures, openUrl: openUrl,
             viewImage: (picture, alt) => ImageViewer.Show(app, picture, alt));
-        DialogHost.Run(app, dialog);
+        panes.Widths.While(dialog.Sides, () => DialogHost.Run(app, dialog));
         return dialog.Chosen;
     }
 
@@ -638,7 +652,6 @@ public sealed partial class ReaderDialog : DashboardDialog
     private void ShowHistory(bool shown)
     {
         _historyFrame.Visible = shown;
-        _bodyFrame.Width = shown ? Dim.Fill(ReaderPanes.HistoryWidth) : Dim.Fill();
         if (!shown && _scrolled == _history)
             Scroll(_body);
         Offer();
@@ -904,7 +917,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (!CommentShown)
         {
             _commentFrame.Visible = true;
-            if (HistoryShown && _width < ReaderPanes.NarrowestThree)
+            if (HistoryShown && _width < _panes.NarrowestThree)
                 ShowHistory(false);
             SetNeedsLayout();
         }

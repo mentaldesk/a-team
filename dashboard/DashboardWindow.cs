@@ -83,6 +83,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, string?> _askHold;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Action<string> _showGuide;
+    private readonly PaneWidths _paneWidths;
     private readonly Action<Handover>? _handOver;
     private readonly IconStyle _auto;
     private readonly Label _title;
@@ -181,8 +182,10 @@ public sealed class DashboardWindow : Window
         MacKeys? macKeys = null,
         Func<WaitingItem, bool>? confirmApprove = null,
         Func<WaitingItem, string?>? askHold = null,
-        AssistantSetup? assistant = null)
+        AssistantSetup? assistant = null,
+        PaneWidths? paneWidths = null)
     {
+        _paneWidths = paneWidths ?? new PaneWidths();
         _macKeys = macKeys;
         _attaching = attaching;
         _showSpending = showSpending;
@@ -298,6 +301,8 @@ public sealed class DashboardWindow : Window
         _commands.Keys.FocusedScope = () => Region;
         KeyOverrides = settings.KeyOverrides(_commands);
         KeyOverrides.Load();
+        _paneWidths.Keys = id => _commands.Keys.For(id).Select(binding => binding.Chord);
+        _paneWidths.Window = key => key == _commands.KeyFor("commands") && _commands.Press(key);
         SyncQuitKey();
         ShowKeysHint();
         _menu = new AppMenu(_commands, _area, new Dictionary<string, Func<bool>>
@@ -750,6 +755,8 @@ public sealed class DashboardWindow : Window
             .Register("agent.collapse", () => _dispatcherOpen ? "Back from the dispatcher's log" : "Back to Overseer", Collapse, Key.Esc,
                 isEnabled: () => _dispatcherOpen || _sessionFull, menuLabel: () => "Back", scopes: [Regions.Log])
             .Register("quit", "Quit", Quit, Key.Q.WithCtrl);
+        foreach (var (id, label, run) in PaneWidths.Commands)
+            _commands.Register(id, label, () => run(_paneWidths.Open!), isEnabled: () => _paneWidths.Open?.CanResize == true);
         for (var tab = 0; tab < 9; tab++)
         {
             var index = tab;
@@ -2230,9 +2237,13 @@ public sealed class DashboardWindow : Window
 
     internal KeySheet Keys => KeysSheet.For(_commands, Offered, Region);
 
-    /// <summary>While the reader is open, only what works from it: the rest acts on the board underneath.</summary>
+    /// <summary>While the reader or the Guide is open, only what works from it: the rest acts on the board underneath.</summary>
     private IReadOnlyList<CommandDescriptor> Offered =>
-        _shown is null ? _commands.Enabled : [.. _commands.Enabled.Where(command => command.Id is "work.new" or "work.viewImage" or "help" or "commands")];
+        _shown is null && _paneWidths.Open is null
+            ? _commands.Enabled
+            : [.. _commands.Enabled.Where(command => command.Id is "help" or "commands"
+                || _shown is not null && command.Id is "work.new" or "work.viewImage"
+                || PaneWidths.Commands.Any(resize => resize.Id == command.Id))];
 
     /// <summary>Where the window is now, for the keys that work only there.</summary>
     internal CommandScope Region =>

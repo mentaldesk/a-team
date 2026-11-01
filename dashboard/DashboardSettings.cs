@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Layout;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -104,6 +105,11 @@ public sealed class DashboardSettings
         writer.WriteEndObject();
     });
 
+    /// <summary>The width each side pane was left at, where it isn't its default. Never writes, whatever it finds.</summary>
+    public JsonObject? ReadPaneWidths() => ReadObject(SidePanes.Section);
+
+    public void WritePaneWidths(JsonObject widths) => Write(SidePanes.Section, writer => widths.WriteTo(writer));
+
     /// <summary>The key each command was to run on instead of its default, as the dashboard saved them before it moved
     /// onto MentalDesk.Tui's keymap, in the order the file gives them.
     /// An empty name unbinds the command, and one <see cref="Key.TryParse(string?, out Key)"/> rejects is left out. Never
@@ -132,10 +138,12 @@ public sealed class DashboardSettings
         new(commands.Library, commands.Keys, () => ReadKeymap() ?? (ReadKeys() is { Count: > 0 } saved ? SavedKeys.Carry(saved, commands) : null),
             overrides => Write(KeymapSection, writer => overrides.WriteTo(writer)));
 
-    private JsonObject? ReadKeymap()
+    private JsonObject? ReadKeymap() => ReadObject(KeymapSection);
+
+    private JsonObject? ReadObject(string name)
     {
         using var file = Parse();
-        return Setting(file, KeymapSection) is { ValueKind: JsonValueKind.Object } keymap ? JsonNode.Parse(keymap.GetRawText()) as JsonObject : null;
+        return Setting(file, name) is { ValueKind: JsonValueKind.Object } value ? JsonNode.Parse(value.GetRawText()) as JsonObject : null;
     }
 
     /// <summary>Writes one setting, carrying over every other one the file already holds.</summary>

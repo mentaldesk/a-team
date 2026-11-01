@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using MentalDesk.Tui.Filtering;
+using MentalDesk.Tui.Focus;
 using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Layout;
 using MentalDesk.Tui.Links;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
@@ -20,10 +22,12 @@ public sealed class GuideDialog : DashboardDialog
 
     private const string BackId = "guide.back";
     private const int Inset = 1;
+    private const int ContentsWidth = 30;
     private static readonly Key ContentsKey = Key.C.WithCtrl.WithShift;
     private static readonly Key IndexKey = Key.I.WithCtrl.WithShift;
 
     private readonly IReadOnlyDictionary<string, string> _guide;
+    private readonly PaneWidths _widths;
     private readonly Func<string, LinkOutcome> _openUrl;
     private readonly MarkdownView _page;
     private readonly MessageBar _message = new();
@@ -32,6 +36,7 @@ public sealed class GuideDialog : DashboardDialog
     private readonly IReadOnlyList<GuideTopic> _sections;
     private readonly List<GuideTopic> _matches = [];
     private readonly TeamTabs _sidebar = new();
+    private readonly View _contentsPane = new() { CanFocus = true };
     private readonly View _contentsTab = new() { Title = "Contents", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
     private readonly View _indexTab = new() { Title = "Index", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
     private readonly TreeView<GuideTopic> _contents;
@@ -45,11 +50,13 @@ public sealed class GuideDialog : DashboardDialog
 
     /// <param name="guide">Each page's Markdown, by its path in the guide.</param>
     /// <param name="openUrl">Where a link to a web page goes.</param>
-    public GuideDialog(IReadOnlyDictionary<string, string> guide, Func<string, LinkOutcome> openUrl, string page = Contents)
+    /// <param name="widths">Where Contents' width is kept, and the window's keys that work here too.</param>
+    public GuideDialog(IReadOnlyDictionary<string, string> guide, Func<string, LinkOutcome> openUrl, string page = Contents, PaneWidths? widths = null)
         : base("Guide")
     {
         _guide = guide;
         _openUrl = openUrl;
+        _widths = widths ?? new PaneWidths();
         X = 0;
         Y = 0;
         Width = Dim.Fill();
@@ -94,22 +101,24 @@ public sealed class GuideDialog : DashboardDialog
                 _index.Value = row - 1;
         };
         _indexTab.Add(_filter, _index, _noMatches);
-        _sidebar.X = 0;
-        _sidebar.Y = 0;
-        _sidebar.Width = Dim.Func(_ => SidebarWidth(), this);
-        _sidebar.Height = Dim.Func(_ => HintRow(), this);
+        _sidebar.Width = Dim.Fill() + 1;
+        _sidebar.Height = Dim.Fill();
         _sidebar.CanFocus = true;
         _sidebar.Add(_contentsTab, _indexTab);
+        // Tabs draw their box on each tab, so the pane draws the border you drag, over the tabs' right edge.
+        _contentsPane.BorderStyle = LineStyle.Single;
+        _contentsPane.Border!.Thickness = new Thickness(0, 0, Inset, 0);
+        _contentsPane.Height = Dim.Func(_ => HintRow(), this);
+        _contentsPane.Add(_sidebar);
         _sidebar.Value = _contentsTab;
         Narrow();
 
         _page = new MarkdownView
         {
-            X = Pos.Right(_sidebar) + Inset,
             Y = 0,
-            Width = Dim.Fill(Inset),
             Height = Dim.Func(_ => HintRow(), this),
         };
+        _page.Padding!.Thickness = new Thickness(Inset, 0, Inset, 0);
         // The view has already scrolled to an anchor on its own page by the time it says a link was followed.
         _page.ViewportChanged += (_, change) => _lineBefore = change.OldViewport.Y;
         _page.LinkClicked += (_, link) =>
@@ -137,7 +146,14 @@ public sealed class GuideDialog : DashboardDialog
         AddButton(ButtonKind.Secondary, BackId);
         AddButton(ButtonKind.Secondary, CancelId);
         Foot.Y = Pos.Func(_ => HintRow(), this);
-        Add(_sidebar, _page, Foot, _message);
+        Add(_contentsPane, _page, Foot, _message);
+        FocusRegion? region = null;
+        _sidebar.HasFocusChanged += (_, focus) => region = focus.NewValue ? PaneWidths.Contents : region;
+        _page.HasFocusChanged += (_, focus) => region = focus.NewValue ? null : region;
+        Sides = _widths.For(this, () => region, Say)
+            .AddSide(_contentsPane, PaneWidths.Contents, ContentsWidth)
+            .AddMain(_page);
+        Resizes(Sides, _widths);
         if (!Open(page))
             Title = "Guide";
         else if (page != Contents)
@@ -152,6 +168,10 @@ public sealed class GuideDialog : DashboardDialog
     internal MarkdownView View => _page;
 
     internal MessageBar Message => _message;
+
+    internal SidePanes Sides { get; }
+
+    internal View Sidebar => _contentsPane;
 
     internal bool HasClosed { get; private set; }
 
@@ -222,11 +242,14 @@ public sealed class GuideDialog : DashboardDialog
         return true;
     }
 
-    public static void Show(IApplication app, IReadOnlyDictionary<string, string> guide, Func<string, LinkOutcome> openUrl, string page = Contents)
+    public static void Show(
+        IApplication app, IReadOnlyDictionary<string, string> guide, Func<string, LinkOutcome> openUrl, string page, PaneWidths widths)
     {
-        using var dialog = new GuideDialog(guide, openUrl, page);
-        DialogHost.Run(app, dialog);
+        using var dialog = new GuideDialog(guide, openUrl, page, widths);
+        widths.While(dialog.Sides, () => DialogHost.Run(app, dialog));
     }
+
+    protected override bool OnKeyDown(Key key) => base.OnKeyDown(key) || _widths.Window(key);
 
     internal static bool IsWeb(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "mailto";
@@ -258,8 +281,6 @@ public sealed class GuideDialog : DashboardDialog
         if (_contents.Viewport.Height > 0)
             _contents.EnsureVisible(at);
     }
-
-    private int SidebarWidth() => Math.Clamp(Viewport.Width / 4, 16, 30);
 
     private int HintRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines);
 
@@ -313,6 +334,12 @@ public sealed class GuideDialog : DashboardDialog
         then();
         _page.SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    private void Say(string text)
+    {
+        _message.Show(text, Schemes.Accent);
+        SetNeedsLayout();
     }
 
     private bool Close()
