@@ -127,6 +127,20 @@ public static class Ages
         ];
         return string.Join(" ", parts.Where(part => part.Length > 0));
     }
+
+    /// <summary>How long a run has been going, as a stopwatch reads.</summary>
+    public static string Clock(TimeSpan span) => span.TotalHours >= 1
+        ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
+        : $"{span.Minutes}:{span.Seconds:00}";
+
+    /// <summary>How long ago something happened, to the minute.</summary>
+    public static string Ago(TimeSpan span) => span.TotalMinutes < 1
+        ? "<1m"
+        : span.TotalHours < 1
+            ? $"{(int)span.TotalMinutes}m"
+            : span.TotalDays < 1
+                ? $"{(int)span.TotalHours}h{span.Minutes:00}m"
+                : $"{(int)span.TotalDays}d{span.Hours}h";
 }
 
 /// <summary>How long a card may sit in a column before Overseer highlights it, one optional entry per column.</summary>

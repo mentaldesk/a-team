@@ -6,8 +6,9 @@ public sealed record Chip(BoardCard? Card, int Hidden = 0)
     public bool IsMore => Card is null;
 }
 
-/// <summary>Where the selection is: a card by team and number, or a lane's <c>+N</c> in a column.</summary>
-public readonly record struct ChipPlace(string Team, int Column, int? Number);
+/// <summary>Where the selection is: a card by team and number, a lane's <c>+N</c> in a column, or the lane's heading,
+/// which keeps the column it was reached from.</summary>
+public readonly record struct ChipPlace(string Team, int Column, int? Number, bool Heading = false);
 
 /// <summary>Every team's board as Overseer lays it out: a lane per team, a column per status, chips oldest first,
 /// and the selection moving between them.</summary>
@@ -96,10 +97,12 @@ public sealed class OverseerBoard
     public BoardCard? SelectedCard =>
         Selected is { Number: { } number } place ? _cards.FirstOrDefault(card => card.Team == place.Team && card.Number == number) : null;
 
-    public bool OnMore => Selected is { Number: null };
+    public bool OnMore => Selected is { Number: null, Heading: false };
+
+    public bool OnHeading => Selected is { Heading: true };
 
     /// <summary>Which row of its column the selection is on.</summary>
-    public int? SelectedRow => Selected is { } place && IndexOf(place) is >= 0 and var row ? row : null;
+    public int? SelectedRow => Selected is { Heading: false } place && IndexOf(place) is >= 0 and var row ? row : null;
 
     /// <summary>Starts on the first chip of the first lane with any.</summary>
     public void SelectFirst()
@@ -128,6 +131,8 @@ public sealed class OverseerBoard
     /// <summary>Left and right go to the nearest column that way with chips in it, on the same row or its last.</summary>
     public void MoveColumn(int step)
     {
+        if (OnHeading)
+            return;
         if (Selected is not { } place || SelectedRow is not { } row)
         {
             SelectFirst();
@@ -143,10 +148,22 @@ public sealed class OverseerBoard
         }
     }
 
-    /// <summary>Up and down go along a column, and past its ends into the lane before or after, to the column
-    /// nearest this one with chips in it.</summary>
+    /// <summary>Up and down go along a column, up from its top row to the lane's heading, and down from its last row
+    /// or a heading to the next lane's heading. Down from a heading goes to the top chip of the column nearest the one it
+    /// was reached from, and up from one to the bottom of that column in the lane above.</summary>
     public void MoveRow(int step)
     {
+        if (Selected is { Heading: true } heading)
+        {
+            if (step > 0 && SelectLane(heading.Team, heading.Column))
+                return;
+            var next = _teams.IndexOf(heading.Team) + step;
+            if (next < 0 || next >= _teams.Count)
+                return;
+            if (step > 0 || !SelectBottom(_teams[next], heading.Column))
+                Selected = heading with { Team = _teams[next] };
+            return;
+        }
         if (Selected is not { } place || SelectedRow is not { } row)
         {
             SelectFirst();
@@ -158,14 +175,30 @@ public sealed class OverseerBoard
             Selected = At(place.Team, place.Column, row + step);
             return;
         }
-        for (var lane = _teams.IndexOf(place.Team) + step; lane >= 0 && lane < _teams.Count; lane += step)
+        if (step < 0)
         {
-            var team = _teams[lane];
-            if (Nearest(team, place.Column) is not { } column)
-                continue;
-            Selected = At(team, column, step > 0 ? 0 : Chips(team, column).Count - 1);
+            Selected = new ChipPlace(place.Team, place.Column, null, Heading: true);
             return;
         }
+        if (_teams.IndexOf(place.Team) + 1 is var below && below < _teams.Count)
+            Selected = new ChipPlace(_teams[below], place.Column, null, Heading: true);
+    }
+
+    private bool SelectBottom(string team, int column)
+    {
+        if (Nearest(team, column) is not { } nearest)
+            return false;
+        Selected = At(team, nearest, Chips(team, nearest).Count - 1);
+        return true;
+    }
+
+    /// <summary>Selects <paramref name="team"/>'s lane heading.</summary>
+    public bool SelectHeading(string team)
+    {
+        if (!_teams.Contains(team))
+            return false;
+        Selected = new ChipPlace(team, Selected?.Column ?? 0, null, Heading: true);
+        return true;
     }
 
     /// <summary>Tab and Shift+Tab: the next or previous lane with cards, round past the end.</summary>
@@ -194,7 +227,7 @@ public sealed class OverseerBoard
     /// <summary>Shows every chip in the selected lane, staying on the card the <c>+N</c> stood in front of.</summary>
     public void Unfold()
     {
-        if (Selected is not { } place)
+        if (Selected is not { Heading: false } place)
             return;
         var row = SelectedRow ?? 0;
         _unfolded.Add(place.Team);
@@ -215,7 +248,7 @@ public sealed class OverseerBoard
     /// <summary>After a read, the same card wherever it has moved to, or the chip nearest where it was.</summary>
     private void Reselect()
     {
-        if (Selected is not { } place)
+        if (Selected is not { } place || place.Heading && _teams.Contains(place.Team))
             return;
         if (place.Number is { } number && Select(place.Team, number))
             return;

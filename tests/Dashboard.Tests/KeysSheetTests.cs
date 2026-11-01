@@ -56,39 +56,34 @@ public class KeysSheetTests : IDisposable
     }
 
     [Fact]
-    public void Here_on_the_agent_grid_lists_moving_between_agents_and_what_the_selected_one_can_do()
+    public void Here_in_the_team_s_panel_lists_choosing_a_role_and_what_it_can_do()
     {
-        using var window = Open(Area.Dashboard);
-        window.NewKeyDownEvent(Key.Tab);
+        using var window = Open(Area.Overseer);
+        window.Overseer.SelectHeading("a-team");
+        window.Refresh();
+        window.Commands.Execute("view.details");
 
         var here = window.Keys.Here!;
 
-        Assert.Equal("Agents", here.Heading);
-        Assert.Equal(
-            [
-                "Select the next agent", "Select the previous agent", "Select the agent to the right", "Select the agent to the left",
-                "Select the agent below", "Select the agent above", "Expand the selected agent", "Scroll the log up", "Scroll the log down",
-                "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full", "Pause selected agent's role",
-            ],
-            Rows(here).Select(row => row.Label));
+        Assert.Equal("Team", here.Heading);
+        Assert.Contains(("↓", "Choose the role below"), Rows(here));
+        Assert.Contains(("↑", "Choose the role above"), Rows(here));
+        Assert.Contains(("H", "Pause this role"), Rows(here));
+        Assert.DoesNotContain(Rows(here), row => row.Label == "Select the chip above");
     }
 
     [Fact]
-    public void Here_in_an_expanded_log_lists_selecting_lines_copying_and_going_back()
+    public void Here_in_the_dispatcher_s_log_lists_scrolling_and_going_back()
     {
-        using var window = Open(Area.Dashboard);
-        window.NewKeyDownEvent(Key.Tab);
-        window.NewKeyDownEvent(Key.Enter);
+        using var window = Open(Area.Overseer);
+        window.Commands.Execute("view.dispatcher");
 
         var here = window.Keys.Here!;
 
         Assert.Equal("Log", here.Heading);
-        Assert.Contains(("Shift+↓", "Extend the selection down"), Rows(here));
-        Assert.Contains(("L", "Copy the selected lines"), Rows(here));
-        Assert.Contains(("A", "Copy the whole log"), Rows(here));
-        Assert.Contains(("E", "Open the whole log in your editor"), Rows(here));
-        Assert.Contains(("Esc", "Back to the agent grid"), Rows(here));
-        Assert.DoesNotContain(Rows(here), row => row.Label == "Expand the selected agent");
+        Assert.Contains(("PgUp", "Scroll the log up"), Rows(here));
+        Assert.Contains(("Esc", "Back from the dispatcher's log"), Rows(here));
+        Assert.DoesNotContain(Rows(here), row => row.Label == "Copy the selected lines");
     }
 
     [Fact]
@@ -96,13 +91,14 @@ public class KeysSheetTests : IDisposable
     {
         using var work = Open(Area.Work);
         using var overseer = Open(Area.Overseer);
-        using var grid = Open(Area.Dashboard);
-        grid.NewKeyDownEvent(Key.Tab);
-        using var log = Open(Area.Dashboard);
-        log.NewKeyDownEvent(Key.Tab);
-        log.NewKeyDownEvent(Key.Enter);
+        using var team = Open(Area.Overseer);
+        team.Overseer.SelectHeading("a-team");
+        team.Refresh();
+        team.Commands.Execute("view.details");
+        using var log = Open(Area.Overseer);
+        log.Commands.Execute("view.dispatcher");
 
-        List<string> sheets = [.. new[] { work, overseer, grid, log }.Select(window => string.Join('\n', Rows(window.Keys.Here!)))];
+        List<string> sheets = [.. new[] { work, overseer, team, log }.Select(window => string.Join('\n', Rows(window.Keys.Here!)))];
 
         Assert.Equal(4, sheets.Distinct().Count());
     }
@@ -120,7 +116,7 @@ public class KeysSheetTests : IDisposable
         Assert.Equal("Everywhere", everywhere.Heading);
         Assert.Equal(["View", "Go", "Help"], everywhere.Groups.Select(group => group.Heading));
         Assert.Equal([("Ctrl+,", "Settings"), ("Ctrl+Q", "Quit")], Rows(everywhere.Groups[0]));
-        Assert.Equal([("Ctrl+G D", "Dashboard"), ("Ctrl+G W", "Work"), ("Ctrl+G O", "Overseer")], Rows(everywhere.Groups[1]));
+        Assert.Equal([("Ctrl+G W", "Work"), ("Ctrl+G O", "Overseer")], Rows(everywhere.Groups[1]));
         Assert.Equal([("F1", "Show keys"), ("Ctrl+E", "Commands")], Rows(everywhere.Groups[2]));
         Assert.DoesNotContain(everywhere.Groups.SelectMany(group => group.Rows), row => row.Label == "Next team");
     }

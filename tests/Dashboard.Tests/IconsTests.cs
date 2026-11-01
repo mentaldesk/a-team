@@ -120,7 +120,7 @@ public class IconsTests : StaticConfigurationTest
     [Fact]
     public void Every_pane_status_names_the_meaning_it_shares_its_name_with() =>
         Assert.All(
-            Enum.GetValues<PaneStatus>(),
+            Enum.GetValues<RoleStatus>(),
             status => Assert.Equal(status.ToString(), Icons.For(status).ToString()));
 
     [Theory]

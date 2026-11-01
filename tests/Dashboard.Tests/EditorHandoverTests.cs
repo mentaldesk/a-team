@@ -64,7 +64,7 @@ public class EditorHandoverTests : IDisposable
     }
 
     private static EditorHandover Handover(string file, params string[] editor) =>
-        new("a-team", "dev", new PanePlace(null, new LogPlace([], 0, true, 0, 0, false)), file, editor);
+        new("a-team", "dev", new LogPlace([], 0, true, 0, 0, false), file, editor);
 
     private string Log()
     {
