@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Layout;
 using System.Globalization;
 using System.Drawing;
 using MentalDesk.Tui.Keys;
@@ -522,6 +523,131 @@ public class ReaderDialogTests
 
         Assert.False(dialog.HistoryShown);
         Assert.True(panes.HistoryShown);
+    }
+
+    [Fact]
+    public void Widen_and_Narrow_resize_History_with_focus_in_it_and_Reset_puts_it_back()
+    {
+        using var dialog = Wide();
+        Assert.False(dialog.Sides.CanResize);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Sides.CanResize);
+        dialog.Sides.Widen();
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(ReaderPanes.HistoryWidth + SidePanes.Step, dialog.HistoryLog.SuperView!.Frame.Width);
+        Assert.Equal(dialog.Viewport.Width - ReaderPanes.HistoryWidth - SidePanes.Step, dialog.Body.SuperView!.Frame.Width);
+
+        dialog.Sides.Narrow();
+        dialog.Sides.Narrow();
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(ReaderPanes.HistoryWidth - SidePanes.Step, dialog.HistoryLog.SuperView.Frame.Width);
+
+        dialog.Sides.Reset();
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(ReaderPanes.HistoryWidth, dialog.HistoryLog.SuperView.Frame.Width);
+    }
+
+    [Fact]
+    public void A_ranked_reader_resizes_History_once_Tab_has_reached_it()
+    {
+        using var dialog = Ranking(read: new IssueBody(Long(), History: Recorded), rank: Rank.Low, width: 120);
+        Assert.False(dialog.Sides.CanResize);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.Ranks!.HasFocus);
+        Assert.True(dialog.Sides.CanResize);
+        dialog.Sides.Widen();
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(ReaderPanes.HistoryWidth + SidePanes.Step, dialog.HistoryLog.SuperView!.Frame.Width);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.False(dialog.Sides.CanResize);
+    }
+
+    [Fact]
+    public void History_stops_where_the_body_keeps_40_columns_and_says_so()
+    {
+        using var dialog = Wide();
+        dialog.NewKeyDownEvent(Key.Tab);
+
+        for (var i = 0; i < 20; i++)
+            dialog.Sides.Widen();
+        dialog.Layout(new Size(120, 20));
+
+        Assert.Equal(SidePanes.MinimumMainWidth, dialog.Body.SuperView!.Frame.Width);
+        Assert.Equal("History is as wide as it can be", dialog.Message.Says);
+
+        for (var i = 0; i < 20; i++)
+            dialog.Sides.Narrow();
+        dialog.Layout(new Size(120, 20));
+
+        Assert.Equal(SidePanes.MinimumWidth, dialog.HistoryLog.SuperView!.Frame.Width);
+        Assert.Equal("History is as narrow as it can be", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void The_comment_pane_resizes_with_focus_in_it()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+
+        dialog.Sides.Widen();
+        dialog.Layout(new Size(140, 20));
+
+        Assert.Equal(ReaderPanes.CommentWidth + SidePanes.Step, dialog.Field.SuperView!.Frame.Width);
+        Assert.Equal(ReaderPanes.CommentWidth + SidePanes.Step, dialog.Body.SuperView!.Frame.X);
+    }
+
+    [Fact]
+    public void The_width_chosen_is_the_width_the_next_reader_opens_with()
+    {
+        var panes = new ReaderPanes();
+        using (var dialog = Wide(panes))
+        {
+            dialog.NewKeyDownEvent(Key.Tab);
+            dialog.Sides.Narrow();
+        }
+
+        using var next = Wide(panes);
+        Assert.Equal(ReaderPanes.HistoryWidth - SidePanes.Step, next.HistoryLog.SuperView!.Frame.Width);
+    }
+
+    [Fact]
+    public void A_narrower_terminal_narrows_History_first_and_a_wider_one_gives_its_width_back()
+    {
+        using var dialog = Wide();
+
+        dialog.Layout(new Size(100, 20));
+        Assert.Equal(dialog.Viewport.Width - ReaderPanes.HistoryWidth, dialog.Body.SuperView!.Frame.Width);
+
+        dialog.Layout(new Size(80, 20));
+        Assert.Equal(SidePanes.MinimumMainWidth, dialog.Body.SuperView.Frame.Width);
+        Assert.Equal(dialog.Viewport.Width - SidePanes.MinimumMainWidth, dialog.HistoryLog.SuperView!.Frame.Width);
+
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(ReaderPanes.HistoryWidth, dialog.HistoryLog.SuperView.Frame.Width);
+    }
+
+    [Fact]
+    public void Resizing_has_no_key_until_one_is_given_and_then_F1_lists_it_with_focus_in_a_side_pane()
+    {
+        using (var plain = Wide())
+        {
+            plain.NewKeyDownEvent(Key.Tab);
+            Assert.DoesNotContain("Widen pane", Keys(plain));
+        }
+
+        var widths = new PaneWidths { Keys = id => id == SidePanes.WidenId ? [[Key.W.WithAlt]] : [] };
+        using var dialog = Wide(new ReaderPanes(widths));
+        Assert.DoesNotContain("Widen pane", Keys(dialog));
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.Contains("Alt+W Widen pane", Keys(dialog));
+
+        Assert.True(dialog.NewKeyDownEvent(Key.W.WithAlt));
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(ReaderPanes.HistoryWidth + SidePanes.Step, dialog.HistoryLog.SuperView!.Frame.Width);
     }
 
     [Fact]
@@ -1489,7 +1615,7 @@ public class ReaderDialogTests
     {
         var panes = new ReaderPanes();
         using var dialog = new ReaderDialog(Item, new IssueBody(Long(), History: Recorded), () => null,
-            comment: Commenting(), panes: panes, width: ReaderPanes.NarrowestThree - 1);
+            comment: Commenting(), panes: panes, width: panes.NarrowestThree - 1);
         Assert.True(dialog.HistoryShown);
 
         dialog.NewKeyDownEvent(new Key('c'));

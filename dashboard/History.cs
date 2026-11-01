@@ -81,20 +81,29 @@ public sealed record History(IReadOnlyList<HistoryEvent> Events, DateTimeOffset?
         run.TryGetProperty("outcome", out var outcome) && outcome.ValueKind == JsonValueKind.String ? outcome.GetString() : null);
 }
 
-/// <summary>Whether the reader shows History beside the body: as you last left it, until the dashboard restarts.</summary>
-public sealed class ReaderPanes
+/// <summary>Whether the reader shows History beside the body, as you last left it until the dashboard restarts, and how
+/// wide its side panes are.</summary>
+public sealed class ReaderPanes(PaneWidths? widths = null)
 {
     public const int HistoryWidth = 48;
 
-    /// <summary>Narrower than this, the body would be too cramped beside History.</summary>
-    public const int NarrowestSplit = 100;
-
     public const int CommentWidth = 36;
 
-    /// <summary>Narrower than this, the comment, the body and History can't all fit.</summary>
-    public const int NarrowestThree = 120;
+    private const int BodyBesideHistory = 52;
+
+    private const int BodyBetween = 36;
+
+    public PaneWidths Widths { get; } = widths ?? new PaneWidths();
 
     public bool HistoryShown { get; set; } = true;
 
+    /// <summary>Narrower than this, the body would be too cramped beside History.</summary>
+    public int NarrowestSplit => ChosenHistory + BodyBesideHistory;
+
+    /// <summary>Narrower than this, the comment, the body and History can't all fit.</summary>
+    public int NarrowestThree => Widths.Width(PaneWidths.Comment, CommentWidth) + ChosenHistory + BodyBetween;
+
     public bool OpensWithHistory(int width) => HistoryShown && width >= NarrowestSplit;
+
+    private int ChosenHistory => Widths.Width(PaneWidths.History, HistoryWidth);
 }

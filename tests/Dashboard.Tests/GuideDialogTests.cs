@@ -456,6 +456,62 @@ public partial class GuideDialogTests : IDisposable
         Assert.Equal(Sections().Count, dialog.Matches.Count);
     }
 
+    [Fact]
+    public void Contents_is_30_wide_and_resizes_with_focus_in_either_tab_and_Reset_puts_it_back()
+    {
+        var widths = new PaneWidths();
+        using var dialog = new GuideDialog(GuidePages.In(_folder), Opening.Opened, widths: widths);
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(30, dialog.Sidebar.Frame.Width);
+        Assert.False(dialog.Sides.CanResize);
+
+        dialog.ShowContents();
+        dialog.Sides.Widen();
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(35, dialog.Sidebar.Frame.Width);
+        Assert.Equal(35, dialog.View.Frame.X);
+
+        dialog.ShowIndex();
+        Assert.True(dialog.Sides.CanResize);
+        dialog.Sides.Widen();
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(40, dialog.Sidebar.Frame.Width);
+
+        dialog.Sides.Reset();
+        dialog.Layout(new Size(120, 20));
+        Assert.Equal(30, dialog.Sidebar.Frame.Width);
+    }
+
+    [Fact]
+    public void The_window_s_Commands_opens_from_anywhere_in_the_Guide_even_the_Index_filter()
+    {
+        var opened = 0;
+        var widths = new PaneWidths { WindowCommands = (Key.E.WithCtrl, () => opened++) };
+        using var dialog = new GuideDialog(GuidePages.In(_folder), Opening.Opened, widths: widths);
+        dialog.Layout(new Size(120, 20));
+
+        dialog.ShowIndex();
+        dialog.IndexFilter.NewKeyDownEvent(Key.E.WithCtrl);
+
+        Assert.Equal(1, opened);
+    }
+
+    [Fact]
+    public void The_Guide_opens_with_Contents_as_wide_as_it_was_left()
+    {
+        var widths = new PaneWidths();
+        using (var first = new GuideDialog(GuidePages.In(_folder), Opening.Opened, widths: widths))
+        {
+            first.Layout(new Size(120, 20));
+            first.ShowContents();
+            first.Sides.Narrow();
+        }
+
+        using var next = new GuideDialog(GuidePages.In(_folder), Opening.Opened, widths: widths);
+        next.Layout(new Size(120, 20));
+        Assert.Equal(25, next.Sidebar.Frame.Width);
+    }
+
     private GuideDialog Open(Func<string, LinkOutcome>? openUrl = null)
     {
         var dialog = new GuideDialog(GuidePages.In(_folder), openUrl ?? Opening.Opened);

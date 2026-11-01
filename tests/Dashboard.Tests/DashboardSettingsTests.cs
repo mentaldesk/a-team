@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -29,6 +30,28 @@ public class DashboardSettingsTests : IDisposable
         var written = File.ReadAllText(Path.Combine(_configRoot, "dashboard.json"));
         Assert.Contains("\"theme\"", written);
         Assert.Contains($"\"{BundledThemes.Daylight}\"", written);
+    }
+
+    [Fact]
+    public void Pane_widths_written_are_the_widths_the_next_run_reads_and_a_bad_one_falls_back()
+    {
+        var settings = new DashboardSettings(_configRoot);
+        settings.WriteTheme(BundledThemes.Daylight);
+        settings.WritePaneWidths(new JsonObject { ["History"] = 30, ["Comment"] = 5, ["Contents"] = "wide" });
+
+        var widths = new PaneWidths(new DashboardSettings(_configRoot).ReadPaneWidths, settings.WritePaneWidths);
+
+        Assert.Equal(30, widths.Width(PaneWidths.History, ReaderPanes.HistoryWidth));
+        Assert.Equal(ReaderPanes.CommentWidth, widths.Width(PaneWidths.Comment, ReaderPanes.CommentWidth));
+        Assert.Equal(30, widths.Width(PaneWidths.Contents, 30));
+        Assert.Equal(BundledThemes.Daylight, settings.ReadTheme());
+    }
+
+    [Fact]
+    public void No_pane_widths_saved_reads_as_none()
+    {
+        Assert.Null(new DashboardSettings(_configRoot).ReadPaneWidths());
+        Assert.Equal(48, new PaneWidths(new DashboardSettings(_configRoot).ReadPaneWidths, _ => { }).Width(PaneWidths.History, 48));
     }
 
     [Fact]

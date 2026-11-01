@@ -1,6 +1,7 @@
 using MentalDesk.Tui.Commands;
 using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Layout;
 using MentalDesk.Tui.Shell;
 using MentalDesk.Tui.Theming;
 using Terminal.Gui.Input;
@@ -127,6 +128,19 @@ public abstract class DashboardDialog : AppDialog
         Register(id, label, run, when);
         if (Keys.CheckConflict([key], CommandScope.Global) != KeyConflict.ExactMatch)
             Keys.Bind([key], id);
+    }
+
+    /// <summary>Widen, Narrow and Reset for <paramref name="panes"/>, while a side pane has focus, on the keys the user
+    /// gave them.</summary>
+    protected void Resizes(SidePanes panes, PaneWidths widths)
+    {
+        foreach (var (id, label, run) in PaneWidths.Commands)
+        {
+            Register(id, label, () => run(panes), () => panes.CanResize);
+            foreach (var chord in widths.Keys(id))
+                if (Keys.CheckConflict(chord, CommandScope.Global) is null)
+                    Keys.Bind(chord, id);
+        }
     }
 
     private string Caption(string id, string label) =>
