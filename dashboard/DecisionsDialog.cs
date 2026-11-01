@@ -68,6 +68,7 @@ public sealed class DecisionsDialog : DashboardDialog
 
         _search.ValueChanged += (_, _) => Show();
         _search.KeyDown += (_, key) => key.Handled = Searching(key);
+        _search.HasFocusChanged += (_, _) => ShowHints();
         _allTeams.ValueChanged += (_, _) => Show();
         _replaced.ValueChanged += (_, _) => Show();
         _table.ValueChanged += (_, _) => ShowSelected();
