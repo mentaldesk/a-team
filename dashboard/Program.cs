@@ -37,7 +37,8 @@ if ((wanted.Length > 0 ? wanted : teams.Names()).Length == 0)
 
 var settings = new DashboardSettings(configRoot);
 var command = new TeamCommand(Path.Combine(root, "bin", "a-team"));
-var readerPanes = new ReaderPanes();
+var paneWidths = new PaneWidths(settings.ReadPaneWidths, settings.WritePaneWidths);
+var readerPanes = new ReaderPanes(paneWidths);
 var start = new TeamStart(
     Path.Combine(root, "examples", "team.json"),
     command,
@@ -124,7 +125,7 @@ Handover? Show(Handover? back)
         start,
         item => command.Read("board", item.Team, "conversation", item.Number.ToString()),
         item => AcceptDialog.Show(app, item),
-        showGuide: page => GuideDialog.Show(app, GuidePages.Bundled(), opener.Open, page),
+        showGuide: page => GuideDialog.Show(app, GuidePages.Bundled(), opener.Open, page, paneWidths),
         confirmStop: task => StopRunDialog.Show(app, task),
         readHistory: item => command.Read("board", item.Team, "history", item.Number.ToString()),
         pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),
@@ -148,6 +149,7 @@ Handover? Show(Handover? back)
         showDecisions: team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
             change => change.Run(team, command.Read), opener.Open),
         macKeys: macKeys,
+        paneWidths: paneWidths,
         assistant: new AssistantSetup(new ProcessLauncher(), AssistantBrief.For(root, teams.TeamsDirectory, stateRoot, named),
             Path.Combine(stateRoot, "assistant.json")),
         syncBoard: team => command.Read("board", team, "sync"));

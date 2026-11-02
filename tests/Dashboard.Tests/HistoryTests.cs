@@ -1,3 +1,4 @@
+using Terminal.Gui.ViewBase;
 namespace ATeam.Dashboard.Tests;
 
 public class HistoryTests
@@ -79,6 +80,32 @@ public class HistoryTests
             History.Of(new Reading("", "board.sh: no such team"), 308).Lines.Select(line => line.Text));
         Assert.Equal(["couldn't read #308's history"], Read("[]").Lines.Select(line => line.Text));
         Assert.Equal(["couldn't read #308's history"], Read("not json").Lines.Select(line => line.Text));
+    }
+
+    [Fact]
+    public void Where_the_reader_leaves_History_out_follows_the_widths_chosen()
+    {
+        var widths = new PaneWidths();
+        var panes = new ReaderPanes(widths);
+        Assert.Equal(100, panes.NarrowestSplit);
+        Assert.Equal(120, panes.NarrowestThree);
+
+        using var row = new View();
+        using var body = new View();
+        using var history = new View();
+        using var comment = new View { Visible = false };
+        var sides = widths.For(row, () => PaneWidths.History, _ => { })
+            .AddSide(comment, PaneWidths.Comment, ReaderPanes.CommentWidth).AddMain(body).AddSide(history, PaneWidths.History, ReaderPanes.HistoryWidth);
+        row.Add(comment, body, history);
+        row.Width = 120;
+        row.Height = 10;
+        row.Layout(new System.Drawing.Size(120, 10));
+        sides.Narrow();
+        sides.Narrow();
+
+        Assert.Equal(90, panes.NarrowestSplit);
+        Assert.Equal(110, panes.NarrowestThree);
+        Assert.True(panes.OpensWithHistory(95));
     }
 
     [Theory]

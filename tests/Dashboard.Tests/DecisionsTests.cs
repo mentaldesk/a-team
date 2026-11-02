@@ -263,6 +263,42 @@ public class DecisionsTests
         Assert.Equal(["Save", "Esc Cancel"], dialog.ButtonLabels);
     }
 
+    [Theory]
+    [InlineData(Register)]
+    [InlineData("""
+        [{"id": 5, "team": "a-team", "scope": "team", "decision": "Ctrl+PgDn/PgUp switch teams, not Tab", "why": "", "who": "you",
+          "kind": "rule", "item": 356, "link": "https://github.com/mentaldesk/a-team/issues/356", "said": "2026-10-09T00:00:00Z",
+          "recorded": "2026-10-09T01:00:00Z", "confirmed": "2026-10-09T00:00:00Z", "confirmedOn": null, "replacedBy": null,
+          "retired": null, "yours": null}]
+        """)]
+    public void The_list_s_keys_show_as_soon_as_focus_leaves_the_search(string json)
+    {
+        using var dialog = Open(json);
+        string[] listKeys = ["e Edit", "k Rule/lean", "r Retire"];
+
+        dialog.Search.SetFocus();
+        Assert.Equal(["Enter Open on GitHub", "Esc Close"], dialog.ButtonLabels);
+        dialog.Search.NewKeyDownEvent(Key.E);
+        Assert.Equal("e", dialog.Search.Text);
+        Assert.False(dialog.Editor.Visible);
+        dialog.Search.Text = "";
+
+        dialog.AllTeams.SetFocus();
+        Assert.Superset(listKeys.ToHashSet(), dialog.ButtonLabels.ToHashSet());
+
+        dialog.Search.SetFocus();
+        Assert.Equal(["Enter Open on GitHub", "Esc Close"], dialog.ButtonLabels);
+
+        dialog.Table.SetFocus();
+        Assert.Superset(listKeys.ToHashSet(), dialog.ButtonLabels.ToHashSet());
+
+        dialog.StartEditing();
+        Assert.Equal(["Save", "Esc Cancel"], dialog.ButtonLabels);
+        dialog.Editor.NewKeyDownEvent(Key.Esc);
+        Assert.True(dialog.Table.HasFocus);
+        Assert.Superset(listKeys.ToHashSet(), dialog.ButtonLabels.ToHashSet());
+    }
+
     [Fact]
     public void F1_lists_every_key_the_buttons_name()
     {

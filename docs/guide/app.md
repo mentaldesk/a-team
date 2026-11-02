@@ -117,6 +117,9 @@ page at that section. **Index** lists every section by name, its page under it: 
 so `pau` finds *Pausing a role* and *Pausing a team*, and `Enter` opens the one selected.
 `Ctrl+Shift+C` goes to Contents and `Ctrl+Shift+I` to Index from anywhere in the Guide. In a page,
 `Tab` moves to the next link, `Enter` follows it, `Backspace` goes back, and `Esc` closes the Guide.
+Drag the border beside Contents to make it wider or narrower, or with the cursor in Contents or Index
+pick **Widen pane**, **Narrow pane** or **Reset pane width** in Commands (`Ctrl+E`). Both tabs share the
+width, and it stays as you left it.
 
 ## Confirming
 

@@ -391,6 +391,7 @@ public class DashboardWindowTests : IDisposable
                 "Show the session full-screen", "Fold the lane", "Open on GitHub", "Read the boards that failed again", "Read every board again",
                 "Choose the role below", "Choose the role above", "Work", "Overseer", "Assistant", "Details", "Dispatcher log", "Go to what's new",
                 "Pause this role", "Interrupt the agent on this card", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "Messages", "About", "Trends", "Spending", "Decisions…", "Back to Overseer", "Quit",
+                "Widen pane", "Narrow pane", "Reset pane width",
                 "Go to team0", "Go to team1", "Go to team 3", "Go to team 4", "Go to team 5", "Go to team 6", "Go to team 7",
                 "Go to team 8", "Go to team 9",
             ],
