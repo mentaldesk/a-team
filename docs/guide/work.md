@@ -228,6 +228,13 @@ that comment in the body. `h` hides
 History to give the body the full width, and shows it again; it stays as you left it until you
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.
 
+**Make History or Comment wider or narrower.** Drag the border between it and the body with the
+mouse, or, with the cursor in it, pick **Widen pane** or **Narrow pane** in Commands (`Ctrl+E`) to
+change it by 5 columns, and **Reset pane width** to put it back. Neither has a key until you give one
+under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings). Each keeps the width you chose
+after a restart; a narrower terminal narrows them first, and a wider one gives their width back.
+With History narrowed, the reader keeps it showing in a narrower terminal.
+
 **Copy from it.** The body and History each have a cursor. Move it with the arrows, `Home`, `End`,
 `PgUp` and `PgDn` (`Ctrl+Home` and `Ctrl+End` for the top and the end, `Option+←`/`→` or
 `Ctrl+←`/`→` for a word), and hold `Shift` to select,
