@@ -124,12 +124,13 @@ MARKS='def state_label: startswith("a-team:") or startswith("rank:") or startswi
     else . end);'
 RANKS="urgent high medium low"
 
-# facts: what an item's marks say, as the app shows it under the title; "" for none.
+# facts: what an item's marks say, as the app shows it under the title; "" for none. A shelve shows while it's `cooling`.
 FACTS='def facts: .marks as $m | [
     (if $m.rank then "Lead recommends \($m.rank)" else empty end),
     (if $m.theme then "theme: \($m.theme)" else empty end),
-    (if $m.shelved.until then "shelved until \($m.shelved.until | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0"))"
-     elif $m.shelved then "shelved" else empty end),
+    (if ($m.shelved.until // "") > (now | localtime | strftime("%Y-%m-%d")) and $m.shelved.priority == .priority
+     then "shelved until \($m.shelved.until | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0"))"
+     else empty end),
     (if $m.skipped then "skipped" else empty end),
     (if $m.held then "held" else empty end),
     (if ($m.upstream | type) == "array" and $m.upstream != [] then "waiting on \($m.upstream | join(", "))"
@@ -581,12 +582,12 @@ unlabel() { gh api -X DELETE "repos/$REPO/issues/$1/labels/$(jq -rn --arg l "$2"
 # adopt_labels: carries the a-team labels on open items into the record, then takes them off on GitHub. A `blocked`
 # keeps who added it and when, and a shelve the date in its hidden comment.
 adopt_labels() {
-  local rows held='{}' query='' n labels marks shelf refs label kept
+  local rows held='{}' query='' n labels marks shelf refs label kept gone
   rows=$(history_sql -json "SELECT item, marks, content FROM board WHERE team = $(sql "$TEAM") AND status != 'Done'
       AND json_extract(content, '$.shut') IS NULL;" |
     jq -sc "$MARKS"'(.[0] // []) | map((.content | fromjson) as $c | select(any($c.labels[]?; state_label))
       | {n: .item, marks: ((.marks // "{}") | fromjson), labels: ($c.labels | map(select(state_label))),
-         kept: ($c.labels | map(select(state_label | not)))})')
+         all: $c.labels})')
   [ "$rows" != '[]' ] || return 0
   for n in $(jq -r '.[] | select(.labels | index("blocked")) | .n' <<<"$rows"); do
     query+=" x$n: issueOrPullRequest(number: $n) { ... on Issue { timelineItems(last: 50, itemTypes: [LABELED_EVENT]) {
@@ -618,12 +619,14 @@ adopt_labels() {
       | if .upstream and $refs != null then .upstream = $refs else . end
       | if .shelved and $shelf != null then .shelved = $shelf else . end' <<<"$(jq -c --argjson n "$n" '.[] | select(.n == $n)' <<<"$rows")")
     history_sql "UPDATE board SET marks = $(sql "$marks") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
+    gone='[]'
     while IFS= read -r label; do
-      write "unlabel #$n $label" unlabel "$n" "$label" || continue 2
+      ! write "unlabel #$n $label" unlabel "$n" "$label" || gone=$(jq -c --arg l "$label" '. + [$l]' <<<"$gone")
     done < <(jq -r '.[]' <<<"$labels")
+    kept=$(jq -c --argjson gone "$gone" '. - $gone' <<<"$kept")
     history_sql "UPDATE board SET content = json_set(content, '$.labels', json($(sql "$kept")))
       WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-  done < <(jq -r '.[] | [.n, (.labels | tojson), (.kept | tojson)] | @tsv' <<<"$rows")
+  done < <(jq -r '.[] | [.n, (.labels | tojson), (.all | tojson)] | @tsv' <<<"$rows")
 }
 
 # board_ready: moves the board over from the mirror on the first run, and copies it all to a mirror newly pointed at.

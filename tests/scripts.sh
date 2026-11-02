@@ -214,7 +214,8 @@ RUNS
 # Carrying a-team labels into the record happens once, on upgrade, so it isn't counted with a command's calls.
 case " \$* " in
   *HeldSince*) printf '%s\n' "\$*" >>"$BIN/args"; cat "$TALK"; exit 0 ;;
-  *"-X DELETE"*"/labels/"*) [ ! -e "$BIN/unlabel-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+  *"-X DELETE"*"/labels/"*) [ ! -e "$BIN/unlabel-fails" ] || { [ -s "$BIN/unlabel-fails" ] && [[ " \$* " != *"/\$(cat "$BIN/unlabel-fails") "* ]]; } ||
+                              { echo "gh: HTTP 502" >&2; exit 1; }
                             echo "\$*" >>"$BIN/unlabelled"; exit 0 ;;
 esac
 echo call >>"$CALLS"
@@ -1991,6 +1992,14 @@ same "seed" '{"rank":"Medium","idea":true}' "$(marks 7)"
 same "kept for next time" '["rank:medium","a-team:idea","mine"]' \
   "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT content FROM board WHERE team = 'demo' AND item = 7;" | jq -c .labels)"
 
+case_ "a label GitHub takes off while another won't come off goes from the record, and only the other is tried again"
+echo "a-team%3Aidea" >"$BIN/unlabel-fails"
+KEEP_BOARD='' run board demo list
+rm -f "$BIN/unlabel-fails"
+same "exit" 0 "$STATUS"
+same "kept for next time" '["a-team:idea","mine"]' \
+  "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT content FROM board WHERE team = 'demo' AND item = 7;" | jq -c .labels)"
+
 case_ "--dry-run carries the labels over in its own copy and takes none off"
 rm -f "$BIN/unlabelled"
 run board --dry-run demo list
@@ -2018,6 +2027,22 @@ edit_item 41 '.labels.nodes = [{name: "a-team:idea"}, {name: "rank:medium"}, {na
 run board demo waiting
 same "exit" 0 "$STATUS"
 same "facts" '"Lead recommends Medium · skipped"' "$(jq -c '.[] | select(.number == 41) | .facts' "$OUT")"
+
+case_ "a card says it's shelved only while the shelve holds it back"
+gh_items 7 <<'ITEMS'
+Idea 7 A pitch for later
+ITEMS
+edit_item 7 '.labels.nodes = [{name: "pitch"}, {name: "a-team:shelved"}]'
+gh_thread <<THREAD
+comment $(ago 60) reviewer 1 Not now.\n\n<!-- a-team:shelved until=$(weeks_on 2) priority=High -->
+THREAD
+run board demo overview
+same "exit" 0 "$STATUS"
+same "cooling" "\"shelved until $(jq -rn --arg d "$(weeks_on 2)" '$d | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0")')\"" \
+  "$(jq -c '.[] | select(.number == 7) | .facts' "$OUT")"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_set(marks, '$.shelved.priority', 'Low') WHERE team = 'demo' AND item = 7;"
+KEEP_BOARD=1 run board demo overview
+same "reranked" null "$(jq -c '.[] | select(.number == 7) | .facts' "$OUT")"
 
 case_ "the Dev holds its own task with its question, as its, and moves it back to Ready"
 gh_items <<'ITEMS'

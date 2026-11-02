@@ -244,6 +244,18 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void The_message_bar_line_ends_with_what_a_team_keeps_of_it_in_place_of_the_short_rank()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 412, "title": "A seed", "status": "Idea", "team": "a-team", "turn": "you",
+              "recommendation": "Medium", "facts": "Lead recommends Medium · theme: Consistently good UX"}]
+            """));
+
+        Assert.Equal("#412 · Lead recommends Medium · theme: Consistently good UX", item.Line);
+        Assert.Equal("#412 · Med?", (item with { Facts = "" }).Line);
+    }
+
+    [Fact]
     public void The_message_bar_line_ends_with_the_PR_s_branch_where_it_has_one()
     {
         var item = Assert.Single(WaitingItem.Parse("""

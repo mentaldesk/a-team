@@ -104,11 +104,12 @@ public sealed record WaitingItem(
     /// <summary>Whether the next move is the reviewer's. An item the board said nothing about is theirs.</summary>
     public bool Mine => Turn.Length == 0 || Turn == "you";
 
-    /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's,
-    /// and the PR it hands over to at the end; who held it, for a held task that's yours; or the chain, for a card holding up
-    /// a task or a task held up.</summary>
+    /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's, then its
+    /// <see cref="Facts"/>, and the PR it hands over to at the end; who held it, for a held task that's yours; or the
+    /// chain, for a card holding up a task or a task held up.</summary>
     public string Line => Held && Mine ? $"#{Number} · {Hold}" : Holding.Count > 0 ? Holds.Chain(this) : WaitsOn.Length > 0 ? Holds.Waiting(this) : string.Join(" · ",
-        new[] { $"#{Number}", Mine ? "" : Turn, Suggested, Reason, PrBranch.Length > 0 ? PrBranch : Pr == 0 ? "" : $"PR #{Pr}" }.Where(part => part.Length > 0));
+        new[] { $"#{Number}", Mine ? "" : Turn, Facts.Length > 0 ? Facts : Suggested, Reason, PrBranch.Length > 0 ? PrBranch : Pr == 0 ? "" : $"PR #{Pr}" }
+            .Where(part => part.Length > 0));
 
     /// <summary>What that command printed. Anything that isn't an item with a number is left out.</summary>
     public static IReadOnlyList<WaitingItem> Parse(string json)

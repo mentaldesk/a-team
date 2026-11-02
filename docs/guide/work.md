@@ -104,6 +104,9 @@ A card reads as the issue's number, then its title:
 - **The Lead's recommendation.** An Idea you haven't ranked shows the rank the Lead would give it
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
+- **What a-team keeps of it.** Selecting a card puts the rest on the status bar after its number, like
+  `#412 · Lead recommends Medium · theme: Consistently good UX`, with *shelved until <date>*,
+  *skipped*, *held* or *waiting on <repo>#<n>* where they apply.
 - **Who held it.** Selecting a held task in Blocked puts who held it and why on the status bar, like
   `#524 · held by the Lead · Reply here once…`, `#575 · held by you · wait until…`, or
   `#417 · held, no reason given`. Once you've replied to the Lead, its card reads
