@@ -94,7 +94,8 @@ field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the
   the Lead or Customer lead will draft it.
 
 **Mirror** is the GitHub Project a-team copies the board to, so you can see it on GitHub. A-Team keeps the
-board itself, so the team works the same with *None*, and needs no Project at all. *A new project, named after
+board itself, so the team works with *None* and needs no Project at all, but an issue opened on GitHub then
+never reaches Triage by itself: open ideas with [**New idea**](work.md#adding-an-idea) instead. `b` has no board to open. *A new project, named after
 the team* makes one when you save, sets it up and copies the board onto it. Moving a card there, or changing its
 Priority, counts as your move; one the board wouldn't let you make is set back, and the card's History says why.
 
