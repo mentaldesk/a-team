@@ -23,15 +23,16 @@ public class TerminalPageTests
     [InlineData("iTerm2")]
     [InlineData("kitty")]
     [InlineData("WezTerm")]
-    public void It_names_the_terminal_says_not_installed_and_offers_Install(string terminal)
+    public void It_names_the_terminal_says_not_installed_and_offers_a_box_left_clear(string terminal)
     {
         using var page = Page(new FakeKeys(terminal));
 
         Assert.Equal(terminal, Shown(page)[1]);
         Assert.Equal("Not installed", page.State.Text);
-        Assert.True(page.InstallButton.Visible);
-        Assert.False(page.UpdateButton.Visible);
-        Assert.False(page.RemoveButton.Visible);
+        Assert.Equal($"Cmd and Option keys in {terminal}", page.TurnedOn.Text);
+        Assert.Equal(CheckState.UnChecked, page.TurnedOn.Value);
+        Assert.Equal("", page.Default);
+        Assert.False(page.IsChanged);
         Assert.True(page.ShowsKeys);
         Assert.Contains("Only the dashboard is affected.", page.Note);
     }
@@ -49,20 +50,56 @@ public class TerminalPageTests
     }
 
     [Fact]
-    public void Install_installs_and_the_buttons_become_Update_and_Remove()
+    public void Ticking_the_box_installs_nothing_until_it_is_kept()
     {
-        var keys = new FakeKeys("iTerm2");
+        var keys = new FakeKeys("kitty");
         using var page = Page(keys);
 
-        page.InstallButton.InvokeCommand(Command.Accept);
+        page.TurnedOn.Value = CheckState.Checked;
+
+        Assert.Equal(MacKeysState.NotInstalled, keys.State);
+        Assert.True(page.IsChanged);
+        Assert.Equal("Installs when you press Ctrl+Enter.", page.Pending);
+        Assert.Equal("(default: off)", page.Default);
+
+        page.Keep();
 
         Assert.Equal(MacKeysState.Installed, keys.State);
         Assert.Equal("Installed", page.State.Text);
-        Assert.False(page.InstallButton.Visible);
-        Assert.True(page.UpdateButton.Visible);
-        Assert.True(page.RemoveButton.Visible);
-        Assert.Equal("", page.ConfigLine);
-        Assert.Equal(("Installed the Mac keys for iTerm2.", Schemes.Accent), _said.Single());
+        Assert.False(page.IsChanged);
+        Assert.Equal("", page.Pending);
+    }
+
+    [Fact]
+    public void Revert_leaves_the_terminal_as_it_was()
+    {
+        var keys = new FakeKeys("kitty");
+        using var page = Page(keys);
+        page.TurnedOn.Value = CheckState.Checked;
+
+        page.Revert();
+
+        Assert.Equal(CheckState.UnChecked, page.TurnedOn.Value);
+        Assert.Equal(MacKeysState.NotInstalled, keys.State);
+        Assert.False(page.IsChanged);
+        Assert.Equal("", page.Pending);
+    }
+
+    [Fact]
+    public void Clearing_the_box_removes_the_keys_once_kept()
+    {
+        var keys = new FakeKeys("kitty", "include ateam.conf", "~/.config/kitty/kitty.conf") { State = MacKeysState.Installed };
+        using var page = Page(keys);
+        Assert.Equal(CheckState.Checked, page.TurnedOn.Value);
+
+        page.TurnedOn.Value = CheckState.UnChecked;
+        Assert.Equal("Removes them when you press Ctrl+Enter.", page.Pending);
+        Assert.Equal(MacKeysState.Installed, keys.State);
+        page.Keep();
+
+        Assert.Equal(MacKeysState.NotInstalled, keys.State);
+        Assert.Equal("Not installed", page.State.Text);
+        Assert.False(page.CopyButton.Visible);
     }
 
     [Theory]
@@ -74,7 +111,8 @@ public class TerminalPageTests
         using var page = Page(new FakeKeys(terminal, line, file), clipboard);
         Assert.False(page.CopyButton.Visible);
 
-        page.InstallButton.InvokeCommand(Command.Accept);
+        page.TurnedOn.Value = CheckState.Checked;
+        page.Keep();
 
         Assert.Equal(line, page.ConfigLine);
         Assert.Equal($"Add this line to {file},\nthen {then}:", page.Note);
@@ -85,59 +123,43 @@ public class TerminalPageTests
     }
 
     [Fact]
-    public void Remove_takes_it_away_and_the_state_goes_back_to_not_installed()
-    {
-        var keys = new FakeKeys("kitty", "include ateam.conf", "~/.config/kitty/kitty.conf") { State = MacKeysState.Installed };
-        using var page = Page(keys);
-
-        page.RemoveButton.InvokeCommand(Command.Accept);
-
-        Assert.Equal(MacKeysState.NotInstalled, keys.State);
-        Assert.Equal("Not installed", page.State.Text);
-        Assert.True(page.InstallButton.Visible);
-        Assert.False(page.RemoveButton.Visible);
-        Assert.False(page.CopyButton.Visible);
-    }
-
-    [Fact]
-    public void An_out_of_date_install_says_so_and_Update_fixes_it()
+    public void An_out_of_date_install_says_so_and_keeping_it_ticked_updates_it()
     {
         var keys = new FakeKeys("WezTerm") { State = MacKeysState.OutOfDate };
         using var page = Page(keys);
         Assert.Equal("Out of date", page.State.Text);
-        Assert.True(page.UpdateButton.Visible);
+        Assert.True(page.IsChanged);
+        Assert.Equal("Updates them when you press Ctrl+Enter.", page.Pending);
 
-        page.UpdateButton.InvokeCommand(Command.Accept);
+        page.Keep();
 
         Assert.Equal("Installed", page.State.Text);
-        Assert.Equal(("Updated the Mac keys.", Schemes.Accent), _said.Single());
+        Assert.False(page.IsChanged);
     }
 
     [Theory]
     [InlineData("Ghostty")]
     [InlineData("Terminal.app")]
-    public void A_terminal_that_cant_do_it_says_so_with_no_Install_and_the_keys_that_work_there(string terminal)
+    public void A_terminal_that_cant_do_it_says_so_with_the_box_greyed_and_the_keys_that_work_there(string terminal)
     {
         using var page = Page(new FakeKeys(terminal) { CanInstall = false });
 
         Assert.Equal("Can't be installed here", page.State.Text);
-        Assert.False(page.InstallButton.Visible);
-        Assert.False(page.UpdateButton.Visible);
-        Assert.False(page.RemoveButton.Visible);
+        Assert.False(page.TurnedOn.Enabled);
+        Assert.False(page.IsChanged);
         Assert.False(page.ShowsKeys);
         Assert.StartsWith($"{terminal} can't change keys for one app only.", page.Note);
         Assert.Contains("Option+←/→ moves a word, fn+←/→ goes to the start and end of the line.", page.Note);
     }
 
     [Fact]
-    public void A_failed_install_says_why()
+    public void A_failed_install_is_left_to_Settings_to_say()
     {
         var keys = new FakeKeys("kitty") { Fails = new UnauthorizedAccessException("no access") };
         using var page = Page(keys);
+        page.TurnedOn.Value = CheckState.Checked;
 
-        page.InstallButton.InvokeCommand(Command.Accept);
-
-        Assert.Equal(("Couldn't install the Mac keys: no access", Schemes.Error), _said.Single());
+        Assert.Throws<UnauthorizedAccessException>(page.Keep);
         Assert.Equal("Not installed", page.State.Text);
     }
 

@@ -38,7 +38,7 @@ public sealed class TeamConfigs
         }
     }
 
-    /// <summary>A team as the Teams page lists it: its repo, whether it's paused, or why its file can't be read.</summary>
+    /// <summary>A team as the Teams screen lists it: its repo, whether it's paused, or why its file can't be read.</summary>
     public TeamRow Row(string team)
     {
         try
@@ -246,5 +246,5 @@ public sealed class TeamConfigs
     }
 }
 
-/// <summary>A team's row on the Teams page. <see cref="Problem"/> is set when its file can't be read.</summary>
+/// <summary>A team's row on the Teams screen. <see cref="Problem"/> is set when its file can't be read.</summary>
 public sealed record TeamRow(string Name, string Repo, bool Paused, string? Problem);

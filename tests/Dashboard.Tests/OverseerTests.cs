@@ -957,23 +957,20 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
-    public void A_limit_Settings_can_t_read_is_refused_naming_the_field()
+    public void The_Overseer_page_opens_on_the_kept_limits_and_finds_one_it_can_t_read()
     {
-        using var dialog = new SettingsDialog(
-            new ThemeSetting(BundledThemes.Midnight, _ => { }, _ => { }), new IconSetting(IconStyle.Unicode, _ => { }, _ => { }), false,
-            new CommandRegistry().Register("quit", "Quit", () => { }), new TeamConfigs(Config), () => { }, IconStyle.Unicode,
-            limits: new Dictionary<string, string> { ["Ready"] = "2d" });
+        var settings = new DashboardSettings(Config);
+        settings.WriteLimits(new Dictionary<string, string> { ["Ready"] = "2d" });
+        using var page = new OverseerPage(settings);
 
-        Assert.All(dialog.LimitFields.Where(limit => limit.Column != "Ready"), limit => Assert.Equal("", limit.Field.Text));
-        Assert.Equal("2d", dialog.LimitFields.Single(limit => limit.Column == "Ready").Field.Text);
-        Assert.Null(dialog.UnreadableLimit());
-        dialog.LimitFields.Single(limit => limit.Column == "Building").Field.Text = "two weeks";
+        Assert.All(page.Fields.Where(limit => limit.Column != "Ready"), limit => Assert.Equal("", limit.Field.Text));
+        Assert.Equal("2d", page.Fields.Single(limit => limit.Column == "Ready").Field.Text);
+        Assert.Null(page.Unreadable());
+        page.Fields.Single(limit => limit.Column == "Building").Field.Text = "two weeks";
 
-        Assert.Equal("Building", dialog.UnreadableLimit());
-        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
-
-        Assert.False(dialog.Confirmed);
-        Assert.Contains("Building", dialog.Message.Says, StringComparison.Ordinal);
+        Assert.Equal("Building", page.Unreadable());
+        Assert.Throws<IOException>(page.Keep);
+        Assert.Equal(new Dictionary<string, string> { ["Ready"] = "2d" }, settings.ReadLimits());
     }
 
     [Fact]

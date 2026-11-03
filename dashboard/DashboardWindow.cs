@@ -748,8 +748,8 @@ public sealed class DashboardWindow : Window
             .Register("dispatch.pass", "Run a dispatch pass now", PassNow)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", () => OpenSettings(), chord: "Ctrl+,", isEnabled: HasApp)
-            .Register("teams", "Teams", () => OpenSettings(SettingsDialog.TeamsPage), isEnabled: HasApp)
-            .Register("teams.new", "New team", () => OpenSettings(SettingsDialog.TeamsPage, newTeam: true), isEnabled: HasApp)
+            .Register("teams", "Teams", () => OpenTeams(), isEnabled: HasApp)
+            .Register("teams.new", "New team", () => OpenTeams(newTeam: true), isEnabled: HasApp)
             .Register("help", () => "Show keys", OpenKeys, Key.F1, isEnabled: HasApp, menuLabel: () => "Show _keys")
             .Register("guide", "Guide", () => _showGuide(_area == Area.Work ? GuideDialog.Work : GuideDialog.Overseer))
             .Register("messages", () => "Messages", OpenMessages, isEnabled: HasApp, menuLabel: () => "Messages…")
@@ -2312,12 +2312,23 @@ public sealed class DashboardWindow : Window
         ReadBody(item, (read, body) => ShowBody(read, body, pitch.Url), forReader: true);
     }
 
-    private void OpenSettings(string? page = null, bool newTeam = false)
+    private void OpenSettings()
+    {
+        if (App is not { } app)
+            return;
+        SettingsScreen.Show(app, _settings, _commands, KeyOverrides, ShowIcons, _auto, _showGuide, _macKeys);
+        _limits = _settings.ReadLimits();
+        SyncQuitKey();
+        ShowKeysHint();
+        _menu.Refresh();
+    }
+
+    private void OpenTeams(bool newTeam = false)
     {
         if (App is not { } app)
             return;
         var before = _teams.Names();
-        var (removed, vision) = SettingsDialog.Show(app, _settings, _commands, KeyOverrides, ShowIcons, _auto, _teams, page, _start, newTeam, _showGuide, _checks, _macKeys);
+        var (removed, vision) = TeamsDialog.Show(app, _teams, _start, newTeam, _showGuide, _checks, Icons.Resolve(_settings.ReadIcons(), _auto));
         if (vision is not null && _teams.Names().Contains(vision))
         {
             WriteVision(vision);
@@ -2329,9 +2340,6 @@ public sealed class DashboardWindow : Window
             return;
         }
         Forget(removed);
-        _limits = _settings.ReadLimits();
-        SyncQuitKey();
-        ShowKeysHint();
         _menu.Refresh();
     }
 

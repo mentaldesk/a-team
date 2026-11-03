@@ -131,9 +131,9 @@ finish cleanly. Where the dispatcher isn't checking, the line says so instead of
 paused says `paused`, and one whose team is paused says `team paused`.
 
 The app checks each team when it starts and again whenever the team's file changes, the same check
-**Settings → Teams** shows. If something stops the team running, every role wears `⚠`, the panel
+**Teams** shows. If something stops the team running, every role wears `⚠`, the panel
 says what's wrong above them, as in `misconfigured: checkout ~/code/TuiCode/main isn't there: …`,
-and the status bar says which checks failed. Fix it in **Settings → Teams** or in the file, and the
+and the status bar says which checks failed. Fix it in **Teams** or in the file, and the
 `⚠` clears. A missing vision, docs page or label is only a note, and changes nothing here.
 
 The keys act on the chosen role, the first until you choose another. `F6` or `Ctrl+G I` puts focus

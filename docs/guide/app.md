@@ -86,9 +86,10 @@ own clipboard instead, with the same terminal setup, and the status bar says
 
 A Mac terminal keeps `Cmd` to itself, so out of the box `Cmd+←` and the rest do nothing in the app.
 In iTerm2, kitty or WezTerm, **Settings → Terminal** fixes that: it names the terminal you're in and
-whether the dashboard's Mac keys are *Not installed*, *Installed* or *Out of date*. **Install** adds
-them, **Update** brings them up to date after an a-team upgrade changes them, and **Remove** takes
-them away. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
+whether the dashboard's Mac keys are *Not installed*, *Installed* or *Out of date*. Tick
+**Cmd and Option keys** and press `Ctrl+Enter` to install them, or to bring them up to date after an
+a-team upgrade changes them; clear it and press `Ctrl+Enter` to take them away. `Esc` leaves them as
+they were. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
 and the file it goes in, with **Copy** beside it. After adding it, reload kitty's config with
 `Ctrl+Cmd+,` (kitty reads it only then), or in WezTerm reopen the dashboard.
 
