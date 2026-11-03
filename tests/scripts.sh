@@ -8187,10 +8187,20 @@ dispatcher_line() {
 installed() { jq -nc --argjson dry "$1" --argjson at $(($(date +%s) - $2)) \
   '{bin: "/Users/me/code/a-team/palette/bin/a-team", version: "0.1.13", dryRun: $dry, interval: 120, installedAt: $at}'; }
 
+# dispatcher_line for record $4 and prefix $5 reads $2 and a countdown from $3s, less up to however long it took.
+counting_down() {
+  local start line s
+  start=$(date +%s)
+  line=$(dispatcher_line "$4" "$3" "${5:-}")
+  for ((s = $3; s >= $3 - ($(date +%s) - start); s--)); do
+    [ "$line" = "$2 $((s / 60)):$(printf %02d $((s % 60)))" ] && return
+  done
+  same "$1" "$2 $(($3 / 60)):$(printf %02d $(($3 % 60)))" "$line"
+}
+
 case_ "status opens with what's driving the teams"
-same "live" "dispatcher · ~/code/a-team/palette/bin/a-team 0.1.13 · next pass 1:12" "$(dispatcher_line "$(installed false 600)" 72)"
-same "dry run" "dispatcher · dry run: nothing will actually start · next pass 0:48" \
-  "$(dispatcher_line "$(installed true 600)" 48 dry-)"
+counting_down "live" "dispatcher · ~/code/a-team/palette/bin/a-team 0.1.13 · next pass" 72 "$(installed false 600)"
+counting_down "dry run" "dispatcher · dry run: nothing will actually start · next pass" 48 "$(installed true 600)" dry-
 same "stopped" "dispatcher · stopped 14m ago" "$(dispatcher_line "$(installed false 3600)" $((120 - 14 * 60)))"
 same "never installed" "dispatcher · nothing installed · run: a-team install" "$(dispatcher_line '')"
 same "unrecorded" "dispatcher" "$(dispatcher_line '' 30)"
