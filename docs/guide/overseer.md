@@ -82,8 +82,9 @@ At 140 columns or wider, the selected card has a panel on the right, about two f
 window. Narrower, its details sit at the foot of the lanes instead, without the session.
 
 The panel gives the card's title, what it is, its Priority, team and column, how long it has
-been there in full (`6d 2h 10m`), the column's limit if it has one, and why it's waiting where Work
-says. For a task waiting on a change in another repo, that's how far the change has got:
+been there in full (`6d 2h 10m`), the column's limit if it has one, then
+[what a-team keeps about it](how-a-team-works.md#what-a-card-says-about-an-item), like the Lead's rank
+or a shelve, and why it's waiting where Work says. For a task waiting on a change in another repo, that's how far the change has got:
 `Waiting on tui-style-guide#84: merged, not released`. A task already in review says so on a line
 of its own: `Also waits on tui-style-guide#100 · in review, yours`. A task held for you says who held it and why, as Work's Blocked card does: `Blocked: held by the Lead · …`. For a card another task waits on, it gives the
 chain, as on Work's status bar: `a-team #499 waits on this · then MentalDesk.Tui's release`. For a pitch, it lists the open tasks under it,
@@ -128,7 +129,8 @@ Then the role's name and what it's doing: `running 14:02 · #602` with the cards
 `idle · ran 12m ago · next check 3:41`, adding `failed` or `cut short` where its last run didn't
 finish cleanly. Where the dispatcher isn't checking, the line says so instead of counting down:
 `dispatcher hasn't run`, `checking now` while a pass runs long, or `dispatcher not running`. A role you
-paused says `paused`, and one whose team is paused says `team paused`.
+paused says `paused · ran 12m ago`, or `paused · stopped by you 3m ago` if you stopped its run, and
+one whose team is paused says `team paused`.
 
 The app checks each team when it starts and again whenever the team's file changes, the same check
 **Settings → Teams** shows. If something stops the team running, every role wears `⚠`, the panel

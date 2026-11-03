@@ -31,7 +31,7 @@ Each step says what it will do and waits for `Ctrl+Enter`. `Esc` skips it, and `
 step. The last asks whether to get to work or keep the team paused: `↑`/`↓` choose, `Ctrl+Enter`
 goes ahead with the one chosen, and `Esc` cancels the new team.
 
-One part of the Project is yours to set up on GitHub: under its **Workflows**, turn on **Auto-add
+If the team has a mirror, one part of its Project is yours to set up on GitHub: under its **Workflows**, turn on **Auto-add
 to project** for the repo, and **Item added to project** with Status set to Idea. Without them, an
 issue you or another team open on the repo never reaches Triage. Health notes it until both are on.
 
@@ -45,8 +45,6 @@ to come back. It rewrites a vision the team already has. From a terminal, it's `
 
 Skip it and the Lead drafts one from the repo instead. That's a guess, so the team's Health notes
 it until you replace it.
-
-`gh` needs to be able to manage projects first: `gh auth refresh -s project`.
 
 ## Reviewing the vision
 
