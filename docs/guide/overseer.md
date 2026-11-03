@@ -63,7 +63,7 @@ behind a count, as in `+7`.
 | `i` | Interrupts the agent on the selected card, or the chosen role on a heading, and puts you in its conversation |
 | `h` | On a heading, pauses the chosen role, or lets it start again |
 | `g` | Opens the card on GitHub |
-| `b` | Opens the team's Project board on GitHub |
+| `b` | Opens the team's mirror, its Project board on GitHub, if it has one |
 | `r` | Reads again the boards that couldn't be read |
 | `F5` | Reads every board again |
 

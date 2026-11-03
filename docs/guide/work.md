@@ -174,7 +174,7 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 | `1` to `9` | Go to the first team's tab, the second's, and so on |
 | `Enter` | Read the card, and on a card in Triage, rank it |
 | `g` | Open the card, or the PR row you're on, on GitHub |
-| `b` | Open the team's Project board on GitHub, for everything that isn't waiting on you |
+| `b` | Open the team's mirror, its Project board on GitHub, for everything that isn't waiting on you |
 | `p` | Read the card and set its Priority |
 | `Ctrl+T M` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `Ctrl+G N` | Go to the newest card that has become your move |
