@@ -114,6 +114,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly int _number;
     private readonly int _width;
     private IssueBody _text;
+    private readonly Label _standing;
     private readonly LogView _body;
     private readonly FrameView _bodyFrame;
     private readonly LogView _history;
@@ -193,13 +194,15 @@ public sealed partial class ReaderDialog : DashboardDialog
         Width = Dim.Fill();
         Height = Dim.Fill();
 
-        int PaneRows() => Math.Max(0, FootRow() - (rank is null ? 0 : BandLines));
+        int PaneRows() => Math.Max(0, FootRow() - 1 - (rank is null ? 0 : BandLines));
+
+        _standing = new Label { Text = item.Standing, X = 1, Y = 0, Width = Dim.Fill(1), CanFocus = false, SchemeName = LogSchemes.Dimmed };
 
         _commentFrame = new FrameView
         {
             Title = "Comment",
             X = 0,
-            Y = 0,
+            Y = 1,
             Height = Dim.Func(_ => PaneRows(), this),
             Visible = false,
         };
@@ -233,7 +236,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         _bodyFrame = new FrameView
         {
             Title = "Body",
-            Y = 0,
+            Y = 1,
             Height = Dim.Func(_ => PaneRows(), this),
         };
         _body = new LogView
@@ -253,7 +256,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         _historyFrame = new FrameView
         {
             Title = "History",
-            Y = 0,
+            Y = 1,
             Height = Dim.Func(_ => PaneRows(), this),
         };
         _history = new LogView
@@ -305,7 +308,7 @@ public sealed partial class ReaderDialog : DashboardDialog
             _band = new View
             {
                 X = 0,
-                Y = Pos.Func(_ => PaneRows(), this),
+                Y = Pos.Func(_ => 1 + PaneRows(), this),
                 Width = Dim.Fill(),
                 Height = BandLines,
                 // Without this the ranks can't take focus, whatever they say.
@@ -324,7 +327,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
         AddKeys();
 
-        Add(_commentFrame, _bodyFrame, _historyFrame, Foot, _message);
+        Add(_standing, _commentFrame, _bodyFrame, _historyFrame, Foot, _message);
         if (_band is not null)
             Add(_band);
         Sides = _panes.Widths.For(this, Region, said => Say(said, Schemes.Accent))
@@ -361,6 +364,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     internal View? Band => _band;
 
     internal LogView Body => _body;
+
+    internal string Standing => _standing.Text;
 
     internal LogView HistoryLog => _history;
 

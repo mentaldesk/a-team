@@ -14,6 +14,14 @@ public sealed record WaitingItem(
     /// <summary>Whether it's the task that makes the team's red default branch green again.</summary>
     public bool Fix { get; init; }
 
+    /// <summary>What a-team keeps of it beyond Status and Priority: the Lead's rank, its theme, a shelve, a skip, a hold
+    /// or a wait on another repo.</summary>
+    public string Facts { get; init; } = "";
+
+    /// <summary>The line under its title in the reader: its Status, its Priority, then its <see cref="Facts"/>.</summary>
+    public string Standing => string.Join(" · ",
+        new[] { Status, $"Priority {(Priority.Length > 0 ? Priority : "none")}", Facts }.Where(part => part.Length > 0));
+
     /// <summary>The tasks this card holds up, found across every team's cards by <see cref="Holds.Tag"/>.</summary>
     public IReadOnlyList<Hold> Holding { get; init; } = [];
 
@@ -23,7 +31,7 @@ public sealed record WaitingItem(
     /// <summary>Whether it's a task waiting on a change in another repo, which frees itself and asks nobody anything.</summary>
     public bool WaitsUpstream => Upstream.Length > 0;
 
-    /// <summary>Whether it's a Ready task someone labelled blocked, which waits on you whoever held it.</summary>
+    /// <summary>Whether it's a held Ready task, which waits on you whoever held it.</summary>
     public bool Held => Status == "Ready" && !WaitsUpstream;
 
     /// <summary>Whether it's a Ready task you could hold, or release where it's <see cref="Held"/>.</summary>
@@ -96,11 +104,12 @@ public sealed record WaitingItem(
     /// <summary>Whether the next move is the reviewer's. An item the board said nothing about is theirs.</summary>
     public bool Mine => Turn.Length == 0 || Turn == "you";
 
-    /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's,
-    /// and the PR it hands over to at the end; who held it, for a held task that's yours; or the chain, for a card holding up
-    /// a task or a task held up.</summary>
+    /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's, then its
+    /// <see cref="Facts"/>, and the PR it hands over to at the end; who held it, for a held task that's yours; or the
+    /// chain, for a card holding up a task or a task held up.</summary>
     public string Line => Held && Mine ? $"#{Number} · {Hold}" : Holding.Count > 0 ? Holds.Chain(this) : WaitsOn.Length > 0 ? Holds.Waiting(this) : string.Join(" · ",
-        new[] { $"#{Number}", Mine ? "" : Turn, Suggested, Reason, PrBranch.Length > 0 ? PrBranch : Pr == 0 ? "" : $"PR #{Pr}" }.Where(part => part.Length > 0));
+        new[] { $"#{Number}", Mine ? "" : Turn, Facts.Length > 0 ? Facts : Suggested, Reason, PrBranch.Length > 0 ? PrBranch : Pr == 0 ? "" : $"PR #{Pr}" }
+            .Where(part => part.Length > 0));
 
     /// <summary>What that command printed. Anything that isn't an item with a number is left out.</summary>
     public static IReadOnlyList<WaitingItem> Parse(string json)
@@ -125,7 +134,7 @@ public sealed record WaitingItem(
                         Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream"),
                         Linked(item) is { Count: > 0 } chains ? chains : null,
                         Numbers(item, "frees") is { Count: > 0 } frees ? frees : null, Text(item, "heldBy"))
-                    { Fix = Flag(item, "fix") })
+                    { Fix = Flag(item, "fix"), Facts = Text(item, "facts") })
             ];
         }
         catch (JsonException)

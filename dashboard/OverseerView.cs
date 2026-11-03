@@ -354,7 +354,8 @@ public sealed class OverseerView : View
         var limit = ColumnLimits.Limit(state.Limits, card.Status) is not null ? $" (limit {state.Limits[card.Status]})" : "";
         List<string> lines =
         [
-            string.Join(Separator, card.KindName, card.Priority.Length > 0 ? card.Priority : "Unranked", card.Team, $"{card.Status}{age}{limit}"),
+            string.Join(Separator, new[] { card.KindName, card.Priority.Length > 0 ? card.Priority : "Unranked", card.Team,
+                $"{card.Status}{age}{limit}", card.Facts }.Where(part => part.Length > 0)),
         ];
         if (state.Waiting(card.Team, card.Number) is { WaitsUpstream: true } upstream)
             lines.Add($"Waiting on {upstream.Upstream}");

@@ -135,9 +135,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    closes. For a task that waits on an issue or PR already open in another repo,
    `a-team board {{team}} depends lead <task> <owner/repo>#<n> <closed|released [<package>]> "<why>"`:
    `released <package>` when the task upgrades a package and needs a published release carrying the change.
-   Never hold a task on another repo with the `blocked` label: the board frees a `depends` by itself.
-   Only where the change has no issue or PR there yet, draft one in the task, label it `blocked`,
-   and ask the stakeholder in a comment to file it and reply. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
+   Never hold a task on another repo: the board frees a `depends` by itself.
+   Only where the change has no issue or PR there yet, draft one in the task, and hold it with
+   `a-team board {{team}} hold lead <task> <file>`, the file asking the stakeholder to file it and reply. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
    independent of each other if they touch different parts of the code. Make the later one depend
    on the earlier when both would make major changes to the same file or the same part of the
    code; two unrelated behaviour changes that only brush a shared file run in parallel. Don't plan
@@ -162,8 +162,7 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
   same way, and if it is, close it with `a-team board {{team}} finish lead <pitch> <file> <pr>...`,
   naming the merged PRs that built it, the file saying which PRs did and what you tried. Never ask
   the stakeholder to close it.
-- For each task you held that your prompt names (a Ready task labelled `blocked`, your comment
-  saying why), read `a-team board {{team}} feedback lead <task>`. If the stakeholder's reply says the
+- For each task you held that your prompt names (a held Ready task, your comment saying why), read `a-team board {{team}} feedback lead <task>`. If the stakeholder's reply says the
   thing is done, `a-team board {{team}} unblock lead <task>`, and it goes back in the Dev's queue. If
   it doesn't, or you can't tell, ask again in one line with `a-team board {{team}} comment lead <task>`.
 - A task you held that waits on a change in another repo becomes a dependency, as in step 2:
@@ -186,7 +185,7 @@ For each Dependabot PR your prompt names:
 
 ### 5. Recommend a rank for each Idea
 
-For each item in `a-team board {{team}} list Idea` with no `rank:` label, run
+For each item in `a-team board {{team}} list Idea` with no `marks.rank`, run
 `a-team board {{team}} recommend lead <n> <urgent|high|medium|low> <file>`. Rank the Ideas against
 each other: the theme in the vision it serves first, earlier themes higher; then appetite, smaller
 higher; then your confidence it's worth doing. The file is one line naming the theme and the
@@ -201,7 +200,7 @@ gets a blend of their own ideas refined and new ones found, and it respects the 
 When nothing is Pitched or Exploring, it always pitches.
 
 **`demote`** and **`promote`** are one swap, paired in order: each demoted pitch is displaced by
-the draft beside it, which always has a higher Priority; `rank:` labels never decide a swap. **Alternate** them — demote the first, promote the first, demote the second,
+the draft beside it, which always has a higher Priority; your recommended ranks never decide a swap. **Alternate** them — demote the first, promote the first, demote the second,
 promote the second — so Pitched never holds more than `wip.pitched` and every move is still one
 the board allows when it re-checks.
 
@@ -309,7 +308,7 @@ step 6. The board script has decided it's due; don't second-guess that.
 1. Gather what's happened since the vision last changed on the default branch
    (`git log -1 --format=%cs origin/<default branch> -- <vision>`): the pitches done since, the themes
    whose issues have all closed, the pitches the stakeholder shelved or declined, the Ideas you
-   skipped (`a-team:skipped`), and any correction the stakeholder has made more than once in
+   skipped (`marks.skipped`), and any correction the stakeholder has made more than once in
    feedback.
 2. Fetch `origin`, and add a worktree under the workdir on `a-team/vision` from
    `origin/<default branch>` (`git worktree add -B a-team/vision ...`). If `origin/a-team/vision` is still

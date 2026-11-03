@@ -47,15 +47,15 @@ Idea → Exploring → Pitched → Approved → Building ───────�
 | In review | A PR waiting for you: a task's, the Customer lead's docs PR, a Dependabot update, or another team's Dev's change to this repo |
 | Done | Merged or closed, or a pitch whose tasks have all closed |
 
-A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. The Lead also labels
-it `theme: <heading>` for the vision theme it serves, which you can change on GitHub. A task is one
+A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. The Lead also gives
+it the vision theme it serves. A task is one
 pull request that changes something you can see or do. A task that needs another merged first is
 blocked by it on GitHub, and becomes ready to start by itself when that one closes.
 
 A task that needs a change in another repo first, like a fix in a shared library, waits on that
-repo's issue or PR instead, labelled `a-team:upstream`. It waits either until that closes or until a
+repo's issue or PR instead. It waits either until that closes or until a
 published release carries the change; a pre-release doesn't count. The board checks every couple
-of minutes, and once the wait is over it takes the label off and says so on the task, naming the
+of minutes, and once the wait is over it frees the task and says so on it, naming the
 release and the package to upgrade, so the Dev can pick it up with no click from you. An issue
 closed by hand, with no change linked to it, counts as released in the first release after it
 closed. If Dependabot already has a PR open bringing that release in, the task waits for it to
@@ -70,7 +70,7 @@ any other, and the Lead pitches such an Idea before any other, whatever their Pr
 still orders them among themselves, and nobody's Priority changes.
 
 One kind of task has no pitch: a **fix**. When CI fails on the default branch, say after two PRs
-that each passed broke it together, the Lead files one task, labelled `a-team:fix`, that makes it
+that each passed broke it together, the Lead files one task, a fix, that makes it
 green again. It goes straight to Ready, skipping Pitched since it only restores work you've already
 accepted, and the Dev takes it before anything else. You still accept its PR. Meanwhile a PR failing
 only what the branch fails isn't counted as the Dev's failure. [Work](work.md#when-main-is-red) shows
@@ -105,12 +105,12 @@ The 👀 reaction on your comment means a run has read it. Leave that one to the
 reaction is yours. A comment you make while a run is going gets a run of its own, so nothing you say
 is missed.
 
-When the Dev can't go on without you, it hands its task back with a question and the `blocked` label.
-The Lead may hold a task with the same label while it breaks a pitch down, and asks on a pitch under
+When the Dev can't go on without you, it hands its task back with a question and holds it.
+The Lead may hold a task too while it breaks a pitch down, and asks on a pitch under
 **Needs your answer** in its description. All of them wait in **Blocked** in the Work area until you
 answer: a held task with the latest ask on it, or `held, no reason given` where no agent said why.
 
-You never take `blocked` off a task an agent held. Reply on it instead, from the reader or on GitHub:
+You never need to take the hold off a task an agent held. Reply on it instead, from the reader or on GitHub:
 the agent that held it reads your reply on its next run and, if it says the thing is done, takes the
 hold off and the task goes back in the Dev's queue. If your reply doesn't say so, it asks again in a
 line and the task stays held. A task that waits on a change in another repo is never held: it's
@@ -119,6 +119,16 @@ recorded as waiting on that repo, and frees itself ([The board](#the-board)).
 To hold a task yourself, select its card in Work and press `h` (**Hold**), and say why. To take any
 hold off, yours or an agent's, press `h` again (**Release hold**), or use **Release hold** in the
 reader ([Work](work.md#answering-from-a-card)).
+
+## What a card says about an item
+
+a-team keeps what it knows about an item beyond its Status and Priority in its own record, not as
+labels on your issues: the rank the Lead recommends, the theme a pitch serves, a shelve and its date,
+a skip, a hold, and what a task waits on in another repo. A card's details in Overseer and the line
+under the reader's title show them, like `Idea · Priority none · Lead recommends Medium · theme:
+Consistently good UX`. The GitHub Project shows the Lead's rank and the theme as its **Lead rank** and
+**Theme** fields. Upgrading takes the old `rank:`, `theme:` and `a-team:` labels, and `blocked`, off
+your open issues once their state is in the record; `pitch` and your own labels stay.
 
 ## What the team remembers
 
@@ -210,7 +220,7 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
 
 - **Seed an idea** by opening an issue in the product repo and putting it on the board in Idea.
 - **The Lead pitches the highest-priority Idea**, and between pitches it discovers new ones. Its own
-  discoveries, and the Customer lead's, carry the `a-team:idea` label.
+  discoveries, and the Customer lead's, are marked as theirs.
 - **An Idea any agent wrote is only pitched once you give it a priority.** Until then it waits in
   Triage. Close the ones you don't want.
 - **The Lead recommends a rank for every Idea**, saying which theme in the vision it serves and how
@@ -223,7 +233,7 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
   date you picked, or until you change its Priority. See [Work](work.md#answering-from-a-card).
 - **The Lead's own Ideas are limited too.** Once **Ideas** in the team's settings are waiting on
   you, it stops discovering until you rank or close one.
-- **An Idea the Lead sets aside** gets the `a-team:skipped` label and a comment saying why. Comment
+- **An Idea the Lead sets aside** is marked skipped, with a comment saying why. Comment
   on it to put it back in the running.
 
 The Dev also takes the highest-priority Ready task first.

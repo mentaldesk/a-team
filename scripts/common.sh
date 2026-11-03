@@ -57,7 +57,7 @@ history_sql() {
     gate TEXT NOT NULL, what TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS board (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL, status TEXT NOT NULL,
     priority TEXT, since TEXT NOT NULL, content TEXT NOT NULL DEFAULT '{}', mirror TEXT, mirrored_status TEXT,
-    mirrored_priority TEXT, PRIMARY KEY (team, item));
+    mirrored_priority TEXT, marks TEXT, mirrored_rank TEXT, mirrored_theme TEXT, PRIMARY KEY (team, item));
   CREATE TABLE IF NOT EXISTS boards (team TEXT PRIMARY KEY, project TEXT NOT NULL, read TEXT, failed TEXT, retry TEXT);
   ${*: -1}"
 }
