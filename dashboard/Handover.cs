@@ -16,6 +16,9 @@ public sealed record TryHandover(
     WaitingItem Item, bool OnPr, IReadOnlyList<WaitingItem> Items, DateTimeOffset? ReadAt, ReaderPlace? Reader = null)
     : Handover
 {
+    /// <summary>When each team's cards were synced, for the status bar.</summary>
+    public IReadOnlyDictionary<string, Synced> Synced { get; init; } = new Dictionary<string, Synced>();
+
     public override string[] Arguments => Item.Pr > 0 ? ["try", Item.Team, Item.Pr.ToString()] : ["try", Item.Team];
 
     public override Area Area => Area.Work;
@@ -107,6 +110,9 @@ public sealed record DocumentHandover(
     WaitingItem Item, DocumentPitch Document, string File, string[] Editor, bool OnPr, IReadOnlyList<WaitingItem> Items,
     DateTimeOffset? ReadAt, ReaderPlace Reader) : Handover
 {
+    /// <summary>When each team's cards were synced, for the status bar.</summary>
+    public IReadOnlyDictionary<string, Synced> Synced { get; init; } = new Dictionary<string, Synced>();
+
     /// <summary>What became of the edit, where it went through.</summary>
     public string? Said { get; init; }
 

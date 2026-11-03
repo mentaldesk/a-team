@@ -185,10 +185,16 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 `Ctrl+G T`, **Go → Team…** or **Go to team…** in Commands (`Ctrl+E`) picks a team by name: type
 to narrow the list as in Commands.
 
-The cards are read when you open Work, when you press `F5`, and by themselves every five minutes
-while Work is in front. Coming back from Overseer puts you on the card you left, and reads again
-only if an agent has started or finished a run, or five minutes have passed, since the last read.
-That costs about 250 of the 5,000 GraphQL points an hour GitHub allows.
+The cards and their reasons come from a-team's record on this machine, so they show as soon as you
+open Work. The record keeps them up to date with GitHub: every dispatcher pass syncs it, and so does
+the app, once a minute while Work is in front. While the app's sync runs, Work's title ends in
+`Syncing…`; once it lands, only the cards that changed redraw, and the selection stays where it
+was. A new comment, review or CI result shows on its card after whichever sync comes first. A sync
+short of GitHub API budget leaves the cards as they were.
+
+Work also reads the record when you press `F5`, and by itself every five minutes while it's in
+front. Coming back from Overseer puts you on the card you left, and reads again only if an agent has
+started or finished a run, or five minutes have passed, since the last read.
 
 Each team's tab is read on its own. While its first read takes more than a moment, it shows a
 spinner and `Reading a-team's board…`. A team with nothing waiting says `Nothing waiting on you`,
@@ -196,8 +202,10 @@ and adds how many cards *Only mine* hides, as in `· 3 hidden by Only mine`, whe
 whose read fails says why in its tab, in red, with `r retry` under it, and the other tabs keep their
 cards. A board GitHub sent back with items missing, twice, fails rather than showing some of its
 cards, and says so: `Board read incomplete (100 of 358 items)`. A read again with cards on screen keeps them, with a spinner at the right of the tabs' top
-border; if it fails, the cards stay and the foot says so in red. The foot's `read 2m ago` is for
-the team whose tab is in front.
+border; if it fails, the cards stay and the foot says so in red. The foot's `synced 2m ago` says when the
+cards of the team whose tab is in front were last synced from GitHub, `synced just now` within a
+minute of it. When a sync can't reach GitHub, the cards stay as they were and it says
+`synced 14m ago · GitHub unreachable, retrying`, with the age of the last sync that worked.
 
 ## Reading a card
 

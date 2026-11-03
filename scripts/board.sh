@@ -1180,17 +1180,23 @@ fix_pr() {
 # main_red: the default branch's head as {branch, sha, since, failing} while its latest completed CI there has failed, else
 # null. A run still going, or no CI at all, isn't red. `since` is the head it was first seen red on.
 main_red() {
-  local red branch since
+  local red branch=
   red=$(gh api --paginate "repos/$REPO/commits/HEAD/check-runs?per_page=100" --jq '.check_runs[]' |
     jq -cs "$CHECKS"'(first.head_sha // "") as $sha | checks
       | if .verdict == "fail" then {sha: $sha, failing: (.failing | map(.name) | unique)} else null end') ||
     die "could not read the default branch's CI"
+  [ "$red" = null ] || branch=$(gh api "repos/$REPO" --jq .default_branch) || die "could not read $REPO's default branch"
+  red_since "$red" "$branch"
+}
+
+# red_since <red> <branch>: a red head as {sha, failing} with its branch and the head it was first seen red on, or null.
+red_since() {
+  local red=$1 branch=$2 since
   if [ "$red" = null ]; then
     [ -n "$DRY_RUN" ] || rm -f "$RED_SINCE"
     echo null
     return
   fi
-  branch=$(gh api "repos/$REPO" --jq .default_branch) || die "could not read $REPO's default branch"
   since=$(cat "$RED_SINCE" 2>/dev/null || true)
   if [ -z "$since" ]; then
     since=$(jq -r .sha <<<"$red")
@@ -1238,13 +1244,13 @@ awaiting() {
     | unanswered($since) | map(.at) | max // empty' <<<"$1"
 }
 
-# gated_talk <items>: one page holding the body, comments and open PR of every item, in one call
+# gated_talk <items> [checks] [<fields>]: one page holding the body, comments and open PR of every item, in one call
 # whatever the number of them, plus one more for any PR GitHub hasn't linked to its task. The open
 # PR that closes a task comes back nested under the task's own number: a stakeholder answers a task
 # on either. `waiting` reads whose turn it is off this page. With `checks`, each PR carries its head
-# commit's check runs too.
+# commit's check runs too, and <fields> are more of the repository's, asked for in the same call.
 gated_talk() {
-  local said reviewed n pr page unlinked prs query='' runs=''
+  local said reviewed n pr page unlinked prs query='' runs='' extra=${3:-}
   local seen='reactions(content: EYES) { totalCount }'
   [ "${2:-}" = checks ] && runs='commits(last: 1) { nodes { commit { checkSuites(first: 50) { nodes {
     checkRuns(first: 100, filterBy: {checkType: LATEST}) { nodes { name status conclusion completedAt url } } } } } } }'
@@ -1259,9 +1265,9 @@ gated_talk() {
         closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { $reviewed } } }
       ... on PullRequest { $reviewed } }"
   done
-  [ -n "$query" ] || { echo '{"data": {"repository": {}}}'; return; }
+  [ -n "$query$extra" ] || { echo '{"data": {"repository": {}}}'; return; }
   page=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" \
-    -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query
+    -f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {$query $extra
       openPrs: pullRequests(states: OPEN, first: 100) { nodes { number body } } } }") || return
   unlinked=$(jq -c "$CLOSES"'.data.repository | (.openPrs.nodes // []) as $open
     | [to_entries[].value | select(.closedByPullRequestsReferences.nodes? == []) | .number as $n
@@ -1788,11 +1794,88 @@ chains() {
 prerequisites() {
   [ "$(jq length <<<"$1")" -gt 0 ] || { echo '{}'; return; }
   gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="query Prerequisites(\$owner: String!, \$name: String!) {
-      repository(owner: \$owner, name: \$name) {
-        $(jq -r '.[] | "i\(.): issue(number: \(.)) { blockedBy(first: 10) { nodes { number state repository { nameWithOwner } } } }"' <<<"$1")
-      } }" 2>/dev/null | jq -c --arg repo "$REPO" '[(.data.repository // {}) | to_entries[] | (.key | ltrimstr("i") | tonumber) as $n
-      | .value.blockedBy.nodes[]? | select(.state == "OPEN" and (.repository.nameWithOwner | ascii_downcase) == ($repo | ascii_downcase))
-      | {prereq: .number, n: $n}] | group_by(.prereq) | map({key: "\(.[0].prereq)", value: map(.n)}) | from_entries' 2>/dev/null || echo '{}'
+      repository(owner: \$owner, name: \$name) { $(blocked_by "$1") } }" 2>/dev/null |
+    jq -c --arg repo "$REPO" "$FREES"'.data.repository | frees' 2>/dev/null || echo '{}'
+}
+
+# blocked_by <numbers>: the GraphQL fields, one `i<n>` per issue, that read what those issues are blocked by.
+blocked_by() {
+  jq -r '.[] | "i\(.): issue(number: \(.)) { blockedBy(first: 10) { nodes { number state repository { nameWithOwner } } } }"' <<<"$1"
+}
+
+# frees: of a repository page's `i<n>` fields, as blocked_by reads them, each open prerequisite in this repo with the tasks it
+# blocks, as {prerequisite: [tasks]}.
+FREES='def frees: [(. // {}) | to_entries[] | select(.key | test("^i[0-9]+$")) | (.key | ltrimstr("i") | tonumber) as $n
+    | .value.blockedBy.nodes[]? | select(.state == "OPEN" and (.repository.nameWithOwner | ascii_downcase) == ($repo | ascii_downcase))
+    | {prereq: .number, n: $n}] | group_by(.prereq) | map({key: "\(.[0].prereq)", value: map(.n)}) | from_entries;'
+
+# main_of: the default branch's head off a repository page as {sha, failing} while its latest completed CI has failed, else
+# null, as main_red reads it.
+MAIN_OF='def main_of: .defaultBranchRef.target as $head
+    | [$head.checkSuites.nodes[]?.checkRuns.nodes[]
+       | {name, status: (.status | ascii_downcase), conclusion: (.conclusion // "" | ascii_downcase),
+          completed_at: .completedAt, html_url: .url}] | checks
+    | if .verdict == "fail" then {sha: ($head.oid // ""), failing: (.failing | map(.name) | unique)} else null end;'
+MAIN_FIELDS='defaultBranchRef { name target { ... on Commit { oid checkSuites(first: 50) { nodes {
+    checkRuns(first: 100, filterBy: {checkType: LATEST}) { nodes { name status conclusion completedAt url } } } } } } }'
+
+# Below this many API requests left this hour, a sync leaves the cards' detail as it last was.
+DETAIL_FLOOR=${A_TEAM_DETAIL_FLOOR:-500}
+# Touched whenever a sync stores the cards' detail, for the app to read them again.
+DETAIL_SYNCED="$STATE/$TEAM/detail-synced"
+
+# sync_detail: stores in the record what the cards' reasons in `waiting` are made of: the gated and held items' comments,
+# reviews and PRs with their checks, the default branch's CI and what blocks each Ready task, in one call, then upstream
+# waits. Where GitHub can't be read it keeps the last detail and records when it failed.
+sync_detail() {
+  local all was left talked ready talk main frees upstream='{}' n waits open_bumps='' detail
+  all=$(items open)
+  was=$(detail)
+  left=$(gh api rate_limit --jq '[.resources.graphql.remaining, .resources.core.remaining] | map(numbers) | min // empty' 2>/dev/null) ||
+    left=
+  [ -z "$left" ] || [ "$left" -ge "$DETAIL_FLOOR" ] || return 0
+  catch_up "$all"
+  talked=$(jq "$RECOMMENDED"'map(select(.status == "Pitched" or .status == "In review" or ('"$HELD"')
+    or (.status == "Idea" and .type == "Issue" and .priority == null and recommended != null)) | {number})' <<<"$all")
+  ready=$(jq -c "[.[] | select($READY_TASK and .blockedBy > 0) | .number]" <<<"$all")
+  if ! talk=$(gated_talk "$talked" checks "$MAIN_FIELDS $(blocked_by "$ready")" 2>/dev/null); then
+    history_sql "INSERT INTO details (team, failed) VALUES ($(sql "$TEAM"), $(sql "$(date -u +%FT%TZ)"))
+      ON CONFLICT (team) DO UPDATE SET failed = excluded.failed;" >/dev/null
+    detail_synced
+    return 0
+  fi
+  main=$(red_since "$(jq -c "$CHECKS$MAIN_OF"'.data.repository | main_of' <<<"$talk")" \
+    "$(jq -r '.data.repository.defaultBranchRef.name // ""' <<<"$talk")")
+  frees=$(jq -c --arg repo "$REPO" "$FREES"'.data.repository | frees' <<<"$talk")
+  talk=$(jq -c '.data.repository |= with_entries(select(.key | test("^x[0-9]+$")))' <<<"$talk")
+  for n in $(jq -r "map(select(($UPSTREAM_HELD or $UPSTREAM_REVIEWED) and (.marks.held | not))) | .[].number" <<<"$all"); do
+    if ! waits=$(waits_on "$n"); then
+      upstream=$(jq -c --arg n "$n" --argjson was "$was" '. + ($was.detail.upstream // {} | with_entries(select(.key == $n)))' <<<"$upstream")
+      continue
+    fi
+    [ "$waits" != "[]" ] || continue
+    waits=$(upstream_state "$waits")
+    if jq -e 'any(.[]; .state == "released" and .package)' <<<"$waits" >/dev/null; then
+      open_bumps=${open_bumps:-$(bumps)}
+      waits=$(with_bumps "$waits" "$open_bumps")
+    fi
+    upstream=$(jq -c --arg n "$n" --argjson waits "$waits" --argjson reach "$(upstream_reach "$waits")" \
+      '. + {($n): {waits: $waits, reach: $reach}}' <<<"$upstream")
+  done
+  detail=$(jq -cn --argjson talk "$talk" --argjson main "$main" --argjson frees "$frees" --argjson upstream "$upstream" \
+    '{talk: $talk, main: $main, frees: $frees, upstream: $upstream}')
+  history_sql "INSERT INTO details (team, detail, synced) VALUES ($(sql "$TEAM"), $(sql "$detail"), $(sql "$(date -u +%FT%TZ)"))
+    ON CONFLICT (team) DO UPDATE SET detail = excluded.detail, synced = excluded.synced, failed = NULL;" >/dev/null
+  detail_synced
+}
+
+detail_synced() { [ -n "$DRY_RUN" ] || { mkdir -p "$(dirname "$DETAIL_SYNCED")" && touch "$DETAIL_SYNCED"; }; }
+
+# detail: the cards' detail as the last sync stored it, with when that was and when one has failed since, as
+# {detail, synced, failed}, each null until there's one.
+detail() {
+  history_sql -json "SELECT detail, synced, failed FROM details WHERE team = $(sql "$TEAM");" |
+    jq -sc '.[0][0] // {} | .detail |= (if . then fromjson else null end)'
 }
 
 # holding <items>: the numbers of this repo's items some team's task waits on: what another team's task names, its pitch
@@ -2943,7 +3026,8 @@ case "$CMD" in
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
     CACHED=1
     all=$(items open)
-    catch_up "$all"
+    stored=$(detail)
+    [ "$(jq -r '.synced // empty' <<<"$stored")" ] || { sync_detail; stored=$(detail); }
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)}
@@ -2954,32 +3038,26 @@ case "$CMD" in
           then {document: true} else {} end)' <<<"$all")
     held=$(jq --arg team "$TEAM" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false})" <<<"$all")
-    upstream='[]' reviewed='{}' open_bumps=
+    upstream='[]' reviewed='{}'
     for n in $(jq -r "map(select(($UPSTREAM_HELD or $UPSTREAM_REVIEWED) and (.marks.held | not))) | .[].number" <<<"$all"); do
-      waits=$(waits_on "$n")
-      [ "$waits" != "[]" ] || continue
-      waits=$(upstream_state "$waits")
-      if jq -e 'any(.[]; .state == "released" and .package)' <<<"$waits" >/dev/null; then
-        open_bumps=${open_bumps:-$(bumps)}
-        waits=$(with_bumps "$waits" "$open_bumps")
-      fi
+      waits=$(jq -c --arg n "$n" '.detail.upstream[$n].waits // empty' <<<"$stored")
+      [ -n "$waits" ] || continue
+      chained=$(chains "$waits" "$(jq -c --arg n "$n" '.detail.upstream[$n].reach' <<<"$stored")")
       if jq -e --argjson n "$n" "any(.[]; .number == \$n and ($UPSTREAM_REVIEWED))" <<<"$all" >/dev/null; then
-        reviewed=$(jq -c --arg n "$n" --argjson chains "$(chains "$waits" "$(upstream_reach "$waits")")" \
+        reviewed=$(jq -c --arg n "$n" --argjson chains "$chained" \
           '. + if $chains == [] then {} else {($n): $chains} end' <<<"$reviewed")
         continue
       fi
       line=$(upstream_line "$waits")
-      upstream=$(jq -c --arg team "$TEAM" --argjson n "$n" --arg line "$line" --argjson chains "$(chains "$waits" "$(upstream_reach "$waits")")" \
+      upstream=$(jq -c --arg team "$TEAM" --argjson n "$n" --arg line "$line" --argjson chains "$chained" \
         --argjson was "$upstream" '$was + [.[] | select(.number == $n)
         | {number, title, status, url, team: $team, priority, pitch: false, turn: "upstream", upstream: $line, reason: "waiting on \($line)",
            chains: $chains}]' <<<"$all")
     done
-    frees=$(prerequisites "$(jq -c "[.[] | select($READY_TASK and .blockedBy > 0) | .number]" <<<"$all")")
-    recommended=$(jq "$RECOMMENDED"'map(select(.status == "Idea" and .type == "Issue" and .priority == null
-      and recommended != null) | {number})' <<<"$all")
-    talk=$(gated_talk "$(jq -s add <<<"$gated$held$recommended")" checks)
+    frees=$(jq -c '.detail.frees // {}' <<<"$stored")
+    talk=$(jq -c '.detail.talk // {data: {repository: {}}}' <<<"$stored")
     said=$(gated_comments "$talk")
-    main=$(main_red)
+    main=$(jq -c '.detail.main' <<<"$stored")
     waiting=$(turns "$gated" "$said" "$(gated_prs "$talk" "$main" "$(jq -c "[.[] | select($FIX) | .number]" <<<"$all")")" |
       jq --argjson tasks "$(gated_tasks "$talk")" \
         'map(if .pitch and .status == "In review" then . + ($tasks[.number | tostring] // {}) else . end)' |
@@ -2996,7 +3074,8 @@ case "$CMD" in
       waiting=$(jq --argjson main "$main" --arg team "$TEAM" --argjson fix "$(jq "[.[] | select($FIX and .closed == null and .status != \"Done\")
         | {number, status}] | first" <<<"$all")" '. + [{team: $team, red: ($main + {fix: $fix})}]' <<<"$waiting")
     fi
-    printf '%s\n' "$waiting"
+    # So does when the detail was last synced, and when a sync last failed if it has since.
+    jq --argjson stored "$stored" --arg team "$TEAM" '. + [{team: $team, synced: $stored.synced, failed: $stored.failed}]' <<<"$waiting"
     ;;
 
   adopt)
@@ -3050,6 +3129,7 @@ case "$CMD" in
   sync)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM sync"
     board_sync
+    sync_detail
     ;;
 
   overview)

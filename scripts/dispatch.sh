@@ -348,6 +348,17 @@ update_branches() {
   fi
 }
 
+# sync_board <team>: brings the team's record up to date with GitHub, the cards' detail too, so the app's is a pass old at most.
+sync_board() {
+  local said
+  mkdir -p "$STATE/$1"
+  if said=$("$ROOT/bin/a-team" board ${dry:+"$dry"} "$1" sync 2>&1); then
+    passing "$STATE/$1/sync-failing" "$STATE/$1/sync-failed-once" "$1: syncing the board working again"
+  else
+    failing "$STATE/$1/sync-failing" "$STATE/$1/sync-failed-once" "${said//$'\n'/ }" "$1: syncing the board failed"
+  fi
+}
+
 # cannot_run <team> <config>: why the team can't run, if it can't. It runs only as its own App.
 cannot_run() {
   local why
@@ -388,6 +399,7 @@ for team in $(team_names); do
     failing "$STATE/$team/adopt-failing" "$STATE/$team/adopt-failed-once" "${adopted//$'\n'/ }" "$team: adopt failed"
   fi
   update_branches "$team"
+  sync_board "$team"
   now=$(date +%s)
   $DRY_RUN || settle_runs
   held=false
