@@ -28,8 +28,8 @@ here.
 brew install mentaldesk/tap/a-team
 ```
 
-Claude Code must be installed and logged in, and `gh` needs the `project` scope
-(`gh auth refresh -s project`). Then add a team (see *Starting a team*) and run
+Claude Code must be installed and logged in, and for a team that mirrors its board to a GitHub
+Project, `gh` needs the `project` scope (`gh auth refresh -s project`). Then add a team (see *Starting a team*) and run
 `a-team install` to start the dispatcher. `brew upgrade a-team` moves every team to the latest
 release, whenever you like: a run already going finishes on the release it started on.
 
@@ -40,7 +40,7 @@ takes it from there.
 
 The app opens only once there's a team, so your first one starts by hand:
 
-1. Make sure `gh` can manage projects: `gh auth refresh -s project`.
+1. If the team will have a mirror, make sure `gh` can manage projects: `gh auth refresh -s project`.
 2. Create or pick a Project for the repo to mirror the board to, or set `"mirror": false` in step 3
    to go without one. Its Status field needs nine options, Idea, Exploring,
    Pitched, Approved, Building, Ready, In progress, In review and Done, or a `statusMap` in the team
@@ -96,7 +96,7 @@ a-team app create <team>
    (service `a-team-app`, account `<owner>`, base64-encoded) — never on disk — and writes
    `app: { id, slug }` into the team's config.
 3. The App's install page opens. Install it on the team's repo, then run
-   `a-team board <team> check`: its `identity:` line says whether a token mints, the project reads
+   `a-team board <team> check`: its `identity:` line says whether a token mints, the project (if there's a mirror) reads
    and writes, the Priority field reads and the App can push, and what to grant if one can't.
 
 One App serves every team under the same account. Run `app create` for a second team there and it

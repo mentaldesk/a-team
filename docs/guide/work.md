@@ -202,7 +202,9 @@ the team whose tab is in front.
 ## Reading a card
 
 `Enter` opens the issue as it was written, then everything said since on it and on its PR, each
-comment headed by who said it and when. What you can do to it, like approving, commenting or
+comment headed by who said it and when. The line under its title gives its Status, its Priority and
+[what a-team keeps about it](how-a-team-works.md#what-a-card-says-about-an-item), like
+`Idea · Priority none · Lead recommends Medium`. What you can do to it, like approving, commenting or
 declining, is a button at its foot with its key; `g` (*GitHub*) opens it on GitHub, and `Esc`
 closes it. `F1` lists every key that works where you are in it.
 

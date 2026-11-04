@@ -3,7 +3,7 @@
 A team is two agents working on one GitHub repository, and you. You can add the
 [Customer lead](#the-customer-lead) and the [Reviewer](#the-reviewer). They coordinate through the team's
 board: if it isn't on the board, in an issue or in a PR, the team doesn't know about it. A-Team keeps the board on
-this machine, and copies it to a GitHub Project, its mirror, so you can see it on GitHub too.
+this machine, and can copy it to a GitHub Project, its mirror, so you can see it on GitHub too.
 
 ## Who does what
 
@@ -218,7 +218,8 @@ conversation, under `reviewer` and `dev`.
 
 You steer the Lead with the Priority field on the board: Low, Medium, High or Urgent.
 
-- **Seed an idea** by opening an issue in the product repo and putting it on the board in Idea.
+- **Seed an idea** with [**New idea**](work.md#adding-an-idea) (`Ctrl+N`). With a mirror, an issue you
+  open on the product repo reaches Idea too.
 - **The Lead pitches the highest-priority Idea**, and between pitches it discovers new ones. Its own
   discoveries, and the Customer lead's, are marked as theirs.
 - **An Idea any agent wrote is only pitched once you give it a priority.** Until then it waits in
