@@ -84,7 +84,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
-        run: gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG exists: uploading its assets again"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi
 
       - name: Render templates
         env:
@@ -158,9 +164,15 @@ jobs:
           git switch -c "$branch"
           git add "Formula/$NAME.rb"
           git commit -m "$NAME $VERSION"
-          git push --force-with-lease -u origin "$branch"
+          # A fresh checkout has no tracking ref for a branch an earlier attempt pushed, and an empty lease means it must not exist.
+          lease=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          git push --force-with-lease="$branch:$lease" -u origin "$branch"
           body="Updates \`$NAME\` to $VERSION. Release: $RELEASE_URL"
-          gh pr view "$branch" >/dev/null 2>&1 || gh pr create --base "$base" --head "$branch" --title "$NAME $VERSION" --body "$body"
+          # Not `gh pr view "$branch"`, which also finds a closed or merged PR from that branch.
+          open=$(gh pr list --head "$branch" --state open --json number --jq length)
+          if [ "$open" = 0 ]; then
+            gh pr create --base "$base" --head "$branch" --title "$NAME $VERSION" --body "$body"
+          fi
           # The tap's own CI (brew audit, install and test on every platform) gates the merge.
           if ! gh pr merge "$branch" --auto --squash --delete-branch; then
             echo "::warning::Auto-merge isn't available on the tap, so the formula PR needs merging by hand once its checks pass: $(gh pr view "$branch" --json url --jq .url)"

@@ -9216,5 +9216,124 @@ same "released" "0.0.0-pr42 " "$(picked)"
 next_version 0.1 auto 42
 same "bad version on a PR" "0.0.0-pr42 " "$(picked)"
 
+# release-publish.yml's "Publish release" and "Open tap PR" steps, run as Actions runs them.
+publish_step() {
+  awk -v name="- name: $1" 'index($0, name) { step = 1 } step && /run: \|$/ { body = 1; next }
+    body && /^ *[^ ]/ && !/^          / { exit } body { sub(/^          /, ""); print }' \
+    "$ROOT/.github/workflows/release-publish.yml"
+}
+PUBLISH_RELEASE="$WORK/publish-release.sh" OPEN_TAP_PR="$WORK/open-tap-pr.sh" PUBLISH_BIN="$WORK/publish-bin"
+publish_step "Publish release" >"$PUBLISH_RELEASE"
+publish_step "Open tap PR" >"$OPEN_TAP_PR"
+mkdir -p "$PUBLISH_BIN"
+cat >"$PUBLISH_BIN/gh" <<'GH'
+#!/usr/bin/env bash
+echo "$*" >>"$FAKE_GITHUB/calls"
+case "$1 $2" in
+  "release view") [ -f "$FAKE_GITHUB/release" ] ;;
+  "release create")
+    if [ -f "$FAKE_GITHUB/release" ]; then echo "a release with the same tag name already exists" >&2; exit 1; fi
+    touch "$FAKE_GITHUB/release"
+    ;;
+  "release upload") ;;
+  "pr list")
+    case "$*" in
+      *--head*) [ -f "$FAKE_GITHUB/open-pr" ] && echo 1 || echo 0 ;;
+      *) [ ! -f "$FAKE_GITHUB/open-pr" ] || echo "7 $(cat "$FAKE_GITHUB/open-pr")" ;;
+    esac
+    ;;
+  "pr create")
+    if [ -f "$FAKE_GITHUB/502" ]; then rm "$FAKE_GITHUB/502"; echo "HTTP 502: 502 Bad Gateway" >&2; exit 1; fi
+    [ ! -f "$FAKE_GITHUB/open-pr" ] || { echo "a pull request already exists" >&2; exit 1; }
+    while [ "$1" != --head ]; do shift; done
+    echo "$2" >"$FAKE_GITHUB/open-pr"
+    ;;
+  "pr merge") [ -f "$FAKE_GITHUB/open-pr" ] && touch "$FAKE_GITHUB/auto-merge" ;;
+  "pr view") echo "https://github.com/mentaldesk/homebrew-tap/pull/7" ;;
+  *) echo "gh stub: unexpected $*" >&2; exit 1 ;;
+esac
+GH
+chmod +x "$PUBLISH_BIN/gh"
+
+# A tap, a release job's folder and a GitHub with nothing published on them yet.
+publish_world() {
+  FAKE_GITHUB=$(mktemp -d "$WORK/publish.XXXXXX")
+  local seed="$FAKE_GITHUB/seed"
+  git init -q -b main "$seed"
+  git -C "$seed" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -q --allow-empty -m init
+  git clone -q --bare "$seed" "$FAKE_GITHUB/tap.git"
+  mkdir "$FAKE_GITHUB/job"
+  mkdir "$FAKE_GITHUB/job/dist"
+  touch "$FAKE_GITHUB/job/dist/demo-1.2.3-linux-x64.tar.gz"
+  echo 'formula 1' >"$FAKE_GITHUB/job/formula.rb"
+}
+
+# publish_attempt: both steps from a fresh job, whose tap checkout tracks only the default branch.
+publish_attempt() {
+  rm -rf "$FAKE_GITHUB/job/tap"
+  git clone -q --single-branch --branch main "file://$FAKE_GITHUB/tap.git" "$FAKE_GITHUB/job/tap"
+  (cd "$FAKE_GITHUB/job" && export FAKE_GITHUB PATH="$PUBLISH_BIN:$PATH" TAG=v1.2.3 GITHUB_SHA=abc123 \
+    NAME=demo VERSION=1.2.3 RELEASE_URL=https://example.com/v1.2.3 GIT_CONFIG_GLOBAL=/dev/null &&
+    bash --noprofile --norc -e "$PUBLISH_RELEASE" && bash --noprofile --norc -e "$OPEN_TAP_PR") >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+tap_branch() { git -C "$FAKE_GITHUB/tap.git" rev-parse -q --verify refs/heads/demo-1.2.3; }
+tap_formula() { git -C "$FAKE_GITHUB/tap.git" show demo-1.2.3:Formula/demo.rb; }
+
+case_ "a first publish creates the release and opens the tap PR with auto-merge on, as it always has"
+publish_world
+publish_attempt
+same "exit" 0 "$STATUS"
+grep -qxF 'release create v1.2.3 dist/demo-1.2.3-linux-x64.tar.gz --target abc123 --title v1.2.3 --generate-notes' "$FAKE_GITHUB/calls" ||
+  fail "create: '$(cat "$FAKE_GITHUB/calls")'"
+grep -q '^release upload' "$FAKE_GITHUB/calls" && fail "first publish uploaded again"
+same "formula" "formula 1" "$(tap_formula)"
+same "PR" demo-1.2.3 "$(cat "$FAKE_GITHUB/open-pr")"
+[ -f "$FAKE_GITHUB/auto-merge" ] || fail "auto-merge isn't on"
+
+case_ "re-running a publish that failed on opening the tap PR finishes it"
+publish_world
+touch "$FAKE_GITHUB/502"
+publish_attempt
+failed "first attempt"
+[ -n "$(tap_branch)" ] || fail "first attempt: no tap branch"
+[ ! -f "$FAKE_GITHUB/open-pr" ] || fail "first attempt: opened a PR"
+first=$(tap_branch)
+echo 'formula 2' >"$FAKE_GITHUB/job/formula.rb"
+: >"$FAKE_GITHUB/calls"
+publish_attempt
+same "re-run exit" 0 "$STATUS"
+grep -qxF 'release upload v1.2.3 dist/demo-1.2.3-linux-x64.tar.gz --clobber' "$FAKE_GITHUB/calls" ||
+  fail "upload: '$(cat "$FAKE_GITHUB/calls")'"
+grep -q '^release create' "$FAKE_GITHUB/calls" && fail "re-run tried to create the release"
+[ "$(tap_branch)" != "$first" ] || fail "re-run left the tap branch as it was"
+same "formula" "formula 2" "$(tap_formula)"
+same "PR" demo-1.2.3 "$(cat "$FAKE_GITHUB/open-pr")"
+[ -f "$FAKE_GITHUB/auto-merge" ] || fail "re-run: auto-merge isn't on"
+
+case_ "re-running a publish whose tap PR is open reuses it"
+publish_world
+publish_attempt
+same "exit" 0 "$STATUS"
+rm "$FAKE_GITHUB/auto-merge"
+: >"$FAKE_GITHUB/calls"
+publish_attempt
+same "re-run exit" 0 "$STATUS"
+grep -q '^pr create' "$FAKE_GITHUB/calls" && fail "re-run opened a second PR"
+[ -f "$FAKE_GITHUB/auto-merge" ] || fail "re-run: auto-merge isn't on"
+
+case_ "a tap branch that moved after the job read it is still refused"
+publish_world
+touch "$FAKE_GITHUB/502"
+publish_attempt
+failed "first attempt"
+sed 's/^git push /git -C "$FAKE_GITHUB\/tap.git" branch -f demo-1.2.3 main; git push /' "$OPEN_TAP_PR" >"$WORK/raced-tap-pr.sh"
+(cd "$FAKE_GITHUB/job" && rm -rf tap && git clone -q --single-branch --branch main "file://$FAKE_GITHUB/tap.git" tap &&
+  export FAKE_GITHUB PATH="$PUBLISH_BIN:$PATH" NAME=demo VERSION=1.2.3 RELEASE_URL=https://example.com/v1.2.3 GIT_CONFIG_GLOBAL=/dev/null &&
+  bash --noprofile --norc -e "$WORK/raced-tap-pr.sh") >"$OUT" 2>"$ERR"
+STATUS=$?
+failed "raced push"
+same "tap branch" "$(git -C "$FAKE_GITHUB/tap.git" rev-parse main)" "$(tap_branch)"
+
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

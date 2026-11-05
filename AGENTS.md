@@ -146,6 +146,10 @@ and `{{sha_<rid>}}` for every `<name>-<version>-<rid>.tar.gz` or `.zip` found, w
 hyphens as underscores (`{{sha_osx_arm64}}`, `{{sha_win_x64}}`). A placeholder no artifact matched
 fails the job. The template decides which platforms it mentions.
 
+Every step is safe to repeat, so a publish job that fails partway is finished by re-running it: an
+existing release gets its assets uploaded again, replacing any with the same name, and a tap branch
+an earlier attempt pushed is updated, with its open PR reused.
+
 A caller that ships `.zip` platforms passes `scoop` as well, and gets `bucket/<name>.json` in the
 bucket updated in the same run. That one is **committed straight to the bucket's default branch,
 not opened as a PR**: the bucket has no CI to gate one. a-team passes no `scoop`, so none of it
