@@ -189,8 +189,10 @@ The cards and their reasons come from a-team's record on this machine, so they s
 open Work. The record keeps them up to date with GitHub: every dispatcher pass syncs it, and so does
 the app, once a minute while Work is in front. While the app's sync runs, Work's title ends in
 `Syncing…`; once it lands, only the cards that changed redraw, and the selection stays where it
-was. A new comment, review or CI result shows on its card after whichever sync comes first. A sync
-short of GitHub API budget leaves the cards as they were.
+was. A new comment, review or CI result shows on its card after whichever sync comes first. A card
+that has only just reached you has no reason in the record yet, so reading it syncs that team then
+and there, and that team's cards take a moment longer. A sync short of GitHub API budget leaves the
+cards as they were.
 
 Work also reads the record when you press `F5`, and by itself every five minutes while it's in
 front. Coming back from Overseer puts you on the card you left, and reads again only if an agent has

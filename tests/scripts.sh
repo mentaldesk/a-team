@@ -3767,6 +3767,54 @@ kept board demo sync
 KEEP_BOARD=1 waiting
 same "green" false "$(jq 'any(.[]; has("red"))' "$OUT")"
 
+case_ "a card that reached its gate since the last sync has its reason straight away, without another call once it has"
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+Ready 115 I can change any of the keys
+ITEMS
+sync_then_reach_gate() {
+  gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+TALK
+  run board demo sync
+  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET status = 'In review' WHERE team = 'demo' AND item = 115;"
+  gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:10:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T09:00:00Z reviewer Can it say which key?
+TALK
+}
+sync_then_reach_gate
+: >"$BIN/args"
+KEEP_BOARD=1 waiting
+same "exit" 0 "$STATUS"
+same "reason" '[115,"dev","answering your feedback since 09:00"]' "$(jq -c '.[1] | [.number, .turn, .reason]' "$OUT")"
+same "synced for it" 1 "$(grep -c defaultBranchRef "$BIN/args")"
+: >"$BIN/args"
+KEEP_BOARD=1 waiting
+same "the next read" 0 "$(grep -c '' <"$BIN/args")"
+
+case_ "a gap the sync can't fill keeps the cards, and offline only tries the once"
+sync_then_reach_gate
+touch "$BIN/offline"
+KEEP_BOARD=1 waiting
+same "exit" 0 "$STATUS"
+same "cards" '[106,115]' "$(jq -c 'map(.number)' "$OUT")"
+same "failed" true "$(jq '.failed != null' "$OUT.synced")"
+: >"$BIN/args"
+KEEP_BOARD=1 waiting
+same "exit" 0 "$STATUS"
+same "doesn't try again" 0 "$(grep -c '' <"$BIN/args")"
+rm "$BIN/offline"
+sync_then_reach_gate
+echo 10 >"$BIN/remaining"
+: >"$BIN/args"
+KEEP_BOARD=1 waiting
+same "short of budget exit" 0 "$STATUS"
+same "short of budget, no detail read" 0 "$(grep -c defaultBranchRef "$BIN/args")"
+rm "$BIN/remaining"
+
 case_ "overview and waiting read the record as it stands, and sync reads GitHub"
 gh_items <<'ITEMS'
 Ready 13 Something to start

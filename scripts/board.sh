@@ -1824,6 +1824,12 @@ DETAIL_FLOOR=${A_TEAM_DETAIL_FLOOR:-500}
 # Touched whenever a sync stores the cards' detail, for the app to read them again.
 DETAIL_SYNCED="$STATE/$TEAM/detail-synced"
 
+# talked_of <items>: the items whose cards' reasons come from what's been said on them, as [{number}].
+talked_of() {
+  jq "$RECOMMENDED"'map(select(.status == "Pitched" or .status == "In review" or ('"$HELD"')
+    or (.status == "Idea" and .type == "Issue" and .priority == null and recommended != null)) | {number})' <<<"$1"
+}
+
 # sync_detail: stores in the record what the cards' reasons in `waiting` are made of: the gated and held items' comments,
 # reviews and PRs with their checks, the default branch's CI and what blocks each Ready task, in one call, then upstream
 # waits. Where GitHub can't be read it keeps the last detail and records when it failed.
@@ -1835,8 +1841,7 @@ sync_detail() {
     left=
   [ -z "$left" ] || [ "$left" -ge "$DETAIL_FLOOR" ] || return 0
   catch_up "$all"
-  talked=$(jq "$RECOMMENDED"'map(select(.status == "Pitched" or .status == "In review" or ('"$HELD"')
-    or (.status == "Idea" and .type == "Issue" and .priority == null and recommended != null)) | {number})' <<<"$all")
+  talked=$(talked_of "$all")
   ready=$(jq -c "[.[] | select($READY_TASK and .blockedBy > 0) | .number]" <<<"$all")
   if ! talk=$(gated_talk "$talked" checks "$MAIN_FIELDS $(blocked_by "$ready")" 2>/dev/null); then
     history_sql "INSERT INTO details (team, failed) VALUES ($(sql "$TEAM"), $(sql "$(date -u +%FT%TZ)"))
@@ -1867,6 +1872,12 @@ sync_detail() {
   history_sql "INSERT INTO details (team, detail, synced) VALUES ($(sql "$TEAM"), $(sql "$detail"), $(sql "$(date -u +%FT%TZ)"))
     ON CONFLICT (team) DO UPDATE SET detail = excluded.detail, synced = excluded.synced, failed = NULL;" >/dev/null
   detail_synced
+}
+
+# talk_missing <items> <stored>: succeeds if one of those items reached its card since the stored detail was synced.
+talk_missing() {
+  printf '%s\n%s' "$(talked_of "$1")" "$2" | jq -se '.[0] as $items | (.[1].detail.talk.data.repository // {}) as $have
+    | any($items[]; "x\(.number)" as $x | $have | has($x) | not)' >/dev/null
 }
 
 detail_synced() { [ -n "$DRY_RUN" ] || { mkdir -p "$(dirname "$DETAIL_SYNCED")" && touch "$DETAIL_SYNCED"; }; }
@@ -3035,6 +3046,10 @@ case "$CMD" in
       else
         die "too few GitHub API requests left this hour to read the cards' reasons"
       fi
+    # A failed sync makes the app read again, so reading only retries one that last worked.
+    elif [ -z "$(jq -r '.failed // empty' <<<"$stored")" ] && talk_missing "$all" "$stored"; then
+      sync_detail
+      stored=$(detail)
     fi
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
