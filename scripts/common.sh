@@ -37,6 +37,25 @@ team_names() {
 # iso <epoch seconds>: that instant as ISO-8601 UTC. BSD date spells it -r, GNU date -d @.
 iso() { date -u -r "$1" +%FT%TZ 2>/dev/null || date -u -d "@$1" +%FT%TZ; }
 
+# alive <pid> <file>: whether <pid> is running and started before <file> was last written, give or take a minute. A
+# process that started later has only been given the same pid since.
+alive() {
+  local elapsed days=0 seconds=0 part written
+  local -a parts
+  [[ $1 =~ ^[0-9]+$ ]] || return 1
+  elapsed=$(ps -o etime= -p "$1" 2>/dev/null) || return 1
+  elapsed=${elapsed//[[:space:]]/}
+  [ -n "$elapsed" ] || return 1
+  [[ $elapsed == *-* ]] && days=${elapsed%%-*} elapsed=${elapsed#*-}
+  IFS=: read -ra parts <<<"$elapsed"
+  for part in "${parts[@]}"; do seconds=$((seconds * 60 + 10#$part)); done
+  written=$(stat -c %Y "$2" 2>/dev/null || stat -f %m "$2" 2>/dev/null) || return 1
+  [ $(($(date +%s) - 10#$days * 86400 - seconds)) -le $((written + 60)) ]
+}
+
+# live_pid <file>: the pid in <file>, while that process is still the one it was written for.
+live_pid() { local pid; pid=$(cat "$1" 2>/dev/null) && alive "$pid" "$1" && echo "$pid"; }
+
 sql() { printf "'%s'" "${1//\'/\'\'}"; }
 
 # history_sql [sqlite3 options...] <statement>: the record, created on first use.

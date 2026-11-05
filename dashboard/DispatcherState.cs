@@ -73,16 +73,8 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
     private static readonly TimeSpan Grace = TimeSpan.FromMinutes(1);
 
     /// <summary>A scheduled pass is still going, however overdue its next-pass: see scripts/dispatch.sh.</summary>
-    internal static bool Passing(string stateRoot, bool dryRun = false)
-    {
-        try
-        {
-            return int.TryParse(File.ReadAllText(Path.Combine(stateRoot, dryRun ? "dry-pass" : "pass")).Trim(), out var pid)
-                && AgentState.IsAlive(pid);
-        }
-        catch (IOException) { return false; }
-        catch (UnauthorizedAccessException) { return false; }
-    }
+    internal static bool Passing(string stateRoot, bool dryRun = false) =>
+        AgentState.IsAlive(Path.Combine(stateRoot, dryRun ? "dry-pass" : "pass"));
 
     internal sealed record Installed(string Bin, string Version, bool DryRun, int Interval, DateTimeOffset InstalledAt, string Log);
 

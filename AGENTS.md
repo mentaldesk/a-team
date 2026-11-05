@@ -35,6 +35,15 @@ nothing to restart.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
 
+## What the machine doesn't promise
+
+The dispatcher runs unattended for weeks, so state it writes outlives what it describes. Write
+down each assumption about the machine here, and the rule that keeps it from tricking us.
+
+- **A pid names a process only while that process runs.** The OS gives it to another process
+  afterwards. Check a recorded pid is still the run before acting on it (`live_pid` in
+  `scripts/common.sh`, `AgentState.IsAlive` in the dashboard), and delete it once the run ends.
+
 ## Layout
 
 | Path | What it is |

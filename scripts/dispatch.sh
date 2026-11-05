@@ -120,11 +120,15 @@ dispatch() {
   done
 }
 
-# live_runs <dir>: "<pid> <started> <task>" for each of the role's runs still going, oldest first.
+# live_runs <dir>: "<pid> <started> <task>" for each of the role's runs still going, oldest first. Removes the pid file
+# of each run that has ended, before the OS gives its pid to another process.
 live_runs() {
   local file pid seen=' ' at
   for file in "$1/pid" "$1"/runs/*/pid; do
-    pid=$(cat "$file" 2>/dev/null) && kill -0 "$pid" 2>/dev/null || continue
+    if ! pid=$(live_pid "$file"); then
+      [ -s "$file" ] && ! $DRY_RUN && rm -f "$file"
+      continue
+    fi
     [[ $seen == *" $pid "* ]] && continue
     seen+="$pid "
     at=$(cat "$(dirname "$file")/last-start" 2>/dev/null || echo "$now")
@@ -137,7 +141,7 @@ prune_releases() {
   local release
   for release in "$1/release" "$1"/runs/*/release; do
     [ -d "$release" ] || continue
-    kill -0 "$(cat "$(dirname "$release")/pid" 2>/dev/null)" 2>/dev/null || rm -rf "$release"
+    live_pid "$(dirname "$release")/pid" >/dev/null || rm -rf "$release"
   done
 }
 
@@ -234,7 +238,7 @@ settle_runs() {
   local id pid log result ended cost outcome
   [ -f "$STATE/history.db" ] || return 0
   while IFS='|' read -r id pid log; do
-    kill -0 "$pid" 2>/dev/null && continue
+    alive "$pid" "$log" && continue
     result=$(jq -cR 'fromjson? | select(.type == "result")' "$log" 2>/dev/null | tail -n 1)
     ended=$(stat -c %Y "$log" 2>/dev/null || stat -f %m "$log" 2>/dev/null || echo "$now")
     if [ -n "$result" ]; then

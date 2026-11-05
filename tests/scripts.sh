@@ -5701,6 +5701,8 @@ fake_run() {
   RUN_PID=$!
   echo "$RUN_PID" >"$A_TEAM_STATE/demo/dev/pid"
 }
+# backdate <file>...: as if written an hour ago, before any process the test starts.
+backdate() { touch -t "$(jq -rn 'now - 3600 | strflocaltime("%Y%m%d%H%M.%S")')" "$@"; }
 held() { jq -c '.dispatch.hold' "$TEAM"; }
 history_db() { (source "$ROOT/scripts/common.sh" && history_sql "$@"); }
 # runs_recorded: "<role> <item or -> <ended?> <cost or -> <outcome or ->" for each run and item it was for.
@@ -5844,6 +5846,17 @@ grep -q 'left nothing claimed' "$OUT" || fail "nothing claimed: '$(cat "$OUT")'"
 case_ "stopping it again doesn't hold it twice"
 run stop demo dev
 same "hold" '["dev"]' "$(held)"
+
+case_ "stop leaves alone a process that has since been given the run's pid"
+sleep 30 &
+stranger=$!
+echo "$stranger" >"$A_TEAM_STATE/demo/dev/pid"
+backdate "$A_TEAM_STATE/demo/dev/pid"
+run stop demo dev
+same "exit" 0 "$STATUS"
+grep -q 'no run to stop' "$OUT" || fail "stranger: '$(cat "$OUT")'"
+kill -0 "$stranger" 2>/dev/null || fail "stop killed it"
+kill "$stranger"
 
 case_ "stop --dry-run names the run it would stop, and neither stops nor holds it"
 run resume demo dev
@@ -6326,6 +6339,30 @@ launched 5
 A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/status.sh" >"$OUT"
 grep -q "^demo dev: running$" "$OUT" || fail "one: '$(cat "$OUT")'"
 same "one run" 1 "$(grep -c '^  #30 Task 30: running 0h00m' "$OUT")"
+stop_runs
+
+case_ "a process given a finished run's pid since takes no slot, isn't killed or in status, and the run's pid file and record end"
+sleep 30 &
+stranger=$!
+echo "$stranger" >"$A_TEAM_STATE/demo/dev/runs/14/pid"
+echo $(($(date +%s) - 3 * 3600)) >"$A_TEAM_STATE/demo/dev/runs/14/last-start"
+: >"$DISPATCH/old.jsonl"
+backdate "$A_TEAM_STATE/demo/dev/runs/14/pid" "$DISPATCH/old.jsonl"
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'dev', $stranger, '$DISPATCH/old.jsonl', '$(ago 60)');"
+printf '31\n' >"$QUEUE"
+jq -n '{reasons: [], creative: false, tasks: [], ready: 31, chores: []}' >"$DEV_TRIGGERS"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev
+launched 6
+same "launched" 31 "$(tail -n 1 "$LAUNCHED")"
+kill -0 "$stranger" 2>/dev/null || fail "the dispatcher killed it"
+grep -q "killed run $stranger" "$A_TEAM_STATE/dispatch.log" && fail "kill: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+[ -e "$A_TEAM_STATE/demo/dev/runs/14/pid" ] && fail "kept the finished run's pid file"
+[ -e "$A_TEAM_STATE/demo/dev/runs/31/pid" ] || fail "removed the new run's pid file"
+same "its run" "dev - 1 - died" "$(runs_recorded | grep '^dev - ')"
+A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/status.sh" >"$OUT"
+grep -q "pid $stranger" "$OUT" && fail "status: '$(cat "$OUT")'"
+kill "$stranger"
 stop_runs
 
 case_ "a dry-run dispatch records no runs"

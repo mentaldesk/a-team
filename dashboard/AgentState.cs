@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 
 namespace ATeam.Dashboard;
@@ -29,18 +31,18 @@ public sealed record AgentState(
 
     public static AgentState Read(string dir)
     {
-        var latest = Pid(dir);
-        var running = latest is { } id && IsAlive(id);
+        var running = IsAlive(Path.Combine(dir, "pid"));
+        var task = ReadTask(Path.Combine(dir, "task"));
         var lastStart = ReadTime(Path.Combine(dir, "last-start"));
         var reasons = (ReadText(Path.Combine(dir, "last-reasons")) ?? "")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var log = Path.Combine(dir, "latest.jsonl");
         var logPath = File.Exists(log) ? new FileInfo(log).ResolveLinkTarget(true)?.FullName ?? log : null;
         return new AgentState(
-            running, lastStart, reasons, logPath, ReadTime(Path.Combine(dir, "stopped")), ReadTask(Path.Combine(dir, "task")))
+            running, lastStart, reasons, logPath, ReadTime(Path.Combine(dir, "stopped")), task)
         {
             Runs = LiveRuns(Path.Combine(dir, "runs")),
-            Latest = RunOf(Path.Combine(dir, "runs"), latest),
+            Latest = task is null ? null : RunOf(Path.Combine(dir, "runs", task.Number.ToString(CultureInfo.InvariantCulture))),
             Card = ReadTask(Path.Combine(dir, "card"))?.Number,
         };
     }
@@ -51,23 +53,18 @@ public sealed record AgentState(
             return [];
         return [.. Directory.EnumerateDirectories(runs)
             .Select(DevRun)
-            .Where(run => run.Held is not null || Pid(run.Dir) is { } pid && IsAlive(pid))
+            .Where(run => run.Held is not null || IsAlive(Path.Combine(run.Dir, "pid")))
             .OrderBy(run => run.Started)
             .ThenBy(run => run.Dir, StringComparer.Ordinal)];
     }
 
-    private static DevRun? RunOf(string runs, int? pid) =>
-        pid is null || !Directory.Exists(runs)
-            ? null
-            : Directory.EnumerateDirectories(runs).Where(run => Pid(run) == pid).Select(DevRun).FirstOrDefault();
+    private static DevRun? RunOf(string run) => Directory.Exists(run) ? DevRun(run) : null;
 
     private static DevRun DevRun(string run) =>
         new(run, ReadTask(Path.Combine(run, "task")), ReadTime(Path.Combine(run, "last-start")))
         {
             Held = ReadTime(Path.Combine(run, "held")),
         };
-
-    private static int? Pid(string dir) => int.TryParse(ReadText(Path.Combine(dir, "pid")), out var pid) ? pid : null;
 
     internal static RunTask? ReadTask(string path)
     {
@@ -94,14 +91,21 @@ public sealed record AgentState(
         catch (UnauthorizedAccessException) { return null; }
     }
 
-    internal static bool IsAlive(int pid)
+    /// <summary>Whether the pid in <paramref name="file"/> is running and started before the file was last written,
+    /// give or take a minute. A process that started later has only been given the same pid since.</summary>
+    internal static bool IsAlive(string file)
     {
+        if (!int.TryParse(ReadText(file), out var pid))
+            return false;
         try
         {
             using var process = Process.GetProcessById(pid);
-            return !process.HasExited;
+            return !process.HasExited
+                && process.StartTime.ToUniversalTime() <= File.GetLastWriteTimeUtc(file) + TimeSpan.FromMinutes(1);
         }
         catch (ArgumentException) { return false; }
         catch (InvalidOperationException) { return false; }
+        catch (Win32Exception) { return false; }
+        catch (NotSupportedException) { return false; }
     }
 }
