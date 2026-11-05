@@ -213,6 +213,7 @@ public sealed class DashboardWindow : Window
         _clock = clock ?? TimeProvider.System;
         _bar.Clock = _clock;
         _bar.MessagesRequested += (_, _) => _commands.Execute("messages");
+        _commands.Running += () => _bar.SetChord(_commands.PendingChord);
         _attention = attention ?? new Attention(_clock, _ => { });
         _news = whatsNew ?? new WhatsNew(_clock.GetUtcNow());
         _opened = new Opened(stateRoot);
@@ -700,7 +701,7 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnWork() && _work.SelectedCard is { Holdable: true }, onCard: true, scopes: [Regions.Work], menuLabels: holdTask)
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
-            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, menuLabel: () => "Team…", scopes: [Regions.Work], chord: "Ctrl+G T")
+            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, menuLabel: () => "Team…", scopes: [Regions.Work])
             .Register("work.new", "New idea", NewIdea, Key.N.WithCtrl, isEnabled: NewIdeaEnabled)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, chord: "Ctrl+T M", isEnabled: OnWork,
                 menuLabel: () => mine[_work.OnlyMine ? 1 : 0], scopes: [Regions.Work], menuLabels: mine)
@@ -748,7 +749,7 @@ public sealed class DashboardWindow : Window
             .Register("dispatch.pass", "Run a dispatch pass now", PassNow)
             .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
             .Register("settings", "Settings", () => OpenSettings(), chord: "Ctrl+,", isEnabled: HasApp)
-            .Register("teams", "Teams", () => OpenTeams(), isEnabled: HasApp)
+            .Register("teams", () => "Teams", () => OpenTeams(), isEnabled: HasApp, menuLabel: () => "_Teams", chord: "Ctrl+G T")
             .Register("teams.new", "New team", () => OpenTeams(newTeam: true), isEnabled: HasApp)
             .Register("help", () => "Show keys", OpenKeys, Key.F1, isEnabled: HasApp, menuLabel: () => "Show _keys")
             .Register("guide", "Guide", () => _showGuide(_area == Area.Work ? GuideDialog.Work : GuideDialog.Overseer))

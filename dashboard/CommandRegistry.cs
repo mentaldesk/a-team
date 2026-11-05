@@ -38,6 +38,9 @@ public sealed class CommandRegistry
 
     public string? PendingChord => Keys.PendingChord;
 
+    /// <summary>Raised just before a command runs, since one that opens a dialog doesn't return until it closes.</summary>
+    public event Action? Running;
+
     public IReadOnlyList<CommandDescriptor> Registered =>
         [.. _entries.Select(entry => new CommandDescriptor(entry.Id, entry.Label(), KeysFor(entry.Id, Where(entry)), entry.OnCard, entry.MenuLabel?.Invoke(),
             entry.Scopes, entry.MenuLabels))];
@@ -135,6 +138,7 @@ public sealed class CommandRegistry
     private void Run(Entry entry)
     {
         _ran++;
+        Running?.Invoke();
         entry.Handler();
     }
 

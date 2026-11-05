@@ -1,7 +1,7 @@
 # Teams
 
-Your teams have a screen of their own: **Teams** in Commands (`Ctrl+E`) or the menu opens it, and
-**New team** opens it on the form for a new one. `Ctrl+G` in Teams or Settings opens this page.
+Your teams have a screen of their own: `Ctrl+G T`, **View → Teams** or **Teams** in Commands
+(`Ctrl+E`) opens it, and **New team** in Commands opens it on the form for a new one. `Ctrl+G` in Teams or Settings opens this page.
 
 ## The Teams screen
 

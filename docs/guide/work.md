@@ -178,11 +178,10 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 | `p` | Read the card and set its Priority |
 | `Ctrl+T M` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `Ctrl+G N` | Go to the newest card that has become your move |
-| `Ctrl+G T` | Pick a team by name |
 | `r` | In a tab that couldn't be read, read that team again |
 | `F5` | Read what's waiting again |
 
-`Ctrl+G T`, **Go → Team…** or **Go to team…** in Commands (`Ctrl+E`) picks a team by name: type
+**Go → Team…** or **Go to team…** in Commands (`Ctrl+E`) picks a team by name: type
 to narrow the list as in Commands.
 
 The cards are read when you open Work, when you press `F5`, and by themselves every five minutes

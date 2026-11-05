@@ -212,7 +212,7 @@ public class AppMenuTests : IDisposable
 
         Assert.Equal(
             ["_Show the session full-screen", "_Fold the lane", "Open on _GitHub", "_Read the boards that failed again", "R_efresh", "_Next team",
-                "_Previous team", "Open team's _board on GitHub", "_Dispatcher log", "De_cisions…", "Se_ttings", "_Quit"],
+                "_Previous team", "Open team's _board on GitHub", "_Dispatcher log", "De_cisions…", "Sett_ings", "_Teams", "_Quit"],
             Under(window, View(window)).Select(id => Item(window, id).Title));
     }
 
@@ -308,7 +308,7 @@ public class AppMenuTests : IDisposable
         Assert.Equal(["_View", AppMenu.Go], window.Menus.Take(2).Select(menu => menu.Title));
         Assert.Equal(["view.work", "view.overseer", "assistant", "view.details"], Above(window, Go(window)));
         Assert.Equal(["work.team", "work.whatsNew"], Below(window, Go(window)));
-        Assert.Equal(["Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "Ctrl+G T", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
+        Assert.Equal(["Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
         Assert.DoesNotContain(Under(window, View(window)), id => id is "view.work" or "view.overseer" or "view.details" or "assistant" or "work.team" or "work.whatsNew");
     }
 
