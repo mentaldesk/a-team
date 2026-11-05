@@ -14,7 +14,7 @@ ago() { echo "$(span "$1") ago"; }
 runs() {
   local file pid seen=' '
   for file in "$1/pid" "$1"/runs/*/pid; do
-    pid=$(cat "$file" 2>/dev/null) && kill -0 "$pid" 2>/dev/null || continue
+    pid=$(live_pid "$file") || continue
     [[ $seen == *" $pid "* ]] && continue
     seen+="$pid "
     printf '%s %s %s\n' "$(cat "$(dirname "$file")/last-start" 2>/dev/null || date +%s)" "$pid" \
@@ -31,7 +31,7 @@ short() {
 }
 
 # passing [dry-]: a scheduled pass is still going, however overdue its next-pass.
-passing() { local pid; pid=$(cat "$STATE/${1:-}pass" 2>/dev/null) && kill -0 "$pid" 2>/dev/null; }
+passing() { live_pid "$STATE/${1:-}pass" >/dev/null; }
 
 # The dashboard's dispatcher title, from install.sh's record and the pass's next-pass: see DispatcherState.
 dispatcher() {
@@ -73,7 +73,7 @@ for team in $(team_names); do
       while read -r at pid task; do
         echo "  ${task:-a run}: running $(span "$at") (pid $pid)"
       done <<<"$live"
-    elif pid=$(cat "$dir/pid" 2>/dev/null) && kill -0 "$pid" 2>/dev/null; then
+    elif pid=$(live_pid "$dir/pid"); then
       echo "running (pid $pid, started $(ago "$(cat "$dir/last-start")"))"
     elif [ -f "$dir/last-start" ]; then
       echo "idle, last started $(ago "$(cat "$dir/last-start")")"

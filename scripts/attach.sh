@@ -56,7 +56,7 @@ fi
 
 running() { local stat; stat=$(ps -o stat= -p "$1" 2>/dev/null) && [[ $stat != Z* ]]; }
 
-PID=$(cat "$DIR/pid" 2>/dev/null || true)
+PID=$(live_pid "$DIR/pid" || true)
 bash "$ROOT/scripts/pause.sh" stop "$TEAM" "$ROLE" ${TASK:+"$TASK"}
 # The stopped run may still be writing to the session, so let it exit before resuming it.
 for _ in $(seq 100); do

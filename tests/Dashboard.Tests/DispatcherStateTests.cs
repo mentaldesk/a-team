@@ -101,6 +101,18 @@ public class DispatcherStateTests : IDisposable
     }
 
     [Fact]
+    public void A_pass_overdue_whose_pid_a_later_process_has_taken_has_stopped()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12", installedAt: Now - TimeSpan.FromHours(1));
+        NextPass(-TimeSpan.FromMinutes(3));
+        Pass(Environment.ProcessId);
+        using var self = System.Diagnostics.Process.GetCurrentProcess();
+        File.SetLastWriteTimeUtc(Path.Combine(_root, "pass"), self.StartTime.ToUniversalTime().AddHours(-1));
+
+        Assert.Equal("dispatcher · stopped 5m ago", Read().Title());
+    }
+
+    [Fact]
     public void A_live_pass_says_nothing_for_a_dry_run_dispatcher_whose_own_pass_has_stopped()
     {
         Install("/opt/homebrew/bin/a-team", "0.1.12", dryRun: true, installedAt: Now - TimeSpan.FromHours(1));

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 
@@ -30,7 +31,7 @@ public sealed record AgentState(
     public static AgentState Read(string dir)
     {
         var latest = Pid(dir);
-        var running = latest is { } id && IsAlive(id);
+        var running = IsAlive(Path.Combine(dir, "pid"));
         var lastStart = ReadTime(Path.Combine(dir, "last-start"));
         var reasons = (ReadText(Path.Combine(dir, "last-reasons")) ?? "")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -51,7 +52,7 @@ public sealed record AgentState(
             return [];
         return [.. Directory.EnumerateDirectories(runs)
             .Select(DevRun)
-            .Where(run => run.Held is not null || Pid(run.Dir) is { } pid && IsAlive(pid))
+            .Where(run => run.Held is not null || IsAlive(Path.Combine(run.Dir, "pid")))
             .OrderBy(run => run.Started)
             .ThenBy(run => run.Dir, StringComparer.Ordinal)];
     }
@@ -94,14 +95,21 @@ public sealed record AgentState(
         catch (UnauthorizedAccessException) { return null; }
     }
 
-    internal static bool IsAlive(int pid)
+    /// <summary>Whether the pid in <paramref name="file"/> is running and started before the file was last written,
+    /// give or take a minute. A process that started later has only been given the same pid since.</summary>
+    internal static bool IsAlive(string file)
     {
+        if (!int.TryParse(ReadText(file), out var pid))
+            return false;
         try
         {
             using var process = Process.GetProcessById(pid);
-            return !process.HasExited;
+            return !process.HasExited
+                && process.StartTime.ToUniversalTime() <= File.GetLastWriteTimeUtc(file) + TimeSpan.FromMinutes(1);
         }
         catch (ArgumentException) { return false; }
         catch (InvalidOperationException) { return false; }
+        catch (Win32Exception) { return false; }
+        catch (NotSupportedException) { return false; }
     }
 }

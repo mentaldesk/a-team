@@ -67,6 +67,23 @@ public class RoleWatchTests : IDisposable
     }
 
     [Fact]
+    public void A_process_that_started_after_a_runs_pid_was_written_is_not_that_run()
+    {
+        var stranger = Run();
+        Write(_dir, stranger, 300, 303);
+        Write(Path.Combine(_dir, "runs", "303"), stranger, 300, 303);
+        var before = DateTime.UtcNow.AddHours(-1);
+        File.SetLastWriteTimeUtc(Path.Combine(_dir, "pid"), before);
+        File.SetLastWriteTimeUtc(Path.Combine(_dir, "runs", "303", "pid"), before);
+
+        var state = AgentState.Read(_dir);
+
+        Assert.False(state.Running);
+        Assert.Empty(state.Runs);
+        Assert.Equal(303, state.Latest!.Task!.Number);
+    }
+
+    [Fact]
     public void A_role_with_several_runs_is_running_on_each_of_their_cards()
     {
         Write(_dir, Finished(), 300, 303);

@@ -56,7 +56,7 @@ if [ -n "$TASK" ]; then
     echo "let $TEAM $ROLE start #$TASK again"
     exit 0
   fi
-  PID=$(cat "$RUN/pid" 2>/dev/null) && kill -0 "$PID" 2>/dev/null || PID=''
+  PID=$(live_pid "$RUN/pid") || PID=''
   if [ -n "$DRY_RUN" ]; then
     if [ -n "$PID" ]; then echo "(dry run) would stop run $PID on #$TASK"; else echo "(dry run) no run to stop on #$TASK"; fi
     echo "(dry run) would hold #$TASK"
@@ -89,9 +89,7 @@ DIR="$STATE/$TEAM/$ROLE"
 PID=''
 if [ "$CMD" = stop ]; then
   # A Dev or Reviewer may have several runs going, each under runs/<task>.
-  PID=$(for file in "$DIR/pid" "$DIR"/runs/*/pid; do
-    pid=$(cat "$file" 2>/dev/null) && kill -0 "$pid" 2>/dev/null && echo "$pid"
-  done | sort -un | paste -sd ' ' -) || true
+  PID=$(for file in "$DIR/pid" "$DIR"/runs/*/pid; do live_pid "$file"; done | sort -un | paste -sd ' ' -) || true
 fi
 
 if [ -n "$DRY_RUN" ]; then
