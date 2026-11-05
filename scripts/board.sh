@@ -3027,7 +3027,15 @@ case "$CMD" in
     CACHED=1
     all=$(items open)
     stored=$(detail)
-    [ "$(jq -r '.synced // empty' <<<"$stored")" ] || { sync_detail; stored=$(detail); }
+    if [ -z "$(jq -r '.synced // empty' <<<"$stored")" ]; then
+      sync_detail
+      stored=$(detail)
+      [ "$(jq -r '.synced // empty' <<<"$stored")" ] || if [ "$(jq -r '.failed // empty' <<<"$stored")" ]; then
+        die "can't read the cards' reasons from GitHub"
+      else
+        die "too few GitHub API requests left this hour to read the cards' reasons"
+      fi
+    fi
     gated=$(jq --arg team "$TEAM" 'map(select(.status == "Pitched" or .status == "In review")
       | {number, title, status, url, team: $team, priority,
          pitch: (.type == "Issue" and (.labels | index("pitch")) != null)}

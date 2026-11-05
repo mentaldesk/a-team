@@ -3636,6 +3636,23 @@ same "the record's board" '[[13,"Ready",null],[14,"In review","High"],[15,"Done"
 same "mirror reads" 0 "$(grep -c 'projectV2(number' "$BIN/args")"
 same "open items read" 1 "$(grep -c BoardRefresh "$BIN/args")"
 
+case_ "a first read that can't sync the cards' reasons fails, rather than showing them without"
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+ITEMS
+run board demo list
+touch "$BIN/offline"
+A_TEAM_BOARD_READ_EVERY=3600 KEEP_BOARD=1 waiting
+same "offline exit" 1 "$STATUS"
+grep -q "can't read the cards' reasons from GitHub" "$ERR" || fail "offline: '$(cat "$ERR")'"
+rm "$BIN/offline"
+run board demo list
+echo 10 >"$BIN/remaining"
+A_TEAM_BOARD_READ_EVERY=3600 KEEP_BOARD=1 waiting
+same "short of budget exit" 1 "$STATUS"
+grep -q "too few GitHub API requests" "$ERR" || fail "short of budget: '$(cat "$ERR")'"
+rm "$BIN/remaining"
+
 case_ "after a sync, waiting reads every card and its reason from the record, with no call to GitHub"
 gh_items <<'ITEMS'
 Pitched 106 Both gates are mine
