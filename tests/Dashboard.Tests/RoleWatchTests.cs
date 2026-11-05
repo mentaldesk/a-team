@@ -84,6 +84,18 @@ public class RoleWatchTests : IDisposable
     }
 
     [Fact]
+    public void The_latest_run_is_found_by_its_task_once_its_pid_file_is_gone()
+    {
+        Write(_dir, Finished(), 300, 303);
+        Write(Path.Combine(_dir, "runs", "303"), Finished(), 300, 303);
+        Write(Path.Combine(_dir, "runs", "246"), Finished(), 100, 246);
+        File.Delete(Path.Combine(_dir, "pid"));
+        File.Delete(Path.Combine(_dir, "runs", "303", "pid"));
+
+        Assert.Equal(303, AgentState.Read(_dir).Latest!.Task!.Number);
+    }
+
+    [Fact]
     public void A_role_with_several_runs_is_running_on_each_of_their_cards()
     {
         Write(_dir, Finished(), 300, 303);

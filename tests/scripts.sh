@@ -6341,7 +6341,7 @@ grep -q "^demo dev: running$" "$OUT" || fail "one: '$(cat "$OUT")'"
 same "one run" 1 "$(grep -c '^  #30 Task 30: running 0h00m' "$OUT")"
 stop_runs
 
-case_ "a process given a finished run's pid since takes no slot, isn't killed or in status, and the run is recorded as ended"
+case_ "a process given a finished run's pid since takes no slot, isn't killed or in status, and the run's pid file and record end"
 sleep 30 &
 stranger=$!
 echo "$stranger" >"$A_TEAM_STATE/demo/dev/runs/14/pid"
@@ -6357,6 +6357,8 @@ launched 6
 same "launched" 31 "$(tail -n 1 "$LAUNCHED")"
 kill -0 "$stranger" 2>/dev/null || fail "the dispatcher killed it"
 grep -q "killed run $stranger" "$A_TEAM_STATE/dispatch.log" && fail "kill: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+[ -e "$A_TEAM_STATE/demo/dev/runs/14/pid" ] && fail "kept the finished run's pid file"
+[ -e "$A_TEAM_STATE/demo/dev/runs/31/pid" ] || fail "removed the new run's pid file"
 same "its run" "dev - 1 - died" "$(runs_recorded | grep '^dev - ')"
 A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/status.sh" >"$OUT"
 grep -q "pid $stranger" "$OUT" && fail "status: '$(cat "$OUT")'"

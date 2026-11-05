@@ -120,11 +120,15 @@ dispatch() {
   done
 }
 
-# live_runs <dir>: "<pid> <started> <task>" for each of the role's runs still going, oldest first.
+# live_runs <dir>: "<pid> <started> <task>" for each of the role's runs still going, oldest first. Removes the pid file
+# of each run that has ended, before the OS gives its pid to another process.
 live_runs() {
   local file pid seen=' ' at
   for file in "$1/pid" "$1"/runs/*/pid; do
-    pid=$(live_pid "$file") || continue
+    if ! pid=$(live_pid "$file"); then
+      [ -s "$file" ] && ! $DRY_RUN && rm -f "$file"
+      continue
+    fi
     [[ $seen == *" $pid "* ]] && continue
     seen+="$pid "
     at=$(cat "$(dirname "$file")/last-start" 2>/dev/null || echo "$now")
