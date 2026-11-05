@@ -190,6 +190,20 @@ public class SettingsScreenTests : IDisposable
     }
 
     [Fact]
+    public void Tab_never_reaches_Keep_so_only_Ctrl_Enter_and_a_click_keep()
+    {
+        using var screen = Open();
+        screen.Dialog.Open(screen.Dialog.Pages.ToList().IndexOf(screen.Overseer));
+        screen.Overseer.Fields[0].Field.SetFocus();
+
+        for (var i = 0; i < 40; i++)
+        {
+            Press(screen, Key.Tab);
+            Assert.False(screen.Dialog.KeepButton.HasFocus);
+        }
+    }
+
+    [Fact]
     public void Enter_on_a_page_does_not_close_Settings()
     {
         using var screen = Open();
