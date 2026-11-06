@@ -9646,8 +9646,8 @@ for latest in v1.2.3 v1.2.2; do
   same "exit with $latest latest" 0 "$STATUS"
 done
 
-# fake_run <dir under the role> <started seconds ago> [ignores]: a live run on record, in $FAKE; `ignores` makes it ignore SIGTERM.
-fake_run() {
+# live_run <dir under the role> <started seconds ago> [ignores]: a live run on record, in $FAKE; `ignores` makes it ignore SIGTERM.
+live_run() {
   local dir="$A_TEAM_STATE/demo/$1"
   mkdir -p "$dir"
   if [ "${3:-}" = ignores ]; then
@@ -9682,7 +9682,7 @@ JSON
 case_ "a run still alive on the pass after its kill is stuck, says so once each way, and clears when it goes"
 stuck_fixture
 jq -n '{reasons: [], creative: false, tasks: [{number: 8, title: "T", reasons: ["r"]}], ready: 9, readyCount: 1, chores: []}' >"$DEV_TRIGGERS"
-fake_run dev/runs/13 $((3 * 3600)) ignores
+live_run dev/runs/13 $((3 * 3600)) ignores
 on_task 13 dev/runs/13
 dispatch_dev
 [ -e "$A_TEAM_STATE/demo/dev/stuck" ] && fail "stuck on the pass that sent the kill"
@@ -9703,7 +9703,7 @@ same "one clear line" 1 "$(logged "demo dev: run $FAKE no longer stuck")"
 
 case_ "a run that stops when told never warns"
 stuck_fixture
-fake_run dev/runs/13 $((3 * 3600))
+live_run dev/runs/13 $((3 * 3600))
 dispatch_dev
 wait "$FAKE" 2>/dev/null
 dispatch_dev
@@ -9713,7 +9713,7 @@ same "no warning" 0 "$(logged 'stuck')"
 case_ "a closed task warns only after 30 minutes, on its record's say, and a run inside its limit on an open one never"
 stuck_fixture
 jq -n '{reasons: [], creative: false, tasks: [], ready: 9, readyCount: 4, chores: []}' >"$DEV_TRIGGERS"
-fake_run dev/runs/516 3600
+live_run dev/runs/516 3600
 on_task 516 dev/runs/516
 closed_item 516 10
 dispatch_dev
@@ -9736,7 +9736,7 @@ end_run "$FAKE"
 
 case_ "a run that came to a card already closed gets its 30 minutes from when it started"
 stuck_fixture
-fake_run lead 60
+live_run lead 60
 jq -n '{number: 40}' >"$A_TEAM_STATE/demo/lead/card"
 closed_item 40 5000
 dispatch_dev
@@ -9745,7 +9745,7 @@ end_run "$FAKE"
 
 case_ "a Lead run on a closed card is stuck; one on no card only by its limit"
 stuck_fixture
-fake_run lead 3600
+live_run lead 3600
 jq -n '{number: 40}' >"$A_TEAM_STATE/demo/lead/card"
 closed_item 40 45
 jq -n '{reasons: ["one", "two"], creative: false}' >"$LEAD_TRIGGERS"
@@ -9760,7 +9760,7 @@ end_run "$FAKE"
 case_ "a Reviewer's waiting PRs leave out the one it's on"
 stuck_fixture
 jq -n '{reasons: [], creative: false, tasks: [{number: 7, title: "T", reasons: []}, {number: 8, title: "T", reasons: []}, {number: 516, title: "T", reasons: []}], ready: null, chores: []}' >"$REVIEWER_TRIGGERS"
-fake_run reviewer/runs/516 3600
+live_run reviewer/runs/516 3600
 on_task 516 reviewer/runs/516
 closed_item 516 45
 dispatch_dev
@@ -9770,7 +9770,7 @@ end_run "$FAKE"
 
 case_ "no such task, or a record that can't be read, is no warning"
 stuck_fixture
-fake_run dev/runs/516 3600
+live_run dev/runs/516 3600
 on_task 516 dev/runs/516
 dispatch_dev
 same "no such task" 0 "$(logged 'stuck')"
@@ -9782,7 +9782,7 @@ end_run "$FAKE"
 case_ "a held or over-budget role still gets checked"
 stuck_fixture
 jq '.dispatch.hold = ["dev"]' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
-fake_run dev/runs/13 $((3 * 3600)) ignores
+live_run dev/runs/13 $((3 * 3600)) ignores
 dispatch_dev
 dispatch_dev
 same "held" 1 "$(logged 'demo dev: run .* is stuck')"
@@ -9790,7 +9790,7 @@ end_run "$FAKE"
 stuck_fixture
 jq '.dispatch.budget = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 history_db "INSERT INTO runs (team, role, pid, log, started, ended, cost) VALUES ('demo', 'lead', 1, 'x', '$(ago 5)', '$(ago 1)', 5);" >/dev/null
-fake_run dev/runs/13 $((3 * 3600)) ignores
+live_run dev/runs/13 $((3 * 3600)) ignores
 dispatch_dev
 dispatch_dev
 same "over budget" 1 "$(logged 'demo dev: run .* is stuck')"
@@ -9800,9 +9800,9 @@ case_ "status has a line for each of two stuck runs, oldest first, and counts th
 stuck_fixture
 jq '.wip.devs = 3' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 jq -n '{reasons: [], creative: false, tasks: [], ready: null, readyCount: 0, chores: []}' >"$DEV_TRIGGERS"
-fake_run dev/runs/13 $((5 * 3600)) ignores
+live_run dev/runs/13 $((5 * 3600)) ignores
 first=$FAKE
-fake_run dev/runs/14 $((3 * 3600)) ignores
+live_run dev/runs/14 $((3 * 3600)) ignores
 second=$FAKE
 dispatch_dev
 dispatch_dev
@@ -9814,7 +9814,7 @@ end_run "$second"
 
 case_ "a marker shows nothing once its run has gone or its pid is another process's, paused team or not"
 stuck_fixture
-fake_run dev/runs/13 $((3 * 3600)) ignores
+live_run dev/runs/13 $((3 * 3600)) ignores
 dispatch_dev
 dispatch_dev
 same "stuck" 1 "$(status_stuck | grep -c .)"
@@ -9837,7 +9837,7 @@ same "its run gone, in a team no pass reaches" "" "$(status_stuck)"
 
 case_ "--dry-run keeps the stuck state to its own dry- files"
 stuck_fixture
-fake_run dev/runs/13 $((3 * 3600)) ignores
+live_run dev/runs/13 $((3 * 3600)) ignores
 dispatch_dev --dry-run
 dispatch_dev --dry-run
 [ -s "$A_TEAM_STATE/demo/dev/dry-stuck" ] || fail "no dry-stuck"
