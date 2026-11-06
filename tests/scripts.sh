@@ -6649,7 +6649,7 @@ run stop demo dev
 same "hold" '["dev"]' "$(held)"
 
 case_ "stop leaves alone a process that has since been given the run's pid"
-sleep 30 &
+(exec -a "$WORK/stranger" sleep 30) >/dev/null 2>&1 &
 stranger=$!
 echo "$stranger" >"$A_TEAM_STATE/demo/dev/pid"
 backdate "$A_TEAM_STATE/demo/dev/pid"
@@ -7173,7 +7173,7 @@ same "one run" 1 "$(grep -c '^  #30 Task 30: running 0h00m' "$OUT")"
 stop_runs
 
 case_ "a process given a finished run's pid since takes no slot, isn't killed or in status, and the run's pid file and record end"
-sleep 30 &
+(exec -a "$WORK/stranger" sleep 30) >/dev/null 2>&1 &
 stranger=$!
 echo "$stranger" >"$A_TEAM_STATE/demo/dev/runs/14/pid"
 echo $(($(date +%s) - 3 * 3600)) >"$A_TEAM_STATE/demo/dev/runs/14/last-start"
