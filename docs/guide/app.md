@@ -65,6 +65,14 @@ In a dialog, what you can do to it is a row of buttons at its foot, each with it
 headed with its title, including the ones with no button, like scrolling, selecting and copying.
 `Esc` closes it and puts you back where you were, a half-written comment and its cursor included.
 
+A dialog says what's wrong with what you typed when you confirm, not before, so its confirm button
+is never dimmed for that. A confirm it won't take turns the label of every wrong field red and moves
+you to the first. The foot names the field you're on and how many more there are, like
+`Repo is required  •  2 more to fix`, and follows you as you `Tab` to another. Each mark goes as you
+fix it, and what you typed stays. A refusal about one field that comes later, like a team name
+that's already taken, marks it the same way. Confirming with nothing typed doesn't cancel: only `Esc`
+does. The exception is **Attach image file**, which an empty path just closes.
+
 `Ctrl+E` opens Commands: everything the app can do where you are, with the key for each. Type to
 narrow the list. Letters that start words match first, so `gt` finds **Go to team…**, then names
 that hold the letters anywhere, best match first; `Enter` runs the one at the top. Every key on

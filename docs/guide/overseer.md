@@ -235,4 +235,5 @@ countdown alone. The status bar says what it started, or `Pass done: nothing to 
 **Settings → Overseer** has a field for each column. Put a number and a unit in one, as in `30m`,
 `2h`, `3d` or `2w`, and a card that stays in that column longer has its age drawn in amber. A
 blank field is no limit, and a column without one never highlights. Settings won't keep an entry it
-can't read, and says which column it's in.
+can't read: **Keep** opens this page instead, turns the name of every such column red and moves you to the
+first, and the foot says which column you're on, how to write a limit, and how many more there are.
