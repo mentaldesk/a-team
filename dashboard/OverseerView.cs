@@ -112,6 +112,9 @@ public sealed class OverseerView : View
 
     internal int ScrolledTo => _lanes.Viewport.Y;
 
+    /// <summary>What <paramref name="team"/>'s heading says of its mirror, which its title cuts off where it doesn't fit.</summary>
+    internal string? MirrorNote(string team) => _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null;
+
     internal IReadOnlyList<string> LaneTitles => [.. _laneViews.Select(lane => lane.Title)];
 
     internal const string NothingOnTheBoard = "Nothing on the board";
@@ -212,7 +215,7 @@ public sealed class OverseerView : View
         {
             var team = LaneTeam(lane);
             var heading = Heading(team, state.Busy.TryGetValue(team, out var busy) ? busy : [], Over(team),
-                _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null, state.Stuck.TryGetValue(team, out var stuck) ? stuck : [],
+                MirrorNote(team), state.Stuck.TryGetValue(team, out var stuck) ? stuck : [],
                 state.Stopped.Contains(team));
             lane.Slots = heading.Slots;
             if (lane.Title != heading.Title)

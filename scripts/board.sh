@@ -959,19 +959,44 @@ snapshot() {
     echo "board.sh: couldn't record how much is waiting" >&2
 }
 
+# GitHub fails a whole query that asks for a missing field by name, so this lists them.
 project_raw() {
-  gql "query(\$owner: String!, \$number: Int!, \$field: String!) {
+  gql "query(\$owner: String!, \$number: Int!) {
       $KIND(login: \$owner) { projectV2(number: \$number) { id title
-        field(name: \$field) { ... on ProjectV2SingleSelectField { id options { id name color description } } }
-        rank: field(name: \"$RANK_FIELD\") { ... on ProjectV2Field { id } }
-        theme: field(name: \"$THEME_FIELD\") { ... on ProjectV2Field { id } } } } }" \
-    -F field="$FIELD" "$@"
+        fields(first: 100) { nodes {
+          ... on ProjectV2Field { id name dataType }
+          ... on ProjectV2IterationField { id name dataType }
+          ... on ProjectV2SingleSelectField { id name dataType options { id name color description } } } } } } }"
 }
-
-project_meta() { project_raw --jq ".data.$KIND.projectV2"; }
 
 # The mirror's text fields for the Lead's recommended rank and a pitch's theme.
 RANK_FIELD="Lead rank" THEME_FIELD=Theme
+
+# project_meta: the project, with its Status field as `field`, its text fields as `rank` and `theme`, each null if
+# missing, and as `clash` the names of those two that it has as some other type.
+project_meta() {
+  local raw
+  raw=$(project_raw) || return 1
+  jq -ce --arg kind "$KIND" --arg status "$FIELD" --arg rank "$RANK_FIELD" --arg theme "$THEME_FIELD" '
+    .data[$kind].projectV2 // empty | .fields.nodes as $fields
+    | def named($name): $fields | map(select(.name == $name)) | first;
+      def text($name): named($name) | if .dataType == "TEXT" then . else null end;
+      {id, title, field: (named($status) | if .options then . else null end), rank: text($rank), theme: text($theme),
+       clash: [$rank, $theme | select(. as $name | named($name) != null and text($name) == null)]}' <<<"$raw"
+}
+
+# text_field_name <rank|theme>: what that field is called on the mirror.
+text_field_name() { [ "$1" = rank ] && echo "$RANK_FIELD" || echo "$THEME_FIELD"; }
+
+# field_clash <name>: what's wrong with a project whose own field has that name.
+field_clash() { echo "$OWNER project $NUMBER has a $1 field that isn't text, so a-team can't copy to it: rename that field"; }
+
+# add_text_field <project id> <name>: adds a text field to the project and prints its id.
+add_text_field() {
+  gh api graphql -F project="$1" -f name="$2" -f query='mutation($project: ID!, $name: String!) {
+      createProjectV2Field(input: {projectId: $project, dataType: TEXT, name: $name}) {
+        projectV2Field { ... on ProjectV2Field { id } } } }' --jq .data.createProjectV2Field.projectV2Field.id
+}
 
 # LAGGING: an item whose Status, Priority, Lead rank or theme the mirror doesn't show yet.
 LAGGING="(mirror IS NULL OR mirrored_status IS NOT status OR mirrored_priority IS NOT COALESCE(priority, 'none')
@@ -992,18 +1017,21 @@ board_add() {
   [ -n "$DRY_RUN" ] || { nodes=$(fresh_nodes "[$(jq -Rn --arg id "$2" '$id')]" 2>/dev/null) && reconcile "$nodes"; } || true
 }
 
-# mirror_failed <error>: why the mirror stopped catching up, and when it next tries.
+# mirror_failed <gh's error> [<the board's own reason>]: why the mirror stopped catching up, and when it next tries.
 mirror_failed() {
   local why retry reset
-  if grep -qi 'rate limit' <<<"$1"; then
+  if [ -n "${2:-}" ]; then
+    why="GitHub refused: $2"
+  elif grep -qi 'rate limit' <<<"$1"; then
     why="GitHub rate limit"
     reset=$(gh api rate_limit --jq '[.resources.graphql.reset, .resources.core.reset] | max' 2>/dev/null) || reset=
     [[ $reset =~ ^[0-9]+$ ]] && retry=$(iso "$reset") || retry=
-  elif grep -qiE 'could not resolve|connection|timed? ?out|network|dial tcp|no such host|EOF|HTTP 5[0-9][0-9]' <<<"$1"; then
+  # Every phrase has a space or punctuation, so an owner's login in GitHub's message can't match.
+  elif grep -qiE 'could not resolve host|error connecting|connection (refused|reset|closed|timed out)|internet connection|timed out|i/o timeout|handshake timeout|client\.timeout|deadline exceeded|network is|no route to host|dial tcp|no such host|: EOF|unexpected EOF|HTTP 5[0-9][0-9]' <<<"$1"; then
     why="GitHub unreachable"
   else
     why=$(grep -v '^[[:space:]]*$' <<<"$1" | head -n 1 | sed 's/^gh: //')
-    why=${why:-GitHub refused}
+    why="GitHub refused${why:+: $why}"
   fi
   retry=${retry:-$(iso $(($(date +%s) + 300)))}
   history_sql "UPDATE boards SET failed = $(sql "$why"), retry = $(sql "$retry") WHERE team = $(sql "$TEAM");" >/dev/null
@@ -1012,7 +1040,7 @@ mirror_failed() {
 # mirror_push [<n>]: copies #n, or once any retry is due up to 20 items, to the mirror; a failure is kept for its lane.
 mirror_push() {
   [ -n "$MIRROR" ] && [ -z "$DRY_RUN" ] || return 0
-  local rows meta pfield err n node status priority mirror shown ranked type option id key value was field
+  local rows meta pfield err own='' n node status priority mirror shown ranked type option id key value was field name
   if [ -z "${1:-}" ]; then
     [ "$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $(sql "$TEAM") AND retry > $(sql "$(date -u +%FT%TZ)");")" -eq 0 ] ||
       return 0
@@ -1026,7 +1054,7 @@ mirror_push() {
   [ -n "$rows" ] || { [ -n "${1:-}" ] || history_sql "UPDATE boards SET failed = NULL, retry = NULL WHERE team = $(sql "$TEAM");" >/dev/null; return 0; }
   err=$(mktemp)
   if ! meta=$(project_meta 2>"$err") || ! jq -e '.field.id' <<<"$meta" >/dev/null 2>&1; then
-    mirror_failed "$(cat "$err")${meta:+$'\n'no single-select field '$FIELD' on $OWNER project $NUMBER}"
+    mirror_failed "$(cat "$err")" "${meta:+no single-select field '$FIELD' on $OWNER project $NUMBER}"
     rm -f "$err"
     return 0
   fi
@@ -1045,7 +1073,7 @@ mirror_push() {
       if [ "$status" != None ]; then
         option=$(jq -r --arg o "$(jq -r --arg s "$status" '.project.statusMap[$s] // $s' "$CONFIG")" \
           '.field.options[] | select(.name == $o) | .id' <<<"$meta")
-        [ -n "$option" ] || { echo "no '$status' option on $OWNER project $NUMBER's $FIELD" >"$err"; break; }
+        [ -n "$option" ] || { own="no '$status' option on $OWNER project $NUMBER's $FIELD"; break; }
         gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$mirror" -F field="$(jq -r .field.id <<<"$meta")" \
           -f option="$option" -f query='
           mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
@@ -1068,7 +1096,7 @@ mirror_push() {
                 clientMutationId } }' >/dev/null 2>"$err" || break
         else
           option=$(jq -r --arg v "$priority" '.options[] | select(.name == $v) | .id' <<<"$pfield")
-          [ -n "$option" ] || { echo "no '$priority' option on $OWNER's $PRIORITY field" >"$err"; break; }
+          [ -n "$option" ] || { own="no '$priority' option on $OWNER's $PRIORITY field"; break; }
           gh api graphql -F issue="$node" -F field="$(jq -r .id <<<"$pfield")" -F option="$option" -f query='
             mutation($issue: ID!, $field: ID!, $option: ID!) {
               updateIssueFieldValue(input: {issueId: $issue, issueField: {fieldId: $field,
@@ -1084,11 +1112,13 @@ mirror_push() {
       field=$(jq -r --arg k "$key" '.[$k].id // empty' <<<"$meta")
       if [ -z "$field" ]; then
         [ -n "$value" ] || { history_sql "UPDATE board SET mirrored_$key = '' WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null; continue; }
-        field=$(gh api graphql -F project="$(jq -r .id <<<"$meta")" -f name="$([ "$key" = rank ] && echo "$RANK_FIELD" || echo "$THEME_FIELD")" \
-          -f query='mutation($project: ID!, $name: String!) {
-            createProjectV2Field(input: {projectId: $project, dataType: TEXT, name: $name}) {
-              projectV2Field { ... on ProjectV2Field { id } } } }' --jq .data.createProjectV2Field.projectV2Field.id 2>"$err") || break
-        [ -n "$field" ] && [ "$field" != null ] || { echo "couldn't add a $key field to $OWNER project $NUMBER" >"$err"; break; }
+        name=$(text_field_name "$key")
+        if jq -e --arg name "$name" '.clash | index($name)' <<<"$meta" >/dev/null; then
+          own=$(field_clash "$name")
+          break
+        fi
+        field=$(add_text_field "$(jq -r .id <<<"$meta")" "$name" 2>"$err") || break
+        [ -n "$field" ] && [ "$field" != null ] || { own="couldn't add a $key field to $OWNER project $NUMBER"; break; }
         meta=$(jq -c --arg k "$key" --arg id "$field" '.[$k] = {id: $id}' <<<"$meta")
       fi
       if [ -n "$value" ]; then
@@ -1104,12 +1134,12 @@ mirror_push() {
       fi
       history_sql "UPDATE board SET mirrored_$key = $(sql "$value") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
     done
-    [ ! -s "$err" ] || break
+    [ ! -s "$err" ] && [ -z "$own" ] || break
     : >"$err"
   done <<<"$rows"
-  if [ -s "$err" ]; then
-    mirror_failed "$(cat "$err")"
-  elif [ "$(history_sql "SELECT COUNT(*) FROM board WHERE team = $(sql "$TEAM") AND node != '' AND $LAGGING;")" -eq 0 ]; then
+  if [ -s "$err" ] || [ -n "$own" ]; then
+    mirror_failed "$(cat "$err")" "$own"
+  elif [ -z "${1:-}" ] || [ "$(history_sql "SELECT COUNT(*) FROM board WHERE team = $(sql "$TEAM") AND node != '' AND $LAGGING;")" -eq 0 ]; then
     history_sql "UPDATE boards SET failed = NULL, retry = NULL WHERE team = $(sql "$TEAM");" >/dev/null
   fi
   rm -f "$err"
@@ -4074,17 +4104,21 @@ case "$CMD" in
           note release "release is $release, but $REPO has no release.yml workflow for it to run" ;;
       *) note release "release is '$release': expected never, daily or continuous" ;;
     esac
+    read_err=$(mktemp)
     if [ "$(jq -r '.mirror != false' "$CONFIG")" = false ]; then
       echo "mirror: none, so the board is only on this machine"
     elif [ -z "$NUMBER" ]; then
       note project "$TEAM.json names no GitHub Project to copy the board to: pick one, or None, under Mirror in its settings"
-    elif ! meta=$({ project_raw 2>/dev/null || true; } | jq -ce --arg k "$KIND" '.data[$k].projectV2 // empty' 2>/dev/null); then
-      reason=$(project_raw 2>&1 >/dev/null | tail -n 1) || true
+    elif ! meta=$(project_meta 2>"$read_err"); then
+      reason=$(tail -n 1 "$read_err")
       problem project "can't read $OWNER project $NUMBER: ${reason#gh: }"
       unreachable=1
     elif ! jq -e '.field.id' <<<"$meta" >/dev/null 2>&1; then
       problem project "no single-select field '$FIELD' on $OWNER project $NUMBER"
     else
+      while IFS= read -r name; do
+        note fields "$(field_clash "$name")"
+      done < <(jq -r '.clash[]' <<<"$meta")
       missing=()
       for s in "${STATES[@]}"; do
         option=$(jq -r --arg s "$s" '.project.statusMap[$s] // $s' "$CONFIG")
@@ -4105,6 +4139,7 @@ case "$CMD" in
         fi
       fi
     fi
+    rm -f "$read_err"
     if [ -n "$MIRROR" ] && [ -z "$unreachable" ] &&
       enabled=$(gql "query(\$owner: String!, \$number: Int!) { $KIND(login: \$owner) { projectV2(number: \$number) {
           workflows(first: 50) { nodes { name enabled } } } } }" \
@@ -4163,8 +4198,11 @@ case "$CMD" in
     [ -n "$MIRROR" ] || [ "$(jq -r '.mirror != false' "$CONFIG")" = false ] ||
       die "$TEAM.json names no GitHub Project: pick one, or None, under Mirror in its settings"
     if [ -n "$MIRROR" ]; then
-      field=$(project_meta | jq '.field // empty')
+      meta=$(project_meta)
+      field=$(jq '.field // empty' <<<"$meta")
       jq -e '.id' <<<"$field" >/dev/null 2>&1 || die "no single-select field '$FIELD' on $OWNER project $NUMBER"
+      clash=$(jq -r '.clash[0] // empty' <<<"$meta")
+      [ -z "$clash" ] || die "$(field_clash "$clash")"
       pages=$(board_pages "query(\$owner: String!, \$number: Int!, \$field: String!, \$endCursor: String) {
           $KIND(login: \$owner) { projectV2(number: \$number) {
             items(first: 100, after: \$endCursor) { totalCount pageInfo { hasNextPage endCursor }
@@ -4199,6 +4237,16 @@ case "$CMD" in
           gh api graphql --input - >/dev/null
         echo "Status options set on $OWNER project $NUMBER"
       fi
+      for key in rank theme; do
+        jq -e --arg k "$key" '.[$k].id' <<<"$meta" >/dev/null && continue
+        name=$(text_field_name "$key")
+        if $dry_run; then
+          echo "  add   field $name"
+        else
+          add_text_field "$(jq -r .id <<<"$meta")" "$name" >/dev/null
+          echo "Field $name added to $OWNER project $NUMBER"
+        fi
+      done
     fi
     existing=$(gh label list -R "$REPO" --limit 500 --json name,color,description)
     while IFS='|' read -r name color description _; do

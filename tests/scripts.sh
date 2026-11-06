@@ -186,9 +186,9 @@ gh_items() {
     {id: "OP_medium", name: "Medium"}, {id: "OP_low", name: "Low"}]}]}}}}' >"$FIELDS"
   echo '[]' >"$EMPTY"
   META="$BIN/meta.json"
-  jq -n '{data: {organization: {projectV2: {id: "PVT_1", title: "demo", field: {id: "PVTSSF_status", options: [
+  jq -n '{data: {organization: {projectV2: {id: "PVT_1", title: "demo", fields: {nodes: [{id: "PVTSSF_status", name: "Status", options: [
     {id: "OPT_exploring", name: "Exploring"}, {id: "OPT_pitched", name: "Pitched"},
-    {id: "OPT_approved", name: "Approved"}, {id: "OPT_done", name: "Done"}]}}}}}' >"$META"
+    {id: "OPT_approved", name: "Approved"}, {id: "OPT_done", name: "Done"}]}]}}}}}' >"$META"
   gh_thread </dev/null
   gh_recent </dev/null
   RUNS="$BIN/runs.json"
@@ -272,7 +272,8 @@ case " \$* " in
   *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
   *"pr view"*) page="$BUMP_VIEW" ;;
   *"pr list"*"app/demo-app"*) echo "\$*" >>"$UPSTREAM_CALLS"; page="$UPSTREAM" ;;
-  *ProjectV2SingleSelectField*) page="$META" ;;
+  *ProjectV2SingleSelectField*) [ ! -e "$BIN/project-read-fails" ] || { cat "$BIN/project-read-fails" >&2; exit 1; }
+                                page="$META" ;;
   *BoardRefresh*) jq --argjson off "\$(cat "$BIN/off-mirror" 2>/dev/null || echo '[]')" '{data: {nodes: [.data.organization.projectV2.items.nodes[]
                         | .content + {projectItems: {nodes: (if .content.number | IN(\$off[]) then [] else [
                         {id, project: {number: 1, owner: {login: "mentaldesk"}}, fieldValueByName}] end)}}]}}' "$ITEMS"; exit 0 ;;
@@ -1421,6 +1422,7 @@ JSON
 gh_items <<'ITEMS'
 Done 99 Already merged
 ITEMS
+jq '.data.organization.projectV2.fields.nodes[0].name = "Work state"' "$META" >"$META.new" && mv "$META.new" "$META"
 waiting
 same "exit" 0 "$STATUS"
 
@@ -1815,7 +1817,7 @@ grep -q "can't close #9 (gh: Resource not accessible by integration (HTTP 403))"
 rm "$BIN/close-fails"
 
 case_ "a Status option whose id is all digits is sent as a string"
-jq '.data.organization.projectV2.field.options |= map(if .name == "Done" then .id = "98236657" else . end)' \
+jq '.data.organization.projectV2.fields.nodes[0].options |= map(if .name == "Done" then .id = "98236657" else . end)' \
   "$META" >"$META.new" && mv "$META.new" "$META"
 : >"$WRITES"
 run board demo decline you 9 "$WORK/reason"
@@ -1840,7 +1842,7 @@ Exploring 8 A pitch still being drafted
 Idea 9 An Idea
 Ready 10 A task
 ITEMS
-jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_thread <<THREAD
 comment $(ago 1) reviewer 0 What would this cost to run?
 THREAD
@@ -2542,7 +2544,7 @@ same "fetched once" 1 "$(grep -c RAW "$WRITES")"
 unset TMPDIR
 
 case_ "add you puts your own issue on the board as an Idea, with no label"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_child 41 - - "It always starts on the first team."
 run board demo add you 41 Idea
 same "exit" 0 "$STATUS"
@@ -3029,7 +3031,7 @@ same "labels" "(dry run) created label pitch" "$(grep 'created label' "$OUT")"
 
 case_ "setup drops the Todo and In Progress GitHub made, unless an item has one"
 cp "$META" "$BIN/meta.saved"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_todo", name: "Todo"}, {id: "OPT_ip", name: "In Progress"}]' \
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_todo", name: "Todo"}, {id: "OPT_ip", name: "In Progress"}]' \
   "$BIN/meta.saved" >"$META"
 jq '.data.organization.projectV2.items.nodes[0].fieldValueByName.name = "In Progress"' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
 run board --dry-run demo setup
@@ -3046,10 +3048,62 @@ listed=$(cat "$OUT")
 run board demo setup
 same "exit" 0 "$STATUS"
 [ -n "$listed" ] || fail "dry run: nothing listed"
-same "options" "$(sed -En 's/^  (keep|add ) {2}//p' <<<"$listed")" \
+same "options" "$(grep -v '^  add   field ' <<<"$listed" | sed -En 's/^  (keep|add ) {2}//p')" \
   "$(jq -r '.variables.input.singleSelectOptions[].name' "$BIN/mutation.json")"
 same "labels" "$(sed -n 's/^(dry run) created label //p' <<<"$listed")" \
   "$(sed -n 's/^label create \([^ ]*\) .*/\1/p' "$WRITES")"
+
+case_ "setup adds whichever of the Lead rank and Theme fields the project lacks, and its dry run lists them"
+add_field() { jq --arg name "$1" '.data.organization.projectV2.fields.nodes += [{id: "PVTF_\($name)", name: $name, dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"; }
+listed_fields() { sed -n 's/^  add   field //p' "$OUT" | paste -sd, -; }
+added_fields() { sed -n 's/^FIELD .*name=\(.*\) FIELD -f.*/\1/p' "$WRITES" | paste -sd, -; }
+run board --dry-run demo setup
+same "neither: listed" "Lead rank,Theme" "$(listed_fields)"
+: >"$WRITES"
+run board demo setup
+same "exit" 0 "$STATUS"
+same "neither: added" "Lead rank,Theme" "$(added_fields)"
+cp "$META" "$BIN/meta.saved"
+add_field Theme
+run board --dry-run demo setup
+same "only Theme: listed" "Lead rank" "$(listed_fields)"
+: >"$WRITES"
+run board demo setup
+same "only Theme: added" "Lead rank" "$(added_fields)"
+add_field "Lead rank"
+run board --dry-run demo setup
+same "both: listed" "" "$(listed_fields)"
+: >"$WRITES"
+run board demo setup
+same "exit" 0 "$STATUS"
+same "both: added" "" "$(added_fields)"
+mv "$BIN/meta.saved" "$META"
+
+case_ "setup and check name a Lead rank or Theme field of the project's own, before setup changes anything"
+cp "$META" "$BIN/meta.saved"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTSSF_theme", name: "Theme", dataType: "SINGLE_SELECT", options: []},
+    {id: "PVTF_rank", name: "Lead rank", dataType: "TEXT"}]' "$BIN/meta.saved" >"$META"
+clash="mentaldesk project 1 has a Theme field that isn't text, so a-team can't copy to it: rename that field"
+rm -f "$BIN/mutation.json"
+: >"$WRITES"
+run board demo setup
+same "exit" 1 "$STATUS"
+grep -qF "$clash" "$ERR" || fail "setup: nothing about the clash in '$(cat "$ERR")'"
+[ ! -e "$BIN/mutation.json" ] || fail "setup: Status options changed"
+same "writes" "" "$(cat "$WRITES")"
+run board --dry-run demo setup
+same "dry run: exit" 1 "$STATUS"
+grep -qF "$clash" "$ERR" || fail "dry run: nothing about the clash in '$(cat "$ERR")'"
+run board demo check
+grep -qF "fields    $clash" "$OUT" || fail "check: nothing about the clash in '$(cat "$OUT")'"
+mv "$BIN/meta.saved" "$META"
+
+case_ "setup names GitHub's reason when it can't read the project"
+echo "gh: Could not resolve to a ProjectV2 with the number 1." >"$BIN/project-read-fails"
+run board demo setup
+failed "setup"
+grep -qF "Could not resolve to a ProjectV2 with the number 1." "$ERR" || fail "setup: '$(cat "$ERR")'"
+rm "$BIN/project-read-fails"
 
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'
@@ -3196,7 +3250,7 @@ Pitched 12 A pitch in front of the stakeholder
 Idea 13 An idea
 Ready 40 A task
 ITEMS
-jq '.data.organization.projectV2.field.options += [{id: "OPT_ready", name: "Ready"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_ready", name: "Ready"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 printf '## Context\n\nFor #10.\n' >"$WORK/task"
 for pitch in 10 11; do
   gh_child 77 - -
@@ -3381,7 +3435,7 @@ case_ "the Dev puts a follow-up it opened on the board as an Idea, without the L
 gh_items <<'ITEMS'
 In_progress 12 A task
 ITEMS
-jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_child 41 - - "Follow-up from #12.
 
 <!-- a-team:dev -->"
@@ -3540,7 +3594,7 @@ echo '[]' >"$UPDATES"
 
 # A project whose Status field has the options a claim moves through.
 claimable() {
-  jq '.data.organization.projectV2.field.options += [{id: "OPT_ready", name: "Ready"}, {id: "OPT_progress", name: "In progress"}]' \
+  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_ready", name: "Ready"}, {id: "OPT_progress", name: "In progress"}]' \
     "$META" >"$META.new" && mv "$META.new" "$META"
 }
 
@@ -3677,7 +3731,7 @@ add_card() {
 # statuses: each card's number and Status, as the last command printed them.
 statuses() { jq -c 'map([.number, .status])' "$OUT"; }
 every_status() {
-  jq '.data.organization.projectV2.field.options = ([["Idea", "idea"], ["Exploring", "exploring"], ["Pitched", "pitched"],
+  jq '.data.organization.projectV2.fields.nodes[0].options = ([["Idea", "idea"], ["Exploring", "exploring"], ["Pitched", "pitched"],
       ["Approved", "approved"], ["Building", "building"], ["Ready", "ready"], ["In progress", "progress"],
       ["In review", "review"], ["Done", "done"]] | map({id: "OPT_\(.[1])", name: .[0]}))' "$META" >"$META.new" && mv "$META.new" "$META"
 }
@@ -3944,6 +3998,107 @@ A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
 same "caught up" '[]' "$(jq -c '[.[] | select(.number == null)]' "$OUT")"
 grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "catch-up: mirror not written in '$(cat "$WRITES")'"
+
+case_ "the lane says GitHub unreachable only when it was, and otherwise gives GitHub's own reason"
+mirror_says() {
+  gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+  claimable
+  printf '%s\n' "$1" >"$BIN/project-read-fails"
+  run board demo claim dev
+  same "exit" 0 "$STATUS"
+  A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+  same "$1" "$2" "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+  rm "$BIN/project-read-fails"
+}
+mirror_says "gh: Could not resolve to a ProjectV2 with the number 1." "GitHub refused: Could not resolve to a ProjectV2 with the number 1."
+mirror_says "gh: Resource not accessible by integration" "GitHub refused: Resource not accessible by integration"
+mirror_says "gh: Bad credentials (HTTP 401)" "GitHub refused: Bad credentials (HTTP 401)"
+mirror_says "Could not resolve host: api.github.com" "GitHub unreachable"
+mirror_says "error connecting to api.github.com" "GitHub unreachable"
+mirror_says 'Post "https://api.github.com/graphql": dial tcp: lookup api.github.com: no such host' "GitHub unreachable"
+mirror_says "gh: Post https://api.github.com/graphql: net/http: request canceled (Client.Timeout exceeded): timeout" "GitHub unreachable"
+mirror_says "gh: Bad Gateway (HTTP 502)" "GitHub unreachable"
+mirror_says 'Post "https://api.github.com/graphql": EOF' "GitHub unreachable"
+mirror_says "gh: Could not resolve to an Organization with the login of 'geoff-network-timeout'." \
+  "GitHub refused: Could not resolve to an Organization with the login of 'geoff-network-timeout'."
+
+case_ "a project with no Status field refuses, and says so"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+jq '.data.organization.projectV2.fields.nodes = []' "$META" >"$META.new" && mv "$META.new" "$META"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "reason" "GitHub refused: no single-select field 'Status' on mentaldesk project 1" \
+  "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+
+case_ "the board's own reasons are refusals, whatever the owner is called"
+cp "$TEAM" "$WORK/team.saved"
+jq '.project.owner = "acme-network-timeout"' "$WORK/team.saved" >"$TEAM"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+jq '.data.organization.projectV2.fields.nodes = []' "$META" >"$META.new" && mv "$META.new" "$META"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "reason" "GitHub refused: no single-select field 'Status' on acme-network-timeout project 1" \
+  "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+mv "$WORK/team.saved" "$TEAM"
+
+case_ "a sync on a project with a Theme of its own says so, and makes no field of that name"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo claim dev
+same "exit" 0 "$STATUS"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_object('theme', 'Good UX') WHERE team = 'demo' AND item = 13;"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTSSF_theme", name: "Theme", dataType: "SINGLE_SELECT", options: []}]' "$META" >"$META.new" && mv "$META.new" "$META"
+: >"$WRITES"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+grep -q '^FIELD ' "$WRITES" && fail "made a field: '$(cat "$WRITES")'"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "reason" "GitHub refused: mentaldesk project 1 has a Theme field that isn't text, so a-team can't copy to it: rename that field" \
+  "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+
+case_ "a sync on a project missing a field copies, and makes the field only once it has a value for it"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+: >"$WRITES"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "status not copied: '$(cat "$WRITES")'"
+grep -q '^FIELD ' "$WRITES" && fail "made a field with nothing to put in it: '$(cat "$WRITES")'"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_object('rank', 'High', 'theme', 'Good UX') WHERE team = 'demo' AND item = 13;"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme", dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+: >"$WRITES"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+same "only the one missing" 1 "$(grep -c '^FIELD ' "$WRITES")"
+grep -q 'FIELD .*name=Lead rank' "$WRITES" || fail "no Lead rank field: '$(cat "$WRITES")'"
+grep -q 'field=PVTF_new -f text=High' "$WRITES" || fail "rank not copied: '$(cat "$WRITES")'"
+grep -q 'field=PVTF_theme -f text=Good UX' "$WRITES" || fail "theme not copied: '$(cat "$WRITES")'"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "lane" '[]' "$(jq -c '[.[] | select(.number == null)]' "$OUT")"
+
+case_ "a catch-up that copied a batch stops saying it failed, though more items are still to come"
+gh_items <<ITEMS
+$(for i in $(seq 100 124); do echo "Ready $i Task $i"; done)
+ITEMS
+claimable
+A_TEAM_BOARD_READ_EVERY=3600 run board demo wip
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_object('rank', 'High') WHERE team = 'demo';
+  UPDATE boards SET failed = 'GitHub unreachable', retry = '2000-01-01T00:00:00Z' WHERE team = 'demo';"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "lag" '{"behind":5,"failed":null,"retry":null}' "$(jq -c '.[] | select(.number == null) | .mirror' "$OUT")"
 
 case_ "a card moved on the mirror is put back, to and from every status, and its history says a change there isn't a move"
 gh_items <<'ITEMS'
@@ -4719,7 +4874,7 @@ ITEMS
 docs_pr 9
 jq '(.data.organization.projectV2.items.nodes[] | select(.content.number == 9)) |= (.fieldValueByName = null)' \
   "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
   "$META" >"$META.new" && mv "$META.new" "$META"
 jq -n '{node_id: "PR_9", number: 9, state: "open", pull_request: {},
         body: "- Help → Guide covers the Customer lead (#48)\n\n<!-- a-team:customer -->"}' >"$ISSUE"
@@ -4782,7 +4937,7 @@ same "posted" "" "$(cat "$POSTED")"
 
 case_ "accepting the docs PR squash-merges it, deletes its branch and moves it to Done"
 : >"$WRITES"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 echo '{"head": {"sha": "deadbeefcafe", "ref": "docs/customer-lead", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
 run board demo accept you 9
 same "exit" 0 "$STATUS"
@@ -4818,7 +4973,7 @@ dependabot_pr() {
     | del(.issueDependenciesSummary, .issueFieldValues)'
 }
 reviewable() {
-  jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
+  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
     "$META" >"$META.new" && mv "$META.new" "$META"
 }
 
@@ -5433,7 +5588,7 @@ run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" "[\"no user docs yet: propose where they'll live\"]" "$(jq -c .reasons "$OUT")"
 [ -e "$AUDITED" ] && fail "the audit isn't due as soon as the docs page appears"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
   mv "$META.new" "$META"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
 run board demo add customer 15 "In review"
@@ -5507,7 +5662,7 @@ same "writes" "" "$(cat "$WRITES")"
 
 case_ "a docs PR goes into In review beside a leftover proposal once the docs page is in the repo"
 rm "$WORK/no-docs"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
   mv "$META.new" "$META"
 jq -n '{node_id: "PR_15", number: 15, state: "open", draft: false, body: "<!-- a-team:customer -->"}' >"$PULL"
 run board demo add customer 15 "In review"
@@ -5580,7 +5735,7 @@ run board demo triggers customer
 same "reasons" '["pitch #16 is done: check the docs cover what it shipped","weekly docs audit: check the docs as a whole"]' \
   "$(jq -c .reasons "$OUT")"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
   mv "$META.new" "$META"
 run board demo add customer 15 "In review"
 same "docs PR" 0 "$STATUS"
@@ -5604,7 +5759,7 @@ jq '.wip = {pitched: 2, exploring: 4, ideas: 2}' "$TEAM" >"$TEAM.new" && mv "$TE
 gh_items <<'ITEMS'
 Idea 41 I can't find how to pause one role
 ITEMS
-jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 customer_issue 41 "**Evidence**: the guide's Dashboard page doesn't say.
 
 <!-- a-team:customer -->"
@@ -6012,7 +6167,7 @@ document_pitch() {
 ${2:-Pitched} $1 Vision review: themes 1 and 5 have run dry
 ITEMS
   edit_item "$1" '.__typename = "PullRequest" | .labels.nodes = [{name: "pitch"}] | del(.issueDependenciesSummary, .issueFieldValues)'
-  jq '.data.organization.projectV2.field.options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
   echo '{"head": {"sha": "deadbeefcafe", "ref": "a-team/vision", "repo": {"full_name": "mentaldesk/demo"}}, "draft": true}' >"$PULL"
 }
 
@@ -6134,7 +6289,7 @@ grep -q 'labels/theme%3A%20Think%20bigger' "$BIN/unlabelled" || fail "old label 
 same "history" "lead theme: Consistently good UX" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
 
 case_ "none takes the theme off, on the mirror too"
-jq '.data.organization.projectV2.theme = {id: "PVTF_theme"}' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme", dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 : >"$WRITES"
 KEEP_BOARD=1 run board demo theme lead 81 none
 same "exit" 0 "$STATUS"
@@ -8252,8 +8407,8 @@ done
 # and the project's enabled workflows in workflows.json.
 mkdir -p "$APP_BIN/board"
 board_options() {
-  jq -n --args '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options:
-    ($ARGS.positional | map({id: ., name: .}))}}}}}' "$@" >"$APP_BIN/board/meta.json"
+  jq -n --args '{data: {organization: {projectV2: {id: "PVT_1", fields: {nodes: [{id: "PVTSSF_status", name: "Status", options:
+    ($ARGS.positional | map({id: ., name: .}))}]}}}}}' "$@" >"$APP_BIN/board/meta.json"
 }
 board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
 board_labels() { jq -n --args '$ARGS.positional | map({name: .})' "$@" >"$APP_BIN/board/labels.json"; }
@@ -8281,8 +8436,8 @@ case " \$* " in
   *ProjectV2SingleSelectField*)
     [ -z "\${NO_PROJECT:-}" ] || { echo '{"data": {"organization": {"projectV2": null}}}'
       echo "gh: Could not resolve to a ProjectV2 with the number 1." >&2; exit 1; }
-    [ -z "\${NO_FIELD:-}" ] || { echo '{"data": {"organization": {"projectV2": {"id": "PVT_1", "field": null}}}}'
-      echo "gh: Could not resolve to a Unions::ProjectV2FieldConfiguration with the name Status" >&2; exit 1; }
+    [ -z "\${NO_FIELD:-}" ] || { echo '{"data": {"organization": {"projectV2": {"id": "PVT_1", "fields": {"nodes": []}}}}}'; exit 0; }
+    [ -z "\${PARTIAL_READ:-}" ] || { cat "$APP_BIN/board/meta.json"; echo "gh: Resource not accessible by integration" >&2; exit 1; }
     page="$APP_BIN/board/meta.json" ;;
   *"items(first: 1) { totalCount }"*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
                 page="$APP_BIN/board/items.json" ;;
@@ -8356,6 +8511,8 @@ says 1 "project   can't read mentaldesk project 1: Could not resolve to a Projec
 grep -q '^identity: demo-app\[bot\] · token ok · Priority readable' "$OUT" || fail "no project: the App's view in '$(cat "$OUT")'"
 NO_FIELD=1 checked
 says 1 "project   no single-select field 'Status' on mentaldesk project 1"
+PARTIAL_READ=1 checked
+says 1 "project   can't read mentaldesk project 1: Resource not accessible by integration"
 board_options Idea Approved Building Ready "In progress" "In review" Done
 checked
 says 1 "status    2 of 9 options missing from 'Status': Exploring, Pitched"
@@ -8644,7 +8801,7 @@ In_review 8 A task in front of me
 Idea 6 An idea
 ITEMS
 claimable
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 run board demo move dev 12 "In progress"
 recorded "move" 12 "dev Ready → In progress"
 run board demo claim dev 12
