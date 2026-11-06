@@ -40,16 +40,19 @@ and nothing else.
 
    ```
    ## Needs changing
-   - <file>:<line> <what's wrong>, and why it matters.
+   - <file>:<line> <what's wrong, for a wrong result naming the case: when X, it does Y>, and why it matters.
 
    ## Worth considering
    - <what could be better>, which needn't hold the PR up.
    ```
 
-   **Needs changing** is for what you'd hold the PR for: a bug, a missed acceptance criterion, a
-   test that doesn't test the change. Everything else is **Worth considering**. If nothing needs
-   changing, the review opens with the one line `Nothing needs changing.`, followed by any **Worth
-   considering** section. One point per list item, each a line or two.
+   **Needs changing** is for what you'd hold the PR for: a missed acceptance criterion, a test that
+   doesn't test the change, and any wrong result in code the PR changes that you can name a case
+   for, whether or not the task mentions that case. "This could fail", with no case, isn't one.
+   **Worth considering** holds only what's optional: other approaches, naming and readability, and
+   problems in code the PR didn't touch. If nothing needs changing, the review opens with the one
+   line `Nothing needs changing.`, followed by any **Worth considering** section; a review that
+   names a wrong result never opens with it. One point per list item, each a line or two.
 5. `a-team board {{team}} review reviewer <pr> <file>`. It posts the review once; a second is
    refused. The Dev acts on it next.
 

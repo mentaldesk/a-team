@@ -97,9 +97,9 @@ turns the label of every wrong field red and moves you to the first. The foot na
 
 **Mirror** is the GitHub Project a-team copies the board to, so you can see it on GitHub. A-Team keeps the
 board itself, so the team works with *None* and needs no Project at all, but an issue opened on GitHub then
-never reaches Triage by itself: open ideas with [**New idea**](work.md#adding-an-idea) instead. `b` has no board to open. *A new project, named after
-the team* makes one when you save, sets it up and copies the board onto it. The Project only shows the board: cards
-are moved in the app. Moving a card on the Project isn't a move, so it goes back to the app's Status on the next sync,
+never reaches Triage by itself: open ideas with [**New idea**](work.md#adding-an-idea) instead. A closed issue reopened on GitHub stays Done, too. `b` has no board to open. *A new project, named after
+the team* makes one when you save, sets it up and copies the board onto it. The Project only shows the board: a card
+moves when you [answer it in Work](work.md#answering-from-a-card) or the team moves it. Moving a card on the Project isn't a move, so it goes back to the app's Status on the next sync,
 and the card's History says so. An issue's Priority is different: changing it on GitHub still counts as yours.
 
 **Contributes to** lists the other repos the Dev may open draft PRs on, picked from the ones the

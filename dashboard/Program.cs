@@ -144,6 +144,7 @@ Handover? Show(Handover? back)
         confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
         confirmApprove: item => ApproveDialog.Show(app, item),
         askHold: item => HoldDialog.Show(app, item),
+        askFix: (item, points) => AskFixDialog.Show(app, item, points),
         attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
             new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
         showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),

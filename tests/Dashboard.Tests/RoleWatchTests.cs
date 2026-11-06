@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace ATeam.Dashboard.Tests;
 
 public class RoleWatchTests : IDisposable
@@ -241,6 +243,110 @@ public class RoleWatchTests : IDisposable
 
         Assert.Equal(RoleStatus.Misconfigured, RoleWatch.StatusOf(state, paused, held, verdict, misconfigured: true));
         Assert.Equal("⚠", Icons.Glyph(Icons.For(RoleStatus.Misconfigured), IconStyle.Unicode));
+    }
+
+    private static readonly IReadOnlyList<StuckRun> OneStuck = [new(67118, "run 67118 outlived its 2h limit by 19d · holds 1 of 3 slots")];
+
+    [Theory]
+    [InlineData(false, false, RunVerdict.None)]
+    [InlineData(true, false, RunVerdict.Ok)]
+    [InlineData(false, true, RunVerdict.Error)]
+    public void A_stuck_run_outranks_everything_but_a_misconfigured_team(bool paused, bool held, RunVerdict verdict)
+    {
+        var state = new AgentState(true, DateTimeOffset.UnixEpoch, [], null) { Stuck = OneStuck };
+
+        Assert.Equal(RoleStatus.Stuck, RoleWatch.StatusOf(state, paused, held, verdict));
+        Assert.Equal(RoleStatus.Misconfigured, RoleWatch.StatusOf(state, paused, held, verdict, misconfigured: true));
+    }
+
+    [Fact]
+    public void A_stuck_role_wears_the_alert_in_both_icon_styles()
+    {
+        Assert.Equal("⚠", Icons.Glyph(Icons.For(RoleStatus.Stuck), IconStyle.Unicode));
+        Assert.Equal("\U000F0026", Icons.Glyph(Icons.For(RoleStatus.Stuck), IconStyle.NerdFont));
+    }
+
+    [Fact]
+    public void A_stuck_line_describes_the_oldest_run_and_counts_the_rest()
+    {
+        Assert.Equal("stuck · run 67118 outlived its 2h limit by 19d · holds 1 of 3 slots", RoleWatch.SaysStuck(OneStuck));
+        Assert.Equal(
+            "stuck · run 67118 outlived its 2h limit by 19d · holds 1 of 3 slots · +1 more",
+            RoleWatch.SaysStuck([.. OneStuck, new(51200, "run 51200 is on #516, closed 29 Oct")]));
+    }
+
+    [Fact]
+    public void A_stuck_line_its_row_would_clip_is_said_in_full_and_one_that_fits_isnt()
+    {
+        const string Line = "stuck · run 51200 is on #516, closed 29 Oct · holds its only slot, 3 PRs waiting";
+
+        Assert.Empty(TeamPanel.InFull([("reviewer", Line)], 120));
+        Assert.Empty(TeamPanel.InFull([("reviewer", Line)], 0));
+        var rows = TeamPanel.InFull([("reviewer", Line)], 60);
+        Assert.True(rows.Count > 1);
+        Assert.All(rows, row => Assert.True(row.Length <= 60));
+        Assert.Equal($"Reviewer: {Line}", string.Join(' ', rows));
+    }
+
+    private void WriteStuck(string runs, int pid)
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "runs", runs));
+        File.WriteAllText(Path.Combine(_dir, "runs", runs, "pid"), pid.ToString(CultureInfo.InvariantCulture));
+        File.WriteAllText(
+            Path.Combine(_dir, "stuck"),
+            $$"""[{"pid":{{pid}},"file":"runs/{{runs}}/pid","says":"run {{pid}} is on #{{runs}}, closed 29 Oct"}]""");
+    }
+
+    [Fact]
+    public void A_stuck_run_still_going_makes_the_line_say_so()
+    {
+        WriteStuck("516", Environment.ProcessId);
+        var watch = new RoleWatch("a-team", "reviewer", _dir);
+
+        watch.Refresh(Now, Now.AddMinutes(2), paused: true, held: false);
+
+        Assert.Equal(RoleStatus.Stuck, watch.Status);
+        Assert.Equal($"stuck · run {Environment.ProcessId} is on #516, closed 29 Oct", watch.Line);
+    }
+
+    [Fact]
+    public void A_marker_left_by_a_run_that_has_gone_shows_nothing()
+    {
+        var run = System.Diagnostics.Process.Start("sleep", "0");
+        run.WaitForExit();
+        WriteStuck("516", run.Id);
+
+        Assert.Empty(AgentState.Read(_dir).Stuck);
+    }
+
+    [Fact]
+    public void A_marker_whose_pid_another_process_has_now_shows_nothing()
+    {
+        WriteStuck("516", Environment.ProcessId);
+        File.SetLastWriteTimeUtc(Path.Combine(_dir, "runs", "516", "pid"), DateTime.UtcNow - TimeSpan.FromDays(365 * 30));
+
+        Assert.Empty(AgentState.Read(_dir).Stuck);
+    }
+
+    [Fact]
+    public void A_marker_for_a_pid_its_file_no_longer_holds_shows_nothing()
+    {
+        WriteStuck("516", Environment.ProcessId);
+        File.WriteAllText(Path.Combine(_dir, "runs", "516", "pid"), "1");
+
+        Assert.Empty(AgentState.Read(_dir).Stuck);
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("""{"pid":1}""")]
+    [InlineData("""[{"pid":"one"}]""")]
+    public void A_marker_it_cant_read_shows_nothing(string text)
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "stuck"), text);
+
+        Assert.Empty(AgentState.Read(_dir).Stuck);
     }
 
     [Fact]

@@ -160,7 +160,9 @@ The task's own card says which link it waits on now and whose move that is, like
 `#499 ⛓ waits on tui-style-guide#84 · in review, yours`, then `#499 ⛓ waits on MentalDesk.Tui's
 release · yours`. That card is in Blocked while the task is Ready, and stays in Review if its PR
 is already up, so you can see that accepting it now would come before the change it needs. Once
-that release is out, Dependabot's PR bringing it in merges by itself, and the task is free. A link in a repo no team here works in still shows on the task's card, but there's no tab to
+that release is out, Dependabot's PR bringing it in merges by itself, and the task is free. Until it
+does, the card says how the bump stands, like `#499 ⛓ waits on #653 · merges by itself`, or `· blocked, yours`
+once [it has reached you](how-a-team-works.md#dependency-updates). A link in a repo no team here works in still shows on the task's card, but there's no tab to
 tag.
 
 The tag wears a link glyph where the icons are a Nerd Font's.
@@ -229,7 +231,9 @@ accept, decline, Not now, comment, Priority, recommendation, skip, review, link 
 and who (`you`, the role: `lead`, `dev`, `customer` or `reviewer`, or `board` for what a-team did by itself). What
 you or anyone else does on GitHub directly (a merge, a close, a comment)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. A closed issue or
-merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move. It
+merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move.
+On a team with a mirror, reopening one brings it back at its last move, with a line saying so: a task whose PR had
+merged comes back Ready, to be built again. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
 Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
@@ -275,6 +279,13 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   before throwing it away: `Ctrl+Enter` discards it, and `Esc` keeps writing.
 - **Answer a question.** Read it in Blocked, and reply with `c`. On a held task, reply that it's
   done and the agent that held it takes the hold off itself.
+- **Ask the Dev to fix what the Reviewer left to consider.** On a task that says `reviewed · N to
+  consider`, reading it or with its card selected, press `f` (**Cards → Ask the Dev to fix…**).
+  **Ask the Dev to fix #n** lists each **Worth considering** point with a check box, and a `Note:`
+  line for anything you want to add. `Space` ticks a point and `Tab` moves on. **Ask** (`Ctrl+Enter`)
+  stays greyed out until a box is ticked. It posts one comment on the PR as you, quoting each ticked
+  point and ending `Please fix these.` and your note, and the Dev fixes them all in one run. `Esc` asks
+  for nothing. On a card with nothing to consider, or not yet reviewed, the command is greyed out.
 - **Hold a task.** On a Ready task's card, press `h` (**Cards → Hold**). **Hold #n** asks `Why:`;
   `Enter` or **Hold** posts your reason on the task and the card moves to Blocked, where the Dev
   leaves it alone. `Enter` with no reason holds nothing: `Why:` turns red and the foot says `Why is needed`
@@ -289,7 +300,7 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   doesn't count as accepted. If the board refuses the decline, the status bar says why and the
   reason you typed is lost. A reason is required: with none, the pane's title turns red and the foot says
   `Why is needed`. `Esc` turns the pane back into a plain comment,
-  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub: the card
+  keeping what you wrote, and declines nothing. To undo a decline on a team with a mirror, reopen the issue on GitHub: the card
   comes back at its last move.
 - **Say Not now to a pitch.** On a pitch in Pitches, reading it or with its card selected, press
   `l`. The Comment pane opens as **Not now #n**, with **Back in [2] weeks** above it: `Shift+Tab`

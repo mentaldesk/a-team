@@ -85,6 +85,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, bool> _confirmAccept;
     private readonly Func<WaitingItem, bool> _confirmApprove;
     private readonly Func<WaitingItem, string?> _askHold;
+    private readonly Func<WaitingItem, IReadOnlyList<string>, string?> _askFix;
     private readonly Func<RunTask, bool> _confirmStop;
     private readonly Action<string> _showGuide;
     private readonly PaneWidths _paneWidths;
@@ -107,6 +108,7 @@ public sealed class DashboardWindow : Window
     private readonly Func<Write?, IReadOnlyList<Write>, bool> _confirmQuit;
     private WaitingItem? _approvable;
     private WaitingItem? _shown;
+    private IssueBody? _shownBody;
     private WaitingItem? _leaving;
     private string? _added;
     private ReaderIdea? _idea;
@@ -188,6 +190,7 @@ public sealed class DashboardWindow : Window
         MacKeys? macKeys = null,
         Func<WaitingItem, bool>? confirmApprove = null,
         Func<WaitingItem, string?>? askHold = null,
+        Func<WaitingItem, IReadOnlyList<string>, string?>? askFix = null,
         AssistantSetup? assistant = null,
         PaneWidths? paneWidths = null,
         Func<string, Task<Reading>>? syncBoard = null,
@@ -236,6 +239,7 @@ public sealed class DashboardWindow : Window
         _confirmAccept = confirmAccept ?? (_ => false);
         _confirmApprove = confirmApprove ?? (_ => false);
         _askHold = askHold ?? (_ => null);
+        _askFix = askFix ?? ((_, _) => null);
         _confirmStop = confirmStop ?? (_ => false);
         _handOver = handOver;
         _area = area;
@@ -710,6 +714,7 @@ public sealed class DashboardWindow : Window
                 isEnabled: () => OnWork() && _work.SelectedCard is { Shelvable: true }, onCard: true, scopes: [Regions.Work])
             .Register("work.hold", () => holdTask[_work.SelectedCard is { Held: true } ? 1 : 0], HoldOrRelease, new Key('h'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Holdable: true }, onCard: true, scopes: [Regions.Work], menuLabels: holdTask)
+            .Register("work.fix", "Ask the Dev to fix…", () => AskFix(), new Key('f'), isEnabled: () => Fixable() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, menuLabel: () => "Team…", scopes: [Regions.Work])
@@ -1105,10 +1110,13 @@ public sealed class DashboardWindow : Window
             _limits,
             running.SelectMany(watch => watch.Working.Select(number => (Card: (watch.Team, number), watch.Role)))
                 .DistinctBy(worked => worked.Card).ToDictionary(worked => worked.Card, worked => worked.Role),
-            running.GroupBy(watch => watch.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
+            running.Where(watch => watch.Status != RoleStatus.Stuck).GroupBy(watch => watch.Team)
+                .ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
             (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number))
         {
             Holding = Holds.Holders(_work.Items),
+            Stuck = _watches.Where(watch => watch.Status == RoleStatus.Stuck).GroupBy(watch => watch.Team)
+                .ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
         });
     }
 
@@ -1180,7 +1188,8 @@ public sealed class DashboardWindow : Window
         _team.Show(team,
             [.. _watches.Where(watch => watch.Team == team).Select(watch => (watch.Role, Icons.Field(Icons.For(watch.Status), _drawn), watch.Line))],
             _checks?.Fatal(team) is { } problem ? RoleWatch.Misconfigured(problem) : null,
-            _overseer.MirrorNote(team));
+            _overseer.MirrorNote(team),
+            [.. _watches.Where(watch => watch.Team == team && watch.Status == RoleStatus.Stuck).Select(watch => (watch.Role, watch.Line))]);
         _team.ShowHint(TeamHint());
         if (!_sessionFull)
             return;
@@ -1547,6 +1556,7 @@ public sealed class DashboardWindow : Window
         {
             _approvable = item.Approvable ? item : null;
             _shown = item;
+            _shownBody = body;
             _attention.Open(item, WorkView.GateOf(item));
             Seen(item);
             _idea = NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
@@ -1556,7 +1566,8 @@ public sealed class DashboardWindow : Window
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
                     item.Shelvable ? new ReaderShelve(_commands.KeyFor("work.notNow"), (weeks, reason) => Shelve(item, weeks, reason), shelving) : null,
-                    Attaching(), _image, item.Held ? new ReaderRelease(comment => Release(item, comment)) : null),
+                    Attaching(), _image, item.Held ? new ReaderRelease(comment => Release(item, comment)) : null,
+                    item.Fixable && ToConsider(item, body).Count > 0 ? new ReaderCommand(_commands.KeyFor("work.fix"), "ask the Dev to fix", AskFix) : null),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -1570,6 +1581,7 @@ public sealed class DashboardWindow : Window
             _opened.Open(item.Team, item.Number, _clock.GetUtcNow());
             _approvable = null;
             _shown = null;
+            _shownBody = null;
             var reranked = chosen is { } ranked && ranked != Priorities.Of(item) ? chosen : null;
             if (reranked is not null)
                 _attention.Did("ranked");
@@ -1718,6 +1730,49 @@ public sealed class DashboardWindow : Window
             $"Shelving #{item.Number}…", $"#{item.Number} is already being shelved", $"shelving #{item.Number}", item,
             Scratch: file, Weeks: weeks));
         return Task.FromResult<string?>(null);
+    }
+
+    /// <summary>The item the reader is showing, or else the one selected on the board, where there's a point to ask for.</summary>
+    private WaitingItem? Fixable() =>
+        _shown is { } shown
+            ? shown.Fixable && _shownBody is { } body && ToConsider(shown, body).Count > 0 ? shown : null
+            : _area == Area.Work && _work.Selected is { Fixable: true } item ? item : null;
+
+    private static IReadOnlyList<string> ToConsider(WaitingItem item, IssueBody body) =>
+        Considered.Points(body.Remarks.Select(said => said.Remark), item.Pr);
+
+    /// <summary>Asks which of the Reviewer's points to fix, reading its review first unless the reader already has.
+    /// True once a comment is under way.</summary>
+    private bool AskFix()
+    {
+        if (Fixable() is not { } item || Already(Write.KeyOf(item)))
+            return false;
+        if (_shown is not null)
+            return _shownBody is { } shown && AskFix(item, shown);
+        ReadBody(item, (read, body) =>
+        {
+            ShowMessage();
+            AskFix(read, body);
+        }, forReader: true);
+        return false;
+    }
+
+    private bool AskFix(WaitingItem item, IssueBody body)
+    {
+        var points = ToConsider(item, body);
+        if (points.Count == 0)
+        {
+            Reply($"couldn't read what the Reviewer left on PR #{item.Pr}", Severity.Error);
+            return false;
+        }
+        if (_askFix(item, points) is not { Length: > 0 } comment)
+            return false;
+        var file = Path.GetTempFileName();
+        File.WriteAllText(file, comment);
+        _attention.Did("asked");
+        Queue(new Write(WriteKind.AskFix, Write.KeyOf(item), ["board", item.Team, "comment", "you", item.Pr.ToString(), file],
+            $"Asking the Dev about PR #{item.Pr}…", $"#{item.Number} is already being asked about", $"asking the Dev about PR #{item.Pr}", item, Scratch: file));
+        return true;
     }
 
     /// <summary>Holds the selected Ready task with the reason you give, or takes the hold off one that's held.</summary>
@@ -1911,6 +1966,9 @@ public sealed class DashboardWindow : Window
                 break;
             case WriteKind.HoldTask:
                 Held(write.Item!);
+                break;
+            case WriteKind.AskFix:
+                Announce($"asked the Dev to fix PR #{write.Item!.Pr}");
                 break;
             case WriteKind.Release:
                 Released(write.Item!);
