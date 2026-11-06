@@ -1,6 +1,7 @@
 using MentalDesk.Tui.Chrome;
 using MentalDesk.Tui.Dialogs;
 using System.Collections.ObjectModel;
+using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Filtering;
 using MentalDesk.Tui.Loading;
 using Terminal.Gui.Drawing;
@@ -20,7 +21,7 @@ public sealed class Picker : DashboardDialog
     private readonly List<string> _kept;
     private readonly List<string> _listed = [];
     private readonly List<string> _shown = [];
-    private readonly TextField _filter;
+    private readonly PlaceholderField _filter;
     private readonly ListView _list;
     private readonly Label _noMatches;
     private readonly MessageBar _message = new();
@@ -45,7 +46,7 @@ public sealed class Picker : DashboardDialog
         Width = Dim.Fill();
         Height = Dim.Fill();
 
-        _filter = new TextField { X = Pos.Absolute(1), Y = 0, Width = Dim.Fill(1) };
+        _filter = new PlaceholderField { X = Pos.Absolute(1), Y = 0, Width = Dim.Fill(1) };
         _filter.ValueChanged += (_, _) =>
         {
             Harvest();
@@ -87,7 +88,7 @@ public sealed class Picker : DashboardDialog
     /// <summary>The names picked, in the order they were chosen, or null where it was cancelled.</summary>
     internal IReadOnlyList<string>? Picked { get; private set; }
 
-    internal TextField Filter => _filter;
+    internal PlaceholderField Filter => _filter;
 
     internal ListView List => _list;
 

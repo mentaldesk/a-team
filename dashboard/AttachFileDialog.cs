@@ -1,4 +1,5 @@
 using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Fields;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -10,7 +11,7 @@ public sealed class AttachFileDialog : DashboardDialog
     private const string AttachId = "attach.attach";
     private const int Wide = 60;
 
-    private readonly TextField _file;
+    private readonly PlaceholderField _file;
 
     public AttachFileDialog()
         : base(Name)
@@ -18,7 +19,7 @@ public sealed class AttachFileDialog : DashboardDialog
         Width = Dim.Func(_ => Math.Min(Wide, SuperView?.Viewport.Width ?? Wide), this);
         Height = Dim.Func(_ => 2 + Foot.Rows + GetAdornmentsThickness().Vertical, this);
         Add(new Label { Text = "File", X = 1, Y = 0 });
-        _file = new TextField { X = 7, Y = 0, Width = Dim.Fill(1) };
+        _file = new PlaceholderField { X = 7, Y = 0, Width = Dim.Fill(1) };
         Bind(AttachId, Key.Enter.WithCtrl, "Attach", () => Done(_file.Text));
         Register(CancelId, "Cancel", () => Done(null));
         AddButton(ButtonKind.Primary, AttachId);
@@ -31,7 +32,7 @@ public sealed class AttachFileDialog : DashboardDialog
     /// <summary>The path typed, or null where the dialog was cancelled.</summary>
     internal string? Chosen { get; private set; }
 
-    internal TextField File => _file;
+    internal PlaceholderField File => _file;
 
     /// <summary>Opens the dialog, and returns the path typed, or null where it was cancelled or left empty.</summary>
     public static string? Show(IApplication app)

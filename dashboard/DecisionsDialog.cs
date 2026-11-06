@@ -1,5 +1,6 @@
 using System.Drawing;
 using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Links;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
@@ -22,14 +23,14 @@ public sealed class DecisionsDialog : DashboardDialog
     private readonly Func<Task<Reading>> _read;
     private readonly Func<DecisionChange, Task<string?>> _change;
     private readonly Func<string, LinkOutcome> _openUrl;
-    private readonly TextField _search = new() { X = 8, Y = 0, Width = 28 };
+    private readonly PlaceholderField _search = new() { X = 8, Y = 0, Width = 28 };
     private readonly CheckBox _allTeams = new() { Text = "Include all-teams", Value = CheckState.Checked, Y = 0 };
     private readonly CheckBox _replaced = new() { Text = "Show replaced", Value = CheckState.UnChecked, Y = 0 };
     private readonly TableView _table;
     private readonly Label _empty = new() { X = 1, Y = 2, Width = Dim.Fill(1), Visible = false };
     private readonly Line _rule = new() { X = 0, Width = Dim.Fill() };
     private readonly LogView _detail = new() { X = 1, Width = Dim.Fill(1), Height = DetailRows, CanFocus = false };
-    private readonly TextField _editor = new() { X = 1, Width = Dim.Fill(1), Visible = false };
+    private readonly PlaceholderField _editor = new() { X = 1, Width = Dim.Fill(1), Visible = false };
     private readonly MessageBar _message = new();
     private IReadOnlyList<Decision> _shown = [];
     private int? _keep;
@@ -104,7 +105,7 @@ public sealed class DecisionsDialog : DashboardDialog
 
     internal TableView Table => _table;
 
-    internal TextField Search => _search;
+    internal PlaceholderField Search => _search;
 
     internal CheckBox AllTeams => _allTeams;
 
@@ -112,7 +113,7 @@ public sealed class DecisionsDialog : DashboardDialog
 
     internal LogView Detail => _detail;
 
-    internal TextField Editor => _editor;
+    internal PlaceholderField Editor => _editor;
 
     internal Label Empty => _empty;
 

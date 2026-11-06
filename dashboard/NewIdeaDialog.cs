@@ -23,7 +23,7 @@ public sealed class NewIdeaDialog : DashboardDialog
     private readonly IdeaFiler _filer;
     private readonly Func<bool> _confirmDiscard;
     private readonly DropDownList _team;
-    private readonly TextField _title;
+    private readonly PlaceholderField _title;
     private readonly MultiLineField _description;
     private readonly OptionSelector<Rank> _rank;
     private readonly MessageBar _message = new();
@@ -53,7 +53,7 @@ public sealed class NewIdeaDialog : DashboardDialog
             Text = team,
         };
         Add(new Label { Text = "Title", X = Inset, Y = 2 });
-        _title = new TextField { X = FieldX, Y = 2, Width = Dim.Fill(Inset) };
+        _title = new PlaceholderField { X = FieldX, Y = 2, Width = Dim.Fill(Inset) };
         Add(new Label { Text = "Description", X = Inset, Y = 4 });
         _description = new MultiLineField { X = Inset, Y = 5, Width = Dim.Fill(Inset), Height = DescriptionLines, Text = description };
         var rankY = 5 + DescriptionLines + 1;
@@ -96,7 +96,7 @@ public sealed class NewIdeaDialog : DashboardDialog
 
     internal DropDownList Team => _team;
 
-    internal TextField IdeaTitle => _title;
+    internal PlaceholderField IdeaTitle => _title;
 
     internal MultiLineField Description => _description;
 

@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Settings;
 
 namespace ATeam.Dashboard;
@@ -13,7 +14,7 @@ public sealed class OverseerPage : SettingsPage
     private const int FieldWidth = 10;
 
     private readonly DashboardSettings _settings;
-    private readonly List<(string Column, TextField Field, Label Default)> _limits;
+    private readonly List<(string Column, PlaceholderField Field, Label Default)> _limits;
     private IReadOnlyDictionary<string, string> _kept;
 
     public OverseerPage(DashboardSettings settings) : base(Name)
@@ -22,7 +23,7 @@ public sealed class OverseerPage : SettingsPage
         _kept = settings.ReadLimits();
         var label = OverseerBoard.Columns.Max(column => column.Length) + 1;
         _limits = [.. OverseerBoard.Columns.Select((column, row) => (column,
-            new TextField { X = Indent + label, Y = FirstRow + row, Width = FieldWidth, Text = KeptLimit(column) },
+            new PlaceholderField { X = Indent + label, Y = FirstRow + row, Width = FieldWidth, Text = KeptLimit(column) },
             Dimmed(new Label { X = Indent + label + FieldWidth + 2, Y = FirstRow + row })))];
         Add(new Label { Text = Heading });
         foreach (var (column, field, note) in _limits)
@@ -38,7 +39,7 @@ public sealed class OverseerPage : SettingsPage
         Show();
     }
 
-    internal IReadOnlyList<(string Column, TextField Field)> Fields => [.. _limits.Select(limit => (limit.Column, limit.Field))];
+    internal IReadOnlyList<(string Column, PlaceholderField Field)> Fields => [.. _limits.Select(limit => (limit.Column, limit.Field))];
 
     /// <summary>Each column's limit as entered, blank for none.</summary>
     internal IReadOnlyDictionary<string, string> Limits =>
