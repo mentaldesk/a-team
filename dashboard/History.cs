@@ -41,7 +41,20 @@ public sealed record History(IReadOnlyList<HistoryEvent> Events, DateTimeOffset?
         : Parse(reading.Output) ?? new History([], Failure: $"couldn't read #{number}'s history");
 
     /// <summary>With <paramref name="happened"/> at the top, as the next read will show it.</summary>
-    public History With(HistoryEvent happened) => this with { Events = [happened, .. Events] };
+    public History With(HistoryEvent happened) => this with { Events = Ticks([happened, .. Events]) };
+
+    /// <summary>A run of ticks reads as the newest of them, so a list ticked through doesn't bury the rest.</summary>
+    private static List<HistoryEvent> Ticks(IEnumerable<HistoryEvent> events)
+    {
+        List<HistoryEvent> kept = [];
+        foreach (var each in events)
+            if (kept.Count == 0 || !(IsTick(kept[^1]) && IsTick(each) && kept[^1].Who == each.Who))
+                kept.Add(each);
+        return kept;
+    }
+
+    private static bool IsTick(HistoryEvent each) =>
+        each.What.StartsWith("ticked ", StringComparison.Ordinal) || each.What.StartsWith("unticked, ", StringComparison.Ordinal);
 
     public IReadOnlyList<LogLine> Lines =>
         Failure is { Length: > 0 } failure ? [new LogLine(failure, LogLineKind.Prose)]
@@ -61,13 +74,13 @@ public sealed record History(IReadOnlyList<HistoryEvent> Events, DateTimeOffset?
             DateTimeOffset? since = root.TryGetProperty("since", out var at) && at.ValueKind == JsonValueKind.String
                 ? at.GetDateTimeOffset()
                 : null;
-            return new History([.. root.GetProperty("events").EnumerateArray().Select(e => new HistoryEvent(
+            return new History(Ticks(root.GetProperty("events").EnumerateArray().Select(e => new HistoryEvent(
                 e.GetProperty("at").GetDateTimeOffset(),
                 e.GetProperty("who").GetString() ?? "",
                 e.GetProperty("what").GetString() ?? "",
                 e.TryGetProperty("run", out var run) && run.ValueKind == JsonValueKind.Object ? ParseRun(run) : null,
                 e.TryGetProperty("spent", out var spent) && spent.ValueKind == JsonValueKind.Number
-                    ? TimeSpan.FromSeconds(spent.GetDouble()) : null))], since);
+                    ? TimeSpan.FromSeconds(spent.GetDouble()) : null))), since);
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
         {

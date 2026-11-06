@@ -15,6 +15,42 @@ public sealed record IssueBody(string Text = "", string? Failure = null, History
     /// <summary>What a document pitch changes, where it is one and that was read.</summary>
     public DocumentPitch? Document { get; init; }
 
+    /// <summary>The task's criteria, where it lists them above its text, and the line they start on.</summary>
+    public Checklist? Checklist { get; init; }
+
+    public int ChecklistLine { get; init; }
+
+    /// <summary>The body with <paramref name="checklist"/> above it, its remarks moved down to match.</summary>
+    public IssueBody With(Checklist checklist)
+    {
+        var lines = checklist.Lines;
+        return this with
+        {
+            Text = string.Join('\n', lines) + "\n" + Text,
+            Remarks = [.. Remarks.Select(said => said with { Line = said.Line + lines.Count })],
+            Checklist = checklist,
+            ChecklistLine = 0,
+        };
+    }
+
+    /// <summary>The criterion ticked or not, in the list only: it stays in its place, and nothing else moves.</summary>
+    public IssueBody Ticked(int index, bool ticked)
+    {
+        if (Checklist is not { } checklist)
+            return this;
+        var was = checklist.Lines.Count;
+        var now = checklist.With(index, ticked);
+        var lines = Text.Split('\n');
+        return this with
+        {
+            Text = string.Join('\n', [.. lines[..ChecklistLine], .. now.Lines, .. lines[(ChecklistLine + was)..]]),
+            Checklist = now,
+        };
+    }
+
+    /// <summary>The criterion on <paramref name="line"/> of the body, or null.</summary>
+    public Criterion? CriterionAt(int line) => Checklist?.At(line - ChecklistLine);
+
     /// <summary>A document pitch's body, followed by the one file it changes, as it is on its branch now.</summary>
     public IssueBody With(DocumentPitch document) => this with
     {
@@ -46,6 +82,7 @@ public sealed record IssueBody(string Text = "", string? Failure = null, History
     {
         Text = $"{line}\n\n{Text}",
         Remarks = [.. Remarks.Select(said => said with { Line = said.Line + 2 })],
+        ChecklistLine = ChecklistLine + 2,
     };
 
     public bool Equals(IssueBody? other) =>

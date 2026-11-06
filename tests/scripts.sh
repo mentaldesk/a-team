@@ -288,7 +288,8 @@ case " \$* " in
   *"pr ready"*) echo "READY \$*" >>"$WRITES"; exit 0 ;;
   *"issue close"*) [ ! -e "$BIN/close-fails" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
                    echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
-  *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"; printf '%s' "\${@: -1}" >"$EDITED"; exit 0 ;;
+  *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"
+    if [ "\${@: -1}" = - ]; then cat >"$EDITED"; else printf '%s' "\${@: -1}" >"$EDITED"; fi; exit 0 ;;
   *addProjectV2ItemById*) printf 'ADD %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo PVTI_new; exit 0 ;;
   *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
@@ -6404,22 +6405,37 @@ A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 7
 failed "command failed"
 same "command failure file" "false exited 1" "$(cat "$TRY_WORK/failed")"
 
-case_ "a PR that closes an issue shows its acceptance criteria, unticked and in order, before running"
+case_ "a PR that closes an issue shows what's left for you, then what the team checked, in order, before running"
 try_fixture record
 try_gh
 try_closes 92 "$(printf '%s\r\n' '## Context' '' 'Why.' '' '## Acceptance criteria' '' \
   '- [ ] A grid cell never goes below' '      5 rows' '- [x] Moving the selection scrolls' \
-  '  - [ ] and the strip never does' '' '## Tests' '' '- [ ] not this one')"
+  '  - [ ] and the strip never does' '- [x] The foot says so' '' '## Tests' '' '- [ ] not this one')"
+jq --arg body "$(printf '%s\n' 'Closes #92' '' '## Checked by the team' '' '- `screen` Moving the selection scrolls' \
+  '- `test` The foot says so' '' '<!-- a-team:dev -->')" '. + {body: $body}' "$TRY_BIN/pull.json" >"$TRY_BIN/pull.new"
+mv "$TRY_BIN/pull.new" "$TRY_BIN/pull.json"
 run try demo 7
 same "exit" 0 "$STATUS"
 [ -e "$TRY_WORK/ran" ] || fail "criteria: the team's command didn't run"
 sed -n 2p "$OUT" | grep -q "at ${TRY_SHA:0:7} (closes #92)$" || fail "criteria: second line '$(sed -n 2p "$OUT")'"
-same "checklist" "  What this should let you do
+same "checklist" "Left for you (2):
     [ ] A grid cell never goes below 5 rows
-    [ ] Moving the selection scrolls
-      [ ] and the strip never does" "$(sed -n '4,7p' "$OUT")"
-same "then the sandbox" "" "$(sed -n 8p "$OUT")"
+      [ ] and the strip never does
+Checked by the team (2), pictures on the PR:
+    [x] Moving the selection scrolls
+    [x] The foot says so" "$(sed -n '4,9p' "$OUT")"
+same "then the sandbox" "" "$(sed -n 10p "$OUT")"
 grep -q 'not this one' "$OUT" && fail "criteria: it ran on past the section in '$(cat "$OUT")'"
+
+case_ "with nothing recorded on its PR, every criterion is left for you, as the issue has it"
+try_fixture record
+try_gh
+try_closes 92 "$(printf '%s\n' '## Acceptance criteria' '- [ ] One' '- [x] Two')"
+run try demo 7
+same "checklist" "Left for you (2):
+    [ ] One
+    [x] Two" "$(sed -n '4,6p' "$OUT")"
+grep -q 'Checked by the team' "$OUT" && fail "nothing recorded: '$(cat "$OUT")'"
 
 case_ "an issue with no acceptance criteria, or a PR closing nothing, shows no checklist and runs"
 try_fixture record
@@ -6428,12 +6444,12 @@ try_closes 92 "Just some words."
 run try demo 7
 same "exit" 0 "$STATUS"
 [ -e "$TRY_WORK/ran" ] || fail "no criteria: the team's command didn't run"
-grep -q 'What this should let you do' "$OUT" && fail "no criteria: a checklist in '$(cat "$OUT")'"
+grep -q 'Left for you' "$OUT" && fail "no criteria: a checklist in '$(cat "$OUT")'"
 same "stderr" "" "$(cat "$ERR")"
 try_gh
 run try demo 7
 same "exit" 0 "$STATUS"
-grep -q 'closes\|What this should' "$OUT" && fail "closes nothing: '$(cat "$OUT")'"
+grep -q 'closes\|Left for you' "$OUT" && fail "closes nothing: '$(cat "$OUT")'"
 same "stderr" "" "$(cat "$ERR")"
 
 case_ "an issue that won't read is one line, and try runs anyway"
@@ -6444,7 +6460,7 @@ run try demo 7
 same "exit" 0 "$STATUS"
 [ -e "$TRY_WORK/ran" ] || fail "unreadable: the team's command didn't run"
 same "lines about it" 1 "$(grep -c 'Could not read' "$OUT")"
-grep -q 'What this should' "$OUT" && fail "unreadable: a checklist in '$(cat "$OUT")'"
+grep -q 'Left for you' "$OUT" && fail "unreadable: a checklist in '$(cat "$OUT")'"
 
 case_ "with no PR, there's no checklist"
 try_fixture record
@@ -6452,7 +6468,7 @@ try_gh
 try_closes 92 "$(printf '%s\n' '## Acceptance criteria' '- [ ] something')"
 run try demo
 same "exit" 0 "$STATUS"
-grep -q 'What this should' "$OUT" && fail "no PR: a checklist in '$(cat "$OUT")'"
+grep -q 'Left for you' "$OUT" && fail "no PR: a checklist in '$(cat "$OUT")'"
 
 case_ "with no PR, try runs origin's default branch as it is now, not the checkout's stale copy"
 try_fixture record
@@ -9552,11 +9568,166 @@ same "writes" "" "$(cat "$WRITES")"
 grep -q "would put 1 picture(s) on #912" "$ERR" || fail "pictures dry run: '$(cat "$ERR")'"
 grep -qF "  | ![Save is left-aligned]" "$ERR" || fail "pictures dry run: no body in '$(cat "$ERR")'"
 
+# The criteria: what the reader lists, what the Dev records and what you tick.
+criteria_body() {
+  printf '%s\n' '## Context' '' '- [ ] not a criterion' '' '## Acceptance criteria' '' '- [ ] Save is left-aligned' \
+    '- [x] Remove is red,' '  in every theme' '  - [ ] and it says so' '* Plain' '' '## Tests' '' '- [ ] nor this' '' '<!-- a-team:lead -->'
+}
+criteria_issue() {
+  jq -n --arg body "$(criteria_body)" '{number: 12, title: "A task", body: $body}' >"$ISSUE"
+}
+criteria_pull() {
+  jq -n --arg body "$1" '{body: $body}' >"$PULL"
+}
+
+case_ "criteria lists a task's checklist, numbered, with how the team checked each and its picture"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+In_review 12 A task in front of me
+ITEMS
+criteria_issue
+criteria_pull "$(printf '%s\n' 'Closes #12' '' '## What it looks like' '' 'Save is left-aligned' '' \
+  '![Save is left-aligned](https://github.com/x/shot.png)' '' '## Checked by the team' '' '- `screen` Save is left-aligned' \
+  '- `test` Remove is red, in every theme' '' 'a-team try demo 912' '' '<!-- a-team:dev -->')"
+run board demo criteria 12 912
+same "exit" 0 "$STATUS"
+same "criteria" '[[1,0,false,"Save is left-aligned","screen","https://github.com/x/shot.png"],[2,0,true,"Remove is red, in every theme","test",null],[3,1,false,"and it says so",null,null],[4,0,false,"Plain",null,null]]' \
+  "$(jq -c 'map([.index, .depth, .ticked, .text, .how, .picture.url])' "$OUT")"
+
+case_ "a body with no Acceptance criteria section has none, and a CRLF body reads the same"
+jq -n '{body: "## Context\r\n\r\n- [ ] a list, but not criteria"}' >"$ISSUE"
+run board demo criteria 12 912
+same "none" '[]' "$(jq -c . "$OUT")"
+jq -n --arg body "$(criteria_body | sed 's/$/\r/')" '{body: $body}' >"$ISSUE"
+run board demo criteria 12 912
+same "CRLF" '[false,true,false,false]' "$(jq -c 'map(.ticked)' "$OUT")"
+same "CRLF text" '"Remove is red, in every theme"' "$(jq -c '.[1].text' "$OUT")"
+
+case_ "tick changes only the box on that criterion's line, and History says how many are ticked"
+criteria_issue
+: >"$WRITES"
+rm -f "$EDITED"
+run board demo tick you 12 1 on "Save is left-aligned"
+same "exit" 0 "$STATUS"
+same "said" "#12: 2 of 4 ticked" "$(cat "$OUT")"
+grep -q "^EDIT issue edit 12 -R mentaldesk/demo --body-file -" "$WRITES" || fail "tick: no edit in '$(cat "$WRITES")'"
+same "body" "$(criteria_body | sed 's/^- \[ \] Save/- [x] Save/')" "$(cat "$EDITED")"
+run board demo history 12
+same "history" '"ticked 2 of 4"' "$(jq -c '.events[0].what' "$OUT")"
+same "by you" '"you"' "$(jq -c '.events[0].who' "$OUT")"
+
+case_ "unticking a team's box, or ticking a plain bullet, leaves the rest of the body alone"
+: >"$WRITES"
+run board demo tick you 12 2 off "Remove is red, in every theme"
+same "exit" 0 "$STATUS"
+same "unticked" "$(criteria_body | sed 's/^- \[x\] Remove/- [ ] Remove/')" "$(cat "$EDITED")"
+run board demo history 12
+same "history" '"unticked, 0 of 4 ticked"' "$(jq -c '.events[0].what' "$OUT")"
+run board demo tick you 12 4 on "Plain"
+same "plain" "$(criteria_body | sed 's/^\* Plain/* [x] Plain/')" "$(cat "$EDITED")"
+
+case_ "tick is yours, on a task In review, and refuses a criterion that's changed"
+: >"$WRITES"
+run board demo tick dev 12 1 on "Save is left-aligned"
+failed "dev tick"
+grep -qF "dev may not tick a criterion" "$ERR" || fail "dev tick: '$(cat "$ERR")'"
+run board demo tick you 12 1 on "Something else now"
+failed "changed"
+grep -qF "#12's criteria have changed: open it again" "$ERR" || fail "changed: '$(cat "$ERR")'"
+run board demo tick you 12 9 on "Save is left-aligned"
+failed "no such"
+run board demo tick you 12 1 maybe "Save is left-aligned"
+failed "not on or off"
+gh_items <<'ITEMS'
+In_progress 12 A task still being built
+ITEMS
+run board demo tick you 12 1 on "Save is left-aligned"
+failed "not in review"
+grep -qF "only a task In review has criteria to tick (#12 is 'In progress')" "$ERR" || fail "not in review: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+grep -qF '"Bash(a-team board * tick you *)"' "$ROOT/settings/agents.json" || fail "no tick deny rule"
+
+case_ "tick --dry-run writes nothing and records nothing"
+gh_items <<'ITEMS'
+In_review 12 A task in front of me
+ITEMS
+criteria_issue
+: >"$WRITES"
+run board --dry-run demo tick you 12 1 on "Save is left-aligned"
+same "exit" 0 "$STATUS"
+same "writes" "" "$(cat "$WRITES")"
+grep -q "would tick criterion 1 on #12" "$ERR" || fail "tick dry run: '$(cat "$ERR")'"
+
+case_ "dev checked says how on the PR, above the try line, and ticks those boxes on the issue"
+gh_pr 912 true
+criteria_issue
+SHOT_BODY=$(printf '%s\n' 'Buttons.' '' 'Closes #12' '' '## What it looks like' '' 'Save is left-aligned' '' \
+  '![Save is left-aligned](https://github.com/x/shot.png)' '' 'a-team try demo 912' '' '<!-- a-team:dev -->')
+gh_reviewing ".body = $(jq -n --arg b "$SHOT_BODY" '$b')"
+: >"$WRITES"
+rm -f "$BIN/pr-body" "$EDITED"
+run board demo checked dev 912 1=screen 3=test
+same "exit" 0 "$STATUS"
+same "said" "#12: 2 of 4 checked by the team" "$(cat "$OUT")"
+same "issue" "$(criteria_body | sed -e 's/^- \[ \] Save/- [x] Save/' -e 's/^  - \[ \] and/  - [x] and/')" "$(cat "$EDITED")"
+same "PR" "Buttons.
+
+Closes #12
+
+## What it looks like
+
+Save is left-aligned
+
+![Save is left-aligned](https://github.com/x/shot.png)
+
+## Checked by the team
+
+- \`screen\` Save is left-aligned
+- \`test\` and it says so
+
+a-team try demo 912
+
+<!-- a-team:dev -->" "$(cat "$BIN/pr-body")"
+run board demo history 12
+same "history" '"checked 2 of 4: 1 on screen, 1 by test"' "$(jq -c '.events[0].what' "$OUT")"
+
+case_ "what checked writes reads back as the team's, and checked again replaces it"
+criteria_pull "$(cat "$BIN/pr-body")"
+run board demo criteria 12 912
+same "read back" '["screen",null,"test",null]' "$(jq -c 'map(.how)' "$OUT")"
+gh_reviewing ".body = $(jq -n --arg b "$(cat "$BIN/pr-body")" '$b')"
+run board demo checked dev 912 2=test
+same "exit" 0 "$STATUS"
+same "one section" 1 "$(grep -c '^## Checked by the team' "$BIN/pr-body")"
+grep -q 'and it says so' "$BIN/pr-body" && fail "checked again: kept the old record in '$(cat "$BIN/pr-body")'"
+grep -qF -- '- `test` Remove is red, in every theme' "$BIN/pr-body" || fail "checked again: '$(cat "$BIN/pr-body")'"
+
+case_ "checked refuses a screen criterion with no picture captioned with it, one that doesn't exist, and anyone but the Dev"
+: >"$WRITES"
+run board demo checked dev 912 2=screen
+failed "no picture"
+grep -qF "criterion 2 is screen, but no picture on #912 is captioned with it: Remove is red, in every theme" "$ERR" || fail "no picture: '$(cat "$ERR")'"
+run board demo checked dev 912 9=test
+failed "no such criterion"
+grep -qF "#12 has no criterion 9" "$ERR" || fail "no such criterion: '$(cat "$ERR")'"
+run board demo checked dev 912 1=seen
+failed "not screen or test"
+run board demo checked reviewer 912 1=test
+failed "reviewer"
+grep -qF "reviewer may not say what the team checked" "$ERR" || fail "reviewer: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+
+case_ "the Dev says what it checked, and is authorised to"
+grep -qF 'checked dev <pr> <criterion>=screen|test' "$ROOT/roles/dev.md" || fail "dev.md: doesn't say what it checked"
+grep -qF 'checked dev ...' "$ROOT/tasks/dev.md" || fail "task prompt: Dev not authorised to say what it checked"
+
 case_ "the Dev puts what it looked at on its PR, again after a fix on screen, and the Reviewer checks each picture"
 step=$(sed -n '/^5\. Build and run the tests/,/^7\./p' "$ROOT/roles/dev.md")
 grep -qF 'Keep a snapshot of each screen the acceptance criteria name' <<<"$step" || fail "dev.md: doesn't keep its snapshots"
 grep -qF 'pictures dev <pr> <image> "<criterion>"' <<<"$step" || fail "dev.md: doesn't put its snapshots on the PR"
-grep -qF 'run `pictures` as in step' "$ROOT/roles/dev.md" || fail "dev.md: doesn't replace the pictures after a fix"
+grep -qF 'run `pictures` and `checked`' "$ROOT/roles/dev.md" || fail "dev.md: doesn't replace the pictures after a fix"
 grep -qF 'pictures dev ...' "$ROOT/tasks/dev.md" || fail "task prompt: Dev not authorised to put pictures on its PR"
 grep -qF 'body <pr>` lists in `images`' "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't read the pictures"
 grep -qF "each picture against its caption and the contributor docs' UI" "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't check them"
@@ -10749,6 +10920,25 @@ dispatch_dev --dry-run
 [ -e "$A_TEAM_STATE/demo/dev/killed" ] && fail "wrote the real killed record"
 same "status reads only the real one" "" "$(status_stuck)"
 end_run "$FAKE"
+
+case_ "waiting says how many of a task's criteria aren't ticked, and nothing where none is left"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+In_review 12 A task with some left
+In_review 13 A task with all ticked
+ITEMS
+TODAY=$(date -u +%F)
+gh_talk <<TALK
+12 body ${TODAY}T08:00:00Z reviewer ## Acceptance criteria\n- [ ] One\n- [x] Two\n- [ ] Three
+12 pr-body ${TODAY}T08:10:00Z demo-app[bot] Closes #12
+13 body ${TODAY}T08:00:00Z reviewer ## Acceptance criteria\n- [x] One
+13 pr-body ${TODAY}T08:10:00Z demo-app[bot] Closes #13
+TALK
+waiting
+same "exit" 0 "$STATUS"
+same "unticked" '[[12,2],[13,null]]' "$(jq -c 'map(select(.number)) | sort_by(.number) | map([.number, .unticked])' "$OUT")"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

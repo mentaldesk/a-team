@@ -73,6 +73,8 @@ public sealed class DashboardWindow : Window
     private readonly Func<WaitingItem, Task<Reading>> _readBody;
     private readonly Func<WaitingItem, Task<Reading>>? _readConversation;
     private readonly Func<WaitingItem, Task<Reading>>? _readDocument;
+    private readonly Func<WaitingItem, Task<Reading>>? _readCriteria;
+    private readonly Dictionary<string, int> _unticked = [];
     private readonly Func<WaitingItem, Task<Reading>>? _readHistory;
     private readonly Func<string, Task<Reading>>? _readTrend;
     private readonly Action<IReadOnlyList<(string Team, int? Waiting)>>? _showTrends;
@@ -180,6 +182,7 @@ public sealed class DashboardWindow : Window
         Func<string, Task<Reading>>? readBoard = null,
         Attention? attention = null,
         Func<WaitingItem, Task<Reading>>? readDocument = null,
+        Func<WaitingItem, Task<Reading>>? readCriteria = null,
         Func<string, DateTimeOffset, Task<Reading>>? readMoves = null,
         WhatsNew? whatsNew = null,
         WriteQueue? writes = null,
@@ -208,6 +211,7 @@ public sealed class DashboardWindow : Window
         _readMoves = readMoves;
         _readBoard = readBoard;
         _readDocument = readDocument;
+        _readCriteria = readCriteria;
         _limits = settings.ReadLimits();
         _clipboard = clipboard;
         _newIdea = newIdea;
@@ -1508,6 +1512,7 @@ public sealed class DashboardWindow : Window
         var body = _readBody(item);
         var conversation = forReader ? _readConversation?.Invoke(item) : null;
         var history = forReader ? _readHistory?.Invoke(item) : null;
+        var criteria = forReader && item.HasCriteria ? _readCriteria?.Invoke(item) : null;
         var opened = forReader ? _opened.Last(item.Team, item.Number) : null;
         var read = await Settled(body, reading => IssueBody.Of(reading, item.Number),
             new IssueBody(Failure: $"couldn't read #{item.Number}")).ConfigureAwait(false);
@@ -1520,6 +1525,11 @@ public sealed class DashboardWindow : Window
         if (forReader && item.Document && _readDocument?.Invoke(item) is { } reading
             && await Settled(reading, read => read.Failure is null ? DocumentPitch.Parse(read.Output) : null, null).ConfigureAwait(false) is { } document)
             read = read.With(document);
+        if (criteria is not null)
+            read = await Settled(criteria, reading => reading.Failure is { Length: > 0 } why
+                    ? read.Headed($"## Criteria · couldn't be read: {why}")
+                    : Checklist.Parse(reading.Output) is { } checklist ? read.With(checklist) : read,
+                read.Headed($"## Criteria · couldn't be read")).ConfigureAwait(false);
         if (forReader)
             read = read.Headed(item.PrHeading);
         if (history is not null)
@@ -1561,13 +1571,17 @@ public sealed class DashboardWindow : Window
             Seen(item);
             _idea = NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
             _image = new ReaderImage();
+            if (body.Checklist is { } listed)
+                _unticked[Write.KeyOf(item)] = listed.Unticked;
             var chosen = _showBody(item, body, () => url is { Length: > 0 } ? _openUrl(url) : null, _approvable is null ? null : Approve,
                 item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
                     item.Shelvable ? new ReaderShelve(_commands.KeyFor("work.notNow"), (weeks, reason) => Shelve(item, weeks, reason), shelving) : null,
                     Attaching(), _image, item.Held ? new ReaderRelease(comment => Release(item, comment)) : null,
-                    item.Fixable && ToConsider(item, body).Count > 0 ? new ReaderCommand(_commands.KeyFor("work.fix"), "ask the Dev to fix", AskFix) : null),
+                    item.Fixable && ToConsider(item, body).Count > 0 ? new ReaderCommand(_commands.KeyFor("work.fix"), "ask the Dev to fix", AskFix) : null,
+                    body.Checklist is not null ? new ReaderTick((criterion, ticked) => Tick(item, criterion, ticked), SettleWrites,
+                        unticked => _unticked[Write.KeyOf(item)] = unticked) : null),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -1671,7 +1685,7 @@ public sealed class DashboardWindow : Window
             Reply(why, Severity.Error);
             return false;
         }
-        if (!_confirmAccept(item))
+        if (!_confirmAccept(item with { Unticked = _unticked.GetValueOrDefault(Write.KeyOf(item), item.Unticked) }))
             return false;
         _attention.Did("accepted");
         var (doing, being, queued) = item.Document ? ($"Merging #{item.Number}…", "merged", $"merging #{item.Number}")
@@ -1680,6 +1694,17 @@ public sealed class DashboardWindow : Window
         Queue(new Write(WriteKind.Accept, Write.KeyOf(item), ["board", item.Team, "accept", "you", item.Number.ToString()],
             doing, $"#{item.Number} is already being {being}", queued, item));
         return true;
+    }
+
+    /// <summary>In the write queue, so it outlives the reader and a try, and two ticks in a row can't undo each other.</summary>
+    private Task<string?> Tick(WaitingItem item, Criterion criterion, bool ticked)
+    {
+        _attention.Did("ticked");
+        var outcome = new TaskCompletionSource<string?>();
+        Queue(new Write(WriteKind.Tick, $"{Write.KeyOf(item)}/tick",
+            ["board", item.Team, "tick", "you", item.Number.ToString(), criterion.Index.ToString(), ticked ? "on" : "off", criterion.Text],
+            $"Saving the tick on #{item.Number}…", "", $"saving a tick on #{item.Number}") { Outcome = outcome });
+        return outcome.Task;
     }
 
     private async Task<string?> Post(WaitingItem item, string body)
@@ -1936,6 +1961,8 @@ public sealed class DashboardWindow : Window
         if (settled.Count == 0)
             return;
         _work.ShowWriting(Writing());
+        foreach (var (write, failure) in settled)
+            write.Outcome?.TrySetResult(failure);
         foreach (var (write, refused) in settled.Where(done => done.Failure is not { Length: > 0 }))
             Settled(write);
         var refusals = settled.Where(done => done.Failure is { Length: > 0 })

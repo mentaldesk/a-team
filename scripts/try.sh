@@ -18,26 +18,16 @@ die() {
 refuse() { echo "a-team try: $*" >&2; echo "usage: a-team try <team> [<pr>] [--clean]" >&2; exit 2; }
 tilde() { echo "${1/#$HOME/\~}"; }
 
-# The "Acceptance criteria" section of an issue body, as an unticked checklist.
-criteria() {
-  tr -d '\r' | awk '
-    /^#+[[:space:]]+[Aa]cceptance [Cc]riteria[[:space:]]*$/ { on = 1; next }
-    on && /^#+[[:space:]]/ { exit }
-    !on || /^[[:space:]]*$/ { next }
-    {
-      match($0, /^[[:space:]]*/); indent = RLENGTH; text = substr($0, indent + 1)
-      if (text ~ /^[-*+][[:space:]]/) {
-        if (item != "") print item
-        text = substr(text, 3); sub(/^\[[ xX]\][[:space:]]*/, "", text)
-        depth = (indent == 0) ? "" : "  "
-        item = "    " depth "[ ] " text
-      } else if (item != "") {
-        item = item " " text
-      } else {
-        print "    " text
-      }
-    }
-    END { if (item != "") print item }'
+# The checklist as the reader splits it, what's left for you first: criteria_json on stdin.
+checklist() {
+  jq -r '
+    def rows: map("    \(if .depth > 0 then "  " else "" end)[\(if .ticked then "x" else " " end)] \(.text)");
+    map(select(.how == null)) as $left | map(select(.how != null)) as $team
+    | (if $left == [] then [] else ["Left for you (\($left | length)):"] + ($left | rows) end)
+      + (if $team == [] then [] else
+          ["Checked by the team (\($team | length))\(if any($team[]; .how == "screen") then ", pictures on the PR" else "" end):"]
+          + ($team | rows) end)
+    | .[]'
 }
 
 CLEAN=false
@@ -143,8 +133,7 @@ else
     CHECKLIST="  Could not read the issue #$PR closes, so there's no checklist."
   elif [ -n "$closes" ]; then
     AT="$AT (closes #$(jq -r .number <<<"$closes"))"
-    CHECKLIST=$(jq -r '.body // empty' <<<"$closes" | criteria)
-    [ -z "$CHECKLIST" ] || CHECKLIST=$'  What this should let you do\n'"$CHECKLIST"
+    CHECKLIST=$(criteria_json "$(jq -r '.body // empty' <<<"$closes")" "$(jq -r '.body // empty' <<<"$pull")" | checklist)
   fi
   AFTER="Removed the worktree. Merge #$PR if it did what you wanted."
 fi

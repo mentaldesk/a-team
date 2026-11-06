@@ -72,8 +72,8 @@ Find it with `a-team board {{team}} pr <n>`, then:
   general rule that PRs stay in draft. While `pr` reports `"review": "waiting"`, leave it a draft:
   the Reviewer reads it first. After pushing fixes for a review, end the run: a later run marks
   it ready once CI is green again.
-- When a fix changes something on screen, snapshot each screen again and run `pictures` as in step
-  4 with all of them, so the PR shows what it does now.
+- When a fix changes something on screen, snapshot each screen again and run `pictures` and `checked`
+  as in step 4 with all of them, so the PR shows what it does now.
 - Leave it there and end the run. The stakeholder merges.
 
 If your task is a Dependabot PR, it's its own PR, and these replace the steps above that don't fit:
@@ -149,8 +149,12 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
    test-plan section. Once the PR has a number, edit the body so it ends, just above the
    marker, with the line `a-team try {{team}} <pr>` for it. If the task changes what the user sees,
    put your snapshots on it with `a-team board {{team}} pictures dev <pr> <image> "<criterion>" ...`,
-   one per screen, each captioned with the acceptance criterion it shows. It replaces any pictures
-   the PR had. A task with nothing on screen gets none.
+   one per criterion you saw on screen, captioned in that criterion's own words as
+   `a-team board {{team}} criteria <n>` gives them; one snapshot can serve several. It replaces any
+   pictures the PR had. A task with nothing on screen gets none. Then say what you checked, with
+   `a-team board {{team}} checked dev <pr> <criterion>=screen|test ...`, numbered as `criteria` numbers
+   them: `screen` for one you saw working, with its picture, `test` for one a test in the PR proves.
+   The rest stay with the stakeholder, so never claim one you didn't check.
 7. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
 8. Leave the task In progress and end the run. A later run marks the PR ready once CI is green.
 
