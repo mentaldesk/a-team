@@ -149,6 +149,33 @@ APP_FROM=2026-09-29T00:00:00Z
 BOT=$(cfg .app.slug)
 BOT=${BOT:+${BOT}[bot]}
 
+# act_as_app <role>: from here on gh is the team's App, whatever login this shell has, or the command stops before it reaches GitHub.
+act_as_app() {
+  local why=
+  if [ -z "$(cfg .app.id)" ]; then
+    why="no GitHub App: run a-team app create $TEAM, then install it"
+  elif ! GH_TOKEN=$("$ROOT/bin/a-team" token "$TEAM" 2>&1); then
+    why=${GH_TOKEN#a-team token: }
+  fi
+  [ -z "$why" ] || die "$1 acts as ${BOT:-the App}, which can't get a token: $why"
+  export GH_TOKEN
+}
+
+case "$CMD" in
+  accept | add | approve | attach | audited | claim | comment | covered | decide | decision | decline | depends | \
+    edit | feedback | finish | fix | hold | mine | move | new | pictures | priority | recommend | reconfirm | \
+    release | replace | review | seeded | shelve | skip | spent | task | theme | triggers | unblock | undepend | \
+    unlink | vision-review)
+    speaker=${1:-}
+    [ "$CMD" != triggers ] || [ "$speaker" != --sweep ] || speaker=${2:-}
+    case "$speaker" in
+      lead | dev | customer | reviewer) act_as_app "$speaker" ;;
+      you) [ -z "${A_TEAM_RUN_TEAM:-}" ] || die "only the stakeholder can $CMD as you, and this is a team's run" ;;
+    esac
+    ;;
+  lead-next) act_as_app lead ;;
+esac
+
 # login: an author as REST spells it. GraphQL leaves a bot's "[bot]" off its login.
 LOGIN='if . == null then "" elif .__typename == "Bot" then "\(.login)[bot]" else .login end'
 
