@@ -7602,7 +7602,7 @@ fake_claude() {
   cat >"$BIN/claude" <<SH
 #!/usr/bin/env bash
 { echo "args: \$*"; echo "cwd: \$(pwd -P)"; echo "hold: \$(jq -c .dispatch.hold "$TEAM")"
-  echo "signals: \$(grep -c TERM "$SIGNALS")"; } >>"$RESUMED"
+  echo "signals: \$(grep -c TERM "$SIGNALS")"; echo "team: \${A_TEAM_RUN_TEAM:-}"; } >>"$RESUMED"
 exit ${1:-0}
 SH
   chmod +x "$BIN/claude"
@@ -7630,6 +7630,7 @@ same "resumed" "args: --resume sess-123" "$(sed -n 1p "$RESUMED")"
 same "cwd" "cwd: $(cd "$WORKDIR" && pwd -P)" "$(sed -n 2p "$RESUMED")"
 same "held first" 'hold: ["dev"]' "$(sed -n 3p "$RESUMED")"
 same "stopped first" "signals: 1" "$(sed -n 4p "$RESUMED")"
+same "resumed as a team's run, so you commands refuse" "team: demo" "$(sed -n 5p "$RESUMED")"
 same "released" '[]' "$(held)"
 
 case_ "attach on a finished role doesn't signal anything, and resumes"
@@ -8056,7 +8057,7 @@ says() {
   same "problems" "$2" "$(grep -E '^[a-z]+ {2,}' "$OUT")"
 }
 NO_KEY=1 checked
-says 1 "app       demo-app[bot] has no key in the login Keychain (service 'a-team-app', account 'mentaldesk'): run a-team app create demo"
+says 1 "app       demo-app[bot] has no key in the login Keychain (service 'a-team-app', account 'mentaldesk'): generate a new private key on the App's settings page on GitHub, then run: security add-generic-password -U -s a-team-app -a mentaldesk -w \"\$(openssl base64 -A -in <the .pem you downloaded>)\""
 rm -f "$CACHE"
 MINT_FAILS=1 checked
 same "no token exit" 1 "$STATUS"
@@ -8239,6 +8240,13 @@ run app create demo
 same "exit" 0 "$STATUS"
 grep -q 'installed    on mentaldesk/demo already' "$OUT" || fail "installed: '$(cat "$OUT")'"
 same "opened" '' "$(cat "$OPENED")"
+
+case_ "app create on a team whose App has lost its key says how to restore it, not to run app create"
+app_fixture
+NO_KEY=1 run app create demo
+failed "lost key"
+grep -q "no private key .*: generate a new private key on the App's settings page" "$ERR" || fail "lost key: '$(cat "$ERR")'"
+grep -q 'app create' "$ERR" && fail "lost key: sent back to app create: '$(cat "$ERR")'"
 
 case_ "app create again with a key that isn't the App's says so, rather than opening the install page"
 MINT_FAILS=1 run app create demo
@@ -10844,8 +10852,9 @@ A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
 : >"$BIN/tokens"
 NO_TOKEN=1 NO_KEY=1 run board demo comment lead 7 "$WORK/identity-reply"
 failed "no key"
-grep -q "^board.sh: lead acts as demo-app\[bot\], which can't get a token: no private key .*: run a-team app create demo$" "$ERR" ||
+grep -q "^board.sh: lead acts as demo-app\[bot\], which can't get a token: no private key .*: generate a new private key on the App's settings page on GitHub, then run: security add-generic-password -U -s a-team-app -a mentaldesk -w " "$ERR" ||
   fail "no key: '$(cat "$ERR")'"
+grep -q 'app create' "$ERR" && fail "no key: sent to app create, which needs the key: '$(cat "$ERR")'"
 same "no key gh calls" 0 "$(grep -c '' <"$BIN/tokens")"
 
 case_ "a role whose App isn't installed stops, saying where to install it, and reaches nothing as you"

@@ -26,7 +26,7 @@ if jq -er --argjson now "$(date +%s)" '
   exit 0
 fi
 
-jwt=$(app_jwt "$ID" "${REPO%/*}" 2>&1) || die "$jwt: run a-team app create $TEAM"
+jwt=$(app_jwt "$ID" "${REPO%/*}" 2>&1) || die "$jwt"
 installation=$(installation "$ID" "${REPO%/*}" "$REPO" "$jwt") || {
   [ $? -eq 2 ] && die "$installation: install it at https://github.com/apps/$SLUG/installations/new"
   die "$installation"

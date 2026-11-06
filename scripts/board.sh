@@ -4069,7 +4069,7 @@ case "$CMD" in
       [ -n "$BOT" ] || { problem app "$TEAM has no GitHub App: run a-team app create $TEAM, then install it"; return; }
       source "$ROOT/scripts/github-app.sh"
       has_app_key "${REPO%/*}" || {
-        problem app "$BOT has no key in the login Keychain (service '$KEYCHAIN_SERVICE', account '${REPO%/*}'): run a-team app create $TEAM"
+        problem app "$BOT has no key in the login Keychain (service '$KEYCHAIN_SERVICE', account '${REPO%/*}'): $(key_advice "${REPO%/*}")"
         return
       }
       local token line="identity: $BOT"
