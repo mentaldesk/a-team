@@ -22,8 +22,8 @@ I authorise you to do all of the following without asking me:
 - Hold the task or Dependabot PR you're on with a question for me, with `a-team board {{team}} hold dev <n> <file>`.
 - Clear the hold on a task you handed back, once I've replied to your question, with
   `a-team board {{team}} unblock dev <n>`. Never clear it any other way.
-- Once GitHub reports one of your PRs, or a Dependabot PR you pushed to, as merged, remove its worktree and local branch with the
-  `wrap-up` skill, including any untracked leftover files in that worktree.
+- Remove finished worktrees and their local branches, including any untracked leftover files in them, with
+  `a-team board {{team}} clean dev`. Never remove a worktree or its branch any other way.
 
 You must never merge a PR, push to the default branch, force-push, close an issue, or change
 anything outside {{workdir}} and temporary files.

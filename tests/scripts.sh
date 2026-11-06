@@ -186,9 +186,9 @@ gh_items() {
     {id: "OP_medium", name: "Medium"}, {id: "OP_low", name: "Low"}]}]}}}}' >"$FIELDS"
   echo '[]' >"$EMPTY"
   META="$BIN/meta.json"
-  jq -n '{data: {organization: {projectV2: {id: "PVT_1", title: "demo", field: {id: "PVTSSF_status", options: [
+  jq -n '{data: {organization: {projectV2: {id: "PVT_1", title: "demo", fields: {nodes: [{id: "PVTSSF_status", name: "Status", options: [
     {id: "OPT_exploring", name: "Exploring"}, {id: "OPT_pitched", name: "Pitched"},
-    {id: "OPT_approved", name: "Approved"}, {id: "OPT_done", name: "Done"}]}}}}}' >"$META"
+    {id: "OPT_approved", name: "Approved"}, {id: "OPT_done", name: "Done"}]}]}}}}}' >"$META"
   gh_thread </dev/null
   gh_recent </dev/null
   RUNS="$BIN/runs.json"
@@ -272,7 +272,8 @@ case " \$* " in
   *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
   *"pr view"*) page="$BUMP_VIEW" ;;
   *"pr list"*"app/demo-app"*) echo "\$*" >>"$UPSTREAM_CALLS"; page="$UPSTREAM" ;;
-  *ProjectV2SingleSelectField*) page="$META" ;;
+  *ProjectV2SingleSelectField*) [ ! -e "$BIN/project-read-fails" ] || { cat "$BIN/project-read-fails" >&2; exit 1; }
+                                page="$META" ;;
   *BoardRefresh*) jq --argjson off "\$(cat "$BIN/off-mirror" 2>/dev/null || echo '[]')" '{data: {nodes: [.data.organization.projectV2.items.nodes[]
                         | .content + {projectItems: {nodes: (if .content.number | IN(\$off[]) then [] else [
                         {id, project: {number: 1, owner: {login: "mentaldesk"}}, fieldValueByName}] end)}}]}}' "$ITEMS"; exit 0 ;;
@@ -1422,6 +1423,7 @@ JSON
 gh_items <<'ITEMS'
 Done 99 Already merged
 ITEMS
+jq '.data.organization.projectV2.fields.nodes[0].name = "Work state"' "$META" >"$META.new" && mv "$META.new" "$META"
 waiting
 same "exit" 0 "$STATUS"
 
@@ -1816,7 +1818,7 @@ grep -q "can't close #9 (gh: Resource not accessible by integration (HTTP 403))"
 rm "$BIN/close-fails"
 
 case_ "a Status option whose id is all digits is sent as a string"
-jq '.data.organization.projectV2.field.options |= map(if .name == "Done" then .id = "98236657" else . end)' \
+jq '.data.organization.projectV2.fields.nodes[0].options |= map(if .name == "Done" then .id = "98236657" else . end)' \
   "$META" >"$META.new" && mv "$META.new" "$META"
 : >"$WRITES"
 run board demo decline you 9 "$WORK/reason"
@@ -1841,7 +1843,7 @@ Exploring 8 A pitch still being drafted
 Idea 9 An Idea
 Ready 10 A task
 ITEMS
-jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_thread <<THREAD
 comment $(ago 1) reviewer 0 What would this cost to run?
 THREAD
@@ -2543,7 +2545,7 @@ same "fetched once" 1 "$(grep -c RAW "$WRITES")"
 unset TMPDIR
 
 case_ "add you puts your own issue on the board as an Idea, with no label"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_child 41 - - "It always starts on the first team."
 run board demo add you 41 Idea
 same "exit" 0 "$STATUS"
@@ -3030,7 +3032,7 @@ same "labels" "(dry run) created label pitch" "$(grep 'created label' "$OUT")"
 
 case_ "setup drops the Todo and In Progress GitHub made, unless an item has one"
 cp "$META" "$BIN/meta.saved"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_todo", name: "Todo"}, {id: "OPT_ip", name: "In Progress"}]' \
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_todo", name: "Todo"}, {id: "OPT_ip", name: "In Progress"}]' \
   "$BIN/meta.saved" >"$META"
 jq '.data.organization.projectV2.items.nodes[0].fieldValueByName.name = "In Progress"' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
 run board --dry-run demo setup
@@ -3047,10 +3049,62 @@ listed=$(cat "$OUT")
 run board demo setup
 same "exit" 0 "$STATUS"
 [ -n "$listed" ] || fail "dry run: nothing listed"
-same "options" "$(sed -En 's/^  (keep|add ) {2}//p' <<<"$listed")" \
+same "options" "$(grep -v '^  add   field ' <<<"$listed" | sed -En 's/^  (keep|add ) {2}//p')" \
   "$(jq -r '.variables.input.singleSelectOptions[].name' "$BIN/mutation.json")"
 same "labels" "$(sed -n 's/^(dry run) created label //p' <<<"$listed")" \
   "$(sed -n 's/^label create \([^ ]*\) .*/\1/p' "$WRITES")"
+
+case_ "setup adds whichever of the Lead rank and Theme fields the project lacks, and its dry run lists them"
+add_field() { jq --arg name "$1" '.data.organization.projectV2.fields.nodes += [{id: "PVTF_\($name)", name: $name, dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"; }
+listed_fields() { sed -n 's/^  add   field //p' "$OUT" | paste -sd, -; }
+added_fields() { sed -n 's/^FIELD .*name=\(.*\) FIELD -f.*/\1/p' "$WRITES" | paste -sd, -; }
+run board --dry-run demo setup
+same "neither: listed" "Lead rank,Theme" "$(listed_fields)"
+: >"$WRITES"
+run board demo setup
+same "exit" 0 "$STATUS"
+same "neither: added" "Lead rank,Theme" "$(added_fields)"
+cp "$META" "$BIN/meta.saved"
+add_field Theme
+run board --dry-run demo setup
+same "only Theme: listed" "Lead rank" "$(listed_fields)"
+: >"$WRITES"
+run board demo setup
+same "only Theme: added" "Lead rank" "$(added_fields)"
+add_field "Lead rank"
+run board --dry-run demo setup
+same "both: listed" "" "$(listed_fields)"
+: >"$WRITES"
+run board demo setup
+same "exit" 0 "$STATUS"
+same "both: added" "" "$(added_fields)"
+mv "$BIN/meta.saved" "$META"
+
+case_ "setup and check name a Lead rank or Theme field of the project's own, before setup changes anything"
+cp "$META" "$BIN/meta.saved"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTSSF_theme", name: "Theme", dataType: "SINGLE_SELECT", options: []},
+    {id: "PVTF_rank", name: "Lead rank", dataType: "TEXT"}]' "$BIN/meta.saved" >"$META"
+clash="mentaldesk project 1 has a Theme field that isn't text, so a-team can't copy to it: rename that field"
+rm -f "$BIN/mutation.json"
+: >"$WRITES"
+run board demo setup
+same "exit" 1 "$STATUS"
+grep -qF "$clash" "$ERR" || fail "setup: nothing about the clash in '$(cat "$ERR")'"
+[ ! -e "$BIN/mutation.json" ] || fail "setup: Status options changed"
+same "writes" "" "$(cat "$WRITES")"
+run board --dry-run demo setup
+same "dry run: exit" 1 "$STATUS"
+grep -qF "$clash" "$ERR" || fail "dry run: nothing about the clash in '$(cat "$ERR")'"
+run board demo check
+grep -qF "fields    $clash" "$OUT" || fail "check: nothing about the clash in '$(cat "$OUT")'"
+mv "$BIN/meta.saved" "$META"
+
+case_ "setup names GitHub's reason when it can't read the project"
+echo "gh: Could not resolve to a ProjectV2 with the number 1." >"$BIN/project-read-fails"
+run board demo setup
+failed "setup"
+grep -qF "Could not resolve to a ProjectV2 with the number 1." "$ERR" || fail "setup: '$(cat "$ERR")'"
+rm "$BIN/project-read-fails"
 
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'
@@ -3197,7 +3251,7 @@ Pitched 12 A pitch in front of the stakeholder
 Idea 13 An idea
 Ready 40 A task
 ITEMS
-jq '.data.organization.projectV2.field.options += [{id: "OPT_ready", name: "Ready"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_ready", name: "Ready"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 printf '## Context\n\nFor #10.\n' >"$WORK/task"
 for pitch in 10 11; do
   gh_child 77 - -
@@ -3382,7 +3436,7 @@ case_ "the Dev puts a follow-up it opened on the board as an Idea, without the L
 gh_items <<'ITEMS'
 In_progress 12 A task
 ITEMS
-jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_child 41 - - "Follow-up from #12.
 
 <!-- a-team:dev -->"
@@ -3541,7 +3595,7 @@ echo '[]' >"$UPDATES"
 
 # A project whose Status field has the options a claim moves through.
 claimable() {
-  jq '.data.organization.projectV2.field.options += [{id: "OPT_ready", name: "Ready"}, {id: "OPT_progress", name: "In progress"}]' \
+  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_ready", name: "Ready"}, {id: "OPT_progress", name: "In progress"}]' \
     "$META" >"$META.new" && mv "$META.new" "$META"
 }
 
@@ -3678,7 +3732,7 @@ add_card() {
 # statuses: each card's number and Status, as the last command printed them.
 statuses() { jq -c 'map([.number, .status])' "$OUT"; }
 every_status() {
-  jq '.data.organization.projectV2.field.options = ([["Idea", "idea"], ["Exploring", "exploring"], ["Pitched", "pitched"],
+  jq '.data.organization.projectV2.fields.nodes[0].options = ([["Idea", "idea"], ["Exploring", "exploring"], ["Pitched", "pitched"],
       ["Approved", "approved"], ["Building", "building"], ["Ready", "ready"], ["In progress", "progress"],
       ["In review", "review"], ["Done", "done"]] | map({id: "OPT_\(.[1])", name: .[0]}))' "$META" >"$META.new" && mv "$META.new" "$META"
 }
@@ -3945,6 +3999,107 @@ A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
 same "caught up" '[]' "$(jq -c '[.[] | select(.number == null)]' "$OUT")"
 grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "catch-up: mirror not written in '$(cat "$WRITES")'"
+
+case_ "the lane says GitHub unreachable only when it was, and otherwise gives GitHub's own reason"
+mirror_says() {
+  gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+  claimable
+  printf '%s\n' "$1" >"$BIN/project-read-fails"
+  run board demo claim dev
+  same "exit" 0 "$STATUS"
+  A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+  same "$1" "$2" "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+  rm "$BIN/project-read-fails"
+}
+mirror_says "gh: Could not resolve to a ProjectV2 with the number 1." "GitHub refused: Could not resolve to a ProjectV2 with the number 1."
+mirror_says "gh: Resource not accessible by integration" "GitHub refused: Resource not accessible by integration"
+mirror_says "gh: Bad credentials (HTTP 401)" "GitHub refused: Bad credentials (HTTP 401)"
+mirror_says "Could not resolve host: api.github.com" "GitHub unreachable"
+mirror_says "error connecting to api.github.com" "GitHub unreachable"
+mirror_says 'Post "https://api.github.com/graphql": dial tcp: lookup api.github.com: no such host' "GitHub unreachable"
+mirror_says "gh: Post https://api.github.com/graphql: net/http: request canceled (Client.Timeout exceeded): timeout" "GitHub unreachable"
+mirror_says "gh: Bad Gateway (HTTP 502)" "GitHub unreachable"
+mirror_says 'Post "https://api.github.com/graphql": EOF' "GitHub unreachable"
+mirror_says "gh: Could not resolve to an Organization with the login of 'geoff-network-timeout'." \
+  "GitHub refused: Could not resolve to an Organization with the login of 'geoff-network-timeout'."
+
+case_ "a project with no Status field refuses, and says so"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+jq '.data.organization.projectV2.fields.nodes = []' "$META" >"$META.new" && mv "$META.new" "$META"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "reason" "GitHub refused: no single-select field 'Status' on mentaldesk project 1" \
+  "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+
+case_ "the board's own reasons are refusals, whatever the owner is called"
+cp "$TEAM" "$WORK/team.saved"
+jq '.project.owner = "acme-network-timeout"' "$WORK/team.saved" >"$TEAM"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+jq '.data.organization.projectV2.fields.nodes = []' "$META" >"$META.new" && mv "$META.new" "$META"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "reason" "GitHub refused: no single-select field 'Status' on acme-network-timeout project 1" \
+  "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+mv "$WORK/team.saved" "$TEAM"
+
+case_ "a sync on a project with a Theme of its own says so, and makes no field of that name"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo claim dev
+same "exit" 0 "$STATUS"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_object('theme', 'Good UX') WHERE team = 'demo' AND item = 13;"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTSSF_theme", name: "Theme", dataType: "SINGLE_SELECT", options: []}]' "$META" >"$META.new" && mv "$META.new" "$META"
+: >"$WRITES"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+grep -q '^FIELD ' "$WRITES" && fail "made a field: '$(cat "$WRITES")'"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "reason" "GitHub refused: mentaldesk project 1 has a Theme field that isn't text, so a-team can't copy to it: rename that field" \
+  "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+
+case_ "a sync on a project missing a field copies, and makes the field only once it has a value for it"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+: >"$WRITES"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "status not copied: '$(cat "$WRITES")'"
+grep -q '^FIELD ' "$WRITES" && fail "made a field with nothing to put in it: '$(cat "$WRITES")'"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_object('rank', 'High', 'theme', 'Good UX') WHERE team = 'demo' AND item = 13;"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme", dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+: >"$WRITES"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+same "only the one missing" 1 "$(grep -c '^FIELD ' "$WRITES")"
+grep -q 'FIELD .*name=Lead rank' "$WRITES" || fail "no Lead rank field: '$(cat "$WRITES")'"
+grep -q 'field=PVTF_new -f text=High' "$WRITES" || fail "rank not copied: '$(cat "$WRITES")'"
+grep -q 'field=PVTF_theme -f text=Good UX' "$WRITES" || fail "theme not copied: '$(cat "$WRITES")'"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "lane" '[]' "$(jq -c '[.[] | select(.number == null)]' "$OUT")"
+
+case_ "a catch-up that copied a batch stops saying it failed, though more items are still to come"
+gh_items <<ITEMS
+$(for i in $(seq 100 124); do echo "Ready $i Task $i"; done)
+ITEMS
+claimable
+A_TEAM_BOARD_READ_EVERY=3600 run board demo wip
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_object('rank', 'High') WHERE team = 'demo';
+  UPDATE boards SET failed = 'GitHub unreachable', retry = '2000-01-01T00:00:00Z' WHERE team = 'demo';"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "lag" '{"behind":5,"failed":null,"retry":null}' "$(jq -c '.[] | select(.number == null) | .mirror' "$OUT")"
 
 case_ "a card moved on the mirror is put back, to and from every status, and its history says a change there isn't a move"
 gh_items <<'ITEMS'
@@ -4720,7 +4875,7 @@ ITEMS
 docs_pr 9
 jq '(.data.organization.projectV2.items.nodes[] | select(.content.number == 9)) |= (.fieldValueByName = null)' \
   "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
   "$META" >"$META.new" && mv "$META.new" "$META"
 jq -n '{node_id: "PR_9", number: 9, state: "open", pull_request: {},
         body: "- Help → Guide covers the Customer lead (#48)\n\n<!-- a-team:customer -->"}' >"$ISSUE"
@@ -4783,7 +4938,7 @@ same "posted" "" "$(cat "$POSTED")"
 
 case_ "accepting the docs PR squash-merges it, deletes its branch and moves it to Done"
 : >"$WRITES"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 echo '{"head": {"sha": "deadbeefcafe", "ref": "docs/customer-lead", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
 run board demo accept you 9
 same "exit" 0 "$STATUS"
@@ -4819,7 +4974,7 @@ dependabot_pr() {
     | del(.issueDependenciesSummary, .issueFieldValues)'
 }
 reviewable() {
-  jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
+  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
     "$META" >"$META.new" && mv "$META.new" "$META"
 }
 
@@ -5434,7 +5589,7 @@ run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" "[\"no user docs yet: propose where they'll live\"]" "$(jq -c .reasons "$OUT")"
 [ -e "$AUDITED" ] && fail "the audit isn't due as soon as the docs page appears"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
   mv "$META.new" "$META"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
 run board demo add customer 15 "In review"
@@ -5508,7 +5663,7 @@ same "writes" "" "$(cat "$WRITES")"
 
 case_ "a docs PR goes into In review beside a leftover proposal once the docs page is in the repo"
 rm "$WORK/no-docs"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
   mv "$META.new" "$META"
 jq -n '{node_id: "PR_15", number: 15, state: "open", draft: false, body: "<!-- a-team:customer -->"}' >"$PULL"
 run board demo add customer 15 "In review"
@@ -5581,7 +5736,7 @@ run board demo triggers customer
 same "reasons" '["pitch #16 is done: check the docs cover what it shipped","weekly docs audit: check the docs as a whole"]' \
   "$(jq -c .reasons "$OUT")"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
   mv "$META.new" "$META"
 run board demo add customer 15 "In review"
 same "docs PR" 0 "$STATUS"
@@ -5605,7 +5760,7 @@ jq '.wip = {pitched: 2, exploring: 4, ideas: 2}' "$TEAM" >"$TEAM.new" && mv "$TE
 gh_items <<'ITEMS'
 Idea 41 I can't find how to pause one role
 ITEMS
-jq '.data.organization.projectV2.field.options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 customer_issue 41 "**Evidence**: the guide's Dashboard page doesn't say.
 
 <!-- a-team:customer -->"
@@ -6013,7 +6168,7 @@ document_pitch() {
 ${2:-Pitched} $1 Vision review: themes 1 and 5 have run dry
 ITEMS
   edit_item "$1" '.__typename = "PullRequest" | .labels.nodes = [{name: "pitch"}] | del(.issueDependenciesSummary, .issueFieldValues)'
-  jq '.data.organization.projectV2.field.options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
   echo '{"head": {"sha": "deadbeefcafe", "ref": "a-team/vision", "repo": {"full_name": "mentaldesk/demo"}}, "draft": true}' >"$PULL"
 }
 
@@ -6135,7 +6290,7 @@ grep -q 'labels/theme%3A%20Think%20bigger' "$BIN/unlabelled" || fail "old label 
 same "history" "lead theme: Consistently good UX" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
 
 case_ "none takes the theme off, on the mirror too"
-jq '.data.organization.projectV2.theme = {id: "PVTF_theme"}' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme", dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 : >"$WRITES"
 KEEP_BOARD=1 run board demo theme lead 81 none
 same "exit" 0 "$STATUS"
@@ -6357,6 +6512,290 @@ same "worktrees left" "" "$(worktrees)"
 run try demo 7 --clean
 same "exit" 0 "$STATUS"
 grep -q 'Nothing to remove' "$OUT" || fail "--clean twice: '$(cat "$OUT")'"
+
+# A try of #7 left running, its `try` command staying until $TRY_WORK/go appears, so a test can act during it.
+try_while_running() {
+  try_fixture hold
+  try_gh
+  cat >"$TRY_BIN/hold" <<SH
+#!/usr/bin/env bash
+touch "$TRY_WORK/started"
+until [ -e "$TRY_WORK/go" ]; do sleep 0.1; done
+SH
+  chmod +x "$TRY_BIN/hold"
+  A_TEAM_CONFIG="$CONFIG" "$A_TEAM" try demo 7 >"$OUT.first" 2>&1 &
+  TRY_FIRST=$!
+  until [ -e "$TRY_WORK/started" ]; do sleep 0.1; done
+}
+
+case_ "a second try of a PR being tried refuses, says why in the terminal and for Work's bar, and leaves the first alone"
+try_while_running
+touch "$TRY_WORK/.try/state/7/theirs"
+A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 7
+same "exit" 1 "$STATUS"
+same "terminal" "a-team try: #7 is already being tried (pid $TRY_FIRST): quit that one first" "$(cat "$ERR")"
+same "for the bar" "#7 is already being tried (pid $TRY_FIRST): quit that one first" "$(cat "$TRY_WORK/failed")"
+[ -e "$TRY_WORK/.try/7/file" ] || fail "second try: the first's worktree is gone"
+[ -e "$TRY_WORK/.try/state/7/theirs" ] || fail "second try: the first's sandbox is gone"
+same "first still running" "$TRY_FIRST" "$(cat "$TRY_WORK/.try/state/7.pid")"
+
+case_ "--clean on a PR being tried refuses the same way"
+run try demo 7 --clean
+same "exit" 1 "$STATUS"
+same "terminal" "a-team try: #7 is already being tried (pid $TRY_FIRST): quit that one first" "$(cat "$ERR")"
+[ -e "$TRY_WORK/.try/7/file" ] || fail "--clean: the first's worktree is gone"
+[ -e "$TRY_WORK/.try/state/7/theirs" ] || fail "--clean: the first's sandbox is gone"
+
+case_ "the first try carries on after both, and clears up when it's quit"
+touch "$TRY_WORK/go"
+wait "$TRY_FIRST"
+same "exit" 0 "$?"
+[ ! -e "$TRY_WORK/.try/state/7.pid" ] || fail "quit: it's still marked as being tried"
+
+case_ "after a try is killed, the next try of that PR starts normally"
+try_while_running
+kill -9 "$TRY_FIRST"
+wait "$TRY_FIRST" 2>/dev/null
+touch "$TRY_WORK/go"
+rm -f "$TRY_WORK/started"
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/started" ] || fail "killed: the next try didn't run"
+[ ! -e "$TRY_WORK/.try/state/7.pid" ] || fail "killed: its record is still there"
+
+case_ "a pid another process has since been given doesn't block a try or --clean"
+try_fixture record
+try_gh
+mkdir -p "$TRY_WORK/.try/state"
+echo $$ >"$TRY_WORK/.try/state/7.pid"
+touch -t 200001010000 "$TRY_WORK/.try/state/7.pid"
+run try demo 7 --clean
+same "--clean exit" 0 "$STATUS"
+echo $$ >"$TRY_WORK/.try/state/7.pid"
+touch -t 200001010000 "$TRY_WORK/.try/state/7.pid"
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/ran" ] || fail "reused pid: the try didn't run"
+
+case_ "a try of the default branch refuses while one is running, naming the branch"
+try_fixture hold
+try_gh
+cat >"$TRY_BIN/hold" <<SH
+#!/usr/bin/env bash
+touch "$TRY_WORK/started"
+until [ -e "$TRY_WORK/go" ]; do sleep 0.1; done
+SH
+chmod +x "$TRY_BIN/hold"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" try demo >"$OUT.first" 2>&1 &
+TRY_FIRST=$!
+until [ -e "$TRY_WORK/started" ]; do sleep 0.1; done
+run try demo
+same "terminal" "a-team try: main is already being tried (pid $TRY_FIRST): quit that one first" "$(cat "$ERR")"
+touch "$TRY_WORK/go"
+wait "$TRY_FIRST"
+
+# --- a-team board clean -----------------------------------------------------------------------
+# A checkout from try_fixture, and a gh answering `pr list --head <branch>` with what clean_pr gave that branch.
+clean_world() {
+  try_fixture
+  CLEAN_BIN=$(mktemp -d "$WORK/cleanbin.XXXXXX")
+  cat >"$CLEAN_BIN/gh" <<SH
+#!/usr/bin/env bash
+[ ! -e "$CLEAN_BIN/fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    --head) branch=\$2; shift ;;
+    -R) repo=\$2; shift ;;
+  esac
+  shift
+done
+echo "\$repo" >>"$CLEAN_BIN/repos"
+cat "$CLEAN_BIN/\${branch//\//_}.json" 2>/dev/null || echo '[]'
+SH
+  chmod +x "$CLEAN_BIN/gh"
+  CLEAN_PATH=$CLEAN_BIN:$PATH
+}
+
+# clean_pr <branch> <number> <state> <sha> [<marker role, or "" for none>] [<jq to apply to it>]: another PR on <branch>, oldest first.
+clean_pr() {
+  local file="$CLEAN_BIN/${1//\//_}.json"
+  [ -e "$file" ] || echo '[]' >"$file"
+  jq --argjson number "$2" --arg state "$3" --arg sha "$4" --arg role "${5-dev}" "
+    [{number: \$number, state: \$state, headRefOid: \$sha, isCrossRepository: false, author: {login: \"app/demo-app\"},
+      body: (if \$role == \"\" then \"By hand\" else \"Does it\n<!-- a-team:\(\$role) -->\" end)} | ${6:-.}] + ." "$file" >"$file.new" &&
+    mv "$file.new" "$file"
+}
+
+# clean_tree <slug> <branch>: a worktree on a new <branch> from origin/main; its HEAD in TREE_HEAD.
+clean_tree() {
+  git -C "$CHECKOUT" worktree add -q "$TRY_WORK/$1" -b "$2" origin/main 2>/dev/null
+  TREE_HEAD=$(git -C "$TRY_WORK/$1" rev-parse HEAD)
+}
+
+clean() { PATH=$CLEAN_PATH run board "$@" clean "$CLEAN_ROLE"; }
+branches() { git -C "$CHECKOUT" branch --format='%(refname:short)' | grep -v '^main$'; }
+
+case_ "clean removes a merged PR's worktree and branch, at its last commit with no tracked changes, untracked files and all"
+clean_world
+CLEAN_ROLE=dev
+clean_tree finished feat/finished
+clean_pr feat/finished 11 MERGED "$TREE_HEAD"
+touch "$TRY_WORK/finished/build-output"
+clean demo
+same "exit" 0 "$STATUS"
+[ ! -e "$TRY_WORK/finished" ] || fail "merged and clean: the worktree is still there"
+same "branches" "" "$(branches)"
+grep -q 'Removed .*finished: #11 has merged' "$OUT" || fail "merged and clean: '$(cat "$OUT")'"
+same "asked" mentaldesk/demo "$(cat "$CLEAN_BIN/repos")"
+
+case_ "clean leaves a worktree whose HEAD is past the PR's last commit, and says why"
+clean_world
+clean_tree past feat/past
+clean_pr feat/past 12 MERGED "$TREE_HEAD"
+git -C "$TRY_WORK/past" -c user.email=t@example.com -c user.name=T commit -q --allow-empty -m newer
+past=$(git -C "$TRY_WORK/past" rev-parse HEAD)
+clean demo
+same "exit" 0 "$STATUS"
+[ -d "$TRY_WORK/past" ] || fail "past: it was removed"
+same "branches" feat/past "$(branches)"
+grep -q "Left .*past: its HEAD ${past:0:7} isn't #12's last commit (${TREE_HEAD:0:7})" "$OUT" || fail "past: '$(cat "$OUT")'"
+
+case_ "clean leaves a worktree with changed tracked files"
+clean_world
+clean_tree edited feat/edited
+clean_pr feat/edited 13 MERGED "$TREE_HEAD"
+echo edit >"$TRY_WORK/edited/file"
+clean demo
+[ -d "$TRY_WORK/edited" ] || fail "edited: it was removed"
+same "edit kept" edit "$(cat "$TRY_WORK/edited/file")"
+grep -q 'Left .*edited: it has 1 changed tracked file' "$OUT" || fail "edited: '$(cat "$OUT")'"
+
+case_ "clean leaves an unmerged PR's worktree, open or closed"
+clean_world
+clean_tree opened feat/opened
+clean_pr feat/opened 14 OPEN "$TREE_HEAD"
+clean_tree closed feat/closed
+clean_pr feat/closed 15 CLOSED "$TREE_HEAD"
+clean demo
+[ -d "$TRY_WORK/opened" ] || fail "open: it was removed"
+[ -d "$TRY_WORK/closed" ] || fail "closed: it was removed"
+grep -q 'Left .*opened: #14 is open' "$OUT" || fail "open: '$(cat "$OUT")'"
+grep -q 'Left .*closed: #15 was closed without merging' "$OUT" || fail "closed: '$(cat "$OUT")'"
+
+case_ "on a reused branch only the newest PR counts, and a fork's PR of the same name doesn't"
+clean_world
+clean_tree reused feat/reused
+clean_pr feat/reused 16 MERGED "$TREE_HEAD"
+clean_pr feat/reused 17 OPEN "$TREE_HEAD"
+clean_pr feat/reused 18 MERGED "$TREE_HEAD" dev '.isCrossRepository = true'
+clean demo
+[ -d "$TRY_WORK/reused" ] || fail "reused: it was removed"
+grep -q 'Left .*reused: #17 is open' "$OUT" || fail "reused: '$(cat "$OUT")'"
+
+case_ "clean touches only the role's own: not the stakeholder's, the Lead's, the other role's, or one with no branch"
+clean_world
+clean_tree mine-by-hand feat/by-hand
+clean_pr feat/by-hand 19 MERGED "$TREE_HEAD" ''
+clean_tree vision a-team/vision
+clean_pr a-team/vision 20 MERGED "$TREE_HEAD" lead
+clean_tree docs docs/customer-lead
+clean_pr docs/customer-lead 21 MERGED "$TREE_HEAD" customer
+git -C "$CHECKOUT" worktree add -q --detach "$TRY_WORK/detached" origin/main
+clean demo
+same "exit" 0 "$STATUS"
+same "said" "No worktrees of yours to clean up." "$(cat "$OUT")"
+for tree in mine-by-hand vision docs detached; do [ -d "$TRY_WORK/$tree" ] || fail "not dev's: $tree was removed"; done
+[ -d "$CHECKOUT" ] || fail "not dev's: the checkout was removed"
+
+case_ "clean customer removes its finished worktree, and leaves every other branch to the Dev"
+CLEAN_ROLE=customer
+clean_tree dev-work feat/dev-work
+clean_pr feat/dev-work 22 MERGED "$TREE_HEAD"
+clean demo
+[ ! -e "$TRY_WORK/docs" ] || fail "customer: its merged worktree is still there"
+[ -d "$TRY_WORK/dev-work" ] || fail "customer: it removed the Dev's"
+grep -q 'Removed .*docs: #21 has merged' "$OUT" || fail "customer: '$(cat "$OUT")'"
+
+case_ "clean customer names newer work on its branch, whether the newest PR has merged or there's none"
+clean_world
+clean_tree docs docs/customer-lead
+clean_pr docs/customer-lead 23 MERGED "$TREE_HEAD" customer
+git -C "$TRY_WORK/docs" -c user.email=t@example.com -c user.name=T commit -q --allow-empty -m newer
+clean_tree proposal docs/customer-lead-proposal
+clean demo
+[ -d "$TRY_WORK/docs" ] || fail "newer: it was removed"
+[ -d "$TRY_WORK/proposal" ] || fail "no PR: it was removed"
+grep -q "Left .*docs: its HEAD .* isn't #23's last commit" "$OUT" || fail "newer: '$(cat "$OUT")'"
+grep -q "Left .*proposal: there's no PR on docs/customer-lead-proposal" "$OUT" || fail "no PR: '$(cat "$OUT")'"
+
+case_ "clean customer names a closed PR on its branch, and the role says how to start again from it"
+clean_world
+clean_tree docs docs/customer-lead
+clean_pr docs/customer-lead 27 CLOSED "$TREE_HEAD" customer
+clean demo
+[ -d "$TRY_WORK/docs" ] || fail "closed: it was removed"
+grep -q 'Left .*docs: #27 was closed without merging' "$OUT" || fail "closed: '$(cat "$OUT")'"
+grep -qF 'closed without merging' "$ROOT/roles/customer.md" || fail "closed: the role doesn't mention it"
+grep -qF 'git merge -s ours --no-commit origin/' "$ROOT/roles/customer.md" || fail "closed: the role doesn't say how to start again"
+grep -qF 'closed without merging' "$ROOT/tasks/customer.md" || fail "closed: the prompt doesn't allow it"
+
+case_ "clean treats Dependabot's merged PR as the Dev's"
+clean_world
+CLEAN_ROLE=dev
+clean_tree bump dependabot/nuget/x
+clean_pr dependabot/nuget/x 24 MERGED "$TREE_HEAD" '' '.author.login = "app/dependabot"'
+clean demo
+[ ! -e "$TRY_WORK/bump" ] || fail "Dependabot: it's still there"
+
+case_ "clean takes the Dev's worktrees of a contributed-to repo too, asking that repo, and never the clone"
+clean_world
+git clone -q "file://$TRY_ORIGIN" "$TRY_WORK/upstream-clone"
+mkdir "$TRY_WORK/upstream"
+mv "$TRY_WORK/upstream-clone" "$TRY_WORK/upstream/lib"
+jq '.contributesTo = ["other/lib"]' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+git -C "$TRY_WORK/upstream/lib" worktree add -q "$TRY_WORK/upstream/lib-change" -b feat/lib-change origin/main 2>/dev/null
+clean_pr feat/lib-change 25 MERGED "$(git -C "$TRY_WORK/upstream/lib" rev-parse origin/main)"
+clean_pr main 3 MERGED "$(git -C "$TRY_WORK/upstream/lib" rev-parse origin/main)"
+clean demo
+[ ! -e "$TRY_WORK/upstream/lib-change" ] || fail "upstream: its worktree is still there"
+[ -d "$TRY_WORK/upstream/lib" ] || fail "upstream: the clone was removed"
+same "asked" other/lib "$(sort -u "$CLEAN_BIN/repos")"
+
+case_ "clean leaves a worktree when it can't read the PRs, or this shell is in it"
+clean_world
+clean_tree here feat/here
+clean_pr feat/here 26 MERGED "$TREE_HEAD"
+touch "$CLEAN_BIN/fails"
+clean demo
+[ -d "$TRY_WORK/here" ] || fail "can't read: it was removed"
+grep -q "Left .*here: couldn't read the PRs on feat/here (gh: HTTP 502)" "$OUT" || fail "can't read: '$(cat "$OUT")'"
+rm "$CLEAN_BIN/fails"
+(cd "$TRY_WORK/here" && clean demo)
+[ -d "$TRY_WORK/here" ] || fail "in it: it was removed"
+grep -q 'Left .*here: this shell is in it' "$OUT" || fail "in it: '$(cat "$OUT")'"
+
+case_ "clean --dry-run says what it would remove and removes nothing"
+PATH=$CLEAN_PATH run board --dry-run demo clean dev
+[ -d "$TRY_WORK/here" ] || fail "dry run: it was removed"
+same "branches" feat/here "$(branches)"
+grep -q 'would remove the worktree' "$ERR" || fail "dry run: '$(cat "$ERR")'"
+grep -q '^(dry run) Removed' "$OUT" || fail "dry run: '$(cat "$OUT")'"
+
+case_ "only the Dev and the Customer lead clean up"
+for role in lead reviewer you; do
+  PATH=$CLEAN_PATH run board demo clean "$role"
+  failed "$role"
+  grep -q 'only dev and customer clean up worktrees' "$ERR" || fail "$role: '$(cat "$ERR")'"
+done
+[ -d "$TRY_WORK/here" ] || fail "other role: it was removed"
+
+case_ "the Dev and the Customer lead are told to clean up, allowed to, and can't remove a worktree any other way"
+for role in dev customer; do
+  grep -qF "a-team board {{team}} clean $role" "$ROOT/roles/$role.md" || fail "$role: not in its role"
+  grep -qF "a-team board {{team}} clean $role" "$ROOT/tasks/$role.md" || fail "$role: not in its prompt"
+  grep -qF '"Bash(git worktree remove *)"' "$ROOT/settings/$role.json" || fail "$role: no deny rule"
+  grep -q 'wrap-up' "$ROOT/roles/$role.md" "$ROOT/tasks/$role.md" && fail "$role: still told to use wrap-up"
+done
 
 case_ "a worktree left behind with nothing changed in it is replaced by a fresh one"
 try_fixture record
@@ -7984,8 +8423,8 @@ done
 # and the project's enabled workflows in workflows.json.
 mkdir -p "$APP_BIN/board"
 board_options() {
-  jq -n --args '{data: {organization: {projectV2: {id: "PVT_1", field: {id: "PVTSSF_status", options:
-    ($ARGS.positional | map({id: ., name: .}))}}}}}' "$@" >"$APP_BIN/board/meta.json"
+  jq -n --args '{data: {organization: {projectV2: {id: "PVT_1", fields: {nodes: [{id: "PVTSSF_status", name: "Status", options:
+    ($ARGS.positional | map({id: ., name: .}))}]}}}}}' "$@" >"$APP_BIN/board/meta.json"
 }
 board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
 board_labels() { jq -n --args '$ARGS.positional | map({name: .})' "$@" >"$APP_BIN/board/labels.json"; }
@@ -8013,8 +8452,8 @@ case " \$* " in
   *ProjectV2SingleSelectField*)
     [ -z "\${NO_PROJECT:-}" ] || { echo '{"data": {"organization": {"projectV2": null}}}'
       echo "gh: Could not resolve to a ProjectV2 with the number 1." >&2; exit 1; }
-    [ -z "\${NO_FIELD:-}" ] || { echo '{"data": {"organization": {"projectV2": {"id": "PVT_1", "field": null}}}}'
-      echo "gh: Could not resolve to a Unions::ProjectV2FieldConfiguration with the name Status" >&2; exit 1; }
+    [ -z "\${NO_FIELD:-}" ] || { echo '{"data": {"organization": {"projectV2": {"id": "PVT_1", "fields": {"nodes": []}}}}}'; exit 0; }
+    [ -z "\${PARTIAL_READ:-}" ] || { cat "$APP_BIN/board/meta.json"; echo "gh: Resource not accessible by integration" >&2; exit 1; }
     page="$APP_BIN/board/meta.json" ;;
   *"items(first: 1) { totalCount }"*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
                 page="$APP_BIN/board/items.json" ;;
@@ -8088,6 +8527,8 @@ says 1 "project   can't read mentaldesk project 1: Could not resolve to a Projec
 grep -q '^identity: demo-app\[bot\] · token ok · Priority readable' "$OUT" || fail "no project: the App's view in '$(cat "$OUT")'"
 NO_FIELD=1 checked
 says 1 "project   no single-select field 'Status' on mentaldesk project 1"
+PARTIAL_READ=1 checked
+says 1 "project   can't read mentaldesk project 1: Resource not accessible by integration"
 board_options Idea Approved Building Ready "In progress" "In review" Done
 checked
 says 1 "status    2 of 9 options missing from 'Status': Exploring, Pitched"
@@ -8376,7 +8817,7 @@ In_review 8 A task in front of me
 Idea 6 An idea
 ITEMS
 claimable
-jq '.data.organization.projectV2.field.options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 run board demo move dev 12 "In progress"
 recorded "move" 12 "dev Ready → In progress"
 run board demo claim dev 12
@@ -9186,6 +9627,68 @@ ended=$(date +%s)
 same "next-pass during the pass" 1800000000 "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
 left=$(($(cat "$PASS_STATE/next-pass") - ended))
 [ "$left" -ge 118 ] && [ "$left" -le 120 ] || fail "next-pass after the pass: due in ${left}s, not 120s"
+
+# overlap_first <unscheduled>: starts a pass that stays in its first jq until $OVERLAP/go appears; its pid in OVERLAP_PID.
+overlap_first() {
+  OVERLAP=$(mktemp -d "$WORK/stubs.XXXXXX")
+  printf '#!/usr/bin/env bash\ntouch "%s/started"\nuntil [ -e "%s/go" ]; do sleep 0.1; done\nexec %s "$@"\n' \
+    "$OVERLAP" "$OVERLAP" "$(command -v jq)" >"$OVERLAP/jq"
+  chmod +x "$OVERLAP/jq"
+  PATH="$OVERLAP:$PATH" A_TEAM_UNSCHEDULED=$1 A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" &
+  OVERLAP_PID=$!
+  until [ -e "$OVERLAP/started" ]; do sleep 0.1; done
+}
+
+# overlap_second <unscheduled>: a second pass, with a jq saying if it ever got as far as a team.
+overlap_second() {
+  SECOND=$(mktemp -d "$WORK/stubs.XXXXXX")
+  printf '#!/usr/bin/env bash\ntouch "%s/reached"\nexec %s "$@"\n' "$SECOND" "$(command -v jq)" >"$SECOND/jq"
+  chmod +x "$SECOND/jq"
+  PATH="$SECOND:$PATH" A_TEAM_UNSCHEDULED=$1 A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+
+for first in '' 1; do
+  for second in 1 ''; do
+    case_ "a pass (unscheduled='$first') makes another (unscheduled='$second') stop before it reaches a team"
+    rm -f "$PASS_STATE/next-pass"
+    overlap_first "$first"
+    overlap_second "$second"
+    same "exit" 0 "$STATUS"
+    same "said" "${second:+A pass is already running.}" "$(cat "$OUT")"
+    [ ! -e "$SECOND/reached" ] || fail "overlap: the second pass reached a team"
+    same "still the first's" "$OVERLAP_PID" "$(cat "$PASS_STATE/pass")"
+    kill -0 "$OVERLAP_PID" || fail "overlap: the first pass stopped"
+    if [ -z "$second" ]; then
+      [ -e "$PASS_STATE/next-pass" ] || fail "overlap: launchd's countdown restarted with no next-pass"
+    else
+      [ ! -e "$PASS_STATE/next-pass" ] || fail "overlap: an off-schedule pass wrote next-pass"
+    fi
+    touch "$OVERLAP/go"
+    wait "$OVERLAP_PID"
+    [ ! -e "$PASS_STATE/pass" ] || fail "overlap: the first didn't clear its record"
+  done
+done
+
+case_ "a killed pass doesn't block the next, in either order"
+for next in '' 1; do
+  overlap_first ''
+  kill -9 "$OVERLAP_PID"
+  wait "$OVERLAP_PID" 2>/dev/null
+  touch "$OVERLAP/go"
+  same "its record" "$OVERLAP_PID" "$(cat "$PASS_STATE/pass")"
+  overlap_second "$next"
+  same "said" "" "$(cat "$OUT")"
+  [ -e "$SECOND/reached" ] || fail "killed: the next pass didn't run"
+  [ ! -e "$PASS_STATE/pass" ] || fail "killed: its record is still there"
+done
+
+case_ "a pid another process has since been given doesn't block a pass"
+echo $$ >"$PASS_STATE/pass"
+touch -t 200001010000 "$PASS_STATE/pass"
+overlap_second ''
+same "said" "" "$(cat "$OUT")"
+[ -e "$SECOND/reached" ] || fail "reused pid: the pass didn't run"
 
 # release.sh against a repo in $REL: repo.json the GraphQL view of its default branch and latest release, runs.json
 # its latest release.yml run, and each workflow it was asked to run a line of `dispatched`.

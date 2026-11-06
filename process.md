@@ -166,6 +166,8 @@ a-team board {{team}} replace lead <old> <new>  # Lead only: mark entry <old> re
 a-team board {{team}} seeded lead               # Lead only: the register is seeded from closed pitches,
                                                 # so `lead-next` stops saying `seed`
 a-team board {{team}} reconfirm lead <n> <id>...  # Lead only: approved pitch #<n> cited these entries
+a-team board {{team}} clean <dev|customer>      # remove your worktrees whose PR has merged, at its last commit, with
+                                                # no changed tracked files, and their branches; say why any other stayed
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
                                                 # done pitch #<n>
 a-team board {{team}} audited customer          # Customer lead only: the docs as a whole are

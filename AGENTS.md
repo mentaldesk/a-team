@@ -47,6 +47,11 @@ down each assumption about the machine here, and the rule that keeps it from tri
 - **A pid names a process only while that process runs.** The OS gives it to another process
   afterwards. Check a recorded pid is still the run before acting on it (`live_pid` in
   `scripts/common.sh`, `AgentState.IsAlive` in the dashboard), and delete it once the run ends.
+- **A branch name names a PR only until the next PR on it.** `docs/customer-lead` has had many. Trust
+  only the branch's newest PR, and only for a worktree at that PR's last commit with no changed tracked
+  files (`a-team board <team> clean`).
+- **launchd and the app can each start a pass, and nothing else stops them overlapping.** Only one runs
+  at a time: `claim_pid` on the `pass` file, whichever started it, and the other stops at once.
 
 ## Layout
 

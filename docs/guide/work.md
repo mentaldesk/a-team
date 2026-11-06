@@ -337,7 +337,9 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
   with its acceptance criteria printed first, **Left for you** and then **Checked by the team**; quit
   it to come back. If you were reading the task, it opens again on its [Criteria](#criteria) list,
   or where you left it if it has none, ready for `Space`, `a`, `c` or another `t`, and says there why
-  the try failed if it did. A key pressed while your comment is still posting waits for it to post.
+  the try failed if it did. While you're already trying that PR in another terminal, it says
+  `#655 is already being tried (pid 48213): quit that one first` and leaves that try alone. A key
+  pressed while your comment is still posting waits for it to post.
 - **Edit a document pitch.** Reading a vision draft, a vision review or a docs proposal, which shows
   the file it proposes under its description, press `e`. The file opens in your editor (`$VISUAL`,
   else `$EDITOR`). Save and quit, and your change is committed to the pitch as you, and the reader

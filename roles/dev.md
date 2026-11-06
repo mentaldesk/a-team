@@ -32,12 +32,10 @@ and give its number in your reply. Don't open one unasked: note it in the PR bod
 
 ### 1. Clean up merged work
 
-List the repo's worktrees (`git worktree list`). A worktree is yours if its branch's PR carries
-your marker or is Dependabot's. For each of yours whose PR GitHub reports as `MERGED`, `cd` into it and run the
-stakeholder's `wrap-up` skill. Only run it on merged PRs: on anything else it watches CI, which you
-mustn't do here. Do the same for your worktrees under `<workdir>/upstream`. Leave the worktrees of
-PRs closed without merging, and list them in your summary. This is the one thing you do outside
-your task.
+Run `a-team board {{team}} clean dev`, from outside any worktree. It removes each of your worktrees
+that's finished, here and under `<workdir>/upstream`, and says why it left the others. Never remove
+a worktree or its branch any other way. Name each one it left, and why, in your summary. This is the
+one thing you do outside your task.
 
 ### 2. If your task has a PR
 
