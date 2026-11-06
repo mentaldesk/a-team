@@ -105,7 +105,8 @@ public sealed class OverseerBoard
     /// <summary>Which row of its column the selection is on.</summary>
     public int? SelectedRow => Selected is { Heading: false } place && IndexOf(place) is >= 0 and var row ? row : null;
 
-    /// <summary>Starts on the first chip of the first lane with any.</summary>
+    /// <summary>Starts on the first chip of the first lane with any, or with none on the board, the first heading, so
+    /// a team's panel can still be reached.</summary>
     public void SelectFirst()
     {
         Selected = null;
@@ -115,6 +116,8 @@ public sealed class OverseerBoard
                 Selected = At(team, column, 0);
                 return;
             }
+        if (_teams.Count > 0)
+            Selected = new ChipPlace(_teams[0], 0, null, Heading: true);
     }
 
     public bool Select(string team, int number)
