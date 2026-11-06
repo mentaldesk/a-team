@@ -4,6 +4,7 @@ using System.Drawing;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Links;
 using MentalDesk.Tui.Theming;
+using Terminal.Gui.App;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
@@ -175,6 +176,24 @@ public class ReaderDialogTests
 
         Assert.Equal("a Accept · g GitHub · Esc Close", Buttons(dialog));
         Assert.True(ButtonFor(dialog, "a Accept").Enabled);
+    }
+
+    [Fact]
+    public void F_asks_the_Dev_to_fix_and_closes_the_reader_once_asked_and_stays_on_a_cancel()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var answers = new Queue<bool>([false, true]);
+        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => null,
+            comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null),
+                Fix: new ReaderCommand(new Key('F'), "ask the Dev to fix", answers.Dequeue)));
+        app.Begin(dialog);
+        dialog.Layout(new Size(100, 20));
+
+        Assert.Contains("f Ask the Dev to fix", dialog.ButtonLabels);
+        Assert.True(dialog.NewKeyDownEvent(new Key('f')));
+        Assert.False(dialog.StopRequested);
+        Assert.True(dialog.NewKeyDownEvent(new Key('f')));
+        Assert.True(dialog.StopRequested);
     }
 
     [Fact]

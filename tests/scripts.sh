@@ -9491,6 +9491,13 @@ grep -qF 'body <pr>` lists in `images`' "$ROOT/roles/reviewer.md" || fail "revie
 grep -qF "each picture against its caption and the contributor docs' UI" "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't check them"
 grep -qF 'that changes what the user sees with no pictures' "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't flag a UI task with none"
 
+grep -qF '## Needs changing' "$ROOT/roles/reviewer.md" || fail "reviewer.md: the board's count reads this heading"
+grep -qF '## Worth considering' "$ROOT/roles/reviewer.md" || fail "reviewer.md: the board's count reads this heading"
+grep -qF 'Nothing needs changing.' "$ROOT/roles/reviewer.md" || fail "reviewer.md: the board's count reads this opening"
+grep -qF 'when X, it does Y' "$ROOT/roles/reviewer.md" || fail "reviewer.md: a wrong result doesn't name its case"
+grep -qF 'with a test that fails without the fix' "$ROOT/roles/dev.md" || fail "dev.md: a Needs changing fix has no test"
+grep -qF "changing code the PR doesn't otherwise touch" "$ROOT/roles/dev.md" || fail "dev.md: doesn't say what it may leave"
+
 case_ "body on a PR brings a local copy of each picture under What it looks like, for the Reviewer"
 export TMPDIR="$WORK/tmp"
 mkdir -p "$TMPDIR"
@@ -9542,6 +9549,22 @@ gh_talk <<TALK
 TALK
 waiting
 same "unreviewed" null "$(jq -c '.[0].reviewed' "$OUT")"
+
+case_ "the board counts each review fixture's Worth considering points as the dashboard reads them"
+for fixture in "$ROOT"/tests/Dashboard.Tests/fixtures/reviews/*.md; do
+  name=$(basename "$fixture" .md)
+  review=$(awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }' "$fixture")
+  gh_items <<'ITEMS'
+In_review 115 Reviewed already
+ITEMS
+  gh_talk <<TALK
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T08:40:00Z demo-app[bot] $review\n\n<!-- a-team:reviewer -->
+TALK
+  waiting
+  same "$name" "${name##*-}" "$(jq -c '.[0].consider' "$OUT")"
+done
 
 # What #11 waits on in other repos, as the team's comments on it record them: lines of "<owner/repo#n> <until> [<package>]".
 waits() {

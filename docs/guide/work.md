@@ -275,6 +275,13 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   before throwing it away: `Ctrl+Enter` discards it, and `Esc` keeps writing.
 - **Answer a question.** Read it in Blocked, and reply with `c`. On a held task, reply that it's
   done and the agent that held it takes the hold off itself.
+- **Ask the Dev to fix what the Reviewer left to consider.** On a task that says `reviewed · N to
+  consider`, reading it or with its card selected, press `f` (**Cards → Ask the Dev to fix…**).
+  **Ask the Dev to fix #n** lists each **Worth considering** point with a check box, and a `Note:`
+  line for anything you want to add. `Space` ticks a point and `Tab` moves on. **Ask** (`Ctrl+Enter`)
+  stays greyed out until a box is ticked. It posts one comment on the PR as you, quoting each ticked
+  point and ending `Please fix these.` and your note, and the Dev fixes them all in one run. `Esc` asks
+  for nothing. On a card with nothing to consider, or not yet reviewed, the command is greyed out.
 - **Hold a task.** On a Ready task's card, press `h` (**Cards → Hold**). **Hold #n** asks `Why:`;
   `Enter` or **Hold** posts your reason on the task and the card moves to Blocked, where the Dev
   leaves it alone. `Enter` with no reason holds nothing: `Why:` turns red and the foot says `Why is needed`
