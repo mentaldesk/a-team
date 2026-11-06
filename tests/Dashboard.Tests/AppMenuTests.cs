@@ -299,6 +299,21 @@ public class AppMenuTests : IDisposable
         Assert.Equal(["_Ab", "_Ba", "Ab"], Titles(("Ab", Key.Empty), ("Ba", Key.Empty), ("Ab", Key.Empty)));
     }
 
+    [Theory]
+    [InlineData(Area.Work)]
+    [InlineData(Area.Overseer)]
+    public void View_ends_with_the_app_wide_items_under_a_line_and_Quit_under_another(Area area)
+    {
+        using var window = Open(area);
+        window.Refresh();
+
+        var views = View(window).PopoverMenu!.Root!.SubViews.ToList();
+        var shown = views.Select(view => view is Line ? AppMenu.Separator : window.MenuItems.Single(item => item.Item == view).Id).ToList();
+
+        Assert.True(shown.IndexOf(AppMenu.Separator) > 0);
+        Assert.Equal([AppMenu.Separator, "decisions", "settings", "teams", AppMenu.Separator, "quit"], shown.TakeLast(6));
+    }
+
     [Fact]
     public void Go_sits_after_View_with_the_screens_and_the_Assistant_then_team_and_what_s_new_under_a_line_each_with_its_chord()
     {
