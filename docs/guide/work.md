@@ -161,8 +161,8 @@ The task's own card says which link it waits on now and whose move that is, like
 release · yours`. That card is in Blocked while the task is Ready, and stays in Review if its PR
 is already up, so you can see that accepting it now would come before the change it needs. Once
 that release is out, Dependabot's PR bringing it in merges by itself, and the task is free. Until it
-does, the card says `#499 ⛓ waits on #653 · merges by itself`, or `· yours` if [the bump has reached
-you](how-a-team-works.md#dependency-updates) in Blocked. A link in a repo no team here works in still shows on the task's card, but there's no tab to
+does, the card says how the bump stands, like `#499 ⛓ waits on #653 · merges by itself`, or `· blocked, yours`
+once [it has reached you](how-a-team-works.md#dependency-updates). A link in a repo no team here works in still shows on the task's card, but there's no tab to
 tag.
 
 The tag wears a link glyph where the icons are a Nerd Font's.
