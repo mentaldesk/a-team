@@ -19,8 +19,11 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool
     internal static IReadOnlyList<Card> Nodes(IEnumerable<Card> roots) =>
         [.. roots.SelectMany(root => root.Children.Prepend(root))];
 
-    /// <summary>The one PR under a card, where its item has one.</summary>
-    internal IReadOnlyList<Card> Children => IsPr || Item.Pr == 0 || Item.Pr == Item.Number ? [] : [this with { IsPr = true }];
+    /// <summary>The one PR under a card, where its item has one, or why the Dev can't make a Dependabot PR build.</summary>
+    internal IReadOnlyList<Card> Children =>
+        !IsPr && (StuckBump || Item.Pr != 0 && Item.Pr != Item.Number) ? [this with { IsPr = true }] : [];
+
+    private bool StuckBump => Item.Dependency && Item.Held;
 
     /// <summary>The page Enter opens on this row, or nothing where it has none.</summary>
     internal string Url => IsPr ? Item.PrUrl : Item.Url;
@@ -49,12 +52,14 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool
     /// as the PR's own number and the same title.</summary>
     internal string Text(int width, IconStyle style = IconStyle.Unicode)
     {
+        if (IsPr && StuckBump)
+            return Elide($"dev · {Item.Asked}", width);
         if (IsPr)
             return Elide($"{Icons.Glyph(Icon.PullRequest, style)} #{Item.Pr}  {Item.Title}", width);
         var chained = Item.Holding.Count > 0 ? Holds.Frees(Item) : Item.WaitsOn;
-        var number = chained.Length == 0 ? $"#{Item.Number}" : $"#{Item.Number} {Icons.Glyph(Icon.Chain, style)} {chained}";
+        var number = StuckBump && chained.Length == 0 ? $"PR #{Item.Number}" : chained.Length == 0 ? $"#{Item.Number}" : $"#{Item.Number} {Icons.Glyph(Icon.Chain, style)} {chained}";
         var said = new[] { Item.Mine || Item.WaitsUpstream ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "",
-                Item.Fix ? "fix" : "", Item.Dependency ? "Dependabot" : "", Item.Review,
+                Item.Fix ? "fix" : "", Item.Dependency && !StuckBump ? "Dependabot" : "", Item.Review,
                 New ? NewMark + Item.Title : Item.Title }
             .Where(part => part.Length > 0);
         return Elide($"{number}  {string.Join(" · ", said)}", width);

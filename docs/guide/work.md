@@ -64,13 +64,15 @@ on; the others, and the other tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
-| Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings or as soon as it brings a release a task waits on, or another team's Dev's PR to this repo once it's ready. |
+| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. A Dependabot PR the Dev can't make build is here too, with the Dev's reason under it. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
+| Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, or another team's Dev's PR to this repo once it's ready. |
 
 Each column's heading counts its cards, and orders them with the ones [holding up a
 task](#holding-up-a-task) first, then by Priority. Under the Review cards, a line sums up the work that's in
 review but not ready for you yet, grouped by whose move it is, like
-`1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`.
+`1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`. A Dependabot PR the Dev is
+making green only ever shows here, as `1 with the Dev: PR #653 (CI failing)`: [bumps merge by
+themselves](how-a-team-works.md#dependency-updates).
 
 ## When main is red
 
@@ -158,9 +160,7 @@ The task's own card says which link it waits on now and whose move that is, like
 `#499 ⛓ waits on tui-style-guide#84 · in review, yours`, then `#499 ⛓ waits on MentalDesk.Tui's
 release · yours`. That card is in Blocked while the task is Ready, and stays in Review if its PR
 is already up, so you can see that accepting it now would come before the change it needs. Once
-that release is out, Dependabot's PR bringing it in comes into Review, tagged `⛓ frees #499`, and
-**Accept** merges it like a task. Other Dependabot PRs still wait for the
-Lead. A link in a repo no team here works in still shows on the task's card, but there's no tab to
+that release is out, Dependabot's PR bringing it in merges by itself, and the task is free. A link in a repo no team here works in still shows on the task's card, but there's no tab to
 tag.
 
 The tag wears a link glyph where the icons are a Nerd Font's.
@@ -315,7 +315,7 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. It asks first:
   `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't
   ([Confirming](app.md#confirming)). For a task, its PR is squash-merged and its
-  branch deleted. The Customer lead's docs PR, a Dependabot PR and another team's PR are merged the same way, and so is a document pitch,
+  branch deleted. The Customer lead's docs PR and another team's PR are merged the same way, and so is a document pitch,
   from Pitches: the card leaves, and the Lead's next run reads the new vision. If it isn't ready yet,
   `a` says why instead.
 

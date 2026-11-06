@@ -828,6 +828,35 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void A_Dependabot_PR_with_the_Dev_is_counted_under_Review_and_never_shown_in_it()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new WaitingItem(653, "Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "In progress", "https://github.com/x/pull/653", "a-team", "dev",
+            "CI failing", Pr: 653, Trouble: "CI failing", Unready: "CI failing", Base: "main", Dependency: true)]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[3];
+        Assert.Equal("Review · 0", review.Title);
+        Assert.Equal("1 with the Dev: PR #653 (CI failing)", review.Summary);
+    }
+
+    [Fact]
+    public void A_Dependabot_PR_the_Dev_cant_make_build_is_in_Blocked_with_the_Devs_reason()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new WaitingItem(653, "Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "Ready", "https://github.com/x/pull/653", "a-team", "you",
+            "asked you", PrUrl: "https://github.com/x/pull/653", Question: "Can't build: it needs an AgentSpec.", Dependency: true, HeldBy: "dev")]);
+        LayOut(view, 120, 20);
+
+        var blocked = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
+        Assert.Equal("Blocked · 1", blocked.Title);
+        Assert.Equal(["PR #653  Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "dev · Can't build: it needs an AgentSpec."], blocked.CardText);
+        Assert.Equal("", view.Lanes[0].Columns[3].Summary);
+    }
+
+    [Fact]
     public void Review_sums_up_what_the_Dev_is_still_fixing_under_its_cards_and_counts_only_the_rest()
     {
         using var view = Open(["a-team"]);

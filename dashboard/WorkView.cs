@@ -23,7 +23,7 @@ public sealed class WorkView : View
         ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && !item.Document && item.Status is "Idea" or "Pitched", null),
         ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs || item.Document) && item.Question.Length == 0, null),
         ("Blocked", null, Icon.Blocked, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
-        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
+        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.WithTheDev || item.Status == "In review" && item.Holdup.Length > 0),
     ];
 
     /// <summary>The gate a card waits at, as your time on it is split by; Other for one at none of them, like a task
@@ -834,7 +834,7 @@ public sealed class WorkColumn : FrameView
         var groups = new[]
         {
             reviewer.Count == 0 ? "" : $"{reviewer.Count} with the Reviewer: {string.Join(" · ", reviewer.Select(item => $"#{item.Number}"))}",
-            dev.Count == 0 ? "" : $"{dev.Count} with the Dev: {string.Join(" · ", dev.Select(item => $"#{item.Number} {item.Holdup}"))}",
+            dev.Count == 0 ? "" : $"{dev.Count} with the Dev: {string.Join(" · ", dev.Select(item => item.WithTheDev ? $"PR #{item.Number} ({item.Holdup})" : $"#{item.Number} {item.Holdup}"))}",
             red.Count == 0 ? "" : $"{red.Count} waiting while {red[0].Base} is red: {string.Join(" · ", red.Select(item => $"#{item.Number}"))}",
         };
         return Card.Elide(string.Join(" · ", groups.Where(group => group.Length > 0)), width);

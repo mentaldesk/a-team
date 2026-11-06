@@ -34,6 +34,12 @@ public sealed record WaitingItem(
     /// <summary>Whether it's a held Ready task, which waits on you whoever held it.</summary>
     public bool Held => Status == "Ready" && !WaitsUpstream;
 
+    /// <summary>Whether it's a Dependabot PR the Dev is making green, which Review counts but never shows.</summary>
+    public bool WithTheDev => Dependency && Status == "In progress";
+
+    /// <summary>Whether it counts as waiting on you: not while another repo or the Dev has it.</summary>
+    public bool WaitsOnYou => !WaitsUpstream && !WithTheDev;
+
     /// <summary>Whether it's a Ready task you could hold, or release where it's <see cref="Held"/>.</summary>
     public bool Holdable => Status == "Ready" && !Pitch;
 
@@ -46,7 +52,7 @@ public sealed record WaitingItem(
         _ => "held, no reason given",
     };
 
-    private string Asked => string.Join(' ', Question.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    internal string Asked => string.Join(' ', Question.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>The PR its branch is on: the one that closes it, or a document pitch itself; 0 where there's none.</summary>
     public int BranchPr => Branch.Length == 0 ? 0 : Pr > 0 ? Pr : Number;

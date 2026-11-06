@@ -207,7 +207,8 @@ the reason changes, and `a-team: running again` once it can. A single failed pas
 during `brew upgrade`, says nothing, though the team still sits that pass out.
 A role whose check for work fails is the same: two passes in a row give one red line, as in
 `a-team dev: triggers failed: gh: connection reset`, and `a-team dev: triggers working again` once
-it passes. `PgUp`, `PgDn`, `Home` and `End` scroll it.
+it passes. A dependency bump it merges has its own line, as in
+`a-team: PR #653 (Bump MentalDesk.Tui from 0.5.2 to 0.6.0): merged`. `PgUp`, `PgDn`, `Home` and `End` scroll it.
 
 Its title says what is driving the teams: the a-team the dispatcher runs and its version, with the
 countdown to its next pass, as in `dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12`.

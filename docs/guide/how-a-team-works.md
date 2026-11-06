@@ -44,7 +44,7 @@ Idea → Exploring → Pitched → Approved → Building ───────�
 | Building | Its tasks are in flight |
 | Ready | A task the Dev can pick up |
 | In progress | The Dev is building it, or another team's Dev is getting its change to this repo ready |
-| In review | A PR waiting for you: a task's, the Customer lead's docs PR, a Dependabot update, or another team's Dev's change to this repo |
+| In review | A PR waiting for you: a task's, the Customer lead's docs PR, or another team's Dev's change to this repo |
 | Done | Merged or closed, or a pitch whose tasks have all closed |
 
 A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. The Lead also gives
@@ -59,7 +59,7 @@ of minutes, and once the wait is over it frees the task and says so on it, namin
 release and the package to upgrade, so the Dev can pick it up with no click from you. An issue
 closed by hand, with no change linked to it, counts as released in the first release after it
 closed. If Dependabot already has a PR open bringing that release in, the task waits for it to
-merge too, and the PR comes into [Review](work.md#holding-up-a-task) for you to accept. Until then
+merge too, which [it does by itself](#dependency-updates). Until then
 the task's card in **Blocked** says which link it waits on and whose move that is, though it asks
 you nothing. If its PR is already up, its card stays in **Review** and says the same. Open its
 card's details in the [Overseer](overseer.md) (`Enter`) to see how far the change has got, like
@@ -79,6 +79,19 @@ all of this on one line.
 A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a
 draft pull request in Pitched instead. You agree to it by merging it, with `a` in
 [Work](work.md#answering-from-a-card), where `e` also edits it.
+
+## Dependency updates
+
+A Dependabot PR doesn't need you. The Lead reads what the update brings and files an Idea for any new
+rule worth adopting, and the PR never waits on those. Once its CI passes and the Lead has commented, the
+dispatcher squash-merges it and deletes its branch, on its next pass. Its history and the
+[dispatcher's log](overseer.md#the-dispatchers-log) say so.
+
+When its CI fails on jobs that pass on the default branch, the PR goes to the Dev, ahead of every Ready
+task except a fix, and the Dev changes the code on the PR's own branch until it's green. When it fails
+only what the default branch fails, it waits for the fix. It only reaches you if the Dev can't make it
+build: it shows in [Blocked](work.md#columns) as a question, with what broke, what the Dev tried and what
+it needs. Answer on the PR and it's back with the Dev; close the PR and it's gone.
 
 ## Where you decide
 
