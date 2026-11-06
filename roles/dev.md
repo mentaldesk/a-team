@@ -33,7 +33,7 @@ and give its number in your reply. Don't open one unasked: note it in the PR bod
 ### 1. Clean up merged work
 
 List the repo's worktrees (`git worktree list`). A worktree is yours if its branch's PR carries
-your marker. For each of yours whose PR GitHub reports as `MERGED`, `cd` into it and run the
+your marker or is Dependabot's. For each of yours whose PR GitHub reports as `MERGED`, `cd` into it and run the
 stakeholder's `wrap-up` skill. Only run it on merged PRs: on anything else it watches CI, which you
 mustn't do here. Do the same for your worktrees under `<workdir>/upstream`. Leave the worktrees of
 PRs closed without merging, and list them in your summary. This is the one thing you do outside
@@ -74,13 +74,26 @@ Find it with `a-team board {{team}} pr <n>`, then:
   4 with all of them, so the PR shows what it does now.
 - Leave it there and end the run. The stakeholder merges.
 
+If your task is a Dependabot PR, it's its own PR, and these replace the steps above that don't fit:
+
+- If `checks` says `pass`, there's nothing to do: it merges itself on the dispatcher's next pass.
+  Never mark it In review.
+- If `checks` says `fail`, fetch it into a worktree on Dependabot's own branch
+  (`git -C <checkout> fetch origin <branch>`, `git -C <checkout> worktree add ../<slug> <branch>`),
+  change the code until it builds and its tests pass, and push there. Open no second PR, and put no
+  `Closes` line in the commits. New rules the update brings stay the Lead's Ideas: only fix the build.
+- If you can't make it build, hold it with `a-team board {{team}} hold dev <pr> <file>`, the file saying
+  what broke, what you tried and what you need from the stakeholder, then
+  `a-team board {{team}} move dev <pr> Ready`, and end the run. They answer on the PR, or close it.
+
 ### 3. If your task is Ready and held
 
-You handed it back with a question. Read `a-team board {{team}} feedback dev <n>`, and judge
+You handed it back with a question, or the dispatcher asked for you because GitHub keeps refusing to merge a
+green Dependabot PR. Read `a-team board {{team}} feedback dev <n>`, and judge
 whether the reply answers it:
 
 - If it does, `a-team board {{team}} unblock dev <n>`, `a-team board {{team}} move dev <n> "In progress"`,
-  and build it as in step 4, from its step 2.
+  and build it as in step 4, from its step 2. A Dependabot PR goes back to the Dependabot steps above instead.
 - If it doesn't, reply with `a-team board {{team}} comment dev <n>`: rephrase the question, or say
   what you still need. Leave it held, and end the run.
 

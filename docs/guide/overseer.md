@@ -231,7 +231,8 @@ the reason changes, and `a-team: running again` once it can. A single failed pas
 during `brew upgrade`, says nothing, though the team still sits that pass out.
 A role whose check for work fails is the same: two passes in a row give one red line, as in
 `a-team dev: triggers failed: gh: connection reset`, and `a-team dev: triggers working again` once
-it passes. A [stuck run](#a-stuck-role) gets one red line when it starts, as in
+it passes. A dependency bump it merges has its own line, as in
+`a-team: PR #653 (Bump MentalDesk.Tui from 0.5.2 to 0.6.0): merged`. A [stuck run](#a-stuck-role) gets one red line when it starts, as in
 `a-team reviewer: run 51200 is stuck: on #516, which closed 29 Oct`, and one when it clears, `a-team reviewer: run 51200
 no longer stuck`, and a run past its limit gets one `killed run` line however many passes it stays alive. `PgUp`, `PgDn`, `Home` and `End` scroll it.
 
@@ -259,4 +260,5 @@ countdown alone. The status bar says what it started, or `Pass done: nothing to 
 **Settings → Overseer** has a field for each column. Put a number and a unit in one, as in `30m`,
 `2h`, `3d` or `2w`, and a card that stays in that column longer has its age drawn in amber. A
 blank field is no limit, and a column without one never highlights. Settings won't keep an entry it
-can't read, and says which column it's in.
+can't read: **Keep** opens this page instead, turns the name of every such column red and moves you to the
+first, and the foot says which column you're on, how to write a limit, and how many more there are.

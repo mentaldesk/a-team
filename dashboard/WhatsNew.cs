@@ -26,8 +26,8 @@ public sealed record Move(int Item, DateTimeOffset At, string Who, string What)
         || What.StartsWith("accepted · ", StringComparison.Ordinal) || What.StartsWith("closed", StringComparison.Ordinal)
         || What is "declined" or "question answered";
 
-    private bool Into(string status) =>
-        What.EndsWith($" → {status}", StringComparison.Ordinal) || What == $"added as {status}";
+    private bool Into(string status) => What.Split(" · ")[0] is var move
+        && (move.EndsWith($" → {status}", StringComparison.Ordinal) || move == $"added as {status}");
 
     public static IReadOnlyList<Move> Parse(string json)
     {
