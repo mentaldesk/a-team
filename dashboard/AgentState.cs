@@ -15,6 +15,9 @@ public sealed record DevRun(string Dir, RunTask? Task, DateTimeOffset? Started)
     public DateTimeOffset? Held { get; init; }
 }
 
+/// <summary>A live run the dispatcher has found stuck, and what it says about it.</summary>
+public sealed record StuckRun(int Pid, string Says);
+
 /// <summary>What the dispatcher has recorded about one role: see scripts/dispatch.sh.</summary>
 public sealed record AgentState(
     bool Running, DateTimeOffset? LastStart, IReadOnlyList<string> Reasons, string? LogPath, DateTimeOffset? Stopped = null,
@@ -28,6 +31,9 @@ public sealed record AgentState(
 
     /// <summary>The one card a Lead or Customer lead run was started for, or has taken up since.</summary>
     public int? Card { get; init; }
+
+    /// <summary>The role's runs the dispatcher found stuck and that are still going, oldest first.</summary>
+    public IReadOnlyList<StuckRun> Stuck { get; init; } = [];
 
     public static AgentState Read(string dir)
     {
@@ -44,7 +50,32 @@ public sealed record AgentState(
             Runs = LiveRuns(Path.Combine(dir, "runs")),
             Latest = task is null ? null : RunOf(Path.Combine(dir, "runs", task.Number.ToString(CultureInfo.InvariantCulture))),
             Card = ReadTask(Path.Combine(dir, "card"))?.Number,
+            Stuck = ReadStuck(dir),
         };
+    }
+
+    /// <summary>A run counts only while its pid file still holds its pid and that process is the one it was written for.</summary>
+    private static List<StuckRun> ReadStuck(string dir)
+    {
+        if (ReadText(Path.Combine(dir, "stuck")) is not { Length: > 0 } text)
+            return [];
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            List<StuckRun> stuck = [];
+            foreach (var run in document.RootElement.EnumerateArray())
+            {
+                var pid = run.GetProperty("pid").GetInt32();
+                var file = Path.Combine(dir, run.GetProperty("file").GetString() ?? "");
+                if (ReadText(file) == pid.ToString(CultureInfo.InvariantCulture) && IsAlive(file))
+                    stuck.Add(new StuckRun(pid, run.GetProperty("says").GetString() ?? ""));
+            }
+            return stuck;
+        }
+        catch (JsonException) { return []; }
+        catch (InvalidOperationException) { return []; }
+        catch (KeyNotFoundException) { return []; }
+        catch (FormatException) { return []; }
     }
 
     private static List<DevRun> LiveRuns(string runs)
