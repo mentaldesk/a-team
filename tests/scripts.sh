@@ -3457,6 +3457,64 @@ same "children" '[{"number":40,"status":"Ready"},{"number":30,"status":"Building
   "$(jq -c 'map({number, status})' "$OUT")"
 same "labels" '["pitch"]' "$(jq -c '.[1].labels' "$OUT")"
 
+case_ "children tells a task the Lead filed that was left in Idea from an idea, and the Lead's role acts on it"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Idea 41 A task
+Idea 30 A follow-up from a stakeholder
+Idea 31 The Lead's own idea
+Idea 32 A pitch in Idea
+Ready 42 A task in Ready
+ITEMS
+lead='A thing. <!-- a-team:lead -->'
+jq -n --arg lead "$lead" '[{number: 41, title: "A task", state: "open", labels: [], body: $lead},
+        {number: 30, title: "A follow-up", state: "open", labels: [], body: "Spotted."},
+        {number: 31, title: "An idea", state: "open", labels: [], body: $lead},
+        {number: 32, title: "A pitch", state: "open", labels: [{name: "pitch"}], body: $lead},
+        {number: 42, title: "A task", state: "open", labels: [], body: $lead}]' >"$SUBS"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"idea\":true}' WHERE team = 'demo' AND item = 31;"
+KEEP_BOARD=1 run board demo children 10
+same "exit" 0 "$STATUS"
+same "left in idea" '[41]' "$(jq -c 'map(select(.leftInIdea) | .number)' "$OUT")"
+step=$(sed -n '/^### 3\. Tend pitches in Building/,/^### 4\./p' "$ROOT/roles/lead.md")
+grep -qF 'add lead <child> Ready' <<<"$step" || fail "lead.md: doesn't put a task left in Idea in Ready"
+
+case_ "unlink refuses a task the Lead filed that was left in Idea, whichever fileable pitch it's under, and it still reaches Ready"
+for parent in Approved Building; do
+  gh_items <<ITEMS
+$parent 10 A pitch
+Idea 41 A task
+ITEMS
+  edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+  gh_child 41 10 - "A task. <!-- a-team:lead -->"
+  run board demo unlink lead 10 41
+  failed "$parent"
+  grep -qF "#41 is a task left in Idea, not an idea" "$ERR" || fail "$parent: '$(cat "$ERR")'"
+  same "$parent writes" "" "$(cat "$WRITES")"
+  same "$parent posted" "" "$(cat "$POSTED")"
+  KEEP_BOARD=1 run board demo add lead 41 Ready
+  same "$parent add" 0 "$STATUS"
+done
+
+case_ "unlink still takes off an idea of the Lead's, which is marked, and a stray child of a pitch that isn't fileable"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Pitched 20 A pitch not approved yet
+Idea 31 The Lead's own idea
+Idea 41 A stray
+ITEMS
+edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+edit_item 20 '.labels.nodes = [{name: "pitch"}]'
+gh_child 41 20 - "A stray. <!-- a-team:lead -->"
+run board demo unlink lead 20 41
+same "unfileable pitch" 0 "$STATUS"
+gh_child 31 10 - "An idea. <!-- a-team:lead -->"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"idea\":true}' WHERE team = 'demo' AND item = 31;"
+KEEP_BOARD=1 run board demo unlink lead 10 31
+same "marked idea" 0 "$STATUS"
+
 case_ "--dry-run says every write unlink would make, and makes none"
 gh_items <<'ITEMS'
 Building 10 A pitch
