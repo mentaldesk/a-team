@@ -947,16 +947,17 @@ CYCLES="$MOVE"'
        withYou: ($review.review + $waited + if $review.since == null then 0
                  else $to - ($review.since | fromdateiso8601) end)};'
 
-# touches($by; $since): per item accepted since then, as Accepted counts them, your comments once it reached review.
+# touches($by; $work; $since): per task in $work accepted since then, your comments on it or its PR once it reached review.
 # finished($by; $tasks; $since): per pitch finished since then, whether you approved it with nothing to say while
 # Pitched and never commented on its tasks or their PRs. $by holds each item's events, $tasks each pitch's tasks.
 TOUCHES='
   def said: .who == "you" and .what == "commented";
   def merged: capture("^accepted · PR #(?<pr>[0-9]+) ").pr | tonumber;
   def on($by): .[] as $n | $by[$n | tostring][]?;
-  def touches($by; $since): map(select(.who == "you" and (.what | startswith("accepted · ")) and .at > $since))
-    | group_by(if .what | startswith("accepted · PR #") then .what else .item | tostring end)
-    | map(([.[].item] + [.[].what | merged] | unique | [on($by)]) as $events
+  def touches($by; $work; $since): map(select(.who == "you" and (.what | startswith("accepted · ")) and .at > $since
+        and (.item | IN($work[]))))
+    | group_by(.item)
+    | map(([.[0].item] + [.[].what | merged] | unique | [on($by)]) as $events
         | ([$events[] | select(.what | move | .to == "In review") | .at] | min // "") as $review
         | {accepted: (map(.at) | max), touches: ([$events[] | select(said and .at >= $review)] | length)})
     | sort_by(.accepted);
@@ -3560,13 +3561,15 @@ case "$CMD" in
           WHERE team = $team AND (who = 'you' AND (what = 'commented' OR what LIKE 'accepted · %')
             OR what LIKE 'closed as done%' OR what LIKE '% → %' OR what LIKE 'added as %') ORDER BY at, id)) AS said,
         (SELECT json_group_array(json_object('item', item, 'parent', json_extract(content, '\$.parent'))) FROM board
-          WHERE team = $team AND json_extract(content, '\$.parent') IS NOT NULL) AS tasks;" |
+          WHERE team = $team AND json_extract(content, '\$.type') = 'Issue'
+            AND (json_extract(content, '\$.parent') IS NOT NULL OR json_extract(marks, '\$.dev'))) AS tasks;" |
       jq --argjson worktrees "$(jq '.wip.worktrees // null' "$CONFIG")" "$CYCLES$TOUCHES"'.[0]
         | .queue |= fromjson | .accepted |= fromjson | .spent |= fromjson
         | (.said | fromjson) as $said
         | (reduce $said[] as $e ({}; .[$e.item | tostring] += [$e])) as $by
-        | (reduce (.tasks | fromjson)[] as $t ({}; .[$t.parent | tostring] += [$t.item])) as $tasks
-        | .fortnight as $since | .touches = ($said | touches($by; $since)) | .finished = ($said | finished($by; $tasks; $since))
+        | (.tasks | fromjson) as $work
+        | (reduce ($work[] | select(.parent)) as $t ({}; .[$t.parent | tostring] += [$t.item])) as $tasks
+        | .fortnight as $since | .touches = ($said | touches($by; [$work[].item]; $since)) | .finished = ($said | finished($by; $tasks; $since))
         | del(.fortnight, .said, .tasks)
         | (.moves | fromjson | waits($worktrees)) as $waits
         | .cycles |= (fromjson | group_by(.item) | map(cycle($waits)) | sort_by(.accepted)) | del(.moves)'

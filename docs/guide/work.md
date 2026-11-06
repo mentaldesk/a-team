@@ -35,9 +35,10 @@ and so are days with nothing accepted when charting hours. Underneath, a table l
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
 and for the tasks you accepted, their median **Cycle** and how much of it was **With you**: In
 review, waiting for a slot your reviews were holding, or waiting for your answer to a question. Then
-**First time**, the share of what you accepted that had no comment from you on it or its PR once it
-reached review, like `75% of 12`; **Touches**, your comments per item from review onwards, where
-accepting isn't one; and **Untouched**, how many pitches finished in the last 7 days that you approved
+**First time**, the share of the tasks you accepted that had no comment from you on the task or its PR
+once it reached review, like `75% of 12`, which leaves out docs PRs, dependency bumps and your own PRs,
+so it can be out of fewer than *Accepted*; **Touches**, your comments per one of those tasks from review
+onwards, where accepting isn't one; and **Untouched**, how many pitches finished in the last 7 days that you approved
 without a comment while Pitched, and whose tasks and their PRs you never commented on. They show `–`
 with nothing to count, and stay blank for a team with no record yet. Then **Yours (7d)**, your time on it in the last 7 days, and **/h**, what you accepted per
 hour of it. Days and weeks before your time was first recorded are left blank, not zero. The **All**
