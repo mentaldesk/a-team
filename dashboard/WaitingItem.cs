@@ -52,7 +52,7 @@ public sealed record WaitingItem(
         _ => "held, no reason given",
     };
 
-    internal string Asked => string.Join(' ', Question.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    internal string Asked => string.Join(' ', ReaderDialog.Marker().Replace(Question, "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>The PR its branch is on: the one that closes it, or a document pitch itself; 0 where there's none.</summary>
     public int BranchPr => Branch.Length == 0 ? 0 : Pr > 0 ? Pr : Number;

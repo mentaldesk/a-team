@@ -456,7 +456,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     }
 
     [GeneratedRegex(@"\s*<!-- a-team:(dev|lead) -->\s*$")]
-    private static partial Regex Marker();
+    internal static partial Regex Marker();
 
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex NeedsAnswer();

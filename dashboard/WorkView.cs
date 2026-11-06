@@ -663,8 +663,14 @@ public sealed class WorkLane : View
     private void Fit()
     {
         // A second pass: the scroll bar takes a column off the area the first one measured.
-        for (var pass = 0; pass < 2 && _body.GetContentSize() != Content(); pass++)
+        for (var pass = 0; pass < 2; pass++)
+        {
+            for (var index = 0; index < _columns.Count; index++)
+                _columns[index].WrapReasons(ColumnWidth(index));
+            if (_body.GetContentSize() == Content())
+                return;
             _body.SetContentSize(Content());
+        }
     }
 
     private Size Content() => _body.Viewport.Size with { Height = Tall() };
@@ -697,10 +703,15 @@ public sealed class WorkColumn : FrameView
     private readonly Func<WaitingItem, bool>? _aside;
     private readonly Cards _cards;
     private readonly Label _summary;
+    /// <summary>The cells of a column its tree doesn't get: the frame's two and a margin each side.</summary>
+    private const int TreeInset = 4;
+
     private readonly FocusBorder _border;
     private IReadOnlyList<WaitingItem> _items = [];
     private IReadOnlyList<WaitingItem> _setAside = [];
+    private List<Card> _roots = [];
     private List<Card> _nodes = [];
+    private int _reasonWidth;
     private int _laidOutOver = -1;
     private IconStyle _icons = IconStyle.Unicode;
 
@@ -787,15 +798,37 @@ public sealed class WorkColumn : FrameView
         _items = items;
         _setAside = setAside ?? [];
         _summary.Visible = _setAside.Count > 0;
-        var roots = Card.Roots(items, Kind, isNew, isWriting);
-        _nodes = [.. Card.Nodes(roots)];
+        _roots = [.. Card.Roots(items, Kind, isNew, isWriting, _reasonWidth)];
         Title = Heading(Kind, Gate, items.Count, _icons);
+        Plant();
+        SetNeedsLayout();
+    }
+
+    /// <summary>Wraps a stuck Dependabot PR's reason to a column <paramref name="columnWidth"/> wide, which moves with
+    /// focus, before the lane measures the rows it takes.</summary>
+    internal void WrapReasons(int columnWidth)
+    {
+        var width = columnWidth - TreeInset - Icons.Width - 2;
+        if (width == _reasonWidth)
+            return;
+        _reasonWidth = width;
+        if (!_roots.Any(root => root.StuckBump))
+            return;
+        var selected = Selected;
+        _roots = [.. _roots.Select(root => root with { ReasonWidth = width })];
+        Plant();
+        if (selected is not null)
+            _cards.GoTo(_nodes.FindLast(card => card.Item == selected.Item && card.IsPr == selected.IsPr && card.Line <= selected.Line)!);
+    }
+
+    private void Plant()
+    {
+        _nodes = [.. Card.Nodes(_roots)];
         _cards.ClearObjects();
-        _cards.AddObjects(roots);
+        _cards.AddObjects(_roots);
         _cards.ExpandAll();
         _laidOutOver = -1;
         Fit();
-        SetNeedsLayout();
     }
 
     internal void ShowIcons(IconStyle style)
