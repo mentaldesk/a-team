@@ -527,8 +527,8 @@ public sealed class DashboardWindow : Window
             _bar.Withdraw(was);
         if (read.Failure is { Length: > 0 } failure)
         {
-            if (_work.Fail(team, FirstLine(failure), RetryHint("work.retry"), () => RetryTeam(team)))
-                _readFailures[team] = Announce($"{team}: {failure}", Severity.Error);
+            if (_work.Fail(team, Reason(failure), RetryHint("work.retry"), () => RetryTeam(team)))
+                _readFailures[team] = Announce($"{team}: {Reason(failure)}", Severity.Error);
             return;
         }
         var items = WaitingItem.Parse(read.Output);
@@ -1017,8 +1017,8 @@ public sealed class DashboardWindow : Window
                 _bar.Withdraw(was);
             if (read.Failure is { Length: > 0 } failure)
             {
-                if (_overseer.Fail(team, FirstLine(failure), RetryHint("overseer.retry"), () => RetryBoards([team])))
-                    _boardFailures[team] = Announce($"{team}: {failure}", Severity.Error);
+                if (_overseer.Fail(team, Reason(failure), RetryHint("overseer.retry"), () => RetryBoards([team])))
+                    _boardFailures[team] = Announce($"{team}: {Reason(failure)}", Severity.Error);
                 continue;
             }
             _boardReadAt[team] = _clock.GetUtcNow();
@@ -1115,6 +1115,7 @@ public sealed class DashboardWindow : Window
             (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number))
         {
             Holding = Holds.Holders(_work.Items),
+            Stopped = _teamNames.Where(team => _checks?.Fatal(team) is { StopsTheTeam: true }).ToHashSet(),
             Stuck = _watches.Where(watch => watch.Status == RoleStatus.Stuck).GroupBy(watch => watch.Team)
                 .ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
         });
@@ -2055,6 +2056,11 @@ public sealed class DashboardWindow : Window
 
     private static string FirstLine(string text) =>
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
+
+    /// <summary>Why a board read failed, without the name of the script that said so.</summary>
+    private static string Reason(string failure) => FirstLine(failure) is var line && line.StartsWith("board.sh: ", StringComparison.Ordinal)
+        ? line["board.sh: ".Length..]
+        : line;
 
     private static Severity SeverityOf(Schemes scheme) => scheme == Schemes.Error ? Severity.Error : Severity.Info;
 

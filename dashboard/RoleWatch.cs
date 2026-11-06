@@ -118,7 +118,8 @@ public sealed class RoleWatch(string team, string role, string stateDir)
     internal static string SaysStuck(IReadOnlyList<StuckRun> stuck) =>
         $"stuck · {stuck[0].Says}" + (stuck.Count > 1 ? $" · +{stuck.Count - 1} more" : "");
 
-    internal static string Misconfigured(TeamProblem problem) => $"misconfigured: {problem.Topic} {problem.Detail}";
+    internal static string Misconfigured(TeamProblem problem) =>
+        problem.StopsTheTeam ? $"stopped: {problem.Detail}" : $"misconfigured: {problem.Topic} {problem.Detail}";
 
     private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck, bool passing) => nextCheck switch
     {

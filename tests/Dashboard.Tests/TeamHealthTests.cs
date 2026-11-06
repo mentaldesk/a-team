@@ -85,6 +85,19 @@ public class TeamHealthTests
             new TeamHealth([new TeamProblem("app", "no key"), new TeamProblem("app", "no push")]).Failed("goose"));
     }
 
+    [Fact]
+    public void A_board_too_new_for_this_a_team_says_why_and_the_fix_on_the_bar_and_in_the_panel()
+    {
+        var problem = new TeamProblem("board", "the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team");
+
+        Assert.Equal(
+            "goose: stopped: brew upgrade a-team · the board is in format 2, from a-team 0.4.0, and this is 0.3.0",
+            new TeamHealth([problem, new TeamProblem("app", "no key")]).Failed("goose"));
+        Assert.Equal(
+            "stopped: the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team",
+            RoleWatch.Misconfigured(problem));
+    }
+
     [Theory]
     [InlineData("status", true)]
     [InlineData("labels", true)]
