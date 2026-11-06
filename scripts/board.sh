@@ -1057,9 +1057,17 @@ agent_written() {
   gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev|customer|reviewer) -->'
 }
 
-# The number of the issue #1 is a sub-issue of, or nothing.
+# The number of the issue #1 is a sub-issue of, or nothing. GraphQL answers only for an item the record has not seen.
 parent_of() {
-  gh api "repos/$REPO/issues/$1" --jq '.parent_issue_url // empty | split("/") | last'
+  local known
+  known=$(item "$1")
+  if [ -n "$known" ]; then
+    jq -r '.parent // empty' <<<"$known"
+    return
+  fi
+  gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F n="$1" --jq '.data.repository.issueOrPullRequest.parent.number // empty' \
+    -f query='query ParentOf($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
+      issueOrPullRequest(number: $n) { ... on Issue { parent { number } } } } }'
 }
 
 # idea <issue> <status>: the child is an idea rather than a task, by its labels or its board status.
@@ -2883,6 +2891,8 @@ case "$CMD" in
     [ "$(parent_of "$child")" = "$parent" ] || die "#$child is not a sub-issue of #$parent"
     write "take #$child off #$parent" gh api -X DELETE "repos/$REPO/issues/$parent/sub_issue" \
       -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
+    [ -n "$DRY_RUN" ] || history_sql "UPDATE board SET content = json_remove(content, '\$.parent')
+      WHERE team = $(sql "$TEAM") AND item = $child;" >/dev/null
     record "$role" "$child" "taken off #$parent"
     if [ -z "$followup" ]; then
       say "#$child is no longer a sub-issue of #$parent"
