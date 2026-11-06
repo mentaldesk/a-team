@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace ATeam.Dashboard;
@@ -38,10 +39,28 @@ public sealed record Cycle(DateTimeOffset Ready, DateTimeOffset Accepted, TimeSp
     }
 }
 
+/// <summary>An item you accepted, and your comments on it or its PR once it reached review.</summary>
+public sealed record Touched(DateTimeOffset Accepted, int Touches);
+
+/// <summary>A pitch finished, and whether you approved it and its tasks with nothing to say.</summary>
+public sealed record FinishedPitch(DateTimeOffset At, bool Untouched);
+
+/// <summary>What you had to say on a week's work: of <paramref name="Tasks"/> accepted, how many drew no comment and how
+/// many comments in all, and of <paramref name="Finished"/> pitches finished, how many went through untouched.</summary>
+public sealed record WeekTouches(int Tasks, int FirstTime, int Touches, int Finished, int Untouched)
+{
+    public string FirstTimeText => Tasks == 0 ? "–" : $"{((double)FirstTime / Tasks).ToString("0%", CultureInfo.InvariantCulture)} of {Tasks}";
+
+    public string TouchesText => Tasks == 0 ? "–" : ((double)Touches / Tasks).ToString("0.0", CultureInfo.InvariantCulture);
+
+    public string UntouchedText => Finished == 0 ? "–" : Untouched.ToString(CultureInfo.InvariantCulture);
+}
+
 /// <summary>One team's last fortnight, as <c>a-team board &lt;team&gt; trends</c> reports it, with your time from
 /// <paramref name="SpentSince"/> when timing began.</summary>
 public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount> Queue, IReadOnlyList<DateTimeOffset> Accepted,
-    IReadOnlyList<Cycle> Cycles, decimal Cost, DateTimeOffset? SpentSince = null, IReadOnlyList<SpentTime>? Spent = null)
+    IReadOnlyList<Cycle> Cycles, decimal Cost, DateTimeOffset? SpentSince = null, IReadOnlyList<SpentTime>? Spent = null,
+    IReadOnlyList<Touched>? Touches = null, IReadOnlyList<FinishedPitch>? Finished = null)
 {
     public const int Days = 14;
 
@@ -91,6 +110,18 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
         : (Spent ?? []).Where(spent => spent.At > now.AddDays(-WorkTrend.Week) && (gate is null || spent.Gate == gate))
             .Aggregate(TimeSpan.Zero, (sum, spent) => sum + spent.Spent);
 
+    /// <summary>The last 7 days' touches, or null before the record began.</summary>
+    public WeekTouches? TouchesInWeek(DateTimeOffset now)
+    {
+        if (Since is null)
+            return null;
+        var from = now.AddDays(-WorkTrend.Week);
+        var tasks = (Touches ?? []).Where(task => task.Accepted > from).ToList();
+        var pitches = (Finished ?? []).Where(pitch => pitch.At > from).ToList();
+        return new(tasks.Count, tasks.Count(task => task.Touches == 0), tasks.Sum(task => task.Touches),
+            pitches.Count, pitches.Count(pitch => pitch.Untouched));
+    }
+
     private static DateOnly Day(DateTimeOffset at, TimeZoneInfo zone) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, zone).DateTime);
 
     private static TeamRecord? Parse(string json)
@@ -114,6 +145,12 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
                 root.TryGetProperty("spent", out var spent) && spent.ValueKind == JsonValueKind.Array
                     ? [.. spent.EnumerateArray().Select(each => new SpentTime(each.GetProperty("at").GetDateTimeOffset(),
                         TimeSpan.FromSeconds(each.GetProperty("seconds").GetDouble()), Gate(each.GetProperty("gate").GetString())))]
+                    : [],
+                root.TryGetProperty("touches", out var touches) && touches.ValueKind == JsonValueKind.Array
+                    ? [.. touches.EnumerateArray().Select(task => new Touched(task.GetProperty("accepted").GetDateTimeOffset(), task.GetProperty("touches").GetInt32()))]
+                    : [],
+                root.TryGetProperty("finished", out var finished) && finished.ValueKind == JsonValueKind.Array
+                    ? [.. finished.EnumerateArray().Select(pitch => new FinishedPitch(pitch.GetProperty("at").GetDateTimeOffset(), pitch.GetProperty("untouched").GetBoolean()))]
                     : []);
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
@@ -133,9 +170,10 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
 
 /// <summary>A row of the Trends table: <paramref name="WaitingNow"/> is Work's own count where it has read one, or
 /// the record's latest. <paramref name="Cycle"/> is the week's median hours to accept, <paramref name="WithYou"/>
-/// the share of them In review, and <paramref name="Yours"/> your time in the week, null before timing began.</summary>
+/// the share of them In review, <paramref name="Yours"/> your time in the week, null before timing began, and
+/// <paramref name="Touches"/> what you had to say in the week, null before the record began.</summary>
 public sealed record TeamTrendRow(string Team, int? WaitingNow, int? WeekAgo, int Accepted, decimal Cost, double? Cycle, double? WithYou,
-    TimeSpan? Yours = null)
+    TimeSpan? Yours = null, WeekTouches? Touches = null)
 {
     /// <summary>Accepted per hour of yours.</summary>
     public string? PerHour => Yours is { } yours ? WorkTrend.PerHour(Accepted, yours) : null;
@@ -144,14 +182,16 @@ public sealed record TeamTrendRow(string Team, int? WaitingNow, int? WeekAgo, in
     {
         var week = record.CyclesInWeek(now).ToList();
         return new(team, waitingNow ?? record.Queue.LastOrDefault()?.Waiting, record.WeekAgo(now), record.AcceptedInWeek(now),
-            record.Cost, Dashboard.Cycle.Median(week), Dashboard.Cycle.WithYou(week), record.SpentInWeek(now));
+            record.Cost, Dashboard.Cycle.Median(week), Dashboard.Cycle.WithYou(week), record.SpentInWeek(now), record.TouchesInWeek(now));
     }
 
     /// <summary>The teams summed, and the week's cycles of all of them together; a count none of them has stays blank.</summary>
     public static TeamTrendRow All(IReadOnlyList<TeamTrendRow> rows, IReadOnlyList<Dashboard.Cycle> week) =>
         new("All", Sum(rows.Select(row => row.WaitingNow)), Sum(rows.Select(row => row.WeekAgo)),
             rows.Sum(row => row.Accepted), rows.Sum(row => row.Cost), Dashboard.Cycle.Median(week), Dashboard.Cycle.WithYou(week),
-            rows.Select(row => row.Yours).Aggregate((TimeSpan?)null, (sum, yours) => yours is null ? sum : (sum ?? TimeSpan.Zero) + yours));
+            rows.Select(row => row.Yours).Aggregate((TimeSpan?)null, (sum, yours) => yours is null ? sum : (sum ?? TimeSpan.Zero) + yours),
+            rows.Select(row => row.Touches).Aggregate((WeekTouches?)null, (sum, week) => week is null ? sum : new((sum?.Tasks ?? 0) + week.Tasks,
+                (sum?.FirstTime ?? 0) + week.FirstTime, (sum?.Touches ?? 0) + week.Touches, (sum?.Finished ?? 0) + week.Finished, (sum?.Untouched ?? 0) + week.Untouched)));
 
     private static int? Sum(IEnumerable<int?> values) => values.Aggregate((int?)null, (sum, value) => value is null ? sum : (sum ?? 0) + value);
 }
