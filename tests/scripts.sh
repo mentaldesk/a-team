@@ -9704,6 +9704,17 @@ same "one section" 1 "$(grep -c '^## Checked by the team' "$BIN/pr-body")"
 grep -q 'and it says so' "$BIN/pr-body" && fail "checked again: kept the old record in '$(cat "$BIN/pr-body")'"
 grep -qF -- '- `test` Remove is red, in every theme' "$BIN/pr-body" || fail "checked again: '$(cat "$BIN/pr-body")'"
 
+case_ "checked again unticks what it no longer claims, and leaves the stakeholder's own ticks"
+jq -n --arg body "$(criteria_body | sed -e 's/^- \[ \] Save/- [x] Save/' -e 's/^  - \[ \] and/  - [x] and/' -e 's/^\* Plain/* [x] Plain/')" \
+  '{number: 12, title: "A task", body: $body}' >"$ISSUE"
+gh_reviewing ".body = $(jq -n --arg b "$SHOT_BODY" '$b')"
+run board demo checked dev 912 1=screen 3=test
+same "exit" 0 "$STATUS"
+gh_reviewing ".body = $(jq -n --arg b "$(cat "$BIN/pr-body")" '$b')"
+run board demo checked dev 912 2=test
+same "exit" 0 "$STATUS"
+same "issue" "$(criteria_body | sed 's/^\* Plain/* [x] Plain/')" "$(cat "$EDITED")"
+
 case_ "checked refuses a screen criterion with no picture captioned with it, one that doesn't exist, and anyone but the Dev"
 : >"$WRITES"
 run board demo checked dev 912 2=screen

@@ -2490,7 +2490,8 @@ case "$CMD" in
       section+=$'\n'"- \`$how\` $(jq -r .text <<<"$one")"
       lines=$(jq -c --argjson line "$(jq .line <<<"$one")" '. + [$line]' <<<"$lines")
     done
-    ticked=$(jq -Rsr --argjson lines "$lines" "$CRITERIA"'boxed($lines; "x")' <<<"$issue")
+    dropped=$(jq -c --argjson lines "$lines" 'map(select(.how != null and (.line as $l | $lines | index($l) | not)) | .line)' <<<"$list")
+    ticked=$(jq -Rsr --argjson lines "$lines" --argjson dropped "$dropped" "$CRITERIA"'boxed($lines; "x") | boxed($dropped; " ")' <<<"$issue")
     body=$(SECTION=$section with_section <<<"$said")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
     write "tick what the team checked on #$n" gh issue edit "$n" -R "$REPO" --body-file - <<<"$ticked" >/dev/null

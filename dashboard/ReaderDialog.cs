@@ -613,7 +613,7 @@ public sealed partial class ReaderDialog : DashboardDialog
                 AddButton(kind, id);
 
         if (_comment?.Tick is not null && _text.Checklist is not null)
-            Bind(TickId, Key.Space, "Tick", Tick, () => Reads() && _ranks is null && CriterionAtCaret() is not null);
+            Bind(TickId, Key.Space, "Tick", Tick, () => Reads() && _ranks is null && _scrolled == _body && CriterionAtCaret() is not null);
         Bind(HistoryId, new Key('h'), "Show history", ToggleHistory, () => Reads() && _ranks is null);
         Bind("reader.previousRemark", Key.CursorUp.WithAlt, "Previous remark", () => ToRemark(-1), () => Reads() && _scrolled == _body);
         Bind("reader.nextRemark", Key.CursorDown.WithAlt, "Next remark", () => ToRemark(+1), () => Reads() && _scrolled == _body);

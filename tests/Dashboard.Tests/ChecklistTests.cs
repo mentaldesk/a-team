@@ -135,6 +135,25 @@ public class ChecklistTests
     }
 
     [Fact]
+    public void Space_in_History_does_nothing_and_back_in_the_body_it_ticks()
+    {
+        List<(int, bool)> ticks = [];
+        using var dialog = Reader(Body() with { History = new History([]) }, ticks);
+        dialog.NewKeyDownEvent(new Key('h'));
+        if (!dialog.HistoryLog.HasFocus)
+            dialog.NewKeyDownEvent(Key.Tab);
+        Assert.True(dialog.HistoryLog.HasFocus);
+
+        dialog.NewKeyDownEvent(Key.Space);
+        Assert.Empty(ticks);
+
+        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+        Assert.True(dialog.Body.HasFocus);
+        dialog.NewKeyDownEvent(Key.Space);
+        Assert.Equal([(1, true)], ticks);
+    }
+
+    [Fact]
     public void History_shows_the_tick_once_its_saved()
     {
         using var dialog = Reader(Body() with { History = new History([]) });
