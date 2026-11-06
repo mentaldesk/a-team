@@ -15,14 +15,20 @@ source "$ROOT/scripts/common.sh"
 DRY_RUN=false dry=''
 [ "${1:-}" = --dry-run ] && DRY_RUN=true dry=--dry-run
 mkdir -p "$STATE"
-# A pass run off schedule, from the app, leaves the scheduled one's countdown alone.
-if [ -z "${A_TEAM_UNSCHEDULED:-}" ]; then
-  # While this holds a live pid, an overdue next-pass is a slow pass, not a stopped dispatcher.
-  PASS="$STATE/$($DRY_RUN && echo dry-)pass"
-  NEXT="$STATE/$($DRY_RUN && echo dry-)next-pass"
-  echo $$ >"$PASS"
-  # launchd counts StartInterval from when a pass ends, not from when it started.
-  trap '[ "$(cat "$PASS" 2>/dev/null)" = $$ ] && rm -f "$PASS"; echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$NEXT"' EXIT
+# While this holds a live pid, no other pass starts, and an overdue next-pass is a slow pass, not a stopped dispatcher.
+PASS="$STATE/$($DRY_RUN && echo dry-)pass"
+NEXT="$STATE/$($DRY_RUN && echo dry-)next-pass"
+# launchd counts StartInterval from when a pass ends, not from when it started. A pass run off schedule, from the app,
+# leaves the scheduled one's countdown alone.
+pass_ended() {
+  release_pid "$PASS"
+  [ -n "${A_TEAM_UNSCHEDULED:-}" ] || echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$NEXT"
+}
+trap pass_ended EXIT
+if ! running=$(claim_pid "$PASS") && [ -n "$running" ]; then
+  # Only the app asks: the app reads any scheduled output as a broken pass (DispatcherState.Broke).
+  [ -z "${A_TEAM_UNSCHEDULED:-}" ] || echo "A pass is already running."
+  exit 0
 fi
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
@@ -371,13 +377,14 @@ over_budget() {
 }
 
 # fresh <file> <reasons> <log>: whether these reasons are worth a run. The same ones as last time
-# wait retryAfter, unless that run, logged to <log>, died before finishing. <file> holds
+# wait retryAfter, unless that run, logged to <log>, died before finishing, or started before the
+# board last moved to a new format, which stopped it. <file> holds
 # "<fingerprint> <started>".
 fresh() {
   local fingerprint tried at
   fingerprint=$(shasum <<<"$2" | cut -c1-12)
   read -r tried at 2>/dev/null <"$1"
-  if [ "$fingerprint" = "${tried:-}" ] && [ $((now - ${at:-0})) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] &&
+  if [ "$fingerprint" = "${tried:-}" ] && [ "${at:-0}" -gt "$moved" ] && [ $((now - ${at:-0})) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] &&
     { $DRY_RUN || grep -q '"type":"result"' "$3" 2>/dev/null; }; then
     return 1
   fi
@@ -476,7 +483,14 @@ cannot_run() {
   local why
   jq -e '.app.id' "$2" >/dev/null 2>&1 ||
     { echo "no GitHub App: run a-team app create $1, then install it"; return; }
-  why=$("$ROOT/bin/a-team" token "$1" 2>&1 >/dev/null) || echo "${why#a-team token: }"
+  why=$("$ROOT/bin/a-team" token "$1" 2>&1 >/dev/null) || { echo "${why#a-team token: }"; return; }
+  why=$("$ROOT/bin/a-team" board ${dry:+"$dry"} "$1" format 2>&1 >/dev/null) || echo "${why#board.sh: }"
+}
+
+# format_moved <team>: when its board last moved to a new format, in epoch seconds; 0 if it never has.
+format_moved() {
+  [ -f "$STATE/history.db" ] || { echo 0; return; }
+  history_sql "SELECT COALESCE((SELECT strftime('%s', moved) FROM formats WHERE team = $(sql "$1")), 0);" || echo 0
 }
 
 # keep_record: launchd's own pass keeps dispatcher.json true: its version after an upgrade, and all of it for a
@@ -503,6 +517,7 @@ for team in $(team_names); do
     continue
   fi
   passing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$team: running again"
+  moved=$(format_moved "$team")
   settle_bumps "$team"
   free_waits "$team"
   if adopted=$("$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" adopt 2>&1); then

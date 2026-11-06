@@ -43,7 +43,7 @@ that holds them. Beside it, headed with where you are (Work, Overseer, a team's 
 log or the Assistant), are the ones for there. *Help → Show keys* and **Show keys** in Commands open it too, and
 `Esc` or its *Esc Close* button closes it. *Press F1 for help*, at the right end of the status bar,
 is the only key it names. The rest of it starts with where you are (Work's filter, or Overseer) and
-when the board was last read, then says what's selected or going on. The app's version is in
+when the cards were last synced in Work, or the boards last read in Overseer, then says what's selected or going on. The app's version is in
 *Help → About*.
 
 A message on the status bar, like `#512 approved` or `Copied 3 lines`, stays for 5 seconds, or

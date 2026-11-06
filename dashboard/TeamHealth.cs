@@ -10,6 +10,14 @@ public sealed record TeamProblem(string Topic, string Detail)
 
     public override string ToString() => $"{Topic.PadRight(TopicWidth)}{Detail}";
 
+    /// <summary>The board is in a newer format than this a-team, which stops the team until it's upgraded.</summary>
+    public bool StopsTheTeam => Topic == "board";
+
+    /// <summary>A stop as the message bar says it, the fix first, since a narrow bar cuts off the end.</summary>
+    internal string FixFirst => Detail.LastIndexOf(": ", StringComparison.Ordinal) is >= 0 and var at
+        ? $"{Detail[(at + 2)..]} · {Detail[..at]}"
+        : Detail;
+
     /// <summary>The problem in rows no wider than <paramref name="width"/>, its detail wrapping under itself.</summary>
     public IEnumerable<string> Rows(int width)
     {
@@ -32,7 +40,7 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
     private static readonly string[] Repairable = ["status", "labels"];
 
     /// <summary>What <c>check</c> reports that a team can still run with.</summary>
-    private static readonly string[] Notes = ["vision", "docs", "labels", "workflow"];
+    private static readonly string[] Notes = ["vision", "docs", "labels", "workflow", "fields"];
 
     public bool CanRepair => Problems.Any(problem => Repairable.Contains(problem.Topic));
 
@@ -57,6 +65,8 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
         var fatal = Fatal;
         if (fatal.Count == 0)
             return null;
+        if (fatal.FirstOrDefault(problem => problem.StopsTheTeam) is { } stop)
+            return $"{team}: stopped: {stop.FixFirst}";
         var topics = string.Join(", ", fatal.Select(problem => problem.Topic).Distinct());
         return $"{team}: {fatal.Count} {(fatal.Count == 1 ? "check" : "checks")} failed — {topics}";
     }

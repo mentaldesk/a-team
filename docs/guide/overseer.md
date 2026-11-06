@@ -14,8 +14,10 @@ A lane's title names the team and its roles that are running now, each with its 
 beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. A [stuck role](#a-stuck-role) is named on its own
 instead of as running, as in `a-team · Dev ⚠ stuck · Reviewer ⚠ stuck`. Where cards are past their column's limit, it counts them: `2 over`.
 Where the team's GitHub Project hasn't caught up with its board yet, it says how far behind it is and why, as in
-`mirror 3 moves behind (GitHub rate limit, retry 11:20)`. The board itself is never behind: once GitHub is back,
-the Project catches up and the note goes.
+`mirror 3 moves behind (GitHub rate limit, retry 11:20)`. `GitHub unreachable` means it really couldn't be reached;
+when GitHub turns the copy down, the note gives its reason after `GitHub refused:`. The board itself is never behind:
+once GitHub is back, the Project catches up and the note goes. Where the title has no room for the whole note, select the
+heading and the team's panel shows all of it.
 
 Each card is a chip: a mark for what it is, its number, and how long it has been in that column, in
 the largest unit, as in `◆404  6d`.
@@ -229,6 +231,13 @@ A team that can't run on two passes in a row gets one line saying why, as in
 `a-team: stopped: no GitHub App: run a-team app create a-team, then install it`, another only if
 the reason changes, and `a-team: running again` once it can. A single failed pass, such as one
 during `brew upgrade`, says nothing, though the team still sits that pass out.
+If the board is in a newer format than the a-team the dispatcher runs, as after a downgrade, every team
+stops the same way, as in `a-team: stopped: the board is in format 4, from a-team 0.2.17, and this is
+0.2.11: brew upgrade a-team`. The message bar says the same, each lane's title says `stopped`, and in the
+panel of a lane's heading each role wears `⚠` above the same line until you upgrade. A release that moves the
+board's format moves it on the dispatcher's next pass. A run still on the release before stops at its
+next board command with a line saying so, and the next pass carries on from the board, so there's
+nothing for you to do.
 A role whose check for work fails is the same: two passes in a row give one red line, as in
 `a-team dev: triggers failed: gh: connection reset`, and `a-team dev: triggers working again` once
 it passes. A dependency bump it merges has its own line, as in

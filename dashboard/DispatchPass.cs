@@ -42,6 +42,8 @@ public sealed class DispatchPass(string stateRoot, string fallback, Func<string,
         if (_pass is not { IsCompleted: true } pass)
             return null;
         _pass = null;
+        if (pass.IsCompletedSuccessfully && pass.Result.Output.Trim() == AlreadyRunning)
+            return (AlreadyRunning, Schemes.Accent);
         var failure = pass.Status == TaskStatus.RanToCompletion
             ? pass.Result.Failure
             : pass.Exception?.GetBaseException().Message ?? "the pass didn't finish";

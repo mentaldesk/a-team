@@ -27,11 +27,15 @@ nothing to restart.
   `settings/<role>.json`, not only in prose.
 - **Keep triggers cheap and deterministic.** `a-team board <team> triggers` runs every 2 minutes per role:
   no per-item API calls where one call for the whole repo will do.
-- **Try board changes against a real board, without changing it.** `list`, `wip`, `triggers`
-  and `check` only read. For commands that write, `a-team board --dry-run <team> ...` (or
+- **Try board changes against a real board, without changing it.** `a-team board --dry-run <team> ...` (or
   `A_TEAM_DRY_RUN=1`) does every read and every permission check for real, and prints each
   change it would have made instead of making it. New writes to GitHub go through `write` so
-  dry-run covers them.
+  dry-run covers them. Without it no command only reads, `list`, `wip`, `triggers` and `check` included:
+  each brings the record up to date first.
+- **A change that moves or reinterprets stored state bumps the format.** Bump `BOARD_FORMAT` in
+  `scripts/board.sh` and add its `format_<n>` step. An older a-team then refuses to act, and only the
+  installed one runs the step, so an ordinary release never stops anything. Commands take turns to run
+  it, but one killed partway leaves the next to run it again, so a step must be safe to repeat.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
 
@@ -47,6 +51,11 @@ down each assumption about the machine here, and the rule that keeps it from tri
   suite killed outright stops nothing. So `tests/leftovers.sh` stops whatever names the suite's temp folder
   in its command when the suite exits, and a passing suite that left any fails. A fake's command must name
   that folder (a script in it, or `exec -a`), and anything that waits gives up after `FAKE_LIMIT` seconds.
+- **A branch name names a PR only until the next PR on it.** `docs/customer-lead` has had many. Trust
+  only the branch's newest PR, and only for a worktree at that PR's last commit with no changed tracked
+  files (`a-team board <team> clean`).
+- **launchd and the app can each start a pass, and nothing else stops them overlapping.** Only one runs
+  at a time: `claim_pid` on the `pass` file, whichever started it, and the other stops at once.
 
 ## Layout
 

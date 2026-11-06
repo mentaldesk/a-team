@@ -73,6 +73,15 @@ TREE="$WORKDIR/.try/$SLOT"
 SANDBOX="$WORKDIR/.try/state/$SLOT"
 AGAIN="a-team try $TEAM${PR:+ $PR}"
 
+# Beside the sandbox, so removing the sandbox leaves it.
+TRYING="$SANDBOX.pid"
+mkdir -p "$(dirname "$TRYING")"
+if ! holder=$(claim_pid "$TRYING"); then
+  [ -n "$holder" ] || die "could not write $(tilde "$TRYING")"
+  die "${PR:+#}$SLOT is already being tried (pid $holder): quit that one first"
+fi
+trap 'release_pid "$TRYING"; rmdir "$WORKDIR/.try/state" "$WORKDIR/.try" 2>/dev/null || true' EXIT
+
 remove() {
   git -C "$CHECKOUT" worktree remove --force "$TREE" 2>/dev/null || rm -rf "$TREE"
   git -C "$CHECKOUT" worktree prune

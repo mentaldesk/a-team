@@ -56,6 +56,38 @@ alive() {
 # live_pid <file>: the pid in <file>, while that process is still the one it was written for.
 live_pid() { local pid; pid=$(cat "$1" 2>/dev/null) && alive "$pid" "$1" && echo "$pid"; }
 
+# claim_pid <file>: makes <file> name this process, atomically, unless it names another that's still running: then
+# prints that one's pid and fails. Fails printing nothing if <file> can't be written.
+claim_pid() {
+  local mine="$1.$$" stale="$1.$$.stale" holder attempt
+  echo $$ 2>/dev/null >"$mine" || return 1
+  for attempt in 1 2 3; do
+    if ln "$mine" "$1" 2>/dev/null; then
+      rm -f "$mine"
+      return 0
+    fi
+    if holder=$(live_pid "$1"); then
+      rm -f "$mine"
+      echo "$holder"
+      return 1
+    fi
+    # Moved aside before it's judged dead, so a claim made since it was read is put back rather than removed.
+    mv "$1" "$stale" 2>/dev/null || continue
+    if holder=$(live_pid "$stale"); then
+      ln "$stale" "$1" 2>/dev/null
+      rm -f "$stale" "$mine"
+      echo "$holder"
+      return 1
+    fi
+    rm -f "$stale"
+  done
+  rm -f "$mine"
+  return 1
+}
+
+# release_pid <file>: removes <file> if it names this process.
+release_pid() { [ "$(cat "$1" 2>/dev/null)" != $$ ] || rm -f "$1"; }
+
 # stuck_runs <dir>: what <dir>/stuck says of each run, while that run is still the process its pid file was written for.
 stuck_runs() {
   local pid file says
@@ -88,6 +120,8 @@ history_sql() {
     mirrored_priority TEXT, marks TEXT, mirrored_rank TEXT, mirrored_theme TEXT, PRIMARY KEY (team, item));
   CREATE TABLE IF NOT EXISTS boards (team TEXT PRIMARY KEY, project TEXT NOT NULL, read TEXT, failed TEXT, retry TEXT);
   CREATE TABLE IF NOT EXISTS details (team TEXT PRIMARY KEY, detail TEXT, synced TEXT, failed TEXT);
+  CREATE TABLE IF NOT EXISTS formats (team TEXT PRIMARY KEY, format INTEGER NOT NULL, version TEXT NOT NULL, moved TEXT);
+  CREATE TABLE IF NOT EXISTS format_moves (team TEXT PRIMARY KEY, pid INTEGER NOT NULL);
   ${*: -1}"
 }
 

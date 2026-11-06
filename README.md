@@ -144,7 +144,7 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   refused rather than waiting for someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
   editing this repo) hold even if the model tries.
 - **Logs** are under `~/.local/state/a-team/` (or `$A_TEAM_STATE`). `a-team status` shows what each role is
-  doing and how its last run went. A dashboard that crashes says so in one line and leaves the whole
+  doing and how its last run went, and warns when a role is [stuck](docs/guide/overseer.md#a-stuck-role). A dashboard that crashes says so in one line and leaves the whole
   of it in a `crash-<time>.log` there.
 
 ## Releasing by itself
@@ -196,6 +196,8 @@ that PR's `a-team` first on your `PATH`; `Ctrl+D` comes back.
 On the way out it removes the worktree and the sandbox state. If you changed a file in there it
 keeps the worktree and tells you; trying that PR again runs it as you left it, unless the PR has
 moved on since, and `a-team try <team> <pr> --clean` removes it when you're done.
+While a try of a PR is running, a second try of it and `--clean` both refuse, naming the first's pid,
+and the first isn't touched. A try that was killed doesn't get in the way of the next.
 `try` runs the PR's code on purpose, so it asks before running a branch from a repo that isn't the
 team's own.
 

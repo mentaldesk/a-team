@@ -161,6 +161,8 @@ a-team board {{team}} replace lead <old> <new>  # Lead only: mark entry <old> re
 a-team board {{team}} seeded lead               # Lead only: the register is seeded from closed pitches,
                                                 # so `lead-next` stops saying `seed`
 a-team board {{team}} reconfirm lead <n> <id>...  # Lead only: approved pitch #<n> cited these entries
+a-team board {{team}} clean <dev|customer>      # remove your worktrees whose PR has merged, at its last commit, with
+                                                # no changed tracked files, and their branches; say why any other stayed
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
                                                 # done pitch #<n>
 a-team board {{team}} audited customer          # Customer lead only: the docs as a whole are
@@ -178,7 +180,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 `overview` is what its Overseer reads, `bumps` is how the dispatcher merges green dependency PRs and hands red ones to the Dev, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
-how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in
+how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `free` is how the dispatcher frees a task once what it waits on in
 another repo has closed or been released, and `update` is how it brings a PR In review that's behind
 its base up to date. Don't run them.
 
@@ -239,6 +241,9 @@ out stops everyone.
   in your summary. Don't retry.
 - If an `a-team board` call says the board read came back incomplete, do the same: it has
   already read twice and changed nothing.
+- If an `a-team board` call says the board is in a newer format or only the installed a-team may
+  move it, and ends in `stopping`, end the run there and say that line in your summary. Don't retry,
+  and don't comment: the dispatcher's next pass carries on from the board on the installed release.
 
 ## Never
 
