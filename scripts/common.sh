@@ -88,6 +88,15 @@ claim_pid() {
 # release_pid <file>: removes <file> if it names this process.
 release_pid() { [ "$(cat "$1" 2>/dev/null)" != $$ ] || rm -f "$1"; }
 
+# stuck_runs <dir>: what <dir>/stuck says of each run, while that run is still the process its pid file was written for.
+stuck_runs() {
+  local pid file says
+  while IFS=$'\t' read -r pid file says; do
+    [ "$(live_pid "$1/$file")" = "$pid" ] && printf '%s\n' "$says"
+  done < <(jq -r '.[] | [.pid, .file, .says] | @tsv' "$1/stuck" 2>/dev/null)
+  return 0
+}
+
 sql() { printf "'%s'" "${1//\'/\'\'}"; }
 
 # history_sql [sqlite3 options...] <statement>: the record, created on first use.

@@ -69,6 +69,9 @@ public sealed record WaitingItem(
     /// <summary>What the card says about the Reviewer's review of its PR, or nothing where it has none.</summary>
     public string Review => !Reviewed ? "" : Consider == 0 ? "reviewed" : $"reviewed · {Consider} to consider";
 
+    /// <summary>Whether the Reviewer left points on its PR that you could ask the Dev to fix.</summary>
+    public bool Fixable => Reviewed && Consider > 0 && Pr > 0;
+
     /// <summary>Whether this is a pitch the reviewer can approve now.</summary>
     public bool Approvable => Pitch && Status == "Pitched";
 

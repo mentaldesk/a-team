@@ -9,6 +9,9 @@ public class DispatchLineTests
     [InlineData("2026-09-20T17:01:17Z a-team dev: killed run 41234 after 121 minutes", LogLineKind.DispatchFailed)]
     [InlineData("2026-09-20T17:01:17Z tui release: failed: can't read mentaldesk/tui-style-guide", LogLineKind.DispatchFailed)]
     [InlineData("2026-09-20T17:01:17Z tui release: ran release.yml on main at 1111111 (latest release: v0.2.0)", LogLineKind.Prose)]
+    [InlineData("2026-09-20T17:01:17Z a-team reviewer: run 51200 is stuck: on #516, which closed 29 Oct", LogLineKind.DispatchFailed)]
+    [InlineData("2026-09-20T17:01:17Z a-team dev: run 67118 is stuck: outlived its 2h limit", LogLineKind.DispatchFailed)]
+    [InlineData("2026-09-20T17:01:17Z a-team reviewer: run 51200 no longer stuck", LogLineKind.Prose)]
     [InlineData("2026-09-20T17:01:17Z something else entirely", LogLineKind.Prose)]
     public void A_line_is_coloured_by_what_it_says(string line, LogLineKind kind) =>
         Assert.Equal(kind, DispatchLine.KindOf(line));

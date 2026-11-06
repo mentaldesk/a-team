@@ -25,6 +25,7 @@ public enum Icon
     Failed,
     CutShort,
     Misconfigured,
+    Stuck,
     Selected,
     ToolCall,
     ToolError,
@@ -64,6 +65,7 @@ public static class Icons
         [Icon.Failed] = "\U000F0159",    // nf-md-close_circle
         [Icon.CutShort] = "\U000F0159",  // nf-md-close_circle
         [Icon.Misconfigured] = "\U000F0026", // nf-md-alert
+        [Icon.Stuck] = "\U000F0026",     // nf-md-alert
         [Icon.Selected] = "\U000F0142",  // nf-md-chevron_right
         [Icon.ToolCall] = "\U000F0169",  // nf-md-code_braces
         [Icon.ToolError] = "\U000F0159", // nf-md-close_circle
@@ -93,6 +95,7 @@ public static class Icons
         [Icon.Failed] = "✗",
         [Icon.CutShort] = "✗",
         [Icon.Misconfigured] = "⚠",
+        [Icon.Stuck] = "⚠",
         [Icon.Selected] = "▶",
         [Icon.ToolCall] = "▸",
         [Icon.ToolError] = "✗",
@@ -143,6 +146,7 @@ public static class Icons
         RoleStatus.Failed => Icon.Failed,
         RoleStatus.CutShort => Icon.CutShort,
         RoleStatus.Misconfigured => Icon.Misconfigured,
+        RoleStatus.Stuck => Icon.Stuck,
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, "No icon for this status."),
     };
 

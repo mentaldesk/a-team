@@ -59,9 +59,11 @@ Find it with `a-team board {{team}} pr <n>`, then:
   behind once it's out of draft.
 - If `pr` reports `"review": "posted"`, the Reviewer has posted its one review on the PR (the comment
   with `<!-- a-team:reviewer -->`). Treat its **Needs changing** points like stakeholder feedback:
-  fix each one and push, or say why not. Answer them all in one `a-team board {{team}} comment dev <pr>`.
-  Leave **Worth considering** to the stakeholder unless they ask for it. Do this once: the PR isn't
-  reviewed again, and once you've answered, `pr` reports `"review": "answered"`.
+  fix each one with a test that fails without the fix and push, or say why not. A point that means
+  changing code the PR doesn't otherwise touch, say so and leave it. Answer them all in one
+  `a-team board {{team}} comment dev <pr>`. Leave **Worth considering** to the stakeholder unless
+  they ask for it, which may be one comment quoting several points: fix them all in one run. Do this
+  once: the PR isn't reviewed again, and once you've answered, `pr` reports `"review": "answered"`.
 - If the PR is still a draft and `checks` says `pass`, mark it ready with `gh pr ready <pr>`, and if
   the task is In progress, `a-team board {{team}} move dev <n> "In review"`. Only a green PR is
   marked ready, never a failing or pending one: this is the one exception to the stakeholder's

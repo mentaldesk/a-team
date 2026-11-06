@@ -22,6 +22,9 @@ public sealed record OverseerState(
 
     /// <summary>The cards another task waits on, which wear a warning.</summary>
     public IReadOnlySet<(string Team, int Number)> Holding { get; init; } = new HashSet<(string, int)>();
+
+    /// <summary>Each team's stuck roles, which its lane names instead of showing them busy.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Stuck { get; init; } = new Dictionary<string, IReadOnlyList<string>>();
 }
 
 /// <summary>Where a busy role's header frame goes in its lane's title, in columns from the title's start.</summary>
@@ -204,7 +207,7 @@ public sealed class OverseerView : View
         {
             var team = LaneTeam(lane);
             var heading = Heading(team, state.Busy.TryGetValue(team, out var busy) ? busy : [], Over(team),
-                _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null);
+                _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null, state.Stuck.TryGetValue(team, out var stuck) ? stuck : []);
             lane.Slots = heading.Slots;
             if (lane.Title != heading.Title)
                 lane.Title = heading.Title;
@@ -302,19 +305,22 @@ public sealed class OverseerView : View
 
     internal bool CanFold => _board.Selected is { } place && _board.Unfolded(place.Team);
 
-    /// <summary>A lane's title: the team, its busy roles or <c>idle</c>, and how many of its cards are past their limit.
-    /// Each busy role keeps a cell after its name, which the lane paints its header frame into.</summary>
-    internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over, string? mirror = null)
+    /// <summary>A lane's title: the team, its stuck roles, its busy roles or <c>idle</c>, and how many of its cards are past
+    /// their limit. Each busy role keeps a cell after its name, which the lane paints its header frame into.</summary>
+    internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over, string? mirror = null, IReadOnlyList<string>? stuck = null)
     {
         var title = team;
         List<HeaderSlot> slots = [];
+        stuck ??= [];
+        foreach (var role in stuck)
+            title += $"{Separator}{RoleName(role)} ⚠ stuck";
         foreach (var role in busy)
         {
             title += Separator + RoleName(role) + " ";
             slots.Add(new(title.GetColumns(), role));
             title += " ";
         }
-        if (busy.Count == 0)
+        if (busy.Count == 0 && stuck.Count == 0)
             title += Separator + "idle";
         if (over > 0)
             title += $"{Separator}{over} over";

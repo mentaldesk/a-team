@@ -144,7 +144,7 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   refused rather than waiting for someone to answer. The deny rules (merging, closing issues, force-pushing, pushing to `main`,
   editing this repo) hold even if the model tries.
 - **Logs** are under `~/.local/state/a-team/` (or `$A_TEAM_STATE`). `a-team status` shows what each role is
-  doing and how its last run went. A dashboard that crashes says so in one line and leaves the whole
+  doing and how its last run went, and warns when a role is [stuck](docs/guide/overseer.md#a-stuck-role). A dashboard that crashes says so in one line and leaves the whole
   of it in a `crash-<time>.log` there.
 
 ## Releasing by itself
