@@ -45,7 +45,7 @@ public sealed class SettingsScreen : IDisposable
         KeysPage = new KeysPage(commands.Library, _scopes, keys, scope => scope.Name, confirm => Confirm(confirm)) { Title = KeysPageName };
         Dashboard = new DashboardPage(settings, icons, auto, redraw);
         Terminal = terminalKeys is null ? null : new TerminalPage(terminalKeys, Say);
-        Overseer = new OverseerPage(settings);
+        Overseer = new OverseerPage(settings, message => Say(message, Schemes.Error));
         Dialog = new LibrarySettings([Theme, KeysPage, Dashboard, .. Terminal is null ? Array.Empty<SettingsPage>() : [Terminal], Overseer]);
         Dialog.Height = Dim.Fill(1);
         Dialog.KeepButton.MouseEvent += (_, mouse) => mouse.Handled = mouse.Handled || (mouse.Flags != MouseFlags.None && RefusesLimits());
@@ -138,13 +138,13 @@ public sealed class SettingsScreen : IDisposable
 
     public void Dispose() => Dialog.Dispose();
 
-    /// <summary>Opens Overseer on the first limit it can't read, and says so; false when they all read.</summary>
+    /// <summary>Opens Overseer on the limits it can't read, and marks them; false when they all read.</summary>
     private bool RefusesLimits()
     {
         if (Overseer.Unreadable() is null)
             return false;
         Dialog.Open(Dialog.Pages.ToList().IndexOf(Overseer));
-        return Overseer.Refuse(message => Say(message, Schemes.Error));
+        return Overseer.Refuse();
     }
 
     private void Say(string message, Schemes scheme) =>
