@@ -21,8 +21,8 @@ Every item's Status is one of:
 | Approved | Stakeholder agreed; Lead to break it down | **Stakeholder**, or the Lead on their plain yes (`approve`) |
 | Building | Broken into tasks; tasks are in flight | Lead |
 | Ready | A task Dev can pick up | Lead (or stakeholder) |
-| In progress | Dev is working on it, or another team's Dev on a draft upstream PR | Dev, or the dispatcher for an upstream PR |
-| In review ⛔ | A PR (task, docs, dependency or upstream) is waiting on the stakeholder | Dev, Customer lead, Lead for a Dependabot PR, or the dispatcher for an upstream PR |
+| In progress | Dev is working on it, or another team's Dev on a draft upstream PR | Dev, or the dispatcher for a red dependency PR or an upstream PR |
+| In review ⛔ | A PR (task, docs or upstream) is waiting on the stakeholder | Dev, Customer lead, or the dispatcher for an upstream PR |
 | Done | Merged, or a pitch whose tasks have all closed | **Stakeholder**, or the Lead for a pitch (`finish`) |
 
 ⛔ marks a gate. Agents move work *into* a gate and stop. Only the stakeholder moves it out. Pitched
@@ -59,8 +59,12 @@ Two kinds of item share the board:
   While the team config's `docs` page isn't in the repo, a **docs proposal** comes first: a
   document pitch of the Customer lead's, not labelled `pitch`, that adds that page, and no docs PR goes
   up until it's merged.
-- A **dependency PR** is one Dependabot opened. Once the Lead has said what the update brings, it
-  goes straight to In review, and accepting it merges it.
+- A **dependency PR** is one Dependabot opened, and it never needs the stakeholder. Once its CI
+  passes and the Lead has said what the update brings, the dispatcher squash-merges it. When it fails
+  jobs that pass on the default branch, the dispatcher puts it In progress with the Dev, ahead of every
+  Ready task except a fix, and the Dev makes it green on its own branch. When it fails only what the
+  default branch fails, it waits for the fix. Only one the Dev can't make build, or a green one GitHub
+  keeps refusing to merge, reaches the stakeholder: held, as a question on the PR.
 - An **upstream PR** is one another team's Dev opened here for a task of its own (`Needed by
   <repo>#<n>`). The dispatcher puts it In progress while it's a draft, then In review once it's out of
   draft, and accepting it merges it.
@@ -171,7 +175,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend`, `trends`, `spending` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
-`overview` is what its Overseer reads, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
+`overview` is what its Overseer reads, `bumps` is how the dispatcher merges green dependency PRs and hands red ones to the Dev, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in

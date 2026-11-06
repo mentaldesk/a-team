@@ -2407,6 +2407,37 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(Severity.Error, window.Status.MessageSeverity);
     }
 
+    [Fact]
+    public void A_Dependabot_PR_with_the_Dev_is_not_counted_as_waiting_on_you()
+    {
+        const string bump = """
+            [{"number": 653, "title": "Bump MentalDesk.Tui", "status": "In progress", "url": "https://github.com/x/pull/653", "team": "team0",
+              "turn": "dev", "dependency": true, "pr": 653, "unready": "CI failing", "trouble": "CI failing", "base": "main"}]
+            """;
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? bump : "[]", null)));
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        Assert.Equal("Work · 0 waiting on you", window.WorkTitle);
+        Assert.Equal("1 with the Dev: PR #653 (CI failing)", window.Work.Lanes[0].Columns[3].Summary);
+    }
+
+    [Fact]
+    public void Trends_counts_no_Dependabot_PR_with_the_Dev_as_waiting_on_you()
+    {
+        const string bump = """
+            [{"number": 653, "title": "Bump MentalDesk.Tui", "status": "In progress", "url": "https://github.com/x/pull/653", "team": "team0",
+              "turn": "dev", "dependency": true, "pr": 653, "unready": "CI failing", "trouble": "CI failing", "base": "main"}]
+            """;
+        var opened = new List<IReadOnlyList<(string Team, int? Waiting)>>();
+        using var window = Open(read: team => Task.FromResult(new Reading(team == "team0" ? bump : "[]", null)), showTrends: opened.Add);
+        window.Refresh();
+
+        window.Commands.Execute("trends");
+
+        Assert.Equal([("team0", 0), ("team1", 0)], opened[0]);
+    }
+
     [Theory]
     [InlineData("CI failing", 122, "#49 CI failing")]
     [InlineData("conflicts with main", 122, "#49 conflicts with main")]
