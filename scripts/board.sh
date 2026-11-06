@@ -2150,6 +2150,72 @@ FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "B
 # The Dev's tasks that take up one of wip.worktrees.
 WORKING='.marks.dev and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
+# clean_worktrees <role> <clone> <repo>: removes each of the role's worktrees of <clone> that's finished, and says why
+# it left the others. The first listed is the clone itself, and one with no branch is nobody's PR.
+clean_worktrees() {
+  local tree head branch itself
+  itself=$(cd "$2" && pwd -P)
+  while IFS=$'\t' read -r tree head branch; do
+    [ ! -d "$tree" ] || [ "$tree" = "$itself" ] || clean_worktree "$1" "$2" "$3" "$tree" "$head" "$branch"
+  done < <(git -C "$2" worktree list --porcelain | awk '
+    /^worktree / { n++; tree = substr($0, 10) }
+    /^HEAD / { head = $2 }
+    /^branch refs\/heads\// { if (n > 1) print tree "\t" head "\t" substr($0, 19) }')
+}
+
+# clean_worktree <role> <clone> <repo> <tree> <head> <branch>: a branch name can be reused, so only its newest PR
+# speaks for it, and only a worktree at that PR's last commit with no edits is what the PR left behind.
+clean_worktree() {
+  local role=$1 clone=$2 repo=$3 tree=$4 head=$5 branch=$6 where trouble prs pr number last changed
+  where=${tree/#$HOME/\~}
+  left() { CLEANED=$((CLEANED + 1)); say "Left $where: $*"; }
+  [ "$role" != customer ] || [ "$branch" = docs/customer-lead ] || [ "$branch" = docs/customer-lead-proposal ] || return 0
+  trouble=$(mktemp)
+  if ! prs=$(gh pr list -R "$repo" --head "$branch" --state all \
+    --json number,state,headRefOid,body,author,isCrossRepository 2>"$trouble"); then
+    left "couldn't read the PRs on $branch ($(head -1 "$trouble"))."
+    rm -f "$trouble"
+    return 0
+  fi
+  rm -f "$trouble"
+  pr=$(jq -c 'map(select(.isCrossRepository | not)) | max_by(.number) // empty' <<<"$prs")
+  if [ -z "$pr" ]; then
+    [ "$role" != customer ] || left "there's no PR on $branch."
+    return 0
+  fi
+  jq -e --arg marker "<!-- a-team:$role -->" --arg role "$role" \
+    '((.body // "") | contains($marker)) or ($role == "dev" and .author.login == "app/dependabot")' <<<"$pr" >/dev/null || return 0
+  number=$(jq -r .number <<<"$pr")
+  last=$(jq -r .headRefOid <<<"$pr")
+  case "$(jq -r .state <<<"$pr")" in
+    MERGED) ;;
+    OPEN) left "#$number is open."; return 0 ;;
+    *) left "#$number was closed without merging."; return 0 ;;
+  esac
+  if [ "$head" != "$last" ]; then
+    left "its HEAD ${head:0:7} isn't #$number's last commit (${last:0:7})."
+    return 0
+  fi
+  if ! changed=$(git -C "$tree" status --porcelain --untracked-files=no); then
+    left "git couldn't read its changes."
+    return 0
+  fi
+  if [ -n "$changed" ]; then
+    left "it has $(grep -c '' <<<"$changed") changed tracked file(s)."
+    return 0
+  fi
+  case "$(pwd -P 2>/dev/null)/" in
+    "$tree"/*) left "this shell is in it."; return 0 ;;
+  esac
+  if ! write "remove the worktree $where" git -C "$clone" worktree remove --force "$tree"; then
+    left "git wouldn't remove it."
+    return 0
+  fi
+  CLEANED=$((CLEANED + 1))
+  say "Removed $where: #$number has merged."
+  write "delete the branch $branch" git -C "$clone" branch -qD "$branch" || say "Couldn't delete its branch $branch."
+}
+
 [ "$CMD" = check ] || format_gate
 
 case "$CMD" in
@@ -3092,6 +3158,25 @@ case "$CMD" in
       date +%s >"$AUDITED"
     fi
     say "docs audited: the next audit is in a week"
+    ;;
+
+  clean)
+    [ $# -eq 1 ] || die "usage: board.sh $TEAM clean <role>"
+    role=$1
+    case "$role" in dev | customer) ;; *) die "only dev and customer clean up worktrees" ;; esac
+    checkout=$(cfg .checkout)
+    checkout=${checkout/#\~/$HOME}
+    [ -d "$checkout" ] || die "no checkout for $TEAM at ${checkout:-<unset>}"
+    CLEANED=0
+    clean_worktrees "$role" "$checkout" "$REPO"
+    if [ "$role" = dev ]; then
+      workdir=$(cfg .workdir)
+      workdir=${workdir/#\~/$HOME}
+      while IFS= read -r upstream; do
+        [ ! -d "$workdir/upstream/${upstream#*/}" ] || clean_worktrees dev "$workdir/upstream/${upstream#*/}" "$upstream"
+      done < <(jq -r '.contributesTo // [] | .[]' "$CONFIG")
+    fi
+    [ "$CLEANED" -gt 0 ] || say "No worktrees of yours to clean up."
     ;;
 
   document)

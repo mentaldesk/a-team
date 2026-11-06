@@ -73,6 +73,18 @@ public class DispatchPassTests : IDisposable
     }
 
     [Fact]
+    public void A_pass_the_dispatcher_stopped_because_another_is_running_says_so_and_counts_none_of_its_runs()
+    {
+        var pass = Pass();
+        pass.Start();
+        Log("2026-10-04T10:02:00Z a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build");
+
+        _pass.SetResult(new Reading("A pass is already running.\n", null));
+
+        Assert.Equal(("A pass is already running.", Schemes.Accent), pass.Finished());
+    }
+
+    [Fact]
     public void A_pass_that_started_runs_says_how_many()
     {
         Log("2026-10-04T10:00:00Z a-team lead: started 41 on 0.1.12: an earlier pass");
