@@ -226,9 +226,10 @@ the previous and next comment's heading, with the top of the body counting as th
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
 accept, decline, Not now, comment, Priority, recommendation, skip, review, link and dependency, with when
-and who (`you`, or the role: `lead`, `dev`, `customer` or `reviewer`). What
-you or anyone else does on GitHub directly (a merge, a close, a comment, a card moved on the team's mirror)
-appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
+and who (`you`, the role: `lead`, `dev`, `customer` or `reviewer`, or `board` for what a-team did by itself). What
+you or anyone else does on GitHub directly (a merge, a close, a comment)
+appears there too, within a read or two of Work, with someone else shown by their GitHub login. A closed issue or
+merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
 Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
@@ -285,7 +286,8 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   issue as not planned on GitHub, and the card leaves Work; History records it as `declined`, and it
   doesn't count as accepted. If the board refuses the decline, the status bar says why and the
   reason you typed is lost. A reason is required. `Esc` turns the pane back into a plain comment,
-  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub.
+  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub: the card
+  comes back at its last move.
 - **Say Not now to a pitch.** On a pitch in Pitches, reading it or with its card selected, press
   `l`. The Comment pane opens as **Not now #n**, with **Back in [2] weeks** above it: `Shift+Tab`
   reaches the weeks, and `↑`/`↓` or typing sets any whole number from 1. A reason is optional.

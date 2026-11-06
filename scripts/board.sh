@@ -395,7 +395,7 @@ KIND=${KIND:-organization}
 # MIRROR: the GitHub Project a-team copies the board to, as "<owner>/<number>"; empty for none.
 MIRROR=
 [ -z "$NUMBER" ] || [ "$(jq -r '.mirror != false' "$CONFIG")" = false ] || MIRROR="$OWNER/$NUMBER"
-# How often the whole mirror is read back, for items added to it and cards moved on it.
+# How often the whole mirror is read back, for items added to it and cards that have drifted from the record.
 READ_EVERY=${A_TEAM_BOARD_READ_EVERY:-900}
 PRIORITIES='["Urgent", "High", "Medium", "Low"]'
 
@@ -488,10 +488,11 @@ fresh_nodes() {
   printf '%s\n' "$out"
 }
 
-# reconcile <nodes> [adopt]: brings the record up to date with those nodes, and Done for whatever it sees close. With
-# `adopt` it takes the mirror's Status and Priority as they are; otherwise a change there is a stakeholder's move.
+# reconcile <nodes> [adopt]: brings the record up to date with those nodes, Done for whatever it sees close, and back
+# off Done for whatever it sees reopen. With `adopt` it takes the mirror's Status and Priority as they are; otherwise
+# a Status there is never a move, and mirror_push writes the record's back, while a Priority there is a stakeholder's.
 reconcile() {
-  local rows plan n from to why
+  local rows plan n from to
   rows=$(history_sql -json "SELECT item, status, priority, since, mirror, mirrored_status, mirrored_priority,
       json_extract(content, '$.shut') AS shut FROM board WHERE team = $(sql "$TEAM");" | jq -s '.[0] // []')
   plan=$(jq -n --argjson nodes "$1" --argjson rows "$rows" --arg repo "$REPO" --arg team "$TEAM" --arg sq "'" \
@@ -505,6 +506,8 @@ reconcile() {
        | ($had["\($c.number)"]) as $row
        | (if $c.state then ($c.state | IN("CLOSED", "MERGED")) else ($c.stateReason // "REOPENED") != "REOPENED" end) as $shut
        | {n: $c.number, node: $c.id, row: $row, shut: $shut,
+          closes: ($shut and $row != null and $row.status != "Done"),
+          reopens: (($shut | not) and $row.shut == 1 and $row.status == "Done"),
           shown: (if .project then .project.status | state else null end), item: .project.id, changed: .project.since,
           since: (.project.since // $now),
           ranked: ([$c.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
@@ -520,52 +523,41 @@ reconcile() {
            + [$known[] | (.ranked // "none") as $r
                | "UPDATE board SET content = \(.content | tojson | q), node = \(.node | q)\(
                if .item then ", mirror = \(.item | q)" elif $mirror != "" then ", mirror = NULL, mirrored_status = NULL, mirrored_rank = NULL, mirrored_theme = NULL" else "" end)\(
-               if .shown != null and ($adopt or .row.mirrored_status == null or .shown == .row.status)
-               then ", mirrored_status = \(.shown | q)" else "" end)\(
+               if .shown != null then ", mirrored_status = \(.shown | q)" else "" end)\(
                if .content.type == "Issue" and ($adopt or .row.mirrored_priority == null or $r == (.row.priority // "none"))
                then ", mirrored_priority = \($r | q)" else "" end)\(
                if $adopt and .shown != null then ", status = \(.shown | q)" else "" end)\(
-               if $adopt then ", priority = \(.ranked | q)" else "" end)
+               if $adopt then ", priority = \(.ranked | q)" else "" end)\(
+               if ($adopt | not) and .row.status == "None" and .shown != null and .shown != "None"
+               then ", status = \(.shown | q), since = \($now | q)" else "" end)
                WHERE team = \($team | q) AND item = \(.n);"]
-           + [$found[] | select(.shut and .row != null and .row.shut != 1 and .row.status != "Done")
+           + [$found[] | select(.closes)
                | "UPDATE board SET status = \("Done" | q), since = \($now | q) WHERE team = \($team | q) AND item = \(.n);"]
            | join("\n")),
-       drags: (if $adopt then [] else [$known[] | select((.shut | not) and .shown != null and .row.mirrored_status != null
-           and .shown != .row.mirrored_status and .shown != .row.status and .changed > .row.since)
-         | [.n, .row.status, .shown] | @tsv] end),
+       bounces: (if $adopt then [] else [$known[] | select((.closes or .reopens or .row.status == "None" | not) and .shown != null
+           and .row.mirrored_status != null and .shown != .row.mirrored_status and .shown != .row.status and .changed >= .row.since)
+         | [.n, .row.status, (.shown | ltrimstr("?"))] | @tsv] end),
+       reopened: (if $adopt then [] else [$known[] | select(.reopens) | .n] end),
        ranks: (if $adopt then [] else [$known[] | select(.content.type == "Issue" and .ranked != null
            and .row.mirrored_priority != null and .ranked != .row.mirrored_priority and .ranked != .row.priority)
          | [.n, .ranked] | @tsv] end)}')
   history_sql "BEGIN; $(jq -r .sql <<<"$plan") COMMIT;" >/dev/null
-  while IFS=$'\t' read -r n from to; do
-    if why=$(drag_refused "$n" "$from" "$to"); then
-      history_sql "UPDATE board SET mirrored_status = $(sql "$to") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-      record you "$n" "moved to $to on GitHub, set back: $why"
-    else
-      history_sql "UPDATE board SET status = $(sql "$to"), mirrored_status = $(sql "$to"), since = $(sql "$(date -u +%FT%TZ)")
-        WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-      record you "$n" "$from → $to"
-    fi
-  done < <(jq -r '.drags[]' <<<"$plan")
+  while IFS=$'\t' read -r n to from; do
+    record board "$n" "$from on GitHub isn't a move: put back to $to"
+  done < <(jq -r '.bounces[]' <<<"$plan")
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    to=$(history_sql -json "SELECT what FROM events WHERE team = $(sql "$TEAM") AND item = $n ORDER BY id;" |
+      jq -rs "$LANDED"'[(.[0] // [])[].what | landed.to | select(. != "Done")] | last // "Idea"')
+    history_sql "UPDATE board SET status = $(sql "$to"), since = $(sql "$(date -u +%FT%TZ)")
+      WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
+    record board "$n" "Done → $to · reopened"
+  done < <(jq -r '.reopened[]' <<<"$plan")
   while IFS=$'\t' read -r n to; do
     history_sql "UPDATE board SET priority = $(sql "$to"), mirrored_priority = $(sql "$to")
       WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
     record you "$n" "$PRIORITY set to $to"
   done < <(jq -r '.ranks[]' <<<"$plan")
-}
-
-# drag_refused <n> <from> <to>: why a stakeholder may not move #n so; fails, saying nothing, when they may.
-drag_refused() {
-  local it
-  is_state "$3" || { echo "'$3' isn't one of the board's states"; return 0; }
-  it=$(history_sql -json "SELECT content, marks FROM board WHERE team = $(sql "$TEAM") AND item = $1;" |
-    jq -c '.[0] | {labels: (.content | fromjson | .labels // []), marks: (.marks // "{}" | fromjson)}')
-  jq -e '(.labels | index("pitch")) or .marks.dev or .marks.customer' <<<"$it" >/dev/null || return 1
-  case "$2>$3" in
-    *">Idea" | *">Done" | "Pitched>Approved") return 1 ;;
-    *">Ready") jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || return 1 ;;
-  esac
-  echo "$2 → $3 is the team's move, not a stakeholder's"
 }
 
 # mark <n> <key> <JSON value|null>: sets, or with null clears, one of #n's marks in the record.
@@ -629,6 +621,26 @@ adopt_labels() {
   done < <(jq -r '.[] | [.n, (.labels | tojson), (.all | tojson)] | @tsv' <<<"$rows")
 }
 
+# repair_last_moves: once per team, puts each open card whose Status differs from its last recorded move back at that
+# move: what the mirror's false set-backs undid before a Status there stopped being a move.
+repair_last_moves() {
+  local n from to who at
+  [ "$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $(sql "$TEAM") AND repaired IS NULL;")" -gt 0 ] || return 0
+  [ "$(history_sql "UPDATE boards SET repaired = $(sql "$(date -u +%FT%TZ)") WHERE team = $(sql "$TEAM") AND repaired IS NULL;
+    SELECT changes();")" = 1 ] || return 0
+  while IFS=$'\t' read -r n from to who at; do
+    history_sql "UPDATE board SET status = $(sql "$to"), since = $(sql "$(date -u +%FT%TZ)")
+      WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
+    record board "$n" "$from → $to · repaired to its last move ($who, $at)"
+  done < <(history_sql -json "SELECT b.item, b.status, json_group_array(json_object('id', e.id, 'at', e.at, 'who', e.who, 'what', e.what)) AS events
+      FROM board b JOIN events e ON e.team = b.team AND e.item = b.item
+      WHERE b.team = $(sql "$TEAM") AND b.status != 'Done' AND json_extract(b.content, '$.shut') IS NULL
+      GROUP BY b.item ORDER BY b.item;" | jq -rs "$LANDED"'(.[0] // [])[] | .item as $n | .status as $from
+        | ([.events | fromjson | sort_by(.id)[] | . as $e | .what | landed | . + {who: $e.who, at: $e.at}] | last) as $m
+        | select($m != null and $m.to != $from and $m.to != "Done")
+        | [$n, $from, $m.to, $m.who, ($m.at | fromdate | strftime("%e %b") | ltrimstr(" "))] | @tsv')
+}
+
 # board_ready: moves the board over from the mirror on the first run, and copies it all to a mirror newly pointed at.
 SEEN=
 board_ready() {
@@ -638,6 +650,8 @@ board_ready() {
     history_sql "SELECT name FROM pragma_table_info('board');" | grep -qx "$column" ||
       history_sql "ALTER TABLE board ADD COLUMN $column TEXT;" >/dev/null
   done
+  history_sql "SELECT name FROM pragma_table_info('boards');" | grep -qx repaired ||
+    history_sql "ALTER TABLE boards ADD COLUMN repaired TEXT;" >/dev/null
   was=$(history_sql -json "SELECT project FROM boards WHERE team = $(sql "$TEAM");" | jq -rs '.[0][0].project // "-"')
   if [ "$was" = - ]; then
     if [ -n "$MIRROR" ]; then
@@ -645,13 +659,14 @@ board_ready() {
       reconcile "$nodes" adopt
       SEEN=$(jq -c '[.[].content.id]' <<<"$nodes")
     fi
-    history_sql "INSERT INTO boards (team, project, read) VALUES ($(sql "$TEAM"), $(sql "$MIRROR"),
-      $([ -n "$MIRROR" ] && sql "$(date -u +%FT%TZ)" || echo NULL));" >/dev/null
+    history_sql "INSERT INTO boards (team, project, read, repaired) VALUES ($(sql "$TEAM"), $(sql "$MIRROR"),
+      $([ -n "$MIRROR" ] && sql "$(date -u +%FT%TZ)" || echo NULL), $(sql "$(date -u +%FT%TZ)"));" >/dev/null
   elif [ "$was" != "$MIRROR" ]; then
     history_sql "UPDATE board SET mirror = NULL, mirrored_status = NULL, mirrored_priority = NULL, mirrored_rank = NULL,
       mirrored_theme = NULL WHERE team = $(sql "$TEAM");
       UPDATE boards SET project = $(sql "$MIRROR"), read = NULL, failed = NULL, retry = NULL WHERE team = $(sql "$TEAM");" >/dev/null
   fi
+  repair_last_moves
 }
 
 # board_sync: once a command, reads the open items, and every READ_EVERY the whole mirror, then catches the mirror up.
@@ -784,8 +799,11 @@ catch_up() {
 # are free to start, and whether the Dev's slots, held as `claim` counts them, are full with one In review.
 # cycle($waits): of one item's events, oldest first, a task's span from first entering Ready to its last
 # acceptance and its seconds with you, or nothing for an item that never entered Ready while the record was kept.
-CYCLES='def move: if startswith("added as ") then {from: null, to: .[9:]}
-      elif contains(" → ") then split(" → ") | {from: .[0], to: .[1]} else empty end;
+# move: the Status a line of history moved its item from and to, if it moved it. landed: the same, with being filed.
+MOVE='def move: if startswith("added as ") then {from: null, to: .[9:]} elif startswith("moved to ") then empty
+      elif contains(" → ") then split(" · ")[0] | split(" → ") | {from: .[0], to: .[1]} else empty end;'
+LANDED="$MOVE"'def landed: if startswith("filed as Ready") then {from: null, to: "Ready"} else move end;'
+CYCLES="$MOVE"'
   def task: IN("Ready", "In progress", "In review");
   def waits($worktrees):
     def ready(f): [.items | to_entries[] | select(.value.status == "Ready" and (.value | f)) | .key];

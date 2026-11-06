@@ -97,8 +97,9 @@ field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the
 **Mirror** is the GitHub Project a-team copies the board to, so you can see it on GitHub. A-Team keeps the
 board itself, so the team works with *None* and needs no Project at all, but an issue opened on GitHub then
 never reaches Triage by itself: open ideas with [**New idea**](work.md#adding-an-idea) instead. `b` has no board to open. *A new project, named after
-the team* makes one when you save, sets it up and copies the board onto it. Moving a card there, or changing its
-Priority, counts as your move; one the board wouldn't let you make is set back, and the card's History says why.
+the team* makes one when you save, sets it up and copies the board onto it. The Project only shows the board: cards
+are moved in the app. Moving a card on the Project isn't a move, so it goes back to the app's Status on the next sync,
+and the card's History says so. An issue's Priority is different: changing it on GitHub still counts as yours.
 
 **Contributes to** lists the other repos the Dev may open draft PRs on, picked from the ones the
 team's GitHub App can reach. When a task needs a change in one of them first, like the style guide,
