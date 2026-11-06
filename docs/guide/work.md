@@ -99,8 +99,8 @@ A card reads as the issue's number, then its title:
 - **What it is.** 💡 an Idea, `◇` a pitch, `‹›` a task, 📄 the Customer lead's docs PR. Triage
   and Pitches show the kind in their heading instead, so only a card of another kind wears its own.
 - **Its Priority.** The issue number is coloured by Priority, in the colours GitHub gives them:
-  green for Low, amber for Medium, red for High and pink for Urgent. An unranked card's number is
-  plain.
+  green for Low, amber for Medium, red for High and pink for Urgent. A task with none of its own
+  wears its pitch's. An unranked card's number is plain.
 - **The Lead's recommendation.** An Idea you haven't ranked shows the rank the Lead would give it
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
