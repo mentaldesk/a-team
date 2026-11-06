@@ -159,7 +159,7 @@ SSH, copies reach your own clipboard as [Copying and links](app.md#copying-and-l
 
 A run of tool calls draws as a single row, so the agent's own words aren't pushed off the top.
 `Ctrl+T T` shows every call, and `Ctrl+T T` again folds them back up. To start every session with its
-calls showing, tick *Show tool calls in full* under [Settings → Dashboard](teams.md#the-rest-of-settings).
+calls showing, tick *Show tool calls in full* under [Settings → Dashboard](teams.md#settings).
 
 The panel keeps only the last 500 lines. `e` opens the whole session as text in your editor: every
 line from the start, each command and error in full. It uses `$VISUAL`, or `$EDITOR` if that isn't
