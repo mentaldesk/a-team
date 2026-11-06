@@ -4137,6 +4137,32 @@ kept board demo list
 same "a second pass changes nothing" '"Idea"' "$(jq -c '.[] | select(.number == 631) | .status' "$OUT")"
 same "recorded once" 1 "$(history_of 631 | grep -c repaired)"
 
+case_ "a repair that can't read a card changes nothing, and the next pass finishes it, once"
+gh_items <<'ITEMS'
+Idea 651 Set back
+Idea 652 Set back, with a move that can't be read
+ITEMS
+every_status
+touch "$BIN/live"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "
+  INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 651, '2026-11-03T09:38:00Z', 'lead', 'Approved → Building'),
+    ('demo', 652, 'sometime', 'lead', 'Approved → Building');
+  UPDATE boards SET repaired = NULL WHERE team = 'demo';"
+kept board demo list
+same "nothing moved" '[[651,"Idea"],[652,"Idea"]]' "$(statuses)"
+same "nothing said" 0 "$(history_of 651 | grep -c repaired)"
+same "still to do" 1 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT COUNT(*) FROM boards WHERE team = 'demo' AND repaired IS NULL;")"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE events SET at = '2026-11-03T09:38:00Z' WHERE team = 'demo' AND item = 652 AND at = 'sometime';"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo list >/dev/null 2>&1 &
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo list >/dev/null 2>&1 &
+wait
+kept board demo list
+same "finished" '[[651,"Building"],[652,"Building"]]' "$(statuses)"
+same "recorded once, even by two at once" 2 "$(for n in 651 652; do history_of "$n"; done | grep -c repaired)"
+same "done" 0 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT COUNT(*) FROM boards WHERE team = 'demo' AND repaired IS NULL;")"
+
 case_ "a board new to a-team has nothing to repair: its first read is taken as it stands"
 gh_items <<'ITEMS'
 Idea 638 Moved long ago

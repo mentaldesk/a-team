@@ -626,21 +626,25 @@ adopt_labels() {
 # repair_last_moves: once per team, puts each open card whose Status differs from its last recorded move back at that
 # move: what the mirror's false set-backs undid before a Status there stopped being a move.
 repair_last_moves() {
-  local n from to who at
-  [ "$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $(sql "$TEAM") AND repaired IS NULL;")" -gt 0 ] || return 0
-  [ "$(history_sql "UPDATE boards SET repaired = $(sql "$(date -u +%FT%TZ)") WHERE team = $(sql "$TEAM") AND repaired IS NULL;
-    SELECT changes();")" = 1 ] || return 0
-  while IFS=$'\t' read -r n from to who at; do
-    history_sql "UPDATE board SET status = $(sql "$to"), since = $(sql "$(date -u +%FT%TZ)")
-      WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    record board "$n" "$from → $to · repaired to its last move ($who, $at)"
-  done < <(history_sql -json "SELECT b.item, b.status, json_group_array(json_object('id', e.id, 'at', e.at, 'who', e.who, 'what', e.what)) AS events
+  local n from to who at now plan changes='' team unrepaired
+  team=$(sql "$TEAM")
+  unrepaired="(SELECT repaired FROM boards WHERE team = $team) IS NULL"
+  [ "$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $team AND repaired IS NULL;")" -gt 0 ] || return 0
+  plan=$(history_sql -json "SELECT b.item, b.status, json_group_array(json_object('id', e.id, 'at', e.at, 'who', e.who, 'what', e.what)) AS events
       FROM board b JOIN events e ON e.team = b.team AND e.item = b.item
-      WHERE b.team = $(sql "$TEAM") AND b.status != 'Done' AND json_extract(b.content, '$.shut') IS NULL
+      WHERE b.team = $team AND b.status != 'Done' AND json_extract(b.content, '$.shut') IS NULL
       GROUP BY b.item ORDER BY b.item;" | jq -rs "$LANDED"'(.[0] // [])[] | .item as $n | .status as $from
         | ([.events | fromjson | sort_by(.id)[] | . as $e | .what | landed | . + {who: $e.who, at: $e.at}] | last) as $m
         | select($m != null and $m.to != $from and $m.to != "Done")
-        | [$n, $from, $m.to, $m.who, ($m.at | fromdate | strflocaltime("%e %b") | ltrimstr(" "))] | @tsv')
+        | [$n, $from, $m.to, $m.who, ($m.at | fromdate | strflocaltime("%e %b") | ltrimstr(" "))] | @tsv') || return 0
+  now=$(sql "$(date -u +%FT%TZ)")
+  while IFS=$'\t' read -r n from to who at; do
+    [ -n "$n" ] || continue
+    changes+="UPDATE board SET status = $(sql "$to"), since = $now WHERE team = $team AND item = $n AND $unrepaired;"
+    [ -n "$DRY_RUN" ] || changes+="INSERT INTO events (team, item, at, who, what) SELECT $team, $n, $now, 'board',
+      $(sql "$from → $to · repaired to its last move ($who, $at)") WHERE $unrepaired;"
+  done <<<"$plan"
+  history_sql "BEGIN IMMEDIATE; $changes UPDATE boards SET repaired = $now WHERE team = $team AND repaired IS NULL; COMMIT;" >/dev/null || return 0
 }
 
 # board_ready: moves the board over from the mirror on the first run, and copies it all to a mirror newly pointed at.
