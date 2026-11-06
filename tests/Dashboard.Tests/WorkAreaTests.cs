@@ -4,6 +4,7 @@ using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Links;
 using MentalDesk.Tui.Loading;
 using System.Drawing;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
@@ -260,7 +261,7 @@ public class WorkAreaTests : IDisposable
     {
         using var window = Open(read: team => Task.FromResult(team == "team1"
             ? new Reading("", "gh: API rate limit exceeded for mentaldesk/TuiCode\nmore")
-            : new Reading(Waiting(team), null)));
+            : new Reading(SyncedAt(team, DateTimeOffset.UtcNow), null)));
         window.Refresh();
         LayOut(window, 120, 30);
 
@@ -270,7 +271,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(LoadState.Failed, bad.Load.State);
         Assert.Equal("gh: API rate limit exceeded for mentaldesk/TuiCode", bad.Load.Says);
         Assert.Equal(0, window.Status.UnreadErrors);
-        Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
+        Assert.Equal("All items · synced just now", window.Status.FocusWord);
 
         window.Work.Pick("team1");
         window.Refresh();
@@ -665,29 +666,29 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_starts_with_whether_the_filter_is_on_then_when_it_last_read()
+    public void The_status_bar_starts_with_whether_the_filter_is_on_then_when_it_last_synced()
     {
-        using var window = Open();
+        using var window = Open(read: team => Task.FromResult(new Reading(SyncedAt(team, DateTimeOffset.UtcNow), null)));
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
+        Assert.Equal("All items · synced just now", window.Status.FocusWord);
 
         window.Press("Ctrl+T M");
         LayOut(window, 120, 30);
 
-        Assert.Equal("My items · read <1m ago", window.Status.FocusWord);
+        Assert.Equal("My items · synced just now", window.Status.FocusWord);
     }
 
     [Fact]
     public void The_status_bar_shows_the_filter_and_stamp_then_the_selected_card_and_help_at_its_right()
     {
-        using var window = Open();
+        using var window = Open(read: team => Task.FromResult(new Reading(SyncedAt(team, DateTimeOffset.UtcNow), null)));
         window.Refresh();
         LayOut(window, 120, 30);
 
         Assert.Equal("#6 · waiting to be ranked", window.Status.RestingText);
-        Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
+        Assert.Equal("All items · synced just now", window.Status.FocusWord);
         Assert.Equal("Press F1 for help", window.Status.Hints.Says);
         Assert.Equal(window.Status.FrameToScreen().Right - 1, window.Status.Hints.FrameToScreen().Right);
         Assert.DoesNotContain(window.Status.SubViews, view => view.Visible && view.Text.Contains("a-team "));
@@ -2951,16 +2952,116 @@ public class WorkAreaTests : IDisposable
     }
 
     [Fact]
-    public void The_status_bar_says_when_it_last_read()
+    public void The_status_bar_says_when_the_cards_were_last_synced_from_GitHub()
     {
-        var now = DateTimeOffset.UtcNow;
-        using var window = Open();
+        var clock = new Clock();
+        using var window = Open(read: team => Task.FromResult(new Reading(SyncedAt(team, clock.Now - TimeSpan.FromMinutes(2)), null)), clock: clock);
         Assert.Equal("All items", window.Status.FocusWord);
 
         window.Refresh();
 
-        Assert.Equal("All items · read <1m ago", window.Status.FocusWord);
+        Assert.Equal("All items · synced 2m ago", window.Status.FocusWord);
+    }
+
+    [Fact]
+    public void A_sync_that_has_only_just_landed_says_so()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.Equal("synced just now", new Synced(now, null).Stamp(now.AddSeconds(30)));
+        Assert.Equal("synced 14m ago", new Synced(now, null).Stamp(now.AddMinutes(14)));
+    }
+
+    [Fact]
+    public void A_sync_that_failed_says_GitHub_was_unreachable_and_when_one_last_worked()
+    {
+        var clock = new Clock();
+        using var window = Open(read: team => Task.FromResult(new Reading(
+            SyncedAt(team, clock.Now - TimeSpan.FromMinutes(14), clock.Now - TimeSpan.FromMinutes(1)), null)), clock: clock);
+
+        window.Refresh();
+
+        Assert.Equal("All items · synced 14m ago · GitHub unreachable, retrying", window.Status.FocusWord);
+    }
+
+    [Fact]
+    public void Overseers_stamp_still_says_when_its_boards_were_read()
+    {
+        var now = DateTimeOffset.UtcNow;
+
         Assert.Equal("read 2m ago", DashboardWindow.Stamped(now, now.AddMinutes(2)));
+    }
+
+    [Fact]
+    public void While_a_sync_runs_Works_title_says_so_and_once_it_lands_the_cards_are_read_again()
+    {
+        var reads = 0;
+        var sync = new TaskCompletionSource<Reading>();
+        using var window = Open(read: team =>
+        {
+            reads++;
+            return Task.FromResult(new Reading(SyncedAt(team, DateTimeOffset.UtcNow), null));
+        }, syncBoard: _ => sync.Task);
+        window.Refresh();
+
+        Assert.EndsWith(" · Syncing…", window.WorkTitle);
+        Assert.Equal(2, reads);
+
+        sync.SetResult(new Reading("", null));
+        window.Refresh();
+
+        Assert.DoesNotContain("Syncing…", window.WorkTitle);
+        Assert.Equal(4, reads);
+        Assert.Equal("All items · synced just now", window.Status.FocusWord);
+    }
+
+    [Fact]
+    public void With_Work_in_front_it_syncs_every_minute_and_never_more_often()
+    {
+        var clock = new Clock();
+        var syncs = new List<string>();
+        using var window = Open(syncBoard: team =>
+        {
+            syncs.Add(team);
+            return Task.FromResult(new Reading("", null));
+        }, clock: clock);
+        window.Refresh();
+        window.Refresh();
+        Assert.Equal(["team0", "team1"], syncs.Order());
+
+        clock.Now += DashboardWindow.SyncEvery - TimeSpan.FromSeconds(1);
+        window.Refresh();
+        Assert.Equal(2, syncs.Count);
+
+        clock.Now += TimeSpan.FromSeconds(1);
+        window.Refresh();
+        Assert.Equal(4, syncs.Count);
+    }
+
+    [Fact]
+    public void A_sync_the_dispatcher_ran_reads_that_teams_cards_again_and_keeps_the_selection()
+    {
+        var reads = new List<string>();
+        using var window = Open(read: team =>
+        {
+            reads.Add(team);
+            return Task.FromResult(new Reading(Waiting(team), null));
+        });
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        reads.Clear();
+
+        var synced = Path.Combine(_root, "team0", "detail-synced");
+        Directory.CreateDirectory(Path.GetDirectoryName(synced)!);
+        File.WriteAllText(synced, "");
+        File.SetLastWriteTimeUtc(synced, DateTime.UtcNow.AddSeconds(5));
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal(["team0"], reads);
+        Assert.Equal(107, window.Work.Selected?.Number);
     }
 
     [Fact]
@@ -3033,7 +3134,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(read: team =>
         {
             reads++;
-            return Task.FromResult(new Reading(Waiting(team), null));
+            return Task.FromResult(new Reading(SyncedAt(team, clock.Now), null));
         }, clock: clock);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -3048,7 +3149,7 @@ public class WorkAreaTests : IDisposable
         Assert.Equal(2, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
         Assert.NotNull(window.Work.SelectedCard);
-        Assert.EndsWith("read 4m ago", window.Status.FocusWord);
+        Assert.EndsWith("synced 4m ago", window.Status.FocusWord);
     }
 
     [Fact]
@@ -3122,7 +3223,7 @@ public class WorkAreaTests : IDisposable
         using var window = Open(read: team =>
         {
             reads++;
-            return Task.FromResult(new Reading(Waiting(team), null));
+            return Task.FromResult(new Reading(SyncedAt(team, clock.Now), null));
         }, clock: clock);
         window.Refresh();
         LayOut(window, 120, 30);
@@ -3135,7 +3236,7 @@ public class WorkAreaTests : IDisposable
 
         Assert.Equal(4, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
-        Assert.EndsWith("read <1m ago", window.Status.FocusWord);
+        Assert.EndsWith("synced just now", window.Status.FocusWord);
     }
 
     [Fact]
@@ -4137,6 +4238,12 @@ public class WorkAreaTests : IDisposable
             "turn": "you", "reason": "awaiting your approval since 21:37", "priority": "Low", "pitch": true}]
           """;
 
+    /// <summary>What <paramref name="team"/>'s read prints, synced at <paramref name="at"/> and failed since at <paramref name="failed"/>.</summary>
+    private static string SyncedAt(string team, DateTimeOffset at, DateTimeOffset? failed = null) =>
+        $$"""{{Waiting(team).TrimEnd()[..^1]}}, {"team": "{{team}}", "synced": "{{Iso(at)}}", "failed": {{(failed is { } when ? $"\"{Iso(when)}\"" : "null")}}}]""";
+
+    private static string Iso(DateTimeOffset at) => at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+
     /// <summary>One task In review and nothing else, its PR in <paramref name="unready"/> trouble where there's any.</summary>
     private static string Review(string unready = "", int pr = 122) =>
         $$"""
@@ -4430,7 +4537,8 @@ public class WorkAreaTests : IDisposable
         Action<IReadOnlyList<string>, Action<string, SpendingItem>>? showSpending = null,
         Action<string>? showDecisions = null,
         Func<WaitingItem, bool>? confirmApprove = null,
-        Func<WaitingItem, string?>? askHold = null)
+        Func<WaitingItem, string?>? askHold = null,
+        Func<string, Task<Reading>>? syncBoard = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -4467,7 +4575,8 @@ public class WorkAreaTests : IDisposable
             showSpending: showSpending,
             showDecisions: showDecisions,
             confirmApprove: confirmApprove ?? (_ => true),
-            askHold: askHold);
+            askHold: askHold,
+            syncBoard: syncBoard);
     }
 
     private void WriteRun(string team, string role, int pid)

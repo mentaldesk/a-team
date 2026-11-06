@@ -39,10 +39,18 @@ run() {
   local db
   for db in history.db dry-run.db; do
     [ -n "${KEEP_BOARD:-}" ] || [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
-      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo';" 2>/dev/null
+      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo';" 2>/dev/null
   done
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" "$@" >"$OUT" 2>"$ERR"
   STATUS=$?
+}
+
+# waiting: runs `waiting`, keeping its entry saying when the detail was synced apart from the items, in $OUT.synced.
+waiting() {
+  run board demo waiting
+  [ "$STATUS" -eq 0 ] || return 0
+  jq -c 'map(select(has("synced"))) | first' "$OUT" >"$OUT.synced"
+  jq 'map(select(has("synced") | not))' "$OUT" >"$OUT.items" && mv "$OUT.items" "$OUT"
 }
 
 enabled() { jq -c .dispatch.enabled "$TEAM"; }
@@ -211,6 +219,7 @@ RUNS
   echo '{}' >"$CONTENTS"
   cat >"$BIN/gh" <<SH
 #!/usr/bin/env bash
+[ ! -e "$BIN/offline" ] || { echo "gh: error connecting to api.github.com" >&2; exit 1; }
 # Carrying a-team labels into the record happens once, on upgrade, so it isn't counted with a command's calls.
 case " \$* " in
   *HeldSince*) printf '%s\n' "\$*" >>"$BIN/args"; cat "$TALK"; exit 0 ;;
@@ -221,6 +230,7 @@ esac
 echo call >>"$CALLS"
 printf '%s\n' "\$*" >>"$BIN/args"
 case " \$* " in
+  *defaultBranchRef*) page="$TALK" ;;
   *"issues?labels=a-team:upstream"*) page="$WAITING_ON" ;;
   *UpstreamWaits*) page="$UPSTREAM_ITEMS" ;;
   *UpstreamReach*) page="$REACH" ;;
@@ -251,7 +261,8 @@ case " \$* " in
         mv "$ITEMS.new" "$ITEMS"
     fi
     echo '{}'; exit 0 ;;
-  *"api rate_limit"*) page="$BIN/rate.json"; echo '{"resources": {"graphql": {"reset": $QUOTA_RESET}, "core": {"reset": $((QUOTA_RESET - 1800))}}}' >"\$page" ;;
+  *"api rate_limit"*) page="$BIN/rate.json"; jq -n --argjson left "\$(cat "$BIN/remaining" 2>/dev/null || echo null)" \
+                         '{resources: {graphql: {reset: $QUOTA_RESET, remaining: \$left}, core: {reset: $((QUOTA_RESET - 1800)), remaining: \$left}}}' >"\$page" ;;
   *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
   *"pr list"*"app/demo-app"*) echo "\$*" >>"$UPSTREAM_CALLS"; page="$UPSTREAM" ;;
   *ProjectV2SingleSelectField*) page="$META" ;;
@@ -338,6 +349,16 @@ case " \$* " in
              then . + {commits: {nodes: [{commit: {checkSuites: {nodes: [{checkRuns: {nodes: \$runs}}]}}}]}}
              else . end)' "\$page" >"\$page.checked"
     page="\$page.checked" ;;
+esac
+# The detail sync asks for the default branch's CI and what blocks each task in the same call.
+case " \$* " in
+  *defaultBranchRef*)
+    jq --slurpfile main "$MAIN_RUNS" --slurpfile blocked "$PREREQUISITES" '.data.repository += (\$blocked[0].data.repository // {})
+      | .data.repository.defaultBranchRef = {name: "main", target: {oid: (\$main[0].check_runs[0].head_sha // ""),
+          checkSuites: {nodes: [{checkRuns: {nodes: (\$main[0].check_runs | map({name, status: (.status | ascii_upcase),
+            conclusion: (.conclusion | if . == null then null else ascii_upcase end),
+            completedAt: .completed_at, url: .html_url}))}}]}}}' "\$page" >"\$page.detail"
+    page="\$page.detail" ;;
 esac
 filter=
 while [ \$# -gt 0 ]; do
@@ -566,7 +587,7 @@ gh_talk <<TALK
 106 body 2025-09-19T08:14:00Z reviewer The pitch\n<!-- a-team:lead -->
 115 body ${TODAY}T08:14:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "numbers" '[106,115]' "$(jq -c '[.[].number]' "$OUT")"
 same "statuses" '["Pitched","In review"]' "$(jq -c '[.[].status]' "$OUT")"
@@ -591,7 +612,7 @@ gh_talk <<TALK
 115 comment ${TODAY}T08:30:00Z demo-app[bot] Draft PR #9 is up.\n<!-- a-team:dev -->
 115 comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "pitch turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
 same "pitch reason" '"answering your feedback since 09:30"' "$(jq -c '.[0].reason' "$OUT")"
@@ -607,7 +628,7 @@ gh_talk <<TALK
 115 comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
 115 comment ${TODAY}T11:45:00Z demo-app[bot] Added one.\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
 same "pitch reason" '"awaiting your approval since 11:00"' "$(jq -c '.[0].reason' "$OUT")"
@@ -621,7 +642,7 @@ gh_talk <<TALK
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 comment ${TODAY}T09:30:00Z passer-by This looks wrong to me.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "turns" '["you","you"]' "$(jq -c '[.[].turn]' "$OUT")"
 
@@ -634,7 +655,7 @@ gh_talk <<TALK
 115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
 : >"$CALLS"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
@@ -648,7 +669,7 @@ gh_talk false MERGEABLE unlinked <<TALK
 115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
 : >"$CALLS"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
@@ -661,7 +682,7 @@ gh_talk false MERGEABLE unlinked <<TALK
 115 pr-body ${TODAY}T08:25:00Z passer-by Closes #115
 115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 
@@ -673,7 +694,7 @@ gh_talk <<TALK
 115 pr-review ${TODAY}T09:00:00Z reviewer Nearly there.
 115 pr-line ${TODAY}T10:45:00Z reviewer This name reads oddly.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:45"' "$(jq -c '.[1].reason' "$OUT")"
@@ -686,7 +707,7 @@ gh_talk <<TALK
 115 pr-comment+seen ${TODAY}T10:15:00Z reviewer This one needs a test.
 115 pr-comment ${TODAY}T11:45:00Z demo-app[bot] Added one.\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"awaiting your acceptance since 11:45"' "$(jq -c '.[1].reason' "$OUT")"
@@ -697,7 +718,7 @@ gh_talk <<TALK
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "pitch fields" '["number","pitch","priority","reason","status","team","title","turn","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "task fields" \
@@ -721,7 +742,7 @@ case_ "a PR whose CI is failing is the Dev's turn, since the run finished"
 gh_runs <<RUNS
 completed failure ${TODAY}T09:02:00Z build
 RUNS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
@@ -733,7 +754,7 @@ gh_main_runs <<RUNS
 completed failure ${TODAY}T08:50:00Z build
 completed success ${TODAY}T08:50:00Z lint
 RUNS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "checks" '"main-red"' "$(jq -c '.[1].checks' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
@@ -743,7 +764,7 @@ same "red" '{"team":"demo","red":{"branch":"main","sha":"b8f5bdd0c0ffee","failin
 
 case_ "the red main names its fix, and the fix's card says it's one"
 edit_item 115 '.labels.nodes += [{name: "a-team:fix"}]'
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "fix" '{"number":115,"status":"In review"}' "$(jq -c 'last.red.fix' "$OUT")"
 same "fix flag" '[null,true]' "$(jq -c '[.[0:2][].fix]' "$OUT")"
@@ -753,7 +774,7 @@ edit_item 115 '.labels.nodes -= [{name: "a-team:fix"}]'
 
 case_ "red since stays the head it was first seen red on while later heads stay red"
 jq '.check_runs |= map(.head_sha = "c0ffee1234")' "$MAIN_RUNS" >"$MAIN_RUNS.new" && mv "$MAIN_RUNS.new" "$MAIN_RUNS"
-run board demo waiting
+waiting
 same "since" '"b8f5bdd0c0ffee"' "$(jq -c 'last.red.since' "$OUT")"
 same "sha" '"c0ffee1234"' "$(jq -c 'last.red.sha' "$OUT")"
 
@@ -762,7 +783,7 @@ gh_runs <<RUNS
 completed failure ${TODAY}T09:02:00Z build
 completed failure ${TODAY}T09:02:00Z lint
 RUNS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
 same "task trouble" '"CI failing"' "$(jq -c '.[1].trouble' "$OUT")"
@@ -774,12 +795,12 @@ RUNS
 gh_main_runs <<RUNS
 in_progress - - build
 RUNS
-run board demo waiting
+waiting
 same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
 same "no red" '[]' "$(jq -c 'map(select(.red))' "$OUT")"
 [ ! -e "$A_TEAM_STATE/demo/red-since" ] || fail "green main: red-since left behind"
 echo '{"check_runs": []}' >"$MAIN_RUNS"
-run board demo waiting
+waiting
 same "checks, no CI on main" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
 same "no red, no CI on main" '[]' "$(jq -c 'map(select(.red))' "$OUT")"
 
@@ -790,7 +811,7 @@ gh_talk <<TALK
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-comment ${TODAY}T10:15:00Z reviewer This one needs a test.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "checks" '"fail"' "$(jq -c '.[1].checks' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
@@ -807,7 +828,7 @@ gh_talk false CONFLICTING <<TALK
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "conflicting" true "$(jq -c '.[1].conflicting' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
@@ -820,7 +841,7 @@ gh_talk <<TALK
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
 jq '(.. | objects | select(has("isDraft"))) += {mergeStateStatus: "BEHIND"}' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "unready" '"behind main"' "$(jq -c '.[1].unready' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
@@ -828,12 +849,12 @@ same "task reason" '"behind main"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "a PR behind its base that also conflicts or fails CI says that first"
 jq '(.. | objects | select(has("isDraft"))) += {mergeable: "CONFLICTING"}' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
-run board demo waiting
+waiting
 same "conflicting" '"conflicts with main"' "$(jq -c '.[1].unready' "$OUT")"
 gh_runs <<RUNS
 completed failure ${TODAY}T09:00:00Z build
 RUNS
-run board demo waiting
+waiting
 same "failing" '"CI failing"' "$(jq -c '.[1].unready' "$OUT")"
 gh_runs <<RUNS
 completed success ${TODAY}T09:00:00Z build
@@ -845,7 +866,7 @@ gh_talk false UNKNOWN <<TALK
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "conflicting" false "$(jq -c '.[1].conflicting' "$OUT")"
 same "unready" '"resolving mergeable status"' "$(jq -c '.[1].unready' "$OUT")"
@@ -858,7 +879,7 @@ gh_talk true <<TALK
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "draft" true "$(jq -c '.[1].draft' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
@@ -866,19 +887,19 @@ same "task reason" '"still a draft"' "$(jq -c '.[1].reason' "$OUT")"
 
 case_ "with a Reviewer, a green draft is the Reviewer's turn until its review is posted"
 jq '.roles.reviewer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"reviewer"' "$(jq -c '.[1].turn' "$OUT")"
 same "task trouble" '"awaiting review"' "$(jq -c '.[1].trouble' "$OUT")"
 same "task reason" '"awaiting review"' "$(jq -c '.[1].reason' "$OUT")"
 jq '(.. | objects | select(has("isDraft"))) += {mergeStateStatus: "BEHIND"}' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
-run board demo waiting
+waiting
 same "behind turn" '"reviewer"' "$(jq -c '.[1].turn' "$OUT")"
 same "behind trouble" '"awaiting review"' "$(jq -c '.[1].trouble' "$OUT")"
 gh_runs <<RUNS
 in_progress - - build
 RUNS
-run board demo waiting
+waiting
 same "running turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "running trouble" '"CI running"' "$(jq -c '.[1].trouble' "$OUT")"
 gh_runs <<RUNS
@@ -890,7 +911,7 @@ gh_talk true <<TALK
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-comment+seen ${TODAY}T09:10:00Z demo-app[bot] Nothing needs changing.\n<!-- a-team:reviewer -->
 TALK
-run board demo waiting
+waiting
 same "reviewed turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "reviewed trouble" '"still a draft"' "$(jq -c '.[1].trouble' "$OUT")"
 jq 'del(.roles)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
@@ -907,7 +928,7 @@ gh_runs <<RUNS
 completed success ${TODAY}T10:45:00Z build
 in_progress - - windows
 RUNS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "checks" '"pending"' "$(jq -c '.[1].checks' "$OUT")"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
@@ -917,7 +938,7 @@ gh_runs <<RUNS
 completed success ${TODAY}T10:45:00Z build
 completed success ${TODAY}T10:55:00Z windows
 RUNS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"awaiting your acceptance since 10:40"' "$(jq -c '.[1].reason' "$OUT")"
@@ -927,7 +948,7 @@ gh_talk <<TALK
 106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"awaiting your acceptance since 08:00"' "$(jq -c '.[1].reason' "$OUT")"
@@ -936,10 +957,10 @@ case_ "a team with nothing at a gate waits on nothing, and asks nobody whose tur
 gh_items <<'ITEMS'
 Ready 128 Everything waiting on me
 ITEMS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "a gated item carries the Priority the cards colour its number by"
 gh_items 106 <<'ITEMS'
@@ -950,7 +971,7 @@ gh_talk <<TALK
 106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "priorities" '["High",null]' "$(jq -c '[.[].priority]' "$OUT")"
 
@@ -966,7 +987,7 @@ gh_talk <<TALK
 106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "numbers" '[106,115,6]' "$(jq -c '[.[].number]' "$OUT")"
 same "idea status" '"Idea"' "$(jq -c '.[2].status' "$OUT")"
@@ -981,10 +1002,10 @@ gh_items 6 26 <<'ITEMS'
 Idea 6 The agents can't say what they'd change
 Idea 26 A pitch I've shelved
 ITEMS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "a pitch that needs the reviewer's answer comes with that section as its question"
 gh_items <<'ITEMS'
@@ -1004,7 +1025,7 @@ gh_talk <<TALK
 261 body ${TODAY}T08:00:00Z demo-app[bot] ## Open questions\n\n1. **Which?** I'd pick one.\n<!-- a-team:lead -->
 262 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\n1. **Which?** Still open.\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "question" '"## Needs your answer\n\n1. **Devs or Worktrees?** I can'"'"'t pick."' "$(jq -c '.[0].question' "$OUT")"
 same "turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
@@ -1017,7 +1038,7 @@ gh_talk <<TALK
 257 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\n1. **Devs or Worktrees?** I can't pick.\n<!-- a-team:lead -->
 257 comment ${TODAY}T10:50:00Z reviewer Devs.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
 same "reason" '"answering your feedback since 10:50"' "$(jq -c '.[0].reason' "$OUT")"
@@ -1038,7 +1059,7 @@ gh_talk <<TALK
 265 body ${TODAY}T08:00:00Z demo-app[bot] ## Needs your answer\n\n1. **Which?** Like:\n\n   \`\`\`\n   # not a heading\n   \`\`\`\n\n2. **And?** More.\n\n## Original idea\n\n> Hi\n<!-- a-team:lead -->
 266 body ${TODAY}T08:00:00Z demo-app[bot] ~~~~\n## Needs your answer\n~~~\n1. Still fenced.\n~~~~\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "questions" '[[263,null],[264,"## Needs your answer\n\n1. **Which?** Real."],[265,"## Needs your answer\n\n1. **Which?** Like:\n\n   ```\n   # not a heading\n   ```\n\n2. **And?** More."],[266,null]]' \
   "$(jq -c '[.[] | [.number, .question]]' "$OUT")"
@@ -1052,7 +1073,7 @@ edit_item "$((300 + $(grep -nx Ready <<<"$statuses" | cut -d: -f1)))" '.labels.n
 yours=$(jq -c --argjson gates "$gates" '[.data.organization.projectV2.items.nodes[]
   | select((.fieldValueByName.name | IN($gates[])) or any(.content.labels.nodes[]; .name == "blocked")) | .content.number]' "$ITEMS")
 same "one at each gate, and one held" 3 "$(jq length <<<"$yours")"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "all in waiting" '[]' "$(jq -c --argjson yours "$yours" '$yours - [.[].number]' "$OUT")"
 
@@ -1076,7 +1097,7 @@ gh_talk <<TALK
 195 labeled ${TODAY}T09:00:00Z reviewer blocked
 TALK
 : >"$CALLS"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "numbers" '[115,192,195]' "$(jq -c '[.[].number]' "$OUT")"
 same "status" '"Ready"' "$(jq -c '.[1].status' "$OUT")"
@@ -1084,7 +1105,7 @@ same "turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "reason" '"asked you since 08:23"' "$(jq -c '.[1].reason' "$OUT")"
 same "question" '"Which marker should it post?"' "$(jq -c '.[1].question' "$OUT")"
 same "held by" '"dev"' "$(jq -c '.[1].heldBy' "$OUT")"
-same "api calls" 5 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "a held task with no ask from either agent since it was labelled is held for no reason given"
 same "turn" '"you"' "$(jq -c '.[2].turn' "$OUT")"
@@ -1099,7 +1120,7 @@ gh_talk <<TALK
 195 labeled ${TODAY}T09:00:00Z demo-app[bot] blocked
 195 comment ${TODAY}T09:10:00Z demo-app[bot] Holding this until you have a GPG key, and the SDK.\n\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "held" '{"turn":"you","reason":"held by the Lead since 09:10","question":"Holding this until you have a GPG key, and the SDK.","heldBy":"lead"}' \
   "$(jq -c '.[] | select(.number == 195) | {turn, reason, question, heldBy}' "$OUT")"
@@ -1117,7 +1138,7 @@ gh_talk <<TALK
 195 comment ${TODAY}T09:10:00Z demo-app[bot] Reply here once the SDK is in.\n\n<!-- a-team:lead -->
 195 comment ${TODAY}T09:20:00Z reviewer Installed.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "held" '{"turn":"lead","reason":"reading your answer since 09:20","heldBy":"lead"}' \
   "$(jq -c '.[] | select(.number == 195) | {turn, reason, heldBy}' "$OUT")"
@@ -1180,7 +1201,7 @@ gh_talk <<TALK
 192 labeled ${TODAY}T08:23:14Z demo-app[bot] blocked
 192 comment+seen ${TODAY}T10:50:00Z reviewer The Dev's own.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "turn" '"dev"' "$(jq -c '.[] | select(.number == 192) | .turn' "$OUT")"
 same "reason" '"reading your answer since 10:50"' "$(jq -c '.[] | select(.number == 192) | .reason' "$OUT")"
@@ -1191,7 +1212,7 @@ gh_talk <<TALK
 192 comment ${TODAY}T07:10:00Z demo-app[bot] Draft PR #9 is up.\n<!-- a-team:dev -->
 192 labeled ${TODAY}T09:00:00Z reviewer blocked
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "numbers" '[115,192,195]' "$(jq -c '[.[].number]' "$OUT")"
 same "no question" '[null,null]' "$(jq -c '.[1] | [.question, .heldBy]' "$OUT")"
@@ -1210,7 +1231,7 @@ TALK
 run board demo triggers dev
 same "exit" 0 "$STATUS"
 same "reasons" "[\"stakeholder answered the Dev's question on #192 (${TODAY}T10:50:00Z)\"]" "$(jq -c .reasons "$OUT")"
-run board demo waiting
+waiting
 same "no unread in waiting" 'null' "$(jq -c '.[] | select(.number == 192) | .unread' "$OUT")"
 
 case_ "once a run has read the reply, it starts no more runs"
@@ -1232,7 +1253,7 @@ gh_talk <<TALK
 192 comment+seen ${TODAY}T10:50:00Z reviewer I don't understand the question.
 192 comment ${TODAY}T11:00:00Z demo-app[bot] Put another way: the Lead's marker or the Dev's?\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "turn" '"you"' "$(jq -c '.[] | select(.number == 192) | .turn' "$OUT")"
 same "reason" '"asked you since 11:00"' "$(jq -c '.[] | select(.number == 192) | .reason' "$OUT")"
 run board --dry-run demo unblock dev 192
@@ -1303,7 +1324,7 @@ gh_talk <<TALK
 196 comment ${TODAY}T11:00:00Z reviewer wait until I've talked to the designer
 196 labeled ${TODAY}T11:00:02Z reviewer blocked
 TALK
-run board demo waiting
+waiting
 same "held by you" '{"turn":"you","reason":"held by you since 11:00","question":"wait until I'"'"'ve talked to the designer","heldBy":"you"}' \
   "$(jq -c '.[] | select(.number == 196) | {turn, reason, question, heldBy}' "$OUT")"
 
@@ -1314,7 +1335,7 @@ gh_talk <<TALK
 196 labeled ${TODAY}T11:00:02Z reviewer blocked
 196 comment ${TODAY}T12:00:00Z demo-app[bot] Blocked by #11: the picker first.\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "still yours" '"you"' "$(jq -c '.[] | select(.number == 196) | .heldBy' "$OUT")"
 run board demo unblock lead 196
 failed "the Lead clearing your hold"
@@ -1328,7 +1349,7 @@ gh_talk <<TALK
 195 labeled ${TODAY}T11:00:02Z reviewer blocked
 TALK
 edit_item 195 '.labels.nodes = [{name: "blocked"}, {name: "a-team:upstream"}]'
-run board demo waiting
+waiting
 same "held by you" '{"turn":"you","reason":"held by you since 11:00","heldBy":"you"}' \
   "$(jq -c '.[] | select(.number == 195) | {turn, reason, heldBy}' "$OUT")"
 run board demo triggers lead
@@ -1375,7 +1396,7 @@ JSON
 gh_items <<'ITEMS'
 Shipped 99 Already merged
 ITEMS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "nothing waiting" '[]' "$(cat "$OUT")"
 
@@ -1386,7 +1407,7 @@ JSON
 gh_items <<'ITEMS'
 Done 99 Already merged
 ITEMS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 
 case_ "body returns an issue's number, title and body, in one call"
@@ -2024,7 +2045,7 @@ gh_items <<'ITEMS'
 Idea 41 A seed the Lead found
 ITEMS
 edit_item 41 '.labels.nodes = [{name: "a-team:idea"}, {name: "rank:medium"}, {name: "a-team:skipped"}]'
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "facts" '"Lead recommends Medium · skipped"' "$(jq -c '.[] | select(.number == 41) | .facts' "$OUT")"
 
@@ -2146,7 +2167,7 @@ gh_talk <<TALK
 TALK
 jq '.data.repository |= with_entries(.value.subIssuesSummary = {total: 3, completed: 1})' "$TALK" >"$TALK.new" &&
   mv "$TALK.new" "$TALK"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "pitch tasks" '[3,2]' "$(jq -c '.[] | select(.number == 7) | [.tasks, .openTasks]' "$OUT")"
 same "task tasks" '[null,null]' "$(jq -c '.[] | select(.number == 8) | [.tasks, .openTasks]' "$OUT")"
@@ -2580,7 +2601,7 @@ gh_talk <<TALK
 7 comment ${TODAY}T02:28:46Z reviewer And do the same for subissue links.
 7 comment ${TODAY}T02:33:03Z demo-app[bot] Added one.\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
 same "reason" '"answering your feedback since 02:28"' "$(jq -c '.[0].reason' "$OUT")"
@@ -2592,7 +2613,7 @@ gh_talk <<TALK
 7 comment+seen ${TODAY}T02:28:46Z reviewer And do the same for subissue links.
 7 comment ${TODAY}T02:33:03Z demo-app[bot] Added one.\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
 same "reason" '"awaiting your approval since 02:33"' "$(jq -c '.[0].reason' "$OUT")"
@@ -2646,7 +2667,7 @@ gh_talk <<TALK
 7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
 7 comment ${TODAY}T02:28:46Z reviewer > The pitch\n> <!-- a-team:lead -->\n\nAnd include the path.
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "turn" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
 same "reason" '"answering your feedback since 02:28"' "$(jq -c '.[0].reason' "$OUT")"
@@ -2738,7 +2759,7 @@ gh_talk <<TALK
 115 body ${YESTERDAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 comment ${YESTERDAY}T09:00:00Z reviewer > Drafted.\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "pitch turn" '"you"' "$(jq -c '.[0].turn' "$OUT")"
 same "pitch reason" "\"awaiting your approval since $(jq -rn 'now - 86400 | strftime("%d %b")') 08:00\"" "$(jq -c '.[0].reason' "$OUT")"
@@ -2791,7 +2812,7 @@ gh_talk <<'TALK'
 107 body 2026-10-01T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
 107 comment 2026-10-01T09:30:00Z stranger What about the second gate?
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "turns" '["lead","you"]' "$(jq -c '[.[].turn]' "$OUT")"
 
@@ -3615,6 +3636,185 @@ same "the record's board" '[[13,"Ready",null],[14,"In review","High"],[15,"Done"
 same "mirror reads" 0 "$(grep -c 'projectV2(number' "$BIN/args")"
 same "open items read" 1 "$(grep -c BoardRefresh "$BIN/args")"
 
+case_ "a first read that can't sync the cards' reasons fails, rather than showing them without"
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+ITEMS
+run board demo list
+touch "$BIN/offline"
+A_TEAM_BOARD_READ_EVERY=3600 KEEP_BOARD=1 waiting
+same "offline exit" 1 "$STATUS"
+grep -q "can't read the cards' reasons from GitHub" "$ERR" || fail "offline: '$(cat "$ERR")'"
+rm "$BIN/offline"
+run board demo list
+echo 10 >"$BIN/remaining"
+A_TEAM_BOARD_READ_EVERY=3600 KEEP_BOARD=1 waiting
+same "short of budget exit" 1 "$STATUS"
+grep -q "too few GitHub API requests" "$ERR" || fail "short of budget: '$(cat "$ERR")'"
+rm "$BIN/remaining"
+
+case_ "after a sync, waiting reads every card and its reason from the record, with no call to GitHub"
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+In_review 115 I can change any of the keys
+ITEMS
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:10:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+TALK
+run board demo sync
+same "exit" 0 "$STATUS"
+same "one call for the detail" 1 "$(grep -c defaultBranchRef "$BIN/args")"
+same "main's CI in it" 0 "$(grep -c 'commits/HEAD/check-runs\|default_branch' "$BIN/args")"
+: >"$CALLS"
+KEEP_BOARD=1 waiting
+same "exit" 0 "$STATUS"
+same "api calls" 0 "$(grep -c '' <"$CALLS")"
+cards='[[106,"you","awaiting your approval since 08:00"],[115,"you","awaiting your acceptance since 08:10"]]'
+same "cards" "$cards" "$(jq -c 'map([.number, .turn, .reason])' "$OUT")"
+same "synced" '[true,null]' "$(jq -c '[.synced != null, .failed]' "$OUT.synced")"
+touch "$BIN/offline"
+KEEP_BOARD=1 waiting
+same "offline exit" 0 "$STATUS"
+same "offline cards" "$cards" "$(jq -c 'map([.number, .turn, .reason])' "$OUT")"
+
+case_ "a sync that can't reach GitHub keeps the cards as they were, and says when one last worked"
+synced=$(jq -c .synced "$OUT.synced")
+kept board demo sync
+same "exit" 0 "$STATUS"
+KEEP_BOARD=1 waiting
+same "cards" "$cards" "$(jq -c 'map([.number, .turn, .reason])' "$OUT")"
+same "last good sync" "$synced" "$(jq -c .synced "$OUT.synced")"
+same "failed" true "$(jq '.failed != null' "$OUT.synced")"
+rm "$BIN/offline"
+
+case_ "a sync short of API budget leaves the detail as it was"
+echo 10 >"$BIN/remaining"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+106 comment ${TODAY}T09:00:00Z reviewer Why now?
+TALK
+: >"$BIN/args"
+kept board demo sync
+same "exit" 0 "$STATUS"
+same "no detail read" 0 "$(grep -c defaultBranchRef "$BIN/args")"
+KEEP_BOARD=1 waiting
+same "cards" "$cards" "$(jq -c 'map([.number, .turn, .reason])' "$OUT")"
+same "stamp" "$synced" "$(jq -c .synced "$OUT.synced")"
+rm "$BIN/remaining"
+
+case_ "once synced, a failed sync stops saying so"
+kept board demo sync
+KEEP_BOARD=1 waiting
+same "failed" null "$(jq -c .failed "$OUT.synced")"
+
+case_ "a new comment shows on its card after the next sync, and not before"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:10:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T09:00:00Z reviewer Can it say which key?
+TALK
+kept board demo sync
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:10:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T09:00:00Z reviewer Can it say which key?
+115 pr-review ${TODAY}T09:30:00Z reviewer And which team?
+TALK
+KEEP_BOARD=1 waiting
+same "comment" '[115,"dev","answering your feedback since 09:00"]' "$(jq -c '.[1] | [.number, .turn, .reason]' "$OUT")"
+
+case_ "so does a new review"
+kept board demo sync
+KEEP_BOARD=1 waiting
+same "review" '[115,"dev","answering your feedback since 09:30"]' "$(jq -c '.[1] | [.number, .turn, .reason]' "$OUT")"
+
+case_ "and a check going red, then green"
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:10:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+TALK
+gh_runs <<RUNS
+completed failure ${TODAY}T10:00:00Z build
+RUNS
+kept board demo sync
+KEEP_BOARD=1 waiting
+same "red" '[115,"dev","CI failing since 10:00"]' "$(jq -c '.[1] | [.number, .turn, .reason]' "$OUT")"
+gh_runs <<RUNS
+completed success ${TODAY}T10:30:00Z build
+RUNS
+kept board demo sync
+KEEP_BOARD=1 waiting
+same "green" '[115,"you","awaiting your acceptance since 08:10"]' "$(jq -c '.[1] | [.number, .turn, .reason]' "$OUT")"
+
+case_ "the red main shows from the record, and goes after a sync once it's green"
+gh_main_runs <<RUNS
+completed failure ${TODAY}T10:00:00Z build
+RUNS
+kept board demo sync
+KEEP_BOARD=1 waiting
+same "red" '{"branch":"main","sha":"b8f5bdd0c0ffee","failing":["build"],"since":"b8f5bdd0c0ffee","fix":null}' "$(jq -c '.[-1].red' "$OUT")"
+gh_main_runs <<RUNS
+completed success ${TODAY}T10:30:00Z build
+RUNS
+KEEP_BOARD=1 waiting
+same "still red until a sync" true "$(jq '.[-1] | has("red")' "$OUT")"
+kept board demo sync
+KEEP_BOARD=1 waiting
+same "green" false "$(jq 'any(.[]; has("red"))' "$OUT")"
+
+case_ "a card that reached its gate since the last sync has its reason straight away, without another call once it has"
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+Ready 115 I can change any of the keys
+ITEMS
+sync_then_reach_gate() {
+  gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+TALK
+  run board demo sync
+  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET status = 'In review' WHERE team = 'demo' AND item = 115;"
+  gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:10:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T09:00:00Z reviewer Can it say which key?
+TALK
+}
+sync_then_reach_gate
+: >"$BIN/args"
+KEEP_BOARD=1 waiting
+same "exit" 0 "$STATUS"
+same "reason" '[115,"dev","answering your feedback since 09:00"]' "$(jq -c '.[1] | [.number, .turn, .reason]' "$OUT")"
+same "synced for it" 1 "$(grep -c defaultBranchRef "$BIN/args")"
+: >"$BIN/args"
+KEEP_BOARD=1 waiting
+same "the next read" 0 "$(grep -c '' <"$BIN/args")"
+
+case_ "a gap the sync can't fill keeps the cards, and offline only tries the once"
+sync_then_reach_gate
+touch "$BIN/offline"
+KEEP_BOARD=1 waiting
+same "exit" 0 "$STATUS"
+same "cards" '[106,115]' "$(jq -c 'map(.number)' "$OUT")"
+same "failed" true "$(jq '.failed != null' "$OUT.synced")"
+: >"$BIN/args"
+KEEP_BOARD=1 waiting
+same "exit" 0 "$STATUS"
+same "doesn't try again" 0 "$(grep -c '' <"$BIN/args")"
+rm "$BIN/offline"
+sync_then_reach_gate
+echo 10 >"$BIN/remaining"
+: >"$BIN/args"
+KEEP_BOARD=1 waiting
+same "short of budget exit" 0 "$STATUS"
+same "short of budget, no detail read" 0 "$(grep -c defaultBranchRef "$BIN/args")"
+rm "$BIN/remaining"
+
 case_ "overview and waiting read the record as it stands, and sync reads GitHub"
 gh_items <<'ITEMS'
 Ready 13 Something to start
@@ -3622,7 +3822,7 @@ ITEMS
 run board demo list
 : >"$BIN/args"
 kept board demo overview
-kept board demo waiting
+KEEP_BOARD=1 waiting
 same "board reads" 0 "$(grep -c 'projectV2(number\|BoardRefresh' "$BIN/args")"
 kept board demo sync
 same "exit" 0 "$STATUS"
@@ -3806,7 +4006,7 @@ same "exit" 0 "$STATUS"
 same "items" "$complete" "$(jq 'map(del(.since))' "$OUT")"
 same "stderr" "" "$(cat "$ERR")"
 short_reads 1 0
-run board demo waiting
+waiting
 same "filtered exit" 0 "$STATUS"
 same "filtered stderr" "" "$(cat "$ERR")"
 
@@ -3818,7 +4018,7 @@ one_line "short twice"
 grep -qF "board.sh: $SHORT" "$ERR" || fail "short twice: '$(cat "$ERR")'"
 same "stdout" "" "$(cat "$OUT")"
 short_reads 2 0
-run board demo waiting
+waiting
 failed "empty"
 grep -qF 'incomplete (0 of 3 items), twice' "$ERR" || fail "empty: '$(cat "$ERR")'"
 
@@ -4332,7 +4532,7 @@ TALK
 jq '.data.repository.x9 += {url: "https://github.com/mentaldesk/demo/pull/9", isDraft: false, mergeable: "MERGEABLE",
       baseRefName: "main"} | del(.data.repository.x9.closedByPullRequestsReferences)' "$TALK" >"$TALK.new" &&
   mv "$TALK.new" "$TALK"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "docs PR" '{"number":9,"role":"customer","pr":9,"turn":"you","unready":""}' \
   "$(jq -c '.[] | select(.number == 9) | {number, role, pr, turn, unready}' "$OUT")"
@@ -4400,7 +4600,7 @@ TALK
       | del(.data.repository.x535.closedByPullRequestsReferences)' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
 }
 dependabot_talk
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "Dependabot PR" '{"number":535,"dependency":true,"pr":535,"turn":"you","unready":"","reason":"awaiting your acceptance since 08:05"}' \
   "$(jq -c '.[] | select(.number == 535) | {number, dependency, pr, turn, unready, reason}' "$OUT")"
@@ -4409,7 +4609,7 @@ case_ "a Dependabot PR whose CI fails is still yours"
 gh_runs <<'RUNS'
 completed failure 2025-09-19T09:00:00Z build
 RUNS
-run board demo waiting
+waiting
 same "failing" '{"turn":"you","trouble":"CI failing","unready":"CI failing"}' \
   "$(jq -c '.[] | select(.number == 535) | {turn, trouble, unready}' "$OUT")"
 
@@ -4569,7 +4769,7 @@ TALK
 jq '.data.repository.x86 += {url: "https://github.com/mentaldesk/demo/pull/86", isDraft: false, mergeable: "MERGEABLE",
       baseRefName: "main", headRefName: "feat/public-menu-letters"}
     | del(.data.repository.x86.closedByPullRequestsReferences)' "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "upstream PR" '{"number":86,"pr":86,"branch":"feat/public-menu-letters","turn":"you","unready":""}' \
   "$(jq -c '.[] | select(.number == 86) | {number, pr, branch, turn, unready}' "$OUT")"
@@ -4873,7 +5073,7 @@ echo '{"number":7}' >"$WORK/state/demo/lead/card"
 A_TEAM_RUN_TEAM=demo A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "kept" '{"number":7}' "$(cat "$WORK/state/demo/lead/card")"
 rm -f "$WORK/state/demo/lead/card"
-run board demo waiting
+waiting
 same "triage" '[42]' "$(jq -c 'map(select(.reason == "waiting to be ranked") | .number)' "$OUT")"
 
 # --- the Lead's recommended rank -------------------------------------------------------------
@@ -4987,7 +5187,7 @@ gh_talk <<TALK
 6 comment ${TODAY}T07:20:00Z demo-app[bot] Recommended: **High** · theme 2, small · clears the queue\n\n<!-- a-team:lead -->
 6 comment ${TODAY}T07:30:00Z reviewer Recommended: **Low** · not the Lead's
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "ideas" '[[6,"High","theme 2, small · clears the queue"],[7,null,"waiting to be ranked"]]' \
   "$(jq -c 'map(select(.status == "Idea") | [.number, .recommendation, .reason])' "$OUT")"
@@ -5236,7 +5436,7 @@ document_pitch 60
 gh_talk <<TALK
 60 body ${TODAY}T08:14:00Z demo-app[bot] ## Why now\n\nThemes ran dry.\n\n## Needs your answer\n\n- Move fewer decisions up?\n\n<!-- a-team:lead -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "document" '{"number":60,"document":true,"pitch":false,"question":"## Needs your answer\n\n- Move fewer decisions up?"}' \
   "$(jq -c '.[] | select(.number == 60) | {number, document, pitch, question}' "$OUT")"
@@ -5249,7 +5449,7 @@ TALK
 jq '.data.repository.x60 += {url: "https://github.com/mentaldesk/demo/pull/60", isDraft: false, mergeable: "MERGEABLE",
       baseRefName: "main", headRefName: "a-team/vision"} | del(.data.repository.x60.closedByPullRequestsReferences)' \
   "$TALK" >"$TALK.new" && mv "$TALK.new" "$TALK"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "document" '{"number":60,"pr":null,"branch":"a-team/vision","base":"main"}' \
   "$(jq -c '.[] | select(.number == 60) | {number, pr, branch, base}' "$OUT")"
@@ -5752,6 +5952,7 @@ if [ "$1" = token ] && [ -n "${NOT_INSTALLED:-}" ]; then
 fi
 [ "$1" = board ] && { [ "${!#}" = free ] || [ "${!#}" = update ]; } && exit 0
 [ "$1" = board ] && [ "${!#}" = adopt ] && { echo "$*" >>"${ADOPTED:-/dev/null}"; exit 0; }
+[ "$1" = board ] && [ "${!#}" = sync ] && { echo "$*" >>"${SYNCS:-/dev/null}"; exit 0; }
 echo '{"reasons": ["work to do"], "creative": false}'
 SH
 chmod +x "$APP/bin/a-team"
@@ -5762,6 +5963,10 @@ grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the held dev 
 case_ "a dispatcher pass adopts each team's upstream PRs, the dry run's in dry run"
 ADOPTED="$WORK/adopted" A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 same "adopt" "board --dry-run demo adopt" "$(cat "$WORK/adopted")"
+
+case_ "a dispatcher pass syncs each team's board, the cards' detail with it"
+SYNCS="$WORK/syncs" A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+same "sync" "board --dry-run demo sync" "$(cat "$WORK/syncs")"
 
 case_ "a dispatcher pass skips a team with no app key, says it stopped only on the second pass, and runs the others"
 jq 'del(.app) | .dispatch.hold = []' "$TEAM" >"$CONFIG/teams/bare.json"
@@ -7596,7 +7801,7 @@ gh_caught <<CAUGHT
 7 comment $(ago 20) octocat
 911 merged $(ago 10) reviewer
 CAUGHT
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "one query" 1 "$(caught_calls)"
 same "comments, and no moves: the board reads those itself" "octocat commented
@@ -7609,7 +7814,7 @@ same "merged PR" "you accepted · PR #911 merged" "$(history_of 911)"
 same "when" "$said" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 7 | jq -r '.events[-2].at')"
 
 case_ "catching up again records nothing new"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "twice" 3 "$(history_of 7 | grep -c '')"
 
@@ -7622,7 +7827,7 @@ gh_caught <<CAUGHT
 7 moved $(ago 37) reviewer Idea>Ready mentaldesk/2
 7 comment $(ago 200) reviewer
 CAUGHT
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "left out" "lead commented" "$(history_of 7)"
 
@@ -7639,7 +7844,7 @@ gh_caught <<CAUGHT
 7 comment $(ago 1) reviewer
 8 closed $(ago 0) reviewer 908
 CAUGHT
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "once each" "you commented
 you Pitched → Approved
@@ -7657,7 +7862,7 @@ gh_caught <<CAUGHT
 9 comment $(ago 0) reviewer
 9 closed $(ago 0) reviewer NOT_PLANNED
 CAUGHT
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "declined once" "you declined
 you commented" "$(history_of 9)"
@@ -7670,14 +7875,14 @@ Ready 12 A task
 ITEMS
 start=$(ago 120)
 record_from "$start"
-run board demo waiting
+waiting
 same "from the start" "$start" "$(caught_arg since)"
 same "search" "repo:mentaldesk/demo updated:>=$start" "$(caught_arg q)"
 gh_items <<'ITEMS'
 Approved 7 A pitch
 Ready 12 A task
 ITEMS
-run board demo waiting
+waiting
 grep -q 'nodes(ids: \["I_7","I_8"\])' "$BIN/caught-args" || fail "moved: $(grep 'nodes(ids' "$BIN/caught-args")"
 [[ $(caught_arg since) > $start ]] || fail "since: $(caught_arg since) is still the start of the record"
 
@@ -7686,10 +7891,10 @@ rm -f "$A_TEAM_STATE/history.db"
 gh_items <<'ITEMS'
 Pitched 7 A pitch
 ITEMS
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "no query" 0 "$(caught_calls)"
-run board demo waiting
+waiting
 same "then one" 1 "$(caught_calls)"
 
 case_ "--dry-run doesn't catch up"
@@ -7714,15 +7919,15 @@ Pitched 7 A pitch
 In_review 8 A task
 Ready 12 Not waiting
 ITEMS
-run board demo waiting
+waiting
 same "first" 2 "$(queue)"
 gh_items <<'ITEMS'
 Pitched 7 A pitch
 ITEMS
-run board demo waiting
+waiting
 same "within the hour" 2 "$(queue)"
 sqlite3 "$A_TEAM_STATE/history.db" "UPDATE queue SET at = '$(ago 61)'"
-run board demo waiting
+waiting
 same "an hour on" "2
 1" "$(queue)"
 run board --dry-run demo waiting
@@ -8696,7 +8901,7 @@ gh_talk <<TALK
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-comment ${TODAY}T08:40:00Z demo-app[bot] ## Needs changing\n- a.sh:1 off by one.\n\n## Worth considering\n- Rename it.\n- Split it.\n\n<!-- a-team:reviewer -->
 TALK
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "reviewed" true "$(jq -c '.[0].reviewed' "$OUT")"
 same "consider" 2 "$(jq -c '.[0].consider' "$OUT")"
@@ -8705,13 +8910,13 @@ gh_talk <<TALK
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 115 pr-comment ${TODAY}T08:40:00Z demo-app[bot] Nothing needs changing.\n\n<!-- a-team:reviewer -->
 TALK
-run board demo waiting
+waiting
 same "clean review" '[true,0]' "$(jq -c '[.[0].reviewed, .[0].consider]' "$OUT")"
 gh_talk <<TALK
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
 TALK
-run board demo waiting
+waiting
 same "unreviewed" null "$(jq -c '.[0].reviewed' "$OUT")"
 
 # What #11 waits on in other repos, as the team's comments on it record them: lines of "<owner/repo#n> <until> [<package>]".
@@ -8939,7 +9144,7 @@ case_ "waiting shows a task waiting on another repo with how far that's got, out
 waiting_upstream
 waits <<<"mentaldesk/style#84 released"
 upstream_items <<<"84 PullRequest MERGED abc123"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "upstream" '[{"number":11,"turn":"upstream","upstream":"style#84: merged, not released","reason":"waiting on style#84: merged, not released"}]' \
   "$(jq -c 'map(select(.number == 11) | {number, turn, upstream, reason})' "$OUT")"
@@ -8969,17 +9174,17 @@ waits <<<"mentaldesk/style#81 released MentalDesk.Tui"
 upstream_items <<<"81 Issue OPEN"
 jq -n '{data: {repository: {i81: {parent: {number: 71}, subIssues: {nodes: []},
   closedByPullRequestsReferences: {nodes: [{number: 84, state: "OPEN"}, {number: 80, state: "CLOSED"}]}}}}}' >"$REACH"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "chains" '[[{"team":"style","refs":[71,81,84],"what":"style#84","shown":"open"},{"team":"style","refs":[],"what":"MentalDesk.Tui'"'"'s release","shown":"yours"},{"team":"demo","refs":[],"what":"demo'"'"'s bump","shown":"yours"}]]' \
   "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
 jq -n '{data: {repository: {i81: {parent: null, closedByPullRequestsReferences: {nodes: []}, subIssues: {nodes: [
   {number: 82, state: "OPEN", closedByPullRequestsReferences: {nodes: [{number: 85, state: "OPEN"}]}},
   {number: 83, state: "CLOSED", closedByPullRequestsReferences: {nodes: [{number: 86, state: "MERGED"}]}}]}}}}}' >"$REACH"
-run board demo waiting
+waiting
 same "a pitch's task" '{"team":"style","refs":[81,82,85],"what":"style#85","shown":"open"}' "$(jq -c '.[] | select(.number == 11) | .chains[0][0]' "$OUT")"
 rm "$CONFIG/teams/style.json"
-run board demo waiting
+waiting
 same "no team" '{"team":null,"refs":[81,82,85],"what":"style#85","shown":"open"}' "$(jq -c '.[] | select(.number == 11) | .chains[0][0]' "$OUT")"
 
 case_ "waiting: a merged change waits on its release, a released one on the open bump that brings it, and a met wait on nothing"
@@ -8987,17 +9192,17 @@ waiting_upstream
 other_team style mentaldesk/style style-app
 waits <<<"mentaldesk/style#84 released"
 upstream_items <<<"84 PullRequest MERGED abc123"
-run board demo waiting
+waiting
 same "merged" '[[{"team":"style","refs":[],"what":"style'"'"'s release","shown":"yours"}]]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
 waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
 releases <<<"v0.3.9 2026-10-16T12:00:00Z"
 contains v0.3.9
 echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9"},
        {"id": "PR_536", "number": 536, "title": "Bump xunit from 2.9 to 3.0"}]' >"$UPDATES"
-run board demo waiting
+waiting
 same "bump" '[[{"team":"demo","refs":[535],"what":"#535","shown":"yours"}]]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
 echo '[]' >"$UPDATES"
-run board demo waiting
+waiting
 same "met" '[]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
 
 case_ "waiting gives a task In review that waits on another repo its chain, on its own card, and the upstream card frees it"
@@ -9010,7 +9215,7 @@ waits <<<"mentaldesk/style#81 released MentalDesk.Tui"
 upstream_items <<<"81 Issue OPEN"
 jq -n '{data: {repository: {i81: {parent: null, subIssues: {nodes: []},
   closedByPullRequestsReferences: {nodes: [{number: 84, state: "OPEN"}]}}}}}' >"$REACH"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "one card" '[{"status":"In review","turn":"you"}]' "$(jq -c 'map(select(.number == 11) | {status, turn})' "$OUT")"
 same "chains" '[[{"team":"style","refs":[81,84],"what":"style#84","shown":"open"},{"team":"style","refs":[],"what":"MentalDesk.Tui'"'"'s release","shown":"yours"},{"team":"demo","refs":[],"what":"demo'"'"'s bump","shown":"yours"}]]' \
@@ -9019,7 +9224,7 @@ upstream_items <<<"81 Issue CLOSED"
 releases <<<"v0.3.9 2026-10-16T12:00:00Z"
 contains v0.3.9
 echo '[]' >"$UPDATES"
-run board demo waiting
+waiting
 same "met" 'null' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
 
 case_ "free holds a released task while Dependabot's bump of its package is open, and brings that bump into Review"
@@ -9068,7 +9273,7 @@ edit_item 12 '.issueDependenciesSummary.blockedBy = 1'
 jq -n '{data: {repository: {i12: {blockedBy: {nodes: [{number: 13, state: "OPEN", repository: {nameWithOwner: "mentaldesk/demo"}},
   {number: 9, state: "OPEN", repository: {nameWithOwner: "mentaldesk/style"}}, {number: 8, state: "CLOSED", repository: {nameWithOwner: "mentaldesk/demo"}}]}}}}}' \
   >"$PREREQUISITES"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "frees" '[{"number":13,"frees":[12]}]' "$(jq -c 'map(select(.frees) | {number, frees})' "$OUT")"
 
@@ -9076,7 +9281,7 @@ case_ "waiting tags a held task with the Ready tasks waiting on it"
 edit_item 13 '.labels.nodes = [{name: "blocked"}]'
 jq '(.data.organization.projectV2.items.nodes[] | select(.content.number == 13) | .fieldValueByName.name) = "Ready"' \
   "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-run board demo waiting
+waiting
 same "exit" 0 "$STATUS"
 same "frees" '[{"number":13,"status":"Ready","frees":[12]}]' "$(jq -c 'map(select(.frees) | {number, status, frees})' "$OUT")"
 

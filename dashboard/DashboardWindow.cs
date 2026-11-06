@@ -110,7 +110,8 @@ public sealed class DashboardWindow : Window
     private ReaderIdea? _idea;
     private ReaderImage? _image;
     private TeamReads? _reading;
-    private readonly Dictionary<string, DateTimeOffset> _teamReadAt = [];
+    private readonly Dictionary<string, Synced> _synced = [];
+    private readonly Dictionary<string, DateTime> _detailSynced = [];
     private Task<Reading[]>? _trending;
     private IReadOnlyList<WorkTrend> _trends = [];
     private (WaitingItem Item, Task<IssueBody> Read, Action<WaitingItem, IssueBody> Then)? _readingBody;
@@ -405,6 +406,10 @@ public sealed class DashboardWindow : Window
         var now = _clock.GetUtcNow();
         if (_area == Area.Work && Uncovered && (_askedAt is not { } asked || now - asked >= ReadEvery))
             ReadWaiting();
+        if (_area == Area.Work && Uncovered && _readAt is not null)
+            foreach (var team in _teamNames)
+                Sync(team);
+        ReadSynced();
         RefreshWatches(now);
 
         _broke = DispatcherState.Broke(_stateRoot, BrokeLines);
@@ -518,7 +523,8 @@ public sealed class DashboardWindow : Window
         }
         var items = WaitingItem.Parse(read.Output);
         Sync(team);
-        _teamReadAt[team] = _clock.GetUtcNow();
+        if (Synced.Parse(read.Output) is { } synced)
+            _synced[team] = synced;
         _news.Read(team, items, asked);
         _work.Show(team, items);
         _work.ShowRed(RedMain.Parse(read.Output), team);
@@ -601,7 +607,7 @@ public sealed class DashboardWindow : Window
             _dispatchAll.Lines = lines;
     }
 
-    /// <summary>When the Work area was last read, for the status bar.</summary>
+    /// <summary>When Overseer's boards were last read, for the status bar.</summary>
     internal static string Stamped(DateTimeOffset? at, DateTimeOffset now) =>
         at is { } read ? $"read {Ages.Ago(now - read)} ago" : "";
 
@@ -1028,22 +1034,38 @@ public sealed class DashboardWindow : Window
         _syncing.Add(team);
     }
 
-    /// <summary>A team synced is read again, Overseer's lane only where it has been read.</summary>
+    /// <summary>A team synced is read again, for its cards and when they were synced even where it failed, and Overseer's
+    /// lane only where it has been read.</summary>
     private void SettleSyncs()
     {
         if (_syncing is not { } syncing)
             return;
         foreach (var (team, read) in syncing.Landed())
         {
+            _detailSynced[team] = DetailSynced(team);
+            ReadTeam(team);
             if (read.Failure is { Length: > 0 })
                 continue;
-            ReadTeam(team);
             if (_readBoard is not null && _boardReadAt.ContainsKey(team))
                 (_boarding ??= new TeamReads([], _readBoard)).Add(team);
         }
         if (syncing.Done)
             _syncing = null;
     }
+
+    /// <summary>Work reads a team again whenever the dispatcher's own sync has stored its cards' detail.</summary>
+    private void ReadSynced()
+    {
+        foreach (var team in _teamNames)
+        {
+            var at = DetailSynced(team);
+            if (_detailSynced.TryGetValue(team, out var was) && was != at && _area == Area.Work && _readAt is not null)
+                ReadTeam(team);
+            _detailSynced[team] = at;
+        }
+    }
+
+    private DateTime DetailSynced(string team) => Written(Path.Combine(_stateRoot, team, "detail-synced"));
 
     /// <summary>Back from a conversation or the editor, on the card you left once its board is read, or straight away on
     /// the team's panel with the role chosen, and its session full-screen where it was.</summary>
@@ -1255,7 +1277,7 @@ public sealed class DashboardWindow : Window
         Seen(item);
         _attention.Did("tried");
         _attention.HandOver();
-        _handOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader));
+        _handOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced) });
     }
 
     /// <summary>Writes the document pitch's file for your editor, and hands the terminal to it.</summary>
@@ -1277,7 +1299,7 @@ public sealed class DashboardWindow : Window
         _attention.Did("edited");
         _attention.HandOver();
         _handOver(new DocumentHandover(item, document, file, EditorHandover.Command(Environment.GetEnvironmentVariable),
-            _work.SelectedCard is null, _work.Items, _readAt, reader));
+            _work.SelectedCard is null, _work.Items, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced) });
     }
 
     /// <summary>Back from a try, the cards as they were with no re-read; from an attach or the editor, Overseer. Either way, what
@@ -1300,7 +1322,7 @@ public sealed class DashboardWindow : Window
             if (tried.Reader is null)
                 _attention.Close();
             _readAt = _askedAt = tried.ReadAt;
-            Stamp(tried.ReadAt);
+            Stamp(tried.Synced);
             _work.Show(tried.Items);
             ReadTrend();
             if (tried.Reader is { } place)
@@ -1313,7 +1335,7 @@ public sealed class DashboardWindow : Window
         {
             _attention.TakeBack();
             _readAt = _askedAt = edited.ReadAt;
-            Stamp(edited.ReadAt);
+            Stamp(edited.Synced);
             _work.Show(edited.Items);
             ReadTrend();
             _reopen = (edited.Item, edited.Reader, failure, edited.Said, edited.Committed);
@@ -1329,13 +1351,10 @@ public sealed class DashboardWindow : Window
         ShowMessage();
     }
 
-    /// <summary>Cards handed back from before a restart were all read at once.</summary>
-    private void Stamp(DateTimeOffset? readAt)
+    private void Stamp(IReadOnlyDictionary<string, Synced> synced)
     {
-        if (readAt is not { } at)
-            return;
-        foreach (var team in _teamNames)
-            _teamReadAt[team] = at;
+        foreach (var (team, stamp) in synced)
+            _synced[team] = stamp;
     }
 
     protected override void OnIsRunningChanged(bool newIsRunning)
@@ -1918,6 +1937,8 @@ public sealed class DashboardWindow : Window
         var title = WorkTrend.Title(_readAt is null ? null : _work.Items.Count(item => !item.WaitsUpstream), _trends, _clock.GetUtcNow());
         if (_reading is not null && !_work.Unread)
             title += " · Reading…";
+        else if (_syncing is not null)
+            title += " · Syncing…";
         if (_title.Text != title)
             _title.Text = title;
     }
@@ -1938,7 +1959,7 @@ public sealed class DashboardWindow : Window
             : "";
         var stamp = _dispatcherOpen ? "" : _area switch
         {
-            Area.Work => Stamped(_work.Current is { } lane && _teamReadAt.TryGetValue(lane.Team, out var read) ? read : null, _clock.GetUtcNow()),
+            Area.Work => _work.Current is { } lane && _synced.TryGetValue(lane.Team, out var synced) ? synced.Stamp(_clock.GetUtcNow()) : "",
             _ => Stamped(BoardReadAt(), _clock.GetUtcNow()),
         };
         var place = InAssistant ? "Assistant" : _dispatcherOpen ? "Dispatcher log" : _area switch
