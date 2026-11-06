@@ -329,6 +329,7 @@ case " \$* " in
   *"-X PUT"*"/update-branch"*) [ ! -e "$BIN/update-fails" ] || { echo "gh: merge conflict between base and head (HTTP 422)" >&2; exit 1; }
                               echo "PUT \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X PUT"*"/merge"*) [ ! -e "$BIN/merge-fails" ] || { echo "gh: Pull Request is not mergeable (HTTP 405)" >&2; exit 1; }
+                      [ ! -e "$BIN/merge-moved" ] || { echo "gh: Head branch was modified (HTTP 409)" >&2; exit 1; }
                       echo "PUT \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
@@ -4686,7 +4687,7 @@ same "writes" "" "$(cat "$WRITES")"
 # `bump_updates <n> [<update>]`: Dependabot's open PR #<n>, as `gh pr list` gives it, ready to merge unless a jq <update> changes it.
 bump_updates() {
   jq -n --argjson n "$1" '[{id: "PR_\($n)", number: $n, title: "Bump MentalDesk.Tui from 0.3.8 to 0.3.9",
-      author: {login: "app/dependabot"}, isDraft: false, mergeable: "MERGEABLE",
+      author: {login: "app/dependabot"}, isDraft: false, mergeable: "MERGEABLE", headRefOid: "deadbeefcafe",
       comments: [{author: {login: "demo-app"}, body: "Nothing new to adopt.\\n\\n<!-- a-team:lead -->"}]}] | map('"${2:-.}"')' >"$UPDATES"
 }
 # `bump_board <status>`: Dependabot's PR #535 on the board, with an ordinary task In progress beside it.
@@ -4723,7 +4724,7 @@ RUNS
 run board demo bumps
 same "exit" 0 "$STATUS"
 same "said" "PR #535 (Bump MentalDesk.Tui from 0.3.8 to 0.3.9): merged" "$(cat "$OUT")"
-grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/535/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
+grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/535/merge -f merge_method=squash -f sha=deadbeefcafe' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
 grep -q 'DELETE api -X DELETE repos/mentaldesk/demo/git/refs/heads/dependabot/nuget/MentalDesk.Tui-0.3.9' "$WRITES" || fail "branch: '$(cat "$WRITES")'"
 grep -q 'ADD ' "$WRITES" && fail "merge: it came onto the board in '$(cat "$WRITES")'"
 same "history" '{"who":"dispatcher","what":"merged · PR #535"}' "$(history_of 535 | jq -c '.events[0] | {who, what}')"
@@ -4768,6 +4769,66 @@ run board demo bumps
 failed "merge refused"
 grep -q "PR #535: can't merge PR #535" "$ERR" || fail "refused: '$(cat "$ERR")'"
 rm -f "$BIN/merge-fails"
+
+case_ "a PR pushed to since its checks were read isn't merged or counted, and the next pass retries"
+rm -rf "$A_TEAM_STATE/demo/bump-refusals"
+touch "$BIN/merge-moved"
+: >"$WRITES"
+run board demo bumps
+same "exit" 0 "$STATUS"
+same "said" "" "$(cat "$OUT")"
+same "writes" "" "$(cat "$WRITES")"
+[ ! -e "$A_TEAM_STATE/demo/bump-refusals/535" ] || fail "counted"
+rm -f "$BIN/merge-moved"
+
+case_ "a green PR GitHub keeps refusing is put to the stakeholder once, and merges once the cause is gone"
+gh_items <<'ITEMS'
+In_progress 7 A task being built
+ITEMS
+claimable
+bump_updates 535
+rm -f "$POSTED"
+touch "$BIN/merge-fails"
+: >"$WRITES"
+run board demo bumps
+failed "first"
+run board demo bumps
+failed "second"
+[ ! -e "$POSTED" ] || fail "asked too soon: '$(cat "$POSTED")'"
+same "still off the board" "" "$(cat "$WRITES")"
+run board demo bumps
+failed "third"
+same "said" "PR #535: GitHub keeps refusing to merge it, asked the stakeholder" "$(cat "$OUT")"
+grep -q "GitHub won't merge it: can't merge PR #535 (gh: Pull Request is not mergeable (HTTP 405))" "$POSTED" || fail "reason: '$(cat "$POSTED")'"
+same "marker" "<!-- a-team:dev -->" "$(tail -n 1 "$POSTED")"
+grep -q "ADD .*content=PR_535" "$WRITES" || fail "add: '$(cat "$WRITES")'"
+grep -q 'item=PVTI_new .*option=OPT_ready' "$WRITES" || fail "Ready: '$(cat "$WRITES")'"
+same "held by" '"dev"' "$(marks 535 | jq -c .held.by)"
+same "history" '{"who":"dispatcher","what":"held"}' "$(history_of 535 | jq -c '.events[0] | {who, what}')"
+rm -f "$POSTED"
+KEEP_BOARD=1 run board demo bumps
+failed "fourth"
+[ ! -e "$POSTED" ] || fail "asked twice: '$(cat "$POSTED")'"
+[ ! -e "$A_TEAM_STATE/demo/bump-refusals/535" ] || fail "counted while held"
+rm -f "$BIN/merge-fails"
+: >"$WRITES"
+KEEP_BOARD=1 run board demo bumps
+same "exit" 0 "$STATUS"
+same "merged" "PR #535 (Bump MentalDesk.Tui from 0.3.8 to 0.3.9): merged" "$(cat "$OUT")"
+grep -q 'item=PVTI_new .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+
+case_ "refusals are counted afresh once a merge succeeds"
+rm -rf "$A_TEAM_STATE/demo/bump-refusals"
+gh_items <<'ITEMS'
+In_progress 7 A task being built
+ITEMS
+bump_updates 535
+touch "$BIN/merge-fails"
+run board demo bumps
+rm -f "$BIN/merge-fails"
+run board demo bumps
+same "exit" 0 "$STATUS"
+[ ! -e "$A_TEAM_STATE/demo/bump-refusals/535" ] || fail "kept: '$(cat "$A_TEAM_STATE/demo/bump-refusals/535")'"
 
 case_ "a PR on the board merges from wherever it stands, to Done"
 bump_board In_progress
@@ -9573,6 +9634,27 @@ same "bump" '[[{"team":"demo","refs":[535],"what":"#535","shown":"merges by itse
 echo '[]' >"$UPDATES"
 waiting
 same "met" '[]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
+
+case_ "waiting: a bump that's been put to the stakeholder no longer says it merges by itself"
+waiting_upstream
+gh_items <<'ITEMS'
+Building 10 A pitch
+Ready 11 Needs the Mac keys
+Ready 535 Bump MentalDesk.Tui from 0.3.8 to 0.3.9
+ITEMS
+edit_item 11 '.labels.nodes = [{name: "a-team:upstream"}]'
+dependabot_pr 535
+edit_item 535 '.labels.nodes = [{name: "a-team:dev"}, {name: "blocked"}]'
+echo '[{"number": 11}]' >"$WAITING_ON"
+other_team style mentaldesk/style style-app
+waits <<<"mentaldesk/style#84 released MentalDesk.Tui"
+upstream_items <<<"84 PullRequest MERGED abc123"
+releases <<<"v0.3.9 2026-10-16T12:00:00Z"
+contains v0.3.9
+echo '[{"id": "PR_535", "number": 535, "title": "Bump MentalDesk.Tui from 0.3.8 to 0.3.9"}]' >"$UPDATES"
+waiting
+same "held" '[[{"team":"demo","refs":[535],"what":"#535","shown":"yours"}]]' "$(jq -c '.[] | select(.number == 11) | .chains' "$OUT")"
+echo '[]' >"$UPDATES"
 
 case_ "waiting gives a task In review that waits on another repo its chain, on its own card, and the upstream card frees it"
 waiting_upstream

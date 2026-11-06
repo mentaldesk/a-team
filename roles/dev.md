@@ -88,7 +88,8 @@ If your task is a Dependabot PR, it's its own PR, and these replace the steps ab
 
 ### 3. If your task is Ready and held
 
-You handed it back with a question. Read `a-team board {{team}} feedback dev <n>`, and judge
+You handed it back with a question, or the dispatcher asked for you because GitHub keeps refusing to merge a
+green Dependabot PR. Read `a-team board {{team}} feedback dev <n>`, and judge
 whether the reply answers it:
 
 - If it does, `a-team board {{team}} unblock dev <n>`, `a-team board {{team}} move dev <n> "In progress"`,

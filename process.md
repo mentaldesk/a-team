@@ -63,8 +63,8 @@ Two kinds of item share the board:
   passes and the Lead has said what the update brings, the dispatcher squash-merges it. When it fails
   jobs that pass on the default branch, the dispatcher puts it In progress with the Dev, ahead of every
   Ready task except a fix, and the Dev makes it green on its own branch. When it fails only what the
-  default branch fails, it waits for the fix. Only one the Dev can't make build reaches the
-  stakeholder: held, as a question on the PR.
+  default branch fails, it waits for the fix. Only one the Dev can't make build, or a green one GitHub
+  keeps refusing to merge, reaches the stakeholder: held, as a question on the PR.
 - An **upstream PR** is one another team's Dev opened here for a task of its own (`Needed by
   <repo>#<n>`). The dispatcher puts it In progress while it's a draft, then In review once it's out of
   draft, and accepting it merges it.

@@ -93,6 +93,9 @@ only what the default branch fails, it waits for the fix. It only reaches you if
 build: it shows in [Blocked](work.md#columns) as a question, with what broke, what the Dev tried and what
 it needs. Answer on the PR and it's back with the Dev; close the PR and it's gone.
 
+A green PR reaches you the same way if GitHub keeps refusing to merge it, because of a rule on the repo, say,
+with GitHub's reason. The dispatcher goes on trying, so changing what's stopping it is enough to merge it.
+
 ## Where you decide
 
 Work waits for you in two places, and no agent moves it on without you.

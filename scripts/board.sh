@@ -242,6 +242,8 @@ UPSTREAM='def upstream_reasons:
       (if $verdict == "pass" and .isDraft then [$n, "\($pr) is green but still a draft"] else empty end),
       (if $asked != null then [$n, "stakeholder feedback on \($pr) (\($asked))"] else empty end);'
 
+# How many passes in a row GitHub refuses a green bump before it's put to the stakeholder.
+REFUSALS_BEFORE_ASKING=3
 # merges: a PR as `gh pr list` gives it, the check that lets a green one merge with no stakeholder: Dependabot's, open
 # for merging, and the Lead has said what it brings.
 MERGES='def merges: .author.login == "app/dependabot" and (.isDraft | not) and .mergeable == "MERGEABLE"
@@ -393,6 +395,8 @@ UPDATED="$STATE/$TEAM/updated"
 UPDATE_SETTLES=600
 # The default branch's head when it was first seen red, until it's green again.
 RED_SINCE="$STATE/$TEAM/red-since"
+# The merge refusals in a row of each green bump, one file a PR.
+BUMP_REFUSALS="$STATE/$TEAM/bump-refusals"
 
 KIND=$(cfg .project.ownerType)
 KIND=${KIND:-organization}
@@ -1152,10 +1156,10 @@ pr_for() {
         else . + {review: (if answered then "answered" elif reviewed then "posted" elif $on then "waiting" else "off" end)} | del(.body, .comments) end'
 }
 
-# pr_checks <pr>: the CI verdict for <pr>'s head commit.
+# pr_checks <pr> [<sha>]: the CI verdict for <sha>, or <pr>'s head commit.
 pr_checks() {
-  local sha
-  sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
+  local sha=${2:-}
+  [ -n "$sha" ] || sha=$(gh api "repos/$REPO/pulls/$1" --jq .head.sha) || die "could not read PR #$1"
   gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" --jq '.check_runs[]' |
     jq -s "$CHECKS checks"
 }
@@ -1783,19 +1787,21 @@ upstream_reach() {
   printf '%s' "$reach"
 }
 
-# chains <waits> <reach>: for each wait not yet met, the links still to go, the one holding the task now first:
+# chains <waits> <reach> [<held bumps>]: for each wait not yet met, the links still to go, the one holding the task now first:
 # [{team, refs, what, shown}], `team` the team working in that link's repo, `refs` the numbers of its cards there.
 chains() {
   local teams='{}' repo
+  local held=${3:-[]}
   for repo in $(jq -r '[.[].repo] | unique[]' <<<"$1"); do
     teams=$(jq -c --arg repo "$repo" --arg team "$(team_of "$repo")" '. + {($repo): (if $team == "" then null else $team end)}' <<<"$teams")
   done
-  jq -c --argjson reach "$2" --argjson teams "$teams" --arg team "$TEAM" 'map(select(.met | not)
+  jq -c --argjson reach "$2" --argjson teams "$teams" --argjson held "$held" --arg team "$TEAM" 'map(select(.met | not)
     | $teams[.repo] as $up | (.repo | split("/") | last) as $name | ($reach[.ref] // {refs: [], pr: null}) as $r
     | (if .until == "released" then [{team: $up, refs: [], what: "\(.package // $name)'"'"'s release", shown: "yours"}]
          + if .package then [{team: $team, refs: [], what: "\($team)'"'"'s bump", shown: "merges by itself"}] else [] end
        else [] end) as $after
-    | if .bump then [{team: $team, refs: [.bump.number], what: "#\(.bump.number)", shown: "merges by itself"}]
+    | if .bump then [{team: $team, refs: [.bump.number], what: "#\(.bump.number)",
+        shown: (if .bump.number | IN($held[]) then "yours" else "merges by itself" end)}]
       elif .state | IN("open", "unknown") then [{team: $up, refs: ([.n] + $r.refs | unique), what: "\($name)#\($r.pr // .n)", shown}] + $after
       elif .state | IN("merged", "closed") then $after
       else [{team: $up, refs: [], what: "\($name)#\(.n)", shown}] end)' <<<"$1"
@@ -1972,7 +1978,8 @@ own_docs() {
     die "customer only touches its own docs PR (#$2 isn't it)"
 }
 
-# merge <pr>: squash-merges <pr> and deletes its branch.
+# merge <pr> [<sha>]: squash-merges <pr> and deletes its branch. With <sha>, GitHub refuses it (HTTP 409) if that's no
+# longer the PR's head.
 merge() {
   local head refused ref
   head=$(gh api "repos/$REPO/pulls/$1" --jq '{ref: .head.ref, repo: (.head.repo.full_name // ""), draft: (.draft // false)}')
@@ -1981,13 +1988,37 @@ merge() {
     refused=$({ write "mark PR #$1 ready for review" gh pr ready "$1" -R "$REPO" >/dev/null; } 2>&1) ||
       die "can't mark PR #$1 ready to merge it ($(head -1 <<<"$refused"))"
   fi
-  squash() { { gh api -X PUT "repos/$REPO/pulls/$1/merge" -f merge_method=squash >/dev/null; } 2>&1; }
-  refused=$(write "squash-merge PR #$1" squash "$1") || die "can't merge PR #$1 ($(head -1 <<<"$refused"))"
+  squash() { { gh api -X PUT "repos/$REPO/pulls/$1/merge" -f merge_method=squash ${2:+-f "sha=$2"} >/dev/null; } 2>&1; }
+  refused=$(write "squash-merge PR #$1" squash "$1" "${2:-}") || die "can't merge PR #$1 ($(head -1 <<<"$refused"))"
   # A repo that deletes merged branches itself has already done it, so that refusal is no failure.
   if [ "$(jq -r .repo <<<"$head")" = "$REPO" ]; then
     ref=$(jq -r .ref <<<"$head")
     write "delete branch $ref" gh api -X DELETE "repos/$REPO/git/refs/heads/$ref" >/dev/null 2>&1 || true
   fi
+}
+
+# refused_bump <pr> <item> <node id> <why>: counts a refusal of a green bump. Enough in a row hold it, with the Dev's
+# marker so it reads as any bump the Dev can't make build. Passes go on trying, so fixing the cause merges it.
+refused_bump() {
+  local count
+  jq -e '.marks.held' <<<"${2:-null}" >/dev/null && return 0
+  count=$(($(cat "$BUMP_REFUSALS/$1" 2>/dev/null || echo 0) + 1))
+  if [ "$count" -lt "$REFUSALS_BEFORE_ASKING" ]; then
+    [ -n "$DRY_RUN" ] || { mkdir -p "$BUMP_REFUSALS"; echo "$count" >"$BUMP_REFUSALS/$1"; }
+    return 0
+  fi
+  write "comment on #$1" gh issue comment "$1" -R "$REPO" --body-file - >/dev/null <<<"This bump is green, but GitHub won't merge it: $4
+
+The dispatcher goes on trying, so changing what's stopping it merges it. Or merge it yourself, close it, or reply here and the Dev picks it up.
+
+<!-- a-team:dev -->"
+  [ -n "$2" ] || board_add "$1" "$3"
+  mark "$1" dev true
+  set_status "$1" Ready
+  mark "$1" held "$(jq -cn --arg at "$(date -u +%FT%TZ)" '{at: $at, by: "dev"}')"
+  record dispatcher "$1" "held"
+  [ -n "$DRY_RUN" ] || rm -f "$BUMP_REFUSALS/$1"
+  say "PR #$1: GitHub keeps refusing to merge it, asked the stakeholder"
 }
 
 BLOCKED='(.marks.held or .marks.upstream or .blockedBy > 0)'
@@ -3069,7 +3100,7 @@ case "$CMD" in
     for n in $(jq -r "map(select(($UPSTREAM_HELD or $UPSTREAM_REVIEWED) and (.marks.held | not))) | .[].number" <<<"$all"); do
       waits=$(jq -c --arg n "$n" '.detail.upstream[$n].waits // empty' <<<"$stored")
       [ -n "$waits" ] || continue
-      chained=$(chains "$waits" "$(jq -c --arg n "$n" '.detail.upstream[$n].reach' <<<"$stored")")
+      chained=$(chains "$waits" "$(jq -c --arg n "$n" '.detail.upstream[$n].reach' <<<"$stored")" "$(jq -c '[.[] | select(.dependabot and .marks.held) | .number]' <<<"$all")")
       if jq -e --argjson n "$n" "any(.[]; .number == \$n and ($UPSTREAM_REVIEWED))" <<<"$all" >/dev/null; then
         reviewed=$(jq -c --arg n "$n" --argjson chains "$chained" \
           '. + if $chains == [] then {} else {($n): $chains} end' <<<"$reviewed")
@@ -3107,14 +3138,15 @@ case "$CMD" in
 
   bumps)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM bumps"
-    prs=$(gh pr list -R "$REPO" --author app/dependabot --state open --json id,number,title,author,isDraft,mergeable,comments)
+    prs=$(gh pr list -R "$REPO" --author app/dependabot --state open --json id,number,title,author,isDraft,mergeable,comments,headRefOid)
     [ "$prs" != '[]' ] || exit 0
     all=$(items)
     main='' stuck=0
     while IFS= read -r row; do
       p=$(jq -r .number <<<"$row")
       title=$(jq -r .title <<<"$row")
-      checks=$(pr_checks "$p")
+      sha=$(jq -r .headRefOid <<<"$row")
+      checks=$(pr_checks "$p" "$sha")
       verdict=$(jq -r .verdict <<<"$checks")
       if [ "$verdict" = fail ]; then
         main=${main:-$(main_red)}
@@ -3122,11 +3154,15 @@ case "$CMD" in
       fi
       it=$(jq -c --argjson n "$p" 'map(select(.number == $n)) | first // empty' <<<"$all")
       if [ "$verdict" = pass ] && jq -e --arg slug "$(cfg .app.slug)" "$MERGES"'merges' <<<"$row" >/dev/null; then
-        if ! why=$(merge "$p" 2>&1); then
+        if ! why=$(merge "$p" "$sha" 2>&1); then
+          # Pushed to since its checks were read: the next pass reads the new head.
+          [[ $why != *"HTTP 409"* ]] || continue
           echo "PR #$p: ${why#board.sh: }" >&2
           stuck=1
+          refused_bump "$p" "$it" "$(jq -r .id <<<"$row")" "${why#board.sh: }"
           continue
         fi
+        [ -n "$DRY_RUN" ] || rm -f "$BUMP_REFUSALS/$p"
         [ -z "$it" ] || set_status "$p" Done
         record dispatcher "$p" "merged · PR #$p"
         say "PR #$p ($title): merged"
