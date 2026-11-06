@@ -529,6 +529,18 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_lane_names_each_stuck_role_once_and_only_keeps_a_frame_for_the_busy_ones()
+    {
+        Assert.Equal("a-team · Dev ⚠ stuck · Reviewer ⚠ stuck", OverseerView.Heading("a-team", [], 0, stuck: ["dev", "reviewer"]).Title);
+        Assert.Empty(OverseerView.Heading("a-team", [], 0, stuck: ["dev"]).Slots);
+
+        var heading = OverseerView.Heading("a-team", ["lead"], 2, stuck: ["dev"]);
+
+        Assert.Equal("a-team · Dev ⚠ stuck · Lead   · 2 over", heading.Title);
+        Assert.Equal([new HeaderSlot(28, "lead")], heading.Slots);
+    }
+
+    [Fact]
     public void A_lane_whose_mirror_is_behind_says_by_how_much_and_why()
     {
         var retry = new DateTimeOffset(2026, 10, 31, 11, 20, 0, TimeSpan.Zero);

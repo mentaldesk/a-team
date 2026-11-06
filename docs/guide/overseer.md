@@ -11,7 +11,8 @@ Each team is a lane, in the order your teams are listed, under one row of column
 Exploring, Pitched, Approved, Building, Ready, In progress and In review. Done isn't shown.
 
 A lane's title names the team and its roles that are running now, each with its animation playing
-beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. Where cards are past their column's limit, it counts them: `2 over`.
+beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. A [stuck role](#a-stuck-role) is named on its own
+instead of as running, as in `a-team · Dev ⚠ stuck · Reviewer ⚠ stuck`. Where cards are past their column's limit, it counts them: `2 over`.
 Where the team's GitHub Project hasn't caught up with its board yet, it says how far behind it is and why, as in
 `mirror 3 moves behind (GitHub rate limit, retry 11:20)`. The board itself is never behind: once GitHub is back,
 the Project catches up and the note goes.
@@ -118,7 +119,7 @@ it's doing:
 
 | Icon | Means |
 |---|---|
-| `⚠` | The team is misconfigured and can't run. This wins over every other icon |
+| `⚠` | The team is misconfigured and can't run, which wins over every other icon, or the role is [stuck](#a-stuck-role), as its line says |
 | `●` | Running now |
 | `⏸` | Paused, or held by you |
 | `✓` | Its last run finished cleanly |
@@ -146,6 +147,27 @@ role's latest session full-screen, as [Reading a session](#reading-a-session) de
 comes back to the team. `h` pauses the role or lets it start again ([Pausing a role](#pausing-a-role)),
 and `i` interrupts it ([Interrupting a run](#interrupting-a-run)). The panel's last line lists the keys
 that work now.
+
+### A stuck role
+
+A role is stuck when the dispatcher counts a run as live that isn't doing its work: the run is still alive on the
+pass after it was stopped for reaching its time limit, or its task or PR closed or went Done more than 30 minutes
+ago. A run that stops when told, or that closes its own card and finishes up, never warns, and neither does a
+long run with work waiting behind it. A Lead or Customer lead run that isn't on a card can only be stuck by its time limit.
+
+The role's line wears `⚠` and says what's wrong, which run, and what's waiting on its slot:
+
+```
+⚠ Dev       stuck · run 67118 outlived its 2h limit by 19d · holds 1 of 3 slots
+⚠ Reviewer  stuck · run 51200 is on #516, closed 29 Oct · holds its only slot, 3 PRs waiting
+```
+
+Where the panel is too narrow for the line, it says it in full again below the roles. Where a role has more than one stuck run, the line describes the oldest and adds `+1 more`. `a-team status` prints
+a line for each, as in `a-team reviewer: stuck: run 51200 is on #516, closed 29 Oct · holds its only slot, 3 PRs waiting`.
+
+It only reports: the dispatcher starts nothing in its place and frees no slot, so the run is yours to look into.
+`Enter`, `h` and `i` work on its line as on any other. There's nothing to dismiss: once the run has gone, the
+warning clears by itself, from the title, the panel and `a-team status`, even if the team is paused or the dispatcher is stopped.
 
 ## Reading a session
 
@@ -217,7 +239,9 @@ nothing for you to do.
 A role whose check for work fails is the same: two passes in a row give one red line, as in
 `a-team dev: triggers failed: gh: connection reset`, and `a-team dev: triggers working again` once
 it passes. A dependency bump it merges has its own line, as in
-`a-team: PR #653 (Bump MentalDesk.Tui from 0.5.2 to 0.6.0): merged`. `PgUp`, `PgDn`, `Home` and `End` scroll it.
+`a-team: PR #653 (Bump MentalDesk.Tui from 0.5.2 to 0.6.0): merged`. A [stuck run](#a-stuck-role) gets one red line when it starts, as in
+`a-team reviewer: run 51200 is stuck: on #516, which closed 29 Oct`, and one when it clears, `a-team reviewer: run 51200
+no longer stuck`, and a run past its limit gets one `killed run` line however many passes it stays alive. `PgUp`, `PgDn`, `Home` and `End` scroll it.
 
 Its title says what is driving the teams: the a-team the dispatcher runs and its version, with the
 countdown to its next pass, as in `dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12`.

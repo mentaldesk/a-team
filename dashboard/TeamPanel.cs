@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
@@ -13,18 +14,23 @@ public sealed class TeamPanel : FrameView
     private static readonly string ErrorScheme = SchemeManager.SchemesToSchemeName(Schemes.Error)!;
 
     private readonly Label _problem = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = 0, CanFocus = false, SchemeName = ErrorScheme };
-    private readonly ListView _roles = new() { X = 0, Width = Dim.Fill(), Height = Dim.Fill(1), CanFocus = false };
+    private readonly ListView _roles = new() { X = 0, Width = Dim.Fill(), CanFocus = false };
+    private readonly Label _inFull = new() { X = 0, Width = Dim.Fill(), CanFocus = false };
     private readonly Label _hint = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill(), CanFocus = false, SchemeName = LogSchemes.Dimmed };
     private readonly ObservableCollection<string> _lines = [];
     private IReadOnlyList<string> _order = [];
+    private int _inFullRows;
 
     public TeamPanel()
     {
         CanFocus = true;
         SchemeName = BaseScheme;
         _roles.Y = Pos.Bottom(_problem);
+        _roles.Height = Dim.Fill(Dim.Func(_ => _inFullRows + 1, this));
+        _inFull.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _inFullRows - 1), this);
+        _inFull.Height = Dim.Func(_ => _inFullRows, this);
         _roles.SetSource(_lines);
-        Add(_problem, _roles, _hint);
+        Add(_problem, _roles, _inFull, _hint);
     }
 
     internal string Team => Title;
@@ -38,12 +44,14 @@ public sealed class TeamPanel : FrameView
 
     internal string Hint => _hint.Text;
 
-    /// <summary>Rows it needs at the foot of the lanes: its frame, the problem if any, a line per role and the hint.</summary>
-    internal int Rows => 2 + (_problem.Text.Length > 0 ? 1 : 0) + _lines.Count + 1;
+    /// <summary>Rows it needs at the foot of the lanes: its frame, the problem if any, a line per role, any stuck line
+    /// in full and the hint.</summary>
+    internal int Rows => 2 + (_problem.Text.Length > 0 ? 1 : 0) + _lines.Count + _inFullRows + 1;
 
     /// <summary>Shows <paramref name="team"/>'s roles, each with its icon and what it's doing, keeping the role chosen
-    /// while it's the same team.</summary>
-    public void Show(string team, IReadOnlyList<(string Role, string Icon, string Line)> roles, string? problem)
+    /// while it's the same team. A line in <paramref name="stuck"/> that its row would clip is also said in full below them.</summary>
+    public void Show(
+        string team, IReadOnlyList<(string Role, string Icon, string Line)> roles, string? problem, IReadOnlyList<(string Role, string Line)>? stuck = null)
     {
         var chosen = Title == team ? Role : null;
         if (Title != team)
@@ -65,7 +73,20 @@ public sealed class TeamPanel : FrameView
             _problem.Text = text;
             _problem.Height = text.Length > 0 ? 1 : 0;
         }
+        var inFull = InFull(stuck ?? [], Viewport.Width);
+        var said = string.Join('\n', inFull);
+        if (_inFull.Text != said)
+        {
+            _inFull.Text = said;
+            _inFullRows = inFull.Count;
+            SetNeedsLayout();
+        }
     }
+
+    /// <summary>The rows that say each stuck line its row would clip at <paramref name="width"/>, wrapped.</summary>
+    internal static List<string> InFull(IReadOnlyList<(string Role, string Line)> stuck, int width) =>
+        width <= 0 ? [] : [.. stuck.Where(role => Icons.Width + NameWidth + role.Line.GetColumns() > width)
+            .SelectMany(role => Confirm.Wrap($"{OverseerView.RoleName(role.Role)}: {role.Line}", width))];
 
     /// <summary>The keys that work on the chosen role.</summary>
     public void ShowHint(string hint)

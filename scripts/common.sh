@@ -56,6 +56,15 @@ alive() {
 # live_pid <file>: the pid in <file>, while that process is still the one it was written for.
 live_pid() { local pid; pid=$(cat "$1" 2>/dev/null) && alive "$pid" "$1" && echo "$pid"; }
 
+# stuck_runs <dir>: what <dir>/stuck says of each run, while that run is still the process its pid file was written for.
+stuck_runs() {
+  local pid file says
+  while IFS=$'\t' read -r pid file says; do
+    [ "$(live_pid "$1/$file")" = "$pid" ] && printf '%s\n' "$says"
+  done < <(jq -r '.[] | [.pid, .file, .says] | @tsv' "$1/stuck" 2>/dev/null)
+  return 0
+}
+
 sql() { printf "'%s'" "${1//\'/\'\'}"; }
 
 # history_sql [sqlite3 options...] <statement>: the record, created on first use.
