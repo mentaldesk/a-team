@@ -26,7 +26,8 @@ pass_ended() {
 }
 trap pass_ended EXIT
 if ! running=$(claim_pid "$PASS") && [ -n "$running" ]; then
-  echo "A pass is already running."
+  # Only the app asks: the app reads any scheduled output as a broken pass (DispatcherState.Broke).
+  [ -z "${A_TEAM_UNSCHEDULED:-}" ] || echo "A pass is already running."
   exit 0
 fi
 

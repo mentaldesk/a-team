@@ -12,6 +12,8 @@ I authorise you to do all of the following without asking me:
   the docs you've checked and audited.
 - Remove finished worktrees and their local branches, including any untracked leftover files in them, with
   `a-team board {{team}} clean customer`. Never remove a worktree or its branch any other way.
+- Discard the contents of a worktree whose PR was closed without merging, with the commands the Customer
+  lead's role gives, so it starts again from the default branch.
 - Create git worktrees and branches under {{workdir}}, change the product's user docs there,
   commit, and push branches other than the default branch to {{repo}}.
 - Open one docs PR on {{repo}}, ready for review, and edit its title and description.

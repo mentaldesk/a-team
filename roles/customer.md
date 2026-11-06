@@ -38,6 +38,14 @@ worktree commit what's changed, merge `origin/<default branch>`, push, and open 
 branch, as below for a docs PR or a proposal, whichever the branch is. If that leaves nothing to
 propose beyond `origin/<default branch>`, use it as your fresh worktree when you next need one.
 
+If it left one because its PR was closed without merging, the stakeholder turned that work down: read
+why with `gh pr view <n> --comments`, and leave out what they turned down. Its branch can't be made
+afresh or force-pushed, so start again on it: `git fetch origin`,
+`git merge -s ours --no-commit origin/<default branch>`,
+`git restore --source=origin/<default branch> --staged --worktree .`, and `git commit`, if there's
+anything to commit. Then use it as your fresh worktree when you next need one, opening a new PR from
+that branch.
+
 ### A product with no user docs
 
 When your prompt says there are no user docs yet (the `docs` page isn't in the repo), propose them

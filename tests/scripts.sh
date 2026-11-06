@@ -6572,6 +6572,17 @@ clean demo
 grep -q "Left .*docs: its HEAD .* isn't #23's last commit" "$OUT" || fail "newer: '$(cat "$OUT")'"
 grep -q "Left .*proposal: there's no PR on docs/customer-lead-proposal" "$OUT" || fail "no PR: '$(cat "$OUT")'"
 
+case_ "clean customer names a closed PR on its branch, and the role says how to start again from it"
+clean_world
+clean_tree docs docs/customer-lead
+clean_pr docs/customer-lead 27 CLOSED "$TREE_HEAD" customer
+clean demo
+[ -d "$TRY_WORK/docs" ] || fail "closed: it was removed"
+grep -q 'Left .*docs: #27 was closed without merging' "$OUT" || fail "closed: '$(cat "$OUT")'"
+grep -qF 'closed without merging' "$ROOT/roles/customer.md" || fail "closed: the role doesn't mention it"
+grep -qF 'git merge -s ours --no-commit origin/' "$ROOT/roles/customer.md" || fail "closed: the role doesn't say how to start again"
+grep -qF 'closed without merging' "$ROOT/tasks/customer.md" || fail "closed: the prompt doesn't allow it"
+
 case_ "clean treats Dependabot's merged PR as the Dev's"
 clean_world
 CLEAN_ROLE=dev
@@ -9471,7 +9482,7 @@ for first in '' 1; do
     overlap_first "$first"
     overlap_second "$second"
     same "exit" 0 "$STATUS"
-    same "said" "A pass is already running." "$(cat "$OUT")"
+    same "said" "${second:+A pass is already running.}" "$(cat "$OUT")"
     [ ! -e "$SECOND/reached" ] || fail "overlap: the second pass reached a team"
     same "still the first's" "$OVERLAP_PID" "$(cat "$PASS_STATE/pass")"
     kill -0 "$OVERLAP_PID" || fail "overlap: the first pass stopped"
