@@ -64,13 +64,15 @@ on; the others, and the other tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
-| Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, a Dependabot PR once the Lead has said what the update brings or as soon as it brings a release a task waits on, or another team's Dev's PR to this repo once it's ready. |
+| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. A Dependabot PR the Dev can't make build is here too, with the Dev's reason under it, and so is a green one GitHub keeps refusing to merge, with GitHub's. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
+| Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, or another team's Dev's PR to this repo once it's ready. |
 
 Each column's heading counts its cards, and orders them with the ones [holding up a
 task](#holding-up-a-task) first, then by Priority. Under the Review cards, a line sums up the work that's in
 review but not ready for you yet, grouped by whose move it is, like
-`1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`.
+`1 with the Reviewer: #12 · 2 with the Dev: #14 CI failing · #15 still a draft`. A Dependabot PR the Dev is
+making green only ever shows here, as `1 with the Dev: PR #653 (CI failing)`: [bumps merge by
+themselves](how-a-team-works.md#dependency-updates).
 
 ## When main is red
 
@@ -99,8 +101,8 @@ A card reads as the issue's number, then its title:
 - **What it is.** 💡 an Idea, `◇` a pitch, `‹›` a task, 📄 the Customer lead's docs PR. Triage
   and Pitches show the kind in their heading instead, so only a card of another kind wears its own.
 - **Its Priority.** The issue number is coloured by Priority, in the colours GitHub gives them:
-  green for Low, amber for Medium, red for High and pink for Urgent. An unranked card's number is
-  plain.
+  green for Low, amber for Medium, red for High and pink for Urgent. A task with none of its own
+  wears its pitch's. An unranked card's number is plain.
 - **The Lead's recommendation.** An Idea you haven't ranked shows the rank the Lead would give it
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
@@ -158,9 +160,7 @@ The task's own card says which link it waits on now and whose move that is, like
 `#499 ⛓ waits on tui-style-guide#84 · in review, yours`, then `#499 ⛓ waits on MentalDesk.Tui's
 release · yours`. That card is in Blocked while the task is Ready, and stays in Review if its PR
 is already up, so you can see that accepting it now would come before the change it needs. Once
-that release is out, Dependabot's PR bringing it in comes into Review, tagged `⛓ frees #499`, and
-**Accept** merges it like a task. Other Dependabot PRs still wait for the
-Lead. A link in a repo no team here works in still shows on the task's card, but there's no tab to
+that release is out, Dependabot's PR bringing it in merges by itself, and the task is free. A link in a repo no team here works in still shows on the task's card, but there's no tab to
 tag.
 
 The tag wears a link glyph where the icons are a Nerd Font's.
@@ -226,9 +226,10 @@ the previous and next comment's heading, with the top of the body counting as th
 
 Beside it, **History** lists what a-team has done to the card, newest first: each move, approval,
 accept, decline, Not now, comment, Priority, recommendation, skip, review, link and dependency, with when
-and who (`you`, or the role: `lead`, `dev`, `customer` or `reviewer`). What
-you or anyone else does on GitHub directly (a merge, a close, a comment, a card moved on the team's mirror)
-appears there too, within a read or two of Work, with someone else shown by their GitHub login. It
+and who (`you`, the role: `lead`, `dev`, `customer` or `reviewer`, or `board` for what a-team did by itself). What
+you or anyone else does on GitHub directly (a merge, a close, a comment)
+appears there too, within a read or two of Work, with someone else shown by their GitHub login. A closed issue or
+merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
 Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
@@ -244,7 +245,7 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 **Make History or Comment wider or narrower.** Drag the border between it and the body with the
 mouse, or, with the cursor in it, pick **Widen pane** or **Narrow pane** in Commands (`Ctrl+E`) to
 change it by 5 columns, and **Reset pane width** to put it back. Neither has a key until you give one
-under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings). Each keeps the width you chose
+under [Settings → Keyboard Shortcuts](teams.md#settings). Each keeps the width you chose
 after a restart; a narrower terminal narrows them first, and a wider one gives their width back.
 With History narrowed, the reader keeps it showing in a narrower terminal.
 
@@ -264,8 +265,9 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   `Esc` in the comment goes back to the pane you came from, and `c` comes back to what you'd written.
   It moves and selects as in [a description](#adding-an-idea).
   `Ctrl+Enter` posts it from any pane: it's posted as you, joins the end of what you're reading, and
-  the agent picks it up on its next run. On a terminal too narrow for three panes, History hides
-  while you write; `h` still shows it.
+  the agent picks it up on its next run. With nothing written, it posts nothing: the pane's title
+  turns red and the foot says `Comment is needed`. On a terminal too narrow for three panes, History
+  hides while you write; `h` still shows it.
 - **Quote what you're answering.** Select it in the body or History and press `q`. It goes into the
   comment where its cursor is, opening the comment if it isn't, as `> ` lines the agents read just
   as they read a quote reply on GitHub, and takes you to the comment below it to write your answer;
@@ -275,7 +277,8 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   done and the agent that held it takes the hold off itself.
 - **Hold a task.** On a Ready task's card, press `h` (**Cards → Hold**). **Hold #n** asks `Why:`;
   `Enter` or **Hold** posts your reason on the task and the card moves to Blocked, where the Dev
-  leaves it alone. It won't hold without a reason. `Esc` holds nothing.
+  leaves it alone. `Enter` with no reason holds nothing: `Why:` turns red and the foot says `Why is needed`
+  until you type one. `Esc` holds nothing.
 - **Release a hold.** On a held card, the same `h` reads **Release hold**: it takes the hold off,
   whoever set it, and the card leaves Blocked for the Dev's queue. Reading a held task,
   `Ctrl+R` (**Release hold**, beside **Post**) does the same, posting anything you'd written first.
@@ -284,8 +287,10 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   quote into it with `q` as into a comment. `Ctrl+Enter` posts your reason as a comment, closes the
   issue as not planned on GitHub, and the card leaves Work; History records it as `declined`, and it
   doesn't count as accepted. If the board refuses the decline, the status bar says why and the
-  reason you typed is lost. A reason is required. `Esc` turns the pane back into a plain comment,
-  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub.
+  reason you typed is lost. A reason is required: with none, the pane's title turns red and the foot says
+  `Why is needed`. `Esc` turns the pane back into a plain comment,
+  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub: the card
+  comes back at its last move.
 - **Say Not now to a pitch.** On a pitch in Pitches, reading it or with its card selected, press
   `l`. The Comment pane opens as **Not now #n**, with **Back in [2] weeks** above it: `Shift+Tab`
   reaches the weeks, and `↑`/`↓` or typing sets any whole number from 1. A reason is optional.
@@ -315,7 +320,7 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. It asks first:
   `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't
   ([Confirming](app.md#confirming)). For a task, its PR is squash-merged and its
-  branch deleted. The Customer lead's docs PR, a Dependabot PR and another team's PR are merged the same way, and so is a document pitch,
+  branch deleted. The Customer lead's docs PR and another team's PR are merged the same way, and so is a document pitch,
   from Pitches: the card leaves, and the Lead's next run reads the new vision. If it isn't ready yet,
   `a` says why instead.
 
@@ -381,7 +386,7 @@ the bar says to drop the file instead.
 
 `Ctrl+Enter` adds it: the issue is opened as you, put on the team's board as an Idea and ranked if
 you chose a Priority. Work reads again straight away, and the bar says `#<n> added to <team>'s
-ideas`. If a step fails, the dialog stays open with what you wrote and says which step; `Ctrl+Enter`
+ideas`. With no title it adds nothing: `Title` turns red and the foot says `Title is needed`. If a step fails, the dialog stays open with what you wrote and says which step; `Ctrl+Enter`
 tries again from there. `Esc` cancels, asking first if you've typed anything: `Ctrl+Enter` discards
 it, and `Esc` keeps writing.
 

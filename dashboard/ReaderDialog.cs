@@ -5,7 +5,9 @@ using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Focus;
 using MentalDesk.Tui.Layout;
 using MentalDesk.Tui.Links;
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.App;
+using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -121,6 +123,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly FrameView _historyFrame;
     private readonly FrameView _commentFrame;
     private readonly MultiLineField _field;
+    private readonly View _commentMark = new();
     private readonly View _weeksRow;
     private readonly NumericUpDown<int> _weeks;
     private readonly ReaderPanes _panes;
@@ -223,6 +226,17 @@ public sealed partial class ReaderDialog : DashboardDialog
                 Offer();
         };
         _commentFrame.Add(_weeksRow, _field);
+        // The border's own attributes, not the frame's scheme, which the field would inherit and turn what's typed red.
+        _commentFrame.Border!.GetOrCreateView().GettingAttributeForRole += (_, e) =>
+        {
+            if (_commentMark.SchemeName != SchemeNames.Error)
+                return;
+            e.Result = SchemeManager.GetScheme(SchemeNames.Error).GetAttributeForRole(e.Role);
+            e.Handled = true;
+        };
+        CheckWhileWriting(_field, _commentMark, () =>
+            _shelving || _releasing || !string.IsNullOrWhiteSpace(_field.Text) ? null
+            : _declining ? "Why is needed" : "Comment is needed");
         if (comment?.Image is { } image)
         {
             image.Viewable = () => _field.HasFocus && FieldImage() is not null;
@@ -324,7 +338,8 @@ public sealed partial class ReaderDialog : DashboardDialog
         else if (OpensAt(item, body) is > 0 and var line)
             _body.ShowLine(line);
         Foot.Y = Pos.Func(_ => FootRow(), this);
-        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
+        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines - Alert.Lines), this);
+        Alert.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Alert.Lines), this);
         AddKeys();
 
         Add(_standing, _commentFrame, _bodyFrame, _historyFrame, Foot, _message);
@@ -398,6 +413,9 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     internal MessageBar Message => _message;
 
+    /// <summary>Holds the mark of a refused comment, which colours the pane's frame: its title is the field's label.</summary>
+    internal View CommentMark => _commentMark;
+
     /// <summary>A click on the ranks reaches the dialog as Accept.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
         _ranks is null || Writing || Run(SetId, Set);
@@ -456,7 +474,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     }
 
     [GeneratedRegex(@"\s*<!-- a-team:(dev|lead) -->\s*$")]
-    private static partial Regex Marker();
+    internal static partial Regex Marker();
 
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex NeedsAnswer();
@@ -606,7 +624,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     private static string Capital(string label) => label.Length == 0 ? label : char.ToUpperInvariant(label[0]) + label[1..];
 
-    private int FootRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines);
+    private int FootRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines - Alert.Lines);
 
     /// <summary>The buttons, and the labels that change, for where the keyboard is now.</summary>
     private void Offer()
@@ -928,6 +946,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private bool Decline()
     {
         ShowWeeks(false);
+        Unmark();
         _declining = true;
         _commentFrame.Title = $"Decline #{_number}: why?";
         return Comment();
@@ -938,6 +957,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     {
         _declining = false;
         ShowWeeks(true);
+        Unmark();
         _commentFrame.Title = $"Not now #{_number}";
         return Comment();
     }
@@ -955,6 +975,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         var weeks = _weeks.HasFocus;
         _declining = false;
         ShowWeeks(false);
+        Unmark();
         _commentFrame.Title = "Comment";
         if (weeks)
             ToComment();
@@ -962,7 +983,11 @@ public sealed partial class ReaderDialog : DashboardDialog
         return true;
     }
 
-    private bool Unfocus() => _declining || _shelving ? BackToComment() : Back();
+    private bool Unfocus()
+    {
+        Unmark();
+        return _declining || _shelving ? BackToComment() : Back();
+    }
 
     private void ToComment()
     {
@@ -981,6 +1006,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (_posting is not null)
             return true;
         _releasing = true;
+        Unmark();
         return Post();
     }
 
@@ -988,11 +1014,9 @@ public sealed partial class ReaderDialog : DashboardDialog
     {
         if (_posting is not null)
             return true;
-        if (!_shelving && !_releasing && string.IsNullOrWhiteSpace(_field.Text))
+        if (!Checked())
         {
-            _message.Show(_declining ? $"A reason is needed to decline #{_number}" : "Nothing to post: the comment is empty",
-                Schemes.Error);
-            SetNeedsLayout();
+            _message.Clear();
             return true;
         }
         if (_attach?.Uploading == true)

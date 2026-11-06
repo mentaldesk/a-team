@@ -326,6 +326,20 @@ run_release() {
   printf '%s\n' "$said" >"$file"
 }
 
+# settle_bumps <team>: merges the team's green Dependabot PRs and puts its red ones with the Dev, as its App, so each
+# stands as the rest of the pass reads it. A merge GitHub keeps refusing is logged once.
+settle_bumps() {
+  local args=(board) said
+  $DRY_RUN && args+=(--dry-run)
+  mkdir -p "$STATE/$1"
+  if said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$1 "$ROOT/bin/a-team" "${args[@]}" "$1" bumps 2>"$STATE/$1/bumps.err"); then
+    passing "$STATE/$1/bumps-failing" "$STATE/$1/bumps-failed-once" "$1: settling dependency bumps working again"
+  else
+    failing "$STATE/$1/bumps-failing" "$STATE/$1/bumps-failed-once" "$(tr '\n' ' ' <"$STATE/$1/bumps.err")" "$1: settling dependency bumps failed"
+  fi
+  [ -z "$said" ] || log "$1: ${said//$'\n'/; }"
+}
+
 # free_waits <team>: frees the team's tasks whose wait on another repo is met, commenting as its App.
 free_waits() {
   local args=(board) said
@@ -395,6 +409,7 @@ for team in $(team_names); do
     continue
   fi
   passing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$team: running again"
+  settle_bumps "$team"
   free_waits "$team"
   if adopted=$("$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" adopt 2>&1); then
     passing "$STATE/$team/adopt-failing" "$STATE/$team/adopt-failed-once" "$team: adopting upstream PRs again"

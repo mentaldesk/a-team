@@ -253,6 +253,20 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void Within_a_column_the_highest_priority_comes_first_and_equals_run_oldest_first()
+    {
+        var board = Board([
+            Card(1, "Ready", days: 9),
+            Card(2, "Ready", days: 1, priority: "Urgent"),
+            Card(3, "Ready", days: 5, priority: "Low"),
+            Card(4, "Ready", days: 2, priority: "High"),
+            Card(5, "Ready", days: 4, priority: "High"),
+        ]);
+
+        Assert.Equal([2, 5, 4, 3, 1], board.Column("a", 5).Select(card => card.Number));
+    }
+
+    [Fact]
     public void Past_three_rows_a_column_folds_the_rest_into_a_count()
     {
         var board = Board([.. Enumerable.Range(1, 6).Select(n => Card(n, "Ready", days: 10 - n)), Card(9, "Idea", days: 1)]);
@@ -1004,8 +1018,8 @@ public class OverseerTests : IDisposable
         Assert.Equal(new Dictionary<string, string> { ["Ready"] = "2d" }, settings.ReadLimits());
     }
 
-    private static BoardCard Card(int number, string status, int days, string team = "a") =>
-        new(team, number, $"#{number}", $"https://github.com/o/{team}/issues/{number}", status, "", CardKind.Pitch,
+    private static BoardCard Card(int number, string status, int days, string team = "a", string priority = "") =>
+        new(team, number, $"#{number}", $"https://github.com/o/{team}/issues/{number}", status, priority, CardKind.Pitch,
             Now - TimeSpan.FromDays(days));
 
     private static OverseerBoard Board(IReadOnlyList<BoardCard> cards, IReadOnlyList<string>? teams = null)

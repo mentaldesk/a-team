@@ -1565,7 +1565,37 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
 
         Assert.Equal(0, posted);
-        Assert.Equal("Nothing to post: the comment is empty", dialog.Message.Says);
+        Assert.Equal("Comment is needed", dialog.Alert.Message);
+        Assert.True(dialog.CommentShown);
+        Assert.True(dialog.Field.HasFocus);
+        Assert.Equal(SchemeNames.Error, dialog.CommentMark.SchemeName);
+    }
+
+    [Fact]
+    public void Writing_the_comment_clears_its_mark_and_its_message()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        dialog.Field.Text = "Looks right";
+
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(SchemeNames.Error, dialog.CommentMark.SchemeName);
+    }
+
+    [Fact]
+    public void Esc_out_of_a_refused_comment_takes_the_mark_and_the_message_away()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(SchemeNames.Error, dialog.CommentMark.SchemeName);
+        Assert.False(dialog.Field.HasFocus);
     }
 
     [Fact]
@@ -1787,9 +1817,24 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
 
         Assert.Equal(0, declined);
-        Assert.Equal("A reason is needed to decline #180", dialog.Message.Says);
+        Assert.Equal("Why is needed", dialog.Alert.Message);
+        Assert.Equal(SchemeNames.Error, dialog.CommentMark.SchemeName);
         Assert.True(dialog.CommentShown);
         Assert.False(dialog.Declined);
+    }
+
+    [Fact]
+    public void Esc_from_a_refused_decline_goes_back_to_a_plain_comment_unmarked()
+    {
+        using var dialog = Declining();
+        dialog.NewKeyDownEvent(new Key('x'));
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal("Comment", dialog.CommentTitle);
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(SchemeNames.Error, dialog.CommentMark.SchemeName);
     }
 
     [Fact]

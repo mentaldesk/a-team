@@ -152,10 +152,12 @@ public sealed partial record TeamSettings(
 
     /// <summary>Why <paramref name="name"/> can't be a new team's, or null when it can.</summary>
     public static string? NameRefusal(string name, IReadOnlyCollection<string> taken) =>
-        name.Length == 0 ? "Name is required."
-        : !NameShape().IsMatch(name) ? $"{name} can't be a file name: use letters, digits, '.', '_' and '-'."
-        : taken.Contains(name) ? $"There's already a team named {name}."
+        name.Length == 0 ? "Name is required"
+        : !NameShape().IsMatch(name) ? $"Name can't be {name}: use letters, digits, '.', '_' and '-'"
+        : taken.Contains(name) ? NameTaken(name)
         : null;
+
+    public static string NameTaken(string name) => $"There's already a team named {name}";
 
     /// <summary>The workdir a new team named <paramref name="name"/> gets unless you change it.</summary>
     public static string WorkdirFor(string name) => $"~/code/{name}";
@@ -218,15 +220,29 @@ public sealed partial record TeamSettings(
         return config;
     }
 
-    /// <summary>Why the form won't save these, or null when it will. A team with no project has one made for it.</summary>
-    public string? Refusal() =>
-        Repo.Trim().Length == 0 ? "Repo is required."
-        : !RepoShape().IsMatch(Repo.Trim()) ? $"Repo must be owner/repo, like mentaldesk/a-team, not {Repo.Trim()}."
-        : Mirror && !NoProject && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null) ? "Mirror needs an owner and a number."
-        : ProjectNumber <= 0 ? "Project number must be above 0."
-        : Vision.Trim().Length == 0 ? "Vision is required."
-        : Workdir.Trim().Length == 0 ? "Workdir is required."
+    public string? RepoRefusal() =>
+        Repo.Trim().Length == 0 ? "Repo is required"
+        : !RepoShape().IsMatch(Repo.Trim()) ? $"Repo must be owner/repo, like mentaldesk/a-team, not {Repo.Trim()}"
         : null;
+
+    /// <summary>A team with no project has one made for it, so only half of one is refused.</summary>
+    public string? MirrorRefusal() =>
+        HalfAProject ? "Mirror needs an owner and a number"
+        : ProjectNumber <= 0 ? "Mirror's number must be above 0"
+        : null;
+
+    public string? OwnerRefusal() => HalfAProject && ProjectOwner.Trim().Length == 0 ? "Owner is required for a mirror" : null;
+
+    public string? NumberRefusal() =>
+        HalfAProject && ProjectNumber is null ? "Number is required for a mirror"
+        : ProjectNumber <= 0 ? "Number must be above 0"
+        : null;
+
+    public string? VisionRefusal() => Vision.Trim().Length == 0 ? "Vision is required" : null;
+
+    public string? WorkdirRefusal() => Workdir.Trim().Length == 0 ? "Workdir is required" : null;
+
+    private bool HalfAProject => Mirror && !NoProject && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null);
 
     /// <summary>What's true of these that the team won't like, though it's still worth saving: a workdir that
     /// isn't there, a skill this machine hasn't got, or a vision the repo hasn't got yet.</summary>

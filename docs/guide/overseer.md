@@ -31,7 +31,8 @@ the largest unit, as in `◆404  6d`.
 Where a Nerd Font is in effect, a chip wears the icon [Work](work.md) gives the card
 instead: an idea, a pitch, a task or the docs PR.
 
-A chip's mark and number are drawn in its Priority's colour. Its age is in the theme's own colour, and
+A chip's mark and number are drawn in its Priority's colour, which for a task with none of its own is its
+pitch's. Its age is in the theme's own colour, and
 turns amber only once the card is past its column's limit. A card another task is waiting on, the one
 [Work](work.md) tags `⛓ frees`, wears an amber `⚠` between its number and its age, as in `●81 ⚠6d`. A card that's
 blocked for any reason, waiting on another task, on another repo or on your answer, wears `⊘` there (the Nerd Font
@@ -49,7 +50,8 @@ A role with no animation of its own plays a dim spinner, `⠋⠙⠹`, in the the
 
 A Lead run started for one card (feedback on it, or the Idea it's pitching), a Customer lead run on
 its docs PR and a Reviewer run on a task's PR animate on that card. A run working across the whole
-board animates in the lane's title only. Within a column, the card that has waited longest is first.
+board animates in the lane's title only. Within a column, the highest Priority is first, and among equals the
+card that has waited longest.
 A column shows as many rows as fit with every lane on screen, and at least three, and puts the rest
 behind a count, as in `+7`.
 
@@ -161,7 +163,7 @@ SSH, copies reach your own clipboard as [Copying and links](app.md#copying-and-l
 
 A run of tool calls draws as a single row, so the agent's own words aren't pushed off the top.
 `Ctrl+T T` shows every call, and `Ctrl+T T` again folds them back up. To start every session with its
-calls showing, tick *Show tool calls in full* under [Settings → Dashboard](teams.md#the-rest-of-settings).
+calls showing, tick *Show tool calls in full* under [Settings → Dashboard](teams.md#settings).
 
 The panel keeps only the last 500 lines. `e` opens the whole session as text in your editor: every
 line from the start, each command and error in full. It uses `$VISUAL`, or `$EDITOR` if that isn't
@@ -209,7 +211,8 @@ the reason changes, and `a-team: running again` once it can. A single failed pas
 during `brew upgrade`, says nothing, though the team still sits that pass out.
 A role whose check for work fails is the same: two passes in a row give one red line, as in
 `a-team dev: triggers failed: gh: connection reset`, and `a-team dev: triggers working again` once
-it passes. `PgUp`, `PgDn`, `Home` and `End` scroll it.
+it passes. A dependency bump it merges has its own line, as in
+`a-team: PR #653 (Bump MentalDesk.Tui from 0.5.2 to 0.6.0): merged`. `PgUp`, `PgDn`, `Home` and `End` scroll it.
 
 Its title says what is driving the teams: the a-team the dispatcher runs and its version, with the
 countdown to its next pass, as in `dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12`.
@@ -235,4 +238,5 @@ countdown alone. The status bar says what it started, or `Pass done: nothing to 
 **Settings → Overseer** has a field for each column. Put a number and a unit in one, as in `30m`,
 `2h`, `3d` or `2w`, and a card that stays in that column longer has its age drawn in amber. A
 blank field is no limit, and a column without one never highlights. Settings won't keep an entry it
-can't read, and says which column it's in.
+can't read: **Keep** opens this page instead, turns the name of every such column red and moves you to the
+first, and the foot says which column you're on, how to write a limit, and how many more there are.
