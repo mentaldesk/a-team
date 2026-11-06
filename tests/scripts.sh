@@ -314,7 +314,7 @@ case " \$* " in
   *VisionThemes*) page="$THEMES" ;;
   *"/files"*) page="$FILES" ;;
   *"/contents/"*"?ref="*) page="$CONTENTS" ;;
-  *vnd.github.raw*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; cat "$VISION_MD"; exit 0 ;;
+  *vnd.github.raw*) [ ! -e "$WORK/docs-down" ] || { echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1; }; [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; cat "$VISION_MD"; exit 0 ;;
   *"commits/HEAD/check-runs"*) page="$MAIN_RUNS" ;;
   *check-runs*) page="$RUNS" ;;
   *"repos/mentaldesk/demo --jq .default_branch"*) echo main; exit 0 ;;
@@ -340,7 +340,7 @@ case " \$* " in
                       echo "PUT \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
-  *"/contents/"*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *"/contents/"*) [ ! -e "$WORK/docs-down" ] || { echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1; }; [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"/pulls/"[0-9]*) [ ! -e "$BIN/not-a-pull" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     [ ! -e "$BIN/pull-fails" ] || { echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; }; page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
@@ -5751,6 +5751,47 @@ run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 jq '.docs = "docs/index.md"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "while GitHub doesn't answer for the docs page, the Customer lead gets no run, its audit keeps its date, and the others run"
+gh_items <<'ITEMS'
+Approved 20 A pitch to break down
+Ready 21 A task
+ITEMS
+jq '.wip.worktrees = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+echo 12345 >"$AUDITED"
+touch "$WORK/docs-down"
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+same "the audit's date" 12345 "$(cat "$AUDITED")"
+run board demo triggers lead
+same "the Lead" true "$(jq '.reasons | index("#20 was approved: break it down") != null' "$OUT")"
+run board demo triggers dev
+same "the Dev" 21 "$(jq .ready "$OUT")"
+
+case_ "while GitHub doesn't answer for the docs page, the Customer lead's add says so and to try again"
+: >"$WRITES"
+proposal_pr 15
+run board demo add customer 15 Pitched
+failed "a docs proposal"
+grep -q "GitHub didn't answer for docs/index.md: try again" "$ERR" || fail "docs proposal: '$(cat "$ERR")'"
+run board demo add customer 15 "In review"
+failed "a docs PR"
+grep -q "GitHub didn't answer for docs/index.md: try again" "$ERR" || fail "docs PR: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+rm "$WORK/docs-down"
+
+case_ "when GitHub does answer, a 404 clears the audit and starts the proposal, and a docs page keeps the audit"
+run board demo triggers customer
+same "the page there" '["weekly docs audit: check the docs as a whole"]' "$(jq -c .reasons "$OUT")"
+same "the audit's date" 12345 "$(cat "$AUDITED")"
+touch "$WORK/no-docs"
+run board demo triggers customer
+same "a 404" "[\"no user docs yet: propose where they'll live\"]" "$(jq -c .reasons "$OUT")"
+[ -e "$AUDITED" ] && fail "a 404 keeps the audit's date"
+rm "$WORK/no-docs"
+echo "$(date +%s)" >"$AUDITED"
+
 # `customer_issue <n> <body>`: #<n> is an open issue with <body>.
 customer_issue() { gh_child "$1" - - "$2" && jq '.state = "open"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"; }
 
@@ -6047,6 +6088,13 @@ themes_states 1:CLOSED:1 2:OPEN 3:OPEN 4:OPEN 5:OPEN
 same "1 of 5" '[]' "$(lead_reasons)"
 themes_states 1:CLOSED:1 2:CLOSED:2 3:CLOSED:9 4:OPEN 5:OPEN
 same "3 of 5" '["vision review due: 3 of the 5 issues its themes name are closed"]' "$(lead_reasons)"
+touch "$WORK/docs-down"
+same "GitHub didn't answer for the vision" '[]' "$(lead_reasons)"
+rm "$WORK/docs-down"
+touch "$WORK/no-docs"
+same "no vision" '[]' "$(lead_reasons)"
+rm "$WORK/no-docs"
+same "the answer back" '["vision review due: 3 of the 5 issues its themes name are closed"]' "$(lead_reasons)"
 
 case_ "after closing a review unmerged, only issues closed since count towards the next one"
 jq -n --arg at "$(days_ago 3)" '[{number: 52, merged_at: null, closed_at: $at}]' >"$VCLOSED"
@@ -8427,10 +8475,12 @@ cat >"$APP_BIN/board/gh" <<SH
 #!/usr/bin/env bash
 refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
 case " \$* " in
+  *" repos/mentaldesk/demo/contents/\${CONTENTS_DOWN:-none} "*) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;;
   *" repos/mentaldesk/demo/contents/"*) [ -z "\${NO_VISION:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     [ -z "\${LEAD_VISION:-}" ] || printf '# Vision\n\nWho it is for.\n\n<!-- a-team:lead -->\n'; exit 0 ;;
   *" repos/mentaldesk/demo "*) [ -z "\${REPO_GONE:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
-  *"/actions/workflows/release.yml "*) [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *"/actions/workflows/release.yml "*) [ -z "\${RELEASE_DOWN:-}" ] || { echo "error connecting to api.github.com" >&2; exit 1; }
+    [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"label list"*) page="$APP_BIN/board/labels.json" ;;
   *"workflows(first"*) page="$APP_BIN/board/workflows.json" ;;
   *ProjectV2SingleSelectField*)
@@ -8532,6 +8582,8 @@ NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
 LEAD_VISION=1 checked
 says 2 "vision    drafted by the Lead: Write the vision with me replaces it"
+CONTENTS_DOWN=docs/vision.md checked
+says 2 "vision    GitHub didn't answer for docs/vision.md: checking again next pass"
 board_labels
 checked
 says 2 "labels    no 'pitch' label, so the team can't tell its pitches from tasks"
@@ -8548,6 +8600,8 @@ says 0 ""
 NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
 docs      docs/index.md isn't in mentaldesk/demo yet: the Customer lead will propose the docs as a draft PR"
+CONTENTS_DOWN=docs/index.md checked
+says 2 "docs      GitHub didn't answer for docs/index.md: checking again next pass"
 jq 'del(.roles, .docs)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
 NO_VISION=1 checked
@@ -8559,6 +8613,8 @@ checked
 says 0 ""
 NO_RELEASE_WORKFLOW=1 checked
 says 2 "release   release is continuous, but mentaldesk/demo has no release.yml workflow for it to run"
+RELEASE_DOWN=1 checked
+says 2 "release   GitHub didn't answer for release.yml: checking again next pass"
 jq '.release = "weekly"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 checked
 says 2 "release   release is 'weekly': expected never, daily or continuous"

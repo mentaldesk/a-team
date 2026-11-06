@@ -186,7 +186,8 @@ panel in [Overseer](overseer.md#the-teams-panel).
 - **If the docs' first page isn't in the repo yet**, it proposes the docs first: a draft PR in
   Pitched, `Docs proposal: where <product>'s user docs live`, that adds that page with their outline.
   Comment on it to change the plan. Accept it in Work to agree, and its next run writes the docs.
-  Until then it writes none.
+  Until then it writes none. Only GitHub saying the page isn't there starts this: if GitHub doesn't
+  answer, the Customer lead waits for the next pass.
 - **When a pitch is done**, it reads what the pitch shipped and checks the user docs cover it:
   the README, guides and in-app help written as text.
 - **If they don't**, it writes what's missing into one docs PR, `Docs: what's changed since <date>`,
