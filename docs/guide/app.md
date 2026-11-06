@@ -54,6 +54,12 @@ haven't seen count in `⚠ n`, just left of *Press F1 for help*. *Help → Messa
 in Commands, or clicking `⚠ n` lists this session's messages, newest first, with their times;
 `Ctrl+C` copies the selected one.
 
+The terminal's tab shows the same from another tab: `(3) a-team` with 3 cards waiting on you, the
+number in Work's title, and `⚠ 1 (3) a-team` with an error you haven't seen. Open the app on one
+team, with `a-team dashboard TuiCode`, and the team comes first: `(2) TuiCode — a-team`. It follows
+the board as it's read, without you switching to the tab. When you quit, or the app hands the
+terminal to your editor, *Try it* or an attached run, the tab gets its own title back.
+
 In a dialog, what you can do to it is a row of buttons at its foot, each with its key first, like
 *Ctrl+Enter Add* or *Esc Cancel*; click one or press its key. `F1` there shows that dialog's keys,
 headed with its title, including the ones with no button, like scrolling, selecting and copying.

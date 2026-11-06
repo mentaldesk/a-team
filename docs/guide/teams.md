@@ -81,7 +81,8 @@ and untick it to take it away again. Tick **Reviewer** to have the
 [Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. **Stakeholders**, **Contributes to** and **Skills** open a list: type to
 narrow it as in Commands, `Space` marks a name, and `Enter` keeps what's marked. Each
 field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the team's file, leaving everything else in it as it was, and
-`Esc` (**Cancel**) cancels. `Enter` never saves. `F1` lists every key the form takes.
+`Esc` (**Cancel**) cancels. `Enter` never saves. `F1` lists every key the form takes. A save it won't take
+turns the label of every wrong field red and moves you to the first. The foot names the field you're on and how many more there are, like `Repo is required  •  2 more to fix`, and each mark goes as you fix it.
 
 **Workdir**, **Vision** and **First page** take typing, and `Enter` on one opens a picker:
 

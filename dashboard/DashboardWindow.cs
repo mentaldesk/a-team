@@ -6,6 +6,7 @@ using MentalDesk.Tui.Chrome;
 using MentalDesk.Tui.Commands;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Links;
+using MentalDesk.Tui.Shell;
 using Terminal.Gui;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
@@ -88,6 +89,7 @@ public sealed class DashboardWindow : Window
     private readonly Action<string> _showGuide;
     private readonly PaneWidths _paneWidths;
     private readonly Action<Handover>? _handOver;
+    private readonly TerminalTitle _terminalTitle;
     private readonly IconStyle _auto;
     private readonly Label _title;
     private readonly TimeProvider _clock;
@@ -188,8 +190,10 @@ public sealed class DashboardWindow : Window
         Func<WaitingItem, string?>? askHold = null,
         AssistantSetup? assistant = null,
         PaneWidths? paneWidths = null,
-        Func<string, Task<Reading>>? syncBoard = null)
+        Func<string, Task<Reading>>? syncBoard = null,
+        TerminalTitle? terminalTitle = null)
     {
+        _terminalTitle = terminalTitle ?? new TerminalTitle(_ => { });
         _paneWidths = paneWidths ?? new PaneWidths();
         _syncBoard = syncBoard;
         _macKeys = macKeys;
@@ -214,6 +218,7 @@ public sealed class DashboardWindow : Window
         _clock = clock ?? TimeProvider.System;
         _bar.Clock = _clock;
         _bar.MessagesRequested += (_, _) => _commands.Execute("messages");
+        _bar.UnreadErrorsChanged += (_, _) => _terminalTitle.UnseenErrors = _bar.UnreadErrors;
         _commands.Running += () => _bar.SetChord(_commands.PendingChord);
         _attention = attention ?? new Attention(_clock, _ => { });
         _news = whatsNew ?? new WhatsNew(_clock.GetUtcNow());
@@ -1054,13 +1059,13 @@ public sealed class DashboardWindow : Window
             _syncing = null;
     }
 
-    /// <summary>Work reads a team again whenever the dispatcher's own sync has stored its cards' detail.</summary>
+    /// <summary>A team is read again whenever the dispatcher's own sync has stored its cards' detail.</summary>
     private void ReadSynced()
     {
         foreach (var team in _teamNames)
         {
             var at = DetailSynced(team);
-            if (_detailSynced.TryGetValue(team, out var was) && was != at && _area == Area.Work && _readAt is not null)
+            if (_detailSynced.TryGetValue(team, out var was) && was != at && _readAt is not null)
                 ReadTeam(team);
             _detailSynced[team] = at;
         }
@@ -1935,7 +1940,10 @@ public sealed class DashboardWindow : Window
 
     private void ShowTitle()
     {
-        var title = WorkTrend.Title(_readAt is null ? null : _work.Items.Count(item => item.WaitsOnYou), _trends, _clock.GetUtcNow());
+        int? waiting = _readAt is null ? null : _work.Items.Count(item => item.WaitsOnYou);
+        if (waiting is { } count)
+            _terminalTitle.Waiting = count;
+        var title = WorkTrend.Title(waiting, _trends, _clock.GetUtcNow());
         if (_reading is not null && !_work.Unread)
             title += " · Reading…";
         else if (_syncing is not null)

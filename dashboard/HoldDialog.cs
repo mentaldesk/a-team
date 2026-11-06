@@ -15,17 +15,17 @@ public sealed class HoldDialog : DashboardDialog
         : base($"Hold #{number}")
     {
         Width = Dim.Func(_ => Math.Min(Wide, SuperView?.Viewport.Width ?? Wide), this);
-        Height = Dim.Func(_ => 2 + Foot.Rows + GetAdornmentsThickness().Vertical, this);
-        Add(new Label { Text = "Why:", X = 1, Y = 0 });
+        Height = Dim.Func(_ => 2 + Foot.Rows + Alert.Lines + GetAdornmentsThickness().Vertical, this);
+        var label = new Label { Text = "Why:", X = 1, Y = 0 };
         _why = new TextField { X = 6, Y = 0, Width = Dim.Fill(1) };
-        _why.TextChanged += (_, _) => Grey(HoldId, Given);
-        Bind(HoldId, Key.Enter, "Hold", () => Done(_why.Text), () => Given);
-        Register(CancelId, "Cancel", () => Done(null));
+        Bind(HoldId, Key.Enter, "Hold", Hold);
+        Register(CancelId, "Cancel", RequestStop);
         AddButton(ButtonKind.Primary, HoldId);
         AddButton(ButtonKind.Secondary, CancelId);
-        Grey(HoldId, Given);
         Foot.Y = 2;
-        Add(_why, Foot);
+        Alert.Y = Pos.Bottom(Foot);
+        Add(label, _why, Foot);
+        Check(_why, label, () => string.IsNullOrWhiteSpace(_why.Text) ? "Why is needed" : null);
         _why.SetFocus();
     }
 
@@ -33,8 +33,6 @@ public sealed class HoldDialog : DashboardDialog
     internal string? Chosen { get; private set; }
 
     internal TextField Why => _why;
-
-    private bool Given => !string.IsNullOrWhiteSpace(_why.Text);
 
     /// <summary>Opens the dialog, and returns the reason given, or null where it was cancelled.</summary>
     public static string? Show(IApplication app, WaitingItem item)
@@ -44,11 +42,11 @@ public sealed class HoldDialog : DashboardDialog
         return dialog.Chosen;
     }
 
-    private void Done(string? why)
+    private void Hold()
     {
-        if (why is not null && string.IsNullOrWhiteSpace(why))
+        if (!Checked())
             return;
-        Chosen = why?.Trim();
+        Chosen = _why.Text.Trim();
         RequestStop();
     }
 }

@@ -304,37 +304,45 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Theory]
-    [InlineData("", "o", 1, "v", "w", "Repo is required.")]
-    [InlineData("just-a-name", "o", 1, "v", "w", "Repo must be owner/repo, like mentaldesk/a-team, not just-a-name.")]
-    [InlineData("o/r/x", "o", 1, "v", "w", "Repo must be owner/repo, like mentaldesk/a-team, not o/r/x.")]
-    [InlineData("o/r", "", 1, "v", "w", "Mirror needs an owner and a number.")]
-    [InlineData("o/r", "o", null, "v", "w", "Mirror needs an owner and a number.")]
-    [InlineData("o/r", "o", 0, "v", "w", "Project number must be above 0.")]
-    [InlineData("o/r", "o", 1, "", "w", "Vision is required.")]
-    [InlineData("o/r", "o", 1, "v", "", "Workdir is required.")]
-    [InlineData("o/r", "o", 1, "v", "w", null)]
-    public void A_missing_field_or_a_repo_not_shaped_owner_repo_refuses_the_save(
-        string repo, string owner, int? number, string vision, string workdir, string? refusal) =>
-        Assert.Equal(refusal, (Settings() with
-        {
-            Repo = repo, ProjectOwner = owner, ProjectNumber = number, Vision = vision, Workdir = workdir,
-        }).Refusal());
+    [InlineData("", "Repo is required")]
+    [InlineData("just-a-name", "Repo must be owner/repo, like mentaldesk/a-team, not just-a-name")]
+    [InlineData("o/r/x", "Repo must be owner/repo, like mentaldesk/a-team, not o/r/x")]
+    [InlineData("o/r", null)]
+    public void A_missing_repo_or_one_not_shaped_owner_repo_is_refused(string repo, string? refusal) =>
+        Assert.Equal(refusal, (Settings() with { Repo = repo }).RepoRefusal());
 
     [Theory]
-    [InlineData(false, "", null)]
-    [InlineData(true, "", null)]
-    [InlineData(true, "docs/index.md", null)]
-    public void A_Customer_lead_never_refuses_the_save_for_its_docs(bool customer, string docs, string? refusal) =>
-        Assert.Equal(refusal, (Settings() with { Customer = customer, Docs = docs }).Refusal());
+    [InlineData("", 1, "Mirror needs an owner and a number", "Owner is required for a mirror", null)]
+    [InlineData("o", null, "Mirror needs an owner and a number", null, "Number is required for a mirror")]
+    [InlineData("o", 0, "Mirror's number must be above 0", null, "Number must be above 0")]
+    [InlineData("o", 1, null, null, null)]
+    public void Half_a_project_or_a_number_below_1_is_refused(
+        string owner, int? number, string? mirror, string? ownerRefusal, string? numberRefusal)
+    {
+        var settings = Settings() with { ProjectOwner = owner, ProjectNumber = number };
+
+        Assert.Equal(mirror, settings.MirrorRefusal());
+        Assert.Equal(ownerRefusal, settings.OwnerRefusal());
+        Assert.Equal(numberRefusal, settings.NumberRefusal());
+    }
+
+    [Fact]
+    public void A_missing_vision_or_workdir_is_refused()
+    {
+        Assert.Equal("Vision is required", (Settings() with { Vision = " " }).VisionRefusal());
+        Assert.Equal("Workdir is required", (Settings() with { Workdir = " " }).WorkdirRefusal());
+        Assert.Null(Settings().VisionRefusal());
+        Assert.Null(Settings().WorkdirRefusal());
+    }
 
     [Theory]
     [InlineData(true, "", null, null)]
-    [InlineData(true, "o", null, "Mirror needs an owner and a number.")]
-    [InlineData(true, "", 1, "Mirror needs an owner and a number.")]
+    [InlineData(true, "o", null, "Mirror needs an owner and a number")]
+    [InlineData(true, "", 1, "Mirror needs an owner and a number")]
     [InlineData(false, "o", null, null)]
     public void A_team_may_leave_its_project_to_be_made_or_have_none_but_not_name_half_of_one(
         bool mirror, string owner, int? number, string? refusal) =>
-        Assert.Equal(refusal, (Settings() with { Repo = "o/r", Mirror = mirror, ProjectOwner = owner, ProjectNumber = number }).Refusal());
+        Assert.Equal(refusal, (Settings() with { Repo = "o/r", Mirror = mirror, ProjectOwner = owner, ProjectNumber = number }).MirrorRefusal());
 
     [Fact]
     public void Mirror_None_is_written_as_mirror_false_and_read_back()
