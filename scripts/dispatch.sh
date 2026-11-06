@@ -123,6 +123,7 @@ check_runs() {
   local sent='' stuck='[]' count=0 said="$dir/${prefix}killed" marker="$dir/${prefix}stuck"
   maximum=$(($(cfg '.dispatch.maxRuntime // 120') * 60))
   killed=" $(cat "$said" 2>/dev/null | paste -sd ' ' -) "
+  was=$(jq -r '.[]?.pid' "$marker" 2>/dev/null)
   while read -r pid at file number; do
     [ -n "$pid" ] || continue
     why=''
@@ -137,7 +138,10 @@ check_runs() {
         why="outlived its $(minutes_said $((maximum / 60))) limit"
         says="run $pid $why by $(age_said "$over")"
       fi
-    elif [ -n "$number" ] && closed=$(finished_at "$team" "$number") && [ $((now - (closed > at ? closed : at))) -gt 1800 ]; then
+    fi
+    # Past its limit, only a run already stuck on its task stays so, through the pass that sends its kill.
+    if [ -z "$why" ] && { [ $((now - at)) -le "$maximum" ] || grep -qx "$pid" <<<"$was"; } &&
+      [ -n "$number" ] && closed=$(finished_at "$team" "$number") && [ $((now - (closed > at ? closed : at))) -gt 1800 ]; then
       why="on #$number, which closed $(day_said "$closed")"
       says="run $pid is on #$number, closed $(day_said "$closed")"
     fi
@@ -147,7 +151,6 @@ check_runs() {
   done <<<"$live"
   if [ -n "$sent" ]; then printf '%s' "$sent" >"$said"; else rm -f "$said"; fi
 
-  was=$(jq -r '.[]?.pid' "$marker" 2>/dev/null)
   while read -r pid; do
     [ -z "$pid" ] || jq -e --argjson pid "$pid" 'any(.[]; .pid == $pid)' <<<"$stuck" >/dev/null ||
       log "$team $role: run $pid no longer stuck"

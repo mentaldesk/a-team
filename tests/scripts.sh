@@ -9734,6 +9734,27 @@ same "and logs nothing more" 1 "$(logged 'is stuck')"
 same "or a triggers failure" 0 "$(logged 'triggers failed')"
 end_run "$FAKE"
 
+case_ "a run stuck on a closed task stays stuck as it crosses its limit, says so once each way"
+stuck_fixture
+jq -n '{reasons: [], creative: false, tasks: [], ready: 9, readyCount: 1, chores: []}' >"$DEV_TRIGGERS"
+live_run dev/runs/516 3600 ignores
+on_task 516 dev/runs/516
+closed_item 516 45
+dispatch_dev
+day=$(day_of 45)
+same "on the task" "demo dev: stuck: run $FAKE is on #516, closed $day · holds its only slot, 1 task waiting" "$(status_stuck)"
+echo $(($(date +%s) - 3 * 3600)) >"$A_TEAM_STATE/demo/dev/runs/516/last-start"
+dispatch_dev
+same "the pass that sends the kill" "demo dev: stuck: run $FAKE is on #516, closed $day · holds its only slot, 1 task waiting" "$(status_stuck)"
+same "killed" 1 "$(logged 'demo dev: killed run')"
+dispatch_dev
+same "the pass after it" "demo dev: stuck: run $FAKE outlived its 2h limit by 1h · holds its only slot, 1 task waiting" "$(status_stuck)"
+same "one stuck line" 1 "$(logged 'is stuck')"
+same "not cleared" 0 "$(logged 'no longer stuck')"
+end_run "$FAKE"
+dispatch_dev
+same "one clear line" 1 "$(logged "demo dev: run $FAKE no longer stuck")"
+
 case_ "a run that came to a card already closed gets its 30 minutes from when it started"
 stuck_fixture
 live_run lead 60
