@@ -8,6 +8,7 @@ public enum WriteKind
     Decline,
     Shelve,
     HoldTask,
+    AskFix,
     Release,
     VisionReview,
     Hold,

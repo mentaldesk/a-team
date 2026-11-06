@@ -201,11 +201,16 @@ panel in [Overseer](overseer.md#the-teams-panel). Each review is a run, so it co
   the task names in the PR's description, under **What it looks like**, captioned with what it
   shows. The Reviewer checks each one against its caption and the style guide, and a task that
   changes the screen with no pictures is a **Needs changing** point of its own.
-- **What it says.** One comment on the PR, in two sections: **Needs changing**, each point with the
-  file and line and why, and **Worth considering**, for what needn't hold the PR up. It leaves out
-  whatever is fine. If nothing needs changing, it says so in one line.
-- **What happens next.** The Dev fixes each **Needs changing** point or replies why not, then marks
-  the PR ready as usual. It leaves **Worth considering** to you: comment if you want any of it done.
+- **What it says.** One comment on the PR, in two sections. **Needs changing** has each point with
+  the file and line and why: a missed acceptance criterion, a test that doesn't test the change, or
+  a wrong result in code the PR changes, naming the case, like *when the read is rate limited, it
+  says the PR isn't merged*, whether or not the task mentioned that case. **Worth considering** holds
+  only what's optional: other approaches, naming and readability, and problems in code the PR didn't
+  touch. It leaves out whatever is fine. If nothing needs changing, it says so in one line.
+- **What happens next.** The Dev fixes each **Needs changing** point with a test, or replies why
+  not, then marks the PR ready as usual. A point that means changing code the PR doesn't otherwise
+  touch it says so about and leaves, for you to see on the PR. It leaves **Worth considering** to
+  you: tick the ones you want with [Ask the Dev to fix](work.md#answering-from-a-card).
 - **Once only.** A PR is reviewed once. The Dev's fixes come to you without a second review, so the
   two agents can't go round in circles.
 - **Only task PRs.** Pitches, the Customer lead's docs PR and your own PRs are never reviewed.

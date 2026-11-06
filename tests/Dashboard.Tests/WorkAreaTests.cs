@@ -3481,7 +3481,7 @@ public class WorkAreaTests : IDisposable
             [
                 "overseer.details", "overseer.fold", "overseer.github", "overseer.retry", "overseer.refresh", "work.nextTeam", "work.previousTeam", "team.board",
                 "view.dispatcher", "decisions", "settings", "teams", "quit", "view.work", "view.overseer", "assistant", "view.details", "work.team", "work.whatsNew", "work.read",
-                "work.priority", "work.try", "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.new", "work.refresh",
+                "work.priority", "work.try", "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.fix", "work.new", "work.refresh",
                 "work.mine", "agent.hold", "agent.interrupt", "dispatch.pass", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help",
                 "guide", "messages", "commands", "about",
             ],
@@ -4505,6 +4505,138 @@ public class WorkAreaTests : IDisposable
             row => row.StartsWith("Read what's waiting again") && row.TrimEnd().EndsWith(" F5"));
     }
 
+    private const string Reviewed = """
+        [{"number": 49, "title": "Reviewed task", "status": "In review", "team": "team0", "url": "u", "pr": 50, "prUrl": "p",
+          "reviewed": true, "consider": 2},
+         {"number": 51, "title": "Clean review", "status": "In review", "team": "team0", "url": "u", "pr": 52, "prUrl": "p",
+          "reviewed": true, "consider": 0},
+         {"number": 53, "title": "Unreviewed", "status": "In review", "team": "team0", "url": "u", "pr": 54, "prUrl": "p"}]
+        """;
+
+    private const string ReviewConversation = """
+        [{"who": "reviewer", "at": "2026-11-01T08:00:00Z", "pr": 50,
+          "body": "## Needs changing\n- a.sh:1 off.\n\n## Worth considering\n- Rename it.\n- Split it\n  in two."}]
+        """;
+
+    private DashboardWindow OpenReviewed(
+        Func<string[], Task<string?>>? run = null, Func<WaitingItem, IReadOnlyList<string>, string?>? askFix = null, string conversation = ReviewConversation)
+    {
+        var window = Open(
+            read: team => Task.FromResult(new Reading(team == "team0" ? Reviewed : "[]", null)),
+            run: run,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            readConversation: _ => Task.FromResult(new Reading(conversation, null)),
+            askFix: askFix);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        return window;
+    }
+
+    [Fact]
+    public void F_on_a_reviewed_card_reads_its_points_asks_which_and_posts_one_comment_on_the_PR()
+    {
+        var calls = new List<string[]>();
+        var posted = "";
+        IReadOnlyList<string>? offered = null;
+        using var window = OpenReviewed(
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                posted = File.ReadAllText(arguments[^1]);
+                return Task.FromResult<string?>(null);
+            },
+            askFix: (_, points) =>
+            {
+                offered = points;
+                return Considered.Request(points.Take(1), "");
+            });
+        Assert.Equal(49, window.Work.Selected?.Number);
+
+        Assert.True(window.NewKeyDownEvent(new Key('f')));
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal(["Rename it.", "Split it\nin two."], offered);
+        Assert.Equal([["board", "team0", "comment", "you", "50"]], calls.Select(call => call[..^1]));
+        Assert.Equal("> Rename it.\n\nPlease fix these.", posted);
+        Assert.Equal("asked the Dev to fix PR #50", window.Says());
+    }
+
+    [Fact]
+    public void Cancelling_the_dialog_posts_nothing()
+    {
+        var calls = new List<string[]>();
+        using var window = OpenReviewed(
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult<string?>(null);
+            },
+            askFix: (_, _) => null);
+
+        window.NewKeyDownEvent(new Key('f'));
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void A_review_that_can_t_be_read_says_so_and_asks_nothing()
+    {
+        var asked = 0;
+        using var window = OpenReviewed(
+            askFix: (_, _) =>
+            {
+                asked++;
+                return null;
+            },
+            conversation: "[]");
+
+        window.NewKeyDownEvent(new Key('f'));
+        window.Refresh();
+
+        Assert.Equal(0, asked);
+        Assert.Equal("couldn't read what the Reviewer left on PR #50", window.Says());
+    }
+
+    [Fact]
+    public void The_command_is_greyed_out_and_f_does_nothing_with_nothing_to_consider_or_no_review_yet()
+    {
+        var asked = 0;
+        using var window = OpenReviewed(
+            askFix: (_, _) =>
+            {
+                asked++;
+                return null;
+            });
+        var command = window.Commands.Registered.Single(registered => registered.Id == "work.fix");
+        Assert.Equal("Ask the Dev to fix…", command.Label);
+        Assert.Equal("F", command.Keys);
+        Assert.True(command.OnCard);
+        Assert.True(window.Commands.IsEnabled("work.fix"));
+
+        foreach (var number in new[] { 51, 53 })
+        {
+            window.NewKeyDownEvent(Key.CursorDown);
+            if (window.Work.Selected?.Number != number)
+                window.NewKeyDownEvent(Key.CursorDown);
+            Assert.Equal(number, window.Work.Selected?.Number);
+            Assert.False(window.Commands.IsEnabled("work.fix"));
+            window.NewKeyDownEvent(new Key('f'));
+            window.Refresh();
+            Assert.Equal(0, asked);
+        }
+    }
+
+    [Fact]
+    public void F1_lists_f_under_Work()
+    {
+        using var window = OpenReviewed();
+
+        Assert.Contains(new KeyRow("F", "Ask the Dev to fix…"), window.Keys.Here!.Groups.Single().Rows);
+    }
+
     private static MenuItem MenuItem(DashboardWindow window, string id) =>
         window.MenuItems.Single(item => item.Id == id).Item;
 
@@ -4538,7 +4670,8 @@ public class WorkAreaTests : IDisposable
         Action<string>? showDecisions = null,
         Func<WaitingItem, bool>? confirmApprove = null,
         Func<WaitingItem, string?>? askHold = null,
-        Func<string, Task<Reading>>? syncBoard = null)
+        Func<string, Task<Reading>>? syncBoard = null,
+        Func<WaitingItem, IReadOnlyList<string>, string?>? askFix = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -4576,6 +4709,7 @@ public class WorkAreaTests : IDisposable
             showDecisions: showDecisions,
             confirmApprove: confirmApprove ?? (_ => true),
             askHold: askHold,
+            askFix: askFix,
             syncBoard: syncBoard);
     }
 

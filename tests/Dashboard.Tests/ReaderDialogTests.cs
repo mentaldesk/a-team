@@ -178,6 +178,27 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void F_asks_the_Dev_to_fix_and_closes_the_reader_once_asked_and_stays_on_a_cancel()
+    {
+        var answers = new Queue<bool>([false, true]);
+        var ran = 0;
+        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => null,
+            comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null),
+                Fix: new ReaderCommand(new Key('F'), "ask the Dev to fix", () =>
+                {
+                    ran++;
+                    return answers.Dequeue();
+                })));
+        dialog.Layout(new Size(100, 20));
+
+        Assert.Contains("f Ask the Dev to fix", dialog.ButtonLabels);
+        Assert.True(dialog.NewKeyDownEvent(new Key('f')));
+        Assert.Equal(1, ran);
+        Assert.True(dialog.NewKeyDownEvent(new Key('f')));
+        Assert.Equal(2, ran);
+    }
+
+    [Fact]
     public void Accept_on_a_PR_in_trouble_is_greyed_but_its_key_still_says_why()
     {
         var ran = 0;
