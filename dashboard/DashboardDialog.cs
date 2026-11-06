@@ -16,6 +16,7 @@ public abstract class DashboardDialog : AppDialog
     private readonly List<(KeyRow Row, Func<bool>? When)> _also = [];
     private readonly Dictionary<string, (Action Run, Func<bool>? When)> _runs = [];
     private readonly Dictionary<string, Button> _buttons = [];
+    private bool _unmarking;
 
     protected DashboardDialog(string title)
         : base(title, width: 0, contentRows: 0)
@@ -24,6 +25,20 @@ public abstract class DashboardDialog : AppDialog
     }
 
     internal ButtonBar Foot { get; } = new();
+
+    /// <summary>As <see cref="AppDialog.Check"/>, for a field the dialog stays open without: see <see cref="Unmark"/>.</summary>
+    protected void CheckWhileWriting(View field, View label, Func<string?> refusal) =>
+        Check(field, label, () => _unmarking ? null : refusal());
+
+    /// <summary>Takes the marks and the message away once what they were about has been left.</summary>
+    protected void Unmark()
+    {
+        _unmarking = true;
+        Checked();
+        _unmarking = false;
+        Alert.Clear();
+        SetNeedsLayout();
+    }
 
     /// <summary>The labels of the buttons on show, in order.</summary>
     internal IReadOnlyList<string> ButtonLabels => [.. Foot.Shown.Select(button => button.Text.Trim())];

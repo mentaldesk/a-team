@@ -30,6 +30,46 @@ public class DecisionsTests
     private static List<int> Ids(IEnumerable<Decision> entries) => [.. entries.Select(entry => entry.Id)];
 
     [Fact]
+    public void An_empty_edit_marks_Decision_keeps_the_editor_and_changes_nothing()
+    {
+        var changes = new List<DecisionChange>();
+        using var dialog = Open(Register, changes);
+        dialog.Table.SetFocus();
+        dialog.StartEditing();
+        dialog.Editor.Text = "  ";
+
+        dialog.Editor.NewKeyDownEvent(Key.Enter);
+
+        Assert.Empty(changes);
+        Assert.True(dialog.Editor.Visible);
+        Assert.True(dialog.Editor.HasFocus);
+        Assert.Equal("Decision is needed", dialog.Alert.Message);
+        Assert.Equal(MentalDesk.Tui.Theming.SchemeNames.Error, dialog.EditorLabel.SchemeName);
+
+        dialog.Editor.Text = "Something else";
+
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(MentalDesk.Tui.Theming.SchemeNames.Error, dialog.EditorLabel.SchemeName);
+    }
+
+    [Fact]
+    public void Esc_out_of_a_refused_edit_takes_the_mark_and_the_message_away()
+    {
+        using var dialog = Open(Register);
+        dialog.Table.SetFocus();
+        dialog.StartEditing();
+        dialog.Editor.Text = "";
+        dialog.Editor.NewKeyDownEvent(Key.Enter);
+
+        dialog.Editor.NewKeyDownEvent(Key.Esc);
+
+        Assert.False(dialog.Editor.Visible);
+        Assert.False(dialog.EditorLabel.Visible);
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(MentalDesk.Tui.Theming.SchemeNames.Error, dialog.EditorLabel.SchemeName);
+    }
+
+    [Fact]
     public void It_lists_what_stands_newest_confirmed_first()
     {
         Assert.Equal([2, 5], Ids(Read().Shown("", allTeams: true, replaced: false)));

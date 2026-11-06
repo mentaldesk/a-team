@@ -84,11 +84,21 @@ public class TeamStartTests : IDisposable
         Assert.Equal("{}", File.ReadAllText(Path.Combine(_teams.TeamsDirectory, "fretty.json")));
     }
 
+    [Fact]
+    public void A_team_named_while_the_form_was_open_comes_back_as_the_name_being_taken()
+    {
+        var start = new TeamStart(Example, null!, null!, _root, () => true);
+        var settings = TeamSettings.New(File.ReadAllBytes(Example), "") with { Repo = "o/r", Workdir = "~/code/fretty" };
+        Assert.Null(start.Create(_teams, "fretty", settings));
+
+        Assert.Equal("There's already a team named fretty", start.Create(_teams, "fretty", settings));
+    }
+
     [Theory]
-    [InlineData("", "Name is required.")]
-    [InlineData("a-team", "There's already a team named a-team.")]
-    [InlineData("my team", "my team can't be a file name: use letters, digits, '.', '_' and '-'.")]
-    [InlineData("../x", "../x can't be a file name: use letters, digits, '.', '_' and '-'.")]
+    [InlineData("", "Name is required")]
+    [InlineData("a-team", "There's already a team named a-team")]
+    [InlineData("my team", "Name can't be my team: use letters, digits, '.', '_' and '-'")]
+    [InlineData("../x", "Name can't be ../x: use letters, digits, '.', '_' and '-'")]
     [InlineData("fretty", null)]
     public void A_new_team_s_name_must_be_free_and_usable_as_a_file_name(string name, string? refusal) =>
         Assert.Equal(refusal, TeamSettings.NameRefusal(name, ["a-team"]));

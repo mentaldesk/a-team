@@ -53,6 +53,10 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             teams.Create(team, File.ReadAllBytes(example), settings);
             return null;
         }
+        catch (IOException) when (teams.Names().Contains(team))
+        {
+            return TeamSettings.NameTaken(team);
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             return $"Couldn't create {team}: {e.Message}";
@@ -66,6 +70,10 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         {
             teams.Redo(team, name, settings);
             return null;
+        }
+        catch (IOException) when (name != team && teams.Names().Contains(name))
+        {
+            return TeamSettings.NameTaken(name);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
