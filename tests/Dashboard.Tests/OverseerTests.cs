@@ -518,6 +518,27 @@ public class OverseerTests : IDisposable
         Assert.Single(BoardCard.Parse("""[{"number": 7, "team": "a-team"}, {"team": "a-team", "mirror": {"behind": 3}}]"""));
     }
 
+    [Theory]
+    [InlineData(100, 3)]
+    [InlineData(160, 2)]
+    public void The_team_s_panel_shows_the_whole_of_a_mirror_note_the_title_has_no_room_for(int width, int rows)
+    {
+        var lag = new MirrorLag(3, "GitHub refused: " + string.Join(' ', Enumerable.Repeat("much too long for any title", 6)));
+        using var window = Open(width: width);
+        window.Press("Ctrl+G O");
+        window.Refresh();
+        Assert.True(window.NewKeyDownEvent(Key.CursorUp));
+        window.Layout(new Size(width, 30));
+        var without = window.Team.RowsAt(width);
+
+        window.Overseer.Show("team0", [], lag);
+        window.Layout(new Size(width, 30));
+
+        Assert.Equal(lag.Note, window.Team.Mirror);
+        Assert.Equal(without + rows, window.Team.RowsAt(width));
+        Assert.Equal(width >= 140 ? 1 : 30 - 1 - window.Team.Rows, window.Team.Frame.Y);
+    }
+
     [Fact]
     public void A_pitch_s_details_list_its_open_tasks_and_its_column_s_limit()
     {

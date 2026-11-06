@@ -1174,7 +1174,8 @@ public sealed class DashboardWindow : Window
         var team = _overseer.Board.Selected!.Value.Team;
         _team.Show(team,
             [.. _watches.Where(watch => watch.Team == team).Select(watch => (watch.Role, Icons.Field(Icons.For(watch.Status), _drawn), watch.Line))],
-            _checks?.Fatal(team) is { } problem ? RoleWatch.Misconfigured(problem) : null);
+            _checks?.Fatal(team) is { } problem ? RoleWatch.Misconfigured(problem) : null,
+            _overseer.MirrorNote(team));
         _team.ShowHint(TeamHint());
         if (!_sessionFull)
             return;
@@ -2068,7 +2069,7 @@ public sealed class DashboardWindow : Window
 
     /// <summary>Rows the team's panel takes at the foot of the lanes, where the window is too narrow for it beside them.</summary>
     private int TeamFoot() =>
-        OnHeading && !_sessionFull && !_dispatcherOpen && !Wide(Viewport.Width) ? _team.Rows : 0;
+        OnHeading && !_sessionFull && !_dispatcherOpen && !Wide(Viewport.Width) ? _team.RowsAt(BesideAssistant()) : 0;
 
     /// <summary>The selection has a panel of its own, beside the lanes or, for a team, at their foot.</summary>
     private bool PanelShown => Docked || TeamFoot() > 0;

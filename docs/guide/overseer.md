@@ -15,7 +15,8 @@ beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. Where cards are 
 Where the team's GitHub Project hasn't caught up with its board yet, it says how far behind it is and why, as in
 `mirror 3 moves behind (GitHub rate limit, retry 11:20)`. `GitHub unreachable` means it really couldn't be reached;
 when GitHub turns the copy down, the note gives its reason after `GitHub refused:`. The board itself is never behind:
-once GitHub is back, the Project catches up and the note goes.
+once GitHub is back, the Project catches up and the note goes. Where the title has no room for the whole note, select the
+heading and the team's panel shows all of it.
 
 Each card is a chip: a mark for what it is, its number, and how long it has been in that column, in
 the largest unit, as in `◆404  6d`.

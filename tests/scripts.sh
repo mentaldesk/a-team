@@ -3040,7 +3040,7 @@ same "labels" "$(sed -n 's/^(dry run) created label //p' <<<"$listed")" \
   "$(sed -n 's/^label create \([^ ]*\) .*/\1/p' "$WRITES")"
 
 case_ "setup adds whichever of the Lead rank and Theme fields the project lacks, and its dry run lists them"
-add_field() { jq --arg name "$1" '.data.organization.projectV2.fields.nodes += [{id: "PVTF_\($name)", name: $name}]' "$META" >"$META.new" && mv "$META.new" "$META"; }
+add_field() { jq --arg name "$1" '.data.organization.projectV2.fields.nodes += [{id: "PVTF_\($name)", name: $name, dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"; }
 listed_fields() { sed -n 's/^  add   field //p' "$OUT" | paste -sd, -; }
 added_fields() { sed -n 's/^FIELD .*name=\(.*\) FIELD -f.*/\1/p' "$WRITES" | paste -sd, -; }
 run board --dry-run demo setup
@@ -3063,6 +3063,25 @@ same "both: listed" "" "$(listed_fields)"
 run board demo setup
 same "exit" 0 "$STATUS"
 same "both: added" "" "$(added_fields)"
+mv "$BIN/meta.saved" "$META"
+
+case_ "setup and check name a Lead rank or Theme field of the project's own, before setup changes anything"
+cp "$META" "$BIN/meta.saved"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTSSF_theme", name: "Theme", dataType: "SINGLE_SELECT", options: []},
+    {id: "PVTF_rank", name: "Lead rank", dataType: "TEXT"}]' "$BIN/meta.saved" >"$META"
+clash="mentaldesk project 1 has a Theme field that isn't text, so a-team can't copy to it: rename that field"
+rm -f "$BIN/mutation.json"
+: >"$WRITES"
+run board demo setup
+same "exit" 1 "$STATUS"
+grep -qF "$clash" "$ERR" || fail "setup: nothing about the clash in '$(cat "$ERR")'"
+[ ! -e "$BIN/mutation.json" ] || fail "setup: Status options changed"
+same "writes" "" "$(cat "$WRITES")"
+run board --dry-run demo setup
+same "dry run: exit" 1 "$STATUS"
+grep -qF "$clash" "$ERR" || fail "dry run: nothing about the clash in '$(cat "$ERR")'"
+run board demo check
+grep -qF "fields    $clash" "$OUT" || fail "check: nothing about the clash in '$(cat "$OUT")'"
 mv "$BIN/meta.saved" "$META"
 
 case_ "setup names GitHub's reason when it can't read the project"
@@ -3936,6 +3955,9 @@ mirror_says "error connecting to api.github.com" "GitHub unreachable"
 mirror_says 'Post "https://api.github.com/graphql": dial tcp: lookup api.github.com: no such host' "GitHub unreachable"
 mirror_says "gh: Post https://api.github.com/graphql: net/http: request canceled (Client.Timeout exceeded): timeout" "GitHub unreachable"
 mirror_says "gh: Bad Gateway (HTTP 502)" "GitHub unreachable"
+mirror_says 'Post "https://api.github.com/graphql": EOF' "GitHub unreachable"
+mirror_says "gh: Could not resolve to an Organization with the login of 'geoff-network-timeout'." \
+  "GitHub refused: Could not resolve to an Organization with the login of 'geoff-network-timeout'."
 
 case_ "a project with no Status field refuses, and says so"
 gh_items <<'ITEMS'
@@ -3949,6 +3971,37 @@ A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
 same "reason" "GitHub refused: no single-select field 'Status' on mentaldesk project 1" \
   "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
 
+case_ "the board's own reasons are refusals, whatever the owner is called"
+cp "$TEAM" "$WORK/team.saved"
+jq '.project.owner = "acme-network-timeout"' "$WORK/team.saved" >"$TEAM"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+jq '.data.organization.projectV2.fields.nodes = []' "$META" >"$META.new" && mv "$META.new" "$META"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "reason" "GitHub refused: no single-select field 'Status' on acme-network-timeout project 1" \
+  "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+mv "$WORK/team.saved" "$TEAM"
+
+case_ "a sync on a project with a Theme of its own says so, and makes no field of that name"
+gh_items <<'ITEMS'
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo claim dev
+same "exit" 0 "$STATUS"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_object('theme', 'Good UX') WHERE team = 'demo' AND item = 13;"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTSSF_theme", name: "Theme", dataType: "SINGLE_SELECT", options: []}]' "$META" >"$META.new" && mv "$META.new" "$META"
+: >"$WRITES"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
+grep -q '^FIELD ' "$WRITES" && fail "made a field: '$(cat "$WRITES")'"
+A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
+same "reason" "GitHub refused: mentaldesk project 1 has a Theme field that isn't text, so a-team can't copy to it: rename that field" \
+  "$(jq -r '.[] | select(.number == null) | .mirror.failed' "$OUT")"
+
 case_ "a sync on a project missing a field copies, and makes the field only once it has a value for it"
 gh_items <<'ITEMS'
 Ready 13 Something to start
@@ -3960,7 +4013,7 @@ same "exit" 0 "$STATUS"
 grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "status not copied: '$(cat "$WRITES")'"
 grep -q '^FIELD ' "$WRITES" && fail "made a field with nothing to put in it: '$(cat "$WRITES")'"
 sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_object('rank', 'High', 'theme', 'Good UX') WHERE team = 'demo' AND item = 13;"
-jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme", dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 : >"$WRITES"
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo sync
 same "only the one missing" 1 "$(grep -c '^FIELD ' "$WRITES")"
@@ -5592,7 +5645,7 @@ grep -q 'labels/theme%3A%20Think%20bigger' "$BIN/unlabelled" || fail "old label 
 same "history" "lead theme: Consistently good UX" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
 
 case_ "none takes the theme off, on the mirror too"
-jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme", dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 : >"$WRITES"
 KEEP_BOARD=1 run board demo theme lead 81 none
 same "exit" 0 "$STATUS"

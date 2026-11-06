@@ -1,11 +1,12 @@
 using System.Collections.ObjectModel;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
 /// <summary>Overseer's panel for a selected lane heading: a line per role saying whether it's running or idle, when it
-/// last ran and when the dispatcher next checks, with what's wrong where the team can't run.</summary>
+/// last ran and when the dispatcher next checks, with what's wrong where the team can't run and why its mirror is behind.</summary>
 public sealed class TeamPanel : FrameView
 {
     private const int NameWidth = 14;
@@ -13,6 +14,7 @@ public sealed class TeamPanel : FrameView
     private static readonly string ErrorScheme = SchemeManager.SchemesToSchemeName(Schemes.Error)!;
 
     private readonly Label _problem = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = 0, CanFocus = false, SchemeName = ErrorScheme };
+    private readonly Label _mirror = new() { X = 0, Width = Dim.Fill(), CanFocus = false, TextFormatter = { WordWrap = true, MultiLine = true } };
     private readonly ListView _roles = new() { X = 0, Width = Dim.Fill(), Height = Dim.Fill(1), CanFocus = false };
     private readonly Label _hint = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill(), CanFocus = false, SchemeName = LogSchemes.Dimmed };
     private readonly ObservableCollection<string> _lines = [];
@@ -22,9 +24,11 @@ public sealed class TeamPanel : FrameView
     {
         CanFocus = true;
         SchemeName = BaseScheme;
-        _roles.Y = Pos.Bottom(_problem);
+        _mirror.Y = Pos.Bottom(_problem);
+        _mirror.Height = Dim.Func(_ => MirrorRows(Viewport.Width));
+        _roles.Y = Pos.Bottom(_mirror);
         _roles.SetSource(_lines);
-        Add(_problem, _roles, _hint);
+        Add(_problem, _mirror, _roles, _hint);
     }
 
     internal string Team => Title;
@@ -38,12 +42,22 @@ public sealed class TeamPanel : FrameView
 
     internal string Hint => _hint.Text;
 
-    /// <summary>Rows it needs at the foot of the lanes: its frame, the problem if any, a line per role and the hint.</summary>
-    internal int Rows => 2 + (_problem.Text.Length > 0 ? 1 : 0) + _lines.Count + 1;
+    internal string Mirror => _mirror.Text;
+
+    internal int Rows => RowsAt(Frame.Width);
+
+    /// <summary>Rows it needs at the foot of the lanes, <paramref name="width"/> wide: its frame, the problem if any, the
+    /// mirror's note if any, a line per role and the hint.</summary>
+    internal int RowsAt(int width) => 2 + (_problem.Text.Length > 0 ? 1 : 0) + MirrorRows(width - 2) + _lines.Count + 1;
+
+    private int MirrorRows(int width) =>
+        _mirror.Text.Length == 0 ? 0 : width < 1 ? 1 : TextFormatter.Format(
+            _mirror.Text, width, Alignment.Start, wordWrap: true, preserveTrailingSpaces: false, tabWidth: 4,
+            TextDirection.LeftRight_TopBottom, multiLine: false, textFormatter: null, preserveTabs: false).Count;
 
     /// <summary>Shows <paramref name="team"/>'s roles, each with its icon and what it's doing, keeping the role chosen
-    /// while it's the same team.</summary>
-    public void Show(string team, IReadOnlyList<(string Role, string Icon, string Line)> roles, string? problem)
+    /// while it's the same team, and the whole of what its heading says of its mirror.</summary>
+    public void Show(string team, IReadOnlyList<(string Role, string Icon, string Line)> roles, string? problem, string? mirror)
     {
         var chosen = Title == team ? Role : null;
         if (Title != team)
@@ -65,6 +79,8 @@ public sealed class TeamPanel : FrameView
             _problem.Text = text;
             _problem.Height = text.Length > 0 ? 1 : 0;
         }
+        if (_mirror.Text != (mirror ?? ""))
+            _mirror.Text = mirror ?? "";
     }
 
     /// <summary>The keys that work on the chosen role.</summary>
