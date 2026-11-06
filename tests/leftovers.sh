@@ -3,7 +3,9 @@
 # tests/leftovers.sh — a suite answers for what it started. Source it first: it gives the suite $WORK,
 # fail and finish_suite. A process is the suite's if its command names $WORK, so a fake has to.
 
-WORK=$(mktemp -d)
+# A plain mktemp -d ignores TMPDIR on macOS.
+tmp=${TMPDIR:-/tmp}
+WORK=$(mktemp -d "${tmp%/}/tmp.XXXXXX")
 failures=0
 LEFT_RUNNING="left running when the suite ended, now stopped:"
 
@@ -40,7 +42,8 @@ stop_leftovers() {
 
 on_suite_exit() {
   local left
-  left=$(stop_leftovers)
+  exec 2>/dev/null # bash reports each job it sees killed
+  left=$(stop_leftovers 2>/dev/null)
   [ -z "$left" ] || printf '  %s\n%s\n' "$LEFT_RUNNING" "$left"
   rm -rf "$WORK"
 }
@@ -49,7 +52,7 @@ trap on_suite_exit EXIT
 # Leftovers fail a passing suite. After a failed case they're expected, so they're only listed.
 finish_suite() {
   local left
-  left=$(stop_leftovers)
+  left=$(stop_leftovers 2>/dev/null)
   if [ -n "$left" ]; then
     if [ "$failures" -eq 0 ]; then fail "$LEFT_RUNNING"; else echo "  $LEFT_RUNNING"; fi
     echo "$left"
