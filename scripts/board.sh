@@ -633,7 +633,7 @@ format_gate() {
     history_sql "INSERT OR REPLACE INTO formats (team, format, version, moved) VALUES ($(sql "$TEAM"), $BOARD_FORMAT,
       $(sql "$("$ROOT/bin/a-team" version)"), $(sql "$(date -u +%FT%TZ)"));" >/dev/null
   elif [ -z "$own" ] && may_move_state; then
-    history_sql "INSERT INTO formats (team, format, version) VALUES ($(sql "$TEAM"), $BOARD_FORMAT,
+    history_sql "INSERT OR IGNORE INTO formats (team, format, version) VALUES ($(sql "$TEAM"), $BOARD_FORMAT,
       $(sql "$("$ROOT/bin/a-team" version)"));" >/dev/null
   fi
 }

@@ -112,7 +112,8 @@ public sealed class RoleWatch(string team, string role, string stateDir)
         return $"idle · {ran}{went} · {(teamPaused ? "team paused" : NextCheck(now, nextCheck, passing))}";
     }
 
-    internal static string Misconfigured(TeamProblem problem) => $"misconfigured: {problem.Topic} {problem.Detail}";
+    internal static string Misconfigured(TeamProblem problem) =>
+        problem.StopsTheTeam ? $"stopped: {problem.Detail}" : $"misconfigured: {problem.Topic} {problem.Detail}";
 
     private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck, bool passing) => nextCheck switch
     {

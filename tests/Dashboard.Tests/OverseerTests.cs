@@ -312,6 +312,18 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void With_no_chips_on_any_board_the_selection_starts_on_the_first_heading_and_moves_between_headings()
+    {
+        var board = new OverseerBoard(["a", "b"]);
+
+        board.SelectFirst();
+        Assert.Equal(new ChipPlace("a", 0, null, Heading: true), board.Selected);
+
+        board.MoveRow(+1);
+        Assert.Equal(new ChipPlace("b", 0, null, Heading: true), board.Selected);
+    }
+
+    [Fact]
     public void Folding_deeper_moves_the_selection_from_the_count_to_the_card_it_stood_for()
     {
         var board = Board([.. Enumerable.Range(1, 9).Select(n => Card(n, "Ready", days: 10 - n))]);
@@ -1009,6 +1021,24 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_team_stopped_by_the_board_format_says_why_in_its_lane_on_the_bar_and_in_a_panel_that_can_be_reached()
+    {
+        const string Why = "the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team";
+        var checks = new TeamChecks(_ => Task.FromResult(new TeamHealth([new TeamProblem("board", Why)])), _ => "{}");
+        using var window = Open(checks: checks, readBoard: _ => Task.FromResult(new Reading("", $"board.sh: {Why}")));
+        window.Commands.Execute("view.overseer");
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal(["team0 · stopped", "team1 · stopped"], window.Overseer.LaneTitles);
+        Assert.Equal(Why, window.Overseer.LoadOf("team0")!.Says);
+        Assert.Contains("stopped: brew upgrade a-team · the board is in format 2", window.Says());
+        Assert.Equal(new ChipPlace("team0", 0, null, Heading: true), window.Overseer.Board.Selected);
+        Assert.Equal($"stopped: {Why}", window.Team.Problem);
+        Assert.All(window.Team.Lines, line => Assert.StartsWith(Icons.Field(Icon.Misconfigured, IconStyle.Unicode), line));
+    }
+
+    [Fact]
     public void One_board_failing_leaves_the_other_lanes_and_says_so_in_its_own()
     {
         using var window = Open(readBoard: team => Task.FromResult(team == "team1"
@@ -1100,7 +1130,7 @@ public class OverseerTests : IDisposable
     private DashboardWindow Open(
         Func<string, Task<Reading>>? readBoard = null, Func<string, LinkOutcome>? openUrl = null, TimeProvider? clock = null, int height = 30,
         int width = 120, Action<Handover>? handOver = null, Func<RunTask, bool>? confirmStop = null, Handover? resume = null,
-        Func<string[], Task<string?>>? run = null, Func<string, Task<Reading>>? syncBoard = null)
+        Func<string[], Task<string?>>? run = null, Func<string, Task<Reading>>? syncBoard = null, TeamChecks? checks = null)
     {
         Directory.CreateDirectory(_root);
         var window = new DashboardWindow(
@@ -1120,7 +1150,8 @@ public class OverseerTests : IDisposable
             clock: clock,
             confirmStop: confirmStop,
             readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))),
-            syncBoard: syncBoard);
+            syncBoard: syncBoard,
+            checks: checks);
         window.Frame = new Rectangle(0, 0, width, height);
         window.Layout(new Size(width, height));
         window.Refresh();

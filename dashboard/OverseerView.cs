@@ -22,6 +22,9 @@ public sealed record OverseerState(
 
     /// <summary>The cards another task waits on, which wear a warning.</summary>
     public IReadOnlySet<(string Team, int Number)> Holding { get; init; } = new HashSet<(string, int)>();
+
+    /// <summary>The teams that can't run until a-team is upgraded, whose lanes say so.</summary>
+    public IReadOnlySet<string> Stopped { get; init; } = new HashSet<string>();
 }
 
 /// <summary>Where a busy role's header frame goes in its lane's title, in columns from the title's start.</summary>
@@ -170,6 +173,8 @@ public sealed class OverseerView : View
             return true;
         }
         load.ShowFailed(message, (retry, run));
+        if (_board.Selected is null)
+            _board.SelectFirst();
         Changed();
         return false;
     }
@@ -204,7 +209,7 @@ public sealed class OverseerView : View
         {
             var team = LaneTeam(lane);
             var heading = Heading(team, state.Busy.TryGetValue(team, out var busy) ? busy : [], Over(team),
-                _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null);
+                _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null, state.Stopped.Contains(team));
             lane.Slots = heading.Slots;
             if (lane.Title != heading.Title)
                 lane.Title = heading.Title;
@@ -302,9 +307,9 @@ public sealed class OverseerView : View
 
     internal bool CanFold => _board.Selected is { } place && _board.Unfolded(place.Team);
 
-    /// <summary>A lane's title: the team, its busy roles or <c>idle</c>, and how many of its cards are past their limit.
+    /// <summary>A lane's title: the team, its busy roles or <c>idle</c> or <c>stopped</c>, and how many of its cards are past their limit.
     /// Each busy role keeps a cell after its name, which the lane paints its header frame into.</summary>
-    internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over, string? mirror = null)
+    internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over, string? mirror = null, bool stopped = false)
     {
         var title = team;
         List<HeaderSlot> slots = [];
@@ -315,7 +320,7 @@ public sealed class OverseerView : View
             title += " ";
         }
         if (busy.Count == 0)
-            title += Separator + "idle";
+            title += Separator + (stopped ? "stopped" : "idle");
         if (over > 0)
             title += $"{Separator}{over} over";
         if (mirror is not null)

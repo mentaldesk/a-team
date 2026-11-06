@@ -209,7 +209,8 @@ the reason changes, and `a-team: running again` once it can. A single failed pas
 during `brew upgrade`, says nothing, though the team still sits that pass out.
 If the board is in a newer format than the a-team the dispatcher runs, as after a downgrade, every team
 stops the same way, as in `a-team: stopped: the board is in format 4, from a-team 0.2.17, and this is
-0.2.11: brew upgrade a-team`, and each role wears `⚠` until you upgrade. A release that moves the
+0.2.11: brew upgrade a-team`. The message bar says the same, each lane's title says `stopped`, and in the
+panel of a lane's heading each role wears `⚠` above the same line until you upgrade. A release that moves the
 board's format moves it on the dispatcher's next pass. A run still on the release before stops at its
 next board command with a line saying so, and the next pass carries on from the board, so there's
 nothing for you to do.

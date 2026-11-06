@@ -9708,6 +9708,21 @@ on_real "$INSTALLED" demo wip
 same "second exit" 0 "$STATUS"
 same "still stamped" "1|0.3.0|0" "$(stamp)"
 
+case_ "installed commands that race to stamp a new state all carry on"
+format_board
+for round in 1 2 3 4 5; do
+  format_home "$INSTALLED"
+  pids=()
+  for racer in 1 2 3 4; do
+    env -u A_TEAM_STATE -u XDG_STATE_HOME HOME="$FORMAT_HOME" A_TEAM_CONFIG="$CONFIG" "$INSTALLED/bin/a-team" board demo format >"$OUT.$racer" 2>"$ERR.$racer" &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || fail "round $round: $(cat "$ERR".*)"
+  done
+  same "round $round stamped" "1|0.3.0|0" "$(stamp)"
+done
+
 case_ "a worktree with no migration to do runs as today, and leaves the stamp to the installed a-team"
 format_board
 format_home "$INSTALLED"
