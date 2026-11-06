@@ -261,7 +261,8 @@ own output since then ──`.
 Answered something a team was waiting on? **Run a dispatch pass now**, in the Commands palette
 (`Ctrl+E`) or under **Agents**, has that dispatcher check for work straight away instead of at its
 next pass. It starts only what that pass would have, within the same limits, and leaves the
-countdown alone. The status bar says what it started, or `Pass done: nothing to start.`
+countdown alone. The status bar says what it started, or `Pass done: nothing to start.` Only one pass
+runs at a time: during another, scheduled or not, it says `A pass is already running.` and starts nothing.
 
 ## Time limits
 

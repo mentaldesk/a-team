@@ -18,7 +18,9 @@ this machine, and can copy it to a GitHub Project, its mirror, so you can see it
   products are doing. It writes a pitch for an Idea, with a mockup, revises it on your feedback,
   breaks an approved pitch into tasks, and checks the finished feature against the pitch.
 - **The Dev** builds those tasks. It takes a Ready task, builds it in its own worktree with tests,
-  opens a pull request and sees it through CI and your review.
+  opens a pull request and sees it through CI and your review. A later run removes that worktree once
+  the PR has merged, if it's still at the PR's last commit with no tracked file changed. Any other
+  worktree stays, and the run's summary says why. The Customer lead's are cleaned up the same way.
 - **You decide** which of the Lead's pitches get built, and you accept the finished work. Only you
   approve or merge, and the Lead closes a pitch only once its tasks have all closed.
 

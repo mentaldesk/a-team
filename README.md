@@ -203,7 +203,8 @@ team's own.
 
 To try what has landed, leave the PR out: `a-team try <team>` fetches the default branch and
 runs it as it is on origin now, at `<workdir>/.try/main`, the same way. Its first lines name the
-branch and commit, and `a-team try <team> --clean` removes it.
+branch and commit, and `a-team try <team> --clean` removes it. While it's running, another try of
+it and `--clean` refuse too, as they do for a PR.
 
 ### Trying out a clone or worktree
 
