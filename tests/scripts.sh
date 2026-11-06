@@ -9751,6 +9751,11 @@ for command in list wip triggers\ dev; do
 done
 same "stamp" "1|0.3.0|0" "$(stamp)"
 [ ! -e "$FORMAT_STATE/format-2-ran" ] || fail "the step ran"
+A_TEAM_RUN_TEAM=demo on_real "$AHEAD" demo list
+grep -q "only the installed one .* may: try it with --dry-run" "$ERR" || fail "a run from a worktree: '$(cat "$ERR")'"
+RELEASE_AHEAD=$(format_copy 0.2.0 2)
+A_TEAM_RUN_TEAM=demo on_real "$RELEASE_AHEAD" demo list
+same "a run on another release" "board.sh: this run is on 0.2.0, and only the installed a-team (0.3.0) may move the board from format 1 to 2: stopping" "$(cat "$ERR")"
 
 case_ "--dry-run and a state of its own still work from that worktree, and the real state stays put"
 on_real "$AHEAD" --dry-run demo list
@@ -9779,6 +9784,36 @@ format_home "$NEWER"
 on_real "$RUN_COPY" demo list
 same "run copy exit" 0 "$STATUS"
 same "run copy moved" "2|0.4.0|1" "$(stamp)"
+
+case_ "commands that find the board behind take turns, so the step runs once"
+for round in 1 2 3 4 5; do
+  format_home "$NEWER"
+  on_real "$INSTALLED" demo list
+  set_stamp 1 0.3.0
+  for racer in 1 2 3 4; do
+    env -u A_TEAM_STATE -u XDG_STATE_HOME HOME="$FORMAT_HOME" A_TEAM_CONFIG="$CONFIG" "$NEWER/bin/a-team" board demo format >/dev/null 2>"$ERR.$racer" &
+  done
+  wait
+  same "round $round ran" 1 "$(grep -c '' <"$FORMAT_STATE/format-2-ran")"
+  same "round $round moved" "2|0.4.0|1" "$(stamp)"
+  same "round $round left no turn behind" 0 "$(sqlite3 "$FORMAT_STATE/history.db" "SELECT COUNT(*) FROM format_moves;")"
+  for racer in 1 2 3 4; do
+    same "round $round stderr" "" "$(cat "$ERR.$racer")"
+  done
+done
+
+case_ "a command that died moving the board doesn't hold up the next, which repeats its step"
+format_home "$NEWER"
+on_real "$INSTALLED" demo list
+set_stamp 1 0.3.0
+true &
+DEAD=$!
+wait "$DEAD"
+sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO format_moves (team, pid) VALUES ('demo', $DEAD);"
+on_real "$NEWER" demo format
+same "exit" 0 "$STATUS"
+same "ran" demo "$(cat "$FORMAT_STATE/format-2-ran")"
+same "moved" "2|0.4.0|1" "$(stamp)"
 
 case_ "an a-team older than the state refuses every board command, read or write, whichever team moved it"
 format_board
@@ -9816,6 +9851,12 @@ failed "worktree"
 grep -q "would move the board forward, taking its old labels off the issues, and only the installed one ($INSTALLED/bin/a-team) may" "$ERR" ||
   fail "worktree: '$(cat "$ERR")'"
 [ ! -e "$BIN/unlabelled" ] || fail "worktree took labels off: '$(cat "$BIN/unlabelled")'"
+OLD_RUN=$(format_copy 0.2.0 1)
+A_TEAM_RUN_TEAM=demo on_real "$OLD_RUN" demo list
+failed "previous release"
+one_line "previous release"
+same "previous release" "board.sh: this run is on 0.2.0, and only the installed a-team (0.3.0) may move the board forward, taking its old labels off the issues: stopping" "$(cat "$ERR")"
+[ ! -e "$BIN/unlabelled" ] || fail "previous release took labels off: '$(cat "$BIN/unlabelled")'"
 on_real "$INSTALLED" demo list
 same "installed exit" 0 "$STATUS"
 same "taken off" "api -X DELETE repos/mentaldesk/demo/issues/7/labels/rank%3Amedium" "$(sort -u "$BIN/unlabelled")"

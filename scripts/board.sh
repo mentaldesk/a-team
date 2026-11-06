@@ -580,7 +580,7 @@ mark() {
 unlabel() { gh api -X DELETE "repos/$REPO/issues/$1/labels/$(jq -rn --arg l "$2" '$l | @uri')" >/dev/null 2>&1; }
 
 # BOARD_FORMAT: the format of the state this a-team keeps. A change that moves or reinterprets stored state bumps it and
-# adds a format_<n> step. A team with no stamp is on format 1: its labels are carried into the record, as adopt_labels does.
+# adds a format_<n> step, safe to repeat. A team with no stamp is on format 1: its labels are carried into the record, as adopt_labels does.
 BOARD_FORMAT=1
 
 # format_behind: why this a-team can't act on the state, if the state is in a newer format than it knows.
@@ -615,23 +615,45 @@ may_move_state() {
 
 # refuse_move <what>: stops this a-team doing <what> to state only the installed one may move.
 refuse_move() {
+  [ ! -f "$ROOT/VERSION" ] || [ -z "${A_TEAM_RUN_TEAM:-}" ] ||
+    die "this run is on $("$ROOT/bin/a-team" version), and only the installed a-team ($("$(installed_bin)" version 2>/dev/null)) may $1: stopping"
   die "this a-team ($ROOT) would $1, and only the installed one ($(installed_bin)) may: try it with --dry-run, or with A_TEAM_STATE set to a copy"
+}
+
+# format_move: moves this team's state up to BOARD_FORMAT, one a-team at a time. One that died leaves its steps to repeat.
+format_move() {
+  local team own step holder waited=0
+  team=$(sql "$TEAM")
+  until [ "$(history_sql "INSERT OR IGNORE INTO format_moves (team, pid) VALUES ($team, $$); SELECT changes();")" = 1 ]; do
+    holder=$(history_sql "SELECT pid FROM format_moves WHERE team = $team;")
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+      history_sql "DELETE FROM format_moves WHERE team = $team AND pid = $holder;" >/dev/null
+    else
+      [ "$((waited++))" -lt 300 ] || die "another a-team (pid $holder) has been moving the board forward for 5 minutes"
+      sleep 1
+    fi
+  done
+  own=$(history_sql "SELECT format FROM formats WHERE team = $team;")
+  if [ "${own:-1}" -lt "$BOARD_FORMAT" ]; then
+    for ((step = ${own:-1} + 1; step <= BOARD_FORMAT; step++)); do
+      ! declare -F "format_$step" >/dev/null || "format_$step"
+    done
+    history_sql "INSERT OR REPLACE INTO formats (team, format, version, moved) VALUES ($team, $BOARD_FORMAT,
+      $(sql "$("$ROOT/bin/a-team" version)"), $(sql "$(date -u +%FT%TZ)"));" >/dev/null
+  fi
+  history_sql "DELETE FROM format_moves WHERE team = $team;" >/dev/null
 }
 
 # format_gate: refuses a state this a-team is too old for, stamps one with no stamp, and moves an older one forward.
 format_gate() {
-  local why own step
+  local why own
   why=$(format_behind)
   [ -z "$why" ] || die "$why"
   [ -f "${HISTORY:-$STATE/history.db}" ] || return 0
   own=$(history_sql "SELECT format FROM formats WHERE team = $(sql "$TEAM");")
   if [ "${own:-1}" -lt "$BOARD_FORMAT" ]; then
     may_move_state || refuse_move "move the board from format ${own:-1} to $BOARD_FORMAT"
-    for ((step = ${own:-1} + 1; step <= BOARD_FORMAT; step++)); do
-      ! declare -F "format_$step" >/dev/null || "format_$step"
-    done
-    history_sql "INSERT OR REPLACE INTO formats (team, format, version, moved) VALUES ($(sql "$TEAM"), $BOARD_FORMAT,
-      $(sql "$("$ROOT/bin/a-team" version)"), $(sql "$(date -u +%FT%TZ)"));" >/dev/null
+    format_move
   elif [ -z "$own" ] && may_move_state; then
     history_sql "INSERT OR IGNORE INTO formats (team, format, version) VALUES ($(sql "$TEAM"), $BOARD_FORMAT,
       $(sql "$("$ROOT/bin/a-team" version)"));" >/dev/null

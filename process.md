@@ -235,9 +235,9 @@ out stops everyone.
   in your summary. Don't retry.
 - If an `a-team board` call says the board read came back incomplete, do the same: it has
   already read twice and changed nothing.
-- If an `a-team board` call says the board is in a newer format and it's stopping, end the run
-  there and say that line in your summary. Don't retry, and don't comment: the dispatcher's next pass
-  carries on from the board on the installed release.
+- If an `a-team board` call says the board is in a newer format or only the installed a-team may
+  move it, and ends in `stopping`, end the run there and say that line in your summary. Don't retry,
+  and don't comment: the dispatcher's next pass carries on from the board on the installed release.
 
 ## Never
 

@@ -34,7 +34,8 @@ nothing to restart.
   each brings the record up to date first.
 - **A change that moves or reinterprets stored state bumps the format.** Bump `BOARD_FORMAT` in
   `scripts/board.sh` and add its `format_<n>` step. An older a-team then refuses to act, and only the
-  installed one runs the step, so an ordinary release never stops anything.
+  installed one runs the step, so an ordinary release never stops anything. Commands take turns to run
+  it, but one killed partway leaves the next to run it again, so a step must be safe to repeat.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
 
