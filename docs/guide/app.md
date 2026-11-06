@@ -31,7 +31,7 @@ says so in a line, with the command that signs you in.
 The keys come in TuiCode's families. `Ctrl+G` then a letter goes somewhere: `Ctrl+G W`
 Work, `Ctrl+G O` Overseer, `Ctrl+G A` the Assistant, `Ctrl+G I` the panel for what's selected in
 Overseer, `Ctrl+G T` [Teams](teams.md) and `Ctrl+G N` what's new. `Ctrl+T` then a letter turns something on or off: `Ctrl+T T` tool calls and
-`Ctrl+T M` only your moves. Everyday commands are a Ctrl key: `Ctrl+E` Commands, `Ctrl+,` Settings,
+`Ctrl+T M` only your moves. Everyday commands are a Ctrl key: `Ctrl+E` Commands, `Ctrl+,` [Settings](teams.md#settings),
 `Ctrl+N` a new idea, `Ctrl+Q` quit, and `Ctrl+L` a new conversation in the Assistant. The keys for a
 selected card or log line, like `a` to accept or `l` to copy, stay single letters.
 
@@ -69,7 +69,7 @@ headed with its title, including the ones with no button, like scrolling, select
 narrow the list. Letters that start words match first, so `gt` finds **Go to team…**, then names
 that hold the letters anywhere, best match first; `Enter` runs the one at the top. Every key on
 this page is one of those commands, so anything you can press you can also run by name, and you
-can change its key under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
+can change its key under [Settings → Keyboard Shortcuts](teams.md#settings).
 
 The menus list everything, wherever you are. An item that can't run here is dimmed, with its key
 beside it, and does nothing. With a menu open, each item's underlined letter is its own: press it to
@@ -93,9 +93,9 @@ own clipboard instead, with the same terminal setup, and the status bar says
 A Mac terminal keeps `Cmd` to itself, so out of the box `Cmd+←` and the rest do nothing in the app.
 In iTerm2, kitty or WezTerm, **Settings → Terminal** fixes that: it names the terminal you're in and
 whether the dashboard's Mac keys are *Not installed*, *Installed* or *Out of date*. Tick
-**Cmd and Option keys** and press `Ctrl+Enter` to install them, or to bring them up to date after an
-a-team upgrade changes them; clear it and press `Ctrl+Enter` to take them away. `Esc` leaves them as
-they were. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
+**Cmd and Option keys** and press `Ctrl+Enter` to install them; clear it and press `Ctrl+Enter` to
+take them away. When an a-team upgrade leaves them *Out of date*, the box is already ticked, so
+`Ctrl+Enter` alone brings them up to date. `Esc` leaves them as they were. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
 and the file it goes in, with **Copy** beside it. After adding it, reload kitty's config with
 `Ctrl+Cmd+,` (kitty reads it only then), or in WezTerm reopen the dashboard.
 

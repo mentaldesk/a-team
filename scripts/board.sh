@@ -680,16 +680,19 @@ board_sync() {
   mirror_push
 }
 
-# items [open]: the board's items, as the record has them; `open` leaves Done off.
+# items [open]: the board's items, as the record has them; `open` leaves Done off. A task with no Priority takes its pitch's.
 items() {
   board_sync
-  history_sql -json "SELECT item, node, status, priority, since, content, mirror, marks FROM board
-    WHERE team = $(sql "$TEAM")$([ "${1:-}" = open ] && echo " AND status != 'Done'") ORDER BY rowid;" |
+  history_sql -json "SELECT b.item, b.node, b.status, b.priority, b.since, b.content, b.mirror, b.marks, up.priority AS pitch_priority
+    FROM board b LEFT JOIN board up ON up.team = b.team AND up.item = json_extract(b.content, '$.parent')
+    WHERE b.team = $(sql "$TEAM")$([ "${1:-}" = open ] && echo " AND b.status != 'Done'") ORDER BY b.rowid;" |
     jq -s "$MARKS"'(.[0] // []) | map((.content | fromjson) as $c
       | {id: (.mirror // ""), number: .item, node, type: $c.type, title: $c.title, url: $c.url,
          labels: ($c.labels // [] | map(select(state_label | not))),
          marks: (if .marks then .marks | fromjson else $c.labels // [] | marks_of end),
-         blockedBy: ($c.blockedBy // 0), priority, since, parent: $c.parent, status}
+         blockedBy: ($c.blockedBy // 0),
+         priority: (.priority // (if .status == "Idea" or ($c.labels // [] | index("pitch")) then null else .pitch_priority end)),
+         since, parent: $c.parent, status}
         + (if $c.closed then {closed: $c.closed} else {} end) + (if $c.dependabot then {dependabot: true} else {} end))'
 }
 
