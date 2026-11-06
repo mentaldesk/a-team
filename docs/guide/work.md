@@ -160,7 +160,9 @@ The task's own card says which link it waits on now and whose move that is, like
 `#499 ⛓ waits on tui-style-guide#84 · in review, yours`, then `#499 ⛓ waits on MentalDesk.Tui's
 release · yours`. That card is in Blocked while the task is Ready, and stays in Review if its PR
 is already up, so you can see that accepting it now would come before the change it needs. Once
-that release is out, Dependabot's PR bringing it in merges by itself, and the task is free. A link in a repo no team here works in still shows on the task's card, but there's no tab to
+that release is out, Dependabot's PR bringing it in merges by itself, and the task is free. Until it
+does, the card says how the bump stands, like `#499 ⛓ waits on #653 · merges by itself`, or `· blocked, yours`
+once [it has reached you](how-a-team-works.md#dependency-updates). A link in a repo no team here works in still shows on the task's card, but there's no tab to
 tag.
 
 The tag wears a link glyph where the icons are a Nerd Font's.
@@ -229,7 +231,9 @@ accept, decline, Not now, comment, Priority, recommendation, skip, review, link 
 and who (`you`, the role: `lead`, `dev`, `customer` or `reviewer`, or `board` for what a-team did by itself). What
 you or anyone else does on GitHub directly (a merge, a close, a comment)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. A closed issue or
-merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move. It
+merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move.
+On a team with a mirror, reopening one brings it back at its last move, with a line saying so: a task whose PR had
+merged comes back Ready, to be built again. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
 Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
@@ -296,7 +300,7 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   doesn't count as accepted. If the board refuses the decline, the status bar says why and the
   reason you typed is lost. A reason is required: with none, the pane's title turns red and the foot says
   `Why is needed`. `Esc` turns the pane back into a plain comment,
-  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub: the card
+  keeping what you wrote, and declines nothing. To undo a decline on a team with a mirror, reopen the issue on GitHub: the card
   comes back at its last move.
 - **Say Not now to a pitch.** On a pitch in Pitches, reading it or with its card selected, press
   `l`. The Comment pane opens as **Not now #n**, with **Back in [2] weeks** above it: `Shift+Tab`
