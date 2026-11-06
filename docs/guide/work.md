@@ -101,8 +101,8 @@ A card reads as the issue's number, then its title:
 - **What it is.** 💡 an Idea, `◇` a pitch, `‹›` a task, 📄 the Customer lead's docs PR. Triage
   and Pitches show the kind in their heading instead, so only a card of another kind wears its own.
 - **Its Priority.** The issue number is coloured by Priority, in the colours GitHub gives them:
-  green for Low, amber for Medium, red for High and pink for Urgent. An unranked card's number is
-  plain.
+  green for Low, amber for Medium, red for High and pink for Urgent. A task with none of its own
+  wears its pitch's. An unranked card's number is plain.
 - **The Lead's recommendation.** An Idea you haven't ranked shows the rank the Lead would give it
   after its number, like `#183  High? · ...`, and selecting it puts the Lead's one-line case on the
   status bar.
@@ -244,7 +244,7 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 **Make History or Comment wider or narrower.** Drag the border between it and the body with the
 mouse, or, with the cursor in it, pick **Widen pane** or **Narrow pane** in Commands (`Ctrl+E`) to
 change it by 5 columns, and **Reset pane width** to put it back. Neither has a key until you give one
-under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings). Each keeps the width you chose
+under [Settings → Keyboard Shortcuts](teams.md#settings). Each keeps the width you chose
 after a restart; a narrower terminal narrows them first, and a wider one gives their width back.
 With History narrowed, the reader keeps it showing in a narrower terminal.
 
