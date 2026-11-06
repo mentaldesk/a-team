@@ -123,6 +123,33 @@ public class TeamStartTests : IDisposable
             TeamStart.SetupPlan(output, new ProjectChoice("mentaldesk", 7, "fretty"), "mentaldesk/fretty"));
     }
 
+    [Fact]
+    public void The_setup_plan_lists_the_project_fields_it_would_add_beside_the_Status_options()
+    {
+        const string output = """
+              add   Idea
+              drop  Todo
+              add   field Lead rank
+              add   field Theme
+            (dry run) created label pitch
+            """;
+        var project = new ProjectChoice("mentaldesk", 7, "fretty");
+
+        Assert.Equal(
+            [
+                "On project fretty (mentaldesk #7), field 'Status':",
+                "  add   Idea",
+                "  drop  Todo",
+                "On project fretty (mentaldesk #7):",
+                "  add   field Lead rank",
+                "  add   field Theme",
+                "On mentaldesk/fretty:",
+                "  create label pitch",
+            ],
+            TeamStart.SetupPlan(output, project, "mentaldesk/fretty"));
+        Assert.DoesNotContain("On project fretty (mentaldesk #7):", TeamStart.SetupPlan("  keep  Idea\n", project, "mentaldesk/fretty"));
+    }
+
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
     public void Every_step_is_offered_in_turn_and_Get_to_work_starts_the_team()
     {

@@ -127,8 +127,9 @@ labels on your issues: the rank the Lead recommends, the theme a pitch serves, a
 a skip, a hold, and what a task waits on in another repo. A card's details in Overseer and the line
 under the reader's title show them, like `Idea · Priority none · Lead recommends Medium · theme:
 Consistently good UX`. The GitHub Project shows the Lead's rank and the theme as its **Lead rank** and
-**Theme** fields. Upgrading takes the old `rank:`, `theme:` and `a-team:` labels, and `blocked`, off
-your open issues once their state is in the record; `pitch` and your own labels stay.
+**Theme** fields, which setting the board up adds, or else the first copy that needs one. Upgrading
+takes the old `rank:`, `theme:` and `a-team:` labels, and `blocked`, off your open issues once their
+state is in the record; `pitch` and your own labels stay.
 
 ## What the team remembers
 
