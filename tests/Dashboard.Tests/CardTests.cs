@@ -42,6 +42,33 @@ public class CardTests
     }
 
     [Fact]
+    public void A_Dependabot_PR_the_Dev_cant_make_build_says_why_on_the_row_under_it()
+    {
+        var bump = new Card(new WaitingItem(653, "Bump MentalDesk.Tui", "Ready", "https://github.com/x/pull/653", "a-team", "you",
+            PrUrl: "https://github.com/x/pull/653", Question: "Can't build:\n\nneeds an AgentSpec.", Dependency: true, HeldBy: "dev"), false);
+
+        Assert.Equal("PR #653  Bump MentalDesk.Tui", bump.Text(0));
+        var reason = Assert.Single(bump.Children);
+        Assert.Equal("dev · Can't build: needs an AgentSpec.", reason.Text(0));
+        Assert.Equal("https://github.com/x/pull/653", reason.Url);
+    }
+
+    [Fact]
+    public void A_Dependabot_PR_the_Dev_cant_make_build_wraps_its_reason_over_as_many_rows_as_it_takes()
+    {
+        var bump = new Card(new WaitingItem(653, "Bump MentalDesk.Tui", "Ready", "https://github.com/x/pull/653", "a-team", "you",
+            PrUrl: "https://github.com/x/pull/653", Question: "Can't build: needs an AgentSpec. Close it, or wait?\n\n<!-- a-team:dev -->", Dependency: true, HeldBy: "dev"), false, ReasonWidth: 24);
+
+        var rows = bump.Children;
+
+        Assert.Equal(["dev · Can't build: needs", "an AgentSpec. Close it,", "or wait?"], rows.Select(row => row.Text(24)));
+        Assert.All(rows, row => Assert.Equal("https://github.com/x/pull/653", row.Url));
+        Assert.NotEqual(" ", rows[0].Lead(IconStyle.Unicode).Glyph);
+        Assert.Equal([" ", " "], rows.Skip(1).Select(row => row.Lead(IconStyle.Unicode).Glyph));
+        Assert.Equal(3, rows.Distinct().Count());
+    }
+
+    [Fact]
     public void A_fix_for_a_red_main_says_it_is_one()
     {
         var fix = new Card(new WaitingItem(624, "Main builds again", "In review", "https://github.com/x/624", "a-team", "you",

@@ -190,6 +190,37 @@ public class SettingsScreenTests : IDisposable
     }
 
     [Fact]
+    public void Every_limit_Overseer_cannot_read_is_marked_and_the_message_follows_focus_until_each_is_fixed()
+    {
+        using var screen = Open();
+        var field = (string column) => screen.Overseer.Fields.Single(limit => limit.Column == column).Field;
+        var (first, second) = (screen.Overseer.Fields[0].Column, screen.Overseer.Fields[1].Column);
+        field(first).Text = "soon";
+        field(second).Text = "later";
+
+        Press(screen, Key.Enter.WithCtrl);
+
+        Assert.False(screen.Confirmed);
+        Assert.Equal([first, second], screen.Overseer.Marked);
+        Assert.Equal(MentalDesk.Tui.Theming.SchemeNames.Error, screen.Overseer.LabelOf(first).SchemeName);
+        Assert.Equal(MentalDesk.Tui.Theming.SchemeNames.Error, screen.Overseer.LabelOf(second).SchemeName);
+        Assert.True(field(first).HasFocus);
+        Assert.Equal($"{OverseerPage.Refusal(first)}  •  1 more to fix", screen.Dialog.Alert.Message);
+
+        field(second).SetFocus();
+        Assert.Equal($"{OverseerPage.Refusal(second)}  •  1 more to fix", screen.Dialog.Alert.Message);
+
+        field(second).Text = "2d";
+        Assert.Equal([first], screen.Overseer.Marked);
+        Assert.Equal(OverseerPage.Refusal(first), screen.Dialog.Alert.Message);
+        Assert.NotEqual(MentalDesk.Tui.Theming.SchemeNames.Error, screen.Overseer.LabelOf(second).SchemeName);
+
+        field(first).Text = "3d";
+        Assert.Empty(screen.Overseer.Marked);
+        Assert.Equal("", screen.Dialog.Alert.Message);
+    }
+
+    [Fact]
     public void Tab_never_reaches_Keep_so_only_Ctrl_Enter_and_a_click_keep()
     {
         using var screen = Open();

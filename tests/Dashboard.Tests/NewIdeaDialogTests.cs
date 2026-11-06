@@ -255,7 +255,26 @@ public class NewIdeaDialogTests
 
         Assert.Equal(0, calls);
         Assert.Null(dialog.Added);
-        Assert.Equal("Nothing to add: the title is needed", dialog.Message.Says);
+        Assert.Equal("Title is needed", dialog.Alert.Message);
+        Assert.Equal(SchemeNames.Error, TitleLabel(dialog).SchemeName);
+        Assert.True(dialog.IdeaTitle.HasFocus);
+    }
+
+    private static Terminal.Gui.Views.Label TitleLabel(NewIdeaDialog dialog) =>
+        dialog.SubViews.OfType<Terminal.Gui.Views.Label>().Single(label => label.Text == "Title");
+
+    [Fact]
+    public void Focus_goes_back_to_the_title_from_the_description_and_typing_one_clears_the_mark()
+    {
+        using var dialog = Open();
+        dialog.Description.SetFocus();
+
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.True(dialog.IdeaTitle.HasFocus);
+        dialog.IdeaTitle.Text = "Remember my lane";
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(SchemeNames.Error, TitleLabel(dialog).SchemeName);
     }
 
     [Fact]

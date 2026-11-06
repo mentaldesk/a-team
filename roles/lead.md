@@ -176,12 +176,10 @@ For each Dependabot PR your prompt names:
   Where the contributor docs say the dependency carries the product's conventions, like a style
   guide's library, look for rules that are new or changed.
 - For each change the product should adopt and doesn't follow yet, file an Idea as in `discover`
-  below, naming the PR under **Evidence**. If the update needs code changes before it builds, say
-  so in the Idea: that work ships inside it.
+  below, naming the PR under **Evidence**. The PR never waits on those Ideas. If the update needs
+  code changes before it builds, leave that out of them: the Dev makes the PR itself green.
 - Then `a-team board {{team}} comment lead <pr> <file>`, listing the Ideas you filed, or saying
-  there's nothing to adopt.
-- Then `a-team board {{team}} add lead <pr> "In review"`, so the stakeholder can merge it from
-  Review. Leave the PR itself to them.
+  there's nothing to adopt. Leave the PR itself alone: once it's green, your comment lets it merge by itself.
 
 ### 5. Recommend a rank for each Idea
 

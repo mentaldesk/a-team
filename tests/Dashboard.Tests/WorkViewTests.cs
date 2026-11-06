@@ -828,6 +828,81 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void A_Dependabot_PR_with_the_Dev_is_counted_under_Review_and_never_shown_in_it()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new WaitingItem(653, "Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "In progress", "https://github.com/x/pull/653", "a-team", "dev",
+            "CI failing", Pr: 653, Trouble: "CI failing", Unready: "CI failing", Base: "main", Dependency: true)]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[3];
+        Assert.Equal("Review · 0", review.Title);
+        Assert.Equal("1 with the Dev: PR #653 (CI failing)", review.Summary);
+    }
+
+    [Fact]
+    public void A_Dependabot_PR_the_Dev_cant_make_build_is_in_Blocked_with_the_Devs_reason()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new WaitingItem(653, "Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "Ready", "https://github.com/x/pull/653", "a-team", "you",
+            "asked you", PrUrl: "https://github.com/x/pull/653", Question: "Can't build: it needs an AgentSpec.", Dependency: true, HeldBy: "dev")]);
+        LayOut(view, 120, 20);
+
+        var blocked = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
+        Assert.Equal("Blocked · 1", blocked.Title);
+        Assert.Equal(["PR #653  Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "dev · Can't build: it needs an AgentSpec."], blocked.CardText);
+        Assert.Equal("", view.Lanes[0].Columns[3].Summary);
+    }
+
+    [Fact]
+    public void A_Dependabot_PR_the_Dev_cant_make_build_shows_its_whole_reason_at_any_width()
+    {
+        using var view = Open(["a-team"]);
+        const string reason = "Can't build: AssistantPane's constructor now needs an AgentSpec the dashboard can't make yet. "
+            + "I tried a stub, and the tests fail on it. Close it, or wait for tui-style-guide#130?";
+        view.Show([StuckBump(653, reason), Waiting[2]]);
+
+        foreach (var width in new[] { 120, 80, 40 })
+        {
+            LayOut(view, width, 20);
+
+            var blocked = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
+            var rows = blocked.CardText.Skip(1).ToList();
+            Assert.True(rows.Count > 1);
+            Assert.Equal($"dev · {reason}".Replace(" ", ""), string.Concat(rows).Replace(" ", ""));
+            Assert.Equal(blocked.Nodes, rows.Count + 1);
+            Assert.True(view.Lanes[0].Rows >= blocked.Nodes);
+        }
+    }
+
+    [Fact]
+    public void Down_walks_every_row_of_a_stuck_Dependabot_PRs_reason_and_narrowing_keeps_the_selection_on_it()
+    {
+        using var view = Open(["a-team"]);
+        view.Show([StuckBump(653, "Can't build: it needs an AgentSpec the dashboard can't make yet. Close it, or wait for the guide?")]);
+        LayOut(view, 40, 20);
+        view.FocusFirstCard();
+        var blocked = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
+
+        for (var row = 0; row < blocked.Nodes - 1; row++)
+            view.MoveCard(+1);
+
+        Assert.Equal(blocked.Nodes - 1, blocked.Index);
+        Assert.Equal("https://github.com/x/pull/653", view.SelectedUrl);
+
+        LayOut(view, 120, 20);
+
+        Assert.True(blocked.Selected is { IsPr: true });
+        Assert.Equal(653, view.Selected?.Number);
+    }
+
+    private static WaitingItem StuckBump(int number, string reason) =>
+        new(number, "Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "Ready", $"https://github.com/x/pull/{number}", "a-team", "you",
+            "asked you", PrUrl: $"https://github.com/x/pull/{number}", Question: reason, Dependency: true, HeldBy: "dev");
+
+    [Fact]
     public void Review_sums_up_what_the_Dev_is_still_fixing_under_its_cards_and_counts_only_the_rest()
     {
         using var view = Open(["a-team"]);

@@ -216,7 +216,8 @@ next board command with a line saying so, and the next pass carries on from the 
 nothing for you to do.
 A role whose check for work fails is the same: two passes in a row give one red line, as in
 `a-team dev: triggers failed: gh: connection reset`, and `a-team dev: triggers working again` once
-it passes. `PgUp`, `PgDn`, `Home` and `End` scroll it.
+it passes. A dependency bump it merges has its own line, as in
+`a-team: PR #653 (Bump MentalDesk.Tui from 0.5.2 to 0.6.0): merged`. `PgUp`, `PgDn`, `Home` and `End` scroll it.
 
 Its title says what is driving the teams: the a-team the dispatcher runs and its version, with the
 countdown to its next pass, as in `dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12`.
@@ -242,4 +243,5 @@ countdown alone. The status bar says what it started, or `Pass done: nothing to 
 **Settings → Overseer** has a field for each column. Put a number and a unit in one, as in `30m`,
 `2h`, `3d` or `2w`, and a card that stays in that column longer has its age drawn in amber. A
 blank field is no limit, and a column without one never highlights. Settings won't keep an entry it
-can't read, and says which column it's in.
+can't read: **Keep** opens this page instead, turns the name of every such column red and moves you to the
+first, and the foot says which column you're on, how to write a limit, and how many more there are.

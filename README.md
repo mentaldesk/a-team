@@ -117,7 +117,8 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   Pitched or Exploring, so the stakeholder always has a pitch to decide on.
 - **Dependency updates.** A Dependabot PR the Lead hasn't commented on starts a Lead run. It
   reads what the new version brings, files an Idea for each change the product should adopt (a
-  style guide's new rule, say), and lists them on the PR, then puts it in Review in Work. Merging it stays yours.
+  style guide's new rule, say), and lists them on the PR. Once its CI passes, the dispatcher merges it; while
+  CI fails on jobs that pass on the default branch, it's the Dev's to make green.
 - **Feedback is never too old to start a run.** The two-minute check reads the last day of
   comments repo-wide, so every `dispatch.sweepEvery` minutes (30 by default) a role's own items
   are read in full instead, however old the comments on them are. The gap is elapsed time, not
