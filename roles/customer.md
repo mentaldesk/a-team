@@ -28,8 +28,15 @@ While it's open, add to it: commit to its branch, and add a line to its descript
 
 ## Each run
 
-If a worktree on `docs/customer-lead` or `docs/customer-lead-proposal` is left over from a PR that
-has merged, remove it and its local branch first, untracked files and all.
+Run `a-team board {{team}} clean customer` first, from outside any worktree. It removes a worktree
+on `docs/customer-lead` or `docs/customer-lead-proposal` that's finished, and says why it left any
+other. Never remove one or its branch any other way. Name each one it left, and why, in your summary.
+
+If it left one because its HEAD isn't the merged PR's last commit, because of changed tracked files, or
+because the branch has no PR, an earlier run didn't finish. Carry on from it, not afresh: in that
+worktree commit what's changed, merge `origin/<default branch>`, push, and open a new PR from that
+branch, as below for a docs PR or a proposal, whichever the branch is. If that leaves nothing to
+propose beyond `origin/<default branch>`, use it as your fresh worktree when you next need one.
 
 ### A product with no user docs
 

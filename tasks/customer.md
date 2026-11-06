@@ -10,6 +10,8 @@ I authorise you to do all of the following without asking me:
 
 - Run `a-team board {{team}} ...` to read the board, add your docs PR to it, comment on it, and record
   the docs you've checked and audited.
+- Remove finished worktrees and their local branches, including any untracked leftover files in them, with
+  `a-team board {{team}} clean customer`. Never remove a worktree or its branch any other way.
 - Create git worktrees and branches under {{workdir}}, change the product's user docs there,
   commit, and push branches other than the default branch to {{repo}}.
 - Open one docs PR on {{repo}}, ready for review, and edit its title and description.

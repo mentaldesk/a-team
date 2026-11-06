@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git worktree remove *)",
+      "Bash(git -C * worktree remove *)",
+      "Bash(git branch -D *)",
+      "Bash(git -C * branch -D *)"
+    ]
+  }
+}

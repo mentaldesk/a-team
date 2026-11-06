@@ -6309,6 +6309,279 @@ run try demo 7 --clean
 same "exit" 0 "$STATUS"
 grep -q 'Nothing to remove' "$OUT" || fail "--clean twice: '$(cat "$OUT")'"
 
+# A try of #7 left running, its `try` command staying until $TRY_WORK/go appears, so a test can act during it.
+try_while_running() {
+  try_fixture hold
+  try_gh
+  cat >"$TRY_BIN/hold" <<SH
+#!/usr/bin/env bash
+touch "$TRY_WORK/started"
+until [ -e "$TRY_WORK/go" ]; do sleep 0.1; done
+SH
+  chmod +x "$TRY_BIN/hold"
+  A_TEAM_CONFIG="$CONFIG" "$A_TEAM" try demo 7 >"$OUT.first" 2>&1 &
+  TRY_FIRST=$!
+  until [ -e "$TRY_WORK/started" ]; do sleep 0.1; done
+}
+
+case_ "a second try of a PR being tried refuses, says why in the terminal and for Work's bar, and leaves the first alone"
+try_while_running
+touch "$TRY_WORK/.try/state/7/theirs"
+A_TEAM_TRY_FAILED="$TRY_WORK/failed" run try demo 7
+same "exit" 1 "$STATUS"
+same "terminal" "a-team try: #7 is already being tried (pid $TRY_FIRST): quit that one first" "$(cat "$ERR")"
+same "for the bar" "#7 is already being tried (pid $TRY_FIRST): quit that one first" "$(cat "$TRY_WORK/failed")"
+[ -e "$TRY_WORK/.try/7/file" ] || fail "second try: the first's worktree is gone"
+[ -e "$TRY_WORK/.try/state/7/theirs" ] || fail "second try: the first's sandbox is gone"
+same "first still running" "$TRY_FIRST" "$(cat "$TRY_WORK/.try/state/7.pid")"
+
+case_ "--clean on a PR being tried refuses the same way"
+run try demo 7 --clean
+same "exit" 1 "$STATUS"
+same "terminal" "a-team try: #7 is already being tried (pid $TRY_FIRST): quit that one first" "$(cat "$ERR")"
+[ -e "$TRY_WORK/.try/7/file" ] || fail "--clean: the first's worktree is gone"
+[ -e "$TRY_WORK/.try/state/7/theirs" ] || fail "--clean: the first's sandbox is gone"
+
+case_ "the first try carries on after both, and clears up when it's quit"
+touch "$TRY_WORK/go"
+wait "$TRY_FIRST"
+same "exit" 0 "$?"
+[ ! -e "$TRY_WORK/.try/state/7.pid" ] || fail "quit: it's still marked as being tried"
+
+case_ "after a try is killed, the next try of that PR starts normally"
+try_while_running
+kill -9 "$TRY_FIRST"
+wait "$TRY_FIRST" 2>/dev/null
+touch "$TRY_WORK/go"
+rm -f "$TRY_WORK/started"
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/started" ] || fail "killed: the next try didn't run"
+[ ! -e "$TRY_WORK/.try/state/7.pid" ] || fail "killed: its record is still there"
+
+case_ "a pid another process has since been given doesn't block a try or --clean"
+try_fixture record
+try_gh
+mkdir -p "$TRY_WORK/.try/state"
+echo $$ >"$TRY_WORK/.try/state/7.pid"
+touch -t 200001010000 "$TRY_WORK/.try/state/7.pid"
+run try demo 7 --clean
+same "--clean exit" 0 "$STATUS"
+echo $$ >"$TRY_WORK/.try/state/7.pid"
+touch -t 200001010000 "$TRY_WORK/.try/state/7.pid"
+run try demo 7
+same "exit" 0 "$STATUS"
+[ -e "$TRY_WORK/ran" ] || fail "reused pid: the try didn't run"
+
+case_ "a try of the default branch refuses while one is running, naming the branch"
+try_fixture hold
+try_gh
+cat >"$TRY_BIN/hold" <<SH
+#!/usr/bin/env bash
+touch "$TRY_WORK/started"
+until [ -e "$TRY_WORK/go" ]; do sleep 0.1; done
+SH
+chmod +x "$TRY_BIN/hold"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" try demo >"$OUT.first" 2>&1 &
+TRY_FIRST=$!
+until [ -e "$TRY_WORK/started" ]; do sleep 0.1; done
+run try demo
+same "terminal" "a-team try: main is already being tried (pid $TRY_FIRST): quit that one first" "$(cat "$ERR")"
+touch "$TRY_WORK/go"
+wait "$TRY_FIRST"
+
+# --- a-team board clean -----------------------------------------------------------------------
+# A checkout from try_fixture, and a gh answering `pr list --head <branch>` with what clean_pr gave that branch.
+clean_world() {
+  try_fixture
+  CLEAN_BIN=$(mktemp -d "$WORK/cleanbin.XXXXXX")
+  cat >"$CLEAN_BIN/gh" <<SH
+#!/usr/bin/env bash
+[ ! -e "$CLEAN_BIN/fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    --head) branch=\$2; shift ;;
+    -R) repo=\$2; shift ;;
+  esac
+  shift
+done
+echo "\$repo" >>"$CLEAN_BIN/repos"
+cat "$CLEAN_BIN/\${branch//\//_}.json" 2>/dev/null || echo '[]'
+SH
+  chmod +x "$CLEAN_BIN/gh"
+  CLEAN_PATH=$CLEAN_BIN:$PATH
+}
+
+# clean_pr <branch> <number> <state> <sha> [<marker role, or "" for none>] [<jq to apply to it>]: another PR on <branch>, oldest first.
+clean_pr() {
+  local file="$CLEAN_BIN/${1//\//_}.json"
+  [ -e "$file" ] || echo '[]' >"$file"
+  jq --argjson number "$2" --arg state "$3" --arg sha "$4" --arg role "${5-dev}" "
+    [{number: \$number, state: \$state, headRefOid: \$sha, isCrossRepository: false, author: {login: \"app/demo-app\"},
+      body: (if \$role == \"\" then \"By hand\" else \"Does it\n<!-- a-team:\(\$role) -->\" end)} | ${6:-.}] + ." "$file" >"$file.new" &&
+    mv "$file.new" "$file"
+}
+
+# clean_tree <slug> <branch>: a worktree on a new <branch> from origin/main; its HEAD in TREE_HEAD.
+clean_tree() {
+  git -C "$CHECKOUT" worktree add -q "$TRY_WORK/$1" -b "$2" origin/main 2>/dev/null
+  TREE_HEAD=$(git -C "$TRY_WORK/$1" rev-parse HEAD)
+}
+
+clean() { PATH=$CLEAN_PATH run board "$@" clean "$CLEAN_ROLE"; }
+branches() { git -C "$CHECKOUT" branch --format='%(refname:short)' | grep -v '^main$'; }
+
+case_ "clean removes a merged PR's worktree and branch, at its last commit with no tracked changes, untracked files and all"
+clean_world
+CLEAN_ROLE=dev
+clean_tree finished feat/finished
+clean_pr feat/finished 11 MERGED "$TREE_HEAD"
+touch "$TRY_WORK/finished/build-output"
+clean demo
+same "exit" 0 "$STATUS"
+[ ! -e "$TRY_WORK/finished" ] || fail "merged and clean: the worktree is still there"
+same "branches" "" "$(branches)"
+grep -q 'Removed .*finished: #11 has merged' "$OUT" || fail "merged and clean: '$(cat "$OUT")'"
+same "asked" mentaldesk/demo "$(cat "$CLEAN_BIN/repos")"
+
+case_ "clean leaves a worktree whose HEAD is past the PR's last commit, and says why"
+clean_world
+clean_tree past feat/past
+clean_pr feat/past 12 MERGED "$TREE_HEAD"
+git -C "$TRY_WORK/past" -c user.email=t@example.com -c user.name=T commit -q --allow-empty -m newer
+past=$(git -C "$TRY_WORK/past" rev-parse HEAD)
+clean demo
+same "exit" 0 "$STATUS"
+[ -d "$TRY_WORK/past" ] || fail "past: it was removed"
+same "branches" feat/past "$(branches)"
+grep -q "Left .*past: its HEAD ${past:0:7} isn't #12's last commit (${TREE_HEAD:0:7})" "$OUT" || fail "past: '$(cat "$OUT")'"
+
+case_ "clean leaves a worktree with changed tracked files"
+clean_world
+clean_tree edited feat/edited
+clean_pr feat/edited 13 MERGED "$TREE_HEAD"
+echo edit >"$TRY_WORK/edited/file"
+clean demo
+[ -d "$TRY_WORK/edited" ] || fail "edited: it was removed"
+same "edit kept" edit "$(cat "$TRY_WORK/edited/file")"
+grep -q 'Left .*edited: it has 1 changed tracked file' "$OUT" || fail "edited: '$(cat "$OUT")'"
+
+case_ "clean leaves an unmerged PR's worktree, open or closed"
+clean_world
+clean_tree opened feat/opened
+clean_pr feat/opened 14 OPEN "$TREE_HEAD"
+clean_tree closed feat/closed
+clean_pr feat/closed 15 CLOSED "$TREE_HEAD"
+clean demo
+[ -d "$TRY_WORK/opened" ] || fail "open: it was removed"
+[ -d "$TRY_WORK/closed" ] || fail "closed: it was removed"
+grep -q 'Left .*opened: #14 is open' "$OUT" || fail "open: '$(cat "$OUT")'"
+grep -q 'Left .*closed: #15 was closed without merging' "$OUT" || fail "closed: '$(cat "$OUT")'"
+
+case_ "on a reused branch only the newest PR counts, and a fork's PR of the same name doesn't"
+clean_world
+clean_tree reused feat/reused
+clean_pr feat/reused 16 MERGED "$TREE_HEAD"
+clean_pr feat/reused 17 OPEN "$TREE_HEAD"
+clean_pr feat/reused 18 MERGED "$TREE_HEAD" dev '.isCrossRepository = true'
+clean demo
+[ -d "$TRY_WORK/reused" ] || fail "reused: it was removed"
+grep -q 'Left .*reused: #17 is open' "$OUT" || fail "reused: '$(cat "$OUT")'"
+
+case_ "clean touches only the role's own: not the stakeholder's, the Lead's, the other role's, or one with no branch"
+clean_world
+clean_tree mine-by-hand feat/by-hand
+clean_pr feat/by-hand 19 MERGED "$TREE_HEAD" ''
+clean_tree vision a-team/vision
+clean_pr a-team/vision 20 MERGED "$TREE_HEAD" lead
+clean_tree docs docs/customer-lead
+clean_pr docs/customer-lead 21 MERGED "$TREE_HEAD" customer
+git -C "$CHECKOUT" worktree add -q --detach "$TRY_WORK/detached" origin/main
+clean demo
+same "exit" 0 "$STATUS"
+same "said" "No worktrees of yours to clean up." "$(cat "$OUT")"
+for tree in mine-by-hand vision docs detached; do [ -d "$TRY_WORK/$tree" ] || fail "not dev's: $tree was removed"; done
+[ -d "$CHECKOUT" ] || fail "not dev's: the checkout was removed"
+
+case_ "clean customer removes its finished worktree, and leaves every other branch to the Dev"
+CLEAN_ROLE=customer
+clean_tree dev-work feat/dev-work
+clean_pr feat/dev-work 22 MERGED "$TREE_HEAD"
+clean demo
+[ ! -e "$TRY_WORK/docs" ] || fail "customer: its merged worktree is still there"
+[ -d "$TRY_WORK/dev-work" ] || fail "customer: it removed the Dev's"
+grep -q 'Removed .*docs: #21 has merged' "$OUT" || fail "customer: '$(cat "$OUT")'"
+
+case_ "clean customer names newer work on its branch, whether the newest PR has merged or there's none"
+clean_world
+clean_tree docs docs/customer-lead
+clean_pr docs/customer-lead 23 MERGED "$TREE_HEAD" customer
+git -C "$TRY_WORK/docs" -c user.email=t@example.com -c user.name=T commit -q --allow-empty -m newer
+clean_tree proposal docs/customer-lead-proposal
+clean demo
+[ -d "$TRY_WORK/docs" ] || fail "newer: it was removed"
+[ -d "$TRY_WORK/proposal" ] || fail "no PR: it was removed"
+grep -q "Left .*docs: its HEAD .* isn't #23's last commit" "$OUT" || fail "newer: '$(cat "$OUT")'"
+grep -q "Left .*proposal: there's no PR on docs/customer-lead-proposal" "$OUT" || fail "no PR: '$(cat "$OUT")'"
+
+case_ "clean treats Dependabot's merged PR as the Dev's"
+clean_world
+CLEAN_ROLE=dev
+clean_tree bump dependabot/nuget/x
+clean_pr dependabot/nuget/x 24 MERGED "$TREE_HEAD" '' '.author.login = "app/dependabot"'
+clean demo
+[ ! -e "$TRY_WORK/bump" ] || fail "Dependabot: it's still there"
+
+case_ "clean takes the Dev's worktrees of a contributed-to repo too, asking that repo, and never the clone"
+clean_world
+git clone -q "file://$TRY_ORIGIN" "$TRY_WORK/upstream-clone"
+mkdir "$TRY_WORK/upstream"
+mv "$TRY_WORK/upstream-clone" "$TRY_WORK/upstream/lib"
+jq '.contributesTo = ["other/lib"]' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+git -C "$TRY_WORK/upstream/lib" worktree add -q "$TRY_WORK/upstream/lib-change" -b feat/lib-change origin/main 2>/dev/null
+clean_pr feat/lib-change 25 MERGED "$(git -C "$TRY_WORK/upstream/lib" rev-parse origin/main)"
+clean_pr main 3 MERGED "$(git -C "$TRY_WORK/upstream/lib" rev-parse origin/main)"
+clean demo
+[ ! -e "$TRY_WORK/upstream/lib-change" ] || fail "upstream: its worktree is still there"
+[ -d "$TRY_WORK/upstream/lib" ] || fail "upstream: the clone was removed"
+same "asked" other/lib "$(sort -u "$CLEAN_BIN/repos")"
+
+case_ "clean leaves a worktree when it can't read the PRs, or this shell is in it"
+clean_world
+clean_tree here feat/here
+clean_pr feat/here 26 MERGED "$TREE_HEAD"
+touch "$CLEAN_BIN/fails"
+clean demo
+[ -d "$TRY_WORK/here" ] || fail "can't read: it was removed"
+grep -q "Left .*here: couldn't read the PRs on feat/here (gh: HTTP 502)" "$OUT" || fail "can't read: '$(cat "$OUT")'"
+rm "$CLEAN_BIN/fails"
+(cd "$TRY_WORK/here" && clean demo)
+[ -d "$TRY_WORK/here" ] || fail "in it: it was removed"
+grep -q 'Left .*here: this shell is in it' "$OUT" || fail "in it: '$(cat "$OUT")'"
+
+case_ "clean --dry-run says what it would remove and removes nothing"
+PATH=$CLEAN_PATH run board --dry-run demo clean dev
+[ -d "$TRY_WORK/here" ] || fail "dry run: it was removed"
+same "branches" feat/here "$(branches)"
+grep -q 'would remove the worktree' "$ERR" || fail "dry run: '$(cat "$ERR")'"
+grep -q '^(dry run) Removed' "$OUT" || fail "dry run: '$(cat "$OUT")'"
+
+case_ "only the Dev and the Customer lead clean up"
+for role in lead reviewer you; do
+  PATH=$CLEAN_PATH run board demo clean "$role"
+  failed "$role"
+  grep -q 'only dev and customer clean up worktrees' "$ERR" || fail "$role: '$(cat "$ERR")'"
+done
+[ -d "$TRY_WORK/here" ] || fail "other role: it was removed"
+
+case_ "the Dev and the Customer lead are told to clean up, allowed to, and can't remove a worktree any other way"
+for role in dev customer; do
+  grep -qF "a-team board {{team}} clean $role" "$ROOT/roles/$role.md" || fail "$role: not in its role"
+  grep -qF "a-team board {{team}} clean $role" "$ROOT/tasks/$role.md" || fail "$role: not in its prompt"
+  grep -qF '"Bash(git worktree remove *)"' "$ROOT/settings/$role.json" || fail "$role: no deny rule"
+  grep -q 'wrap-up' "$ROOT/roles/$role.md" "$ROOT/tasks/$role.md" && fail "$role: still told to use wrap-up"
+done
+
 case_ "a worktree left behind with nothing changed in it is replaced by a fresh one"
 try_fixture record
 try_gh
@@ -9099,6 +9372,68 @@ ended=$(date +%s)
 same "next-pass during the pass" 1800000000 "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
 left=$(($(cat "$PASS_STATE/next-pass") - ended))
 [ "$left" -ge 118 ] && [ "$left" -le 120 ] || fail "next-pass after the pass: due in ${left}s, not 120s"
+
+# overlap_first <unscheduled>: starts a pass that stays in its first jq until $OVERLAP/go appears; its pid in OVERLAP_PID.
+overlap_first() {
+  OVERLAP=$(mktemp -d "$WORK/stubs.XXXXXX")
+  printf '#!/usr/bin/env bash\ntouch "%s/started"\nuntil [ -e "%s/go" ]; do sleep 0.1; done\nexec %s "$@"\n' \
+    "$OVERLAP" "$OVERLAP" "$(command -v jq)" >"$OVERLAP/jq"
+  chmod +x "$OVERLAP/jq"
+  PATH="$OVERLAP:$PATH" A_TEAM_UNSCHEDULED=$1 A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" &
+  OVERLAP_PID=$!
+  until [ -e "$OVERLAP/started" ]; do sleep 0.1; done
+}
+
+# overlap_second <unscheduled>: a second pass, with a jq saying if it ever got as far as a team.
+overlap_second() {
+  SECOND=$(mktemp -d "$WORK/stubs.XXXXXX")
+  printf '#!/usr/bin/env bash\ntouch "%s/reached"\nexec %s "$@"\n' "$SECOND" "$(command -v jq)" >"$SECOND/jq"
+  chmod +x "$SECOND/jq"
+  PATH="$SECOND:$PATH" A_TEAM_UNSCHEDULED=$1 A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+
+for first in '' 1; do
+  for second in 1 ''; do
+    case_ "a pass (unscheduled='$first') makes another (unscheduled='$second') stop before it reaches a team"
+    rm -f "$PASS_STATE/next-pass"
+    overlap_first "$first"
+    overlap_second "$second"
+    same "exit" 0 "$STATUS"
+    same "said" "A pass is already running." "$(cat "$OUT")"
+    [ ! -e "$SECOND/reached" ] || fail "overlap: the second pass reached a team"
+    same "still the first's" "$OVERLAP_PID" "$(cat "$PASS_STATE/pass")"
+    kill -0 "$OVERLAP_PID" || fail "overlap: the first pass stopped"
+    if [ -z "$second" ]; then
+      [ -e "$PASS_STATE/next-pass" ] || fail "overlap: launchd's countdown restarted with no next-pass"
+    else
+      [ ! -e "$PASS_STATE/next-pass" ] || fail "overlap: an off-schedule pass wrote next-pass"
+    fi
+    touch "$OVERLAP/go"
+    wait "$OVERLAP_PID"
+    [ ! -e "$PASS_STATE/pass" ] || fail "overlap: the first didn't clear its record"
+  done
+done
+
+case_ "a killed pass doesn't block the next, in either order"
+for next in '' 1; do
+  overlap_first ''
+  kill -9 "$OVERLAP_PID"
+  wait "$OVERLAP_PID" 2>/dev/null
+  touch "$OVERLAP/go"
+  same "its record" "$OVERLAP_PID" "$(cat "$PASS_STATE/pass")"
+  overlap_second "$next"
+  same "said" "" "$(cat "$OUT")"
+  [ -e "$SECOND/reached" ] || fail "killed: the next pass didn't run"
+  [ ! -e "$PASS_STATE/pass" ] || fail "killed: its record is still there"
+done
+
+case_ "a pid another process has since been given doesn't block a pass"
+echo $$ >"$PASS_STATE/pass"
+touch -t 200001010000 "$PASS_STATE/pass"
+overlap_second ''
+same "said" "" "$(cat "$OUT")"
+[ -e "$SECOND/reached" ] || fail "reused pid: the pass didn't run"
 
 # release.sh against a repo in $REL: repo.json the GraphQL view of its default branch and latest release, runs.json
 # its latest release.yml run, and each workflow it was asked to run a line of `dispatched`.
