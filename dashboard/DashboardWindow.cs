@@ -1562,7 +1562,7 @@ public sealed class DashboardWindow : Window
                     item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
                     item.Shelvable ? new ReaderShelve(_commands.KeyFor("work.notNow"), (weeks, reason) => Shelve(item, weeks, reason), shelving) : null,
                     Attaching(), _image, item.Held ? new ReaderRelease(comment => Release(item, comment)) : null,
-                    item.Fixable ? new ReaderCommand(_commands.KeyFor("work.fix"), "ask the Dev to fix", AskFix) : null),
+                    item.Fixable && ToConsider(item, body).Count > 0 ? new ReaderCommand(_commands.KeyFor("work.fix"), "ask the Dev to fix", AskFix) : null),
                 item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -1729,7 +1729,12 @@ public sealed class DashboardWindow : Window
 
     /// <summary>The item the reader is showing, or else the one selected on the board, where there's a point to ask for.</summary>
     private WaitingItem? Fixable() =>
-        (_shown ?? (_area == Area.Work ? _work.Selected : null)) is { Fixable: true } item ? item : null;
+        _shown is { } shown
+            ? shown.Fixable && _shownBody is { } body && ToConsider(shown, body).Count > 0 ? shown : null
+            : _area == Area.Work && _work.Selected is { Fixable: true } item ? item : null;
+
+    private static IReadOnlyList<string> ToConsider(WaitingItem item, IssueBody body) =>
+        Considered.Points(body.Remarks.Select(said => said.Remark), item.Pr);
 
     /// <summary>Asks which of the Reviewer's points to fix, reading its review first unless the reader already has.
     /// True once a comment is under way.</summary>
@@ -1749,7 +1754,7 @@ public sealed class DashboardWindow : Window
 
     private bool AskFix(WaitingItem item, IssueBody body)
     {
-        var points = Considered.Points(body.Remarks.Select(said => said.Remark), item.Pr);
+        var points = ToConsider(item, body);
         if (points.Count == 0)
         {
             Reply($"couldn't read what the Reviewer left on PR #{item.Pr}", Severity.Error);
