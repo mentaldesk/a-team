@@ -40,7 +40,7 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
     public static bool Expected(TeamProblem problem) =>
         problem.Topic == "docs" && problem.Detail.Contains(" yet:", StringComparison.Ordinal);
 
-    /// <summary>The Teams page's health column.</summary>
+    /// <summary>The Teams screen's health column.</summary>
     public string Column => Problems.Count(problem => !Expected(problem)) switch
     {
         0 => "ok",
@@ -61,7 +61,7 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
         return $"{team}: {fatal.Count} {(fatal.Count == 1 ? "check" : "checks")} failed — {topics}";
     }
 
-    /// <summary>A file the Teams page couldn't read, which <c>check</c> would only say again.</summary>
+    /// <summary>A file the Teams screen couldn't read, which <c>check</c> would only say again.</summary>
     public static TeamHealth Unreadable(string problem) => new([new TeamProblem("config", problem)]);
 
     /// <summary>The problem lines <c>check</c> printed. Where it failed without printing any, its failure is the one.</summary>

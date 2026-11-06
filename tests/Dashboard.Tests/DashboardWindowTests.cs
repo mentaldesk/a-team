@@ -414,6 +414,20 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
+    public void A_finished_chord_is_off_the_status_bar_before_its_command_opens_anything()
+    {
+        using var window = Open(agents: Agents(4));
+        string? said = null;
+        window.Commands.Register("opens.dialog", "Opens a dialog", () => said = window.Status.Says, chord: "Ctrl+G Z");
+
+        window.NewKeyDownEvent(Key.G.WithCtrl);
+        window.NewKeyDownEvent(new Key('z'));
+
+        Assert.NotNull(said);
+        Assert.NotEqual("Ctrl+G…", said);
+    }
+
+    [Fact]
     public void A_key_that_finishes_no_chord_cancels_it_says_so_and_does_nothing_else()
     {
         using var window = Open(agents: Agents(4));
@@ -463,10 +477,10 @@ public class DashboardWindowTests : IDisposable
         Assert.Equal(
             [
                 ("view.work", "Ctrl+G W"), ("view.overseer", "Ctrl+G O"), ("assistant", "Ctrl+G A"),
-                ("work.team", "Ctrl+G T"), ("work.whatsNew", "Ctrl+G N"), ("log.toolCalls", "Ctrl+T T"), ("work.mine", "Ctrl+T M"),
+                ("teams", "Ctrl+G T"), ("work.team", ""), ("work.whatsNew", "Ctrl+G N"), ("log.toolCalls", "Ctrl+T T"), ("work.mine", "Ctrl+T M"),
                 ("commands", "Ctrl+E"), ("settings", "Ctrl+,"), ("work.new", "Ctrl+N"), ("quit", "Ctrl+Q"), ("assistant.clear", "Ctrl+L"),
             ],
-            new[] { "view.work", "view.overseer", "assistant", "work.team", "work.whatsNew", "log.toolCalls", "work.mine", "commands",
+            new[] { "view.work", "view.overseer", "assistant", "teams", "work.team", "work.whatsNew", "log.toolCalls", "work.mine", "commands",
                 "settings", "work.new", "quit", "assistant.clear" }.Select(id => (id, window.Commands.KeysFor(id))));
     }
 
@@ -836,7 +850,7 @@ public class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void Teams_opens_Settings_on_its_Teams_page_and_nothing_pauses_a_team_from_outside_it()
+    public void Teams_and_New_team_are_commands_and_nothing_pauses_a_team_from_outside_them()
     {
         using var window = Open(agents: Agents(4));
 

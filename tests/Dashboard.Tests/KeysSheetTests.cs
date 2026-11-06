@@ -31,7 +31,7 @@ public class KeysSheetTests : IDisposable
             [
                 ("→", "Select the column to the right"), ("←", "Select the column to the left"),
                 ("↓", "Select the card below"), ("↑", "Select the card above"),
-                ("Ctrl+PgDn", "Next team"), ("Ctrl+PgUp", "Previous team"), ("Ctrl+G T", "Go to team…"),
+                ("Ctrl+PgDn", "Next team"), ("Ctrl+PgUp", "Previous team"),
                 ("Ctrl+T M", "Show only what's your move"), ("F5", "Read what's waiting again"), ("1", "Go to a-team"),
             ],
             Rows(here));
@@ -115,7 +115,7 @@ public class KeysSheetTests : IDisposable
 
         Assert.Equal("Everywhere", everywhere.Heading);
         Assert.Equal(["View", "Go", "Help"], everywhere.Groups.Select(group => group.Heading));
-        Assert.Equal([("Ctrl+,", "Settings"), ("Ctrl+Q", "Quit")], Rows(everywhere.Groups[0]));
+        Assert.Equal([("Ctrl+,", "Settings"), ("Ctrl+G T", "Teams"), ("Ctrl+Q", "Quit")], Rows(everywhere.Groups[0]));
         Assert.Equal([("Ctrl+G W", "Work"), ("Ctrl+G O", "Overseer")], Rows(everywhere.Groups[1]));
         Assert.Equal([("F1", "Show keys"), ("Ctrl+E", "Commands")], Rows(everywhere.Groups[2]));
         Assert.DoesNotContain(everywhere.Groups.SelectMany(group => group.Rows), row => row.Label == "Next team");

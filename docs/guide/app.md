@@ -30,7 +30,7 @@ says so in a line, with the command that signs you in.
 
 The keys come in TuiCode's families. `Ctrl+G` then a letter goes somewhere: `Ctrl+G W`
 Work, `Ctrl+G O` Overseer, `Ctrl+G A` the Assistant, `Ctrl+G I` the panel for what's selected in
-Overseer, `Ctrl+G T` a team and `Ctrl+G N` what's new. `Ctrl+T` then a letter turns something on or off: `Ctrl+T T` tool calls and
+Overseer, `Ctrl+G T` [Teams](teams.md) and `Ctrl+G N` what's new. `Ctrl+T` then a letter turns something on or off: `Ctrl+T T` tool calls and
 `Ctrl+T M` only your moves. Everyday commands are a Ctrl key: `Ctrl+E` Commands, `Ctrl+,` Settings,
 `Ctrl+N` a new idea, `Ctrl+Q` quit, and `Ctrl+L` a new conversation in the Assistant. The keys for a
 selected card or log line, like `a` to accept or `l` to copy, stay single letters.
@@ -86,9 +86,10 @@ own clipboard instead, with the same terminal setup, and the status bar says
 
 A Mac terminal keeps `Cmd` to itself, so out of the box `Cmd+←` and the rest do nothing in the app.
 In iTerm2, kitty or WezTerm, **Settings → Terminal** fixes that: it names the terminal you're in and
-whether the dashboard's Mac keys are *Not installed*, *Installed* or *Out of date*. **Install** adds
-them, **Update** brings them up to date after an a-team upgrade changes them, and **Remove** takes
-them away. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
+whether the dashboard's Mac keys are *Not installed*, *Installed* or *Out of date*. Tick
+**Cmd and Option keys** and press `Ctrl+Enter` to install them, or to bring them up to date after an
+a-team upgrade changes them; clear it and press `Ctrl+Enter` to take them away. `Esc` leaves them as
+they were. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
 and the file it goes in, with **Copy** beside it. After adding it, reload kitty's config with
 `Ctrl+Cmd+,` (kitty reads it only then), or in WezTerm reopen the dashboard.
 

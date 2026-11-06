@@ -1,23 +1,25 @@
 # Teams
 
-Your teams are in **Settings → Teams**: `Ctrl+,` opens Settings, and **Teams** in Commands (`Ctrl+E`)
-opens it on that page. `Ctrl+G` in Settings opens this page.
+Your teams have a screen of their own: `Ctrl+G T`, **View → Teams** or **Teams** in Commands
+(`Ctrl+E`) opens it, and **New team** in Commands opens it on the form for a new one. `Ctrl+G` in Teams or Settings opens this page.
 
-## The Teams page
+## The Teams screen
 
 A row per team: its name, its repo, whether it's `working`, `paused` or has its `budget reached`,
-what its runs have cost **Today**, since midnight, and its health.
+what its runs have cost **Today**, since midnight, and its health. Each action is a button at the
+foot with its key on it, and happens straight away, saying so on the line beneath.
 
 | Key | Does |
 |---|---|
-| `p` | Pause the selected team, or start it working again. It happens straight away |
+| `p` | Pause the selected team, or start it working again |
 | `Enter` | Open the team's settings |
-| `x` | Remove the team |
+| `x` | Remove the team, once you've said yes |
 | `n` | Start a new team |
+| `Esc` | Close Teams |
 
 ## Starting a team
 
-`n` on the Teams page, or **New team** in Commands, opens the form for a new team. Fill it in and
+`n` in Teams, or **New team** in Commands, opens the form for a new team. Fill it in and
 press `Ctrl+Enter` (**Create**). A-Team writes the team's file, paused, then offers in turn to:
 
 1. Clone the repo.
@@ -128,7 +130,7 @@ the rows go, but the first page is kept for when you tick it again.
 
 ## Pausing a team
 
-A paused team picks up no new work, and a run already going finishes. `p` on the Teams page, or the
+A paused team picks up no new work, and a run already going finishes. `p` in Teams, or the
 team's own form, pauses it and starts it again. To pause one role and not the other, use `h` on its
 team's panel in [Overseer](overseer.md#pausing-a-role).
 
@@ -166,9 +168,13 @@ it found.
 
 ## The rest of Settings
 
-Settings is a page at a time: the pages down the left, the one you picked on the right. `Tab` goes
-into the page and back out. `Ctrl+Enter` keeps what you picked, on any page, and `Esc` throws it
-away. `F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
+Settings (`Ctrl+,`) holds the app's own preferences, a page at a time: the pages down the left, the
+one you picked on the right. `Ctrl+PgDn` and `Ctrl+PgUp` go to the next and previous page, round
+from the last to the first, and clicking a page opens it. Nothing you change is kept until
+`Ctrl+Enter` (**Keep**); `Esc` (**Cancel**) puts back everything you changed, on every page. A page
+with changes you haven't kept shows `•` after its name, and loses it when you put them back. A
+setting that isn't at its default says what the default is on its row, like `(default: Midnight)`.
+`F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
 
 - **Theme**: Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode.
 - **Keyboard Shortcuts**: a row per key, with the command it runs and where it works: *Everywhere*,
@@ -182,8 +188,8 @@ away. `F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
   cards wear. *Automatic* names what it decided for the terminal you're in, and decides again every
   time the app starts. *Nerd Font* and *Unicode* are drawn in their own glyphs, so pick the one that
   isn't boxes. The app previews each behind Settings as you move.
-- **Terminal**: the [Mac keys](app.md#mac-keys), installed, updated and removed straight away,
-  like pausing a team.
+- **Terminal**: the [Mac keys](app.md#mac-keys). Ticking or clearing the box changes nothing until
+  you keep Settings, which installs, updates or removes them.
 - **Overseer**: how long a card may stay in each column before [Overseer](overseer.md) highlights
   it.
 

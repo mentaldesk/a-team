@@ -212,7 +212,7 @@ public class AppMenuTests : IDisposable
 
         Assert.Equal(
             ["_Show the session full-screen", "_Fold the lane", "Open on _GitHub", "_Read the boards that failed again", "R_efresh", "_Next team",
-                "_Previous team", "Open team's _board on GitHub", "_Dispatcher log", "De_cisions…", "Se_ttings", "_Quit"],
+                "_Previous team", "Open team's _board on GitHub", "_Dispatcher log", "De_cisions…", "Sett_ings", "_Teams", "_Quit"],
             Under(window, View(window)).Select(id => Item(window, id).Title));
     }
 
@@ -299,6 +299,21 @@ public class AppMenuTests : IDisposable
         Assert.Equal(["_Ab", "_Ba", "Ab"], Titles(("Ab", Key.Empty), ("Ba", Key.Empty), ("Ab", Key.Empty)));
     }
 
+    [Theory]
+    [InlineData(Area.Work)]
+    [InlineData(Area.Overseer)]
+    public void View_ends_with_the_app_wide_items_under_a_line_and_Quit_under_another(Area area)
+    {
+        using var window = Open(area);
+        window.Refresh();
+
+        var views = View(window).PopoverMenu!.Root!.SubViews.ToList();
+        var shown = views.Select(view => view is Line ? AppMenu.Separator : window.MenuItems.Single(item => item.Item == view).Id).ToList();
+
+        Assert.True(shown.IndexOf(AppMenu.Separator) > 0);
+        Assert.Equal([AppMenu.Separator, "decisions", "settings", "teams", AppMenu.Separator, "quit"], shown.TakeLast(6));
+    }
+
     [Fact]
     public void Go_sits_after_View_with_the_screens_and_the_Assistant_then_team_and_what_s_new_under_a_line_each_with_its_chord()
     {
@@ -308,7 +323,7 @@ public class AppMenuTests : IDisposable
         Assert.Equal(["_View", AppMenu.Go], window.Menus.Take(2).Select(menu => menu.Title));
         Assert.Equal(["view.work", "view.overseer", "assistant", "view.details"], Above(window, Go(window)));
         Assert.Equal(["work.team", "work.whatsNew"], Below(window, Go(window)));
-        Assert.Equal(["Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "Ctrl+G T", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
+        Assert.Equal(["Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
         Assert.DoesNotContain(Under(window, View(window)), id => id is "view.work" or "view.overseer" or "view.details" or "assistant" or "work.team" or "work.whatsNew");
     }
 

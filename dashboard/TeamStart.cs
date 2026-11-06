@@ -75,7 +75,7 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
 
     /// <summary>Offers each step the new team still needs, in order, through <paramref name="ask"/>, calling
     /// <paramref name="writeVision"/> at the end where you chose to write its vision now. Returns the line to leave on the
-    /// Teams page, or null where Back went past the first step, to the form.</summary>
+    /// Teams screen, or null where Back went past the first step, to the form.</summary>
     public (string Message, Schemes Scheme)? Follow(TeamConfigs teams, string team, Func<Step, Answer> ask, Action? writeVision = null)
     {
         string Checkout() => teams.Settings(team).CheckoutPath;

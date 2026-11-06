@@ -42,9 +42,9 @@ esac
 CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG"
 [ "$ROLE" != customer ] || team_roles "$CONFIG" | grep -x customer >/dev/null ||
-  die "$TEAM has no Customer lead: turn it on in Settings → Teams"
+  die "$TEAM has no Customer lead: turn it on in Teams"
 [ "$ROLE" != reviewer ] || team_roles "$CONFIG" | grep -x reviewer >/dev/null ||
-  die "$TEAM has no Reviewer: turn it on in Settings → Teams"
+  die "$TEAM has no Reviewer: turn it on in Teams"
 
 if [ -n "$TASK" ]; then
   [ "$ROLE" = dev ] || [ "$ROLE" = reviewer ] || die "only a Dev or Reviewer run is for a task"

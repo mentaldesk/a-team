@@ -35,7 +35,7 @@ release, whenever you like: a run already going finishes on the release it start
 
 ## Starting a team
 
-In the app, open **Settings → Teams** and press `n`: the [guide](docs/guide/teams.md#starting-a-team)
+In the app, open **Teams** from Commands (`Ctrl+E`) and press `n`: the [guide](docs/guide/teams.md#starting-a-team)
 takes it from there.
 
 The app opens only once there's a team, so your first one starts by hand:
@@ -54,8 +54,8 @@ The app opens only once there's a team, so your first one starts by hand:
    the command that runs the product from a worktree, and `roles` to turn on the Customer lead or
    the Reviewer. Leave `app` as `null`: the next step fills it in. `a-team teams` lists the teams it finds. Check the team with
    `a-team board <name> check`: it prints one line per problem it finds, and exits 1 if the team
-   can't run, or 2 if it can but something's missing, like its vision or a label. The Teams page in
-   Settings shows the same problems, and F12 (or *Repair*) in a team's form sets its board up again.
+   can't run, or 2 if it can but something's missing, like its vision or a label. The app's Teams
+   screen shows the same problems, and F12 (or *Repair*) in a team's form sets its board up again.
 4. Give the team its own GitHub App (next section). The dispatcher won't run the team without one.
 5. Write the team's vision with `a-team vision <name>`, or **Write the vision with me** in the
    app's Commands: an interview that opens it as a draft PR for you to merge. Skip it and the Lead
