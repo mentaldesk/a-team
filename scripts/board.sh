@@ -3504,7 +3504,7 @@ case "$CMD" in
     reasons=()
     recent='[]'
     case "$role" in lead | dev) recent=$(recent_comments) ;; esac
-    tasks='[]' chores=() ready='' items=() card='' main=''
+    tasks='[]' chores=() ready='' readyCount=0 items=() card='' main=''
     # task_reason <n> <title> <reason>: a reason the Dev has to start a run on task #n.
     task_reason() {
       reasons+=("$3")
@@ -3596,6 +3596,7 @@ case "$CMD" in
       limit=$(cfg .wip.worktrees)
       startable=$(jq "[.[] | select($STARTABLE)]" <<<"$all")
       first=$(jq -r '.[0].number // empty' <<<"$startable")
+      readyCount=$(jq length <<<"$startable")
       fix=$(jq -r "[.[] | select($FIX)][0].number // empty" <<<"$startable")
       if [ -n "$fix" ] && [ "$used" -lt $((limit + 1)) ]; then
         ready=$fix
@@ -3726,12 +3727,12 @@ case "$CMD" in
       { [ "$exploring" -lt "$(cfg .wip.exploring)" ] && [ "$ideas" -gt 0 ]; } ||
         [ "$found" -lt "$(cfg .wip.ideas)" ] && creative=true
     fi
-    jq -n --argjson creative "$creative" --arg role "$role" --argjson tasks "$tasks" --arg ready "$ready" \
+    jq -n --argjson creative "$creative" --arg role "$role" --argjson tasks "$tasks" --arg ready "$ready" --argjson readyCount "$readyCount" \
       --argjson chores "$(jq -n '$ARGS.positional' --args ${chores[@]+"${chores[@]}"})" \
       --argjson items "$(jq -n '$ARGS.positional | map(tonumber)' --args ${items[@]+"${items[@]}"})" --arg card "$card" '
       {reasons: $ARGS.positional, creative: $creative}
       + if $role == "dev" or $role == "reviewer"
-        then {tasks: $tasks, ready: (if $ready == "" then null else $ready | tonumber end), chores: $chores}
+        then {tasks: $tasks, ready: (if $ready == "" then null else $ready | tonumber end), $readyCount, chores: $chores}
         else {items: $items, card: (if ($items | length) == 1 then $items[0] elif $card != "" then $card | tonumber else null end)} end' \
       --args "${reasons[@]+"${reasons[@]}"}"
     ;;

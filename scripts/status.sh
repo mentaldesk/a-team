@@ -85,6 +85,7 @@ for team in $(team_names); do
       echo "never run"
       continue
     fi
+    stuck_runs "$dir" | while IFS= read -r says; do echo "$team $role: stuck: $says"; done
     sed 's/^/  why: /' "$dir/last-reasons" 2>/dev/null
     if [ -f "$dir/latest.jsonl" ]; then
       jq -r 'select(.type == "result")

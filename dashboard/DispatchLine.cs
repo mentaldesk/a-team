@@ -24,12 +24,15 @@ public static class DispatchLine
     {
         var said = Said(line);
         if (said.StartsWith("triggers failed:", StringComparison.Ordinal) || said.StartsWith("killed run", StringComparison.Ordinal)
-            || said.StartsWith("failed:", StringComparison.Ordinal))
+            || said.StartsWith("failed:", StringComparison.Ordinal) || IsStuck(said))
             return LogLineKind.DispatchFailed;
         return said.StartsWith("would start:", StringComparison.Ordinal)
             ? LogLineKind.DispatchSkipped
             : LogLineKind.Prose;
     }
+
+    private static bool IsStuck(string said) =>
+        said.StartsWith("run ", StringComparison.Ordinal) && said.Contains(" is stuck", StringComparison.Ordinal);
 
     /// <summary>Whether the line says a pass started a run, or would have in a dry run.</summary>
     internal static bool Starts(string line)

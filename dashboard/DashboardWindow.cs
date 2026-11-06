@@ -1105,10 +1105,13 @@ public sealed class DashboardWindow : Window
             _limits,
             running.SelectMany(watch => watch.Working.Select(number => (Card: (watch.Team, number), watch.Role)))
                 .DistinctBy(worked => worked.Card).ToDictionary(worked => worked.Card, worked => worked.Role),
-            running.GroupBy(watch => watch.Team).ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
+            running.Where(watch => watch.Status != RoleStatus.Stuck).GroupBy(watch => watch.Team)
+                .ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
             (team, number) => _work.Items.FirstOrDefault(item => item.Team == team && item.Number == number))
         {
             Holding = Holds.Holders(_work.Items),
+            Stuck = _watches.Where(watch => watch.Status == RoleStatus.Stuck).GroupBy(watch => watch.Team)
+                .ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
         });
     }
 
@@ -1179,7 +1182,8 @@ public sealed class DashboardWindow : Window
         var team = _overseer.Board.Selected!.Value.Team;
         _team.Show(team,
             [.. _watches.Where(watch => watch.Team == team).Select(watch => (watch.Role, Icons.Field(Icons.For(watch.Status), _drawn), watch.Line))],
-            _checks?.Fatal(team) is { } problem ? RoleWatch.Misconfigured(problem) : null);
+            _checks?.Fatal(team) is { } problem ? RoleWatch.Misconfigured(problem) : null,
+            [.. _watches.Where(watch => watch.Team == team && watch.Status == RoleStatus.Stuck).Select(watch => (watch.Role, watch.Line))]);
         _team.ShowHint(TeamHint());
         if (!_sessionFull)
             return;

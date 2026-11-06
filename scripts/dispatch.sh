@@ -61,14 +61,10 @@ dispatch() {
 
   $DRY_RUN || prune_releases "$dir"
   live=$(live_runs "$dir")
-  while read -r pid at _; do
-    [ -n "$pid" ] || continue
-    [ $((now - at)) -gt $(($(cfg '.dispatch.maxRuntime // 120') * 60)) ] && kill "$pid" &&
-      log "$team $role: killed run $pid after $(((now - at) / 60)) minutes" && run_outcome "$team" "$role" "$pid" killed
-  done <<<"$live"
-  $held && return
   limit=1
   [ "$role" = dev ] && limit=$(cfg '.wip.devs // 1')
+  check_runs
+  $held && return
   [ "$(grep -c . <<<"$live")" -lt "$limit" ] || return
   jq -e --arg role "$role" '.dispatch.hold // [] | index($role)' "$config" >/dev/null 2>&1 && return
 
@@ -102,7 +98,7 @@ dispatch() {
   fi
 
   # Tasks that already have a live run never get a second one.
-  picked+="$(cut -d' ' -f3 <<<"$live" | tr '\n' ' ')"
+  picked+="$(cut -d' ' -f4 <<<"$live" | tr '\n' ' ')"
   chores=$(jq -r '.chores[]?' <<<"$triggers")
   while [ $(($(grep -c . <<<"$live") + started)) -lt "$limit" ]; do
     task=$(pick_task "$team" "$dir" "$triggers") || return
@@ -120,19 +116,114 @@ dispatch() {
   done
 }
 
-# live_runs <dir>: "<pid> <started> <task>" for each of the role's runs still going, oldest first. Removes the pid file
-# of each run that has ended, before the OS gives its pid to another process.
+# check_runs: sends the kill to each of the role's runs past its limit, logging that once, and keeps <dir>/stuck: the
+# runs still alive on the pass after their kill, or on a task finished for more than 30 minutes. It only reports.
+check_runs() {
+  local maximum killed was pid at file number closed why says over waiting holds
+  local sent='' stuck='[]' count=0 said="$dir/${prefix}killed" marker="$dir/${prefix}stuck"
+  maximum=$(($(cfg '.dispatch.maxRuntime // 120') * 60))
+  killed=" $(cat "$said" 2>/dev/null | paste -sd ' ' -) "
+  while read -r pid at file number; do
+    [ -n "$pid" ] || continue
+    why=''
+    if [ $((now - at)) -gt "$maximum" ]; then
+      if kill "$pid" && [[ $killed != *" $pid "* ]]; then
+        log "$team $role: killed run $pid after $(((now - at) / 60)) minutes"
+        run_outcome "$team" "$role" "$pid" killed
+      fi
+      sent+="$pid"$'\n'
+      if [[ $killed == *" $pid "* ]]; then
+        over=$((now - at - maximum))
+        why="outlived its $(minutes_said $((maximum / 60))) limit"
+        says="run $pid $why by $(age_said "$over")"
+      fi
+    elif [ -n "$number" ] && closed=$(finished_at "$team" "$number") && [ $((now - (closed > at ? closed : at))) -gt 1800 ]; then
+      why="on #$number, which closed $(day_said "$closed")"
+      says="run $pid is on #$number, closed $(day_said "$closed")"
+    fi
+    [ -n "$why" ] || continue
+    count=$((count + 1))
+    stuck=$(jq -c --argjson pid "$pid" --arg file "$file" --arg says "$says" --arg why "$why" '. + [{$pid, $file, $says, $why}]' <<<"$stuck")
+  done <<<"$live"
+  if [ -n "$sent" ]; then printf '%s' "$sent" >"$said"; else rm -f "$said"; fi
+
+  was=$(jq -r '.[]?.pid' "$marker" 2>/dev/null)
+  while read -r pid; do
+    [ -z "$pid" ] || jq -e --argjson pid "$pid" 'any(.[]; .pid == $pid)' <<<"$stuck" >/dev/null ||
+      log "$team $role: run $pid no longer stuck"
+  done <<<"$was"
+  if [ "$count" -eq 0 ]; then
+    rm -f "$marker"
+    return
+  fi
+  while IFS=$'\t' read -r pid why; do
+    grep -qx "$pid" <<<"$was" || log "$team $role: run $pid is stuck: $why"
+  done < <(jq -r '.[] | [.pid, .why] | @tsv' <<<"$stuck")
+
+  if [ "$limit" -eq 1 ]; then holds="holds its only slot"; else holds="holds $count of $limit slots"; fi
+  if [ "$(grep -c . <<<"$live")" -ge "$limit" ] && waiting=$(waiting_said); then holds+=", $waiting"; fi
+  jq -c --arg holds "$holds" 'map({pid, file, says: "\(.says) · \($holds)"})' <<<"$stuck" >"$marker.$$" && mv "$marker.$$" "$marker"
+}
+
+# waiting_said: how much work is waiting for this role's slots, as "3 PRs waiting". Fails if none is, or it can't tell.
+waiting_said() {
+  local triggers n noun=thing
+  triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" 2>/dev/null) || return 1
+  case $role in
+    reviewer) noun=PR ;;
+    dev) noun=task ;;
+  esac
+  n=$(jq -r --arg live "$(cut -d' ' -f4 <<<"$live" | paste -sd ' ' -)" '($live | split(" ")) as $on
+    | if has("tasks") then ([.tasks[]? | select((.number | tostring) as $n | $on | index($n) | not)] | length) + (.readyCount // 0)
+      else .reasons | length end' <<<"$triggers") || return 1
+  [ "${n:-0}" -gt 0 ] || return 1
+  [ "$n" -eq 1 ] || noun+=s
+  echo "$n $noun waiting"
+}
+
+# finished_at <team> <n>: when the board's record says #<n> closed or went Done, in epoch seconds. Fails if it doesn't say so.
+finished_at() {
+  local at
+  [ -f "$STATE/history.db" ] || return 1
+  at=$(history_sql "SELECT strftime('%s', since) FROM board WHERE team = $(sql "$1") AND item = $2
+    AND (status = 'Done' OR json_extract(content, '$.shut'));" 2>/dev/null) || return 1
+  [[ $at =~ ^[0-9]+$ ]] && echo "$at"
+}
+
+# minutes_said <minutes>: 2h, 1h30m or 45m.
+minutes_said() {
+  if [ $(($1 % 60)) -ne 0 ] && [ "$1" -gt 60 ]; then echo "$(($1 / 60))h$(($1 % 60))m"
+  elif [ "$1" -ge 60 ]; then echo "$(($1 / 60))h"
+  else echo "$1m"
+  fi
+}
+
+# age_said <seconds>: in the largest unit, as Overseer's chips say it: 12m, 3h, 19d.
+age_said() {
+  if [ "$1" -lt 3600 ]; then echo "$(($1 / 60))m"
+  elif [ "$1" -lt 86400 ]; then echo "$(($1 / 3600))h"
+  else echo "$(($1 / 86400))d"
+  fi
+}
+
+# day_said <epoch seconds>: that day, as 29 Oct.
+day_said() { LC_ALL=C date -r "$1" '+%-d %b' 2>/dev/null || LC_ALL=C date -d "@$1" '+%-d %b'; }
+
+# live_runs <dir>: "<pid> <started> <its pid file, under dir> <task or card>" for each of the role's runs still going, oldest
+# first. Removes the pid file of each run that has ended, before the OS gives its pid to another process. A run's own
+# pid file comes first: the role's follows whichever run started last.
 live_runs() {
-  local file pid seen=' ' at
-  for file in "$1/pid" "$1"/runs/*/pid; do
+  local file pid seen=' ' at from
+  for file in "$1"/runs/*/pid "$1/pid"; do
     if ! pid=$(live_pid "$file"); then
       [ -s "$file" ] && ! $DRY_RUN && rm -f "$file"
       continue
     fi
     [[ $seen == *" $pid "* ]] && continue
     seen+="$pid "
-    at=$(cat "$(dirname "$file")/last-start" 2>/dev/null || echo "$now")
-    echo "$pid $at $(jq -r '.number // empty' "$(dirname "$file")/task" 2>/dev/null)"
+    from=$(dirname "$file")
+    at=$(cat "$from/last-start" 2>/dev/null || echo "$now")
+    echo "$pid $at ${file#"$1"/} $({ cat "$from/task" || cat "$from/card"; } 2>/dev/null | jq -r '.number // empty' 2>/dev/null)"
   done | sort -k2n
 }
 
