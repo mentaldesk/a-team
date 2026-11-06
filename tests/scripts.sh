@@ -10432,5 +10432,29 @@ on_real "$INSTALLED" demo list
 same "installed exit" 0 "$STATUS"
 same "taken off" "api -X DELETE repos/mentaldesk/demo/issues/7/labels/rank%3Amedium" "$(sort -u "$BIN/unlabelled")"
 
+case_ "a worktree won't put cards back at their last moves on the real board, and the installed a-team will"
+format_board
+format_home "$INSTALLED"
+on_real "$INSTALLED" demo list
+real_status() { sqlite3 "$FORMAT_STATE/history.db" "SELECT status FROM board WHERE team = 'demo' AND item = 7;"; }
+to_repair() { sqlite3 "$FORMAT_STATE/history.db" "SELECT COUNT(*) FROM boards WHERE team = 'demo' AND repaired IS NULL;"; }
+sqlite3 "$FORMAT_STATE/history.db" "UPDATE boards SET repaired = NULL WHERE team = 'demo';"
+on_real "$SAME_FORMAT" demo list
+same "nothing to put back: exit" 0 "$STATUS"
+same "nothing to put back: left for the installed one" 1 "$(to_repair)"
+sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO events (team, item, at, who, what)
+  VALUES ('demo', 7, '2026-11-03T09:38:00Z', 'lead', 'Approved → Building');"
+on_real "$SAME_FORMAT" demo list
+failed "worktree"
+one_line "worktree"
+grep -q "would move the board forward, putting cards back at their last moves, and only the installed one ($INSTALLED/bin/a-team) may" "$ERR" ||
+  fail "worktree: '$(cat "$ERR")'"
+same "worktree moved nothing" Idea "$(real_status)"
+same "worktree left it to do" 1 "$(to_repair)"
+on_real "$INSTALLED" demo list
+same "installed exit" 0 "$STATUS"
+same "installed moved it" Building "$(real_status)"
+same "installed finished it" 0 "$(to_repair)"
+
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

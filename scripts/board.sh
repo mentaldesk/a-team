@@ -728,6 +728,10 @@ repair_last_moves() {
         | ([.events | fromjson | sort_by(.id)[] | . as $e | .what | landed | . + {who: $e.who, at: $e.at}] | last) as $m
         | select($m != null and $m.to != $from and $m.to != "Done")
         | [$n, $from, $m.to, $m.who, ($m.at | fromdate | strflocaltime("%e %b") | ltrimstr(" "))] | @tsv') || return 0
+  if ! may_move_state; then
+    [ -z "$plan" ] || refuse_move "move the board forward, putting cards back at their last moves"
+    return 0
+  fi
   now=$(sql "$(date -u +%FT%TZ)")
   while IFS=$'\t' read -r n from to who at; do
     [ -n "$n" ] || continue
