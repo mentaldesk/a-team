@@ -9230,12 +9230,14 @@ cat >"$PUBLISH_BIN/gh" <<'GH'
 #!/usr/bin/env bash
 echo "$*" >>"$FAKE_GITHUB/calls"
 case "$1 $2" in
-  "release view") [ -f "$FAKE_GITHUB/release" ] ;;
+  "release list") [ ! -f "$FAKE_GITHUB/latest" ] || cat "$FAKE_GITHUB/latest" ;;
+  "release view") [ -f "$FAKE_GITHUB/release" ] && cat "$FAKE_GITHUB/release" ;;
   "release create")
     if [ -f "$FAKE_GITHUB/release" ]; then echo "a release with the same tag name already exists" >&2; exit 1; fi
-    touch "$FAKE_GITHUB/release"
+    echo false >"$FAKE_GITHUB/release"
     ;;
   "release upload") ;;
+  "release edit") echo false >"$FAKE_GITHUB/release" ;;
   "pr list")
     case "$*" in
       *--head*) [ -f "$FAKE_GITHUB/open-pr" ] && echo 1 || echo 0 ;;
@@ -9306,6 +9308,7 @@ same "re-run exit" 0 "$STATUS"
 grep -qxF 'release upload v1.2.3 dist/demo-1.2.3-linux-x64.tar.gz --clobber' "$FAKE_GITHUB/calls" ||
   fail "upload: '$(cat "$FAKE_GITHUB/calls")'"
 grep -q '^release create' "$FAKE_GITHUB/calls" && fail "re-run tried to create the release"
+grep -q '^release edit' "$FAKE_GITHUB/calls" && fail "re-run edited a published release"
 [ "$(tap_branch)" != "$first" ] || fail "re-run left the tap branch as it was"
 same "formula" "formula 2" "$(tap_formula)"
 same "PR" demo-1.2.3 "$(cat "$FAKE_GITHUB/open-pr")"
@@ -9334,6 +9337,37 @@ sed 's/^git push /git -C "$FAKE_GITHUB\/tap.git" branch -f demo-1.2.3 main; git 
 STATUS=$?
 failed "raced push"
 same "tap branch" "$(git -C "$FAKE_GITHUB/tap.git" rev-parse main)" "$(tap_branch)"
+
+case_ "re-running a publish that left its release a draft publishes it, once its assets are up"
+publish_world
+echo true >"$FAKE_GITHUB/release"
+publish_attempt
+same "exit" 0 "$STATUS"
+same "order" "upload v1.2.3
+edit v1.2.3" "$(grep -E '^release (upload|edit)' "$FAKE_GITHUB/calls" | cut -d' ' -f2,3)"
+grep -qxF 'release edit v1.2.3 --draft=false' "$FAKE_GITHUB/calls" || fail "edit: '$(cat "$FAKE_GITHUB/calls")'"
+same "draft" false "$(cat "$FAKE_GITHUB/release")"
+same "PR" demo-1.2.3 "$(cat "$FAKE_GITHUB/open-pr")"
+
+case_ "publishing a version older than the latest release fails before it changes anything, re-run or not"
+for existing in true false; do
+  publish_world
+  echo v1.10.0 >"$FAKE_GITHUB/latest"
+  if [ "$existing" = true ]; then echo false >"$FAKE_GITHUB/release"; fi
+  publish_attempt
+  failed "older than latest"
+  grep -qF '::error::1.2.3 is older than the latest release, 1.10.0' "$OUT" || fail "message: '$(cat "$OUT")'"
+  grep -qE '^release (create|upload|edit)' "$FAKE_GITHUB/calls" && fail "changed the release: '$(cat "$FAKE_GITHUB/calls")'"
+  [ -z "$(tap_branch)" ] || fail "pushed a tap branch"
+done
+
+case_ "publishing the latest release again, or one newer, isn't refused"
+for latest in v1.2.3 v1.2.2; do
+  publish_world
+  echo "$latest" >"$FAKE_GITHUB/latest"
+  publish_attempt
+  same "exit with $latest latest" 0 "$STATUS"
+done
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

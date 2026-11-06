@@ -148,7 +148,10 @@ fails the job. The template decides which platforms it mentions.
 
 Every step is safe to repeat, so a publish job that fails partway is finished by re-running it: an
 existing release gets its assets uploaded again, replacing any with the same name, and a tap branch
-an earlier attempt pushed is updated, with its open PR reused.
+an earlier attempt pushed is updated, with its open PR reused. A release an earlier attempt left as
+a draft is published. The exception is a version older than the latest release: its job fails before
+changing anything, re-run or not, since it would downgrade every package manager, so what it was
+meant to ship goes in a new release.
 
 A caller that ships `.zip` platforms passes `scoop` as well, and gets `bucket/<name>.json` in the
 bucket updated in the same run. That one is **committed straight to the bucket's default branch,

@@ -84,10 +84,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          latest=$(gh release list --json isLatest,tagName --jq '.[] | select(.isLatest) | .tagName')
+          latest=${latest#v}
+          if [ -n "$latest" ] && [ "$latest" != "$VERSION" ] &&
+            [ "$(printf '%s\n' "$latest" "$VERSION" | sort -V | head -1)" = "$VERSION" ]; then
+            echo "::error::$VERSION is older than the latest release, $latest, and publishing it would downgrade every package manager. Nothing was changed. Ship what it needs in a new release instead."
+            exit 1
+          fi
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
             echo "$TAG exists: uploading its assets again"
             gh release upload "$TAG" dist/* --clobber
+            if [ "$draft" = true ]; then gh release edit "$TAG" --draft=false; fi
           else
             gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
           fi
