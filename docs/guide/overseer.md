@@ -224,7 +224,8 @@ written to the board, as in [Work](work.md#while-its-being-written).
 
 **View → Dispatcher log** opens the dispatcher's whole log full-screen, from any area, and `Esc` comes
 back. Each run it starts names the release it's on, as in `09:51 a-team lead: started 81834 on
-0.1.7: #232 was approved`, and keeps that release to its end, even if you upgrade a-team meanwhile.
+0.1.7: #232 was approved`, and keeps that release to its end, even if you upgrade a-team meanwhile, unless the upgrade moves the
+board's format, as below.
 A team that can't run on two passes in a row gets one line saying why, as in
 `a-team: stopped: no GitHub App: run a-team app create a-team, then install it`, another only if
 the reason changes, and `a-team: running again` once it can. A single failed pass, such as one

@@ -31,7 +31,9 @@ brew install mentaldesk/tap/a-team
 Claude Code must be installed and logged in, and for a team that mirrors its board to a GitHub
 Project, `gh` needs the `project` scope (`gh auth refresh -s project`). Then add a team (see *Starting a team*) and run
 `a-team install` to start the dispatcher. `brew upgrade a-team` moves every team to the latest
-release, whenever you like: a run already going finishes on the release it started on.
+release, whenever you like: a run already going finishes on the release it started on, unless the
+new release moves the board's format. Then it stops at its next board command, and the dispatcher's
+next pass carries on from the board.
 
 ## Starting a team
 
@@ -216,6 +218,11 @@ A_TEAM_STATE=/tmp/a-team-test ./bin/a-team dashboard
 ```
 
 Give a clone's dispatcher its own `A_TEAM_STATE`, or it shares state with the real one.
+A clone can read and write the real state, but it won't move the board to a new format, and it won't
+act on a board in a newer format than it knows. Instead it says why and stops, as in `this a-team
+(~/code/a-team/mine) would move the board from format 1 to 2, and only the installed one
+(/opt/homebrew/bin/a-team) may: try it with --dry-run, or with A_TEAM_STATE set to a copy`, or asks
+you to merge the default branch.
 `a-team install` asks before replacing a dispatcher installed from somewhere else, so trying a
 clone can't take over the real one by accident. When a
 dispatcher starts an agent, it puts its own `bin` first on the agent's `PATH` and fills in the
