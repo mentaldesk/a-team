@@ -579,6 +579,65 @@ mark() {
 
 unlabel() { gh api -X DELETE "repos/$REPO/issues/$1/labels/$(jq -rn --arg l "$2" '$l | @uri')" >/dev/null 2>&1; }
 
+# BOARD_FORMAT: the format of the state this a-team keeps. A change that moves or reinterprets stored state bumps it and
+# adds a format_<n> step. A team with no stamp is on format 1: its labels are carried into the record, as adopt_labels does.
+BOARD_FORMAT=1
+
+# format_behind: why this a-team can't act on the state, if the state is in a newer format than it knows.
+format_behind() {
+  local top from here
+  [ -f "${HISTORY:-$STATE/history.db}" ] || return 0
+  IFS='|' read -r top from < <(history_sql "SELECT format, version FROM formats ORDER BY format DESC LIMIT 1;") || true
+  [ "${top:-1}" -gt "$BOARD_FORMAT" ] || return 0
+  here=$("$ROOT/bin/a-team" version)
+  if [ ! -f "$ROOT/VERSION" ]; then
+    echo "the board is in format $top, from a-team $from, and this a-team ($ROOT) is on $here: merge the default branch"
+  elif [ -n "${A_TEAM_RUN_TEAM:-}" ]; then
+    echo "the board is in format $top, from a-team $from, and this run is on $here: stopping"
+  else
+    echo "the board is in format $top, from a-team $from, and this is $here: brew upgrade a-team"
+  fi
+}
+
+# installed_bin: the a-team the dispatcher runs, by its own record; nothing where there's no dispatcher.
+installed_bin() { jq -r '.bin // empty' "$STATE/dispatcher.json" 2>/dev/null || true; }
+
+# may_move_state: only the a-team the dispatcher runs, or a run's copy of that release, moves the real state forward.
+may_move_state() {
+  local bin
+  [ -z "$DRY_RUN" ] || return 0
+  [ "$STATE" -ef "${XDG_STATE_HOME:-$HOME/.local/state}/a-team" ] || return 0
+  bin=$(installed_bin)
+  [ -n "$bin" ] || return 0
+  [ "$(cd -P "$ROOT" && pwd)" != "$(cd -P "$(dirname "$(readlink -f "$bin")")/.." 2>/dev/null && pwd)" ] || return 0
+  [ -f "$ROOT/VERSION" ] && [ "$(cat "$ROOT/VERSION")" = "$("$bin" version 2>/dev/null)" ]
+}
+
+# refuse_move <what>: stops this a-team doing <what> to state only the installed one may move.
+refuse_move() {
+  die "this a-team ($ROOT) would $1, and only the installed one ($(installed_bin)) may: try it with --dry-run, or with A_TEAM_STATE set to a copy"
+}
+
+# format_gate: refuses a state this a-team is too old for, stamps one with no stamp, and moves an older one forward.
+format_gate() {
+  local why own step
+  why=$(format_behind)
+  [ -z "$why" ] || die "$why"
+  [ -f "${HISTORY:-$STATE/history.db}" ] || return 0
+  own=$(history_sql "SELECT format FROM formats WHERE team = $(sql "$TEAM");")
+  if [ "${own:-1}" -lt "$BOARD_FORMAT" ]; then
+    may_move_state || refuse_move "move the board from format ${own:-1} to $BOARD_FORMAT"
+    for ((step = ${own:-1} + 1; step <= BOARD_FORMAT; step++)); do
+      ! declare -F "format_$step" >/dev/null || "format_$step"
+    done
+    history_sql "INSERT OR REPLACE INTO formats (team, format, version, moved) VALUES ($(sql "$TEAM"), $BOARD_FORMAT,
+      $(sql "$("$ROOT/bin/a-team" version)"), $(sql "$(date -u +%FT%TZ)"));" >/dev/null
+  elif [ -z "$own" ] && may_move_state; then
+    history_sql "INSERT INTO formats (team, format, version) VALUES ($(sql "$TEAM"), $BOARD_FORMAT,
+      $(sql "$("$ROOT/bin/a-team" version)"));" >/dev/null
+  fi
+}
+
 # adopt_labels: carries the a-team labels on open items into the record, then takes them off on GitHub. A `blocked`
 # keeps who added it and when, and a shelve the date in its hidden comment.
 adopt_labels() {
@@ -589,6 +648,7 @@ adopt_labels() {
       | {n: .item, marks: ((.marks // "{}") | fromjson), labels: ($c.labels | map(select(state_label))),
          all: $c.labels})')
   [ "$rows" != '[]' ] || return 0
+  may_move_state || refuse_move "move the board forward, taking its old labels off the issues"
   for n in $(jq -r '.[] | select(.labels | index("blocked")) | .n' <<<"$rows"); do
     query+=" x$n: issueOrPullRequest(number: $n) { ... on Issue { timelineItems(last: 50, itemTypes: [LABELED_EVENT]) {
       nodes { ... on LabeledEvent { createdAt label { name } actor { __typename login } } } } } }"
@@ -1999,7 +2059,13 @@ FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "B
 # The Dev's tasks that take up one of wip.worktrees.
 WORKING='.marks.dev and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
+[ "$CMD" = check ] || format_gate
+
 case "$CMD" in
+  format)
+    [ $# -eq 0 ] || die "usage: board.sh $TEAM format"
+    ;;
+
   list)
     if [ $# -eq 0 ]; then
       items
@@ -3742,6 +3808,8 @@ case "$CMD" in
     problem() { printf '%-10s%s\n' "$1" "$2"; fatal=1; }
     note() { printf '%-10s%s\n' "$1" "$2"; minor=1; }
     reached='' unreachable=''
+    behind=$(format_behind)
+    [ -z "$behind" ] || problem board "$behind"
     if [ -z "$REPO" ]; then
       problem repo "$TEAM.json names no repo"
     elif reason=$(gh api "repos/$REPO" --silent 2>&1); then

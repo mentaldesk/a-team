@@ -6014,6 +6014,10 @@ if [ "$1" = token ] && [ -n "${NOT_INSTALLED:-}" ]; then
   echo "a-team token: app 7 isn't installed on mentaldesk/$2: install it at https://github.com/apps/demo-app/installations/new" >&2
   exit 1
 fi
+[ "$1" = board ] && [ "${!#}" = format ] && [ -n "${BOARD_AHEAD:-}" ] && {
+  echo "board.sh: the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" >&2
+  exit 1
+}
 [ "$1" = board ] && { [ "${!#}" = free ] || [ "${!#}" = update ]; } && exit 0
 [ "$1" = board ] && [ "${!#}" = adopt ] && { echo "$*" >>"${ADOPTED:-/dev/null}"; exit 0; }
 [ "$1" = board ] && [ "${!#}" = sync ] && { echo "$*" >>"${SYNCS:-/dev/null}"; exit 0; }
@@ -6031,6 +6035,15 @@ same "adopt" "board --dry-run demo adopt" "$(cat "$WORK/adopted")"
 case_ "a dispatcher pass syncs each team's board, the cards' detail with it"
 SYNCS="$WORK/syncs" A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 same "sync" "board --dry-run demo sync" "$(cat "$WORK/syncs")"
+
+case_ "a dispatcher behind the board's format stops the team, saying why once, until it's upgraded"
+: >"$A_TEAM_STATE/dispatch.log"
+rm -f "$A_TEAM_STATE"/demo/*/dry-*
+for _ in 1 2 3; do BOARD_AHEAD=1 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run; done
+grep -q 'demo lead\|demo dev' "$A_TEAM_STATE/dispatch.log" && fail "behind: demo was started: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+same "stopped once" 1 "$(grep -c 'demo: stopped: the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team$' "$A_TEAM_STATE/dispatch.log")"
+A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
+same "running again" 1 "$(grep -c 'demo: running again' "$A_TEAM_STATE/dispatch.log")"
 
 case_ "a dispatcher pass skips a team with no app key, says it stopped only on the second pass, and runs the others"
 jq 'del(.app) | .dispatch.hold = []' "$TEAM" >"$CONFIG/teams/bare.json"
@@ -6290,6 +6303,14 @@ grep -q 'demo dev: would start: #14: stakeholder feedback on #914' "$A_TEAM_STAT
 : >"$A_TEAM_STATE/dispatch.log"
 dispatch_dev --dry-run
 grep -q 'claim dev' "$CLAIMS" || fail "with both waiting, the Ready task wasn't claimed"
+
+case_ "the same reasons run again once the board has moved format, since that's what stopped the last run"
+: >"$A_TEAM_STATE/dispatch.log"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start' "$A_TEAM_STATE/dispatch.log" && fail "before the move: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+history_db "INSERT INTO formats (team, format, version, moved) VALUES ('demo', 2, '0.4.0', '$(date -u +%FT%TZ)');"
+dispatch_dev --dry-run
+grep -q 'demo dev: would start: #12' "$A_TEAM_STATE/dispatch.log" || fail "after the move: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 
 case_ "with nothing in hand, a Ready task is claimed before the run starts"
 dev_dispatcher
@@ -9637,6 +9658,152 @@ for latest in v1.2.3 v1.2.2; do
   publish_attempt
   same "exit with $latest latest" 0 "$STATUS"
 done
+
+# A copy of a-team at board format $2, as a release at version $1 or, with "", as a worktree.
+format_copy() {
+  local copy
+  copy=$(mktemp -d "$WORK/format.XXXXXX")
+  cp -R "$ROOT/bin" "$ROOT/scripts" "$copy/"
+  [ -z "$1" ] || echo "$1" >"$copy/VERSION"
+  sed "s/^BOARD_FORMAT=1$/BOARD_FORMAT=$2\nformat_$2() { echo \"\$TEAM\" >>\"\$STATE\/format-$2-ran\"; }/" "$ROOT/scripts/board.sh" >"$copy/scripts/board.sh"
+  echo "$copy"
+}
+# format_home: a home of its own, whose state is the real state, with the dispatcher on a-team $1.
+format_home() {
+  FORMAT_HOME=$(mktemp -d "$WORK/home.XXXXXX")
+  FORMAT_STATE="$FORMAT_HOME/.local/state/a-team"
+  mkdir -p "$FORMAT_STATE"
+  : >"$FORMAT_STATE/history.db"
+  jq -n --arg bin "$1/bin/a-team" '{$bin}' >"$FORMAT_STATE/dispatcher.json"
+}
+# on_real <a-team> <args...>: that a-team against the real state, as a worktree's ./bin/a-team board runs it.
+on_real() {
+  env -u A_TEAM_STATE -u XDG_STATE_HOME HOME="$FORMAT_HOME" A_TEAM_CONFIG="$CONFIG" "$1/bin/a-team" board "${@:2}" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+stamp() { sqlite3 "$FORMAT_STATE/history.db" "SELECT format, version, moved IS NOT NULL FROM formats WHERE team = 'demo';" 2>/dev/null; }
+set_stamp() {
+  sqlite3 "$FORMAT_STATE/history.db" "INSERT OR REPLACE INTO formats (team, format, version, moved)
+    VALUES ('demo', $1, '$2', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
+}
+format_board() {
+  fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+  gh_items <<'ITEMS'
+Idea 7 A seed
+ITEMS
+}
+
+INSTALLED=$(format_copy 0.3.0 1)
+
+case_ "state with no stamp counts as today's format, and the installed a-team stamps it without stopping anything"
+format_board
+format_home "$INSTALLED"
+on_real "$INSTALLED" demo list
+same "first exit" 0 "$STATUS"
+same "first stderr" "" "$(cat "$ERR")"
+same "stamped" "1|0.3.0|0" "$(stamp)"
+on_real "$INSTALLED" demo wip
+same "second exit" 0 "$STATUS"
+same "still stamped" "1|0.3.0|0" "$(stamp)"
+
+case_ "a worktree with no migration to do runs as today, and leaves the stamp to the installed a-team"
+format_board
+format_home "$INSTALLED"
+SAME_FORMAT=$(format_copy "" 1)
+on_real "$SAME_FORMAT" demo list
+same "exit" 0 "$STATUS"
+same "item" 7 "$(jq '.[0].number' "$OUT")"
+same "no stamp" "" "$(stamp)"
+set_stamp 1 0.3.0
+on_real "$SAME_FORMAT" demo list
+same "stamped exit" 0 "$STATUS"
+same "stamp kept" "1|0.3.0|1" "$(stamp)"
+
+case_ "a worktree whose a-team would migrate refuses every command, and points at --dry-run and A_TEAM_STATE"
+format_board
+format_home "$INSTALLED"
+on_real "$INSTALLED" demo list
+AHEAD=$(format_copy "" 2)
+for command in list wip triggers\ dev; do
+  # shellcheck disable=SC2086 # the command and its argument
+  on_real "$AHEAD" demo $command
+  failed "$command"
+  one_line "$command"
+  grep -q "would move the board from format 1 to 2, and only the installed one ($INSTALLED/bin/a-team) may: try it with --dry-run, or with A_TEAM_STATE set to a copy" "$ERR" ||
+    fail "$command: '$(cat "$ERR")'"
+done
+same "stamp" "1|0.3.0|0" "$(stamp)"
+[ ! -e "$FORMAT_STATE/format-2-ran" ] || fail "the step ran"
+
+case_ "--dry-run and a state of its own still work from that worktree, and the real state stays put"
+on_real "$AHEAD" --dry-run demo list
+same "dry run exit" 0 "$STATUS"
+same "dry run item" 7 "$(jq '.[0].number' "$OUT")"
+same "dry run stamp" "1|0.3.0|0" "$(stamp)"
+OWN=$(mktemp -d "$WORK/state.XXXXXX")
+cp "$FORMAT_STATE/history.db" "$OWN/"
+A_TEAM_STATE=$OWN A_TEAM_CONFIG="$CONFIG" "$AHEAD/bin/a-team" board demo list >"$OUT" 2>"$ERR"
+same "own state exit" 0 "$?"
+same "own state moved" 2 "$(sqlite3 "$OWN/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+same "own state stamp" "1|0.3.0|0" "$(stamp)"
+
+case_ "the installed a-team moves it forward, once, and a run's copy of that release may too"
+NEWER=$(format_copy 0.4.0 2)
+format_home "$NEWER"
+format_board
+RUN_COPY=$(format_copy 0.4.0 2)
+on_real "$NEWER" demo list
+same "unstamped exit" 0 "$STATUS"
+same "ran once" demo "$(cat "$FORMAT_STATE/format-2-ran")"
+same "moved" "2|0.4.0|1" "$(stamp)"
+on_real "$NEWER" demo list
+same "ran once more" demo "$(cat "$FORMAT_STATE/format-2-ran")"
+format_home "$NEWER"
+on_real "$RUN_COPY" demo list
+same "run copy exit" 0 "$STATUS"
+same "run copy moved" "2|0.4.0|1" "$(stamp)"
+
+case_ "an a-team older than the state refuses every board command, read or write, whichever team moved it"
+format_board
+format_home "$NEWER"
+on_real "$INSTALLED" demo list
+sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO formats (team, format, version) VALUES ('other', 2, '0.4.0');"
+for command in "demo list" "demo wip" "demo move dev 7 Ready" "--dry-run demo list" "demo body 7"; do
+  # shellcheck disable=SC2086 # the command and its arguments
+  A_TEAM_RUN_TEAM=demo on_real "$INSTALLED" $command
+  failed "$command"
+  one_line "$command"
+  same "$command" "board.sh: the board is in format 2, from a-team 0.4.0, and this run is on 0.3.0: stopping" "$(cat "$ERR")"
+done
+on_real "$INSTALLED" demo list
+same "installed" "board.sh: the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
+on_real "$SAME_FORMAT" demo list
+grep -q "is on unknown: merge the default branch" "$ERR" || fail "worktree: '$(cat "$ERR")'"
+
+case_ "check reports a board problem while the a-team is behind the state, and runs its other checks"
+on_real "$INSTALLED" demo check
+same "exit" 1 "$STATUS"
+grep -q '^board     the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team$' "$OUT" ||
+  fail "check: '$(cat "$OUT")'"
+grep -q '^app ' "$OUT" || fail "check stopped early: '$(cat "$OUT")'"
+
+case_ "the label adoption from #638 defines today's format: a worktree won't take labels off, and the installed a-team will"
+format_board
+format_home "$INSTALLED"
+edit_item 7 '.labels.nodes = [{name: "rank:medium"}, {name: "mine"}]'
+on_real "$SAME_FORMAT" --dry-run demo list
+same "dry run exit" 0 "$STATUS"
+[ ! -e "$BIN/unlabelled" ] || fail "dry run took labels off: '$(cat "$BIN/unlabelled")'"
+on_real "$SAME_FORMAT" demo list
+failed "worktree"
+grep -q "would move the board forward, taking its old labels off the issues, and only the installed one ($INSTALLED/bin/a-team) may" "$ERR" ||
+  fail "worktree: '$(cat "$ERR")'"
+[ ! -e "$BIN/unlabelled" ] || fail "worktree took labels off: '$(cat "$BIN/unlabelled")'"
+on_real "$INSTALLED" demo list
+same "installed exit" 0 "$STATUS"
+same "taken off" "api -X DELETE repos/mentaldesk/demo/issues/7/labels/rank%3Amedium" "$(sort -u "$BIN/unlabelled")"
 
 [ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
 echo "all passed"

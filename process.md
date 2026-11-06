@@ -174,7 +174,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 `overview` is what its Overseer reads, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
-how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in
+how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `free` is how the dispatcher frees a task once what it waits on in
 another repo has closed or been released, and `update` is how it brings a PR In review that's behind
 its base up to date. Don't run them.
 
@@ -235,6 +235,9 @@ out stops everyone.
   in your summary. Don't retry.
 - If an `a-team board` call says the board read came back incomplete, do the same: it has
   already read twice and changed nothing.
+- If an `a-team board` call says the board is in a newer format and it's stopping, end the run
+  there and say that line in your summary. Don't retry, and don't comment: the dispatcher's next pass
+  carries on from the board on the installed release.
 
 ## Never
 
