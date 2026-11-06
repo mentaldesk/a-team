@@ -1823,7 +1823,7 @@ same "exit" 0 "$STATUS"
 grep -q -- "-f option=98236657 " "$WRITES" || fail "numeric option: not a raw string in '$(cat "$WRITES")'"
 
 case_ "the agents' settings deny decline"
-grep -qF '"Bash(a-team board * decline *)"' "$ROOT/settings/agents.json" || fail "no decline deny rule"
+grep -qF '"Bash(a-team board * decline you *)"' "$ROOT/settings/agents.json" || fail "no decline deny rule"
 
 # Not now: a Pitched pitch back to Idea, held back from the Lead until a date.
 weeks_on() { jq -rn --argjson w "$1" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")'; }
@@ -2105,7 +2105,7 @@ grep -qF '"Bash(a-team board * shelve you *)"' "$ROOT/settings/agents.json" || f
 
 case_ "the agents' settings deny holding as you, and releasing, which are yours"
 grep -qF '"Bash(a-team board * hold you *)"' "$ROOT/settings/agents.json" || fail "no hold deny rule"
-grep -qF '"Bash(a-team board * release *)"' "$ROOT/settings/agents.json" || fail "no release deny rule"
+grep -qF '"Bash(a-team board * release you *)"' "$ROOT/settings/agents.json" || fail "no release deny rule"
 
 # Accepting: the app's merge, the gate a task leaves by.
 case_ "accept squash-merges the task's PR and deletes its branch"
@@ -2187,7 +2187,7 @@ same "pitch tasks" '[3,2]' "$(jq -c '.[] | select(.number == 7) | [.tasks, .open
 same "task tasks" '[null,null]' "$(jq -c '.[] | select(.number == 8) | [.tasks, .openTasks]' "$OUT")"
 
 case_ "the agents' settings deny accept, beside approve"
-grep -qF '"Bash(a-team board * accept *)"' "$ROOT/settings/agents.json" || fail "no accept deny rule"
+grep -qF '"Bash(a-team board * accept you *)"' "$ROOT/settings/agents.json" || fail "no accept deny rule"
 
 case_ "the agents' settings deny removing a label by hand, so blocked is cleared only through unblock"
 grep -qF '"Bash(gh issue edit *--remove-label*)"' "$ROOT/settings/agents.json" || fail "no remove-label deny rule"
@@ -2519,7 +2519,7 @@ same "link" "$SHOT_LINK" "$(cat "$OUT")"
 grep -q "would commit Shot.PNG to $MONTH/$SHOT_HASH.png on a-team/attachments" "$ERR" || fail "attach dry run: '$(cat "$ERR")'"
 
 case_ "the agents' settings deny attach"
-grep -qF '"Bash(a-team board * attach *)"' "$ROOT/settings/agents.json" || fail "no attach deny rule"
+grep -qF '"Bash(a-team board * attach you *)"' "$ROOT/settings/agents.json" || fail "no attach deny rule"
 
 case_ "body and feedback bring a local copy of each attached image, for the agent to look at"
 export TMPDIR="$WORK/tmp"
@@ -5937,8 +5937,50 @@ same "dry exit" 0 "$STATUS"
 same "dry asked" '[]' "$(lead_reasons)"
 
 case_ "the agents' settings deny edit and vision-review"
-for rule in "Bash(a-team board * edit *)" "Bash(a-team board * vision-review *)"; do
+for rule in "Bash(a-team board * edit you *)" "Bash(a-team board * vision-review you)"; do
   jq -e --arg r "$rule" '.permissions.deny | index($r)' "$ROOT/settings/agents.json" >/dev/null || fail "no deny rule $rule"
+done
+
+# Claude Code's rule form: `*` is the only wildcard, and it has to match the whole command as written.
+board_denied() {
+  local rule
+  while IFS= read -r rule; do
+    # shellcheck disable=SC2053
+    [[ $1 == $rule ]] && return 0
+  done < <(jq -r '.permissions.deny[] | select(startswith("Bash(a-team board ")) | .[5:-1]' "$ROOT/settings/agents.json")
+  return 1
+}
+
+case_ "a word in free text doesn't trip a deny rule, including any rule added later"
+words=$(jq -r '.permissions.deny[] | select(startswith("Bash(a-team board ")) | .[5:-1] | split(" ")[3]' "$ROOT/settings/agents.json" | sort -u)
+for word in accept release priority decline attach edit decision vision-review $words; do
+  for command in "a-team board demo task lead 7 \"A $word in a title\" body.md" \
+    "a-team board demo fix lead \"A $word in a title\" body.md" \
+    "a-team board demo depends lead 7 8 \"needs the $word first\"" \
+    "a-team board demo depends lead 7 owner/repo#8 released pkg \"needs the $word first\"" \
+    "a-team board demo undepend lead 7 8 \"no $word now\"" \
+    "a-team board demo decisions $word" \
+    "a-team board demo decisions --replaced the $word rule" \
+    "a-team board demo task lead 7 \"$word your own task\" body.md"; do
+    ! board_denied "$command" || fail "denied: $command"
+  done
+done
+
+case_ "every form of a stakeholder's own command that says you is denied, whatever else is on the line"
+for command in "accept you 7" "release you 7" "priority you 7 high" "decline you 7 reason.md" "attach you shot.png" \
+  "edit you 7 path sha body.md" "decision you 7 retire" "decision you 7 edit body.md" "vision-review you"; do
+  board_denied "a-team board demo $command" || fail "allowed: $command"
+  board_denied "a-team board --dry-run demo $command" || fail "allowed with --dry-run: $command"
+done
+
+case_ "a team role's own forms of those commands reach the board, which refuses them itself"
+for role in lead dev customer reviewer; do
+  for command in "accept $role 7" "release $role 7" "priority $role 7 high" "decline $role 7 reason.md" \
+    "attach $role shot.png" "edit $role 7 path sha body.md" "decision $role 7 retire" "vision-review $role"; do
+    ! board_denied "a-team board demo $command" || fail "denied by a rule: $command"
+    run board demo $command
+    failed "$command"
+  done
 done
 
 case_ "after a review closed unmerged, the Lead's branching pushes a new one without forcing, and keeps none of the old"
