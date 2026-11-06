@@ -207,13 +207,14 @@ public sealed class TeamForm : AppDialog
         _number = new TextField { Text = settings.ProjectNumber?.ToString() ?? "", X = Pos.Right(numberLabel) + 1, Y = 0, Width = 8 };
         _ownedBy.Add(ownerLabel, _owner, numberLabel, _number);
         Add(mirrorLabel, _project, _ownedBy);
+        // Before Check's own handler, which rechecks what Pick sets.
+        _project.TextChanged += (_, _) => Pick();
         Check(_project, mirrorLabel, () => _project.Visible ? Current().MirrorRefusal() : null);
         Check(_owner, ownerLabel, () => _ownedBy.Visible ? Current().OwnerRefusal() : null);
         Check(_number, numberLabel, () => _ownedBy.Visible ? Current().NumberRefusal() : null);
         Caption(_project, ProjectCaption);
         Caption(_owner, OwnerCaption);
         Caption(_number, NumberCaption);
-        _project.TextChanged += (_, _) => Pick();
         _project.HasFocusChanged += (_, _) =>
         {
             if (_project.HasFocus && _listProjects is { } list)

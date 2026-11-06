@@ -797,6 +797,23 @@ public class TeamFormTests
         Assert.Equal("Mirror's number must be above 0", form.Alert.Message);
     }
 
+    [Theory]
+    [InlineData("TuiCode (mentaldesk #4)")]
+    [InlineData(TeamForm.NewProject)]
+    public void Picking_a_project_that_can_be_used_clears_the_mark_on_Mirror(string choice)
+    {
+        using var form = new TeamForm("a-team", Settings with { ProjectNumber = 0 }, _ => null);
+        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
+        form.SetFocus();
+        form.Save();
+        Assert.Equal(SchemeNames.Error, LabelNamed(form, "Mirror").SchemeName);
+
+        form.Project.Text = choice;
+
+        Assert.NotEqual(SchemeNames.Error, LabelNamed(form, "Mirror").SchemeName);
+        Assert.Equal("", form.Alert.Message);
+    }
+
     [Fact]
     public void Enter_creates_the_team_under_its_name()
     {
