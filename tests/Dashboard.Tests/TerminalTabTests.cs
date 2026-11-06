@@ -121,7 +121,7 @@ public class TerminalTabTests : IDisposable
     {
         var handed = new AttachHandover("team0", "dev");
         var shows = new Queue<Handover?>([handed, null]);
-        List<IReadOnlyList<string>> atHandover = [];
+        string? atHandover = null;
 
         TerminalTab.Run(_title, _ =>
         {
@@ -129,12 +129,14 @@ public class TerminalTabTests : IDisposable
             return shows.Dequeue();
         }, handover =>
         {
-            atHandover.Add([.. Titles]);
+            atHandover = Tab("my shell");
+            _written.Add($"{Osc}vim\x07");
             return handover with { Failure = "exited 1" };
         });
 
-        Assert.Equal([Push, "a-team", "(2) a-team", Pop], atHandover.Single());
-        Assert.Equal([Push, "a-team", "(2) a-team", Pop, Push, "(2) a-team", "(4) a-team", Pop], Titles);
+        Assert.Equal("my shell", atHandover);
+        Assert.Equal([Push, "a-team", "(2) a-team", Pop, Push, "vim", "(2) a-team", "(4) a-team", Pop], Titles);
+        Assert.Equal("my shell", Tab("my shell"));
     }
 
     [Fact]
@@ -177,6 +179,22 @@ public class TerminalTabTests : IDisposable
 
         Assert.False(dialog.Border.Settings.HasFlag(BorderSettings.TerminalTitle));
         Assert.Empty(Titles);
+    }
+
+    private string Tab(string own)
+    {
+        var tab = own;
+        Stack<string> saved = [];
+        foreach (var written in Titles)
+        {
+            if (written == Push)
+                saved.Push(tab);
+            else if (written == Pop)
+                tab = saved.Pop();
+            else
+                tab = written;
+        }
+        return tab;
     }
 
     private DashboardWindow Open(Area area)

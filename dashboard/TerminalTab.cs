@@ -18,21 +18,20 @@ public static class TerminalTab
     /// title back for each handover and at the end. A new window starts with no unseen errors.</summary>
     public static void Run(TerminalTitle title, Func<Handover?, Handover?> show, Func<Handover, Handover> hand)
     {
-        Handover? back = null;
-        while (Showing(title, () => show(back)) is { } handover)
-        {
-            title.UnseenErrors = 0;
-            back = hand(handover);
-        }
-    }
-
-    private static Handover? Showing(TerminalTitle title, Func<Handover?> show)
-    {
         title.Save();
-        title.Show();
         try
         {
-            return show();
+            title.Show();
+            Handover? back = null;
+            while (show(back) is { } handover)
+            {
+                title.Restore();
+                // Saved again now, not on return, so a title the handed-over program leaves can't outlast the app.
+                title.Save();
+                title.UnseenErrors = 0;
+                back = hand(handover);
+                title.Show();
+            }
         }
         finally
         {
