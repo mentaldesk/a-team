@@ -122,7 +122,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly FrameView _commentFrame;
     private readonly MultiLineField _field;
     private readonly View _weeksRow;
-    private readonly NumericUpDown<int> _weeks;
+    private readonly PlaceholderField _weeks;
+    private int _shelveWeeks = ReaderShelve.Weeks;
     private readonly ReaderPanes _panes;
     private readonly View? _band;
     private readonly OptionSelector<Rank>? _ranks;
@@ -206,11 +207,22 @@ public sealed partial class ReaderDialog : DashboardDialog
             Height = Dim.Func(_ => PaneRows(), this),
             Visible = false,
         };
-        _weeks = new NumericUpDown<int> { Value = ReaderShelve.Weeks, X = 8, Width = 5, CanEdit = true };
-        _weeks.ValueChanging += (_, e) => e.Handled = e.NewValue < 1;
+        _weeks = new PlaceholderField { Text = $"{_shelveWeeks}", X = 8, Width = 5 };
+        _weeks.ValueChanging += (_, e) => e.Handled = e.NewValue is { Length: > 0 } text && ParseWeeks(text) is null;
+        _weeks.ValueChanged += (_, e) => _shelveWeeks = ParseWeeks(e.NewValue) ?? _shelveWeeks;
+        _weeks.HasFocusChanged += (_, focus) =>
+        {
+            if (!focus.NewValue && _weeks.Text.Length == 0)
+                _weeks.Text = $"{_shelveWeeks}";
+        };
         _weeks.KeyDown += (_, key) =>
         {
-            if (key.Handled = Commenting(key))
+            if (key == Key.CursorUp || key == Key.CursorDown)
+            {
+                _weeks.Text = $"{Math.Max(1, _shelveWeeks + (key == Key.CursorUp ? 1 : -1))}";
+                key.Handled = true;
+            }
+            else if (key.Handled = Commenting(key))
                 Offer();
         };
         _weeksRow = new View { Width = Dim.Fill(), Height = 1, CanFocus = true, Visible = false };
@@ -388,7 +400,9 @@ public sealed partial class ReaderDialog : DashboardDialog
     /// <summary>Whether the pitch was shelved, which closed the reader.</summary>
     internal bool Shelved { get; private set; }
 
-    internal NumericUpDown<int> Weeks => _weeks;
+    internal PlaceholderField Weeks => _weeks;
+
+    internal int ShelveWeeks => _shelveWeeks;
 
     internal bool WeeksShown => _weeksRow.Visible;
 
@@ -950,6 +964,9 @@ public sealed partial class ReaderDialog : DashboardDialog
         SetNeedsLayout();
     }
 
+    private static int? ParseWeeks(string? text) =>
+        int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var weeks) && weeks >= 1 ? weeks : null;
+
     private bool BackToComment()
     {
         var weeks = _weeks.HasFocus;
@@ -1006,7 +1023,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         SetNeedsLayout();
         var text = _field.Text;
         var posting = _posting = _declining ? _comment!.Decline!.Run(text)
-            : _shelving ? _comment!.Shelve!.Run(_weeks.Value, text)
+            : _shelving ? _comment!.Shelve!.Run(_shelveWeeks, text)
             : _releasing ? _comment!.Release!.Run(text)
             : _comment!.Post(text);
         if (posting.IsCompleted)

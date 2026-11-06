@@ -4,9 +4,6 @@ namespace ATeam.Dashboard.Tests;
 
 public class TextBoxTests
 {
-    // NumericUpDown's editor is a plain TextField that the library's painted caret can't reach yet.
-    private const string KnownGap = "_weeks = new NumericUpDown<int>";
-
     private static string DashboardSource
     {
         get
@@ -25,8 +22,7 @@ public class TextBoxTests
             .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
                 && !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
             .SelectMany(file => File.ReadLines(file).Select(line => (File: Path.GetFileName(file), Line: line)))
-            .Where(source => Regex.IsMatch(source.Line, @"\b(TextField|TextView)\b|\bCanEdit\s*=\s*true\b")
-                && !source.Line.Contains(KnownGap))
+            .Where(source => Regex.IsMatch(source.Line, @"\b(TextField|TextView)\b|\bCanEdit\s*=\s*true\b"))
             .Select(source => $"{source.File}: {source.Line.Trim()}");
 
         Assert.Empty(unpainted);
