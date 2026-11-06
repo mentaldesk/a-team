@@ -1,5 +1,7 @@
 using System.Drawing;
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.Input;
+using Terminal.Gui.Views;
 
 namespace ATeam.Dashboard.Tests;
 
@@ -32,17 +34,37 @@ public class HoldDialogTests
         Assert.Equal("wait until I've talked to the designer", dialog.Chosen);
     }
 
+    private static Label WhyLabel(HoldDialog dialog) => dialog.SubViews.OfType<Label>().Single(label => label.Text == "Why:");
+
     [Fact]
-    public void It_won_t_hold_with_no_reason()
+    public void Hold_stays_enabled_and_Enter_with_no_reason_marks_Why_says_so_and_stays_open()
     {
         using var dialog = Open();
         dialog.Why.Text = "   ";
 
+        Assert.True(dialog.Foot.Shown[0].Enabled);
         dialog.NewKeyDownEvent(Key.Enter);
         dialog.Foot.Shown[0].InvokeCommand(Command.Accept);
 
         Assert.Null(dialog.Chosen);
-        Assert.False(dialog.Foot.Shown[0].Enabled);
+        Assert.True(dialog.Foot.Shown[0].Enabled);
+        Assert.Equal(SchemeNames.Error, WhyLabel(dialog).SchemeName);
+        Assert.Equal("Why is needed", dialog.Alert.Message);
+        Assert.True(dialog.Why.HasFocus);
+    }
+
+    [Fact]
+    public void Giving_a_reason_clears_the_mark_and_the_message_then_Enter_holds()
+    {
+        using var dialog = Open();
+        dialog.NewKeyDownEvent(Key.Enter);
+
+        dialog.Why.Text = "waiting on design";
+
+        Assert.NotEqual(SchemeNames.Error, WhyLabel(dialog).SchemeName);
+        Assert.Equal("", dialog.Alert.Message);
+        dialog.NewKeyDownEvent(Key.Enter);
+        Assert.Equal("waiting on design", dialog.Chosen);
     }
 
     [Fact]

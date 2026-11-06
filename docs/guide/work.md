@@ -276,7 +276,8 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   done and the agent that held it takes the hold off itself.
 - **Hold a task.** On a Ready task's card, press `h` (**Cards → Hold**). **Hold #n** asks `Why:`;
   `Enter` or **Hold** posts your reason on the task and the card moves to Blocked, where the Dev
-  leaves it alone. It won't hold without a reason. `Esc` holds nothing.
+  leaves it alone. `Enter` with no reason holds nothing: `Why:` turns red and the foot says `Why is needed`
+  until you type one. `Esc` holds nothing.
 - **Release a hold.** On a held card, the same `h` reads **Release hold**: it takes the hold off,
   whoever set it, and the card leaves Blocked for the Dev's queue. Reading a held task,
   `Ctrl+R` (**Release hold**, beside **Post**) does the same, posting anything you'd written first.
@@ -285,7 +286,8 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   quote into it with `q` as into a comment. `Ctrl+Enter` posts your reason as a comment, closes the
   issue as not planned on GitHub, and the card leaves Work; History records it as `declined`, and it
   doesn't count as accepted. If the board refuses the decline, the status bar says why and the
-  reason you typed is lost. A reason is required. `Esc` turns the pane back into a plain comment,
+  reason you typed is lost. A reason is required: with none, the pane's title turns red and the foot says
+  `Why is needed`. `Esc` turns the pane back into a plain comment,
   keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub: the card
   comes back at its last move.
 - **Say Not now to a pitch.** On a pitch in Pitches, reading it or with its card selected, press

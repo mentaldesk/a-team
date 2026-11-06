@@ -4,6 +4,7 @@ using MentalDesk.Tui.Assistant;
 using MentalDesk.Tui.Copying;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Links;
+using MentalDesk.Tui.Shell;
 using MentalDesk.Tui.Theming;
 
 var root = FindRepoRoot(AppContext.BaseDirectory) ?? FindRepoRoot(Environment.CurrentDirectory);
@@ -55,6 +56,7 @@ var attention = new Attention(TimeProvider.System, visit =>
 var news = new WhatsNew(DateTimeOffset.UtcNow);
 var writes = new WriteQueue(command.Run);
 var macKeys = new MacKeys("ateam");
+var title = TerminalTitle.ForConsole().Names(wanted);
 
 return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 
@@ -62,12 +64,11 @@ int Run()
 {
     var terminal = TerminalMode.Save();
     BundledThemes.Cursor = TerminalCursor.ForConsole();
-    Handover? back = null;
-    while (Show(back) is { } handover)
+    TerminalTab.Run(title, Show, handover =>
     {
         BundledThemes.Cursor.Restore();
         terminal.Restore();
-        back = handover switch
+        return handover switch
         {
             TeamsChanged => handover,
             EditorHandover editor => editor with { Failure = editor.Open() },
@@ -79,7 +80,7 @@ int Run()
             TryHandover tried => tried.Open((arguments, environment) => command.Hand(arguments, environment: environment)),
             _ => handover with { Failure = command.Hand(handover.Arguments) },
         };
-    }
+    });
     attention.Stop();
     writes.InFlight?.Wait(TimeSpan.FromMinutes(1));
     lock (recording)
@@ -95,6 +96,7 @@ Handover? Show(Handover? back)
     BundledThemes.Load(settings.ReadTheme());
     using var app = Application.Create();
     app.Init();
+    using var titled = TerminalTitle.TakeOver(app);
     var opener = new LinkOpener(TerminalClipboard.Install(app));
     using var active = macKeys.Activate();
     app.Keyboard.KeyDown += (_, _) => attention.Key();
@@ -152,7 +154,8 @@ Handover? Show(Handover? back)
         paneWidths: paneWidths,
         assistant: new AssistantSetup(new ProcessLauncher(), AssistantBrief.For(root, teams.TeamsDirectory, stateRoot, named),
             Path.Combine(stateRoot, "assistant.json")),
-        syncBoard: team => command.Read("board", team, "sync"));
+        syncBoard: team => command.Read("board", team, "sync"),
+        terminalTitle: title);
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {
