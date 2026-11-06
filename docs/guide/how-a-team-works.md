@@ -150,7 +150,7 @@ relied on it, and what it replaced.
 | Key | What it does |
 |---|---|
 | `Enter` | Open where it was said on GitHub |
-| `e` | Edit its wording; `Enter` saves, `Esc` leaves it |
+| `e` | Edit its wording; `Enter` saves, `Esc` leaves it. Left empty, it saves nothing: `Decision` turns red and the foot says `Decision is needed` |
 | `k` | Make it a rule or a lean |
 | `w` | Widen it to all teams, or narrow it again |
 | `r` | Retire it, or bring it back |

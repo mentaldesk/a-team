@@ -264,8 +264,9 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   `Esc` in the comment goes back to the pane you came from, and `c` comes back to what you'd written.
   It moves and selects as in [a description](#adding-an-idea).
   `Ctrl+Enter` posts it from any pane: it's posted as you, joins the end of what you're reading, and
-  the agent picks it up on its next run. On a terminal too narrow for three panes, History hides
-  while you write; `h` still shows it.
+  the agent picks it up on its next run. With nothing written, it posts nothing: the pane's title
+  turns red and the foot says `Comment is needed`. On a terminal too narrow for three panes, History
+  hides while you write; `h` still shows it.
 - **Quote what you're answering.** Select it in the body or History and press `q`. It goes into the
   comment where its cursor is, opening the comment if it isn't, as `> ` lines the agents read just
   as they read a quote reply on GitHub, and takes you to the comment below it to write your answer;
@@ -383,7 +384,7 @@ the bar says to drop the file instead.
 
 `Ctrl+Enter` adds it: the issue is opened as you, put on the team's board as an Idea and ranked if
 you chose a Priority. Work reads again straight away, and the bar says `#<n> added to <team>'s
-ideas`. If a step fails, the dialog stays open with what you wrote and says which step; `Ctrl+Enter`
+ideas`. With no title it adds nothing: `Title` turns red and the foot says `Title is needed`. If a step fails, the dialog stays open with what you wrote and says which step; `Ctrl+Enter`
 tries again from there. `Esc` cancels, asking first if you've typed anything: `Ctrl+Enter` discards
 it, and `Esc` keeps writing.
 
