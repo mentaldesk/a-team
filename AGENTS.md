@@ -27,11 +27,15 @@ nothing to restart.
   `settings/<role>.json`, not only in prose.
 - **Keep triggers cheap and deterministic.** `a-team board <team> triggers` runs every 2 minutes per role:
   no per-item API calls where one call for the whole repo will do.
-- **Try board changes against a real board, without changing it.** `list`, `wip`, `triggers`
-  and `check` only read. For commands that write, `a-team board --dry-run <team> ...` (or
+- **Try board changes against a real board, without changing it.** `a-team board --dry-run <team> ...` (or
   `A_TEAM_DRY_RUN=1`) does every read and every permission check for real, and prints each
   change it would have made instead of making it. New writes to GitHub go through `write` so
-  dry-run covers them.
+  dry-run covers them. Without it no command only reads, `list`, `wip`, `triggers` and `check` included:
+  each brings the record up to date first.
+- **A change that moves or reinterprets stored state bumps the format.** Bump `BOARD_FORMAT` in
+  `scripts/board.sh` and add its `format_<n>` step. An older a-team then refuses to act, and only the
+  installed one runs the step, so an ordinary release never stops anything. Commands take turns to run
+  it, but one killed partway leaves the next to run it again, so a step must be safe to repeat.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
 
