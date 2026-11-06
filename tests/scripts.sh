@@ -3655,12 +3655,21 @@ same "writes" "" "$(cat "$WRITES")"
 kept() { KEEP_BOARD=1 run "$@"; }
 # history_of <n>: #n's history, oldest first, as "<who> <what>" lines.
 history_of() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history "$1" | jq -r '.events | reverse[] | "\(.who) \(.what)"'; }
-# drag <n> <status>: a stakeholder moves #n's card on the mirror.
+# drag <n> <status>: someone, or GitHub's own automation, changes #n's card on the mirror.
 drag() {
   jq --arg i "PVTI_$1" --arg s "$2" '(.data.organization.projectV2.items.nodes[] | select(.id == $i)).fieldValueByName =
       {name: $s, updatedAt: (now + 1 | todate)}' \
     "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
 }
+# add_card <n> <status|null> <title>: the Project adds an issue to itself, and sets that Status on it if it isn't null.
+add_card() {
+  jq --argjson n "$1" --arg s "$2" --arg title "$3" '.data.organization.projectV2.items.nodes += [(.data.organization.projectV2.items.nodes[0]
+      | .id = "PVTI_\($n)" | .fieldValueByName = (if $s == "null" then null else {name: $s, updatedAt: (now + 1 | todate)} end)
+      | .content |= (.id = "I_\($n)" | .number = $n | .title = $title | .url = "https://github.com/mentaldesk/demo/issues/\($n)"
+          | .labels.nodes = [] | .issueFieldValues.nodes = []))]' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+}
+# statuses: each card's number and Status, as the last command printed them.
+statuses() { jq -c 'map([.number, .status])' "$OUT"; }
 every_status() {
   jq '.data.organization.projectV2.field.options = ([["Idea", "idea"], ["Exploring", "exploring"], ["Pitched", "pitched"],
       ["Approved", "approved"], ["Building", "building"], ["Ready", "ready"], ["In progress", "progress"],
@@ -3930,25 +3939,55 @@ A_TEAM_BOARD_READ_EVERY=3600 kept board demo overview
 same "caught up" '[]' "$(jq -c '[.[] | select(.number == null)]' "$OUT")"
 grep -q 'item=PVTI_13 .*option=OPT_progress' "$WRITES" || fail "catch-up: mirror not written in '$(cat "$WRITES")'"
 
-case_ "a card moved on the mirror is the stakeholder's move, read back once and not twice"
+case_ "a card moved on the mirror is put back, to and from every status, and its history says a change there isn't a move"
 gh_items <<'ITEMS'
-Idea 20 Mine to move
-Ready 21 A task
+Pitched 620 A pitch in front of you
+Done 621 A finished task
 ITEMS
 every_status
+touch "$BIN/live"
 run board demo list
-drag 20 Ready
+for to in Idea Exploring Approved Building Ready "In progress" "In review" Done; do
+  : >"$WRITES"
+  drag 620 "$to"
+  kept board demo list
+  same "kept, from $to" '"Pitched"' "$(jq -c '.[] | select(.number == 620) | .status' "$OUT")"
+  same "line, from $to" "board $to on GitHub isn't a move: put back to Pitched" "$(history_of 620 | tail -n 1)"
+  grep -q 'item=PVTI_620 .*option=OPT_pitched' "$WRITES" || fail "$to: not written back in '$(cat "$WRITES")'"
+done
+same "never yours" 0 "$(history_of 620 | grep -c '^you')"
+for from in Pitched Approved "In review" Ready Done; do
+  jq --arg s "$from" '(.data.organization.projectV2.items.nodes[] | select(.id == "PVTI_621")).fieldValueByName = {name: $s}' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET status = '$from', mirrored_status = '$from' WHERE team = 'demo' AND item = 621;"
+  drag 621 Idea
+  kept board demo list
+  same "kept at $from" "\"$from\"" "$(jq -c '.[] | select(.number == 621) | .status' "$OUT")"
+  same "line at $from" "board Idea on GitHub isn't a move: put back to $from" "$(history_of 621 | tail -n 1)"
+done
+: >"$WRITES"
+lines=$(history_of 620 | grep -c '')
 kept board demo list
-same "moved" '"Ready"' "$(jq -c '.[] | select(.number == 20) | .status' "$OUT")"
-kept board demo list
-same "history" "you Idea → Ready" "$(history_of 20)"
-same "nothing written back" "" "$(cat "$WRITES")"
-A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
-drag 21 Done
-A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
-same "read from the open items too" '"Done"' "$(jq -c '.[] | select(.number == 21) | .status' "$OUT")"
+same "once" "" "$(cat "$WRITES")"
+same "still once" "$lines" "$(history_of 620 | grep -c '')"
 
-case_ "a role's move isn't read back as a drag from a mirror read taken before it, and a later drag still is"
+case_ "a card the mirror can't put back yet says so once, and goes back when it can"
+gh_items <<'ITEMS'
+Ready 622 A task
+ITEMS
+every_status
+touch "$BIN/live" "$BIN/mirror-fails"
+run board demo list
+drag 622 Idea
+kept board demo list
+kept board demo list
+same "kept" '"Ready"' "$(jq -c '.[0].status' "$OUT")"
+same "once" 1 "$(history_of 622 | grep -c 'put back to Ready')"
+rm -f "$BIN/mirror-fails"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE boards SET retry = NULL WHERE team = 'demo';"
+kept board demo list
+grep -q 'item=PVTI_622 .*option=OPT_ready' "$WRITES" || fail "not written back in '$(cat "$WRITES")'"
+
+case_ "a role's move isn't read back from a mirror read taken before it, and a later change there is put back"
 gh_items <<'ITEMS'
 Ready 13 Something to start
 ITEMS
@@ -3957,10 +3996,182 @@ run board demo list
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo claim dev
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
 same "kept" '"In progress"' "$(jq -c '.[0].status' "$OUT")"
-same "not yours" 0 "$(history_of 13 | grep -c '^you')"
+same "no line" 0 "$(history_of 13 | grep -c "isn't a move")"
 drag 13 Ready
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo list
-same "dragged" '"Ready"' "$(jq -c '.[0].status' "$OUT")"
+same "put back" '"In progress"' "$(jq -c '.[0].status' "$OUT")"
+same "line" "board Ready on GitHub isn't a move: put back to In progress" "$(history_of 13 | tail -n 1)"
+
+case_ "auto-add's Idea on a task the board just put in Ready is put back to Ready, on the Project too"
+gh_items <<'ITEMS'
+Building 623 A pitch
+ITEMS
+claimable
+every_status
+touch "$BIN/live"
+run board demo list
+echo 'A task' >"$WORK/task.md"
+echo '{"id": 77, "number": 77, "node_id": "I_77", "body": "A task\n\n<!-- a-team:lead -->"}' >"$ISSUE"
+kept board demo task lead 623 "Its task" "$WORK/task.md"
+same "filed" 0 "$STATUS"
+add_card 77 Idea "Its task"
+: >"$WRITES"
+kept board demo list
+same "stays Ready" '[[623,"Building"],[77,"Ready"]]' "$(statuses)"
+same "line" "board Idea on GitHub isn't a move: put back to Ready" "$(history_of 77 | tail -n 1)"
+grep -q 'item=PVTI_77 .*option=OPT_ready' "$WRITES" || fail "not written back in '$(cat "$WRITES")'"
+kept board demo list
+same "the Project agrees" '{"name":"Ready"}' "$(jq -c '.data.organization.projectV2.items.nodes[] | select(.id == "PVTI_77").fieldValueByName' "$ITEMS")"
+
+case_ "an issue the Project adds that the record doesn't have reaches Triage, with a Status or still waiting for one"
+gh_items <<'ITEMS'
+Building 624 A pitch
+ITEMS
+every_status
+touch "$BIN/live"
+run board demo list
+add_card 625 Idea "Opened on GitHub"
+add_card 626 null "Opened on GitHub, its Status still coming"
+kept board demo list
+same "with one" '"Idea"' "$(jq -c '.[] | select(.number == 625) | .status' "$OUT")"
+same "without" '"None"' "$(jq -c '.[] | select(.number == 626) | .status' "$OUT")"
+jq '(.data.organization.projectV2.items.nodes[] | select(.id == "PVTI_626")).fieldValueByName = {name: "Idea", updatedAt: (now + 1 | todate)}' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+kept board demo list
+same "once it has one" '"Idea"' "$(jq -c '.[] | select(.number == 626) | .status' "$OUT")"
+same "nobody's move" 0 "$(history_of 626 | grep -c '')"
+
+case_ "a closed issue or merged PR is Done whatever Status it had, and a reopened one comes back to its last move"
+gh_items <<'ITEMS'
+In_progress 627 Closed and left In progress
+In_review 628 A PR
+Ready 629 A task
+Idea 630 Never moved
+ITEMS
+claimable
+every_status
+touch "$BIN/live"
+run board demo list
+edit_item 627 '.state = "CLOSED" | .stateReason = "COMPLETED"'
+kept board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET status = 'In progress' WHERE team = 'demo' AND item = 627;"
+edit_item 628 '.__typename = "PullRequest" | .state = "MERGED" | .author = {login: "someone"}'
+kept board demo list
+same "closed, even a record that knew" '"Done"' "$(jq -c '.[] | select(.number == 627) | .status' "$OUT")"
+same "merged" '"Done"' "$(jq -c '.[] | select(.number == 628) | .status' "$OUT")"
+kept board demo claim dev 629
+edit_item 629 '.state = "CLOSED" | .stateReason = "NOT_PLANNED"'
+edit_item 630 '.state = "CLOSED" | .stateReason = "COMPLETED"'
+kept board demo list
+same "closed" '[[629,"Done"],[630,"Done"]]' "$(jq -c 'map(select(.number >= 629) | [.number, .status])' "$OUT")"
+edit_item 629 '.state = "OPEN" | .stateReason = "REOPENED"'
+edit_item 630 '.state = "OPEN" | .stateReason = "REOPENED"'
+: >"$WRITES"
+kept board demo list
+same "reopened" '[[629,"In progress"],[630,"Idea"]]' "$(jq -c 'map(select(.number >= 629) | [.number, .status])' "$OUT")"
+same "line" "board Done → In progress · reopened" "$(history_of 629 | tail -n 1)"
+grep -q 'item=PVTI_629 .*option=OPT_progress' "$WRITES" || fail "not written back in '$(cat "$WRITES")'"
+kept board demo list
+same "stays" '"In progress"' "$(jq -c '.[] | select(.number == 629) | .status' "$OUT")"
+same "once" 1 "$(history_of 629 | grep -c reopened)"
+
+case_ "a reopened task that closed In review comes back Ready, since its PR has gone, and a reopened PR stays In review"
+gh_items <<'ITEMS'
+Ready 641 Accepted, then reopened
+In_review 642 A PR closed unmerged
+ITEMS
+claimable
+every_status
+touch "$BIN/live"
+run board demo list
+kept board demo claim dev 641
+kept board demo move dev 641 "In review"
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, what) VALUES ('demo', 642, '2026-11-03T09:38:00Z', 'dev', 'In progress → In review');"
+edit_item 641 '.state = "CLOSED" | .stateReason = "COMPLETED"'
+edit_item 642 '.__typename = "PullRequest" | .state = "CLOSED" | .author = {login: "someone"}'
+kept board demo list
+same "closed" '[[641,"Done"],[642,"Done"]]' "$(statuses)"
+edit_item 641 '.state = "OPEN" | .stateReason = "REOPENED"'
+edit_item 642 '.state = "OPEN"'
+kept board demo list
+same "reopened" '[[641,"Ready"],[642,"In review"]]' "$(statuses)"
+same "line" "board Done → Ready · reopened" "$(history_of 641 | tail -n 1)"
+kept board demo claim dev 641
+kept board demo list
+same "work restarts" '"In progress"' "$(jq -c '.[] | select(.number == 641) | .status' "$OUT")"
+
+case_ "the repair puts a card back at its last recorded move, once, and leaves alone a card with none"
+gh_items <<'ITEMS'
+Idea 631 Set back
+Pitched 632 At its last move
+Exploring 633 Never moved
+Ready 634 Filed, and set back
+Done 635 Finished
+Idea 637 Set back and since closed
+Idea 639 Moved late in the UTC day
+ITEMS
+every_status
+touch "$BIN/live"
+run board demo list
+edit_item 637 '.state = "CLOSED" | .stateReason = "COMPLETED"'
+kept board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "
+  INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 631, '2026-11-02T09:00:00Z', 'lead', 'Pitched → Approved'),
+    ('demo', 631, '2026-11-03T09:38:00Z', 'lead', 'Approved → Building'),
+    ('demo', 631, '2026-11-04T05:40:53Z', 'you', 'moved to Building on GitHub, set back: Idea → Building is the team''s move, not a stakeholder''s'),
+    ('demo', 632, '2026-11-03T09:38:00Z', 'lead', 'Exploring → Pitched'),
+    ('demo', 634, '2026-11-03T09:38:00Z', 'lead', 'filed as Ready under #631'),
+    ('demo', 635, '2026-11-03T09:38:00Z', 'dev', 'In progress → In review'),
+    ('demo', 637, '2026-11-03T09:38:00Z', 'lead', 'Approved → Building'),
+    ('demo', 639, '2026-11-03T14:38:00Z', 'lead', 'Approved → Building');
+  UPDATE board SET status = 'Idea' WHERE team = 'demo' AND item = 634;
+  UPDATE boards SET repaired = NULL WHERE team = 'demo';"
+: >"$WRITES"
+TZ=NZT-13 kept board demo list
+same "repaired" '[[631,"Building"],[632,"Pitched"],[633,"Exploring"],[634,"Ready"],[635,"Done"],[637,"Done"],[639,"Building"]]' "$(statuses)"
+same "local day" "board Idea → Building · repaired to its last move (lead, 4 Nov)" "$(history_of 639 | tail -n 1)"
+same "line" "board Idea → Building · repaired to its last move (lead, 3 Nov)" "$(history_of 631 | tail -n 1)"
+same "filed" "board Idea → Ready · repaired to its last move (lead, 3 Nov)" "$(history_of 634 | tail -n 1)"
+same "the rest say nothing" 0 "$(for n in 632 633 635 637; do history_of "$n"; done | grep -c repaired)"
+grep -q 'item=PVTI_631 .*option=OPT_building' "$WRITES" || fail "not on the Project in '$(cat "$WRITES")'"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET status = 'Idea' WHERE team = 'demo' AND item = 631;"
+kept board demo list
+same "a second pass changes nothing" '"Idea"' "$(jq -c '.[] | select(.number == 631) | .status' "$OUT")"
+same "recorded once" 1 "$(history_of 631 | grep -c repaired)"
+
+case_ "a repair that can't read a card changes nothing, and the next pass finishes it, once"
+gh_items <<'ITEMS'
+Idea 651 Set back
+Idea 652 Set back, with a move that can't be read
+ITEMS
+every_status
+touch "$BIN/live"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "
+  INSERT INTO events (team, item, at, who, what) VALUES
+    ('demo', 651, '2026-11-03T09:38:00Z', 'lead', 'Approved → Building'),
+    ('demo', 652, 'sometime', 'lead', 'Approved → Building');
+  UPDATE boards SET repaired = NULL WHERE team = 'demo';"
+kept board demo list
+same "nothing moved" '[[651,"Idea"],[652,"Idea"]]' "$(statuses)"
+same "nothing said" 0 "$(history_of 651 | grep -c repaired)"
+same "still to do" 1 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT COUNT(*) FROM boards WHERE team = 'demo' AND repaired IS NULL;")"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE events SET at = '2026-11-03T09:38:00Z' WHERE team = 'demo' AND item = 652 AND at = 'sometime';"
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo list >/dev/null 2>&1 &
+A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo list >/dev/null 2>&1 &
+wait
+kept board demo list
+same "finished" '[[651,"Building"],[652,"Building"]]' "$(statuses)"
+same "recorded once, even by two at once" 2 "$(for n in 651 652; do history_of "$n"; done | grep -c repaired)"
+same "done" 0 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT COUNT(*) FROM boards WHERE team = 'demo' AND repaired IS NULL;")"
+
+case_ "a board new to a-team has nothing to repair: its first read is taken as it stands"
+gh_items <<'ITEMS'
+Idea 638 Moved long ago
+ITEMS
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, what) VALUES ('demo', 638, '2026-11-03T09:38:00Z', 'lead', 'Approved → Building');"
+run board demo list
+same "as it stands" '[[638,"Idea"]]' "$(statuses)"
 
 case_ "an item whose card was taken off the mirror is put back on it with its next move"
 gh_items <<'ITEMS'
@@ -3972,23 +4183,6 @@ echo '[13]' >"$BIN/off-mirror"
 A_TEAM_BOARD_READ_EVERY=3600 kept board demo claim dev
 grep -q '^ADD .*content=I_13' "$WRITES" || fail "not added back in '$(cat "$WRITES")'"
 grep -q 'item=PVTI_new .*option=OPT_progress' "$WRITES" || fail "not moved on the new card in '$(cat "$WRITES")'"
-
-case_ "a move on the mirror the board wouldn't allow is set back, and the item's history says why"
-gh_items <<'ITEMS'
-Exploring 22 A pitch being drafted
-ITEMS
-every_status
-touch "$BIN/live"
-run board demo list
-drag 22 Approved
-kept board demo list
-same "kept" '"Exploring"' "$(jq -c '.[0].status' "$OUT")"
-grep -q 'item=PVTI_22 .*option=OPT_exploring' "$WRITES" || fail "set back: mirror not written in '$(cat "$WRITES")'"
-same "history" "you moved to Approved on GitHub, set back: Exploring → Approved is the team's move, not a stakeholder's" "$(history_of 22)"
-: >"$WRITES"
-kept board demo list
-same "once" "" "$(cat "$WRITES")"
-same "still once" 1 "$(history_of 22 | grep -c '')"
 
 case_ "a Priority set on the mirror is read back as the stakeholder's, and one set here is written there"
 gh_items <<'ITEMS'

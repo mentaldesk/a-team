@@ -34,6 +34,17 @@ public class WhatsNewTests
     }
 
     [Fact]
+    public void A_move_with_a_note_after_it_is_new_too()
+    {
+        var news = Read(
+            At(1, 4, "board", "Idea → Pitched · repaired to its last move (lead, 4 Nov)"),
+            At(2, 5, "board", "Done → In review · reopened"),
+            At(3, 6, "board", "Idea → Building · repaired to its last move (lead, 3 Nov)"));
+
+        Assert.Equal([(5, Arrival.Review), (4, Arrival.Pitch)], news.Items.Select(item => (item.Number, item.Kind)));
+    }
+
+    [Fact]
     public void Nothing_from_before_start_up_is_new()
     {
         var news = Read(At(-1, 7, "lead", "Exploring → Pitched"), At(-5, 8, "dev", "In progress → In review"));
