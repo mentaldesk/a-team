@@ -43,6 +43,10 @@ down each assumption about the machine here, and the rule that keeps it from tri
 - **A pid names a process only while that process runs.** The OS gives it to another process
   afterwards. Check a recorded pid is still the run before acting on it (`live_pid` in
   `scripts/common.sh`, `AgentState.IsAlive` in the dashboard), and delete it once the run ends.
+- **A process outlives the script that started it.** A test's fake goes on after its suite ends, and a
+  suite killed outright stops nothing. So `tests/leftovers.sh` stops whatever names the suite's temp folder
+  in its command when the suite exits, and a passing suite that left any fails. A fake's command must name
+  that folder (a script in it, or `exec -a`), and anything that waits gives up after `FAKE_LIMIT` seconds.
 
 ## Layout
 

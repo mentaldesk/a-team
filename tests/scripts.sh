@@ -8,14 +8,10 @@ unset A_TEAM_RUN_TEAM A_TEAM_RUN_TASK A_TEAM_RUN_STARTED
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 A_TEAM="$ROOT/bin/a-team"
-WORK=$(mktemp -d)
-# A fake run that ignores SIGTERM outlives everything but SIGKILL.
-stop_fake_runs() {
-  local pid
-  [ -f "$WORK/fake-runs" ] || return 0
-  while read -r pid; do kill -9 "$pid" 2>/dev/null; done <"$WORK/fake-runs"
-}
-trap 'stop_fake_runs; rm -rf "$WORK"' EXIT
+# shellcheck source=tests/leftovers.sh
+source "$ROOT/tests/leftovers.sh"
+# How long a fake waits, so one a killed suite leaves behind still ends.
+FAKE_LIMIT=300
 OUT="$WORK/out" ERR="$WORK/err"
 # Board writes record history in the state folder, which mustn't be the real one.
 export A_TEAM_STATE="$WORK/state"
@@ -24,10 +20,8 @@ export A_TEAM_BOARD_READ_EVERY=0
 CONFIG=$WORK TEAM='' STATUS=0
 # When the stub's GitHub quota resets: always ahead, so a retry stays due later.
 QUOTA_RESET=$(($(date +%s) + 86400))
-failures=0
 
 case_() { echo "$*"; }
-fail() { echo "  FAIL $*"; failures=$((failures + 1)); }
 same() { [ "$2" = "$3" ] || fail "$1: expected '$2', got '$3'"; }
 failed() { [ "$STATUS" -ne 0 ] || fail "$1: expected a non-zero exit, got $STATUS"; }
 one_line() { same "$1 stderr" 1 "$(grep -c '' <"$ERR")"; }
@@ -6499,7 +6493,7 @@ fake_run() {
   SIGNALS="$A_TEAM_STATE/signals"
   : >"$SIGNALS"
   mkdir -p "$A_TEAM_STATE/demo/dev"
-  bash -c "trap 'echo TERM >>\"$SIGNALS\"; exit' TERM; while :; do sleep 0.1; done" &
+  bash -c "trap 'echo TERM >>\"$SIGNALS\"; exit' TERM; while [ \$SECONDS -lt $FAKE_LIMIT ]; do sleep 0.1; done" &
   RUN_PID=$!
   echo "$RUN_PID" >"$A_TEAM_STATE/demo/dev/pid"
 }
@@ -7093,7 +7087,7 @@ SH
   cat >"$DISPATCH/bin/claude" <<SH
 #!/usr/bin/env bash
 echo "\$A_TEAM_RUN_TASK" >>"$LAUNCHED"
-exec sleep 60
+exec -a "\$0" sleep 60
 SH
   chmod +x "$DISPATCH/bin/claude"
 }
@@ -7225,7 +7219,7 @@ case_ "a run that ends with a result records how long it took, its cost and whet
 # claude waits for $DISPATCH/finish, then prints $DISPATCH/result, if there is one, as its log's last line.
 cat >"$DISPATCH/bin/claude" <<SH
 #!/usr/bin/env bash
-while [ ! -e "$DISPATCH/finish" ]; do sleep 0.1; done
+until [ -e "$DISPATCH/finish" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 cat "$DISPATCH/result" 2>/dev/null
 SH
 chmod +x "$DISPATCH/bin/claude"
@@ -7437,14 +7431,25 @@ seen="$SEEN/\${A_TEAM_RUN_TASK:-lead}"
 while [ \$# -gt 0 ]; do [ "\$1" = --settings ] && echo "\$2" >"\$seen.settings"; shift; done
 command -v a-team >"\$seen.bin"
 a-team version >"\$seen.before"
-while [ ! -e "$GO" ]; do sleep 0.1; done
+until [ -e "$GO" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 a-team version >"\$seen.after"
 echo "\${A_TEAM_RUN_TASK:-lead}" >>"$LAUNCHED"
-exec sleep 60
+exec -a "\$0" sleep 60
 SH
   chmod +x "$DISPATCH/bin/claude"
 }
 seen() { for _ in $(seq 50); do [ -s "$SEEN/$1" ] && break; sleep 0.1; done; cat "$SEEN/$1" 2>/dev/null; }
+
+case_ "a fake whose suite has gone stops waiting at its limit"
+FAKE_LIMIT=1 pinned_claude
+PATH="$DISPATCH/bin:$PATH" bash "$DISPATCH/bin/claude" >/dev/null 2>&1 &
+waiting=$!
+for _ in $(seq 50); do kill -0 "$waiting" 2>/dev/null || break; sleep 0.1; done
+kill -0 "$waiting" 2>/dev/null && fail "still waiting"
+kill -9 "$waiting" 2>/dev/null
+wait "$waiting" 2>/dev/null
+[ -e "$SEEN/lead.before" ] || fail "never started"
+[ -e "$SEEN/lead.after" ] && fail "carried on as if told to"
 
 case_ "each Dev run keeps the release it started on, even once an upgrade removes it"
 jq '.dispatch.hold = []' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
@@ -7602,7 +7607,7 @@ case_ "attach <team> dev <task> stops and holds only that run while you resume i
 run resume demo dev
 for n in 21 22; do
   mkdir -p "$A_TEAM_STATE/demo/dev/runs/$n"
-  bash -c "trap 'echo $n >>\"$SIGNALS\"; exit' TERM; while :; do sleep 0.1; done" &
+  bash -c "trap 'echo $n >>\"$SIGNALS\"; exit' TERM; while [ \$SECONDS -lt $FAKE_LIMIT ]; do sleep 0.1; done" &
   echo $! >"$A_TEAM_STATE/demo/dev/runs/$n/pid"
 done
 : >"$SIGNALS"
@@ -10245,12 +10250,11 @@ live_run() {
   local dir="$A_TEAM_STATE/demo/$1"
   mkdir -p "$dir"
   if [ "${3:-}" = ignores ]; then
-    (trap '' TERM; exec sleep 300) >/dev/null 2>&1 &
+    (trap '' TERM; exec -a "$WORK/live-run" sleep 300) >/dev/null 2>&1 &
   else
-    sleep 300 >/dev/null 2>&1 &
+    (exec -a "$WORK/live-run" sleep 300) >/dev/null 2>&1 &
   fi
   FAKE=$!
-  echo "$FAKE" >>"$WORK/fake-runs"
   echo "$FAKE" >"$dir/pid"
   echo $(($(date +%s) - $2)) >"$dir/last-start"
 }
@@ -10434,9 +10438,8 @@ dispatch_dev
 dispatch_dev
 same "stuck" 1 "$(status_stuck | grep -c .)"
 jq '.dispatch.enabled = false' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
-sleep 300 >/dev/null 2>&1 &
+(exec -a "$WORK/stranger" sleep 300) >/dev/null 2>&1 &
 stranger=$!
-echo "$stranger" >>"$WORK/fake-runs"
 jq --argjson pid "$stranger" '.[0].pid = $pid' "$A_TEAM_STATE/demo/dev/stuck" >"$A_TEAM_STATE/demo/dev/stuck.new"
 mv "$A_TEAM_STATE/demo/dev/stuck.new" "$A_TEAM_STATE/demo/dev/stuck"
 echo "$stranger" >"$A_TEAM_STATE/demo/dev/runs/13/pid"
@@ -10461,5 +10464,79 @@ dispatch_dev --dry-run
 same "status reads only the real one" "" "$(status_stuck)"
 end_run "$FAKE"
 
-[ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
-echo "all passed"
+# --- the suite answers for what it started ----------------------------------------------------
+SUITE=$(mktemp -d "$WORK/suite.XXXXXX")
+cat >"$SUITE/fake" <<SH
+#!/usr/bin/env bash
+trap '' TERM
+echo \$\$ >>"\$1"
+while [ "\$SECONDS" -lt "$FAKE_LIMIT" ]; do sleep 0.1; done
+SH
+chmod +x "$SUITE/fake"
+# A small suite on the real clean-up: its one argument is what it does before finishing.
+cat >"$SUITE/suite" <<SH
+#!/usr/bin/env bash
+export TMPDIR="$SUITE"
+SUITE="$SUITE"
+source "$ROOT/tests/leftovers.sh"
+leak() { cp "$SUITE/fake" "\$WORK/fake"; nohup "\$WORK/fake" "$SUITE/pids" >/dev/null 2>&1 & }
+neighbour() { mkdir "\$WORK.b"; cp "$SUITE/fake" "\$WORK.b/fake"; nohup "\$WORK.b/fake" "$SUITE/neighbours" >/dev/null 2>&1 & }
+started() { until [ -s "\$1" ]; do sleep 0.1; done; }
+eval "\$1"
+finish_suite
+SH
+small_suite() {
+  : >"$SUITE/pids"
+  bash "$SUITE/suite" "$1" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+stopped() { kill -0 "$(cat "$SUITE/pids")" 2>/dev/null && fail "$1: still running"; }
+
+case_ "a suite that left nothing running passes"
+small_suite ':'
+same "exit" 0 "$STATUS"
+same "output" "all passed" "$(cat "$OUT")"
+
+case_ "a passing suite that left a fake running stops it, names it and fails"
+small_suite 'leak; started "$SUITE/pids"'
+same "exit" 1 "$STATUS"
+same "output" "  FAIL left running when the suite ended, now stopped:
+       <tmp>/fake
+1 failed" "$(cat "$OUT")"
+stopped "after passing"
+
+case_ "a suite whose cases failed lists what it stopped without counting it"
+small_suite 'fail a case; leak; started "$SUITE/pids"'
+same "exit" 1 "$STATUS"
+same "output" "  FAIL a case
+  left running when the suite ended, now stopped:
+       <tmp>/fake
+1 failed" "$(cat "$OUT")"
+stopped "after failing"
+
+case_ "an interrupted suite stops what it started and removes its folder"
+for signal in TERM HUP; do
+  : >"$SUITE/pids"
+  bash "$SUITE/suite" 'leak; started "$SUITE/pids"; touch "$SUITE/waiting"; sleep 5' >"$OUT" 2>"$ERR" &
+  interrupted=$!
+  for _ in $(seq 50); do [ -e "$SUITE/waiting" ] && break; sleep 0.1; done
+  rm -f "$SUITE/waiting"
+  kill -"$signal" "$interrupted"
+  wait "$interrupted" 2>/dev/null
+  STATUS=$?
+  [ "$STATUS" -ne 0 ] || fail "$signal: exit 0"
+  same "$signal output" "  left running when the suite ended, now stopped:
+       <tmp>/fake" "$(cat "$OUT")"
+  stopped "$signal"
+  same "$signal folder" "" "$(find "$SUITE" -name 'tmp.*')"
+done
+
+case_ "a suite leaves another suite's process alone, even in a folder whose name starts with its own"
+small_suite 'neighbour; started "$SUITE/neighbours"'
+same "exit" 0 "$STATUS"
+same "output" "all passed" "$(cat "$OUT")"
+neighbour=$(cat "$SUITE/neighbours")
+kill -0 "$neighbour" 2>/dev/null || fail "stopped the neighbour"
+kill -9 "$neighbour" 2>/dev/null
+
+finish_suite
