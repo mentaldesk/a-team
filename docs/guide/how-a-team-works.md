@@ -237,4 +237,5 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
 - **An Idea the Lead sets aside** is marked skipped, with a comment saying why. Comment
   on it to put it back in the running.
 
-The Dev also takes the highest-priority Ready task first.
+The Dev also takes the highest-priority Ready task first. A task takes its pitch's Priority unless you
+give it one of its own.

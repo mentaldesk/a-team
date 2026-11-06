@@ -1,7 +1,8 @@
 # Teams
 
 Your teams have a screen of their own: `Ctrl+G T`, **View → Teams** or **Teams** in Commands
-(`Ctrl+E`) opens it, and **New team** in Commands opens it on the form for a new one. `Ctrl+G` in Teams or Settings opens this page.
+(`Ctrl+E`) opens it, and **New team** in Commands opens it on the form for a new one. `Ctrl+G` in Teams opens this page. So does `Ctrl+G` in Settings,
+which is [further down](#settings).
 
 ## The Teams screen
 
@@ -162,18 +163,19 @@ it found.
 - **Problems**: open the team, and its form lists them at the top, one a line, each naming what it's
   about and what's wrong. A board that's missing a Status option or a label can be set
   up again with `F12` (*Repair*).
-- **`can't read this file`**: the team's file isn't valid. Select it, and the foot of the page names
+- **`can't read this file`**: the team's file isn't valid. Select it, and the foot of the screen names
   the line that's wrong. Fix it in the file; the team can't be started or paused until you do.
 
 `a-team board <team> check` reports the same problems from a shell.
 
-## The rest of Settings
+## Settings
 
 Settings (`Ctrl+,`) holds the app's own preferences, a page at a time: the pages down the left, the
 one you picked on the right. `Ctrl+PgDn` and `Ctrl+PgUp` go to the next and previous page, round
 from the last to the first, and clicking a page opens it. Nothing you change is kept until
-`Ctrl+Enter` (**Keep**); `Esc` (**Cancel**) puts back everything you changed, on every page. A page
-with changes you haven't kept shows `•` after its name, and loses it when you put them back. A
+`Ctrl+Enter` (**Keep**); `Esc` (**Cancel**) puts back everything you changed, on every page. `Tab`
+doesn't reach either button, so in a terminal that can't tell `Ctrl+Enter` from `Enter`, such as macOS
+Terminal, click **Keep**. A page with changes you haven't kept shows `•` after its name, and loses it when you put them back. A
 setting that isn't at its default says what the default is on its row, like `(default: Midnight)`.
 `F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
 
