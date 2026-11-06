@@ -29,7 +29,8 @@ the largest unit, as in `◆404  6d`.
 Where a Nerd Font is in effect, a chip wears the icon [Work](work.md) gives the card
 instead: an idea, a pitch, a task or the docs PR.
 
-A chip's mark and number are drawn in its Priority's colour. Its age is in the theme's own colour, and
+A chip's mark and number are drawn in its Priority's colour, which for a task with none of its own is its
+pitch's. Its age is in the theme's own colour, and
 turns amber only once the card is past its column's limit. A card another task is waiting on, the one
 [Work](work.md) tags `⛓ frees`, wears an amber `⚠` between its number and its age, as in `●81 ⚠6d`. A card that's
 blocked for any reason, waiting on another task, on another repo or on your answer, wears `⊘` there (the Nerd Font
@@ -47,7 +48,8 @@ A role with no animation of its own plays a dim spinner, `⠋⠙⠹`, in the the
 
 A Lead run started for one card (feedback on it, or the Idea it's pitching), a Customer lead run on
 its docs PR and a Reviewer run on a task's PR animate on that card. A run working across the whole
-board animates in the lane's title only. Within a column, the card that has waited longest is first.
+board animates in the lane's title only. Within a column, the highest Priority is first, and among equals the
+card that has waited longest.
 A column shows as many rows as fit with every lane on screen, and at least three, and puts the rest
 behind a count, as in `+7`.
 

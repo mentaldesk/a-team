@@ -84,7 +84,7 @@ a-team board {{team}} wip                       # counts per status: pitches, de
                                                 # the Dev's blocked tasks under dev.blocked
 a-team board {{team}} next                      # the next task Dev should take (or null): a fix
                                                 # first, then one a task waits on, then highest
-                                                # issue Priority, unset last
+                                                # Priority (its pitch's where it has none), unset last
 a-team board {{team}} claim dev [<n>]           # move `next` (or Ready task <n>) to In progress for
                                                 # a Dev run, if a worktree is free
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)

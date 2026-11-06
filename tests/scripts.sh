@@ -975,6 +975,12 @@ waiting
 same "exit" 0 "$STATUS"
 same "priorities" '["High",null]' "$(jq -c '[.[].priority]' "$OUT")"
 
+case_ "a task with no Priority of its own carries its pitch's onto its card in Work"
+edit_item 115 '.parent = {number: 106}'
+waiting
+same "exit" 0 "$STATUS"
+same "priorities" '["High","High"]' "$(jq -c '[.[].priority]' "$OUT")"
+
 case_ "the Ideas with no Priority are waiting on the reviewer to rank them"
 gh_items 26 <<'ITEMS'
 Pitched 106 Both gates are mine
@@ -3542,6 +3548,48 @@ same "claimed" '{"number":14,"title":"Something more pressing"}' "$(cat "$OUT")"
 same "claimed by the Dev" true "$(marks 14 | jq -c .dev)"
 grep -q 'item=PVTI_14 .*option=OPT_progress' "$WRITES" || fail "claim: no move in '$(cat "$WRITES")'"
 
+case_ "a task with no Priority takes its pitch's, so next passes over an older task under a lower pitch"
+gh_items <<'ITEMS'
+Building 10 A Low pitch
+Building 11 An Urgent pitch
+Ready 13 Under the Low pitch
+Ready 14 Under the Urgent pitch
+Ready 15 Under no pitch
+ITEMS
+edit_item 10 '.issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}]'
+edit_item 11 '.issueFieldValues.nodes = [{name: "Urgent", field: {name: "Priority"}}]'
+edit_item 13 '.parent = {number: 10}'
+edit_item 14 '.parent = {number: 11}'
+claimable
+run board demo next
+same "next" 14 "$(jq .number "$OUT")"
+run board demo list
+same "priorities" '["Low","Urgent",null]' "$(jq -c 'map(select(.status == "Ready") | .priority)' "$OUT")"
+same "the record keeps only what was set" "" \
+  "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT priority FROM board WHERE team = 'demo' AND item = 14;")"
+
+case_ "a task's own Priority wins over its pitch's"
+edit_item 13 '.issueFieldValues.nodes = [{name: "High", field: {name: "Priority"}}]'
+edit_item 11 '.issueFieldValues.nodes = [{name: "Medium", field: {name: "Priority"}}]'
+run board demo next
+same "next" 13 "$(jq .number "$OUT")"
+
+case_ "an Idea or a pitch under a pitch keeps its own Priority, and a Done pitch's still reaches its open task"
+gh_items <<'ITEMS'
+Building 10 An Urgent pitch
+Building 11 A pitch under it
+Idea 12 An Idea under it
+Done 20 A finished pitch
+Ready 13 Under the finished pitch
+ITEMS
+edit_item 10 '.issueFieldValues.nodes = [{name: "Urgent", field: {name: "Priority"}}]'
+edit_item 20 '.issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}]'
+edit_item 11 '.parent = {number: 10}'
+edit_item 12 '.parent = {number: 10}'
+edit_item 13 '.parent = {number: 20}'
+run board demo overview
+same "priorities" '[[10,"Urgent"],[11,null],[12,null],[13,"Low"]]' "$(jq -c 'map(select(.number) | [.number, .priority])' "$OUT")"
+
 case_ "claim refuses a task that's already claimed, and claims nothing"
 gh_items <<'ITEMS'
 In_progress 12 Taken by another run
@@ -4095,6 +4143,22 @@ jq -e '.reasons | index("Ready fix task #16 for the red default branch: take it 
 run board demo claim dev
 same "exit" 0 "$STATUS"
 same "claimed" '{"number":16,"title":"Main builds again"}' "$(cat "$OUT")"
+
+case_ "a task under an Urgent pitch takes the extra worktree too"
+gh_items <<'ITEMS'
+Building 10 An Urgent pitch
+In_progress 11 One
+In_progress 12 Two
+In_progress 15 Three
+Ready 13 Something to start
+Ready 14 Something pressing
+ITEMS
+edit_item 10 '.issueFieldValues.nodes = [{name: "Urgent", field: {name: "Priority"}}]'
+edit_item 14 '.parent = {number: 10}'
+claimable
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":14,"title":"Something pressing"}' "$(cat "$OUT")"
 
 case_ "a fix gets one extra worktree, not two"
 gh_items <<'ITEMS'

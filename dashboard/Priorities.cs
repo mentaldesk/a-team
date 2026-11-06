@@ -59,8 +59,11 @@ public static class Priorities
 
     /// <summary>The Priority <paramref name="item"/> carries, or <see cref="Rank.None"/> where it carries
     /// one we don't colour.</summary>
-    public static Rank Of(WaitingItem item) =>
-        Scheme(item.Priority).Length > 0 ? Enum.Parse<Rank>(item.Priority) : Rank.None;
+    public static Rank Of(WaitingItem item) => Of(item.Priority);
+
+    /// <summary>The rank <paramref name="priority"/> names, or <see cref="Rank.None"/> for one we don't colour.</summary>
+    public static Rank Of(string priority) =>
+        Scheme(priority).Length > 0 ? Enum.Parse<Rank>(priority) : Rank.None;
 
     /// <summary>The rank the Lead recommends for <paramref name="item"/>, or <see cref="Rank.None"/>.</summary>
     public static Rank Recommended(WaitingItem item) =>
