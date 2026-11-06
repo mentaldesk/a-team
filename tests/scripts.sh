@@ -10515,16 +10515,18 @@ same "output" "  FAIL a case
 stopped "after failing"
 
 case_ "an interrupted suite stops what it started and removes its folder"
-for signal in TERM HUP; do
+for signal in TERM:143 HUP:129 INT:130; do
+  code=${signal#*:} signal=${signal%:*}
   : >"$SUITE/pids"
-  bash "$SUITE/suite" 'leak; started "$SUITE/pids"; touch "$SUITE/waiting"; sleep 5' >"$OUT" 2>"$ERR" &
+  # A background job starts with INT ignored, and bash can't undo that. Its sleep survives, as a child can.
+  perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' bash "$SUITE/suite" 'leak; started "$SUITE/pids"; touch "$SUITE/waiting"; sleep 3' >"$OUT" 2>"$ERR" &
   interrupted=$!
   for _ in $(seq 50); do [ -e "$SUITE/waiting" ] && break; sleep 0.1; done
   rm -f "$SUITE/waiting"
   kill -"$signal" "$interrupted"
   wait "$interrupted" 2>/dev/null
   STATUS=$?
-  [ "$STATUS" -ne 0 ] || fail "$signal: exit 0"
+  same "$signal exit" "$code" "$STATUS"
   same "$signal output" "  left running when the suite ended, now stopped:
        <tmp>/fake" "$(cat "$OUT")"
   stopped "$signal"

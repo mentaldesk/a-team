@@ -48,6 +48,10 @@ on_suite_exit() {
   rm -rf "$WORK"
 }
 trap on_suite_exit EXIT
+# Left to itself bash carries on after a Ctrl-C its child survives, and can die of a signal without the EXIT trap.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Leftovers fail a passing suite. After a failed case they're expected, so they're only listed.
 finish_suite() {
