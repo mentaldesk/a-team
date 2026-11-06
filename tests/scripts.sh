@@ -4072,6 +4072,31 @@ kept board demo list
 same "stays" '"In progress"' "$(jq -c '.[] | select(.number == 629) | .status' "$OUT")"
 same "once" 1 "$(history_of 629 | grep -c reopened)"
 
+case_ "a reopened task that closed In review comes back Ready, since its PR has gone, and a reopened PR stays In review"
+gh_items <<'ITEMS'
+Ready 641 Accepted, then reopened
+In_review 642 A PR closed unmerged
+ITEMS
+claimable
+every_status
+touch "$BIN/live"
+run board demo list
+kept board demo claim dev 641
+kept board demo move dev 641 "In review"
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, what) VALUES ('demo', 642, '2026-11-03T09:38:00Z', 'dev', 'In progress → In review');"
+edit_item 641 '.state = "CLOSED" | .stateReason = "COMPLETED"'
+edit_item 642 '.__typename = "PullRequest" | .state = "CLOSED" | .author = {login: "someone"}'
+kept board demo list
+same "closed" '[[641,"Done"],[642,"Done"]]' "$(statuses)"
+edit_item 641 '.state = "OPEN" | .stateReason = "REOPENED"'
+edit_item 642 '.state = "OPEN"'
+kept board demo list
+same "reopened" '[[641,"Ready"],[642,"In review"]]' "$(statuses)"
+same "line" "board Done → Ready · reopened" "$(history_of 641 | tail -n 1)"
+kept board demo claim dev 641
+kept board demo list
+same "work restarts" '"In progress"' "$(jq -c '.[] | select(.number == 641) | .status' "$OUT")"
+
 case_ "the repair puts a card back at its last recorded move, once, and leaves alone a card with none"
 gh_items <<'ITEMS'
 Idea 631 Set back
@@ -4080,6 +4105,7 @@ Exploring 633 Never moved
 Ready 634 Filed, and set back
 Done 635 Finished
 Idea 637 Set back and since closed
+Idea 639 Moved late in the UTC day
 ITEMS
 every_status
 touch "$BIN/live"
@@ -4094,12 +4120,14 @@ sqlite3 "$A_TEAM_STATE/history.db" "
     ('demo', 632, '2026-11-03T09:38:00Z', 'lead', 'Exploring → Pitched'),
     ('demo', 634, '2026-11-03T09:38:00Z', 'lead', 'filed as Ready under #631'),
     ('demo', 635, '2026-11-03T09:38:00Z', 'dev', 'In progress → In review'),
-    ('demo', 637, '2026-11-03T09:38:00Z', 'lead', 'Approved → Building');
+    ('demo', 637, '2026-11-03T09:38:00Z', 'lead', 'Approved → Building'),
+    ('demo', 639, '2026-11-03T14:38:00Z', 'lead', 'Approved → Building');
   UPDATE board SET status = 'Idea' WHERE team = 'demo' AND item = 634;
   UPDATE boards SET repaired = NULL WHERE team = 'demo';"
 : >"$WRITES"
-kept board demo list
-same "repaired" '[[631,"Building"],[632,"Pitched"],[633,"Exploring"],[634,"Ready"],[635,"Done"],[637,"Done"]]' "$(statuses)"
+TZ=NZT-13 kept board demo list
+same "repaired" '[[631,"Building"],[632,"Pitched"],[633,"Exploring"],[634,"Ready"],[635,"Done"],[637,"Done"],[639,"Building"]]' "$(statuses)"
+same "local day" "board Idea → Building · repaired to its last move (lead, 4 Nov)" "$(history_of 639 | tail -n 1)"
 same "line" "board Idea → Building · repaired to its last move (lead, 3 Nov)" "$(history_of 631 | tail -n 1)"
 same "filed" "board Idea → Ready · repaired to its last move (lead, 3 Nov)" "$(history_of 634 | tail -n 1)"
 same "the rest say nothing" 0 "$(for n in 632 633 635 637; do history_of "$n"; done | grep -c repaired)"

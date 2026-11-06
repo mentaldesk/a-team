@@ -492,7 +492,7 @@ fresh_nodes() {
 # off Done for whatever it sees reopen. With `adopt` it takes the mirror's Status and Priority as they are; otherwise
 # a Status there is never a move, and mirror_push writes the record's back, while a Priority there is a stakeholder's.
 reconcile() {
-  local rows plan n from to
+  local rows plan n from to type
   rows=$(history_sql -json "SELECT item, status, priority, since, mirror, mirrored_status, mirrored_priority,
       json_extract(content, '$.shut') AS shut FROM board WHERE team = $(sql "$TEAM");" | jq -s '.[0] // []')
   plan=$(jq -n --argjson nodes "$1" --argjson rows "$rows" --arg repo "$REPO" --arg team "$TEAM" --arg sq "'" \
@@ -537,7 +537,7 @@ reconcile() {
        bounces: (if $adopt then [] else [$known[] | select((.closes or .reopens or .row.status == "None" | not) and .shown != null
            and .row.mirrored_status != null and .shown != .row.mirrored_status and .shown != .row.status and .changed >= .row.since)
          | [.n, .row.status, (.shown | ltrimstr("?"))] | @tsv] end),
-       reopened: (if $adopt then [] else [$known[] | select(.reopens) | .n] end),
+       reopened: (if $adopt then [] else [$known[] | select(.reopens) | [.n, .content.type] | @tsv] end),
        ranks: (if $adopt then [] else [$known[] | select(.content.type == "Issue" and .ranked != null
            and .row.mirrored_priority != null and .ranked != .row.mirrored_priority and .ranked != .row.priority)
          | [.n, .ranked] | @tsv] end)}')
@@ -545,10 +545,12 @@ reconcile() {
   while IFS=$'\t' read -r n to from; do
     record board "$n" "$from on GitHub isn't a move: put back to $to"
   done < <(jq -r '.bounces[]' <<<"$plan")
-  while IFS= read -r n; do
+  while IFS=$'\t' read -r n type; do
     [ -n "$n" ] || continue
     to=$(history_sql -json "SELECT what FROM events WHERE team = $(sql "$TEAM") AND item = $n ORDER BY id;" |
       jq -rs "$LANDED"'[(.[0] // [])[].what | landed.to | select(. != "Done")] | last // "Idea"')
+    # A task that closed In review has no PR left to review.
+    if [ "$to:$type" = "In review:Issue" ]; then to=Ready; fi
     history_sql "UPDATE board SET status = $(sql "$to"), since = $(sql "$(date -u +%FT%TZ)")
       WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
     record board "$n" "Done → $to · reopened"
@@ -638,7 +640,7 @@ repair_last_moves() {
       GROUP BY b.item ORDER BY b.item;" | jq -rs "$LANDED"'(.[0] // [])[] | .item as $n | .status as $from
         | ([.events | fromjson | sort_by(.id)[] | . as $e | .what | landed | . + {who: $e.who, at: $e.at}] | last) as $m
         | select($m != null and $m.to != $from and $m.to != "Done")
-        | [$n, $from, $m.to, $m.who, ($m.at | fromdate | strftime("%e %b") | ltrimstr(" "))] | @tsv')
+        | [$n, $from, $m.to, $m.who, ($m.at | fromdate | strflocaltime("%e %b") | ltrimstr(" "))] | @tsv')
 }
 
 # board_ready: moves the board over from the mirror on the first run, and copies it all to a mirror newly pointed at.
