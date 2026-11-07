@@ -24,7 +24,8 @@ internal sealed class Gh(string? token)
         var output = process.StandardOutput.ReadToEndAsync();
         try
         {
-            if (input is not null) process.StandardInput.Write(input);
+            if (input is not null)
+                process.StandardInput.Write(input);
             process.StandardInput.Close();
         }
         catch (IOException)
