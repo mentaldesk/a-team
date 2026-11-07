@@ -62,15 +62,14 @@ internal static partial class Commands
         var text = File.ReadAllText(file);
         var end = text.IndexOf('\n');
         var title = end < 0 ? text : text[..end];
-        if (Blank(title)) throw new Die("an issue needs a title (the file's first line)");
+        if (!HasText(title)) throw new Die("an issue needs a title (the file's first line)");
         var body = end < 0 ? "" : text[(end + 1)..].TrimEnd('\n');
         board.Show(title);
         board.Show(body);
         var opened = Board.Through(board.Post($"open an issue titled '{title}'", body + "\n", "issue", "create", "-R", board.Repo, "--title", title, "--body-file", "-"));
         if (!opened.Ok) throw new Die($"can't open the issue on {board.Repo}");
         var url = board.DryRun ? "0" : opened.Said;
-        Console.Out.Write(url[(url.LastIndexOf('/') + 1)..] + "\n");
-        return 0;
+        return SayLine(url[(url.LastIndexOf('/') + 1)..]);
     }
 
     internal static int Attach(Board board, string[] args)
@@ -81,8 +80,7 @@ internal static partial class Commands
         Alone("you", role, $"{role} may not attach an image; only a stakeholder does, from the app");
         var path = Board.ImagePath(file);
         board.KeepImage(file, path);
-        Console.Out.Write(board.AttachmentLink(path) + "\n");
-        return 0;
+        return SayLine(board.AttachmentLink(path));
     }
 
     /// <summary>The Dev's own open task PR, or a refusal in the words of the command asking.</summary>
@@ -104,7 +102,7 @@ internal static partial class Commands
         for (var at = 2; at < args.Length; at += 2)
         {
             var (file, caption) = (args[at], args[at + 1]);
-            if (Blank(caption)) throw new Die($"{Board.FileName(file)} needs a caption: the acceptance criterion it shows");
+            if (!HasText(caption)) throw new Die($"{Board.FileName(file)} needs a caption: the acceptance criterion it shows");
             if (caption.Contains('\n')) throw new Die($"a caption is one line: '{caption}'");
             shots.Add((file, Board.ImagePath(file), caption));
         }
@@ -133,33 +131,34 @@ internal static partial class Commands
         var n = Board.FirstClosed(it) ?? throw new Die($"#{pr} doesn't close an issue");
         var issue = board.IssueBody(n);
         var said = (Json.Text(it["body"]) ?? "").TrimEnd('\n');
-        var items = Board.CriteriaItems(issue);
-        var pictured = Board.Pictured(said);
+        var items = Checklist.Items(issue);
+        var pictured = Checklist.Pictured(said);
         var section = new StringBuilder("## Checked by the team\n");
-        var lines = new List<int>();
+        var lines = new List<long>();
         var (screens, tests) = (0, 0);
         foreach (var each in args[2..])
         {
             var named = Regex.Match(each, @"^([1-9][0-9]*)=(screen|test)\z");
             if (!named.Success) throw new Die($"'{each}' isn't <criterion>=screen or <criterion>=test");
             var (index, how) = (named.Groups[1].Value, named.Groups[2].Value);
-            var one = Board.Nth(items, index) ?? throw new Die($"#{n} has no criterion {index}");
+            var one = Checklist.Nth(items, index) ?? throw new Die($"#{n} has no criterion {index}");
+            var text = Json.Text(one["text"])!;
             if (how == "screen")
             {
-                if (!pictured.Contains(Board.Norm(one.Text)))
-                    throw new Die($"criterion {index} is screen, but no picture on #{pr} is captioned with it: {one.Text}");
+                if (!pictured.Contains(Checklist.Norm(text)))
+                    throw new Die($"criterion {index} is screen, but no picture on #{pr} is captioned with it: {text}");
                 screens++;
             }
             else
             {
                 tests++;
             }
-            section.Append($"\n- `{how}` {one.Text}");
-            lines.Add(one.Line);
+            section.Append($"\n- `{how}` {text}");
+            lines.Add(Json.Long(one["line"]));
         }
-        var recorded = Board.RecordedChecks(said);
-        var dropped = items.Where(item => recorded.Contains(Board.Norm(item.Text)) && !lines.Contains(item.Line)).Select(item => item.Line).ToList();
-        var ticked = Board.Boxed(Board.Boxed(issue, lines, "x"), dropped, " ");
+        var recorded = Checklist.Recorded(said);
+        var dropped = items.Where(item => recorded.Contains(Checklist.Norm(Json.Text(item["text"])!))).Select(item => Json.Long(item["line"])).Except(lines).ToList();
+        var ticked = Checklist.Boxed(Checklist.Boxed(issue, lines, "x"), dropped, " ");
         var body = Board.WithSection(said, section.ToString());
         board.Show(body);
         Board.Must(board.Post($"tick what the team checked on #{n}", ticked + "\n", "issue", "edit", n, "-R", board.Repo, "--body-file", "-"));
@@ -186,12 +185,12 @@ internal static partial class Commands
         if (Cards.Status(it) != "In review" || Cards.Pitch(it))
             throw new Die($"only a task In review has criteria to tick (#{n} is '{Cards.Status(it)}')");
         var issue = board.IssueBody(n);
-        var one = Board.Nth(Board.CriteriaItems(issue), index);
-        if (one is null || one.Text != text) throw new Die($"#{n}'s criteria have changed: open it again");
-        var ticked = Board.Boxed(issue, [one.Line], mark);
+        var one = Checklist.Nth(Checklist.Items(issue), index);
+        if (one is null || Json.Text(one["text"]) != text) throw new Die($"#{n}'s criteria have changed: open it again");
+        var ticked = Checklist.Boxed(issue, [Json.Long(one["line"])], mark);
         Board.Must(board.Post($"{(state == "on" ? "tick" : "untick")} criterion {index} on #{n}", ticked + "\n", "issue", "edit", n, "-R", board.Repo, "--body-file", "-"));
-        var after = Board.CriteriaItems(ticked);
-        var count = $"{after.Count(item => item.Ticked)} of {after.Count}";
+        var after = Checklist.Items(ticked);
+        var count = $"{after.Count(item => Json.Truthy(item["ticked"]))} of {after.Count}";
         board.Log(role, n, state == "on" ? $"ticked {count}" : $"unticked, {count} ticked");
         board.Say($"#{n}: {count} ticked");
         return 0;
@@ -243,7 +242,7 @@ internal static partial class Commands
         if (role != "reviewer") throw new Die("only reviewer reviews a task's PR");
         if (!board.ReviewerOn) throw new Die($"{board.Team} has no Reviewer (roles.reviewer in {board.Team}.json)");
         NeedsFile(file);
-        if (Blank(File.ReadAllText(file))) throw new Die($"the review is empty: {file}");
+        if (!HasText(File.ReadAllText(file))) throw new Die($"the review is empty: {file}");
         var it = OwnTaskPr(board, role, pr, $"reviewer reviews only the Dev's open task PRs (#{pr} isn't one)");
         if (board.Reviewed(it)) throw new Die($"#{pr} has its review already: a PR is reviewed once");
         if (!Json.Truthy(it["isDraft"])) throw new Die($"#{pr} is ready for review already: it went to the stakeholders unreviewed");
@@ -287,7 +286,7 @@ internal static partial class Commands
         if (!" urgent high medium low ".Contains($" {level} ", StringComparison.Ordinal))
             throw new Die($"unknown rank '{rank}' (urgent | high | medium | low)");
         NeedsFile(file);
-        var said = File.ReadAllText(file).Split('\n').Where(line => !Blank(line)).ToList();
+        var said = File.ReadAllText(file).Split('\n').Where(HasText).ToList();
         if (said.Count != 1) throw new Die($"the case for #{n} is one line: {file} has {Math.Max(said.Count, 1)}");
         var it = Must(board.Item(n), $"#{n} is not on the board, so it is not an Idea to recommend");
         if (!Cards.IsIssue(it) || Cards.Status(it) != "Idea")
@@ -360,15 +359,14 @@ internal static partial class Commands
             var names = new JsonArray();
             foreach (var name in files.Split([' ', '\t', '\n'], StringSplitOptions.RemoveEmptyEntries))
                 names.Add((JsonNode?)name);
-            Console.Out.Write(Json.Pretty(new JsonObject { ["number"] = ArgJson(n), ["files"] = names }) + "\n");
-            return 0;
+            return SayPretty(new JsonObject { ["number"] = ArgJson(n), ["files"] = names });
         }
         var read = board.Read("api", $"repos/{board.Repo}/contents/{files}?ref={reference}");
         if (!read.Ok) throw new Die($"can't read {files} on {reference} ({Board.Refusal(read)})");
         var number = ArgJson(n);
         if (Json.Parse(read.Out) is not JsonObject file || Json.Text(file["content"]) is not { } content)
             throw new Stop(5, $"jq: error: {files} on {reference} has no content\n");
-        Console.Out.Write(Json.Pretty(new JsonObject
+        return SayPretty(new JsonObject
         {
             ["number"] = number,
             ["files"] = new JsonArray((JsonNode?)files),
@@ -376,8 +374,7 @@ internal static partial class Commands
             ["ref"] = reference,
             ["sha"] = file["sha"]?.DeepClone(),
             ["text"] = Decoded(content),
-        }) + "\n");
-        return 0;
+        });
     }
 
     internal static int Edit(Board board, string[] args)
@@ -468,9 +465,9 @@ internal static partial class Commands
             throw new Die($"usage: board.sh {board.Team} spent you <n|-> <at> <seconds> <gate> <what>");
         var (role, n, at, seconds, gate, what) = (args[0], args[1], args[2], args[3], args[4], args[5]);
         if (role != "you") throw new Die($"only the stakeholders' own time is recorded, not {role}'s");
-        if (n != "-" && !Regex.IsMatch(n, @"^[0-9]+\z")) throw new Die($"#{n} isn't an item number");
+        if (n != "-" && !Digits(n)) throw new Die($"#{n} isn't an item number");
         if (!Regex.IsMatch(at, @"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z")) throw new Die($"'{at}' isn't a UTC time");
-        if (!Regex.IsMatch(seconds, @"^[0-9]+\z")) throw new Die($"'{seconds}' isn't a number of seconds");
+        if (!Digits(seconds)) throw new Die($"'{seconds}' isn't a number of seconds");
         if (!GateNames.Contains(gate)) throw new Die($"unknown gate '{gate}'");
         board.RecordSpent(n, at, seconds, gate, what);
         return 0;

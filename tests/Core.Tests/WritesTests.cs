@@ -29,21 +29,21 @@ public class WritesTests
     [Fact]
     public void Criteria_are_the_list_under_the_heading_up_to_the_next_one()
     {
-        var items = Board.CriteriaItems("Intro\n- not this\n\n## Acceptance criteria\r\n\r\n- one\n- [ ] two\n  wrapped\n* [x] three\n  + [X]four\n\n## Next\n- nor this\n");
+        var items = Checklist.Items("Intro\n- not this\n\n## Acceptance criteria\r\n\r\n- one\n- [ ] two\n  wrapped\n* [x] three\n  + [X]four\n\n## Next\n- nor this\n");
         Assert.Equal(
         [
-            new Board.Criterion(5, false, "one"),
-            new Board.Criterion(6, false, "two wrapped"),
-            new Board.Criterion(8, true, "three"),
-            new Board.Criterion(9, true, "four"),
-        ], items);
+            (5L, false, "one"),
+            (6L, false, "two wrapped"),
+            (8L, true, "three"),
+            (9L, true, "four"),
+        ], items.Select(item => (Json.Long(item["line"]), Json.Truthy(item["ticked"]), Json.Text(item["text"]))));
     }
 
     [Theory]
     [InlineData("Nothing to see\n- here")]
     [InlineData("##Acceptance criteria\n- no space")]
     [InlineData("## Acceptance criteria\n\nWords before any item.\n")]
-    public void No_criteria(string body) => Assert.Empty(Board.CriteriaItems(body));
+    public void No_criteria(string body) => Assert.Empty(Checklist.Items(body));
 
     [Theory]
     [InlineData("1", "a")]
@@ -51,7 +51,7 @@ public class WritesTests
     [InlineData("3", null)]
     [InlineData("99999999999999999999", null)]
     public void Criteria_count_from_one(string index, string? text) =>
-        Assert.Equal(text, Board.Nth(Board.CriteriaItems("# Acceptance criteria\n- a\n- b"), index)?.Text);
+        Assert.Equal(text, Json.Text(Checklist.Nth(Checklist.Items("# Acceptance criteria\n- a\n- b"), index)?["text"]));
 
     [Theory]
     [InlineData("- one\n- two", "- [x] one\n- two")]
@@ -59,18 +59,18 @@ public class WritesTests
     [InlineData("- [X]one\r\n- two", "- [x] one\r\n- two")]
     [InlineData("  * [x]   one", "  * [x]   one")]
     public void Boxed_sets_only_the_lines_named(string body, string with) =>
-        Assert.Equal(with, Board.Boxed(body, [0], "x"));
+        Assert.Equal(with, Checklist.Boxed(body, [0], "x"));
 
     [Fact]
-    public void Boxed_clears_a_box() => Assert.Equal("- [ ] one", Board.Boxed("- [x] one", [0], " "));
+    public void Boxed_clears_a_box() => Assert.Equal("- [ ] one", Checklist.Boxed("- [x] one", [0], " "));
 
     [Fact]
     public void A_section_ends_at_a_big_heading_the_try_line_or_a_marker()
     {
-        Assert.Equal(["a", "### b", ""], Board.Section("x\n## H  \r\na\n### b\n\n## Next\nc", "## H"));
-        Assert.Equal(["a"], Board.Section("## H\na\na-team try x", "## H"));
-        Assert.Equal(["a"], Board.Section("## H\na\n<!-- a-team:dev -->", "## H"));
-        Assert.Empty(Board.Section("nothing", "## H"));
+        Assert.Equal(["a", "### b", ""], Checklist.Section("x\n## H  \r\na\n### b\n\n## Next\nc", "## H"));
+        Assert.Equal(["a"], Checklist.Section("## H\na\na-team try x", "## H"));
+        Assert.Equal(["a"], Checklist.Section("## H\na\n<!-- a-team:dev -->", "## H"));
+        Assert.Empty(Checklist.Section("nothing", "## H"));
     }
 
     [Theory]
@@ -78,14 +78,14 @@ public class WritesTests
     [InlineData("plain", "plain")]
     [InlineData("", "")]
     public void Words_are_compared_without_brackets_or_extra_space(string text, string norm) =>
-        Assert.Equal(norm, Board.Norm(text));
+        Assert.Equal(norm, Checklist.Norm(text));
 
     [Fact]
     public void A_PR_body_says_what_was_checked_and_what_is_pictured()
     {
         const string body = "## What it looks like\n\nSave [left]\n\n![Save [left]](u)\n![  Two  words ](v)\n\n## Checked by the team\n\n- `screen` Save [left]\n- `test`  Two words\n- `other` No\n\n<!-- a-team:dev -->";
-        Assert.Equal(["Save left", "Two words"], Board.Pictured(body).Order(StringComparer.Ordinal));
-        Assert.Equal(["Save left", "Two words"], Board.RecordedChecks(body).Order(StringComparer.Ordinal));
+        Assert.Equal(["Save left", "Two words"], Checklist.Pictured(body).Order(StringComparer.Ordinal));
+        Assert.Equal(["Save left", "Two words"], Checklist.Recorded(body).Order(StringComparer.Ordinal));
     }
 
     [Fact]

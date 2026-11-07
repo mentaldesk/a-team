@@ -8,14 +8,9 @@ using System.Text.RegularExpressions;
 
 namespace ATeam.Core;
 
-/// <summary>What the commands that write need: a task's PR, the attachments branch, a body's criteria and sections, and the team's worktrees.</summary>
+/// <summary>What the commands that write need: a task's PR, the attachments branch, a body's sections, and the team's worktrees.</summary>
 internal sealed partial class Board
 {
-    private const string AttachmentsBranch = "a-team/attachments";
-
-    /// <summary>A line of an issue's acceptance criteria: which line of the body it starts on, whether it's ticked, and what it says.</summary>
-    internal sealed record Criterion(int Line, bool Ticked, string Text);
-
     internal string PriorityName => _priority;
 
     internal List<string> ContributesTo =>
@@ -115,7 +110,7 @@ internal sealed partial class Board
         }
     }
 
-    internal string AttachmentLink(string path) => $"https://github.com/{_repo}/blob/{AttachmentsBranch}/{path}?raw=true";
+    internal string AttachmentLink(string path) => $"https://github.com/{_repo}/blob/{AttachmentBranch}/{path}?raw=true";
 
     /// <summary>Where a file goes on the attachments branch, named by its content, once it's an image of a size GitHub takes.</summary>
     internal static string ImagePath(string file)
@@ -123,7 +118,7 @@ internal sealed partial class Board
         if (!File.Exists(file)) throw new Die($"no such file: {file}");
         var ext = file[(file.LastIndexOf('.') + 1)..].ToLowerInvariant();
         if (ext == "jpeg") ext = "jpg";
-        if (ext is not ("png" or "jpg" or "gif" or "webp")) throw new Die($"{FileName(file)} isn't a .png, .jpg, .gif or .webp");
+        if (!Regex.IsMatch(ext, $"^({AttachmentTypes})\\z")) throw new Die($"{FileName(file)} isn't a .png, .jpg, .gif or .webp");
         if (new FileInfo(file).Length > 10 * 1024 * 1024) throw new Die($"{FileName(file)} is over 10 MB");
         var hash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(file)))[..16];
         return $"{DateTime.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture)}/{hash}.{ext}";
@@ -132,9 +127,9 @@ internal sealed partial class Board
     /// <summary>Stores a file as that path on the attachments branch, unless it's there already.</summary>
     internal void KeepImage(string file, string path)
     {
-        if (_gh.Run("api", $"repos/{_repo}/contents/{path}?ref={AttachmentsBranch}", "--silent").Ok) return;
-        if (!Would($"commit {FileName(file)} to {path} on {AttachmentsBranch}") && !StoreAttachment(file, path))
-            throw new Die($"can't store {FileName(file)} on {_repo}'s {AttachmentsBranch} branch");
+        if (_gh.Run("api", $"repos/{_repo}/contents/{path}?ref={AttachmentBranch}", "--silent").Ok) return;
+        if (!Would($"commit {FileName(file)} to {path} on {AttachmentBranch}") && !StoreAttachment(file, path))
+            throw new Die($"can't store {FileName(file)} on {_repo}'s {AttachmentBranch} branch");
     }
 
     private GhResult GitPost(string kind, JsonObject body)
@@ -159,7 +154,7 @@ internal sealed partial class Board
         if (blob.Length == 0) return false;
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var read = _gh.Run("api", $"repos/{_repo}/git/ref/heads/{AttachmentsBranch}", "--jq", ".object.sha");
+            var read = _gh.Run("api", $"repos/{_repo}/git/ref/heads/{AttachmentBranch}", "--jq", ".object.sha");
             var head = read.Ok ? read.Said : "";
             var tree = new JsonObject { ["tree"] = new JsonArray(new JsonObject { ["path"] = path, ["mode"] = "100644", ["type"] = "blob", ["sha"] = blob }) };
             var parents = new JsonArray();
@@ -175,8 +170,8 @@ internal sealed partial class Board
             var commit = GitPost("commits", new JsonObject { ["message"] = $"Attach {path}", ["tree"] = madeTree.Said, ["parents"] = parents });
             if (!commit.Ok) return false;
             var moved = head.Length == 0
-                ? _gh.Run("api", "-X", "POST", $"repos/{_repo}/git/refs", "-f", $"ref=refs/heads/{AttachmentsBranch}", "-f", $"sha={commit.Said}", "--silent")
-                : _gh.Run("api", "-X", "PATCH", $"repos/{_repo}/git/refs/heads/{AttachmentsBranch}", "-f", $"sha={commit.Said}", "-F", "force=false", "--silent");
+                ? _gh.Run("api", "-X", "POST", $"repos/{_repo}/git/refs", "-f", $"ref=refs/heads/{AttachmentBranch}", "-f", $"sha={commit.Said}", "--silent")
+                : _gh.Run("api", "-X", "PATCH", $"repos/{_repo}/git/refs/heads/{AttachmentBranch}", "-f", $"sha={commit.Said}", "-F", "force=false", "--silent");
             if (Through(moved).Ok) return true;
         }
         return false;
@@ -225,70 +220,6 @@ internal sealed partial class Board
         }
         return output.ToString().TrimEnd('\n');
     }
-
-    /// <summary>The checklist under an issue body's Acceptance criteria heading.</summary>
-    internal static List<Criterion> CriteriaItems(string body)
-    {
-        var on = false;
-        var items = new List<Criterion>();
-        var lines = body.Replace("\r", "").Split('\n');
-        for (var at = 0; at < lines.Length; at++)
-        {
-            var line = lines[at];
-            if (Regex.IsMatch(line, @"^#+\s+[Aa]cceptance [Cc]riteria\s*$"))
-            {
-                on = true;
-                continue;
-            }
-            if (!on) continue;
-            if (Regex.IsMatch(line, @"^#+\s")) break;
-            if (Regex.IsMatch(line, @"^\s*$")) continue;
-            var listed = Regex.Match(line, @"^(?<lead>\s*)[-*+]\s+(\[(?<box>[ xX])\]\s*)?(?<text>.*)$");
-            if (listed.Success)
-                items.Add(new Criterion(at, listed.Groups["box"].Success && listed.Groups["box"].Value != " ", listed.Groups["text"].Value));
-            else if (items.Count > 0)
-                items[^1] = items[^1] with { Text = $"{items[^1].Text} {Regex.Replace(line, @"^\s+", "")}" };
-        }
-        return items;
-    }
-
-    /// <summary>Criterion <paramref name="index"/>, counting from 1, or null if there's none.</summary>
-    internal static Criterion? Nth(List<Criterion> items, string index) =>
-        int.TryParse(index, NumberStyles.None, CultureInfo.InvariantCulture, out var at) && at >= 1 && at <= items.Count ? items[at - 1] : null;
-
-    /// <summary>A body with those lines' boxes set to <paramref name="mark"/>.</summary>
-    internal static string Boxed(string body, IReadOnlyCollection<int> lines, string mark)
-    {
-        var box = new Regex(@"^(?<lead>\s*[-*+]\s+)(\[[ xX]\]\s?)?");
-        return string.Join("\n", body.Split('\n').Select((line, at) =>
-            lines.Contains(at) ? box.Replace(line, found => $"{found.Groups["lead"].Value}[{mark}] ", 1) : line));
-    }
-
-    /// <summary>The lines under a PR body's heading, up to the next heading, `a-team try` line or marker.</summary>
-    internal static List<string> Section(string body, string heading)
-    {
-        var lines = body.Replace("\r", "").Split('\n');
-        var at = Array.FindIndex(lines, line => Regex.Replace(line, @"\s+$", "") == heading);
-        if (at < 0) return [];
-        return lines.Skip(at + 1).TakeWhile(line => !Regex.IsMatch(line, "^#{1,2} |^a-team try |^<!-- a-team:")).ToList();
-    }
-
-    /// <summary>A criterion's words, as a caption or a record of it is matched against them.</summary>
-    internal static string Norm(string text)
-    {
-        var plain = Regex.Replace(text.Replace("[", "").Replace("]", ""), @"\s+", " ");
-        return Regex.Replace(Regex.Replace(plain, "^ ", ""), " $", "");
-    }
-
-    /// <summary>What a PR body records the team checked, by each criterion's words.</summary>
-    internal static HashSet<string> RecordedChecks(string pr) =>
-        Section(pr, "## Checked by the team").Select(line => Regex.Match(line, "^- `(?:screen|test)` (?<text>.*)$"))
-            .Where(found => found.Success).Select(found => Norm(found.Groups["text"].Value)).ToHashSet();
-
-    /// <summary>The captions of a PR body's pictures.</summary>
-    internal static HashSet<string> Pictured(string pr) =>
-        Section(pr, "## What it looks like").Select(line => Regex.Match(line, @"^!\[(?<alt>[^\]]*)\]"))
-            .Where(found => found.Success).Select(found => Norm(found.Groups["alt"].Value)).ToHashSet();
 
     /// <summary>`git`, found on PATH as a shell finds it, and what it said.</summary>
     private static GhResult Git(params string[] args)
