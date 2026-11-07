@@ -78,7 +78,7 @@ case "$command" in
     core="$ROOT/libexec/a-team-core"
     if [ ! -x "$core" ]; then
       core="$ROOT/core/bin/Debug/net10.0/a-team-core"
-      if [ ! -x "$core" ] || [ -n "$(find "$ROOT/core" -name '*.cs' -newer "$core" -print -quit 2>/dev/null)" ]; then
+      if [ ! -x "$core" ] || [ -n "$(find "$ROOT/core" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' -newer "$core" -print -quit 2>/dev/null)" ]; then
         dotnet build "$ROOT/core/Core.csproj" -v q --nologo >/dev/null || {
           echo "a-team: couldn't build the board's core: try dotnet build core/Core.csproj" >&2
           exit 1
