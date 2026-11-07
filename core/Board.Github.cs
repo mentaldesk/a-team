@@ -77,6 +77,7 @@ internal sealed partial class Board
         var task = Environment.GetEnvironmentVariable("A_TEAM_RUN_TASK") ?? "";
         if (task.Length == 0 || n == task) return;
         var (read, pr) = PrFor(task);
+        Console.Error.Write(read.Err);
         if (!read.Ok || pr?["number"]?.ToJsonString() != n)
             throw new Die($"this run is for #{task}: leave #{n} to a run of its own");
     }
@@ -251,31 +252,37 @@ internal sealed partial class Board
         ["eyes"] = raw?["reactions"]?["eyes"]?.DeepClone(),
     };
 
+    /// <summary>A read a command goes on without, with gh's words passed on.</summary>
+    private GhResult Aloud(params string[] args)
+    {
+        var read = _gh.Run(args);
+        Console.Error.Write(read.Err);
+        return read;
+    }
+
     /// <summary>All that's been said on #n, oldest first; null where GitHub won't say.</summary>
     internal List<JsonObject>? Comments(string n)
     {
-        var (all, code, _) = CommentsSoFar(n);
+        var (all, code) = CommentsSoFar(n);
         return code == 0 ? all : null;
     }
 
-    /// <summary>All that's been said on #n as far as GitHub would say, null for nothing; the exit code of the read it stopped at, or 0; and what gh said on stderr.</summary>
-    internal (List<JsonObject>? All, int Code, string Err) CommentsSoFar(string n)
+    /// <summary>All that's been said on #n as far as GitHub would say, null for nothing, and the exit code of the read it stopped at, or 0.</summary>
+    internal (List<JsonObject>? All, int Code) CommentsSoFar(string n)
     {
-        var read = _gh.Run("api", $"repos/{_repo}/issues/{n}");
-        var err = read.Err;
-        if (!read.Ok) return (null, read.Code, err);
+        var read = Aloud("api", $"repos/{_repo}/issues/{n}");
+        if (!read.Ok) return (null, read.Code);
         var issue = Json.Parse(read.Out);
         var all = new List<JsonObject> { Comment("body", issue) };
-        (List<JsonObject>?, int, string) Stopped(GhResult at) =>
-            (all.OrderBy(comment => Json.Text(comment["at"]), StringComparer.Ordinal).ToList(), at.Code, err);
-        var comments = _gh.Run("api", "--paginate", $"repos/{_repo}/issues/{n}/comments");
-        err += comments.Err;
-        if (!comments.Ok) return Stopped(comments);
+        (List<JsonObject>?, int) Stopped(int code) =>
+            (all.OrderBy(comment => Json.Text(comment["at"]), StringComparer.Ordinal).ToList(), code);
+        var comments = Aloud("api", "--paginate", $"repos/{_repo}/issues/{n}/comments");
+        if (!comments.Ok) return Stopped(comments.Code);
         all.AddRange(Paged(comments).Select(c => Comment("comment", c)));
         if (issue?["pull_request"] is not null)
         {
             var (owner, name) = RepoParts;
-            var reviews = _gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"number={n}", "-f", """
+            var reviews = Aloud("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"number={n}", "-f", """
                 query=
                     query($owner: String!, $name: String!, $number: Int!) {
                       repository(owner: $owner, name: $name) { pullRequest(number: $number) {
@@ -287,12 +294,10 @@ internal sealed partial class Board
                           | {kind: "review", state, author: (.author | {{Login}}), at: .submittedAt,
                              body: (.body // ""), url, id, eyes: .reactions.totalCount}
                 """);
-            err += reviews.Err;
-            if (!reviews.Ok) return Stopped(reviews);
+            if (!reviews.Ok) return Stopped(reviews.Code);
             all.AddRange(Json.ParseMany(reviews.Out).OfType<JsonObject>());
-            var lines = _gh.Run("api", "--paginate", $"repos/{_repo}/pulls/{n}/comments");
-            err += lines.Err;
-            if (!lines.Ok) return Stopped(lines);
+            var lines = Aloud("api", "--paginate", $"repos/{_repo}/pulls/{n}/comments");
+            if (!lines.Ok) return Stopped(lines.Code);
             foreach (var line in Paged(lines))
             {
                 var comment = Comment("line", line);
@@ -301,7 +306,7 @@ internal sealed partial class Board
                 all.Add(comment);
             }
         }
-        return Stopped(new GhResult(0, "", ""));
+        return Stopped(0);
     }
 
     /// <summary>The team wrote this, as the role whose marker is <paramref name="marker"/>.</summary>
@@ -365,7 +370,11 @@ internal sealed partial class Board
     private JsonArray? WaitsOn(string n, string repo, string bot)
     {
         var read = _gh.Run("api", "--paginate", $"repos/{repo}/issues/{n}/comments");
-        if (!read.Ok) return null;
+        return read.Ok ? WaitsIn(read, bot) : null;
+    }
+
+    private static JsonArray WaitsIn(GhResult read, string bot)
+    {
         var waits = new List<JsonObject>();
         foreach (var comment in Paged(read))
         {

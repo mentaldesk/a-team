@@ -19,22 +19,6 @@ internal sealed partial class Board
                       reviews(last: 50) { nodes { createdAt body state author { __typename login } {{SeenBy}}
                       comments(first: 50) { nodes { createdAt body author { __typename login } {{SeenBy}} } } } }
         """;
-    private const string RegisterColumns = """
-        id, team, CASE WHEN everyone THEN 'all' ELSE 'team' END AS scope, decision, why, who, kind, item, link,
-          said, recorded, confirmed, confirmed_on AS confirmedOn, replaced_by AS replacedBy, retired, yours
-        """;
-    private const string RegisterSchema = """
-        CREATE TABLE IF NOT EXISTS decisions (id INTEGER PRIMARY KEY, team TEXT NOT NULL,
-            everyone INTEGER NOT NULL DEFAULT 0, decision TEXT NOT NULL, why TEXT NOT NULL, who TEXT NOT NULL,
-            kind TEXT NOT NULL, item INTEGER NOT NULL, link TEXT NOT NULL, said TEXT NOT NULL, recorded TEXT NOT NULL,
-            confirmed TEXT NOT NULL, confirmed_on INTEGER, replaced_by INTEGER, retired TEXT, yours TEXT);
-          CREATE VIRTUAL TABLE IF NOT EXISTS decisions_text USING fts5(decision, why, content='decisions', content_rowid='id');
-          CREATE TRIGGER IF NOT EXISTS decisions_added AFTER INSERT ON decisions BEGIN
-            INSERT INTO decisions_text (rowid, decision, why) VALUES (new.id, new.decision, new.why); END;
-          CREATE TRIGGER IF NOT EXISTS decisions_reworded AFTER UPDATE OF decision, why ON decisions BEGIN
-            INSERT INTO decisions_text (decisions_text, rowid, decision, why) VALUES ('delete', old.id, old.decision, old.why);
-            INSERT INTO decisions_text (rowid, decision, why) VALUES (new.id, new.decision, new.why); END;
-        """;
 
     /// <summary>Whether this state has a record to read at all.</summary>
     internal static bool Recorded => File.Exists(Path.Combine(State, "history.db"));
@@ -86,7 +70,7 @@ internal sealed partial class Board
     {
         var conversation = new JsonArray();
         if (!long.TryParse(n, out _)) return conversation;
-        foreach (var remark in Remarks(TalkOn(n)).OrderBy(remark => Json.Text(remark["at"]), StringComparer.Ordinal))
+        foreach (var remark in Remarks(TalkPage(n)).OrderBy(remark => Json.Text(remark["at"]), StringComparer.Ordinal))
             conversation.Add((JsonNode?)new JsonObject
             {
                 ["who"] = WhoSaid(remark),
@@ -139,7 +123,7 @@ internal sealed partial class Board
     }
 
     /// <summary>One page holding #n's comments and its open PR, plus one more if GitHub hasn't linked that PR to it.</summary>
-    private JsonObject TalkOn(string n)
+    private JsonObject TalkPage(string n)
     {
         var (owner, name) = RepoParts;
         var asked = $$"""
@@ -321,9 +305,8 @@ internal sealed partial class Board
         var match = string.Join(" ", words.Select(word => $"\"{word.Replace("\"", "\"\"")}\"*"));
         try
         {
-            _record.Exec(RegisterSchema);
-            return _record.Rows($"""
-                SELECT {RegisterColumns} FROM decisions WHERE (team = {TeamQ} OR everyone)
+            return Register.Rows($"""
+                SELECT {DecisionColumns} FROM decisions WHERE (team = {TeamQ} OR everyone)
                       {(live ? "AND replaced_by IS NULL AND retired IS NULL" : "")}
                       {(match.Length > 0 ? $"AND id IN (SELECT rowid FROM decisions_text WHERE decisions_text MATCH {Reconciler.Q(match)})" : "")}
                       ORDER BY confirmed DESC, id DESC;

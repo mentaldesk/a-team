@@ -287,8 +287,7 @@ internal static partial class Commands
             throw new Die($"usage: board.sh {board.Team} feedback <role> <n>");
         var (role, n) = (args[0], args[1]);
         CheckRole(role);
-        var (all, code, err) = board.CommentsSoFar(n);
-        Console.Error.Write(err);
+        var (all, code) = board.CommentsSoFar(n);
         if (all is null) return code;
         var left = board.Unanswered(role, all);
         foreach (var comment in left)
