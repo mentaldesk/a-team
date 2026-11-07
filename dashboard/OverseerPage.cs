@@ -1,3 +1,4 @@
+using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Settings;
 using MentalDesk.Tui.Theming;
 
@@ -27,7 +28,7 @@ public sealed class OverseerPage : SettingsPage
         var label = OverseerBoard.Columns.Max(column => column.Length) + 1;
         _limits = [.. OverseerBoard.Columns.Select((column, row) => new Row(column,
             new Label { X = Indent, Y = FirstRow + row, Text = column },
-            new TextField { X = Indent + label, Y = FirstRow + row, Width = FieldWidth, Text = KeptLimit(column) },
+            new PlaceholderField { X = Indent + label, Y = FirstRow + row, Width = FieldWidth, Text = KeptLimit(column) },
             Dimmed(new Label { X = Indent + label + FieldWidth + 2, Y = FirstRow + row })))];
         Add(new Label { Text = Heading });
         foreach (var limit in _limits)
@@ -53,7 +54,7 @@ public sealed class OverseerPage : SettingsPage
         Show();
     }
 
-    internal IReadOnlyList<(string Column, TextField Field)> Fields => [.. _limits.Select(limit => (limit.Column, limit.Field))];
+    internal IReadOnlyList<(string Column, PlaceholderField Field)> Fields => [.. _limits.Select(limit => (limit.Column, limit.Field))];
 
     /// <summary>The columns whose limit is marked as refused.</summary>
     internal IReadOnlyList<string> Marked => [.. _limits.Where(limit => limit.Marked).Select(limit => limit.Column)];
@@ -122,7 +123,7 @@ public sealed class OverseerPage : SettingsPage
         _say(said is null ? "" : marked.Count == 1 ? Refusal(said.Column) : $"{Refusal(said.Column)}  •  {marked.Count - 1} more to fix");
     }
 
-    private sealed record Row(string Column, Label Name, TextField Field, Label Default)
+    private sealed record Row(string Column, Label Name, PlaceholderField Field, Label Default)
     {
         public bool Marked { get; set; }
     }

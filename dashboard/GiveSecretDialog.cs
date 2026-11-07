@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Text;
 using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Fields;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -17,7 +18,7 @@ public sealed class GiveSecretDialog : DashboardDialog
     private readonly Func<string, Task<string?>> _save;
     private readonly Label _request;
     private readonly Label _valueLabel;
-    private readonly TextField _value;
+    private readonly PlaceholderField _value;
     private readonly Label _note;
     private Task<string?>? _saving;
     private bool _replaces;
@@ -32,7 +33,7 @@ public sealed class GiveSecretDialog : DashboardDialog
         Width = Dim.Func(_ => Math.Min(Wide, SuperView?.Viewport.Width ?? App?.Screen.Width ?? Wide), this);
         _request = new Label { X = 1, Y = 0, Width = Dim.Fill(1), Height = Dim.Func(_ => Rows(_request!), this), HotKeySpecifier = (Rune)0xffff };
         _valueLabel = new Label { Text = "Value:", X = 1, Y = Pos.Bottom(_request) + 1 };
-        _value = new TextField { X = 8, Y = Pos.Top(_valueLabel), Width = Dim.Fill(1), Secret = true };
+        _value = new PlaceholderField { X = 8, Y = Pos.Top(_valueLabel), Width = Dim.Fill(1), Secret = true };
         _note = new Label { X = 1, Y = Pos.Bottom(_valueLabel) + 1, Width = Dim.Fill(1), Height = Dim.Func(_ => Rows(_note!), this), HotKeySpecifier = (Rune)0xffff };
         Height = Dim.Func(_ => Rows(_request) + 3 + Rows(_note) + 1 + Foot.Rows + Alert.Lines + GetAdornmentsThickness().Vertical, this);
         Bind(SaveId, Key.Enter, "Save", Save);
@@ -60,7 +61,7 @@ public sealed class GiveSecretDialog : DashboardDialog
     /// <summary>Whether GitHub took the value.</summary>
     internal bool Saved { get; private set; }
 
-    internal TextField Value => _value;
+    internal PlaceholderField Value => _value;
 
     internal string Request => _request.Text;
 
@@ -92,7 +93,7 @@ public sealed class GiveSecretDialog : DashboardDialog
         return true;
     }
 
-    // TextField only places its cursor as it takes focus or resizes, so it's left behind where the dialog then moves.
+    // A field only places its cursor as it takes focus or resizes, so it's left behind where the dialog then moves.
     private void PlaceCursor()
     {
         if (_value.HasFocus && !_value.ReadOnly)

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Filtering;
 using MentalDesk.Tui.Focus;
 using MentalDesk.Tui.Dialogs;
@@ -40,7 +41,7 @@ public sealed class GuideDialog : DashboardDialog
     private readonly View _contentsTab = new() { Title = "Contents", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
     private readonly View _indexTab = new() { Title = "Index", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
     private readonly TreeView<GuideTopic> _contents;
-    private readonly TextField _filter = new() { X = 0, Y = 0, Width = Dim.Fill() };
+    private readonly PlaceholderField _filter = new() { X = 0, Y = 0, Width = Dim.Fill() };
     private readonly ListView _index = new() { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = false };
     private readonly Label _noMatches = new() { X = 0, Y = 1, Text = "(no matches)", Enabled = false, Visible = false };
     private string _current = "";
@@ -179,7 +180,7 @@ public sealed class GuideDialog : DashboardDialog
 
     internal TreeView<GuideTopic> ContentsTree => _contents;
 
-    internal TextField IndexFilter => _filter;
+    internal PlaceholderField IndexFilter => _filter;
 
     internal IReadOnlyList<GuideTopic> Matches => _matches;
 

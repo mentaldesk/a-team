@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Keys;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
@@ -75,21 +76,21 @@ public sealed class TeamForm : AppDialog
     private readonly Func<string, TeamSettings, string?> _save;
     private readonly IReadOnlyCollection<string> _taken;
     private readonly string _teamsDirectory;
-    private readonly TextField? _name;
-    private readonly TextField _repo;
+    private readonly PlaceholderField? _name;
+    private readonly PlaceholderField _repo;
     private readonly PickRow _stakeholders;
     private readonly PickRow _contributes;
     private readonly PickRow _skills;
     private readonly DropDownList _project;
-    private readonly TextField _owner;
-    private readonly TextField _number;
+    private readonly PlaceholderField _owner;
+    private readonly PlaceholderField _number;
     private readonly View _ownedBy;
-    private readonly TextField _vision;
+    private readonly PlaceholderField _vision;
     private readonly View _docsRows = new() { X = 0, Width = Dim.Fill(), Height = DocsRows, CanFocus = true };
     private readonly OptionSelector<DocsChoice> _docsChoice;
-    private readonly TextField _docs;
-    private readonly TextField _workdir;
-    private readonly TextField _try;
+    private readonly PlaceholderField _docs;
+    private readonly PlaceholderField _workdir;
+    private readonly PlaceholderField _try;
     private readonly OptionSelector<TeamStatus>? _status;
     private readonly OptionSelector<TeamRelease> _release;
     private readonly OptionSelector<VisionTrigger> _visionTrigger;
@@ -202,9 +203,9 @@ public sealed class TeamForm : AppDialog
         _project = new DropDownList { X = FieldX, Y = row, Width = Dim.Fill(Inset), ReadOnly = true };
         _ownedBy = new View { X = FieldX, Y = row, Width = Dim.Fill(Inset), Height = 1, CanFocus = true, Visible = false };
         var ownerLabel = new Label { Text = "Owner", X = 0, Y = 0 };
-        _owner = new TextField { Text = settings.ProjectOwner, X = Pos.Right(ownerLabel) + 1, Y = 0, Width = 20 };
+        _owner = new PlaceholderField { Text = settings.ProjectOwner, X = Pos.Right(ownerLabel) + 1, Y = 0, Width = 20 };
         var numberLabel = new Label { Text = "Number", X = Pos.Right(_owner) + 2, Y = 0 };
-        _number = new TextField { Text = settings.ProjectNumber?.ToString() ?? "", X = Pos.Right(numberLabel) + 1, Y = 0, Width = 8 };
+        _number = new PlaceholderField { Text = settings.ProjectNumber?.ToString() ?? "", X = Pos.Right(numberLabel) + 1, Y = 0, Width = 8 };
         _ownedBy.Add(ownerLabel, _owner, numberLabel, _number);
         Add(mirrorLabel, _project, _ownedBy);
         // Before Check's own handler, which rechecks what Pick sets.
@@ -380,9 +381,9 @@ public sealed class TeamForm : AppDialog
     /// <summary>The name a new team was created under.</summary>
     internal string? SavedName { get; private set; }
 
-    internal TextField? NameField => _name;
+    internal PlaceholderField? NameField => _name;
 
-    internal TextField Repo => _repo;
+    internal PlaceholderField Repo => _repo;
 
     internal View StakeholdersRow => _stakeholders;
 
@@ -428,22 +429,22 @@ public sealed class TeamForm : AppDialog
 
     internal DropDownList Project => _project;
 
-    internal TextField Owner => _owner;
+    internal PlaceholderField Owner => _owner;
 
-    internal TextField Number => _number;
+    internal PlaceholderField Number => _number;
 
-    internal TextField Vision => _vision;
+    internal PlaceholderField Vision => _vision;
 
-    internal TextField Docs => _docs;
+    internal PlaceholderField Docs => _docs;
 
     /// <summary>The User docs and First page rows, shown only while the Customer lead is ticked.</summary>
     internal View DocsRowsView => _docsRows;
 
     internal OptionSelector<DocsChoice> UserDocs => _docsChoice;
 
-    internal TextField Workdir => _workdir;
+    internal PlaceholderField Workdir => _workdir;
 
-    internal TextField Try => _try;
+    internal PlaceholderField Try => _try;
 
     internal OptionSelector<TeamStatus>? Status => _status;
 
@@ -849,7 +850,7 @@ public sealed class TeamForm : AppDialog
         $"{path} isn't in {repo} yet: the Customer lead will draft the docs for you to approve.";
 
     /// <summary>Opens the repo's Markdown files to pick from, loading them unless they've been read already.</summary>
-    private void PickFile(TextField field, string label, Func<string> caption)
+    private void PickFile(PlaceholderField field, string label, Func<string> caption)
     {
         var repo = Current().Repo;
         var (width, rows) = App is { } app ? RepoFilePicker.Fit(app.Screen.Width, app.Screen.Height) : (74, 16);
@@ -882,7 +883,7 @@ public sealed class TeamForm : AppDialog
     }
 
     /// <summary>The field's caption, or that the path isn't in the repo yet where its files have been read.</summary>
-    private string FileCaption(TextField field, string caption, Func<string, string, string> missing) =>
+    private string FileCaption(PlaceholderField field, string caption, Func<string, string, string> missing) =>
         field.Text.Trim() is { Length: > 0 } path && _repoFiles is { Failure: null } files && files.Repo == Current().Repo && !files.Has(path)
             ? missing(path, files.Repo)
             : caption;
@@ -932,13 +933,13 @@ public sealed class TeamForm : AppDialog
         _settingWorkdir = false;
     }
 
-    private TextField PathField(
+    private PlaceholderField PathField(
         string label, string value, int row, Func<string> caption, Action pick, View? into = null, Func<string?>? refusal = null)
     {
         into ??= this;
         var name = new Label { Text = label, X = Inset, Y = row };
         into.Add(name);
-        var field = new TextField { Text = value, X = FieldX, Y = row, Width = Dim.Fill(Inset + PickWidth) };
+        var field = new PlaceholderField { Text = value, X = FieldX, Y = row, Width = Dim.Fill(Inset + PickWidth) };
         if (refusal is not null)
             Check(field, name, refusal);
         field.KeyDown += (_, key) =>
@@ -957,11 +958,11 @@ public sealed class TeamForm : AppDialog
         return field;
     }
 
-    private TextField Field(string label, string value, int row, string caption, Func<string?>? refusal = null)
+    private PlaceholderField Field(string label, string value, int row, string caption, Func<string?>? refusal = null)
     {
         var name = new Label { Text = label, X = Inset, Y = row };
         Add(name);
-        var field = new TextField { Text = value, X = FieldX, Y = row, Width = Dim.Fill(Inset) };
+        var field = new PlaceholderField { Text = value, X = FieldX, Y = row, Width = Dim.Fill(Inset) };
         Add(field);
         if (refusal is not null)
             Check(field, name, refusal);
