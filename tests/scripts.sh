@@ -155,6 +155,7 @@ grep -q '^  resume ' "$OUT" || fail "usage: no resume line"
 # its status, as a real board's do: a pitch carries `pitch` from Exploring on, and a task the Dev
 # has claimed is the one In progress or In review.
 gh_items() {
+  [ -z "${BIN:-}" ] || PATH=${PATH/"$BIN:"/}
   BIN=$(mktemp -d "$WORK/bin.XXXXXX")
   ITEMS="$BIN/items.json"
   CALLS="$BIN/calls"
