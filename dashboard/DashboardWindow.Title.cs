@@ -53,6 +53,8 @@ public sealed partial class DashboardWindow
     /// <summary>Where you are and when it was read, then what's running or what's selected, under any message.</summary>
     private void ShowMessage()
     {
+        if (_hintsForSecret != AskingSecret() is not null)
+            ShowKeysHint();
         var resting =
             _progress is { Length: > 0 } ? _progress
             : _writes.Status() is { Length: > 0 } writing ? writing

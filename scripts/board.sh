@@ -132,6 +132,7 @@ FACTS='def facts: .marks as $m | [
      else empty end),
     (if $m.skipped then "skipped" else empty end),
     (if $m.held then "held" else empty end),
+    (if $m.secret then "needs \($m.secret.name)" else empty end),
     (if ($m.upstream | type) == "array" and $m.upstream != [] then "waiting on \($m.upstream | join(", "))"
      elif $m.upstream then "waiting on another repo" else empty end)] | join(" · ");'
 
@@ -161,8 +162,8 @@ act_as_app() {
 
 case "$CMD" in
   accept | add | approve | attach | audited | claim | comment | covered | decide | decision | decline | depends | \
-    edit | feedback | finish | fix | hold | mine | move | new | pictures | priority | recommend | reconfirm | \
-    release | replace | review | seeded | shelve | skip | spent | task | theme | triggers | unblock | undepend | \
+    edit | feedback | finish | fix | gave | hold | mine | move | new | pictures | priority | recommend | reconfirm | \
+    release | replace | review | secret | seeded | shelve | skip | spent | task | theme | triggers | unblock | undepend | \
     unlink | vision-review)
     speaker=${1:-}
     [ "$CMD" != triggers ] || [ "$speaker" != --sweep ] || speaker=${2:-}
@@ -2188,6 +2189,33 @@ own_task() {
     die "this run is for #$task: leave #$2 to a run of its own"
 }
 
+# hold_task <role> <n> <body> <what>: <role> may hold #<n>, so posts <body> on it, marks it held and records <what>.
+hold_task() {
+  local role=$1 n=$2 body=$3 what=$4 it
+  own_task "$role" "$n"
+  it=$(item "$n")
+  [ -n "$it" ] || die "#$n is not on the board"
+  if [ "$role" = dev ]; then
+    jq -e '.marks.dev and (.status == "In progress" or .status == "Ready")' <<<"$it" >/dev/null ||
+      die "dev holds only its own task, In progress or Ready (#$n is in '$(jq -r .status <<<"$it")')"
+  else
+    jq -e "$READY_TASK" <<<"$it" >/dev/null || die "only a Ready task can be held (#$n is in '$(jq -r .status <<<"$it")')"
+  fi
+  ! jq -e '.marks.held' <<<"$it" >/dev/null || die "#$n is already held"
+  [ "$role" = you ] || body+=$'\n\n'"<!-- a-team:$role -->"
+  [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+  write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
+  [ "$role" = you ] || ack "$n"
+  mark "$n" held "$(jq -cn --arg at "$(date -u +%FT%TZ)" --arg by "$role" '{at: $at, by: $by}')"
+  record "$role" "$n" "$what"
+}
+
+# clear_hold <n> <item>: #<n> is held no longer, nor asking for a secret.
+clear_hold() {
+  mark "$1" held null
+  if jq -e '.marks.secret' <<<"$2" >/dev/null; then mark "$1" secret null; fi
+}
+
 # own_docs <role> <n>: the Customer lead touches only its own docs PR.
 own_docs() {
   [ "$1" = customer ] || return 0
@@ -3290,7 +3318,7 @@ case "$CMD" in
     else
       die "no stakeholder has replied to $role's ask on #$n since it was held"
     fi
-    mark "$n" held null
+    clear_hold "$n" "$it"
     record "$role" "$n" "$what"
     ack "$n"
     say "#$n: no longer blocked"
@@ -3306,24 +3334,49 @@ case "$CMD" in
     esac
     [ -f "$file" ] || die "no such file: $file"
     [ -n "$(tr -d '[:space:]' <"$file")" ] || die "say why #$n is held"
-    own_task "$role" "$n"
+    hold_task "$role" "$n" "$(cat "$file")" held
+    say "#$n: held"
+    ;;
+
+  secret)
+    [ $# -eq 5 ] || die "usage: board.sh $TEAM secret <role> <n> <NAME> <repo|environment> <file>"
+    role=$1 n=$2 name=$3 where=$4 file=$5
+    case "$role" in
+      dev | lead) ;;
+      *) die "only the Lead or the Dev asks for a secret, not $role" ;;
+    esac
+    [[ $name =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "'$name' can't be a secret's name: letters, digits and _ only, not starting with a digit"
+    [[ $(tr '[:lower:]' '[:upper:]' <<<"$name") != GITHUB_* ]] || die "'$name' can't be a secret's name: GitHub keeps GITHUB_ for itself"
+    [[ $where =~ ^[A-Za-z0-9_.][A-Za-z0-9_.\ -]*$ ]] || die "'$where' can't be an environment's name"
+    [ -f "$file" ] || die "no such file: $file"
+    [ -n "$(tr -d '[:space:]' <"$file")" ] || die "say why #$n needs $name, and where to get it"
+    if [ "$where" = repo ]; then
+      environment='' place="a repo secret of $REPO"
+    else
+      environment=$where place="in the $where environment of $REPO"
+    fi
+    why=$(cat "$file")
+    hold_task "$role" "$n" "🔑 This needs \`$name\`, $place.
+
+$why
+
+Give it in Work, with \`k\` on this task. Never put its value in a comment: this is public." "held · asks for $name"
+    mark "$n" secret "$(jq -cn --arg name "$name" --arg environment "$environment" --arg by "$role" --arg why "$why" \
+      '{name: $name, environment: $environment, by: $by, why: $why}')"
+    say "#$n: held, asking for $name"
+    ;;
+
+  gave)
+    [ $# -eq 2 ] || die "usage: board.sh $TEAM gave you <n>"
+    role=$1 n=$2
+    [ "$role" = you ] || die "only a stakeholder gives a secret, from the app"
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
-    if [ "$role" = dev ]; then
-      jq -e '.marks.dev and (.status == "In progress" or .status == "Ready")' <<<"$it" >/dev/null ||
-        die "dev holds only its own task, In progress or Ready (#$n is in '$(jq -r .status <<<"$it")')"
-    else
-      jq -e "$READY_TASK" <<<"$it" >/dev/null || die "only a Ready task can be held (#$n is in '$(jq -r .status <<<"$it")')"
-    fi
-    ! jq -e '.marks.held' <<<"$it" >/dev/null || die "#$n is already held"
-    body=$(cat "$file")
-    [ "$role" = you ] || body+=$'\n\n'"<!-- a-team:$role -->"
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
-    [ "$role" = you ] || ack "$n"
-    mark "$n" held "$(jq -cn --arg at "$(date -u +%FT%TZ)" --arg by "$role" '{at: $at, by: $by}')"
-    record "$role" "$n" "held"
-    say "#$n: held"
+    jq -e "$HELD and .marks.secret" <<<"$it" >/dev/null || die "#$n isn't asking for a secret"
+    name=$(jq -r .marks.secret.name <<<"$it")
+    clear_hold "$n" "$it"
+    record you "$n" "gave $name"
+    say "#$n: back in the Dev's queue"
     ;;
 
   release)
@@ -3337,7 +3390,7 @@ case "$CMD" in
     it=$(item "$n")
     [ -n "$it" ] || die "#$n is not on the board"
     jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a held Ready task"
-    mark "$n" held null
+    clear_hold "$n" "$it"
     record "$role" "$n" "hold released"
     say "#$n: hold released"
     ;;
@@ -3502,9 +3555,10 @@ case "$CMD" in
         + if .dependabot then {dependency: true} else {} end
         + if .type == "PullRequest" and .status == "Pitched" and ((.labels | index("pitch")) or .marks.customer)
           then {document: true} else {} end)' <<<"$all")
-    held=$(jq --arg team "$TEAM" "map(select($HELD)
+    held=$(jq --arg team "$TEAM" --arg repo "$REPO" "map(select($HELD)
       | {number, title, status, url, team: \$team, priority, pitch: false}
-        + if .dependabot then {dependency: true, prUrl: .url} else {} end)" <<<"$all")
+        + if .dependabot then {dependency: true, prUrl: .url} else {} end
+        + if .marks.secret then {secret: (.marks.secret + {repo: \$repo})} else {} end)" <<<"$all")
     upstream='[]' reviewed='{}'
     for n in $(jq -r "map(select(($UPSTREAM_HELD or $UPSTREAM_REVIEWED) and (.marks.held | not))) | .[].number" <<<"$all"); do
       waits=$(jq -c --arg n "$n" '.detail.upstream[$n].waits // empty' <<<"$stored")

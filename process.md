@@ -148,6 +148,10 @@ a-team board {{team}} undepend <role> <task> <prereq> "<why>"
                                                 # <prereq> may be <owner/repo>#<n>
 a-team board {{team}} hold <role> <n> <file>    # hold task <n>, posting <file>, the question or why: the
                                                 # Dev its own task, the Lead or stakeholder a Ready one
+a-team board {{team}} secret <role> <n> <NAME> <repo|environment> <file>
+                                                # Dev or Lead: hold task <n> asking for GitHub Actions secret
+                                                # <NAME>, for the repo or that environment; <file> says why
+                                                # and where to get it, never a value
 a-team board {{team}} unblock <role> <n>        # Dev or Lead: clear the hold on a task it held, once a
                                                 # stakeholder has replied (Lead: or it waits on another repo)
 a-team board {{team}} release you <n>           # stakeholder only: take the hold off Ready task <n>,
@@ -185,7 +189,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend`, `trends`, `spending` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
 `overview` is what its Overseer reads, `bumps` is how the dispatcher merges green dependency PRs and hands red ones to the Dev, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
-screenshot, `tick` is how it saves a tick on a task's criteria, `spent` is how it records the
+screenshot, `tick` is how it saves a tick on a task's criteria, `gave` is how it frees a task once you've given its secret, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `free` is how the dispatcher frees a task once what it waits on in
 another repo has closed or been released, and `update` is how it brings a PR In review that's behind
@@ -212,6 +216,11 @@ tell what `$B` will run.
 - **Look at every screenshot.** `images` lists a local copy of each image the stakeholder attached.
   Read each one before acting on what it's attached to, and when you reply about it, say what you saw.
 - Be brief. The stakeholder reads these on a phone.
+- **Ask for a secret by name, with `secret`,** never in prose, and never ask for its value in a comment: a
+  comment here is published. The stakeholder gives it in Work, GitHub stores it, and no agent ever sees it.
+  Giving it frees the task by itself. If they reply instead (*done*, or *not this one*), read the reply as
+  for any hold. The field takes one line, so for a value of several lines, like a GPG key, hold the task
+  instead, naming the secret and where it goes.
 
 ## Every run
 

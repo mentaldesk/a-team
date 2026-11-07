@@ -192,6 +192,34 @@ public sealed partial class DashboardWindow
             $"Holding #{item.Number}…", $"#{item.Number} is already being held", $"holding #{item.Number}", item, Scratch: file));
     }
 
+    private WaitingItem? AskingSecret() => _shown is { Secret: not null } read ? read
+        : _area == Area.Work && _work.SelectedCard is { Secret: not null } card ? card : null;
+
+    /// <summary>Opens <b>Give a secret</b>. The value goes from the dialog to GitHub and nowhere else: what the board is told
+    /// afterwards is only that it was given. True once it has been.</summary>
+    private bool GiveSecret()
+    {
+        if (AskingSecret() is not { Secret: { } secret } item || _options.Secrets is not { } secrets || Already(Write.KeyOf(item)))
+            return false;
+        if (!_giveSecret(item, secrets.IsSet(secret), value => secrets.Store(secret, value)))
+            return false;
+        _attention.Did("gave");
+        if (_shown is not null)
+            _leaving = item;
+        Queue(new Write(WriteKind.GaveSecret, Write.KeyOf(item), ["board", item.Team, "gave", "you", item.Number.ToString()],
+            $"Freeing #{item.Number}…", $"#{item.Number} is already being freed", $"freeing #{item.Number}, whose secret is saved", item));
+        return true;
+    }
+
+    private void GaveSecret(WaitingItem item)
+    {
+        _leaving = null;
+        _work.Leave(item);
+        Announce($"#{item.Number} back in the Dev's queue · its secret is saved");
+        SetNeedsLayout();
+        SetNeedsDraw();
+    }
+
     /// <summary>Posts what you wrote, if anything, then takes the hold off, whoever set it. Like a decline, the reader
     /// closes on it at once, and the card leaves once the board has taken it.</summary>
     private Task<string?> Release(WaitingItem item, string comment)
@@ -372,6 +400,9 @@ public sealed partial class DashboardWindow
                 break;
             case WriteKind.Release:
                 Released(write.Item!);
+                break;
+            case WriteKind.GaveSecret:
+                GaveSecret(write.Item!);
                 break;
             case WriteKind.VisionReview:
                 _pass.Start();

@@ -71,7 +71,7 @@ tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, you, or nobody who said why. A Dependabot PR the Dev can't make build is here too, with the Dev's reason under it, and so is a green one GitHub keeps refusing to merge, with GitHub's. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
+| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, either of them asking for a secret (🔑), you, or nobody who said why. A Dependabot PR the Dev can't make build is here too, with the Dev's reason under it, and so is a green one GitHub keeps refusing to merge, with GitHub's. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, or another team's Dev's PR to this repo once it's ready. |
 
 Each column's heading counts its cards, and orders them with the ones [holding up a
@@ -303,6 +303,17 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
   before throwing it away: `Ctrl+Enter` discards it, and `Esc` keeps writing.
 - **Answer a question.** Read it in Blocked, and reply with `c`. On a held task, reply that it's
   done and the agent that held it takes the hold off itself.
+- **Give a secret the team asks for.** A task that needs a GitHub Actions secret only you can give waits in
+  Blocked with a 🔑 and the secret's name, like `🔑 #702  lead · needs WINGET_TOKEN · …`, and the reader shows who
+  asked, where it goes and why. On its card or in the reader, press `k` (**Cards → Give secret…**, or **Give secret…**
+  in Commands). **Give a secret** says what's asked for, and says so if saving will replace one already set; type
+  or paste it into **Value**, which shows `•` for each character, and press **Save**. It's stored with GitHub as an encrypted secret
+  of the repo or the environment, under your own GitHub sign-in, so you need to be an admin of the repo. The task goes
+  back in the Dev's queue, with no reply needed, and its history says `gave WINGET_TOKEN`. No agent sees the
+  value, and it goes in no comment, record or log. If GitHub refuses, the dialog stays open with what you typed and says
+  why; `Esc` gives nothing. If you'd rather not give it, or you set it in GitHub's settings yourself, reply with `c`,
+  and the agent that asked reads your reply. **Value** takes one line, so set a value of several lines, like a GPG key,
+  in GitHub's settings and reply.
 - **Ask the Dev to fix what the Reviewer left to consider.** On a task that says `reviewed · N to
   consider`, reading it or with its card selected, press `f` (**Cards → Ask the Dev to fix…**).
   **Ask the Dev to fix #n** lists each **Worth considering** point with a check box, and a `Note:`

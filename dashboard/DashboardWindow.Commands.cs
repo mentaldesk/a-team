@@ -110,6 +110,7 @@ public sealed partial class DashboardWindow
                 isEnabled: () => OnWork() && _work.SelectedCard is { Shelvable: true }, onCard: true, scopes: [Regions.Work])
             .Register("work.hold", () => holdTask[_work.SelectedCard is { Held: true } ? 1 : 0], HoldOrRelease, new Key('h'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Holdable: true }, onCard: true, scopes: [Regions.Work], menuLabels: holdTask)
+            .Register("work.secret", "Give secret…", () => GiveSecret(), new Key('k'), isEnabled: () => AskingSecret() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.fix", "Ask the Dev to fix…", () => AskFix(), new Key('f'), isEnabled: () => Fixable() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
@@ -227,10 +228,15 @@ public sealed partial class DashboardWindow
         [.. _writes.Running is { Item: { } running } ? [running] : Array.Empty<WaitingItem>(),
             .. _writes.Queued.Select(write => write.Item).OfType<WaitingItem>()];
 
-    /// <summary>The status bar's one hint, as TuiCode words it: every other key is in the sheet it opens.</summary>
+    /// <summary>The status bar's one hint, as TuiCode words it: every other key is in the sheet it opens. Only a card
+    /// asking for a secret adds its own, since nothing else on it says how to give one.</summary>
     private void ShowKeysHint()
     {
         var keys = _commands.Keys.For("help").FirstOrDefault()?.Display;
-        _bar.Hints.Show(keys is null ? [] : [($"Press {keys} for help", () => _commands.Execute("help"))]);
+        var secret = AskingSecret() is not null ? _commands.Keys.For("work.secret").FirstOrDefault()?.Display.ToLowerInvariant() : null;
+        _hintsForSecret = secret is not null;
+        _bar.Hints.Show([
+            .. secret is null ? [] : new (string, Action)[] { ($"{secret} Give secret", () => _commands.Execute("work.secret")) },
+            .. keys is null ? [] : new (string, Action)[] { ($"Press {keys} for help", () => _commands.Execute("help")) }]);
     }
 }

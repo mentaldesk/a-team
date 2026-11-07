@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Fields;
@@ -23,7 +24,7 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
     ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null, ReaderRelease? Release = null,
-    ReaderCommand? Fix = null, ReaderTick? Tick = null);
+    ReaderCommand? Fix = null, ReaderTick? Tick = null, ReaderCommand? Secret = null);
 
 /// <summary>Ticking a criterion from the reader: Run saves it on the task, with null once it's saved or else why not;
 /// Settle takes in writes that have finished, which nothing else does while the reader is open; Changed is told how many
@@ -87,6 +88,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string ApproveId = "reader.approve";
     private const string AcceptId = "reader.accept";
     private const string FixId = "reader.fix";
+    private const string SecretId = "reader.secret";
     private const string CommentId = "reader.comment";
     private const string PostId = "reader.post";
     private const string AttachId = "reader.attach";
@@ -104,7 +106,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string TickId = "reader.tick";
     private const int BandLines = 3;
     private static readonly string[] WaitForPost =
-        [SetId, ApproveId, AcceptId, FixId, CommentId, DeclineId, NotNowId, ReleaseId, TryId, EditId, CancelId];
+        [SetId, ApproveId, AcceptId, FixId, SecretId, CommentId, DeclineId, NotNowId, ReleaseId, TryId, EditId, CancelId];
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
@@ -172,7 +174,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
         Func<string, LinkOutcome>? openUrl = null, Action<Picture, string>? viewImage = null)
-        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
+        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Secret is { } secret ? $" · {secret.Asker} asks for a secret" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
     {
         _pictures = pictures;
         _openUrl = openUrl;
@@ -207,7 +209,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
         int PaneRows() => Math.Max(0, FootRow() - 1 - (rank is null ? 0 : BandLines));
 
-        _standing = new Label { Text = item.Standing, X = 1, Y = 0, Width = Dim.Fill(1), CanFocus = false, SchemeName = LogSchemes.Dimmed };
+        _standing = new Label { Text = item.Standing, X = 1, Y = 0, Width = Dim.Fill(1), CanFocus = false, SchemeName = LogSchemes.Dimmed, HotKeySpecifier = (Rune)0xffff };
 
         _commentFrame = new FrameView
         {
@@ -580,6 +582,8 @@ public sealed partial class ReaderDialog : DashboardDialog
             Bind(AcceptId, _accept.Key, Capital(_accept.Hint), AcceptItem, Reads);
         if (_comment?.Fix is { } fix)
             Bind(FixId, fix.Key, "Ask the Dev to fix", AskFix, Reads);
+        if (_comment?.Secret is { } secret)
+            Bind(SecretId, secret.Key, "Give secret", GiveSecret, Reads);
         if (_comment is not null)
         {
             Bind(CommentId, _comment.Key, Capital(_comment.Hint), Comment, Reads);
@@ -604,7 +608,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         foreach (var (id, kind) in new[]
         {
             (SetId, ButtonKind.Primary), (ApproveId, _accept is null ? ButtonKind.Primary : ButtonKind.Secondary),
-            (AcceptId, ButtonKind.Primary), (FixId, ButtonKind.Secondary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary), (ReleaseId, ButtonKind.Secondary),
+            (AcceptId, ButtonKind.Primary), (FixId, ButtonKind.Secondary), (SecretId, ButtonKind.Primary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary), (ReleaseId, ButtonKind.Secondary),
             (AttachId, ButtonKind.Secondary), (DeclineId, ButtonKind.Danger),
             (NotNowId, ButtonKind.Secondary), (IdeaId, ButtonKind.Secondary), (TryId, ButtonKind.Secondary),
             (EditId, ButtonKind.Secondary), (GitHubId, ButtonKind.Secondary), (CancelId, ButtonKind.Secondary),
@@ -1018,6 +1022,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     private bool AcceptNow() => !_accept!.Run() || Close();
 
     private bool AskFix() => Leave(() => !_comment!.Fix!.Run() || Close());
+
+    private bool GiveSecret() => Leave(() => !_comment!.Secret!.Run() || Close());
 
     private bool Comment()
     {

@@ -171,7 +171,7 @@ public partial class DashboardWindowTests
                 "Select the column to the right", "Select the column to the left", "Select the card below",
                 "Select the card above", "Open", "Set priority", "Try", "Copy branch name", "Open on GitHub", "Open team's board on GitHub",
                 "Write the vision with me", "Review the vision", "Approve the pitch you're reading", "Accept",
-                "Comment on the item you're reading", "Edit the document pitch you're reading", "Attach image file to what you're writing", "View image", "Decline", "Not now", "Hold", "Ask the Dev to fix…",
+                "Comment on the item you're reading", "Edit the document pitch you're reading", "Attach image file to what you're writing", "View image", "Decline", "Not now", "Hold", "Give secret…", "Ask the Dev to fix…",
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read this team again", "Read what's waiting again",
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",

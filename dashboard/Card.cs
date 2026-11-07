@@ -67,7 +67,7 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool
             return Elide($"{Icons.Glyph(Icon.PullRequest, style)} #{Item.Pr}  {Item.Title}", width);
         var chained = Item.Holding.Count > 0 ? Holds.Frees(Item) : Item.WaitsOn;
         var number = StuckBump && chained.Length == 0 ? $"PR #{Item.Number}" : chained.Length == 0 ? $"#{Item.Number}" : $"#{Item.Number} {Icons.Glyph(Icon.Chain, style)} {chained}";
-        var said = new[] { Item.Mine || Item.WaitsUpstream ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "",
+        var said = new[] { Item.Secret is { } secret ? $"{secret.By} · needs {secret.Name}" : Item.Mine || Item.WaitsUpstream ? "" : Item.Turn, Item.Suggested, Item.Trouble, Item.Docs ? "Customer lead" : "",
                 Item.Fix ? "fix" : "", Item.Dependency && !StuckBump ? "Dependabot" : "", Item.Review,
                 New ? NewMark + Item.Title : Item.Title }
             .Where(part => part.Length > 0);

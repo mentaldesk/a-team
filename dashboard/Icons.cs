@@ -42,6 +42,7 @@ public enum Icon
     Writing,
     Chain,
     Blocked,
+    Secret,
 }
 
 /// <summary>A card's icon for whose move it is, and the scheme its colour comes from.</summary>
@@ -82,6 +83,7 @@ public static class Icons
         [Icon.Writing] = "\U000F01D8", // nf-md-dots_horizontal
         [Icon.Chain] = "\U000F0337",   // nf-md-link
         [Icon.Blocked] = "\uF479",     // nf-oct-blocked
+        [Icon.Secret] = "\U000F0306",  // nf-md-key
     };
 
     private static readonly Dictionary<Icon, string> UnicodeGlyphs = new()
@@ -112,6 +114,7 @@ public static class Icons
         [Icon.Writing] = "⋯",
         [Icon.Chain] = "⛓",
         [Icon.Blocked] = "⊘",
+        [Icon.Secret] = "\U0001F511",
     };
 
     /// <summary>The meanings a style's sample shows, in the order Settings names them underneath.</summary>
@@ -168,7 +171,7 @@ public static class Icons
         For(item, style) with { Glyph = Glyph(KindOf(item), style) };
 
     internal static Icon KindOf(WaitingItem item) =>
-        item.Status == "Idea" ? Icon.Idea : item.Pitch ? Icon.Pitch : item.Docs ? Icon.Docs : Icon.Task;
+        item.Secret is not null ? Icon.Secret : item.Status == "Idea" ? Icon.Idea : item.Pitch ? Icon.Pitch : item.Docs ? Icon.Docs : Icon.Task;
 }
 
 /// <summary>A row wears its icon and its Priority in the cells the tree laid out in front of its text: drawn

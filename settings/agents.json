@@ -62,6 +62,8 @@
       "Bash(a-team board * comment you *)",
       "Bash(a-team board * hold you *)",
       "Bash(a-team board * release you *)",
+      "Bash(a-team board * gave you *)",
+      "Bash(gh secret *)",
       "Bash(a-team board * edit you *)",
       "Bash(a-team board * decision you *)",
       "Bash(a-team board * vision-review you)",

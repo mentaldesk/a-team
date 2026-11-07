@@ -2246,6 +2246,27 @@ public class ReaderDialogTests
     }
 
     [Fact]
+    public void A_secret_request_opens_at_its_comment_which_says_who_asked_for_what_where_and_why()
+    {
+        const string asked = "🔑 This needs `WINGET_TOKEN`, in the release environment of mentaldesk/demo.\n\nA classic PAT with public_repo.\n\nGive it in Work, with `k` on this task.";
+        var body = (new IssueBody(Long()) with { Opened = null }).With(new Conversation([new("lead", Then, $"{asked}\n\n<!-- a-team:lead -->")]), null);
+        using var dialog = Telling(body, Item with
+        {
+            Status = "Ready",
+            HeldBy = "lead",
+            Question = asked,
+            Secret = new SecretAsk("WINGET_TOKEN", "release", "mentaldesk/demo", "A classic PAT with public_repo.", "lead"),
+        }, width: 100);
+
+        Assert.Equal(body.Remarks[0].Line, dialog.Body.TopLine);
+        var shown = string.Join(' ', dialog.Body.Lines.Skip(dialog.Body.TopLine).Select(line => line.Text));
+        Assert.Contains("lead", shown);
+        Assert.Contains("WINGET_TOKEN", shown);
+        Assert.Contains("in the release environment of mentaldesk/demo", shown);
+        Assert.Contains("A classic PAT with public_repo.", shown);
+    }
+
+    [Fact]
     public void A_Lead_s_question_opens_at_the_pitch_s_Needs_your_answer_heading()
     {
         var body = Told(null, $"{Long()}\n\n## Needs your answer\n\n1. Which?\n\n{Long()}");

@@ -20,6 +20,7 @@ public sealed record DashboardOptions
     public Func<WaitingItem, bool>? ConfirmApprove { get; init; }
     public Func<Write?, IReadOnlyList<Write>, bool>? ConfirmQuit { get; init; }
     public Func<RunTask, bool>? ConfirmStop { get; init; }
+    public Func<WaitingItem, Task<bool>, Func<string, Task<string?>>, bool>? GiveSecret { get; init; }
     public Action<Handover>? HandOver { get; init; }
     public MacKeys? MacKeys { get; init; }
     public Func<IReadOnlyList<string>, string, string, Attaching?, (string Team, int Number)?>? NewIdea { get; init; }
@@ -33,6 +34,7 @@ public sealed record DashboardOptions
     public Func<string, DateTimeOffset, Task<Reading>>? ReadMoves { get; init; }
     public Func<string, Task<Reading>>? ReadTrend { get; init; }
     public Handover? Resume { get; init; }
+    public GitHubSecrets? Secrets { get; init; }
     public Action<string>? ShowDecisions { get; init; }
     public Action<string>? ShowGuide { get; init; }
     public Action<IReadOnlyList<string>, Action<string, SpendingItem>>? ShowSpending { get; init; }

@@ -22,6 +22,8 @@ I authorise you to do all of the following without asking me:
 - When I ask for a follow-up, open it as an issue on {{repo}} and put it on the board as an Idea
   with `a-team board {{team}} add dev <n> Idea`.
 - Hold the task or Dependabot PR you're on with a question for me, with `a-team board {{team}} hold dev <n> <file>`.
+- Ask for a GitHub Actions secret on the task you're on, by name and never by value, with
+  `a-team board {{team}} secret dev <n> <NAME> <repo|environment> <file>`.
 - Clear the hold on a task you handed back, once I've replied to your question, with
   `a-team board {{team}} unblock dev <n>`. Never clear it any other way.
 - Remove finished worktrees and their local branches, including any untracked leftover files in them, with

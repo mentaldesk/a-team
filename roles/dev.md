@@ -121,7 +121,10 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
    turns out to be wrong, either role can drop it with `undepend`.
 2. Read the issue and the pitch it belongs to. If the acceptance criteria are ambiguous or
    contradict the code, hold it with the specific question
-   (`a-team board {{team}} hold dev <n> <file>`), then move it back to Ready, and end the run.
+   (`a-team board {{team}} hold dev <n> <file>`), then move it back to Ready, and end the run. If it needs a
+   GitHub Actions secret only the stakeholder can give, ask with
+   `a-team board {{team}} secret dev <n> <NAME> <repo|environment> <file>`, the file saying why and where to get
+   it, then move it back to Ready, and end the run.
 3. If it needs a change in another repo first, like a shared library, open that before building:
    - If the repo is in the team config's `contributesTo`, clone it to `<workdir>/upstream/<name>`
      if it isn't there, and make the change in a worktree beside it, on a new branch from a fresh

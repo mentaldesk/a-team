@@ -11,6 +11,9 @@ public sealed record WaitingItem(
     bool Dependency = false, string Upstream = "", IReadOnlyList<IReadOnlyList<ChainLink>>? Chains = null,
     IReadOnlyList<int>? Frees = null, string HeldBy = "")
 {
+    /// <summary>The GitHub Actions secret it's held asking for, or null where it asks for none.</summary>
+    public SecretAsk? Secret { get; init; }
+
     /// <summary>Whether it's the task that makes the team's red default branch green again.</summary>
     public bool Fix { get; init; }
 
@@ -50,7 +53,7 @@ public sealed record WaitingItem(
     public bool Holdable => Status == "Ready" && !Pitch;
 
     /// <summary>Who held it and why, as the status bar says it: <c>held by the Lead · &lt;its ask&gt;</c>.</summary>
-    public string Hold => HeldBy switch
+    public string Hold => Secret is { } secret ? $"{secret.Asker} asks for a secret" : HeldBy switch
     {
         "dev" => $"held by the Dev · {Asked}",
         "lead" => $"held by the Lead · {Asked}",
@@ -122,7 +125,7 @@ public sealed record WaitingItem(
     /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's, then its
     /// <see cref="Facts"/>, and the PR it hands over to at the end; who held it, for a held task that's yours; or the
     /// chain, for a card holding up a task or a task held up.</summary>
-    public string Line => Held && Mine ? $"#{Number} · {Hold}" : Holding.Count > 0 ? Holds.Chain(this) : WaitsOn.Length > 0 ? Holds.Waiting(this) : string.Join(" · ",
+    public string Line => Held && (Mine || Secret is not null) ? $"#{Number} · {Hold}" : Holding.Count > 0 ? Holds.Chain(this) : WaitsOn.Length > 0 ? Holds.Waiting(this) : string.Join(" · ",
         new[] { $"#{Number}", Mine ? "" : Turn, Facts.Length > 0 ? Facts : Suggested, Reason, PrBranch.Length > 0 ? PrBranch : Pr == 0 ? "" : $"PR #{Pr}" }
             .Where(part => part.Length > 0));
 
@@ -149,7 +152,7 @@ public sealed record WaitingItem(
                         Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream"),
                         Linked(item) is { Count: > 0 } chains ? chains : null,
                         Numbers(item, "frees") is { Count: > 0 } frees ? frees : null, Text(item, "heldBy"))
-                    { Fix = Flag(item, "fix"), Facts = Text(item, "facts"), Unticked = Numbered(item, "unticked") ?? 0 })
+                    { Fix = Flag(item, "fix"), Facts = Text(item, "facts"), Unticked = Numbered(item, "unticked") ?? 0, Secret = SecretOf(item) })
             ];
         }
         catch (JsonException)
@@ -159,6 +162,11 @@ public sealed record WaitingItem(
     }
 
     private static int? Numbered(JsonElement item) => Numbered(item, "number");
+
+    private static SecretAsk? SecretOf(JsonElement item) =>
+        item.TryGetProperty("secret", out var secret) && secret.ValueKind == JsonValueKind.Object && Text(secret, "name").Length > 0
+            ? new SecretAsk(Text(secret, "name"), Text(secret, "environment"), Text(secret, "repo"), Text(secret, "why"), Text(secret, "by"))
+            : null;
 
     private static IReadOnlyList<IReadOnlyList<ChainLink>> Linked(JsonElement item) =>
         item.TryGetProperty("chains", out var chains) && chains.ValueKind == JsonValueKind.Array

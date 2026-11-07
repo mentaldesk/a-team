@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 
 namespace ATeam.Dashboard;
 
@@ -14,6 +15,9 @@ public sealed class TeamCommand(string executable, IReadOnlyDictionary<string, s
 
     /// <summary>What a read-only command printed, for the caller to parse.</summary>
     public Task<Reading> Read(params string[] arguments) => Task.Run(() => Invoke(arguments));
+
+    /// <summary>As <see cref="Run"/>, with <paramref name="input"/> on its stdin, for what mustn't be in its arguments.</summary>
+    public Task<string?> Feed(string input, params string[] arguments) => Task.Run(() => Invoke(arguments, input: input).Failure);
 
     /// <summary>What a command printed whether or not it failed, for one that reports problems and exits non-zero.</summary>
     public Task<Reading> Report(params string[] arguments) => Task.Run(() => Invoke(arguments, keepOutput: true));
@@ -93,9 +97,14 @@ public sealed class TeamCommand(string executable, IReadOnlyDictionary<string, s
         return failure;
     }
 
-    private Reading Invoke(string[] arguments, bool keepOutput = false)
+    private Reading Invoke(string[] arguments, bool keepOutput = false, string? input = null)
     {
         var start = new ProcessStartInfo(executable) { RedirectStandardOutput = true, RedirectStandardError = true };
+        if (input is not null)
+        {
+            start.RedirectStandardInput = true;
+            start.StandardInputEncoding = new UTF8Encoding(false);
+        }
         foreach (var argument in arguments)
             start.ArgumentList.Add(argument);
         foreach (var (name, value) in environment ?? new Dictionary<string, string>())
@@ -108,6 +117,11 @@ public sealed class TeamCommand(string executable, IReadOnlyDictionary<string, s
                 return new Reading("", $"couldn't run {Path.GetFileName(executable)} {said}");
             var error = process.StandardError.ReadToEndAsync();
             var output = process.StandardOutput.ReadToEndAsync();
+            if (input is not null)
+            {
+                process.StandardInput.Write(input);
+                process.StandardInput.Close();
+            }
             process.WaitForExit();
             if (process.ExitCode == 0)
                 return new Reading(output.GetAwaiter().GetResult(), null);
