@@ -677,21 +677,36 @@ public sealed class WorkLane : View
 
     private int Left(int index) => Enumerable.Range(0, index).Sum(ColumnWidth);
 
-    /// <summary>The selected column takes half the tab and the others it shows share the rest.</summary>
     private int ColumnWidth(int index)
     {
         var column = _columns[index];
         if (!column.Visible)
             return 0;
         var shown = _columns.Where(each => each.Visible).ToList();
-        var wide = shown.Count > 1 && _wide is { Visible: true } ? _wide : null;
-        var half = _body.Viewport.Width / 2;
-        if (column == wide)
-            return half;
-        var rest = shown.Where(each => each != wide).ToList();
-        var room = wide is null ? _body.Viewport.Width : _body.Viewport.Width - half;
-        var at = rest.IndexOf(column);
-        return room * (at + 1) / rest.Count - room * at / rest.Count;
+        return Share(_body.Viewport.Width, shown.Count, _wide is { Visible: true } ? shown.IndexOf(_wide) : null)[shown.IndexOf(column)];
+    }
+
+    /// <summary>Each of <paramref name="count"/> columns' width: the selected one takes two-thirds of the tab beside
+    /// one other and half beside more, and the others share the rest.</summary>
+    internal static int[] Share(int width, int count, int? selected)
+    {
+        var even = count < 2 || selected is null;
+        var wide = even ? 0 : count == 2 ? width - width / 3 : width / 2;
+        var rest = even ? count : count - 1;
+        var room = width - wide;
+        var widths = new int[count];
+        var at = 0;
+        for (var index = 0; index < count; index++)
+        {
+            if (!even && index == selected)
+            {
+                widths[index] = wide;
+                continue;
+            }
+            widths[index] = room * (at + 1) / rest - room * at / rest;
+            at++;
+        }
+        return widths;
     }
 }
 
