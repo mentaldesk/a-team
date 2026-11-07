@@ -2,7 +2,7 @@
 #
 # dispatch.sh [--dry-run] — starts a headless session for each team role that has work.
 # launchd runs it every couple of minutes (see install.sh). Deciding whether there is work is
-# a plain script (board.sh triggers); Claude only starts when there is.
+# a plain command (a-team board <team> triggers); Claude only starts when there is.
 #
 set -uo pipefail
 
@@ -50,7 +50,7 @@ passing() {
   rm -f "$1" "$2"
 }
 
-# short_read <output> <team role>: logs board.sh's board read short twice in one line; fails on any other output.
+# short_read <output> <team role>: logs the board's read short twice in one line; fails on any other output.
 short_read() {
   [[ $1 =~ incomplete\ \(([0-9]+\ of\ [0-9]+)\ items\) ]] || return 1
   log "$2: board read incomplete (${BASH_REMATCH[1]} items), twice; trying again next check"

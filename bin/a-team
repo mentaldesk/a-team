@@ -85,7 +85,7 @@ case "$command" in
         }
       fi
     fi
-    A_TEAM_ROOT="$ROOT" A_TEAM_CORE="$core" exec "$core" "$@" ;;
+    A_TEAM_ROOT="$ROOT" exec "$core" "$@" ;;
   app | attach | dispatch | install | release | status | run | task-prompt | token | try | vision)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
   dashboard)

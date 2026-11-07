@@ -38,10 +38,12 @@ grep -q "not -path '\*/obj/\*'" "$ROOT/bin/a-team" || fail "bin/a-team still cou
 
 case_ "only the status route writes a card's status"
 writes=$(grep -nE 'SET status|INTO board \(|, status = ' "$ROOT"/scripts/*.sh "$ROOT"/core/*.cs | grep -v 'core/StatusRoute.cs' || true)
+same "no board.sh" "" "$(ls "$ROOT/scripts/board.sh" 2>/dev/null)"
 same "elsewhere" "" "$writes"
 
-case_ "it knows the board format board.sh does"
-same "format" "$(sed -n 's/^BOARD_FORMAT=//p' "$ROOT/scripts/board.sh")" "$(sed -n 's/.*const int DefaultFormat = \([0-9]*\);.*/\1/p' "$ROOT/core/Board.cs")"
+case_ "the board's format is the core's alone, and only a checkout's build can be told another"
+same "in shell" "" "$(grep -nE 'BOARD_FORMAT|format_[0-9]+\(\)' "$ROOT"/scripts/*.sh || true)"
+same "read in a release" "" "$(awk '/^#if DEBUG/ { on = 1 } /^#else|^#endif/ { on = 0 } !on && /A_TEAM_BOARD_FORMAT/' "$ROOT"/core/*.cs)"
 
 case_ "list prints each card the way the app and the roles read it"
 core_fixture
@@ -106,14 +108,23 @@ refused "reviewer 8 Ready" "reviewer may not move #8 from 'Ready' to 'Ready'"
 refused "dev 7 Pitched" "dev may not move #7 from 'Exploring' to 'Pitched'"
 refused "lead 13 Idea" "lead may not move #13 from 'Done' to 'Idea'"
 
-case_ "whatever isn't ported runs in board.sh"
+case_ "the board's own refusals: no command, no such command, no team"
 core_fixture
 gh_items <<'ITEMS'
 Ready 8 A task
 ITEMS
+run board demo
+same "usage exit" 1 "$STATUS"
+same "usage" "board.sh: usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)" "$(cat "$ERR")"
+run board demo nosuch
+same "unknown exit" 1 "$STATUS"
+same "unknown" "board.sh: unknown command 'nosuch' (see process.md)" "$(cat "$ERR")"
+run board nobody list
+same "no team exit" 1 "$STATUS"
+same "no team" "board.sh: no config for team 'nobody' at $CONFIG/teams/nobody.json (start from examples/team.json)" "$(cat "$ERR")"
 run board demo format
 same "format exit" 0 "$STATUS"
-grep -q "fallback format: not ported yet" "$TRACE" || fail "format: '$(cat "$TRACE")'"
+same "handled" "handled format" "$(grep -v '^handled \(board\|demo\|nobody\)$' "$TRACE" | tail -n 1)"
 : >"$TRACE"
 
 case_ "the reads are the core's: none of them reaches board.sh"
@@ -218,6 +229,118 @@ grep -q "dry-run: would set #8 to 'In progress'" "$ERR" || fail "would: '$(cat "
 same "record" "$before" "$(card 8)"
 same "history" "" "$(events 8)"
 same "copies left behind" "" "$(find "$own_temp" -name 'a-team-history.*')"
+
+case_ "check, setup and format are the core's: none of them reaches board.sh"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+ITEMS
+board_moved_over
+for command in check setup "setup --dry-run" format; do
+  read -ra words <<<"$command"
+  KEEP_BOARD=1 run board demo "${words[@]}"
+  same "$command" "handled ${words[0]}" "$(traced)"
+done
+printf '{\n "repo": "mentaldesk/demo",\n}\n' >"$TEAM"
+KEEP_BOARD=1 run board demo check
+same "unreadable exit" 1 "$STATUS"
+same "unreadable" "handled check" "$(traced)"
+
+case_ "format says how it's used only once the gate has passed"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+ITEMS
+board_moved_over
+KEEP_BOARD=1 run board demo format now
+same "exit" 1 "$STATUS"
+same "words" "board.sh: usage: board.sh demo format" "$(cat "$ERR")"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE formats SET format = 99, version = '9.9.9' WHERE team = 'demo';"
+KEEP_BOARD=1 run board demo format now
+same "refused exit" 1 "$STATUS"
+grep -q "the board is in format 99, from a-team 9.9.9" "$ERR" || fail "gate: '$(cat "$ERR")'"
+
+case_ "a config whose project isn't an object is refused as board.sh refused it, and check reports it"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+ITEMS
+echo '{ "repo": "mentaldesk/demo", "project": "mentaldesk/1" }' >"$TEAM"
+run board demo wip
+same "wip exit" 1 "$STATUS"
+same "wip words" "board.sh: demo.json isn't a JSON object" "$(cat "$ERR")"
+run board demo check
+same "check exit" 1 "$STATUS"
+same "check words" "problem  config    demo.json isn't a JSON object" "$(cat "$OUT")"
+
+case_ "a record check can't read doesn't stop its other checks"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+ITEMS
+echo "not a record" >"$A_TEAM_STATE/history.db"
+run board demo check
+grep -q '^problem  app ' "$OUT" || fail "check stopped: '$(cat "$OUT" "$ERR")'"
+grep -q '^Error: ' "$ERR" || fail "said nothing: '$(cat "$ERR")'"
+
+case_ "setup --dry-run after the command writes nothing, not even the format's stamp, and lists what the other dry run lists"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+ITEMS
+board_moved_over
+KEEP_BOARD=1 run board --dry-run demo setup
+listed=$(cat "$OUT")
+[ -n "$listed" ] || fail "nothing listed"
+sqlite3 "$A_TEAM_STATE/history.db" "DELETE FROM formats;"
+rm -f "$BIN/mutation.json"
+: >"$WRITES"
+KEEP_BOARD=1 run board demo setup --dry-run
+same "exit" 0 "$STATUS"
+same "listed" "$listed" "$(cat "$OUT")"
+same "stderr" "" "$(cat "$ERR")"
+same "writes" "" "$(cat "$WRITES")"
+[ ! -e "$BIN/mutation.json" ] || fail "Status options changed"
+same "stamp" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT * FROM formats;")"
+
+case_ "setup puts a label right only where it differs, and says what it changed"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+ITEMS
+board_moved_over
+LABELLED=$(mktemp -d "$WORK/bin.XXXXXX")
+fake "$LABELLED/gh" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" label list "*) [ ! -e "$LABELLED/list-fails" ] || { echo "gh: labels are down" >&2; exit 3; }; cat "$LABELLED/labels.json" ;;
+  *" label edit "*) echo "\$*" >>"$WRITES" ;;
+  *) exec "$BIN/gh" "\$@" ;;
+esac
+SH
+labelled() { jq -n --arg color "$1" --arg description "$2" '[{name: "pitch", color: $color, description: $description}]' >"$LABELLED/labels.json"; }
+setup_labels() {
+  : >"$WRITES"
+  PATH="$LABELLED:$PATH" KEEP_BOARD=1 run board "$@"
+  same "$* exit" 0 "$STATUS"
+}
+right="An a-team pitch: Lead shapes it, reviewer approves it"
+labelled 5319e7 "$right"
+setup_labels demo setup
+same "right said" "" "$(grep label "$OUT")"
+same "right writes" "" "$(grep label "$WRITES" || true)"
+labelled ffffff "$right"
+setup_labels demo setup
+same "colour said" "updated label pitch: colour" "$(grep label "$OUT")"
+same "colour writes" "label edit pitch -R mentaldesk/demo --color 5319e7 --description $right" "$(grep label "$WRITES")"
+labelled ffffff "Something else"
+setup_labels --dry-run demo setup
+same "both said" "(dry run) updated label pitch: colour and description" "$(grep label "$OUT")"
+same "dry run writes" "" "$(grep label "$WRITES" || true)"
+touch "$LABELLED/list-fails"
+PATH="$LABELLED:$PATH" KEEP_BOARD=1 run board demo setup
+same "unreadable exit" 3 "$STATUS"
+same "unreadable words" "gh: labels are down" "$(cat "$ERR")"
 
 case_ "a swap in Pitched is refused unless a draft displaces it"
 core_fixture

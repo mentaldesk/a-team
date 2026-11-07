@@ -32,8 +32,8 @@ nothing to restart.
   change it would have made instead of making it. New writes to GitHub go through `write` so
   dry-run covers them. Without it no command only reads, `list`, `wip`, `triggers` and `check` included:
   each brings the record up to date first.
-- **A change that moves or reinterprets stored state bumps the format.** Bump `BOARD_FORMAT` in
-  `scripts/board.sh` and add its `format_<n>` step. An older a-team then refuses to act, and only the
+- **A change that moves or reinterprets stored state bumps the format.** Bump `DefaultFormat` in
+  `core/Board.Setup.cs` and add its step to `FormatSteps`. An older a-team then refuses to act, and only the
   installed one runs the step, so an ordinary release never stops anything. Commands take turns to run
   it, but one killed partway leaves the next to run it again, so a step must be safe to repeat.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
@@ -48,7 +48,7 @@ down each assumption about the machine here, and the rule that keeps it from tri
   afterwards. Check a recorded pid is still the run before acting on it (`live_pid` in
   `scripts/common.sh`, `AgentState.IsAlive` in the dashboard), and delete it once the run ends.
 - **A failed call to GitHub says nothing about what's there.** Only its 404 means a file is missing
-  (`file_there` in `scripts/board.sh`): on any other failure, wait for the next pass.
+  (`FileThere` in `core/Board.Github.cs`): on any other failure, wait for the next pass.
 - **A process outlives the script that started it.** A test's fake goes on after its suite ends, and a
   suite killed outright stops nothing. So `tests/leftovers.sh` stops whatever names the suite's temp folder
   in its command when the suite exits, and a passing suite that left any fails. A fake's command must name
@@ -68,8 +68,7 @@ down each assumption about the machine here, and the rule that keeps it from tri
 | `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
 | `bin/gh` | `gh` as the team's App inside a run |
 | `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
-| `core/` | `a-team board`, compiled as `a-team-core`: the only way agents touch the board. It owns the record, syncing with GitHub and every status change, and takes over from `board.sh` a command at a time |
-| `scripts/board.sh` | The commands the core hasn't taken yet. It asks the core for the board's state |
+| `core/` | `a-team board`, compiled as `a-team-core`: the only way agents touch the board. It owns the record, syncing with GitHub and every status change |
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
@@ -83,15 +82,16 @@ down each assumption about the machine here, and the rule that keeps it from tri
 
 ## The compiled board
 
-`bin/a-team board` runs `a-team-core`, and a checkout builds its own whenever a source is newer than it. What the core hasn't
-ported yet it hands to `scripts/board.sh` before doing anything, so a command moves over without its caller noticing.
+`a-team board` is `core/`, compiled as `a-team-core`. A release ships it built, and `bin/a-team` builds a checkout's own whenever
+a source under `core/` is newer than it, so a checkout needs `dotnet`. Each group of commands is a `Commands.<Group>.cs` with
+its table, and what they share of the board is in `Board.<Group>.cs`. Its refusals still start `board.sh:`, which the app and
+`scripts/dispatch.sh` strip off before showing why.
 
-The core owns the board's state: `board.sh` reads cards and syncs through it (`core __items`, `core __sync`), and a command is
-in one place only, so nothing is changed twice. A card's status changes only through `core/StatusRoute.cs`: its table says who
-may do what, and it holds the only SQL that writes one, which `tests/scripts/core.sh` checks.
+A card's status changes only through `core/StatusRoute.cs`: its table says who may do what, and it holds the only SQL that
+writes one, which `tests/scripts/core.sh` checks.
 
-`tests/scripts/` runs every command through the core, and `tests/Core.Tests` covers the logic in process. Set
-`A_TEAM_CORE_TRACE=<file>` to see what each command did: `handled`, or `fallback` and why.
+`tests/scripts/` runs every command through the compiled board, and `tests/Core.Tests` covers the logic in process. Set
+`A_TEAM_CORE_TRACE=<file>` to see each command it handled.
 
 ## Dashboard UI
 

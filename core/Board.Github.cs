@@ -88,15 +88,28 @@ internal sealed partial class Board
             throw new Die($"customer only touches its own docs PR (#{n} isn't it)");
     }
 
+    /// <summary>`gh api`, and what it found: 0 and what it printed, 1 only on GitHub's 404, 2 where GitHub didn't answer.
+    /// A failed call says nothing about what's there, so nothing but a 404 counts as missing.</summary>
+    internal (int There, string Said) FileThere(params string[] args)
+    {
+        var read = _gh.Run(["api", .. args]);
+        return read.Ok ? (0, read.Out) : (read.Err.Contains("(HTTP 404)", StringComparison.Ordinal) ? 1 : 2, read.Out);
+    }
+
+    /// <summary>Whether the first page of the user docs is on the default branch: 0 yes, 1 GitHub says not, 2 GitHub didn't answer.</summary>
+    internal int DocsThere() => FileThere($"repos/{_repo}/contents/{Text("docs")}", "--silent").There;
+
     /// <summary>Whether the first page of the user docs is on the default branch. Refuses to go on where GitHub didn't answer.</summary>
     internal bool DocsKnown()
     {
         var docs = Text("docs");
         if (docs.Length == 0) return false;
-        var read = _gh.Run("api", $"repos/{_repo}/contents/{docs}", "--silent");
-        if (read.Ok) return true;
-        if (read.Err.Contains("(HTTP 404)", StringComparison.Ordinal)) return false;
-        throw new Die($"GitHub didn't answer for {docs}: try again");
+        return DocsThere() switch
+        {
+            0 => true,
+            1 => false,
+            _ => throw new Die($"GitHub didn't answer for {docs}: try again"),
+        };
     }
 
     /// <summary>The number of the issue #n is a sub-issue of, or nothing. GraphQL answers only for an item the record has not seen.</summary>

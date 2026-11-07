@@ -1568,13 +1568,6 @@ internal sealed partial class Board
             """[.[] | select(.merged_at != null and (((.body // "") | contains("<!-- a-team:dev -->")) or .user.login == "dependabot[bot]"))][0].number // empty""")).Said;
     }
 
-    /// <summary>Whether the first page of the user docs is on the default branch: 0 yes, 1 GitHub says not, 2 GitHub didn't answer.</summary>
-    internal int DocsThere()
-    {
-        var read = _gh.Run("api", $"repos/{_repo}/contents/{Text("docs")}", "--silent");
-        return read.Ok ? 0 : read.Err.Contains("(HTTP 404)", StringComparison.Ordinal) ? 1 : 2;
-    }
-
     /// <summary>Turned on, the Customer lead starts from the pitches done after that, not from every one before.</summary>
     internal void StartCovering(List<string> accepted)
     {
