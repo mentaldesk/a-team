@@ -100,7 +100,8 @@ internal static class Program
         trouble = null;
         try
         {
-            return Json.Parse(File.ReadAllText(file)) is JsonObject config
+            var text = File.ReadAllText(file);
+            return !string.IsNullOrWhiteSpace(text) && Json.Parse(text) is JsonObject config
                 && config["project"] is null or JsonObject && config["app"] is null or JsonObject ? config : null;
         }
         catch (Exception problem) when (problem is System.Text.Json.JsonException or ArgumentException)
