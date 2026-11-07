@@ -106,15 +106,14 @@ refused "reviewer 8 Ready" "reviewer may not move #8 from 'Ready' to 'Ready'"
 refused "dev 7 Pitched" "dev may not move #7 from 'Exploring' to 'Pitched'"
 refused "lead 13 Idea" "lead may not move #13 from 'Done' to 'Idea'"
 
-case_ "whatever isn't ported runs in board.sh, which comes back to the core for the board's state"
+case_ "whatever isn't ported runs in board.sh"
 core_fixture
 gh_items <<'ITEMS'
 Ready 8 A task
 ITEMS
-run board demo overview
-same "overview exit" 0 "$STATUS"
-grep -q "fallback overview: not ported yet" "$TRACE" || fail "overview: '$(cat "$TRACE")'"
-grep -q "handled __items" "$TRACE" || fail "state: '$(cat "$TRACE")'"
+run board demo format
+same "format exit" 0 "$STATUS"
+grep -q "fallback format: not ported yet" "$TRACE" || fail "format: '$(cat "$TRACE")'"
 : >"$TRACE"
 
 case_ "the reads are the core's: none of them reaches board.sh"
@@ -126,6 +125,20 @@ ITEMS
 board_moved_over
 for command in wip next today trend trends spending decisions "mine dev" "children 7" "body 8" "conversation 8" "history 8" \
   "moves 2026-10-11T09:00:00Z" "pr 8" "checks 8" "criteria 8 9" "feedback lead 8"; do
+  read -ra words <<<"$command"
+  KEEP_BOARD=1 run board demo "${words[@]}"
+  same "$command exit" 0 "$STATUS"
+  same "$command" "handled ${words[0]}" "$(traced)"
+done
+
+case_ "the queues are the core's: none of them reaches board.sh"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+Pitched 7 A pitch
+ITEMS
+board_moved_over
+for command in "triggers lead" "triggers dev" "triggers reviewer" "triggers customer" "triggers --sweep lead" lead-next waiting overview sync; do
   read -ra words <<<"$command"
   KEEP_BOARD=1 run board demo "${words[@]}"
   same "$command exit" 0 "$STATUS"
