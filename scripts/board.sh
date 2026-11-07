@@ -1173,9 +1173,17 @@ agent_written() {
   gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev|customer|reviewer) -->'
 }
 
-# The number of the issue #1 is a sub-issue of, or nothing.
+# The number of the issue #1 is a sub-issue of, or nothing. GraphQL answers only for an item the record has not seen.
 parent_of() {
-  gh api "repos/$REPO/issues/$1" --jq '.parent_issue_url // empty | split("/") | last'
+  local known
+  known=$(item "$1")
+  if [ -n "$known" ]; then
+    jq -r '.parent // empty' <<<"$known"
+    return
+  fi
+  gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F n="$1" --jq '.data.repository.issueOrPullRequest.parent.number // empty' \
+    -f query='query ParentOf($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
+      issueOrPullRequest(number: $n) { ... on Issue { parent { number } } } } }'
 }
 
 # idea <issue> <status>: the child is an idea rather than a task, by its labels or its board status.
@@ -2177,6 +2185,8 @@ UPSTREAM_REVIEWED='.status == "In review" and .type == "Issue" and .marks.upstre
 FIX='(.marks.fix // false)'
 # A pitch the Lead may file tasks under.
 FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "Building")'
+# A sub-issue the Lead filed as a task that the board left in Idea, unlike an idea, which is marked or isn't the Lead's.
+LEFT_IN_IDEA='.status == "Idea" and (.labels | index("pitch") | not) and (.marks.idea | not) and ((.body // "") | contains("<!-- a-team:lead -->"))'
 # The Dev's tasks that take up one of wip.worktrees.
 WORKING='.marks.dev and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
@@ -3069,8 +3079,17 @@ case "$CMD" in
         die "$role may only take a task off a pitch in Building (#$parent is '$pitch_status')"
     fi
     [ "$(parent_of "$child")" = "$parent" ] || die "#$child is not a sub-issue of #$parent"
+    case "$pitch_status" in
+      Approved | Building)
+        ! jq -e --argjson n "$child" --argjson issue "$issue" \
+          "first(.[] | select(.number == \$n)) | .body = \$issue.body | $LEFT_IN_IDEA" <<<"$all" >/dev/null ||
+          die "#$child is a task left in Idea, not an idea: put it in Ready with: board.sh $TEAM add lead $child Ready"
+        ;;
+    esac
     write "take #$child off #$parent" gh api -X DELETE "repos/$REPO/issues/$parent/sub_issue" \
       -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
+    [ -n "$DRY_RUN" ] || history_sql "UPDATE board SET content = json_remove(content, '\$.parent')
+      WHERE team = $(sql "$TEAM") AND item = $child;" >/dev/null
     record "$role" "$child" "taken off #$parent"
     if [ -z "$followup" ]; then
       say "#$child is no longer a sub-issue of #$parent"
@@ -3294,8 +3313,9 @@ case "$CMD" in
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
-      jq -s --argjson all "$(items)" 'add // [] | map(.number as $n | {number, title, state, labels: [.labels[].name],
-        status: ([$all[] | select(.number == $n) | .status] | first)})'
+      jq -s --argjson all "$(items)" "add // [] | map(.number as \$n | ([\$all[] | select(.number == \$n)] | first) as \$on
+        | .labels |= map(.name) | .status = \$on.status | .marks = \$on.marks
+        | {number, title, state, labels, status, leftInIdea: ($LEFT_IN_IDEA)})"
     ;;
 
   waiting)

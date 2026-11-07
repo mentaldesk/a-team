@@ -236,6 +236,7 @@ esac
 echo call >>"$CALLS"
 printf '%s\n' "\$*" >>"$BIN/args"
 case " \$* " in
+  *ParentOf*) page="$BIN/parent.json" ;;
   *defaultBranchRef*) page="$TALK" ;;
   *"issues?labels=a-team:upstream"*) page="$WAITING_ON" ;;
   *UpstreamWaits*) page="$UPSTREAM_ITEMS" ;;
@@ -2408,13 +2409,17 @@ case_ "the agents' settings deny comment you, beside accept"
 grep -qF '"Bash(a-team board * comment you *)"' "$ROOT/settings/agents.json" || fail "no comment you deny rule"
 
 # `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
-# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
+# <parent> ("-" for none) on the record and on GraphQL, carrying the comma-separated <labels> ("-" for none).
+# REST never reports the parent, as it doesn't for mentaldesk/website#79.
 gh_child() {
-  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
+  jq -n --argjson n "$1" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
     {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
      labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
-     parent_issue_url: (if $parent == "-" then null
-                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
+     parent_issue_url: null}' >"$ISSUE"
+  local parent=null
+  [ "$2" = - ] || parent="{\"number\": $2}"
+  edit_item "$1" ".parent = $parent"
+  jq -n --argjson parent "$parent" '{data: {repository: {issueOrPullRequest: {parent: $parent}}}}' >"$BIN/parent.json"
   : >"$POSTED"
   : >"$WRITES"
   : >"$EDITED"
@@ -3308,6 +3313,60 @@ gh_child 41 11 -
 run board demo add lead 41 Ready
 same "add under a Building pitch" 0 "$STATUS"
 
+case_ "the lead's task reaches Ready from the record's parent, with no parent lookup on GitHub, whatever REST says"
+for pitch in 10 11; do
+  gh_items <<'ITEMS'
+Approved 10 An approved pitch
+Building 11 A pitch being built
+Idea 41 A task
+ITEMS
+  gh_child 41 "$pitch" - "A task. <!-- a-team:lead -->"
+  run board demo add lead 41 Ready
+  same "under #$pitch" 0 "$STATUS"
+  grep -q 'parent_issue_url\|ParentOf' "$BIN/args" && fail "under #$pitch: asked GitHub for the parent"
+  KEEP_BOARD=1 run board demo list Ready
+  same "under #$pitch list" "[{\"number\":41,\"parent\":$pitch}]" "$(jq -c 'map({number, parent})' "$OUT")"
+done
+
+case_ "the lead's task stays out of Ready when the record has it under no pitch or an unapproved one"
+for pitch in - 12 13; do
+  gh_items <<'ITEMS'
+Pitched 12 A pitch in front of the stakeholder
+Idea 13 An idea
+Idea 41 A task
+ITEMS
+  gh_child 41 "$pitch" - "A task. <!-- a-team:lead -->"
+  jq -n '{data: {repository: {issueOrPullRequest: {parent: {number: 11}}}}}' >"$BIN/parent.json"
+  run board demo add lead 41 Ready
+  failed "under $pitch"
+  grep -qF "#41 isn't a sub-issue of an Approved or Building pitch" "$ERR" || fail "under $pitch: '$(cat "$ERR")'"
+  same "under $pitch writes" "" "$(cat "$WRITES")"
+done
+
+case_ "a task the record hasn't seen yet takes its parent from GraphQL, accepted or refused"
+for pitch in 10 11; do
+  gh_items <<'ITEMS'
+Approved 10 An approved pitch
+Building 11 A pitch being built
+ITEMS
+  gh_child 41 "$pitch" -
+  run board demo add lead 41 Ready
+  same "under #$pitch" 0 "$STATUS"
+  grep -q ParentOf "$BIN/args" || fail "under #$pitch: GraphQL wasn't asked"
+  grep -q parent_issue_url "$BIN/args" && fail "under #$pitch: asked REST for the parent"
+done
+for pitch in - 12 13; do
+  gh_items <<'ITEMS'
+Pitched 12 A pitch in front of the stakeholder
+Idea 13 An idea
+ITEMS
+  gh_child 41 "$pitch" -
+  run board demo add lead 41 Ready
+  failed "under $pitch"
+  grep -qF "#41 isn't a sub-issue of an Approved or Building pitch" "$ERR" || fail "under $pitch: '$(cat "$ERR")'"
+  same "under $pitch writes" "" "$(cat "$WRITES")"
+done
+
 case_ "the Lead's breakdown and the command list file tasks with task, not gh issue create, link and add"
 step=$(sed -n '/^### 2\. Break down approved pitches/,/^### 3\./p' "$ROOT/roles/lead.md")
 grep -qF 'task lead <pitch> "<title>" <file>' <<<"$step" || fail "lead.md breakdown: no task command"
@@ -3401,6 +3460,42 @@ run board demo unlink dev 10 40
 failed "dev"
 grep -q "dev may not take a task off a pitch" "$ERR" || fail "dev: '$(cat "$ERR")'"
 
+case_ "unlink trusts the record's parent over REST, and the record no longer has it afterwards"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Building 20 Another pitch
+Ready 40 A task
+ITEMS
+edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+edit_item 20 '.labels.nodes = [{name: "pitch"}]'
+gh_child 40 10 -
+run board demo unlink lead 20 40
+failed "wrong parent"
+grep -q "#40 is not a sub-issue of #20" "$ERR" || fail "wrong parent: '$(cat "$ERR")'"
+same "wrong parent writes" "" "$(cat "$WRITES")"
+KEEP_BOARD=1 run board --dry-run demo unlink lead 10 40
+same "dry run exit" 0 "$STATUS"
+same "dry run keeps the parent" 10 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT json_extract(content, '\$.parent') FROM board WHERE item = 40")"
+KEEP_BOARD=1 run board demo unlink lead 10 40
+same "exit" 0 "$STATUS"
+grep -q 'parent_issue_url\|ParentOf' "$BIN/args" && fail "asked GitHub for the parent"
+same "parent gone" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT json_extract(content, '\$.parent') FROM board WHERE item = 40")"
+
+case_ "unlink takes its parent from GraphQL for an idea the record hasn't seen yet"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Building 20 Another pitch
+ITEMS
+edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+edit_item 20 '.labels.nodes = [{name: "pitch"}]'
+gh_child 30 10 pitch
+run board demo unlink lead 20 30
+failed "wrong parent"
+grep -q "#30 is not a sub-issue of #20" "$ERR" || fail "wrong parent: '$(cat "$ERR")'"
+run board demo unlink lead 10 30
+same "exit" 0 "$STATUS"
+grep -q ParentOf "$BIN/args" || fail "GraphQL wasn't asked"
+
 case_ "children shows each child's board status, null when it isn't on the board"
 gh_items <<'ITEMS'
 Building 10 A pitch
@@ -3415,6 +3510,64 @@ same "exit" 0 "$STATUS"
 same "children" '[{"number":40,"status":"Ready"},{"number":30,"status":"Building"},{"number":44,"status":null}]' \
   "$(jq -c 'map({number, status})' "$OUT")"
 same "labels" '["pitch"]' "$(jq -c '.[1].labels' "$OUT")"
+
+case_ "children tells a task the Lead filed that was left in Idea from an idea, and the Lead's role acts on it"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Idea 41 A task
+Idea 30 A follow-up from a stakeholder
+Idea 31 The Lead's own idea
+Idea 32 A pitch in Idea
+Ready 42 A task in Ready
+ITEMS
+lead='A thing. <!-- a-team:lead -->'
+jq -n --arg lead "$lead" '[{number: 41, title: "A task", state: "open", labels: [], body: $lead},
+        {number: 30, title: "A follow-up", state: "open", labels: [], body: "Spotted."},
+        {number: 31, title: "An idea", state: "open", labels: [], body: $lead},
+        {number: 32, title: "A pitch", state: "open", labels: [{name: "pitch"}], body: $lead},
+        {number: 42, title: "A task", state: "open", labels: [], body: $lead}]' >"$SUBS"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"idea\":true}' WHERE team = 'demo' AND item = 31;"
+KEEP_BOARD=1 run board demo children 10
+same "exit" 0 "$STATUS"
+same "left in idea" '[41]' "$(jq -c 'map(select(.leftInIdea) | .number)' "$OUT")"
+step=$(sed -n '/^### 3\. Tend pitches in Building/,/^### 4\./p' "$ROOT/roles/lead.md")
+grep -qF 'add lead <child> Ready' <<<"$step" || fail "lead.md: doesn't put a task left in Idea in Ready"
+
+case_ "unlink refuses a task the Lead filed that was left in Idea, whichever fileable pitch it's under, and it still reaches Ready"
+for parent in Approved Building; do
+  gh_items <<ITEMS
+$parent 10 A pitch
+Idea 41 A task
+ITEMS
+  edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+  gh_child 41 10 - "A task. <!-- a-team:lead -->"
+  run board demo unlink lead 10 41
+  failed "$parent"
+  grep -qF "#41 is a task left in Idea, not an idea" "$ERR" || fail "$parent: '$(cat "$ERR")'"
+  same "$parent writes" "" "$(cat "$WRITES")"
+  same "$parent posted" "" "$(cat "$POSTED")"
+  KEEP_BOARD=1 run board demo add lead 41 Ready
+  same "$parent add" 0 "$STATUS"
+done
+
+case_ "unlink still takes off an idea of the Lead's, which is marked, and a stray child of a pitch that isn't fileable"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Pitched 20 A pitch not approved yet
+Idea 31 The Lead's own idea
+Idea 41 A stray
+ITEMS
+edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+edit_item 20 '.labels.nodes = [{name: "pitch"}]'
+gh_child 41 20 - "A stray. <!-- a-team:lead -->"
+run board demo unlink lead 20 41
+same "unfileable pitch" 0 "$STATUS"
+gh_child 31 10 - "An idea. <!-- a-team:lead -->"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"idea\":true}' WHERE team = 'demo' AND item = 31;"
+KEEP_BOARD=1 run board demo unlink lead 10 31
+same "marked idea" 0 "$STATUS"
 
 case_ "--dry-run says every write unlink would make, and makes none"
 gh_items <<'ITEMS'

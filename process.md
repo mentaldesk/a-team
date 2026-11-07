@@ -149,7 +149,8 @@ a-team board {{team}} release you <n>           # stakeholder only: take the hol
 a-team board {{team}} body <n>                  # an issue's or PR's number, title and body, as JSON,
                                                 # with `images` where it has screenshots attached
 a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON
-a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
+a-team board {{team}} children <n>              # sub-issues, whether they're closed, their status, and
+                                                # `leftInIdea` for a task the board left in Idea
 a-team board {{team}} decisions [--replaced] [<words>...]  # the decision register: this team's entries and
                                                 # all teams', newest-confirmed first, as JSON; words
                                                 # narrow it; --replaced adds replaced and retired ones
