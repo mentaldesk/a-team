@@ -31,6 +31,51 @@ public class StatusRouteTests
     public void Every_role_status_and_target_is_allowed_only_where_the_table_says(string role, string from, string to, bool allowed) =>
         Assert.Equal(allowed, StatusRoute.Allowed(role, from, to));
 
+    public static TheoryData<string, string, string, bool> EveryGate()
+    {
+        var data = new TheoryData<string, string, string, bool>();
+        foreach (var who in new[] { "lead", "dev", "customer", "reviewer", "you", StatusRoute.Dispatcher })
+            foreach (var from in From)
+                foreach (var to in StatusRoute.Statuses)
+                    data.Add(who, from, to, Expected.Contains($"{who}:{from}>{to}") || Gates.Contains($"{who}:{from}>{to}")
+                        || (who == StatusRoute.Dispatcher && to is "Done" or "In progress" or "Ready"));
+        return data;
+    }
+
+    private static readonly HashSet<string> Gates =
+    [
+        "you:Pitched>Approved", "lead:Pitched>Approved", "you:Idea>Done", "you:Pitched>Done", "you:In review>Done",
+        "you:Pitched>Idea", "lead:Pitched>Idea", "dev:None>In progress", "dev:None>In review",
+    ];
+
+    [Theory]
+    [MemberData(nameof(EveryGate))]
+    public void Every_status_write_a_command_can_ask_for_is_permitted_only_where_the_route_says(string who, string from, string to, bool permitted) =>
+        Assert.Equal(permitted, StatusRoute.Permits(who, from, to));
+
+    [Theory]
+    [MemberData(nameof(EveryStatus))]
+    public void Every_status_has_a_way_out(string status) =>
+        Assert.True(StatusRoute.Everything().Any(move => move.From == status && move.To != status && move.Who != StatusRoute.Dispatcher)
+            || StatusRoute.Follows().Any(move => move.From == status && move.To != status));
+
+    [Theory]
+    [MemberData(nameof(EveryStatus))]
+    public void Every_status_can_be_reached(string status)
+    {
+        if (status != StatusRoute.None)
+            Assert.True(StatusRoute.Everything().Any(move => move.To == status && move.Who != StatusRoute.Dispatcher)
+                || StatusRoute.Follows().Any(move => move.To == status));
+    }
+
+    public static TheoryData<string> EveryStatus()
+    {
+        var data = new TheoryData<string>();
+        foreach (var status in From)
+            data.Add(status);
+        return data;
+    }
+
     [Fact]
     public void Nobody_moves_a_card_to_Done_or_out_of_it_here() =>
         Assert.DoesNotContain(StatusRoute.All, move => move.To == "Done" || move.From == "Done");

@@ -17,8 +17,8 @@ if [ "${#areas[@]}" -eq 0 ]; then
     [ "$area" = lib ] || areas+=("$area")
   done
 fi
-# The compiled board, so the cases run through it. Without dotnet they run on board.sh alone.
-if command -v dotnet >/dev/null && [ -f "$DIR/../../core/Core.csproj" ]; then
+# The compiled board, once for every area that runs through it.
+if [ -f "$DIR/../../core/Core.csproj" ]; then
   dotnet build "$DIR/../../core/Core.csproj" --nologo -v quiet -clp:ErrorsOnly >/dev/null || { echo "core doesn't build"; exit 1; }
 fi
 # One area needs nothing gathered, and shows its cases as they run.

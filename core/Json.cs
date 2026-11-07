@@ -10,6 +10,19 @@ internal static class Json
 {
     internal static JsonNode? Parse(string text) => JsonNode.Parse(text);
 
+    /// <summary>What a read that exited 0 said, or null if that wasn't JSON.</summary>
+    internal static JsonNode? TryParse(string text)
+    {
+        try
+        {
+            return JsonNode.Parse(text);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>`gh api --paginate` prints one document after another.</summary>
     internal static List<JsonNode?> ParseMany(string text)
     {
@@ -27,7 +40,23 @@ internal static class Json
     internal static string? Text(JsonNode? node) =>
         node is JsonValue value && value.GetValueKind() == JsonValueKind.String ? value.GetValue<string>() : null;
 
+    /// <summary>A number, whether it was parsed or built here; 0 for anything else.</summary>
+    internal static long Long(JsonNode? node)
+    {
+        if (node is not JsonValue value) return 0;
+        return value.TryGetValue<long>(out var wide) ? wide : value.TryGetValue<int>(out var narrow) ? narrow : 0;
+    }
+
     internal static bool Truthy(JsonNode? node) => node is not null && node.GetValueKind() != JsonValueKind.False && node.GetValueKind() != JsonValueKind.Null;
+
+    /// <summary>jq's `*`: <paramref name="over"/> on top of <paramref name="under"/>, objects merged all the way down.</summary>
+    internal static JsonObject Merge(JsonObject under, JsonObject over)
+    {
+        var merged = under.DeepClone().AsObject();
+        foreach (var (key, value) in over)
+            merged[key] = value is JsonObject top && merged[key] is JsonObject below ? Merge(below, top) : value?.DeepClone();
+        return merged;
+    }
 
     internal static string Pretty(JsonNode? node)
     {

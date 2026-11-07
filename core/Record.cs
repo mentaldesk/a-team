@@ -45,12 +45,14 @@ internal sealed class Record : IDisposable
     internal static Record Open(string path)
     {
         if (Sqlite.sqlite3_open_v2(Sqlite.Utf8(path), out var db, ReadWriteCreate, IntPtr.Zero) != 0)
-            throw new Fallback($"can't open {path}");
+            throw new Die($"can't open {path}");
         Sqlite.sqlite3_busy_timeout(db, 5000);
         var record = new Record(db);
         record.Exec(Schema);
         return record;
     }
+
+    internal void TryRollback() => Sqlite.sqlite3_exec(_db, Sqlite.Utf8("ROLLBACK;"), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
     internal void Exec(string sql)
     {

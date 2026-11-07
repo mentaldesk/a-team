@@ -4,11 +4,22 @@ using System.Text.Json.Nodes;
 namespace ATeam.Core;
 
 /// <summary>
-/// a-team board, for what's been ported: everything else, and anything a ported command can't finish here, runs in
-/// board.sh, which is always the same command to its caller.
+/// a-team board, for what's been ported: everything else runs in board.sh, which comes back here for the board's state.
 /// </summary>
 internal static class Program
 {
+    /// <summary>What board.sh asks of the core, on the record it has open.</summary>
+    private static readonly HashSet<string> Internal = ["__sync", "__items", "__mirror-push"];
+
+    /// <summary>The commands that speak as their first argument, a role's App or you.</summary>
+    private static readonly HashSet<string> Spoken =
+    [
+        "accept", "add", "approve", "attach", "audited", "claim", "comment", "covered", "decide", "decision", "decline", "depends", "edit",
+        "feedback", "finish", "fix", "gave", "hold", "mine", "move", "new", "pictures", "priority", "recommend", "reconfirm", "release",
+        "replace", "review", "secret", "seeded", "shelve", "skip", "spent", "task", "theme", "triggers", "unblock", "undepend", "unlink",
+        "vision-review",
+    ];
+
     private static int Main(string[] args)
     {
         if (args is ["route"])
@@ -23,13 +34,17 @@ internal static class Program
             Console.WriteLine($"sqlite {memory.Scalar("SELECT sqlite_version();")}, json {memory.Scalar("SELECT json_extract('{\"a\": 1}', '$.a');")}");
             return 0;
         }
-        var what = args.Length > 1 ? args[1] : "";
-        Board? board = null;
+        var what = args.FirstOrDefault(arg => arg != "--dry-run" && arg != args.FirstOrDefault(first => first != "--dry-run")) ?? "";
+        string? scratch = null;
         try
         {
-            var code = Run(args, made => board = made);
+            var code = Run(args, made => scratch = made);
             Trace($"handled {what}");
             return code;
+        }
+        catch (Fallback reason)
+        {
+            return Hand(args, $"{what}: {reason.Message}");
         }
         catch (Die refusal)
         {
@@ -37,26 +52,31 @@ internal static class Program
             Console.Error.WriteLine($"board.sh: {refusal.Message}");
             return 1;
         }
-        catch (Fallback reason)
+        catch (Stop stopped)
         {
-            return Hand(args, $"{what}: {reason.Message}");
-        }
-        catch (Exception problem) when (board is not { Committed: true })
-        {
-            return Hand(args, $"{what}: {problem.GetType().Name}: {problem.Message}");
+            Trace($"handled {what}");
+            Console.Error.Write(stopped.Message);
+            return stopped.Code;
         }
         catch (Exception problem)
         {
             Console.Error.WriteLine($"board.sh: {problem.Message}");
             return 1;
         }
+        finally
+        {
+            if (scratch is not null) File.Delete(scratch);
+        }
     }
+
+    private static string RootDir => Environment.GetEnvironmentVariable("A_TEAM_ROOT") ?? "";
+
+    private static string Shell => Path.Combine(RootDir, "scripts", "board.sh");
 
     private static int Hand(string[] args, string why)
     {
         Trace($"fallback {why}");
-        var root = Environment.GetEnvironmentVariable("A_TEAM_ROOT") ?? "";
-        var code = Libc.Exec("bash", [Path.Combine(root, "scripts", "board.sh"), .. args]);
+        var code = Libc.Exec("bash", [Shell, .. args]);
         Console.Error.WriteLine($"a-team-core: couldn't run board.sh (errno {code})");
         return 127;
     }
@@ -74,65 +94,167 @@ internal static class Program
         return Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", under, "a-team");
     }
 
-    private static int Run(string[] args, Action<Board> made)
+    private static int Run(string[] args, Action<string> scratch)
     {
-        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN")))
-            throw new Fallback("a dry run");
-        if (args.Length < 2 || args[0] == "--dry-run")
-            throw new Fallback("a dry run or a usage error");
-        var (team, command) = (args[0], args[1]);
-        var rest = args[2..];
-        if (command is not ("list" or "move" or "add"))
+        var dry = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN"));
+        var words = args;
+        if (words.FirstOrDefault() == "--dry-run")
+        {
+            dry = true;
+            words = words[1..];
+        }
+        if (words.Length < 2)
+            throw new Fallback("a usage error");
+        var (team, command) = (words[0], words[1]);
+        var rest = words[2..];
+        var commands = Commands.All();
+        if (!Internal.Contains(command) && !commands.ContainsKey(command))
             throw new Fallback("not ported yet");
 
-        var configFile = Path.Combine(Dir("A_TEAM_CONFIG", "XDG_CONFIG_HOME", ".config"), "teams", team + ".json");
+        var configDir = Dir("A_TEAM_CONFIG", "XDG_CONFIG_HOME", ".config");
+        var configFile = Path.Combine(configDir, "teams", team + ".json");
         if (!File.Exists(configFile))
             throw new Fallback("no config");
-        if (Json.Parse(File.ReadAllText(configFile)) is not JsonObject config)
-            throw new Fallback("a config that isn't an object");
+        JsonObject config;
+        try
+        {
+            config = Json.Parse(File.ReadAllText(configFile)) as JsonObject ?? throw new Fallback("a config that isn't an object");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new Fallback("a config that doesn't parse");
+        }
 
         var state = Dir("A_TEAM_STATE", "XDG_STATE_HOME", ".local/state");
         Board.State = state;
-        var token = command == "list" ? null : Speaker(rest, state, team, config);
-        var history = Path.Combine(state, "history.db");
-        if (!File.Exists(history))
-            throw new Fallback("no record yet");
+        Board.Root = RootDir;
+        Board.ConfigDir = configDir;
+        var token = command == "lead-next" ? Speaker(team, command, "lead", state, config)
+            : Spoken.Contains(command) ? Speaker(team, command, SpeakerOf(command, rest), state, config) : null;
 
-        using var record = Record.Open(history);
-        var board = new Board(team, config, record, new Gh(token));
-        made(board);
-        board.Gate();
-        return command switch
+        var history = Environment.GetEnvironmentVariable("A_TEAM_HISTORY");
+        if (string.IsNullOrEmpty(history))
+            history = Scratch(dry, state, scratch) ?? Path.Combine(state, "history.db");
+        var existed = File.Exists(history);
+        Record Open()
         {
-            "list" => Commands.List(board, rest),
-            "move" => Commands.Move(board, rest),
-            _ => Commands.Add(board, rest, config),
-        };
+            Directory.CreateDirectory(state);
+            return Record.Open(history);
+        }
+        var opened = new Lazy<Record>(Open);
+        try
+        {
+            var board = new Board(team, config, () => opened.Value, new Gh(token), dry);
+            if (Internal.Contains(command))
+            {
+                board.SkipSync = command == "__items";
+                return command switch
+                {
+                    "__sync" => InternalSync(board, rest),
+                    "__items" => InternalItems(board, rest),
+                    _ => InternalPush(board, rest),
+                };
+            }
+            if (existed && !board.FormatIsCurrent())
+            {
+                var gate = FormatGate(dry, team);
+                if (gate != 0) return gate;
+            }
+            return commands[command](board, rest);
+        }
+        finally
+        {
+            if (opened.IsValueCreated) opened.Value.Dispose();
+        }
     }
 
-    /// <summary>The token a role's command acts with, while the cached one is good: minting one is token.sh's.</summary>
-    private static string? Speaker(string[] rest, string state, string team, JsonObject config)
+    private static int InternalSync(Board board, string[] rest)
     {
-        var speaker = rest.Length > 0 ? rest[0] : "";
+        board.Sync(cached: rest.Contains("--cached"));
+        return 0;
+    }
+
+    private static int InternalItems(Board board, string[] rest)
+    {
+        Console.Out.Write(Json.Pretty(board.Items(open: rest.Contains("open"))) + "\n");
+        return 0;
+    }
+
+    private static int InternalPush(Board board, string[] rest)
+    {
+        board.MirrorPush(rest.FirstOrDefault());
+        return 0;
+    }
+
+    /// <summary>A dry run works on a copy of the record, so it reads as a real run would and changes nothing. With no record
+    /// yet it keeps its own between commands, so the board is moved over once and not on every command.</summary>
+    private static string? Scratch(bool dry, string state, Action<string> scratch)
+    {
+        if (!dry) return null;
+        var real = Path.Combine(state, "history.db");
+        if (!File.Exists(real))
+        {
+            Directory.CreateDirectory(state);
+            return Path.Combine(state, "dry-run.db");
+        }
+        var temp = Environment.GetEnvironmentVariable("TMPDIR");
+        var copy = Path.Combine(string.IsNullOrEmpty(temp) ? "/tmp" : temp, $"a-team-history.{Path.GetRandomFileName()}");
+        File.Copy(real, copy);
+        scratch(copy);
+        return copy;
+    }
+
+    /// <summary>board.sh still decides what to do about a state in another format: it refuses, stamps or moves it.</summary>
+    private static int FormatGate(bool dry, string team)
+    {
+        return dry ? Proc.Run("bash", Shell, "--dry-run", team, "format") : Proc.Run("bash", Shell, team, "format");
+    }
+
+    private static string SpeakerOf(string command, string[] rest) =>
+        command == "triggers" && rest.FirstOrDefault() == "--sweep" ? rest.ElementAtOrDefault(1) ?? "" : rest.FirstOrDefault() ?? "";
+
+    /// <summary>The token a role's command acts with. As you, whatever this shell's login is, unless this is a team's run.</summary>
+    private static string? Speaker(string team, string command, string speaker, string state, JsonObject config)
+    {
         if (speaker == "you")
         {
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("A_TEAM_RUN_TEAM")))
-                throw new Fallback("you, in a team's run");
+                throw new Die($"only the stakeholder can {command} as you, and this is a team's run");
             return null;
         }
         if (!StatusRoute.Roles.Contains(speaker))
             return null;
+        var slug = Json.Text(config["app"]?["slug"]);
+        var acts = $"{speaker} acts as {(string.IsNullOrEmpty(slug) ? "the App" : $"{slug}[bot]")}, which can't get a token";
         if (!Json.Truthy(config["app"]?["id"]))
-            throw new Fallback("a role with no App");
+            throw new Die($"{acts}: no GitHub App: run a-team app create {team}, then install it");
+        return CachedToken(state, team) ?? MintToken(team, acts);
+    }
+
+    private static string? CachedToken(string state, string team)
+    {
         var cache = Path.Combine(state, team, "token.json");
-        if (!File.Exists(cache))
-            throw new Fallback("no cached token");
-        var cached = Json.Parse(File.ReadAllText(cache));
-        if (Json.Text(cached?["token"]) is not { Length: > 0 } token
-            || Json.Text(cached?["expires_at"]) is not { } expires
-            || !DateTimeOffset.TryParse(expires, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var at)
-            || at - DateTimeOffset.UtcNow < TimeSpan.FromSeconds(300))
-            throw new Fallback("the cached token is ending");
-        return token;
+        if (!File.Exists(cache)) return null;
+        try
+        {
+            var cached = Json.Parse(File.ReadAllText(cache));
+            return Json.Text(cached?["token"]) is { Length: > 0 } token
+                && Json.Text(cached?["expires_at"]) is { } expires
+                && DateTimeOffset.TryParse(expires, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var at)
+                && at - DateTimeOffset.UtcNow >= TimeSpan.FromSeconds(300)
+                ? token : null;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string MintToken(string team, string acts)
+    {
+        var (code, said) = Proc.Capture(Path.Combine(RootDir, "bin", "a-team"), "token", team);
+        if (code == 0) return said;
+        const string prefix = "a-team token: ";
+        throw new Die($"{acts}: {(said.StartsWith(prefix, StringComparison.Ordinal) ? said[prefix.Length..] : said)}");
     }
 }

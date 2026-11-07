@@ -14,9 +14,12 @@ internal readonly record struct GhResult(int Code, string Out, string Err)
 /// <summary>`gh`, found on PATH as a shell finds it: never beside this binary or in the working directory.</summary>
 internal sealed class Gh(string? token)
 {
-    public GhResult Run(params string[] args)
+    public GhResult Run(params string[] args) => Feed(null, args);
+
+    /// <summary>`gh` with <paramref name="input"/> on its stdin.</summary>
+    public GhResult Feed(string? input, params string[] args)
     {
-        var path = Which("gh") ?? throw new Fallback("no gh on PATH");
+        var path = Which("gh") ?? throw new Die("no gh on PATH");
         var start = new ProcessStartInfo(path)
         {
             RedirectStandardOutput = true,
@@ -30,15 +33,27 @@ internal sealed class Gh(string? token)
             start.ArgumentList.Add(arg);
         if (token is not null)
             start.Environment["GH_TOKEN"] = token;
-        using var process = Process.Start(start) ?? throw new Fallback("couldn't start gh");
-        process.StandardInput.Close();
+        using var process = Process.Start(start) ?? throw new Die("couldn't start gh");
         var err = process.StandardError.ReadToEndAsync();
-        var output = process.StandardOutput.ReadToEnd();
+        var output = process.StandardOutput.ReadToEndAsync();
+        if (input is not null)
+        {
+            try
+            {
+                process.StandardInput.Write(input);
+            }
+            catch (IOException)
+            {
+                // It stopped reading, and its exit code says why.
+            }
+        }
+        process.StandardInput.Close();
+        output.Wait();
         process.WaitForExit();
-        return new GhResult(process.ExitCode, output, err.Result);
+        return new GhResult(process.ExitCode, output.Result, err.Result);
     }
 
-    private static string? Which(string name)
+    internal static string? Which(string name)
     {
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(':'))
         {
