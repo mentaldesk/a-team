@@ -159,9 +159,10 @@ to `<team>.json` to bring the team back.
 ## When a team can't run
 
 The **Health** column reads `checking…` while A-Team checks each team, then `ok` or how many problems
-it found.
+it found. That count includes notes, which the team runs with, so a team can read `1 problem` and be
+working. A note puts no `⚠` on its roles in [Overseer](overseer.md).
 
-- **Problems**: open the team, and its form lists them at the top, one a line, each naming what it's
+- **Problems**: open the team, and its form lists them at the top, one a line, notes among them, each naming what it's
   about and what's wrong. A board that's missing a Status option or a label can be set
   up again with `F12` (*Repair*).
 - **`can't read this file`**: the team's file isn't valid. Select it, and the foot of the screen names

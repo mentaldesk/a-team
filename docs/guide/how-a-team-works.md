@@ -136,6 +136,9 @@ hold off and the task goes back in the Dev's queue. If your reply doesn't say so
 line and the task stays held. A task that waits on a change in another repo is never held: it's
 recorded as waiting on that repo, and frees itself ([The board](#the-board)).
 
+When a task needs a GitHub Actions secret, like a deploy token, the agent asks for it by name and never for
+its value in a comment. You [give it in Work](work.md#answering-from-a-card), and that frees the task with no reply.
+
 To hold a task yourself, select its card in Work and press `h` (**Hold**), and say why. To take any
 hold off, yours or an agent's, press `h` again (**Release hold**), or use **Release hold** in the
 reader ([Work](work.md#answering-from-a-card)).
