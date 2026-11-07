@@ -61,8 +61,6 @@ cfg() { jq -r "$1 // empty" "$CONFIG"; }
 IFS=$'\x1f' read -r REPO OWNER NUMBER PRIORITY STAKEHOLDERS BOT MIRRORED APP_ID <<<"$settings"
 PRIORITY=${PRIORITY:-Priority}
 
-RANKS="urgent high medium low"
-
 # facts: what an item's marks say, as the app shows it under the title; "" for none. A shelve shows while it's `cooling`.
 FACTS='def facts: .marks as $m | [
     (if $m.rank then "Lead recommends \($m.rank)" else empty end),
@@ -101,8 +99,7 @@ act_as_app() {
 }
 
 case "$CMD" in
-  attach | audited | comment | covered | edit | new | pictures | priority | recommend | review | skip | \
-    spent | theme | triggers | vision-review)
+  triggers)
     speaker=${1:-}
     [ "$CMD" != triggers ] || [ "$speaker" != --sweep ] || speaker=${2:-}
     case "$speaker" in
@@ -205,7 +202,6 @@ UPSTREAM='def upstream_reasons:
     | (if $verdict == "fail" then [$n, "CI failed on \($pr) at \(.headRefOid[:7])"] else empty end),
       (if $verdict == "pass" and .isDraft then [$n, "\($pr) is green but still a draft"] else empty end),
       (if $asked != null then [$n, "stakeholder feedback on \($pr) (\($asked))"] else empty end);'
-
 
 # main_red($main): a PR's checks fail only jobs that fail on the default branch too, read by `main_red`.
 MAIN_RED='def main_red($main): $main != null and .failing != [] and all(.failing[].name; IN($main.failing[]));'
@@ -356,17 +352,6 @@ trap 'rm -f "$SYNCED" ${SCRATCH:+"$SCRATCH"}' EXIT
 
 trap 'exit 1' USR1
 
-# mark <n> <key> <JSON value|null>: sets, or with null clears, one of #n's marks in the record.
-mark() {
-  local to
-  to="json_set(COALESCE(marks, '{}'), '\$.$2', json($(sql "$3")))"
-  [ "$3" != null ] || to="json_remove(COALESCE(marks, '{}'), '\$.$2')"
-  write "$([ "$3" = null ] && echo "clear #$1's $2" || echo "mark #$1 $2 $3")" \
-    history_sql "UPDATE board SET marks = $to WHERE team = $(sql "$TEAM") AND item = $1;" >/dev/null
-}
-
-# board_ready: moves the board over from the mirror on the first run, and copies it all to a mirror newly pointed at.
-
 # core <command> [args...]: the board's state is the core's, on the record this command has open.
 core() { A_TEAM_DRY_RUN=$DRY_RUN A_TEAM_HISTORY=${HISTORY:-} "$A_TEAM_CORE" "$TEAM" "$@"; }
 
@@ -383,8 +368,6 @@ items() {
   board_sync
   core __items ${1:-}
 }
-
-mirror_push() { core __mirror-push ${1:-}; }
 
 item() {
   items | jq --argjson n "$1" 'map(select(.number == $n)) | first // empty'
@@ -942,8 +925,6 @@ unanswered_feedback() {
 ATTACHMENTS=a-team/attachments
 IMAGE_TYPES='png|jpe?g|gif|webp'
 
-attachment_link() { printf 'https://github.com/%s/blob/%s/%s?raw=true' "$REPO" "$ATTACHMENTS" "$1"; }
-
 # with_images: to each object of a JSON array whose .body links an attachment, adds .images, a local
 # copy of each, for an agent to look at.
 with_images() {
@@ -964,121 +945,6 @@ with_images() {
   done <<<"$links"
   jq --argjson files "$files" 'map(. as $said | [$files | to_entries[] | .key as $link | select($said.body | contains($link)) | .value]
     | if length == 0 then $said else $said + {images: .} end)' <<<"$json"
-}
-
-# image_path <file>: where <file> goes on the attachments branch, named by its content, once it's an image of a
-# size GitHub takes.
-image_path() {
-  local file=$1 ext size hash
-  [ -f "$file" ] || die "no such file: $file"
-  ext=$(tr '[:upper:]' '[:lower:]' <<<"${file##*.}")
-  [ "$ext" != jpeg ] || ext=jpg
-  grep -qxE "$IMAGE_TYPES" <<<"$ext" || die "$(basename "$file") isn't a .png, .jpg, .gif or .webp"
-  size=$(wc -c <"$file" | tr -d ' ')
-  [ "$size" -le $((10 * 1024 * 1024)) ] || die "$(basename "$file") is over 10 MB"
-  hash=$({ shasum -a 256 || sha256sum; } <"$file" 2>/dev/null | cut -c1-16)
-  echo "$(date -u +%Y-%m)/$hash.$ext"
-}
-
-# keep_image <file> <path>: stores <file> as <path> on the attachments branch, unless it's there already.
-keep_image() {
-  gh api "repos/$REPO/contents/$2?ref=$ATTACHMENTS" --silent >/dev/null 2>&1 && return 0
-  write "commit $(basename "$1") to $2 on $ATTACHMENTS" store_attachment "$1" "$2" ||
-    die "can't store $(basename "$1") on $REPO's $ATTACHMENTS branch"
-}
-
-# with_section: the PR body on stdin with the section $SECTION heads swapped for $SECTION, just above the
-# `a-team try` line and the marker.
-with_section() {
-  awk '
-    function emit(line) {
-      if (seam) { if (out) print "" } else while (blanks-- > 0) print ""
-      blanks = 0; seam = 0; out = 1; print line
-    }
-    BEGIN { heading = ENVIRON["SECTION"]; sub(/\n.*/, "", heading) }
-    { line = $0; sub(/[[:space:]]+$/, "", line) }
-    line == heading { skipping = 1; seam = 1; next }
-    skipping && (/^#{1,2} / || /^a-team try / || /^<!-- a-team:/) { skipping = 0 }
-    skipping { next }
-    /^$/ { blanks++; next }
-    !placed && (/^a-team try / || /^<!-- a-team:dev -->/) { seam = 1; emit(ENVIRON["SECTION"]); seam = 1; placed = 1 }
-    { emit($0) }
-    END { if (!placed) { seam = 1; emit(ENVIRON["SECTION"]) } }'
-}
-
-# task_pr <pr>: PR <pr>'s state, draft, body, labels and comments, and whether it's the docs PR, or nothing when it
-# isn't a PR.
-task_pr() {
-  gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
-    query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
-      pullRequest(number: $n) { state isDraft body labels(first: 20) { nodes { name } }
-        comments(last: 100) { nodes { body author { __typename login } } } } } }' 2>/dev/null |
-    jq -c --argjson marks "$(item "$1" | jq -sc '.[0].marks // {}')" \
-      '.data.repository.pullRequest // empty | . + {customer: ($marks.customer // false)}' || true
-}
-
-DEV_TASK_PR='.state == "OPEN" and ((.body // "") | contains("<!-- a-team:dev -->"))
-  and ([.labels.nodes[].name] | index("pitch") | not) and (.customer | not)'
-
-# git_post <path> <jq filter> [jq args...]: POST to the repo's git database, printing the new object's sha.
-git_post() {
-  local path=$1 filter=$2 input
-  shift 2
-  input=$(mktemp)
-  jq -n "$@" "$filter" >"$input" || { rm -f "$input"; return 1; }
-  gh api -X POST "repos/$REPO/git/$path" --input "$input" --jq .sha
-  local status=$?
-  rm -f "$input"
-  return $status
-}
-
-# store_attachment <file> <path>: commits <file> as <path> on the attachments branch, starting the
-# branch the first time. A ref that moved on under it is read again and tried once more.
-store_attachment() {
-  local file=$1 path=$2 encoded blob head base tree commit attempt
-  encoded=$(mktemp)
-  base64 <"$file" | tr -d '\n' >"$encoded"
-  blob=$(git_post blobs '{content: $content, encoding: "base64"}' --rawfile content "$encoded")
-  rm -f "$encoded"
-  [ -n "$blob" ] || return 1
-  for attempt in 1 2; do
-    head=$(gh api "repos/$REPO/git/ref/heads/$ATTACHMENTS" --jq .object.sha 2>/dev/null) || head=
-    base=
-    [ -z "$head" ] || base=$(gh api "repos/$REPO/git/commits/$head" --jq .tree.sha) || return 1
-    tree=$(git_post trees '{tree: [{path: $path, mode: "100644", type: "blob", sha: $blob}]}
-      + if $base == "" then {} else {base_tree: $base} end' \
-      --arg path "$path" --arg blob "$blob" --arg base "$base") || return 1
-    commit=$(git_post commits '{message: "Attach \($path)", tree: $tree, parents: (if $head == "" then [] else [$head] end)}' \
-      --arg path "$path" --arg tree "$tree" --arg head "$head") || return 1
-    if [ -z "$head" ]; then
-      gh api -X POST "repos/$REPO/git/refs" -f ref="refs/heads/$ATTACHMENTS" -f sha="$commit" --silent && return 0
-    else
-      gh api -X PATCH "repos/$REPO/git/refs/heads/$ATTACHMENTS" -f sha="$commit" -F force=false --silent && return 0
-    fi
-    [ "$attempt" = 1 ] || return 1
-  done
-}
-
-# react <id> <what>: a 👀 on comment <id>.
-react() {
-  write "add 👀 to $2" gh api graphql -F subject="$1" -f query='
-    mutation($subject: ID!) {
-      addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }' >/dev/null
-}
-
-# ack <n>: a 👀 on every stakeholder comment on #n this run could have seen. One that arrived mid-run
-# is newer than A_TEAM_RUN_STARTED, so it stays unanswered and gets a run of its own. Unset means
-# now, which is right for a person running `comment` by hand, since they have just read the thread.
-ack() {
-  local id at started=${A_TEAM_RUN_STARTED:-$(iso "$(date +%s)")}
-  while IFS=$'\t' read -r id at; do
-    react "$id" "your comment of $at on #$1"
-  done < <(comments "$1" | jq -r --argjson stakeholders "$STAKEHOLDERS" --arg started "$started" \
-    --arg appFrom "$APP_FROM" --arg bot "$BOT" "$TEAM_SAID"'
-    map(select(.at < $started))
-    | map(select(.kind != "body" and (.author | IN($stakeholders[]))
-                 and (team("<!-- a-team:") | not) and (.eyes // 0) == 0))
-    | .[] | [.id, .at] | @tsv')
 }
 
 # feedback_at <recent> <role> <n>: when a stakeholder last asked <role> something on #n and got no
@@ -1369,22 +1235,6 @@ first_held() {
 # startable <items>: the Ready tasks the Dev can start now, in the order it takes them: a fix for a red default branch first.
 startable() { jq "map(select($STARTABLE))" <<<"$1" | by_priority | first_held "$1" | jq "sort_by($FIX | not)"; }
 
-# own_task <role> <n>: a Dev or Reviewer run started for one task touches only that task and its PR.
-own_task() {
-  local task=${A_TEAM_RUN_TASK:-}
-  case "$1" in dev | reviewer) ;; *) return 0 ;; esac
-  [ -n "$task" ] && [ "$2" != "$task" ] || return 0
-  [ "$(pr_for "$task" | jq -r '.number // empty')" = "$2" ] ||
-    die "this run is for #$task: leave #$2 to a run of its own"
-}
-
-# own_docs <role> <n>: the Customer lead touches only its own docs PR.
-own_docs() {
-  [ "$1" = customer ] || return 0
-  item "$2" | jq -e '.marks.customer' >/dev/null ||
-    die "customer only touches its own docs PR (#$2 isn't it)"
-}
-
 BLOCKED='(.marks.held or .marks.upstream or .blockedBy > 0)'
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
@@ -1401,72 +1251,6 @@ UPSTREAM_REVIEWED='.status == "In review" and .type == "Issue" and .marks.upstre
 FIX='(.marks.fix // false)'
 # The Dev's tasks that take up one of wip.worktrees.
 WORKING='.marks.dev and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
-
-# clean_worktrees <role> <clone> <repo>: removes each of the role's worktrees of <clone> that's finished, and says why
-# it left the others. The first listed is the clone itself, and one with no branch is nobody's PR.
-clean_worktrees() {
-  local tree head branch itself
-  itself=$(cd "$2" && pwd -P)
-  while IFS=$'\t' read -r tree head branch; do
-    [ ! -d "$tree" ] || [ "$tree" = "$itself" ] || clean_worktree "$1" "$2" "$3" "$tree" "$head" "$branch"
-  done < <(git -C "$2" worktree list --porcelain | awk '
-    /^worktree / { n++; tree = substr($0, 10) }
-    /^HEAD / { head = $2 }
-    /^branch refs\/heads\// { if (n > 1) print tree "\t" head "\t" substr($0, 19) }')
-}
-
-# clean_worktree <role> <clone> <repo> <tree> <head> <branch>: a branch name can be reused, so only its newest PR
-# speaks for it, and only a worktree at that PR's last commit with no edits is what the PR left behind.
-clean_worktree() {
-  local role=$1 clone=$2 repo=$3 tree=$4 head=$5 branch=$6 where trouble prs pr number last changed
-  where=${tree/#$HOME/\~}
-  left() { CLEANED=$((CLEANED + 1)); say "Left $where: $*"; }
-  [ "$role" != customer ] || [ "$branch" = docs/customer-lead ] || [ "$branch" = docs/customer-lead-proposal ] || return 0
-  trouble=$(mktemp)
-  if ! prs=$(gh pr list -R "$repo" --head "$branch" --state all \
-    --json number,state,headRefOid,body,author,isCrossRepository 2>"$trouble"); then
-    left "couldn't read the PRs on $branch ($(head -1 "$trouble"))."
-    rm -f "$trouble"
-    return 0
-  fi
-  rm -f "$trouble"
-  pr=$(jq -c 'map(select(.isCrossRepository | not)) | max_by(.number) // empty' <<<"$prs")
-  if [ -z "$pr" ]; then
-    [ "$role" != customer ] || left "there's no PR on $branch."
-    return 0
-  fi
-  jq -e --arg marker "<!-- a-team:$role -->" --arg role "$role" \
-    '((.body // "") | contains($marker)) or ($role == "dev" and .author.login == "app/dependabot")' <<<"$pr" >/dev/null || return 0
-  number=$(jq -r .number <<<"$pr")
-  last=$(jq -r .headRefOid <<<"$pr")
-  case "$(jq -r .state <<<"$pr")" in
-    MERGED) ;;
-    OPEN) left "#$number is open."; return 0 ;;
-    *) left "#$number was closed without merging."; return 0 ;;
-  esac
-  if [ "$head" != "$last" ]; then
-    left "its HEAD ${head:0:7} isn't #$number's last commit (${last:0:7})."
-    return 0
-  fi
-  if ! changed=$(git -C "$tree" status --porcelain --untracked-files=no); then
-    left "git couldn't read its changes."
-    return 0
-  fi
-  if [ -n "$changed" ]; then
-    left "it has $(grep -c '' <<<"$changed") changed tracked file(s)."
-    return 0
-  fi
-  case "$(pwd -P 2>/dev/null)/" in
-    "$tree"/*) left "this shell is in it."; return 0 ;;
-  esac
-  if ! write "remove the worktree $where" git -C "$clone" worktree remove --force "$tree"; then
-    left "git wouldn't remove it."
-    return 0
-  fi
-  CLEANED=$((CLEANED + 1))
-  say "Removed $where: #$number has merged."
-  write "delete the branch $branch" git -C "$clone" branch -qD "$branch" || say "Couldn't delete its branch $branch."
-}
 
 core __format
 
@@ -1514,386 +1298,6 @@ case "$CMD" in
          elif $turn == "discover" then {room: $room}
          else {reason: "Exploring and the discovery queue are both full, or there is no Idea to pitch"} end)
       + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor), skipped: $skipped, unthemed: $unthemed, seed: $seed}'
-    ;;
-
-  new)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM new you <file>"
-    role=$1 file=$2
-    case "$role" in
-      lead | dev | customer | reviewer) die "$role may not open an issue as you; open it yourself and add it" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
-    esac
-    [ -f "$file" ] || die "no such file: $file"
-    title=$(head -n 1 "$file")
-    [ -n "${title//[[:space:]]/}" ] || die "an issue needs a title (the file's first line)"
-    body=$(tail -n +2 "$file")
-    [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
-    url=$(write <<<"$body" "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
-      die "can't open the issue on $REPO"
-    [ -z "$DRY_RUN" ] || url=0
-    echo "${url##*/}"
-    ;;
-
-  attach)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM attach you <image>"
-    role=$1 file=$2
-    case "$role" in
-      lead | dev | customer | reviewer) die "$role may not attach an image; only a stakeholder does, from the app" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
-    esac
-    path=$(image_path "$file") || exit 1
-    keep_image "$file" "$path"
-    attachment_link "$path"
-    echo
-    ;;
-
-  pictures)
-    [ $# -ge 4 ] && [ $(($# % 2)) -eq 0 ] || die "usage: board.sh $TEAM pictures dev <pr> <image> <caption> [<image> <caption>...]"
-    role=$1 pr=$2
-    case "$role" in
-      dev) ;;
-      lead | customer | reviewer | you) die "$role may not put pictures on a PR; only dev does, on its own task PR" ;;
-      *) die "unknown role '$role' (dev)" ;;
-    esac
-    shift 2
-    shots=() images=() captions=()
-    while [ $# -gt 0 ]; do
-      grep -q '[^[:space:]]' <<<"$2" || die "$(basename "$1") needs a caption: the acceptance criterion it shows"
-      [ "$(wc -l <<<"$2")" -eq 1 ] || die "a caption is one line: '$2'"
-      path=$(image_path "$1") || exit 1
-      shots+=("$1") images+=("$path") captions+=("$2")
-      shift 2
-    done
-    own_task "$role" "$pr"
-    it=$(task_pr "$pr")
-    [ -n "$it" ] || die "#$pr isn't a PR"
-    jq -e "$DEV_TASK_PR" <<<"$it" >/dev/null || die "dev puts pictures only on its own open task PRs (#$pr isn't one)"
-    section="## What it looks like"
-    for i in "${!images[@]}"; do
-      keep_image "${shots[$i]}" "${images[$i]}"
-      section+=$'\n\n'"${captions[$i]}"$'\n\n'"![${captions[$i]//[\[\]]/}]($(attachment_link "${images[$i]}"))"
-    done
-    body=$(jq -r '.body // ""' <<<"$it" | SECTION=$section with_section)
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write <<<"$body" "put ${#images[@]} picture(s) on #$pr" gh pr edit "$pr" -R "$REPO" --body-file - >/dev/null
-    record "$role" "${A_TEAM_RUN_TASK:-$pr}" "put ${#images[@]} picture(s) on PR #$pr"
-    say "#$pr: ${#images[@]} picture(s) under What it looks like"
-    ;;
-
-  checked)
-    [ $# -ge 3 ] || die "usage: board.sh $TEAM checked dev <pr> <criterion>=screen|test ..."
-    role=$1 pr=$2
-    case "$role" in
-      dev) ;;
-      lead | customer | reviewer | you) die "$role may not say what the team checked; only dev does, on its own task PR" ;;
-      *) die "unknown role '$role' (dev)" ;;
-    esac
-    shift 2
-    own_task "$role" "$pr"
-    it=$(task_pr "$pr")
-    [ -n "$it" ] || die "#$pr isn't a PR"
-    jq -e "$DEV_TASK_PR" <<<"$it" >/dev/null || die "dev says what it checked only on its own open task PRs (#$pr isn't one)"
-    n=$(jq -r "$CLOSES"'closes[0] // empty' <<<"$it")
-    [ -n "$n" ] || die "#$pr doesn't close an issue"
-    issue=$(gh api "repos/$REPO/issues/$n" --jq '.body // ""') || die "can't read #$n"
-    said=$(jq -r '.body // ""' <<<"$it")
-    list=$(criteria_json "$issue" "$said")
-    pictured=$(jq -Rs "$CRITERIA"'[section("## What it looks like")[] | capture("^!\\[(?<alt>[^\\]]*)\\]") | .alt | norm]' <<<"$said")
-    section="## Checked by the team"$'\n' lines='[]' screens=0 tests=0
-    for each in "$@"; do
-      [[ "$each" =~ ^([1-9][0-9]*)=(screen|test)$ ]] || die "'$each' isn't <criterion>=screen or <criterion>=test"
-      index=${BASH_REMATCH[1]} how=${BASH_REMATCH[2]}
-      one=$(jq -c --argjson i "$index" '.[$i - 1] // empty' <<<"$list")
-      [ -n "$one" ] || die "#$n has no criterion $index"
-      if [ "$how" = screen ]; then
-        jq -e --arg said "$(jq -r .text <<<"$one")" --argjson pictured "$pictured" "$CRITERIA"'$pictured | index($said | norm)' <<<null >/dev/null ||
-          die "criterion $index is screen, but no picture on #$pr is captioned with it: $(jq -r .text <<<"$one")"
-        screens=$((screens + 1))
-      else
-        tests=$((tests + 1))
-      fi
-      section+=$'\n'"- \`$how\` $(jq -r .text <<<"$one")"
-      lines=$(jq -c --argjson line "$(jq .line <<<"$one")" '. + [$line]' <<<"$lines")
-    done
-    dropped=$(jq -c --argjson lines "$lines" 'map(select(.how != null and (.line as $l | $lines | index($l) | not)) | .line)' <<<"$list")
-    ticked=$(jq -Rsr --argjson lines "$lines" --argjson dropped "$dropped" "$CRITERIA"'boxed($lines; "x") | boxed($dropped; " ")' <<<"$issue")
-    body=$(SECTION=$section with_section <<<"$said")
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write "tick what the team checked on #$n" gh issue edit "$n" -R "$REPO" --body-file - <<<"$ticked" >/dev/null
-    write "say what the team checked on #$pr" gh pr edit "$pr" -R "$REPO" --body-file - <<<"$body" >/dev/null
-    record "$role" "${A_TEAM_RUN_TASK:-$n}" "checked $((screens + tests)) of $(jq length <<<"$list"): $screens on screen, $tests by test"
-    say "#$n: $((screens + tests)) of $(jq length <<<"$list") checked by the team"
-    ;;
-
-  tick)
-    [ $# -eq 5 ] || die "usage: board.sh $TEAM tick you <n> <criterion> <on|off> <its text>"
-    role=$1 n=$2 index=$3 state=$4 text=$5
-    case "$role" in
-      you) ;;
-      lead | dev | customer | reviewer) die "$role may not tick a criterion; it's the stakeholders' own check" ;;
-      *) die "unknown role '$role' (you)" ;;
-    esac
-    case "$state" in
-      on) mark=x ;;
-      off) mark=' ' ;;
-      *) die "'$state' isn't on or off" ;;
-    esac
-    [[ "$index" =~ ^[1-9][0-9]*$ ]] || die "'$index' isn't a criterion's number"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    jq -e '.status == "In review" and ((.labels | index("pitch")) | not)' <<<"$it" >/dev/null ||
-      die "only a task In review has criteria to tick (#$n is '$(jq -r .status <<<"$it")')"
-    issue=$(gh api "repos/$REPO/issues/$n" --jq '.body // ""') || die "can't read #$n"
-    line=$(jq -Rsr --argjson i "$index" --arg text "$text" "$CRITERIA"'criteria_items | .[$i - 1] // empty | select(.text == $text) | .line' <<<"$issue")
-    [ -n "$line" ] || die "#$n's criteria have changed: open it again"
-    ticked=$(jq -Rsr --argjson line "$line" --arg mark "$mark" "$CRITERIA"'boxed([$line]; $mark)' <<<"$issue")
-    write "$([ "$state" = on ] && echo tick || echo untick) criterion $index on #$n" \
-      gh issue edit "$n" -R "$REPO" --body-file - <<<"$ticked" >/dev/null
-    count=$(jq -Rsr "$CRITERIA"'criteria_items | "\(map(select(.ticked)) | length) of \(length)"' <<<"$ticked")
-    if [ "$state" = on ]; then
-      record "$role" "$n" "ticked $count"
-    else
-      record "$role" "$n" "unticked, $count ticked"
-    fi
-    say "#$n: $count ticked"
-    ;;
-
-  priority)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM priority <role> <n> <value|none>"
-    role=$1 n=$2 value=$3
-    case "$role" in
-      lead | dev | customer | reviewer) die "$role may not set a $PRIORITY; ranking an item is the stakeholders' own gate" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
-    esac
-    [ -n "$(item "$n")" ] || die "#$n is not on the board"
-    if [ "$value" != none ]; then
-      jq -e --arg v "$value" 'index($v)' <<<"$PRIORITIES" >/dev/null ||
-        die "unknown $PRIORITY '$value' ($(jq -r '. + ["none"] | join(" | ")' <<<"$PRIORITIES"))"
-    fi
-    write "set $PRIORITY on #$n to '$value'" history_sql "UPDATE board SET priority = $([ "$value" = none ] && echo NULL || sql "$value")
-      WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    mirror_push "$n"
-    if [ "$value" = none ]; then
-      record "$role" "$n" "$PRIORITY cleared"
-      say "#$n: $PRIORITY cleared"
-    else
-      record "$role" "$n" "$PRIORITY set to $value"
-      say "#$n: $PRIORITY set to '$value'"
-    fi
-    ;;
-
-  comment)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM comment <role> <n> <file>"
-    role=$1 n=$2 file=$3
-    case "$role" in
-      lead | dev | customer | you) ;;
-      reviewer) die "reviewer posts only its review, with: board.sh $TEAM review reviewer <pr> <file>" ;;
-      *) die "unknown role '$role' (lead | dev | customer | you)" ;;
-    esac
-    [ -f "$file" ] || die "no such file: $file"
-    own_task "$role" "$n"
-    own_docs "$role" "$n"
-    # Your comment is feedback the roles still owe an answer: no marker, and no 👀.
-    if [ "$role" = you ]; then
-      body=$(cat "$file")
-    else
-      body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
-    fi
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
-    [ "$role" = you ] || ack "$n"
-    record "$role" "$n" "commented"
-    ;;
-
-  review)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM review reviewer <pr> <file>"
-    role=$1 pr=$2 file=$3
-    check_role "$role"
-    [ "$role" = reviewer ] || die "only reviewer reviews a task's PR"
-    reviewer_on || die "$TEAM has no Reviewer (roles.reviewer in $TEAM.json)"
-    [ -f "$file" ] || die "no such file: $file"
-    [ -n "$(grep -v '^[[:space:]]*$' "$file" || true)" ] || die "the review is empty: $file"
-    own_task "$role" "$pr"
-    it=$(task_pr "$pr")
-    [ -n "$it" ] || die "#$pr isn't a PR"
-    jq -e "$DEV_TASK_PR" <<<"$it" >/dev/null ||
-      die "reviewer reviews only the Dev's open task PRs (#$pr isn't one)"
-    ! jq -e --arg bot "$BOT" "$REVIEWED reviewed" <<<"$it" >/dev/null ||
-      die "#$pr has its review already: a PR is reviewed once"
-    jq -e .isDraft <<<"$it" >/dev/null || die "#$pr is ready for review already: it went to the stakeholders unreviewed"
-    [ "$(pr_checks "$pr" | jq -r .verdict)" = pass ] || die "#$pr isn't green: it's reviewed once CI passes"
-    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write <<<"$body" "comment on #$pr" gh pr comment "$pr" -R "$REPO" --body-file -
-    record "$role" "${A_TEAM_RUN_TASK:-$pr}" "reviewed PR #$pr"
-    say "#$pr: reviewed"
-    ;;
-
-  skip)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM skip <role> <n> <file>"
-    role=$1 n=$2 file=$3
-    check_role "$role"
-    [ "$role" = lead ] || die "only lead may skip an Idea"
-    [ -f "$file" ] || die "no such file: $file"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board, so it is not an Idea to skip"
-    status=$(jq -r .status <<<"$it")
-    [ "$status" = Idea ] || die "skip is only for Ideas (#$n is in '$status')"
-    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
-    ack "$n"
-    mark "$n" skipped true
-    record "$role" "$n" "skipped"
-    say "#$n: skipped; a stakeholder's comment there puts it back"
-    ;;
-
-  recommend)
-    [ $# -eq 4 ] || die "usage: board.sh $TEAM recommend lead <n> <urgent|high|medium|low> <file>"
-    role=$1 n=$2 level=$(tr '[:upper:]' '[:lower:]' <<<"$3") file=$4
-    case "$role" in
-      lead) ;;
-      dev | customer | reviewer | you) die "$role may not recommend a rank; recommending is the Lead's, and ranking is the stakeholders'" ;;
-      *) die "unknown role '$role' (lead)" ;;
-    esac
-    [[ " $RANKS " == *" $level "* ]] || die "unknown rank '$3' (urgent | high | medium | low)"
-    [ -f "$file" ] || die "no such file: $file"
-    case_line=$(grep -v '^[[:space:]]*$' "$file" || true)
-    [ -n "$case_line" ] && [ "$(grep -c '' <<<"$case_line")" -eq 1 ] || die "the case for #$n is one line: $file has $(grep -c '' <<<"$case_line")"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board, so it is not an Idea to recommend"
-    [ "$(jq -r .type <<<"$it")" = Issue ] && [ "$(jq -r .status <<<"$it")" = Idea ] ||
-      die "recommend is only for Ideas (#$n is in '$(jq -r .status <<<"$it")')"
-    name=$(tr '[:lower:]' '[:upper:]' <<<"${level:0:1}")${level:1}
-    mark "$n" rank "$(jq -cn --arg r "$name" '$r')"
-    mirror_push "$n"
-    body=$(printf 'Recommended: **%s** · %s\n\n<!-- a-team:%s -->' "$name" "$case_line" "$role")
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
-    record "$role" "$n" "recommended $name"
-    say "#$n: recommended $name"
-    ;;
-
-  theme)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM theme lead <n> <heading|none>"
-    role=$1 n=$2 heading=$3
-    case "$role" in
-      lead) ;;
-      dev | customer | reviewer | you) die "$role may not set a pitch's theme; that's the Lead's" ;;
-      *) die "unknown role '$role' (lead)" ;;
-    esac
-    [[ -n $heading && $heading != *,* && $heading != *$'\n'* ]] || die "a theme is its heading from the vision, on one line and with no commas"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    jq -e '.type == "Issue" and (.labels | index("pitch"))' <<<"$it" >/dev/null || die "#$n isn't a pitch: only pitches carry a theme"
-    if [ "$heading" = none ]; then
-      mark "$n" theme null
-      record "$role" "$n" "no theme"
-      say "#$n: no theme"
-    else
-      mark "$n" theme "$(jq -cn --arg h "$heading" '$h')"
-      record "$role" "$n" "theme: $heading"
-      say "#$n: theme: $heading"
-    fi
-    mirror_push "$n"
-    ;;
-
-  covered)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM covered <role> <pitch>"
-    role=$1 n=$2
-    [ "$role" = customer ] || die "only customer checks the docs against a done pitch"
-    item "$n" | jq -e '(.labels | index("pitch")) and .status == "Done"' >/dev/null ||
-      die "#$n isn't a done pitch"
-    if [ -z "$DRY_RUN" ]; then
-      mkdir -p "$(dirname "$COVERED")"
-      grep -qx "$n" "$COVERED" 2>/dev/null || echo "$n" >>"$COVERED"
-    fi
-    record "$role" "$n" "docs checked"
-    say "#$n: docs checked"
-    ;;
-
-  audited)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM audited <role>"
-    [ "$1" = customer ] || die "only customer audits the docs"
-    customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
-    if [ -z "$DRY_RUN" ]; then
-      mkdir -p "$(dirname "$AUDITED")"
-      date +%s >"$AUDITED"
-    fi
-    say "docs audited: the next audit is in a week"
-    ;;
-
-  clean)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM clean <role>"
-    role=$1
-    case "$role" in dev | customer) ;; *) die "only dev and customer clean up worktrees" ;; esac
-    checkout=$(cfg .checkout)
-    checkout=${checkout/#\~/$HOME}
-    [ -d "$checkout" ] || die "no checkout for $TEAM at ${checkout:-<unset>}"
-    CLEANED=0
-    clean_worktrees "$role" "$checkout" "$REPO"
-    if [ "$role" = dev ]; then
-      workdir=$(cfg .workdir)
-      workdir=${workdir/#\~/$HOME}
-      while IFS= read -r upstream; do
-        [ ! -d "$workdir/upstream/${upstream#*/}" ] || clean_worktrees dev "$workdir/upstream/${upstream#*/}" "$upstream"
-      done < <(jq -r '.contributesTo // [] | .[]' "$CONFIG")
-    fi
-    [ "$CLEANED" -gt 0 ] || say "No worktrees of yours to clean up."
-    ;;
-
-  document)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM document <n>"
-    trouble=$(mktemp)
-    ref=$(gh api "repos/$REPO/pulls/$1" --jq .head.ref 2>"$trouble") &&
-      files=$(gh api --paginate "repos/$REPO/pulls/$1/files" --jq '.[].filename' 2>"$trouble") ||
-      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read PR #$1 ($reason)"; }
-    if [ "$(grep -c . <<<"$files")" -ne 1 ]; then
-      rm -f "$trouble"
-      jq -n --argjson n "$1" '{number: $n, files: $ARGS.positional}' --args $files
-      exit 0
-    fi
-    file=$(gh api "repos/$REPO/contents/$files?ref=$ref" 2>"$trouble") ||
-      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read $files on $ref ($reason)"; }
-    rm -f "$trouble"
-    jq --argjson n "$1" --arg path "$files" --arg ref "$ref" \
-      '{number: $n, files: [$path], path: $path, ref: $ref, sha, text: (.content | gsub("\\s"; "") | @base64d)}' <<<"$file"
-    ;;
-
-  edit)
-    [ $# -eq 5 ] || die "usage: board.sh $TEAM edit you <n> <path> <sha> <file>"
-    role=$1 n=$2 path=$3 sha=$4 file=$5
-    [ "$role" = you ] || die "$role may not edit a document pitch; only the stakeholders edit one from the app"
-    [ -f "$file" ] || die "no file $file"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    [ "$(jq -r '.type == "PullRequest" and .status == "Pitched"
-        and ((.labels | index("pitch")) or .marks.customer)' <<<"$it")" = true ] ||
-      die "#$n isn't a document pitch in Pitched"
-    ref=$(gh api "repos/$REPO/pulls/$n" --jq .head.ref)
-    put() {
-      jq -n --arg message "Edit $path" --arg content "$(base64 <"$file" | tr -d '\n')" --arg sha "$sha" --arg branch "$ref" \
-        '{message: $message, content: $content, sha: $sha, branch: $branch}' 2>/dev/null |
-        { gh api -X PUT "repos/$REPO/contents/$path" --input - >/dev/null; } 2>&1
-    }
-    if ! refused=$(write "commit $file to $path on $ref" put); then
-      grep -qE 'HTTP 409|does not match' <<<"$refused" &&
-        die "$path changed on GitHub while you were editing it"
-      die "can't commit to $path on $ref ($(head -1 <<<"$refused"))"
-    fi
-    record "$role" "$n" "edited $path"
-    say "#$n: committed your edit to $path"
-    ;;
-
-  vision-review)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM vision-review you"
-    [ "$1" = you ] || die "$1 may not ask for a vision review; the team's trigger or a stakeholder does"
-    [ -n "$(cfg .vision)" ] || die "$TEAM.json names no vision"
-    [ -n "$DRY_RUN" ] || { mkdir -p "$(dirname "$VISION_ASKED")" && touch "$VISION_ASKED"; }
-    say "vision review asked for: the Lead starts one on the next pass"
     ;;
 
   waiting)
@@ -1994,23 +1398,6 @@ case "$CMD" in
       lastRun: ($last[.number | tostring] | if . then {role, log, started} else null end)}
         + (facts as $facts | if $facts != "" then {facts: $facts} else {} end))
       + (if $lag then [{team: $team, mirror: $lag}] else [] end)' <<<"$all"
-    ;;
-
-  spent)
-    [ $# -eq 6 ] || die "usage: board.sh $TEAM spent you <n|-> <at> <seconds> <gate> <what>"
-    role=$1 n=$2 at=$3 seconds=$4 gate=$5 what=$6
-    [ "$role" = you ] || die "only the stakeholders' own time is recorded, not $role's"
-    [[ $n =~ ^[0-9]+$ || $n == - ]] || die "#$n isn't an item number"
-    [[ $at =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "'$at' isn't a UTC time"
-    [[ $seconds =~ ^[0-9]+$ ]] || die "'$seconds' isn't a number of seconds"
-    case $gate in Triage | Pitches | Blocked | Review | Other) ;; *) die "unknown gate '$gate'" ;; esac
-    if [ -n "$DRY_RUN" ]; then
-      echo "dry-run: would record ${seconds}s of yours on ${n/#-/other}" >&2
-      exit 0
-    fi
-    mkdir -p "$STATE"
-    history_sql "INSERT INTO spent (team, item, at, seconds, gate, what) VALUES ($(sql "$TEAM"),
-      $([ "$n" = - ] && echo NULL || echo "$n"), $(sql "$at"), $seconds, $(sql "$gate"), $(sql "$what"));" >/dev/null
     ;;
 
   triggers)
