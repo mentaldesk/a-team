@@ -2,7 +2,7 @@
 #
 # tests/scripts/lib.sh — what the shell tests share. An area sources this first, and ends with finish_suite.
 #
-# shellcheck disable=SC2034,SC2154 # a helper reads what its area set, and an area reads what this sets
+# shellcheck disable=SC2034,SC2120,SC2154 # a helper reads what its area set and takes what it passes, and an area reads what this sets
 set -uo pipefail
 # As in CI: a run's own team would otherwise reach every test's gh and git.
 unset A_TEAM_RUN_TEAM A_TEAM_RUN_TASK A_TEAM_RUN_STARTED
