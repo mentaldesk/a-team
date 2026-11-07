@@ -22,18 +22,16 @@ internal sealed class Gh(string? token)
         using var process = Process.Start(Starting(args)) ?? throw new Die("couldn't start gh");
         var err = process.StandardError.ReadToEndAsync();
         var output = process.StandardOutput.ReadToEndAsync();
-        if (input is not null)
+        try
         {
-            try
-            {
+            if (input is not null)
                 process.StandardInput.Write(input);
-            }
-            catch (IOException)
-            {
-                // It stopped reading, and its exit code says why.
-            }
+            process.StandardInput.Close();
         }
-        process.StandardInput.Close();
+        catch (IOException)
+        {
+            // It stopped reading, and its exit code says why.
+        }
         output.Wait();
         process.WaitForExit();
         return new GhResult(process.ExitCode, output.Result, err.Result);

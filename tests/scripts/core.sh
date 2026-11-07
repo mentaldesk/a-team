@@ -25,6 +25,17 @@ board_moved_over() {
 events() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT who, what FROM events WHERE team = 'demo' AND item = $1 ORDER BY id;"; }
 card() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT status, mirror, mirrored_status, mirrored_priority, marks FROM board WHERE team = 'demo' AND item = $1;"; }
 
+case_ "what a build generates doesn't make a checkout's core look out of date"
+core_bin="$ROOT/core/bin/Debug/net10.0/a-team-core"
+generated="$ROOT/core/obj/Release/net10.0/.core-test-generated.cs"
+mkdir -p "$(dirname "$generated")"
+: >"$generated"
+touch -t 209901010000 "$generated"
+stale=$(find "$ROOT/core" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' -newer "$core_bin" -print -quit)
+rm -f "$generated"
+same "stale" "" "$stale"
+grep -q "not -path '\*/obj/\*'" "$ROOT/bin/a-team" || fail "bin/a-team still counts generated sources"
+
 case_ "only the status route writes a card's status"
 writes=$(grep -nE 'SET status|INTO board \(|, status = ' "$ROOT"/scripts/*.sh "$ROOT"/core/*.cs | grep -v 'core/StatusRoute.cs' || true)
 same "elsewhere" "" "$writes"
@@ -199,14 +210,15 @@ Ready 8 A task
 ITEMS
 board_moved_over
 before=$(card 8)
-KEEP_BOARD=1 run board --dry-run demo move dev 8 "In progress"
+own_temp=$(mktemp -d "$WORK/temp.XXXXXX")
+TMPDIR=$own_temp KEEP_BOARD=1 run board --dry-run demo move dev 8 "In progress"
 same "exit" 0 "$STATUS"
 same "handled" "handled move" "$(traced)"
 same "said" "(dry run) #8: Ready -> In progress" "$(cat "$OUT")"
 grep -q "dry-run: would set #8 to 'In progress'" "$ERR" || fail "would: '$(cat "$ERR")'"
 same "record" "$before" "$(card 8)"
 same "history" "" "$(events 8)"
-same "copies left behind" "" "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'a-team-history.*' -newer "$CONFIG" 2>/dev/null | head -1)"
+same "copies left behind" "" "$(find "$own_temp" -name 'a-team-history.*')"
 
 case_ "a swap in Pitched is refused unless a draft displaces it"
 core_fixture
