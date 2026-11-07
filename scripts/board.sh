@@ -1869,7 +1869,7 @@ depend_note() {
   local body
   body=$(printf '%s\n\n<!-- a-team:%s -->' "$3" "$1")
   [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-  printf '%s\n' "$body" | write "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
+  write <<<"$body" "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
 }
 
 # A task waiting on another repo is marked `upstream`, and each wait is a marker in one of the team's comments on it.
@@ -2564,7 +2564,7 @@ case "$CMD" in
     [ -n "${title//[[:space:]]/}" ] || die "an issue needs a title (the file's first line)"
     body=$(tail -n +2 "$file")
     [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
-    url=$(printf '%s\n' "$body" | write "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
+    url=$(write <<<"$body" "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
       die "can't open the issue on $REPO"
     [ -z "$DRY_RUN" ] || url=0
     echo "${url##*/}"
@@ -2612,7 +2612,7 @@ case "$CMD" in
     done
     body=$(jq -r '.body // ""' <<<"$it" | SECTION=$section with_section)
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "put ${#images[@]} picture(s) on #$pr" gh pr edit "$pr" -R "$REPO" --body-file - >/dev/null
+    write <<<"$body" "put ${#images[@]} picture(s) on #$pr" gh pr edit "$pr" -R "$REPO" --body-file - >/dev/null
     record "$role" "${A_TEAM_RUN_TASK:-$pr}" "put ${#images[@]} picture(s) on PR #$pr"
     say "#$pr: ${#images[@]} picture(s) under What it looks like"
     ;;
@@ -2720,7 +2720,7 @@ case "$CMD" in
     body=$(cat "$file")
     grep -qF "<!-- a-team:$role -->" <<<"$body" || body=$(printf '%s\n\n<!-- a-team:%s -->' "$body" "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
-    url=$(printf '%s\n' "$body" | write "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
+    url=$(write <<<"$body" "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
       die "can't open the issue on $REPO"
     if [ -n "$DRY_RUN" ]; then
       n=new issue='{}'
@@ -2750,7 +2750,7 @@ case "$CMD" in
     body=$(cat "$file")
     grep -qF "<!-- a-team:$role -->" <<<"$body" || body=$(printf '%s\n\n<!-- a-team:%s -->' "$body" "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
-    url=$(printf '%s\n' "$body" | write "open an issue titled '$title'" \
+    url=$(write <<<"$body" "open an issue titled '$title'" \
       gh issue create -R "$REPO" --title "$title" --body-file -) || die "can't open the issue on $REPO"
     if [ -n "$DRY_RUN" ]; then
       n=new node=''
@@ -2816,7 +2816,7 @@ case "$CMD" in
         die "#$n still has questions under Needs your answer: fold the stakeholder's answers into the pitch first, or ask them"
       body=$(printf '%s\n\n<!-- a-team:lead -->' "$(cat "$file")")
       [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-      printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
+      write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
       ack "$n"
     fi
     set_status "$(jq -r .number <<<"$it")" Approved
@@ -2886,7 +2886,7 @@ case "$CMD" in
       [ "$role" = you ] || printf '\n\n<!-- a-team:%s -->' "$role"
     )
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    posted=$(printf '%s\n' "$body" | write "comment on #$n" \
+    posted=$(write <<<"$body" "comment on #$n" \
       gh api -X POST "repos/$REPO/issues/$n/comments" -F body=@- --jq .node_id)
     if [ "$role" = you ]; then
       # Your Not now is read when the Lead next pitches it, not answered now.
@@ -2968,7 +2968,7 @@ case "$CMD" in
     close_pitch "$n" built "$@"
     body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     ack "$n"
     record "$role" "$n" "closed as done${BUILT_BY:+ · built by $BUILT_BY}"
     say "#$n: closed as done${BUILT_BY:+ (built by $BUILT_BY)}"
@@ -2992,7 +2992,7 @@ case "$CMD" in
       body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
     fi
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     [ "$role" = you ] || ack "$n"
     record "$role" "$n" "commented"
     ;;
@@ -3016,7 +3016,7 @@ case "$CMD" in
     [ "$(pr_checks "$pr" | jq -r .verdict)" = pass ] || die "#$pr isn't green: it's reviewed once CI passes"
     body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "comment on #$pr" gh pr comment "$pr" -R "$REPO" --body-file -
+    write <<<"$body" "comment on #$pr" gh pr comment "$pr" -R "$REPO" --body-file -
     record "$role" "${A_TEAM_RUN_TASK:-$pr}" "reviewed PR #$pr"
     say "#$pr: reviewed"
     ;;
@@ -3033,7 +3033,7 @@ case "$CMD" in
     [ "$status" = Idea ] || die "skip is only for Ideas (#$n is in '$status')"
     body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     ack "$n"
     mark "$n" skipped true
     record "$role" "$n" "skipped"
@@ -3061,7 +3061,7 @@ case "$CMD" in
     mirror_push "$n"
     body=$(printf 'Recommended: **%s** · %s\n\n<!-- a-team:%s -->' "$name" "$case_line" "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
+    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
     record "$role" "$n" "recommended $name"
     say "#$n: recommended $name"
     ;;
@@ -3256,7 +3256,7 @@ case "$CMD" in
     body=$(printf '#%s (%s) grew out of this pitch and is its own item now, so it no longer holds this one up. Its body names #%s as where it came from.\n\n<!-- a-team:%s -->' \
       "$child" "$(jq -r .title <<<"$issue")" "$parent" "$role")
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "comment on #$parent" gh issue comment "$parent" -R "$REPO" --body-file -
+    write <<<"$body" "comment on #$parent" gh issue comment "$parent" -R "$REPO" --body-file -
     if ! jq -e --arg p "$parent" '.body | test("Follow-up from #" + $p + "\\b")' <<<"$issue" >/dev/null; then
       write "add 'Follow-up from #$parent' to #$child" gh issue edit "$child" -R "$REPO" \
         --body "$(jq -r --arg p "$parent" '"Follow-up from #\($p)\n\n\(.body)"' <<<"$issue")" >/dev/null
@@ -3319,7 +3319,7 @@ case "$CMD" in
     body=$(cat "$file")
     [ "$role" = you ] || body+=$'\n\n'"<!-- a-team:$role -->"
     [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    printf '%s\n' "$body" | write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
+    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
     [ "$role" = you ] || ack "$n"
     mark "$n" held "$(jq -cn --arg at "$(date -u +%FT%TZ)" --arg by "$role" '{at: $at, by: $by}')"
     record "$role" "$n" "held"
