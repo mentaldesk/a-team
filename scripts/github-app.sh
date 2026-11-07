@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced by token.sh, app.sh, board.sh, credential.sh and bin/git: the team's GitHub App, as seen
+# Sourced by token.sh, app.sh, credential.sh and bin/git: the team's GitHub App, as seen
 # from this Mac.
 
 # The private key is a base64-encoded PEM in the login Keychain, one item per account the App is

@@ -3,14 +3,9 @@ using System.Text.Json.Nodes;
 
 namespace ATeam.Core;
 
-/// <summary>
-/// a-team board, for what's been ported: everything else runs in board.sh, which comes back here for the board's state.
-/// </summary>
+/// <summary>a-team board: the only way the roles, the dispatcher and the app read or change a team's board.</summary>
 internal static class Program
 {
-    /// <summary>What board.sh asks of the core, on the record it has open.</summary>
-    private static readonly HashSet<string> Internal = ["__sync", "__items", "__mirror-push"];
-
     /// <summary>The commands that speak as their first argument, a role's App or you.</summary>
     private static readonly HashSet<string> Spoken =
     [
@@ -42,10 +37,6 @@ internal static class Program
             Trace($"handled {what}");
             return code;
         }
-        catch (Fallback reason)
-        {
-            return Hand(args, $"{what}: {reason.Message}");
-        }
         catch (Die refusal)
         {
             Trace($"handled {what}");
@@ -71,16 +62,6 @@ internal static class Program
 
     private static string RootDir => Environment.GetEnvironmentVariable("A_TEAM_ROOT") ?? "";
 
-    private static string Shell => Path.Combine(RootDir, "scripts", "board.sh");
-
-    private static int Hand(string[] args, string why)
-    {
-        Trace($"fallback {why}");
-        var code = Libc.Exec("bash", [Shell, .. args]);
-        Console.Error.WriteLine($"a-team-core: couldn't run board.sh (errno {code})");
-        return 127;
-    }
-
     private static void Trace(string line)
     {
         if (Environment.GetEnvironmentVariable("A_TEAM_CORE_TRACE") is { Length: > 0 } file)
@@ -94,6 +75,23 @@ internal static class Program
         return Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", under, "a-team");
     }
 
+    /// <summary>A team's config, or null if the shell couldn't read its settings either, with a parser's words if it stopped one.</summary>
+    private static JsonObject? ReadConfig(string file, out string? trouble)
+    {
+        trouble = null;
+        try
+        {
+            var text = File.ReadAllText(file);
+            return !string.IsNullOrWhiteSpace(text) && Json.Parse(text) is JsonObject config
+                && config["project"] is null or JsonObject && config["app"] is null or JsonObject ? config : null;
+        }
+        catch (Exception problem) when (problem is System.Text.Json.JsonException or ArgumentException)
+        {
+            trouble = problem.Message;
+            return null;
+        }
+    }
+
     private static int Run(string[] args, Action<string> scratch)
     {
         var dry = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN"));
@@ -104,25 +102,20 @@ internal static class Program
             words = words[1..];
         }
         if (words.Length < 2)
-            throw new Fallback("a usage error");
+            throw new Die("usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)");
         var (team, command) = (words[0], words[1]);
         var rest = words[2..];
+        dry |= command == "setup" && rest.FirstOrDefault() == "--dry-run";
         var commands = Commands.All();
-        if (!Internal.Contains(command) && !commands.ContainsKey(command))
-            throw new Fallback("not ported yet");
 
         var configDir = Dir("A_TEAM_CONFIG", "XDG_CONFIG_HOME", ".config");
         var configFile = Path.Combine(configDir, "teams", team + ".json");
         if (!File.Exists(configFile))
-            throw new Fallback("no config");
-        JsonObject config;
-        try
+            throw new Die($"no config for team '{team}' at {configFile} (start from examples/team.json)");
+        if (ReadConfig(configFile, out var trouble) is not { } config)
         {
-            config = Json.Parse(File.ReadAllText(configFile)) as JsonObject ?? throw new Fallback("a config that isn't an object");
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            throw new Fallback("a config that doesn't parse");
+            if (command == "check") return Commands.CheckUnreadable(team, configFile, trouble);
+            throw new Die(Commands.Unreadable(team, configFile, trouble));
         }
 
         var state = Dir("A_TEAM_STATE", "XDG_STATE_HOME", ".local/state");
@@ -132,9 +125,7 @@ internal static class Program
         var token = command == "lead-next" ? Speaker(team, command, "lead", state, config)
             : Spoken.Contains(command) ? Speaker(team, command, SpeakerOf(command, rest), state, config) : null;
 
-        var history = Environment.GetEnvironmentVariable("A_TEAM_HISTORY");
-        if (string.IsNullOrEmpty(history))
-            history = Scratch(dry, state, scratch) ?? Path.Combine(state, "history.db");
+        var history = Scratch(dry, state, scratch) ?? Path.Combine(state, "history.db");
         var existed = File.Exists(history);
         Record Open()
         {
@@ -144,46 +135,16 @@ internal static class Program
         var opened = new Lazy<Record>(Open);
         try
         {
-            var board = new Board(team, config, () => opened.Value, new Gh(token), dry);
-            if (Internal.Contains(command))
-            {
-                board.SkipSync = command == "__items";
-                return command switch
-                {
-                    "__sync" => InternalSync(board, rest),
-                    "__items" => InternalItems(board, rest),
-                    _ => InternalPush(board, rest),
-                };
-            }
-            if (existed && !board.FormatIsCurrent())
-            {
-                var gate = FormatGate(dry, team);
-                if (gate != 0) return gate;
-            }
-            return commands[command](board, rest);
+            var board = new Board(team, config, () => opened.Value, new Gh(token), dry) { RecordFound = existed };
+            if (command != "check") board.FormatGate();
+            if (!commands.TryGetValue(command, out var run))
+                throw new Die($"unknown command '{command}' (see process.md)");
+            return run(board, rest);
         }
         finally
         {
             if (opened.IsValueCreated) opened.Value.Dispose();
         }
-    }
-
-    private static int InternalSync(Board board, string[] rest)
-    {
-        board.Sync(cached: rest.Contains("--cached"));
-        return 0;
-    }
-
-    private static int InternalItems(Board board, string[] rest)
-    {
-        Console.Out.Write(Json.Pretty(board.Items(open: rest.Contains("open"))) + "\n");
-        return 0;
-    }
-
-    private static int InternalPush(Board board, string[] rest)
-    {
-        board.MirrorPush(rest.FirstOrDefault());
-        return 0;
     }
 
     /// <summary>A dry run works on a copy of the record, so it reads as a real run would and changes nothing. With no record
@@ -202,12 +163,6 @@ internal static class Program
         File.Copy(real, copy);
         scratch(copy);
         return copy;
-    }
-
-    /// <summary>board.sh still decides what to do about a state in another format: it refuses, stamps or moves it.</summary>
-    private static int FormatGate(bool dry, string team)
-    {
-        return dry ? Proc.Run("bash", Shell, "--dry-run", team, "format") : Proc.Run("bash", Shell, team, "format");
     }
 
     private static string SpeakerOf(string command, string[] rest) =>
