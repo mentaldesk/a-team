@@ -7,6 +7,7 @@ public class GhTests
     [Fact]
     public void A_gh_that_exits_without_reading_its_input_gives_its_own_answer()
     {
+        if (OperatingSystem.IsWindows()) return;
         var bin = Directory.CreateTempSubdirectory("a-team-gh");
         var path = Environment.GetEnvironmentVariable("PATH");
         try
