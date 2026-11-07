@@ -390,8 +390,8 @@ internal sealed partial class Board
             var page = _mirror.Length > 0
                 ? _gh.Run("api", "graphql", "-F", $"field={_field}", "-f", $"query=query BoardRefresh($field: String!) {{ nodes(ids: {chunk}) {{ {ContentFields}\n        {items} }} }}")
                 : _gh.Run("api", "graphql", "-f", $"query=query BoardRefresh {{ nodes(ids: {chunk}) {{ {ContentFields} }} }}");
-            if (!page.Ok) return null;
-            foreach (var node in Json.Parse(page.Out)?["data"]?["nodes"]?.AsArray() ?? [])
+            if (!page.Ok || Json.TryParse(page.Out) is not { } read) return null;
+            foreach (var node in read["data"]?["nodes"]?.AsArray() ?? [])
             {
                 if (node is null) continue;
                 JsonObject? project = null;

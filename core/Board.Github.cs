@@ -152,7 +152,7 @@ internal sealed partial class Board
                 }
             """);
         if (!read.Ok) return (read, null);
-        var repository = Json.Parse(read.Out)?["data"]?["repository"];
+        var repository = Json.TryParse(read.Out)?["data"]?["repository"];
         var number = long.Parse(n, CultureInfo.InvariantCulture);
         var found = repository?["issue"]?["closedByPullRequestsReferences"]?["nodes"]?.AsArray().FirstOrDefault()
             ?? repository?["pullRequests"]?["nodes"]?.AsArray().FirstOrDefault(pr => Closes(pr).Contains(number));

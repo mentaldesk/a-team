@@ -10,6 +10,19 @@ internal static class Json
 {
     internal static JsonNode? Parse(string text) => JsonNode.Parse(text);
 
+    /// <summary>What a read that exited 0 said, or null if that wasn't JSON.</summary>
+    internal static JsonNode? TryParse(string text)
+    {
+        try
+        {
+            return JsonNode.Parse(text);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>`gh api --paginate` prints one document after another.</summary>
     internal static List<JsonNode?> ParseMany(string text)
     {
