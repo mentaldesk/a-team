@@ -187,14 +187,15 @@ Ready 8 A task
 ITEMS
 board_moved_over
 before=$(card 8)
-KEEP_BOARD=1 run board --dry-run demo move dev 8 "In progress"
+own_temp=$(mktemp -d "$WORK/temp.XXXXXX")
+TMPDIR=$own_temp KEEP_BOARD=1 run board --dry-run demo move dev 8 "In progress"
 same "exit" 0 "$STATUS"
 same "handled" "handled move" "$(traced)"
 same "said" "(dry run) #8: Ready -> In progress" "$(cat "$OUT")"
 grep -q "dry-run: would set #8 to 'In progress'" "$ERR" || fail "would: '$(cat "$ERR")'"
 same "record" "$before" "$(card 8)"
 same "history" "" "$(events 8)"
-same "copies left behind" "" "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'a-team-history.*' -newer "$CONFIG" 2>/dev/null | head -1)"
+same "copies left behind" "" "$(find "$own_temp" -name 'a-team-history.*')"
 
 case_ "check, setup and format are the core's: none of them reaches board.sh"
 core_fixture
