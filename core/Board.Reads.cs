@@ -397,6 +397,9 @@ internal static class Checklist
         return items;
     }
 
+    /// <summary>How many of an issue body's criteria aren't ticked.</summary>
+    internal static int Unticked(string body) => Items(body).Count(item => !Json.Truthy(item["ticked"]));
+
     private static JsonObject Item(string line, int at)
     {
         var parts = Regex.Match(line, @"^(?<lead>\s*)[-*+]\s+(\[(?<box>[ xX])\]\s*)?(?<text>.*)$");

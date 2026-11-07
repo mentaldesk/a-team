@@ -281,19 +281,7 @@ internal sealed partial class Board
         all.AddRange(Paged(comments).Select(c => Comment("comment", c)));
         if (issue?["pull_request"] is not null)
         {
-            var (owner, name) = RepoParts;
-            var reviews = Aloud("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"number={n}", "-f", """
-                query=
-                    query($owner: String!, $name: String!, $number: Int!) {
-                      repository(owner: $owner, name: $name) { pullRequest(number: $number) {
-                        reviews(last: 50) { nodes { id url state body submittedAt author { __typename login }
-                          reactions(content: EYES) { totalCount } } } } } }
-                """, "--jq", $$"""
-                .data.repository.pullRequest.reviews.nodes[]
-                          | select((.body // "") != "" or .state == "CHANGES_REQUESTED")
-                          | {kind: "review", state, author: (.author | {{Login}}), at: .submittedAt,
-                             body: (.body // ""), url, id, eyes: .reactions.totalCount}
-                """);
+            var reviews = ReviewsRead(n);
             if (!reviews.Ok) return Stopped(reviews.Code);
             all.AddRange(Json.ParseMany(reviews.Out).OfType<JsonObject>());
             var lines = Aloud("api", "--paginate", $"repos/{_repo}/pulls/{n}/comments");
@@ -370,6 +358,7 @@ internal sealed partial class Board
     private JsonArray? WaitsOn(string n, string repo, string bot)
     {
         var read = _gh.Run("api", "--paginate", $"repos/{repo}/issues/{n}/comments");
+        if (!read.Ok && !SaidOnlyAnError(read)) _holdingLost = true;
         return read.Ok ? WaitsIn(read, bot) : null;
     }
 
@@ -516,6 +505,7 @@ internal sealed partial class Board
         var fields = string.Join("\n", numbers.Select(n => $"i{n}: issue(number: {n}) {{ blockedBy(first: 10) {{ nodes {{ number state repository {{ nameWithOwner }} }} }} }}"));
         var read = _gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-f",
             $"query=query Prerequisites($owner: String!, $name: String!) {{\n      repository(owner: $owner, name: $name) {{ {fields} }} }}");
+        if (!read.Ok && read.Out.Trim().Length > 0) _holdingLost = true;
         if (!read.Ok) return [];
         var found = new List<long>();
         try
