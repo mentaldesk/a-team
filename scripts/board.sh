@@ -299,8 +299,24 @@ customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
 
 reviewer_on() { jq -e '.roles.reviewer == true' "$CONFIG" >/dev/null 2>&1; }
 
-# Whether the first page of the user docs, the config's `docs`, is on the default branch.
-docs_there() { [ -n "$(cfg .docs)" ] && gh api "repos/$REPO/contents/$(cfg .docs)" --silent >/dev/null 2>&1; }
+# `gh api "$@"`, passing on what it prints: 1 only on GitHub's 404, 2 where GitHub didn't answer.
+file_there() {
+  local trouble
+  { trouble=$(gh api "$@" 2>&1 >&3); } 3>&1 && return 0
+  [[ $trouble == *"(HTTP 404)"* ]] && return 1
+  return 2
+}
+
+# Whether the first page of the user docs, the config's `docs`, is on the default branch, as file_there says.
+docs_there() { [ -n "$(cfg .docs)" ] && file_there "repos/$REPO/contents/$(cfg .docs)" --silent >/dev/null; }
+
+# docs_there, refusing to go on where GitHub didn't answer.
+docs_known() {
+  local there=0
+  docs_there || there=$?
+  [ "$there" != 2 ] || die "GitHub didn't answer for $(cfg .docs): try again"
+  return "$there"
+}
 
 # A stakeholder asked for a vision review from Commands, and no review PR has opened since.
 VISION_ASKED="$STATE/$TEAM/lead/vision-review"
@@ -2422,13 +2438,13 @@ case "$CMD" in
       other=$(items | jq -r --argjson n "$n" '[.[] | select(.marks.customer
         and .status == "In review" and .number != $n) | .number] | first // empty')
       [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
-      docs_there || die "$(cfg .docs) isn't in $REPO yet: propose the docs before writing any"
+      docs_known || die "$(cfg .docs) isn't in $REPO yet: propose the docs before writing any"
     elif [ "$role:$to" = "customer:Pitched" ]; then
       customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
       gh api "repos/$REPO/pulls/$n" --jq '.state == "open" and .draft
           and ((.body // "") | contains("<!-- a-team:customer -->"))' 2>/dev/null | grep -qx true ||
         die "customer may only put its own open draft docs proposal in Pitched (#$n isn't one)"
-      ! docs_there || die "$(cfg .docs) is already in $REPO: no docs proposal needed"
+      ! docs_known || die "$(cfg .docs) is already in $REPO: no docs proposal needed"
       other=$(items | jq -r --argjson n "$n" '[.[] | select(.marks.customer
         and (.status == "In review" or .status == "Pitched") and .number != $n) | .number] | first // empty')
       [ -z "$other" ] || die "customer's #$other is still open: no docs proposal beside it"
@@ -3977,7 +3993,9 @@ case "$CMD" in
           | map("\(.status)\t\(.number)") | first // empty' <<<"$all")
         status=${docs%%$'\t'*} n=${docs##*$'\t'}
         kind=''
-        if ! docs_there; then
+        there=0
+        docs_there || there=$?
+        if [ "$there" = 1 ]; then
           # The first audit after the docs page appears writes the docs it outlines.
           rm -f "$AUDITED"
           if [ "$status" = Pitched ]; then
@@ -3985,7 +4003,7 @@ case "$CMD" in
           else
             reasons+=("no user docs yet: propose where they'll live")
           fi
-        else
+        elif [ "$there" = 0 ]; then
           for p in $accepted; do
             grep -qx "$p" "$COVERED" || reasons+=("pitch #$p is done: check the docs cover what it shipped")
           done
@@ -4081,6 +4099,10 @@ case "$CMD" in
     fatal=0 minor=0
     problem() { printf '%-10s%s\n' "$1" "$2"; fatal=1; }
     note() { printf '%-10s%s\n' "$1" "$2"; minor=1; }
+    # `not_there <topic> <file_there's status> <file> <what to say on a 404>`
+    not_there() {
+      if [ "$2" = 1 ]; then note "$1" "$4"; else note "$1" "GitHub didn't answer for $3: checking again next pass"; fi
+    }
     reached='' unreachable=''
     behind=$(format_behind)
     [ -z "$behind" ] || problem board "$behind"
@@ -4103,25 +4125,25 @@ case "$CMD" in
     fi
     vision=$(cfg .vision)
     if [ -n "$reached" ] && [ -n "$vision" ]; then
-      if ! drafted=$(gh api -H 'Accept: application/vnd.github.raw' "repos/$REPO/contents/$vision" 2>/dev/null); then
-        note vision "$vision isn't in $REPO yet: the Lead will draft one and open it as a draft PR"
-      elif grep -qF '<!-- a-team:lead -->' <<<"$drafted"; then
-        note vision "drafted by the Lead: Write the vision with me replaces it"
+      if drafted=$(file_there -H 'Accept: application/vnd.github.raw' "repos/$REPO/contents/$vision"); then
+        ! grep -qF '<!-- a-team:lead -->' <<<"$drafted" || note vision "drafted by the Lead: Write the vision with me replaces it"
+      else
+        not_there vision $? "$vision" "$vision isn't in $REPO yet: the Lead will draft one and open it as a draft PR"
       fi
     fi
     if customer_on; then
       if [ -z "$(cfg .docs)" ]; then
         note docs "$TEAM.json names no docs page, so the Customer lead has nothing to keep right"
-      elif [ -n "$reached" ] && ! docs_there; then
-        note docs "$(cfg .docs) isn't in $REPO yet: the Customer lead will propose the docs as a draft PR"
+      elif [ -n "$reached" ]; then
+        docs_there || not_there docs $? "$(cfg .docs)" "$(cfg .docs) isn't in $REPO yet: the Customer lead will propose the docs as a draft PR"
       fi
     fi
     release=$(cfg .release)
     case "${release:-never}" in
       never) ;;
       daily | continuous)
-        [ -z "$reached" ] || gh api "repos/$REPO/actions/workflows/release.yml" --silent >/dev/null 2>&1 ||
-          note release "release is $release, but $REPO has no release.yml workflow for it to run" ;;
+        [ -z "$reached" ] || file_there "repos/$REPO/actions/workflows/release.yml" --silent >/dev/null ||
+          not_there release $? release.yml "release is $release, but $REPO has no release.yml workflow for it to run" ;;
       *) note release "release is '$release': expected never, daily or continuous" ;;
     esac
     read_err=$(mktemp)

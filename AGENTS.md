@@ -47,6 +47,8 @@ down each assumption about the machine here, and the rule that keeps it from tri
 - **A pid names a process only while that process runs.** The OS gives it to another process
   afterwards. Check a recorded pid is still the run before acting on it (`live_pid` in
   `scripts/common.sh`, `AgentState.IsAlive` in the dashboard), and delete it once the run ends.
+- **A failed call to GitHub says nothing about what's there.** Only its 404 means a file is missing
+  (`file_there` in `scripts/board.sh`): on any other failure, wait for the next pass.
 - **A branch name names a PR only until the next PR on it.** `docs/customer-lead` has had many. Trust
   only the branch's newest PR, and only for a worktree at that PR's last commit with no changed tracked
   files (`a-team board <team> clean`).
