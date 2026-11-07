@@ -39,7 +39,7 @@ if ! settings=$(jq -er 'if type == "object" then . else error end
 fi
 
 cfg() { jq -r "$1 // empty" "$CONFIG"; }
-IFS=$'\x1f' read -r REPO OWNER NUMBER FIELD PRIORITY STAKEHOLDERS BOT KIND MIRRORED APP_ID <<<"$settings"
+IFS=$'\x1f' read -r REPO OWNER NUMBER FIELD PRIORITY _ BOT KIND MIRRORED _ <<<"$settings"
 FIELD=${FIELD:-Status}
 PRIORITY=${PRIORITY:-Priority}
 
