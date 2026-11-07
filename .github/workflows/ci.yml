@@ -14,6 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
       - name: Syntax
         run: for f in scripts/*.sh bin/a-team bin/gh tests/*.sh tests/scripts/*.sh; do bash -n "$f"; done
 
@@ -47,3 +51,9 @@ jobs:
 
       - name: Test
         run: dotnet test tests/Dashboard.Tests/Dashboard.Tests.csproj -warnaserror
+
+      - name: Build the compiled board
+        run: dotnet build core/Core.csproj -warnaserror
+
+      - name: Test the compiled board
+        run: dotnet test tests/Core.Tests/Core.Tests.csproj -warnaserror

@@ -73,7 +73,16 @@ USAGE
 command=$1
 shift
 case "$command" in
-  app | attach | board | dispatch | install | release | status | run | task-prompt | token | try | vision)
+  board)
+    # The compiled board where there is one: a checkout's only while no source is newer than it.
+    core="$ROOT/libexec/a-team-core"
+    if [ ! -x "$core" ]; then
+      core="$ROOT/core/bin/Debug/net10.0/a-team-core"
+      [ ! -x "$core" ] || [ -z "$(find "$ROOT/core" -name '*.cs' -newer "$core" -print -quit 2>/dev/null)" ] || core=
+    fi
+    [ -z "$core" ] || [ ! -x "$core" ] || A_TEAM_ROOT="$ROOT" exec "$core" "$@"
+    exec bash "$ROOT/scripts/board.sh" "$@" ;;
+  app | attach | dispatch | install | release | status | run | task-prompt | token | try | vision)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
   dashboard)
     exec bash "$ROOT/scripts/dashboard.sh" --area dashboard "$@" ;;
