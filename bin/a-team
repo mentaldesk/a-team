@@ -74,14 +74,18 @@ command=$1
 shift
 case "$command" in
   board)
-    # The compiled board where there is one: a checkout's only while no source is newer than it.
+    # A release's compiled board, or a checkout's, built again whenever a source is newer than it.
     core="$ROOT/libexec/a-team-core"
     if [ ! -x "$core" ]; then
       core="$ROOT/core/bin/Debug/net10.0/a-team-core"
-      [ ! -x "$core" ] || [ -z "$(find "$ROOT/core" -name '*.cs' -newer "$core" -print -quit 2>/dev/null)" ] || core=
+      if [ ! -x "$core" ] || [ -n "$(find "$ROOT/core" -name '*.cs' -newer "$core" -print -quit 2>/dev/null)" ]; then
+        dotnet build "$ROOT/core/Core.csproj" -v q --nologo >/dev/null || {
+          echo "a-team: couldn't build the board's core: try dotnet build core/Core.csproj" >&2
+          exit 1
+        }
+      fi
     fi
-    [ -z "$core" ] || [ ! -x "$core" ] || A_TEAM_ROOT="$ROOT" exec "$core" "$@"
-    exec bash "$ROOT/scripts/board.sh" "$@" ;;
+    A_TEAM_ROOT="$ROOT" A_TEAM_CORE="$core" exec "$core" "$@" ;;
   app | attach | dispatch | install | release | status | run | task-prompt | token | try | vision)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
   dashboard)

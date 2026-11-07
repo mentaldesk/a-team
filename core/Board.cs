@@ -5,16 +5,22 @@ using System.Text.RegularExpressions;
 
 namespace ATeam.Core;
 
-/// <summary>This path isn't ported yet, or needs what only board.sh does: nothing is lost by running it there instead.</summary>
+/// <summary>Only ever before a command starts: it isn't ported yet, so it runs in board.sh.</summary>
 internal sealed class Fallback(string reason) : Exception(reason);
 
 /// <summary>A refusal: "board.sh: " and this, on stderr, and exit 1.</summary>
 internal sealed class Die(string message) : Exception(message);
 
-/// <summary>A team's board, as one command sees it: its config, its record and GitHub.</summary>
-internal sealed class Board
+/// <summary>A command stopped by what it ran: this exit code, and what that said on stderr.</summary>
+internal sealed class Stop(int code, string said) : Exception(said)
 {
-    internal const int Format = 1;
+    internal int Code => code;
+}
+
+/// <summary>A team's board, as one command sees it: its config, its record and GitHub.</summary>
+internal sealed partial class Board
+{
+    private const int DefaultFormat = 1;
     private const string RankField = "Lead rank";
     private const string ThemeField = "Theme";
     private const string Lagging = """
@@ -45,22 +51,29 @@ internal sealed class Board
     private readonly string _mirror;
     private readonly int _readEvery;
     private readonly Dictionary<string, string> _reverseMap = [];
-    private readonly Record _record;
+    private readonly Lazy<Record> _opened;
     private readonly Gh _gh;
     private List<string>? _seen;
     private bool _synced;
 
+    private Record _record => _opened.Value;
+
     internal string Team => _team;
 
-    /// <summary>Set once a command has done what can't be repeated, so a failure after it can't start the command again in board.sh.</summary>
-    internal bool Committed { get; set; }
+    internal string Repo => _repo;
 
-    internal Board(string team, JsonObject config, Record record, Gh gh)
+    internal bool DryRun { get; }
+
+    /// <summary>The caller has already brought the record up to date.</summary>
+    internal bool SkipSync { get; set; }
+
+    internal Board(string team, JsonObject config, Func<Record> record, Gh gh, bool dryRun)
     {
         _team = team;
         _config = config;
-        _record = record;
+        _opened = new Lazy<Record>(record);
         _gh = gh;
+        DryRun = dryRun;
         _repo = Text("repo");
         _owner = Text("project", "owner");
         _number = Text("project", "number");
@@ -77,7 +90,7 @@ internal sealed class Board
 
     private static string OrElse(string text, string other) => text.Length > 0 ? text : other;
 
-    private string Text(params string[] path)
+    internal string Text(params string[] path)
     {
         JsonNode? node = _config;
         foreach (var key in path)
@@ -85,38 +98,41 @@ internal sealed class Board
         return node is null || !Json.Truthy(node) ? "" : Json.Text(node) ?? node.ToJsonString();
     }
 
-    private static string Now() => DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+    internal static string Now() => DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
     private static string Iso(long seconds) =>
         DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
     private string TeamQ => Reconciler.Q(_team);
 
-    internal void Gate()
+    internal static int Format =>
+        int.TryParse(Environment.GetEnvironmentVariable("A_TEAM_BOARD_FORMAT"), out var format) ? format : DefaultFormat;
+
+    /// <summary>Whether this team's state is in the format this a-team knows, stamped and with nothing newer about.</summary>
+    internal bool FormatIsCurrent()
     {
         var top = _record.Scalar("SELECT format FROM formats ORDER BY format DESC LIMIT 1;");
-        if (top is not null && int.Parse(top, CultureInfo.InvariantCulture) > Format)
-            throw new Fallback("the board is in a newer format");
+        if (top is not null && int.Parse(top, CultureInfo.InvariantCulture) > Format) return false;
         var own = _record.Scalar("SELECT format FROM formats WHERE team = ?;", _team);
-        if (own is null || int.Parse(own, CultureInfo.InvariantCulture) != Format)
-            throw new Fallback("the board's format needs stamping or moving");
+        return own is not null && int.Parse(own, CultureInfo.InvariantCulture) == Format;
     }
 
     private void BoardReady()
     {
         var columns = _record.Query("SELECT 'board.' || name AS name FROM pragma_table_info('board') UNION ALL SELECT 'boards.' || name FROM pragma_table_info('boards');")
             .Select(row => row.First).ToHashSet();
-        foreach (var column in new[] { "board.marks", "board.mirrored_rank", "board.mirrored_theme", "boards.repaired" })
-            if (!columns.Contains(column))
-                throw new Fallback($"the record has no {column} yet");
+        foreach (var column in new[] { "marks", "mirrored_rank", "mirrored_theme" })
+            if (!columns.Contains($"board.{column}"))
+                _record.Exec($"ALTER TABLE board ADD COLUMN {column} TEXT;");
+        if (!columns.Contains("boards.repaired"))
+            _record.Exec("ALTER TABLE boards ADD COLUMN repaired TEXT;");
         var was = _record.Scalar($"SELECT COALESCE((SELECT project FROM boards WHERE team = {TeamQ}), '-');");
         if (was == "-")
         {
             if (_mirror.Length > 0)
             {
-                var nodes = MirrorNodes(shortEnds: true) ?? throw new Fallback("the mirror's first read failed");
+                var nodes = MirrorNodes(shortEnds: true) ?? throw new Stop(1, _mirrorError);
                 Reconcile(nodes, adopt: true);
-                RefuseLabelsOnlyTheShellAdopts();
                 _seen = nodes.Select(node => Json.Text(node?["content"]?["id"])).OfType<string>().ToList();
             }
             var read = _mirror.Length > 0 ? Reconciler.Q(Now()) : "NULL";
@@ -130,78 +146,149 @@ internal sealed class Board
                 UPDATE boards SET project = {Reconciler.Q(_mirror)}, read = NULL, failed = NULL, retry = NULL WHERE team = {TeamQ};
                 """);
         }
-        if (_record.Scalar($"SELECT COUNT(*) FROM boards WHERE team = {TeamQ} AND repaired IS NULL;") != "0")
-            throw new Fallback("the board's last moves need repairing");
+        RepairLastMoves();
     }
 
-    /// <summary>Carries the old a-team labels on open items into the record, then takes them off on GitHub.</summary>
+    /// <summary>Once per team, puts each open card whose status differs from its last recorded move back at that move:
+    /// what the mirror's false set-backs undid before a status there stopped being a move.</summary>
+    private void RepairLastMoves()
+    {
+        if (_record.Scalar($"SELECT COUNT(*) FROM boards WHERE team = {TeamQ} AND repaired IS NULL;") == "0") return;
+        var plan = new List<(string N, string From, string To, string Who, string At)>();
+        foreach (var row in _record.Query($"""
+            SELECT b.item, b.status, json_group_array(json_object('id', e.id, 'at', e.at, 'who', e.who, 'what', e.what)) AS events
+              FROM board b JOIN events e ON e.team = b.team AND e.item = b.item
+              WHERE b.team = {TeamQ} AND b.status != 'Done' AND json_extract(b.content, '$.shut') IS NULL
+              GROUP BY b.item ORDER BY b.item;
+            """))
+        {
+            var last = Json.Parse(row["events"]!)!.AsArray().OrderBy(e => e!["id"]!.GetValue<long>())
+                .Where(e => Reconciler.Landed(Json.Text(e!["what"])!) is not null).LastOrDefault();
+            if (last is null) continue;
+            var to = Reconciler.Landed(Json.Text(last["what"])!)!;
+            var from = row["status"]!;
+            if (to == from || to == "Done") continue;
+            if (!DateTimeOffset.TryParseExact(Json.Text(last["at"]), "yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var moved))
+                return;
+            plan.Add((row["item"]!, from, to, Json.Text(last["who"])!, Libc.Local(moved).ToString("d MMM", CultureInfo.InvariantCulture)));
+        }
+        if (!MayMoveState())
+        {
+            if (plan.Count > 0) RefuseMove("move the board forward, putting cards back at their last moves");
+            return;
+        }
+        var now = Now();
+        var unrepaired = $"(SELECT repaired FROM boards WHERE team = {TeamQ}) IS NULL";
+        var changes = new StringBuilder();
+        foreach (var (n, from, to, who, at) in plan)
+        {
+            changes.Append(StatusRoute.Set(TeamQ, n, to, now, $" AND {unrepaired}"));
+            if (!DryRun)
+                changes.Append($"INSERT INTO events (team, item, at, who, what) SELECT {TeamQ}, {n}, {Reconciler.Q(now)}, 'board',\n {Reconciler.Q($"{from} → {to} · repaired to its last move ({who}, {at})")} WHERE {unrepaired};\n");
+        }
+        try
+        {
+            _record.Exec($"BEGIN IMMEDIATE; {changes} UPDATE boards SET repaired = {Reconciler.Q(now)} WHERE team = {TeamQ} AND repaired IS NULL; COMMIT;");
+        }
+        catch (InvalidOperationException)
+        {
+            _record.TryRollback();
+        }
+    }
+
+    /// <summary>Whether this a-team may move the state forward: only the one the dispatcher runs, or a run's copy of that
+    /// release, moves the real state.</summary>
+    private bool MayMoveState()
+    {
+        if (DryRun) return true;
+        var xdg = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
+        var real = Path.Combine(string.IsNullOrEmpty(xdg) ? Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", ".local/state") : xdg, "a-team");
+        if (Libc.RealPath(State) is not { } here || here != Libc.RealPath(real)) return true;
+        var bin = InstalledBin();
+        if (bin.Length == 0) return true;
+        var installedRoot = Libc.RealPath(bin) is { } target ? Libc.RealPath(Path.Combine(Path.GetDirectoryName(target)!, "..")) : null;
+        if (Libc.RealPath(Root) == installedRoot) return true;
+        var version = Path.Combine(Root, "VERSION");
+        return File.Exists(version) && File.ReadAllText(version).TrimEnd('\n') == Proc.Say(bin, "version");
+    }
+
+    private static string InstalledBin()
+    {
+        try
+        {
+            return Json.Text(Json.Parse(File.ReadAllText(Path.Combine(State, "dispatcher.json")))?["bin"]) ?? "";
+        }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
+        {
+            return "";
+        }
+    }
+
+    private static void RefuseMove(string what)
+    {
+        var bin = InstalledBin();
+        if (File.Exists(Path.Combine(Root, "VERSION")) && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("A_TEAM_RUN_TEAM")))
+            throw new Die($"this run is on {Proc.Say(Path.Combine(Root, "bin", "a-team"), "version")}, and only the installed a-team ({Proc.Say(bin, "version")}) may {what}: stopping");
+        throw new Die($"this a-team ({Root}) would {what}, and only the installed one ({bin}) may: try it with --dry-run, or with A_TEAM_STATE set to a copy");
+    }
+
+    /// <summary>Carries the old a-team labels on open items into the record, then takes them off on GitHub. A `blocked`
+    /// keeps who added it and when, and a shelve the date in its hidden comment.</summary>
     private void AdoptLabels()
     {
-        RefuseLabelsOnlyTheShellAdopts();
-        foreach (var row in OpenCards())
+        var rows = _record.Query($"SELECT item, marks, content FROM board WHERE team = {TeamQ} AND status != 'Done' AND json_extract(content, '$.shut') IS NULL;")
+            .Select(row => (Row: row, All: Json.Parse(row["content"]!)?["labels"]?.AsArray() ?? []))
+            .Select(card => (card.Row, card.All, Old: card.All.Select(Json.Text).OfType<string>().Where(IsStateLabel).ToList()))
+            .Where(card => card.Old.Count > 0).ToList();
+        if (rows.Count == 0) return;
+        if (!MayMoveState()) RefuseMove("move the board forward, taking its old labels off the issues");
+        var held = HeldSince(rows.Where(card => card.Old.Contains("blocked")).Select(card => card.Row["item"]!).ToList());
+        foreach (var (row, all, old) in rows)
         {
-            var labels = Json.Parse(row["content"]!)?["labels"]?.AsArray() ?? [];
-            var old = OldLabels(row);
-            if (old.Count == 0) continue;
-            var marks = Json.Parse(string.IsNullOrEmpty(row["marks"]) ? "{}" : row["marks"]!)!.AsObject();
-            var label2 = new JsonArray();
-            foreach (var label in old)
-                label2.Add((JsonNode?)label);
-            foreach (var (key, value) in MarksOf(label2))
-                marks[key] = value?.DeepClone();
             var n = row["item"]!;
+            var labels = new JsonArray();
+            foreach (var label in old)
+                labels.Add((JsonNode?)label);
+            var marks = Json.Merge(Json.Parse(string.IsNullOrEmpty(row["marks"]) ? "{}" : row["marks"]!)!.AsObject(), MarksOf(labels));
+            if (Json.Truthy(marks["held"]) && held[n] is { } since)
+                marks["held"] = since.DeepClone();
+            if (Json.Truthy(marks["upstream"]) && old.Contains("a-team:upstream") && UpstreamRefs(n) is { } refs)
+                marks["upstream"] = refs;
+            if (Json.Truthy(marks["shelved"]) && old.Contains("a-team:shelved") && Shelved(n) is { } shelf)
+                marks["shelved"] = shelf;
             _record.Exec($"UPDATE board SET marks = {Reconciler.Q(Json.Compact(marks))} WHERE team = {TeamQ} AND item = {n};");
             var gone = new HashSet<string>();
             foreach (var label in old)
-                if (_gh.Run("api", "-X", "DELETE", $"repos/{_repo}/issues/{n}/labels/{Uri.EscapeDataString(label)}").Ok)
+                if (Write($"unlabel #{n} {label}", "api", "-X", "DELETE", $"repos/{_repo}/issues/{n}/labels/{Uri.EscapeDataString(label)}").Ok)
                     gone.Add(label);
             var kept = new JsonArray();
-            foreach (var label in labels)
+            foreach (var label in all)
                 if (Json.Text(label) is not { } name || !gone.Contains(name))
                     kept.Add(label?.DeepClone());
             _record.Exec($"UPDATE board SET content = json_set(content, '$.labels', json({Reconciler.Q(Json.Compact(kept))})) WHERE team = {TeamQ} AND item = {n};");
         }
     }
 
-    private List<Row> OpenCards() =>
-        _record.Query($"SELECT item, marks, content FROM board WHERE team = {TeamQ} AND status != 'Done' AND json_extract(content, '$.shut') IS NULL;");
-
-    private static List<string> OldLabels(Row row) =>
-        (Json.Parse(row["content"]!)?["labels"]?.AsArray() ?? []).Select(Json.Text).OfType<string>().Where(IsStateLabel).ToList();
-
-    /// <summary>Checked before anything moves on, so board.sh finds things exactly as it would have.</summary>
-    private void RefuseLabelsOnlyTheShellAdopts()
-    {
-        var all = OpenCards().SelectMany(OldLabels).ToList();
-        if (all.Count == 0) return;
-        if (all.Any(label => label is "blocked" or "a-team:shelved" or "a-team:upstream"))
-            throw new Fallback("labels that carry what GitHub has to be asked for");
-        if (IsRealState)
-            throw new Fallback("old labels on the real state, which only the installed a-team moves");
-    }
-
-    private static bool IsRealState
-    {
-        get
-        {
-            var xdg = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
-            var real = Path.Combine(string.IsNullOrEmpty(xdg) ? Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", ".local/state") : xdg, "a-team");
-            return Path.GetFullPath(State) == Path.GetFullPath(real);
-        }
-    }
-
     internal static string State { get; set; } = "";
+
+    internal static string Root { get; set; } = "";
+
+    internal static string ConfigDir { get; set; } = "";
 
     private static bool IsStateLabel(string label) =>
         label.StartsWith("a-team:", StringComparison.Ordinal) || label.StartsWith("rank:", StringComparison.Ordinal)
         || label.StartsWith("theme: ", StringComparison.Ordinal) || label == "blocked";
 
-    internal void Sync()
+    /// <summary>Once a command, reads the open items, and every so often the whole mirror, then catches the mirror up. Where
+    /// GitHub can't be read, the record stands as it is. <paramref name="cached"/> only moves the board over and carries any
+    /// old labels into it.</summary>
+    internal void Sync(bool cached = false)
     {
         if (_synced) return;
         _synced = true;
         BoardReady();
         AdoptLabels();
+        if (cached) return;
         var seen = _seen ?? [];
         if (_mirror.Length > 0 && _seen is null)
         {
@@ -220,6 +307,8 @@ internal sealed class Board
         AdoptLabels();
         MirrorPush(null);
     }
+
+    private string _mirrorError = "";
 
     private GhResult Gql(string query, params string[] rest)
     {
@@ -244,6 +333,7 @@ internal sealed class Board
         for (var attempt = 0; attempt < 2; attempt++)
         {
             var read = Gql(query, "-F", $"field={_field}", "--paginate");
+            _mirrorError = read.Err;
             if (!read.Ok) return null;
             var pages = Json.ParseMany(read.Out);
             var got = 0;
@@ -347,7 +437,7 @@ internal sealed class Board
                     to = landed;
             to ??= "Idea";
             if (to == "In review" && type == "Issue") to = "Ready";
-            _record.Exec($"UPDATE board SET status = {Reconciler.Q(to)}, since = {Reconciler.Q(Now())} WHERE team = {TeamQ} AND item = {n};");
+            _record.Exec(StatusRoute.Set(TeamQ, n, to, Now()));
             Log("board", n, $"Done → {to} · reopened");
         }
         foreach (var (n, to) in plan.Ranks)
@@ -360,6 +450,7 @@ internal sealed class Board
     /// <summary>One line of a card's history, after the change it describes.</summary>
     internal void Log(string who, string n, string what)
     {
+        if (DryRun) return;
         try
         {
             _record.Exec($"INSERT INTO events (team, item, at, who, what) VALUES ({TeamQ}, {Reconciler.Q(n)}, {Reconciler.Q(Now())}, {Reconciler.Q(who)}, {Reconciler.Q(what)});");
@@ -370,38 +461,47 @@ internal sealed class Board
         }
     }
 
+    /// <summary>Sets one of #n's marks in the record.</summary>
     internal void Mark(string n, string key, string json)
     {
+        if (Would($"mark #{n} {key} {json}")) return;
         _record.Exec($"UPDATE board SET marks = json_set(COALESCE(marks, '{{}}'), '$.{key}', json({Reconciler.Q(json)})) WHERE team = {TeamQ} AND item = {n};");
     }
 
     internal void ClearMark(string n, string key)
     {
+        if (Would($"clear #{n}'s {key}")) return;
         _record.Exec($"UPDATE board SET marks = json_remove(COALESCE(marks, '{{}}'), '$.{key}') WHERE team = {TeamQ} AND item = {n};");
     }
 
-    internal void SetStatus(string n, string status)
+    /// <summary>Moves #n on the board, then on its mirror. Who may do that is the route's to say, whatever the command.</summary>
+    internal void SetStatus(string n, string from, string to, string who)
     {
-        _record.Exec($"UPDATE board SET status = {Reconciler.Q(status)}, since = {Reconciler.Q(Now())} WHERE team = {TeamQ} AND item = {n};");
+        if (!StatusRoute.Permits(who, from, to))
+            throw new InvalidOperationException($"the status route has no {who}: {from} -> {to}");
+        if (Would($"set #{n} to '{to}'")) return;
+        _record.Exec(StatusRoute.Set(TeamQ, n, to, Now()));
         MirrorPush(n);
     }
 
+    /// <summary>Puts an issue or PR on the board, with no status yet, and on its mirror.</summary>
     internal void AddToBoard(string n, string node)
     {
-        _record.Exec($"INSERT OR IGNORE INTO board (team, item, node, status, since) VALUES ({TeamQ}, {n}, {Reconciler.Q(node)}, 'None', {Reconciler.Q(Now())});");
+        if (Would($"add #{n} to the board")) return;
+        _record.Exec(StatusRoute.Enter(TeamQ, n, Reconciler.Q(node), StatusRoute.None, Now()));
         if (FreshNodes([node]) is { } nodes)
             Reconcile(nodes, adopt: false);
     }
 
     /// <summary>The board's items, as the record has them.</summary>
-    internal JsonArray Items()
+    internal JsonArray Items(bool open = false)
     {
-        Sync();
+        if (!SkipSync) Sync();
         var items = new JsonArray();
         foreach (var row in _record.Query($"""
             SELECT b.item, b.node, b.status, b.priority, b.since, b.content, b.mirror, b.marks, up.priority AS pitch_priority
               FROM board b LEFT JOIN board up ON up.team = b.team AND up.item = json_extract(b.content, '$.parent')
-              WHERE b.team = {TeamQ} ORDER BY b.rowid;
+              WHERE b.team = {TeamQ}{(open ? " AND b.status != 'Done'" : "")} ORDER BY b.rowid;
             """))
         {
             var c = Json.Parse(row["content"]!)!;
@@ -434,6 +534,16 @@ internal sealed class Board
             items.Add((JsonNode?)item);
         }
         return items;
+    }
+
+    internal List<JsonNode> AllCards() => Items().OfType<JsonNode>().ToList();
+
+    /// <summary>#n as `list` prints it, or null if it isn't on the board.</summary>
+    internal JsonNode? Item(string n)
+    {
+        if (!long.TryParse(n, out var number))
+            throw new Stop(2, $"jq: Invalid JSON text passed to --argjson\n");
+        return Items().FirstOrDefault(item => item!["number"]!.GetValue<long>() == number);
     }
 
     /// <summary>The marks an old label stood for, on a card with none of its own in the record.</summary>
@@ -548,7 +658,7 @@ internal sealed class Board
     /// <summary>Catches the mirror up with the record: one card, or the ones behind it when GitHub isn't being waited for.</summary>
     internal void MirrorPush(string? only)
     {
-        if (_mirror.Length == 0) return;
+        if (_mirror.Length == 0 || DryRun) return;
         if (only is null && _record.Scalar($"SELECT COUNT(*) FROM boards WHERE team = {TeamQ} AND retry > {Reconciler.Q(Now())};") != "0")
             return;
         var rows = _record.Query($"""
@@ -727,12 +837,4 @@ internal sealed class Board
         else if (only is null || _record.Scalar($"SELECT COUNT(*) FROM board WHERE team = {TeamQ} AND node != '' AND {Lagging};") == "0")
             _record.Exec($"UPDATE boards SET failed = NULL, retry = NULL WHERE team = {TeamQ};");
     }
-
-    internal GhResult Label(string n) => _gh.Run("issue", "edit", n, "-R", _repo, "--add-label", "pitch");
-
-    internal GhResult LabelNew(string n) => _gh.Run("api", "-X", "POST", $"repos/{_repo}/issues/{n}/labels", "-f", "labels[]=pitch");
-
-    internal GhResult Issue(string n, string jq) => _gh.Run("api", $"repos/{_repo}/issues/{n}", "--jq", jq);
-
-    internal GhResult Content(string kind, string n, string jq) => _gh.Run("api", $"repos/{_repo}/{kind}/{n}", "--jq", jq);
 }

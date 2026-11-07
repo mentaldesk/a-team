@@ -80,9 +80,7 @@ internal static class Reconciler
 
             if (row is null && shown is not null)
             {
-                inserts.Append($"INSERT INTO board (team, item, node, status, priority, since, content, mirror, mirrored_status,\n"
-                    + $" mirrored_priority) VALUES ({teamQ}, {number}, {Q(Json.Text(c["id"]))}, {Q(shown)},\n"
-                    + $" {Q(ranked)}, {Q(since)}, {contentQ}, {Q(item)}, {Q(shown)}, {Q(ranked ?? "none")});\n");
+                inserts.Append(StatusRoute.Arrive(teamQ, number, Q(Json.Text(c["id"])), shown, ranked, since, contentQ, item));
             }
             if (row is not null)
             {
@@ -96,13 +94,13 @@ internal static class Reconciler
                     updates.Append($", mirrored_status = {Q(shown)}");
                 if (type == "Issue" && (adopt || row.MirroredPriority is null || r == (row.Priority ?? "none")))
                     updates.Append($", mirrored_priority = {Q(r)}");
-                if (adopt && shown is not null)
-                    updates.Append($", status = {Q(shown)}");
                 if (adopt)
                     updates.Append($", priority = {Q(ranked)}");
-                if (!adopt && row.Status == StatusRoute.None && shown is not null && shown != StatusRoute.None)
-                    updates.Append($", status = {Q(shown)}, since = {Q(now)}");
                 updates.Append($"\n WHERE team = {teamQ} AND item = {number};\n");
+                if (adopt && shown is not null)
+                    closings.Append(StatusRoute.Set(teamQ, number, shown, null));
+                if (!adopt && row.Status == StatusRoute.None && shown is not null && shown != StatusRoute.None)
+                    closings.Append(StatusRoute.Set(teamQ, number, shown, now));
 
                 if (!adopt)
                 {
@@ -117,7 +115,7 @@ internal static class Reconciler
                 }
             }
             if (closes)
-                closings.Append($"UPDATE board SET status = 'Done', since = {Q(now)} WHERE team = {teamQ} AND item = {number};\n");
+                closings.Append(StatusRoute.Set(teamQ, number, "Done", now));
         }
         return new ReconcilePlan(inserts.ToString() + updates + closings, bounces, reopened, ranks);
     }

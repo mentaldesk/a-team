@@ -29,6 +29,15 @@ internal static class Json
 
     internal static bool Truthy(JsonNode? node) => node is not null && node.GetValueKind() != JsonValueKind.False && node.GetValueKind() != JsonValueKind.Null;
 
+    /// <summary>jq's `*`: <paramref name="over"/> on top of <paramref name="under"/>, objects merged all the way down.</summary>
+    internal static JsonObject Merge(JsonObject under, JsonObject over)
+    {
+        var merged = under.DeepClone().AsObject();
+        foreach (var (key, value) in over)
+            merged[key] = value is JsonObject top && merged[key] is JsonObject below ? Merge(below, top) : value?.DeepClone();
+        return merged;
+    }
+
     internal static string Pretty(JsonNode? node)
     {
         var text = new StringBuilder();

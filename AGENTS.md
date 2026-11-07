@@ -17,8 +17,8 @@ nothing to restart.
 - **Rules live in one place.** Anything both roles follow goes in `process.md`; anything one
   role does goes in its role file. Team-specific facts go in the team's config (see `examples/team.json`) or in
   the product repo's own docs and skills, never in a role file.
-- **Decisions that gate anything go in `board.sh`, not in prose.** Who may move an item where
-  is the `allowed` table. An agent can talk itself out of a sentence, but not out of a
+- **Decisions that gate anything go in the board, not in prose.** Who may move an item where
+  is `core/StatusRoute.cs`. An agent can talk itself out of a sentence, but not out of a
   refused command.
 - **Anything a role is allowed to do goes in its task prompt (`tasks/<role>.md`).** Auto mode
   treats the prompt as the reviewer's intent and the brief `run.sh` prints as command output,
@@ -68,8 +68,8 @@ down each assumption about the machine here, and the rule that keeps it from tri
 | `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
 | `bin/gh` | `gh` as the team's App inside a run |
 | `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
-| `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
-| `core/` | The board's compiled core, `a-team-core`, taking over from `board.sh` a command at a time. What it hasn't ported, or can't finish, it hands to `board.sh` before changing anything |
+| `core/` | `a-team board`, compiled as `a-team-core`: the only way agents touch the board. It owns the record, syncing with GitHub and every status change, and takes over from `board.sh` a command at a time |
+| `scripts/board.sh` | The commands the core hasn't taken yet. It asks the core for the board's state |
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
@@ -83,13 +83,15 @@ down each assumption about the machine here, and the rule that keeps it from tri
 
 ## The compiled board
 
-`bin/a-team board` runs `a-team-core` where there is one, and it hands anything it doesn't do itself to `board.sh`, so a
-command can move over without its caller noticing, and a checkout with no build just runs on `board.sh`. A checkout's core
-is only used while no source is newer than it: `dotnet build core/Core.csproj`, which `tests/scripts.sh` does too.
+`bin/a-team board` runs `a-team-core`, and a checkout builds its own whenever a source is newer than it. What the core hasn't
+ported yet it hands to `scripts/board.sh` before doing anything, so a command moves over without its caller noticing.
 
-While a command lives in both, a change to it goes in both. `tests/scripts/core.sh` runs the same commands through each and
-compares what they say and leave behind, and `tests/Core.Tests` covers the logic in process. Set `A_TEAM_CORE_TRACE=<file>` to
-see what each command did: `handled`, or `fallback` and why.
+The core owns the board's state: `board.sh` reads cards and syncs through it (`core __items`, `core __sync`), and a command is
+in one place only, so nothing is changed twice. A card's status changes only through `core/StatusRoute.cs`: its table says who
+may do what, and it holds the only SQL that writes one, which `tests/scripts/core.sh` checks.
+
+`tests/scripts/` runs every command through the core, and `tests/Core.Tests` covers the logic in process. Set
+`A_TEAM_CORE_TRACE=<file>` to see what each command did: `handled`, or `fallback` and why.
 
 ## Dashboard UI
 

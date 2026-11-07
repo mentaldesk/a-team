@@ -685,6 +685,10 @@ format_copy() {
   local copy
   copy=$(mktemp -d "$WORK/format.XXXXXX")
   cp -R "$ROOT/bin" "$ROOT/scripts" "$copy/"
+  ln -s "$ROOT/core" "$copy/core"
+  sed -i.bak "2i\\
+export A_TEAM_BOARD_FORMAT=$2
+" "$copy/bin/a-team"
   [ -z "$1" ] || echo "$1" >"$copy/VERSION"
   sed "s/^BOARD_FORMAT=1$/BOARD_FORMAT=$2\nformat_$2() { echo \"\$TEAM\" >>\"\$STATE\/format-$2-ran\"; }/" "$ROOT/scripts/board.sh" >"$copy/scripts/board.sh"
   echo "$copy"

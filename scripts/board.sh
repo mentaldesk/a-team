@@ -10,6 +10,8 @@ STATES=("Idea" "Exploring" "Pitched" "Approved" "Building" "Ready" "In progress"
 
 die() { echo "board.sh: $*" >&2; exit 1; }
 
+[ -n "${A_TEAM_CORE:-}" ] || die "run this as a-team board, which starts the board's core"
+
 DRY_RUN=${A_TEAM_DRY_RUN:-}
 SWEEP=
 if [ "${1:-}" = --dry-run ]; then
@@ -111,16 +113,6 @@ PRIORITY=${PRIORITY:-Priority}
 # The labels setup creates, as "<name>|<colour>|<description>|<what goes wrong without it>".
 LABELS="pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it|the team can't tell its pitches from tasks"
 
-# What a-team keeps of an item beyond Status and Priority, in the record's `marks`. Before, each was a label on the
-# issue: state_label says which labels those were, and marks_of reads them, for the labels an upgrade carries over.
-MARKS='def state_label: startswith("a-team:") or startswith("rank:") or startswith("theme: ") or . == "blocked";
-  def marks_of: reduce .[] as $l ({};
-    if $l == "blocked" then .held = {at: null, by: null}
-    elif $l == "a-team:shelved" then .shelved = {until: null, priority: null}
-    elif $l | startswith("a-team:") then .[$l | ltrimstr("a-team:")] = true
-    elif $l | startswith("rank:") then .rank = ($l | ltrimstr("rank:") | (.[:1] | ascii_upcase) + .[1:])
-    elif $l | startswith("theme: ") then .theme = ($l | ltrimstr("theme: "))
-    else . end);'
 RANKS="urgent high medium low"
 
 # facts: what an item's marks say, as the app shows it under the title; "" for none. A shelve shows while it's `cooling`.
@@ -161,10 +153,9 @@ act_as_app() {
 }
 
 case "$CMD" in
-  accept | add | approve | attach | audited | claim | comment | covered | decide | decision | decline | depends | \
-    edit | feedback | finish | fix | gave | hold | mine | move | new | pictures | priority | recommend | reconfirm | \
-    release | replace | review | secret | seeded | shelve | skip | spent | task | theme | triggers | unblock | undepend | \
-    unlink | vision-review)
+  attach | audited | comment | covered | decide | decision | depends | edit | feedback | gave | hold | mine | new | \
+    pictures | priority | recommend | reconfirm | release | replace | review | secret | seeded | skip | spent | theme | \
+    triggers | unblock | undepend | unlink | vision-review)
     speaker=${1:-}
     [ "$CMD" != triggers ] || [ "$speaker" != --sweep ] || speaker=${2:-}
     case "$speaker" in
@@ -268,12 +259,6 @@ UPSTREAM='def upstream_reasons:
       (if $verdict == "pass" and .isDraft then [$n, "\($pr) is green but still a draft"] else empty end),
       (if $asked != null then [$n, "stakeholder feedback on \($pr) (\($asked))"] else empty end);'
 
-# How many passes in a row GitHub refuses a green bump before it's put to the stakeholder.
-REFUSALS_BEFORE_ASKING=3
-# merges: a PR as `gh pr list` gives it, the check that lets a green one merge with no stakeholder: Dependabot's, open
-# for merging, and the Lead has said what it brings.
-MERGES='def merges: .author.login == "app/dependabot" and (.isDraft | not) and .mergeable == "MERGEABLE"
-    and any(.comments[]; .author.login == $slug and (.body | contains("<!-- a-team:lead -->")));'
 
 # main_red($main): a PR's checks fail only jobs that fail on the default branch too, read by `main_red`.
 MAIN_RED='def main_red($main): $main != null and .failing != [] and all(.failing[].name; IN($main.failing[]));'
@@ -289,28 +274,6 @@ CHECKS='def checks:
       failing: map(select(failed) | {name, at: .completed_at, link: .html_url}),
       pending: map(select(.status != "completed") | .name)
     };'
-
-is_state() {
-  local s
-  for s in "${STATES[@]}"; do [ "$s" = "$1" ] && return 0; done
-  return 1
-}
-
-allowed() {
-  # Pitched > Exploring is gated again in `move`, only for a pitch `lead-next` names in `demote`;
-  # Pitched > Idea is `shelve`'s.
-  case "$1:$2>$3" in
-    "lead:Idea>Exploring" | "lead:Exploring>Pitched" | "lead:Exploring>Idea" | \
-    "lead:Pitched>Exploring" | \
-    "lead:Approved>Building" | \
-    "lead:None>Idea" | "lead:None>Exploring" | "lead:None>Pitched" | "lead:None>Ready" | \
-    "dev:None>Idea" | "dev:Ready>In progress" | "dev:In progress>In review" | "dev:In progress>Ready" | \
-    "customer:None>Idea" | "customer:None>Pitched" | "customer:None>In review" | \
-    "you:None>Idea")
-      return 0 ;;
-  esac
-  return 1
-}
 
 check_role() {
   case "$1" in lead | dev | customer | reviewer) ;; *) die "unknown role '$1' (lead | dev | customer | reviewer)" ;; esac
@@ -335,14 +298,6 @@ file_there() {
 
 # Whether the first page of the user docs, the config's `docs`, is on the default branch, as file_there says.
 docs_there() { [ -n "$(cfg .docs)" ] && file_there "repos/$REPO/contents/$(cfg .docs)" --silent >/dev/null; }
-
-# docs_there, refusing to go on where GitHub didn't answer.
-docs_known() {
-  local there=0
-  docs_there || there=$?
-  [ "$there" != 2 ] || die "GitHub didn't answer for $(cfg .docs): try again"
-  return "$there"
-}
 
 # A stakeholder asked for a vision review from Commands, and no review PR has opened since.
 VISION_ASKED="$STATE/$TEAM/lead/vision-review"
@@ -437,16 +392,12 @@ UPDATED="$STATE/$TEAM/updated"
 UPDATE_SETTLES=600
 # The default branch's head when it was first seen red, until it's green again.
 RED_SINCE="$STATE/$TEAM/red-since"
-# The merge refusals in a row of each green bump, one file a PR.
-BUMP_REFUSALS="$STATE/$TEAM/bump-refusals"
 
 KIND=${KIND:-organization}
 
 # MIRROR: the GitHub Project a-team copies the board to, as "<owner>/<number>"; empty for none.
 MIRROR=
 [ -z "$NUMBER" ] || [ "$MIRRORED" = false ] || MIRROR="$OWNER/$NUMBER"
-# How often the whole mirror is read back, for items added to it and cards that have drifted from the record.
-READ_EVERY=${A_TEAM_BOARD_READ_EVERY:-900}
 PRIORITIES='["Urgent", "High", "Medium", "Low"]'
 
 # A dry run works on a copy of the record, so it reads as a real run would and changes nothing. With no record yet, as
@@ -512,106 +463,6 @@ mirror_nodes() {
       | {project: {id, status: .fieldValueByName.name, since: .fieldValueByName.updatedAt}, content}]'
 }
 
-# fresh_nodes <node ids>: those issues and PRs as GitHub has them now, in mirror_nodes' shape; `project` is null for
-# one that isn't on the mirror.
-fresh_nodes() {
-  local ids chunk out='[]' page items
-  ids=$1
-  items="projectItems(first: 20) { nodes { id project { number owner { ... on Organization { login } ... on User { login } } }
-    $STATUS_VALUE } }"
-  items="... on Issue { $items } ... on PullRequest { $items }"
-  while [ "$(jq length <<<"$ids")" -gt 0 ]; do
-    chunk=$(jq -c '.[:100]' <<<"$ids")
-    ids=$(jq -c '.[100:]' <<<"$ids")
-    if [ -n "$MIRROR" ]; then
-      page=$(gh api graphql -F field="$FIELD" -f query="query BoardRefresh(\$field: String!) { nodes(ids: $chunk) { $CONTENT
-        $items } }") || return 1
-    else
-      page=$(gh api graphql -f query="query BoardRefresh { nodes(ids: $chunk) { $CONTENT } }") || return 1
-    fi
-    out=$(jq -c --argjson was "$out" --arg owner "$OWNER" --arg number "$NUMBER" '$was + [.data.nodes[]? | select(. != null)
-      | ([.projectItems.nodes[]? | select(($number != "") and .project.number == ($number | tonumber)
-            and (.project.owner.login | ascii_downcase) == ($owner | ascii_downcase))
-          | {id, status: .fieldValueByName.name, since: .fieldValueByName.updatedAt}] | first) as $project
-      | {project: $project, content: del(.projectItems)}]' <<<"$page")
-  done
-  printf '%s\n' "$out"
-}
-
-# reconcile <nodes> [adopt]: brings the record up to date with those nodes, Done for whatever it sees close, and back
-# off Done for whatever it sees reopen. With `adopt` it takes the mirror's Status and Priority as they are; otherwise
-# a Status there is never a move, and mirror_push writes the record's back, while a Priority there is a stakeholder's.
-reconcile() {
-  local rows plan n from to type
-  rows=$(history_sql -json "SELECT item, status, priority, since, mirror, mirrored_status, mirrored_priority,
-      json_extract(content, '$.shut') AS shut FROM board WHERE team = $(sql "$TEAM");" | jq -s '.[0] // []')
-  plan=$(jq -n --argjson nodes "$1" --argjson rows "$rows" --arg repo "$REPO" --arg team "$TEAM" --arg sq "'" \
-    --arg priority "$PRIORITY" --arg mirror "$MIRROR" --arg now "$(date -u +%FT%TZ)" --argjson adopt "$([ "${2:-}" = adopt ] && echo true || echo false)" \
-    --argjson states "$(printf '%s\n' "${STATES[@]}" | jq -R . | jq -s .)" --slurpfile cfg "$CONFIG" '
-    def q: if . == null then "NULL" else $sq + (tostring | gsub($sq; $sq + $sq)) + $sq end;
-    ($cfg[0].project.statusMap // {} | to_entries | map({key: .value, value: .key}) | from_entries) as $rev
-    | def state: if . == null then "None" elif $rev[.] then $rev[.] elif (. as $s | $states | index($s)) then . else "?" + . end;
-    ($rows | map({key: "\(.item)", value: .}) | from_entries) as $had
-    | [$nodes[] | select(.content.repository.nameWithOwner == $repo) | .content as $c
-       | ($had["\($c.number)"]) as $row
-       | (if $c.state then ($c.state | IN("CLOSED", "MERGED")) else ($c.stateReason // "REOPENED") != "REOPENED" end) as $shut
-       | {n: $c.number, node: $c.id, row: $row, shut: $shut,
-          closes: ($shut and $row != null and $row.status != "Done"),
-          reopens: (($shut | not) and $row.shut == 1 and $row.status == "Done"),
-          shown: (if .project then .project.status | state else null end), item: .project.id, changed: .project.since,
-          since: (.project.since // $now),
-          ranked: ([$c.issueFieldValues.nodes[]? | select(.field.name == $priority) | .name] | first),
-          content: ({type: $c.__typename, title: $c.title, url: $c.url, labels: [$c.labels.nodes[]?.name],
-                    blockedBy: ($c.issueDependenciesSummary.blockedBy // 0), parent: $c.parent.number}
-            + (if $shut then {shut: true} else {} end) + (if $shut and $c.stateReason then {closed: $c.stateReason} else {} end)
-            + (if $c.author.login == "dependabot" then {dependabot: true} else {} end))}] as $found
-    | ($found | map(select(.row == null and .shown != null))) as $new
-    | ($found | map(select(.row != null))) as $known
-    | {sql: ([$new[] | "INSERT INTO board (team, item, node, status, priority, since, content, mirror, mirrored_status,
-                 mirrored_priority) VALUES (\($team | q), \(.n), \(.node | q), \(.shown | q),
-                 \(.ranked | q), \(.since | q), \(.content | tojson | q), \(.item | q), \(.shown | q), \(.ranked // "none" | q));"]
-           + [$known[] | (.ranked // "none") as $r
-               | "UPDATE board SET content = \(.content | tojson | q), node = \(.node | q)\(
-               if .item then ", mirror = \(.item | q)" elif $mirror != "" then ", mirror = NULL, mirrored_status = NULL, mirrored_rank = NULL, mirrored_theme = NULL" else "" end)\(
-               if .shown != null then ", mirrored_status = \(.shown | q)" else "" end)\(
-               if .content.type == "Issue" and ($adopt or .row.mirrored_priority == null or $r == (.row.priority // "none"))
-               then ", mirrored_priority = \($r | q)" else "" end)\(
-               if $adopt and .shown != null then ", status = \(.shown | q)" else "" end)\(
-               if $adopt then ", priority = \(.ranked | q)" else "" end)\(
-               if ($adopt | not) and .row.status == "None" and .shown != null and .shown != "None"
-               then ", status = \(.shown | q), since = \($now | q)" else "" end)
-               WHERE team = \($team | q) AND item = \(.n);"]
-           + [$found[] | select(.closes)
-               | "UPDATE board SET status = \("Done" | q), since = \($now | q) WHERE team = \($team | q) AND item = \(.n);"]
-           | join("\n")),
-       bounces: (if $adopt then [] else [$known[] | select((.closes or .reopens or .row.status == "None" | not) and .shown != null
-           and .row.mirrored_status != null and .shown != .row.mirrored_status and .shown != .row.status and .changed >= .row.since)
-         | [.n, .row.status, (.shown | ltrimstr("?"))] | @tsv] end),
-       reopened: (if $adopt then [] else [$known[] | select(.reopens) | [.n, .content.type] | @tsv] end),
-       ranks: (if $adopt then [] else [$known[] | select(.content.type == "Issue" and .ranked != null
-           and .row.mirrored_priority != null and .ranked != .row.mirrored_priority and .ranked != .row.priority)
-         | [.n, .ranked] | @tsv] end)}')
-  history_sql "BEGIN; $(jq -r .sql <<<"$plan") COMMIT;" >/dev/null
-  while IFS=$'\t' read -r n to from; do
-    record board "$n" "$from on GitHub isn't a move: put back to $to"
-  done < <(jq -r '.bounces[]' <<<"$plan")
-  while IFS=$'\t' read -r n type; do
-    [ -n "$n" ] || continue
-    to=$(history_sql -json "SELECT what FROM events WHERE team = $(sql "$TEAM") AND item = $n ORDER BY id;" |
-      jq -rs "$LANDED"'[(.[0] // [])[].what | landed.to | select(. != "Done")] | last // "Idea"')
-    # A task that closed In review has no PR left to review.
-    if [ "$to:$type" = "In review:Issue" ]; then to=Ready; fi
-    history_sql "UPDATE board SET status = $(sql "$to"), since = $(sql "$(date -u +%FT%TZ)")
-      WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    record board "$n" "Done → $to · reopened"
-  done < <(jq -r '.reopened[]' <<<"$plan")
-  while IFS=$'\t' read -r n to; do
-    history_sql "UPDATE board SET priority = $(sql "$to"), mirrored_priority = $(sql "$to")
-      WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    record you "$n" "$PRIORITY set to $to"
-  done < <(jq -r '.ranks[]' <<<"$plan")
-}
-
 # mark <n> <key> <JSON value|null>: sets, or with null clears, one of #n's marks in the record.
 mark() {
   local to
@@ -620,8 +471,6 @@ mark() {
   write "$([ "$3" = null ] && echo "clear #$1's $2" || echo "mark #$1 $2 $3")" \
     history_sql "UPDATE board SET marks = $to WHERE team = $(sql "$TEAM") AND item = $1;" >/dev/null
 }
-
-unlabel() { gh api -X DELETE "repos/$REPO/issues/$1/labels/$(jq -rn --arg l "$2" '$l | @uri')" >/dev/null 2>&1; }
 
 # BOARD_FORMAT: the format of the state this a-team keeps. A change that moves or reinterprets stored state bumps it and
 # adds a format_<n> step, safe to repeat. A team with no stamp is on format 1: its labels are carried into the record, as adopt_labels does.
@@ -704,155 +553,26 @@ format_gate() {
   fi
 }
 
-# adopt_labels: carries the a-team labels on open items into the record, then takes them off on GitHub. A `blocked`
-# keeps who added it and when, and a shelve the date in its hidden comment.
-adopt_labels() {
-  local rows held='{}' query='' n labels marks shelf refs label kept gone
-  rows=$(history_sql -json "SELECT item, marks, content FROM board WHERE team = $(sql "$TEAM") AND status != 'Done'
-      AND json_extract(content, '$.shut') IS NULL;" |
-    jq -sc "$MARKS"'(.[0] // []) | map((.content | fromjson) as $c | select(any($c.labels[]?; state_label))
-      | {n: .item, marks: ((.marks // "{}") | fromjson), labels: ($c.labels | map(select(state_label))),
-         all: $c.labels})')
-  [ "$rows" != '[]' ] || return 0
-  may_move_state || refuse_move "move the board forward, taking its old labels off the issues"
-  for n in $(jq -r '.[] | select(.labels | index("blocked")) | .n' <<<"$rows"); do
-    query+=" x$n: issueOrPullRequest(number: $n) { ... on Issue { timelineItems(last: 50, itemTypes: [LABELED_EVENT]) {
-      nodes { ... on LabeledEvent { createdAt label { name } actor { __typename login } } } } } }"
-  done
-  if [ -n "$query" ]; then
-    held=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query="query HeldSince(\$owner: String!, \$name: String!) {
-        repository(owner: \$owner, name: \$name) {$query} }" 2>/dev/null |
-      jq -c --argjson stakeholders "$STAKEHOLDERS" "def login: $LOGIN;"'[.data.repository // {} | to_entries[] | select(.value != null)
-        | {key: (.key | ltrimstr("x")), value: ([.value.timelineItems.nodes[]? | select(.label.name == "blocked")] | max_by(.createdAt)
-            | if . == null then {at: null, by: null}
-              else {at: .createdAt, by: (.actor | login | if IN($stakeholders[]) then "you" else "team" end)} end)}]
-        | from_entries') || held='{}'
-  fi
-  while IFS=$'\t' read -r n labels kept; do
-    shelf=null
-    if jq -e 'index("a-team:shelved")' <<<"$labels" >/dev/null; then
-      shelf=$(shelved "$n" 2>/dev/null | jq -c '{until, priority}') || shelf=
-      shelf=${shelf:-null}
-    fi
-    refs=null
-    if jq -e 'index("a-team:upstream")' <<<"$labels" >/dev/null; then
-      refs=$(waits_on "$n" 2>/dev/null | jq -c 'map(.ref) | select(. != [])') || refs=
-      refs=${refs:-null}
-    fi
-    marks=$(jq -c --argjson held "$held" --argjson shelf "$shelf" --argjson refs "$refs" --arg n "$n" --argjson labels "$labels" "$MARKS"'
-      .marks * ($labels | marks_of)
-      | if .held then .held = ($held[$n] // .held) else . end
-      | if .upstream and $refs != null then .upstream = $refs else . end
-      | if .shelved and $shelf != null then .shelved = $shelf else . end' <<<"$(jq -c --argjson n "$n" '.[] | select(.n == $n)' <<<"$rows")")
-    history_sql "UPDATE board SET marks = $(sql "$marks") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    gone='[]'
-    while IFS= read -r label; do
-      ! write "unlabel #$n $label" unlabel "$n" "$label" || gone=$(jq -c --arg l "$label" '. + [$l]' <<<"$gone")
-    done < <(jq -r '.[]' <<<"$labels")
-    kept=$(jq -c --argjson gone "$gone" '. - $gone' <<<"$kept")
-    history_sql "UPDATE board SET content = json_set(content, '$.labels', json($(sql "$kept")))
-      WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-  done < <(jq -r '.[] | [.n, (.labels | tojson), (.all | tojson)] | @tsv' <<<"$rows")
-}
-
-# repair_last_moves: once per team, puts each open card whose Status differs from its last recorded move back at that
-# move: what the mirror's false set-backs undid before a Status there stopped being a move.
-repair_last_moves() {
-  local n from to who at now plan changes='' team unrepaired
-  team=$(sql "$TEAM")
-  unrepaired="(SELECT repaired FROM boards WHERE team = $team) IS NULL"
-  [ "$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $team AND repaired IS NULL;")" -gt 0 ] || return 0
-  plan=$(history_sql -json "SELECT b.item, b.status, json_group_array(json_object('id', e.id, 'at', e.at, 'who', e.who, 'what', e.what)) AS events
-      FROM board b JOIN events e ON e.team = b.team AND e.item = b.item
-      WHERE b.team = $team AND b.status != 'Done' AND json_extract(b.content, '$.shut') IS NULL
-      GROUP BY b.item ORDER BY b.item;" | jq -rs "$LANDED"'(.[0] // [])[] | .item as $n | .status as $from
-        | ([.events | fromjson | sort_by(.id)[] | . as $e | .what | landed | . + {who: $e.who, at: $e.at}] | last) as $m
-        | select($m != null and $m.to != $from and $m.to != "Done")
-        | [$n, $from, $m.to, $m.who, ($m.at | fromdate | strflocaltime("%e %b") | ltrimstr(" "))] | @tsv') || return 0
-  if ! may_move_state; then
-    [ -z "$plan" ] || refuse_move "move the board forward, putting cards back at their last moves"
-    return 0
-  fi
-  now=$(sql "$(date -u +%FT%TZ)")
-  while IFS=$'\t' read -r n from to who at; do
-    [ -n "$n" ] || continue
-    changes+="UPDATE board SET status = $(sql "$to"), since = $now WHERE team = $team AND item = $n AND $unrepaired;"
-    [ -n "$DRY_RUN" ] || changes+="INSERT INTO events (team, item, at, who, what) SELECT $team, $n, $now, 'board',
-      $(sql "$from → $to · repaired to its last move ($who, $at)") WHERE $unrepaired;"
-  done <<<"$plan"
-  history_sql "BEGIN IMMEDIATE; $changes UPDATE boards SET repaired = $now WHERE team = $team AND repaired IS NULL; COMMIT;" >/dev/null || return 0
-}
-
 # board_ready: moves the board over from the mirror on the first run, and copies it all to a mirror newly pointed at.
-SEEN=
-board_ready() {
-  local was nodes column columns
-  mkdir -p "$STATE"
-  columns=$(history_sql "SELECT 'board.' || name FROM pragma_table_info('board')
-    UNION ALL SELECT 'boards.' || name FROM pragma_table_info('boards');")
-  columns=" ${columns//$'\n'/ } "
-  for column in marks mirrored_rank mirrored_theme; do
-    [[ $columns == *" board.$column "* ]] || history_sql "ALTER TABLE board ADD COLUMN $column TEXT;" >/dev/null
-  done
-  [[ $columns == *" boards.repaired "* ]] || history_sql "ALTER TABLE boards ADD COLUMN repaired TEXT;" >/dev/null
-  was=$(history_sql "SELECT COALESCE((SELECT project FROM boards WHERE team = $(sql "$TEAM")), '-');")
-  if [ "$was" = - ]; then
-    if [ -n "$MIRROR" ]; then
-      nodes=$(mirror_nodes) || exit 1
-      reconcile "$nodes" adopt
-      SEEN=$(jq -c '[.[].content.id]' <<<"$nodes")
-    fi
-    history_sql "INSERT INTO boards (team, project, read, repaired) VALUES ($(sql "$TEAM"), $(sql "$MIRROR"),
-      $([ -n "$MIRROR" ] && sql "$(date -u +%FT%TZ)" || echo NULL), $(sql "$(date -u +%FT%TZ)"));" >/dev/null
-  elif [ "$was" != "$MIRROR" ]; then
-    history_sql "UPDATE board SET mirror = NULL, mirrored_status = NULL, mirrored_priority = NULL, mirrored_rank = NULL,
-      mirrored_theme = NULL WHERE team = $(sql "$TEAM");
-      UPDATE boards SET project = $(sql "$MIRROR"), read = NULL, failed = NULL, retry = NULL WHERE team = $(sql "$TEAM");" >/dev/null
-  fi
-  repair_last_moves
-}
 
-# board_sync: once a command, reads the open items, and every READ_EVERY the whole mirror, then catches the mirror up.
-# Where GitHub can't be read, the record stands as it is. With CACHED set, it only moves the board over and carries
-# any a-team labels into it.
+# core <command> [args...]: the board's state is the core's, on the record this command has open.
+core() { A_TEAM_DRY_RUN=$DRY_RUN A_TEAM_HISTORY=${HISTORY:-} "$A_TEAM_CORE" "$TEAM" "$@"; }
+
+# board_sync: once a command, the core brings the record up to date with GitHub, and the mirror with the record. With
+# CACHED set, it only moves the board over and carries any a-team labels into it.
 board_sync() {
   [ ! -e "$SYNCED" ] || return 0
   : >"$SYNCED"
-  board_ready
-  adopt_labels
-  [ -z "$CACHED" ] || return 0
-  local seen=${SEEN:-[]} nodes stale ids
-  if [ -n "$MIRROR" ] && [ -z "$SEEN" ]; then
-    stale=$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $(sql "$TEAM")
-      AND (read IS NULL OR read <= $(sql_now "-$READ_EVERY seconds"));")
-    if [ "$stale" -gt 0 ] && nodes=$(SHORT_ENDS='' mirror_nodes 2>/dev/null); then
-      reconcile "$nodes"
-      history_sql "UPDATE boards SET read = $(sql "$(date -u +%FT%TZ)") WHERE team = $(sql "$TEAM");" >/dev/null
-      seen=$(jq -c '[.[].content.id]' <<<"$nodes")
-    fi
-  fi
-  ids=$(history_sql -json "SELECT node FROM board WHERE team = $(sql "$TEAM") AND status != 'Done' AND node != '';" |
-    jq -sc --argjson seen "$seen" '(.[0] // []) | map(.node) | unique - $seen')
-  [ "$ids" = '[]' ] || { nodes=$(fresh_nodes "$ids" 2>/dev/null) && reconcile "$nodes"; } || true
-  adopt_labels
-  mirror_push
+  core __sync ${CACHED:+--cached} || { kill -USR1 $$; exit 1; }
 }
 
-# items [open]: the board's items, as the record has them; `open` leaves Done off. A task with no Priority takes its pitch's.
+# items [open]: the board's items, as the record has them; `open` leaves Done off.
 items() {
   board_sync
-  history_sql -json "SELECT b.item, b.node, b.status, b.priority, b.since, b.content, b.mirror, b.marks, up.priority AS pitch_priority
-    FROM board b LEFT JOIN board up ON up.team = b.team AND up.item = json_extract(b.content, '$.parent')
-    WHERE b.team = $(sql "$TEAM")$([ "${1:-}" = open ] && echo " AND b.status != 'Done'") ORDER BY b.rowid;" |
-    jq -s "$MARKS"'(.[0] // []) | map((.content | fromjson) as $c
-      | {id: (.mirror // ""), number: .item, node, type: $c.type, title: $c.title, url: $c.url,
-         labels: ($c.labels // [] | map(select(state_label | not))),
-         marks: (if .marks then .marks | fromjson else $c.labels // [] | marks_of end),
-         blockedBy: ($c.blockedBy // 0),
-         priority: (.priority // (if .status == "Idea" or ($c.labels // [] | index("pitch")) then null else .pitch_priority end)),
-         since, parent: $c.parent, status}
-        + (if $c.closed then {closed: $c.closed} else {} end) + (if $c.dependabot then {dependabot: true} else {} end))'
+  core __items ${1:-}
 }
+
+mirror_push() { core __mirror-push ${1:-}; }
 
 item() {
   items | jq --argjson n "$1" 'map(select(.number == $n)) | first // empty'
@@ -942,10 +662,9 @@ catch_up() {
 # are free to start, and whether the Dev's slots, held as `claim` counts them, are full with one In review.
 # cycle($waits): of one item's events, oldest first, a task's span from first entering Ready to its last
 # acceptance and its seconds with you, or nothing for an item that never entered Ready while the record was kept.
-# move: the Status a line of history moved its item from and to, if it moved it. landed: the same, with being filed.
+# move: the Status a line of history moved its item from and to, if it moved it.
 MOVE='def move: if startswith("added as ") then {from: null, to: .[9:]} elif startswith("moved to ") then empty
       elif contains(" → ") then split(" · ")[0] | split(" → ") | {from: .[0], to: .[1]} else empty end;'
-LANDED="$MOVE"'def landed: if startswith("filed as Ready") then {from: null, to: "Ready"} else move end;'
 CYCLES="$MOVE"'
   def task: IN("Ready", "In progress", "In review");
   def waits($worktrees):
@@ -1070,148 +789,6 @@ add_text_field() {
 LAGGING="(mirror IS NULL OR mirrored_status IS NOT status OR mirrored_priority IS NOT COALESCE(priority, 'none')
   OR COALESCE(mirrored_rank, '') IS NOT COALESCE(json_extract(marks, '$.rank'), '')
   OR COALESCE(mirrored_theme, '') IS NOT COALESCE(json_extract(marks, '$.theme'), ''))"
-
-# set_status <n> <status>: moves #n on the board, then on its mirror.
-set_status() {
-  write "set #$1 to '$2'" history_sql "UPDATE board SET status = $(sql "$2"), since = $(sql "$(date -u +%FT%TZ)")
-    WHERE team = $(sql "$TEAM") AND item = $1;" >/dev/null
-  mirror_push "$1"
-}
-
-# board_add <n> <content node id>: puts an issue or PR on the board, with no Status yet, and on its mirror.
-board_add() {
-  write "add #$1 to the board" history_sql "INSERT OR IGNORE INTO board (team, item, node, status, since)
-    VALUES ($(sql "$TEAM"), $1, $(sql "$2"), 'None', $(sql "$(date -u +%FT%TZ)"));" >/dev/null
-  [ -n "$DRY_RUN" ] || { nodes=$(fresh_nodes "[$(jq -Rn --arg id "$2" '$id')]" 2>/dev/null) && reconcile "$nodes"; } || true
-}
-
-# mirror_failed <gh's error> [<the board's own reason>]: why the mirror stopped catching up, and when it next tries.
-mirror_failed() {
-  local why retry reset
-  if [ -n "${2:-}" ]; then
-    why="GitHub refused: $2"
-  elif grep -qi 'rate limit' <<<"$1"; then
-    why="GitHub rate limit"
-    reset=$(gh api rate_limit --jq '[.resources.graphql.reset, .resources.core.reset] | max' 2>/dev/null) || reset=
-    [[ $reset =~ ^[0-9]+$ ]] && retry=$(iso "$reset") || retry=
-  # Every phrase has a space or punctuation, so an owner's login in GitHub's message can't match.
-  elif grep -qiE 'could not resolve host|error connecting|connection (refused|reset|closed|timed out)|internet connection|timed out|i/o timeout|handshake timeout|client\.timeout|deadline exceeded|network is|no route to host|dial tcp|no such host|: EOF|unexpected EOF|HTTP 5[0-9][0-9]' <<<"$1"; then
-    why="GitHub unreachable"
-  else
-    why=$(grep -v '^[[:space:]]*$' <<<"$1" | head -n 1 | sed 's/^gh: //')
-    why="GitHub refused${why:+: $why}"
-  fi
-  retry=${retry:-$(iso $(($(date +%s) + 300)))}
-  history_sql "UPDATE boards SET failed = $(sql "$why"), retry = $(sql "$retry") WHERE team = $(sql "$TEAM");" >/dev/null
-}
-
-# mirror_push [<n>]: copies #n, or once any retry is due up to 20 items, to the mirror; a failure is kept for its lane.
-mirror_push() {
-  [ -n "$MIRROR" ] && [ -z "$DRY_RUN" ] || return 0
-  local rows meta pfield err own='' n node status priority mirror shown ranked type option id key value was field name
-  if [ -z "${1:-}" ]; then
-    [ "$(history_sql "SELECT COUNT(*) FROM boards WHERE team = $(sql "$TEAM") AND retry > $(sql "$(date -u +%FT%TZ)");")" -eq 0 ] ||
-      return 0
-  fi
-  rows=$(history_sql -json "SELECT item, node, status, COALESCE(priority, 'none') AS priority, mirror,
-      mirrored_status AS shown, mirrored_priority AS ranked, json_extract(content, '$.type') AS type,
-      COALESCE(json_extract(marks, '$.rank'), '') AS rank, COALESCE(mirrored_rank, '') AS shown_rank,
-      COALESCE(json_extract(marks, '$.theme'), '') AS theme, COALESCE(mirrored_theme, '') AS shown_theme FROM board
-    WHERE team = $(sql "$TEAM") AND node != '' AND $LAGGING${1:+ AND item = $1}
-    ORDER BY status = 'Done', since DESC LIMIT 20;" | jq -c '.[]') || return 0
-  [ -n "$rows" ] || { [ -n "${1:-}" ] || history_sql "UPDATE boards SET failed = NULL, retry = NULL WHERE team = $(sql "$TEAM");" >/dev/null; return 0; }
-  err=$(mktemp)
-  if ! meta=$(project_meta 2>"$err") || ! jq -e '.field.id' <<<"$meta" >/dev/null 2>&1; then
-    mirror_failed "$(cat "$err")" "${meta:+no single-select field '$FIELD' on $OWNER project $NUMBER}"
-    rm -f "$err"
-    return 0
-  fi
-  pfield=
-  while IFS= read -r row; do
-    IFS=$'\t' read -r n node status priority mirror shown ranked type < <(jq -r '[.item, .node, .status, .priority,
-      (.mirror // "-"), (.shown // "-"), (.ranked // "-"), (.type // "-")] | @tsv' <<<"$row")
-    if [ "$mirror" = - ]; then
-      mirror=$(gh api graphql -F project="$(jq -r .id <<<"$meta")" -F content="$node" -f query='
-        mutation($project: ID!, $content: ID!) {
-          addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } } }' \
-        --jq .data.addProjectV2ItemById.item.id 2>"$err") || break
-      history_sql "UPDATE board SET mirror = $(sql "$mirror") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    fi
-    if [ "$status" != "$shown" ]; then
-      if [ "$status" != None ]; then
-        option=$(jq -r --arg o "$(jq -r --arg s "$status" '.project.statusMap[$s] // $s' "$CONFIG")" \
-          '.field.options[] | select(.name == $o) | .id' <<<"$meta")
-        [ -n "$option" ] || { own="no '$status' option on $OWNER project $NUMBER's $FIELD"; break; }
-        gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$mirror" -F field="$(jq -r .field.id <<<"$meta")" \
-          -f option="$option" -f query='
-          mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
-            updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field,
-                                                  value: {singleSelectOptionId: $option}}) { clientMutationId } }' \
-          >/dev/null 2>"$err" || break
-      fi
-      history_sql "UPDATE board SET mirrored_status = $(sql "$status") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    fi
-    if [ "$priority" != "$ranked" ]; then
-      if [ "$type" = Issue ]; then
-        pfield=${pfield:-$(priority_field 2>/dev/null | jq -c . 2>/dev/null)}
-        pfield=${pfield:-none}
-      fi
-      if [ "$type" = Issue ] && [ "$pfield" != none ]; then
-        if [ "$priority" = none ]; then
-          gh api graphql -F issue="$node" -F field="$(jq -r .id <<<"$pfield")" -f query='
-            mutation($issue: ID!, $field: ID!) {
-              updateIssueFieldValue(input: {issueId: $issue, issueField: {fieldId: $field, delete: true}}) {
-                clientMutationId } }' >/dev/null 2>"$err" || break
-        else
-          option=$(jq -r --arg v "$priority" '.options[] | select(.name == $v) | .id' <<<"$pfield")
-          [ -n "$option" ] || { own="no '$priority' option on $OWNER's $PRIORITY field"; break; }
-          gh api graphql -F issue="$node" -F field="$(jq -r .id <<<"$pfield")" -F option="$option" -f query='
-            mutation($issue: ID!, $field: ID!, $option: ID!) {
-              updateIssueFieldValue(input: {issueId: $issue, issueField: {fieldId: $field,
-                                            singleSelectOptionId: $option}}) { clientMutationId } }' >/dev/null 2>"$err" || break
-        fi
-      fi
-      history_sql "UPDATE board SET mirrored_priority = $(sql "$priority") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    fi
-    for key in rank theme; do
-      value=$(jq -r --arg k "$key" '.[$k]' <<<"$row")
-      was=$(jq -r --arg k "shown_$key" '.[$k]' <<<"$row")
-      [ "$value" != "$was" ] || continue
-      field=$(jq -r --arg k "$key" '.[$k].id // empty' <<<"$meta")
-      if [ -z "$field" ]; then
-        [ -n "$value" ] || { history_sql "UPDATE board SET mirrored_$key = '' WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null; continue; }
-        name=$(text_field_name "$key")
-        if jq -e --arg name "$name" '.clash | index($name)' <<<"$meta" >/dev/null; then
-          own=$(field_clash "$name")
-          break
-        fi
-        field=$(add_text_field "$(jq -r .id <<<"$meta")" "$name" 2>"$err") || break
-        [ -n "$field" ] && [ "$field" != null ] || { own="couldn't add a $key field to $OWNER project $NUMBER"; break; }
-        meta=$(jq -c --arg k "$key" --arg id "$field" '.[$k] = {id: $id}' <<<"$meta")
-      fi
-      if [ -n "$value" ]; then
-        gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$mirror" -F field="$field" -f text="$value" -f query='
-          mutation($project: ID!, $item: ID!, $field: ID!, $text: String!) {
-            updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field,
-                                                  value: {text: $text}}) { clientMutationId } }' >/dev/null 2>"$err" || break
-      else
-        gh api graphql -F project="$(jq -r .id <<<"$meta")" -F item="$mirror" -F field="$field" -f query='
-          mutation($project: ID!, $item: ID!, $field: ID!) {
-            clearProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field}) {
-              clientMutationId } }' >/dev/null 2>"$err" || break
-      fi
-      history_sql "UPDATE board SET mirrored_$key = $(sql "$value") WHERE team = $(sql "$TEAM") AND item = $n;" >/dev/null
-    done
-    [ ! -s "$err" ] && [ -z "$own" ] || break
-    : >"$err"
-  done <<<"$rows"
-  if [ -s "$err" ] || [ -n "$own" ]; then
-    mirror_failed "$(cat "$err")" "$own"
-  elif [ -z "${1:-}" ] || [ "$(history_sql "SELECT COUNT(*) FROM board WHERE team = $(sql "$TEAM") AND node != '' AND $LAGGING;")" -eq 0 ]; then
-    history_sql "UPDATE boards SET failed = NULL, retry = NULL WHERE team = $(sql "$TEAM");" >/dev/null
-  fi
-  rm -f "$err"
-}
 
 # mirror_lag: how far behind the mirror is and why, as {behind, failed, retry}; nothing while it's caught up.
 mirror_lag() {
@@ -2156,30 +1733,6 @@ first_held() {
 # startable <items>: the Ready tasks the Dev can start now, in the order it takes them: a fix for a red default branch first.
 startable() { jq "map(select($STARTABLE))" <<<"$1" | by_priority | first_held "$1" | jq "sort_by($FIX | not)"; }
 
-# close_pitch <n> [built [<pr>...]]: closes pitch #n once all its tasks are closed. `built` also needs it to have
-# some, or, with none, the merged PRs that built it, which it lists in BUILT_BY.
-close_pitch() {
-  local subs open refused pr merged
-  BUILT_BY=
-  subs=$(gh api --paginate "repos/$REPO/issues/$1/sub_issues" | jq -s 'add // []')
-  if [ "${2:-}" = built ] && [ "$(jq length <<<"$subs")" -eq 0 ]; then
-    [ $# -gt 2 ] || die "#$1 has no tasks: name the merged PRs that built it"
-    for pr in "${@:3}"; do
-      pr=${pr#\#}
-      merged=
-      if [[ $pr =~ ^[0-9]+$ ]] && ! merged=$(gh api "repos/$REPO/pulls/$pr" --jq .merged 2>&1); then
-        [[ $merged == *"HTTP 404"* ]] || die "can't tell whether #$pr is merged ($(head -1 <<<"$merged"))"
-      fi
-      [ "$merged" = true ] || die "#$pr isn't merged, so it can't have built #$1"
-      BUILT_BY="${BUILT_BY:+$BUILT_BY, }#$pr"
-    done
-  fi
-  open=$(jq 'map(select(.state == "open")) | length' <<<"$subs")
-  [ "$open" -eq 0 ] || die "#$1 has $open open task$([ "$open" -eq 1 ] || echo s)"
-  close() { { gh issue close "$1" -R "$REPO" --reason completed >/dev/null; } 2>&1; }
-  refused=$(write "close #$1 as completed" close "$1") || die "can't close #$1 ($(head -1 <<<"$refused"))"
-}
-
 # own_task <role> <n>: a Dev or Reviewer run started for one task touches only that task and its PR.
 own_task() {
   local task=${A_TEAM_RUN_TASK:-}
@@ -2223,49 +1776,6 @@ own_docs() {
     die "customer only touches its own docs PR (#$2 isn't it)"
 }
 
-# merge <pr> [<sha>]: squash-merges <pr> and deletes its branch. With <sha>, GitHub refuses it (HTTP 409) if that's no
-# longer the PR's head.
-merge() {
-  local head refused ref
-  head=$(gh api "repos/$REPO/pulls/$1" --jq '{ref: .head.ref, repo: (.head.repo.full_name // ""), draft: (.draft // false)}')
-  # A document pitch is still a draft when accepted, and GitHub won't merge a draft.
-  if [ "$(jq -r .draft <<<"$head")" = true ]; then
-    refused=$({ write "mark PR #$1 ready for review" gh pr ready "$1" -R "$REPO" >/dev/null; } 2>&1) ||
-      die "can't mark PR #$1 ready to merge it ($(head -1 <<<"$refused"))"
-  fi
-  squash() { { gh api -X PUT "repos/$REPO/pulls/$1/merge" -f merge_method=squash ${2:+-f "sha=$2"} >/dev/null; } 2>&1; }
-  refused=$(write "squash-merge PR #$1" squash "$1" "${2:-}") || die "can't merge PR #$1 ($(head -1 <<<"$refused"))"
-  # A repo that deletes merged branches itself has already done it, so that refusal is no failure.
-  if [ "$(jq -r .repo <<<"$head")" = "$REPO" ]; then
-    ref=$(jq -r .ref <<<"$head")
-    write "delete branch $ref" gh api -X DELETE "repos/$REPO/git/refs/heads/$ref" >/dev/null 2>&1 || true
-  fi
-}
-
-# refused_bump <pr> <item> <node id> <why>: counts a refusal of a green bump. Enough in a row hold it, with the Dev's
-# marker so it reads as any bump the Dev can't make build. Passes go on trying, so fixing the cause merges it.
-refused_bump() {
-  local count
-  jq -e '.marks.held' <<<"${2:-null}" >/dev/null && return 0
-  count=$(($(cat "$BUMP_REFUSALS/$1" 2>/dev/null || echo 0) + 1))
-  if [ "$count" -lt "$REFUSALS_BEFORE_ASKING" ]; then
-    [ -n "$DRY_RUN" ] || { mkdir -p "$BUMP_REFUSALS"; echo "$count" >"$BUMP_REFUSALS/$1"; }
-    return 0
-  fi
-  write "comment on #$1" gh issue comment "$1" -R "$REPO" --body-file - >/dev/null <<<"This bump is green, but GitHub won't merge it: $4
-
-The dispatcher goes on trying, so changing what's stopping it merges it. Or merge it yourself, close it, or reply here and the Dev picks it up.
-
-<!-- a-team:dev -->"
-  [ -n "$2" ] || board_add "$1" "$3"
-  mark "$1" dev true
-  set_status "$1" Ready
-  mark "$1" held "$(jq -cn --arg at "$(date -u +%FT%TZ)" '{at: $at, by: "dev"}')"
-  record dispatcher "$1" "held"
-  [ -n "$DRY_RUN" ] || rm -f "$BUMP_REFUSALS/$1"
-  say "PR #$1: GitHub keeps refusing to merge it, asked the stakeholder"
-}
-
 BLOCKED='(.marks.held or .marks.upstream or .blockedBy > 0)'
 # Ready tasks, and the ones the Dev can start now: `next` picks from STARTABLE, `lead-next` counts it.
 READY_TASK='.status == "Ready" and .type == "Issue" and (.labels | index("pitch") | not)'
@@ -2280,8 +1790,6 @@ UPSTREAM_HELD="$READY_TASK and .marks.upstream"
 UPSTREAM_REVIEWED='.status == "In review" and .type == "Issue" and .marks.upstream'
 # A task that makes a red default branch green again.
 FIX='(.marks.fix // false)'
-# A pitch the Lead may file tasks under.
-FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "Building")'
 # A sub-issue the Lead filed as a task that the board left in Idea, unlike an idea, which is marked or isn't the Lead's.
 LEFT_IN_IDEA='.status == "Idea" and (.labels | index("pitch") | not) and (.marks.idea | not) and ((.body // "") | contains("<!-- a-team:lead -->"))'
 # The Dev's tasks that take up one of wip.worktrees.
@@ -2360,15 +1868,6 @@ case "$CMD" in
     [ $# -eq 0 ] || die "usage: board.sh $TEAM format"
     ;;
 
-  list)
-    if [ $# -eq 0 ]; then
-      items
-    else
-      items | jq --argjson want "$(printf '%s\n' "$@" | jq -R . | jq -s .)" \
-        'map(select(.status as $s | $want | index($s)))'
-    fi
-    ;;
-
   mine)
     [ $# -ge 1 ] || die "usage: board.sh $TEAM mine <role> [STATUS...]"
     role=$1
@@ -2392,29 +1891,6 @@ case "$CMD" in
   next)
     all=$(items)
     startable "$all" | jq first
-    ;;
-
-  claim)
-    [ $# -ge 1 ] && [ $# -le 2 ] || die "usage: board.sh $TEAM claim dev [<n>]"
-    [ "$1" = dev ] || die "only dev claims a task"
-    all=$(items)
-    startable=$(startable "$all")
-    if [ $# -eq 2 ]; then
-      it=$(jq --argjson n "$2" 'map(select(.number == $n)) | first // empty' <<<"$startable")
-      [ -n "$it" ] || die "#$2 isn't a Ready task the Dev can start: it's claimed, blocked or not Ready"
-    else
-      it=$(jq 'first // empty' <<<"$startable")
-      [ -n "$it" ] || { echo null; exit 0; }
-    fi
-    used=$(jq "[.[] | select($WORKING)] | length" <<<"$all")
-    limit=$(cfg .wip.worktrees)
-    [ "$used" -lt "$limit" ] || { [ "$used" -lt $((limit + 1)) ] && jq -e ".priority == \"Urgent\" or $FIX" <<<"$it" >/dev/null; } ||
-      die "no free worktree for #$(jq -r .number <<<"$it") ($used in use, wip.worktrees is $limit)"
-    n=$(jq -r .number <<<"$it")
-    mark "$n" dev true
-    set_status "$(jq -r .number <<<"$it")" "In progress"
-    record dev "$n" "Ready → In progress"
-    jq -c '{number, title}' <<<"$it"
     ;;
 
   lead-next)
@@ -2460,123 +1936,6 @@ case "$CMD" in
          elif $turn == "discover" then {room: $room}
          else {reason: "Exploring and the discovery queue are both full, or there is no Idea to pitch"} end)
       + {ready: $ready, blocked: $blocked, readyLow: ($ready < $floor), skipped: $skipped, unthemed: $unthemed, seed: $seed}'
-    ;;
-
-  move)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM move <role> <n> <status>"
-    role=$1 n=$2 to=$3
-    check_role "$role"
-    is_state "$to" || die "unknown status '$to'"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board (use add)"
-    from=$(jq -r .status <<<"$it")
-    allowed "$role" "$from" "$to" || die "$role may not move #$n from '$from' to '$to'"
-    own_task "$role" "$n"
-    own_docs "$role" "$n"
-    if [ "$role" = dev ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
-      die "dev does not move pitches"
-    fi
-    if [ "$role:$to" = "dev:In review" ] && jq -e '.dependabot' <<<"$it" >/dev/null; then
-      die "a Dependabot PR merges itself once it's green: leave #$n In progress"
-    fi
-    if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
-      ! pitch_swap "$(items)" | jq -e --argjson n "$n" 'any(.demote[]; .number == $n)' >/dev/null; then
-      die "lead may move #$n out of Pitched only when a higher-priority draft displaces it (nothing in Exploring out-ranks #$n)"
-    fi
-    case "$role:$from" in
-      "dev:Ready") mark "$n" dev true ;;
-      "lead:Idea") write "label #$n pitch" gh issue edit "$n" -R "$REPO" --add-label pitch >/dev/null ;;
-      *)
-        jq -e --arg role "$role" "$OWN"'own($role)' <<<"$it" >/dev/null ||
-          die "#$n isn't $role's; leave it to the stakeholders" ;;
-    esac
-    if [ "$role:$from>$to" = "lead:Idea>Exploring" ] && jq -e '.marks.shelved' <<<"$it" >/dev/null; then
-      mark "$n" shelved null
-    fi
-    if [ "$role:$from>$to" = "lead:Pitched>Exploring" ] &&
-      ! jq -e '.marks.displaced' <<<"$it" >/dev/null; then
-      mark "$n" displaced true
-    fi
-    set_status "$(jq -r .number <<<"$it")" "$to"
-    record "$role" "$n" "$from → $to"
-    if [ "$role:$from>$to" = "dev:In progress>Ready" ] && jq -e '.marks.held' <<<"$it" >/dev/null; then
-      record "$role" "$n" "handed back with a question"
-    fi
-    say "#$n: $from -> $to"
-    ;;
-
-  add)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM add <role> <n> <status>"
-    role=$1 n=$2 to=$3
-    [ "$role" = you ] || check_role "$role"
-    is_state "$to" || die "unknown status '$to'"
-    allowed "$role" None "$to" || die "$role may not add items as '$to'"
-    if [ "$role:$to" = "customer:In review" ]; then
-      customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
-      gh api "repos/$REPO/issues/$n" --jq '.pull_request != null and .state == "open"
-          and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
-        die "customer may only add its own open docs PR (#$n isn't one)"
-      other=$(items | jq -r --argjson n "$n" '[.[] | select(.marks.customer
-        and .status == "In review" and .number != $n) | .number] | first // empty')
-      [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
-      docs_known || die "$(cfg .docs) isn't in $REPO yet: propose the docs before writing any"
-    elif [ "$role:$to" = "customer:Pitched" ]; then
-      customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
-      gh api "repos/$REPO/pulls/$n" --jq '.state == "open" and .draft
-          and ((.body // "") | contains("<!-- a-team:customer -->"))' 2>/dev/null | grep -qx true ||
-        die "customer may only put its own open draft docs proposal in Pitched (#$n isn't one)"
-      ! docs_known || die "$(cfg .docs) is already in $REPO: no docs proposal needed"
-      other=$(items | jq -r --argjson n "$n" '[.[] | select(.marks.customer
-        and (.status == "In review" or .status == "Pitched") and .number != $n) | .number] | first // empty')
-      [ -z "$other" ] || die "customer's #$other is still open: no docs proposal beside it"
-    elif [ "$role:$to" = "customer:Idea" ]; then
-      customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
-      gh api "repos/$REPO/issues/$n" --jq '.pull_request == null and .state == "open"
-          and ((.body // "") | contains("<!-- a-team:customer -->"))' | grep -qx true ||
-        die "customer may only add an open issue it opened as an Idea (#$n isn't one)"
-      found=$(items | jq --argjson n "$n" '[.[] | select(.marks.idea
-        and .status == "Idea" and .number != $n)] | length')
-      limit=$(cfg '.wip.ideas // 0')
-      [ "$found" -lt "$limit" ] ||
-        die "$found discovered Ideas are waiting for triage (wip.ideas is $limit): leave #$n off the board"
-    elif [ "$role:$to" = "lead:Ready" ]; then
-      parent=$(parent_of "$n")
-      { [ -n "$parent" ] && items | jq -e --argjson p "$parent" "any(.[]; .number == \$p and $FILEABLE)" >/dev/null; } ||
-        die "#$n isn't a sub-issue of an Approved or Building pitch: file a task with: board.sh $TEAM task lead <pitch> <title> <file>"
-    fi
-    existing=$(item "$n")
-    if [ -n "$existing" ]; then
-      # The project's auto-add workflow may already have put a new issue on the board.
-      case "$(jq -r .status <<<"$existing")" in None | Idea) ;; *) die "#$n is already on the board (use move)" ;; esac
-      if [ "$role" = you ]; then
-        ! gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:" ||
-          die "#$n is already on the board and is a role's, not yours (use move)"
-      else
-        gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:$role -->" ||
-          die "#$n is already on the board and isn't $role's (use move)"
-      fi
-    elif [ "$role" = dev ]; then
-      gh api "repos/$REPO/issues/$n" --jq .body | grep -qF "<!-- a-team:dev -->" ||
-        die "#$n has no dev marker: dev adds only the follow-ups it opened"
-    fi
-    content=$(gh api "repos/$REPO/issues/$n" --jq 'if .pull_request then "pulls" else "issues" end')
-    case "$role:$to" in
-      lead:Exploring | lead:Pitched) write "label #$n pitch" gh api -X POST "repos/$REPO/issues/$n/labels" -f 'labels[]=pitch' >/dev/null ;;
-    esac
-    [ -n "$existing" ] || board_add "$n" "$(gh api "repos/$REPO/$content/$n" --jq .node_id)"
-    case "$role:$to" in
-      lead:Idea | customer:Idea) mark "$n" idea true ;;
-      "customer:In review" | customer:Pitched) mark "$n" customer true ;;
-    esac
-    if [ -n "$existing" ]; then
-      set_status "$(jq -r .number <<<"$existing")" "$to"
-      record "$role" "$n" "added as $to"
-      say "#$n: added as $to"
-      exit 0
-    fi
-    set_status "$n" "$to"
-    record "$role" "$n" "added as $to"
-    say "#$n: added as $to"
     ;;
 
   new)
@@ -2734,65 +2093,6 @@ case "$CMD" in
     say "#$n: $count ticked"
     ;;
 
-  task)
-    [ $# -eq 4 ] || die "usage: board.sh $TEAM task lead <pitch> <title> <file>"
-    role=$1 pitch=$2 title=$3 file=$4
-    check_role "$role"
-    [ "$role" = lead ] || die "$role may not file a task; only lead breaks down pitches"
-    [ -f "$file" ] || die "no such file: $file"
-    [ -n "${title//[[:space:]]/}" ] || die "a task needs a title"
-    it=$(item "$pitch")
-    [ -n "$it" ] || die "#$pitch is not on the board"
-    jq -e "$FILEABLE" <<<"$it" >/dev/null ||
-      die "lead files tasks only under an Approved or Building pitch (#$pitch is '$(jq -r .status <<<"$it")')"
-    body=$(cat "$file")
-    grep -qF "<!-- a-team:$role -->" <<<"$body" || body=$(printf '%s\n\n<!-- a-team:%s -->' "$body" "$role")
-    [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
-    url=$(write <<<"$body" "open an issue titled '$title'" gh issue create -R "$REPO" --title "$title" --body-file -) ||
-      die "can't open the issue on $REPO"
-    if [ -n "$DRY_RUN" ]; then
-      n=new issue='{}'
-    else
-      n=${url##*/}
-      issue=$(gh api "repos/$REPO/issues/$n" --jq '{id, node_id}')
-    fi
-    write "make #$n a sub-issue of #$pitch" gh api -X POST "repos/$REPO/issues/$pitch/sub_issues" \
-      -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
-    board_add "$n" "$(jq -r .node_id <<<"$issue")"
-    set_status "$n" Ready
-    record "$role" "$n" "filed as Ready under #$pitch"
-    say "#$n: filed as Ready under #$pitch"
-    ;;
-
-  fix)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM fix lead <title> <file>"
-    role=$1 title=$2 file=$3
-    check_role "$role"
-    [ "$role" = lead ] || die "$role may not file a fix; only lead files one, when the default branch is red"
-    [ -f "$file" ] || die "no such file: $file"
-    [ -n "${title//[[:space:]]/}" ] || die "a fix needs a title"
-    open=$(items | jq -r "[.[] | select($FIX and .closed == null and .status != \"Done\") | \"#\(.number)\"] | join(\", \")")
-    [ -z "$open" ] || die "$open is already the fix for the default branch: one at a time"
-    main=$(main_red)
-    [ "$main" != null ] || die "the default branch isn't red: its latest completed CI passed, is still running, or there's none"
-    body=$(cat "$file")
-    grep -qF "<!-- a-team:$role -->" <<<"$body" || body=$(printf '%s\n\n<!-- a-team:%s -->' "$body" "$role")
-    [ -z "$DRY_RUN" ] || printf '%s\n%s\n' "$title" "$body" | sed 's/^/  | /' >&2
-    url=$(write <<<"$body" "open an issue titled '$title'" \
-      gh issue create -R "$REPO" --title "$title" --body-file -) || die "can't open the issue on $REPO"
-    if [ -n "$DRY_RUN" ]; then
-      n=new node=''
-    else
-      n=${url##*/}
-      node=$(gh api "repos/$REPO/issues/$n" --jq .node_id)
-    fi
-    board_add "$n" "$node"
-    mark "$n" fix true
-    set_status "$n" Ready
-    record "$role" "$n" "filed as Ready to make $(jq -r .branch <<<"$main") green"
-    echo "$n"
-    ;;
-
   priority)
     [ $# -eq 3 ] || die "usage: board.sh $TEAM priority <role> <n> <value|none>"
     role=$1 n=$2 value=$3
@@ -2816,190 +2116,6 @@ case "$CMD" in
       record "$role" "$n" "$PRIORITY set to $value"
       say "#$n: $PRIORITY set to '$value'"
     fi
-    ;;
-
-  approve)
-    [ $# -eq 2 ] || [ $# -eq 3 ] || die "usage: board.sh $TEAM approve <role> <n> [<file>]"
-    role=$1 n=$2 file=${3:-}
-    case "$role" in
-      you) [ $# -eq 2 ] || die "usage: board.sh $TEAM approve you <n>" ;;
-      lead) [ $# -eq 3 ] || die "usage: board.sh $TEAM approve lead <n> <file>" ;;
-      dev | customer | reviewer) die "$role may not approve a pitch; approving is the stakeholders' own gate, or the Lead's on their word" ;;
-      *) die "unknown role '$role' (you | lead)" ;;
-    esac
-    if [ "$role" = lead ]; then
-      [ -f "$file" ] || die "no such file: $file"
-      grep -q '[^[:space:]]' "$file" || die "the Lead's approve is its reply: $file is empty"
-    fi
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a pitch to approve"
-    jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
-    status=$(jq -r .status <<<"$it")
-    [ "$status" = Pitched ] || die "only a Pitched pitch can be approved (#$n is in '$status')"
-    if [ "$role" = lead ]; then
-      word=$(unanswered_feedback lead "$n" | jq -c 'max_by(.at) // empty')
-      [ -n "$word" ] || die "lead may approve #$n only on a stakeholder's word (no unanswered stakeholder feedback on #$n)"
-      [ -z "$(gh api "repos/$REPO/issues/$n" --jq '.body // ""' | jq -Rsr "$NEEDS"'needs_answer')" ] ||
-        die "#$n still has questions under Needs your answer: fold the stakeholder's answers into the pitch first, or ask them"
-      body=$(printf '%s\n\n<!-- a-team:lead -->' "$(cat "$file")")
-      [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-      write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
-      ack "$n"
-    fi
-    set_status "$(jq -r .number <<<"$it")" Approved
-    record "$role" "$n" "Pitched → Approved"
-    if [ "$role" = lead ]; then
-      when=$(jq -r '.at | fromdateiso8601 | "\(strflocaltime("%d %b") | ltrimstr("0")) \(strflocaltime("%H:%M"))"' <<<"$word")
-      record "$role" "$n" "approved on $(jq -r .author <<<"$word")'s word of $when"
-    fi
-    say "#$n: Pitched -> Approved"
-    ;;
-
-  decline)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM decline <role> <n> <file>"
-    role=$1 n=$2 file=$3
-    case "$role" in
-      lead | dev | customer | reviewer) die "$role may not decline an item; declining is the stakeholders' own gate" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
-    esac
-    [ -f "$file" ] || die "no such file: $file"
-    grep -q '[^[:space:]]' "$file" || die "a decline needs a reason, so whoever reads #$n later knows why"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not an Idea or a pitch to decline"
-    status=$(jq -r .status <<<"$it")
-    case "$status" in
-      Idea) ;;
-      Pitched) jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)" ;;
-      *) die "only an Idea or a Pitched pitch can be declined (#$n is in '$status')" ;;
-    esac
-    [ -z "$DRY_RUN" ] || sed 's/^/  | /' "$file" >&2
-    write "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - <"$file" >/dev/null
-    record "$role" "$n" "commented"
-    close() { { gh issue close "$1" -R "$REPO" --reason "not planned" >/dev/null; } 2>&1; }
-    refused=$(write "close #$n as not planned" close "$n") || die "can't close #$n ($(head -1 <<<"$refused"))"
-    set_status "$(jq -r .number <<<"$it")" Done
-    record "$role" "$n" "declined"
-    say "#$n: declined"
-    ;;
-
-  shelve)
-    [ $# -eq 4 ] || die "usage: board.sh $TEAM shelve <role> <n> <weeks> <file>"
-    role=$1 n=$2 weeks=$3 file=$4
-    case "$role" in
-      you | lead) ;;
-      dev | customer | reviewer) die "$role may not shelve a pitch; Not now is the stakeholders' own, or the Lead's when they ask" ;;
-      *) die "unknown role '$role' (you | lead)" ;;
-    esac
-    [[ $weeks =~ ^[0-9]+$ ]] && [ "$weeks" -ge 1 ] || die "weeks is a whole number from 1 ('$weeks' isn't)"
-    [ -f "$file" ] || die "no such file: $file"
-    [ "$role" = you ] || grep -q '[^[:space:]]' "$file" || die "the Lead's shelve is its reply: $file is empty"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    [ "$(jq -r .type <<<"$it")" = Issue ] || die "#$n is not an issue, so it is not a pitch to shelve"
-    jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
-    status=$(jq -r .status <<<"$it")
-    [ "$status" = Pitched ] || die "only a Pitched pitch can be shelved (#$n is in '$status')"
-    if [ "$role" = lead ] && [ "$(unanswered_feedback lead "$n" | jq length)" -eq 0 ]; then
-      die "lead may shelve #$n only when a stakeholder has asked (no unanswered stakeholder feedback on #$n)"
-    fi
-    until=$(jq -rn --argjson w "$weeks" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")')
-    back=$(jq -rn --arg d "$until" '$d | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0")')
-    reason=$(cat "$file")
-    body=$(
-      [ -z "${reason//[[:space:]]/}" ] || printf '%s\n\n' "$reason"
-      printf 'Not now: back on %s.' "$back"
-      [ "$role" = you ] || printf '\n\n<!-- a-team:%s -->' "$role"
-    )
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    posted=$(write <<<"$body" "comment on #$n" \
-      gh api -X POST "repos/$REPO/issues/$n/comments" -F body=@- --jq .node_id)
-    if [ "$role" = you ]; then
-      # Your Not now is read when the Lead next pitches it, not answered now.
-      [ -z "$posted" ] || react "$posted" "your Not now on #$n"
-    else
-      ack "$n"
-    fi
-    mark "$n" shelved "$(jq -c --arg until "$until" '{until: $until, priority}' <<<"$it")"
-    set_status "$(jq -r .number <<<"$it")" Idea
-    record "$role" "$n" "Pitched → Idea"
-    record "$role" "$n" "shelved until $back"
-    say "#$n: back on $back"
-    ;;
-
-  accept)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM accept <role> <n>"
-    role=$1 n=$2
-    case "$role" in
-      lead | dev | customer | reviewer) die "$role may not accept a task; accepting is the stakeholders' own gate" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
-    esac
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    status=$(jq -r .status <<<"$it")
-    # A document pitch, the Lead's or the Customer lead's docs proposal, is accepted from Pitched by merging it.
-    if [ "$(jq -r .type <<<"$it")" = PullRequest ] && jq -e '.labels | index("pitch")' <<<"$it" >/dev/null ||
-      { [ "$status" = Pitched ] && jq -e '.marks.customer' <<<"$it" >/dev/null; }; then
-      [ "$status" = Pitched ] || die "only a document pitch in Pitched can be accepted (#$n is in '$status')"
-      merge "$n"
-      set_status "$(jq -r .number <<<"$it")" Done
-      record "$role" "$n" "accepted · PR #$n merged"
-      say "#$n: merged document pitch #$n"
-      exit 0
-    fi
-    if [ "$(jq -r .type <<<"$it")" = PullRequest ] && jq -e '.marks.customer' <<<"$it" >/dev/null; then
-      [ "$status" = "In review" ] || die "only a docs PR In review, or a docs proposal in Pitched, can be accepted (#$n is in '$status')"
-      merge "$n"
-      set_status "$(jq -r .number <<<"$it")" Done
-      record "$role" "$n" "accepted · PR #$n merged"
-      say "#$n: merged docs PR #$n"
-      exit 0
-    fi
-    if [ "$(jq -r .type <<<"$it")" = PullRequest ]; then
-      [ "$status" = "In review" ] || die "only a PR In review can be accepted (#$n is in '$status')"
-      merge "$n"
-      set_status "$(jq -r .number <<<"$it")" Done
-      record "$role" "$n" "accepted · PR #$n merged"
-      say "#$n: merged PR #$n"
-      exit 0
-    fi
-    if jq -e '.labels | index("pitch")' <<<"$it" >/dev/null; then
-      [ "$status" = "In review" ] || die "only a pitch In review can be accepted (#$n is in '$status')"
-      close_pitch "$n"
-      record "$role" "$n" "accepted · closed"
-      say "#$n: closed as done"
-      exit 0
-    fi
-    [ "$status" = "In review" ] || die "only a task In review can be accepted (#$n is in '$status')"
-    pr=$(pr_for "$n" | jq -r '.number // empty')
-    [ -n "$pr" ] || die "#$n has no open PR to merge"
-    merge "$pr"
-    record "$role" "$n" "accepted · PR #$pr merged"
-    say "#$n: merged PR #$pr"
-    ;;
-
-  finish)
-    [ $# -ge 3 ] || die "usage: board.sh $TEAM finish <role> <n> <file> [<pr>...]"
-    role=$1 n=$2 file=$3
-    shift 3
-    check_role "$role"
-    [ "$role" = lead ] || die "only lead may close a pitch as done"
-    [ -f "$file" ] || die "no such file: $file"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    jq -e '.labels | index("pitch")' <<<"$it" >/dev/null || die "#$n is not a pitch (no 'pitch' label)"
-    status=$(jq -r .status <<<"$it")
-    [ "$status" = Building ] || die "only a pitch in Building can be closed as done (#$n is in '$status')"
-    close_pitch "$n" built "$@"
-    body=$(cat "$file"; printf '\n\n<!-- a-team:%s -->' "$role")
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file -
-    ack "$n"
-    record "$role" "$n" "closed as done${BUILT_BY:+ · built by $BUILT_BY}"
-    say "#$n: closed as done${BUILT_BY:+ (built by $BUILT_BY)}"
     ;;
 
   comment)
@@ -3601,74 +2717,6 @@ Give it in Work, with \`k\` on this task. Never put its value in a comment: this
     fi
     # So does when the detail was last synced, and when a sync last failed if it has since.
     jq --argjson stored "$stored" --arg team "$TEAM" '. + [{team: $team, synced: $stored.synced, failed: $stored.failed}]' <<<"$waiting"
-    ;;
-
-  bumps)
-    [ $# -eq 0 ] || die "usage: board.sh $TEAM bumps"
-    prs=$(gh pr list -R "$REPO" --author app/dependabot --state open --json id,number,title,author,isDraft,mergeable,comments,headRefOid)
-    [ "$prs" != '[]' ] || exit 0
-    all=$(items)
-    main='' stuck=0
-    while IFS= read -r row; do
-      p=$(jq -r .number <<<"$row")
-      title=$(jq -r .title <<<"$row")
-      sha=$(jq -r .headRefOid <<<"$row")
-      checks=$(pr_checks "$p" "$sha")
-      verdict=$(jq -r .verdict <<<"$checks")
-      if [ "$verdict" = fail ]; then
-        main=${main:-$(main_red)}
-        verdict=$(against_main "$checks" "$main" | jq -r .verdict)
-      fi
-      it=$(jq -c --argjson n "$p" 'map(select(.number == $n)) | first // empty' <<<"$all")
-      if [ "$verdict" = pass ] && jq -e --arg slug "$(cfg .app.slug)" "$MERGES"'merges' <<<"$row" >/dev/null; then
-        if ! why=$(merge "$p" "$sha" 2>&1); then
-          # Pushed to since its checks were read: the next pass reads the new head.
-          [[ $why != *"HTTP 409"* ]] || continue
-          echo "PR #$p: ${why#board.sh: }" >&2
-          stuck=1
-          refused_bump "$p" "$it" "$(jq -r .id <<<"$row")" "${why#board.sh: }"
-          continue
-        fi
-        [ -n "$DRY_RUN" ] || rm -f "$BUMP_REFUSALS/$p"
-        [ -z "$it" ] || set_status "$p" Done
-        record dispatcher "$p" "merged · PR #$p"
-        say "PR #$p ($title): merged"
-      elif [ "$verdict" = fail ] && ! jq -e '.marks.held or .status == "In progress"' <<<"${it:-null}" >/dev/null; then
-        if [ -n "$it" ]; then
-          moved="$(jq -r .status <<<"$it") → In progress"
-        else
-          board_add "$p" "$(jq -r .id <<<"$row")"
-          moved="added as In progress"
-        fi
-        mark "$p" dev true
-        set_status "$p" "In progress"
-        record dispatcher "$p" "$moved"
-        say "PR #$p ($title): CI failing, with the Dev"
-      fi
-    done < <(jq -c '.[]' <<<"$prs")
-    exit "$stuck"
-    ;;
-
-  adopt)
-    [ $# -eq 0 ] || die "usage: board.sh $TEAM adopt"
-    slug=$(cfg .app.slug)
-    [ -n "$slug" ] || exit 0
-    prs=$(gh pr list -R "$REPO" --author "app/$slug" --state open --json id,number,isDraft,body |
-      jq --arg repo "$REPO" '[.[] | select(((.body // "") | contains("<!-- a-team:dev -->"))
-        and any((.body // "") | scan("(?i)needed by ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#[0-9]+")[0];
-                ascii_downcase != ($repo | ascii_downcase)))]')
-    [ "$prs" != '[]' ] || exit 0
-    while IFS=$'\t' read -r n node to from; do
-      if [ -n "$from" ]; then moved="$from → $to"; else moved="added as $to"; board_add "$n" "$node"; fi
-      set_status "$n" "$to"
-      record dev "$n" "$moved"
-      say "#$n: $moved"
-    done < <(jq -r --argjson here "$(items | jq -c 'map({key: (.number | tostring), value: .status}) | from_entries')" '
-      .[] | $here[.number | tostring] as $status
-      | if $status == null then [.number, .id, (if .isDraft then "In progress" else "In review" end), ""]
-        elif (.isDraft | not) and $status == "In progress" then [.number, .id, "In review", "In progress"]
-        else empty end
-      | @tsv' <<<"$prs")
     ;;
 
   update)
