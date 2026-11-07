@@ -65,6 +65,6 @@ for _ in $(seq 100); do
 done
 WHO="$TEAM $ROLE${TASK:+ $TASK}"
 cd "$WORKDIR" || die "can't open $WORKDIR; $WHO is stopped and held"
-claude --resume "$SESSION" ||
+A_TEAM_RUN_TEAM=$TEAM claude --resume "$SESSION" ||
   die "couldn't resume session $SESSION; $WHO is stopped and held until: a-team resume $WHO"
 bash "$ROOT/scripts/pause.sh" resume "$TEAM" "$ROLE" ${TASK:+"$TASK"}

@@ -85,6 +85,10 @@ the team's words, and a run's `gh` and `git push` reach only the repos you insta
 instead of your whole account. Until the App is installed, the dispatcher skips the team and
 `a-team status` says why.
 
+`a-team board <team> <command> lead ...`, or any other team role's command, acts as the App even
+from your own terminal, so it can't read as your feedback, and it stops rather than post as you if
+the App can't give a token. `you` commands stay yours, and refuse inside a team's run.
+
 ```
 a-team app create <team>
 ```

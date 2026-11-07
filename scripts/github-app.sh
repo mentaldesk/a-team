@@ -8,6 +8,11 @@ KEYCHAIN_SERVICE=a-team-app
 
 has_app_key() { security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$1" >/dev/null 2>&1; }
 
+# key_advice <owner>: how to restore a registered App's key, which `a-team app create` needs and can't restore.
+key_advice() {
+  echo "generate a new private key on the App's settings page on GitHub, then run: security add-generic-password -U -s $KEYCHAIN_SERVICE -a $1 -w \"\$(openssl base64 -A -in <the .pem you downloaded>)\""
+}
+
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
 # app_jwt <app id> <owner>: a JWT the App signs to speak as itself, valid for nine minutes and
@@ -15,7 +20,7 @@ b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 app_jwt() {
   local id=$1 owner=$2 key now header payload signature
   key=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$owner" -w 2>/dev/null) || {
-    echo "no private key in the login Keychain under service '$KEYCHAIN_SERVICE', account '$owner'" >&2
+    echo "no private key in the login Keychain under service '$KEYCHAIN_SERVICE', account '$owner': $(key_advice "$owner")" >&2
     return 1
   }
   now=$(date +%s)

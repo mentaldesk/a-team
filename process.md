@@ -79,7 +79,8 @@ hold, a shelve) is in its record too, never a label.
 
 `a-team board` is the only way to read or change Status. Never use `gh project` directly. The
 script enforces who may make which move and refuses the rest; if it refuses, that's the
-answer. Don't work around it.
+answer. Don't work around it. A team role's command always acts as the team's App, or stops if the
+App can't give a token, whatever shell runs it. A `you` command refuses inside a team's run.
 
 ```
 a-team board {{team}} list [STATUS...]          # items, as JSON
