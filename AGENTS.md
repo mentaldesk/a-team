@@ -110,7 +110,9 @@ draw loop, so cover the logic behind the views instead.
 ## Scripts
 
 `tests/scripts.sh` is the shell side's test suite (`bash tests/scripts.sh`). CI runs it, along with
-`bash -n` and ShellCheck over `scripts/`, `bin/` and `tests/`.
+`bash -n` and ShellCheck over `scripts/`, `bin/` and `tests/`. A Dev run merging the base into a PR
+leaves this suite to CI: its quick checks are `bash -n` and ShellCheck for shell, and the dashboard's
+tests for C#.
 
 ## Releasing
 

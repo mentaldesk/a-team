@@ -14,6 +14,8 @@ I authorise you to do all of the following without asking me:
 - Create git worktrees and branches under {{workdir}}, build, test and try out the product there,
   commit, and push branches other than the default branch to {{repo}}, Dependabot's branch included
   when this run is for its PR.
+- Push a merge of the base branch into your PR after only the quick checks for what it touched,
+  leaving the full test suite to CI.
 - Open draft PRs on {{repo}}, mark your own PRs ready for review once CI is green, and comment
   on issues and PRs there.
 {{contributes}}

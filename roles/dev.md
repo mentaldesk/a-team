@@ -53,10 +53,12 @@ Find it with `a-team board {{team}} pr <n>`, then:
   the comment was made. If you disagree with a point, say why in the reply instead of changing
   the code.
 - If `pr` reports `"mergeable": "CONFLICTING"`, the PR conflicts with its base. In its worktree,
-  merge the base branch into the PR branch, resolve, and push. Merge, never rebase: a PR branch is
-  never force-pushed. `checks` reports CI only, so a conflicting PR can still be green. Do the same
-  for a draft when `pr` reports `"mergeStateStatus": "BEHIND"`; the dispatcher updates a PR that's
-  behind once it's out of draft.
+  merge the base branch into the PR branch, resolve, build, run only the quick checks for what the
+  merge touched, and push. CI runs the rest, and a red result comes back to you. Run more only if the
+  resolve rewrote behaviour rather than choosing between lines, or if the repo's CI doesn't run its
+  tests, when you run them all first. Merge, never rebase: a PR branch is never force-pushed. `checks`
+  reports CI only, so a conflicting PR can still be green. Do the same for a draft when `pr` reports
+  `"mergeStateStatus": "BEHIND"`; the dispatcher updates a PR that's behind once it's out of draft.
 - If `pr` reports `"review": "posted"`, the Reviewer has posted its one review on the PR (the comment
   with `<!-- a-team:reviewer -->`). Treat its **Needs changing** points like stakeholder feedback:
   fix each one with a test that fails without the fix and push, or say why not. A point that means
