@@ -23,10 +23,12 @@ public sealed class AssistantTests : IDisposable
 
     private string Sessions => Path.Combine(_root, "assistant.json");
 
+    private string Config => Path.Combine(_root, "config");
+
     private DashboardWindow Open(IReadOnlyList<(string, string)>? agents = null, int width = 0, Area area = Area.Work)
     {
         Directory.CreateDirectory(_root);
-        var config = Path.Combine(_root, "config");
+        var config = Config;
         var setup = new AssistantSetup(_agent, "the brief", Sessions, request =>
         {
             _asked.Add(request);
@@ -301,7 +303,7 @@ public sealed class AssistantTests : IDisposable
         var here = window.Keys.Here!;
 
         Assert.Equal("Assistant", here.Heading);
-        Assert.Equal([("Enter", "Send question"), ("Ctrl+L", "Start a new conversation")],
+        Assert.Equal([("Enter", "Send question"), ("Ctrl+L", "Start a new conversation"), ("Ctrl+T T", "Show tool calls in full")],
             here.Groups.SelectMany(group => group.Rows).Select(row => (row.Keys, row.Label)));
     }
 
@@ -326,6 +328,74 @@ public sealed class AssistantTests : IDisposable
         Assert.Equal("You · on a-team's Lead in Overseer\nWhy?\n\nClaude Code\nIt's\n▸ Read latest.jsonl\nwaiting on CI.", Chat(window));
         var sent = (string?)_agent.Received("session/prompt").Single()!["prompt"]![0]!["text"];
         Assert.Equal("[on a-team's Lead in Overseer]\n\nWhy?", sent);
+    }
+
+    private void Calls(string answer) =>
+        _agent.OnPrompt = async (agent, _) =>
+        {
+            agent.Tool("a", "Read a.jsonl", "completed");
+            agent.Tool("b", "a-team board a-team test", "failed");
+            agent.Tool("c", "Read c.jsonl", "completed");
+            agent.Tool("d", "Read d.jsonl", "completed");
+            agent.Say(answer);
+            await Task.Yield();
+        };
+
+    [Fact]
+    public async Task An_answers_calls_fold_into_one_row_with_a_failed_one_on_its_own()
+    {
+        using var window = Open();
+        window.Commands.Execute("assistant");
+        Calls("Because.");
+
+        await Ask(window, "Why?");
+        await Until(() => Chat(window).Contains("Because.") && !window.Assistant!.Controller.IsAnswering);
+
+        Assert.EndsWith("Claude Code\n▸ a-team board a-team test (failed)\n▸ Read d.jsonl (+2)\nBecause.", Chat(window));
+    }
+
+    [Fact]
+    public async Task Ctrl_T_T_in_the_Assistant_shows_every_call_and_again_folds_them_leaving_the_setting_alone()
+    {
+        using var window = Open();
+        window.Commands.Execute("assistant");
+        Calls("Because.");
+        await Ask(window, "Why?");
+        await Until(() => Chat(window).Contains("Because.") && !window.Assistant!.Controller.IsAnswering);
+
+        window.Press("Ctrl+T T");
+        var inFull = Chat(window);
+        window.Press("Ctrl+T T");
+
+        Assert.EndsWith("▸ Read a.jsonl\n▸ a-team board a-team test (failed)\n▸ Read c.jsonl\n▸ Read d.jsonl\nBecause.", inFull);
+        Assert.EndsWith("▸ Read d.jsonl (+2)\nBecause.", Chat(window));
+        Assert.False(new DashboardSettings(Config).ReadExpandToolCalls());
+    }
+
+    [Fact]
+    public void Ctrl_T_T_in_the_question_box_types_nothing()
+    {
+        using var window = Open();
+        window.Commands.Execute("assistant");
+
+        window.Press("Ctrl+T T");
+
+        Assert.True(window.Assistant!.Controller.Conversation.ToolCallsInFull);
+        Assert.Equal("", window.Assistant.Question);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void The_Assistant_opens_with_every_call_shown_only_with_the_setting_ticked(bool expand)
+    {
+        Directory.CreateDirectory(_root);
+        new DashboardSettings(Config).WriteExpandToolCalls(expand);
+        using var window = Open();
+        window.Commands.Execute("assistant");
+
+        Assert.Equal(expand, window.Assistant!.Controller.Conversation.ToolCallsInFull);
+        Assert.Equal(expand, window.Assistant.Controller.Conversation.StartsInFull);
     }
 
     [Fact]

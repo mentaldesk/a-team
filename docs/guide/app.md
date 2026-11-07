@@ -15,10 +15,15 @@ run record are, and what you're looking at: the line above the box says what the
 about, like *on #499 in Work*, and your question's heading repeats it, so you never have to name the
 card or role. With more than one team, the card's team is named too.
 
-The answer streams in, with a `▸` line for each thing it looks at. It runs in Claude Code's Auto
-mode, so it reads and runs commands without asking unless Auto's check flags one. Then it asks you,
-in a dialog titled *Claude Code wants to run a command*:
-`Ctrl+Enter` allows that one command, and `Esc` denies it. Deny starts focused. To change anything it
+The answer streams in, with one faint `▸` row for each run of things it looks at: the newest, then
+`(+N)` for the ones before it, updating in place so the answer starts right below. Text between
+calls starts a new run, and a failed call keeps its own `▸ … (failed)` row. `Ctrl+T T` shows every
+call on its own row, and again folds them, keeping what you were reading in view. To open the
+Assistant with every call showing, tick *Show tool calls in full* under
+[Settings → Dashboard](teams.md#settings).
+
+It runs in Claude Code's Auto mode, so it reads and runs commands without asking unless Auto's check
+flags one. Then it asks you, in a dialog titled *Claude Code wants to run a command*: `Ctrl+Enter` allows that one command, and `Esc` denies it. Deny starts focused. To change anything it
 goes through the board as you do, so it can't make a move you couldn't.
 
 `Enter` sends, `Esc` stops the answer and keeps what has arrived, and `Ctrl+L` starts a new
