@@ -27,7 +27,7 @@ internal sealed partial class Board
     internal JsonNode? Seek(string n)
     {
         if (long.TryParse(n, out _)) return Item(n);
-        if (!SkipSync) Sync();
+        Sync();
         Console.Error.Write("jq: Invalid JSON text passed to --argjson\n");
         return null;
     }

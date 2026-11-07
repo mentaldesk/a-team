@@ -5,9 +5,6 @@ using System.Text.RegularExpressions;
 
 namespace ATeam.Core;
 
-/// <summary>Only ever before a command starts: it isn't ported yet, so it runs in board.sh.</summary>
-internal sealed class Fallback(string reason) : Exception(reason);
-
 /// <summary>A refusal: "board.sh: " and this, on stderr, and exit 1.</summary>
 internal sealed class Die(string message) : Exception(message);
 
@@ -63,8 +60,6 @@ internal sealed partial class Board
 
     internal bool DryRun { get; }
 
-    /// <summary>The caller has already brought the record up to date.</summary>
-    internal bool SkipSync { get; set; }
 
     internal Board(string team, JsonObject config, Func<Record> record, Gh gh, bool dryRun)
     {
@@ -486,7 +481,7 @@ internal sealed partial class Board
     /// <summary>The board's items, as the record has them.</summary>
     internal JsonArray Items(bool open = false)
     {
-        if (!SkipSync) Sync();
+        Sync();
         var items = new JsonArray();
         foreach (var row in _record.Query($"""
             SELECT b.item, b.node, b.status, b.priority, b.since, b.content, b.mirror, b.marks, up.priority AS pitch_priority

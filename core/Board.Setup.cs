@@ -139,13 +139,6 @@ internal sealed partial class Board
                     projectV2Field { ... on ProjectV2Field { id } } } }
             """, "--jq", ".data.createProjectV2Field.projectV2Field.id");
 
-    /// <summary>`gh api`, and what it found: 0 and what it printed, 1 only on GitHub's 404, 2 where GitHub didn't answer.</summary>
-    private (int There, string Said) LookFor(params string[] args)
-    {
-        var read = _gh.Run(["api", .. args]);
-        return read.Ok ? (0, read.Out) : (read.Err.Contains("(HTTP 404)", StringComparison.Ordinal) ? 1 : 2, read.Out);
-    }
-
     private static void NotThere(Findings found, string topic, int there, string file, string missing) =>
         found.Note(topic, there == 1 ? missing : $"GitHub didn't answer for {file}: checking again next pass");
 
@@ -191,7 +184,7 @@ internal sealed partial class Board
     {
         var vision = Text("vision");
         if (vision.Length == 0) return;
-        var (there, said) = LookFor("-H", "Accept: application/vnd.github.raw", $"repos/{_repo}/contents/{vision}");
+        var (there, said) = FileThere("-H", "Accept: application/vnd.github.raw", $"repos/{_repo}/contents/{vision}");
         if (there != 0)
             NotThere(found, "vision", there, vision, $"{vision} isn't in {_repo} yet: the Lead will draft one and open it as a draft PR");
         else if (said.Contains("<!-- a-team:lead -->", StringComparison.Ordinal))
@@ -208,7 +201,7 @@ internal sealed partial class Board
             return;
         }
         if (!reached) return;
-        var (there, _) = LookFor($"repos/{_repo}/contents/{docs}", "--silent");
+        var (there, _) = FileThere($"repos/{_repo}/contents/{docs}", "--silent");
         if (there != 0)
             NotThere(found, "docs", there, docs, $"{docs} isn't in {_repo} yet: the Customer lead will propose the docs as a draft PR");
     }
@@ -223,7 +216,7 @@ internal sealed partial class Board
             return;
         }
         if (!reached) return;
-        var (there, _) = LookFor($"repos/{_repo}/actions/workflows/release.yml", "--silent");
+        var (there, _) = FileThere($"repos/{_repo}/actions/workflows/release.yml", "--silent");
         if (there != 0)
             NotThere(found, "release", there, "release.yml", $"release is {release}, but {_repo} has no release.yml workflow for it to run");
     }

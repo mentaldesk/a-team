@@ -88,15 +88,28 @@ internal sealed partial class Board
             throw new Die($"customer only touches its own docs PR (#{n} isn't it)");
     }
 
+    /// <summary>`gh api`, and what it found: 0 and what it printed, 1 only on GitHub's 404, 2 where GitHub didn't answer.
+    /// A failed call says nothing about what's there, so nothing but a 404 counts as missing.</summary>
+    internal (int There, string Said) FileThere(params string[] args)
+    {
+        var read = _gh.Run(["api", .. args]);
+        return read.Ok ? (0, read.Out) : (read.Err.Contains("(HTTP 404)", StringComparison.Ordinal) ? 1 : 2, read.Out);
+    }
+
+    /// <summary>Whether the first page of the user docs is on the default branch: 0 yes, 1 GitHub says not, 2 GitHub didn't answer.</summary>
+    internal int DocsThere() => FileThere($"repos/{_repo}/contents/{Text("docs")}", "--silent").There;
+
     /// <summary>Whether the first page of the user docs is on the default branch. Refuses to go on where GitHub didn't answer.</summary>
     internal bool DocsKnown()
     {
         var docs = Text("docs");
         if (docs.Length == 0) return false;
-        var read = _gh.Run("api", $"repos/{_repo}/contents/{docs}", "--silent");
-        if (read.Ok) return true;
-        if (read.Err.Contains("(HTTP 404)", StringComparison.Ordinal)) return false;
-        throw new Die($"GitHub didn't answer for {docs}: try again");
+        return DocsThere() switch
+        {
+            0 => true,
+            1 => false,
+            _ => throw new Die($"GitHub didn't answer for {docs}: try again"),
+        };
     }
 
     /// <summary>The number of the issue #n is a sub-issue of, or nothing. GraphQL answers only for an item the record has not seen.</summary>
@@ -281,19 +294,7 @@ internal sealed partial class Board
         all.AddRange(Paged(comments).Select(c => Comment("comment", c)));
         if (issue?["pull_request"] is not null)
         {
-            var (owner, name) = RepoParts;
-            var reviews = Aloud("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"number={n}", "-f", """
-                query=
-                    query($owner: String!, $name: String!, $number: Int!) {
-                      repository(owner: $owner, name: $name) { pullRequest(number: $number) {
-                        reviews(last: 50) { nodes { id url state body submittedAt author { __typename login }
-                          reactions(content: EYES) { totalCount } } } } } }
-                """, "--jq", $$"""
-                .data.repository.pullRequest.reviews.nodes[]
-                          | select((.body // "") != "" or .state == "CHANGES_REQUESTED")
-                          | {kind: "review", state, author: (.author | {{Login}}), at: .submittedAt,
-                             body: (.body // ""), url, id, eyes: .reactions.totalCount}
-                """);
+            var reviews = ReviewsRead(n);
             if (!reviews.Ok) return Stopped(reviews.Code);
             all.AddRange(Json.ParseMany(reviews.Out).OfType<JsonObject>());
             var lines = Aloud("api", "--paginate", $"repos/{_repo}/pulls/{n}/comments");
@@ -370,6 +371,7 @@ internal sealed partial class Board
     private JsonArray? WaitsOn(string n, string repo, string bot)
     {
         var read = _gh.Run("api", "--paginate", $"repos/{repo}/issues/{n}/comments");
+        if (!read.Ok && !SaidOnlyAnError(read)) _holdingLost = true;
         return read.Ok ? WaitsIn(read, bot) : null;
     }
 
@@ -516,6 +518,7 @@ internal sealed partial class Board
         var fields = string.Join("\n", numbers.Select(n => $"i{n}: issue(number: {n}) {{ blockedBy(first: 10) {{ nodes {{ number state repository {{ nameWithOwner }} }} }} }}"));
         var read = _gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-f",
             $"query=query Prerequisites($owner: String!, $name: String!) {{\n      repository(owner: $owner, name: $name) {{ {fields} }} }}");
+        if (!read.Ok && read.Out.Trim().Length > 0) _holdingLost = true;
         if (!read.Ok) return [];
         var found = new List<long>();
         try
