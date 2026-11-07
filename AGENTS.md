@@ -49,6 +49,10 @@ down each assumption about the machine here, and the rule that keeps it from tri
   `scripts/common.sh`, `AgentState.IsAlive` in the dashboard), and delete it once the run ends.
 - **A failed call to GitHub says nothing about what's there.** Only its 404 means a file is missing
   (`file_there` in `scripts/board.sh`): on any other failure, wait for the next pass.
+- **A process outlives the script that started it.** A test's fake goes on after its suite ends, and a
+  suite killed outright stops nothing. So `tests/leftovers.sh` stops whatever names the suite's temp folder
+  in its command when the suite exits, and a passing suite that left any fails. A fake's command must name
+  that folder (a script in it, or `exec -a`), and anything that waits gives up after `FAKE_LIMIT` seconds.
 - **A branch name names a PR only until the next PR on it.** `docs/customer-lead` has had many. Trust
   only the branch's newest PR, and only for a worktree at that PR's last commit with no changed tracked
   files (`a-team board <team> clean`).
