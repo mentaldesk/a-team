@@ -113,8 +113,11 @@ in alphabetical order, so two features adding one each don't meet on a line.
 
 ## Scripts
 
-`tests/scripts.sh` is the shell side's test suite (`bash tests/scripts.sh`). CI runs it, along with
-`bash -n` and ShellCheck over `scripts/`, `bin/` and `tests/`. A Dev run merging the base into a PR
+`tests/scripts.sh` is the shell side's test suite. `bash tests/scripts.sh` runs every area side by side, `TEST_JOBS`
+at once, and `bash tests/scripts.sh <area>` runs one. CI runs it, along with `bash -n` and ShellCheck over `scripts/`,
+`bin/` and `tests/`. A new case goes in its area's file in `tests/scripts/`, and a helper more than one area needs goes in
+`lib.sh`. Every area has to pass on its own, so a case can lean on the cases before it only in its own file. `lib.sh` puts a
+`gh`, `curl`, `security`, `claude`, `open` and `launchctl` on `PATH` that refuse, so a case that forgets its fakes stops. A Dev run merging the base into a PR
 leaves this suite to CI: its quick checks are `bash -n` and ShellCheck for shell, and the dashboard's
 tests for C#.
 
