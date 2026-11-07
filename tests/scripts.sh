@@ -232,7 +232,7 @@ RUNS
   : >"$VISION_MD"
   echo '{"data": {"repository": {}}}' >"$THEMES"
   echo '{}' >"$CONTENTS"
-  cat >"$BIN/gh" <<SH
+  fake "$BIN/gh" <<SH
 #!/usr/bin/env bash
 [ ! -e "$BIN/offline" ] || { echo "gh: error connecting to api.github.com" >&2; exit 1; }
 # Carrying a-team labels into the record happens once, on upgrade, so it isn't counted with a command's calls.
@@ -398,7 +398,6 @@ if [ "\$page" = "$ITEMS" ]; then
 fi
 if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
-  chmod +x "$BIN/gh"
   PATH="$BIN:$PATH"
 }
 
@@ -1521,8 +1520,7 @@ same "conversation" '[]' "$(jq -c . "$OUT")"
 
 case_ "a conversation that can't be read is refused in one line, naming the issue"
 DOWN=$(mktemp -d "$WORK/down.XXXXXX")
-printf '#!/usr/bin/env bash\necho "gh: HTTP 502" >&2\nexit 1\n' >"$DOWN/gh"
-chmod +x "$DOWN/gh"
+printf '#!/usr/bin/env bash\necho "gh: HTTP 502" >&2\nexit 1\n' | fake "$DOWN/gh"
 PATH="$DOWN:$PATH" run board demo conversation 6
 failed "unreadable conversation"
 one_line "unreadable conversation"
@@ -6618,7 +6616,7 @@ try_gh() {
   jq -n --arg state "${1:-open}" --arg repo "${2:-mentaldesk/demo}" --arg sha "$TRY_SHA" \
     '{number: 7, title: "A change worth a look", state: $state,
       head: {sha: $sha, repo: {full_name: $repo}}}' >"$TRY_BIN/pull.json"
-  cat >"$TRY_BIN/gh" <<SH
+  fake "$TRY_BIN/gh" <<SH
 #!/usr/bin/env bash
 case " \$* " in
   *"/pulls/7"*) cat "$TRY_BIN/pull.json" ;;
@@ -6628,12 +6626,10 @@ case " \$* " in
   *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
 esac
 SH
-  chmod +x "$TRY_BIN/gh"
-  cat >"$TRY_BIN/record" <<SH
+  fake "$TRY_BIN/record" <<SH
 #!/usr/bin/env bash
 { pwd; git rev-parse HEAD; echo "\${A_TEAM_STATE:-}"; echo "\${A_TEAM_DRY_RUN:-}"; } >"$TRY_WORK/ran"
 SH
-  chmod +x "$TRY_BIN/record"
   PATH="$TRY_BIN:$PATH"
 }
 
@@ -6727,12 +6723,11 @@ grep -q 'Nothing to remove' "$OUT" || fail "--clean twice: '$(cat "$OUT")'"
 try_while_running() {
   try_fixture hold
   try_gh
-  cat >"$TRY_BIN/hold" <<SH
+  fake "$TRY_BIN/hold" <<SH
 #!/usr/bin/env bash
 touch "$TRY_WORK/started"
 until [ -e "$TRY_WORK/go" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 SH
-  chmod +x "$TRY_BIN/hold"
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" try demo 7 >"$OUT.first" 2>&1 &
   TRY_FIRST=$!
   until [ -e "$TRY_WORK/started" ]; do sleep 0.1; done
@@ -6790,12 +6785,11 @@ same "exit" 0 "$STATUS"
 case_ "a try of the default branch refuses while one is running, naming the branch"
 try_fixture hold
 try_gh
-cat >"$TRY_BIN/hold" <<SH
+fake "$TRY_BIN/hold" <<SH
 #!/usr/bin/env bash
 touch "$TRY_WORK/started"
 until [ -e "$TRY_WORK/go" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 SH
-chmod +x "$TRY_BIN/hold"
 A_TEAM_CONFIG="$CONFIG" "$A_TEAM" try demo >"$OUT.first" 2>&1 &
 TRY_FIRST=$!
 until [ -e "$TRY_WORK/started" ]; do sleep 0.1; done
@@ -6809,7 +6803,7 @@ wait "$TRY_FIRST"
 clean_world() {
   try_fixture
   CLEAN_BIN=$(mktemp -d "$WORK/cleanbin.XXXXXX")
-  cat >"$CLEAN_BIN/gh" <<SH
+  fake "$CLEAN_BIN/gh" <<SH
 #!/usr/bin/env bash
 [ ! -e "$CLEAN_BIN/fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
 while [ \$# -gt 0 ]; do
@@ -6822,7 +6816,6 @@ done
 echo "\$repo" >>"$CLEAN_BIN/repos"
 cat "$CLEAN_BIN/\${branch//\//_}.json" 2>/dev/null || echo '[]'
 SH
-  chmod +x "$CLEAN_BIN/gh"
   CLEAN_PATH=$CLEAN_BIN:$PATH
 }
 
@@ -7185,11 +7178,10 @@ APP=$(mktemp -d "$WORK/app.XXXXXX")
 mkdir -p "$APP/bin" "$APP/scripts" "$APP/libexec"
 cp "$ROOT/bin/a-team" "$APP/bin/"
 cp "$ROOT"/scripts/*.sh "$APP/scripts/"
-cat >"$APP/libexec/ateam" <<SH
+fake "$APP/libexec/ateam" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$@" >"$WORK/app-args"
 SH
-chmod +x "$APP/libexec/ateam"
 
 "$APP/bin/a-team" >"$OUT" 2>"$ERR"
 STATUS=$?
@@ -7249,7 +7241,7 @@ case_ "a dispatcher pass skips the held role, and starts its sibling"
 APP=$(mktemp -d "$WORK/dispatch.XXXXXX")
 mkdir -p "$APP/bin" "$APP/scripts"
 cp "$ROOT"/scripts/*.sh "$APP/scripts/"
-cat >"$APP/bin/a-team" <<'SH'
+fake "$APP/bin/a-team" <<'SH'
 #!/usr/bin/env bash
 if [ "$1" = token ] && [ "${NOT_INSTALLED:-}" = 2 ]; then
   echo "a-team token: other" >&2
@@ -7268,7 +7260,6 @@ fi
 [ "$1" = board ] && [ "${!#}" = sync ] && { echo "$*" >>"${SYNCS:-/dev/null}"; exit 0; }
 echo '{"reasons": ["work to do"], "creative": false}'
 SH
-chmod +x "$APP/bin/a-team"
 A_TEAM_CONFIG="$CONFIG" bash "$APP/scripts/dispatch.sh" --dry-run
 grep -q 'demo lead: would start' "$A_TEAM_STATE/dispatch.log" || fail "dispatch: the lead wasn't started"
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "dispatch: the held dev was started"
@@ -7489,7 +7480,7 @@ dev_dispatcher() {
   UPDATES_RUN="$DISPATCH/updates-run" UPDATED_SAID="$DISPATCH/updated-said"
   : >"$UPDATES_RUN"
   : >"$UPDATED_SAID"
-  cat >"$DISPATCH/bin/a-team" <<SH
+  fake "$DISPATCH/bin/a-team" <<SH
 #!/usr/bin/env bash
 case " \$* " in
   *" bumps "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$BUMPS"; echo bumps >>"$FREES"; cat "$BUMPED"; [ ! -e "$BUMPED.fails" ] || { cat "$BUMPED.fails" >&2; exit 1; } ;;
@@ -7504,7 +7495,6 @@ case " \$* " in
   *" version "*) cat "\$(dirname "\$0")/../VERSION" ;;
 esac
 SH
-  chmod +x "$DISPATCH/bin/a-team"
   A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
 }
 dispatch_dev() { A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/dispatch.sh" "$@"; }
@@ -7599,13 +7589,13 @@ grep -q 'demo dev: would start: #13: Ready task #13 to build' "$A_TEAM_STATE/dis
 same "why" "Ready task #13 to build" "$(cat "$A_TEAM_STATE/demo/dev/dry-last-reasons")"
 
 case_ "a claim that's refused starts nothing, and says why"
-sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: no free worktree for #13" >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team"
+sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: no free worktree for #13" >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team.body"
 : >"$A_TEAM_STATE/dispatch.log"
 dispatch_dev --dry-run
 grep -q 'demo dev: claim failed: board.sh: no free worktree for #13' "$A_TEAM_STATE/dispatch.log" ||
   fail "refused: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 grep -q 'would start' "$A_TEAM_STATE/dispatch.log" && fail "refused: a run started"
-sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: the board read came back incomplete (100 of 358 items), twice. Nothing was changed: end this run, and the next one reads the board again." >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team"
+sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: the board read came back incomplete (100 of 358 items), twice. Nothing was changed: end this run, and the next one reads the board again." >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team.body"
 : >"$A_TEAM_STATE/dispatch.log"
 dispatch_dev --dry-run
 same "short claim" "demo dev: board read incomplete (100 of 358 items), twice; trying again next check" \
@@ -7661,7 +7651,7 @@ jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DE
 cp "$CONFIG/teams/demo.json" "$CONFIG/teams/other.json"
 FAILS="$DISPATCH/fails"
 FAILING="  *\" demo triggers dev\"*) [ -s $FAILS ] && { cat $FAILS >&2; exit 1; }; cat $DEV_TRIGGERS ;;"
-FAILING=$FAILING perl -i -pe 'print "$ENV{FAILING}\n" if /^  \*" triggers dev"\*\)/' "$DISPATCH/bin/a-team"
+FAILING=$FAILING perl -i -pe 'print "$ENV{FAILING}\n" if /^  \*" triggers dev"\*\)/' "$DISPATCH/bin/a-team.body"
 echo "gh: connection reset" >"$FAILS"
 echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
 jq '.ready = 13 | .reasons = ["Ready task available (e.g. #13) and a free worktree"]' "$DEV_TRIGGERS" >"$DISPATCH/ready.json"
@@ -7724,11 +7714,10 @@ jq --arg w "$WORKDIR" '.workdir = $w' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$T
 jq -n '{reasons: [], creative: false, tasks: [], ready: 13, chores: []}' >"$DEV_TRIGGERS"
 echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
 LAUNCHED="$DISPATCH/launched"
-cat >"$DISPATCH/bin/claude" <<SH
+fake "$DISPATCH/bin/claude" <<SH
 #!/usr/bin/env bash
 { echo "task: \$A_TEAM_RUN_TASK"; printf '%s\n' "\$2"; } >"$LAUNCHED"
 SH
-chmod +x "$DISPATCH/bin/claude"
 dispatch_dev
 for _ in $(seq 50); do [ -s "$LAUNCHED" ] && break; sleep 0.1; done
 same "claims" "board demo claim dev" "$(cat "$CLAIMS")"
@@ -7758,8 +7747,7 @@ case_ "only a team with the Customer lead on asks it for work, and its run gets 
 dev_dispatcher
 jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
 jq -n '{reasons: ["pitch #5 is done: check the docs cover what it shipped"], creative: false}' >"$CUSTOMER_TRIGGERS"
-printf '#!/usr/bin/env bash\n' >"$DISPATCH/bin/claude"
-chmod +x "$DISPATCH/bin/claude"
+printf '#!/usr/bin/env bash\n' | fake "$DISPATCH/bin/claude"
 dispatch_dev --dry-run
 same "asked while off" "" "$(cat "$CLAIMS")"
 jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
@@ -7803,7 +7791,7 @@ queued_dispatcher() {
   QUEUE="$DISPATCH/queue" LAUNCHED="$DISPATCH/launched"
   : >"$QUEUE"
   : >"$LAUNCHED"
-  cat >"$DISPATCH/bin/a-team" <<SH
+  fake "$DISPATCH/bin/a-team" <<SH
 #!/usr/bin/env bash
 case " \$* " in
   *" claim dev "*)
@@ -7818,12 +7806,11 @@ case " \$* " in
   *" version "*) cat "\$(dirname "\$0")/../VERSION" ;;
 esac
 SH
-  cat >"$DISPATCH/bin/claude" <<SH
+  fake "$DISPATCH/bin/claude" <<SH
 #!/usr/bin/env bash
 echo "\$A_TEAM_RUN_TASK" >>"$LAUNCHED"
 exec -a "\$0" sleep 60
 SH
-  chmod +x "$DISPATCH/bin/claude"
 }
 devs() { jq --argjson n "$1" '.wip.devs = $n' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"; }
 alive() { kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/$1/pid")" 2>/dev/null; }
@@ -7951,12 +7938,11 @@ echo '{"reasons": [], "creative": false}' >"$LEAD_TRIGGERS"
 
 case_ "a run that ends with a result records how long it took, its cost and whether it erred"
 # claude waits for $DISPATCH/finish, then prints $DISPATCH/result, if there is one, as its log's last line.
-cat >"$DISPATCH/bin/claude" <<SH
+fake "$DISPATCH/bin/claude" <<SH
 #!/usr/bin/env bash
 until [ -e "$DISPATCH/finish" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 cat "$DISPATCH/result" 2>/dev/null
 SH
-chmod +x "$DISPATCH/bin/claude"
 run_gone() { for _ in $(seq 50); do kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/$1/pid")" 2>/dev/null || return; sleep 0.1; done; }
 dispatch_dev
 same "running" "dev 13 0 - -" "$(runs_recorded)"
@@ -7992,7 +7978,7 @@ dispatch_dev
 same "errored" "dev 14 1 0.5 error" "$(runs_recorded | grep ' 14 ')"
 
 case_ "a Lead run is recorded on each item it was started for, and a discovery run on none"
-sed -i.bak "s|^  \*\" triggers lead\"\*).*|  *\" triggers lead\"*) cat \"$DISPATCH/lead.json\" ;;|" "$DISPATCH/bin/a-team"
+sed -i.bak "s|^  \*\" triggers lead\"\*).*|  *\" triggers lead\"*) cat \"$DISPATCH/lead.json\" ;;|" "$DISPATCH/bin/a-team.body"
 jq -n '{reasons: ["stakeholder feedback on #7 (2026-10-07T09:00:00Z)", "#9 was approved: break it down"], creative: false, items: [7, 9]}' \
   >"$DISPATCH/lead.json"
 history_db "DELETE FROM runs; DELETE FROM run_items;"
@@ -8159,7 +8145,7 @@ A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/pause.sh" stop demo dev x >"$OUT
 # claude records where its a-team is, its settings, and its version before and after $GO appears.
 pinned_claude() {
   SEEN=$(mktemp -d "$WORK/seen.XXXXXX") GO="$WORK/go.$RANDOM"
-  cat >"$DISPATCH/bin/claude" <<SH
+  fake "$DISPATCH/bin/claude" <<SH
 #!/usr/bin/env bash
 seen="$SEEN/\${A_TEAM_RUN_TASK:-lead}"
 while [ \$# -gt 0 ]; do [ "\$1" = --settings ] && echo "\$2" >"\$seen.settings"; shift; done
@@ -8170,7 +8156,6 @@ a-team version >"\$seen.after"
 echo "\${A_TEAM_RUN_TASK:-lead}" >>"$LAUNCHED"
 exec -a "\$0" sleep 60
 SH
-  chmod +x "$DISPATCH/bin/claude"
 }
 seen() { for _ in $(seq 50); do [ -s "$SEEN/$1" ] && break; sleep 0.1; done; cat "$SEEN/$1" 2>/dev/null; }
 
@@ -8223,7 +8208,7 @@ dispatch_dev
 stop_runs
 
 case_ "the Lead's run keeps its copy in the role's folder"
-sed -i.bak 's|^  \*" triggers lead"\*).*|  *" triggers lead"*) echo '"'"'{"reasons": ["#232 was approved"], "creative": false}'"'"' ;;|' "$DISPATCH/bin/a-team"
+sed -i.bak 's|^  \*" triggers lead"\*).*|  *" triggers lead"*) echo '"'"'{"reasons": ["#232 was approved"], "creative": false}'"'"' ;;|' "$DISPATCH/bin/a-team.body"
 jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
 dispatch_dev
 same "lead a-team" "$A_TEAM_STATE/demo/lead/release/bin/a-team" "$(seen lead.bin)"
@@ -8260,13 +8245,12 @@ grep -q '^  pause \[--dry-run\] <team> \[<role>\]' "$OUT" || fail "usage: pause 
 fake_claude() {
   RESUMED="$BIN/resumed"
   : >"$RESUMED"
-  cat >"$BIN/claude" <<SH
+  fake "$BIN/claude" <<SH
 #!/usr/bin/env bash
 { echo "args: \$*"; echo "cwd: \$(pwd -P)"; echo "hold: \$(jq -c .dispatch.hold "$TEAM")"
   echo "signals: \$(grep -c TERM "$SIGNALS")"; echo "team: \${A_TEAM_RUN_TEAM:-}"; } >>"$RESUMED"
 exit ${1:-0}
 SH
-  chmod +x "$BIN/claude"
 }
 session_log() {
   printf '%s\n' 'not json' \
@@ -8365,12 +8349,11 @@ unset A_TEAM_STATE
 # --- a-team vision ---------------------------------------------------------------------------
 # A claude that records its arguments and where it ran, one per line, for `a-team vision`.
 VISION_BIN=$(mktemp -d "$WORK/vision.XXXXXX")
-cat >"$VISION_BIN/claude" <<SH
+fake "$VISION_BIN/claude" <<SH
 #!/usr/bin/env bash
 pwd -P >"$VISION_BIN/asked"
 printf '%s\n' "\$@" >>"$VISION_BIN/asked"
 SH
-chmod +x "$VISION_BIN/claude"
 VISION_WORK=$(mktemp -d "$WORK/visionwork.XXXXXX")
 mkdir -p "$VISION_WORK/main"
 # vision_with <a-team>: runs that a-team's `vision demo` with the recording claude, from no terminal.
@@ -8435,12 +8418,12 @@ openssl rsa -in "$APP_BIN/key.pem" -pubout 2>/dev/null >"$APP_BIN/pub.pem"
 openssl base64 -A <"$APP_BIN/key.pem" >"$APP_BIN/key.b64"
 rm "$APP_BIN/key.pem"
 echo '{"contents": "write", "issues": "write", "organization_projects": "write"}' >"$APP_BIN/perms.json"
-cat >"$APP_BIN/security" <<SH
+fake "$APP_BIN/security" <<SH
 #!/usr/bin/env bash
 [ -z "\${NO_KEY:-}" ] || exit 44
 case " \$* " in *" -w "*) cat "$APP_BIN/key.b64" ;; esac
 SH
-cat >"$APP_BIN/curl" <<SH
+fake "$APP_BIN/curl" <<SH
 #!/usr/bin/env bash
 answer() { printf '%s\n%s' "\$2" "\$1"; }
 [ -z "\${MINT_FAILS:-}" ] || { answer 401 '{"message": "Bad credentials"}'; exit; }
@@ -8461,8 +8444,7 @@ case "\${!#}" in
   *) answer 404 '{"message": "Not Found"}' ;;
 esac
 SH
-printf '#!/usr/bin/env bash\necho "$*" >>"%s"\n' "$OPENED" >"$APP_BIN/open"
-chmod +x "$APP_BIN/security" "$APP_BIN/curl" "$APP_BIN/open"
+printf '#!/usr/bin/env bash\necho "$*" >>"%s"\n' "$OPENED" | fake "$APP_BIN/open"
 PATH="$APP_BIN:$PATH"
 export A_TEAM_STATE
 A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
@@ -8566,8 +8548,7 @@ grep -q 'a-team app create demo' "$ERR" || fail "no app: '$(cat "$ERR")'"
 
 # The real gh the wrapper stands in front of: prints GH_TOKEN, then each argument on its own line.
 mkdir -p "$APP_BIN/real"
-printf '#!/usr/bin/env bash\necho "GH_TOKEN=${GH_TOKEN:-}"\nprintf "[%%s]\\n" "$@"\n' >"$APP_BIN/real/gh"
-chmod +x "$APP_BIN/real/gh"
+printf '#!/usr/bin/env bash\necho "GH_TOKEN=${GH_TOKEN:-}"\nprintf "[%%s]\\n" "$@"\n' | fake "$APP_BIN/real/gh"
 wrapped() {
   A_TEAM_CONFIG="$CONFIG" PATH="$ROOT/bin:$APP_BIN/real:$PATH" gh "$@" >"$OUT" 2>"$ERR"
   STATUS=$?
@@ -8661,7 +8642,7 @@ echo '{"data": {"organization": {"projectV2": {"items": {"totalCount": 0,
   "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": []}}}}}' >"$APP_BIN/board/items.json"
 echo '{"data": {"organization": {"issueFields": {"nodes": [{"id": "IF_priority", "name": "Priority",
   "options": []}]}}}}' >"$APP_BIN/board/fields.json"
-cat >"$APP_BIN/board/gh" <<SH
+fake "$APP_BIN/board/gh" <<SH
 #!/usr/bin/env bash
 refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
 case " \$* " in
@@ -8692,7 +8673,6 @@ while [ \$# -gt 0 ]; do
 done
 if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
-chmod +x "$APP_BIN/board/gh"
 checked() { PATH="$APP_BIN/board:$PATH" run board demo check; }
 grants() { jq "$1" "$CACHE" >"$CACHE.new" && mv "$CACHE.new" "$CACHE"; }
 
@@ -9855,9 +9835,9 @@ install_dispatcher() {
 }
 INSTALL_HOME=$(mktemp -d "$WORK/home.XXXXXX") INSTALL_STATE=$(mktemp -d "$WORK/state.XXXXXX")
 INSTALL_STUBS=$(mktemp -d "$WORK/stubs.XXXXXX")
-for tool in claude gh; do printf '#!/usr/bin/env bash\n' >"$INSTALL_STUBS/$tool"; done
+for tool in claude gh; do printf '#!/usr/bin/env bash\n' | fake "$INSTALL_STUBS/$tool"; done
 # A job bootout stops stays loaded for $LAUNCHCTL_LINGER more prints, and can't be bootstrapped until it's gone.
-cat >"$INSTALL_STUBS/launchctl" <<SH
+fake "$INSTALL_STUBS/launchctl" <<SH
 #!/usr/bin/env bash
 left=\$(cat "$INSTALL_STUBS/lingering" 2>/dev/null || echo 0)
 case \$1 in
@@ -9866,8 +9846,7 @@ case \$1 in
   bootstrap) [ "\$left" -eq 0 ] || { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; } ;;
 esac
 SH
-printf '#!/usr/bin/env bash\n[ "$1" = version ] && echo 0.1.13-alpha.0.7\n' >"$INSTALL_STUBS/a-team"
-chmod +x "$INSTALL_STUBS"/*
+printf '#!/usr/bin/env bash\n[ "$1" = version ] && echo 0.1.13-alpha.0.7\n' | fake "$INSTALL_STUBS/a-team"
 
 case_ "install records the binary, its version, the interval and the log beside the state"
 install_dispatcher
@@ -9979,8 +9958,7 @@ PASS_STATE=$(mktemp -d "$WORK/state.XXXXXX") PASS_CONFIG=$(mktemp -d "$WORK/conf
 PASS_STUBS=$(mktemp -d "$WORK/stubs.XXXXXX")
 mkdir -p "$PASS_CONFIG/teams"
 echo '{}' >"$PASS_CONFIG/teams/t.json"
-printf '#!/usr/bin/env bash\ncat "%s/pass" >"%s/seen"\nexec %s "$@"\n' "$PASS_STATE" "$PASS_STUBS" "$(command -v jq)" >"$PASS_STUBS/jq"
-chmod +x "$PASS_STUBS/jq"
+printf '#!/usr/bin/env bash\ncat "%s/pass" >"%s/seen"\nexec %s "$@"\n' "$PASS_STATE" "$PASS_STUBS" "$(command -v jq)" | fake "$PASS_STUBS/jq"
 PATH="$PASS_STUBS:$PATH" A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" &
 pass_pid=$!
 wait "$pass_pid"
@@ -9989,7 +9967,7 @@ same "pid during the pass" "$pass_pid" "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
 
 case_ "a scheduled pass counts the next one down from when it ends, as launchd does"
 echo 1800000000 >"$PASS_STATE/next-pass"
-printf '#!/usr/bin/env bash\ncat "%s/next-pass" >"%s/seen"\nexec %s "$@"\n' "$PASS_STATE" "$PASS_STUBS" "$(command -v jq)" >"$PASS_STUBS/jq"
+printf '#!/usr/bin/env bash\ncat "%s/next-pass" >"%s/seen"\nexec %s "$@"\n' "$PASS_STATE" "$PASS_STUBS" "$(command -v jq)" | fake "$PASS_STUBS/jq"
 PATH="$PASS_STUBS:$PATH" A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh"
 ended=$(date +%s)
 same "next-pass during the pass" 1800000000 "$(cat "$PASS_STUBS/seen" 2>/dev/null)"
@@ -10000,8 +9978,7 @@ left=$(($(cat "$PASS_STATE/next-pass") - ended))
 overlap_first() {
   OVERLAP=$(mktemp -d "$WORK/stubs.XXXXXX")
   printf '#!/usr/bin/env bash\ntouch "%s/started"\nuntil [ -e "%s/go" ]; do [ "$SECONDS" -lt %s ] || exit; sleep 0.1; done\nexec %s "$@"\n' \
-    "$OVERLAP" "$OVERLAP" "$FAKE_LIMIT" "$(command -v jq)" >"$OVERLAP/jq"
-  chmod +x "$OVERLAP/jq"
+    "$OVERLAP" "$OVERLAP" "$FAKE_LIMIT" "$(command -v jq)" | fake "$OVERLAP/jq"
   PATH="$OVERLAP:$PATH" A_TEAM_UNSCHEDULED=$1 A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" &
   OVERLAP_PID=$!
   until [ -e "$OVERLAP/started" ]; do sleep 0.1; done
@@ -10010,8 +9987,7 @@ overlap_first() {
 # overlap_second <unscheduled>: a second pass, with a jq saying if it ever got as far as a team.
 overlap_second() {
   SECOND=$(mktemp -d "$WORK/stubs.XXXXXX")
-  printf '#!/usr/bin/env bash\ntouch "%s/reached"\nexec %s "$@"\n' "$SECOND" "$(command -v jq)" >"$SECOND/jq"
-  chmod +x "$SECOND/jq"
+  printf '#!/usr/bin/env bash\ntouch "%s/reached"\nexec %s "$@"\n' "$SECOND" "$(command -v jq)" | fake "$SECOND/jq"
   PATH="$SECOND:$PATH" A_TEAM_UNSCHEDULED=$1 A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" >"$OUT" 2>"$ERR"
   STATUS=$?
 }
@@ -10062,7 +10038,7 @@ same "said" "" "$(cat "$OUT")"
 # its latest release.yml run, and each workflow it was asked to run a line of `dispatched`.
 REL=$(mktemp -d "$WORK/release.XXXXXX")
 mkdir -p "$REL/bin"
-cat >"$REL/bin/gh" <<SH
+fake "$REL/bin/gh" <<SH
 #!/usr/bin/env bash
 case " \$* " in
   *"-X POST"*"/dispatches"*) printf '%s\n' "\$*" >>"$REL/dispatched"; exit 0 ;;
@@ -10077,7 +10053,6 @@ while [ \$# -gt 0 ]; do
 done
 if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
-chmod +x "$REL/bin/gh"
 # released <head> [<tag commit> <seconds ago>]: main at <head>, and v1.2.0 at <tag commit>, released that long ago.
 released() {
   jq -n --arg head "$1" --arg tag "${2:-}" --argjson ago "${3:-0}" '{data: {repository: {
@@ -10162,14 +10137,13 @@ case_ "a dispatcher pass logs what release says when it changes, paused or not, 
 APP=$(mktemp -d "$WORK/dispatch.XXXXXX")
 mkdir -p "$APP/bin" "$APP/scripts"
 cp "$ROOT"/scripts/*.sh "$APP/scripts/"
-cat >"$APP/bin/a-team" <<SH
+fake "$APP/bin/a-team" <<SH
 #!/usr/bin/env bash
 [ "\$1" = release ] || exit 1
 printf '%s\n' "\$*" >>"$APP/release-args"
 cat "$APP/said"
 exit "\$(cat "$APP/code" 2>/dev/null || echo 0)"
 SH
-chmod +x "$APP/bin/a-team"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "release": "continuous", "dispatch": { "enabled": false } }
 JSON
@@ -11126,8 +11100,7 @@ awk '/id: next$/ { step = 1 } step && /run: \|$/ { body = 1; next }
   body && /^ *[^ ]/ && !/^          / { exit } body { sub(/^          /, ""); print }' \
   "$ROOT/.github/workflows/release-version.yml" >"$NEXT_VERSION"
 mkdir -p "$RELEASE_BIN"
-printf '#!/usr/bin/env bash\ncat "%s/merged.json"\n' "$RELEASE_BIN" >"$RELEASE_BIN/gh"
-chmod +x "$RELEASE_BIN/gh"
+printf '#!/usr/bin/env bash\ncat "%s/merged.json"\n' "$RELEASE_BIN" | fake "$RELEASE_BIN/gh"
 echo '[]' >"$RELEASE_BIN/merged.json"
 
 release_repo() {
@@ -11216,7 +11189,7 @@ PUBLISH_RELEASE="$WORK/publish-release.sh" OPEN_TAP_PR="$WORK/open-tap-pr.sh" PU
 publish_step "Publish release" >"$PUBLISH_RELEASE"
 publish_step "Open tap PR" >"$OPEN_TAP_PR"
 mkdir -p "$PUBLISH_BIN"
-cat >"$PUBLISH_BIN/gh" <<'GH'
+fake "$PUBLISH_BIN/gh" <<'GH'
 #!/usr/bin/env bash
 echo "$*" >>"$FAKE_GITHUB/calls"
 case "$1 $2" in
@@ -11245,7 +11218,6 @@ case "$1 $2" in
   *) echo "gh stub: unexpected $*" >&2; exit 1 ;;
 esac
 GH
-chmod +x "$PUBLISH_BIN/gh"
 
 # A tap, a release job's folder and a GitHub with nothing published on them yet.
 publish_world() {
@@ -11808,12 +11780,12 @@ end_run "$FAKE"
 # as_shell: records the token each gh call used, "shell" for none.
 as_shell() {
   mv "$BIN/gh" "$BIN/real-gh"
-  cat >"$BIN/gh" <<SH
+  mv "$BIN/gh.body" "$BIN/real-gh.body"
+  fake "$BIN/gh" <<SH
 #!/usr/bin/env bash
 echo "\${GH_TOKEN:-shell}" >>"$BIN/tokens"
 exec "$BIN/real-gh" "\$@"
 SH
-  chmod +x "$BIN/gh"
   : >"$BIN/tokens"
 }
 tokens_used() { sort -u "$BIN/tokens" | tr '\n' ' '; }
@@ -11940,6 +11912,7 @@ SUITE="$SUITE"
 source "$ROOT/tests/leftovers.sh"
 leak() { cp "$SUITE/fake" "\$WORK/fake"; nohup "\$WORK/fake" "$SUITE/pids" >/dev/null 2>&1 & }
 neighbour() { mkdir "\$WORK.b"; cp "$SUITE/fake" "\$WORK.b/fake"; nohup "\$WORK.b/fake" "$SUITE/neighbours" >/dev/null 2>&1 & }
+leak_shared() { fake "\$WORK/shared" <"$SUITE/fake"; nohup "\$WORK/shared" "$SUITE/pids" >/dev/null 2>&1 & }
 started() { until [ -s "\$1" ]; do sleep 0.1; done; }
 eval "\$1"
 finish_suite
@@ -11963,6 +11936,14 @@ same "output" "  FAIL left running when the suite ended, now stopped:
        <tmp>/fake
 1 failed" "$(cat "$OUT")"
 stopped "after passing"
+
+case_ "a fake started through the shared launcher is found under its own name"
+small_suite 'leak_shared; started "$SUITE/pids"'
+same "exit" 1 "$STATUS"
+same "output" "  FAIL left running when the suite ended, now stopped:
+       <tmp>/shared
+1 failed" "$(cat "$OUT")"
+stopped "through the launcher"
 
 case_ "a suite whose cases failed lists what it stopped without counting it"
 small_suite 'fail a case; leak; started "$SUITE/pids"'
