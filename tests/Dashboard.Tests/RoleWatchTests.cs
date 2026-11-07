@@ -86,6 +86,31 @@ public class RoleWatchTests : IDisposable
     }
 
     [Fact]
+    public void In_a_folder_weeks_old_only_the_real_runs_count_as_live()
+    {
+        var gone = Finished();
+        var stranger = Run();
+        var weeksAgo = DateTime.UtcNow - TimeSpan.FromDays(21);
+        for (var task = 1; task <= 300; task++)
+        {
+            var run = Path.Combine(_dir, "runs", task.ToString());
+            Write(run, task % 10 == 0 ? stranger : gone, 100 + task, task);
+            File.SetLastWriteTimeUtc(Path.Combine(run, "pid"), weeksAgo);
+            if (task % 3 == 0)
+                File.Delete(Path.Combine(run, "pid"));
+        }
+        Write(_dir, stranger, 100, 300);
+        File.SetLastWriteTimeUtc(Path.Combine(_dir, "pid"), weeksAgo);
+        Write(Path.Combine(_dir, "runs", "401"), Run(), 500, 401);
+        Write(Path.Combine(_dir, "runs", "402"), Run(), 600, 402);
+
+        var state = AgentState.Read(_dir);
+
+        Assert.False(state.Running);
+        Assert.Equal([401, 402], state.Runs.Select(run => run.Task!.Number));
+    }
+
+    [Fact]
     public void The_latest_run_is_found_by_its_task_once_its_pid_file_is_gone()
     {
         Write(_dir, Finished(), 300, 303);
