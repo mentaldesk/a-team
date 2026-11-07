@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.Json.Nodes;
 
 namespace ATeam.Core;
 
@@ -96,6 +98,59 @@ internal sealed class Record : IDisposable
             Sqlite.sqlite3_finalize(stmt);
         }
         return rows;
+    }
+
+    /// <summary>The rows as `sqlite3 -json` prints them, each column in its own JSON type.</summary>
+    internal JsonArray Rows(string sql)
+    {
+        if (Sqlite.sqlite3_prepare_v2(_db, Sqlite.Utf8(sql), -1, out var stmt, IntPtr.Zero) != 0)
+            throw new InvalidOperationException(Error());
+        var rows = new JsonArray();
+        try
+        {
+            var columns = Sqlite.sqlite3_column_count(stmt);
+            while (Sqlite.sqlite3_step(stmt) == Sqlite.Row)
+            {
+                var row = new JsonObject();
+                for (var c = 0; c < columns; c++)
+                    row[Marshal.PtrToStringUTF8(Sqlite.sqlite3_column_name(stmt, c))!] = Cell(stmt, c);
+                rows.Add((JsonNode?)row);
+            }
+        }
+        finally
+        {
+            Sqlite.sqlite3_finalize(stmt);
+        }
+        return rows;
+    }
+
+    private static string CellText(IntPtr stmt, int column) => Marshal.PtrToStringUTF8(Sqlite.sqlite3_column_text(stmt, column))!;
+
+    private JsonNode? Cell(IntPtr stmt, int column) => Sqlite.sqlite3_column_type(stmt, column) switch
+    {
+        Sqlite.Null => null,
+        Sqlite.Integer => JsonNode.Parse(CellText(stmt, column)),
+        Sqlite.Float => JsonNode.Parse(Real(Sqlite.sqlite3_column_double(stmt, column))),
+        _ => CellText(stmt, column),
+    };
+
+    /// <summary>A real number as `sqlite3 -json` spells it.</summary>
+    private string Real(double value)
+    {
+        var whole = (long)value;
+        if (value == whole) return $"{whole.ToString(CultureInfo.InvariantCulture)}.0";
+        if (Sqlite.sqlite3_prepare_v2(_db, Sqlite.Utf8("SELECT printf('%!.20g', ?1);"), -1, out var stmt, IntPtr.Zero) != 0)
+            throw new InvalidOperationException(Error());
+        try
+        {
+            Sqlite.sqlite3_bind_double(stmt, 1, value);
+            Sqlite.sqlite3_step(stmt);
+            return CellText(stmt, 0);
+        }
+        finally
+        {
+            Sqlite.sqlite3_finalize(stmt);
+        }
     }
 
     internal string? Scalar(string sql, params string?[] args)
