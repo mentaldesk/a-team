@@ -12,8 +12,8 @@ and how Ideas and their priorities steer what the Lead does next.
 ## [Work](work.md)
 
 The area that shows everything waiting on you, across every team. What its columns hold, what a card's
-icons and colours say, and how to answer from it: approving a pitch, replying to a question, asking
-the Dev to fix what the Reviewer left to consider, and accepting finished work. Trends, to compare the teams day by day, and Spending, for what their runs
+icons and colours say, and how to answer from it: approving a pitch, replying to a question, giving a
+secret the team asks for, asking the Dev to fix what the Reviewer left to consider, and accepting finished work. Trends, to compare the teams day by day, and Spending, for what their runs
 cost by theme and pitch.
 
 ## [Overseer](overseer.md)
