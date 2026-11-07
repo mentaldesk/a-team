@@ -233,14 +233,17 @@ public class WhatsNewWindowTests : IDisposable
             },
             area,
             IconStyle.Unicode,
-            clock: new Clock(),
-            readMoves: (team, since) =>
+            new DashboardOptions
             {
-                Assert.Equal(Start, since);
-                onMoves?.Invoke();
-                return Task.FromResult(new Reading(_moves[team], null));
-            },
-            whatsNew: new WhatsNew(Start));
+                Clock = new Clock(),
+                ReadMoves = (team, since) =>
+                {
+                    Assert.Equal(Start, since);
+                    onMoves?.Invoke();
+                    return Task.FromResult(new Reading(_moves[team], null));
+                },
+                WhatsNew = new WhatsNew(Start),
+            });
     }
 
     private static string Waiting(string team) => team == "team0"

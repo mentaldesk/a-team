@@ -107,6 +107,10 @@ Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashbo
 outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's
 draw loop, so cover the logic behind the views instead.
 
+`DashboardWindow` is one class across a file per area (`DashboardWindow.Work.cs`, `.Overseer.cs` and so on), and
+so are its biggest test classes: add to the area's file. What a feature gives the window goes in `DashboardOptions`,
+in alphabetical order, so two features adding one each don't meet on a line.
+
 ## Scripts
 
 `tests/scripts.sh` is the shell side's test suite (`bash tests/scripts.sh`). CI runs it, along with
