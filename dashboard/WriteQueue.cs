@@ -13,6 +13,7 @@ public enum WriteKind
     VisionReview,
     Hold,
     Interrupt,
+    Tick,
 }
 
 /// <summary>One board write: what it runs, what the status bar says while it runs, what it says when you act on the
@@ -23,6 +24,9 @@ public sealed record Write(
     WaitingItem? Item = null, Rank Rank = Rank.None, string Team = "", string? Scratch = null, int Weeks = 0)
 {
     public static string KeyOf(WaitingItem item) => $"{item.Team}#{item.Number}";
+
+    /// <summary>Told why the board refused it, or null, for what's waiting on the outcome.</summary>
+    public TaskCompletionSource<string?>? Outcome { get; init; }
 }
 
 /// <summary>The dashboard's board writes, run one at a time in the order they were made, so nothing waits on them.

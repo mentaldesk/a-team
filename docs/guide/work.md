@@ -266,6 +266,21 @@ as in any editor. You can also drag with the mouse, or double-click a word, like
 a URL. `Ctrl+C` copies the selection, and `Esc` clears it. Over SSH it reaches your own computer,
 with the terminal set up as [Copying and links](app.md#copying-and-links) says.
 
+## Criteria
+
+Reading a task in Review that has acceptance criteria, a **Criteria** list heads the body, above the
+issue text, with a count like `4 of 7 left for you ticked · 6 checked by the team`. **Left for you**
+comes first, then **Checked by the team**: the ones the Dev saw working on screen or proved with a
+test, already ticked, with `screen` or `test` after them. The rest are yours to check.
+
+The cursor starts on the first box still to tick. `Space` ticks or unticks the criterion it's on, the
+team's ones too if you find one wrong. The box on the task's issue on GitHub changes to match, so
+it reads the same everywhere, and History says `you ticked 9 of 13`. On a `screen` criterion, `Enter`
+shows the Dev's picture for it full-window.
+
+Ticking never stops you accepting: `a` only says how many are left, like `3 criteria not ticked`, and
+`Ctrl+Enter` still accepts. A task with no **Acceptance criteria** section shows no list.
+
 ## Answering from a card
 
 - **Approve a pitch.** Reading a pitch in Pitches, press `a`. It asks first ([Confirming](app.md#confirming)):
@@ -325,9 +340,10 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   `c`, approve with `a` and open it with `g` while the ranks show; there, `h` picks **High**
   rather than hiding History.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,
-  with its acceptance criteria printed first; quit it to come back. If you were reading the task,
-  it opens again where you left it, ready for `a`, `c` or another `t`, and says there why the try
-  failed if it did. While you're already trying that PR in another terminal, it says
+  with its acceptance criteria printed first, **Left for you** and then **Checked by the team**; quit
+  it to come back. If you were reading the task, it opens again on its [Criteria](#criteria) list,
+  or where you left it if it has none, ready for `Space`, `a`, `c` or another `t`, and says there why
+  the try failed if it did. While you're already trying that PR in another terminal, it says
   `#655 is already being tried (pid 48213): quit that one first` and leaves that try alone. A key
   pressed while your comment is still posting waits for it to post.
 - **Edit a document pitch.** Reading a vision draft, a vision review or a docs proposal, which shows
@@ -338,7 +354,8 @@ with the terminal set up as [Copying and links](app.md#copying-and-links) says.
   A pitch that changes more than one file can't be edited here; `g` opens it on GitHub.
 - **Accept finished work.** On a card in Review, or reading one, press `a`. It asks first:
   `Ctrl+Enter` accepts, `Esc` cancels, and `Enter` does nothing, so a stray one can't
-  ([Confirming](app.md#confirming)). For a task, its PR is squash-merged and its
+  ([Confirming](app.md#confirming)), saying how many of a task's [criteria](#criteria) aren't ticked,
+  if any. For a task, its PR is squash-merged and its
   branch deleted. The Customer lead's docs PR and another team's PR are merged the same way, and so is a document pitch,
   from Pitches: the card leaves, and the Lead's next run reads the new vision. If it isn't ready yet,
   `a` says why instead.

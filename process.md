@@ -115,6 +115,11 @@ a-team board {{team}} review reviewer <pr> <file>  # Reviewer only: post the one
 a-team board {{team}} pictures dev <pr> <image> "<caption>" [<image> "<caption>"...]
                                                 # Dev only: store each image as an attached screenshot
                                                 # is, and make them the task PR's What it looks like
+a-team board {{team}} criteria <n> [<pr>]         # task #<n>'s acceptance criteria, numbered, as JSON: ticked or not,
+                                                # and how the team checked each, from its PR
+a-team board {{team}} checked dev <pr> <criterion>=screen|test ...
+                                                # Dev only: say which criteria it saw on screen or proved by a
+                                                # test, on the task PR, and tick them on the issue
 a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass
                                                 # over it from now on
 a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
@@ -180,7 +185,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend`, `trends`, `spending` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
 `overview` is what its Overseer reads, `bumps` is how the dispatcher merges green dependency PRs and hands red ones to the Dev, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
-screenshot, `spent` is how it records the
+screenshot, `tick` is how it saves a tick on a task's criteria, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `free` is how the dispatcher frees a task once what it waits on in
 another repo has closed or been released, and `update` is how it brings a PR In review that's behind

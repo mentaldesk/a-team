@@ -23,7 +23,12 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
     ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null, ReaderRelease? Release = null,
-    ReaderCommand? Fix = null);
+    ReaderCommand? Fix = null, ReaderTick? Tick = null);
+
+/// <summary>Ticking a criterion from the reader: Run saves it on the task, with null once it's saved or else why not;
+/// Settle takes in writes that have finished, which nothing else does while the reader is open; Changed is told how many
+/// are left unticked.</summary>
+public sealed record ReaderTick(Func<Criterion, bool, Task<string?>> Run, Action? Settle = null, Action<int>? Changed = null);
 
 /// <summary>Taking the hold off a held task from the reader: Run posts what's in the Comment pane, if anything, then
 /// releases it, with null once it's under way or else why not.</summary>
@@ -96,6 +101,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string CopyId = "reader.copy";
     private const string QuoteId = "reader.quote";
     private const string BranchId = "reader.branch";
+    private const string TickId = "reader.tick";
     private const int BandLines = 3;
     private static readonly string[] WaitForPost =
         [SetId, ApproveId, AcceptId, FixId, CommentId, DeclineId, NotNowId, ReleaseId, TryId, EditId, CancelId];
@@ -335,10 +341,20 @@ public sealed partial class ReaderDialog : DashboardDialog
             };
             _band.Add(_ranks);
         }
-        if ((tryIt?.Top ?? edit?.Top) is { } top)
+        if (tryIt?.Top is not null && body.Checklist is not null)
+        {
+            _body.ShowLine(body.ChecklistLine);
+            CaretOnCriteria();
+        }
+        else if ((tryIt?.Top ?? edit?.Top) is { } top)
             _body.Top = top;
         else if (OpensAt(item, body) is > 0 and var line)
             _body.ShowLine(line);
+        else if (body.Checklist is not null)
+            CaretOnCriteria();
+        foreach (var criterion in body.Checklist?.Team ?? [])
+            if (criterion.Picture is { } shot)
+                pictures?.For(shot.Url);
         Foot.Y = Pos.Func(_ => FootRow(), this);
         _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines - Alert.Lines), this);
         Alert.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Alert.Lines), this);
@@ -539,6 +555,8 @@ public sealed partial class ReaderDialog : DashboardDialog
             return SwitchPane(+1);
         if (key == Key.Tab.WithShift)
             return SwitchPane(-1);
+        if (_ranks is null && _body.HasFocus && key == Key.Enter && CriterionAtCaret()?.Picture is { } shot)
+            return ViewImage(shot);
         if (_ranks is null && _body.HasFocus && key == Key.Enter && _body.ImageAtCaret is { } image)
             return ViewImage(image);
         if (_ranks is null && _history.HasFocus && key == Key.Enter)
@@ -594,6 +612,8 @@ public sealed partial class ReaderDialog : DashboardDialog
             if (Commands.Find(id) is not null)
                 AddButton(kind, id);
 
+        if (_comment?.Tick is not null && _text.Checklist is not null)
+            Bind(TickId, Key.Space, "Tick", Tick, () => Reads() && _ranks is null && _scrolled == _body && CriterionAtCaret() is not null);
         Bind(HistoryId, new Key('h'), "Show history", ToggleHistory, () => Reads() && _ranks is null);
         Bind("reader.previousRemark", Key.CursorUp.WithAlt, "Previous remark", () => ToRemark(-1), () => Reads() && _scrolled == _body);
         Bind("reader.nextRemark", Key.CursorDown.WithAlt, "Next remark", () => ToRemark(+1), () => Reads() && _scrolled == _body);
@@ -607,7 +627,8 @@ public sealed partial class ReaderDialog : DashboardDialog
         Also("←/→", "Priority", () => _ranks is not null);
         Also("Arrows/PgUp/PgDn", "Move", () => Reads() && _ranks is null);
         Also("Shift+arrows", "Select", () => _ranks is null);
-        Also("Enter", "View the picture", () => Reads() && _ranks is null && _scrolled == _body && _body.ImageAtCaret is not null);
+        Also("Enter", "View the picture", () => Reads() && _ranks is null && _scrolled == _body
+            && (_body.ImageAtCaret is not null || CriterionAtCaret()?.Picture is not null));
         Also("Enter", "Show the comment", () => Reads() && _ranks is null && _scrolled == _history);
         Also("Ctrl+V", "Paste", () => Writing);
         Also("Ctrl+X", "Cut", () => _field.HasFocus);
@@ -644,6 +665,7 @@ public sealed partial class ReaderDialog : DashboardDialog
             Rename(IdeaId, Quoted() > 0 ? $"Idea from {Lines(Quoted())}" : "Idea");
         if (_comment is not null)
             Rename(QuoteId, $"Quote {Lines(marked)}");
+        Rename(TickId, CriterionAtCaret() is { Ticked: true } ? "Untick" : "Tick");
         Rename(HistoryId, HistoryShown ? "Hide history" : "Show history");
         Rename(CancelId, Writing ? _declining ? "Cancel" : _shelving ? "Comment instead" : "Back" : marked > 0 ? "Clear" : "Close");
         Restyle(CancelId, !Writing && marked == 0 && !string.IsNullOrWhiteSpace(_field.Text) ? ButtonKind.Danger : ButtonKind.Secondary);
@@ -888,6 +910,68 @@ public sealed partial class ReaderDialog : DashboardDialog
         else
             Say($"{image.Alt} hasn't finished uploading", Schemes.Error);
         return true;
+    }
+
+    private void CaretOnCriteria() =>
+        _body.PutCaret(_text.ChecklistLine + _text.Checklist!.LineOf(_text.Checklist.First));
+
+    private Criterion? CriterionAtCaret() => _body.Caret is { } caret ? _text.CriterionAt(caret.Line) : null;
+
+    /// <summary>Shown as ticked at once; one the board refuses goes back, saying why.</summary>
+    private bool Tick()
+    {
+        if (CriterionAtCaret() is not { } criterion)
+            return true;
+        var tick = _comment!.Tick!;
+        var ticked = !criterion.Ticked;
+        ShowTick(criterion.Index, ticked);
+        var saving = tick.Run(criterion, ticked);
+        var said = new HistoryEvent((_comment.Clock ?? TimeProvider.System).GetUtcNow(), "you", _text.Checklist!.Said(ticked));
+        if (saving.IsCompleted)
+        {
+            Saved(saving, criterion.Index, ticked, said);
+            return true;
+        }
+        App?.AddTimeout(PollEvery, () =>
+        {
+            tick.Settle?.Invoke();
+            if (!saving.IsCompleted)
+                return true;
+            Saved(saving, criterion.Index, ticked, said);
+            return false;
+        });
+        return true;
+    }
+
+    private void Saved(Task<string?> saving, int index, bool ticked, HistoryEvent said)
+    {
+        var failure = saving.Status == TaskStatus.RanToCompletion
+            ? saving.Result
+            : saving.Exception?.GetBaseException().Message ?? "the tick didn't save";
+        if (failure is { Length: > 0 })
+        {
+            ShowTick(index, !ticked);
+            Say(failure, Schemes.Error);
+        }
+        else if (_text.History is { Failure: null } history)
+        {
+            _text = _text with { History = history.With(said) };
+            _history.Lines = _text.History.Lines;
+        }
+        Offer();
+    }
+
+    /// <summary>Only the box and the count change, so the view and the caret stay where they are.</summary>
+    private void ShowTick(int index, bool ticked)
+    {
+        var caret = _body.Caret;
+        var top = _body.Top;
+        _text = _text.Ticked(index, ticked);
+        _body.Lines = _text.Lines;
+        _body.Top = top;
+        if (caret is { } at)
+            _body.PutCaret(at.Line, at.Offset);
+        _comment?.Tick?.Changed?.Invoke(_text.Checklist!.Unticked);
     }
 
     private bool OnGitHub()

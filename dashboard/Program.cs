@@ -140,6 +140,7 @@ Handover? Show(Handover? back)
         readMoves: (team, since) => command.Read("board", team, "moves", since.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)),
         whatsNew: news,
         readDocument: item => command.Read("board", item.Team, "document", item.Number.ToString()),
+        readCriteria: item => command.Read("board", item.Team, "criteria", item.Number.ToString(), item.Pr.ToString()),
         writes: writes,
         confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
         confirmApprove: item => ApproveDialog.Show(app, item),

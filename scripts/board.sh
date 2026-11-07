@@ -1762,7 +1762,7 @@ keep_image() {
     die "can't store $(basename "$1") on $REPO's $ATTACHMENTS branch"
 }
 
-# with_section: the PR body on stdin with its What it looks like section swapped for $SECTION, just above the
+# with_section: the PR body on stdin with the section $SECTION heads swapped for $SECTION, just above the
 # `a-team try` line and the marker.
 with_section() {
   awk '
@@ -1770,7 +1770,9 @@ with_section() {
       if (seam) { if (out) print "" } else while (blanks-- > 0) print ""
       blanks = 0; seam = 0; out = 1; print line
     }
-    /^## What it looks like[[:space:]]*$/ { skipping = 1; seam = 1; next }
+    BEGIN { heading = ENVIRON["SECTION"]; sub(/\n.*/, "", heading) }
+    { line = $0; sub(/[[:space:]]+$/, "", line) }
+    line == heading { skipping = 1; seam = 1; next }
     skipping && (/^#{1,2} / || /^a-team try / || /^<!-- a-team:/) { skipping = 0 }
     skipping { next }
     /^$/ { blanks++; next }
@@ -2617,6 +2619,95 @@ case "$CMD" in
     say "#$pr: ${#images[@]} picture(s) under What it looks like"
     ;;
 
+  criteria)
+    [ $# -ge 1 ] && [ $# -le 2 ] || die "usage: board.sh $TEAM criteria <n> [<pr>]"
+    pr=${2:-$(pr_for "$1" | jq -r '.number // empty')}
+    issue=$(gh api "repos/$REPO/issues/$1" --jq '.body // ""') || die "can't read #$1"
+    said=""
+    if [ -n "$pr" ]; then
+      said=$(gh api "repos/$REPO/pulls/$pr" --jq '.body // ""') || die "can't read PR #$pr"
+    fi
+    criteria_json "$issue" "$said"
+    ;;
+
+  checked)
+    [ $# -ge 3 ] || die "usage: board.sh $TEAM checked dev <pr> <criterion>=screen|test ..."
+    role=$1 pr=$2
+    case "$role" in
+      dev) ;;
+      lead | customer | reviewer | you) die "$role may not say what the team checked; only dev does, on its own task PR" ;;
+      *) die "unknown role '$role' (dev)" ;;
+    esac
+    shift 2
+    own_task "$role" "$pr"
+    it=$(task_pr "$pr")
+    [ -n "$it" ] || die "#$pr isn't a PR"
+    jq -e "$DEV_TASK_PR" <<<"$it" >/dev/null || die "dev says what it checked only on its own open task PRs (#$pr isn't one)"
+    n=$(jq -r "$CLOSES"'closes[0] // empty' <<<"$it")
+    [ -n "$n" ] || die "#$pr doesn't close an issue"
+    issue=$(gh api "repos/$REPO/issues/$n" --jq '.body // ""') || die "can't read #$n"
+    said=$(jq -r '.body // ""' <<<"$it")
+    list=$(criteria_json "$issue" "$said")
+    pictured=$(jq -Rs "$CRITERIA"'[section("## What it looks like")[] | capture("^!\\[(?<alt>[^\\]]*)\\]") | .alt | norm]' <<<"$said")
+    section="## Checked by the team"$'\n' lines='[]' screens=0 tests=0
+    for each in "$@"; do
+      [[ "$each" =~ ^([1-9][0-9]*)=(screen|test)$ ]] || die "'$each' isn't <criterion>=screen or <criterion>=test"
+      index=${BASH_REMATCH[1]} how=${BASH_REMATCH[2]}
+      one=$(jq -c --argjson i "$index" '.[$i - 1] // empty' <<<"$list")
+      [ -n "$one" ] || die "#$n has no criterion $index"
+      if [ "$how" = screen ]; then
+        jq -e --arg said "$(jq -r .text <<<"$one")" --argjson pictured "$pictured" "$CRITERIA"'$pictured | index($said | norm)' <<<null >/dev/null ||
+          die "criterion $index is screen, but no picture on #$pr is captioned with it: $(jq -r .text <<<"$one")"
+        screens=$((screens + 1))
+      else
+        tests=$((tests + 1))
+      fi
+      section+=$'\n'"- \`$how\` $(jq -r .text <<<"$one")"
+      lines=$(jq -c --argjson line "$(jq .line <<<"$one")" '. + [$line]' <<<"$lines")
+    done
+    dropped=$(jq -c --argjson lines "$lines" 'map(select(.how != null and (.line as $l | $lines | index($l) | not)) | .line)' <<<"$list")
+    ticked=$(jq -Rsr --argjson lines "$lines" --argjson dropped "$dropped" "$CRITERIA"'boxed($lines; "x") | boxed($dropped; " ")' <<<"$issue")
+    body=$(SECTION=$section with_section <<<"$said")
+    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
+    write "tick what the team checked on #$n" gh issue edit "$n" -R "$REPO" --body-file - <<<"$ticked" >/dev/null
+    write "say what the team checked on #$pr" gh pr edit "$pr" -R "$REPO" --body-file - <<<"$body" >/dev/null
+    record "$role" "${A_TEAM_RUN_TASK:-$n}" "checked $((screens + tests)) of $(jq length <<<"$list"): $screens on screen, $tests by test"
+    say "#$n: $((screens + tests)) of $(jq length <<<"$list") checked by the team"
+    ;;
+
+  tick)
+    [ $# -eq 5 ] || die "usage: board.sh $TEAM tick you <n> <criterion> <on|off> <its text>"
+    role=$1 n=$2 index=$3 state=$4 text=$5
+    case "$role" in
+      you) ;;
+      lead | dev | customer | reviewer) die "$role may not tick a criterion; it's the stakeholders' own check" ;;
+      *) die "unknown role '$role' (you)" ;;
+    esac
+    case "$state" in
+      on) mark=x ;;
+      off) mark=' ' ;;
+      *) die "'$state' isn't on or off" ;;
+    esac
+    [[ "$index" =~ ^[1-9][0-9]*$ ]] || die "'$index' isn't a criterion's number"
+    it=$(item "$n")
+    [ -n "$it" ] || die "#$n is not on the board"
+    jq -e '.status == "In review" and ((.labels | index("pitch")) | not)' <<<"$it" >/dev/null ||
+      die "only a task In review has criteria to tick (#$n is '$(jq -r .status <<<"$it")')"
+    issue=$(gh api "repos/$REPO/issues/$n" --jq '.body // ""') || die "can't read #$n"
+    line=$(jq -Rsr --argjson i "$index" --arg text "$text" "$CRITERIA"'criteria_items | .[$i - 1] // empty | select(.text == $text) | .line' <<<"$issue")
+    [ -n "$line" ] || die "#$n's criteria have changed: open it again"
+    ticked=$(jq -Rsr --argjson line "$line" --arg mark "$mark" "$CRITERIA"'boxed([$line]; $mark)' <<<"$issue")
+    write "$([ "$state" = on ] && echo tick || echo untick) criterion $index on #$n" \
+      gh issue edit "$n" -R "$REPO" --body-file - <<<"$ticked" >/dev/null
+    count=$(jq -Rsr "$CRITERIA"'criteria_items | "\(map(select(.ticked)) | length) of \(length)"' <<<"$ticked")
+    if [ "$state" = on ]; then
+      record "$role" "$n" "ticked $count"
+    else
+      record "$role" "$n" "unticked, $count ticked"
+    fi
+    say "#$n: $count ticked"
+    ;;
+
   task)
     [ $# -eq 4 ] || die "usage: board.sh $TEAM task lead <pitch> <title> <file>"
     role=$1 pitch=$2 title=$3 file=$4
@@ -3445,7 +3536,11 @@ case "$CMD" in
         | if $f == [] then . else . + {frees: ($f | unique)} end)' |
       jq --argjson reviewed "$reviewed" 'map(if .status == "In review" and $reviewed["\(.number)"] then . + {chains: $reviewed["\(.number)"]} else . end)' |
       jq --argjson all "$all" "$FACTS"'INDEX($all[]; .number | tostring) as $by
-        | map(($by["\(.number)"] | if . then facts else "" end) as $facts | if $facts != "" then . + {facts: $facts} else . end)')
+        | map(($by["\(.number)"] | if . then facts else "" end) as $facts | if $facts != "" then . + {facts: $facts} else . end)' |
+      jq --argjson unticked "$(jq "$CRITERIA"'[.data.repository | to_entries[] | select(.key | startswith("x"))
+          | {key: .key[1:], value: (.value.body // "" | unticked)}] | from_entries' <<<"$talk")" \
+        'map(if .status == "In review" and (.pitch | not) and ($unticked["\(.number)"] // 0) > 0
+             then . + {unticked: $unticked["\(.number)"]} else . end)')
     snapshot "$(jq 'map(select(.turn != "upstream" and ((.dependency and .status == "In progress") | not))) | length' <<<"$waiting")"
     # A red default branch rides along as an entry with no number, which readers of the items pass over.
     if [ "$main" != null ]; then

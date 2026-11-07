@@ -16,6 +16,53 @@ dispatcher_record() {
     '{$bin, $version, $dryRun, $interval, $log, $installedAt}'
 }
 
+# CRITERIA: reading a task's acceptance criteria and the team's record of them, as jq.
+# criteria_items: an issue body's checklist. section: the lines under a PR body's heading.
+# criteria($pr): the checklist with how the team checked each, and its picture. boxed: the body with those lines ticked.
+CRITERIA='
+def criteria_items:
+  gsub("\r"; "") | split("\n") | to_entries
+  | reduce .[] as $e ({on: false, done: false, items: []};
+      if .done then .
+      elif ($e.value | test("^#+\\s+[Aa]cceptance [Cc]riteria\\s*$")) then .on = true
+      elif (.on | not) then .
+      elif ($e.value | test("^#+\\s")) then .done = true
+      elif ($e.value | test("^\\s*$")) then .
+      elif ($e.value | test("^\\s*[-*+]\\s")) then
+        ($e.value | capture("^(?<lead>\\s*)[-*+]\\s+(\\[(?<box>[ xX])\\]\\s*)?(?<text>.*)$")) as $m
+        | .items += [{line: $e.key, depth: (if $m.lead == "" then 0 else 1 end),
+                      ticked: (($m.box // " ") != " "), text: $m.text}]
+      elif (.items | length) > 0 then .items[-1].text += " " + ($e.value | sub("^\\s+"; ""))
+      else . end)
+  | .items;
+def unticked: criteria_items | map(select(.ticked | not)) | length;
+def section($heading):
+  (gsub("\r"; "") | split("\n")) as $lines | ($lines | map(sub("\\s+$"; "")) | index($heading)) as $at
+  | if $at == null then [] else $lines[($at + 1):]
+    | (map(test("^#{1,2} |^a-team try |^<!-- a-team:")) | index(true)) as $end
+    | if $end then .[:$end] else . end end;
+def norm: gsub("[\\[\\]]"; "") | gsub("\\s+"; " ") | sub("^ "; "") | sub(" $"; "");
+def criteria($pr):
+  ([$pr | section("## Checked by the team")[] | capture("^- `(?<how>screen|test)` (?<text>.*)$")
+    | {key: (.text | norm), value: .how}] | from_entries) as $how
+  | ([$pr | section("## What it looks like")[] | capture("^!\\[(?<alt>[^\\]]*)\\]\\((?<url>\\S+?)\\)\\s*$")
+      | {key: (.alt | norm), value: .}] | from_entries) as $shot
+  | criteria_items | to_entries
+  | map(.value + {index: (.key + 1)} | (.text | norm) as $said | . + {how: $how[$said]}
+        | . + {picture: (if .how == "screen" then $shot[$said] else null end)});
+def boxed($lines; $mark):
+  split("\n") | to_entries
+  | map(.key as $k | if ($lines | index($k)) != null
+        then .value | sub("^(?<lead>\\s*[-*+]\\s+)(\\[[ xX]\\]\\s?)?"; "\(.lead)[\($mark)] ")
+        else .value end)
+  | join("\n");
+'
+
+# criteria_json <issue body> <PR body>: the issue's checklist, with what the PR records about each criterion.
+criteria_json() {
+  jq -Rs --arg pr "$2" "$CRITERIA"'criteria($pr)' <<<"$1"
+}
+
 team_config() { echo "$CONFIG_DIR/teams/$1.json"; }
 
 # team_roles <config>: the roles a team runs, the Customer lead and the Reviewer only where they're turned on.

@@ -14,6 +14,12 @@ public sealed record WaitingItem(
     /// <summary>Whether it's the task that makes the team's red default branch green again.</summary>
     public bool Fix { get; init; }
 
+    /// <summary>How many of a task's acceptance criteria aren't ticked.</summary>
+    public int Unticked { get; init; }
+
+    /// <summary>Whether the reader lists its acceptance criteria: a task of the Dev's, with its PR In review.</summary>
+    public bool HasCriteria => Status == "In review" && !Pitch && !Document && !Docs && !Dependency && Pr > 0 && Pr != Number;
+
     /// <summary>What a-team keeps of it beyond Status and Priority: the Lead's rank, its theme, a shelve, a skip, a hold
     /// or a wait on another repo.</summary>
     public string Facts { get; init; } = "";
@@ -143,7 +149,7 @@ public sealed record WaitingItem(
                         Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream"),
                         Linked(item) is { Count: > 0 } chains ? chains : null,
                         Numbers(item, "frees") is { Count: > 0 } frees ? frees : null, Text(item, "heldBy"))
-                    { Fix = Flag(item, "fix"), Facts = Text(item, "facts") })
+                    { Fix = Flag(item, "fix"), Facts = Text(item, "facts"), Unticked = Numbered(item, "unticked") ?? 0 })
             ];
         }
         catch (JsonException)

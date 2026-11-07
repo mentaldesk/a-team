@@ -7,7 +7,13 @@ public static class AcceptDialog
 {
     internal static readonly ConfirmAction Accept = new("Accept", ButtonKind.Primary, Confirm.Chord);
 
-    internal static string Says(WaitingItem item) => item.Document
+    internal static string Says(WaitingItem item) => NotTicked(item) + Does(item);
+
+    private static string NotTicked(WaitingItem item) =>
+        !item.HasCriteria || item.Unticked == 0 ? ""
+        : $"{item.Unticked} {(item.Unticked == 1 ? "criterion" : "criteria")} not ticked.\n\n";
+
+    private static string Does(WaitingItem item) => item.Document
         ? $"Merges #{item.Number} into {(item.Base.Length > 0 ? item.Base : "main")}, squashed. " +
           (item.Docs ? "The Customer lead then writes the docs it outlines." : "The Lead's next run reads it.")
         : item.Pitch
