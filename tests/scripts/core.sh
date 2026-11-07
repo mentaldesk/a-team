@@ -185,14 +185,27 @@ Ready 8 A task
 ITEMS
 board_moved_over
 before=$(card 8)
-KEEP_BOARD=1 run board --dry-run demo move dev 8 "In progress"
+own_tmp=$(mktemp -d "$WORK/own-tmp.XXXXXX")
+TMPDIR="$own_tmp" KEEP_BOARD=1 run board --dry-run demo move dev 8 "In progress"
 same "exit" 0 "$STATUS"
 same "handled" "handled move" "$(traced)"
 same "said" "(dry run) #8: Ready -> In progress" "$(cat "$OUT")"
 grep -q "dry-run: would set #8 to 'In progress'" "$ERR" || fail "would: '$(cat "$ERR")'"
 same "record" "$before" "$(card 8)"
 same "history" "" "$(events 8)"
-same "copies left behind" "" "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'a-team-history.*' -newer "$CONFIG" 2>/dev/null | head -1)"
+same "copies left behind" "" "$(find "$own_tmp" -maxdepth 1 -name 'a-team-history.*')"
+
+case_ "a dry run board.sh answers leaves no copy of the record either"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+ITEMS
+board_moved_over
+own_tmp=$(mktemp -d "$WORK/own-tmp.XXXXXX")
+TMPDIR="$own_tmp" KEEP_BOARD=1 run board --dry-run demo overview
+grep -q "fallback overview: not ported yet" "$TRACE" || fail "overview: '$(cat "$TRACE")'"
+: >"$TRACE"
+same "copies left behind" "" "$(find "$own_tmp" -maxdepth 1 -name 'a-team-history.*')"
 
 case_ "a swap in Pitched is refused unless a draft displaces it"
 core_fixture
