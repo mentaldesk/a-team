@@ -61,8 +61,9 @@ task ([below](#holding-up-a-task)), like `tui ⛓ 1 ◇ 1 PR2`, so one on a tab 
 still shows. With `Ctrl+T M` on, it counts only your moves, and a
 column with nothing showing isn't counted. Work opens on the first team with something waiting. Each tab has up to four
 columns, left to right in the order work moves through them. A column with nothing in it is hidden,
-and the one you're on takes half the tab. Only that column highlights its card, the one your keys act
-on; the others, and the other tabs, keep their place for when you come back.
+and the one you're on is always the widest: two-thirds of the tab when two are showing, half when
+more are. Only that column highlights its card, the one your keys act on; the others, and the other
+tabs, keep their place for when you come back.
 
 ## Columns
 

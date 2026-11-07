@@ -171,6 +171,81 @@ public class WorkViewTests
             view.Lanes[0].Columns[1].CardText);
     }
 
+    [Theory]
+    [InlineData(122, 80, 40)]
+    [InlineData(123, 81, 40)]
+    [InlineData(84, 55, 27)]
+    public void Beside_one_other_the_selected_column_takes_two_thirds_and_moving_swaps_them(int terminal, int wide, int narrow)
+    {
+        using var view = Open(["a-team"]);
+        view.Show([.. Waiting.Where(item => item.Team == "a-team" && item.Number != 6)]);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+
+        LayOut(view, terminal, 20);
+        var lane = view.Lanes[0];
+        Assert.Equal([0, wide, 0, narrow], lane.Columns.Select(column => column.Frame.Width));
+        Assert.Equal(lane.Viewport.Width, lane.Columns[3].Frame.Right);
+
+        view.MoveColumn(+1);
+        LayOut(view, terminal, 20);
+        Assert.Equal([0, narrow, 0, wide], lane.Columns.Select(column => column.Frame.Width));
+        Assert.Equal(lane.Viewport.Width, lane.Columns[3].Frame.Right);
+    }
+
+    [Fact]
+    public void One_column_takes_the_whole_tab_at_any_width()
+    {
+        Assert.Equal([121], WorkLane.Share(121, 1, 0));
+        Assert.Equal([121], WorkLane.Share(121, 1, null));
+    }
+
+    [Theory]
+    [InlineData(120, 80, 40)]
+    [InlineData(121, 81, 40)]
+    [InlineData(122, 82, 40)]
+    [InlineData(7, 5, 2)]
+    public void Two_columns_give_the_selected_one_two_thirds_rounded_in_its_favour(int width, int wide, int narrow)
+    {
+        Assert.Equal([wide, narrow], WorkLane.Share(width, 2, 0));
+        Assert.Equal([narrow, wide], WorkLane.Share(width, 2, 1));
+    }
+
+    [Theory]
+    [InlineData(120, 3, new[] { 30, 60, 30 })]
+    [InlineData(121, 3, new[] { 30, 60, 31 })]
+    [InlineData(120, 5, new[] { 15, 60, 15, 15, 15 })]
+    [InlineData(121, 5, new[] { 15, 60, 15, 15, 16 })]
+    public void Three_or_more_columns_keep_the_selected_one_at_half(int width, int count, int[] widths) =>
+        Assert.Equal(widths, WorkLane.Share(width, count, 1));
+
+    [Fact]
+    public void The_selected_column_is_the_widest_and_the_widths_fill_the_tab()
+    {
+        foreach (var width in Enumerable.Range(2, 300))
+            foreach (var count in new[] { 2, 3, 4, 5 })
+                foreach (var selected in Enumerable.Range(0, count))
+                {
+                    var widths = WorkLane.Share(width, count, selected);
+                    Assert.Equal(width, widths.Sum());
+                    Assert.Equal(widths.Max(), widths[selected]);
+                }
+    }
+
+    [Fact]
+    public void Hidden_columns_take_no_width()
+    {
+        using var view = Open(["a-team"]);
+        view.Show([.. Waiting.Where(item => item.Team == "a-team" && item.Number != 6)]);
+        LayOut(view, 122, 20);
+        view.FocusFirstCard();
+
+        LayOut(view, 122, 20);
+
+        Assert.Equal(0, view.Lanes[0].Columns[0].Frame.Width);
+        Assert.Equal(120, view.Lanes[0].Columns.Sum(column => column.Frame.Width));
+    }
+
     [Fact]
     public void A_tab_with_nothing_in_it_shows_no_column()
     {
