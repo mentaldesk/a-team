@@ -6,6 +6,17 @@ namespace ATeam.Core;
 /// <summary>Filing work, and the stakeholders' gates: what approves, declines, shelves, accepts and closes it.</summary>
 internal static partial class Commands
 {
+    private static Dictionary<string, Handler> Gating() => new()
+    {
+        ["task"] = Task,
+        ["fix"] = Fix,
+        ["approve"] = Approve,
+        ["decline"] = Decline,
+        ["shelve"] = Shelve,
+        ["accept"] = Accept,
+        ["finish"] = Finish,
+    };
+
     private static bool Blank(string text) => text.All(char.IsWhiteSpace);
 
     private static void NeedsFile(string file)

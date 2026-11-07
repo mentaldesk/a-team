@@ -11,13 +11,14 @@ internal static class Program
     /// <summary>What board.sh asks of the core, on the record it has open.</summary>
     private static readonly HashSet<string> Internal = ["__sync", "__items", "__mirror-push"];
 
-    private static readonly HashSet<string> Ported =
-    [
-        .. Internal, "list", "move", "add", "claim", "task", "fix", "approve", "decline", "shelve", "accept", "finish", "bumps", "adopt",
-    ];
-
     /// <summary>The commands that speak as their first argument, a role's App or you.</summary>
-    private static readonly HashSet<string> Spoken = ["move", "add", "claim", "task", "fix", "approve", "decline", "shelve", "accept", "finish"];
+    private static readonly HashSet<string> Spoken =
+    [
+        "accept", "add", "approve", "attach", "audited", "claim", "comment", "covered", "decide", "decision", "decline", "depends", "edit",
+        "feedback", "finish", "fix", "gave", "hold", "mine", "move", "new", "pictures", "priority", "recommend", "reconfirm", "release",
+        "replace", "review", "secret", "seeded", "shelve", "skip", "spent", "task", "theme", "triggers", "unblock", "undepend", "unlink",
+        "vision-review",
+    ];
 
     private static int Main(string[] args)
     {
@@ -106,7 +107,8 @@ internal static class Program
             throw new Fallback("a usage error");
         var (team, command) = (words[0], words[1]);
         var rest = words[2..];
-        if (!Ported.Contains(command))
+        var commands = Commands.All();
+        if (!Internal.Contains(command) && !commands.ContainsKey(command))
             throw new Fallback("not ported yet");
 
         var configDir = Dir("A_TEAM_CONFIG", "XDG_CONFIG_HOME", ".config");
@@ -127,7 +129,8 @@ internal static class Program
         Board.State = state;
         Board.Root = RootDir;
         Board.ConfigDir = configDir;
-        var token = Spoken.Contains(command) ? Speaker(team, command, rest, state, config) : null;
+        var token = command == "lead-next" ? Speaker(team, command, "lead", state, config)
+            : Spoken.Contains(command) ? Speaker(team, command, SpeakerOf(command, rest), state, config) : null;
 
         var history = Environment.GetEnvironmentVariable("A_TEAM_HISTORY");
         if (string.IsNullOrEmpty(history))
@@ -157,22 +160,7 @@ internal static class Program
                 var gate = FormatGate(dry, team);
                 if (gate != 0) return gate;
             }
-            return command switch
-            {
-                "list" => Commands.List(board, rest),
-                "move" => Commands.Move(board, rest),
-                "add" => Commands.Add(board, rest),
-                "claim" => Commands.Claim(board, rest),
-                "task" => Commands.Task(board, rest),
-                "fix" => Commands.Fix(board, rest),
-                "approve" => Commands.Approve(board, rest),
-                "decline" => Commands.Decline(board, rest),
-                "shelve" => Commands.Shelve(board, rest),
-                "accept" => Commands.Accept(board, rest),
-                "finish" => Commands.Finish(board, rest),
-                "bumps" => Commands.Bumps(board, rest),
-                _ => Commands.Adopt(board, rest),
-            };
+            return commands[command](board, rest);
         }
         finally
         {
@@ -222,10 +210,12 @@ internal static class Program
         return dry ? Proc.Run("bash", Shell, "--dry-run", team, "format") : Proc.Run("bash", Shell, team, "format");
     }
 
+    private static string SpeakerOf(string command, string[] rest) =>
+        command == "triggers" && rest.FirstOrDefault() == "--sweep" ? rest.ElementAtOrDefault(1) ?? "" : rest.FirstOrDefault() ?? "";
+
     /// <summary>The token a role's command acts with. As you, whatever this shell's login is, unless this is a team's run.</summary>
-    private static string? Speaker(string team, string command, string[] rest, string state, JsonObject config)
+    private static string? Speaker(string team, string command, string speaker, string state, JsonObject config)
     {
-        var speaker = rest.Length > 0 ? rest[0] : "";
         if (speaker == "you")
         {
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("A_TEAM_RUN_TEAM")))

@@ -6,6 +6,12 @@ namespace ATeam.Core;
 /// <summary>The PRs that reach the board by themselves: Dependabot's, and the Dev's on other repos.</summary>
 internal static partial class Commands
 {
+    private static Dictionary<string, Handler> Arriving() => new()
+    {
+        ["bumps"] = Bumps,
+        ["adopt"] = Adopt,
+    };
+
     private const int RefusalsBeforeAsking = 3;
 
     private static bool Merges(JsonNode pr, string slug) =>

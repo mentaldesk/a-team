@@ -6,6 +6,23 @@ namespace ATeam.Core;
 /// <summary>What moves a card: `move` and `add`, `claim`, and the commands behind the stakeholders' gates.</summary>
 internal static partial class Commands
 {
+    internal delegate int Handler(Board board, string[] args);
+
+    /// <summary>Every command the core runs, each group's from its own file.</summary>
+    internal static Dictionary<string, Handler> All()
+    {
+        Dictionary<string, Handler>[] groups = [Moving(), Gating(), Arriving()];
+        return groups.SelectMany(group => group).ToDictionary();
+    }
+
+    private static Dictionary<string, Handler> Moving() => new()
+    {
+        ["list"] = List,
+        ["move"] = Move,
+        ["add"] = Add,
+        ["claim"] = Claim,
+    };
+
     private static void CheckRole(string role)
     {
         if (!StatusRoute.Roles.Contains(role))
