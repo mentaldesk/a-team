@@ -149,6 +149,33 @@ APP_FROM=2026-09-29T00:00:00Z
 BOT=$(cfg .app.slug)
 BOT=${BOT:+${BOT}[bot]}
 
+# act_as_app <role>: from here on gh is the team's App, whatever login this shell has, or the command stops before it reaches GitHub.
+act_as_app() {
+  local why=
+  if [ -z "$(cfg .app.id)" ]; then
+    why="no GitHub App: run a-team app create $TEAM, then install it"
+  elif ! GH_TOKEN=$("$ROOT/bin/a-team" token "$TEAM" 2>&1); then
+    why=${GH_TOKEN#a-team token: }
+  fi
+  [ -z "$why" ] || die "$1 acts as ${BOT:-the App}, which can't get a token: $why"
+  export GH_TOKEN
+}
+
+case "$CMD" in
+  accept | add | approve | attach | audited | claim | comment | covered | decide | decision | decline | depends | \
+    edit | feedback | finish | fix | hold | mine | move | new | pictures | priority | recommend | reconfirm | \
+    release | replace | review | seeded | shelve | skip | spent | task | theme | triggers | unblock | undepend | \
+    unlink | vision-review)
+    speaker=${1:-}
+    [ "$CMD" != triggers ] || [ "$speaker" != --sweep ] || speaker=${2:-}
+    case "$speaker" in
+      lead | dev | customer | reviewer) act_as_app "$speaker" ;;
+      you) [ -z "${A_TEAM_RUN_TEAM:-}" ] || die "only the stakeholder can $CMD as you, and this is a team's run" ;;
+    esac
+    ;;
+  lead-next) act_as_app lead ;;
+esac
+
 # login: an author as REST spells it. GraphQL leaves a bot's "[bot]" off its login.
 LOGIN='if . == null then "" elif .__typename == "Bot" then "\(.login)[bot]" else .login end'
 
@@ -299,8 +326,24 @@ customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
 
 reviewer_on() { jq -e '.roles.reviewer == true' "$CONFIG" >/dev/null 2>&1; }
 
-# Whether the first page of the user docs, the config's `docs`, is on the default branch.
-docs_there() { [ -n "$(cfg .docs)" ] && gh api "repos/$REPO/contents/$(cfg .docs)" --silent >/dev/null 2>&1; }
+# `gh api "$@"`, passing on what it prints: 1 only on GitHub's 404, 2 where GitHub didn't answer.
+file_there() {
+  local trouble
+  { trouble=$(gh api "$@" 2>&1 >&3); } 3>&1 && return 0
+  [[ $trouble == *"(HTTP 404)"* ]] && return 1
+  return 2
+}
+
+# Whether the first page of the user docs, the config's `docs`, is on the default branch, as file_there says.
+docs_there() { [ -n "$(cfg .docs)" ] && file_there "repos/$REPO/contents/$(cfg .docs)" --silent >/dev/null; }
+
+# docs_there, refusing to go on where GitHub didn't answer.
+docs_known() {
+  local there=0
+  docs_there || there=$?
+  [ "$there" != 2 ] || die "GitHub didn't answer for $(cfg .docs): try again"
+  return "$there"
+}
 
 # A stakeholder asked for a vision review from Commands, and no review PR has opened since.
 VISION_ASKED="$STATE/$TEAM/lead/vision-review"
@@ -947,6 +990,32 @@ CYCLES="$MOVE"'
        withYou: ($review.review + $waited + if $review.since == null then 0
                  else $to - ($review.since | fromdateiso8601) end)};'
 
+# touches($by; $work; $since): per task in $work accepted since then, your comments on it or its PR once it reached review.
+# finished($by; $tasks; $since): per pitch finished since then, whether you approved it with nothing to say while
+# Pitched and never commented on its tasks or their PRs. $by holds each item's events, $tasks each pitch's tasks.
+TOUCHES='
+  def said: .who == "you" and .what == "commented";
+  def merged: capture("^accepted · PR #(?<pr>[0-9]+) ").pr | tonumber;
+  def on($by): .[] as $n | $by[$n | tostring][]?;
+  def touches($by; $work; $since): map(select(.who == "you" and (.what | startswith("accepted · ")) and .at > $since
+        and (.item | IN($work[]))))
+    | group_by(.item)
+    | map(([.[0].item] + [.[].what | merged] | unique | [on($by)]) as $events
+        | ([$events[] | select(.what | move | .to == "In review") | .at] | min // "") as $review
+        | {accepted: (map(.at) | max), touches: ([$events[] | select(said and .at >= $review)] | length)})
+    | sort_by(.accepted);
+  def finished($by; $tasks; $since): map(select((.what | startswith("closed as done")) and .at > $since))
+    | group_by(.item) | map(last | . as $closed
+      | (reduce $by[.item | tostring][] as $e ({pitched: false, approved: false, said: false};
+          (if .pitched and ($e | said) then .said = true else . end)
+          | ([$e.what | move] | first) as $m
+          | if $m == null then . else .pitched = ($m.to == "Pitched")
+              | .approved = (.approved or ($m.from == "Pitched" and $m.to == "Approved")) end)) as $pitch
+      | ($tasks[.item | tostring] // []) as $own
+      | ($own + [$own | on($by) | .what | merged] + [.what | scan("#[0-9]+") | .[1:] | tonumber]) as $items
+      | {at: .at, untouched: ($pitch.approved and ($pitch.said | not) and ([$items | on($by) | select(said)] | length) == 0)})
+    | sort_by(.at);'
+
 # sql_now <modifier>: now, moved by an SQLite date modifier, in the record's own format.
 sql_now() { printf "strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ', 'now', '%s')" "$1"; }
 
@@ -1173,9 +1242,17 @@ agent_written() {
   gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev|customer|reviewer) -->'
 }
 
-# The number of the issue #1 is a sub-issue of, or nothing.
+# The number of the issue #1 is a sub-issue of, or nothing. GraphQL answers only for an item the record has not seen.
 parent_of() {
-  gh api "repos/$REPO/issues/$1" --jq '.parent_issue_url // empty | split("/") | last'
+  local known
+  known=$(item "$1")
+  if [ -n "$known" ]; then
+    jq -r '.parent // empty' <<<"$known"
+    return
+  fi
+  gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F n="$1" --jq '.data.repository.issueOrPullRequest.parent.number // empty' \
+    -f query='query ParentOf($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
+      issueOrPullRequest(number: $n) { ... on Issue { parent { number } } } } }'
 }
 
 # idea <issue> <status>: the child is an idea rather than a task, by its labels or its board status.
@@ -2177,6 +2254,8 @@ UPSTREAM_REVIEWED='.status == "In review" and .type == "Issue" and .marks.upstre
 FIX='(.marks.fix // false)'
 # A pitch the Lead may file tasks under.
 FILEABLE='(.labels | index("pitch")) and (.status == "Approved" or .status == "Building")'
+# A sub-issue the Lead filed as a task that the board left in Idea, unlike an idea, which is marked or isn't the Lead's.
+LEFT_IN_IDEA='.status == "Idea" and (.labels | index("pitch") | not) and (.marks.idea | not) and ((.body // "") | contains("<!-- a-team:lead -->"))'
 # The Dev's tasks that take up one of wip.worktrees.
 WORKING='.marks.dev and (.status == "In progress" or .status == "In review")'" and ($BLOCKED | not)"
 
@@ -2412,13 +2491,13 @@ case "$CMD" in
       other=$(items | jq -r --argjson n "$n" '[.[] | select(.marks.customer
         and .status == "In review" and .number != $n) | .number] | first // empty')
       [ -z "$other" ] || die "customer's docs PR #$other is still open: add to it rather than opening another"
-      docs_there || die "$(cfg .docs) isn't in $REPO yet: propose the docs before writing any"
+      docs_known || die "$(cfg .docs) isn't in $REPO yet: propose the docs before writing any"
     elif [ "$role:$to" = "customer:Pitched" ]; then
       customer_on || die "$TEAM has no Customer lead (roles.customer in $TEAM.json)"
       gh api "repos/$REPO/pulls/$n" --jq '.state == "open" and .draft
           and ((.body // "") | contains("<!-- a-team:customer -->"))' 2>/dev/null | grep -qx true ||
         die "customer may only put its own open draft docs proposal in Pitched (#$n isn't one)"
-      ! docs_there || die "$(cfg .docs) is already in $REPO: no docs proposal needed"
+      ! docs_known || die "$(cfg .docs) is already in $REPO: no docs proposal needed"
       other=$(items | jq -r --argjson n "$n" '[.[] | select(.marks.customer
         and (.status == "In review" or .status == "Pitched") and .number != $n) | .number] | first // empty')
       [ -z "$other" ] || die "customer's #$other is still open: no docs proposal beside it"
@@ -3069,8 +3148,17 @@ case "$CMD" in
         die "$role may only take a task off a pitch in Building (#$parent is '$pitch_status')"
     fi
     [ "$(parent_of "$child")" = "$parent" ] || die "#$child is not a sub-issue of #$parent"
+    case "$pitch_status" in
+      Approved | Building)
+        ! jq -e --argjson n "$child" --argjson issue "$issue" \
+          "first(.[] | select(.number == \$n)) | .body = \$issue.body | $LEFT_IN_IDEA" <<<"$all" >/dev/null ||
+          die "#$child is a task left in Idea, not an idea: put it in Ready with: board.sh $TEAM add lead $child Ready"
+        ;;
+    esac
     write "take #$child off #$parent" gh api -X DELETE "repos/$REPO/issues/$parent/sub_issue" \
       -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
+    [ -n "$DRY_RUN" ] || history_sql "UPDATE board SET content = json_remove(content, '\$.parent')
+      WHERE team = $(sql "$TEAM") AND item = $child;" >/dev/null
     record "$role" "$child" "taken off #$parent"
     if [ -z "$followup" ]; then
       say "#$child is no longer a sub-issue of #$parent"
@@ -3294,8 +3382,9 @@ case "$CMD" in
   children)
     [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
     gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
-      jq -s --argjson all "$(items)" 'add // [] | map(.number as $n | {number, title, state, labels: [.labels[].name],
-        status: ([$all[] | select(.number == $n) | .status] | first)})'
+      jq -s --argjson all "$(items)" "add // [] | map(.number as \$n | ([\$all[] | select(.number == \$n)] | first) as \$on
+        | .labels |= map(.name) | .status = \$on.status | .marks = \$on.marks
+        | {number, title, state, labels, status, leftInIdea: ($LEFT_IN_IDEA)})"
     ;;
 
   waiting)
@@ -3509,7 +3598,7 @@ case "$CMD" in
   trends)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM trends"
     if [ ! -f "$STATE/history.db" ]; then
-      echo '{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0, "spentSince": null, "spent": []}'
+      echo '{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0, "spentSince": null, "spent": [], "touches": [], "finished": []}'
       exit 0
     fi
     team=$(sql "$TEAM")
@@ -3529,9 +3618,22 @@ case "$CMD" in
         (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost,
         (SELECT MIN(at) FROM spent WHERE team = $team) AS spentSince,
         (SELECT json_group_array(json_object('at', at, 'seconds', seconds, 'gate', gate)) FROM (SELECT at, seconds, gate
-          FROM spent WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS spent;" |
-      jq --argjson worktrees "$(jq '.wip.worktrees // null' "$CONFIG")" "$CYCLES"'.[0]
+          FROM spent WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS spent,
+        $(sql_now '-15 days') AS fortnight,
+        (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
+          WHERE team = $team AND (who = 'you' AND (what = 'commented' OR what LIKE 'accepted · %')
+            OR what LIKE 'closed as done%' OR what LIKE '% → %' OR what LIKE 'added as %') ORDER BY at, id)) AS said,
+        (SELECT json_group_array(json_object('item', item, 'parent', json_extract(content, '\$.parent'))) FROM board
+          WHERE team = $team AND json_extract(content, '\$.type') = 'Issue'
+            AND (json_extract(content, '\$.parent') IS NOT NULL OR json_extract(marks, '\$.dev'))) AS tasks;" |
+      jq --argjson worktrees "$(jq '.wip.worktrees // null' "$CONFIG")" "$CYCLES$TOUCHES"'.[0]
         | .queue |= fromjson | .accepted |= fromjson | .spent |= fromjson
+        | (.said | fromjson) as $said
+        | (reduce $said[] as $e ({}; .[$e.item | tostring] += [$e])) as $by
+        | (.tasks | fromjson) as $work
+        | (reduce ($work[] | select(.parent)) as $t ({}; .[$t.parent | tostring] += [$t.item])) as $tasks
+        | .fortnight as $since | .touches = ($said | touches($by; [$work[].item]; $since)) | .finished = ($said | finished($by; $tasks; $since))
+        | del(.fortnight, .said, .tasks)
         | (.moves | fromjson | waits($worktrees)) as $waits
         | .cycles |= (fromjson | group_by(.item) | map(cycle($waits)) | sort_by(.accepted)) | del(.moves)'
     ;;
@@ -3957,7 +4059,9 @@ case "$CMD" in
           | map("\(.status)\t\(.number)") | first // empty' <<<"$all")
         status=${docs%%$'\t'*} n=${docs##*$'\t'}
         kind=''
-        if ! docs_there; then
+        there=0
+        docs_there || there=$?
+        if [ "$there" = 1 ]; then
           # The first audit after the docs page appears writes the docs it outlines.
           rm -f "$AUDITED"
           if [ "$status" = Pitched ]; then
@@ -3965,7 +4069,7 @@ case "$CMD" in
           else
             reasons+=("no user docs yet: propose where they'll live")
           fi
-        else
+        elif [ "$there" = 0 ]; then
           for p in $accepted; do
             grep -qx "$p" "$COVERED" || reasons+=("pitch #$p is done: check the docs cover what it shipped")
           done
@@ -4061,6 +4165,10 @@ case "$CMD" in
     fatal=0 minor=0
     problem() { printf '%-10s%s\n' "$1" "$2"; fatal=1; }
     note() { printf '%-10s%s\n' "$1" "$2"; minor=1; }
+    # `not_there <topic> <file_there's status> <file> <what to say on a 404>`
+    not_there() {
+      if [ "$2" = 1 ]; then note "$1" "$4"; else note "$1" "GitHub didn't answer for $3: checking again next pass"; fi
+    }
     reached='' unreachable=''
     behind=$(format_behind)
     [ -z "$behind" ] || problem board "$behind"
@@ -4083,25 +4191,25 @@ case "$CMD" in
     fi
     vision=$(cfg .vision)
     if [ -n "$reached" ] && [ -n "$vision" ]; then
-      if ! drafted=$(gh api -H 'Accept: application/vnd.github.raw' "repos/$REPO/contents/$vision" 2>/dev/null); then
-        note vision "$vision isn't in $REPO yet: the Lead will draft one and open it as a draft PR"
-      elif grep -qF '<!-- a-team:lead -->' <<<"$drafted"; then
-        note vision "drafted by the Lead: Write the vision with me replaces it"
+      if drafted=$(file_there -H 'Accept: application/vnd.github.raw' "repos/$REPO/contents/$vision"); then
+        ! grep -qF '<!-- a-team:lead -->' <<<"$drafted" || note vision "drafted by the Lead: Write the vision with me replaces it"
+      else
+        not_there vision $? "$vision" "$vision isn't in $REPO yet: the Lead will draft one and open it as a draft PR"
       fi
     fi
     if customer_on; then
       if [ -z "$(cfg .docs)" ]; then
         note docs "$TEAM.json names no docs page, so the Customer lead has nothing to keep right"
-      elif [ -n "$reached" ] && ! docs_there; then
-        note docs "$(cfg .docs) isn't in $REPO yet: the Customer lead will propose the docs as a draft PR"
+      elif [ -n "$reached" ]; then
+        docs_there || not_there docs $? "$(cfg .docs)" "$(cfg .docs) isn't in $REPO yet: the Customer lead will propose the docs as a draft PR"
       fi
     fi
     release=$(cfg .release)
     case "${release:-never}" in
       never) ;;
       daily | continuous)
-        [ -z "$reached" ] || gh api "repos/$REPO/actions/workflows/release.yml" --silent >/dev/null 2>&1 ||
-          note release "release is $release, but $REPO has no release.yml workflow for it to run" ;;
+        [ -z "$reached" ] || file_there "repos/$REPO/actions/workflows/release.yml" --silent >/dev/null ||
+          not_there release $? release.yml "release is $release, but $REPO has no release.yml workflow for it to run" ;;
       *) note release "release is '$release': expected never, daily or continuous" ;;
     esac
     read_err=$(mktemp)
@@ -4162,7 +4270,7 @@ case "$CMD" in
       [ -n "$BOT" ] || { problem app "$TEAM has no GitHub App: run a-team app create $TEAM, then install it"; return; }
       source "$ROOT/scripts/github-app.sh"
       has_app_key "${REPO%/*}" || {
-        problem app "$BOT has no key in the login Keychain (service '$KEYCHAIN_SERVICE', account '${REPO%/*}'): run a-team app create $TEAM"
+        problem app "$BOT has no key in the login Keychain (service '$KEYCHAIN_SERVICE', account '${REPO%/*}'): $(key_advice "${REPO%/*}")"
         return
       }
       local token line="identity: $BOT"

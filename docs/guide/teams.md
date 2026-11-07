@@ -167,6 +167,10 @@ it found.
 - **`can't read this file`**: the team's file isn't valid. Select it, and the foot of the screen names
   the line that's wrong. Fix it in the file; the team can't be started or paused until you do.
 
+`GitHub didn't answer for docs/guide/index.md: checking again next pass` means GitHub couldn't say
+whether a file is there, so nothing is treated as missing. It's the same for the vision and `release.yml`,
+and it clears by itself once GitHub answers.
+
 `a-team board <team> check` reports the same problems from a shell.
 
 ## Settings

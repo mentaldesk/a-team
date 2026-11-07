@@ -74,6 +74,17 @@ public class TeamHealthTests
     }
 
     [Fact]
+    public void GitHub_not_answering_for_the_docs_page_is_a_note_that_Health_counts()
+    {
+        var health = TeamHealth.Parse(new Reading("""
+            docs      GitHub didn't answer for docs/guide/index.md: checking again next pass
+            """, null));
+
+        Assert.Equal("1 problem", health.Column);
+        Assert.Empty(health.Fatal);
+    }
+
+    [Fact]
     public void A_team_with_only_notes_or_one_fatal_problem_says_so_in_kind()
     {
         Assert.Null(new TeamHealth([new TeamProblem("labels", "no 'pitch' label")]).Failed("goose"));
