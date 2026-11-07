@@ -273,7 +273,9 @@ issue text, with a count like `4 of 7 left for you ticked · 6 checked by the te
 comes first, then **Checked by the team**: the ones the Dev saw working on screen or proved with a
 test, already ticked, with `screen` or `test` after them. The rest are yours to check.
 
-The cursor starts on the first box still to tick. `Space` ticks or unticks the criterion it's on, the
+When the card opens at the top, or you come back from a try, the cursor starts on the first box still
+to tick. When it opens at a comment ([Reading a card](#reading-a-card) says when), `Ctrl+Home` goes to
+the top of the body and the arrows reach the list. `Space` ticks or unticks the criterion it's on, the
 team's ones too if you find one wrong. The box on the task's issue on GitHub changes to match, so
 it reads the same everywhere, and History says `you ticked 9 of 13`. On a `screen` criterion, `Enter`
 shows the Dev's picture for it full-window.
