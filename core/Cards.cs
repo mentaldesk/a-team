@@ -5,7 +5,7 @@ namespace ATeam.Core;
 /// <summary>What a card on the board, as `list` prints it, says about itself.</summary>
 internal static class Cards
 {
-    private static readonly string[] Ranks = ["Urgent", "High", "Medium", "Low"];
+    internal static readonly string[] Ranks = ["Urgent", "High", "Medium", "Low"];
 
     internal static string N(JsonNode card) => card["number"]!.ToJsonString();
 

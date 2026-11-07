@@ -83,7 +83,7 @@ internal sealed partial class Board
 
     internal void OwnDocs(string role, string n)
     {
-        if (role == "customer" && (Item(n) is not { } it || !Cards.Marked(it, "customer")))
+        if (role == "customer" && (Seek(n) is not { } it || !Cards.Marked(it, "customer")))
             throw new Die($"customer only touches its own docs PR (#{n} isn't it)");
     }
 
