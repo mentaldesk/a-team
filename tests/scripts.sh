@@ -10439,6 +10439,9 @@ grep -qF 'Nothing needs changing.' "$ROOT/roles/reviewer.md" || fail "reviewer.m
 grep -qF 'when X, it does Y' "$ROOT/roles/reviewer.md" || fail "reviewer.md: a wrong result doesn't name its case"
 grep -qF 'with a test that fails without the fix' "$ROOT/roles/dev.md" || fail "dev.md: a Needs changing fix has no test"
 grep -qF "changing code the PR doesn't otherwise touch" "$ROOT/roles/dev.md" || fail "dev.md: doesn't say what it may leave"
+grep -qF 'run only the quick checks for what the' "$ROOT/roles/dev.md" || fail "dev.md: a conflict run isn't told to leave the suite to CI"
+grep -qF "the repo's CI doesn't run its" "$ROOT/roles/dev.md" || fail "dev.md: a repo whose CI runs no tests would lose them"
+grep -qF 'leaving the full test suite to CI' "$ROOT/tasks/dev.md" || fail "task prompt: Dev not authorised to leave the suite to CI"
 
 case_ "body on a PR brings a local copy of each picture under What it looks like, for the Reviewer"
 export TMPDIR="$WORK/tmp"
