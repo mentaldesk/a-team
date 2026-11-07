@@ -99,7 +99,7 @@ if ! settings=$(jq -er 'if type == "object" then . else error end
   unreadable=${unreadable#jq: }
   unreadable="can't read $TEAM.json: ${unreadable#parse error: }"
   [ "$unreadable" != "can't read $TEAM.json: " ] || unreadable="$TEAM.json isn't a JSON object"
-  [ "$CMD" = check ] && { printf '%-10s%s\n' config "$unreadable"; exit 1; }
+  [ "$CMD" = check ] && { printf '%-9s%-10s%s\n' problem config "$unreadable"; exit 1; }
   die "$unreadable"
 fi
 
@@ -4256,8 +4256,8 @@ case "$CMD" in
   check)
     # Exits 1 when the team can't run, and 2 when it can but something it uses is missing.
     fatal=0 minor=0
-    problem() { printf '%-10s%s\n' "$1" "$2"; fatal=1; }
-    note() { printf '%-10s%s\n' "$1" "$2"; minor=1; }
+    problem() { printf '%-9s%-10s%s\n' problem "$1" "$2"; fatal=1; }
+    note() { printf '%-9s%-10s%s\n' note "$1" "$2"; minor=1; }
     # `not_there <topic> <file_there's status> <file> <what to say on a 404>`
     not_there() {
       if [ "$2" = 1 ]; then note "$1" "$4"; else note "$1" "GitHub didn't answer for $3: checking again next pass"; fi

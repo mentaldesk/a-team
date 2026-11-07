@@ -781,7 +781,7 @@ checked() { PATH="$APP_BIN/board:$PATH" run board demo check; }
 # says <exit> <line>: check exited so, and printed exactly that one problem.
 says() {
   same "exit" "$1" "$STATUS"
-  same "problems" "$2" "$(grep -E '^[a-z]+ {2,}' "$OUT")"
+  same "problems" "$2" "$(grep -E '^(problem|note) {2,}' "$OUT")"
 }
 
 # History: what `a-team board` did to each item, in $A_TEAM_STATE/history.db.

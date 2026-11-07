@@ -55,7 +55,7 @@ The app opens only once there's a team, so your first one starts by hand:
    machine (`workdir` for its worktrees, `checkout` for its main clone), and optionally `try`,
    the command that runs the product from a worktree, and `roles` to turn on the Customer lead or
    the Reviewer. Leave `app` as `null`: the next step fills it in. `a-team teams` lists the teams it finds. Check the team with
-   `a-team board <name> check`: it prints one line per problem it finds, and exits 1 if the team
+   `a-team board <name> check`: it prints one line per thing it finds, marked `problem` or `note`, and exits 1 if the team
    can't run, or 2 if it can but something's missing, like its vision or a label. The app's Teams
    screen shows the same problems, and F12 (or *Repair*) in a team's form sets its board up again.
 4. Give the team its own GitHub App (next section). The dispatcher won't run the team without one.

@@ -7,16 +7,16 @@ public class TeamHealthTests
     {
         const string output = """
             ok: mentaldesk project 3, field 'Status'
-            vision    docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR
-            labels    no 'pitch' label, so the team can't tell its pitches from tasks
+            note     vision    docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR
+            problem  labels    no 'pitch' label, so the team can't tell its pitches from tasks
             identity: a-team-app[bot] · token ok · project 3 read+write ok · Priority readable · push access to mentaldesk/goose ok
             """;
 
-        var health = TeamHealth.Parse(new Reading(output, "vision    docs/vision.md isn't in mentaldesk/goose yet"));
+        var health = TeamHealth.Parse(new Reading(output, "note     vision    docs/vision.md isn't in mentaldesk/goose yet"));
 
         Assert.Equal(
             [
-                new TeamProblem("vision", "docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR"),
+                new TeamProblem("vision", "docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR", IsNote: true),
                 new TeamProblem("labels", "no 'pitch' label, so the team can't tell its pitches from tasks"),
             ],
             health.Problems);
@@ -47,24 +47,62 @@ public class TeamHealthTests
     {
         var health = new TeamHealth(
         [
-            new TeamProblem("vision", "docs/vision.md isn't in mentaldesk/goose yet"),
-            new TeamProblem("docs", "docs/index.md isn't in mentaldesk/goose yet"),
+            new TeamProblem("vision", "docs/vision.md isn't in mentaldesk/goose yet", IsNote: true),
             new TeamProblem("checkout", "~/code/goose/main isn't there"),
-            new TeamProblem("labels", "no 'pitch' label"),
+            new TeamProblem("labels", "no 'pitch' label", IsNote: true),
             new TeamProblem("status", "2 of 9 options missing"),
-            new TeamProblem("workflow", "\"Auto-add to project\" is off on mentaldesk project 6"),
         ]);
 
         Assert.Equal(["checkout", "status"], health.Fatal.Select(problem => problem.Topic));
         Assert.Equal("tuicode: 2 checks failed — checkout, status", health.Failed("tuicode"));
     }
 
+    [Theory]
+    [InlineData("release", "release is continuous, but mentaldesk/goose has no release.yml workflow for it to run")]
+    [InlineData("release", "release is 'weekly': expected never, daily or continuous")]
+    [InlineData("project", "goose.json names no GitHub Project to copy the board to: pick one, or None, under Mirror in its settings")]
+    [InlineData("anything", "a topic the app has never heard of")]
+    public void A_note_stops_nothing_whatever_it_is_about_and_is_still_listed(string topic, string detail)
+    {
+        var health = TeamHealth.Parse(new Reading($"note     {topic.PadRight(10)}{detail}", null));
+
+        Assert.Equal([new TeamProblem(topic, detail, IsNote: true)], health.Problems);
+        Assert.Empty(health.Fatal);
+        Assert.Null(health.Failed("goose"));
+        Assert.Equal("1 problem", health.Column);
+    }
+
+    [Fact]
+    public void A_topic_can_be_a_problem_on_one_line_and_a_note_on_another()
+    {
+        var health = TeamHealth.Parse(new Reading("""
+            note     project   goose.json names no GitHub Project to copy the board to
+            problem  project   can't read aaif-goose project 2: Not Found
+            """, null));
+
+        Assert.Equal("project", Assert.Single(health.Fatal).Topic);
+        Assert.Equal("can't read aaif-goose project 2: Not Found", health.Fatal[0].Detail);
+    }
+
+    [Fact]
+    public void A_problem_beside_a_note_is_the_reason_given_and_the_note_is_not()
+    {
+        var health = TeamHealth.Parse(new Reading("""
+            note     release   release is 'weekly': expected never, daily or continuous
+            problem  workdir   ~/code/goose isn't there, so the agents would have nothing to work in
+            """, null));
+
+        Assert.Equal("workdir", Assert.Single(health.Fatal).Topic);
+        Assert.Equal("goose: 1 check failed — workdir", health.Failed("goose"));
+        Assert.Equal("2 problems", health.Column);
+    }
+
     [Fact]
     public void A_docs_page_not_written_yet_is_a_note_that_Health_does_not_count()
     {
         var health = TeamHealth.Parse(new Reading("""
-            docs      docs/guide/index.md isn't in mentaldesk/goose yet: the Customer lead will propose the docs as a draft PR
-            labels    no 'pitch' label, so the team can't tell its pitches from tasks
+            note     docs      docs/guide/index.md isn't in mentaldesk/goose yet: the Customer lead will propose the docs as a draft PR
+            note     labels    no 'pitch' label, so the team can't tell its pitches from tasks
             """, null));
 
         Assert.Equal("1 problem", health.Column);
@@ -77,7 +115,7 @@ public class TeamHealthTests
     public void GitHub_not_answering_for_the_docs_page_is_a_note_that_Health_counts()
     {
         var health = TeamHealth.Parse(new Reading("""
-            docs      GitHub didn't answer for docs/guide/index.md: checking again next pass
+            note     docs      GitHub didn't answer for docs/guide/index.md: checking again next pass
             """, null));
 
         Assert.Equal("1 problem", health.Column);
@@ -87,7 +125,7 @@ public class TeamHealthTests
     [Fact]
     public void A_team_with_only_notes_or_one_fatal_problem_says_so_in_kind()
     {
-        Assert.Null(new TeamHealth([new TeamProblem("labels", "no 'pitch' label")]).Failed("goose"));
+        Assert.Null(new TeamHealth([new TeamProblem("labels", "no 'pitch' label", IsNote: true)]).Failed("goose"));
         Assert.Equal(
             "goose: 1 check failed — app",
             new TeamHealth([new TeamProblem("app", "no key")]).Failed("goose"));

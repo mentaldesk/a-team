@@ -171,7 +171,8 @@ it found.
 whether a file is there, so nothing is treated as missing. It's the same for the vision and `release.yml`,
 and it clears by itself once GitHub answers.
 
-`a-team board <team> check` reports the same problems from a shell.
+`a-team board <team> check` reports the same from a shell, each line starting `problem`, which stops the
+team, or `note`, which doesn't.
 
 ## Settings
 

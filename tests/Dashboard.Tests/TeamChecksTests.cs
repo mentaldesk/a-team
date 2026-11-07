@@ -49,7 +49,7 @@ public class TeamChecksTests
         Assert.Null(checks.Fatal("tuicode"));
 
         _pending["tuicode"].SetResult(new TeamHealth(
-            [new TeamProblem("vision", "not yet"), new TeamProblem("checkout", "isn't there"), new TeamProblem("status", "missing")]));
+            [new TeamProblem("vision", "not yet", IsNote: true), new TeamProblem("checkout", "isn't there"), new TeamProblem("status", "missing")]));
 
         Assert.Equal(new TeamProblem("checkout", "isn't there"), checks.Fatal("tuicode"));
     }
@@ -76,7 +76,7 @@ public class TeamChecksTests
         checks.Follow(["a-team", "tuicode"]);
         Assert.Empty(checks.Answered());
 
-        _pending["a-team"].SetResult(new TeamHealth([new TeamProblem("labels", "no 'pitch' label")]));
+        _pending["a-team"].SetResult(new TeamHealth([new TeamProblem("labels", "no 'pitch' label", IsNote: true)]));
         _pending["tuicode"].SetResult(new TeamHealth([new TeamProblem("checkout", "isn't there"), new TeamProblem("status", "missing")]));
 
         Assert.Equal([("a-team", null), ("tuicode", "tuicode: 2 checks failed — checkout, status")], checks.Answered());

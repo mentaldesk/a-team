@@ -241,7 +241,7 @@ fixture <<'JSON'
 JSON
 checked
 same "no app exit" 1 "$STATUS"
-grep -q '^app       demo has no GitHub App: run a-team app create demo, then install it$' "$OUT" ||
+grep -q '^problem  app       demo has no GitHub App: run a-team app create demo, then install it$' "$OUT" ||
   fail "no app: '$(cat "$OUT")'"
 
 case_ "check reports the App's identity when every part of it works"
@@ -254,106 +254,106 @@ same "identity" 'identity: demo-app[bot] · token ok · project 1 read+write ok 
 
 case_ "check says which part of the identity is wrong, and what to do about it"
 NO_KEY=1 checked
-says 1 "app       demo-app[bot] has no key in the login Keychain (service 'a-team-app', account 'mentaldesk'): generate a new private key on the App's settings page on GitHub, then run: security add-generic-password -U -s a-team-app -a mentaldesk -w \"\$(openssl base64 -A -in <the .pem you downloaded>)\""
+says 1 "problem  app       demo-app[bot] has no key in the login Keychain (service 'a-team-app', account 'mentaldesk'): generate a new private key on the App's settings page on GitHub, then run: security add-generic-password -U -s a-team-app -a mentaldesk -w \"\$(openssl base64 -A -in <the .pem you downloaded>)\""
 rm -f "$CACHE"
 MINT_FAILS=1 checked
 same "no token exit" 1 "$STATUS"
-grep -q "^app       demo-app\[bot\] can't get a token: " "$OUT" || fail "no token: '$(cat "$OUT")'"
+grep -q "^problem  app       demo-app\[bot\] can't get a token: " "$OUT" || fail "no token: '$(cat "$OUT")'"
 cached ghs_cached 3600
 PROJECT_UNREADABLE=1 checked
-says 1 "app       demo-app[bot] can't read project 1: grant the organisation's \"Projects: read and write\", and install the App on mentaldesk/demo"
+says 1 "problem  app       demo-app[bot] can't read project 1: grant the organisation's \"Projects: read and write\", and install the App on mentaldesk/demo"
 grants '.permissions.organization_projects = "read"'
 checked
-says 1 "app       demo-app[bot] can only read project 1: grant the organisation's \"Projects: read and write\""
+says 1 "problem  app       demo-app[bot] can only read project 1: grant the organisation's \"Projects: read and write\""
 cached ghs_cached 3600
 PRIORITY_UNREADABLE=1 checked
 same "priority exit" 1 "$STATUS"
-grep -q "^app       demo-app\[bot\] can't read the Priority field: grant the organisation's \"Issue Fields: read\"" "$OUT" ||
+grep -q "^problem  app       demo-app\[bot\] can't read the Priority field: grant the organisation's \"Issue Fields: read\"" "$OUT" ||
   fail "priority: '$(cat "$OUT")'"
 grants '.permissions.contents = "read"'
 checked
-says 1 "app       demo-app[bot] can't push to mentaldesk/demo: grant the repository's \"Contents: read and write\""
+says 1 "problem  app       demo-app[bot] can't push to mentaldesk/demo: grant the repository's \"Contents: read and write\""
 
 case_ "check names each problem with the board in a line of its own"
 cached ghs_cached 3600
 checked
 says 0 ""
 REPO_GONE=1 checked
-says 1 "repo      can't reach mentaldesk/demo: Not Found (HTTP 404)"
+says 1 "problem  repo      can't reach mentaldesk/demo: Not Found (HTTP 404)"
 NO_PROJECT=1 checked
-says 1 "project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
+says 1 "problem  project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
 grep -q '^identity: demo-app\[bot\] · token ok · Priority readable' "$OUT" || fail "no project: the App's view in '$(cat "$OUT")'"
 NO_FIELD=1 checked
-says 1 "project   no single-select field 'Status' on mentaldesk project 1"
+says 1 "problem  project   no single-select field 'Status' on mentaldesk project 1"
 PARTIAL_READ=1 checked
-says 1 "project   can't read mentaldesk project 1: Resource not accessible by integration"
+says 1 "problem  project   can't read mentaldesk project 1: Resource not accessible by integration"
 board_options Idea Approved Building Ready "In progress" "In review" Done
 checked
-says 1 "status    2 of 9 options missing from 'Status': Exploring, Pitched"
+says 1 "problem  status    2 of 9 options missing from 'Status': Exploring, Pitched"
 board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
 
 case_ "check names what's missing from the machine"
 rm -rf "$APP_BIN/work/main"
 checked
-says 1 "checkout  $APP_BIN/work/main isn't there: gh repo clone mentaldesk/demo $APP_BIN/work/main"
+says 1 "problem  checkout  $APP_BIN/work/main isn't there: gh repo clone mentaldesk/demo $APP_BIN/work/main"
 rm -rf "$APP_BIN/work"
 checked
-says 1 "workdir   $APP_BIN/work isn't there, so the agents would have nothing to work in"
+says 1 "problem  workdir   $APP_BIN/work isn't there, so the agents would have nothing to work in"
 mkdir -p "$APP_BIN/work/main"
 
 case_ "a missing or Lead-drafted vision, or missing labels, are problems the team can still run with, so check exits 2"
 NO_VISION=1 checked
-says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
+says 2 "note     vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
 LEAD_VISION=1 checked
-says 2 "vision    drafted by the Lead: Write the vision with me replaces it"
+says 2 "note     vision    drafted by the Lead: Write the vision with me replaces it"
 CONTENTS_DOWN=docs/vision.md checked
-says 2 "vision    GitHub didn't answer for docs/vision.md: checking again next pass"
+says 2 "note     vision    GitHub didn't answer for docs/vision.md: checking again next pass"
 board_labels
 checked
-says 2 "labels    no 'pitch' label, so the team can't tell its pitches from tasks"
+says 2 "note     labels    no 'pitch' label, so the team can't tell its pitches from tasks"
 board_labels pitch
 
 case_ "with a Customer lead, a docs page that's missing or not named is a problem the team can still run with"
 jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked a-team:customer
 checked
-says 2 "docs      demo.json names no docs page, so the Customer lead has nothing to keep right"
+says 2 "note     docs      demo.json names no docs page, so the Customer lead has nothing to keep right"
 jq '.docs = "docs/index.md"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 checked
 says 0 ""
 NO_VISION=1 checked
-says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
-docs      docs/index.md isn't in mentaldesk/demo yet: the Customer lead will propose the docs as a draft PR"
+says 2 "note     vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
+note     docs      docs/index.md isn't in mentaldesk/demo yet: the Customer lead will propose the docs as a draft PR"
 CONTENTS_DOWN=docs/index.md checked
-says 2 "docs      GitHub didn't answer for docs/index.md: checking again next pass"
+says 2 "note     docs      GitHub didn't answer for docs/index.md: checking again next pass"
 jq 'del(.roles, .docs)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
 NO_VISION=1 checked
-says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
+says 2 "note     vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
 
 case_ "a release setting check can't act on is a problem the team can still run with"
 jq '.release = "continuous"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 checked
 says 0 ""
 NO_RELEASE_WORKFLOW=1 checked
-says 2 "release   release is continuous, but mentaldesk/demo has no release.yml workflow for it to run"
+says 2 "note     release   release is continuous, but mentaldesk/demo has no release.yml workflow for it to run"
 RELEASE_DOWN=1 checked
-says 2 "release   GitHub didn't answer for release.yml: checking again next pass"
+says 2 "note     release   GitHub didn't answer for release.yml: checking again next pass"
 jq '.release = "weekly"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 checked
-says 2 "release   release is 'weekly': expected never, daily or continuous"
+says 2 "note     release   release is 'weekly': expected never, daily or continuous"
 jq 'del(.release)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 case_ "a project that won't put new issues in Triage is a problem the team can still run with"
 board_workflows "Item closed"
 checked
-says 2 "workflow  \"Auto-add to project\" is off on mentaldesk project 1, so an issue opened on mentaldesk/demo, by you or another team, never reaches Triage
-workflow  \"Item added to project\" is off on mentaldesk project 1, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea"
+says 2 "note     workflow  \"Auto-add to project\" is off on mentaldesk project 1, so an issue opened on mentaldesk/demo, by you or another team, never reaches Triage
+note     workflow  \"Item added to project\" is off on mentaldesk project 1, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea"
 board_workflows "Auto-add to project (2)" "Item added to project"
 checked
 says 0 ""
 NO_PROJECT=1 checked
-says 1 "project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
+says 1 "problem  project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
 echo '{"data": {"organization": {"projectV2": null}}}' >"$APP_BIN/board/workflows.json"
 checked
 says 0 ""
@@ -362,9 +362,9 @@ board_workflows "Auto-add to project" "Item added to project" "Item closed"
 case_ "check reports every problem it finds, not just the first"
 board_labels
 NO_VISION=1 NO_FIELD=1 checked
-says 1 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
-project   no single-select field 'Status' on mentaldesk project 1
-labels    no 'pitch' label, so the team can't tell its pitches from tasks"
+says 1 "note     vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
+problem  project   no single-select field 'Status' on mentaldesk project 1
+note     labels    no 'pitch' label, so the team can't tell its pitches from tasks"
 board_labels pitch
 
 case_ "check reports a config it can't read, or one with no repo or project, as problems"
@@ -372,15 +372,15 @@ before=$(cat "$TEAM")
 printf '{\n "repo": "mentaldesk/demo",\n}\n' >"$TEAM"
 checked
 same "unparsable exit" 1 "$STATUS"
-grep -q "^config    can't read demo.json: .*line 3" "$OUT" || fail "unparsable: '$(cat "$OUT")'"
+grep -q "^problem  config    can't read demo.json: .*line 3" "$OUT" || fail "unparsable: '$(cat "$OUT")'"
 echo '["not a team"]' >"$TEAM"
 checked
-says 1 "config    demo.json isn't a JSON object"
+says 1 "problem  config    demo.json isn't a JSON object"
 echo "$before" | jq 'del(.repo, .project.number)' >"$TEAM"
 checked
 same "no repo exit" 1 "$STATUS"
-grep -q '^repo      demo.json names no repo$' "$OUT" || fail "no repo: '$(cat "$OUT")'"
-grep -q '^project   demo.json names no GitHub Project to copy the board to' "$OUT" || fail "no project number: '$(cat "$OUT")'"
+grep -q '^problem  repo      demo.json names no repo$' "$OUT" || fail "no repo: '$(cat "$OUT")'"
+grep -q '^note     project   demo.json names no GitHub Project to copy the board to' "$OUT" || fail "no project number: '$(cat "$OUT")'"
 echo "$before" >"$TEAM"
 
 case_ "any other command refuses a config it can't read, in one line"
