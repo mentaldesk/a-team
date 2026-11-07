@@ -69,6 +69,7 @@ down each assumption about the machine here, and the rule that keeps it from tri
 | `bin/gh` | `gh` as the team's App inside a run |
 | `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
 | `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
+| `core/` | The board's compiled core, `a-team-core`, taking over from `board.sh` a command at a time. What it hasn't ported, or can't finish, it hands to `board.sh` before changing anything |
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
@@ -79,6 +80,16 @@ down each assumption about the machine here, and the rule that keeps it from tri
 | `settings/agents.json` | Permission rules for every run |
 | `settings/<role>.json` | Rules one role's runs add to those |
 | `examples/team.json` | A starting point for a team's config (see the README, *Starting a team*) |
+
+## The compiled board
+
+`bin/a-team board` runs `a-team-core` where there is one, and it hands anything it doesn't do itself to `board.sh`, so a
+command can move over without its caller noticing, and a checkout with no build just runs on `board.sh`. A checkout's core
+is only used while no source is newer than it: `dotnet build core/Core.csproj`, which `tests/scripts.sh` does too.
+
+While a command lives in both, a change to it goes in both. `tests/scripts/core.sh` runs the same commands through each and
+compares what they say and leave behind, and `tests/Core.Tests` covers the logic in process. Set `A_TEAM_CORE_TRACE=<file>` to
+see what each command did: `handled`, or `fallback` and why.
 
 ## Dashboard UI
 

@@ -253,6 +253,9 @@ copy_release() {
   for item in bin scripts roles tasks settings examples process.md; do
     [ ! -e "$ROOT/$item" ] || cp -R "$ROOT/$item" "$1/" || return
   done
+  if [ -x "$ROOT/libexec/a-team-core" ]; then
+    mkdir -p "$1/libexec" && cp "$ROOT/libexec/a-team-core" "$1/libexec/" || return
+  fi
   "$ROOT/bin/a-team" version >"$1/VERSION"
 }
 
