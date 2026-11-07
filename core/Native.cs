@@ -9,6 +9,8 @@ internal static class Sqlite
     private const string Lib = "sqlite3";
     internal const int Row = 100;
     internal const int Done = 101;
+    internal const int Float = 2;
+    internal const int Integer = 1;
     internal const int Null = 5;
 
     static Sqlite()
@@ -34,11 +36,13 @@ internal static class Sqlite
     [DllImport(Lib)] internal static extern int sqlite3_prepare_v2(IntPtr db, byte[] sql, int bytes, out IntPtr stmt, IntPtr tail);
     [DllImport(Lib)] internal static extern int sqlite3_bind_text(IntPtr stmt, int at, byte[] text, int bytes, IntPtr destructor);
     [DllImport(Lib)] internal static extern int sqlite3_bind_null(IntPtr stmt, int at);
+    [DllImport(Lib)] internal static extern int sqlite3_bind_double(IntPtr stmt, int at, double value);
     [DllImport(Lib)] internal static extern int sqlite3_step(IntPtr stmt);
     [DllImport(Lib)] internal static extern int sqlite3_column_count(IntPtr stmt);
     [DllImport(Lib)] internal static extern IntPtr sqlite3_column_name(IntPtr stmt, int column);
     [DllImport(Lib)] internal static extern int sqlite3_column_type(IntPtr stmt, int column);
     [DllImport(Lib)] internal static extern IntPtr sqlite3_column_text(IntPtr stmt, int column);
+    [DllImport(Lib)] internal static extern double sqlite3_column_double(IntPtr stmt, int column);
     [DllImport(Lib)] internal static extern int sqlite3_finalize(IntPtr stmt);
     [DllImport(Lib)] internal static extern int sqlite3_exec(IntPtr db, byte[] sql, IntPtr callback, IntPtr arg, IntPtr error);
     [DllImport(Lib)] internal static extern IntPtr sqlite3_errmsg(IntPtr db);

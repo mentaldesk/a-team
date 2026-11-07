@@ -19,21 +19,7 @@ internal sealed class Gh(string? token)
     /// <summary>`gh` with <paramref name="input"/> on its stdin.</summary>
     public GhResult Feed(string? input, params string[] args)
     {
-        var path = Which("gh") ?? throw new Die("no gh on PATH");
-        var start = new ProcessStartInfo(path)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = true,
-            UseShellExecute = false,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        foreach (var arg in args)
-            start.ArgumentList.Add(arg);
-        if (token is not null)
-            start.Environment["GH_TOKEN"] = token;
-        using var process = Process.Start(start) ?? throw new Die("couldn't start gh");
+        using var process = Process.Start(Starting(args)) ?? throw new Die("couldn't start gh");
         var err = process.StandardError.ReadToEndAsync();
         var output = process.StandardOutput.ReadToEndAsync();
         if (input is not null)
@@ -51,6 +37,38 @@ internal sealed class Gh(string? token)
         output.Wait();
         process.WaitForExit();
         return new GhResult(process.ExitCode, output.Result, err.Result);
+    }
+
+    /// <summary>`gh`'s stdout, whatever its bytes, in a file, and whether it exited 0. What it said on stderr is dropped.</summary>
+    public bool Save(string file, params string[] args)
+    {
+        using var process = Process.Start(Starting(args)) ?? throw new Die("couldn't start gh");
+        process.StandardInput.Close();
+        var err = process.StandardError.ReadToEndAsync();
+        using (var saved = File.Create(file))
+            process.StandardOutput.BaseStream.CopyTo(saved);
+        err.Wait();
+        process.WaitForExit();
+        return process.ExitCode == 0;
+    }
+
+    private ProcessStartInfo Starting(string[] args)
+    {
+        var path = Which("gh") ?? throw new Die("no gh on PATH");
+        var start = new ProcessStartInfo(path)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = true,
+            UseShellExecute = false,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        foreach (var arg in args)
+            start.ArgumentList.Add(arg);
+        if (token is not null)
+            start.Environment["GH_TOKEN"] = token;
+        return start;
     }
 
     internal static string? Which(string name)
