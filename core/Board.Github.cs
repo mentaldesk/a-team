@@ -210,35 +210,15 @@ internal sealed partial class Board
     /// <summary>The default branch's head as {branch, sha, since, failing} while its latest completed CI there has failed, else null.</summary>
     internal JsonObject? MainRed()
     {
-        var read = _gh.Run("api", "--paginate", $"repos/{_repo}/commits/HEAD/check-runs?per_page=100", "--jq", ".check_runs[]");
-        Console.Error.Write(read.Err);
+        var read = Aloud("api", "--paginate", $"repos/{_repo}/commits/HEAD/check-runs?per_page=100", "--jq", ".check_runs[]");
         if (!read.Ok) throw new Die("could not read the default branch's CI");
         var runs = Json.ParseMany(read.Out);
         var checks = Checks(runs);
-        var file = Path.Combine(State, _team, "red-since");
-        if (Json.Text(checks["verdict"]) != "fail")
-        {
-            if (!DryRun && File.Exists(file)) File.Delete(file);
-            return null;
-        }
-        var branch = _gh.Run("api", $"repos/{_repo}", "--jq", ".default_branch");
-        Console.Error.Write(branch.Err);
+        if (Json.Text(checks["verdict"]) != "fail") return RedSince(null, "");
+        var branch = Aloud("api", $"repos/{_repo}", "--jq", ".default_branch");
         if (!branch.Ok) throw new Die($"could not read {_repo}'s default branch");
-        var sha = Json.Text(runs.FirstOrDefault()?["head_sha"]) ?? "";
-        var since = File.Exists(file) ? File.ReadAllText(file) : "";
-        if (since.Length == 0)
-        {
-            since = sha;
-            if (!DryRun)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-                File.WriteAllText(file, since);
-            }
-        }
-        var failing = new JsonArray();
-        foreach (var name in checks["failing"]!.AsArray().Select(run => Json.Text(run?["name"])).OfType<string>().Distinct().Order(StringComparer.Ordinal))
-            failing.Add((JsonNode?)name);
-        return new JsonObject { ["branch"] = branch.Said, ["sha"] = sha, ["failing"] = failing, ["since"] = since };
+        var failing = checks["failing"]!.AsArray().Select(run => Json.Text(run?["name"])).OfType<string>().Distinct().Order(StringComparer.Ordinal);
+        return RedSince(new JsonObject { ["sha"] = Json.Text(runs.FirstOrDefault()?["head_sha"]) ?? "", ["failing"] = Json.ArrayOf(failing.Select(name => (JsonNode?)name)) }, branch.Said);
     }
 
     /// <summary>Those checks' verdict, `main-red` where every job they fail also fails on the default branch.</summary>
@@ -265,13 +245,15 @@ internal sealed partial class Board
         ["eyes"] = raw?["reactions"]?["eyes"]?.DeepClone(),
     };
 
-    /// <summary>A read a command goes on without, with gh's words passed on.</summary>
-    private GhResult Aloud(params string[] args)
+    /// <summary>Lets what a program said on stderr through, as a shell does.</summary>
+    internal static GhResult Through(GhResult result)
     {
-        var read = _gh.Run(args);
-        Console.Error.Write(read.Err);
-        return read;
+        Console.Error.Write(result.Err);
+        return result;
     }
+
+    /// <summary>A read a command goes on without, with gh's words passed on.</summary>
+    private GhResult Aloud(params string[] args) => Through(_gh.Run(args));
 
     /// <summary>All that's been said on #n, oldest first; null where GitHub won't say.</summary>
     internal List<JsonObject>? Comments(string n)
@@ -337,10 +319,7 @@ internal sealed partial class Board
     /// <summary>Of what's been said on a card, the stakeholders' comments no run has left a 👀 on.</summary>
     internal List<JsonObject> Unanswered(string role, List<JsonObject> comments)
     {
-        var marker = $"<!-- a-team:{role} -->";
-        var since = comments.Where(c => TeamSaid(c, marker)
-                || (string.CompareOrdinal(Json.Text(c["at"]), AckFrom) < 0 && (Json.Text(c["body"]) ?? "").Contains(marker, StringComparison.Ordinal)))
-            .Select(c => Json.Text(c["at"]) ?? "").DefaultIfEmpty("").Max(StringComparer.Ordinal)!;
+        var since = RoleSpoke($"<!-- a-team:{role} -->", comments);
         return comments.Where(c => Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSaid(c, "<!-- a-team:") && Eyes(c) == 0
             && (string.CompareOrdinal(Json.Text(c["at"]), AckFrom) >= 0 || string.CompareOrdinal(Json.Text(c["at"]), since) > 0)).ToList();
     }
@@ -463,10 +442,9 @@ internal sealed partial class Board
         return held;
     }
 
-    /// <summary>Tasks other work waits on first: named by another team's upstream wait, or by a Ready task here that's blocked, with their pitches and siblings.</summary>
-    private HashSet<long> Holding(List<JsonNode> all)
+    /// <summary>Every team configured on this machine, with its config; one that won't read is left out.</summary>
+    internal static IEnumerable<(string Team, JsonNode? Config)> TeamConfigs()
     {
-        var named = new List<long>();
         var teams = Path.Combine(ConfigDir, "teams");
         foreach (var file in (Directory.Exists(teams) ? Directory.GetFiles(teams, "*.json") : []).Order(StringComparer.Ordinal))
         {
@@ -479,10 +457,19 @@ internal sealed partial class Board
             {
                 continue;
             }
+            yield return (Path.GetFileNameWithoutExtension(file), config);
+        }
+    }
+
+    /// <summary>Tasks other work waits on first: named by another team's upstream wait, or by a Ready task here that's blocked, with their pitches and siblings.</summary>
+    private HashSet<long> Holding(List<JsonNode> all)
+    {
+        var named = new List<long>();
+        foreach (var (team, config) in TeamConfigs())
+        {
             var repo = Json.Text(config?["repo"]) ?? "";
             var slug = Json.Text(config?["app"]?["slug"]) ?? "";
             if (repo.Length == 0 || slug.Length == 0 || string.Equals(repo, _repo, StringComparison.OrdinalIgnoreCase)) continue;
-            var team = Path.GetFileNameWithoutExtension(file);
             foreach (var row in _record.Query($"""
                 SELECT item FROM board WHERE team = {Reconciler.Q(team)} AND status != 'Done'
                   AND json_extract(content, '$.type') = 'Issue' AND (json_extract(marks, '$.upstream') IS NOT NULL
@@ -515,7 +502,7 @@ internal sealed partial class Board
     {
         if (numbers.Count == 0) return [];
         var (owner, name) = RepoParts;
-        var fields = string.Join("\n", numbers.Select(n => $"i{n}: issue(number: {n}) {{ blockedBy(first: 10) {{ nodes {{ number state repository {{ nameWithOwner }} }} }} }}"));
+        var fields = BlockedByFields(numbers.Select(n => long.Parse(n, CultureInfo.InvariantCulture)));
         var read = _gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-f",
             $"query=query Prerequisites($owner: String!, $name: String!) {{\n      repository(owner: $owner, name: $name) {{ {fields} }} }}");
         if (!read.Ok && read.Out.Trim().Length > 0) _holdingLost = true;

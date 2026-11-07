@@ -24,47 +24,61 @@ public class LinksTests
 
     private static JsonObject You(string time, string kind = "comment") => Said(kind, time, "reviewer", "Words.");
 
+    /// <summary>Who holds a Ready task, and whose turn it is, by the one rule the app's Waiting and `unblock` share.</summary>
+    private static (string? HeldBy, string Turn) HoldOf(JsonObject? held, List<JsonObject> said)
+    {
+        var card = new JsonObject
+        {
+            ["number"] = 7, ["type"] = "Issue", ["status"] = "Ready", ["labels"] = new JsonArray(),
+            ["marks"] = held is null ? new JsonObject() : new JsonObject { ["held"] = held },
+        };
+        foreach (var one in said)
+            one["n"] = 7;
+        var hold = Demo().Holds([card], said, Board.GatedBlocked([card]))[0];
+        return (Json.Text(hold["heldBy"]), Json.Text(hold["turn"]) ?? "you");
+    }
+
     [Fact]
     public void The_Devs_question_is_the_stakeholders_to_answer_then_the_Devs_to_read()
     {
         var asked = Bot("08:51:00", Dev);
-        Assert.Equal(("dev", "you"), Demo().HoldOf(Held("dev"), [asked]));
-        Assert.Equal(("dev", "dev"), Demo().HoldOf(Held("dev"), [asked, You("09:30:00")]));
-        Assert.Equal(("dev", "dev"), Demo().HoldOf(Held("dev"), [asked, You("09:30:00", "line")]));
+        Assert.Equal(("dev", "you"), HoldOf(Held("dev"), [asked]));
+        Assert.Equal(("dev", "dev"), HoldOf(Held("dev"), [asked, You("09:30:00")]));
+        Assert.Equal(("dev", "dev"), HoldOf(Held("dev"), [asked, You("09:30:00", "line")]));
     }
 
     [Fact]
     public void A_Dev_comment_more_than_ten_minutes_before_the_hold_is_no_question()
     {
-        Assert.Equal((null, "you"), Demo().HoldOf(Held("lead"), [Bot("08:49:59", Dev)]));
-        Assert.Equal(("dev", "you"), Demo().HoldOf(Held("lead"), [Bot("08:50:00", Dev)]));
+        Assert.Equal((null, "you"), HoldOf(Held("lead"), [Bot("08:49:59", Dev)]));
+        Assert.Equal(("dev", "you"), HoldOf(Held("lead"), [Bot("08:50:00", Dev)]));
     }
 
     [Fact]
     public void The_Leads_ask_is_its_own_to_clear_once_a_stakeholder_replies_after_it()
     {
-        Assert.Equal(("lead", "you"), Demo().HoldOf(Held("lead"), [Bot("09:10:00", Lead)]));
-        Assert.Equal(("lead", "lead"), Demo().HoldOf(Held("lead"), [Bot("09:10:00", Lead), You("09:20:00")]));
+        Assert.Equal(("lead", "you"), HoldOf(Held("lead"), [Bot("09:10:00", Lead)]));
+        Assert.Equal(("lead", "lead"), HoldOf(Held("lead"), [Bot("09:10:00", Lead), You("09:20:00")]));
     }
 
     [Fact]
     public void A_stakeholder_who_spoke_before_the_Lead_holds_it()
     {
-        Assert.Equal(("you", "you"), Demo().HoldOf(Held("team"), [You("08:55:00"), Bot("09:10:00", Lead)]));
+        Assert.Equal(("you", "you"), HoldOf(Held("team"), [You("08:55:00"), Bot("09:10:00", Lead)]));
     }
 
     [Fact]
     public void A_hold_of_yours_stays_yours_whoever_comments_on_it()
     {
-        Assert.Equal((null, "you"), Demo().HoldOf(Held("you"), [Bot("09:10:00", Lead)]));
-        Assert.Equal((null, "you"), Demo().HoldOf(Held("you"), [Bot("09:10:00", Dev)]));
-        Assert.Equal(("you", "you"), Demo().HoldOf(Held("you"), [You("09:05:00"), Bot("09:10:00", Lead)]));
+        Assert.Equal((null, "you"), HoldOf(Held("you"), [Bot("09:10:00", Lead)]));
+        Assert.Equal((null, "you"), HoldOf(Held("you"), [Bot("09:10:00", Dev)]));
+        Assert.Equal(("you", "you"), HoldOf(Held("you"), [You("09:05:00"), Bot("09:10:00", Lead)]));
     }
 
     [Fact]
     public void With_no_time_for_the_hold_nobody_said_why()
     {
-        Assert.Equal((null, "you"), Demo().HoldOf(null, [Bot("09:10:00", Lead), You("09:20:00")]));
+        Assert.Equal((null, "you"), HoldOf(null, [Bot("09:10:00", Lead), You("09:20:00")]));
     }
 
     [Theory]

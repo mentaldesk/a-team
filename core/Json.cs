@@ -40,6 +40,14 @@ internal static class Json
     internal static string? Text(JsonNode? node) =>
         node is JsonValue value && value.GetValueKind() == JsonValueKind.String ? value.GetValue<string>() : null;
 
+    internal static JsonArray ArrayOf(IEnumerable<JsonNode?> nodes)
+    {
+        var array = new JsonArray();
+        foreach (var node in nodes)
+            array.Add(node);
+        return array;
+    }
+
     /// <summary>A number, whether it was parsed or built here; 0 for anything else.</summary>
     internal static long Long(JsonNode? node)
     {

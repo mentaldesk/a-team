@@ -535,7 +535,7 @@ internal static partial class Commands
 
     private static string WhatItWas(Row entry)
     {
-        if (!DateTime.TryParseExact(entry["said"], "yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture, DateTimeStyles.None, out var said)) return "";
+        if (!DateTime.TryParseExact(entry["said"], Board.IsoFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var said)) return "";
         return $"what {(entry["who"] == "you" ? "you" : "the Lead")} said on #{entry["item"]} on {said.ToString("d MMM", CultureInfo.InvariantCulture)}";
     }
 

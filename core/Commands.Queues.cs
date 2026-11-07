@@ -65,13 +65,7 @@ internal static partial class Commands
     private static int? WipLimit(Board board, string key) =>
         int.TryParse(board.Text("wip", key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit) ? limit : null;
 
-    private static JsonArray Words(IEnumerable<string> words)
-    {
-        var array = new JsonArray();
-        foreach (var word in words)
-            array.Add((JsonNode?)word);
-        return array;
-    }
+    private static JsonArray Words(IEnumerable<string> words) => Json.ArrayOf(words.Select(word => (JsonNode?)word));
 
     internal static int Triggers(Board board, string[] args)
     {
@@ -219,7 +213,7 @@ internal static partial class Commands
 
     private static List<JsonObject> HeldTalk(Board board, List<JsonNode> held)
     {
-        var (page, code) = board.GatedTalk(held.Select(Board.Number));
+        var (page, code, _) = board.GatedTalk(held.Select(Board.Number));
         if (page is null) throw new Stop(code, "");
         return Board.GatedComments(page);
     }
@@ -285,7 +279,7 @@ internal static partial class Commands
             Board.Must(read);
             if (pr is null || pr["isDraft"]?.GetValueKind() != System.Text.Json.JsonValueKind.True || Json.Text(pr["review"]) != "waiting") continue;
             var p = Board.Raw(pr["number"]);
-            if (board.VerdictAnyway(p) == "pass")
+            if (board.HeadVerdict(p) == "pass")
                 wake.Task(Long(n), Board.Raw(card["title"]), $"PR #{p} is green and waiting for its review");
         }
     }

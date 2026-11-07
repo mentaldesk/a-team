@@ -234,16 +234,9 @@ internal static partial class Commands
         return read.Code;
     }
 
-    /// <summary>A Dependabot PR the Dev has, as `pr` reports a task's. It closes no issue, and no Reviewer reads it.</summary>
     private static int BumpPr(Board board, string n)
     {
-        var view = Board.Must(board.Read("pr", "view", n, "-R", board.Repo, "--json", "number,url,isDraft,headRefName,mergeable,mergeStateStatus"));
-        foreach (var pr in Json.ParseMany(view.Out).OfType<JsonObject>())
-        {
-            var bump = pr.DeepClone().AsObject();
-            bump["review"] = "off";
-            SayCompact(bump);
-        }
+        if (board.BumpView(n) is { } pr) SayCompact(pr);
         return 0;
     }
 

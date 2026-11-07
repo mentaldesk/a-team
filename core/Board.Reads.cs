@@ -14,11 +14,6 @@ internal sealed partial class Board
         number createdAt body author { __typename login }
                 comments(last: 50) { nodes { createdAt body url author { __typename login } {{SeenBy}} } }
         """;
-    private const string TalkedOnPr = $$"""
-        {{TalkedOn}} url isDraft mergeable mergeStateStatus baseRefName headRefName
-                      reviews(last: 50) { nodes { createdAt body state author { __typename login } {{SeenBy}}
-                      comments(first: 50) { nodes { createdAt body author { __typename login } {{SeenBy}} } } } }
-        """;
 
     /// <summary>Whether this state has a record to read at all.</summary>
     internal static bool Recorded => File.Exists(Path.Combine(State, "history.db"));
@@ -125,37 +120,9 @@ internal sealed partial class Board
     /// <summary>One page holding #n's comments and its open PR, plus one more if GitHub hasn't linked that PR to it.</summary>
     private JsonObject TalkPage(string n)
     {
-        var (owner, name) = RepoParts;
-        var asked = $$"""
-             x{{n}}: issueOrPullRequest(number: {{n}}) {
-                  ... on Issue { {{TalkedOn}} subIssuesSummary { total completed }
-                    closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { {{TalkedOnPr}} } } }
-                  ... on PullRequest { {{TalkedOnPr}} } }
-            """;
-        var read = _gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-f", $$"""
-            query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {{{asked}}
-                  openPrs: pullRequests(states: OPEN, first: 100) { nodes { number body } } } }
-            """);
-        if (!read.Ok) throw new Die($"can't read the conversation on #{n} ({FirstLine(read.Err)})");
-        var repository = Json.Parse(read.Out)?["data"]?["repository"]?.AsObject() ?? [];
-        var unlinked = Unlinked(repository);
-        if (unlinked.Count > 0)
-        {
-            var more = string.Concat(unlinked.Values.Distinct().Order().Select(pr => $" p{pr}: pullRequest(number: {pr}) {{ {TalkedOnPr} }}"));
-            var linked = _gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-f", $$"""
-                query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {{{more}}} }
-                """);
-            if (!linked.Ok) throw new Die($"can't read the conversation on #{n} ({FirstLine(read.Err + linked.Err)})");
-            var found = Json.Parse(linked.Out)?["data"]?["repository"];
-            foreach (var (issue, pr) in unlinked)
-            {
-                var nodes = new JsonArray();
-                if (found?[$"p{pr}"] is { } node) nodes.Add((JsonNode?)node.DeepClone());
-                repository[$"x{issue}"]!["closedByPullRequestsReferences"]!["nodes"] = nodes;
-            }
-        }
-        repository.Remove("openPrs");
-        return repository;
+        var (page, _, err) = GatedTalk([long.Parse(n, CultureInfo.InvariantCulture)], aloud: false);
+        if (page is null) throw new Die($"can't read the conversation on #{n} ({FirstLine(err)})");
+        return page["data"]?["repository"] as JsonObject ?? [];
     }
 
     /// <summary>For each issue GitHub links no PR to, the first open PR whose body says it closes it.</summary>
@@ -486,7 +453,7 @@ internal static class Trends
     private static bool IsTask(string? status) => status is "Ready" or "In progress" or "In review";
 
     private static long Seconds(string at) =>
-        DateTimeOffset.ParseExact(at, "yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal).ToUnixTimeSeconds();
+        DateTimeOffset.ParseExact(at, Board.IsoFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal).ToUnixTimeSeconds();
 
     private static bool Later(string at, string than) => string.CompareOrdinal(at, than) > 0;
 
