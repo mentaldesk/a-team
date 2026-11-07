@@ -516,25 +516,25 @@ public class OverseerTests : IDisposable
     [Fact]
     public void A_lane_names_its_busy_roles_each_with_a_cell_for_its_animation_or_says_idle_and_counts_what_s_over()
     {
-        var heading = OverseerView.Heading("a-team", ["lead", "dev"], 2);
+        var heading = OverseerView.Heading(new LaneFacts("a-team") { Busy = ["lead", "dev"], Over = 2 });
 
         Assert.Equal("a-team · Lead   · Dev   · 2 over", heading.Title);
         Assert.Equal([new HeaderSlot(14, "lead"), new HeaderSlot(22, "dev")], heading.Slots);
-        Assert.Equal("tui · idle", OverseerView.Heading("tui", [], 0).Title);
-        Assert.Empty(OverseerView.Heading("tui", [], 0).Slots);
-        Assert.Equal("docs · Customer lead  ", OverseerView.Heading("docs", ["customer"], 0).Title);
-        Assert.Equal("ops · Reviewer  ", OverseerView.Heading("ops", ["reviewer"], 0).Title);
-        Assert.Equal([new HeaderSlot(15, "reviewer")], OverseerView.Heading("ops", ["reviewer"], 0).Slots);
-        Assert.Equal([new HeaderSlot(12, "scout")], OverseerView.Heading("ops", ["scout"], 0).Slots);
+        Assert.Equal("tui · idle", OverseerView.Heading(new LaneFacts("tui")).Title);
+        Assert.Empty(OverseerView.Heading(new LaneFacts("tui")).Slots);
+        Assert.Equal("docs · Customer lead  ", OverseerView.Heading(new LaneFacts("docs") { Busy = ["customer"] }).Title);
+        Assert.Equal("ops · Reviewer  ", OverseerView.Heading(new LaneFacts("ops") { Busy = ["reviewer"] }).Title);
+        Assert.Equal([new HeaderSlot(15, "reviewer")], OverseerView.Heading(new LaneFacts("ops") { Busy = ["reviewer"] }).Slots);
+        Assert.Equal([new HeaderSlot(12, "scout")], OverseerView.Heading(new LaneFacts("ops") { Busy = ["scout"] }).Slots);
     }
 
     [Fact]
     public void A_lane_names_each_stuck_role_once_and_only_keeps_a_frame_for_the_busy_ones()
     {
-        Assert.Equal("a-team · Dev ⚠ stuck · Reviewer ⚠ stuck", OverseerView.Heading("a-team", [], 0, stuck: ["dev", "reviewer"]).Title);
-        Assert.Empty(OverseerView.Heading("a-team", [], 0, stuck: ["dev"]).Slots);
+        Assert.Equal("a-team · Dev ⚠ stuck · Reviewer ⚠ stuck", OverseerView.Heading(new LaneFacts("a-team") { Stuck = ["dev", "reviewer"] }).Title);
+        Assert.Empty(OverseerView.Heading(new LaneFacts("a-team") { Stuck = ["dev"] }).Slots);
 
-        var heading = OverseerView.Heading("a-team", ["lead"], 2, stuck: ["dev"]);
+        var heading = OverseerView.Heading(new LaneFacts("a-team") { Busy = ["lead"], Over = 2, Stuck = ["dev"] });
 
         Assert.Equal("a-team · Dev ⚠ stuck · Lead   · 2 over", heading.Title);
         Assert.Equal([new HeaderSlot(28, "lead")], heading.Slots);
@@ -550,7 +550,7 @@ public class OverseerTests : IDisposable
             """);
 
         Assert.Equal($"mirror 3 moves behind (GitHub rate limit, retry {retry.ToLocalTime():HH:mm})", lag!.Note);
-        Assert.Equal($"a-team · idle · {lag.Note}", OverseerView.Heading("a-team", [], 0, lag.Note).Title);
+        Assert.Equal($"a-team · idle · {lag.Note}", OverseerView.Heading(new LaneFacts("a-team") { Mirror = lag.Note }).Title);
         Assert.Equal("mirror 1 move behind", new MirrorLag(1).Note);
         Assert.Null(MirrorLag.Parse("""[{"number": 7, "team": "a-team"}]"""));
         Assert.Single(BoardCard.Parse("""[{"number": 7, "team": "a-team"}, {"team": "a-team", "mirror": {"behind": 3}}]"""));
@@ -1178,13 +1178,16 @@ public class OverseerTests : IDisposable
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             resume?.Area ?? Area.Work,
             IconStyle.Unicode,
-            handOver: handOver,
-            resume: resume,
-            clock: clock,
-            confirmStop: confirmStop,
-            readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))),
-            syncBoard: syncBoard,
-            checks: checks);
+            new DashboardOptions
+            {
+                HandOver = handOver,
+                Resume = resume,
+                Clock = clock,
+                ConfirmStop = confirmStop,
+                ReadBoard = readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))),
+                SyncBoard = syncBoard,
+                Checks = checks,
+            });
         window.Frame = new Rectangle(0, 0, width, height);
         window.Layout(new Size(width, height));
         window.Refresh();

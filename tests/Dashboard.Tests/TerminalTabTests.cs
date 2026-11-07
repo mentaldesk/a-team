@@ -213,8 +213,11 @@ public class TerminalTabTests : IDisposable
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             area,
             IconStyle.Unicode,
-            readBoard: _ => Task.FromResult(new Reading("[]", null)),
-            terminalTitle: _title);
+            new DashboardOptions
+            {
+                ReadBoard = _ => Task.FromResult(new Reading("[]", null)),
+                TerminalTitle = _title,
+            });
     }
 
     private static void Settle(DashboardWindow window)
