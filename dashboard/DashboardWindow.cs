@@ -79,6 +79,8 @@ public sealed partial class DashboardWindow : Window
     private readonly Action<string> _showGuide;
     private readonly PaneWidths _paneWidths;
     private readonly DashboardOptions _options;
+    private readonly Func<WaitingItem, Task<bool>, Func<string, Task<string?>>, bool> _giveSecret;
+    private bool _hintsForSecret;
     private readonly TerminalTitle _terminalTitle;
     private readonly IconStyle _auto;
     private readonly Label _title;
@@ -180,6 +182,7 @@ public sealed partial class DashboardWindow : Window
         _confirmApprove = _options.ConfirmApprove ?? (_ => false);
         _askHold = _options.AskHold ?? (_ => null);
         _askFix = _options.AskFix ?? ((_, _) => null);
+        _giveSecret = _options.GiveSecret ?? ((_, _, _) => false);
         _confirmStop = _options.ConfirmStop ?? (_ => false);
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");

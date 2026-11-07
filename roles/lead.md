@@ -137,7 +137,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    `released <package>` when the task upgrades a package and needs a published release carrying the change.
    Never hold a task on another repo: the board frees a `depends` by itself.
    Only where the change has no issue or PR there yet, draft one in the task, and hold it with
-   `a-team board {{team}} hold lead <task> <file>`, the file asking the stakeholder to file it and reply. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
+   `a-team board {{team}} hold lead <task> <file>`, the file asking the stakeholder to file it and reply. A task
+   that needs a GitHub Actions secret only they can give asks for it with
+   `a-team board {{team}} secret lead <task> <NAME> <repo|environment> <file>`, the file saying why and where to get it. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
    independent of each other if they touch different parts of the code. Make the later one depend
    on the earlier when both would make major changes to the same file or the same part of the
    code; two unrelated behaviour changes that only brush a shared file run in parallel. Don't plan

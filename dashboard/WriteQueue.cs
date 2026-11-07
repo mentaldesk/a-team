@@ -9,6 +9,7 @@ public enum WriteKind
     Shelve,
     HoldTask,
     AskFix,
+    GaveSecret,
     Release,
     VisionReview,
     Hold,

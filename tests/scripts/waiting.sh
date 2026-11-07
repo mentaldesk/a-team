@@ -826,4 +826,86 @@ run board demo release you 115
 failed "not held"
 same "writes" "" "$(cat "$WRITES")"
 
+case_ "the Lead asks for a repo secret and the Dev for an environment's: each waits on you, by name and destination"
+gh_items <<'ITEMS'
+In_progress 301 The Dev's task
+Ready 302 The Lead's task
+Ready 303 A plain Ready task
+ITEMS
+edit_item 301 '.labels.nodes = [{name: "a-team:dev"}]'
+printf 'A classic PAT with public_repo, for the fork.\n' >"$WORK/why-secret"
+: >"$WRITES"
+: >"$POSTED"
+run board demo secret lead 302 WINGET_TOKEN repo "$WORK/why-secret"
+export KEEP_BOARD=1
+same "exit" 0 "$STATUS"
+same "marked" '{"name":"WINGET_TOKEN","environment":"","by":"lead","why":"A classic PAT with public_repo, for the fork."}' "$(marks 302 | jq -c .secret)"
+same "held by the Lead" '"lead"' "$(marks 302 | jq -c .held.by)"
+grep -q 'WINGET_TOKEN.*a repo secret of mentaldesk/demo' "$POSTED" || fail "the ask names it and where: '$(cat "$POSTED")'"
+same "recorded" '"held · asks for WINGET_TOKEN"' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 302 | jq -c '.events[0].what')"
+run board demo secret dev 301 PACKAGES_TOKEN release "$WORK/why-secret"
+same "exit" 0 "$STATUS"
+same "marked" '{"name":"PACKAGES_TOKEN","environment":"release","by":"dev"}' "$(marks 301 | jq -c '.secret | {name, environment, by}')"
+run board demo move dev 301 Ready
+same "exit" 0 "$STATUS"
+gh_talk <<TALK
+301 comment ${TODAY}T08:00:00Z demo-app[bot] Needs it.\n\n<!-- a-team:dev -->
+302 comment ${TODAY}T08:00:00Z demo-app[bot] Needs it.\n\n<!-- a-team:lead -->
+TALK
+waiting
+same "exit" 0 "$STATUS"
+same "the Lead's" '{"name":"WINGET_TOKEN","environment":"","by":"lead","why":"A classic PAT with public_repo, for the fork.","repo":"mentaldesk/demo"}' \
+  "$(jq -c '.[] | select(.number == 302) | .secret' "$OUT")"
+same "the Dev's" '{"name":"PACKAGES_TOKEN","environment":"release","repo":"mentaldesk/demo"}' \
+  "$(jq -c '.[] | select(.number == 301) | .secret | {name, environment, repo}' "$OUT")"
+same "facts say what it needs" '"held · needs WINGET_TOKEN"' "$(jq -c '.[] | select(.number == 302) | .facts' "$OUT")"
+
+case_ "only the Lead on a Ready task, and the Dev on its own, can ask for a secret, for a name GitHub would take"
+: >"$WRITES"
+for role in you customer reviewer; do
+  run board demo secret "$role" 303 WINGET_TOKEN repo "$WORK/why-secret"
+  failed "$role"
+  grep -q "only the Lead or the Dev" "$ERR" || fail "$role: '$(cat "$ERR")'"
+done
+run board demo secret dev 303 WINGET_TOKEN repo "$WORK/why-secret"
+failed "the Dev on a task that isn't its own"
+for name in 1TOKEN "A-B" GITHUB_TOKEN github_token; do
+  run board demo secret lead 303 "$name" repo "$WORK/why-secret"
+  failed "the name $name"
+done
+run board demo secret lead 303 TOKEN '--bad' "$WORK/why-secret"
+failed "an environment that reads as a flag"
+printf '  \n' >"$WORK/blank"
+run board demo secret lead 303 TOKEN repo "$WORK/blank"
+failed "no reason"
+run board demo secret lead 302 OTHER repo "$WORK/why-secret"
+failed "already held"
+same "nothing posted" "" "$(cat "$WRITES")"
+same "no ask" 'null' "$(marks 303 | jq -c .secret)"
+
+case_ "a given secret frees the task and records only its name, and only you can say so"
+: >"$WRITES"
+run board demo gave lead 302
+failed "the Lead"
+run board demo gave dev 302
+failed "the Dev"
+run board demo gave you 303
+failed "a task asking for none"
+A_TEAM_RUN_TEAM=demo run board demo gave you 302
+failed "in a team's run"
+run board demo gave you 302
+same "exit" 0 "$STATUS"
+same "held" 'null' "$(marks 302 | jq -c .held)"
+same "secret" 'null' "$(marks 302 | jq -c .secret)"
+same "recorded" '{"who":"you","what":"gave WINGET_TOKEN"}' "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 302 | jq -c '.events[0] | {who, what}')"
+same "no comment" "" "$(cat "$WRITES")"
+run board demo gave you 302
+failed "given twice"
+
+case_ "releasing a task asking for a secret takes the ask off too"
+run board demo release you 301
+same "exit" 0 "$STATUS"
+same "secret" 'null' "$(marks 301 | jq -c .secret)"
+unset KEEP_BOARD
+
 finish_suite

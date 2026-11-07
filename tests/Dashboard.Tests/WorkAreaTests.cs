@@ -797,7 +797,9 @@ public partial class WorkAreaTests : IDisposable
         Func<WaitingItem, bool>? confirmApprove = null,
         Func<WaitingItem, string?>? askHold = null,
         Func<string, Task<Reading>>? syncBoard = null,
-        Func<WaitingItem, IReadOnlyList<string>, string?>? askFix = null)
+        Func<WaitingItem, IReadOnlyList<string>, string?>? askFix = null,
+        Func<WaitingItem, Task<bool>, Func<string, Task<string?>>, bool>? giveSecret = null,
+        GitHubSecrets? secrets = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -838,6 +840,8 @@ public partial class WorkAreaTests : IDisposable
                 ConfirmApprove = confirmApprove ?? (_ => true),
                 AskHold = askHold,
                 AskFix = askFix,
+                GiveSecret = giveSecret,
+                Secrets = secrets,
                 SyncBoard = syncBoard,
             });
     }

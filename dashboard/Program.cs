@@ -148,6 +148,8 @@ Handover? Show(Handover? back)
             ConfirmApprove = item => ApproveDialog.Show(app, item),
             AskHold = item => HoldDialog.Show(app, item),
             AskFix = (item, points) => AskFixDialog.Show(app, item, points),
+            GiveSecret = (item, set, save) => GiveSecretDialog.Show(app, item, set, save),
+            Secrets = new GitHubSecrets(new TeamCommand("gh"), Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN") is { Length: > 0 }),
             Attaching = key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
                 new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
             ShowSpending = (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
