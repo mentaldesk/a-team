@@ -77,6 +77,7 @@ internal sealed partial class Board
         var task = Environment.GetEnvironmentVariable("A_TEAM_RUN_TASK") ?? "";
         if (task.Length == 0 || n == task) return;
         var (read, pr) = PrFor(task);
+        Console.Error.Write(read.Err);
         if (!read.Ok || pr?["number"]?.ToJsonString() != n)
             throw new Die($"this run is for #{task}: leave #{n} to a run of its own");
     }
@@ -249,20 +250,28 @@ internal sealed partial class Board
         ["eyes"] = raw?["reactions"]?["eyes"]?.DeepClone(),
     };
 
+    /// <summary>A read a command goes on without, with gh's words passed on.</summary>
+    private GhResult Aloud(params string[] args)
+    {
+        var read = _gh.Run(args);
+        Console.Error.Write(read.Err);
+        return read;
+    }
+
     /// <summary>All that's been said on #n, oldest first; null where GitHub won't say.</summary>
     internal List<JsonObject>? Comments(string n)
     {
-        var read = _gh.Run("api", $"repos/{_repo}/issues/{n}");
+        var read = Aloud("api", $"repos/{_repo}/issues/{n}");
         if (!read.Ok) return null;
         var issue = Json.Parse(read.Out);
         var all = new List<JsonObject> { Comment("body", issue) };
-        var comments = _gh.Run("api", "--paginate", $"repos/{_repo}/issues/{n}/comments");
+        var comments = Aloud("api", "--paginate", $"repos/{_repo}/issues/{n}/comments");
         if (!comments.Ok) return null;
         all.AddRange(Paged(comments).Select(c => Comment("comment", c)));
         if (issue?["pull_request"] is not null)
         {
             var (owner, name) = RepoParts;
-            var reviews = _gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"number={n}", "-f", """
+            var reviews = Aloud("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"number={n}", "-f", """
                 query=
                     query($owner: String!, $name: String!, $number: Int!) {
                       repository(owner: $owner, name: $name) { pullRequest(number: $number) {
@@ -276,7 +285,7 @@ internal sealed partial class Board
                 """);
             if (!reviews.Ok) return null;
             all.AddRange(Json.ParseMany(reviews.Out).OfType<JsonObject>());
-            var lines = _gh.Run("api", "--paginate", $"repos/{_repo}/pulls/{n}/comments");
+            var lines = Aloud("api", "--paginate", $"repos/{_repo}/pulls/{n}/comments");
             if (!lines.Ok) return null;
             foreach (var line in Paged(lines))
             {
@@ -344,7 +353,11 @@ internal sealed partial class Board
     private JsonArray? WaitsOn(string n, string repo, string bot)
     {
         var read = _gh.Run("api", "--paginate", $"repos/{repo}/issues/{n}/comments");
-        if (!read.Ok) return null;
+        return read.Ok ? WaitsIn(read, bot) : null;
+    }
+
+    private static JsonArray WaitsIn(GhResult read, string bot)
+    {
         var waits = new List<JsonObject>();
         foreach (var comment in Paged(read))
         {
