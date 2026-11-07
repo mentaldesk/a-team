@@ -91,7 +91,11 @@ shift 2
 source "$ROOT/scripts/common.sh"
 CONFIG=$(team_config "$TEAM")
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG (start from examples/team.json)"
-if ! unreadable=$(jq -e 'type == "object"' "$CONFIG" 2>&1 >/dev/null); then
+if ! settings=$(jq -er 'if type == "object" then . else error end
+  | [.repo, .project.owner, .project.number, .project.statusField, .priorityField,
+     (.stakeholders // [.reviewer // empty] | tojson), .app.slug, .project.ownerType, (.mirror != false | tostring), .app.id]
+  | map(. // "" | tostring) | join("\u001f")' "$CONFIG" 2>/dev/null); then
+  unreadable=$(jq -e 'type == "object"' "$CONFIG" 2>&1 >/dev/null) || true
   unreadable=${unreadable#jq: }
   unreadable="can't read $TEAM.json: ${unreadable#parse error: }"
   [ "$unreadable" != "can't read $TEAM.json: " ] || unreadable="$TEAM.json isn't a JSON object"
@@ -100,14 +104,9 @@ if ! unreadable=$(jq -e 'type == "object"' "$CONFIG" 2>&1 >/dev/null); then
 fi
 
 cfg() { jq -r "$1 // empty" "$CONFIG"; }
-REPO=$(cfg .repo)
-OWNER=$(cfg .project.owner)
-NUMBER=$(cfg .project.number)
-FIELD=$(cfg .project.statusField)
+IFS=$'\x1f' read -r REPO OWNER NUMBER FIELD PRIORITY STAKEHOLDERS BOT KIND MIRRORED APP_ID <<<"$settings"
 FIELD=${FIELD:-Status}
-PRIORITY=$(cfg .priorityField)
 PRIORITY=${PRIORITY:-Priority}
-STAKEHOLDERS=$(jq -c '.stakeholders // [.reviewer // empty]' "$CONFIG")
 
 # The labels setup creates, as "<name>|<colour>|<description>|<what goes wrong without it>".
 LABELS="pitch|5319e7|An a-team pitch: Lead shapes it, reviewer approves it|the team can't tell its pitches from tasks"
@@ -146,13 +145,12 @@ ACK_FROM=2026-09-24T00:00:00Z
 # Since APP_FROM the team speaks only as its App, so whose words a comment is comes from its author.
 # Before it the team spoke from its stakeholder's account, and the marker alone on the last line said so.
 APP_FROM=2026-09-29T00:00:00Z
-BOT=$(cfg .app.slug)
 BOT=${BOT:+${BOT}[bot]}
 
 # act_as_app <role>: from here on gh is the team's App, whatever login this shell has, or the command stops before it reaches GitHub.
 act_as_app() {
   local why=
-  if [ -z "$(cfg .app.id)" ]; then
+  if [ -z "$APP_ID" ]; then
     why="no GitHub App: run a-team app create $TEAM, then install it"
   elif ! GH_TOKEN=$("$ROOT/bin/a-team" token "$TEAM" 2>&1); then
     why=${GH_TOKEN#a-team token: }
@@ -441,12 +439,11 @@ RED_SINCE="$STATE/$TEAM/red-since"
 # The merge refusals in a row of each green bump, one file a PR.
 BUMP_REFUSALS="$STATE/$TEAM/bump-refusals"
 
-KIND=$(cfg .project.ownerType)
 KIND=${KIND:-organization}
 
 # MIRROR: the GitHub Project a-team copies the board to, as "<owner>/<number>"; empty for none.
 MIRROR=
-[ -z "$NUMBER" ] || [ "$(jq -r '.mirror != false' "$CONFIG")" = false ] || MIRROR="$OWNER/$NUMBER"
+[ -z "$NUMBER" ] || [ "$MIRRORED" = false ] || MIRROR="$OWNER/$NUMBER"
 # How often the whole mirror is read back, for items added to it and cards that have drifted from the record.
 READ_EVERY=${A_TEAM_BOARD_READ_EVERY:-900}
 PRIORITIES='["Urgent", "High", "Medium", "Low"]'
@@ -788,15 +785,16 @@ repair_last_moves() {
 # board_ready: moves the board over from the mirror on the first run, and copies it all to a mirror newly pointed at.
 SEEN=
 board_ready() {
-  local was nodes column
+  local was nodes column columns
   mkdir -p "$STATE"
+  columns=$(history_sql "SELECT 'board.' || name FROM pragma_table_info('board')
+    UNION ALL SELECT 'boards.' || name FROM pragma_table_info('boards');")
+  columns=" ${columns//$'\n'/ } "
   for column in marks mirrored_rank mirrored_theme; do
-    history_sql "SELECT name FROM pragma_table_info('board');" | grep -qx "$column" ||
-      history_sql "ALTER TABLE board ADD COLUMN $column TEXT;" >/dev/null
+    [[ $columns == *" board.$column "* ]] || history_sql "ALTER TABLE board ADD COLUMN $column TEXT;" >/dev/null
   done
-  history_sql "SELECT name FROM pragma_table_info('boards');" | grep -qx repaired ||
-    history_sql "ALTER TABLE boards ADD COLUMN repaired TEXT;" >/dev/null
-  was=$(history_sql -json "SELECT project FROM boards WHERE team = $(sql "$TEAM");" | jq -rs '.[0][0].project // "-"')
+  [[ $columns == *" boards.repaired "* ]] || history_sql "ALTER TABLE boards ADD COLUMN repaired TEXT;" >/dev/null
+  was=$(history_sql "SELECT COALESCE((SELECT project FROM boards WHERE team = $(sql "$TEAM")), '-');")
   if [ "$was" = - ]; then
     if [ -n "$MIRROR" ]; then
       nodes=$(mirror_nodes) || exit 1
