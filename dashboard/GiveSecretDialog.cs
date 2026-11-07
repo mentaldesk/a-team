@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Text;
 using MentalDesk.Tui.Dialogs;
 using Terminal.Gui.Input;
@@ -46,7 +47,11 @@ public sealed class GiveSecretDialog : DashboardDialog
         Alert.Y = Pos.Bottom(Foot);
         Add(_request, _valueLabel, _value, _note, Foot);
         Check(_value, _valueLabel, () => string.IsNullOrWhiteSpace(_value.Text) ? "Value is needed" : null);
-        SubViewsLaidOut += (_, _) => Wrap();
+        SubViewsLaidOut += (_, _) =>
+        {
+            Wrap();
+            PlaceCursor();
+        };
         Wrap();
         TakeInAlreadySet();
         _value.SetFocus();
@@ -73,7 +78,7 @@ public sealed class GiveSecretDialog : DashboardDialog
     }
 
     /// <summary>True once the read of whether it's already set is over, whatever it found.</summary>
-    private bool TakeInAlreadySet()
+    internal bool TakeInAlreadySet()
     {
         if (!_alreadySet.IsCompleted)
             return false;
@@ -85,6 +90,13 @@ public sealed class GiveSecretDialog : DashboardDialog
             SetNeedsLayout();
         }
         return true;
+    }
+
+    // TextField only places its cursor as it takes focus or resizes, so it's left behind where the dialog then moves.
+    private void PlaceCursor()
+    {
+        if (_value.HasFocus && !_value.ReadOnly)
+            _value.Cursor = _value.Cursor with { Position = _value.ViewportToScreen(new Point(_value.InsertionPoint - _value.ScrollOffset, 0)) };
     }
 
     private void Wrap()

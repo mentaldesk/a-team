@@ -58,6 +58,38 @@ public class GiveSecretDialogTests
     }
 
     [Fact]
+    public void Value_s_cursor_follows_the_dialog_to_where_it_ends_up()
+    {
+        using var dialog = Open();
+
+        dialog.X = 10;
+        dialog.Y = 5;
+        dialog.Layout(new Size(100, 30));
+
+        Assert.True(dialog.Value.HasFocus);
+        Assert.Equal(dialog.Value.ViewportToScreen(Point.Empty), dialog.Value.Cursor.Position);
+    }
+
+    [Fact]
+    public void A_late_answer_that_it_s_already_set_keeps_Value_s_focus_cursor_and_what_was_typed()
+    {
+        var alreadySet = new TaskCompletionSource<bool>();
+        using var dialog = new GiveSecretDialog(Item, alreadySet.Task, _ => Task.FromResult<string?>(null));
+        dialog.Layout(new Size(100, 30));
+        dialog.Value.Text = "s3c";
+        dialog.Value.InsertionPoint = 3;
+
+        alreadySet.SetResult(true);
+        Assert.True(dialog.TakeInAlreadySet());
+        dialog.Layout(new Size(100, 30));
+
+        Assert.Contains("Saving will replace it.", dialog.Note.Replace('\n', ' '));
+        Assert.True(dialog.Value.HasFocus);
+        Assert.Equal("s3c", dialog.Value.Text);
+        Assert.Equal(dialog.Value.ViewportToScreen(new Point(3, 0)), dialog.Value.Cursor.Position);
+    }
+
+    [Fact]
     public void Save_stays_enabled_and_with_no_value_marks_Value_says_so_and_stays_open()
     {
         var saved = new List<string>();
