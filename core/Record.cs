@@ -75,7 +75,8 @@ internal sealed class Record : IDisposable
                     Sqlite.sqlite3_bind_null(stmt, i + 1);
             }
             var columns = Sqlite.sqlite3_column_count(stmt);
-            while (Sqlite.sqlite3_step(stmt) == Sqlite.Row)
+            int step;
+            while ((step = Sqlite.sqlite3_step(stmt)) == Sqlite.Row)
             {
                 var row = new Dictionary<string, string?>(columns);
                 string? first = null;
@@ -90,6 +91,8 @@ internal sealed class Record : IDisposable
                 }
                 rows.Add(new Row(row, first));
             }
+            if (step != Sqlite.Done)
+                throw new InvalidOperationException(Error());
         }
         finally
         {

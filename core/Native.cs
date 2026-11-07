@@ -8,6 +8,7 @@ internal static class Sqlite
 {
     private const string Lib = "sqlite3";
     internal const int Row = 100;
+    internal const int Done = 101;
     internal const int Null = 5;
 
     static Sqlite()
