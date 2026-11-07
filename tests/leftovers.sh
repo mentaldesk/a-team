@@ -11,6 +11,11 @@ LEFT_RUNNING="left running when the suite ended, now stopped:"
 
 fail() { echo "  FAIL $*"; failures=$((failures + 1)); }
 
+# Only a new executable's first run waits on macOS's scan, so every fake shares this one and keeps its body beside it.
+printf '#!/usr/bin/env bash\n. "$0.body"\n' >"$WORK/fake-launcher"
+chmod +x "$WORK/fake-launcher"
+fake() { ln -sf "$WORK/fake-launcher" "$1"; cat >"$1.body"; }
+
 # The slash keeps a suite whose folder's name merely starts with ours out of this.
 running_from_work() {
   local listing

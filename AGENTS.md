@@ -114,6 +114,10 @@ draw loop, so cover the logic behind the views instead.
 leaves this suite to CI: its quick checks are `bash -n` and ShellCheck for shell, and the dashboard's
 tests for C#.
 
+Write a new test's fake with `fake <path> <<SH`, which `tests/leftovers.sh` gives the suite. Every fake is a symlink
+to one launcher with its body in `<path>.body`, because on macOS each new executable's first run waits for a scan,
+and the wait behaves like one queue for the whole machine. So edit a fake's `.body`, and move it with its body.
+
 ## Releasing
 
 Run the **Release** workflow from the Actions tab. Leave *bump* on `auto` to pick the version from
