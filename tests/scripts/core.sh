@@ -100,10 +100,82 @@ core_fixture
 gh_items <<'ITEMS'
 Ready 8 A task
 ITEMS
-run board demo wip
-same "wip exit" 0 "$STATUS"
-grep -q "fallback wip: not ported yet" "$TRACE" || fail "wip: '$(cat "$TRACE")'"
+run board demo overview
+same "overview exit" 0 "$STATUS"
+grep -q "fallback overview: not ported yet" "$TRACE" || fail "overview: '$(cat "$TRACE")'"
 grep -q "handled __items" "$TRACE" || fail "state: '$(cat "$TRACE")'"
+: >"$TRACE"
+
+case_ "the reads are the core's: none of them reaches board.sh"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+Building 7 A pitch
+ITEMS
+board_moved_over
+for command in wip next today trend trends spending decisions "mine dev" "children 7" "body 8" "conversation 8" "history 8" \
+  "moves 2026-10-11T09:00:00Z" "pr 8" "checks 8" "criteria 8 9" "feedback lead 8"; do
+  read -ra words <<<"$command"
+  KEEP_BOARD=1 run board demo "${words[@]}"
+  same "$command exit" 0 "$STATUS"
+  same "$command" "handled ${words[0]}" "$(traced)"
+done
+
+case_ "a read GitHub refuses says gh's own words, and exits as the shell did"
+core_fixture
+gh_items <<'ITEMS'
+Ready 8 A task
+Building 7 A pitch
+ITEMS
+board_moved_over
+touch "$BIN/offline"
+said="gh: error connecting to api.github.com"
+refused_read() {
+  KEEP_BOARD=1 run board demo "${@:4}"
+  same "$4 exit" "$1" "$STATUS"
+  same "$4 stdout" "$2" "$(cat "$OUT")"
+  same "$4 stderr" "$3" "$(cat "$ERR")"
+}
+refused_read 1 '[]' "$said" children 7
+refused_read 1 '' "$said" pr 8
+refused_read 1 '' "$said"$'\n'"board.sh: could not read PR #8" checks 8
+refused_read 1 '' "$said" criteria 8
+refused_read 1 '' "$said"$'\n'"board.sh: can't read #8" criteria 8 9
+refused_read 1 '' "$said" feedback lead 8
+refused_read 1 '' "board.sh: can't read #8 ($said)" body 8
+refused_read 1 '' "board.sh: can't read the conversation on #8 ($said)" conversation 8
+rm "$BIN/offline"
+: >"$TRACE"
+
+case_ "pr still prints what jq made of a body gh failed with, as a PR number's read does"
+core_fixture
+gh_items <<'ITEMS'
+In_review 8 A task
+ITEMS
+board_moved_over
+refusing=$(mktemp -d "$WORK/refusing.XXXXXX")
+fake "$refusing/gh" <<'SH'
+echo '{"data": {"repository": {"issue": null, "pullRequests": {"nodes": []}}}}'
+echo "gh: Could not resolve to an Issue with the number of 8." >&2
+exit 1
+SH
+PATH="$refusing:$PATH" KEEP_BOARD=1 run board demo pr 8
+same "exit" 1 "$STATUS"
+same "stdout" null "$(cat "$OUT")"
+same "stderr" "gh: Could not resolve to an Issue with the number of 8." "$(cat "$ERR")"
+: >"$TRACE"
+
+case_ "children stops at an error body gh prints, where jq could not read it as a list"
+fake "$refusing/gh" <<'SH'
+case " $* " in
+  *sub_issues*) echo '{"message": "Not Found", "status": "404"}'; echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+esac
+exit 1
+SH
+PATH="$refusing:$PATH" KEEP_BOARD=1 run board demo children 8
+same "exit" 5 "$STATUS"
+same "stdout" "" "$(cat "$OUT")"
+grep -qF "gh: Not Found (HTTP 404)" "$ERR" || fail "gh's words: '$(cat "$ERR")'"
 : >"$TRACE"
 
 case_ "a dry run is the core's own: it says what it would do, and changes nothing"

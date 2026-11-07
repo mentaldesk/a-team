@@ -151,9 +151,9 @@ internal sealed partial class Board
                   }
                 }
             """);
-        if (!read.Ok) return (read, null);
+        if (!long.TryParse(n, CultureInfo.InvariantCulture, out var number))
+            throw new Stop(2, $"{read.Err}jq: Invalid JSON text passed to --argjson\n");
         var repository = Json.TryParse(read.Out)?["data"]?["repository"];
-        var number = long.Parse(n, CultureInfo.InvariantCulture);
         var found = repository?["issue"]?["closedByPullRequestsReferences"]?["nodes"]?.AsArray().FirstOrDefault()
             ?? repository?["pullRequests"]?["nodes"]?.AsArray().FirstOrDefault(pr => Closes(pr).Contains(number));
         if (found is null) return (read, null);
@@ -197,6 +197,7 @@ internal sealed partial class Board
     internal JsonObject? MainRed()
     {
         var read = _gh.Run("api", "--paginate", $"repos/{_repo}/commits/HEAD/check-runs?per_page=100", "--jq", ".check_runs[]");
+        Console.Error.Write(read.Err);
         if (!read.Ok) throw new Die("could not read the default branch's CI");
         var runs = Json.ParseMany(read.Out);
         var checks = Checks(runs);
@@ -207,6 +208,7 @@ internal sealed partial class Board
             return null;
         }
         var branch = _gh.Run("api", $"repos/{_repo}", "--jq", ".default_branch");
+        Console.Error.Write(branch.Err);
         if (!branch.Ok) throw new Die($"could not read {_repo}'s default branch");
         var sha = Json.Text(runs.FirstOrDefault()?["head_sha"]) ?? "";
         var since = File.Exists(file) ? File.ReadAllText(file) : "";
@@ -252,12 +254,23 @@ internal sealed partial class Board
     /// <summary>All that's been said on #n, oldest first; null where GitHub won't say.</summary>
     internal List<JsonObject>? Comments(string n)
     {
+        var (all, code, _) = CommentsSoFar(n);
+        return code == 0 ? all : null;
+    }
+
+    /// <summary>All that's been said on #n as far as GitHub would say, null for nothing; the exit code of the read it stopped at, or 0; and what gh said on stderr.</summary>
+    internal (List<JsonObject>? All, int Code, string Err) CommentsSoFar(string n)
+    {
         var read = _gh.Run("api", $"repos/{_repo}/issues/{n}");
-        if (!read.Ok) return null;
+        var err = read.Err;
+        if (!read.Ok) return (null, read.Code, err);
         var issue = Json.Parse(read.Out);
         var all = new List<JsonObject> { Comment("body", issue) };
+        (List<JsonObject>?, int, string) Stopped(GhResult at) =>
+            (all.OrderBy(comment => Json.Text(comment["at"]), StringComparer.Ordinal).ToList(), at.Code, err);
         var comments = _gh.Run("api", "--paginate", $"repos/{_repo}/issues/{n}/comments");
-        if (!comments.Ok) return null;
+        err += comments.Err;
+        if (!comments.Ok) return Stopped(comments);
         all.AddRange(Paged(comments).Select(c => Comment("comment", c)));
         if (issue?["pull_request"] is not null)
         {
@@ -274,10 +287,12 @@ internal sealed partial class Board
                           | {kind: "review", state, author: (.author | {{Login}}), at: .submittedAt,
                              body: (.body // ""), url, id, eyes: .reactions.totalCount}
                 """);
-            if (!reviews.Ok) return null;
+            err += reviews.Err;
+            if (!reviews.Ok) return Stopped(reviews);
             all.AddRange(Json.ParseMany(reviews.Out).OfType<JsonObject>());
             var lines = _gh.Run("api", "--paginate", $"repos/{_repo}/pulls/{n}/comments");
-            if (!lines.Ok) return null;
+            err += lines.Err;
+            if (!lines.Ok) return Stopped(lines);
             foreach (var line in Paged(lines))
             {
                 var comment = Comment("line", line);
@@ -286,7 +301,7 @@ internal sealed partial class Board
                 all.Add(comment);
             }
         }
-        return all.OrderBy(comment => Json.Text(comment["at"]), StringComparer.Ordinal).ToList();
+        return Stopped(new GhResult(0, "", ""));
     }
 
     /// <summary>The team wrote this, as the role whose marker is <paramref name="marker"/>.</summary>
@@ -310,6 +325,12 @@ internal sealed partial class Board
     internal List<JsonObject> UnansweredFeedback(string role, string n)
     {
         var comments = Comments(n) ?? throw new Stop(1, $"board.sh: couldn't read what's been said on #{n}\n");
+        return Unanswered(role, comments);
+    }
+
+    /// <summary>Of what's been said on a card, the stakeholders' comments no run has left a 👀 on.</summary>
+    internal List<JsonObject> Unanswered(string role, List<JsonObject> comments)
+    {
         var marker = $"<!-- a-team:{role} -->";
         var since = comments.Where(c => TeamSaid(c, marker)
                 || (string.CompareOrdinal(Json.Text(c["at"]), AckFrom) < 0 && (Json.Text(c["body"]) ?? "").Contains(marker, StringComparison.Ordinal)))

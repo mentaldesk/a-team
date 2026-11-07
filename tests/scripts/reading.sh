@@ -100,6 +100,26 @@ TALK
 run board demo conversation 6
 same "bodies" '["Later.\n\nNot now: back on 15 Oct."]' "$(jq -c '[.[].body]' "$OUT")"
 
+case_ "conversation finds an open PR GitHub hasn't linked, by what its body closes"
+gh_talk false MERGEABLE unlinked <<'TALK'
+6 body 2026-10-01T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+6 pr-body 2026-10-01T08:05:00Z demo-app[bot] Closes #6\n\n<!-- a-team:dev -->
+6 pr-comment 2026-10-01T09:00:00Z reviewer Does it scroll?
+TALK
+: >"$CALLS"
+run board demo conversation 6
+same "exit" 0 "$STATUS"
+same "who" '["dev","you"]' "$(jq -c '[.[].who]' "$OUT")"
+same "prs" '[906,906]' "$(jq -c '[.[].pr]' "$OUT")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
+
+case_ "a conversation's number isn't one: nothing's been said, and GitHub isn't asked"
+: >"$CALLS"
+run board demo conversation abc
+same "exit" 0 "$STATUS"
+same "conversation" '[]' "$(jq -c . "$OUT")"
+same "api calls" 0 "$(grep -c '' <"$CALLS")"
+
 case_ "a card nobody has said anything on has an empty conversation"
 gh_talk <<'TALK'
 6 body 2026-10-01T08:00:00Z reviewer An Idea of my own

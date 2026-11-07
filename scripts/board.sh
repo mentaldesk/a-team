@@ -153,7 +153,7 @@ act_as_app() {
 }
 
 case "$CMD" in
-  attach | audited | comment | covered | decide | decision | depends | edit | feedback | gave | hold | mine | new | \
+  attach | audited | comment | covered | decide | decision | depends | edit | gave | hold | new | \
     pictures | priority | recommend | reconfirm | release | replace | review | secret | seeded | skip | spent | theme | \
     triggers | unblock | undepend | unlink | vision-review)
     speaker=${1:-}
@@ -278,11 +278,6 @@ CHECKS='def checks:
 check_role() {
   case "$1" in lead | dev | customer | reviewer) ;; *) die "unknown role '$1' (lead | dev | customer | reviewer)" ;; esac
 }
-
-# own($role): whether an item is that role's: a pitch is the Lead's, a claimed task the Dev's, the docs PR the Customer lead's.
-OWN='def own($role): if $role == "lead" then (.labels | index("pitch")) != null
-  elif $role == "dev" then .marks.dev == true elif $role == "customer" then .marks.customer == true else false end;'
-
 
 customer_on() { jq -e '.roles.customer == true' "$CONFIG" >/dev/null 2>&1; }
 
@@ -658,82 +653,6 @@ catch_up() {
     | join("\n")') COMMIT;" >/dev/null || echo "board.sh: couldn't record what happened on GitHub" >&2
 }
 
-# waits($worktrees): a team's events, oldest first, as spans saying which Ready tasks await an answer, which
-# are free to start, and whether the Dev's slots, held as `claim` counts them, are full with one In review.
-# cycle($waits): of one item's events, oldest first, a task's span from first entering Ready to its last
-# acceptance and its seconds with you, or nothing for an item that never entered Ready while the record was kept.
-# move: the Status a line of history moved its item from and to, if it moved it.
-MOVE='def move: if startswith("added as ") then {from: null, to: .[9:]} elif startswith("moved to ") then empty
-      elif contains(" → ") then split(" · ")[0] | split(" → ") | {from: .[0], to: .[1]} else empty end;'
-CYCLES="$MOVE"'
-  def task: IN("Ready", "In progress", "In review");
-  def waits($worktrees):
-    def ready(f): [.items | to_entries[] | select(.value.status == "Ready" and (.value | f)) | .key];
-    def span($from; $to): [.items[] | select(.dev and (.status | IN("In progress", "In review")) and .deps == [])] as $held
-      | {from: ($from | fromdateiso8601), to: ($to | fromdateiso8601), asked: ready(.asked),
-         free: ready((.asked | not) and .deps == []),
-         full: ($worktrees != null and ($held | length) >= $worktrees and any($held[]; .status == "In review"))};
-    reduce .[] as $e ({items: {}, last: null, spans: []};
-      (if .last != null and $e.at > .last then .spans += [span(.last; $e.at)] else . end)
-      | .last = $e.at
-      | ($e.item | tostring) as $n
-      | ([$e.what | move] | first) as $m
-      | .items[$n] //= {status: null, dev: false, deps: [], asked: false}
-      | if $m != null then .items[$n] |= (.status = $m.to
-            | .dev = ($m.to | IN("In progress", "In review")) and (.dev or ($e.who == "dev" and $m.from == "Ready" and $m.to == "In progress"))
-            | .asked = (.asked and $m.to == "Ready"))
-        elif $e.what | test("^blocked by #[0-9]+$") then .items[$n].deps += [$e.what[12:] | tonumber]
-        elif $e.what | test("^blocked by [^ #]+#[0-9]+$") then .items[$n].deps += [$e.what[11:]]
-        elif $e.what | test("^no longer blocked by #[0-9]+$") then .items[$n].deps -= [$e.what[22:] | tonumber]
-        elif $e.what | test("^no longer blocked by [^ #]+#[0-9]+$") then .items[$n].deps -= [$e.what[21:]]
-        elif $e.what | test("^(accepted · |closed|declined)") then .items[$n] |= (.status = "Done" | .dev = false)
-          | .items |= map_values(.deps -= [$e.item])
-        elif $e.what == "handed back with a question" then .items[$n].asked = true
-        elif $e.what == "question answered" then .items[$n].asked = false
-        else . end)
-    | .spans;
-  def cycle($waits): (map(select(.who == "you" and (.what | startswith("accepted · ")))) | last.at) as $accepted
-    | [.[] | select(.at <= $accepted) | (.what | move) + {at}] as $moves
-    | ($moves | map(select((.from // "" | task) or (.to | task))) | first) as $first
-    | select($first.to == "Ready" and ($first.from // "" | task | not))
-    | (reduce ($moves[] | select(.at >= $first.at)) as $m ({review: 0, since: null};
-        if $m.to == "In review" then .since //= $m.at
-        elif $m.from == "In review" and .since != null
-        then .review += ($m.at | fromdateiso8601) - (.since | fromdateiso8601) | .since = null
-        else . end)) as $review
-    | ($first.at | fromdateiso8601) as $from | ($accepted | fromdateiso8601) as $to | (.[0].item | tostring) as $n
-    | ([$waits[] | select(.to > $from and .from < $to and ((.asked | index($n)) or (.full and (.free | index($n)))))
-        | ([.to, $to] | min) - ([.from, $from] | max)] | add // 0) as $waited
-    | {ready: $first.at, accepted: $accepted,
-       withYou: ($review.review + $waited + if $review.since == null then 0
-                 else $to - ($review.since | fromdateiso8601) end)};'
-
-# touches($by; $work; $since): per task in $work accepted since then, your comments on it or its PR once it reached review.
-# finished($by; $tasks; $since): per pitch finished since then, whether you approved it with nothing to say while
-# Pitched and never commented on its tasks or their PRs. $by holds each item's events, $tasks each pitch's tasks.
-TOUCHES='
-  def said: .who == "you" and .what == "commented";
-  def merged: capture("^accepted · PR #(?<pr>[0-9]+) ").pr | tonumber;
-  def on($by): .[] as $n | $by[$n | tostring][]?;
-  def touches($by; $work; $since): map(select(.who == "you" and (.what | startswith("accepted · ")) and .at > $since
-        and (.item | IN($work[]))))
-    | group_by(.item)
-    | map(([.[0].item] + [.[].what | merged] | unique | [on($by)]) as $events
-        | ([$events[] | select(.what | move | .to == "In review") | .at] | min // "") as $review
-        | {accepted: (map(.at) | max), touches: ([$events[] | select(said and .at >= $review)] | length)})
-    | sort_by(.accepted);
-  def finished($by; $tasks; $since): map(select((.what | startswith("closed as done")) and .at > $since))
-    | group_by(.item) | map(last | . as $closed
-      | (reduce $by[.item | tostring][] as $e ({pitched: false, approved: false, said: false};
-          (if .pitched and ($e | said) then .said = true else . end)
-          | ([$e.what | move] | first) as $m
-          | if $m == null then . else .pitched = ($m.to == "Pitched")
-              | .approved = (.approved or ($m.from == "Pitched" and $m.to == "Approved")) end)) as $pitch
-      | ($tasks[.item | tostring] // []) as $own
-      | ($own + [$own | on($by) | .what | merged] + [.what | scan("#[0-9]+") | .[1:] | tonumber]) as $items
-      | {at: .at, untouched: ($pitch.approved and ($pitch.said | not) and ([$items | on($by) | select(said)] | length) == 0)})
-    | sort_by(.at);'
-
 # sql_now <modifier>: now, moved by an SQLite date modifier, in the record's own format.
 sql_now() { printf "strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ', 'now', '%s')" "$1"; }
 
@@ -960,26 +879,6 @@ pr_checks() {
 # against_main <checks> <main>: those checks, `main-red` where every job they fail also fails on the default branch.
 against_main() {
   jq --argjson main "$2" "$MAIN_RED"'if .verdict == "fail" and main_red($main) then .verdict = "main-red" else . end' <<<"$1"
-}
-
-# ci <pr>: the CI verdict for <pr>'s head commit, reading the default branch's only when the PR fails. A fix's own PR
-# never reads `main-red`, or nothing would wake the Dev to finish it.
-ci() {
-  local checks main
-  checks=$(pr_checks "$1") || exit 1
-  [ "$(jq -r .verdict <<<"$checks")" = fail ] || { printf '%s\n' "$checks"; return; }
-  main=$(main_red)
-  if [ "$main" != null ] && fix_pr "$1"; then main=null; fi
-  against_main "$checks" "$main"
-}
-
-# fix_pr <pr>: whether <pr> is the open PR of a fix task.
-fix_pr() {
-  local n
-  for n in $(items | jq -r ".[] | select($FIX and .closed == null) | .number"); do
-    [ "$(pr_for "$n" | jq -r '.number // empty')" = "$1" ] && return 0
-  done
-  return 1
 }
 
 # main_red: the default branch's head as {branch, sha, since, failing} while its latest completed CI there has failed, else
@@ -1868,31 +1767,6 @@ case "$CMD" in
     [ $# -eq 0 ] || die "usage: board.sh $TEAM format"
     ;;
 
-  mine)
-    [ $# -ge 1 ] || die "usage: board.sh $TEAM mine <role> [STATUS...]"
-    role=$1
-    shift
-    check_role "$role"
-    items | jq --arg role "$role" \
-      --argjson want "$(if [ $# -gt 0 ]; then printf '%s\n' "$@" | jq -R . | jq -s .; else echo null; fi)" "$OWN"'
-      map(select(own($role) and ($want == null or (.status as $s | $want | index($s)))))'
-    ;;
-
-  wip)
-    items | jq "def open_blocked: .status != \"Done\" and $BLOCKED;"'
-      def counts: group_by(.status) | map({key: .[0].status, value: length}) | from_entries;
-      {pitches: map(select(.labels | index("pitch"))) | counts,
-       dev: (map(select(.marks.dev))
-         | (map(select(open_blocked | not)) | counts) + {blocked: map(select(open_blocked)) | length}),
-       stakeholders: map(select(((.labels | index("pitch")) or .marks.dev or .marks.customer) | not))
-         | counts}'
-    ;;
-
-  next)
-    all=$(items)
-    startable "$all" | jq first
-    ;;
-
   lead-next)
     state="$STATE/$TEAM/lead-turn"
     all=$(items)
@@ -2002,17 +1876,6 @@ case "$CMD" in
     write <<<"$body" "put ${#images[@]} picture(s) on #$pr" gh pr edit "$pr" -R "$REPO" --body-file - >/dev/null
     record "$role" "${A_TEAM_RUN_TASK:-$pr}" "put ${#images[@]} picture(s) on PR #$pr"
     say "#$pr: ${#images[@]} picture(s) under What it looks like"
-    ;;
-
-  criteria)
-    [ $# -ge 1 ] && [ $# -le 2 ] || die "usage: board.sh $TEAM criteria <n> [<pr>]"
-    pr=${2:-$(pr_for "$1" | jq -r '.number // empty')}
-    issue=$(gh api "repos/$REPO/issues/$1" --jq '.body // ""') || die "can't read #$1"
-    said=""
-    if [ -n "$pr" ]; then
-      said=$(gh api "repos/$REPO/pulls/$pr" --jq '.body // ""') || die "can't read PR #$pr"
-    fi
-    criteria_json "$issue" "$said"
     ;;
 
   checked)
@@ -2232,13 +2095,6 @@ case "$CMD" in
       say "#$n: theme: $heading"
     fi
     mirror_push "$n"
-    ;;
-
-  feedback)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM feedback <role> <n>"
-    role=$1 n=$2
-    check_role "$role"
-    unanswered_feedback "$role" "$n"
     ;;
 
   link)
@@ -2606,45 +2462,6 @@ Give it in Work, with \`k\` on this task. Never put its value in a comment: this
     say "vision review asked for: the Lead starts one on the next pass"
     ;;
 
-  body)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM body <n>"
-    # gh puts the error's own body on stdout, so its one-line reason is read from stderr alone.
-    trouble=$(mktemp)
-    issue=$(gh api "repos/$REPO/issues/$1" --jq '{number, title, body: (.body // "")}' 2>"$trouble") ||
-      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read #$1 ($reason)"; }
-    rm -f "$trouble"
-    jq -s . <<<"$issue" | with_images | jq '.[0]'
-    ;;
-
-  conversation)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM conversation <n>"
-    trouble=$(mktemp)
-    talk=$(gated_talk "[{\"number\": $1}]" 2>"$trouble") ||
-      { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read the conversation on #$1 ($reason)"; }
-    rm -f "$trouble"
-    jq --argjson stakeholders "$STAKEHOLDERS" --arg appFrom "$APP_FROM" --arg bot "$BOT" \
-      "def login: $LOGIN; $TEAM_SAID"'
-      def remark($pr): {at: .createdAt, author: (.author | login), body: (.body // ""), pr: $pr, url};
-      def who: if team("<!-- a-team:lead -->") then "lead" elif team("<!-- a-team:dev -->") then "dev"
-        elif team("<!-- a-team:customer -->") then "customer" elif team("<!-- a-team:reviewer -->") then "reviewer"
-        elif .author | IN($stakeholders[]) then "you" else .author end;
-      [.data.repository | to_entries[].value | select(. != null)
-       | (.comments.nodes[]? | remark(null)),
-         (.closedByPullRequestsReferences.nodes[]? | .number as $pr
-          | (remark($pr) + {description: true}), (.comments.nodes[]? | remark($pr)))]
-      | sort_by(.at)
-      | map({who: who, at, pr, url, description: (.description // false),
-             body: (.body | gsub("[ \t]*<!-- a-team:(lead|dev|customer|reviewer|shelved [^>]*) -->[ \t]*"; "") | sub("\\s+$"; ""))})' <<<"$talk"
-    ;;
-
-  children)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM children <n>"
-    gh api --paginate "repos/$REPO/issues/$1/sub_issues" |
-      jq -s --argjson all "$(items)" "add // [] | map(.number as \$n | ([\$all[] | select(.number == \$n)] | first) as \$on
-        | .labels |= map(.name) | .status = \$on.status | .marks = \$on.marks
-        | {number, title, state, labels, status, leftInIdea: ($LEFT_IN_IDEA)})"
-    ;;
-
   waiting)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM waiting"
     CACHED=1
@@ -2771,124 +2588,6 @@ Give it in Work, with \`k\` on this task. Never put its value in a comment: this
       + (if $lag then [{team: $team, mirror: $lag}] else [] end)' <<<"$all"
     ;;
 
-  trend)
-    [ $# -eq 0 ] || die "usage: board.sh $TEAM trend"
-    if [ ! -f "$STATE/history.db" ]; then
-      echo '{"since": null, "weekAgo": null, "accepted": 0, "spentSince": null, "spent": 0}'
-      exit 0
-    fi
-    team=$(sql "$TEAM")
-    history_sql -json "SELECT
-        (SELECT MIN(at) FROM (SELECT at FROM events WHERE team = $team UNION ALL
-          SELECT started FROM caught_up WHERE team = $team UNION ALL SELECT at FROM queue WHERE team = $team)) AS since,
-        (SELECT waiting FROM queue WHERE team = $team AND at <= $(sql_now '-7 days') AND at > $(sql_now '-8 days')
-          ORDER BY at DESC LIMIT 1) AS weekAgo,
-        (SELECT COUNT(DISTINCT CASE WHEN what LIKE 'accepted · PR #%' THEN what ELSE item END) FROM events
-          WHERE team = $team AND who = 'you' AND what LIKE 'accepted · %' AND at > $(sql_now '-7 days')) AS accepted,
-        (SELECT MIN(at) FROM spent WHERE team = $team) AS spentSince,
-        (SELECT COALESCE(SUM(seconds), 0) FROM spent WHERE team = $team AND at > $(sql_now '-7 days')) AS spent;" |
-      jq '.[0]'
-    ;;
-
-  trends)
-    [ $# -eq 0 ] || die "usage: board.sh $TEAM trends"
-    if [ ! -f "$STATE/history.db" ]; then
-      echo '{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0, "spentSince": null, "spent": [], "touches": [], "finished": []}'
-      exit 0
-    fi
-    team=$(sql "$TEAM")
-    history_sql -json "SELECT
-        (SELECT MIN(at) FROM (SELECT at FROM events WHERE team = $team UNION ALL
-          SELECT started FROM caught_up WHERE team = $team UNION ALL SELECT at FROM queue WHERE team = $team)) AS since,
-        (SELECT json_group_array(json_object('at', at, 'waiting', waiting)) FROM (SELECT at, waiting FROM queue
-          WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS queue,
-        (SELECT json_group_array(at) FROM (SELECT MAX(at) AS at FROM events
-          WHERE team = $team AND who = 'you' AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')
-          GROUP BY CASE WHEN what LIKE 'accepted · PR #%' THEN what ELSE item END ORDER BY at)) AS accepted,
-        (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
-          WHERE team = $team AND item IN (SELECT item FROM events WHERE team = $team AND who = 'you'
-            AND what LIKE 'accepted · %' AND at > $(sql_now '-15 days')) ORDER BY at, id)) AS cycles,
-        (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
-          WHERE team = $team AND at > $(sql_now '-45 days') ORDER BY at, id)) AS moves,
-        (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost,
-        (SELECT MIN(at) FROM spent WHERE team = $team) AS spentSince,
-        (SELECT json_group_array(json_object('at', at, 'seconds', seconds, 'gate', gate)) FROM (SELECT at, seconds, gate
-          FROM spent WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS spent,
-        $(sql_now '-15 days') AS fortnight,
-        (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
-          WHERE team = $team AND (who = 'you' AND (what = 'commented' OR what LIKE 'accepted · %')
-            OR what LIKE 'closed as done%' OR what LIKE '% → %' OR what LIKE 'added as %') ORDER BY at, id)) AS said,
-        (SELECT json_group_array(json_object('item', item, 'parent', json_extract(content, '\$.parent'))) FROM board
-          WHERE team = $team AND json_extract(content, '\$.type') = 'Issue'
-            AND (json_extract(content, '\$.parent') IS NOT NULL OR json_extract(marks, '\$.dev'))) AS tasks;" |
-      jq --argjson worktrees "$(jq '.wip.worktrees // null' "$CONFIG")" "$CYCLES$TOUCHES"'.[0]
-        | .queue |= fromjson | .accepted |= fromjson | .spent |= fromjson
-        | (.said | fromjson) as $said
-        | (reduce $said[] as $e ({}; .[$e.item | tostring] += [$e])) as $by
-        | (.tasks | fromjson) as $work
-        | (reduce ($work[] | select(.parent)) as $t ({}; .[$t.parent | tostring] += [$t.item])) as $tasks
-        | .fortnight as $since | .touches = ($said | touches($by; [$work[].item]; $since)) | .finished = ($said | finished($by; $tasks; $since))
-        | del(.fortnight, .said, .tasks)
-        | (.moves | fromjson | waits($worktrees)) as $waits
-        | .cycles |= (fromjson | group_by(.item) | map(cycle($waits)) | sort_by(.accepted)) | del(.moves)'
-    ;;
-
-  spending)
-    [ $# -eq 0 ] || die "usage: board.sh $TEAM spending"
-    runs=
-    [ ! -f "$STATE/history.db" ] || runs=$(history_sql -json "SELECT started, role, COALESCE(cost, 0) AS cost,
-        (SELECT json_group_array(item) FROM run_items WHERE run = runs.id) AS items
-      FROM runs WHERE team = $(sql "$TEAM") ORDER BY started, id;")
-    if [ -z "$runs" ]; then
-      echo '{"since": null, "runs": [], "items": []}'
-      exit 0
-    fi
-    items | jq --argjson runs "$runs" '($runs | map(.items |= fromjson)) as $runs
-      | [$runs[].items[]] as $on
-      | [.[] | select(.number | IN($on[])) | .parent | values] as $over
-      | {since: $runs[0].started, runs: $runs,
-         items: [.[] | select(.number | IN($on[], $over[]))
-           | {number, title, url, status, parent, pitch: (.type == "Issue" and (.labels | index("pitch")) != null),
-              theme: .marks.theme}]}'
-    ;;
-
-  today)
-    [ $# -eq 0 ] || die "usage: board.sh $TEAM today"
-    budget_today "$TEAM" "$CONFIG" "$(date +%s)"
-    ;;
-
-  history)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM history <n>"
-    [[ $1 =~ ^[0-9]+$ ]] || die "#$1 isn't an item number"
-    if [ ! -f "$STATE/history.db" ]; then
-      echo '{"since": null, "events": []}'
-      exit 0
-    fi
-    events=$(history_sql -json "SELECT at, who, what, 0 AS run, NULL AS ended, NULL AS cost, NULL AS outcome, id
-        FROM events WHERE team = $(sql "$TEAM") AND item = $1
-      UNION ALL SELECT started, role, 'run', 1, ended, cost, outcome, runs.id
-        FROM runs JOIN run_items ON run_items.run = runs.id WHERE team = $(sql "$TEAM") AND item = $1
-      UNION ALL SELECT at, 'you', what, 2, NULL, seconds, NULL, rowid FROM spent WHERE team = $(sql "$TEAM") AND item = $1
-      ORDER BY at DESC, run DESC, id DESC;")
-    since=$(history_sql "SELECT MIN(at) FROM (SELECT at FROM events WHERE team = $(sql "$TEAM")
-      UNION ALL SELECT started FROM runs WHERE team = $(sql "$TEAM"));")
-    jq -n --argjson events "${events:-[]}" --arg since "$since" '{
-      since: (if $since == "" then null else $since end),
-      events: [$events[] | {at, who, what} + if .run == 1 then {run: {ended, cost, outcome}}
-        elif .run == 2 then {spent: .cost} else {} end]}'
-    ;;
-
-  moves)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM moves <since>"
-    [[ $1 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "'$1' isn't a time like 2026-10-11T09:30:00Z"
-    if [ ! -f "$STATE/history.db" ]; then
-      echo '[]'
-      exit 0
-    fi
-    history_sql -json "SELECT item, at, who, what FROM events WHERE team = $(sql "$TEAM") AND at >= $(sql "$1")
-      ORDER BY at, id;" | jq -cs 'first // []'
-    ;;
-
   spent)
     [ $# -eq 6 ] || die "usage: board.sh $TEAM spent you <n|-> <at> <seconds> <gate> <what>"
     role=$1 n=$2 at=$3 seconds=$4 gate=$5 what=$6
@@ -2904,26 +2603,6 @@ Give it in Work, with \`k\` on this task. Never put its value in a comment: this
     mkdir -p "$STATE"
     history_sql "INSERT INTO spent (team, item, at, seconds, gate, what) VALUES ($(sql "$TEAM"),
       $([ "$n" = - ] && echo NULL || echo "$n"), $(sql "$at"), $seconds, $(sql "$gate"), $(sql "$what"));" >/dev/null
-    ;;
-
-  decisions)
-    live="AND replaced_by IS NULL AND retired IS NULL"
-    if [ "${1:-}" = --replaced ]; then
-      live=
-      shift
-    fi
-    if [ ! -f "$STATE/history.db" ]; then
-      echo '[]'
-      exit 0
-    fi
-    match=
-    for word in "$@"; do
-      match+="${match:+ }\"${word//\"/\"\"}\"*"
-    done
-    decisions_sql -json "SELECT $DECISION FROM decisions WHERE (team = $(sql "$TEAM") OR everyone)
-      $live
-      ${match:+AND id IN (SELECT rowid FROM decisions_text WHERE decisions_text MATCH $(sql "$match"))}
-      ORDER BY confirmed DESC, id DESC;" | jq -cs 'first // []'
     ;;
 
   decide)
@@ -3083,16 +2762,6 @@ Give it in Work, with \`k\` on this task. Never put its value in a comment: this
     fi
     decisions_sql "UPDATE decisions SET $set_, yours = $(sql "$(date -u +%FT%TZ)") WHERE id = $id;" >/dev/null
     say "decision $id: $done_"
-    ;;
-
-  pr)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM pr <n>"
-    if item "$1" | jq -e '.dependabot' >/dev/null; then bump_pr "$1"; else pr_for "$1"; fi
-    ;;
-
-  checks)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM checks <pr>"
-    ci "$1"
     ;;
 
   triggers)
