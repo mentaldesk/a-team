@@ -226,7 +226,8 @@ written to the board, as in [Work](work.md#while-its-being-written).
 
 **View → Dispatcher log** opens the dispatcher's whole log full-screen, from any area, and `Esc` comes
 back. Each run it starts names the release it's on, as in `09:51 a-team lead: started 81834 on
-0.1.7: #232 was approved`, and keeps that release to its end, even if you upgrade a-team meanwhile.
+0.1.7: #232 was approved`, and keeps that release to its end, even if you upgrade a-team meanwhile, unless the upgrade moves the
+board's format, as below.
 A team that can't run on two passes in a row gets one line saying why, as in
 `a-team: stopped: no GitHub App: run a-team app create a-team, then install it`, another only if
 the reason changes, and `a-team: running again` once it can. A single failed pass, such as one
@@ -262,7 +263,8 @@ own output since then ──`.
 Answered something a team was waiting on? **Run a dispatch pass now**, in the Commands palette
 (`Ctrl+E`) or under **Agents**, has that dispatcher check for work straight away instead of at its
 next pass. It starts only what that pass would have, within the same limits, and leaves the
-countdown alone. The status bar says what it started, or `Pass done: nothing to start.`
+countdown alone. The status bar says what it started, or `Pass done: nothing to start.` Only one pass
+runs at a time: during another, scheduled or not, it says `A pass is already running.` and starts nothing.
 
 ## Time limits
 

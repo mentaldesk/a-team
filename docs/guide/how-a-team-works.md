@@ -18,7 +18,9 @@ this machine, and can copy it to a GitHub Project, its mirror, so you can see it
   products are doing. It writes a pitch for an Idea, with a mockup, revises it on your feedback,
   breaks an approved pitch into tasks, and checks the finished feature against the pitch.
 - **The Dev** builds those tasks. It takes a Ready task, builds it in its own worktree with tests,
-  opens a pull request and sees it through CI and your review.
+  opens a pull request and sees it through CI and your review. A later run removes that worktree once
+  the PR has merged, if it's still at the PR's last commit with no tracked file changed. Any other
+  worktree stays, and the run's summary says why. The Customer lead's are cleaned up the same way.
 - **You decide** which of the Lead's pitches get built, and you accept the finished work. Only you
   approve or merge, and the Lead closes a pitch only once its tasks have all closed.
 
@@ -186,7 +188,8 @@ panel in [Overseer](overseer.md#the-teams-panel).
 - **If the docs' first page isn't in the repo yet**, it proposes the docs first: a draft PR in
   Pitched, `Docs proposal: where <product>'s user docs live`, that adds that page with their outline.
   Comment on it to change the plan. Accept it in Work to agree, and its next run writes the docs.
-  Until then it writes none.
+  Until then it writes none. Only GitHub saying the page isn't there starts this: if GitHub doesn't
+  answer, the Customer lead waits for the next pass.
 - **When a pitch is done**, it reads what the pitch shipped and checks the user docs cover it:
   the README, guides and in-app help written as text.
 - **If they don't**, it writes what's missing into one docs PR, `Docs: what's changed since <date>`,

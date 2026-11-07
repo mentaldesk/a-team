@@ -49,7 +49,7 @@ public class TeamRecordTests
             [new QueueCount(Now.AddDays(-9), 20), new QueueCount(Now.AddDays(-7.5), 12), new QueueCount(Now.AddHours(-1), 9)],
             [Now.AddDays(-8), Now.AddDays(-2), Now.AddHours(-1)], [], 12.5m);
 
-        Assert.Equal(new TeamTrendRow("demo", 7, 12, 2, 12.5m, null, null), TeamTrendRow.Of("demo", 7, record, Now));
+        Assert.Equal(new TeamTrendRow("demo", 7, 12, 2, 12.5m, null, null, null, new(0, 0, 0, 0, 0)), TeamTrendRow.Of("demo", 7, record, Now));
         Assert.Equal(9, TeamTrendRow.Of("demo", null, record, Now).WaitingNow);
     }
 
@@ -58,7 +58,7 @@ public class TeamRecordTests
     {
         var row = TeamTrendRow.Of("demo", null, new TeamRecord(Now.AddDays(-2), [], [], [], 0), Now);
 
-        Assert.Equal(new TeamTrendRow("demo", null, null, 0, 0, null, null), row);
+        Assert.Equal(new TeamTrendRow("demo", null, null, 0, 0, null, null, null, new(0, 0, 0, 0, 0)), row);
     }
 
     [Fact]

@@ -31,7 +31,9 @@ brew install mentaldesk/tap/a-team
 Claude Code must be installed and logged in, and for a team that mirrors its board to a GitHub
 Project, `gh` needs the `project` scope (`gh auth refresh -s project`). Then add a team (see *Starting a team*) and run
 `a-team install` to start the dispatcher. `brew upgrade a-team` moves every team to the latest
-release, whenever you like: a run already going finishes on the release it started on.
+release, whenever you like: a run already going finishes on the release it started on, unless the
+new release moves the board's format. Then it stops at its next board command, and the dispatcher's
+next pass carries on from the board.
 
 ## Starting a team
 
@@ -82,6 +84,10 @@ PRs and commits — shows `<app>[bot]` as its author, which is how `a-team` tell
 the team's words, and a run's `gh` and `git push` reach only the repos you install the App on
 instead of your whole account. Until the App is installed, the dispatcher skips the team and
 `a-team status` says why.
+
+`a-team board <team> <command> lead ...`, or any other team role's command, acts as the App even
+from your own terminal, so it can't read as your feedback, and it stops rather than post as you if
+the App can't give a token. `you` commands stay yours, and refuse inside a team's run.
 
 ```
 a-team app create <team>
@@ -203,7 +209,8 @@ team's own.
 
 To try what has landed, leave the PR out: `a-team try <team>` fetches the default branch and
 runs it as it is on origin now, at `<workdir>/.try/main`, the same way. Its first lines name the
-branch and commit, and `a-team try <team> --clean` removes it.
+branch and commit, and `a-team try <team> --clean` removes it. While it's running, another try of
+it and `--clean` refuse too, as they do for a PR.
 
 ### Trying out a clone or worktree
 
@@ -218,6 +225,11 @@ A_TEAM_STATE=/tmp/a-team-test ./bin/a-team dashboard
 ```
 
 Give a clone's dispatcher its own `A_TEAM_STATE`, or it shares state with the real one.
+A clone can read and write the real state, but it won't move the board to a new format, and it won't
+act on a board in a newer format than it knows. Instead it says why and stops, as in `this a-team
+(~/code/a-team/mine) would move the board from format 1 to 2, and only the installed one
+(/opt/homebrew/bin/a-team) may: try it with --dry-run, or with A_TEAM_STATE set to a copy`, or asks
+you to merge the default branch.
 `a-team install` asks before replacing a dispatcher installed from somewhere else, so trying a
 clone can't take over the real one by accident. When a
 dispatcher starts an agent, it puts its own `bin` first on the agent's `PATH` and fills in the

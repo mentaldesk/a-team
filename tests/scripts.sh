@@ -8,14 +8,10 @@ unset A_TEAM_RUN_TEAM A_TEAM_RUN_TASK A_TEAM_RUN_STARTED
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 A_TEAM="$ROOT/bin/a-team"
-WORK=$(mktemp -d)
-# A fake run that ignores SIGTERM outlives everything but SIGKILL.
-stop_fake_runs() {
-  local pid
-  [ -f "$WORK/fake-runs" ] || return 0
-  while read -r pid; do kill -9 "$pid" 2>/dev/null; done <"$WORK/fake-runs"
-}
-trap 'stop_fake_runs; rm -rf "$WORK"' EXIT
+# shellcheck source=tests/leftovers.sh
+source "$ROOT/tests/leftovers.sh"
+# How long a fake waits, so one a killed suite leaves behind still ends.
+FAKE_LIMIT=300
 OUT="$WORK/out" ERR="$WORK/err"
 # Board writes record history in the state folder, which mustn't be the real one.
 export A_TEAM_STATE="$WORK/state"
@@ -24,10 +20,8 @@ export A_TEAM_BOARD_READ_EVERY=0
 CONFIG=$WORK TEAM='' STATUS=0
 # When the stub's GitHub quota resets: always ahead, so a retry stays due later.
 QUOTA_RESET=$(($(date +%s) + 86400))
-failures=0
 
 case_() { echo "$*"; }
-fail() { echo "  FAIL $*"; failures=$((failures + 1)); }
 same() { [ "$2" = "$3" ] || fail "$1: expected '$2', got '$3'"; }
 failed() { [ "$STATUS" -ne 0 ] || fail "$1: expected a non-zero exit, got $STATUS"; }
 one_line() { same "$1 stderr" 1 "$(grep -c '' <"$ERR")"; }
@@ -38,11 +32,26 @@ fixture() {
   mkdir -p "$CONFIG/teams"
   TEAM="$CONFIG/teams/demo.json"
   cat >"$TEAM"
+  if [ -z "${NO_APP:-}" ] && jq -e '.app == null' "$TEAM" >/dev/null 2>&1; then
+    jq '.app.id = 7' "$TEAM" >"$TEAM.app" && mv "$TEAM.app" "$TEAM"
+  fi
+}
+
+# A role's board command needs the App's token, so a test's team has an App with one in its cache, unless NO_TOKEN is set.
+with_token() {
+  local cache="$A_TEAM_STATE/demo/token.json"
+  [ -z "${NO_TOKEN:-}" ] && [ ! -f "$cache" ] || return 0
+  mkdir -p "$(dirname "$cache")"
+  jq -n '{token: "ghs_app", expires_at: (now + 86400 | floor | todate), permissions: {}}' >"$cache"
 }
 
 # Each board command starts from a board moved over afresh from the test's page, unless KEEP_BOARD is set.
 run() {
   local db
+  case " $* " in
+    *" check "*) ;;
+    " board "* | " stop "*) with_token ;;
+  esac
   for db in history.db dry-run.db; do
     [ -n "${KEEP_BOARD:-}" ] || [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
       sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo';" 2>/dev/null
@@ -236,6 +245,7 @@ esac
 echo call >>"$CALLS"
 printf '%s\n' "\$*" >>"$BIN/args"
 case " \$* " in
+  *ParentOf*) page="$BIN/parent.json" ;;
   *defaultBranchRef*) page="$TALK" ;;
   *"issues?labels=a-team:upstream"*) page="$WAITING_ON" ;;
   *UpstreamWaits*) page="$UPSTREAM_ITEMS" ;;
@@ -315,7 +325,7 @@ case " \$* " in
   *VisionThemes*) page="$THEMES" ;;
   *"/files"*) page="$FILES" ;;
   *"/contents/"*"?ref="*) page="$CONTENTS" ;;
-  *vnd.github.raw*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; cat "$VISION_MD"; exit 0 ;;
+  *vnd.github.raw*) [ ! -e "$WORK/docs-down" ] || { echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1; }; [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; cat "$VISION_MD"; exit 0 ;;
   *"commits/HEAD/check-runs"*) page="$MAIN_RUNS" ;;
   *check-runs*) page="$RUNS" ;;
   *"repos/mentaldesk/demo --jq .default_branch"*) echo main; exit 0 ;;
@@ -341,7 +351,7 @@ case " \$* " in
                       echo "PUT \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*"/git/refs/"*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"/issues/404"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
-  *"/contents/"*) [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *"/contents/"*) [ ! -e "$WORK/docs-down" ] || { echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1; }; [ ! -e "$WORK/no-docs" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"/pulls/"[0-9]*) [ ! -e "$BIN/not-a-pull" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     [ ! -e "$BIN/pull-fails" ] || { echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; }; page="$PULL" ;;
   *"/issues/"[0-9]*) page="$ISSUE" ;;
@@ -2409,13 +2419,17 @@ case_ "the agents' settings deny comment you, beside accept"
 grep -qF '"Bash(a-team board * comment you *)"' "$ROOT/settings/agents.json" || fail "no comment you deny rule"
 
 # `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
-# <parent> ("-" for none) carrying the comma-separated <labels> ("-" for none).
+# <parent> ("-" for none) on the record and on GraphQL, carrying the comma-separated <labels> ("-" for none).
+# REST never reports the parent, as it doesn't for mentaldesk/website#79.
 gh_child() {
-  jq -n --argjson n "$1" --arg parent "$2" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
+  jq -n --argjson n "$1" --arg labels "$3" --arg body "${4:-Spotted while reviewing.}" '
     {id: (9000 + $n), number: $n, title: "The follow-up", body: $body,
      labels: (if $labels == "-" then [] else $labels | split(",") | map({name: .}) end),
-     parent_issue_url: (if $parent == "-" then null
-                        else "https://api.github.com/repos/mentaldesk/demo/issues/\($parent)" end)}' >"$ISSUE"
+     parent_issue_url: null}' >"$ISSUE"
+  local parent=null
+  [ "$2" = - ] || parent="{\"number\": $2}"
+  edit_item "$1" ".parent = $parent"
+  jq -n --argjson parent "$parent" '{data: {repository: {issueOrPullRequest: {parent: $parent}}}}' >"$BIN/parent.json"
   : >"$POSTED"
   : >"$WRITES"
   : >"$EDITED"
@@ -3309,6 +3323,60 @@ gh_child 41 11 -
 run board demo add lead 41 Ready
 same "add under a Building pitch" 0 "$STATUS"
 
+case_ "the lead's task reaches Ready from the record's parent, with no parent lookup on GitHub, whatever REST says"
+for pitch in 10 11; do
+  gh_items <<'ITEMS'
+Approved 10 An approved pitch
+Building 11 A pitch being built
+Idea 41 A task
+ITEMS
+  gh_child 41 "$pitch" - "A task. <!-- a-team:lead -->"
+  run board demo add lead 41 Ready
+  same "under #$pitch" 0 "$STATUS"
+  grep -q 'parent_issue_url\|ParentOf' "$BIN/args" && fail "under #$pitch: asked GitHub for the parent"
+  KEEP_BOARD=1 run board demo list Ready
+  same "under #$pitch list" "[{\"number\":41,\"parent\":$pitch}]" "$(jq -c 'map({number, parent})' "$OUT")"
+done
+
+case_ "the lead's task stays out of Ready when the record has it under no pitch or an unapproved one"
+for pitch in - 12 13; do
+  gh_items <<'ITEMS'
+Pitched 12 A pitch in front of the stakeholder
+Idea 13 An idea
+Idea 41 A task
+ITEMS
+  gh_child 41 "$pitch" - "A task. <!-- a-team:lead -->"
+  jq -n '{data: {repository: {issueOrPullRequest: {parent: {number: 11}}}}}' >"$BIN/parent.json"
+  run board demo add lead 41 Ready
+  failed "under $pitch"
+  grep -qF "#41 isn't a sub-issue of an Approved or Building pitch" "$ERR" || fail "under $pitch: '$(cat "$ERR")'"
+  same "under $pitch writes" "" "$(cat "$WRITES")"
+done
+
+case_ "a task the record hasn't seen yet takes its parent from GraphQL, accepted or refused"
+for pitch in 10 11; do
+  gh_items <<'ITEMS'
+Approved 10 An approved pitch
+Building 11 A pitch being built
+ITEMS
+  gh_child 41 "$pitch" -
+  run board demo add lead 41 Ready
+  same "under #$pitch" 0 "$STATUS"
+  grep -q ParentOf "$BIN/args" || fail "under #$pitch: GraphQL wasn't asked"
+  grep -q parent_issue_url "$BIN/args" && fail "under #$pitch: asked REST for the parent"
+done
+for pitch in - 12 13; do
+  gh_items <<'ITEMS'
+Pitched 12 A pitch in front of the stakeholder
+Idea 13 An idea
+ITEMS
+  gh_child 41 "$pitch" -
+  run board demo add lead 41 Ready
+  failed "under $pitch"
+  grep -qF "#41 isn't a sub-issue of an Approved or Building pitch" "$ERR" || fail "under $pitch: '$(cat "$ERR")'"
+  same "under $pitch writes" "" "$(cat "$WRITES")"
+done
+
 case_ "the Lead's breakdown and the command list file tasks with task, not gh issue create, link and add"
 step=$(sed -n '/^### 2\. Break down approved pitches/,/^### 3\./p' "$ROOT/roles/lead.md")
 grep -qF 'task lead <pitch> "<title>" <file>' <<<"$step" || fail "lead.md breakdown: no task command"
@@ -3402,6 +3470,42 @@ run board demo unlink dev 10 40
 failed "dev"
 grep -q "dev may not take a task off a pitch" "$ERR" || fail "dev: '$(cat "$ERR")'"
 
+case_ "unlink trusts the record's parent over REST, and the record no longer has it afterwards"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Building 20 Another pitch
+Ready 40 A task
+ITEMS
+edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+edit_item 20 '.labels.nodes = [{name: "pitch"}]'
+gh_child 40 10 -
+run board demo unlink lead 20 40
+failed "wrong parent"
+grep -q "#40 is not a sub-issue of #20" "$ERR" || fail "wrong parent: '$(cat "$ERR")'"
+same "wrong parent writes" "" "$(cat "$WRITES")"
+KEEP_BOARD=1 run board --dry-run demo unlink lead 10 40
+same "dry run exit" 0 "$STATUS"
+same "dry run keeps the parent" 10 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT json_extract(content, '\$.parent') FROM board WHERE item = 40")"
+KEEP_BOARD=1 run board demo unlink lead 10 40
+same "exit" 0 "$STATUS"
+grep -q 'parent_issue_url\|ParentOf' "$BIN/args" && fail "asked GitHub for the parent"
+same "parent gone" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT json_extract(content, '\$.parent') FROM board WHERE item = 40")"
+
+case_ "unlink takes its parent from GraphQL for an idea the record hasn't seen yet"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Building 20 Another pitch
+ITEMS
+edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+edit_item 20 '.labels.nodes = [{name: "pitch"}]'
+gh_child 30 10 pitch
+run board demo unlink lead 20 30
+failed "wrong parent"
+grep -q "#30 is not a sub-issue of #20" "$ERR" || fail "wrong parent: '$(cat "$ERR")'"
+run board demo unlink lead 10 30
+same "exit" 0 "$STATUS"
+grep -q ParentOf "$BIN/args" || fail "GraphQL wasn't asked"
+
 case_ "children shows each child's board status, null when it isn't on the board"
 gh_items <<'ITEMS'
 Building 10 A pitch
@@ -3416,6 +3520,64 @@ same "exit" 0 "$STATUS"
 same "children" '[{"number":40,"status":"Ready"},{"number":30,"status":"Building"},{"number":44,"status":null}]' \
   "$(jq -c 'map({number, status})' "$OUT")"
 same "labels" '["pitch"]' "$(jq -c '.[1].labels' "$OUT")"
+
+case_ "children tells a task the Lead filed that was left in Idea from an idea, and the Lead's role acts on it"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Idea 41 A task
+Idea 30 A follow-up from a stakeholder
+Idea 31 The Lead's own idea
+Idea 32 A pitch in Idea
+Ready 42 A task in Ready
+ITEMS
+lead='A thing. <!-- a-team:lead -->'
+jq -n --arg lead "$lead" '[{number: 41, title: "A task", state: "open", labels: [], body: $lead},
+        {number: 30, title: "A follow-up", state: "open", labels: [], body: "Spotted."},
+        {number: 31, title: "An idea", state: "open", labels: [], body: $lead},
+        {number: 32, title: "A pitch", state: "open", labels: [{name: "pitch"}], body: $lead},
+        {number: 42, title: "A task", state: "open", labels: [], body: $lead}]' >"$SUBS"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"idea\":true}' WHERE team = 'demo' AND item = 31;"
+KEEP_BOARD=1 run board demo children 10
+same "exit" 0 "$STATUS"
+same "left in idea" '[41]' "$(jq -c 'map(select(.leftInIdea) | .number)' "$OUT")"
+step=$(sed -n '/^### 3\. Tend pitches in Building/,/^### 4\./p' "$ROOT/roles/lead.md")
+grep -qF 'add lead <child> Ready' <<<"$step" || fail "lead.md: doesn't put a task left in Idea in Ready"
+
+case_ "unlink refuses a task the Lead filed that was left in Idea, whichever fileable pitch it's under, and it still reaches Ready"
+for parent in Approved Building; do
+  gh_items <<ITEMS
+$parent 10 A pitch
+Idea 41 A task
+ITEMS
+  edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+  gh_child 41 10 - "A task. <!-- a-team:lead -->"
+  run board demo unlink lead 10 41
+  failed "$parent"
+  grep -qF "#41 is a task left in Idea, not an idea" "$ERR" || fail "$parent: '$(cat "$ERR")'"
+  same "$parent writes" "" "$(cat "$WRITES")"
+  same "$parent posted" "" "$(cat "$POSTED")"
+  KEEP_BOARD=1 run board demo add lead 41 Ready
+  same "$parent add" 0 "$STATUS"
+done
+
+case_ "unlink still takes off an idea of the Lead's, which is marked, and a stray child of a pitch that isn't fileable"
+gh_items <<'ITEMS'
+Building 10 A pitch
+Pitched 20 A pitch not approved yet
+Idea 31 The Lead's own idea
+Idea 41 A stray
+ITEMS
+edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+edit_item 20 '.labels.nodes = [{name: "pitch"}]'
+gh_child 41 20 - "A stray. <!-- a-team:lead -->"
+run board demo unlink lead 20 41
+same "unfileable pitch" 0 "$STATUS"
+gh_child 31 10 - "An idea. <!-- a-team:lead -->"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"idea\":true}' WHERE team = 'demo' AND item = 31;"
+KEEP_BOARD=1 run board demo unlink lead 10 31
+same "marked idea" 0 "$STATUS"
 
 case_ "--dry-run says every write unlink would make, and makes none"
 gh_items <<'ITEMS'
@@ -5752,6 +5914,47 @@ run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" '[]' "$(jq -c .reasons "$OUT")"
 jq '.docs = "docs/index.md"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "while GitHub doesn't answer for the docs page, the Customer lead gets no run, its audit keeps its date, and the others run"
+gh_items <<'ITEMS'
+Approved 20 A pitch to break down
+Ready 21 A task
+ITEMS
+jq '.wip.worktrees = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+echo 12345 >"$AUDITED"
+touch "$WORK/docs-down"
+run board demo triggers customer
+same "exit" 0 "$STATUS"
+same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+same "the audit's date" 12345 "$(cat "$AUDITED")"
+run board demo triggers lead
+same "the Lead" true "$(jq '.reasons | index("#20 was approved: break it down") != null' "$OUT")"
+run board demo triggers dev
+same "the Dev" 21 "$(jq .ready "$OUT")"
+
+case_ "while GitHub doesn't answer for the docs page, the Customer lead's add says so and to try again"
+: >"$WRITES"
+proposal_pr 15
+run board demo add customer 15 Pitched
+failed "a docs proposal"
+grep -q "GitHub didn't answer for docs/index.md: try again" "$ERR" || fail "docs proposal: '$(cat "$ERR")'"
+run board demo add customer 15 "In review"
+failed "a docs PR"
+grep -q "GitHub didn't answer for docs/index.md: try again" "$ERR" || fail "docs PR: '$(cat "$ERR")'"
+same "writes" "" "$(cat "$WRITES")"
+rm "$WORK/docs-down"
+
+case_ "when GitHub does answer, a 404 clears the audit and starts the proposal, and a docs page keeps the audit"
+run board demo triggers customer
+same "the page there" '["weekly docs audit: check the docs as a whole"]' "$(jq -c .reasons "$OUT")"
+same "the audit's date" 12345 "$(cat "$AUDITED")"
+touch "$WORK/no-docs"
+run board demo triggers customer
+same "a 404" "[\"no user docs yet: propose where they'll live\"]" "$(jq -c .reasons "$OUT")"
+[ -e "$AUDITED" ] && fail "a 404 keeps the audit's date"
+rm "$WORK/no-docs"
+echo "$(date +%s)" >"$AUDITED"
+
 # `customer_issue <n> <body>`: #<n> is an open issue with <body>.
 customer_issue() { gh_child "$1" - - "$2" && jq '.state = "open"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"; }
 
@@ -6048,6 +6251,13 @@ themes_states 1:CLOSED:1 2:OPEN 3:OPEN 4:OPEN 5:OPEN
 same "1 of 5" '[]' "$(lead_reasons)"
 themes_states 1:CLOSED:1 2:CLOSED:2 3:CLOSED:9 4:OPEN 5:OPEN
 same "3 of 5" '["vision review due: 3 of the 5 issues its themes name are closed"]' "$(lead_reasons)"
+touch "$WORK/docs-down"
+same "GitHub didn't answer for the vision" '[]' "$(lead_reasons)"
+rm "$WORK/docs-down"
+touch "$WORK/no-docs"
+same "no vision" '[]' "$(lead_reasons)"
+rm "$WORK/no-docs"
+same "the answer back" '["vision review due: 3 of the 5 issues its themes name are closed"]' "$(lead_reasons)"
 
 case_ "after closing a review unmerged, only issues closed since count towards the next one"
 jq -n --arg at "$(days_ago 3)" '[{number: 52, merged_at: null, closed_at: $at}]' >"$VCLOSED"
@@ -6520,7 +6730,7 @@ try_while_running() {
   cat >"$TRY_BIN/hold" <<SH
 #!/usr/bin/env bash
 touch "$TRY_WORK/started"
-until [ -e "$TRY_WORK/go" ]; do sleep 0.1; done
+until [ -e "$TRY_WORK/go" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 SH
   chmod +x "$TRY_BIN/hold"
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" try demo 7 >"$OUT.first" 2>&1 &
@@ -6583,7 +6793,7 @@ try_gh
 cat >"$TRY_BIN/hold" <<SH
 #!/usr/bin/env bash
 touch "$TRY_WORK/started"
-until [ -e "$TRY_WORK/go" ]; do sleep 0.1; done
+until [ -e "$TRY_WORK/go" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 SH
 chmod +x "$TRY_BIN/hold"
 A_TEAM_CONFIG="$CONFIG" "$A_TEAM" try demo >"$OUT.first" 2>&1 &
@@ -6996,7 +7206,7 @@ fake_run() {
   SIGNALS="$A_TEAM_STATE/signals"
   : >"$SIGNALS"
   mkdir -p "$A_TEAM_STATE/demo/dev"
-  bash -c "trap 'echo TERM >>\"$SIGNALS\"; exit' TERM; while :; do sleep 0.1; done" &
+  bash -c "trap 'echo TERM >>\"$SIGNALS\"; exit' TERM; while [ \$SECONDS -lt $FAKE_LIMIT ]; do sleep 0.1; done" &
   RUN_PID=$!
   echo "$RUN_PID" >"$A_TEAM_STATE/demo/dev/pid"
 }
@@ -7165,7 +7375,7 @@ run stop demo dev
 same "hold" '["dev"]' "$(held)"
 
 case_ "stop leaves alone a process that has since been given the run's pid"
-sleep 30 &
+(exec -a "$WORK/stranger" sleep 30) >/dev/null 2>&1 &
 stranger=$!
 echo "$stranger" >"$A_TEAM_STATE/demo/dev/pid"
 backdate "$A_TEAM_STATE/demo/dev/pid"
@@ -7611,7 +7821,7 @@ SH
   cat >"$DISPATCH/bin/claude" <<SH
 #!/usr/bin/env bash
 echo "\$A_TEAM_RUN_TASK" >>"$LAUNCHED"
-exec sleep 60
+exec -a "\$0" sleep 60
 SH
   chmod +x "$DISPATCH/bin/claude"
 }
@@ -7697,7 +7907,7 @@ same "one run" 1 "$(grep -c '^  #30 Task 30: running 0h00m' "$OUT")"
 stop_runs
 
 case_ "a process given a finished run's pid since takes no slot, isn't killed or in status, and the run's pid file and record end"
-sleep 30 &
+(exec -a "$WORK/stranger" sleep 30) >/dev/null 2>&1 &
 stranger=$!
 echo "$stranger" >"$A_TEAM_STATE/demo/dev/runs/14/pid"
 echo $(($(date +%s) - 3 * 3600)) >"$A_TEAM_STATE/demo/dev/runs/14/last-start"
@@ -7743,7 +7953,7 @@ case_ "a run that ends with a result records how long it took, its cost and whet
 # claude waits for $DISPATCH/finish, then prints $DISPATCH/result, if there is one, as its log's last line.
 cat >"$DISPATCH/bin/claude" <<SH
 #!/usr/bin/env bash
-while [ ! -e "$DISPATCH/finish" ]; do sleep 0.1; done
+until [ -e "$DISPATCH/finish" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 cat "$DISPATCH/result" 2>/dev/null
 SH
 chmod +x "$DISPATCH/bin/claude"
@@ -7955,14 +8165,25 @@ seen="$SEEN/\${A_TEAM_RUN_TASK:-lead}"
 while [ \$# -gt 0 ]; do [ "\$1" = --settings ] && echo "\$2" >"\$seen.settings"; shift; done
 command -v a-team >"\$seen.bin"
 a-team version >"\$seen.before"
-while [ ! -e "$GO" ]; do sleep 0.1; done
+until [ -e "$GO" ]; do [ "\$SECONDS" -lt "$FAKE_LIMIT" ] || exit; sleep 0.1; done
 a-team version >"\$seen.after"
 echo "\${A_TEAM_RUN_TASK:-lead}" >>"$LAUNCHED"
-exec sleep 60
+exec -a "\$0" sleep 60
 SH
   chmod +x "$DISPATCH/bin/claude"
 }
 seen() { for _ in $(seq 50); do [ -s "$SEEN/$1" ] && break; sleep 0.1; done; cat "$SEEN/$1" 2>/dev/null; }
+
+case_ "a fake whose suite has gone stops waiting at its limit"
+FAKE_LIMIT=1 pinned_claude
+PATH="$DISPATCH/bin:$PATH" bash "$DISPATCH/bin/claude" >/dev/null 2>&1 &
+waiting=$!
+for _ in $(seq 50); do kill -0 "$waiting" 2>/dev/null || break; sleep 0.1; done
+kill -0 "$waiting" 2>/dev/null && fail "still waiting"
+kill -9 "$waiting" 2>/dev/null
+wait "$waiting" 2>/dev/null
+[ -e "$SEEN/lead.before" ] || fail "never started"
+[ -e "$SEEN/lead.after" ] && fail "carried on as if told to"
 
 case_ "each Dev run keeps the release it started on, even once an upgrade removes it"
 jq '.dispatch.hold = []' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
@@ -8042,7 +8263,7 @@ fake_claude() {
   cat >"$BIN/claude" <<SH
 #!/usr/bin/env bash
 { echo "args: \$*"; echo "cwd: \$(pwd -P)"; echo "hold: \$(jq -c .dispatch.hold "$TEAM")"
-  echo "signals: \$(grep -c TERM "$SIGNALS")"; } >>"$RESUMED"
+  echo "signals: \$(grep -c TERM "$SIGNALS")"; echo "team: \${A_TEAM_RUN_TEAM:-}"; } >>"$RESUMED"
 exit ${1:-0}
 SH
   chmod +x "$BIN/claude"
@@ -8070,6 +8291,7 @@ same "resumed" "args: --resume sess-123" "$(sed -n 1p "$RESUMED")"
 same "cwd" "cwd: $(cd "$WORKDIR" && pwd -P)" "$(sed -n 2p "$RESUMED")"
 same "held first" 'hold: ["dev"]' "$(sed -n 3p "$RESUMED")"
 same "stopped first" "signals: 1" "$(sed -n 4p "$RESUMED")"
+same "resumed as a team's run, so you commands refuse" "team: demo" "$(sed -n 5p "$RESUMED")"
 same "released" '[]' "$(held)"
 
 case_ "attach on a finished role doesn't signal anything, and resumes"
@@ -8120,7 +8342,7 @@ case_ "attach <team> dev <task> stops and holds only that run while you resume i
 run resume demo dev
 for n in 21 22; do
   mkdir -p "$A_TEAM_STATE/demo/dev/runs/$n"
-  bash -c "trap 'echo $n >>\"$SIGNALS\"; exit' TERM; while :; do sleep 0.1; done" &
+  bash -c "trap 'echo $n >>\"$SIGNALS\"; exit' TERM; while [ \$SECONDS -lt $FAKE_LIMIT ]; do sleep 0.1; done" &
   echo $! >"$A_TEAM_STATE/demo/dev/runs/$n/pid"
 done
 : >"$SIGNALS"
@@ -8335,7 +8557,7 @@ grep -q "app 7 isn't installed on mentaldesk/demo: install it at https://github.
   fail "not installed: '$(cat "$ERR")'"
 
 case_ "a team with no app key has no token, and is told how to get one"
-fixture <<'JSON'
+NO_APP=1 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
 run token demo
@@ -8371,7 +8593,7 @@ same "no run" 'GH_TOKEN=
 [list]' "$(cat "$OUT")"
 
 case_ "in a run of a team with no app key, it fails and names the command, rather than running gh as you"
-fixture <<'JSON'
+NO_APP=1 fixture <<'JSON'
 { "repo": "mentaldesk/demo" }
 JSON
 A_TEAM_RUN_TEAM=demo wrapped pr list
@@ -8443,10 +8665,12 @@ cat >"$APP_BIN/board/gh" <<SH
 #!/usr/bin/env bash
 refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
 case " \$* " in
+  *" repos/mentaldesk/demo/contents/\${CONTENTS_DOWN:-none} "*) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;;
   *" repos/mentaldesk/demo/contents/"*) [ -z "\${NO_VISION:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     [ -z "\${LEAD_VISION:-}" ] || printf '# Vision\n\nWho it is for.\n\n<!-- a-team:lead -->\n'; exit 0 ;;
   *" repos/mentaldesk/demo "*) [ -z "\${REPO_GONE:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
-  *"/actions/workflows/release.yml "*) [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
+  *"/actions/workflows/release.yml "*) [ -z "\${RELEASE_DOWN:-}" ] || { echo "error connecting to api.github.com" >&2; exit 1; }
+    [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"label list"*) page="$APP_BIN/board/labels.json" ;;
   *"workflows(first"*) page="$APP_BIN/board/workflows.json" ;;
   *ProjectV2SingleSelectField*)
@@ -8496,7 +8720,7 @@ says() {
   same "problems" "$2" "$(grep -E '^[a-z]+ {2,}' "$OUT")"
 }
 NO_KEY=1 checked
-says 1 "app       demo-app[bot] has no key in the login Keychain (service 'a-team-app', account 'mentaldesk'): run a-team app create demo"
+says 1 "app       demo-app[bot] has no key in the login Keychain (service 'a-team-app', account 'mentaldesk'): generate a new private key on the App's settings page on GitHub, then run: security add-generic-password -U -s a-team-app -a mentaldesk -w \"\$(openssl base64 -A -in <the .pem you downloaded>)\""
 rm -f "$CACHE"
 MINT_FAILS=1 checked
 same "no token exit" 1 "$STATUS"
@@ -8548,6 +8772,8 @@ NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR"
 LEAD_VISION=1 checked
 says 2 "vision    drafted by the Lead: Write the vision with me replaces it"
+CONTENTS_DOWN=docs/vision.md checked
+says 2 "vision    GitHub didn't answer for docs/vision.md: checking again next pass"
 board_labels
 checked
 says 2 "labels    no 'pitch' label, so the team can't tell its pitches from tasks"
@@ -8564,6 +8790,8 @@ says 0 ""
 NO_VISION=1 checked
 says 2 "vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
 docs      docs/index.md isn't in mentaldesk/demo yet: the Customer lead will propose the docs as a draft PR"
+CONTENTS_DOWN=docs/index.md checked
+says 2 "docs      GitHub didn't answer for docs/index.md: checking again next pass"
 jq 'del(.roles, .docs)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
 NO_VISION=1 checked
@@ -8575,6 +8803,8 @@ checked
 says 0 ""
 NO_RELEASE_WORKFLOW=1 checked
 says 2 "release   release is continuous, but mentaldesk/demo has no release.yml workflow for it to run"
+RELEASE_DOWN=1 checked
+says 2 "release   GitHub didn't answer for release.yml: checking again next pass"
 jq '.release = "weekly"' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 checked
 says 2 "release   release is 'weekly': expected never, daily or continuous"
@@ -8657,7 +8887,7 @@ case_ "examples/team.json carries the app key and stays valid"
 jq -e 'has("app")' "$ROOT/examples/team.json" >/dev/null || fail "example: no app key"
 
 case_ "app create reuses the App another team under the same owner already has"
-fixture <<'JSON'
+NO_APP=1 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer" }
 JSON
 echo '{ "repo": "mentaldesk/other", "app": { "id": 9, "slug": "shared-app" } }' >"$CONFIG/teams/other.json"
@@ -8682,6 +8912,13 @@ same "exit" 0 "$STATUS"
 grep -q 'installed    on mentaldesk/demo already' "$OUT" || fail "installed: '$(cat "$OUT")'"
 same "opened" '' "$(cat "$OPENED")"
 
+case_ "app create on a team whose App has lost its key says how to restore it, not to run app create"
+app_fixture
+NO_KEY=1 run app create demo
+failed "lost key"
+grep -q "no private key .*: generate a new private key on the App's settings page" "$ERR" || fail "lost key: '$(cat "$ERR")'"
+grep -q 'app create' "$ERR" && fail "lost key: sent back to app create: '$(cat "$ERR")'"
+
 case_ "app create again with a key that isn't the App's says so, rather than opening the install page"
 MINT_FAILS=1 run app create demo
 failed "wrong key"
@@ -8689,7 +8926,7 @@ grep -q "isn't that App's" "$ERR" || fail "wrong key: '$(cat "$ERR")'"
 same "opened" '' "$(cat "$OPENED")"
 
 case_ "app create with the owner's key in the Keychain but no team naming it needs the App's id"
-fixture <<'JSON'
+NO_APP=1 fixture <<'JSON'
 { "repo": "mentaldesk/demo" }
 JSON
 run app create demo
@@ -9183,7 +9420,7 @@ trends() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trends | jq -c .; }
 
 case_ "with nothing recorded, trends has no start, no points and no cost, and makes no record file"
 rm -f "$A_TEAM_STATE/history.db"
-same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0,"spentSince":null,"spent":[]}' "$(trends)"
+same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0,"spentSince":null,"spent":[],"touches":[],"finished":[]}' "$(trends)"
 unrecorded "trends"
 
 case_ "trends: the last 15 days of the queue, each item accepted once at its latest, and runs' cost in 7 days"
@@ -9205,7 +9442,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
   INSERT INTO runs (team, role, pid, log, started, cost) VALUES ('demo', 'dev', 1, 'a', '$(ago 100)', 1.25),
     ('demo', 'lead', 2, 'b', '$(ago 200)', NULL), ('demo', 'dev', 3, 'c', '$(ago $((60 * 24 * 8)))', 9),
     ('other', 'dev', 4, 'd', '$(ago 100)', 4);"
-same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25,\"spentSince\":null,\"spent\":[]}" "$(trends)"
+same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25,\"spentSince\":null,\"spent\":[],\"touches\":[],\"finished\":[]}" "$(trends)"
 
 case_ "trends: a task's cycle runs from first entering Ready to its acceptance, with every spell In review counted"
 base=$(date +%s); before() { jq -rn --argjson t "$base" --argjson m "$1" '$t - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
@@ -9282,6 +9519,137 @@ case_ "trends: with no wip.worktrees, only In review and questions count"
 jq 'del(.wip)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 events <<<"$slots"
 same "no slots" "[50]" "$(with_you "\"$(before 600)\"")"
+
+touches_of() { trends | jq -c '[.touches[].touches]'; }
+# boarded <n> <content> [<marks>]: item n on the board, once trends has made the record's tables.
+boarded() {
+  local marks=${3:+"'$3'"}
+  trends >/dev/null
+  sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO board (team, item, node, status, since, content, marks)
+    VALUES ('demo', $1, 'N$1', 'Done', '2026-10-01T00:00:00Z', '$2', ${marks:-NULL});"
+}
+parents() {
+  local n
+  for n in "$@"; do boarded "${n#*:}" "{\"type\": \"Issue\", \"parent\": ${n%:*}}"; done
+}
+under_pitch() {
+  local n
+  for n in "$@"; do parents "99:$n"; done
+}
+
+case_ "trends: touches count your comments on a task or its PR from review onwards, and only yours"
+events <<'EOF'
+1 900 dev In progress → In review
+1 800 you accepted · PR #101 merged
+101 800 you accepted · PR #101 merged
+2 900 dev In progress → In review
+2 850 you commented
+2 800 you accepted · PR #102 merged
+102 800 you accepted · PR #102 merged
+3 900 dev In progress → In review
+103 850 you commented
+3 800 you accepted · PR #103 merged
+103 800 you accepted · PR #103 merged
+4 900 dev In progress → In review
+4 880 you commented
+104 870 you commented
+4 860 you commented
+4 800 you accepted · PR #104 merged
+104 800 you accepted · PR #104 merged
+5 950 you commented
+105 940 you commented
+5 900 dev In progress → In review
+5 800 you accepted · PR #105 merged
+105 800 you accepted · PR #105 merged
+6 900 dev In progress → In review
+6 850 lead commented
+6 845 dev commented
+106 840 octocat commented
+6 800 you accepted · PR #106 merged
+106 800 you accepted · PR #106 merged
+EOF
+under_pitch 1 2 3 4 5 6
+same "none, issue, PR, three, before review, someone else's" "[0,1,1,3,0,0]" "$(touches_of)"
+
+case_ "trends: touches count from the first time it reached review, even after it was sent back"
+events <<'EOF'
+1 900 dev In progress → In review
+1 880 you In review → Ready
+1 870 you commented
+1 860 dev Ready → In progress
+1 850 dev In progress → In review
+1 800 you accepted · PR #101 merged
+EOF
+under_pitch 1
+same "the spell out of review counts" "[1]" "$(touches_of)"
+
+case_ "trends: a task accepted over a fortnight ago isn't reported"
+events <<EOF
+1 $((60 * 24 * 16)) you accepted · PR #101 merged
+EOF
+under_pitch 1
+same "too old" "[]" "$(touches_of)"
+
+case_ "trends: touches count a task or a fix once, and no bump, docs PR, PR of your own or closed issue"
+events <<'EOF'
+1 800 you accepted · PR #101 merged
+101 800 you accepted · PR #101 merged
+2 800 you accepted · PR #102 merged
+102 800 you accepted · PR #102 merged
+3 850 you commented
+3 800 you accepted · closed
+3 800 you accepted · PR #103 merged
+103 840 you commented
+103 800 you accepted · PR #103 merged
+104 800 you accepted · PR #104 merged
+105 800 you accepted · PR #105 merged
+106 800 you accepted · PR #106 merged
+107 800 you accepted · PR #107 merged
+8 800 you accepted · closed
+EOF
+under_pitch 1 3
+boarded 2 '{"type": "Issue"}' '{"dev":true,"fix":true}'
+boarded 104 '{"type": "PullRequest", "dependabot": true}'
+boarded 105 '{"type": "PullRequest", "dependabot": true}' '{"dev":true}'
+boarded 106 '{"type": "PullRequest"}' '{"customer":true}'
+boarded 8 '{"type": "Issue"}'
+same "task, fix, task accepted both ways" "[0,0,2]" "$(touches_of)"
+
+# pitch <n>: pitch n pitched and approved with nothing said, and finished, the rest of the record added on stdin.
+pitch() {
+  printf '%s\n' "$1 900 lead Exploring → Pitched" "$1 800 you Pitched → Approved" "$1 100 lead closed as done"
+}
+finished_of() { trends | jq -c '[.finished[].untouched]'; }
+
+case_ "trends: a pitch is untouched with no comment while Pitched and none on its tasks or their PRs"
+{
+  pitch 1; printf '%s\n' "11 500 you accepted · PR #111 merged" "111 500 you accepted · PR #111 merged"
+} | events
+parents 1:11
+same "none" "[true]" "$(finished_of)"
+
+case_ "trends: a comment while Pitched touches a pitch, in any spell, but not one before or after"
+{
+  pitch 1; echo "1 850 you commented"
+  pitch 2; echo "2 950 you commented"; echo "2 700 you commented"
+} | events
+same "while Pitched, and outside it" "[false,true]" "$(finished_of)"
+
+case_ "trends: a comment on a task touches its pitch, even from before review, as does one on the task's PR"
+{
+  pitch 1; echo "11 600 you commented"
+  pitch 2; printf '%s\n' "121 600 you commented" "12 500 you accepted · PR #121 merged"
+  pitch 3; printf '%s\n' "13 600 lead commented" "13 500 you accepted · PR #131 merged"
+} | events
+parents 1:11 2:12 3:13
+same "task, PR, and the Lead's" "[false,false,true]" "$(finished_of)"
+
+case_ "trends: a pitch built by PRs with no tasks is touched by a comment on one, and one never approved isn't untouched"
+{
+  printf '%s\n' "1 900 lead Exploring → Pitched" "1 800 you Pitched → Approved" "1 100 lead closed as done · built by #532" "532 500 you commented"
+  echo "2 100 lead closed as done"
+} | events
+same "built by, unapproved" "[false,false]" "$(finished_of)"
 
 case_ "spent records your time on a card, or between cards, for History, trend and trends"
 rm -f "$A_TEAM_STATE/history.db"
@@ -9631,8 +9999,8 @@ left=$(($(cat "$PASS_STATE/next-pass") - ended))
 # overlap_first <unscheduled>: starts a pass that stays in its first jq until $OVERLAP/go appears; its pid in OVERLAP_PID.
 overlap_first() {
   OVERLAP=$(mktemp -d "$WORK/stubs.XXXXXX")
-  printf '#!/usr/bin/env bash\ntouch "%s/started"\nuntil [ -e "%s/go" ]; do sleep 0.1; done\nexec %s "$@"\n' \
-    "$OVERLAP" "$OVERLAP" "$(command -v jq)" >"$OVERLAP/jq"
+  printf '#!/usr/bin/env bash\ntouch "%s/started"\nuntil [ -e "%s/go" ]; do [ "$SECONDS" -lt %s ] || exit; sleep 0.1; done\nexec %s "$@"\n' \
+    "$OVERLAP" "$OVERLAP" "$FAKE_LIMIT" "$(command -v jq)" >"$OVERLAP/jq"
   chmod +x "$OVERLAP/jq"
   PATH="$OVERLAP:$PATH" A_TEAM_UNSCHEDULED=$1 A_TEAM_CONFIG="$PASS_CONFIG" A_TEAM_STATE="$PASS_STATE" bash "$ROOT/scripts/dispatch.sh" &
   OVERLAP_PID=$!
@@ -11219,12 +11587,11 @@ live_run() {
   local dir="$A_TEAM_STATE/demo/$1"
   mkdir -p "$dir"
   if [ "${3:-}" = ignores ]; then
-    (trap '' TERM; exec sleep 300) >/dev/null 2>&1 &
+    (trap '' TERM; exec -a "$WORK/live-run" sleep 300) >/dev/null 2>&1 &
   else
-    sleep 300 >/dev/null 2>&1 &
+    (exec -a "$WORK/live-run" sleep 300) >/dev/null 2>&1 &
   fi
   FAKE=$!
-  echo "$FAKE" >>"$WORK/fake-runs"
   echo "$FAKE" >"$dir/pid"
   echo $(($(date +%s) - $2)) >"$dir/last-start"
 }
@@ -11408,9 +11775,8 @@ dispatch_dev
 dispatch_dev
 same "stuck" 1 "$(status_stuck | grep -c .)"
 jq '.dispatch.enabled = false' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
-sleep 300 >/dev/null 2>&1 &
+(exec -a "$WORK/stranger" sleep 300) >/dev/null 2>&1 &
 stranger=$!
-echo "$stranger" >>"$WORK/fake-runs"
 jq --argjson pid "$stranger" '.[0].pid = $pid' "$A_TEAM_STATE/demo/dev/stuck" >"$A_TEAM_STATE/demo/dev/stuck.new"
 mv "$A_TEAM_STATE/demo/dev/stuck.new" "$A_TEAM_STATE/demo/dev/stuck"
 echo "$stranger" >"$A_TEAM_STATE/demo/dev/runs/13/pid"
@@ -11435,6 +11801,202 @@ dispatch_dev --dry-run
 same "status reads only the real one" "" "$(status_stuck)"
 end_run "$FAKE"
 
+# A role's board command binds itself to the App, whatever shell runs it.
+# as_shell: records the token each gh call used, "shell" for none.
+as_shell() {
+  mv "$BIN/gh" "$BIN/real-gh"
+  cat >"$BIN/gh" <<SH
+#!/usr/bin/env bash
+echo "\${GH_TOKEN:-shell}" >>"$BIN/tokens"
+exec "$BIN/real-gh" "\$@"
+SH
+  chmod +x "$BIN/gh"
+  : >"$BIN/tokens"
+}
+tokens_used() { sort -u "$BIN/tokens" | tr '\n' ' '; }
+identity_fixture() {
+  fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 2, "exploring": 2, "worktrees": 2, "devs": 1, "ideas": 2, "readyFloor": 0 },
+  "app": { "id": 7, "slug": "demo-app" } }
+JSON
+}
+echo reply >"$WORK/identity-reply"
+
+case_ "a role's comment, move and 👀 from your own terminal use the App's token, not your login"
+identity_fixture
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+gh_items <<'ITEMS'
+Exploring 7 A pitch
+Ready 8 A task
+ITEMS
+as_shell
+GH_TOKEN=ghp_yours run board demo comment lead 7 "$WORK/identity-reply"
+same "comment exit" 0 "$STATUS"
+same "comment token" "ghs_app " "$(tokens_used)"
+: >"$BIN/tokens"
+GH_TOKEN=ghp_yours run board demo claim dev 8
+same "claim exit" 0 "$STATUS"
+same "claim token" "ghs_app " "$(tokens_used)"
+: >"$BIN/tokens"
+GH_TOKEN=ghp_yours run board demo mine dev
+same "read token" "ghs_app " "$(tokens_used)"
+
+case_ "lead-next, whose role is in its name, uses the App's token too"
+: >"$BIN/tokens"
+GH_TOKEN=ghp_yours run board demo lead-next
+same "lead-next token" "ghs_app " "$(tokens_used)"
+
+case_ "with the flag first, triggers still finds its role"
+: >"$BIN/tokens"
+GH_TOKEN=ghp_yours run board demo triggers --sweep dev
+same "triggers token" "ghs_app " "$(tokens_used)"
+
+case_ "in a dispatcher's run, a role's command still acts as the App"
+: >"$BIN/tokens"
+A_TEAM_RUN_TEAM=demo run board demo comment lead 7 "$WORK/identity-reply"
+same "run exit" 0 "$STATUS"
+same "run token" "ghs_app " "$(tokens_used)"
+
+case_ "a stakeholder's command, outside a run, keeps your own login"
+: >"$BIN/tokens"
+run board demo comment you 7 "$WORK/identity-reply"
+same "you exit" 0 "$STATUS"
+same "you token" "shell " "$(tokens_used)"
+
+case_ "a role with no App stops, as status words it, and reaches nothing as you"
+NO_APP=1 fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+: >"$BIN/tokens"
+NO_TOKEN=1 run board demo comment lead 7 "$WORK/identity-reply"
+failed "no app"
+same "no app says" "board.sh: lead acts as the App, which can't get a token: no GitHub App: run a-team app create demo, then install it" "$(cat "$ERR")"
+same "no app gh calls" 0 "$(grep -c '' <"$BIN/tokens")"
+
+case_ "a role whose App has no key stops, naming the App and what to do, and reaches nothing as you"
+identity_fixture
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+: >"$BIN/tokens"
+NO_TOKEN=1 NO_KEY=1 run board demo comment lead 7 "$WORK/identity-reply"
+failed "no key"
+grep -q "^board.sh: lead acts as demo-app\[bot\], which can't get a token: no private key .*: generate a new private key on the App's settings page on GitHub, then run: security add-generic-password -U -s a-team-app -a mentaldesk -w " "$ERR" ||
+  fail "no key: '$(cat "$ERR")'"
+grep -q 'app create' "$ERR" && fail "no key: sent to app create, which needs the key: '$(cat "$ERR")'"
+same "no key gh calls" 0 "$(grep -c '' <"$BIN/tokens")"
+
+case_ "a role whose App isn't installed stops, saying where to install it, and reaches nothing as you"
+: >"$BIN/tokens"
+NO_TOKEN=1 NOT_INSTALLED=1 run board demo move lead 7 Pitched
+failed "not installed"
+grep -q "^board.sh: lead acts as demo-app\[bot\], which can't get a token: app 7 isn't installed on mentaldesk/demo: install it at https://github.com/apps/demo-app/installations/new$" "$ERR" ||
+  fail "not installed: '$(cat "$ERR")'"
+same "not installed gh calls" 0 "$(grep -c '' <"$BIN/tokens")"
+
+case_ "every you command refuses inside a team's run, and reaches nothing"
+while read -r command rest; do
+  : >"$BIN/tokens"
+  # shellcheck disable=SC2086 # the words are the command's arguments
+  A_TEAM_RUN_TEAM=demo run board demo "$command" you $rest
+  failed "$command you"
+  same "$command you says" "board.sh: only the stakeholder can $command as you, and this is a team's run" "$(cat "$ERR")"
+  same "$command you gh calls" 0 "$(grep -c '' <"$BIN/tokens")"
+done <<'YOURS'
+approve 7
+accept 8
+priority 7 high
+decline 7 file
+shelve 7 2 file
+comment 7 file
+hold 8 file
+release 8
+new file
+attach file
+add 7 Idea
+move 7 Idea
+edit 7 path sha file
+decision 1 retire
+vision-review
+spent - 2026-01-01T00:00:00Z 60 Review read
+YOURS
+
+# --- the suite answers for what it started ----------------------------------------------------
+SUITE=$(mktemp -d "$WORK/suite.XXXXXX")
+cat >"$SUITE/fake" <<SH
+#!/usr/bin/env bash
+trap '' TERM
+echo \$\$ >>"\$1"
+while [ "\$SECONDS" -lt "$FAKE_LIMIT" ]; do sleep 0.1; done
+SH
+chmod +x "$SUITE/fake"
+# A small suite on the real clean-up: its one argument is what it does before finishing.
+cat >"$SUITE/suite" <<SH
+#!/usr/bin/env bash
+export TMPDIR="$SUITE"
+SUITE="$SUITE"
+source "$ROOT/tests/leftovers.sh"
+leak() { cp "$SUITE/fake" "\$WORK/fake"; nohup "\$WORK/fake" "$SUITE/pids" >/dev/null 2>&1 & }
+neighbour() { mkdir "\$WORK.b"; cp "$SUITE/fake" "\$WORK.b/fake"; nohup "\$WORK.b/fake" "$SUITE/neighbours" >/dev/null 2>&1 & }
+started() { until [ -s "\$1" ]; do sleep 0.1; done; }
+eval "\$1"
+finish_suite
+SH
+small_suite() {
+  : >"$SUITE/pids"
+  bash "$SUITE/suite" "$1" >"$OUT" 2>"$ERR"
+  STATUS=$?
+}
+stopped() { kill -0 "$(cat "$SUITE/pids")" 2>/dev/null && fail "$1: still running"; }
+
+case_ "a suite that left nothing running passes"
+small_suite ':'
+same "exit" 0 "$STATUS"
+same "output" "all passed" "$(cat "$OUT")"
+
+case_ "a passing suite that left a fake running stops it, names it and fails"
+small_suite 'leak; started "$SUITE/pids"'
+same "exit" 1 "$STATUS"
+same "output" "  FAIL left running when the suite ended, now stopped:
+       <tmp>/fake
+1 failed" "$(cat "$OUT")"
+stopped "after passing"
+
+case_ "a suite whose cases failed lists what it stopped without counting it"
+small_suite 'fail a case; leak; started "$SUITE/pids"'
+same "exit" 1 "$STATUS"
+same "output" "  FAIL a case
+  left running when the suite ended, now stopped:
+       <tmp>/fake
+1 failed" "$(cat "$OUT")"
+stopped "after failing"
+
+case_ "an interrupted suite stops what it started and removes its folder"
+for signal in TERM:143 HUP:129 INT:130; do
+  code=${signal#*:} signal=${signal%:*}
+  : >"$SUITE/pids"
+  # A background job starts with INT ignored, and bash can't undo that. Its sleep survives, as a child can.
+  perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' bash "$SUITE/suite" 'leak; started "$SUITE/pids"; touch "$SUITE/waiting"; sleep 3' >"$OUT" 2>"$ERR" &
+  interrupted=$!
+  for _ in $(seq 50); do [ -e "$SUITE/waiting" ] && break; sleep 0.1; done
+  rm -f "$SUITE/waiting"
+  kill -"$signal" "$interrupted"
+  wait "$interrupted" 2>/dev/null
+  STATUS=$?
+  same "$signal exit" "$code" "$STATUS"
+  same "$signal output" "  left running when the suite ended, now stopped:
+       <tmp>/fake" "$(cat "$OUT")"
+  stopped "$signal"
+  same "$signal folder" "" "$(find "$SUITE" -name 'tmp.*')"
+done
+
+case_ "a suite leaves another suite's process alone, even in a folder whose name starts with its own"
+small_suite 'neighbour; started "$SUITE/neighbours"'
+same "exit" 0 "$STATUS"
+same "output" "all passed" "$(cat "$OUT")"
+neighbour=$(cat "$SUITE/neighbours")
+kill -0 "$neighbour" 2>/dev/null || fail "stopped the neighbour"
+kill -9 "$neighbour" 2>/dev/null
+
 case_ "waiting says how many of a task's criteria aren't ticked, and nothing where none is left"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
@@ -11454,5 +12016,4 @@ waiting
 same "exit" 0 "$STATUS"
 same "unticked" '[[12,2],[13,null]]' "$(jq -c 'map(select(.number)) | sort_by(.number) | map([.number, .unticked])' "$OUT")"
 
-[ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
-echo "all passed"
+finish_suite

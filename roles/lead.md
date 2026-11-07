@@ -149,7 +149,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
 
 For each item in `a-team board {{team}} mine lead Building`, run `children`:
 
-- A child that isn't a task (labelled `pitch`, or with a status from Idea to Building) doesn't hold
+- A child with `leftInIdea` is a task you filed that the board left in Idea:
+  `a-team board {{team}} add lead <child> Ready`, and treat it as a task.
+- Any other child that isn't a task (labelled `pitch`, or with a status from Idea to Building) doesn't hold
   the pitch up: `a-team board {{team}} unlink lead <pitch> <child>`, and judge the pitch on its
   tasks alone.
 - When every task is closed, check the whole: fetch `origin/main`, build it, try the feature
