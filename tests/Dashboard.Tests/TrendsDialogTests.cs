@@ -34,8 +34,8 @@ public class TrendsDialogTests
         Assert.Equal(0, dialog.Measure.Value);
         Assert.True(dialog.Graph.Visible);
         Assert.False(dialog.Message.Visible);
-        Assert.Equal([new TeamTrendRow("a-team", 4, 12, 2, 212.4m, 9, 16 / 18.0), new TeamTrendRow("tuicode", null, null, 0, 0, null, null)], dialog.Rows);
-        Assert.Equal(new TeamTrendRow("All", 4, 12, 2, 212.4m, 9, 16 / 18.0), dialog.All);
+        Assert.Equal([new TeamTrendRow("a-team", 4, 12, 2, 212.4m, 9, 16 / 18.0, null, new(0, 0, 0, 0, 0)), new TeamTrendRow("tuicode", null, null, 0, 0, null, null)], dialog.Rows);
+        Assert.Equal(new TeamTrendRow("All", 4, 12, 2, 212.4m, 9, 16 / 18.0, null, new(0, 0, 0, 0, 0)), dialog.All);
         Assert.Equal(9, dialog.Series[0][^1]);
         Assert.All(dialog.Series[1], Assert.Null);
     }
@@ -125,9 +125,61 @@ public class TrendsDialogTests
         Assert.Equal("4.5", dialog.Rows[0].PerHour);
         Assert.Null(dialog.Rows[1].Yours);
         Assert.Null(dialog.Rows[1].PerHour);
-        Assert.Equal(["40m", "4.5"], Cells(dialog.Table, 0, 7, 8));
-        Assert.Equal(["–", "–"], Cells(dialog.Table, 1, 7, 8));
-        Assert.Equal(["40m", "4.5"], Cells(dialog.Table, 2, 7, 8));
+        Assert.Equal(["40m", "4.5"], Cells(dialog.Table, 0, 10, 11));
+        Assert.Equal(["–", "–"], Cells(dialog.Table, 1, 10, 11));
+        Assert.Equal(["40m", "4.5"], Cells(dialog.Table, 2, 10, 11));
+    }
+
+    private const string Touchy = """
+        {"since": "2026-09-20T00:00:00Z", "queue": [], "cycles": [], "cost": 0, "accepted": [],
+         "touches": [{"accepted": "2026-09-30T10:00:00Z", "touches": 5}, {"accepted": "2026-10-07T10:00:00Z", "touches": 0},
+                     {"accepted": "2026-10-07T11:00:00Z", "touches": 0}, {"accepted": "2026-10-07T12:00:00Z", "touches": 0},
+                     {"accepted": "2026-10-08T10:00:00Z", "touches": 3}],
+         "finished": [{"at": "2026-09-30T10:00:00Z", "untouched": true}, {"at": "2026-10-07T10:00:00Z", "untouched": true},
+                      {"at": "2026-10-08T10:00:00Z", "untouched": false}]}
+        """;
+
+    private const string OneClean = """
+        {"since": "2026-09-20T00:00:00Z", "queue": [], "cycles": [], "cost": 0, "accepted": [],
+         "touches": [{"accepted": "2026-10-07T10:00:00Z", "touches": 0}], "finished": [{"at": "2026-10-07T10:00:00Z", "untouched": false}]}
+        """;
+
+    private const string Quiet = """{"since": "2026-09-20T00:00:00Z", "queue": [], "accepted": [], "cycles": [], "cost": 0, "touches": [], "finished": []}""";
+
+    [Fact]
+    public void The_table_puts_first_time_touches_and_untouched_between_with_you_and_yours()
+    {
+        using var dialog = Open(("a-team", 4, Touchy));
+
+        var names = dialog.Table.Table!.ColumnNames;
+        Assert.Equal(["With you", "First time", "Touches", "Untouched", "Yours (7d)"], names.Skip(6).Take(5));
+    }
+
+    [Fact]
+    public void It_counts_the_last_7_days_and_leaves_older_work_out()
+    {
+        using var dialog = Open(("a-team", 4, Touchy));
+
+        Assert.Equal(["75% of 4", "0.8", "1"], Cells(dialog.Table, 0, 7, 8, 9));
+    }
+
+    [Fact]
+    public void All_is_over_every_team_s_tasks_not_an_average_of_the_teams()
+    {
+        using var dialog = Open(("a-team", 4, Touchy), ("tuicode", null, OneClean));
+
+        Assert.Equal(["100% of 1", "0.0", "0"], Cells(dialog.Table, 1, 7, 8, 9));
+        Assert.Equal(new WeekTouches(5, 4, 3, 3, 1), dialog.All!.Touches);
+        Assert.Equal(["80% of 5", "0.6", "1"], Cells(dialog.Table, 2, 7, 8, 9));
+    }
+
+    [Fact]
+    public void An_empty_week_shows_a_dash_and_a_week_before_the_record_began_is_blank()
+    {
+        using var dialog = Open(("a-team", 4, Touchy), ("quiet", null, Quiet), ("tuicode", null, Nothing));
+
+        Assert.Equal(["–", "–", "–"], Cells(dialog.Table, 1, 7, 8, 9));
+        Assert.Equal(["", "", ""], Cells(dialog.Table, 2, 7, 8, 9));
     }
 
     [Fact]

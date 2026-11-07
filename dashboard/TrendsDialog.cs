@@ -171,7 +171,7 @@ public sealed class TrendsDialog : DashboardDialog
     };
 
     /// <summary>Wide enough for every column of the table, which a 120-wide terminal has room for.</summary>
-    private const int Wide = 96;
+    private const int Wide = 120;
 
     /// <summary>The split by gate: its row names, then a column of minutes per team.</summary>
     private int GatesWide => "This week".Length + 2 + _teams.Sum(team => Math.Max(team.Team.Length, "10h 00m".Length) + 1);
@@ -205,10 +205,13 @@ public sealed class TrendsDialog : DashboardDialog
             ["Runs $"] = row => row.Cost.ToString("0.00", CultureInfo.InvariantCulture),
             ["Cycle"] = row => row.Cycle is { } hours ? hours.ToString("0.0", CultureInfo.InvariantCulture) + "h" : "–",
             ["With you"] = row => row.WithYou is { } share ? share.ToString("0%", CultureInfo.InvariantCulture) : "–",
+            ["First time"] = row => row.Touches?.FirstTimeText ?? "",
+            ["Touches"] = row => row.Touches?.TouchesText ?? "",
+            ["Untouched"] = row => row.Touches?.UntouchedText ?? "",
             ["Yours (7d)"] = row => row.Yours is { } yours ? Visit.Duration(yours) : "–",
             ["/h"] = row => row.PerHour ?? "–",
         });
-        for (var column = 1; column < 9; column++)
+        for (var column = 1; column < 12; column++)
             _table.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
         var gates = new Dictionary<string, Func<string, object>> { ["This week"] = gate => gate };
         foreach (var (team, record) in _teams.Zip(_records))

@@ -990,6 +990,32 @@ CYCLES="$MOVE"'
        withYou: ($review.review + $waited + if $review.since == null then 0
                  else $to - ($review.since | fromdateiso8601) end)};'
 
+# touches($by; $work; $since): per task in $work accepted since then, your comments on it or its PR once it reached review.
+# finished($by; $tasks; $since): per pitch finished since then, whether you approved it with nothing to say while
+# Pitched and never commented on its tasks or their PRs. $by holds each item's events, $tasks each pitch's tasks.
+TOUCHES='
+  def said: .who == "you" and .what == "commented";
+  def merged: capture("^accepted · PR #(?<pr>[0-9]+) ").pr | tonumber;
+  def on($by): .[] as $n | $by[$n | tostring][]?;
+  def touches($by; $work; $since): map(select(.who == "you" and (.what | startswith("accepted · ")) and .at > $since
+        and (.item | IN($work[]))))
+    | group_by(.item)
+    | map(([.[0].item] + [.[].what | merged] | unique | [on($by)]) as $events
+        | ([$events[] | select(.what | move | .to == "In review") | .at] | min // "") as $review
+        | {accepted: (map(.at) | max), touches: ([$events[] | select(said and .at >= $review)] | length)})
+    | sort_by(.accepted);
+  def finished($by; $tasks; $since): map(select((.what | startswith("closed as done")) and .at > $since))
+    | group_by(.item) | map(last | . as $closed
+      | (reduce $by[.item | tostring][] as $e ({pitched: false, approved: false, said: false};
+          (if .pitched and ($e | said) then .said = true else . end)
+          | ([$e.what | move] | first) as $m
+          | if $m == null then . else .pitched = ($m.to == "Pitched")
+              | .approved = (.approved or ($m.from == "Pitched" and $m.to == "Approved")) end)) as $pitch
+      | ($tasks[.item | tostring] // []) as $own
+      | ($own + [$own | on($by) | .what | merged] + [.what | scan("#[0-9]+") | .[1:] | tonumber]) as $items
+      | {at: .at, untouched: ($pitch.approved and ($pitch.said | not) and ([$items | on($by) | select(said)] | length) == 0)})
+    | sort_by(.at);'
+
 # sql_now <modifier>: now, moved by an SQLite date modifier, in the record's own format.
 sql_now() { printf "strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ', 'now', '%s')" "$1"; }
 
@@ -3572,7 +3598,7 @@ case "$CMD" in
   trends)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM trends"
     if [ ! -f "$STATE/history.db" ]; then
-      echo '{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0, "spentSince": null, "spent": []}'
+      echo '{"since": null, "queue": [], "accepted": [], "cycles": [], "cost": 0, "spentSince": null, "spent": [], "touches": [], "finished": []}'
       exit 0
     fi
     team=$(sql "$TEAM")
@@ -3592,9 +3618,22 @@ case "$CMD" in
         (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = $team AND started > $(sql_now '-7 days')) AS cost,
         (SELECT MIN(at) FROM spent WHERE team = $team) AS spentSince,
         (SELECT json_group_array(json_object('at', at, 'seconds', seconds, 'gate', gate)) FROM (SELECT at, seconds, gate
-          FROM spent WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS spent;" |
-      jq --argjson worktrees "$(jq '.wip.worktrees // null' "$CONFIG")" "$CYCLES"'.[0]
+          FROM spent WHERE team = $team AND at > $(sql_now '-15 days') ORDER BY at)) AS spent,
+        $(sql_now '-15 days') AS fortnight,
+        (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events
+          WHERE team = $team AND (who = 'you' AND (what = 'commented' OR what LIKE 'accepted · %')
+            OR what LIKE 'closed as done%' OR what LIKE '% → %' OR what LIKE 'added as %') ORDER BY at, id)) AS said,
+        (SELECT json_group_array(json_object('item', item, 'parent', json_extract(content, '\$.parent'))) FROM board
+          WHERE team = $team AND json_extract(content, '\$.type') = 'Issue'
+            AND (json_extract(content, '\$.parent') IS NOT NULL OR json_extract(marks, '\$.dev'))) AS tasks;" |
+      jq --argjson worktrees "$(jq '.wip.worktrees // null' "$CONFIG")" "$CYCLES$TOUCHES"'.[0]
         | .queue |= fromjson | .accepted |= fromjson | .spent |= fromjson
+        | (.said | fromjson) as $said
+        | (reduce $said[] as $e ({}; .[$e.item | tostring] += [$e])) as $by
+        | (.tasks | fromjson) as $work
+        | (reduce ($work[] | select(.parent)) as $t ({}; .[$t.parent | tostring] += [$t.item])) as $tasks
+        | .fortnight as $since | .touches = ($said | touches($by; [$work[].item]; $since)) | .finished = ($said | finished($by; $tasks; $since))
+        | del(.fortnight, .said, .tasks)
         | (.moves | fromjson | waits($worktrees)) as $waits
         | .cycles |= (fromjson | group_by(.item) | map(cycle($waits)) | sort_by(.accepted)) | del(.moves)'
     ;;

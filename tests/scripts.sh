@@ -9399,7 +9399,7 @@ trends() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo trends | jq -c .; }
 
 case_ "with nothing recorded, trends has no start, no points and no cost, and makes no record file"
 rm -f "$A_TEAM_STATE/history.db"
-same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0,"spentSince":null,"spent":[]}' "$(trends)"
+same "empty" '{"since":null,"queue":[],"accepted":[],"cycles":[],"cost":0,"spentSince":null,"spent":[],"touches":[],"finished":[]}' "$(trends)"
 unrecorded "trends"
 
 case_ "trends: the last 15 days of the queue, each item accepted once at its latest, and runs' cost in 7 days"
@@ -9421,7 +9421,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY,
   INSERT INTO runs (team, role, pid, log, started, cost) VALUES ('demo', 'dev', 1, 'a', '$(ago 100)', 1.25),
     ('demo', 'lead', 2, 'b', '$(ago 200)', NULL), ('demo', 'dev', 3, 'c', '$(ago $((60 * 24 * 8)))', 9),
     ('other', 'dev', 4, 'd', '$(ago 100)', 4);"
-same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25,\"spentSince\":null,\"spent\":[]}" "$(trends)"
+same "trends" "{\"since\":\"$since\",\"queue\":[{\"at\":\"$days3\",\"waiting\":12},{\"at\":\"$m90\",\"waiting\":9}],\"accepted\":[\"$m50\",\"$m30\"],\"cycles\":[],\"cost\":1.25,\"spentSince\":null,\"spent\":[],\"touches\":[],\"finished\":[]}" "$(trends)"
 
 case_ "trends: a task's cycle runs from first entering Ready to its acceptance, with every spell In review counted"
 base=$(date +%s); before() { jq -rn --argjson t "$base" --argjson m "$1" '$t - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
@@ -9498,6 +9498,137 @@ case_ "trends: with no wip.worktrees, only In review and questions count"
 jq 'del(.wip)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 events <<<"$slots"
 same "no slots" "[50]" "$(with_you "\"$(before 600)\"")"
+
+touches_of() { trends | jq -c '[.touches[].touches]'; }
+# boarded <n> <content> [<marks>]: item n on the board, once trends has made the record's tables.
+boarded() {
+  local marks=${3:+"'$3'"}
+  trends >/dev/null
+  sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO board (team, item, node, status, since, content, marks)
+    VALUES ('demo', $1, 'N$1', 'Done', '2026-10-01T00:00:00Z', '$2', ${marks:-NULL});"
+}
+parents() {
+  local n
+  for n in "$@"; do boarded "${n#*:}" "{\"type\": \"Issue\", \"parent\": ${n%:*}}"; done
+}
+under_pitch() {
+  local n
+  for n in "$@"; do parents "99:$n"; done
+}
+
+case_ "trends: touches count your comments on a task or its PR from review onwards, and only yours"
+events <<'EOF'
+1 900 dev In progress → In review
+1 800 you accepted · PR #101 merged
+101 800 you accepted · PR #101 merged
+2 900 dev In progress → In review
+2 850 you commented
+2 800 you accepted · PR #102 merged
+102 800 you accepted · PR #102 merged
+3 900 dev In progress → In review
+103 850 you commented
+3 800 you accepted · PR #103 merged
+103 800 you accepted · PR #103 merged
+4 900 dev In progress → In review
+4 880 you commented
+104 870 you commented
+4 860 you commented
+4 800 you accepted · PR #104 merged
+104 800 you accepted · PR #104 merged
+5 950 you commented
+105 940 you commented
+5 900 dev In progress → In review
+5 800 you accepted · PR #105 merged
+105 800 you accepted · PR #105 merged
+6 900 dev In progress → In review
+6 850 lead commented
+6 845 dev commented
+106 840 octocat commented
+6 800 you accepted · PR #106 merged
+106 800 you accepted · PR #106 merged
+EOF
+under_pitch 1 2 3 4 5 6
+same "none, issue, PR, three, before review, someone else's" "[0,1,1,3,0,0]" "$(touches_of)"
+
+case_ "trends: touches count from the first time it reached review, even after it was sent back"
+events <<'EOF'
+1 900 dev In progress → In review
+1 880 you In review → Ready
+1 870 you commented
+1 860 dev Ready → In progress
+1 850 dev In progress → In review
+1 800 you accepted · PR #101 merged
+EOF
+under_pitch 1
+same "the spell out of review counts" "[1]" "$(touches_of)"
+
+case_ "trends: a task accepted over a fortnight ago isn't reported"
+events <<EOF
+1 $((60 * 24 * 16)) you accepted · PR #101 merged
+EOF
+under_pitch 1
+same "too old" "[]" "$(touches_of)"
+
+case_ "trends: touches count a task or a fix once, and no bump, docs PR, PR of your own or closed issue"
+events <<'EOF'
+1 800 you accepted · PR #101 merged
+101 800 you accepted · PR #101 merged
+2 800 you accepted · PR #102 merged
+102 800 you accepted · PR #102 merged
+3 850 you commented
+3 800 you accepted · closed
+3 800 you accepted · PR #103 merged
+103 840 you commented
+103 800 you accepted · PR #103 merged
+104 800 you accepted · PR #104 merged
+105 800 you accepted · PR #105 merged
+106 800 you accepted · PR #106 merged
+107 800 you accepted · PR #107 merged
+8 800 you accepted · closed
+EOF
+under_pitch 1 3
+boarded 2 '{"type": "Issue"}' '{"dev":true,"fix":true}'
+boarded 104 '{"type": "PullRequest", "dependabot": true}'
+boarded 105 '{"type": "PullRequest", "dependabot": true}' '{"dev":true}'
+boarded 106 '{"type": "PullRequest"}' '{"customer":true}'
+boarded 8 '{"type": "Issue"}'
+same "task, fix, task accepted both ways" "[0,0,2]" "$(touches_of)"
+
+# pitch <n>: pitch n pitched and approved with nothing said, and finished, the rest of the record added on stdin.
+pitch() {
+  printf '%s\n' "$1 900 lead Exploring → Pitched" "$1 800 you Pitched → Approved" "$1 100 lead closed as done"
+}
+finished_of() { trends | jq -c '[.finished[].untouched]'; }
+
+case_ "trends: a pitch is untouched with no comment while Pitched and none on its tasks or their PRs"
+{
+  pitch 1; printf '%s\n' "11 500 you accepted · PR #111 merged" "111 500 you accepted · PR #111 merged"
+} | events
+parents 1:11
+same "none" "[true]" "$(finished_of)"
+
+case_ "trends: a comment while Pitched touches a pitch, in any spell, but not one before or after"
+{
+  pitch 1; echo "1 850 you commented"
+  pitch 2; echo "2 950 you commented"; echo "2 700 you commented"
+} | events
+same "while Pitched, and outside it" "[false,true]" "$(finished_of)"
+
+case_ "trends: a comment on a task touches its pitch, even from before review, as does one on the task's PR"
+{
+  pitch 1; echo "11 600 you commented"
+  pitch 2; printf '%s\n' "121 600 you commented" "12 500 you accepted · PR #121 merged"
+  pitch 3; printf '%s\n' "13 600 lead commented" "13 500 you accepted · PR #131 merged"
+} | events
+parents 1:11 2:12 3:13
+same "task, PR, and the Lead's" "[false,false,true]" "$(finished_of)"
+
+case_ "trends: a pitch built by PRs with no tasks is touched by a comment on one, and one never approved isn't untouched"
+{
+  printf '%s\n' "1 900 lead Exploring → Pitched" "1 800 you Pitched → Approved" "1 100 lead closed as done · built by #532" "532 500 you commented"
+  echo "2 100 lead closed as done"
+} | events
+same "built by, unapproved" "[false,false]" "$(finished_of)"
 
 case_ "spent records your time on a card, or between cards, for History, trend and trends"
 rm -f "$A_TEAM_STATE/history.db"
