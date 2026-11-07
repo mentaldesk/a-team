@@ -32,8 +32,8 @@ nothing to restart.
   change it would have made instead of making it. New writes to GitHub go through `write` so
   dry-run covers them. Without it no command only reads, `list`, `wip`, `triggers` and `check` included:
   each brings the record up to date first.
-- **A change that moves or reinterprets stored state bumps the format.** Bump `BOARD_FORMAT` in
-  `scripts/board.sh` and add its `format_<n>` step. An older a-team then refuses to act, and only the
+- **A change that moves or reinterprets stored state bumps the format.** Bump `DefaultFormat` in
+  `core/Board.Setup.cs` and add its step to `FormatSteps`. An older a-team then refuses to act, and only the
   installed one runs the step, so an ordinary release never stops anything. Commands take turns to run
   it, but one killed partway leaves the next to run it again, so a step must be safe to repeat.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
@@ -86,7 +86,7 @@ down each assumption about the machine here, and the rule that keeps it from tri
 `bin/a-team board` runs `a-team-core`, and a checkout builds its own whenever a source is newer than it. What the core hasn't
 ported yet it hands to `scripts/board.sh` before doing anything, so a command moves over without its caller noticing.
 
-The core owns the board's state: `board.sh` reads cards and syncs through it (`core __items`, `core __sync`), and a command is
+The core owns the board's state: `board.sh` reads cards, syncs and passes the format gate through it (`core __items`, `core __sync`, `core __format`), and a command is
 in one place only, so nothing is changed twice. A card's status changes only through `core/StatusRoute.cs`: its table says who
 may do what, and it holds the only SQL that writes one, which `tests/scripts/core.sh` checks.
 

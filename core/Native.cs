@@ -57,6 +57,7 @@ internal static class Libc
     [DllImport("libc")] private static extern void free(IntPtr memory);
     [DllImport("libc")] private static extern void tzset();
     [DllImport("libc")] private static extern IntPtr localtime_r(ref long time, out Tm result);
+    [DllImport("libc")] private static extern int kill(int pid, int signal);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Tm
@@ -74,6 +75,9 @@ internal static class Libc
         localtime_r(ref seconds, out var tm);
         return new DateTime(tm.Year + 1900, tm.Mon + 1, tm.Mday, tm.Hour, tm.Min, tm.Sec, DateTimeKind.Unspecified);
     }
+
+    /// <summary>Whether `kill -0` would find that process.</summary>
+    internal static bool Alive(int pid) => kill(pid, 0) == 0;
 
     /// <summary>The path with its links followed, or null where there's nothing there.</summary>
     internal static string? RealPath(string path)

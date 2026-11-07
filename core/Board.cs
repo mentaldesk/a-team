@@ -20,7 +20,6 @@ internal sealed class Stop(int code, string said) : Exception(said)
 /// <summary>A team's board, as one command sees it: its config, its record and GitHub.</summary>
 internal sealed partial class Board
 {
-    private const int DefaultFormat = 1;
     private const string RankField = "Lead rank";
     private const string ThemeField = "Theme";
     private const string Lagging = """
@@ -83,7 +82,7 @@ internal sealed partial class Board
         var mirrored = config["mirror"]?.GetValueKind() != System.Text.Json.JsonValueKind.False;
         _mirror = _number.Length > 0 && mirrored ? $"{_owner}/{_number}" : "";
         _readEvery = int.TryParse(Environment.GetEnvironmentVariable("A_TEAM_BOARD_READ_EVERY"), out var every) ? every : 900;
-        foreach (var (shown, ours) in config["project"]?["statusMap"]?.AsObject() ?? [])
+        foreach (var (shown, ours) in config["project"]?["statusMap"] as JsonObject ?? [])
             if (Json.Text(ours) is { } name)
                 _reverseMap[name] = shown;
     }
@@ -104,18 +103,6 @@ internal sealed partial class Board
         DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
     private string TeamQ => Reconciler.Q(_team);
-
-    internal static int Format =>
-        int.TryParse(Environment.GetEnvironmentVariable("A_TEAM_BOARD_FORMAT"), out var format) ? format : DefaultFormat;
-
-    /// <summary>Whether this team's state is in the format this a-team knows, stamped and with nothing newer about.</summary>
-    internal bool FormatIsCurrent()
-    {
-        var top = _record.Scalar("SELECT format FROM formats ORDER BY format DESC LIMIT 1;");
-        if (top is not null && int.Parse(top, CultureInfo.InvariantCulture) > Format) return false;
-        var own = _record.Scalar("SELECT format FROM formats WHERE team = ?;", _team);
-        return own is not null && int.Parse(own, CultureInfo.InvariantCulture) == Format;
-    }
 
     private void BoardReady()
     {
@@ -319,20 +306,13 @@ internal sealed partial class Board
         return _gh.Run([.. args]);
     }
 
-    /// <summary>Every item on the mirror, read again once if it comes back short; null if it can't be read whole.</summary>
-    private JsonArray? MirrorNodes(bool shortEnds)
+    /// <summary>Every page of the mirror, read again once if it comes back short; null if it can't be read whole.</summary>
+    private List<JsonNode?>? BoardPages(string query, bool shortEnds, params string[] rest)
     {
-        var query = $$"""
-            query($owner: String!, $number: Int!, $field: String!, $endCursor: String) {
-                  {{_kind}}(login: $owner) { projectV2(number: $number) {
-                    items(first: 100, after: $endCursor) {
-                      totalCount pageInfo { hasNextPage endCursor }
-                      nodes { id {{StatusValue}} content { {{ContentFields}} } } } } } }
-            """;
         var said = "";
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var read = Gql(query, "-F", $"field={_field}", "--paginate");
+            var read = Gql(query, [.. rest, "--paginate"]);
             _mirrorError = read.Err;
             if (!read.Ok) return null;
             var pages = Json.ParseMany(read.Out);
@@ -345,34 +325,44 @@ internal sealed partial class Board
                 if (items?["totalCount"] is { } count)
                     total = Math.Max(total, count.GetValue<long>());
             }
-            if (got < total)
-            {
-                said = $"{got} of {total}";
-                continue;
-            }
-            var nodes = new JsonArray();
-            foreach (var page in pages)
-            {
-                foreach (var node in page?["data"]?[_kind]?["projectV2"]?["items"]?["nodes"]?.AsArray() ?? [])
-                {
-                    if (node?["content"] is null) continue;
-                    nodes.Add((JsonNode?)new JsonObject
-                    {
-                        ["project"] = new JsonObject
-                        {
-                            ["id"] = node["id"]?.DeepClone(),
-                            ["status"] = node["fieldValueByName"]?["name"]?.DeepClone(),
-                            ["since"] = node["fieldValueByName"]?["updatedAt"]?.DeepClone(),
-                        },
-                        ["content"] = node["content"]!.DeepClone(),
-                    });
-                }
-            }
-            return nodes;
+            if (got >= total) return pages;
+            said = $"{got} of {total}";
         }
         if (shortEnds)
             throw new Die($"the board read came back incomplete ({said} items), twice. Nothing was changed: end this run, and the next one reads the board again.");
         return null;
+    }
+
+    /// <summary>Every item on the mirror, or null if it can't be read whole.</summary>
+    private JsonArray? MirrorNodes(bool shortEnds)
+    {
+        var query = $$"""
+            query($owner: String!, $number: Int!, $field: String!, $endCursor: String) {
+                  {{_kind}}(login: $owner) { projectV2(number: $number) {
+                    items(first: 100, after: $endCursor) {
+                      totalCount pageInfo { hasNextPage endCursor }
+                      nodes { id {{StatusValue}} content { {{ContentFields}} } } } } } }
+            """;
+        if (BoardPages(query, shortEnds, "-F", $"field={_field}") is not { } pages) return null;
+        var nodes = new JsonArray();
+        foreach (var page in pages)
+        {
+            foreach (var node in page?["data"]?[_kind]?["projectV2"]?["items"]?["nodes"]?.AsArray() ?? [])
+            {
+                if (node?["content"] is null) continue;
+                nodes.Add((JsonNode?)new JsonObject
+                {
+                    ["project"] = new JsonObject
+                    {
+                        ["id"] = node["id"]?.DeepClone(),
+                        ["status"] = node["fieldValueByName"]?["name"]?.DeepClone(),
+                        ["since"] = node["fieldValueByName"]?["updatedAt"]?.DeepClone(),
+                    },
+                    ["content"] = node["content"]!.DeepClone(),
+                });
+            }
+        }
+        return nodes;
     }
 
     /// <summary>Those issues and PRs as GitHub has them now; `project` is null for one that isn't on the mirror.</summary>
@@ -570,19 +560,26 @@ internal sealed partial class Board
         return marks;
     }
 
+    private GhResult ProjectRaw() => Gql($$"""
+        query($owner: String!, $number: Int!) {
+              {{_kind}}(login: $owner) { projectV2(number: $number) { id title
+                fields(first: 100) { nodes {
+                  ... on ProjectV2Field { id name dataType }
+                  ... on ProjectV2IterationField { id name dataType }
+                  ... on ProjectV2SingleSelectField { id name dataType options { id name color description } } } } } } }
+        """);
+
     private (JsonObject? Meta, string Err) ProjectMeta()
     {
-        var raw = Gql($$"""
-            query($owner: String!, $number: Int!) {
-                  {{_kind}}(login: $owner) { projectV2(number: $number) { id title
-                    fields(first: 100) { nodes {
-                      ... on ProjectV2Field { id name dataType }
-                      ... on ProjectV2IterationField { id name dataType }
-                      ... on ProjectV2SingleSelectField { id name dataType options { id name color description } } } } } } }
-            """);
-        if (!raw.Ok) return (null, raw.Err);
-        var project = Json.Parse(raw.Out)?["data"]?[_kind]?["projectV2"];
-        if (project is null) return (null, raw.Err);
+        var raw = ProjectRaw();
+        return (raw.Ok ? MetaOf(raw.Out) : null, raw.Err);
+    }
+
+    /// <summary>The project, with its Status field as `field`, its text fields as `rank` and `theme`, and as `clash` the names of those two it has as some other type.</summary>
+    private JsonObject? MetaOf(string raw)
+    {
+        var project = Json.TryParse(raw)?["data"]?[_kind]?["projectV2"];
+        if (project is null) return null;
         var fields = project["fields"]?["nodes"]?.AsArray() ?? [];
         JsonNode? Named(string name) => fields.FirstOrDefault(field => Json.Text(field?["name"]) == name);
         JsonNode? AsText(string name) => Named(name) is { } field && Json.Text(field["dataType"]) == "TEXT" ? field : null;
@@ -591,7 +588,7 @@ internal sealed partial class Board
             if (Named(name) is not null && AsText(name) is null)
                 clash.Add((JsonNode?)name);
         var status = Named(_field);
-        return (new JsonObject
+        return new JsonObject
         {
             ["id"] = project["id"]?.DeepClone(),
             ["title"] = project["title"]?.DeepClone(),
@@ -599,16 +596,19 @@ internal sealed partial class Board
             ["rank"] = AsText(RankField)?.DeepClone(),
             ["theme"] = AsText(ThemeField)?.DeepClone(),
             ["clash"] = clash,
-        }, raw.Err);
+        };
     }
 
-    private JsonNode? PriorityField()
-    {
-        var read = _gh.Run("api", "graphql", "-F", $"owner={(_owner.Length > 0 ? _owner : _repo.Split('/')[0])}", "-f", """
+    private GhResult PriorityRead() =>
+        _gh.Run("api", "graphql", "-F", $"owner={(_owner.Length > 0 ? _owner : _repo.Split('/')[0])}", "-f", """
             query=query($owner: String!) {
                   organization(login: $owner) { issueFields(first: 50) { nodes {
                     ... on IssueFieldSingleSelect { id name options { id name } } } } } }
             """);
+
+    private JsonNode? PriorityField()
+    {
+        var read = PriorityRead();
         if (!read.Ok) return null;
         try
         {
@@ -653,7 +653,7 @@ internal sealed partial class Board
     }
 
     private string StatusOnMirror(string status) =>
-        _config["project"]?["statusMap"]?[status] is { } mapped && Json.Truthy(mapped) ? Json.Text(mapped) ?? status : status;
+        (_config["project"]?["statusMap"] as JsonObject)?[status] is { } mapped && Json.Truthy(mapped) ? Json.Text(mapped) ?? status : status;
 
     /// <summary>Catches the mirror up with the record: one card, or the ones behind it when GitHub isn't being waited for.</summary>
     internal void MirrorPush(string? only)
@@ -781,18 +781,14 @@ internal sealed partial class Board
                         _record.Exec($"UPDATE board SET mirrored_{key} = '' WHERE team = {TeamQ} AND item = {n};");
                         continue;
                     }
-                    var name = key == "rank" ? RankField : ThemeField;
+                    var name = TextFieldName(key);
                     if (meta["clash"]!.AsArray().Any(clash => Json.Text(clash) == name))
                     {
-                        own = $"{_owner} project {_number} has a {name} field that isn't text, so a-team can't copy to it: rename that field";
+                        own = FieldClash(name);
                         stop = true;
                         break;
                     }
-                    var created = _gh.Run("api", "graphql", "-F", $"project={projectId}", "-f", $"name={name}", "-f", """
-                        query=mutation($project: ID!, $name: String!) {
-                              createProjectV2Field(input: {projectId: $project, dataType: TEXT, name: $name}) {
-                                projectV2Field { ... on ProjectV2Field { id } } } }
-                        """, "--jq", ".data.createProjectV2Field.projectV2Field.id");
+                    var created = AddTextField(projectId, name);
                     err = created.Err;
                     if (!created.Ok)
                     {

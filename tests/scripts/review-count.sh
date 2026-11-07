@@ -680,7 +680,8 @@ for latest in v1.2.3 v1.2.2; do
   same "exit with $latest latest" 0 "$STATUS"
 done
 
-# A copy of a-team at board format $2, as a release at version $1 or, with "", as a worktree.
+# A copy of a-team at board format $2, as a release at version $1 or, with "", as a worktree. A checkout's core, and only
+# that, reads A_TEAM_BOARD_FORMAT, and has a step for that format that adds the team to $STATE/format-$2-ran.
 format_copy() {
   local copy
   copy=$(mktemp -d "$WORK/format.XXXXXX")
@@ -690,7 +691,6 @@ format_copy() {
 export A_TEAM_BOARD_FORMAT=$2
 " "$copy/bin/a-team"
   [ -z "$1" ] || echo "$1" >"$copy/VERSION"
-  sed "s/^BOARD_FORMAT=1$/BOARD_FORMAT=$2\nformat_$2() { echo \"\$TEAM\" >>\"\$STATE\/format-$2-ran\"; }/" "$ROOT/scripts/board.sh" >"$copy/scripts/board.sh"
   echo "$copy"
 }
 # format_home: a home of its own, whose state is the real state, with the dispatcher on a-team $1.
@@ -825,6 +825,18 @@ for round in 1 2 3 4 5; do
     same "round $round stderr" "" "$(cat "$ERR.$racer")"
   done
 done
+
+case_ "a command still in board.sh passes the core's gate, the only one: it moves the board once, or refuses"
+format_home "$NEWER"
+on_real "$INSTALLED" demo list
+set_stamp 1 0.3.0
+on_real "$NEWER" demo overview
+same "exit" 0 "$STATUS"
+same "ran once" demo "$(cat "$FORMAT_STATE/format-2-ran")"
+same "moved" "2|0.4.0|1" "$(stamp)"
+on_real "$INSTALLED" demo overview
+failed "refused"
+same "words" "board.sh: the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
 
 case_ "a command that died moving the board doesn't hold up the next, which repeats its step"
 format_home "$NEWER"

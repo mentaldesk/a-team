@@ -9,7 +9,7 @@ namespace ATeam.Core;
 internal static class Program
 {
     /// <summary>What board.sh asks of the core, on the record it has open.</summary>
-    private static readonly HashSet<string> Internal = ["__sync", "__items", "__mirror-push"];
+    private static readonly HashSet<string> Internal = ["__sync", "__items", "__mirror-push", "__format"];
 
     /// <summary>The commands that speak as their first argument, a role's App or you.</summary>
     private static readonly HashSet<string> Spoken =
@@ -94,6 +94,22 @@ internal static class Program
         return Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", under, "a-team");
     }
 
+    /// <summary>A team's config, or null if the shell couldn't read its settings either, with a parser's words if it stopped one.</summary>
+    private static JsonObject? ReadConfig(string file, out string? trouble)
+    {
+        trouble = null;
+        try
+        {
+            return Json.Parse(File.ReadAllText(file)) is JsonObject config
+                && config["project"] is null or JsonObject && config["app"] is null or JsonObject ? config : null;
+        }
+        catch (Exception problem) when (problem is System.Text.Json.JsonException or ArgumentException)
+        {
+            trouble = problem.Message;
+            return null;
+        }
+    }
+
     private static int Run(string[] args, Action<string> scratch)
     {
         var dry = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN"));
@@ -107,6 +123,7 @@ internal static class Program
             throw new Fallback("a usage error");
         var (team, command) = (words[0], words[1]);
         var rest = words[2..];
+        dry |= command == "setup" && rest.FirstOrDefault() == "--dry-run";
         var commands = Commands.All();
         if (!Internal.Contains(command) && !commands.ContainsKey(command))
             throw new Fallback("not ported yet");
@@ -115,14 +132,11 @@ internal static class Program
         var configFile = Path.Combine(configDir, "teams", team + ".json");
         if (!File.Exists(configFile))
             throw new Fallback("no config");
-        JsonObject config;
-        try
+        if (ReadConfig(configFile, out var trouble) is not { } config)
         {
-            config = Json.Parse(File.ReadAllText(configFile)) as JsonObject ?? throw new Fallback("a config that isn't an object");
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            throw new Fallback("a config that doesn't parse");
+            if (command == "check") return Commands.CheckUnreadable(team, configFile, trouble);
+            if (Internal.Contains(command)) throw new Die(Commands.Unreadable(team, configFile, trouble));
+            throw new Fallback("a config it can't read");
         }
 
         var state = Dir("A_TEAM_STATE", "XDG_STATE_HOME", ".local/state");
@@ -144,28 +158,31 @@ internal static class Program
         var opened = new Lazy<Record>(Open);
         try
         {
-            var board = new Board(team, config, () => opened.Value, new Gh(token), dry);
+            var board = new Board(team, config, () => opened.Value, new Gh(token), dry) { RecordFound = existed };
             if (Internal.Contains(command))
             {
                 board.SkipSync = command == "__items";
                 return command switch
                 {
+                    "__format" => InternalFormat(board),
                     "__sync" => InternalSync(board, rest),
                     "__items" => InternalItems(board, rest),
                     _ => InternalPush(board, rest),
                 };
             }
-            if (existed && !board.FormatIsCurrent())
-            {
-                var gate = FormatGate(dry, team);
-                if (gate != 0) return gate;
-            }
+            if (command != "check") board.FormatGate();
             return commands[command](board, rest);
         }
         finally
         {
             if (opened.IsValueCreated) opened.Value.Dispose();
         }
+    }
+
+    private static int InternalFormat(Board board)
+    {
+        board.FormatGate();
+        return 0;
     }
 
     private static int InternalSync(Board board, string[] rest)
@@ -202,12 +219,6 @@ internal static class Program
         File.Copy(real, copy);
         scratch(copy);
         return copy;
-    }
-
-    /// <summary>board.sh still decides what to do about a state in another format: it refuses, stamps or moves it.</summary>
-    private static int FormatGate(bool dry, string team)
-    {
-        return dry ? Proc.Run("bash", Shell, "--dry-run", team, "format") : Proc.Run("bash", Shell, team, "format");
     }
 
     private static string SpeakerOf(string command, string[] rest) =>
