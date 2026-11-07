@@ -855,9 +855,9 @@ grep -q "is on unknown: merge the default branch" "$ERR" || fail "worktree: '$(c
 case_ "check reports a board problem while the a-team is behind the state, and runs its other checks"
 on_real "$INSTALLED" demo check
 same "exit" 1 "$STATUS"
-grep -q '^board     the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team$' "$OUT" ||
+grep -q '^problem  board     the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team$' "$OUT" ||
   fail "check: '$(cat "$OUT")'"
-grep -q '^app ' "$OUT" || fail "check stopped early: '$(cat "$OUT")'"
+grep -q '^problem  app ' "$OUT" || fail "check stopped early: '$(cat "$OUT")'"
 
 case_ "the label adoption from #638 defines today's format: a worktree won't take labels off, and the installed a-team will"
 format_board

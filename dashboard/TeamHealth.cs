@@ -3,8 +3,9 @@ using Terminal.Gui.Text;
 
 namespace ATeam.Dashboard;
 
-/// <summary>One thing <c>a-team board &lt;team&gt; check</c> found wrong, as the topic it's about and what's wrong.</summary>
-public sealed record TeamProblem(string Topic, string Detail)
+/// <summary>One thing <c>a-team board &lt;team&gt; check</c> found wrong, as the topic it's about and what's wrong. A note is
+/// something the team can still run with.</summary>
+public sealed record TeamProblem(string Topic, string Detail, bool IsNote = false)
 {
     private const int TopicWidth = 10;
 
@@ -39,9 +40,6 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
     /// <summary>What <c>board setup</c> puts right: the Status options and the labels.</summary>
     private static readonly string[] Repairable = ["status", "labels"];
 
-    /// <summary>What <c>check</c> reports that a team can still run with.</summary>
-    private static readonly string[] Notes = ["vision", "docs", "labels", "workflow", "fields"];
-
     public bool CanRepair => Problems.Any(problem => Repairable.Contains(problem.Topic));
 
     /// <summary>A docs page not written yet, which is where every team with a Customer lead starts.</summary>
@@ -57,7 +55,7 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
     };
 
     /// <summary>The problems that stop the team running.</summary>
-    public IReadOnlyList<TeamProblem> Fatal => [.. Problems.Where(problem => !Notes.Contains(problem.Topic))];
+    public IReadOnlyList<TeamProblem> Fatal => [.. Problems.Where(problem => !problem.IsNote)];
 
     /// <summary>The message bar's line for a team that can't run; null for one that can.</summary>
     public string? Failed(string team)
@@ -80,12 +78,12 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
         List<TeamProblem> problems = [];
         foreach (var line in reading.Output.Split('\n'))
             if (ProblemLine().Match(line.TrimEnd()) is { Success: true } match)
-                problems.Add(new TeamProblem(match.Groups[1].Value, match.Groups[2].Value));
+                problems.Add(new TeamProblem(match.Groups[2].Value, match.Groups[3].Value, match.Groups[1].Value == "note"));
         if (problems.Count == 0 && reading.Failure is { } failure)
             problems.Add(new TeamProblem("check", failure));
         return new TeamHealth(problems);
     }
 
-    [GeneratedRegex(@"^([a-z]+) {2,}(\S.*)$")]
+    [GeneratedRegex(@"^(problem|note) {2,}([a-z]+) {2,}(\S.*)$")]
     private static partial Regex ProblemLine();
 }

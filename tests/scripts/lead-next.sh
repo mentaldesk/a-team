@@ -178,7 +178,7 @@ run board --dry-run demo setup
 same "dry run: exit" 1 "$STATUS"
 grep -qF "$clash" "$ERR" || fail "dry run: nothing about the clash in '$(cat "$ERR")'"
 run board demo check
-grep -qF "fields    $clash" "$OUT" || fail "check: nothing about the clash in '$(cat "$OUT")'"
+grep -qF "note     fields    $clash" "$OUT" || fail "check: nothing about the clash in '$(cat "$OUT")'"
 mv "$BIN/meta.saved" "$META"
 
 case_ "setup names GitHub's reason when it can't read the project"

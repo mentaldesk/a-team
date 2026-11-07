@@ -619,13 +619,13 @@ public class TeamStartTests : IDisposable
     {
         var start = new TeamStart(Example, new TeamCommand(Fake("a-team", """
             echo "ok: mentaldesk project 7, field 'Status'"
-            echo "labels    1 of 6 missing: blocked"
+            echo "note     labels    1 of 6 missing: blocked"
             exit 2
             """)), new TeamCommand(Fake("gh", "")), Path.Combine(_root, "home"), () => true);
 
         var health = await start.Check("fretty");
 
-        Assert.Equal([new TeamProblem("labels", "1 of 6 missing: blocked")], health.Problems);
+        Assert.Equal([new TeamProblem("labels", "1 of 6 missing: blocked", IsNote: true)], health.Problems);
         Assert.Equal(["board fretty check"], Ran());
     }
 
