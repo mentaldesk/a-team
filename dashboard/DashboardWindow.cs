@@ -250,7 +250,7 @@ public sealed partial class DashboardWindow : Window
         Add(_card, _team, _side);
         ShowIcons(settings.ReadIcons());
         if (_options.Assistant is not null)
-            Add(_assistant = NewAssistant(_options.Assistant));
+            Add(_assistant = NewAssistant(_options.Assistant, settings.ReadExpandToolCalls()));
 
         _bar.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
         Add(_bar);

@@ -30,6 +30,9 @@ internal sealed class FakeAgent : IAgentLauncher
     // What a session/load replays first: (user?, text).
     public List<(bool User, string Text)> History { get; } = [];
 
+    // What a session/load replays after History.
+    public Action<FakeAgent>? Replay { get; set; }
+
     public List<(string Program, IReadOnlyList<string> Arguments, string Directory)> Launches { get; } = [];
 
     public List<InProcessAgent> Agents { get; } = [];
@@ -83,6 +86,7 @@ internal sealed class FakeAgent : IAgentLauncher
             case "session/load":
                 SessionId = parameters!["sessionId"]!.GetValue<string>();
                 foreach (var (user, text) in History) Update(user ? "user_message_chunk" : "agent_message_chunk", Text(text));
+                Replay?.Invoke(this);
                 return new JsonObject { ["modes"] = SessionModes() };
             case "session/set_mode":
                 return new JsonObject();

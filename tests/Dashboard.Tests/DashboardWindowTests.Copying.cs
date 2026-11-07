@@ -163,7 +163,7 @@ public partial class DashboardWindowTests
 
         Assert.Equal(
             [
-                "Send question", "Stop answering", "Start a new conversation", "Next pane", "Previous pane",
+                "Send question", "Stop answering", "Start a new conversation", "Show tool calls in full", "Next pane", "Previous pane",
                 "Select the next line of the log", "Select the line above in the log", "Extend the selection down",
                 "Extend the selection up", "Scroll the log up", "Scroll the log down",
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",

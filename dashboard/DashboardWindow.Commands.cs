@@ -65,6 +65,8 @@ public sealed partial class DashboardWindow
                 isEnabled: () => InAssistant && _assistant!.Controller.IsAnswering, scopes: [Regions.Assistant])
             .Register("assistant.clear", "Start a new conversation", () => _assistant?.Clear(), Key.L.WithCtrl, isEnabled: () => InAssistant,
                 scopes: [Regions.Assistant])
+            .Register("assistant.toolCalls", "Show tool calls in full", () => _assistant?.ToggleToolCalls(), chord: "Ctrl+T T", isEnabled: () => InAssistant,
+                scopes: [Regions.Assistant])
             .Register("pane.next", "Next pane", SwitchPane, Key.F6, isEnabled: () => _assistant is { Visible: true } || PanelShown)
             .Register("pane.previous", "Previous pane", SwitchPane, Key.F6.WithShift, isEnabled: () => _assistant is { Visible: true } || PanelShown)
             .Register("log.lineDown", "Select the next line of the log", () => Reader()?.MoveLine(+1, extend: false), Key.CursorDown, isEnabled: Reading, scopes: [Regions.Log])

@@ -194,7 +194,7 @@ setting that isn't at its default says what the default is on its row, like `(de
   asks which command keeps it, and one that starts another, or carries on from one, is refused on
   the row, naming the other command. `Del` removes the selected key, and `Ctrl+R` puts every key back
   to its default. Type to narrow the list.
-- **Dashboard**: whether sessions start with every tool call showing, and which icons the roles and
+- **Dashboard**: whether sessions and the Assistant start with every tool call showing, and which icons the roles and
   cards wear. *Automatic* names what it decided for the terminal you're in, and decides again every
   time the app starts. *Nerd Font* and *Unicode* are drawn in their own glyphs, so pick the one that
   isn't boxes. The app previews each behind Settings as you move.

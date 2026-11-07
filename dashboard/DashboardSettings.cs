@@ -76,7 +76,7 @@ public sealed class DashboardSettings
 
     public void WriteIcons(IconStyle style) => Write("icons", writer => writer.WriteStringValue(style.ToString()));
 
-    /// <summary>Whether sessions start with every tool call showing. Off unless the file says otherwise.</summary>
+    /// <summary>Whether sessions and the Assistant start with every tool call showing. Off unless the file says otherwise.</summary>
     public bool ReadExpandToolCalls()
     {
         using var file = Parse();

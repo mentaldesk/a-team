@@ -9,10 +9,12 @@ namespace ATeam.Dashboard;
 public sealed record AssistantSetup(
     IAgentLauncher Launcher, string Brief, string Sessions, Func<PermissionRequest, bool>? Ask = null, Action<Action>? Post = null)
 {
-    /// <summary>The pane, working in <paramref name="folder"/> in Claude Code's Auto mode: only what its check flags asks first.</summary>
-    internal AssistantPane Pane(string folder, Action<Action> post, Func<IApplication?> app)
+    /// <summary>The pane, working in <paramref name="folder"/> in Claude Code's Auto mode: only what its check flags asks first.
+    /// <paramref name="toolCallsInFull"/> gives every tool call its own row, rather than each run of them one.</summary>
+    internal AssistantPane Pane(string folder, Action<Action> post, Func<IApplication?> app, bool toolCallsInFull)
     {
-        var controller = new AssistantController(Launcher, new AssistantSessions(Sessions), Post ?? post, new MentalDesk.Tui.Assistant.Conversation())
+        var conversation = new MentalDesk.Tui.Assistant.Conversation { StartsInFull = toolCallsInFull, ToolCallsInFull = toolCallsInFull };
+        var controller = new AssistantController(Launcher, new AssistantSessions(Sessions), Post ?? post, conversation)
         {
             SessionMeta = AssistantBrief.Meta(Brief),
             SessionMode = "auto",
