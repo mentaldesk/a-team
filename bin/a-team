@@ -73,7 +73,20 @@ USAGE
 command=$1
 shift
 case "$command" in
-  app | attach | board | dispatch | install | release | status | run | task-prompt | token | try | vision)
+  board)
+    # A release's compiled board, or a checkout's, built again whenever a source is newer than it.
+    core="$ROOT/libexec/a-team-core"
+    if [ ! -x "$core" ]; then
+      core="$ROOT/core/bin/Debug/net10.0/a-team-core"
+      if [ ! -x "$core" ] || [ -n "$(find "$ROOT/core" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' -newer "$core" -print -quit 2>/dev/null)" ]; then
+        dotnet build "$ROOT/core/Core.csproj" -v q --nologo >/dev/null || {
+          echo "a-team: couldn't build the board's core: try dotnet build core/Core.csproj" >&2
+          exit 1
+        }
+      fi
+    fi
+    A_TEAM_ROOT="$ROOT" exec "$core" "$@" ;;
+  app | attach | dispatch | install | release | status | run | task-prompt | token | try | vision)
     exec bash "$ROOT/scripts/$command.sh" "$@" ;;
   dashboard)
     exec bash "$ROOT/scripts/dashboard.sh" --area dashboard "$@" ;;

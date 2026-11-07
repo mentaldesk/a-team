@@ -171,6 +171,81 @@ public class WorkViewTests
             view.Lanes[0].Columns[1].CardText);
     }
 
+    [Theory]
+    [InlineData(122, 80, 40)]
+    [InlineData(123, 81, 40)]
+    [InlineData(84, 55, 27)]
+    public void Beside_one_other_the_selected_column_takes_two_thirds_and_moving_swaps_them(int terminal, int wide, int narrow)
+    {
+        using var view = Open(["a-team"]);
+        view.Show([.. Waiting.Where(item => item.Team == "a-team" && item.Number != 6)]);
+        LayOut(view, 120, 20);
+        view.FocusFirstCard();
+
+        LayOut(view, terminal, 20);
+        var lane = view.Lanes[0];
+        Assert.Equal([0, wide, 0, narrow], lane.Columns.Select(column => column.Frame.Width));
+        Assert.Equal(lane.Viewport.Width, lane.Columns[3].Frame.Right);
+
+        view.MoveColumn(+1);
+        LayOut(view, terminal, 20);
+        Assert.Equal([0, narrow, 0, wide], lane.Columns.Select(column => column.Frame.Width));
+        Assert.Equal(lane.Viewport.Width, lane.Columns[3].Frame.Right);
+    }
+
+    [Fact]
+    public void One_column_takes_the_whole_tab_at_any_width()
+    {
+        Assert.Equal([121], WorkLane.Share(121, 1, 0));
+        Assert.Equal([121], WorkLane.Share(121, 1, null));
+    }
+
+    [Theory]
+    [InlineData(120, 80, 40)]
+    [InlineData(121, 81, 40)]
+    [InlineData(122, 82, 40)]
+    [InlineData(7, 5, 2)]
+    public void Two_columns_give_the_selected_one_two_thirds_rounded_in_its_favour(int width, int wide, int narrow)
+    {
+        Assert.Equal([wide, narrow], WorkLane.Share(width, 2, 0));
+        Assert.Equal([narrow, wide], WorkLane.Share(width, 2, 1));
+    }
+
+    [Theory]
+    [InlineData(120, 3, new[] { 30, 60, 30 })]
+    [InlineData(121, 3, new[] { 30, 60, 31 })]
+    [InlineData(120, 5, new[] { 15, 60, 15, 15, 15 })]
+    [InlineData(121, 5, new[] { 15, 60, 15, 15, 16 })]
+    public void Three_or_more_columns_keep_the_selected_one_at_half(int width, int count, int[] widths) =>
+        Assert.Equal(widths, WorkLane.Share(width, count, 1));
+
+    [Fact]
+    public void The_selected_column_is_the_widest_and_the_widths_fill_the_tab()
+    {
+        foreach (var width in Enumerable.Range(2, 300))
+            foreach (var count in new[] { 2, 3, 4, 5 })
+                foreach (var selected in Enumerable.Range(0, count))
+                {
+                    var widths = WorkLane.Share(width, count, selected);
+                    Assert.Equal(width, widths.Sum());
+                    Assert.Equal(widths.Max(), widths[selected]);
+                }
+    }
+
+    [Fact]
+    public void Hidden_columns_take_no_width()
+    {
+        using var view = Open(["a-team"]);
+        view.Show([.. Waiting.Where(item => item.Team == "a-team" && item.Number != 6)]);
+        LayOut(view, 122, 20);
+        view.FocusFirstCard();
+
+        LayOut(view, 122, 20);
+
+        Assert.Equal(0, view.Lanes[0].Columns[0].Frame.Width);
+        Assert.Equal(120, view.Lanes[0].Columns.Sum(column => column.Frame.Width));
+    }
+
     [Fact]
     public void A_tab_with_nothing_in_it_shows_no_column()
     {
@@ -826,6 +901,81 @@ public class WorkViewTests
         Assert.Equal("Review · 1", view.Lanes[0].Columns[3].Title);
         Assert.Equal("", view.Lanes[0].Columns[3].Summary);
     }
+
+    [Fact]
+    public void A_Dependabot_PR_with_the_Dev_is_counted_under_Review_and_never_shown_in_it()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new WaitingItem(653, "Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "In progress", "https://github.com/x/pull/653", "a-team", "dev",
+            "CI failing", Pr: 653, Trouble: "CI failing", Unready: "CI failing", Base: "main", Dependency: true)]);
+        LayOut(view, 120, 20);
+
+        var review = view.Lanes[0].Columns[3];
+        Assert.Equal("Review · 0", review.Title);
+        Assert.Equal("1 with the Dev: PR #653 (CI failing)", review.Summary);
+    }
+
+    [Fact]
+    public void A_Dependabot_PR_the_Dev_cant_make_build_is_in_Blocked_with_the_Devs_reason()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new WaitingItem(653, "Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "Ready", "https://github.com/x/pull/653", "a-team", "you",
+            "asked you", PrUrl: "https://github.com/x/pull/653", Question: "Can't build: it needs an AgentSpec.", Dependency: true, HeldBy: "dev")]);
+        LayOut(view, 120, 20);
+
+        var blocked = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
+        Assert.Equal("Blocked · 1", blocked.Title);
+        Assert.Equal(["PR #653  Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "dev · Can't build: it needs an AgentSpec."], blocked.CardText);
+        Assert.Equal("", view.Lanes[0].Columns[3].Summary);
+    }
+
+    [Fact]
+    public void A_Dependabot_PR_the_Dev_cant_make_build_shows_its_whole_reason_at_any_width()
+    {
+        using var view = Open(["a-team"]);
+        const string reason = "Can't build: AssistantPane's constructor now needs an AgentSpec the dashboard can't make yet. "
+            + "I tried a stub, and the tests fail on it. Close it, or wait for tui-style-guide#130?";
+        view.Show([StuckBump(653, reason), Waiting[2]]);
+
+        foreach (var width in new[] { 120, 80, 40 })
+        {
+            LayOut(view, width, 20);
+
+            var blocked = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
+            var rows = blocked.CardText.Skip(1).ToList();
+            Assert.True(rows.Count > 1);
+            Assert.Equal($"dev · {reason}".Replace(" ", ""), string.Concat(rows).Replace(" ", ""));
+            Assert.Equal(blocked.Nodes, rows.Count + 1);
+            Assert.True(view.Lanes[0].Rows >= blocked.Nodes);
+        }
+    }
+
+    [Fact]
+    public void Down_walks_every_row_of_a_stuck_Dependabot_PRs_reason_and_narrowing_keeps_the_selection_on_it()
+    {
+        using var view = Open(["a-team"]);
+        view.Show([StuckBump(653, "Can't build: it needs an AgentSpec the dashboard can't make yet. Close it, or wait for the guide?")]);
+        LayOut(view, 40, 20);
+        view.FocusFirstCard();
+        var blocked = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
+
+        for (var row = 0; row < blocked.Nodes - 1; row++)
+            view.MoveCard(+1);
+
+        Assert.Equal(blocked.Nodes - 1, blocked.Index);
+        Assert.Equal("https://github.com/x/pull/653", view.SelectedUrl);
+
+        LayOut(view, 120, 20);
+
+        Assert.True(blocked.Selected is { IsPr: true });
+        Assert.Equal(653, view.Selected?.Number);
+    }
+
+    private static WaitingItem StuckBump(int number, string reason) =>
+        new(number, "Bump MentalDesk.Tui from 0.5.2 to 0.6.0", "Ready", $"https://github.com/x/pull/{number}", "a-team", "you",
+            "asked you", PrUrl: $"https://github.com/x/pull/{number}", Question: reason, Dependency: true, HeldBy: "dev");
 
     [Fact]
     public void Review_sums_up_what_the_Dev_is_still_fixing_under_its_cards_and_counts_only_the_rest()

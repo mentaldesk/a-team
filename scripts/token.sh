@@ -14,9 +14,7 @@ CONFIG=$(team_config "$TEAM")
 die() { echo "a-team token: $*" >&2; exit 1; }
 
 [ -f "$CONFIG" ] || die "no config for team '$TEAM' at $CONFIG"
-ID=$(jq -r '.app.id // empty' "$CONFIG")
-SLUG=$(jq -r '.app.slug // empty' "$CONFIG")
-REPO=$(jq -r .repo "$CONFIG")
+IFS=$'\x1f' read -r ID SLUG REPO < <(jq -r '[.app.id // "", .app.slug // "", .repo] | map(tostring) | join("\u001f")' "$CONFIG")
 [ -n "$ID" ] || die "team '$TEAM' has no GitHub App, so it can't run: run a-team app create $TEAM, then install it"
 CACHE=$(token_cache "$TEAM")
 
@@ -26,7 +24,7 @@ if jq -er --argjson now "$(date +%s)" '
   exit 0
 fi
 
-jwt=$(app_jwt "$ID" "${REPO%/*}") || exit 1
+jwt=$(app_jwt "$ID" "${REPO%/*}" 2>&1) || die "$jwt"
 installation=$(installation "$ID" "${REPO%/*}" "$REPO" "$jwt") || {
   [ $? -eq 2 ] && die "$installation: install it at https://github.com/apps/$SLUG/installations/new"
   die "$installation"

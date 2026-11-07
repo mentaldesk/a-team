@@ -2,7 +2,7 @@
 #
 # dispatch.sh [--dry-run] — starts a headless session for each team role that has work.
 # launchd runs it every couple of minutes (see install.sh). Deciding whether there is work is
-# a plain script (board.sh triggers); Claude only starts when there is.
+# a plain command (a-team board <team> triggers); Claude only starts when there is.
 #
 set -uo pipefail
 
@@ -15,14 +15,20 @@ source "$ROOT/scripts/common.sh"
 DRY_RUN=false dry=''
 [ "${1:-}" = --dry-run ] && DRY_RUN=true dry=--dry-run
 mkdir -p "$STATE"
-# A pass run off schedule, from the app, leaves the scheduled one's countdown alone.
-if [ -z "${A_TEAM_UNSCHEDULED:-}" ]; then
-  # While this holds a live pid, an overdue next-pass is a slow pass, not a stopped dispatcher.
-  PASS="$STATE/$($DRY_RUN && echo dry-)pass"
-  NEXT="$STATE/$($DRY_RUN && echo dry-)next-pass"
-  echo $$ >"$PASS"
-  # launchd counts StartInterval from when a pass ends, not from when it started.
-  trap '[ "$(cat "$PASS" 2>/dev/null)" = $$ ] && rm -f "$PASS"; echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$NEXT"' EXIT
+# While this holds a live pid, no other pass starts, and an overdue next-pass is a slow pass, not a stopped dispatcher.
+PASS="$STATE/$($DRY_RUN && echo dry-)pass"
+NEXT="$STATE/$($DRY_RUN && echo dry-)next-pass"
+# launchd counts StartInterval from when a pass ends, not from when it started. A pass run off schedule, from the app,
+# leaves the scheduled one's countdown alone.
+pass_ended() {
+  release_pid "$PASS"
+  [ -n "${A_TEAM_UNSCHEDULED:-}" ] || echo $(($(date +%s) + ${A_TEAM_INTERVAL:-120})) >"$NEXT"
+}
+trap pass_ended EXIT
+if ! running=$(claim_pid "$PASS") && [ -n "$running" ]; then
+  # Only the app asks: the app reads any scheduled output as a broken pass (DispatcherState.Broke).
+  [ -z "${A_TEAM_UNSCHEDULED:-}" ] || echo "A pass is already running."
+  exit 0
 fi
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$STATE/dispatch.log"; }
@@ -44,7 +50,7 @@ passing() {
   rm -f "$1" "$2"
 }
 
-# short_read <output> <team role>: logs board.sh's board read short twice in one line; fails on any other output.
+# short_read <output> <team role>: logs the board's read short twice in one line; fails on any other output.
 short_read() {
   [[ $1 =~ incomplete\ \(([0-9]+\ of\ [0-9]+)\ items\) ]] || return 1
   log "$2: board read incomplete (${BASH_REMATCH[1]} items), twice; trying again next check"
@@ -61,14 +67,10 @@ dispatch() {
 
   $DRY_RUN || prune_releases "$dir"
   live=$(live_runs "$dir")
-  while read -r pid at _; do
-    [ -n "$pid" ] || continue
-    [ $((now - at)) -gt $(($(cfg '.dispatch.maxRuntime // 120') * 60)) ] && kill "$pid" &&
-      log "$team $role: killed run $pid after $(((now - at) / 60)) minutes" && run_outcome "$team" "$role" "$pid" killed
-  done <<<"$live"
-  $held && return
   limit=1
   [ "$role" = dev ] && limit=$(cfg '.wip.devs // 1')
+  check_runs
+  $held && return
   [ "$(grep -c . <<<"$live")" -lt "$limit" ] || return
   jq -e --arg role "$role" '.dispatch.hold // [] | index($role)' "$config" >/dev/null 2>&1 && return
 
@@ -102,7 +104,7 @@ dispatch() {
   fi
 
   # Tasks that already have a live run never get a second one.
-  picked+="$(cut -d' ' -f3 <<<"$live" | tr '\n' ' ')"
+  picked+="$(cut -d' ' -f4 <<<"$live" | tr '\n' ' ')"
   chores=$(jq -r '.chores[]?' <<<"$triggers")
   while [ $(($(grep -c . <<<"$live") + started)) -lt "$limit" ]; do
     task=$(pick_task "$team" "$dir" "$triggers") || return
@@ -120,19 +122,117 @@ dispatch() {
   done
 }
 
-# live_runs <dir>: "<pid> <started> <task>" for each of the role's runs still going, oldest first. Removes the pid file
-# of each run that has ended, before the OS gives its pid to another process.
+# check_runs: sends the kill to each of the role's runs past its limit, logging that once, and keeps <dir>/stuck: the
+# runs still alive on the pass after their kill, or on a task finished for more than 30 minutes. It only reports.
+check_runs() {
+  local maximum killed was pid at file number closed why says over waiting holds
+  local sent='' stuck='[]' count=0 said="$dir/${prefix}killed" marker="$dir/${prefix}stuck"
+  maximum=$(($(cfg '.dispatch.maxRuntime // 120') * 60))
+  killed=" $(cat "$said" 2>/dev/null | paste -sd ' ' -) "
+  was=$(jq -r '.[]?.pid' "$marker" 2>/dev/null)
+  while read -r pid at file number; do
+    [ -n "$pid" ] || continue
+    why=''
+    if [ $((now - at)) -gt "$maximum" ]; then
+      if kill "$pid" && [[ $killed != *" $pid "* ]]; then
+        log "$team $role: killed run $pid after $(((now - at) / 60)) minutes"
+        run_outcome "$team" "$role" "$pid" killed
+      fi
+      sent+="$pid"$'\n'
+      if [[ $killed == *" $pid "* ]]; then
+        over=$((now - at - maximum))
+        why="outlived its $(minutes_said $((maximum / 60))) limit"
+        says="run $pid $why by $(age_said "$over")"
+      fi
+    fi
+    # Past its limit, only a run already stuck on its task stays so, through the pass that sends its kill.
+    if [ -z "$why" ] && { [ $((now - at)) -le "$maximum" ] || grep -qx "$pid" <<<"$was"; } &&
+      [ -n "$number" ] && closed=$(finished_at "$team" "$number") && [ $((now - (closed > at ? closed : at))) -gt 1800 ]; then
+      why="on #$number, which closed $(day_said "$closed")"
+      says="run $pid is on #$number, closed $(day_said "$closed")"
+    fi
+    [ -n "$why" ] || continue
+    count=$((count + 1))
+    stuck=$(jq -c --argjson pid "$pid" --arg file "$file" --arg says "$says" --arg why "$why" '. + [{$pid, $file, $says, $why}]' <<<"$stuck")
+  done <<<"$live"
+  if [ -n "$sent" ]; then printf '%s' "$sent" >"$said"; else rm -f "$said"; fi
+
+  while read -r pid; do
+    [ -z "$pid" ] || jq -e --argjson pid "$pid" 'any(.[]; .pid == $pid)' <<<"$stuck" >/dev/null ||
+      log "$team $role: run $pid no longer stuck"
+  done <<<"$was"
+  if [ "$count" -eq 0 ]; then
+    rm -f "$marker"
+    return
+  fi
+  while IFS=$'\t' read -r pid why; do
+    grep -qx "$pid" <<<"$was" || log "$team $role: run $pid is stuck: $why"
+  done < <(jq -r '.[] | [.pid, .why] | @tsv' <<<"$stuck")
+
+  if [ "$limit" -eq 1 ]; then holds="holds its only slot"; else holds="holds $count of $limit slots"; fi
+  if [ "$(grep -c . <<<"$live")" -ge "$limit" ] && waiting=$(waiting_said); then holds+=", $waiting"; fi
+  jq -c --arg holds "$holds" 'map({pid, file, says: "\(.says) · \($holds)"})' <<<"$stuck" >"$marker.$$" && mv "$marker.$$" "$marker"
+}
+
+# waiting_said: how much work is waiting for this role's slots, as "3 PRs waiting". Fails if none is, or it can't tell.
+waiting_said() {
+  local triggers n noun=thing
+  triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" 2>/dev/null) || return 1
+  case $role in
+    reviewer) noun=PR ;;
+    dev) noun=task ;;
+  esac
+  n=$(jq -r --arg live "$(cut -d' ' -f4 <<<"$live" | paste -sd ' ' -)" '($live | split(" ")) as $on
+    | if has("tasks") then ([.tasks[]? | select((.number | tostring) as $n | $on | index($n) | not)] | length) + (.readyCount // 0)
+      else .reasons | length end' <<<"$triggers") || return 1
+  [ "${n:-0}" -gt 0 ] || return 1
+  [ "$n" -eq 1 ] || noun+=s
+  echo "$n $noun waiting"
+}
+
+# finished_at <team> <n>: when the board's record says #<n> closed or went Done, in epoch seconds. Fails if it doesn't say so.
+finished_at() {
+  local at
+  [ -f "$STATE/history.db" ] || return 1
+  at=$(history_sql "SELECT strftime('%s', since) FROM board WHERE team = $(sql "$1") AND item = $2
+    AND (status = 'Done' OR json_extract(content, '$.shut'));" 2>/dev/null) || return 1
+  [[ $at =~ ^[0-9]+$ ]] && echo "$at"
+}
+
+# minutes_said <minutes>: 2h, 1h30m or 45m.
+minutes_said() {
+  if [ $(($1 % 60)) -ne 0 ] && [ "$1" -gt 60 ]; then echo "$(($1 / 60))h$(($1 % 60))m"
+  elif [ "$1" -ge 60 ]; then echo "$(($1 / 60))h"
+  else echo "$1m"
+  fi
+}
+
+# age_said <seconds>: in the largest unit, as Overseer's chips say it: 12m, 3h, 19d.
+age_said() {
+  if [ "$1" -lt 3600 ]; then echo "$(($1 / 60))m"
+  elif [ "$1" -lt 86400 ]; then echo "$(($1 / 3600))h"
+  else echo "$(($1 / 86400))d"
+  fi
+}
+
+# day_said <epoch seconds>: that day, as 29 Oct.
+day_said() { LC_ALL=C date -r "$1" '+%-d %b' 2>/dev/null || LC_ALL=C date -d "@$1" '+%-d %b'; }
+
+# live_runs <dir>: "<pid> <started> <its pid file, under dir> <task or card>" for each of the role's runs still going, oldest
+# first. Removes the pid file of each run that has ended, before the OS gives its pid to another process. A run's own
+# pid file comes first: the role's follows whichever run started last.
 live_runs() {
-  local file pid seen=' ' at
-  for file in "$1/pid" "$1"/runs/*/pid; do
+  local file pid seen=' ' at from
+  for file in "$1"/runs/*/pid "$1/pid"; do
     if ! pid=$(live_pid "$file"); then
       [ -s "$file" ] && ! $DRY_RUN && rm -f "$file"
       continue
     fi
     [[ $seen == *" $pid "* ]] && continue
     seen+="$pid "
-    at=$(cat "$(dirname "$file")/last-start" 2>/dev/null || echo "$now")
-    echo "$pid $at $(jq -r '.number // empty' "$(dirname "$file")/task" 2>/dev/null)"
+    from=$(dirname "$file")
+    at=$(cat "$from/last-start" 2>/dev/null || echo "$now")
+    echo "$pid $at ${file#"$1"/} $({ cat "$from/task" || cat "$from/card"; } 2>/dev/null | jq -r '.number // empty' 2>/dev/null)"
   done | sort -k2n
 }
 
@@ -153,6 +253,9 @@ copy_release() {
   for item in bin scripts roles tasks settings examples process.md; do
     [ ! -e "$ROOT/$item" ] || cp -R "$ROOT/$item" "$1/" || return
   done
+  if [ -x "$ROOT/libexec/a-team-core" ]; then
+    mkdir -p "$1/libexec" && cp "$ROOT/libexec/a-team-core" "$1/libexec/" || return
+  fi
   "$ROOT/bin/a-team" version >"$1/VERSION"
 }
 
@@ -277,13 +380,14 @@ over_budget() {
 }
 
 # fresh <file> <reasons> <log>: whether these reasons are worth a run. The same ones as last time
-# wait retryAfter, unless that run, logged to <log>, died before finishing. <file> holds
+# wait retryAfter, unless that run, logged to <log>, died before finishing, or started before the
+# board last moved to a new format, which stopped it. <file> holds
 # "<fingerprint> <started>".
 fresh() {
   local fingerprint tried at
   fingerprint=$(shasum <<<"$2" | cut -c1-12)
   read -r tried at 2>/dev/null <"$1"
-  if [ "$fingerprint" = "${tried:-}" ] && [ $((now - ${at:-0})) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] &&
+  if [ "$fingerprint" = "${tried:-}" ] && [ "${at:-0}" -gt "$moved" ] && [ $((now - ${at:-0})) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] &&
     { $DRY_RUN || grep -q '"type":"result"' "$3" 2>/dev/null; }; then
     return 1
   fi
@@ -324,6 +428,20 @@ run_release() {
   log "$1 release: $said"
   mkdir -p "$STATE/$1"
   printf '%s\n' "$said" >"$file"
+}
+
+# settle_bumps <team>: merges the team's green Dependabot PRs and puts its red ones with the Dev, as its App, so each
+# stands as the rest of the pass reads it. A merge GitHub keeps refusing is logged once.
+settle_bumps() {
+  local args=(board) said
+  $DRY_RUN && args+=(--dry-run)
+  mkdir -p "$STATE/$1"
+  if said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$1 "$ROOT/bin/a-team" "${args[@]}" "$1" bumps 2>"$STATE/$1/bumps.err"); then
+    passing "$STATE/$1/bumps-failing" "$STATE/$1/bumps-failed-once" "$1: settling dependency bumps working again"
+  else
+    failing "$STATE/$1/bumps-failing" "$STATE/$1/bumps-failed-once" "$(tr '\n' ' ' <"$STATE/$1/bumps.err")" "$1: settling dependency bumps failed"
+  fi
+  [ -z "$said" ] || log "$1: ${said//$'\n'/; }"
 }
 
 # free_waits <team>: frees the team's tasks whose wait on another repo is met, commenting as its App.
@@ -368,7 +486,14 @@ cannot_run() {
   local why
   jq -e '.app.id' "$2" >/dev/null 2>&1 ||
     { echo "no GitHub App: run a-team app create $1, then install it"; return; }
-  why=$("$ROOT/bin/a-team" token "$1" 2>&1 >/dev/null) || echo "${why#a-team token: }"
+  why=$("$ROOT/bin/a-team" token "$1" 2>&1 >/dev/null) || { echo "${why#a-team token: }"; return; }
+  why=$("$ROOT/bin/a-team" board ${dry:+"$dry"} "$1" format 2>&1 >/dev/null) || echo "${why#board.sh: }"
+}
+
+# format_moved <team>: when its board last moved to a new format, in epoch seconds; 0 if it never has.
+format_moved() {
+  [ -f "$STATE/history.db" ] || { echo 0; return; }
+  history_sql "SELECT COALESCE((SELECT strftime('%s', moved) FROM formats WHERE team = $(sql "$1")), 0);" || echo 0
 }
 
 # keep_record: launchd's own pass keeps dispatcher.json true: its version after an upgrade, and all of it for a
@@ -395,6 +520,8 @@ for team in $(team_names); do
     continue
   fi
   passing "$STATE/$team/cannot-run" "$STATE/$team/failed-check" "$team: running again"
+  moved=$(format_moved "$team")
+  settle_bumps "$team"
   free_waits "$team"
   if adopted=$("$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" adopt 2>&1); then
     passing "$STATE/$team/adopt-failing" "$STATE/$team/adopt-failed-once" "$team: adopting upstream PRs again"

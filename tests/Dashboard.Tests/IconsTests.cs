@@ -50,6 +50,7 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.Failed] = "✗",
                 [Icon.CutShort] = "✗",
                 [Icon.Misconfigured] = "⚠",
+                [Icon.Stuck] = "⚠",
                 [Icon.Selected] = "▶",
                 [Icon.ToolCall] = "▸",
                 [Icon.ToolError] = "✗",
@@ -66,6 +67,7 @@ public class IconsTests : StaticConfigurationTest
                 [Icon.Writing] = "⋯",
                 [Icon.Chain] = "⛓",
                 [Icon.Blocked] = "⊘",
+                [Icon.Secret] = "\U0001F511",
             },
             Enum.GetValues<Icon>().ToDictionary(icon => icon, icon => Icons.Glyph(icon, IconStyle.Unicode)));
 

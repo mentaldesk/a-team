@@ -1,5 +1,6 @@
 using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Settings;
+using MentalDesk.Tui.Theming;
 
 namespace ATeam.Dashboard;
 
@@ -14,32 +15,51 @@ public sealed class OverseerPage : SettingsPage
     private const int FieldWidth = 10;
 
     private readonly DashboardSettings _settings;
-    private readonly List<(string Column, PlaceholderField Field, Label Default)> _limits;
+    private readonly List<Row> _limits;
+    private readonly Action<string> _say;
     private IReadOnlyDictionary<string, string> _kept;
 
-    public OverseerPage(DashboardSettings settings) : base(Name)
+    /// <param name="say">Puts a message at the foot of the screen; an empty one takes it away.</param>
+    public OverseerPage(DashboardSettings settings, Action<string>? say = null) : base(Name)
     {
         _settings = settings;
+        _say = say ?? (_ => { });
         _kept = settings.ReadLimits();
         var label = OverseerBoard.Columns.Max(column => column.Length) + 1;
-        _limits = [.. OverseerBoard.Columns.Select((column, row) => (column,
+        _limits = [.. OverseerBoard.Columns.Select((column, row) => new Row(column,
+            new Label { X = Indent, Y = FirstRow + row, Text = column },
             new PlaceholderField { X = Indent + label, Y = FirstRow + row, Width = FieldWidth, Text = KeptLimit(column) },
             Dimmed(new Label { X = Indent + label + FieldWidth + 2, Y = FirstRow + row })))];
         Add(new Label { Text = Heading });
-        foreach (var (column, field, note) in _limits)
+        foreach (var limit in _limits)
         {
-            field.TextChanged += (_, _) =>
+            limit.Field.TextChanged += (_, _) =>
             {
                 Show();
                 OnChanged();
+                if (limit.Marked)
+                {
+                    Mark(limit);
+                    SayMarks();
+                }
             };
-            Add(new Label { X = Indent, Y = field.Y, Text = column }, field, note);
+            limit.Field.HasFocusChanged += (_, e) =>
+            {
+                if (e.NewValue && _limits.Any(row => row.Marked))
+                    SayMarks();
+            };
+            Add(limit.Name, limit.Field, limit.Default);
         }
         Add(Dimmed(new Label { Y = FirstRow + _limits.Count + 1, Text = Hint }));
         Show();
     }
 
     internal IReadOnlyList<(string Column, PlaceholderField Field)> Fields => [.. _limits.Select(limit => (limit.Column, limit.Field))];
+
+    /// <summary>The columns whose limit is marked as refused.</summary>
+    internal IReadOnlyList<string> Marked => [.. _limits.Where(limit => limit.Marked).Select(limit => limit.Column)];
+
+    internal Label LabelOf(string column) => _limits.First(limit => limit.Column == column).Name;
 
     /// <summary>Each column's limit as entered, blank for none.</summary>
     internal IReadOnlyDictionary<string, string> Limits =>
@@ -51,18 +71,20 @@ public sealed class OverseerPage : SettingsPage
 
     /// <summary>The first column whose limit isn't one Overseer can read, or null when they all are.</summary>
     internal string? Unreadable() =>
-        _limits.FirstOrDefault(limit => !ColumnLimits.TryParse(limit.Field.Text, out _)).Column;
+        _limits.Find(limit => !ColumnLimits.TryParse(limit.Field.Text, out _))?.Column;
 
     internal static string Refusal(string column) =>
-        $"Overseer: can't read the limit for {column}. Use a number and m, h, d or w, like 3d, or leave it blank.";
+        $"Overseer: can't read the limit for {column}. Use a number and m, h, d or w, like 3d, or leave it blank";
 
-    /// <summary>Puts focus on the first limit Overseer can't read, and says so; false when they all read.</summary>
-    internal bool Refuse(Action<string> say)
+    /// <summary>The library's Check, which a page can't reach: marks every limit Overseer can't read, focuses the first
+    /// and speaks for the focused one; false when they all read.</summary>
+    internal bool Refuse()
     {
-        if (Unreadable() is not { } column)
+        _limits.ForEach(Mark);
+        if (_limits.Find(limit => limit.Marked) is not { } first)
             return false;
-        _limits.First(limit => limit.Column == column).Field.SetFocus();
-        say(Refusal(column));
+        first.Field.SetFocus();
+        SayMarks();
         return true;
     }
 
@@ -76,15 +98,33 @@ public sealed class OverseerPage : SettingsPage
 
     public override void Revert()
     {
-        foreach (var (column, field, _) in _limits)
-            field.Text = KeptLimit(column);
+        foreach (var limit in _limits)
+            limit.Field.Text = KeptLimit(limit.Column);
     }
 
     private string KeptLimit(string column) => _kept.TryGetValue(column, out var limit) ? limit : "";
 
     private void Show()
     {
-        foreach (var (_, field, note) in _limits)
-            note.Text = field.Text.Trim().Length == 0 ? "" : DefaultNote("none");
+        foreach (var limit in _limits)
+            limit.Default.Text = limit.Field.Text.Trim().Length == 0 ? "" : DefaultNote("none");
+    }
+
+    private static void Mark(Row limit)
+    {
+        limit.Marked = !ColumnLimits.TryParse(limit.Field.Text, out _);
+        limit.Name.SchemeName = limit.Marked ? SchemeNames.Error : null;
+    }
+
+    private void SayMarks()
+    {
+        var marked = _limits.FindAll(limit => limit.Marked);
+        var said = marked.Find(limit => limit.Field.HasFocus) ?? marked.FirstOrDefault();
+        _say(said is null ? "" : marked.Count == 1 ? Refusal(said.Column) : $"{Refusal(said.Column)}  •  {marked.Count - 1} more to fix");
+    }
+
+    private sealed record Row(string Column, Label Name, PlaceholderField Field, Label Default)
+    {
+        public bool Marked { get; set; }
     }
 }

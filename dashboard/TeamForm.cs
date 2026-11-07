@@ -24,7 +24,7 @@ public enum DocsChoice
 }
 
 /// <summary>One team's settings, to change and save without a text editor.</summary>
-public sealed class TeamForm : Dialog
+public sealed class TeamForm : AppDialog
 {
     internal const string NameCaption = "The team's name, which names its file.";
     internal const string RepoCaption = "The GitHub repo the team works on, as owner/repo.";
@@ -143,6 +143,7 @@ public sealed class TeamForm : Dialog
     private TeamForm(
         string? team, TeamSettings settings, Func<string, TeamSettings, string?> save, IReadOnlyCollection<string> taken, string teamsDirectory,
         string name = "")
+        : base(team is null ? "New team" : $"Team: {team}", width: 0, contentRows: 0)
     {
         _before = settings;
         _mirror = settings.Mirror;
@@ -166,7 +167,6 @@ public sealed class TeamForm : Dialog
                 KeysSheet.Show(app, sheet);
         };
 
-        Title = team is null ? "New team" : $"Team: {team}";
         X = 0;
         Y = 0;
         Width = Dim.Fill();
@@ -175,7 +175,7 @@ public sealed class TeamForm : Dialog
         var row = 0;
         if (team is null)
         {
-            _name = Field("Name", name, row++, NameCaption);
+            _name = Field("Name", name, row++, NameCaption, () => TeamSettings.NameRefusal(_name!.Text.Trim(), _taken));
             _name.HasFocusChanged += (_, _) =>
             {
                 if (_name.HasFocus)
@@ -190,7 +190,7 @@ public sealed class TeamForm : Dialog
                 Hint(Becomes());
             };
         }
-        _repo = Field("Repo", settings.Repo, row++, RepoCaption);
+        _repo = Field("Repo", settings.Repo, row++, RepoCaption, () => Current().RepoRefusal());
         _repo.HasFocusChanged += (_, _) =>
         {
             if (!_repo.HasFocus && _listProjects is { } list && Current().RepoOwner != _projectsOwner)
@@ -199,7 +199,7 @@ public sealed class TeamForm : Dialog
         _stakeholders = Picks("Stakeholders", _stakeholderNames, row++, StakeholdersCaption, PickStakeholders);
         _contributes = Picks("Contributes to", _contributesTo, row++, ContributesCaption, PickContributes);
 
-        Add(new Label { Text = "Mirror", X = Inset, Y = row });
+        var mirrorLabel = new Label { Text = "Mirror", X = Inset, Y = row };
         _project = new DropDownList { X = FieldX, Y = row, Width = Dim.Fill(Inset), ReadOnly = true };
         _ownedBy = new View { X = FieldX, Y = row, Width = Dim.Fill(Inset), Height = 1, CanFocus = true, Visible = false };
         var ownerLabel = new Label { Text = "Owner", X = 0, Y = 0 };
@@ -207,11 +207,15 @@ public sealed class TeamForm : Dialog
         var numberLabel = new Label { Text = "Number", X = Pos.Right(_owner) + 2, Y = 0 };
         _number = new PlaceholderField { Text = settings.ProjectNumber?.ToString() ?? "", X = Pos.Right(numberLabel) + 1, Y = 0, Width = 8 };
         _ownedBy.Add(ownerLabel, _owner, numberLabel, _number);
-        Add(_project, _ownedBy);
+        Add(mirrorLabel, _project, _ownedBy);
+        // Before Check's own handler, which rechecks what Pick sets.
+        _project.TextChanged += (_, _) => Pick();
+        Check(_project, mirrorLabel, () => _project.Visible ? Current().MirrorRefusal() : null);
+        Check(_owner, ownerLabel, () => _ownedBy.Visible ? Current().OwnerRefusal() : null);
+        Check(_number, numberLabel, () => _ownedBy.Visible ? Current().NumberRefusal() : null);
         Caption(_project, ProjectCaption);
         Caption(_owner, OwnerCaption);
         Caption(_number, NumberCaption);
-        _project.TextChanged += (_, _) => Pick();
         _project.HasFocusChanged += (_, _) =>
         {
             if (_project.HasFocus && _listProjects is { } list)
@@ -220,8 +224,8 @@ public sealed class TeamForm : Dialog
         ShowProjects([]);
         row++;
 
-        _vision = PathField("Vision", settings.Vision, row++, () => FileCaption(_vision!, VisionCaption, VisionMissing), PickVision);
-        _workdir = PathField("Workdir", settings.Workdir, row++, () => WorkdirCaption, PickWorkdir);
+        _vision = PathField("Vision", settings.Vision, row++, () => FileCaption(_vision!, VisionCaption, VisionMissing), PickVision, refusal: () => Current().VisionRefusal());
+        _workdir = PathField("Workdir", settings.Workdir, row++, () => WorkdirCaption, PickWorkdir, refusal: () => Current().WorkdirRefusal());
         _workdir.TextChanged += (_, _) =>
         {
             if (!_settingWorkdir)
@@ -330,7 +334,7 @@ public sealed class TeamForm : Dialog
         _problemsBand.Y = BelowDocs(row);
         _problemsBand.Width = Dim.Fill();
         _problemsBand.Height = Dim.Func(_ => Math.Max(ProblemsTop + 1 + BandPadding,
-            Math.Min((_problems.Source?.Count ?? 0) + ProblemsTop + BandPadding, Viewport.Height - 2 - _message.Lines - row - DocsShift)), this);
+            Math.Min((_problems.Source?.Count ?? 0) + ProblemsTop + BandPadding, Viewport.Height - 2 - _message.Lines - Alert.Lines - row - DocsShift)), this);
         _problems.X = Inset;
         _problems.Y = ProblemsTop;
         _problems.Width = Dim.Fill(Inset);
@@ -353,9 +357,10 @@ public sealed class TeamForm : Dialog
         saveButton.X = Pos.Right(_repair) + ButtonGap;
         cancelButton.X = Pos.Right(saveButton) + ButtonGap;
         _buttons.Add(_repair, saveButton, cancelButton);
-        _buttons.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 2 - _message.Lines), this);
-        _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines), this);
-        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
+        _buttons.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 2 - _message.Lines - Alert.Lines), this);
+        _hints.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - 1 - _message.Lines - Alert.Lines), this);
+        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines - Alert.Lines), this);
+        Alert.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Alert.Lines), this);
         Add(_buttons, _hints, _message);
         LayProblems();
         if (_name is { } first)
@@ -692,15 +697,20 @@ public sealed class TeamForm : Dialog
         return form.Saved is not null;
     }
 
-    /// <summary>Saves and closes, or says why not and keeps what was typed.</summary>
+    /// <summary>Saves and closes, or marks what it won't take and keeps what was typed.</summary>
     internal bool Save()
     {
+        _message.Clear();
+        if (!Checked())
+            return true;
         var now = Current();
         var name = _team ?? _name?.Text.Trim() ?? "";
-        var refusal = _team is null ? TeamSettings.NameRefusal(name, _taken) : null;
-        if ((refusal ?? now.Refusal() ?? _save(name, now)) is { } failure)
+        if (_save(name, now) is { } failure)
         {
-            Say(failure, Schemes.Error);
+            if (_name is not null && failure == TeamSettings.NameTaken(name))
+                Refuse(_name, failure);
+            else
+                Say(failure, Schemes.Error);
             return true;
         }
         SavedName = name;
@@ -923,11 +933,15 @@ public sealed class TeamForm : Dialog
         _settingWorkdir = false;
     }
 
-    private PlaceholderField PathField(string label, string value, int row, Func<string> caption, Action pick, View? into = null)
+    private PlaceholderField PathField(
+        string label, string value, int row, Func<string> caption, Action pick, View? into = null, Func<string?>? refusal = null)
     {
         into ??= this;
-        into.Add(new Label { Text = label, X = Inset, Y = row });
+        var name = new Label { Text = label, X = Inset, Y = row };
+        into.Add(name);
         var field = new PlaceholderField { Text = value, X = FieldX, Y = row, Width = Dim.Fill(Inset + PickWidth) };
+        if (refusal is not null)
+            Check(field, name, refusal);
         field.KeyDown += (_, key) =>
         {
             if (key != Key.Enter)
@@ -944,11 +958,14 @@ public sealed class TeamForm : Dialog
         return field;
     }
 
-    private PlaceholderField Field(string label, string value, int row, string caption)
+    private PlaceholderField Field(string label, string value, int row, string caption, Func<string?>? refusal = null)
     {
-        Add(new Label { Text = label, X = Inset, Y = row });
+        var name = new Label { Text = label, X = Inset, Y = row };
+        Add(name);
         var field = new PlaceholderField { Text = value, X = FieldX, Y = row, Width = Dim.Fill(Inset) };
         Add(field);
+        if (refusal is not null)
+            Check(field, name, refusal);
         Caption(field, caption);
         return field;
     }

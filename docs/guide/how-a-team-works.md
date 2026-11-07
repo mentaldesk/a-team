@@ -18,7 +18,11 @@ this machine, and can copy it to a GitHub Project, its mirror, so you can see it
   products are doing. It writes a pitch for an Idea, with a mockup, revises it on your feedback,
   breaks an approved pitch into tasks, and checks the finished feature against the pitch.
 - **The Dev** builds those tasks. It takes a Ready task, builds it in its own worktree with tests,
-  opens a pull request and sees it through CI and your review.
+  opens a pull request and sees it through CI and your review. It says on the PR which acceptance
+  criteria it saw working on screen or proved with a test, and the rest are
+  [left for you](work.md#criteria). A later run removes that worktree once
+  the PR has merged, if it's still at the PR's last commit with no tracked file changed. Any other
+  worktree stays, and the run's summary says why. The Customer lead's are cleaned up the same way.
 - **You decide** which of the Lead's pitches get built, and you accept the finished work. Only you
   approve or merge, and the Lead closes a pitch only once its tasks have all closed.
 
@@ -44,7 +48,7 @@ Idea → Exploring → Pitched → Approved → Building ───────�
 | Building | Its tasks are in flight |
 | Ready | A task the Dev can pick up |
 | In progress | The Dev is building it, or another team's Dev is getting its change to this repo ready |
-| In review | A PR waiting for you: a task's, the Customer lead's docs PR, a Dependabot update, or another team's Dev's change to this repo |
+| In review | A PR waiting for you: a task's, the Customer lead's docs PR, or another team's Dev's change to this repo |
 | Done | Merged or closed, or a pitch whose tasks have all closed |
 
 A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. The Lead also gives
@@ -59,7 +63,7 @@ of minutes, and once the wait is over it frees the task and says so on it, namin
 release and the package to upgrade, so the Dev can pick it up with no click from you. An issue
 closed by hand, with no change linked to it, counts as released in the first release after it
 closed. If Dependabot already has a PR open bringing that release in, the task waits for it to
-merge too, and the PR comes into [Review](work.md#holding-up-a-task) for you to accept. Until then
+merge too, which [it does by itself](#dependency-updates). Until then
 the task's card in **Blocked** says which link it waits on and whose move that is, though it asks
 you nothing. If its PR is already up, its card stays in **Review** and says the same. Open its
 card's details in the [Overseer](overseer.md) (`Enter`) to see how far the change has got, like
@@ -79,6 +83,22 @@ all of this on one line.
 A proposal that is itself a document, like the vision or the Customer lead's docs proposal, is a
 draft pull request in Pitched instead. You agree to it by merging it, with `a` in
 [Work](work.md#answering-from-a-card), where `e` also edits it.
+
+## Dependency updates
+
+A Dependabot PR doesn't need you. The Lead reads what the update brings and files an Idea for any new
+rule worth adopting, and the PR never waits on those. Once its CI passes and the Lead has commented, the
+dispatcher squash-merges it and deletes its branch, on its next pass. Its history and the
+[dispatcher's log](overseer.md#the-dispatchers-log) say so.
+
+When its CI fails on jobs that pass on the default branch, the PR goes to the Dev, ahead of every Ready
+task except a fix, and the Dev changes the code on the PR's own branch until it's green. When it fails
+only what the default branch fails, it waits for the fix. It only reaches you if the Dev can't make it
+build: it shows in [Blocked](work.md#columns) as a question, with what broke, what the Dev tried and what
+it needs. Answer on the PR and it's back with the Dev; close the PR and it's gone.
+
+A green PR reaches you the same way if GitHub keeps refusing to merge it, because of a rule on the repo, say,
+with GitHub's reason. The dispatcher goes on trying, so changing what's stopping it is enough to merge it.
 
 ## Where you decide
 
@@ -116,6 +136,9 @@ hold off and the task goes back in the Dev's queue. If your reply doesn't say so
 line and the task stays held. A task that waits on a change in another repo is never held: it's
 recorded as waiting on that repo, and frees itself ([The board](#the-board)).
 
+When a task needs a GitHub Actions secret, like a deploy token, the agent asks for it by name and never for
+its value in a comment. You [give it in Work](work.md#answering-from-a-card), and that frees the task with no reply.
+
 To hold a task yourself, select its card in Work and press `h` (**Hold**), and say why. To take any
 hold off, yours or an agent's, press `h` again (**Release hold**), or use **Release hold** in the
 reader ([Work](work.md#answering-from-a-card)).
@@ -127,8 +150,11 @@ labels on your issues: the rank the Lead recommends, the theme a pitch serves, a
 a skip, a hold, and what a task waits on in another repo. A card's details in Overseer and the line
 under the reader's title show them, like `Idea · Priority none · Lead recommends Medium · theme:
 Consistently good UX`. The GitHub Project shows the Lead's rank and the theme as its **Lead rank** and
-**Theme** fields. Upgrading takes the old `rank:`, `theme:` and `a-team:` labels, and `blocked`, off
-your open issues once their state is in the record; `pitch` and your own labels stay.
+**Theme** fields, which setting the board up adds, or else the first copy that needs one. If your
+project already has a field of either name that isn't text, a-team can't copy to it: `check`, setup
+and the mirror's note in Overseer say so, and renaming your field clears it. Upgrading
+takes the old `rank:`, `theme:` and `a-team:` labels, and `blocked`, off your open issues once their
+state is in the record; `pitch` and your own labels stay.
 
 ## What the team remembers
 
@@ -150,7 +176,7 @@ relied on it, and what it replaced.
 | Key | What it does |
 |---|---|
 | `Enter` | Open where it was said on GitHub |
-| `e` | Edit its wording; `Enter` saves, `Esc` leaves it |
+| `e` | Edit its wording; `Enter` saves, `Esc` leaves it. Left empty, it saves nothing: `Decision` turns red and the foot says `Decision is needed` |
 | `k` | Make it a rule or a lean |
 | `w` | Widen it to all teams, or narrow it again |
 | `r` | Retire it, or bring it back |
@@ -167,7 +193,8 @@ panel in [Overseer](overseer.md#the-teams-panel).
 - **If the docs' first page isn't in the repo yet**, it proposes the docs first: a draft PR in
   Pitched, `Docs proposal: where <product>'s user docs live`, that adds that page with their outline.
   Comment on it to change the plan. Accept it in Work to agree, and its next run writes the docs.
-  Until then it writes none.
+  Until then it writes none. Only GitHub saying the page isn't there starts this: if GitHub doesn't
+  answer, the Customer lead waits for the next pass.
 - **When a pitch is done**, it reads what the pitch shipped and checks the user docs cover it:
   the README, guides and in-app help written as text.
 - **If they don't**, it writes what's missing into one docs PR, `Docs: what's changed since <date>`,
@@ -201,11 +228,16 @@ panel in [Overseer](overseer.md#the-teams-panel). Each review is a run, so it co
   the task names in the PR's description, under **What it looks like**, captioned with what it
   shows. The Reviewer checks each one against its caption and the style guide, and a task that
   changes the screen with no pictures is a **Needs changing** point of its own.
-- **What it says.** One comment on the PR, in two sections: **Needs changing**, each point with the
-  file and line and why, and **Worth considering**, for what needn't hold the PR up. It leaves out
-  whatever is fine. If nothing needs changing, it says so in one line.
-- **What happens next.** The Dev fixes each **Needs changing** point or replies why not, then marks
-  the PR ready as usual. It leaves **Worth considering** to you: comment if you want any of it done.
+- **What it says.** One comment on the PR, in two sections. **Needs changing** has each point with
+  the file and line and why: a missed acceptance criterion, a test that doesn't test the change, or
+  a wrong result in code the PR changes, naming the case, like *when the read is rate limited, it
+  says the PR isn't merged*, whether or not the task mentioned that case. **Worth considering** holds
+  only what's optional: other approaches, naming and readability, and problems in code the PR didn't
+  touch. It leaves out whatever is fine. If nothing needs changing, it says so in one line.
+- **What happens next.** The Dev fixes each **Needs changing** point with a test, or replies why
+  not, then marks the PR ready as usual. A point that means changing code the PR doesn't otherwise
+  touch it says so about and leaves, for you to see on the PR. It leaves **Worth considering** to
+  you: tick the ones you want with [Ask the Dev to fix](work.md#answering-from-a-card).
 - **Once only.** A PR is reviewed once. The Dev's fixes come to you without a second review, so the
   two agents can't go round in circles.
 - **Only task PRs.** Pitches, the Customer lead's docs PR and your own PRs are never reviewed.
@@ -237,4 +269,5 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
 - **An Idea the Lead sets aside** is marked skipped, with a comment saying why. Comment
   on it to put it back in the running.
 
-The Dev also takes the highest-priority Ready task first.
+The Dev also takes the highest-priority Ready task first. A task takes its pitch's Priority unless you
+give it one of its own.

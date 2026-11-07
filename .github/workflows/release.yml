@@ -17,6 +17,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/release*.yml
+      - core/**
       - dashboard/**
       - packaging/**
 
@@ -61,6 +62,9 @@ jobs:
           dotnet publish dashboard/Dashboard.csproj -c Release -r ${{ matrix.rid }}
           -p:MinVerVersionOverride=${{ needs.version.outputs.version }} -o publish
 
+      - name: Publish the compiled board
+        run: dotnet publish core/Core.csproj -c Release -r ${{ matrix.rid }} -o publish-core
+
       - name: Package
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -70,12 +74,13 @@ jobs:
           mkdir -p "$stage/libexec" dist
           cp -R bin scripts roles tasks settings examples process.md README.md "$stage/"
           cp LICENSE "$stage/"
-          cp publish/ateam "$stage/libexec/"
+          cp publish/ateam publish-core/a-team-core "$stage/libexec/"
           echo "$VERSION" > "$stage/VERSION"
           archive="a-team-$VERSION-$RID.tar.gz"
           tar -czf "dist/$archive" -C stage a-team
           (cd dist && shasum -a 256 "$archive" > "$archive.sha256")
           "$stage/bin/a-team" version
+          "$stage/libexec/a-team-core" check
 
       - uses: actions/upload-artifact@v7
         with:

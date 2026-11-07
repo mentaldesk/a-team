@@ -12,6 +12,7 @@ public enum RoleStatus
     Held,
     StoppedByYou,
     Misconfigured,
+    Stuck,
 }
 
 /// <summary>One role of one team, as the dispatcher's files have it: whether it's running and on which cards, how its
@@ -71,13 +72,14 @@ public sealed class RoleWatch(string team, string role, string stateDir)
         _log.Refresh(LogPath);
         var running = state with { Running = Running };
         Status = StatusOf(running, paused, held, _log.Verdict, misconfigured is not null);
-        Line = Says(running, Working, now, nextCheck, Status, held, paused, passing);
+        Line = Status == RoleStatus.Stuck ? SaysStuck(state.Stuck) : Says(running, Working, now, nextCheck, Status, held, paused, passing);
     }
 
-    /// <summary>A misconfigured team wins, then a held role that isn't running, then pause, then running, then how the
-    /// last run went.</summary>
+    /// <summary>A misconfigured team wins, then a stuck run, then a held role that isn't running, then pause, then running,
+    /// then how the last run went.</summary>
     internal static RoleStatus StatusOf(AgentState state, bool paused, bool held, RunVerdict verdict, bool misconfigured = false) =>
         misconfigured ? RoleStatus.Misconfigured
+            : state.Stuck.Count > 0 ? RoleStatus.Stuck
             : held && !state.Running ? (verdict == RunVerdict.None ? RoleStatus.StoppedByYou : RoleStatus.Held)
             : paused ? RoleStatus.Paused
             : state.Running ? RoleStatus.Running
@@ -112,7 +114,12 @@ public sealed class RoleWatch(string team, string role, string stateDir)
         return $"idle · {ran}{went} · {(teamPaused ? "team paused" : NextCheck(now, nextCheck, passing))}";
     }
 
-    internal static string Misconfigured(TeamProblem problem) => $"misconfigured: {problem.Topic} {problem.Detail}";
+    /// <summary>The oldest stuck run, and how many more there are.</summary>
+    internal static string SaysStuck(IReadOnlyList<StuckRun> stuck) =>
+        $"stuck · {stuck[0].Says}" + (stuck.Count > 1 ? $" · +{stuck.Count - 1} more" : "");
+
+    internal static string Misconfigured(TeamProblem problem) =>
+        problem.StopsTheTeam ? $"stopped: {problem.Detail}" : $"misconfigured: {problem.Topic} {problem.Detail}";
 
     private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck, bool passing) => nextCheck switch
     {

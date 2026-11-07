@@ -28,8 +28,23 @@ While it's open, add to it: commit to its branch, and add a line to its descript
 
 ## Each run
 
-If a worktree on `docs/customer-lead` or `docs/customer-lead-proposal` is left over from a PR that
-has merged, remove it and its local branch first, untracked files and all.
+Run `a-team board {{team}} clean customer` first, from outside any worktree. It removes a worktree
+on `docs/customer-lead` or `docs/customer-lead-proposal` that's finished, and says why it left any
+other. Never remove one or its branch any other way. Name each one it left, and why, in your summary.
+
+If it left one because its HEAD isn't the merged PR's last commit, because of changed tracked files, or
+because the branch has no PR, an earlier run didn't finish. Carry on from it, not afresh: in that
+worktree commit what's changed, merge `origin/<default branch>`, push, and open a new PR from that
+branch, as below for a docs PR or a proposal, whichever the branch is. If that leaves nothing to
+propose beyond `origin/<default branch>`, use it as your fresh worktree when you next need one.
+
+If it left one because its PR was closed without merging, the stakeholder turned that work down: read
+why with `gh pr view <n> --comments`, and leave out what they turned down. Its branch can't be made
+afresh or force-pushed, so start again on it: `git fetch origin`,
+`git merge -s ours --no-commit origin/<default branch>`,
+`git restore --source=origin/<default branch> --staged --worktree .`, and `git commit`, if there's
+anything to commit. Then use it as your fresh worktree when you next need one, opening a new PR from
+that branch.
 
 ### A product with no user docs
 

@@ -32,12 +32,10 @@ and give its number in your reply. Don't open one unasked: note it in the PR bod
 
 ### 1. Clean up merged work
 
-List the repo's worktrees (`git worktree list`). A worktree is yours if its branch's PR carries
-your marker. For each of yours whose PR GitHub reports as `MERGED`, `cd` into it and run the
-stakeholder's `wrap-up` skill. Only run it on merged PRs: on anything else it watches CI, which you
-mustn't do here. Do the same for your worktrees under `<workdir>/upstream`. Leave the worktrees of
-PRs closed without merging, and list them in your summary. This is the one thing you do outside
-your task.
+Run `a-team board {{team}} clean dev`, from outside any worktree. It removes each of your worktrees
+that's finished, here and under `<workdir>/upstream`, and says why it left the others. Never remove
+a worktree or its branch any other way. Name each one it left, and why, in your summary. This is the
+one thing you do outside your task.
 
 ### 2. If your task has a PR
 
@@ -55,32 +53,49 @@ Find it with `a-team board {{team}} pr <n>`, then:
   the comment was made. If you disagree with a point, say why in the reply instead of changing
   the code.
 - If `pr` reports `"mergeable": "CONFLICTING"`, the PR conflicts with its base. In its worktree,
-  merge the base branch into the PR branch, resolve, and push. Merge, never rebase: a PR branch is
-  never force-pushed. `checks` reports CI only, so a conflicting PR can still be green. Do the same
-  for a draft when `pr` reports `"mergeStateStatus": "BEHIND"`; the dispatcher updates a PR that's
-  behind once it's out of draft.
+  merge the base branch into the PR branch, resolve, build, run only the quick checks for what the
+  merge touched, and push. CI runs the rest, and a red result comes back to you. Run more only if the
+  resolve rewrote behaviour rather than choosing between lines, or if the repo's CI doesn't run its
+  tests, when you run them all first. Merge, never rebase: a PR branch is never force-pushed. `checks`
+  reports CI only, so a conflicting PR can still be green. Do the same for a draft when `pr` reports
+  `"mergeStateStatus": "BEHIND"`; the dispatcher updates a PR that's behind once it's out of draft.
 - If `pr` reports `"review": "posted"`, the Reviewer has posted its one review on the PR (the comment
   with `<!-- a-team:reviewer -->`). Treat its **Needs changing** points like stakeholder feedback:
-  fix each one and push, or say why not. Answer them all in one `a-team board {{team}} comment dev <pr>`.
-  Leave **Worth considering** to the stakeholder unless they ask for it. Do this once: the PR isn't
-  reviewed again, and once you've answered, `pr` reports `"review": "answered"`.
+  fix each one with a test that fails without the fix and push, or say why not. A point that means
+  changing code the PR doesn't otherwise touch, say so and leave it. Answer them all in one
+  `a-team board {{team}} comment dev <pr>`. Leave **Worth considering** to the stakeholder unless
+  they ask for it, which may be one comment quoting several points: fix them all in one run. Do this
+  once: the PR isn't reviewed again, and once you've answered, `pr` reports `"review": "answered"`.
 - If the PR is still a draft and `checks` says `pass`, mark it ready with `gh pr ready <pr>`, and if
   the task is In progress, `a-team board {{team}} move dev <n> "In review"`. Only a green PR is
   marked ready, never a failing or pending one: this is the one exception to the stakeholder's
   general rule that PRs stay in draft. While `pr` reports `"review": "waiting"`, leave it a draft:
   the Reviewer reads it first. After pushing fixes for a review, end the run: a later run marks
   it ready once CI is green again.
-- When a fix changes something on screen, snapshot each screen again and run `pictures` as in step
-  4 with all of them, so the PR shows what it does now.
+- When a fix changes something on screen, snapshot each screen again and run `pictures` and `checked`
+  as in step 4 with all of them, so the PR shows what it does now.
 - Leave it there and end the run. The stakeholder merges.
+
+If your task is a Dependabot PR, it's its own PR, and these replace the steps above that don't fit:
+
+- If `checks` says `pass`, there's nothing to do: it merges itself on the dispatcher's next pass.
+  Never mark it In review.
+- If `checks` says `fail`, fetch it into a worktree on Dependabot's own branch
+  (`git -C <checkout> fetch origin <branch>`, `git -C <checkout> worktree add ../<slug> <branch>`),
+  change the code until it builds and its tests pass, and push there. Open no second PR, and put no
+  `Closes` line in the commits. New rules the update brings stay the Lead's Ideas: only fix the build.
+- If you can't make it build, hold it with `a-team board {{team}} hold dev <pr> <file>`, the file saying
+  what broke, what you tried and what you need from the stakeholder, then
+  `a-team board {{team}} move dev <pr> Ready`, and end the run. They answer on the PR, or close it.
 
 ### 3. If your task is Ready and held
 
-You handed it back with a question. Read `a-team board {{team}} feedback dev <n>`, and judge
+You handed it back with a question, or the dispatcher asked for you because GitHub keeps refusing to merge a
+green Dependabot PR. Read `a-team board {{team}} feedback dev <n>`, and judge
 whether the reply answers it:
 
 - If it does, `a-team board {{team}} unblock dev <n>`, `a-team board {{team}} move dev <n> "In progress"`,
-  and build it as in step 4, from its step 2.
+  and build it as in step 4, from its step 2. A Dependabot PR goes back to the Dependabot steps above instead.
 - If it doesn't, reply with `a-team board {{team}} comment dev <n>`: rephrase the question, or say
   what you still need. Leave it held, and end the run.
 
@@ -106,7 +121,10 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
    turns out to be wrong, either role can drop it with `undepend`.
 2. Read the issue and the pitch it belongs to. If the acceptance criteria are ambiguous or
    contradict the code, hold it with the specific question
-   (`a-team board {{team}} hold dev <n> <file>`), then move it back to Ready, and end the run.
+   (`a-team board {{team}} hold dev <n> <file>`), then move it back to Ready, and end the run. If it needs a
+   GitHub Actions secret only the stakeholder can give, ask with
+   `a-team board {{team}} secret dev <n> <NAME> <repo|environment> <file>`, the file saying why and where to get
+   it, then move it back to Ready, and end the run.
 3. If it needs a change in another repo first, like a shared library, open that before building:
    - If the repo is in the team config's `contributesTo`, clone it to `<workdir>/upstream/<name>`
      if it isn't there, and make the change in a worktree beside it, on a new branch from a fresh
@@ -134,8 +152,12 @@ Your task is In progress with no PR: either just claimed, or an earlier run didn
    test-plan section. Once the PR has a number, edit the body so it ends, just above the
    marker, with the line `a-team try {{team}} <pr>` for it. If the task changes what the user sees,
    put your snapshots on it with `a-team board {{team}} pictures dev <pr> <image> "<criterion>" ...`,
-   one per screen, each captioned with the acceptance criterion it shows. It replaces any pictures
-   the PR had. A task with nothing on screen gets none.
+   one per criterion you saw on screen, captioned in that criterion's own words as
+   `a-team board {{team}} criteria <n>` gives them; one snapshot can serve several. It replaces any
+   pictures the PR had. A task with nothing on screen gets none. Then say what you checked, with
+   `a-team board {{team}} checked dev <pr> <criterion>=screen|test ...`, numbered as `criteria` numbers
+   them: `screen` for one you saw working, with its picture, `test` for one a test in the PR proves.
+   The rest stay with the stakeholder, so never claim one you didn't check.
 7. `a-team board {{team}} comment dev <n>` on the issue, one line: "Draft PR #<pr> is up."
 8. Leave the task In progress and end the run. A later run marks the PR ready once CI is green.
 

@@ -40,7 +40,7 @@ public sealed class NewIdeaDialog : DashboardDialog
         _filer = filer;
         _confirmDiscard = confirmDiscard ?? (() => true);
         Width = Dim.Func(_ => Math.Min(Wide, SuperView?.Viewport.Width ?? Wide), this);
-        Height = Dim.Func(_ => DescriptionLines + 9 + Foot.Rows + _message.Lines + GetAdornmentsThickness().Vertical, this);
+        Height = Dim.Func(_ => DescriptionLines + 9 + Foot.Rows + _message.Lines + Alert.Lines + GetAdornmentsThickness().Vertical, this);
 
         Add(new Label { Text = "Team", X = Inset, Y = 1 });
         _team = new DropDownList
@@ -52,7 +52,7 @@ public sealed class NewIdeaDialog : DashboardDialog
             Source = new ListWrapper<string>(new ObservableCollection<string>(teams)),
             Text = team,
         };
-        Add(new Label { Text = "Title", X = Inset, Y = 2 });
+        var titleLabel = new Label { Text = "Title", X = Inset, Y = 2 };
         _title = new PlaceholderField { X = FieldX, Y = 2, Width = Dim.Fill(Inset) };
         Add(new Label { Text = "Description", X = Inset, Y = 4 });
         _description = new MultiLineField { X = Inset, Y = 5, Width = Dim.Fill(Inset), Height = DescriptionLines, Text = description };
@@ -84,7 +84,9 @@ public sealed class NewIdeaDialog : DashboardDialog
         AddButton(ButtonKind.Secondary, CancelId);
         Foot.Y = rankY + 3;
         _message.Y = Pos.Bottom(Foot);
-        Add(_team, _title, _description, _rank, Foot, _message);
+        Alert.Y = Pos.Bottom(_message);
+        Add(_team, titleLabel, _title, _description, _rank, Foot, _message);
+        Check(_title, titleLabel, () => string.IsNullOrWhiteSpace(_title.Text) ? "Title is needed" : null);
         _title.TextChanged += (_, _) => StyleCancel();
         _description.ContentChanged += (_, _) => StyleCancel();
         StyleCancel();
@@ -148,9 +150,9 @@ public sealed class NewIdeaDialog : DashboardDialog
     {
         if (_adding is not null)
             return true;
-        if (string.IsNullOrWhiteSpace(_title.Text))
+        if (!Checked())
         {
-            Say("Nothing to add: the title is needed", Schemes.Error);
+            _message.Clear();
             return true;
         }
         if (_attach?.Uploading == true)

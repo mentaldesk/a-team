@@ -31,6 +31,10 @@ public static partial class Markdown
             yield break;
         if (row.Kind == LogLineKind.Prose && !row.Wrapped && ListMarker().Match(row.Text) is { Success: true } marker)
             yield return new MarkdownSpan(marker.Groups[1].Index, marker.Groups[1].Length, LogLineKind.ListMarker);
+        if (row.Kind == LogLineKind.Prose && CheckBox().Match(row.Text) is { Success: true } box)
+            yield return new MarkdownSpan(box.Groups[1].Index, box.Groups[1].Length, LogLineKind.ListMarker);
+        if (row.Kind == LogLineKind.Prose && Checked().Match(row.Text) is { Success: true } how)
+            yield return new MarkdownSpan(how.Groups[1].Index, how.Groups[1].Length, LogLineKind.InlineCode);
         foreach (Match span in Inline().Matches(row.Text))
             yield return new MarkdownSpan(span.Index, span.Length,
                 span.Value[0] == '`' ? LogLineKind.InlineCode : LogLineKind.Strong);
@@ -46,6 +50,12 @@ public static partial class Markdown
 
     [GeneratedRegex(@"^\s*([-*+]|\d+[.)])\s")]
     private static partial Regex ListMarker();
+
+    [GeneratedRegex(@"^\s*(\[[ x]\]) ")]
+    private static partial Regex CheckBox();
+
+    [GeneratedRegex(@"  (screen|test)$")]
+    private static partial Regex Checked();
 
     [GeneratedRegex(@"`[^`]+`|\*\*[^*]+\*\*|__[^_]+__")]
     private static partial Regex Inline();

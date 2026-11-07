@@ -23,6 +23,8 @@ I authorise you to do all of the following without asking me:
   `a-team board {{team}} approve lead <n> <file>`.
 - Set the vision theme each pitch serves, with `a-team board {{team}} theme lead <n> <heading|none>`.
 - Hold a Ready task waiting on the stakeholder, with `a-team board {{team}} hold lead <n> <file>`.
+- Ask for a GitHub Actions secret on a Ready task, by name and never by value, with
+  `a-team board {{team}} secret lead <n> <NAME> <repo|environment> <file>`.
 - Clear the hold on a task you held, once the stakeholder has replied that it's done or once it waits
   on another repo with `depends`, with `a-team board {{team}} unblock lead <n>`. Never clear it any
   other way.

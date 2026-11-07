@@ -22,6 +22,12 @@ public sealed record OverseerState(
 
     /// <summary>The cards another task waits on, which wear a warning.</summary>
     public IReadOnlySet<(string Team, int Number)> Holding { get; init; } = new HashSet<(string, int)>();
+
+    /// <summary>The teams that can't run until a-team is upgraded, whose lanes say so.</summary>
+    public IReadOnlySet<string> Stopped { get; init; } = new HashSet<string>();
+
+    /// <summary>Each team's stuck roles, which its lane names instead of showing them busy.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Stuck { get; init; } = new Dictionary<string, IReadOnlyList<string>>();
 }
 
 /// <summary>Where a busy role's header frame goes in its lane's title, in columns from the title's start.</summary>
@@ -29,6 +35,16 @@ public readonly record struct HeaderSlot(int Column, string Role);
 
 /// <summary>A lane's title, and the cells in it the busy roles' animations play in.</summary>
 public sealed record LaneHeading(string Title, IReadOnlyList<HeaderSlot> Slots);
+
+/// <summary>What a lane's heading says about its team.</summary>
+public sealed record LaneFacts(string Team)
+{
+    public IReadOnlyList<string> Busy { get; init; } = [];
+    public string? Mirror { get; init; }
+    public int Over { get; init; }
+    public bool Stopped { get; init; }
+    public IReadOnlyList<string> Stuck { get; init; } = [];
+}
 
 /// <summary>Every team's board on one screen: a framed lane per team under one row of column headings, and the
 /// selected card's details at the foot unless they're in the panel beside it.</summary>
@@ -106,6 +122,9 @@ public sealed class OverseerView : View
 
     internal int ScrolledTo => _lanes.Viewport.Y;
 
+    /// <summary>What <paramref name="team"/>'s heading says of its mirror, which its title cuts off where it doesn't fit.</summary>
+    internal string? MirrorNote(string team) => _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null;
+
     internal IReadOnlyList<string> LaneTitles => [.. _laneViews.Select(lane => lane.Title)];
 
     internal const string NothingOnTheBoard = "Nothing on the board";
@@ -170,6 +189,8 @@ public sealed class OverseerView : View
             return true;
         }
         load.ShowFailed(message, (retry, run));
+        if (_board.Selected is null)
+            _board.SelectFirst();
         Changed();
         return false;
     }
@@ -203,8 +224,14 @@ public sealed class OverseerView : View
         foreach (var lane in _laneViews)
         {
             var team = LaneTeam(lane);
-            var heading = Heading(team, state.Busy.TryGetValue(team, out var busy) ? busy : [], Over(team),
-                _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null);
+            var heading = Heading(new LaneFacts(team)
+            {
+                Busy = state.Busy.TryGetValue(team, out var busy) ? busy : [],
+                Over = Over(team),
+                Mirror = MirrorNote(team),
+                Stuck = state.Stuck.TryGetValue(team, out var stuck) ? stuck : [],
+                Stopped = state.Stopped.Contains(team),
+            });
             lane.Slots = heading.Slots;
             if (lane.Title != heading.Title)
                 lane.Title = heading.Title;
@@ -302,24 +329,26 @@ public sealed class OverseerView : View
 
     internal bool CanFold => _board.Selected is { } place && _board.Unfolded(place.Team);
 
-    /// <summary>A lane's title: the team, its busy roles or <c>idle</c>, and how many of its cards are past their limit.
-    /// Each busy role keeps a cell after its name, which the lane paints its header frame into.</summary>
-    internal static LaneHeading Heading(string team, IReadOnlyList<string> busy, int over, string? mirror = null)
+    /// <summary>A lane's title: the team, its stuck roles, its busy roles or <c>idle</c> or <c>stopped</c>, and how many of its cards are past
+    /// their limit. Each busy role keeps a cell after its name, which the lane paints its header frame into.</summary>
+    internal static LaneHeading Heading(LaneFacts lane)
     {
-        var title = team;
+        var title = lane.Team;
         List<HeaderSlot> slots = [];
-        foreach (var role in busy)
+        foreach (var role in lane.Stuck)
+            title += $"{Separator}{RoleName(role)} ⚠ stuck";
+        foreach (var role in lane.Busy)
         {
             title += Separator + RoleName(role) + " ";
             slots.Add(new(title.GetColumns(), role));
             title += " ";
         }
-        if (busy.Count == 0)
-            title += Separator + "idle";
-        if (over > 0)
-            title += $"{Separator}{over} over";
-        if (mirror is not null)
-            title += Separator + mirror;
+        if (lane.Busy.Count == 0 && lane.Stuck.Count == 0)
+            title += Separator + (lane.Stopped ? "stopped" : "idle");
+        if (lane.Over > 0)
+            title += $"{Separator}{lane.Over} over";
+        if (lane.Mirror is not null)
+            title += Separator + lane.Mirror;
         return new(title, slots);
     }
 
@@ -435,7 +464,7 @@ public sealed class OverseerView : View
 
     private void AddLane(string team)
     {
-        var lane = new Lane(this, _laneViews.Count) { X = 0, Width = Dim.Fill(), CanFocus = false, Title = Heading(team, [], 0).Title, Data = team };
+        var lane = new Lane(this, _laneViews.Count) { X = 0, Width = Dim.Fill(), CanFocus = false, Title = Heading(new LaneFacts(team)).Title, Data = team };
         lane.Y = Pos.Func(_ => Top(lane), _lanes);
         lane.Height = Dim.Func(_ => Rows(lane) + FrameRows, _lanes);
         lane.Load = new LoadStateView(new ChipGrid(this, team) { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() },

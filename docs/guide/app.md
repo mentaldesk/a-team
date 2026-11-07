@@ -31,7 +31,7 @@ says so in a line, with the command that signs you in.
 The keys come in TuiCode's families. `Ctrl+G` then a letter goes somewhere: `Ctrl+G W`
 Work, `Ctrl+G O` Overseer, `Ctrl+G A` the Assistant, `Ctrl+G I` the panel for what's selected in
 Overseer, `Ctrl+G T` [Teams](teams.md) and `Ctrl+G N` what's new. `Ctrl+T` then a letter turns something on or off: `Ctrl+T T` tool calls and
-`Ctrl+T M` only your moves. Everyday commands are a Ctrl key: `Ctrl+E` Commands, `Ctrl+,` Settings,
+`Ctrl+T M` only your moves. Everyday commands are a Ctrl key: `Ctrl+E` Commands, `Ctrl+,` [Settings](teams.md#settings),
 `Ctrl+N` a new idea, `Ctrl+Q` quit, and `Ctrl+L` a new conversation in the Assistant. The keys for a
 selected card or log line, like `a` to accept or `l` to copy, stay single letters.
 
@@ -43,7 +43,7 @@ that holds them. Beside it, headed with where you are (Work, Overseer, a team's 
 log or the Assistant), are the ones for there. *Help → Show keys* and **Show keys** in Commands open it too, and
 `Esc` or its *Esc Close* button closes it. *Press F1 for help*, at the right end of the status bar,
 is the only key it names. The rest of it starts with where you are (Work's filter, or Overseer) and
-when the board was last read, then says what's selected or going on. The app's version is in
+when the cards were last synced in Work, or the boards last read in Overseer, then says what's selected or going on. The app's version is in
 *Help → About*.
 
 A message on the status bar, like `#512 approved` or `Copied 3 lines`, stays for 5 seconds, or
@@ -54,16 +54,30 @@ haven't seen count in `⚠ n`, just left of *Press F1 for help*. *Help → Messa
 in Commands, or clicking `⚠ n` lists this session's messages, newest first, with their times;
 `Ctrl+C` copies the selected one.
 
+The terminal's tab shows the same from another tab: `(3) a-team` with 3 cards waiting on you, the
+number in Work's title, and `⚠ 1 (3) a-team` with an error you haven't seen. Open the app on one
+team, with `a-team dashboard TuiCode`, and the team comes first: `(2) TuiCode — a-team`. It follows
+the board as it's read, without you switching to the tab. When you quit, or the app hands the
+terminal to your editor, *Try it* or an attached run, the tab gets its own title back.
+
 In a dialog, what you can do to it is a row of buttons at its foot, each with its key first, like
 *Ctrl+Enter Add* or *Esc Cancel*; click one or press its key. `F1` there shows that dialog's keys,
 headed with its title, including the ones with no button, like scrolling, selecting and copying.
 `Esc` closes it and puts you back where you were, a half-written comment and its cursor included.
 
+A dialog says what's wrong with what you typed when you confirm, not before, so its confirm button
+is never dimmed for that. A confirm it won't take turns the label of every wrong field red and moves
+you to the first. The foot names the field you're on and how many more there are, like
+`Repo is required  •  2 more to fix`, and follows you as you `Tab` to another. Each mark goes as you
+fix it, and what you typed stays. A refusal about one field that comes later, like a team name
+that's already taken, marks it the same way. Confirming with nothing typed doesn't cancel: only `Esc`
+does. The exception is **Attach image file**, which an empty path just closes.
+
 `Ctrl+E` opens Commands: everything the app can do where you are, with the key for each. Type to
 narrow the list. Letters that start words match first, so `gt` finds **Go to team…**, then names
 that hold the letters anywhere, best match first; `Enter` runs the one at the top. Every key on
 this page is one of those commands, so anything you can press you can also run by name, and you
-can change its key under [Settings → Keyboard Shortcuts](teams.md#the-rest-of-settings).
+can change its key under [Settings → Keyboard Shortcuts](teams.md#settings).
 
 The menus list everything, wherever you are. An item that can't run here is dimmed, with its key
 beside it, and does nothing. With a menu open, each item's underlined letter is its own: press it to
@@ -87,9 +101,9 @@ own clipboard instead, with the same terminal setup, and the status bar says
 A Mac terminal keeps `Cmd` to itself, so out of the box `Cmd+←` and the rest do nothing in the app.
 In iTerm2, kitty or WezTerm, **Settings → Terminal** fixes that: it names the terminal you're in and
 whether the dashboard's Mac keys are *Not installed*, *Installed* or *Out of date*. Tick
-**Cmd and Option keys** and press `Ctrl+Enter` to install them, or to bring them up to date after an
-a-team upgrade changes them; clear it and press `Ctrl+Enter` to take them away. `Esc` leaves them as
-they were. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
+**Cmd and Option keys** and press `Ctrl+Enter` to install them; clear it and press `Ctrl+Enter` to
+take them away. When an a-team upgrade leaves them *Out of date*, the box is already ticked, so
+`Ctrl+Enter` alone brings them up to date. `Esc` leaves them as they were. In kitty and WezTerm the page then shows the one line to add to your terminal's config,
 and the file it goes in, with **Copy** beside it. After adding it, reload kitty's config with
 `Ctrl+Cmd+,` (kitty reads it only then), or in WezTerm reopen the dashboard.
 

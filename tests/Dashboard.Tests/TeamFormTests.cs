@@ -1,4 +1,5 @@
 using MentalDesk.Tui.Loading;
+using MentalDesk.Tui.Theming;
 using MentalDesk.Tui.Keys;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -292,7 +293,7 @@ public class TeamFormTests
 
         Assert.False(saved);
         Assert.Null(form.Saved);
-        Assert.Equal("Repo must be owner/repo, like mentaldesk/a-team, not not-a-repo.", form.Message.Says);
+        Assert.Equal("Repo must be owner/repo, like mentaldesk/a-team, not not-a-repo", form.Alert.Message);
         Assert.Equal("not-a-repo", form.Repo.Text);
     }
 
@@ -649,8 +650,8 @@ public class TeamFormTests
     }
 
     [Theory]
-    [InlineData("a-team", "There's already a team named a-team.")]
-    [InlineData("my team", "my team can't be a file name: use letters, digits, '.', '_' and '-'.")]
+    [InlineData("a-team", "There's already a team named a-team")]
+    [InlineData("my team", "Name can't be my team: use letters, digits, '.', '_' and '-'")]
     public void A_name_that_can_t_be_used_refuses_and_leaves_the_form_filled_in(string name, string refusal)
     {
         var created = false;
@@ -666,8 +667,151 @@ public class TeamFormTests
 
         Assert.False(created);
         Assert.Null(form.Saved);
-        Assert.Equal(refusal, form.Message.Says);
+        Assert.StartsWith(refusal, form.Alert.Message);
         Assert.Equal("mentaldesk/fretty", form.Repo.Text);
+    }
+
+    private static Label LabelNamed(View form, string text) => form.SubViews.OfType<Label>().First(label => label.Text == text);
+
+    private static TeamForm Unfilled() =>
+        new("a-team", Settings with { Repo = "", Vision = "", Workdir = "" }, _ => null);
+
+    [Fact]
+    public void Save_marks_every_wrong_field_at_once_focuses_the_first_and_counts_the_rest()
+    {
+        using var form = Unfilled();
+        form.SetFocus();
+        form.Try.SetFocus();
+
+        form.Save();
+
+        Assert.Null(form.Saved);
+        Assert.True(form.Repo.HasFocus);
+        foreach (var name in new[] { "Repo", "Vision", "Workdir" })
+            Assert.Equal(SchemeNames.Error, LabelNamed(form, name).SchemeName);
+        Assert.NotEqual(SchemeNames.Error, LabelNamed(form, "Try").SchemeName);
+        Assert.Equal("Repo is required  •  2 more to fix", form.Alert.Message);
+    }
+
+    [Fact]
+    public void Tab_to_another_marked_field_and_the_message_names_that_one()
+    {
+        using var form = Unfilled();
+        form.SetFocus();
+        form.Save();
+
+        form.Vision.SetFocus();
+
+        Assert.Equal("Vision is required  •  2 more to fix", form.Alert.Message);
+    }
+
+    [Fact]
+    public void Fixing_each_field_clears_its_mark_and_the_last_clears_the_message_then_it_saves()
+    {
+        using var form = Unfilled();
+        form.SetFocus();
+        form.Save();
+
+        form.Repo.Text = "mentaldesk/a-team";
+        Assert.NotEqual(SchemeNames.Error, LabelNamed(form, "Repo").SchemeName);
+        Assert.Equal("Vision is required  •  1 more to fix", form.Alert.Message);
+        form.Vision.Text = "docs/vision.md";
+        Assert.Equal("Workdir is required", form.Alert.Message);
+        form.Workdir.Text = "~/code/a-team";
+        Assert.NotEqual(SchemeNames.Error, LabelNamed(form, "Workdir").SchemeName);
+        Assert.Equal("", form.Alert.Message);
+
+        form.Save();
+
+        Assert.NotNull(form.Saved);
+    }
+
+    [Fact]
+    public void A_new_form_left_empty_marks_Name_first_and_never_closes()
+    {
+        using var form = TeamForm.New(Blank with { Vision = "" }, [], "~/.config/a-team/teams", (_, _) => null);
+        form.SetFocus();
+
+        form.Save();
+
+        Assert.Null(form.Saved);
+        Assert.True(form.NameField!.HasFocus);
+        Assert.Equal("Name is required  •  3 more to fix", form.Alert.Message);
+    }
+
+    [Fact]
+    public void A_name_taken_while_the_form_was_open_marks_Name_and_keeps_what_was_typed()
+    {
+        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (name, _) => TeamSettings.NameTaken(name));
+        form.SetFocus();
+        form.NameField!.Text = "fretty";
+        form.Repo.Text = "mentaldesk/fretty";
+        form.Repo.SetFocus();
+
+        form.Save();
+
+        Assert.Null(form.Saved);
+        Assert.True(form.NameField.HasFocus);
+        Assert.Equal(SchemeNames.Error, LabelNamed(form, "Name").SchemeName);
+        Assert.Equal("There's already a team named fretty", form.Alert.Message);
+        Assert.Equal("", form.Message.Says);
+        Assert.Equal("mentaldesk/fretty", form.Repo.Text);
+
+        form.NameField.Text = "frets";
+
+        Assert.NotEqual(SchemeNames.Error, LabelNamed(form, "Name").SchemeName);
+        Assert.Equal("", form.Alert.Message);
+    }
+
+    [Fact]
+    public void With_the_projects_unread_half_a_project_marks_Owner_or_Number_where_the_keyboard_can_reach_it()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.SetFocus();
+        form.ShowProjects(null);
+        form.Owner.Text = "";
+
+        form.Save();
+
+        Assert.True(form.Owner.HasFocus);
+        Assert.Equal("Owner is required for a mirror", form.Alert.Message);
+        form.Owner.Text = "mentaldesk";
+        form.Number.Text = "0";
+
+        form.Save();
+
+        Assert.True(form.Number.HasFocus);
+        Assert.Equal("Number must be above 0", form.Alert.Message);
+    }
+
+    [Fact]
+    public void A_project_that_can_t_be_used_marks_Mirror_while_the_list_is_showing()
+    {
+        using var form = new TeamForm("a-team", Settings with { ProjectNumber = 0 }, _ => null);
+        form.SetFocus();
+
+        form.Save();
+
+        Assert.True(form.Project.HasFocus);
+        Assert.Equal(SchemeNames.Error, LabelNamed(form, "Mirror").SchemeName);
+        Assert.Equal("Mirror's number must be above 0", form.Alert.Message);
+    }
+
+    [Theory]
+    [InlineData("TuiCode (mentaldesk #4)")]
+    [InlineData(TeamForm.NewProject)]
+    public void Picking_a_project_that_can_be_used_clears_the_mark_on_Mirror(string choice)
+    {
+        using var form = new TeamForm("a-team", Settings with { ProjectNumber = 0 }, _ => null);
+        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
+        form.SetFocus();
+        form.Save();
+        Assert.Equal(SchemeNames.Error, LabelNamed(form, "Mirror").SchemeName);
+
+        form.Project.Text = choice;
+
+        Assert.NotEqual(SchemeNames.Error, LabelNamed(form, "Mirror").SchemeName);
+        Assert.Equal("", form.Alert.Message);
     }
 
     [Fact]

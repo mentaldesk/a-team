@@ -11,10 +11,13 @@ Each team is a lane, in the order your teams are listed, under one row of column
 Exploring, Pitched, Approved, Building, Ready, In progress and In review. Done isn't shown.
 
 A lane's title names the team and its roles that are running now, each with its animation playing
-beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. Where cards are past their column's limit, it counts them: `2 over`.
+beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. A [stuck role](#a-stuck-role) is named on its own
+instead of as running, as in `a-team · Dev ⚠ stuck · Reviewer ⚠ stuck`. Where cards are past their column's limit, it counts them: `2 over`.
 Where the team's GitHub Project hasn't caught up with its board yet, it says how far behind it is and why, as in
-`mirror 3 moves behind (GitHub rate limit, retry 11:20)`. The board itself is never behind: once GitHub is back,
-the Project catches up and the note goes.
+`mirror 3 moves behind (GitHub rate limit, retry 11:20)`. `GitHub unreachable` means it really couldn't be reached;
+when GitHub turns the copy down, the note gives its reason after `GitHub refused:`. The board itself is never behind:
+once GitHub is back, the Project catches up and the note goes. Where the title has no room for the whole note, select the
+heading and the team's panel shows all of it.
 
 Each card is a chip: a mark for what it is, its number, and how long it has been in that column, in
 the largest unit, as in `◆404  6d`.
@@ -29,7 +32,8 @@ the largest unit, as in `◆404  6d`.
 Where a Nerd Font is in effect, a chip wears the icon [Work](work.md) gives the card
 instead: an idea, a pitch, a task or the docs PR.
 
-A chip's mark and number are drawn in its Priority's colour. Its age is in the theme's own colour, and
+A chip's mark and number are drawn in its Priority's colour, which for a task with none of its own is its
+pitch's. Its age is in the theme's own colour, and
 turns amber only once the card is past its column's limit. A card another task is waiting on, the one
 [Work](work.md) tags `⛓ frees`, wears an amber `⚠` between its number and its age, as in `●81 ⚠6d`. A card that's
 blocked for any reason, waiting on another task, on another repo or on your answer, wears `⊘` there (the Nerd Font
@@ -47,7 +51,8 @@ A role with no animation of its own plays a dim spinner, `⠋⠙⠹`, in the the
 
 A Lead run started for one card (feedback on it, or the Idea it's pitching), a Customer lead run on
 its docs PR and a Reviewer run on a task's PR animate on that card. A run working across the whole
-board animates in the lane's title only. Within a column, the card that has waited longest is first.
+board animates in the lane's title only. Within a column, the highest Priority is first, and among equals the
+card that has waited longest.
 A column shows as many rows as fit with every lane on screen, and at least three, and puts the rest
 behind a count, as in `+7`.
 
@@ -116,7 +121,7 @@ it's doing:
 
 | Icon | Means |
 |---|---|
-| `⚠` | The team is misconfigured and can't run. This wins over every other icon |
+| `⚠` | The team is misconfigured and can't run, which wins over every other icon, or the role is [stuck](#a-stuck-role), as its line says |
 | `●` | Running now |
 | `⏸` | Paused, or held by you |
 | `✓` | Its last run finished cleanly |
@@ -136,7 +141,7 @@ The app checks each team when it starts and again whenever the team's file chang
 **Teams** shows. If something stops the team running, every role wears `⚠`, the panel
 says what's wrong above them, as in `misconfigured: checkout ~/code/TuiCode/main isn't there: …`,
 and the status bar says which checks failed. Fix it in **Teams** or in the file, and the
-`⚠` clears. A missing vision, docs page or label is only a note, and changes nothing here.
+`⚠` clears. What the check calls a note, like a missing vision, docs page or label, changes nothing here.
 
 The keys act on the chosen role, the first until you choose another. `F6` or `Ctrl+G I` puts focus
 in the panel, where `↑` and `↓` choose a role, and `F6` goes back to the lanes. `Enter` opens the
@@ -144,6 +149,27 @@ role's latest session full-screen, as [Reading a session](#reading-a-session) de
 comes back to the team. `h` pauses the role or lets it start again ([Pausing a role](#pausing-a-role)),
 and `i` interrupts it ([Interrupting a run](#interrupting-a-run)). The panel's last line lists the keys
 that work now.
+
+### A stuck role
+
+A role is stuck when the dispatcher counts a run as live that isn't doing its work: the run is still alive on the
+pass after it was stopped for reaching its time limit, or its task or PR closed or went Done more than 30 minutes
+ago. A run that stops when told, or that closes its own card and finishes up, never warns, and neither does a
+long run with work waiting behind it. A Lead or Customer lead run that isn't on a card can only be stuck by its time limit.
+
+The role's line wears `⚠` and says what's wrong, which run, and what's waiting on its slot:
+
+```
+⚠ Dev       stuck · run 67118 outlived its 2h limit by 19d · holds 1 of 3 slots
+⚠ Reviewer  stuck · run 51200 is on #516, closed 29 Oct · holds its only slot, 3 PRs waiting
+```
+
+Where the panel is too narrow for the line, it says it in full again below the roles. Where a role has more than one stuck run, the line describes the oldest and adds `+1 more`. `a-team status` prints
+a line for each, as in `a-team reviewer: stuck: run 51200 is on #516, closed 29 Oct · holds its only slot, 3 PRs waiting`.
+
+It only reports: the dispatcher starts nothing in its place and frees no slot, so the run is yours to look into.
+`Enter`, `h` and `i` work on its line as on any other. There's nothing to dismiss: once the run has gone, the
+warning clears by itself, from the title, the panel and `a-team status`, even if the team is paused or the dispatcher is stopped.
 
 ## Reading a session
 
@@ -159,7 +185,7 @@ SSH, copies reach your own clipboard as [Copying and links](app.md#copying-and-l
 
 A run of tool calls draws as a single row, so the agent's own words aren't pushed off the top.
 `Ctrl+T T` shows every call, and `Ctrl+T T` again folds them back up. To start every session with its
-calls showing, tick *Show tool calls in full* under [Settings → Dashboard](teams.md#the-rest-of-settings).
+calls showing, tick *Show tool calls in full* under [Settings → Dashboard](teams.md#settings).
 
 The panel keeps only the last 500 lines. `e` opens the whole session as text in your editor: every
 line from the start, each command and error in full. It uses `$VISUAL`, or `$EDITOR` if that isn't
@@ -200,14 +226,25 @@ written to the board, as in [Work](work.md#while-its-being-written).
 
 **View → Dispatcher log** opens the dispatcher's whole log full-screen, from any area, and `Esc` comes
 back. Each run it starts names the release it's on, as in `09:51 a-team lead: started 81834 on
-0.1.7: #232 was approved`, and keeps that release to its end, even if you upgrade a-team meanwhile.
+0.1.7: #232 was approved`, and keeps that release to its end, even if you upgrade a-team meanwhile, unless the upgrade moves the
+board's format, as below.
 A team that can't run on two passes in a row gets one line saying why, as in
 `a-team: stopped: no GitHub App: run a-team app create a-team, then install it`, another only if
 the reason changes, and `a-team: running again` once it can. A single failed pass, such as one
 during `brew upgrade`, says nothing, though the team still sits that pass out.
+If the board is in a newer format than the a-team the dispatcher runs, as after a downgrade, every team
+stops the same way, as in `a-team: stopped: the board is in format 4, from a-team 0.2.17, and this is
+0.2.11: brew upgrade a-team`. The message bar says the same, each lane's title says `stopped`, and in the
+panel of a lane's heading each role wears `⚠` above the same line until you upgrade. A release that moves the
+board's format moves it on the dispatcher's next pass. A run still on the release before stops at its
+next board command with a line saying so, and the next pass carries on from the board, so there's
+nothing for you to do.
 A role whose check for work fails is the same: two passes in a row give one red line, as in
 `a-team dev: triggers failed: gh: connection reset`, and `a-team dev: triggers working again` once
-it passes. `PgUp`, `PgDn`, `Home` and `End` scroll it.
+it passes. A dependency bump it merges has its own line, as in
+`a-team: PR #653 (Bump MentalDesk.Tui from 0.5.2 to 0.6.0): merged`. A [stuck run](#a-stuck-role) gets one red line when it starts, as in
+`a-team reviewer: run 51200 is stuck: on #516, which closed 29 Oct`, and one when it clears, `a-team reviewer: run 51200
+no longer stuck`, and a run past its limit gets one `killed run` line however many passes it stays alive. `PgUp`, `PgDn`, `Home` and `End` scroll it.
 
 Its title says what is driving the teams: the a-team the dispatcher runs and its version, with the
 countdown to its next pass, as in `dispatcher · /opt/homebrew/bin/a-team 0.1.12 · next pass 1:12`.
@@ -226,11 +263,13 @@ own output since then ──`.
 Answered something a team was waiting on? **Run a dispatch pass now**, in the Commands palette
 (`Ctrl+E`) or under **Agents**, has that dispatcher check for work straight away instead of at its
 next pass. It starts only what that pass would have, within the same limits, and leaves the
-countdown alone. The status bar says what it started, or `Pass done: nothing to start.`
+countdown alone. The status bar says what it started, or `Pass done: nothing to start.` Only one pass
+runs at a time: during another, scheduled or not, it says `A pass is already running.` and starts nothing.
 
 ## Time limits
 
 **Settings → Overseer** has a field for each column. Put a number and a unit in one, as in `30m`,
 `2h`, `3d` or `2w`, and a card that stays in that column longer has its age drawn in amber. A
 blank field is no limit, and a column without one never highlights. Settings won't keep an entry it
-can't read, and says which column it's in.
+can't read: **Keep** opens this page instead, turns the name of every such column red and moves you to the
+first, and the foot says which column you're on, how to write a limit, and how many more there are.

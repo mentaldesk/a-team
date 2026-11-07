@@ -10,8 +10,8 @@ public sealed record Chip(BoardCard? Card, int Hidden = 0)
 /// which keeps the column it was reached from.</summary>
 public readonly record struct ChipPlace(string Team, int Column, int? Number, bool Heading = false);
 
-/// <summary>Every team's board as Overseer lays it out: a lane per team, a column per status, chips oldest first,
-/// and the selection moving between them.</summary>
+/// <summary>Every team's board as Overseer lays it out: a lane per team, a column per status, chips highest Priority
+/// first, and the selection moving between them.</summary>
 public sealed class OverseerBoard
 {
     public static readonly string[] Columns = ["Idea", "Exploring", "Pitched", "Approved", "Building", "Ready", "In progress", "In review"];
@@ -70,10 +70,11 @@ public sealed class OverseerBoard
 
     private int Tall(int fold, int frame) => _teams.Sum(team => Rows(team, fold) + frame);
 
-    /// <summary>A column's cards, the one that has waited longest first.</summary>
+    /// <summary>A column's cards, highest Priority first, and among equals the one that has waited longest.</summary>
     public IReadOnlyList<BoardCard> Column(string team, int column) =>
         [.. _cards.Where(card => card.Team == team && card.Status == Columns[column])
-            .OrderBy(card => card.Since ?? DateTimeOffset.MaxValue)
+            .OrderByDescending(card => Priorities.Of(card.Priority))
+            .ThenBy(card => card.Since ?? DateTimeOffset.MaxValue)
             .ThenBy(card => card.Number)];
 
     /// <summary>The chips a column draws: all of them in an unfolded lane, and otherwise as many as fit in
@@ -104,7 +105,8 @@ public sealed class OverseerBoard
     /// <summary>Which row of its column the selection is on.</summary>
     public int? SelectedRow => Selected is { Heading: false } place && IndexOf(place) is >= 0 and var row ? row : null;
 
-    /// <summary>Starts on the first chip of the first lane with any.</summary>
+    /// <summary>Starts on the first chip of the first lane with any, or with none on the board, the first heading, so
+    /// a team's panel can still be reached.</summary>
     public void SelectFirst()
     {
         Selected = null;
@@ -114,6 +116,8 @@ public sealed class OverseerBoard
                 Selected = At(team, column, 0);
                 return;
             }
+        if (_teams.Count > 0)
+            Selected = new ChipPlace(_teams[0], 0, null, Heading: true);
     }
 
     public bool Select(string team, int number)

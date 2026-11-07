@@ -23,7 +23,7 @@ public sealed class WorkView : View
         ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && !item.Document && item.Status is "Idea" or "Pitched", null),
         ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs || item.Document) && item.Question.Length == 0, null),
         ("Blocked", null, Icon.Blocked, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
-        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.Status == "In review" && item.Holdup.Length > 0),
+        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.WithTheDev || item.Status == "In review" && item.Holdup.Length > 0),
     ];
 
     /// <summary>The gate a card waits at, as your time on it is split by; Other for one at none of them, like a task
@@ -663,29 +663,50 @@ public sealed class WorkLane : View
     private void Fit()
     {
         // A second pass: the scroll bar takes a column off the area the first one measured.
-        for (var pass = 0; pass < 2 && _body.GetContentSize() != Content(); pass++)
+        for (var pass = 0; pass < 2; pass++)
+        {
+            for (var index = 0; index < _columns.Count; index++)
+                _columns[index].WrapReasons(ColumnWidth(index));
+            if (_body.GetContentSize() == Content())
+                return;
             _body.SetContentSize(Content());
+        }
     }
 
     private Size Content() => _body.Viewport.Size with { Height = Tall() };
 
     private int Left(int index) => Enumerable.Range(0, index).Sum(ColumnWidth);
 
-    /// <summary>The selected column takes half the tab and the others it shows share the rest.</summary>
     private int ColumnWidth(int index)
     {
         var column = _columns[index];
         if (!column.Visible)
             return 0;
         var shown = _columns.Where(each => each.Visible).ToList();
-        var wide = shown.Count > 1 && _wide is { Visible: true } ? _wide : null;
-        var half = _body.Viewport.Width / 2;
-        if (column == wide)
-            return half;
-        var rest = shown.Where(each => each != wide).ToList();
-        var room = wide is null ? _body.Viewport.Width : _body.Viewport.Width - half;
-        var at = rest.IndexOf(column);
-        return room * (at + 1) / rest.Count - room * at / rest.Count;
+        return Share(_body.Viewport.Width, shown.Count, _wide is { Visible: true } ? shown.IndexOf(_wide) : null)[shown.IndexOf(column)];
+    }
+
+    /// <summary>Each of <paramref name="count"/> columns' width: the selected one takes two-thirds of the tab beside
+    /// one other and half beside more, and the others share the rest.</summary>
+    internal static int[] Share(int width, int count, int? selected)
+    {
+        var even = count < 2 || selected is null;
+        var wide = even ? 0 : count == 2 ? width - width / 3 : width / 2;
+        var rest = even ? count : count - 1;
+        var room = width - wide;
+        var widths = new int[count];
+        var at = 0;
+        for (var index = 0; index < count; index++)
+        {
+            if (!even && index == selected)
+            {
+                widths[index] = wide;
+                continue;
+            }
+            widths[index] = room * (at + 1) / rest - room * at / rest;
+            at++;
+        }
+        return widths;
     }
 }
 
@@ -697,10 +718,15 @@ public sealed class WorkColumn : FrameView
     private readonly Func<WaitingItem, bool>? _aside;
     private readonly Cards _cards;
     private readonly Label _summary;
+    /// <summary>The cells of a column its tree doesn't get: the frame's two and a margin each side.</summary>
+    private const int TreeInset = 4;
+
     private readonly FocusBorder _border;
     private IReadOnlyList<WaitingItem> _items = [];
     private IReadOnlyList<WaitingItem> _setAside = [];
+    private List<Card> _roots = [];
     private List<Card> _nodes = [];
+    private int _reasonWidth;
     private int _laidOutOver = -1;
     private IconStyle _icons = IconStyle.Unicode;
 
@@ -787,15 +813,37 @@ public sealed class WorkColumn : FrameView
         _items = items;
         _setAside = setAside ?? [];
         _summary.Visible = _setAside.Count > 0;
-        var roots = Card.Roots(items, Kind, isNew, isWriting);
-        _nodes = [.. Card.Nodes(roots)];
+        _roots = [.. Card.Roots(items, Kind, isNew, isWriting, _reasonWidth)];
         Title = Heading(Kind, Gate, items.Count, _icons);
+        Plant();
+        SetNeedsLayout();
+    }
+
+    /// <summary>Wraps a stuck Dependabot PR's reason to a column <paramref name="columnWidth"/> wide, which moves with
+    /// focus, before the lane measures the rows it takes.</summary>
+    internal void WrapReasons(int columnWidth)
+    {
+        var width = columnWidth - TreeInset - Icons.Width - 2;
+        if (width == _reasonWidth)
+            return;
+        _reasonWidth = width;
+        if (!_roots.Any(root => root.StuckBump))
+            return;
+        var selected = Selected;
+        _roots = [.. _roots.Select(root => root with { ReasonWidth = width })];
+        Plant();
+        if (selected is not null)
+            _cards.GoTo(_nodes.FindLast(card => card.Item == selected.Item && card.IsPr == selected.IsPr && card.Line <= selected.Line)!);
+    }
+
+    private void Plant()
+    {
+        _nodes = [.. Card.Nodes(_roots)];
         _cards.ClearObjects();
-        _cards.AddObjects(roots);
+        _cards.AddObjects(_roots);
         _cards.ExpandAll();
         _laidOutOver = -1;
         Fit();
-        SetNeedsLayout();
     }
 
     internal void ShowIcons(IconStyle style)
@@ -834,7 +882,7 @@ public sealed class WorkColumn : FrameView
         var groups = new[]
         {
             reviewer.Count == 0 ? "" : $"{reviewer.Count} with the Reviewer: {string.Join(" · ", reviewer.Select(item => $"#{item.Number}"))}",
-            dev.Count == 0 ? "" : $"{dev.Count} with the Dev: {string.Join(" · ", dev.Select(item => $"#{item.Number} {item.Holdup}"))}",
+            dev.Count == 0 ? "" : $"{dev.Count} with the Dev: {string.Join(" · ", dev.Select(item => item.WithTheDev ? $"PR #{item.Number} ({item.Holdup})" : $"#{item.Number} {item.Holdup}"))}",
             red.Count == 0 ? "" : $"{red.Count} waiting while {red[0].Base} is red: {string.Join(" · ", red.Select(item => $"#{item.Number}"))}",
         };
         return Card.Elide(string.Join(" · ", groups.Where(group => group.Length > 0)), width);

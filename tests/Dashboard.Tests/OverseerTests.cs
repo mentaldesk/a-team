@@ -253,6 +253,20 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void Within_a_column_the_highest_priority_comes_first_and_equals_run_oldest_first()
+    {
+        var board = Board([
+            Card(1, "Ready", days: 9),
+            Card(2, "Ready", days: 1, priority: "Urgent"),
+            Card(3, "Ready", days: 5, priority: "Low"),
+            Card(4, "Ready", days: 2, priority: "High"),
+            Card(5, "Ready", days: 4, priority: "High"),
+        ]);
+
+        Assert.Equal([2, 5, 4, 3, 1], board.Column("a", 5).Select(card => card.Number));
+    }
+
+    [Fact]
     public void Past_three_rows_a_column_folds_the_rest_into_a_count()
     {
         var board = Board([.. Enumerable.Range(1, 6).Select(n => Card(n, "Ready", days: 10 - n)), Card(9, "Idea", days: 1)]);
@@ -295,6 +309,18 @@ public class OverseerTests : IDisposable
         board.FitTo(height: 2, frame: 2);
 
         Assert.Equal(3, board.Rows("a"));
+    }
+
+    [Fact]
+    public void With_no_chips_on_any_board_the_selection_starts_on_the_first_heading_and_moves_between_headings()
+    {
+        var board = new OverseerBoard(["a", "b"]);
+
+        board.SelectFirst();
+        Assert.Equal(new ChipPlace("a", 0, null, Heading: true), board.Selected);
+
+        board.MoveRow(+1);
+        Assert.Equal(new ChipPlace("b", 0, null, Heading: true), board.Selected);
     }
 
     [Fact]
@@ -490,16 +516,28 @@ public class OverseerTests : IDisposable
     [Fact]
     public void A_lane_names_its_busy_roles_each_with_a_cell_for_its_animation_or_says_idle_and_counts_what_s_over()
     {
-        var heading = OverseerView.Heading("a-team", ["lead", "dev"], 2);
+        var heading = OverseerView.Heading(new LaneFacts("a-team") { Busy = ["lead", "dev"], Over = 2 });
 
         Assert.Equal("a-team · Lead   · Dev   · 2 over", heading.Title);
         Assert.Equal([new HeaderSlot(14, "lead"), new HeaderSlot(22, "dev")], heading.Slots);
-        Assert.Equal("tui · idle", OverseerView.Heading("tui", [], 0).Title);
-        Assert.Empty(OverseerView.Heading("tui", [], 0).Slots);
-        Assert.Equal("docs · Customer lead  ", OverseerView.Heading("docs", ["customer"], 0).Title);
-        Assert.Equal("ops · Reviewer  ", OverseerView.Heading("ops", ["reviewer"], 0).Title);
-        Assert.Equal([new HeaderSlot(15, "reviewer")], OverseerView.Heading("ops", ["reviewer"], 0).Slots);
-        Assert.Equal([new HeaderSlot(12, "scout")], OverseerView.Heading("ops", ["scout"], 0).Slots);
+        Assert.Equal("tui · idle", OverseerView.Heading(new LaneFacts("tui")).Title);
+        Assert.Empty(OverseerView.Heading(new LaneFacts("tui")).Slots);
+        Assert.Equal("docs · Customer lead  ", OverseerView.Heading(new LaneFacts("docs") { Busy = ["customer"] }).Title);
+        Assert.Equal("ops · Reviewer  ", OverseerView.Heading(new LaneFacts("ops") { Busy = ["reviewer"] }).Title);
+        Assert.Equal([new HeaderSlot(15, "reviewer")], OverseerView.Heading(new LaneFacts("ops") { Busy = ["reviewer"] }).Slots);
+        Assert.Equal([new HeaderSlot(12, "scout")], OverseerView.Heading(new LaneFacts("ops") { Busy = ["scout"] }).Slots);
+    }
+
+    [Fact]
+    public void A_lane_names_each_stuck_role_once_and_only_keeps_a_frame_for_the_busy_ones()
+    {
+        Assert.Equal("a-team · Dev ⚠ stuck · Reviewer ⚠ stuck", OverseerView.Heading(new LaneFacts("a-team") { Stuck = ["dev", "reviewer"] }).Title);
+        Assert.Empty(OverseerView.Heading(new LaneFacts("a-team") { Stuck = ["dev"] }).Slots);
+
+        var heading = OverseerView.Heading(new LaneFacts("a-team") { Busy = ["lead"], Over = 2, Stuck = ["dev"] });
+
+        Assert.Equal("a-team · Dev ⚠ stuck · Lead   · 2 over", heading.Title);
+        Assert.Equal([new HeaderSlot(28, "lead")], heading.Slots);
     }
 
     [Fact]
@@ -512,10 +550,31 @@ public class OverseerTests : IDisposable
             """);
 
         Assert.Equal($"mirror 3 moves behind (GitHub rate limit, retry {retry.ToLocalTime():HH:mm})", lag!.Note);
-        Assert.Equal($"a-team · idle · {lag.Note}", OverseerView.Heading("a-team", [], 0, lag.Note).Title);
+        Assert.Equal($"a-team · idle · {lag.Note}", OverseerView.Heading(new LaneFacts("a-team") { Mirror = lag.Note }).Title);
         Assert.Equal("mirror 1 move behind", new MirrorLag(1).Note);
         Assert.Null(MirrorLag.Parse("""[{"number": 7, "team": "a-team"}]"""));
         Assert.Single(BoardCard.Parse("""[{"number": 7, "team": "a-team"}, {"team": "a-team", "mirror": {"behind": 3}}]"""));
+    }
+
+    [Theory]
+    [InlineData(100, 3)]
+    [InlineData(160, 2)]
+    public void The_team_s_panel_shows_the_whole_of_a_mirror_note_the_title_has_no_room_for(int width, int rows)
+    {
+        var lag = new MirrorLag(3, "GitHub refused: " + string.Join(' ', Enumerable.Repeat("much too long for any title", 6)));
+        using var window = Open(width: width);
+        window.Press("Ctrl+G O");
+        window.Refresh();
+        Assert.True(window.NewKeyDownEvent(Key.CursorUp));
+        window.Layout(new Size(width, 30));
+        var without = window.Team.RowsAt(width);
+
+        window.Overseer.Show("team0", [], lag);
+        window.Layout(new Size(width, 30));
+
+        Assert.Equal(lag.Note, window.Team.Mirror);
+        Assert.Equal(without + rows, window.Team.RowsAt(width));
+        Assert.Equal(width >= 140 ? 1 : 30 - 1 - window.Team.Rows, window.Team.Frame.Y);
     }
 
     [Fact]
@@ -983,8 +1042,8 @@ public class OverseerTests : IDisposable
         Assert.Equal(new Dictionary<string, string> { ["Ready"] = "2d" }, settings.ReadLimits());
     }
 
-    private static BoardCard Card(int number, string status, int days, string team = "a") =>
-        new(team, number, $"#{number}", $"https://github.com/o/{team}/issues/{number}", status, "", CardKind.Pitch,
+    private static BoardCard Card(int number, string status, int days, string team = "a", string priority = "") =>
+        new(team, number, $"#{number}", $"https://github.com/o/{team}/issues/{number}", status, priority, CardKind.Pitch,
             Now - TimeSpan.FromDays(days));
 
     private static OverseerBoard Board(IReadOnlyList<BoardCard> cards, IReadOnlyList<string>? teams = null)
@@ -992,6 +1051,24 @@ public class OverseerTests : IDisposable
         var board = new OverseerBoard(teams ?? ["a"]);
         board.Show(cards);
         return board;
+    }
+
+    [Fact]
+    public void A_team_stopped_by_the_board_format_says_why_in_its_lane_on_the_bar_and_in_a_panel_that_can_be_reached()
+    {
+        const string Why = "the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team";
+        var checks = new TeamChecks(_ => Task.FromResult(new TeamHealth([new TeamProblem("board", Why)])), _ => "{}");
+        using var window = Open(checks: checks, readBoard: _ => Task.FromResult(new Reading("", $"board.sh: {Why}")));
+        window.Commands.Execute("view.overseer");
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal(["team0 · stopped", "team1 · stopped"], window.Overseer.LaneTitles);
+        Assert.Equal(Why, window.Overseer.LoadOf("team0")!.Says);
+        Assert.Contains("stopped: brew upgrade a-team · the board is in format 2", window.Says());
+        Assert.Equal(new ChipPlace("team0", 0, null, Heading: true), window.Overseer.Board.Selected);
+        Assert.Equal($"stopped: {Why}", window.Team.Problem);
+        Assert.All(window.Team.Lines, line => Assert.StartsWith(Icons.Field(Icon.Misconfigured, IconStyle.Unicode), line));
     }
 
     [Fact]
@@ -1086,7 +1163,7 @@ public class OverseerTests : IDisposable
     private DashboardWindow Open(
         Func<string, Task<Reading>>? readBoard = null, Func<string, LinkOutcome>? openUrl = null, TimeProvider? clock = null, int height = 30,
         int width = 120, Action<Handover>? handOver = null, Func<RunTask, bool>? confirmStop = null, Handover? resume = null,
-        Func<string[], Task<string?>>? run = null, Func<string, Task<Reading>>? syncBoard = null)
+        Func<string[], Task<string?>>? run = null, Func<string, Task<Reading>>? syncBoard = null, TeamChecks? checks = null)
     {
         Directory.CreateDirectory(_root);
         var window = new DashboardWindow(
@@ -1101,12 +1178,16 @@ public class OverseerTests : IDisposable
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             resume?.Area ?? Area.Work,
             IconStyle.Unicode,
-            handOver: handOver,
-            resume: resume,
-            clock: clock,
-            confirmStop: confirmStop,
-            readBoard: readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))),
-            syncBoard: syncBoard);
+            new DashboardOptions
+            {
+                HandOver = handOver,
+                Resume = resume,
+                Clock = clock,
+                ConfirmStop = confirmStop,
+                ReadBoard = readBoard ?? (team => Task.FromResult(new Reading(Overview(team), null))),
+                SyncBoard = syncBoard,
+                Checks = checks,
+            });
         window.Frame = new Rectangle(0, 0, width, height);
         window.Layout(new Size(width, height));
         window.Refresh();

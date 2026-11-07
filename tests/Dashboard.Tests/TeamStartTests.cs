@@ -84,11 +84,21 @@ public class TeamStartTests : IDisposable
         Assert.Equal("{}", File.ReadAllText(Path.Combine(_teams.TeamsDirectory, "fretty.json")));
     }
 
+    [Fact]
+    public void A_team_named_while_the_form_was_open_comes_back_as_the_name_being_taken()
+    {
+        var start = new TeamStart(Example, null!, null!, _root, () => true);
+        var settings = TeamSettings.New(File.ReadAllBytes(Example), "") with { Repo = "o/r", Workdir = "~/code/fretty" };
+        Assert.Null(start.Create(_teams, "fretty", settings));
+
+        Assert.Equal("There's already a team named fretty", start.Create(_teams, "fretty", settings));
+    }
+
     [Theory]
-    [InlineData("", "Name is required.")]
-    [InlineData("a-team", "There's already a team named a-team.")]
-    [InlineData("my team", "my team can't be a file name: use letters, digits, '.', '_' and '-'.")]
-    [InlineData("../x", "../x can't be a file name: use letters, digits, '.', '_' and '-'.")]
+    [InlineData("", "Name is required")]
+    [InlineData("a-team", "There's already a team named a-team")]
+    [InlineData("my team", "Name can't be my team: use letters, digits, '.', '_' and '-'")]
+    [InlineData("../x", "Name can't be ../x: use letters, digits, '.', '_' and '-'")]
     [InlineData("fretty", null)]
     public void A_new_team_s_name_must_be_free_and_usable_as_a_file_name(string name, string? refusal) =>
         Assert.Equal(refusal, TeamSettings.NameRefusal(name, ["a-team"]));
@@ -121,6 +131,33 @@ public class TeamStartTests : IDisposable
                 "  update label blocked: colour and description",
             ],
             TeamStart.SetupPlan(output, new ProjectChoice("mentaldesk", 7, "fretty"), "mentaldesk/fretty"));
+    }
+
+    [Fact]
+    public void The_setup_plan_lists_the_project_fields_it_would_add_beside_the_Status_options()
+    {
+        const string output = """
+              add   Idea
+              drop  Todo
+              add   field Lead rank
+              add   field Theme
+            (dry run) created label pitch
+            """;
+        var project = new ProjectChoice("mentaldesk", 7, "fretty");
+
+        Assert.Equal(
+            [
+                "On project fretty (mentaldesk #7), field 'Status':",
+                "  add   Idea",
+                "  drop  Todo",
+                "On project fretty (mentaldesk #7):",
+                "  add   field Lead rank",
+                "  add   field Theme",
+                "On mentaldesk/fretty:",
+                "  create label pitch",
+            ],
+            TeamStart.SetupPlan(output, project, "mentaldesk/fretty"));
+        Assert.DoesNotContain("On project fretty (mentaldesk #7):", TeamStart.SetupPlan("  keep  Idea\n", project, "mentaldesk/fretty"));
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -582,13 +619,13 @@ public class TeamStartTests : IDisposable
     {
         var start = new TeamStart(Example, new TeamCommand(Fake("a-team", """
             echo "ok: mentaldesk project 7, field 'Status'"
-            echo "labels    1 of 6 missing: blocked"
+            echo "note     labels    1 of 6 missing: blocked"
             exit 2
             """)), new TeamCommand(Fake("gh", "")), Path.Combine(_root, "home"), () => true);
 
         var health = await start.Check("fretty");
 
-        Assert.Equal([new TeamProblem("labels", "1 of 6 missing: blocked")], health.Problems);
+        Assert.Equal([new TeamProblem("labels", "1 of 6 missing: blocked", IsNote: true)], health.Problems);
         Assert.Equal(["board fretty check"], Ran());
     }
 

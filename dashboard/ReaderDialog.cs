@@ -1,11 +1,14 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Focus;
 using MentalDesk.Tui.Layout;
 using MentalDesk.Tui.Links;
+using MentalDesk.Tui.Theming;
 using Terminal.Gui.App;
+using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -20,7 +23,13 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 /// wasn't.</summary>
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
-    ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null, ReaderRelease? Release = null);
+    ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null, ReaderRelease? Release = null,
+    ReaderCommand? Fix = null, ReaderTick? Tick = null, ReaderCommand? Secret = null);
+
+/// <summary>Ticking a criterion from the reader: Run saves it on the task, with null once it's saved or else why not;
+/// Settle takes in writes that have finished, which nothing else does while the reader is open; Changed is told how many
+/// are left unticked.</summary>
+public sealed record ReaderTick(Func<Criterion, bool, Task<string?>> Run, Action? Settle = null, Action<int>? Changed = null);
 
 /// <summary>Taking the hold off a held task from the reader: Run posts what's in the Comment pane, if anything, then
 /// releases it, with null once it's under way or else why not.</summary>
@@ -78,6 +87,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string SetId = "reader.set";
     private const string ApproveId = "reader.approve";
     private const string AcceptId = "reader.accept";
+    private const string FixId = "reader.fix";
+    private const string SecretId = "reader.secret";
     private const string CommentId = "reader.comment";
     private const string PostId = "reader.post";
     private const string AttachId = "reader.attach";
@@ -92,9 +103,10 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string CopyId = "reader.copy";
     private const string QuoteId = "reader.quote";
     private const string BranchId = "reader.branch";
+    private const string TickId = "reader.tick";
     private const int BandLines = 3;
     private static readonly string[] WaitForPost =
-        [SetId, ApproveId, AcceptId, CommentId, DeclineId, NotNowId, ReleaseId, TryId, EditId, CancelId];
+        [SetId, ApproveId, AcceptId, FixId, SecretId, CommentId, DeclineId, NotNowId, ReleaseId, TryId, EditId, CancelId];
     private static readonly TimeSpan SameComment = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
@@ -121,6 +133,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly FrameView _historyFrame;
     private readonly FrameView _commentFrame;
     private readonly MultiLineField _field;
+    private readonly View _commentMark = new();
     private readonly View _weeksRow;
     private readonly PlaceholderField _weeks;
     private int _shelveWeeks = ReaderShelve.Weeks;
@@ -162,7 +175,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
         Func<string, LinkOutcome>? openUrl = null, Action<Picture, string>? viewImage = null)
-        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
+        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Secret is { } secret ? $" · {secret.Asker} asks for a secret" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
     {
         _pictures = pictures;
         _openUrl = openUrl;
@@ -197,7 +210,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
         int PaneRows() => Math.Max(0, FootRow() - 1 - (rank is null ? 0 : BandLines));
 
-        _standing = new Label { Text = item.Standing, X = 1, Y = 0, Width = Dim.Fill(1), CanFocus = false, SchemeName = LogSchemes.Dimmed };
+        _standing = new Label { Text = item.Standing, X = 1, Y = 0, Width = Dim.Fill(1), CanFocus = false, SchemeName = LogSchemes.Dimmed, HotKeySpecifier = (Rune)0xffff };
 
         _commentFrame = new FrameView
         {
@@ -235,6 +248,17 @@ public sealed partial class ReaderDialog : DashboardDialog
                 Offer();
         };
         _commentFrame.Add(_weeksRow, _field);
+        // The border's own attributes, not the frame's scheme, which the field would inherit and turn what's typed red.
+        _commentFrame.Border!.GetOrCreateView().GettingAttributeForRole += (_, e) =>
+        {
+            if (_commentMark.SchemeName != SchemeNames.Error)
+                return;
+            e.Result = SchemeManager.GetScheme(SchemeNames.Error).GetAttributeForRole(e.Role);
+            e.Handled = true;
+        };
+        CheckWhileWriting(_field, _commentMark, () =>
+            _shelving || _releasing || !string.IsNullOrWhiteSpace(_field.Text) ? null
+            : _declining ? "Why is needed" : "Comment is needed");
         if (comment?.Image is { } image)
         {
             image.Viewable = () => _field.HasFocus && FieldImage() is not null;
@@ -331,12 +355,23 @@ public sealed partial class ReaderDialog : DashboardDialog
             };
             _band.Add(_ranks);
         }
-        if ((tryIt?.Top ?? edit?.Top) is { } top)
+        if (tryIt?.Top is not null && body.Checklist is not null)
+        {
+            _body.ShowLine(body.ChecklistLine);
+            CaretOnCriteria();
+        }
+        else if ((tryIt?.Top ?? edit?.Top) is { } top)
             _body.Top = top;
         else if (OpensAt(item, body) is > 0 and var line)
             _body.ShowLine(line);
+        else if (body.Checklist is not null)
+            CaretOnCriteria();
+        foreach (var criterion in body.Checklist?.Team ?? [])
+            if (criterion.Picture is { } shot)
+                pictures?.For(shot.Url);
         Foot.Y = Pos.Func(_ => FootRow(), this);
-        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
+        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines - Alert.Lines), this);
+        Alert.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Alert.Lines), this);
         AddKeys();
 
         Add(_standing, _commentFrame, _bodyFrame, _historyFrame, Foot, _message);
@@ -412,6 +447,9 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     internal MessageBar Message => _message;
 
+    /// <summary>Holds the mark of a refused comment, which colours the pane's frame: its title is the field's label.</summary>
+    internal View CommentMark => _commentMark;
+
     /// <summary>A click on the ranks reaches the dialog as Accept.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
         _ranks is null || Writing || Run(SetId, Set);
@@ -470,7 +508,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     }
 
     [GeneratedRegex(@"\s*<!-- a-team:(dev|lead) -->\s*$")]
-    private static partial Regex Marker();
+    internal static partial Regex Marker();
 
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex NeedsAnswer();
@@ -533,6 +571,8 @@ public sealed partial class ReaderDialog : DashboardDialog
             return SwitchPane(+1);
         if (key == Key.Tab.WithShift)
             return SwitchPane(-1);
+        if (_ranks is null && _body.HasFocus && key == Key.Enter && CriterionAtCaret()?.Picture is { } shot)
+            return ViewImage(shot);
         if (_ranks is null && _body.HasFocus && key == Key.Enter && _body.ImageAtCaret is { } image)
             return ViewImage(image);
         if (_ranks is null && _history.HasFocus && key == Key.Enter)
@@ -554,6 +594,10 @@ public sealed partial class ReaderDialog : DashboardDialog
             Bind(ApproveId, new Key('a'), "Approve", Approve, Reads);
         if (_accept is not null)
             Bind(AcceptId, _accept.Key, Capital(_accept.Hint), AcceptItem, Reads);
+        if (_comment?.Fix is { } fix)
+            Bind(FixId, fix.Key, "Ask the Dev to fix", AskFix, Reads);
+        if (_comment?.Secret is { } secret)
+            Bind(SecretId, secret.Key, "Give secret", GiveSecret, Reads);
         if (_comment is not null)
         {
             Bind(CommentId, _comment.Key, Capital(_comment.Hint), Comment, Reads);
@@ -578,7 +622,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         foreach (var (id, kind) in new[]
         {
             (SetId, ButtonKind.Primary), (ApproveId, _accept is null ? ButtonKind.Primary : ButtonKind.Secondary),
-            (AcceptId, ButtonKind.Primary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary), (ReleaseId, ButtonKind.Secondary),
+            (AcceptId, ButtonKind.Primary), (FixId, ButtonKind.Secondary), (SecretId, ButtonKind.Primary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary), (ReleaseId, ButtonKind.Secondary),
             (AttachId, ButtonKind.Secondary), (DeclineId, ButtonKind.Danger),
             (NotNowId, ButtonKind.Secondary), (IdeaId, ButtonKind.Secondary), (TryId, ButtonKind.Secondary),
             (EditId, ButtonKind.Secondary), (GitHubId, ButtonKind.Secondary), (CancelId, ButtonKind.Secondary),
@@ -586,6 +630,8 @@ public sealed partial class ReaderDialog : DashboardDialog
             if (Commands.Find(id) is not null)
                 AddButton(kind, id);
 
+        if (_comment?.Tick is not null && _text.Checklist is not null)
+            Bind(TickId, Key.Space, "Tick", Tick, () => Reads() && _ranks is null && _scrolled == _body && CriterionAtCaret() is not null);
         Bind(HistoryId, new Key('h'), "Show history", ToggleHistory, () => Reads() && _ranks is null);
         Bind("reader.previousRemark", Key.CursorUp.WithAlt, "Previous remark", () => ToRemark(-1), () => Reads() && _scrolled == _body);
         Bind("reader.nextRemark", Key.CursorDown.WithAlt, "Next remark", () => ToRemark(+1), () => Reads() && _scrolled == _body);
@@ -599,7 +645,8 @@ public sealed partial class ReaderDialog : DashboardDialog
         Also("←/→", "Priority", () => _ranks is not null);
         Also("Arrows/PgUp/PgDn", "Move", () => Reads() && _ranks is null);
         Also("Shift+arrows", "Select", () => _ranks is null);
-        Also("Enter", "View the picture", () => Reads() && _ranks is null && _scrolled == _body && _body.ImageAtCaret is not null);
+        Also("Enter", "View the picture", () => Reads() && _ranks is null && _scrolled == _body
+            && (_body.ImageAtCaret is not null || CriterionAtCaret()?.Picture is not null));
         Also("Enter", "Show the comment", () => Reads() && _ranks is null && _scrolled == _history);
         Also("Ctrl+V", "Paste", () => Writing);
         Also("Ctrl+X", "Cut", () => _field.HasFocus);
@@ -620,7 +667,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     private static string Capital(string label) => label.Length == 0 ? label : char.ToUpperInvariant(label[0]) + label[1..];
 
-    private int FootRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines);
+    private int FootRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines - Alert.Lines);
 
     /// <summary>The buttons, and the labels that change, for where the keyboard is now.</summary>
     private void Offer()
@@ -636,6 +683,7 @@ public sealed partial class ReaderDialog : DashboardDialog
             Rename(IdeaId, Quoted() > 0 ? $"Idea from {Lines(Quoted())}" : "Idea");
         if (_comment is not null)
             Rename(QuoteId, $"Quote {Lines(marked)}");
+        Rename(TickId, CriterionAtCaret() is { Ticked: true } ? "Untick" : "Tick");
         Rename(HistoryId, HistoryShown ? "Hide history" : "Show history");
         Rename(CancelId, Writing ? _declining ? "Cancel" : _shelving ? "Comment instead" : "Back" : marked > 0 ? "Clear" : "Close");
         Restyle(CancelId, !Writing && marked == 0 && !string.IsNullOrWhiteSpace(_field.Text) ? ButtonKind.Danger : ButtonKind.Secondary);
@@ -882,6 +930,68 @@ public sealed partial class ReaderDialog : DashboardDialog
         return true;
     }
 
+    private void CaretOnCriteria() =>
+        _body.PutCaret(_text.ChecklistLine + _text.Checklist!.LineOf(_text.Checklist.First));
+
+    private Criterion? CriterionAtCaret() => _body.Caret is { } caret ? _text.CriterionAt(caret.Line) : null;
+
+    /// <summary>Shown as ticked at once; one the board refuses goes back, saying why.</summary>
+    private bool Tick()
+    {
+        if (CriterionAtCaret() is not { } criterion)
+            return true;
+        var tick = _comment!.Tick!;
+        var ticked = !criterion.Ticked;
+        ShowTick(criterion.Index, ticked);
+        var saving = tick.Run(criterion, ticked);
+        var said = new HistoryEvent((_comment.Clock ?? TimeProvider.System).GetUtcNow(), "you", _text.Checklist!.Said(ticked));
+        if (saving.IsCompleted)
+        {
+            Saved(saving, criterion.Index, ticked, said);
+            return true;
+        }
+        App?.AddTimeout(PollEvery, () =>
+        {
+            tick.Settle?.Invoke();
+            if (!saving.IsCompleted)
+                return true;
+            Saved(saving, criterion.Index, ticked, said);
+            return false;
+        });
+        return true;
+    }
+
+    private void Saved(Task<string?> saving, int index, bool ticked, HistoryEvent said)
+    {
+        var failure = saving.Status == TaskStatus.RanToCompletion
+            ? saving.Result
+            : saving.Exception?.GetBaseException().Message ?? "the tick didn't save";
+        if (failure is { Length: > 0 })
+        {
+            ShowTick(index, !ticked);
+            Say(failure, Schemes.Error);
+        }
+        else if (_text.History is { Failure: null } history)
+        {
+            _text = _text with { History = history.With(said) };
+            _history.Lines = _text.History.Lines;
+        }
+        Offer();
+    }
+
+    /// <summary>Only the box and the count change, so the view and the caret stay where they are.</summary>
+    private void ShowTick(int index, bool ticked)
+    {
+        var caret = _body.Caret;
+        var top = _body.Top;
+        _text = _text.Ticked(index, ticked);
+        _body.Lines = _text.Lines;
+        _body.Top = top;
+        if (caret is { } at)
+            _body.PutCaret(at.Line, at.Offset);
+        _comment?.Tick?.Changed?.Invoke(_text.Checklist!.Unticked);
+    }
+
     private bool OnGitHub()
     {
         Say(_onGitHub());
@@ -925,6 +1035,10 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     private bool AcceptNow() => !_accept!.Run() || Close();
 
+    private bool AskFix() => Leave(() => !_comment!.Fix!.Run() || Close());
+
+    private bool GiveSecret() => Leave(() => !_comment!.Secret!.Run() || Close());
+
     private bool Comment()
     {
         if (!CommentShown)
@@ -942,6 +1056,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private bool Decline()
     {
         ShowWeeks(false);
+        Unmark();
         _declining = true;
         _commentFrame.Title = $"Decline #{_number}: why?";
         return Comment();
@@ -952,6 +1067,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     {
         _declining = false;
         ShowWeeks(true);
+        Unmark();
         _commentFrame.Title = $"Not now #{_number}";
         return Comment();
     }
@@ -972,6 +1088,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         var weeks = _weeks.HasFocus;
         _declining = false;
         ShowWeeks(false);
+        Unmark();
         _commentFrame.Title = "Comment";
         if (weeks)
             ToComment();
@@ -979,7 +1096,11 @@ public sealed partial class ReaderDialog : DashboardDialog
         return true;
     }
 
-    private bool Unfocus() => _declining || _shelving ? BackToComment() : Back();
+    private bool Unfocus()
+    {
+        Unmark();
+        return _declining || _shelving ? BackToComment() : Back();
+    }
 
     private void ToComment()
     {
@@ -998,6 +1119,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (_posting is not null)
             return true;
         _releasing = true;
+        Unmark();
         return Post();
     }
 
@@ -1005,11 +1127,9 @@ public sealed partial class ReaderDialog : DashboardDialog
     {
         if (_posting is not null)
             return true;
-        if (!_shelving && !_releasing && string.IsNullOrWhiteSpace(_field.Text))
+        if (!Checked())
         {
-            _message.Show(_declining ? $"A reason is needed to decline #{_number}" : "Nothing to post: the comment is empty",
-                Schemes.Error);
-            SetNeedsLayout();
+            _message.Clear();
             return true;
         }
         if (_attach?.Uploading == true)

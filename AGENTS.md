@@ -17,8 +17,8 @@ nothing to restart.
 - **Rules live in one place.** Anything both roles follow goes in `process.md`; anything one
   role does goes in its role file. Team-specific facts go in the team's config (see `examples/team.json`) or in
   the product repo's own docs and skills, never in a role file.
-- **Decisions that gate anything go in `board.sh`, not in prose.** Who may move an item where
-  is the `allowed` table. An agent can talk itself out of a sentence, but not out of a
+- **Decisions that gate anything go in the board, not in prose.** Who may move an item where
+  is `core/StatusRoute.cs`. An agent can talk itself out of a sentence, but not out of a
   refused command.
 - **Anything a role is allowed to do goes in its task prompt (`tasks/<role>.md`).** Auto mode
   treats the prompt as the reviewer's intent and the brief `run.sh` prints as command output,
@@ -27,11 +27,15 @@ nothing to restart.
   `settings/<role>.json`, not only in prose.
 - **Keep triggers cheap and deterministic.** `a-team board <team> triggers` runs every 2 minutes per role:
   no per-item API calls where one call for the whole repo will do.
-- **Try board changes against a real board, without changing it.** `list`, `wip`, `triggers`
-  and `check` only read. For commands that write, `a-team board --dry-run <team> ...` (or
+- **Try board changes against a real board, without changing it.** `a-team board --dry-run <team> ...` (or
   `A_TEAM_DRY_RUN=1`) does every read and every permission check for real, and prints each
   change it would have made instead of making it. New writes to GitHub go through `write` so
-  dry-run covers them.
+  dry-run covers them. Without it no command only reads, `list`, `wip`, `triggers` and `check` included:
+  each brings the record up to date first.
+- **A change that moves or reinterprets stored state bumps the format.** Bump `DefaultFormat` in
+  `core/Board.Setup.cs` and add its step to `FormatSteps`. An older a-team then refuses to act, and only the
+  installed one runs the step, so an ordinary release never stops anything. Commands take turns to run
+  it, but one killed partway leaves the next to run it again, so a step must be safe to repeat.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
 
@@ -43,6 +47,17 @@ down each assumption about the machine here, and the rule that keeps it from tri
 - **A pid names a process only while that process runs.** The OS gives it to another process
   afterwards. Check a recorded pid is still the run before acting on it (`live_pid` in
   `scripts/common.sh`, `AgentState.IsAlive` in the dashboard), and delete it once the run ends.
+- **A failed call to GitHub says nothing about what's there.** Only its 404 means a file is missing
+  (`FileThere` in `core/Board.Github.cs`): on any other failure, wait for the next pass.
+- **A process outlives the script that started it.** A test's fake goes on after its suite ends, and a
+  suite killed outright stops nothing. So `tests/leftovers.sh` stops whatever names the suite's temp folder
+  in its command when the suite exits, and a passing suite that left any fails. A fake's command must name
+  that folder (a script in it, or `exec -a`), and anything that waits gives up after `FAKE_LIMIT` seconds.
+- **A branch name names a PR only until the next PR on it.** `docs/customer-lead` has had many. Trust
+  only the branch's newest PR, and only for a worktree at that PR's last commit with no changed tracked
+  files (`a-team board <team> clean`).
+- **launchd and the app can each start a pass, and nothing else stops them overlapping.** Only one runs
+  at a time: `claim_pid` on the `pass` file, whichever started it, and the other stops at once.
 
 ## Layout
 
@@ -53,7 +68,7 @@ down each assumption about the machine here, and the rule that keeps it from tri
 | `bin/a-team` | The one command: `a-team board`, `dispatch`, `install`, `status`, `pause`, `dashboard`, `run` |
 | `bin/gh` | `gh` as the team's App inside a run |
 | `bin/git`, `scripts/credential.sh` | `git` committing and pushing as the team's App inside a run |
-| `scripts/board.sh` | `a-team board`: the only way agents touch the board; enforces who may move what |
+| `core/` | `a-team board`, compiled as `a-team-core`: the only way agents touch the board. It owns the record, syncing with GitHub and every status change |
 | `scripts/run.sh` | `a-team run`: prints the brief a run starts from |
 | `scripts/dispatch.sh` | `a-team dispatch`: starts a role's session when it has work (installed by `a-team install`) |
 | `scripts/status.sh` | `a-team status`: what each role is doing and how its last run went |
@@ -64,6 +79,19 @@ down each assumption about the machine here, and the rule that keeps it from tri
 | `settings/agents.json` | Permission rules for every run |
 | `settings/<role>.json` | Rules one role's runs add to those |
 | `examples/team.json` | A starting point for a team's config (see the README, *Starting a team*) |
+
+## The compiled board
+
+`a-team board` is `core/`, compiled as `a-team-core`. A release ships it built, and `bin/a-team` builds a checkout's own whenever
+a source under `core/` is newer than it, so a checkout needs `dotnet`. Each group of commands is a `Commands.<Group>.cs` with
+its table, and what they share of the board is in `Board.<Group>.cs`. Its refusals still start `board.sh:`, which the app and
+`scripts/dispatch.sh` strip off before showing why.
+
+A card's status changes only through `core/StatusRoute.cs`: its table says who may do what, and it holds the only SQL that
+writes one, which `tests/scripts/core.sh` checks.
+
+`tests/scripts/` runs every command through the compiled board, and `tests/Core.Tests` covers the logic in process. Set
+`A_TEAM_CORE_TRACE=<file>` to see each command it handled.
 
 ## Dashboard UI
 
@@ -92,10 +120,23 @@ Tests live in `tests/Dashboard.Tests` (`dotnet test tests/Dashboard.Tests/Dashbo
 outside `dashboard/` because `Dashboard.csproj` globs `**/*.cs`. They can't drive Terminal.Gui's
 draw loop, so cover the logic behind the views instead.
 
+`DashboardWindow` is one class across a file per area (`DashboardWindow.Work.cs`, `.Overseer.cs` and so on), and
+so are its biggest test classes: add to the area's file. What a feature gives the window goes in `DashboardOptions`,
+in alphabetical order, so two features adding one each don't meet on a line.
+
 ## Scripts
 
-`tests/scripts.sh` is the shell side's test suite (`bash tests/scripts.sh`). CI runs it, along with
-`bash -n` and ShellCheck over `scripts/`, `bin/` and `tests/`.
+`tests/scripts.sh` is the shell side's test suite. `bash tests/scripts.sh` runs every area side by side, `TEST_JOBS`
+at once, and `bash tests/scripts.sh <area>` runs one. CI runs it, along with `bash -n` and ShellCheck over `scripts/`,
+`bin/` and `tests/`. A new case goes in its area's file in `tests/scripts/`, and a helper more than one area needs goes in
+`lib.sh`. Every area has to pass on its own, so a case can lean on the cases before it only in its own file. `lib.sh` puts a
+`gh`, `curl`, `security`, `claude`, `open` and `launchctl` on `PATH` that refuse, so a case that forgets its fakes stops. A Dev run merging the base into a PR
+leaves this suite to CI: its quick checks are `bash -n` and ShellCheck for shell, and the dashboard's
+tests for C#.
+
+Write a new test's fake with `fake <path> <<SH`, which `tests/leftovers.sh` gives the suite. Every fake is a symlink
+to one launcher with its body in `<path>.body`, because on macOS each new executable's first run waits for a scan,
+and the wait behaves like one queue for the whole machine. So edit a fake's `.body`, and move it with its body.
 
 ## Releasing
 
@@ -145,6 +186,13 @@ Both templates are rendered from the artifacts, not from a list of platforms: `{
 and `{{sha_<rid>}}` for every `<name>-<version>-<rid>.tar.gz` or `.zip` found, with the RID's
 hyphens as underscores (`{{sha_osx_arm64}}`, `{{sha_win_x64}}`). A placeholder no artifact matched
 fails the job. The template decides which platforms it mentions.
+
+Every step is safe to repeat, so a publish job that fails partway is finished by re-running it: an
+existing release gets its assets uploaded again, replacing any with the same name, and a tap branch
+an earlier attempt pushed is updated, with its open PR reused. A release an earlier attempt left as
+a draft is published. The exception is a version older than the latest release: its job fails before
+changing anything, re-run or not, since it would downgrade every package manager, so what it was
+meant to ship goes in a new release.
 
 A caller that ships `.zip` platforms passes `scoop` as well, and gets `bucket/<name>.json` in the
 bucket updated in the same run. That one is **committed straight to the bucket's default branch,

@@ -11,8 +11,17 @@ public sealed record WaitingItem(
     bool Dependency = false, string Upstream = "", IReadOnlyList<IReadOnlyList<ChainLink>>? Chains = null,
     IReadOnlyList<int>? Frees = null, string HeldBy = "")
 {
+    /// <summary>The GitHub Actions secret it's held asking for, or null where it asks for none.</summary>
+    public SecretAsk? Secret { get; init; }
+
     /// <summary>Whether it's the task that makes the team's red default branch green again.</summary>
     public bool Fix { get; init; }
+
+    /// <summary>How many of a task's acceptance criteria aren't ticked.</summary>
+    public int Unticked { get; init; }
+
+    /// <summary>Whether the reader lists its acceptance criteria: a task of the Dev's, with its PR In review.</summary>
+    public bool HasCriteria => Status == "In review" && !Pitch && !Document && !Docs && !Dependency && Pr > 0 && Pr != Number;
 
     /// <summary>What a-team keeps of it beyond Status and Priority: the Lead's rank, its theme, a shelve, a skip, a hold
     /// or a wait on another repo.</summary>
@@ -34,11 +43,17 @@ public sealed record WaitingItem(
     /// <summary>Whether it's a held Ready task, which waits on you whoever held it.</summary>
     public bool Held => Status == "Ready" && !WaitsUpstream;
 
+    /// <summary>Whether it's a Dependabot PR the Dev is making green, which Review counts but never shows.</summary>
+    public bool WithTheDev => Dependency && Status == "In progress";
+
+    /// <summary>Whether it counts as waiting on you: not while another repo or the Dev has it.</summary>
+    public bool WaitsOnYou => !WaitsUpstream && !WithTheDev;
+
     /// <summary>Whether it's a Ready task you could hold, or release where it's <see cref="Held"/>.</summary>
     public bool Holdable => Status == "Ready" && !Pitch;
 
     /// <summary>Who held it and why, as the status bar says it: <c>held by the Lead · &lt;its ask&gt;</c>.</summary>
-    public string Hold => HeldBy switch
+    public string Hold => Secret is { } secret ? $"{secret.Asker} asks for a secret" : HeldBy switch
     {
         "dev" => $"held by the Dev · {Asked}",
         "lead" => $"held by the Lead · {Asked}",
@@ -46,7 +61,7 @@ public sealed record WaitingItem(
         _ => "held, no reason given",
     };
 
-    private string Asked => string.Join(' ', Question.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    internal string Asked => string.Join(' ', ReaderDialog.Marker().Replace(Question, "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>The PR its branch is on: the one that closes it, or a document pitch itself; 0 where there's none.</summary>
     public int BranchPr => Branch.Length == 0 ? 0 : Pr > 0 ? Pr : Number;
@@ -62,6 +77,9 @@ public sealed record WaitingItem(
 
     /// <summary>What the card says about the Reviewer's review of its PR, or nothing where it has none.</summary>
     public string Review => !Reviewed ? "" : Consider == 0 ? "reviewed" : $"reviewed · {Consider} to consider";
+
+    /// <summary>Whether the Reviewer left points on its PR that you could ask the Dev to fix.</summary>
+    public bool Fixable => Reviewed && Consider > 0 && Pr > 0;
 
     /// <summary>Whether this is a pitch the reviewer can approve now.</summary>
     public bool Approvable => Pitch && Status == "Pitched";
@@ -107,7 +125,7 @@ public sealed record WaitingItem(
     /// <summary>The whole of it for the message bar, with the role in front when the move isn't the reviewer's, then its
     /// <see cref="Facts"/>, and the PR it hands over to at the end; who held it, for a held task that's yours; or the
     /// chain, for a card holding up a task or a task held up.</summary>
-    public string Line => Held && Mine ? $"#{Number} · {Hold}" : Holding.Count > 0 ? Holds.Chain(this) : WaitsOn.Length > 0 ? Holds.Waiting(this) : string.Join(" · ",
+    public string Line => Held && (Mine || Secret is not null) ? $"#{Number} · {Hold}" : Holding.Count > 0 ? Holds.Chain(this) : WaitsOn.Length > 0 ? Holds.Waiting(this) : string.Join(" · ",
         new[] { $"#{Number}", Mine ? "" : Turn, Facts.Length > 0 ? Facts : Suggested, Reason, PrBranch.Length > 0 ? PrBranch : Pr == 0 ? "" : $"PR #{Pr}" }
             .Where(part => part.Length > 0));
 
@@ -134,7 +152,7 @@ public sealed record WaitingItem(
                         Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream"),
                         Linked(item) is { Count: > 0 } chains ? chains : null,
                         Numbers(item, "frees") is { Count: > 0 } frees ? frees : null, Text(item, "heldBy"))
-                    { Fix = Flag(item, "fix"), Facts = Text(item, "facts") })
+                    { Fix = Flag(item, "fix"), Facts = Text(item, "facts"), Unticked = Numbered(item, "unticked") ?? 0, Secret = SecretOf(item) })
             ];
         }
         catch (JsonException)
@@ -144,6 +162,11 @@ public sealed record WaitingItem(
     }
 
     private static int? Numbered(JsonElement item) => Numbered(item, "number");
+
+    private static SecretAsk? SecretOf(JsonElement item) =>
+        item.TryGetProperty("secret", out var secret) && secret.ValueKind == JsonValueKind.Object && Text(secret, "name").Length > 0
+            ? new SecretAsk(Text(secret, "name"), Text(secret, "environment"), Text(secret, "repo"), Text(secret, "why"), Text(secret, "by"))
+            : null;
 
     private static IReadOnlyList<IReadOnlyList<ChainLink>> Linked(JsonElement item) =>
         item.TryGetProperty("chains", out var chains) && chains.ValueKind == JsonValueKind.Array

@@ -4,6 +4,7 @@ using System.Drawing;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Links;
 using MentalDesk.Tui.Theming;
+using Terminal.Gui.App;
 using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
@@ -175,6 +176,24 @@ public class ReaderDialogTests
 
         Assert.Equal("a Accept · g GitHub · Esc Close", Buttons(dialog));
         Assert.True(ButtonFor(dialog, "a Accept").Enabled);
+    }
+
+    [Fact]
+    public void F_asks_the_Dev_to_fix_and_closes_the_reader_once_asked_and_stays_on_a_cancel()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var answers = new Queue<bool>([false, true]);
+        using var dialog = new ReaderDialog(Item, new IssueBody("Body"), () => null,
+            comment: new ReaderComment(new Key('c'), "comment", _ => Task.FromResult<string?>(null),
+                Fix: new ReaderCommand(new Key('F'), "ask the Dev to fix", answers.Dequeue)));
+        app.Begin(dialog);
+        dialog.Layout(new Size(100, 20));
+
+        Assert.Contains("f Ask the Dev to fix", dialog.ButtonLabels);
+        Assert.True(dialog.NewKeyDownEvent(new Key('f')));
+        Assert.False(dialog.StopRequested);
+        Assert.True(dialog.NewKeyDownEvent(new Key('f')));
+        Assert.True(dialog.StopRequested);
     }
 
     [Fact]
@@ -1565,7 +1584,37 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
 
         Assert.Equal(0, posted);
-        Assert.Equal("Nothing to post: the comment is empty", dialog.Message.Says);
+        Assert.Equal("Comment is needed", dialog.Alert.Message);
+        Assert.True(dialog.CommentShown);
+        Assert.True(dialog.Field.HasFocus);
+        Assert.Equal(SchemeNames.Error, dialog.CommentMark.SchemeName);
+    }
+
+    [Fact]
+    public void Writing_the_comment_clears_its_mark_and_its_message()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        dialog.Field.Text = "Looks right";
+
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(SchemeNames.Error, dialog.CommentMark.SchemeName);
+    }
+
+    [Fact]
+    public void Esc_out_of_a_refused_comment_takes_the_mark_and_the_message_away()
+    {
+        using var dialog = Replying();
+        Open(dialog);
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(SchemeNames.Error, dialog.CommentMark.SchemeName);
+        Assert.False(dialog.Field.HasFocus);
     }
 
     [Fact]
@@ -1787,9 +1836,24 @@ public class ReaderDialogTests
         dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
 
         Assert.Equal(0, declined);
-        Assert.Equal("A reason is needed to decline #180", dialog.Message.Says);
+        Assert.Equal("Why is needed", dialog.Alert.Message);
+        Assert.Equal(SchemeNames.Error, dialog.CommentMark.SchemeName);
         Assert.True(dialog.CommentShown);
         Assert.False(dialog.Declined);
+    }
+
+    [Fact]
+    public void Esc_from_a_refused_decline_goes_back_to_a_plain_comment_unmarked()
+    {
+        using var dialog = Declining();
+        dialog.NewKeyDownEvent(new Key('x'));
+        dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        dialog.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal("Comment", dialog.CommentTitle);
+        Assert.Equal("", dialog.Alert.Message);
+        Assert.NotEqual(SchemeNames.Error, dialog.CommentMark.SchemeName);
     }
 
     [Fact]
@@ -2211,6 +2275,27 @@ public class ReaderDialogTests
         using var dialog = Telling(body, Item with { Status = "Ready", Question = Paragraph("Asked") });
 
         Assert.Equal(body.Remarks[0].Line, dialog.Body.TopLine);
+    }
+
+    [Fact]
+    public void A_secret_request_opens_at_its_comment_which_says_who_asked_for_what_where_and_why()
+    {
+        const string asked = "🔑 This needs `WINGET_TOKEN`, in the release environment of mentaldesk/demo.\n\nA classic PAT with public_repo.\n\nGive it in Work, with `k` on this task.";
+        var body = (new IssueBody(Long()) with { Opened = null }).With(new Conversation([new("lead", Then, $"{asked}\n\n<!-- a-team:lead -->")]), null);
+        using var dialog = Telling(body, Item with
+        {
+            Status = "Ready",
+            HeldBy = "lead",
+            Question = asked,
+            Secret = new SecretAsk("WINGET_TOKEN", "release", "mentaldesk/demo", "A classic PAT with public_repo.", "lead"),
+        }, width: 100);
+
+        Assert.Equal(body.Remarks[0].Line, dialog.Body.TopLine);
+        var shown = string.Join(' ', dialog.Body.Lines.Skip(dialog.Body.TopLine).Select(line => line.Text));
+        Assert.Contains("lead", shown);
+        Assert.Contains("WINGET_TOKEN", shown);
+        Assert.Contains("in the release environment of mentaldesk/demo", shown);
+        Assert.Contains("A classic PAT with public_repo.", shown);
     }
 
     [Fact]

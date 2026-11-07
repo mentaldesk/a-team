@@ -107,6 +107,15 @@ public sealed class LogView : View
         ScrollTo(row < 0 ? _top : row);
     }
 
+    /// <summary>Puts the caret there without scrolling, for a change that leaves the lines where they were.</summary>
+    internal void PutCaret(int line, int offset = 0)
+    {
+        _caret = (line, offset);
+        _from = null;
+        _goal = null;
+        SetNeedsDraw();
+    }
+
     /// <summary>Whether text too long for the view gets a scroll bar beside it, as a body read at a sitting
     /// does.</summary>
     public bool Scrolls
@@ -600,7 +609,9 @@ public sealed class LogView : View
         if (_opensAt is { } line && Viewport.Height > 0)
         {
             _opensAt = null;
+            var caret = _caret;
             ShowLine(line);
+            _caret = caret;
             PlacePictures();
             return;
         }

@@ -21,8 +21,8 @@ Every item's Status is one of:
 | Approved | Stakeholder agreed; Lead to break it down | **Stakeholder**, or the Lead on their plain yes (`approve`) |
 | Building | Broken into tasks; tasks are in flight | Lead |
 | Ready | A task Dev can pick up | Lead (or stakeholder) |
-| In progress | Dev is working on it, or another team's Dev on a draft upstream PR | Dev, or the dispatcher for an upstream PR |
-| In review ⛔ | A PR (task, docs, dependency or upstream) is waiting on the stakeholder | Dev, Customer lead, Lead for a Dependabot PR, or the dispatcher for an upstream PR |
+| In progress | Dev is working on it, or another team's Dev on a draft upstream PR | Dev, or the dispatcher for a red dependency PR or an upstream PR |
+| In review ⛔ | A PR (task, docs or upstream) is waiting on the stakeholder | Dev, Customer lead, or the dispatcher for an upstream PR |
 | Done | Merged, or a pitch whose tasks have all closed | **Stakeholder**, or the Lead for a pitch (`finish`) |
 
 ⛔ marks a gate. Agents move work *into* a gate and stop. Only the stakeholder moves it out. Pitched
@@ -59,8 +59,12 @@ Two kinds of item share the board:
   While the team config's `docs` page isn't in the repo, a **docs proposal** comes first: a
   document pitch of the Customer lead's, not labelled `pitch`, that adds that page, and no docs PR goes
   up until it's merged.
-- A **dependency PR** is one Dependabot opened. Once the Lead has said what the update brings, it
-  goes straight to In review, and accepting it merges it.
+- A **dependency PR** is one Dependabot opened, and it never needs the stakeholder. Once its CI
+  passes and the Lead has said what the update brings, the dispatcher squash-merges it. When it fails
+  jobs that pass on the default branch, the dispatcher puts it In progress with the Dev, ahead of every
+  Ready task except a fix, and the Dev makes it green on its own branch. When it fails only what the
+  default branch fails, it waits for the fix. Only one the Dev can't make build, or a green one GitHub
+  keeps refusing to merge, reaches the stakeholder: held, as a question on the PR.
 - An **upstream PR** is one another team's Dev opened here for a task of its own (`Needed by
   <repo>#<n>`). The dispatcher puts it In progress while it's a draft, then In review once it's out of
   draft, and accepting it merges it.
@@ -75,7 +79,8 @@ hold, a shelve) is in its record too, never a label.
 
 `a-team board` is the only way to read or change Status. Never use `gh project` directly. The
 script enforces who may make which move and refuses the rest; if it refuses, that's the
-answer. Don't work around it.
+answer. Don't work around it. A team role's command always acts as the team's App, or stops if the
+App can't give a token, whatever shell runs it. A `you` command refuses inside a team's run.
 
 ```
 a-team board {{team}} list [STATUS...]          # items, as JSON
@@ -84,7 +89,7 @@ a-team board {{team}} wip                       # counts per status: pitches, de
                                                 # the Dev's blocked tasks under dev.blocked
 a-team board {{team}} next                      # the next task Dev should take (or null): a fix
                                                 # first, then one a task waits on, then highest
-                                                # issue Priority, unset last
+                                                # Priority (its pitch's where it has none), unset last
 a-team board {{team}} claim dev [<n>]           # move `next` (or Ready task <n>) to In progress for
                                                 # a Dev run, if a worktree is free
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)
@@ -110,6 +115,11 @@ a-team board {{team}} review reviewer <pr> <file>  # Reviewer only: post the one
 a-team board {{team}} pictures dev <pr> <image> "<caption>" [<image> "<caption>"...]
                                                 # Dev only: store each image as an attached screenshot
                                                 # is, and make them the task PR's What it looks like
+a-team board {{team}} criteria <n> [<pr>]         # task #<n>'s acceptance criteria, numbered, as JSON: ticked or not,
+                                                # and how the team checked each, from its PR
+a-team board {{team}} checked dev <pr> <criterion>=screen|test ...
+                                                # Dev only: say which criteria it saw on screen or proved by a
+                                                # test, on the task PR, and tick them on the issue
 a-team board {{team}} skip <role> <n> <file>    # Lead only: comment <file> on Idea #<n> and pass
                                                 # over it from now on
 a-team board {{team}} recommend lead <n> <rank> <file>  # Lead only: recommend urgent|high|medium|low
@@ -138,6 +148,10 @@ a-team board {{team}} undepend <role> <task> <prereq> "<why>"
                                                 # <prereq> may be <owner/repo>#<n>
 a-team board {{team}} hold <role> <n> <file>    # hold task <n>, posting <file>, the question or why: the
                                                 # Dev its own task, the Lead or stakeholder a Ready one
+a-team board {{team}} secret <role> <n> <NAME> <repo|environment> <file>
+                                                # Dev or Lead: hold task <n> asking for GitHub Actions secret
+                                                # <NAME>, for the repo or that environment; <file> says why
+                                                # and where to get it, never a value
 a-team board {{team}} unblock <role> <n>        # Dev or Lead: clear the hold on a task it held, once a
                                                 # stakeholder has replied (Lead: or it waits on another repo)
 a-team board {{team}} release you <n>           # stakeholder only: take the hold off Ready task <n>,
@@ -145,7 +159,8 @@ a-team board {{team}} release you <n>           # stakeholder only: take the hol
 a-team board {{team}} body <n>                  # an issue's or PR's number, title and body, as JSON,
                                                 # with `images` where it has screenshots attached
 a-team board {{team}} history <n>               # what a-team has recorded on #<n>, newest first, as JSON
-a-team board {{team}} children <n>              # sub-issues, whether they're closed, and their status
+a-team board {{team}} children <n>              # sub-issues, whether they're closed, their status, and
+                                                # `leftInIdea` for a task the board left in Idea
 a-team board {{team}} decisions [--replaced] [<words>...]  # the decision register: this team's entries and
                                                 # all teams', newest-confirmed first, as JSON; words
                                                 # narrow it; --replaced adds replaced and retired ones
@@ -157,6 +172,8 @@ a-team board {{team}} replace lead <old> <new>  # Lead only: mark entry <old> re
 a-team board {{team}} seeded lead               # Lead only: the register is seeded from closed pitches,
                                                 # so `lead-next` stops saying `seed`
 a-team board {{team}} reconfirm lead <n> <id>...  # Lead only: approved pitch #<n> cited these entries
+a-team board {{team}} clean <dev|customer>      # remove your worktrees whose PR has merged, at its last commit, with
+                                                # no changed tracked files, and their branches; say why any other stayed
 a-team board {{team}} covered customer <n>      # Customer lead only: the docs are checked against
                                                 # done pitch #<n>
 a-team board {{team}} audited customer          # Customer lead only: the docs as a whole are
@@ -171,10 +188,10 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 
 `setup` and `check` are for the stakeholder when starting a team, and `waiting`, `conversation`,
 `trend`, `trends`, `spending` and `moves` are what the app's Work area reads, `today` is what its Teams page reads,
-`overview` is what its Overseer reads, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
-screenshot, `spent` is how it records the
+`overview` is what its Overseer reads, `bumps` is how the dispatcher merges green dependency PRs and hands red ones to the Dev, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
+screenshot, `tick` is how it saves a tick on a task's criteria, `gave` is how it frees a task once you've given its secret, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
-how it asks for a vision review. `free` is how the dispatcher frees a task once what it waits on in
+how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `free` is how the dispatcher frees a task once what it waits on in
 another repo has closed or been released, and `update` is how it brings a PR In review that's behind
 its base up to date. Don't run them.
 
@@ -199,6 +216,11 @@ tell what `$B` will run.
 - **Look at every screenshot.** `images` lists a local copy of each image the stakeholder attached.
   Read each one before acting on what it's attached to, and when you reply about it, say what you saw.
 - Be brief. The stakeholder reads these on a phone.
+- **Ask for a secret by name, with `secret`,** never in prose, and never ask for its value in a comment: a
+  comment here is published. The stakeholder gives it in Work, GitHub stores it, and no agent ever sees it.
+  Giving it frees the task by itself. If they reply instead (*done*, or *not this one*), read the reply as
+  for any hold. The field takes one line, so for a value of several lines, like a GPG key, hold the task
+  instead, naming the secret and where it goes.
 
 ## Every run
 
@@ -235,6 +257,9 @@ out stops everyone.
   in your summary. Don't retry.
 - If an `a-team board` call says the board read came back incomplete, do the same: it has
   already read twice and changed nothing.
+- If an `a-team board` call says the board is in a newer format or only the installed a-team may
+  move it, and ends in `stopping`, end the run there and say that line in your summary. Don't retry,
+  and don't comment: the dispatcher's next pass carries on from the board on the installed release.
 
 ## Never
 

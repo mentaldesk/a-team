@@ -1,7 +1,8 @@
 # Teams
 
 Your teams have a screen of their own: `Ctrl+G T`, **View → Teams** or **Teams** in Commands
-(`Ctrl+E`) opens it, and **New team** in Commands opens it on the form for a new one. `Ctrl+G` in Teams or Settings opens this page.
+(`Ctrl+E`) opens it, and **New team** in Commands opens it on the form for a new one. `Ctrl+G` in Teams opens this page. So does `Ctrl+G` in Settings,
+which is [further down](#settings).
 
 ## The Teams screen
 
@@ -80,7 +81,8 @@ and untick it to take it away again. Tick **Reviewer** to have the
 [Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. **Stakeholders**, **Contributes to** and **Skills** open a list: type to
 narrow it as in Commands, `Space` marks a name, and `Enter` keeps what's marked. Each
 field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the team's file, leaving everything else in it as it was, and
-`Esc` (**Cancel**) cancels. `Enter` never saves. `F1` lists every key the form takes.
+`Esc` (**Cancel**) cancels. `Enter` never saves. `F1` lists every key the form takes. A save it won't take
+turns the label of every wrong field red and moves you to the first. The foot names the field you're on and how many more there are, like `Repo is required  •  2 more to fix`, and each mark goes as you fix it.
 
 **Workdir**, **Vision** and **First page** take typing, and `Enter` on one opens a picker:
 
@@ -95,9 +97,10 @@ field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the
 
 **Mirror** is the GitHub Project a-team copies the board to, so you can see it on GitHub. A-Team keeps the
 board itself, so the team works with *None* and needs no Project at all, but an issue opened on GitHub then
-never reaches Triage by itself: open ideas with [**New idea**](work.md#adding-an-idea) instead. `b` has no board to open. *A new project, named after
-the team* makes one when you save, sets it up and copies the board onto it. Moving a card there, or changing its
-Priority, counts as your move; one the board wouldn't let you make is set back, and the card's History says why.
+never reaches Triage by itself: open ideas with [**New idea**](work.md#adding-an-idea) instead. A closed issue reopened on GitHub stays Done, too. `b` has no board to open. *A new project, named after
+the team* makes one when you save, sets it up and copies the board onto it. The Project only shows the board: a card
+moves when you [answer it in Work](work.md#answering-from-a-card) or the team moves it. Moving a card on the Project isn't a move, so it goes back to the app's Status on the next sync,
+and the card's History says so. An issue's Priority is different: changing it on GitHub still counts as yours.
 
 **Contributes to** lists the other repos the Dev may open draft PRs on, picked from the ones the
 team's GitHub App can reach. When a task needs a change in one of them first, like the style guide,
@@ -156,23 +159,30 @@ to `<team>.json` to bring the team back.
 ## When a team can't run
 
 The **Health** column reads `checking…` while A-Team checks each team, then `ok` or how many problems
-it found.
+it found. That count includes notes, which the team runs with, so a team can read `1 problem` and be
+working. A note puts no `⚠` on its roles in [Overseer](overseer.md).
 
-- **Problems**: open the team, and its form lists them at the top, one a line, each naming what it's
+- **Problems**: open the team, and its form lists them at the top, one a line, notes among them, each naming what it's
   about and what's wrong. A board that's missing a Status option or a label can be set
   up again with `F12` (*Repair*).
-- **`can't read this file`**: the team's file isn't valid. Select it, and the foot of the page names
+- **`can't read this file`**: the team's file isn't valid. Select it, and the foot of the screen names
   the line that's wrong. Fix it in the file; the team can't be started or paused until you do.
 
-`a-team board <team> check` reports the same problems from a shell.
+`GitHub didn't answer for docs/guide/index.md: checking again next pass` means GitHub couldn't say
+whether a file is there, so nothing is treated as missing. It's the same for the vision and `release.yml`,
+and it clears by itself once GitHub answers.
 
-## The rest of Settings
+`a-team board <team> check` reports the same from a shell, each line starting `problem`, which stops the
+team, or `note`, which doesn't.
+
+## Settings
 
 Settings (`Ctrl+,`) holds the app's own preferences, a page at a time: the pages down the left, the
 one you picked on the right. `Ctrl+PgDn` and `Ctrl+PgUp` go to the next and previous page, round
 from the last to the first, and clicking a page opens it. Nothing you change is kept until
-`Ctrl+Enter` (**Keep**); `Esc` (**Cancel**) puts back everything you changed, on every page. A page
-with changes you haven't kept shows `•` after its name, and loses it when you put them back. A
+`Ctrl+Enter` (**Keep**); `Esc` (**Cancel**) puts back everything you changed, on every page. `Tab`
+doesn't reach either button, so in a terminal that can't tell `Ctrl+Enter` from `Enter`, such as macOS
+Terminal, click **Keep**. A page with changes you haven't kept shows `•` after its name, and loses it when you put them back. A
 setting that isn't at its default says what the default is on its row, like `(default: Midnight)`.
 `F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
 

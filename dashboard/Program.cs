@@ -4,6 +4,7 @@ using MentalDesk.Tui.Assistant;
 using MentalDesk.Tui.Copying;
 using MentalDesk.Tui.Keys;
 using MentalDesk.Tui.Links;
+using MentalDesk.Tui.Shell;
 using MentalDesk.Tui.Theming;
 
 var root = FindRepoRoot(AppContext.BaseDirectory) ?? FindRepoRoot(Environment.CurrentDirectory);
@@ -55,6 +56,7 @@ var attention = new Attention(TimeProvider.System, visit =>
 var news = new WhatsNew(DateTimeOffset.UtcNow);
 var writes = new WriteQueue(command.Run);
 var macKeys = new MacKeys("ateam");
+var title = TerminalTitle.ForConsole().Names(wanted);
 
 return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 
@@ -62,12 +64,11 @@ int Run()
 {
     var terminal = TerminalMode.Save();
     BundledThemes.Cursor = TerminalCursor.ForConsole();
-    Handover? back = null;
-    while (Show(back) is { } handover)
+    TerminalTab.Run(title, Show, handover =>
     {
         BundledThemes.Cursor.Restore();
         terminal.Restore();
-        back = handover switch
+        return handover switch
         {
             TeamsChanged => handover,
             EditorHandover editor => editor with { Failure = editor.Open() },
@@ -79,7 +80,7 @@ int Run()
             TryHandover tried => tried.Open((arguments, environment) => command.Hand(arguments, environment: environment)),
             _ => handover with { Failure = command.Hand(handover.Arguments) },
         };
-    }
+    });
     attention.Stop();
     writes.InFlight?.Wait(TimeSpan.FromMinutes(1));
     lock (recording)
@@ -95,6 +96,7 @@ Handover? Show(Handover? back)
     BundledThemes.Load(settings.ReadTheme());
     using var app = Application.Create();
     app.Init();
+    using var titled = TerminalTitle.TakeOver(app);
     var opener = new LinkOpener(TerminalClipboard.Install(app));
     using var active = macKeys.Activate();
     app.Keyboard.KeyDown += (_, _) => attention.Key();
@@ -116,43 +118,51 @@ Handover? Show(Handover? back)
                 pictures, opener.Open),
         back?.Area ?? requested ?? settings.ReadArea(),
         TerminalIcons.Detect(Environment.GetEnvironmentVariable),
-        handover =>
+        new DashboardOptions
         {
-            handedOver = handover;
-            app.RequestStop();
-        },
-        back is TeamsChanged ? null : back,
-        start,
-        item => command.Read("board", item.Team, "conversation", item.Number.ToString()),
-        item => AcceptDialog.Show(app, item),
-        showGuide: page => GuideDialog.Show(app, GuidePages.Bundled(), opener.Open, page, paneWidths),
-        confirmStop: task => StopRunDialog.Show(app, task),
-        readHistory: item => command.Read("board", item.Team, "history", item.Number.ToString()),
-        pass: new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),
-        readTrend: team => command.Read("board", team, "trend"),
-        showTrends: teams => TrendsDialog.Show(app, teams, team => command.Read("board", team, "trends")),
-        newIdea: (teams, team, description, attaching) =>
-            NewIdeaDialog.Show(app, teams, team, new IdeaFiler(command.Read), description, attaching),
-        readBoard: team => command.Read("board", team, "overview"),
-        attention: attention,
-        readMoves: (team, since) => command.Read("board", team, "moves", since.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)),
-        whatsNew: news,
-        readDocument: item => command.Read("board", item.Team, "document", item.Number.ToString()),
-        writes: writes,
-        confirmQuit: (running, queued) => QuitDialog.Show(app, running, queued),
-        confirmApprove: item => ApproveDialog.Show(app, item),
-        askHold: item => HoldDialog.Show(app, item),
-        attaching: key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
-            new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
-        showSpending: (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
-            names.SelectMany(teams.Roles), open),
-        showDecisions: team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
-            change => change.Run(team, command.Read), opener.Open),
-        macKeys: macKeys,
-        paneWidths: paneWidths,
-        assistant: new AssistantSetup(new ProcessLauncher(), AssistantBrief.For(root, teams.TeamsDirectory, stateRoot, named),
-            Path.Combine(stateRoot, "assistant.json")),
-        syncBoard: team => command.Read("board", team, "sync"));
+            HandOver = handover =>
+            {
+                handedOver = handover;
+                app.RequestStop();
+            },
+            Resume = back is TeamsChanged ? null : back,
+            Start = start,
+            ReadConversation = item => command.Read("board", item.Team, "conversation", item.Number.ToString()),
+            ConfirmAccept = item => AcceptDialog.Show(app, item),
+            ShowGuide = page => GuideDialog.Show(app, GuidePages.Bundled(), opener.Open, page, paneWidths),
+            ConfirmStop = task => StopRunDialog.Show(app, task),
+            ReadHistory = item => command.Read("board", item.Team, "history", item.Number.ToString()),
+            Pass = new DispatchPass(stateRoot, Path.Combine(root, "bin", "a-team")),
+            ReadTrend = team => command.Read("board", team, "trend"),
+            ShowTrends = teams => TrendsDialog.Show(app, teams, team => command.Read("board", team, "trends")),
+            NewIdea = (teams, team, description, attaching) =>
+                NewIdeaDialog.Show(app, teams, team, new IdeaFiler(command.Read), description, attaching),
+            ReadBoard = team => command.Read("board", team, "overview"),
+            Attention = attention,
+            ReadMoves = (team, since) => command.Read("board", team, "moves", since.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)),
+            WhatsNew = news,
+            ReadDocument = item => command.Read("board", item.Team, "document", item.Number.ToString()),
+            ReadCriteria = item => command.Read("board", item.Team, "criteria", item.Number.ToString(), item.Pr.ToString()),
+            Writes = writes,
+            ConfirmQuit = (running, queued) => QuitDialog.Show(app, running, queued),
+            ConfirmApprove = item => ApproveDialog.Show(app, item),
+            AskHold = item => HoldDialog.Show(app, item),
+            AskFix = (item, points) => AskFixDialog.Show(app, item, points),
+            GiveSecret = (item, set, save) => GiveSecretDialog.Show(app, item, set, save),
+            Secrets = new GitHubSecrets(new TeamCommand("gh"), Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN") is { Length: > 0 }),
+            Attaching = key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
+                new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
+            ShowSpending = (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
+                names.SelectMany(teams.Roles), open),
+            ShowDecisions = team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
+                change => change.Run(team, command.Read), opener.Open),
+            MacKeys = macKeys,
+            PaneWidths = paneWidths,
+            Assistant = new AssistantSetup(new ProcessLauncher(), AssistantBrief.For(root, teams.TeamsDirectory, stateRoot, named),
+                Path.Combine(stateRoot, "assistant.json")),
+            SyncBoard = team => command.Read("board", team, "sync"),
+            TerminalTitle = title,
+        });
     window.Refresh();
     app.AddTimeout(TimeSpan.FromSeconds(1), () =>
     {

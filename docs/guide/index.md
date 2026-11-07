@@ -12,22 +12,24 @@ and how Ideas and their priorities steer what the Lead does next.
 ## [Work](work.md)
 
 The area that shows everything waiting on you, across every team. What its columns hold, what a card's
-icons and colours say, and how to answer from it: approving a pitch, replying to a question, and
-accepting finished work. Trends, to compare the teams day by day, and Spending, for what their runs
+icons and colours say, and how to answer from it: approving a pitch, replying to a question, giving a
+secret the team asks for, asking the Dev to fix what the Reviewer left to consider, and accepting finished work. Trends, to compare the teams day by day, and Spending, for what their runs
 cost by theme and pitch.
 
 ## [Overseer](overseer.md)
 
 Every team's board on one screen: where each card is, how long it has waited there, which ones an
 agent is on, and the time limits that flag a card that has sat too long. What each agent is doing:
-reading its session, pausing a role, interrupting a run to step into it, and the dispatcher's log.
+reading its session, pausing a role, interrupting a run to step into it, the warning when a role is
+stuck, and the dispatcher's log.
 
 ## [Around the app](app.md)
 
-Asking the Assistant about your teams from any area, the app's keys and menus, copying, making your
+Asking the Assistant about your teams from any area, the app's keys and menus, what its terminal tab
+shows, copying, making your
 Mac's Cmd and Option keys work in it, this Guide, and confirming.
 
 ## [Teams](teams.md)
 
 Starting a team from inside A-Team, writing its vision with you and having the Lead review it, a team's settings and roles, pausing or removing one, a daily budget for what its runs cost, what Teams says
-when a team can't run, and the rest of Settings.
+when a team can't run, and Settings, for the app's own preferences.

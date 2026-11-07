@@ -48,7 +48,10 @@ public sealed class AssistantTests : IDisposable
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
             area,
             IconStyle.Unicode,
-            assistant: setup);
+            new DashboardOptions
+            {
+                Assistant = setup,
+            });
         if (width > 0)
         {
             window.Frame = new System.Drawing.Rectangle(0, 0, width, 30);

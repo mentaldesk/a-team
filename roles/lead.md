@@ -137,7 +137,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
    `released <package>` when the task upgrades a package and needs a published release carrying the change.
    Never hold a task on another repo: the board frees a `depends` by itself.
    Only where the change has no issue or PR there yet, draft one in the task, and hold it with
-   `a-team board {{team}} hold lead <task> <file>`, the file asking the stakeholder to file it and reply. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
+   `a-team board {{team}} hold lead <task> <file>`, the file asking the stakeholder to file it and reply. A task
+   that needs a GitHub Actions secret only they can give asks for it with
+   `a-team board {{team}} secret lead <task> <NAME> <repo|environment> <file>`, the file saying why and where to get it. The Dev works on up to `wip.worktrees` tasks at once, so only leave tasks
    independent of each other if they touch different parts of the code. Make the later one depend
    on the earlier when both would make major changes to the same file or the same part of the
    code; two unrelated behaviour changes that only brush a shared file run in parallel. Don't plan
@@ -149,7 +151,9 @@ For each item in `a-team board {{team}} mine lead Approved`, once step 1 has fol
 
 For each item in `a-team board {{team}} mine lead Building`, run `children`:
 
-- A child that isn't a task (labelled `pitch`, or with a status from Idea to Building) doesn't hold
+- A child with `leftInIdea` is a task you filed that the board left in Idea:
+  `a-team board {{team}} add lead <child> Ready`, and treat it as a task.
+- Any other child that isn't a task (labelled `pitch`, or with a status from Idea to Building) doesn't hold
   the pitch up: `a-team board {{team}} unlink lead <pitch> <child>`, and judge the pitch on its
   tasks alone.
 - When every task is closed, check the whole: fetch `origin/main`, build it, try the feature
@@ -176,12 +180,10 @@ For each Dependabot PR your prompt names:
   Where the contributor docs say the dependency carries the product's conventions, like a style
   guide's library, look for rules that are new or changed.
 - For each change the product should adopt and doesn't follow yet, file an Idea as in `discover`
-  below, naming the PR under **Evidence**. If the update needs code changes before it builds, say
-  so in the Idea: that work ships inside it.
+  below, naming the PR under **Evidence**. The PR never waits on those Ideas. If the update needs
+  code changes before it builds, leave that out of them: the Dev makes the PR itself green.
 - Then `a-team board {{team}} comment lead <pr> <file>`, listing the Ideas you filed, or saying
-  there's nothing to adopt.
-- Then `a-team board {{team}} add lead <pr> "In review"`, so the stakeholder can merge it from
-  Review. Leave the PR itself to them.
+  there's nothing to adopt. Leave the PR itself alone: once it's green, your comment lets it merge by itself.
 
 ### 5. Recommend a rank for each Idea
 

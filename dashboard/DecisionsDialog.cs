@@ -30,7 +30,8 @@ public sealed class DecisionsDialog : DashboardDialog
     private readonly Label _empty = new() { X = 1, Y = 2, Width = Dim.Fill(1), Visible = false };
     private readonly Line _rule = new() { X = 0, Width = Dim.Fill() };
     private readonly LogView _detail = new() { X = 1, Width = Dim.Fill(1), Height = DetailRows, CanFocus = false };
-    private readonly PlaceholderField _editor = new() { X = 1, Width = Dim.Fill(1), Visible = false };
+    private readonly Label _editorLabel = new() { Text = "Decision", X = 1, Width = 9, Visible = false };
+    private readonly PlaceholderField _editor = new() { X = 10, Width = Dim.Fill(1), Visible = false };
     private readonly MessageBar _message = new();
     private IReadOnlyList<Decision> _shown = [];
     private int? _keep;
@@ -47,7 +48,7 @@ public sealed class DecisionsDialog : DashboardDialog
         Width = Dim.Fill();
         Height = Dim.Fill();
 
-        int FootRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines);
+        int FootRow() => Math.Max(0, Viewport.Height - Foot.Rows - _message.Lines - Alert.Lines);
 
         _allTeams.X = Pos.Right(_search) + 3;
         _replaced.X = Pos.Right(_allTeams) + 3;
@@ -63,9 +64,10 @@ public sealed class DecisionsDialog : DashboardDialog
         };
         _rule.Y = Pos.Bottom(_table);
         _detail.Y = Pos.Bottom(_rule);
-        _editor.Y = Pos.Top(_detail);
+        _editorLabel.Y = _editor.Y = Pos.Top(_detail);
         Foot.Y = Pos.Func(_ => FootRow(), this);
-        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines), this);
+        _message.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - _message.Lines - Alert.Lines), this);
+        Alert.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Alert.Lines), this);
 
         _search.ValueChanged += (_, _) => Show();
         _search.KeyDown += (_, key) => key.Handled = Searching(key);
@@ -74,7 +76,8 @@ public sealed class DecisionsDialog : DashboardDialog
         _replaced.ValueChanged += (_, _) => Show();
         _table.ValueChanged += (_, _) => ShowSelected();
         _editor.KeyDown += (_, key) => key.Handled = Editing(key);
-        Add(new Label { X = 0, Y = 0, Text = "Search:" }, _search, _allTeams, _replaced, _table, _empty, _rule, _detail, _editor, Foot, _message);
+        Add(new Label { X = 0, Y = 0, Text = "Search:" }, _search, _allTeams, _replaced, _table, _empty, _rule, _detail, _editorLabel, _editor, Foot, _message);
+        CheckWhileWriting(_editor, _editorLabel, () => _editor.Text.Trim().Length == 0 ? "Decision is needed" : null);
         Bind(OpenId, Key.Enter, "Open on GitHub", () => Open(), () => !_editor.Visible && Selected is not null);
         Bind(EditId, Key.E, "Edit", () => StartEditing(), Browsing);
         Bind(KindId, Key.K, "Rule/lean", () => Correct(entry => DecisionChange.Kind(entry.Id)), Browsing);
@@ -114,6 +117,8 @@ public sealed class DecisionsDialog : DashboardDialog
     internal LogView Detail => _detail;
 
     internal PlaceholderField Editor => _editor;
+
+    internal Label EditorLabel => _editorLabel;
 
     internal Label Empty => _empty;
 
@@ -169,7 +174,7 @@ public sealed class DecisionsDialog : DashboardDialog
         if (Selected is not { } entry)
             return true;
         _editor.Text = entry.Text;
-        _editor.Visible = true;
+        _editorLabel.Visible = _editor.Visible = true;
         _editor.SetFocus();
         _editor.MoveEnd();
         ShowHints();
@@ -228,19 +233,20 @@ public sealed class DecisionsDialog : DashboardDialog
     {
         if (Selected is not { } entry)
             return StopEditing();
-        var wording = _editor.Text.Trim();
-        if (wording.Length == 0)
+        if (!Checked())
         {
-            _message.Show("A decision can't be empty", Schemes.Error);
+            _message.Clear();
             return true;
         }
+        var wording = _editor.Text.Trim();
         StopEditing();
         return wording == entry.Text || Correct(_ => DecisionChange.Edit(entry.Id, wording));
     }
 
     private bool StopEditing()
     {
-        _editor.Visible = false;
+        _editorLabel.Visible = _editor.Visible = false;
+        Unmark();
         _table.SetFocus();
         ShowHints();
         return true;

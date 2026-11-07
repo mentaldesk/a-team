@@ -53,6 +53,10 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             teams.Create(team, File.ReadAllBytes(example), settings);
             return null;
         }
+        catch (IOException) when (teams.Names().Contains(team))
+        {
+            return TeamSettings.NameTaken(team);
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             return $"Couldn't create {team}: {e.Message}";
@@ -66,6 +70,10 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         {
             teams.Redo(team, name, settings);
             return null;
+        }
+        catch (IOException) when (name != team && teams.Names().Contains(name))
+        {
+            return TeamSettings.NameTaken(name);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
@@ -292,14 +300,17 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
     }
 
     /// <summary>What <c>board setup --dry-run</c> printed, as the confirmation lists it: the Status options it would
-    /// add or keep, then the labels it would create or update.</summary>
+    /// add or keep, the project fields it would add, then the labels it would create or update.</summary>
     public static IReadOnlyList<string> SetupPlan(string output, ProjectChoice? project, string repo)
     {
         List<string> options = [];
+        List<string> fields = [];
         List<string> labels = [];
         foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (OptionLine().Match(line) is { Success: true } option)
+            if (FieldLine().Match(line) is { Success: true } field)
+                fields.Add($"  add   field {field.Groups[1].Value.Trim()}");
+            else if (OptionLine().Match(line) is { Success: true } option)
                 options.Add($"  {option.Groups[1].Value.PadRight(6)}{option.Groups[2].Value.Trim()}");
             else if (LabelLine().Match(line) is { Success: true } label)
                 labels.Add($"  {(label.Groups[1].Value == "created" ? "create" : "update")} label {label.Groups[2].Value.Trim()}");
@@ -307,10 +318,14 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         return
         [
             .. project is null ? Array.Empty<string>() : [$"On project {project}, field '{StatusField}':", .. options],
+            .. project is null || fields.Count == 0 ? Array.Empty<string>() : [$"On project {project}:", .. fields],
             $"On {repo}:",
             .. labels.Count == 0 ? ["  labels already set up"] : labels,
         ];
     }
+
+    [GeneratedRegex(@"^\s+add\s+field\s+(.+)$")]
+    private static partial Regex FieldLine();
 
     [GeneratedRegex(@"^\s+(keep|add|drop)\s+(.+)$")]
     private static partial Regex OptionLine();
