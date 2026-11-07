@@ -29,6 +29,10 @@ internal static class Cards
 
     internal static bool Startable(JsonNode card) => ReadyTask(card) && !Blocked(card);
 
+    /// <summary>A Ready task on hold, or a Dependabot PR the Dev can't make build, which waits the same way.</summary>
+    internal static bool Held(JsonNode card) =>
+        (ReadyTask(card) || (Status(card) == "Ready" && Dependabot(card))) && Marked(card, "held");
+
     internal static bool Fix(JsonNode card) => Marked(card, "fix");
 
     internal static bool Fileable(JsonNode card) => Pitch(card) && Status(card) is "Approved" or "Building";

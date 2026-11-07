@@ -61,32 +61,6 @@ decisions_sql() {
 DECISION="id, team, CASE WHEN everyone THEN 'all' ELSE 'team' END AS scope, decision, why, who, kind, item, link,
   said, recorded, confirmed, confirmed_on AS confirmedOn, replaced_by AS replacedBy, retired, yours"
 
-# decision_entry <id>: that entry of this team's register, or one for all teams, as JSON; nothing if there's none.
-decision_entry() {
-  [[ $1 =~ ^[0-9]+$ ]] || die "'$1' isn't a decision's id"
-  [ -f "$STATE/history.db" ] || return 0
-  decisions_sql -json "SELECT $DECISION FROM decisions WHERE id = $1 AND (team = $(sql "$TEAM") OR everyone);" |
-    jq -c 'first // empty'
-}
-
-# live_decision <id>: the entry, refused unless it's still standing.
-live_decision() {
-  local entry
-  entry=$(decision_entry "$1")
-  [ -n "$entry" ] || die "no decision $1 in $TEAM's register"
-  jq -e '.replacedBy == null' <<<"$entry" >/dev/null || die "decision $1 was replaced by $(jq -r .replacedBy <<<"$entry")"
-  jq -e '.retired == null' <<<"$entry" >/dev/null || die "decision $1 is retired"
-  echo "$entry"
-}
-
-# replaceable <old entry> <who> <team|all>: refuses the Lead's change to an entry you changed, and a team's to an all-teams one.
-replaceable() {
-  [ "$2" = you ] || jq -e '.yours == null' <<<"$1" >/dev/null ||
-    die "you changed decision $(jq -r .id <<<"$1") in Decisions, so only your own newer word replaces it"
-  [ "$3" = all ] || jq -e '.scope == "team"' <<<"$1" >/dev/null ||
-    die "decision $(jq -r .id <<<"$1") is for all teams, so only an all-teams entry replaces it; record this one beside it with its condition"
-}
-
 [ $# -ge 2 ] || die "usage: board.sh [--dry-run] <team> <command> [args...] (see process.md)"
 TEAM=$1 CMD=$2
 shift 2
@@ -153,9 +127,8 @@ act_as_app() {
 }
 
 case "$CMD" in
-  attach | audited | comment | covered | decide | decision | depends | edit | feedback | gave | hold | mine | new | \
-    pictures | priority | recommend | reconfirm | release | replace | review | secret | seeded | skip | spent | theme | \
-    triggers | unblock | undepend | unlink | vision-review)
+  attach | audited | comment | covered | edit | feedback | mine | new | pictures | priority | recommend | review | skip | \
+    spent | theme | triggers | vision-review)
     speaker=${1:-}
     [ "$CMD" != triggers ] || [ "$speaker" != --sweep ] || speaker=${2:-}
     case "$speaker" in
@@ -387,9 +360,6 @@ AUDITED="$STATE/$TEAM/customer/audited"
 AUDIT_EVERY=$((7 * 24 * 60 * 60))
 # Present once the Lead has seeded the decision register from closed pitches, so it does it once.
 SEEDED="$STATE/$TEAM/lead/seeded"
-# The PRs `update` has merged their base into, as "<pr> <head it was updated from> <when>", one a line.
-UPDATED="$STATE/$TEAM/updated"
-UPDATE_SETTLES=600
 # The default branch's head when it was first seen red, until it's green again.
 RED_SINCE="$STATE/$TEAM/red-since"
 
@@ -816,26 +786,6 @@ by_priority() {
 # An issue an agent wrote, from any team, carries its marker in the body.
 agent_written() {
   gh api "repos/$REPO/issues/$1" --jq .body | grep -qE '<!-- a-team:(lead|dev|customer|reviewer) -->'
-}
-
-# The number of the issue #1 is a sub-issue of, or nothing. GraphQL answers only for an item the record has not seen.
-parent_of() {
-  local known
-  known=$(item "$1")
-  if [ -n "$known" ]; then
-    jq -r '.parent // empty' <<<"$known"
-    return
-  fi
-  gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F n="$1" --jq '.data.repository.issueOrPullRequest.parent.number // empty' \
-    -f query='query ParentOf($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
-      issueOrPullRequest(number: $n) { ... on Issue { parent { number } } } } }'
-}
-
-# idea <issue> <status>: the child is an idea rather than a task, by its labels or its board status.
-idea() {
-  jq -e '.labels | index("pitch")' <<<"$1" >/dev/null && return 0
-  case "$2" in Idea | Exploring | Pitched | Approved | Building) return 0 ;; esac
-  return 1
 }
 
 # shelved <n>: the newest Not now on #n from before its date moved into the record, as {until, priority}, or
@@ -1441,19 +1391,6 @@ feedback_at() {
   printf '%s' "$at"
 }
 
-# depend_note <role> <task> <text>: why a dependency changed, on the blocked task, with the
-# role's marker, so a blocked task answers "why?" by itself.
-depend_note() {
-  local body
-  body=$(printf '%s\n\n<!-- a-team:%s -->' "$3" "$1")
-  [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-  write <<<"$body" "comment on #$2" gh issue comment "$2" -R "$REPO" --body-file -
-}
-
-# A task waiting on another repo is marked `upstream`, and each wait is a marker in one of the team's comments on it.
-UPSTREAM_REF='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$'
-wait_marker() { printf '<!-- a-team:%s repo=%s n=%s%s%s -->' "$1" "$2" "$3" "${4:+ until=$4}" "${5:+ package=$5}"; }
-
 # waits_on <n> [<repo> <bot>]: what task #n still waits on in other repos, as [{ref, repo, n, until, package}].
 waits_on() {
   gh api --paginate "repos/${2:-$REPO}/issues/$1/comments" |
@@ -1740,33 +1677,6 @@ own_task() {
   [ -n "$task" ] && [ "$2" != "$task" ] || return 0
   [ "$(pr_for "$task" | jq -r '.number // empty')" = "$2" ] ||
     die "this run is for #$task: leave #$2 to a run of its own"
-}
-
-# hold_task <role> <n> <body> <what>: <role> may hold #<n>, so posts <body> on it, marks it held and records <what>.
-hold_task() {
-  local role=$1 n=$2 body=$3 what=$4 it
-  own_task "$role" "$n"
-  it=$(item "$n")
-  [ -n "$it" ] || die "#$n is not on the board"
-  if [ "$role" = dev ]; then
-    jq -e '.marks.dev and (.status == "In progress" or .status == "Ready")' <<<"$it" >/dev/null ||
-      die "dev holds only its own task, In progress or Ready (#$n is in '$(jq -r .status <<<"$it")')"
-  else
-    jq -e "$READY_TASK" <<<"$it" >/dev/null || die "only a Ready task can be held (#$n is in '$(jq -r .status <<<"$it")')"
-  fi
-  ! jq -e '.marks.held' <<<"$it" >/dev/null || die "#$n is already held"
-  [ "$role" = you ] || body+=$'\n\n'"<!-- a-team:$role -->"
-  [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-  write <<<"$body" "comment on #$n" gh issue comment "$n" -R "$REPO" --body-file - >/dev/null
-  [ "$role" = you ] || ack "$n"
-  mark "$n" held "$(jq -cn --arg at "$(date -u +%FT%TZ)" --arg by "$role" '{at: $at, by: $by}')"
-  record "$role" "$n" "$what"
-}
-
-# clear_hold <n> <item>: #<n> is held no longer, nor asking for a secret.
-clear_hold() {
-  mark "$1" held null
-  if jq -e '.marks.secret' <<<"$2" >/dev/null; then mark "$1" secret null; fi
 }
 
 # own_docs <role> <n>: the Customer lead touches only its own docs PR.
@@ -2241,276 +2151,6 @@ case "$CMD" in
     unanswered_feedback "$role" "$n"
     ;;
 
-  link)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM link <parent> <child>"
-    child=$(gh api "repos/$REPO/issues/$2" --jq '{id, labels: [.labels[].name]}')
-    child_id=$(jq -r .id <<<"$child")
-    status=$(item "$2" | jq -r '.status // empty')
-    if [ "$status" = Idea ] && ! jq -e '.labels | index("pitch")' <<<"$child" >/dev/null; then
-      die "#$2 is in Idea: if it's an idea, say \"Follow-up from #$1\" in its body instead of linking it; if it's a task, add it to Ready first"
-    fi
-    idea "$child" "$status" &&
-      die "#$2 is an idea, not a task: say \"Follow-up from #$1\" in its body instead of linking it"
-    write "make #$2 a sub-issue of #$1" gh api -X POST "repos/$REPO/issues/$1/sub_issues" -F "sub_issue_id=$child_id" >/dev/null
-    # Only the Lead draws breakdowns, and link names no role.
-    record lead "$2" "made a sub-issue of #$1"
-    say "#$2 is now a sub-issue of #$1"
-    ;;
-
-  depends)
-    [ $# -eq 4 ] || { [ $# -ge 5 ] && [ $# -le 6 ] && [[ $3 =~ $UPSTREAM_REF ]]; } ||
-      die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\", or <role> <task> <owner/repo#n> <closed|released [<package>]> \"<why>\""
-    role=$1 task=$2 prereq=$3
-    check_role "$role"
-    case "$role" in customer | reviewer) die "$role may not change what a task waits on" ;; esac
-    own_task "$role" "$task"
-    if [[ $prereq =~ $UPSTREAM_REF ]]; then
-      upstream=${BASH_REMATCH[1]} up_n=${BASH_REMATCH[2]}
-      [ $# -ge 5 ] || die "say whether #$task waits for $prereq to close or to be released: depends $role $task $prereq <closed|released> \"<why>\""
-      until=$4 package='' why=$5
-      [ $# -eq 5 ] || package=$5 why=$6
-      case "$until" in closed | released) ;; *) die "#$task waits for $prereq to be closed or released, not '$until'" ;; esac
-      [ -z "$package" ] || [ "$until" = released ] || die "only a wait until released names a package to upgrade"
-      [[ -z $package || $package =~ ^[A-Za-z0-9_.-]+$ ]] || die "'$package' isn't a package name"
-      [ "$(tr '[:upper:]' '[:lower:]' <<<"$upstream")" != "$(tr '[:upper:]' '[:lower:]' <<<"$REPO")" ] ||
-        die "$prereq is in $REPO itself: depends $role $task $up_n \"<why>\""
-      trouble=$(mktemp)
-      up=$(gh api "repos/$upstream/issues/$up_n" --jq '{id, pr: (.pull_request != null)}' 2>"$trouble") ||
-        { reason=$(head -1 "$trouble"); rm -f "$trouble"; die "can't read $prereq (${reason#gh: })"; }
-      rm -f "$trouble"
-      link() { gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" -F "issue_id=$1" >/dev/null 2>&1; }
-      linked=
-      [ "$(jq -r .pr <<<"$up")" = true ] || ! write "block #$task on $prereq" link "$(jq -r .id <<<"$up")" || linked=1
-      mark "$task" upstream "$(item "$task" | jq -c --arg ref "$prereq" '(.marks.upstream | arrays // []) + [$ref] | unique')"
-      note="Blocked by $prereq, until $until: $why"
-      [ -n "$linked" ] || note+=$'\n\n'"GitHub can't link $prereq as a dependency, so the wait is recorded here."
-      depend_note "$role" "$task" "$note"$'\n\n'"$(wait_marker wait "$upstream" "$up_n" "$until" "$package")"
-      record "$role" "$task" "blocked by $prereq"
-      say "#$task now waits for $prereq to be $until, and said why on #$task"
-      exit 0
-    fi
-    [ $# -eq 4 ] || die "usage: board.sh $TEAM depends <role> <task> <prerequisite> \"<why>\""
-    why=$4
-    write "block #$task on #$prereq" gh api -X POST "repos/$REPO/issues/$task/dependencies/blocked_by" \
-      -F "issue_id=$(gh api "repos/$REPO/issues/$prereq" --jq .id)" >/dev/null
-    depend_note "$role" "$task" "Blocked by #$prereq: $why"
-    record "$role" "$task" "blocked by #$prereq"
-    say "#$task is now blocked by #$prereq, and said why on #$task"
-    ;;
-
-  undepend)
-    [ $# -eq 4 ] || die "usage: board.sh $TEAM undepend <role> <task> <prerequisite> \"<why>\""
-    role=$1 task=$2 prereq=$3 why=$4
-    check_role "$role"
-    case "$role" in customer | reviewer) die "$role may not change what a task waits on" ;; esac
-    own_task "$role" "$task"
-    if [[ $prereq =~ $UPSTREAM_REF ]]; then
-      upstream=${BASH_REMATCH[1]} up_n=${BASH_REMATCH[2]}
-      waits=$(waits_on "$task")
-      jq -e --arg ref "$prereq" 'any(.[]; .ref == $ref)' <<<"$waits" >/dev/null || die "#$task is not waiting on $prereq"
-      prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
-        jq -r --arg repo "$upstream" --argjson n "$up_n" '[.[] | select(.number == $n
-          and (.repository_url // "" | ascii_downcase | endswith("/" + ($repo | ascii_downcase)))) | .id] | first // empty')
-      [ -z "$prereq_id" ] || write "unblock #$task from $prereq" \
-        gh api -X DELETE "repos/$REPO/issues/$task/dependencies/blocked_by/$prereq_id" >/dev/null
-      depend_note "$role" "$task" "No longer blocked by $prereq: $why"$'\n\n'"$(wait_marker unwait "$upstream" "$up_n")"
-      left=$(jq -c --arg ref "$prereq" 'map(.ref | select(. != $ref))' <<<"$waits")
-      [ "$left" = '[]' ] && left=null
-      mark "$task" upstream "$left"
-      record "$role" "$task" "no longer blocked by $prereq"
-      say "#$task no longer waits on $prereq, and said why on #$task"
-      exit 0
-    fi
-    prereq_id=$(gh api "repos/$REPO/issues/$task/dependencies/blocked_by" |
-      jq -r --argjson n "$prereq" '[.[] | select(.number == $n) | .id] | first // empty')
-    [ -n "$prereq_id" ] || die "#$task is not blocked by #$prereq"
-    write "unblock #$task from #$prereq" \
-      gh api -X DELETE "repos/$REPO/issues/$task/dependencies/blocked_by/$prereq_id" >/dev/null
-    depend_note "$role" "$task" "No longer blocked by #$prereq: $why"
-    record "$role" "$task" "no longer blocked by #$prereq"
-    say "#$task is no longer blocked by #$prereq, and said why on #$task"
-    ;;
-
-  free)
-    [ $# -eq 0 ] || die "usage: board.sh $TEAM free"
-    bumps=
-    for n in $(items open | jq -r '.[] | select(.type == "Issue" and .marks.upstream) | .number'); do
-      waits=$(waits_on "$n")
-      [ "$waits" != "[]" ] || continue
-      waits=$(upstream_state "$waits")
-      if jq -e 'any(.[]; .state == "released" and .package)' <<<"$waits" >/dev/null; then
-        bumps=${bumps:-$(open_bumps)}
-        waits=$(with_bumps "$waits" "$bumps")
-      fi
-      jq -e 'all(.[]; .met)' <<<"$waits" >/dev/null || continue
-      mark "$n" upstream null
-      depend_note dev "$n" "$(jq -r 'def day: fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0");
-        [.[] | select(.state == "released") | (.release.tag | ltrimstr("v")) as $v | if .package then "\(.package) to \($v)" else "to \($v)" end] as $versions
-        | (map(if .state == "released" and .after
-            then "\(.ref) closed on \(.closed | day), and \(.release.tag) (released \(.release.at | day)) is the first release since."
-          elif .state == "released" then "\(.ref) is in \(.release.tag) (released \(.release.at | day))."
-            else "\(.ref) has \(if .state == "merged" then "merged" else "closed" end)." end) | join(" "))
-        + " No longer blocked"
-        + if $versions == [] then "." else ": upgrade \($versions | join(" and ")) first." end' <<<"$waits")"$'\n\n'"$(
-        jq -r '.[] | "\(.repo)\t\(.n)"' <<<"$waits" | while IFS=$'\t' read -r repo up_n; do wait_marker unwait "$repo" "$up_n"; done)"
-      for ref in $(jq -r '.[].ref' <<<"$waits"); do record dev "$n" "no longer blocked by $ref"; done
-      say "#$n: no longer waiting on $(jq -r 'map(.ref) | join(", ")' <<<"$waits")"
-    done
-    ;;
-
-  unlink)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM unlink <role> <parent> <child>"
-    role=$1 parent=$2 child=$3
-    check_role "$role"
-    [ "$role" = lead ] || die "$role may not take a task off a pitch; only lead draws breakdowns"
-    all=$(items)
-    board_status() { jq -r --argjson n "$1" 'map(select(.number == $n)) | first | .status // empty' <<<"$all"; }
-    from=$(board_status "$child")
-    issue=$(gh api "repos/$REPO/issues/$child" --jq '{id, title, body: (.body // ""), labels: [.labels[].name]}')
-    jq -e --argjson n "$parent" 'map(select(.number == $n)) | first | (.labels // []) | index("pitch")' <<<"$all" >/dev/null ||
-      die "$role may only take a task off a pitch (#$parent is not one)"
-    pitch_status=$(board_status "$parent")
-    followup=
-    idea "$issue" "$from" && followup=1
-    if [ -n "$followup" ]; then
-      [ "$pitch_status" != Done ] || die "$role may not change a Done pitch (#$parent)"
-    else
-      [ -n "$from" ] || die "#$child is not on the board"
-      [ "$from" = Ready ] || die "$role may only take a Ready task off a pitch (#$child is '$from')"
-      [ "$pitch_status" = Building ] ||
-        die "$role may only take a task off a pitch in Building (#$parent is '$pitch_status')"
-    fi
-    [ "$(parent_of "$child")" = "$parent" ] || die "#$child is not a sub-issue of #$parent"
-    case "$pitch_status" in
-      Approved | Building)
-        ! jq -e --argjson n "$child" --argjson issue "$issue" \
-          "first(.[] | select(.number == \$n)) | .body = \$issue.body | $LEFT_IN_IDEA" <<<"$all" >/dev/null ||
-          die "#$child is a task left in Idea, not an idea: put it in Ready with: board.sh $TEAM add lead $child Ready"
-        ;;
-    esac
-    write "take #$child off #$parent" gh api -X DELETE "repos/$REPO/issues/$parent/sub_issue" \
-      -F "sub_issue_id=$(jq -r .id <<<"$issue")" >/dev/null
-    [ -n "$DRY_RUN" ] || history_sql "UPDATE board SET content = json_remove(content, '\$.parent')
-      WHERE team = $(sql "$TEAM") AND item = $child;" >/dev/null
-    record "$role" "$child" "taken off #$parent"
-    if [ -z "$followup" ]; then
-      say "#$child is no longer a sub-issue of #$parent"
-      exit 0
-    fi
-    body=$(printf '#%s (%s) grew out of this pitch and is its own item now, so it no longer holds this one up. Its body names #%s as where it came from.\n\n<!-- a-team:%s -->' \
-      "$child" "$(jq -r .title <<<"$issue")" "$parent" "$role")
-    [ -z "$DRY_RUN" ] || printf '%s\n' "$body" | sed 's/^/  | /' >&2
-    write <<<"$body" "comment on #$parent" gh issue comment "$parent" -R "$REPO" --body-file -
-    if ! jq -e --arg p "$parent" '.body | test("Follow-up from #" + $p + "\\b")' <<<"$issue" >/dev/null; then
-      write "add 'Follow-up from #$parent' to #$child" gh issue edit "$child" -R "$REPO" \
-        --body "$(jq -r --arg p "$parent" '"Follow-up from #\($p)\n\n\(.body)"' <<<"$issue")" >/dev/null
-    fi
-    say "#$child is no longer a sub-issue of #$parent; said so on #$parent, and #$child names #$parent as where it came from"
-    ;;
-
-  unblock)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM unblock <role> <n>"
-    role=$1 n=$2
-    check_role "$role"
-    case "$role" in
-      dev | lead) ;;
-      *) die "only dev or lead may unblock a task, and only one it held" ;;
-    esac
-    own_task "$role" "$n"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a held Ready task"
-    talk=$(gated_talk "[$it]")
-    hold=$(holds "[$it]" "$(gated_comments "$talk")" "$(gated_blocked "[$it]")" | jq -c '.[0]')
-    case "$(jq -r '.heldBy // "you"' <<<"$hold")" in
-      "$role") ;;
-      you) die "#$n has no hold from $role: a stakeholder is holding it, so leave it to them" ;;
-      *) die "#$n has no hold from $role: $(jq -r .heldBy <<<"$hold") held it, so leave it to them" ;;
-    esac
-    if [ "$role" = lead ] && jq -e '.marks.upstream' <<<"$it" >/dev/null; then
-      what="hold now waits on another repo"
-    elif [ "$(jq -r .turn <<<"$hold")" = "$role" ]; then
-      what=$([ "$role" = dev ] && echo "question answered" || echo "hold answered")
-    else
-      die "no stakeholder has replied to $role's ask on #$n since it was held"
-    fi
-    clear_hold "$n" "$it"
-    record "$role" "$n" "$what"
-    ack "$n"
-    say "#$n: no longer blocked"
-    ;;
-
-  hold)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM hold <role> <n> <file>"
-    role=$1 n=$2 file=$3
-    case "$role" in
-      customer | reviewer) die "$role may not hold a task" ;;
-      you | dev | lead) ;;
-      *) die "unknown role '$role' (you | dev | lead)" ;;
-    esac
-    [ -f "$file" ] || die "no such file: $file"
-    [ -n "$(tr -d '[:space:]' <"$file")" ] || die "say why #$n is held"
-    hold_task "$role" "$n" "$(cat "$file")" held
-    say "#$n: held"
-    ;;
-
-  secret)
-    [ $# -eq 5 ] || die "usage: board.sh $TEAM secret <role> <n> <NAME> <repo|environment> <file>"
-    role=$1 n=$2 name=$3 where=$4 file=$5
-    case "$role" in
-      dev | lead) ;;
-      *) die "only the Lead or the Dev asks for a secret, not $role" ;;
-    esac
-    [[ $name =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "'$name' can't be a secret's name: letters, digits and _ only, not starting with a digit"
-    [[ $(tr '[:lower:]' '[:upper:]' <<<"$name") != GITHUB_* ]] || die "'$name' can't be a secret's name: GitHub keeps GITHUB_ for itself"
-    [[ $where =~ ^[A-Za-z0-9_.][A-Za-z0-9_.\ -]*$ ]] || die "'$where' can't be an environment's name"
-    [ -f "$file" ] || die "no such file: $file"
-    [ -n "$(tr -d '[:space:]' <"$file")" ] || die "say why #$n needs $name, and where to get it"
-    if [ "$where" = repo ]; then
-      environment='' place="a repo secret of $REPO"
-    else
-      environment=$where place="in the $where environment of $REPO"
-    fi
-    why=$(cat "$file")
-    hold_task "$role" "$n" "🔑 This needs \`$name\`, $place.
-
-$why
-
-Give it in Work, with \`k\` on this task. Never put its value in a comment: this is public." "held · asks for $name"
-    mark "$n" secret "$(jq -cn --arg name "$name" --arg environment "$environment" --arg by "$role" --arg why "$why" \
-      '{name: $name, environment: $environment, by: $by, why: $why}')"
-    say "#$n: held, asking for $name"
-    ;;
-
-  gave)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM gave you <n>"
-    role=$1 n=$2
-    [ "$role" = you ] || die "only a stakeholder gives a secret, from the app"
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    jq -e "$HELD and .marks.secret" <<<"$it" >/dev/null || die "#$n isn't asking for a secret"
-    name=$(jq -r .marks.secret.name <<<"$it")
-    clear_hold "$n" "$it"
-    record you "$n" "gave $name"
-    say "#$n: back in the Dev's queue"
-    ;;
-
-  release)
-    [ $# -eq 2 ] || die "usage: board.sh $TEAM release <role> <n>"
-    role=$1 n=$2
-    case "$role" in
-      lead | dev | customer | reviewer) die "$role may not release a hold this way; an agent clears its own with unblock" ;;
-      you) ;;
-      *) die "unknown role '$role' (you)" ;;
-    esac
-    it=$(item "$n")
-    [ -n "$it" ] || die "#$n is not on the board"
-    jq -e "$HELD" <<<"$it" >/dev/null || die "#$n isn't a held Ready task"
-    clear_hold "$n" "$it"
-    record "$role" "$n" "hold released"
-    say "#$n: hold released"
-    ;;
-
   covered)
     [ $# -eq 2 ] || die "usage: board.sh $TEAM covered <role> <pitch>"
     role=$1 n=$2
@@ -2719,32 +2359,6 @@ Give it in Work, with \`k\` on this task. Never put its value in a comment: this
     jq --argjson stored "$stored" --arg team "$TEAM" '. + [{team: $team, synced: $stored.synced, failed: $stored.failed}]' <<<"$waiting"
     ;;
 
-  update)
-    [ $# -eq 0 ] || die "usage: board.sh $TEAM update"
-    slug=$(cfg .app.slug)
-    [ -n "$slug" ] || exit 0
-    # GitHub merges in the background, so a PR reads BEHIND for a while after on the head it was updated from.
-    kept='' now=$(date +%s)
-    prs=$(gh pr list -R "$REPO" --author "app/$slug" --state open --json number,isDraft,mergeStateStatus,headRefOid,baseRefName)
-    while IFS=$'\t' read -r p sha base; do
-      at=$(awk -v p="$p" -v sha="$sha" '$1 == p && $2 == sha { print $3 }' "$UPDATED" 2>/dev/null || true)
-      if [ -n "$at" ] && [ $((now - at)) -lt $UPDATE_SETTLES ]; then
-        kept+="$p $sha $at"$'\n'
-        continue
-      fi
-      if write "merge $base into PR #$p" gh api -X PUT "repos/$REPO/pulls/$p/update-branch" -f "expected_head_sha=$sha" >/dev/null; then
-        kept+="$p $sha $now"$'\n'
-        say "PR #$p: merged $base into it"
-      else
-        say "PR #$p: couldn't merge $base into it"
-      fi
-    done < <(jq -r '.[] | select((.isDraft | not) and .mergeStateStatus == "BEHIND") | [.number, .headRefOid, .baseRefName] | @tsv' <<<"$prs")
-    if [ -z "$DRY_RUN" ]; then
-      mkdir -p "$(dirname "$UPDATED")"
-      printf '%s' "$kept" >"$UPDATED"
-    fi
-    ;;
-
   sync)
     [ $# -eq 0 ] || die "usage: board.sh $TEAM sync"
     board_sync
@@ -2924,165 +2538,6 @@ Give it in Work, with \`k\` on this task. Never put its value in a comment: this
       $live
       ${match:+AND id IN (SELECT rowid FROM decisions_text WHERE decisions_text MATCH $(sql "$match"))}
       ORDER BY confirmed DESC, id DESC;" | jq -cs 'first // []'
-    ;;
-
-  decide)
-    usage="usage: board.sh $TEAM decide lead <you|lead> <rule|lean> <team|all> <n|url> <file> [--said <date>] [--replaces <id>]"
-    [ $# -ge 6 ] || die "$usage"
-    role=$1 who=$2 kind=$3 scope=$4 where=$5 file=$6
-    shift 6
-    said=$(date -u +%FT%TZ) old=
-    while [ $# -gt 0 ]; do
-      case $1 in
-        --said) [ $# -ge 2 ] || die "$usage"; said=$2; shift 2 ;;
-        --replaces) [ $# -ge 2 ] || die "$usage"; old=$2; shift 2 ;;
-        *) die "$usage" ;;
-      esac
-    done
-    case "$role" in
-      lead) ;;
-      dev | customer | reviewer | you) die "only lead records decisions; you correct them from Decisions in the app" ;;
-      *) die "unknown role '$role' (lead)" ;;
-    esac
-    case $who in you | lead) ;; *) die "who said it is 'you' or 'lead', not '$who'" ;; esac
-    case $kind in rule | lean) ;; *) die "a decision is a 'rule' or a 'lean', not '$kind'" ;; esac
-    case $scope in team | all) ;; *) die "a decision is for this 'team' or 'all' teams, not '$scope'" ;; esac
-    if [[ $where =~ ^[0-9]+$ ]]; then
-      item=$where link="https://github.com/$REPO/issues/$where"
-    elif [[ $where =~ ^https://github\.com/${REPO//./\\.}/(issues|pull)/([0-9]+)([#?].*)?$ ]]; then
-      item=${BASH_REMATCH[2]} link=$where
-    else
-      die "'$where' isn't an issue number or a link to an issue, PR or comment in $REPO"
-    fi
-    if [[ $said =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-      said+=T00:00:00Z
-    fi
-    [[ $said =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "'$said' isn't a date like 2026-09-26"
-    [ -f "$file" ] || die "no such file: $file"
-    decision=$(grep -m1 '[^[:space:]]' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' || true)
-    [ -n "$decision" ] || die "the decision is the first line of $file, and it's empty"
-    why=$(awk 'found { print } !found && /[^[:space:]]/ { found = 1 }' "$file" | sed '/[^[:space:]]/,$!d')
-    replacing=
-    if [ -n "$old" ]; then
-      replacing=$(live_decision "$old")
-      replaceable "$replacing" "$who" "$scope"
-    fi
-    if [ -n "$DRY_RUN" ]; then
-      echo "dry-run: would record decision '$decision'${old:+, replacing decision $old}" >&2
-      exit 0
-    fi
-    mkdir -p "$STATE"
-    id=$(decisions_sql "BEGIN; INSERT INTO decisions (team, everyone, decision, why, who, kind, item, link, said,
-        recorded, confirmed) VALUES ($(sql "$TEAM"), $([ "$scope" = all ] && echo 1 || echo 0), $(sql "$decision"),
-        $(sql "$why"), $(sql "$who"), $(sql "$kind"), $item, $(sql "$link"), $(sql "$said"),
-        $(sql "$(date -u +%FT%TZ)"), $(sql "$said"));
-      ${old:+UPDATE decisions SET replaced_by = last_insert_rowid() WHERE id = $old;}
-      SELECT last_insert_rowid(); COMMIT;")
-    record lead "$item" "recorded decision $id"
-    if [ -n "$replacing" ]; then
-      say "decision $id recorded; it replaces decision $old, $(jq -r '"what \(if .who == "you" then "you" else "the Lead" end)
-        said on #\(.item) on \(.said | fromdateiso8601 | strftime("%-d %b"))"' <<<"$replacing" | tr -s ' \n' ' ' | sed 's/ $//')"
-    else
-      say "decision $id recorded"
-    fi
-    ;;
-
-  replace)
-    [ $# -eq 3 ] || die "usage: board.sh $TEAM replace lead <old> <new>"
-    role=$1 old=$2 new=$3
-    [ "$role" = lead ] || die "only lead marks one decision replaced by another"
-    [ "$old" != "$new" ] || die "a decision can't replace itself"
-    replacing=$(live_decision "$old")
-    newer=$(live_decision "$new")
-    replaceable "$replacing" "$(jq -r .who <<<"$newer")" "$(jq -r .scope <<<"$newer")"
-    jq -e --argjson old "$replacing" '.said >= $old.said' <<<"$newer" >/dev/null ||
-      die "decision $new was said before decision $old, so the newer one is $old: replace $new with $old"
-    if [ -n "$DRY_RUN" ]; then
-      echo "dry-run: would mark decision $old replaced by decision $new" >&2
-      exit 0
-    fi
-    decisions_sql "UPDATE decisions SET replaced_by = $new WHERE id = $old;" >/dev/null
-    say "decision $old replaced by decision $new"
-    ;;
-
-  seeded)
-    [ $# -eq 1 ] || die "usage: board.sh $TEAM seeded lead"
-    [ "$1" = lead ] || die "only lead seeds the decision register"
-    if [ -z "$DRY_RUN" ]; then
-      mkdir -p "$(dirname "$SEEDED")"
-      date -u +%FT%TZ >"$SEEDED"
-    fi
-    say "decision register seeded: lead-next won't ask again"
-    ;;
-
-  reconfirm)
-    [ $# -ge 3 ] || die "usage: board.sh $TEAM reconfirm lead <n> <id>..."
-    role=$1 n=$2
-    shift 2
-    [ "$role" = lead ] || die "only lead reconfirms decisions, as it breaks down a pitch that cited them"
-    [[ $n =~ ^[0-9]+$ ]] || die "#$n isn't an item number"
-    for id in "$@"; do
-      live_decision "$id" >/dev/null
-    done
-    if [ -n "$DRY_RUN" ]; then
-      echo "dry-run: would reconfirm decisions $* on #$n" >&2
-      exit 0
-    fi
-    decisions_sql "UPDATE decisions SET confirmed = $(sql "$(date -u +%FT%TZ)"), confirmed_on = $n
-      WHERE id IN ($(IFS=,; echo "$*"));" >/dev/null
-    say "reconfirmed decisions $* on #$n"
-    ;;
-
-  decision)
-    [ $# -ge 3 ] || die "usage: board.sh $TEAM decision you <id> <edit <file> | kind | widen | retire>"
-    role=$1 id=$2 change=$3
-    case "$role" in
-      you) ;;
-      lead | dev | customer | reviewer) die "only you correct the register, from Decisions in the app" ;;
-      *) die "unknown role '$role' (you)" ;;
-    esac
-    entry=$(decision_entry "$id")
-    [ -n "$entry" ] || die "no decision $id in $TEAM's register"
-    case $change in
-      edit)
-        [ $# -eq 4 ] || die "usage: board.sh $TEAM decision you <id> edit <file>"
-        [ -f "$4" ] || die "no such file: $4"
-        wording=$(grep -v '^[[:space:]]*$' "$4" || true)
-        [ -n "$wording" ] && [ "$(grep -c '' <<<"$wording")" -eq 1 ] || die "a decision is one line: $4 has $(grep -c '' <<<"$wording")"
-        wording=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' <<<"$wording")
-        set_="decision = $(sql "$wording")" done_="reworded"
-        ;;
-      kind)
-        [ $# -eq 3 ] || die "usage: board.sh $TEAM decision you <id> kind"
-        kind=$(jq -r 'if .kind == "rule" then "lean" else "rule" end' <<<"$entry")
-        set_="kind = $(sql "$kind")" done_="now a $kind"
-        ;;
-      widen)
-        [ $# -eq 3 ] || die "usage: board.sh $TEAM decision you <id> widen"
-        if jq -e '.scope == "all"' <<<"$entry" >/dev/null; then
-          team=$(jq -r .team <<<"$entry")
-          [ "$team" = "$TEAM" ] || die "decision $id is $team's; narrow it to $team from there"
-          set_="everyone = 0" done_="for $TEAM only"
-        else
-          set_="everyone = 1" done_="for all teams"
-        fi
-        ;;
-      retire)
-        [ $# -eq 3 ] || die "usage: board.sh $TEAM decision you <id> retire"
-        if jq -e '.retired == null' <<<"$entry" >/dev/null; then
-          set_="retired = $(sql "$(date -u +%FT%TZ)")" done_="retired"
-        else
-          set_="retired = NULL" done_="back in force"
-        fi
-        ;;
-      *) die "unknown change '$change' (edit | kind | widen | retire)" ;;
-    esac
-    if [ -n "$DRY_RUN" ]; then
-      echo "dry-run: would make decision $id $done_" >&2
-      exit 0
-    fi
-    decisions_sql "UPDATE decisions SET $set_, yours = $(sql "$(date -u +%FT%TZ)") WHERE id = $id;" >/dev/null
-    say "decision $id: $done_"
     ;;
 
   pr)

@@ -908,6 +908,18 @@ case_ "releasing a task asking for a secret takes the ask off too"
 run board demo release you 301
 same "exit" 0 "$STATUS"
 same "secret" 'null' "$(marks 301 | jq -c .secret)"
+
+case_ "unblocking a task asking for a secret takes the ask off too"
+run board demo secret lead 303 WINGET_TOKEN repo "$WORK/why-secret"
+same "asking" '"WINGET_TOKEN"' "$(marks 303 | jq -c .secret.name)"
+gh_talk <<TALK
+303 comment $(ago 5) demo-app[bot] Needs it.\n\n<!-- a-team:lead -->
+303 comment $(ago 1) reviewer You already have one.
+TALK
+run board demo unblock lead 303
+same "exit" 0 "$STATUS"
+same "held" 'null' "$(marks 303 | jq -c .held)"
+same "secret" 'null' "$(marks 303 | jq -c .secret)"
 unset KEEP_BOARD
 
 finish_suite
