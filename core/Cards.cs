@@ -23,7 +23,7 @@ internal static class Cards
     internal static bool Dependabot(JsonNode card) => Json.Truthy(card["dependabot"]);
 
     private static bool Blocked(JsonNode card) =>
-        Marked(card, "held") || Marked(card, "upstream") || (card["blockedBy"]?.GetValue<long>() ?? 0) > 0;
+        Marked(card, "held") || Marked(card, "upstream") || Json.Long(card["blockedBy"]) > 0;
 
     internal static bool ReadyTask(JsonNode card) => Status(card) == "Ready" && IsIssue(card) && !Pitch(card);
 

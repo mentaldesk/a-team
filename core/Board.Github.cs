@@ -304,7 +304,7 @@ internal sealed partial class Board
 
     private bool FromStakeholder(JsonNode comment) => Stakeholders.Contains(Json.Text(comment["author"]) ?? "");
 
-    private static long Eyes(JsonNode comment) => comment["eyes"]?.GetValue<long>() ?? 0;
+    private static long Eyes(JsonNode comment) => Json.Long(comment["eyes"]);
 
     /// <summary>The stakeholders' comments on #n that no run has left a 👀 on.</summary>
     internal List<JsonObject> UnansweredFeedback(string role, string n)
@@ -462,7 +462,7 @@ internal sealed partial class Board
                         named.Add(wait!["n"]!.GetValue<long>());
             }
         }
-        named.AddRange(Prerequisites(all.Where(card => Cards.ReadyTask(card) && (card["blockedBy"]?.GetValue<long>() ?? 0) > 0).Select(Cards.N).ToList()));
+        named.AddRange(Prerequisites(all.Where(card => Cards.ReadyTask(card) && Json.Long(card["blockedBy"]) > 0).Select(Cards.N).ToList()));
         var holding = new HashSet<long>();
         foreach (var n in named)
         {
@@ -470,7 +470,7 @@ internal sealed partial class Board
             foreach (var card in all)
             {
                 var number = card["number"]!.GetValue<long>();
-                var parent = card["parent"]?.GetValue<long>();
+                var parent = card["parent"] is null ? (long?)null : Json.Long(card["parent"]);
                 if (number == n && parent is { } up) holding.Add(up);
                 if (parent == n) holding.Add(number);
             }

@@ -27,6 +27,13 @@ internal static class Json
     internal static string? Text(JsonNode? node) =>
         node is JsonValue value && value.GetValueKind() == JsonValueKind.String ? value.GetValue<string>() : null;
 
+    /// <summary>A number, whether it was parsed or built here; 0 for anything else.</summary>
+    internal static long Long(JsonNode? node)
+    {
+        if (node is not JsonValue value) return 0;
+        return value.TryGetValue<long>(out var wide) ? wide : value.TryGetValue<int>(out var narrow) ? narrow : 0;
+    }
+
     internal static bool Truthy(JsonNode? node) => node is not null && node.GetValueKind() != JsonValueKind.False && node.GetValueKind() != JsonValueKind.Null;
 
     /// <summary>jq's `*`: <paramref name="over"/> on top of <paramref name="under"/>, objects merged all the way down.</summary>
