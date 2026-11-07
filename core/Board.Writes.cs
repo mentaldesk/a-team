@@ -16,13 +16,6 @@ internal sealed partial class Board
     internal List<string> ContributesTo =>
         (_config["contributesTo"] as JsonArray ?? []).Select(repo => Json.Text(repo) ?? repo?.ToJsonString() ?? "null").ToList();
 
-    /// <summary>Lets what gh said on stderr through, as a shell does.</summary>
-    internal static GhResult Through(GhResult result)
-    {
-        Console.Error.Write(result.Err);
-        return result;
-    }
-
     /// <summary>#n where `$(item n)` went on regardless: what isn't a number says so, and isn't on the board.</summary>
     internal JsonNode? Seek(string n)
     {
@@ -88,26 +81,6 @@ internal sealed partial class Board
     {
         var bot = Bot;
         return pr["comments"]?["nodes"]?.AsArray().Any(comment => Said(comment, bot, "reviewer")) == true;
-    }
-
-    /// <summary>Whether CI has passed on the PR's head commit. A read that fails has its say, and isn't a pass.</summary>
-    internal bool Green(string pr)
-    {
-        var sha = Through(_gh.Run("api", $"repos/{_repo}/pulls/{pr}", "--jq", ".head.sha"));
-        if (!sha.Ok)
-        {
-            Console.Error.WriteLine($"board.sh: could not read PR #{pr}");
-            return false;
-        }
-        var runs = Through(_gh.Run("api", "--paginate", $"repos/{_repo}/commits/{sha.Said}/check-runs?per_page=100", "--jq", ".check_runs[]"));
-        try
-        {
-            return Json.Text(Checks(Json.ParseMany(runs.Out))["verdict"]) == "pass";
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
     }
 
     internal string AttachmentLink(string path) => $"https://github.com/{_repo}/blob/{AttachmentBranch}/{path}?raw=true";

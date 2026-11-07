@@ -92,10 +92,12 @@ internal sealed partial class Board
         return node is null || !Json.Truthy(node) ? "" : Json.Text(node) ?? node.ToJsonString();
     }
 
-    internal static string Now() => DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+    internal const string IsoFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+
+    internal static string Now() => DateTime.UtcNow.ToString(IsoFormat, CultureInfo.InvariantCulture);
 
     private static string Iso(long seconds) =>
-        DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+        DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime.ToString(IsoFormat, CultureInfo.InvariantCulture);
 
     private string TeamQ => Reconciler.Q(_team);
 
@@ -150,7 +152,7 @@ internal sealed partial class Board
             var to = Reconciler.Landed(Json.Text(last["what"])!)!;
             var from = row["status"]!;
             if (to == from || to == "Done") continue;
-            if (!DateTimeOffset.TryParseExact(Json.Text(last["at"]), "yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var moved))
+            if (!DateTimeOffset.TryParseExact(Json.Text(last["at"]), IsoFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var moved))
                 return;
             plan.Add((row["item"]!, from, to, Json.Text(last["who"])!, Libc.Local(moved).ToString("d MMM", CultureInfo.InvariantCulture)));
         }

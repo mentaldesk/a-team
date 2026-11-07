@@ -69,14 +69,6 @@ internal sealed partial class Board
         File.WriteAllText(file, text);
     }
 
-    private static JsonArray ArrayOf(IEnumerable<JsonNode?> nodes)
-    {
-        var array = new JsonArray();
-        foreach (var node in nodes)
-            array.Add((JsonNode?)node);
-        return array;
-    }
-
     private static string ADayAgo() => Iso(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 86400);
 
     private static string LocalToday() => Libc.Local(DateTimeOffset.UtcNow).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -172,7 +164,7 @@ internal sealed partial class Board
             foreach (var row in _record.Query($"SELECT item FROM events e WHERE team = {TeamQ} AND what = 'no theme'\n      AND id = (SELECT MAX(id) FROM events WHERE team = e.team AND item = e.item AND what LIKE '%theme%');"))
                 none.Add(long.Parse(row.First!, CultureInfo.InvariantCulture));
         }
-        return ArrayOf(all.Where(card => Cards.IsIssue(card) && Cards.Pitch(card) && card["marks"]?["theme"] is null
+        return Json.ArrayOf(all.Where(card => Cards.IsIssue(card) && Cards.Pitch(card) && card["marks"]?["theme"] is null
                 && Json.Text(card["closed"]) != "NOT_PLANNED" && (Cards.Status(card) != "Done" || recent.Contains(Number(card)))
                 && !none.Contains(Number(card)))
             .Select(card => card["number"]?.DeepClone()));
@@ -378,8 +370,8 @@ internal sealed partial class Board
         return PrChecks(head.Said);
     }
 
-    /// <summary>A PR's CI verdict where nothing stops for it: nothing, if its head can't be read, and otherwise what came back of its runs.</summary>
-    internal string VerdictAnyway(string pr)
+    /// <summary>A PR's CI verdict on its head: nothing if its head can't be read, which it says, and otherwise what came back of its runs.</summary>
+    internal string HeadVerdict(string pr)
     {
         var head = Aloud("api", $"repos/{_repo}/pulls/{pr}", "--jq", ".head.sha");
         if (!head.Ok)
@@ -405,24 +397,24 @@ internal sealed partial class Board
     }
 
     /// <summary>Every item's body, comments and open PR in one call, plus one for PRs GitHub hasn't linked; null and the exit code where GitHub won't say.</summary>
-    internal (JsonNode? Page, int Code) GatedTalk(IEnumerable<long> numbers, bool checks = false, string extra = "", bool aloud = true)
+    internal (JsonNode? Page, int Code, string Err) GatedTalk(IEnumerable<long> numbers, bool checks = false, string extra = "", bool aloud = true)
     {
         var runs = checks ? PrHeadRuns : "";
         var reviewed = $"{TalkedOn} url isDraft mergeable mergeStateStatus baseRefName headRefName {runs}\n              reviews(last: 50) {{ nodes {{ createdAt body state author {{ __typename login }} {SeenBy}\n              comments(first: 50) {{ nodes {{ createdAt body author {{ __typename login }} {SeenBy} }} }} }} }}";
         var query = string.Concat(numbers.Select(n => $" x{n}: issueOrPullRequest(number: {n}) {{\n      ... on Issue {{ {TalkedOn} subIssuesSummary {{ total completed }}\n        closedByPullRequestsReferences(first: 1, includeClosedPrs: false) {{ nodes {{ {reviewed} }} }} }}\n      ... on PullRequest {{ {reviewed} }} }}"));
-        if (query.Length + extra.Length == 0) return (Json.Parse(NoTalk), 0);
+        if (query.Length + extra.Length == 0) return (Json.Parse(NoTalk), 0, "");
         var read = TalkRead($"{query} {extra}\n      openPrs: pullRequests(states: OPEN, first: 100) {{ nodes {{ number body }} }} }} ", aloud);
-        if (!read.Ok) return (null, read.Code);
+        if (!read.Ok) return (null, read.Code, read.Err);
         var page = Json.TryParse(read.Out);
-        if (page?["data"]?["repository"] is not JsonObject repository) return (null, 2);
+        if (page?["data"]?["repository"] is not JsonObject repository) return (null, 2, read.Err);
         var unlinked = Unlinked(repository);
         var more = string.Concat(unlinked.Values.Distinct().Order().Select(pr => $" p{pr}: pullRequest(number: {pr}) {{ {reviewed} }}"));
         if (more.Length > 0)
         {
             var linked = TalkRead($"{more}}} ", aloud);
-            if (!linked.Ok) return (null, linked.Code);
+            if (!linked.Ok) return (null, linked.Code, read.Err + linked.Err);
             var found = Json.TryParse(linked.Out);
-            if (found is null) return (null, 2);
+            if (found is null) return (null, 2, read.Err + linked.Err);
             foreach (var (issue, pr) in unlinked)
             {
                 var nodes = new JsonArray();
@@ -431,7 +423,7 @@ internal sealed partial class Board
             }
         }
         repository.Remove("openPrs");
-        return (page, 0);
+        return (page, 0, "");
     }
 
     private GhResult TalkRead(string fields, bool aloud)
@@ -749,23 +741,8 @@ internal sealed partial class Board
     }
 
     /// <summary>The team on this machine that works in that repo, or nothing.</summary>
-    private static string TeamOf(string repo)
-    {
-        var teams = Path.Combine(ConfigDir, "teams");
-        foreach (var file in (Directory.Exists(teams) ? Directory.GetFiles(teams, "*.json") : []).Order(StringComparer.Ordinal))
-        {
-            try
-            {
-                if (string.Equals(Json.Text(Json.Parse(File.ReadAllText(file))?["repo"]), repo, StringComparison.OrdinalIgnoreCase))
-                    return Path.GetFileNameWithoutExtension(file);
-            }
-            catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
-            {
-                continue;
-            }
-        }
-        return "";
-    }
+    private static string TeamOf(string repo) =>
+        TeamConfigs().FirstOrDefault(team => string.Equals(Json.Text(team.Config?["repo"]), repo, StringComparison.OrdinalIgnoreCase)).Team ?? "";
 
     private static JsonObject Link(string? team, JsonArray refs, string what, JsonNode? shown) => new()
     {
@@ -795,16 +772,16 @@ internal sealed partial class Board
         if (Json.Truthy(wait["bump"]))
         {
             var bump = Json.Long(wait["bump"]!["number"]);
-            return ArrayOf([Link(_team, ArrayOf([(JsonNode?)bump]), $"#{bump}", heldBumps.Contains(bump) ? "yours" : "merges by itself")]);
+            return Json.ArrayOf([Link(_team, Json.ArrayOf([(JsonNode?)bump]), $"#{bump}", heldBumps.Contains(bump) ? "yours" : "merges by itself")]);
         }
         if (state is "open" or "unknown")
         {
             var refs = (r?["refs"]?.AsArray().Select(Json.Long) ?? []).Prepend(Json.Long(wait["n"])).Distinct().Order();
             var named = Json.Truthy(r?["pr"]) ? r!["pr"] : wait["n"];
-            return ArrayOf(new[] { Link(team, ArrayOf(refs.Select(n => (JsonNode?)n)), $"{name}#{Raw(named)}", wait["shown"]?.DeepClone()) }.Concat(AfterIt(wait, team, name)));
+            return Json.ArrayOf(new[] { Link(team, Json.ArrayOf(refs.Select(n => (JsonNode?)n)), $"{name}#{Raw(named)}", wait["shown"]?.DeepClone()) }.Concat(AfterIt(wait, team, name)));
         }
-        if (state is "merged" or "closed") return ArrayOf(AfterIt(wait, team, name));
-        return ArrayOf([Link(team, [], $"{name}#{Raw(wait["n"])}", wait["shown"]?.DeepClone())]);
+        if (state is "merged" or "closed") return Json.ArrayOf(AfterIt(wait, team, name));
+        return Json.ArrayOf([Link(team, [], $"{name}#{Raw(wait["n"])}", wait["shown"]?.DeepClone())]);
     }
 
     private IEnumerable<JsonObject> AfterIt(JsonNode wait, string? team, string name)
@@ -813,19 +790,6 @@ internal sealed partial class Board
         yield return Link(team, [], $"{(Json.Truthy(wait["package"]) ? Raw(wait["package"]) : name)}'s release", "yours");
         if (Json.Truthy(wait["package"]))
             yield return Link(_team, [], $"{_team}'s bump", "merges by itself");
-    }
-
-    /// <summary>A released wait naming a package is still held while a Dependabot PR bumping it is open, which it says.</summary>
-    private static void WithHeldBumps(List<JsonObject> waits, JsonArray bumps)
-    {
-        foreach (var wait in waits.Where(wait => Json.Text(wait["state"]) == "released" && Json.Truthy(wait["package"])))
-        {
-            var package = Json.Text(wait["package"]);
-            var bump = bumps.FirstOrDefault(pr => Regex.Split(Json.Text(pr?["title"]) ?? "", "[ ,]+").Contains(package, StringComparer.OrdinalIgnoreCase));
-            if (bump is null) continue;
-            wait["met"] = false;
-            wait["bump"] = bump.DeepClone();
-        }
     }
 
     private static string ShownAs(JsonNode wait)
@@ -875,7 +839,7 @@ internal sealed partial class Board
         var refs = (Json.Truthy(parent) ? [Json.Long(parent)] : Array.Empty<long>()).Concat(subs.Select(Number)).Concat(open);
         return new JsonObject
         {
-            ["refs"] = ArrayOf(refs.Select(n => (JsonNode?)n)),
+            ["refs"] = Json.ArrayOf(refs.Select(n => (JsonNode?)n)),
             ["pr"] = open.Count > 0 ? open[0] : null,
         };
     }
@@ -904,9 +868,9 @@ internal sealed partial class Board
             foreach (var wait in waits)
                 wait["shown"] = ShownAs(wait);
             if (waits.Any(wait => Json.Text(wait["state"]) == "released" && Json.Truthy(wait["package"])))
-                WithHeldBumps(waits, bumps ??= OpenBumps());
+                WithBumps(waits, bumps ??= OpenBumps());
             var reach = UpstreamReach(waits);
-            upstream[n] = new JsonObject { ["waits"] = ArrayOf(waits), ["reach"] = reach };
+            upstream[n] = new JsonObject { ["waits"] = Json.ArrayOf(waits), ["reach"] = reach };
         }
         return upstream;
     }
@@ -934,7 +898,7 @@ internal sealed partial class Board
         }
         var frees = new JsonObject();
         foreach (var group in pairs.GroupBy(pair => pair.Prerequisite).OrderBy(group => group.Key))
-            frees[group.Key.ToString(CultureInfo.InvariantCulture)] = ArrayOf(group.Select(pair => (JsonNode?)pair.N));
+            frees[group.Key.ToString(CultureInfo.InvariantCulture)] = Json.ArrayOf(group.Select(pair => (JsonNode?)pair.N));
         return frees;
     }
 
@@ -945,7 +909,7 @@ internal sealed partial class Board
         var checks = Checks(LoweredRuns(head));
         if (Json.Text(checks["verdict"]) != "fail") return null;
         var failing = checks["failing"]!.AsArray().Select(run => Json.Text(run?["name"])).OfType<string>().Distinct().Order(StringComparer.Ordinal);
-        return new JsonObject { ["sha"] = Json.Text(head?["oid"]) ?? "", ["failing"] = ArrayOf(failing.Select(name => (JsonNode?)name)) };
+        return new JsonObject { ["sha"] = Json.Text(head?["oid"]) ?? "", ["failing"] = Json.ArrayOf(failing.Select(name => (JsonNode?)name)) };
     }
 
     /// <summary>A red head with its branch and the head it was first seen red on, or null.</summary>
@@ -975,7 +939,7 @@ internal sealed partial class Board
         if (TooFewRequestsLeft()) return;
         CatchUp(all);
         var ready = all.Where(card => Cards.ReadyTask(card) && Json.Long(card["blockedBy"]) > 0).Select(Number);
-        var (page, _) = GatedTalk(TalkedOf(all), checks: true, extra: $"{MainFields} {BlockedByFields(ready)}", aloud: false);
+        var (page, _, _) = GatedTalk(TalkedOf(all), checks: true, extra: $"{MainFields} {BlockedByFields(ready)}", aloud: false);
         if (page?["data"]?["repository"] is not JsonObject repository)
         {
             _record.Exec($"INSERT INTO details (team, failed) VALUES ({TeamQ}, {Reconciler.Q(Now())})\n      ON CONFLICT (team) DO UPDATE SET failed = excluded.failed;");
@@ -1147,7 +1111,7 @@ internal sealed partial class Board
     {
         var freed = (frees[Raw(item["number"])]?.AsArray().Select(Json.Long) ?? [])
             .Concat(frees[item["pr"] is { } pr && Json.Truthy(pr) ? Raw(pr) : "0"]?.AsArray().Select(Json.Long) ?? []).Distinct().Order().ToList();
-        if (freed.Count > 0) item["frees"] = ArrayOf(freed.Select(n => (JsonNode?)n));
+        if (freed.Count > 0) item["frees"] = Json.ArrayOf(freed.Select(n => (JsonNode?)n));
     }
 
     /// <summary>Everything waiting on someone, whose turn it is and why, then a red default branch and when the detail was last synced as entries with no number.</summary>
@@ -1176,7 +1140,7 @@ internal sealed partial class Board
         foreach (var item in waiting)
             Finish(item, all, frees, reviewed, unticked);
         Snapshot(waiting.Count(item => Json.Text(item["turn"]) != "upstream" && !(Json.Truthy(item["dependency"]) && Json.Text(item["status"]) == "In progress")));
-        var list = ArrayOf(waiting);
+        var list = Json.ArrayOf(waiting);
         if (main is not null)
         {
             var red = main.DeepClone().AsObject();
@@ -1270,7 +1234,7 @@ internal sealed partial class Board
 
     /// <summary>The nodes of what's been seen that isn't where it was, for what a search by repo can't find.</summary>
     private static JsonArray ChangedSince(string? seen, List<JsonNode> all) =>
-        ArrayOf((Json.Parse(seen ?? "[]")?.AsArray().OfType<JsonNode>() ?? [])
+        Json.ArrayOf((Json.Parse(seen ?? "[]")?.AsArray().OfType<JsonNode>() ?? [])
             .Where(was => Json.Text(was["node"]) != "" && !all.Any(card => Number(card) == Json.Long(was["item"]) && Cards.Status(card) == Json.Text(was["status"])))
             .Select(was => was["node"]?.DeepClone()));
 
@@ -1363,7 +1327,7 @@ internal sealed partial class Board
     /// <summary>When a vision that last changed then is due another review, in seconds since the epoch, or null if that can't be worked out.</summary>
     internal static double? VisionDueAt(string since, string every, string unit)
     {
-        if (!DateTimeOffset.TryParseExact(since, "yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var at)
+        if (!DateTimeOffset.TryParseExact(since, IsoFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var at)
             || !double.TryParse(every, NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
             return null;
         if (unit == "months")

@@ -246,7 +246,7 @@ internal static partial class Commands
         var it = OwnTaskPr(board, role, pr, $"reviewer reviews only the Dev's open task PRs (#{pr} isn't one)");
         if (board.Reviewed(it)) throw new Die($"#{pr} has its review already: a PR is reviewed once");
         if (!Json.Truthy(it["isDraft"])) throw new Die($"#{pr} is ready for review already: it went to the stakeholders unreviewed");
-        if (!board.Green(pr)) throw new Die($"#{pr} isn't green: it's reviewed once CI passes");
+        if (board.HeadVerdict(pr) != "pass") throw new Die($"#{pr} isn't green: it's reviewed once CI passes");
         var body = WithMarker(file, role);
         board.Show(body);
         Console.Out.Write(Board.Must(board.Post($"comment on #{pr}", body + "\n", "pr", "comment", pr, "-R", board.Repo, "--body-file", "-")).Out);

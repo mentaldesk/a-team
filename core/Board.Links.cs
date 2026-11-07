@@ -76,14 +76,16 @@ internal sealed partial class Board
         return read.Ok && Json.TryParse(read.Out) is JsonArray bumps ? bumps : [];
     }
 
-    /// <summary>A released wait naming a package is still held while a Dependabot PR bumping it is open.</summary>
+    /// <summary>A released wait naming a package is still held while a Dependabot PR bumping it is open, which it says.</summary>
     internal static void WithBumps(List<JsonObject> waits, JsonArray bumps)
     {
         foreach (var wait in waits.Where(wait => Json.Text(wait["state"]) == "released" && Json.Truthy(wait["package"])))
         {
             var package = Json.Text(wait["package"]);
-            if (bumps.Any(bump => Regex.Split(Json.Text(bump?["title"]) ?? "", "[ ,]+").Contains(package, StringComparer.OrdinalIgnoreCase)))
-                wait["met"] = false;
+            var bump = bumps.FirstOrDefault(pr => Regex.Split(Json.Text(pr?["title"]) ?? "", "[ ,]+").Contains(package, StringComparer.OrdinalIgnoreCase));
+            if (bump is null) continue;
+            wait["met"] = false;
+            wait["bump"] = bump.DeepClone();
         }
     }
 
@@ -201,99 +203,15 @@ internal sealed partial class Board
     private static long Epoch(string? at) =>
         DateTimeOffset.Parse(at!, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal).ToUnixTimeSeconds();
 
-    private static JsonObject Talked(JsonNode? raw, string kind) => new()
+    /// <summary>Who holds this held task, if anyone said so, and whose turn it is, as the app's Waiting says.</summary>
+    internal (string? HeldBy, string Turn) HoldOn(JsonNode it)
     {
-        ["at"] = raw?["createdAt"]?.DeepClone(),
-        ["author"] = LoginOf(raw?["author"]),
-        ["body"] = Json.Text(raw?["body"]) ?? "",
-        ["kind"] = kind,
-    };
-
-    /// <summary>Everything said on an issue or PR as GraphQL gives it, its body, comments, reviews and their line comments.</summary>
-    private static IEnumerable<JsonObject> Talk(JsonNode? item)
-    {
-        yield return Talked(item, "body");
-        foreach (var comment in item?["comments"]?["nodes"]?.AsArray() ?? [])
-            yield return Talked(comment, "comment");
-        foreach (var review in item?["reviews"]?["nodes"]?.AsArray() ?? [])
-        {
-            if (!string.IsNullOrEmpty(Json.Text(review?["body"])) || Json.Text(review?["state"]) == "CHANGES_REQUESTED")
-                yield return Talked(review, "review");
-            foreach (var line in review?["comments"]?["nodes"]?.AsArray() ?? [])
-                yield return Talked(line, "line");
-        }
-    }
-
-    private GhResult Repository(string fields)
-    {
-        var (owner, name) = RepoParts;
-        return Must(_gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-f",
-            $"query=query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{{fields}}} }}"));
-    }
-
-    /// <summary>All that's been said on #n and on the open PR that closes it, in one call plus one more for a PR GitHub hasn't linked.</summary>
-    private List<JsonObject> TalkOn(string n)
-    {
-        const string seen = "reactions(content: EYES) { totalCount }";
-        var said = $"number createdAt body author {{ __typename login }}\n        comments(last: 50) {{ nodes {{ createdAt body url author {{ __typename login }} {seen} }} }}";
-        var reviewed = $"{said} url isDraft mergeable mergeStateStatus baseRefName headRefName \n              reviews(last: 50) {{ nodes {{ createdAt body state author {{ __typename login }} {seen}\n              comments(first: 50) {{ nodes {{ createdAt body author {{ __typename login }} {seen} }} }} }} }}";
-        var query = $" x{n}: issueOrPullRequest(number: {n}) {{\n      ... on Issue {{ {said} subIssuesSummary {{ total completed }}\n        closedByPullRequestsReferences(first: 1, includeClosedPrs: false) {{ nodes {{ {reviewed} }} }} }}\n      ... on PullRequest {{ {reviewed} }} }}";
-        var page = Json.Parse(Repository($"{query} \n      openPrs: pullRequests(states: OPEN, first: 100) {{ nodes {{ number body }} }} ").Out)?["data"]?["repository"]?.AsObject() ?? [];
-        var open = page["openPrs"]?["nodes"]?.AsArray() ?? [];
-        var items = page.Where(entry => entry.Key != "openPrs").Select(entry => entry.Value).OfType<JsonNode>().ToList();
-        var unlinked = new Dictionary<long, long>();
-        foreach (var item in items.Where(item => item["closedByPullRequestsReferences"]?["nodes"] is JsonArray { Count: 0 }).OrderBy(item => Json.Long(item["number"])))
-        {
-            var number = Json.Long(item["number"]);
-            if (open.FirstOrDefault(pr => Closes(pr).Contains(number)) is { } pr)
-                unlinked.TryAdd(number, Json.Long(pr["number"]));
-        }
-        JsonNode? prs = null;
-        if (unlinked.Count > 0)
-        {
-            var fields = string.Concat(unlinked.Values.Distinct().Order().Select(pr => $" p{pr}: pullRequest(number: {pr}) {{ {reviewed} }}"));
-            prs = Json.Parse(Repository(fields).Out)?["data"]?["repository"];
-        }
-        var talk = new List<JsonObject>();
-        foreach (var item in items.Where(item => item["number"]?.ToJsonString() == n))
-        {
-            talk.AddRange(Talk(item));
-            var number = Json.Long(item["number"]);
-            var nodes = unlinked.TryGetValue(number, out var pr) ? [prs?[$"p{pr}"]] : item["closedByPullRequestsReferences"]?["nodes"]?.AsArray().ToList() ?? [];
-            foreach (var node in nodes.OfType<JsonNode>())
-                talk.AddRange(Talk(node));
-        }
-        return talk;
-    }
-
-    /// <summary>Who holds this held task, if anyone said so, and whose turn it is.</summary>
-    internal (string? HeldBy, string Turn) HoldOn(JsonNode it) =>
-        HoldOf(it["marks"]?["held"] is JsonObject held && held["at"] is not null ? held : null, TalkOn(Cards.N(it)));
-
-    /// <summary>The Dev with its question, else whichever of the Lead or a stakeholder spoke first since the hold: the Lead, its turn once a
-    /// stakeholder replies, unless a stakeholder held it. Else nobody who said why.</summary>
-    internal (string? HeldBy, string Turn) HoldOf(JsonObject? held, IReadOnlyList<JsonObject> said)
-    {
-        const string dev = "<!-- a-team:dev -->";
-        const string lead = "<!-- a-team:lead -->";
-        const string anyRole = "<!-- a-team:";
-        var yours = Json.Text(held?["by"]) == "you";
-        var from = held is null ? 0 : Epoch(Json.Text(held["at"])) - AskedBefore;
-        var since = held is null ? [] : said.Where(c => Json.Text(c["kind"]) == "comment" && Epoch(Json.Text(c["at"])) >= from).ToList();
-        var theirs = since.Where(c => FromStakeholder(c) && !TeamSaid(c, anyRole)).ToList();
-        if (!yours && Newest(since.Where(c => TeamSaid(c, dev))) is { } asked)
-        {
-            var replied = said.Any(c => Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSaid(c, anyRole)
-                && string.CompareOrdinal(Json.Text(c["at"]), asked) > 0);
-            return ("dev", replied ? "dev" : "you");
-        }
-        var leads = since.Where(c => TeamSaid(c, lead)).ToList();
-        if (Newest(leads) is { } spoke && !yours && (theirs.Count == 0 || string.CompareOrdinal(Oldest(theirs), Oldest(leads)) > 0))
-            return ("lead", theirs.Any(c => string.CompareOrdinal(Json.Text(c["at"]), spoke) > 0) ? "lead" : "you");
-        return (theirs.Count > 0 ? "you" : null, "you");
+        var (page, code, _) = GatedTalk([Json.Long(it["number"])]);
+        if (page is null) throw new Stop(code == 0 ? 1 : code, "");
+        var hold = Holds([it], GatedComments(page), GatedBlocked([it]))[0];
+        return (Json.Text(hold["heldBy"]), Json.Text(hold["turn"]) ?? "you");
     }
 
     private static string? Newest(IEnumerable<JsonObject> comments) => comments.Select(c => Json.Text(c["at"])).Max(StringComparer.Ordinal);
 
-    private static string? Oldest(IEnumerable<JsonObject> comments) => comments.Select(c => Json.Text(c["at"])).Min(StringComparer.Ordinal);
 }
