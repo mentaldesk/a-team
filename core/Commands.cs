@@ -11,7 +11,7 @@ internal static partial class Commands
     /// <summary>Every command the core runs, each group's from its own file.</summary>
     internal static Dictionary<string, Handler> All()
     {
-        Dictionary<string, Handler>[] groups = [Moving(), Gating(), Arriving(), Linking(), Reading(), Queuing()];
+        Dictionary<string, Handler>[] groups = [Moving(), Gating(), Arriving(), Linking(), Reading(), Writes(), Queuing()];
         return groups.SelectMany(group => group).ToDictionary();
     }
 

@@ -106,15 +106,14 @@ refused "reviewer 8 Ready" "reviewer may not move #8 from 'Ready' to 'Ready'"
 refused "dev 7 Pitched" "dev may not move #7 from 'Exploring' to 'Pitched'"
 refused "lead 13 Idea" "lead may not move #13 from 'Done' to 'Idea'"
 
-case_ "whatever isn't ported runs in board.sh, which comes back to the core for the board's state"
+case_ "whatever isn't ported runs in board.sh"
 core_fixture
 gh_items <<'ITEMS'
 Ready 8 A task
 ITEMS
-run board demo priority you 8 High
-same "priority exit" 0 "$STATUS"
-grep -q "fallback priority: not ported yet" "$TRACE" || fail "priority: '$(cat "$TRACE")'"
-grep -q "handled __items" "$TRACE" || fail "state: '$(cat "$TRACE")'"
+run board demo format
+same "format exit" 0 "$STATUS"
+grep -q "fallback format: not ported yet" "$TRACE" || fail "format: '$(cat "$TRACE")'"
 : >"$TRACE"
 
 case_ "the reads are the core's: none of them reaches board.sh"

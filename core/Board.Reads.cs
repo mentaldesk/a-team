@@ -356,7 +356,8 @@ internal sealed partial class Board
 /// <summary>A task's acceptance criteria, and the team's record of them on its PR.</summary>
 internal static class Checklist
 {
-    private static string Norm(string text)
+    /// <summary>A criterion's words, as a caption or a record of it is matched against them.</summary>
+    internal static string Norm(string text)
     {
         text = Regex.Replace(Regex.Replace(text, @"[\[\]]", ""), @"\s+", " ");
         if (text.StartsWith(' ')) text = text[1..];
@@ -364,7 +365,7 @@ internal static class Checklist
     }
 
     /// <summary>The lines under a heading in a PR's body.</summary>
-    private static string[] Section(string pr, string heading)
+    internal static string[] Section(string pr, string heading)
     {
         var lines = pr.Replace("\r", "").Split('\n');
         var at = Array.FindIndex(lines, line => Regex.Replace(line, @"\s+$", "") == heading);
@@ -375,7 +376,7 @@ internal static class Checklist
     }
 
     /// <summary>An issue body's checklist: each item's line, depth, box and text, a wrapped line joined to its item.</summary>
-    private static List<JsonObject> Items(string body)
+    internal static List<JsonObject> Items(string body)
     {
         var items = new List<JsonObject>();
         var inside = false;
@@ -411,6 +412,28 @@ internal static class Checklist
             ["text"] = parts.Groups["text"].Value,
         };
     }
+
+    /// <summary>Criterion <paramref name="index"/>, counting from 1, or null if there's none.</summary>
+    internal static JsonObject? Nth(List<JsonObject> items, string index) =>
+        int.TryParse(index, NumberStyles.None, CultureInfo.InvariantCulture, out var at) && at >= 1 && at <= items.Count ? items[at - 1] : null;
+
+    /// <summary>A body with those lines' boxes set to <paramref name="mark"/>.</summary>
+    internal static string Boxed(string body, IReadOnlyCollection<long> lines, string mark)
+    {
+        var box = new Regex(@"^(?<lead>\s*[-*+]\s+)(\[[ xX]\]\s?)?");
+        return string.Join("\n", body.Split('\n').Select((line, at) =>
+            lines.Contains(at) ? box.Replace(line, found => $"{found.Groups["lead"].Value}[{mark}] ", 1) : line));
+    }
+
+    /// <summary>What a PR body records the team checked, by each criterion's words.</summary>
+    internal static HashSet<string> Recorded(string pr) =>
+        Section(pr, "## Checked by the team").Select(line => Regex.Match(line, "^- `(?:screen|test)` (?<text>.*)$"))
+            .Where(found => found.Success).Select(found => Norm(found.Groups["text"].Value)).ToHashSet();
+
+    /// <summary>The captions of a PR body's pictures.</summary>
+    internal static HashSet<string> Pictured(string pr) =>
+        Section(pr, "## What it looks like").Select(line => Regex.Match(line, @"^!\[(?<alt>[^\]]*)\]"))
+            .Where(found => found.Success).Select(found => Norm(found.Groups["alt"].Value)).ToHashSet();
 
     /// <summary>The checklist with how the team checked each, and its picture.</summary>
     internal static JsonArray Read(string issue, string pr)

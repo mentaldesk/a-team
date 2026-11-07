@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
@@ -1475,9 +1474,6 @@ internal sealed partial class Board
         return fields.Length == 2 && long.TryParse(fields[0], out var total) && long.TryParse(fields[1], out var open) ? (total, open) : null;
     }
 
-    /// <summary>The repos the team contributes to.</summary>
-    internal List<string> ContributesTo => (_config["contributesTo"] as JsonArray ?? []).Select(Raw).ToList();
-
     /// <summary>[task, why] for each reason the Dev has to look at one of its PRs on a repo the team contributes to, on the open task its body says it's needed by.</summary>
     internal List<(long N, string Why)> UpstreamWakes(string upstream, List<JsonNode> all)
     {
@@ -1555,24 +1551,13 @@ internal sealed partial class Board
             .Select(one => one.At).Max(StringComparer.Ordinal);
     }
 
-    /// <summary>The branches of that checkout's worktrees. What git says of a checkout it can't read goes to stderr, and there are none.</summary>
+    /// <summary>The branches of that checkout's worktrees, with what git says of one it can't read passed on.</summary>
     internal static List<string> WorktreeBranches(string checkout)
     {
-        var start = new ProcessStartInfo("git") { UseShellExecute = false, RedirectStandardOutput = true };
-        foreach (var arg in new[] { "-C", checkout, "worktree", "list", "--porcelain" })
-            start.ArgumentList.Add(arg);
-        try
-        {
-            using var git = Process.Start(start)!;
-            var said = git.StandardOutput.ReadToEnd();
-            git.WaitForExit();
-            const string prefix = "branch refs/heads/";
-            return said.Split('\n').Where(line => line.StartsWith(prefix, StringComparison.Ordinal)).Select(line => line[prefix.Length..]).ToList();
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return [];
-        }
+        const string prefix = "branch refs/heads/";
+        var listed = Git("-C", checkout, "worktree", "list", "--porcelain");
+        Console.Error.Write(listed.Err);
+        return listed.Out.Split('\n').Where(line => line.StartsWith(prefix, StringComparison.Ordinal)).Select(line => line[prefix.Length..]).ToList();
     }
 
     /// <summary>The number of a PR from that branch that has merged and was the team's, or nothing.</summary>
