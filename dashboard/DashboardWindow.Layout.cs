@@ -58,9 +58,9 @@ public sealed partial class DashboardWindow
     }
 
     /// <summary>Claude Code down the right of whichever area is showing, working in the state folder.</summary>
-    private AssistantPane NewAssistant(AssistantSetup setup)
+    private AssistantPane NewAssistant(AssistantSetup setup, bool toolCallsInFull)
     {
-        var pane = setup.Pane(_stateRoot, action => App?.Invoke(action), () => App);
+        var pane = setup.Pane(_stateRoot, action => App?.Invoke(action), () => App, toolCallsInFull);
         Place(pane);
         pane.Visible = false;
         pane.HasFocusChanged += (_, _) => ShowMessage();

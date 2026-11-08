@@ -2,7 +2,7 @@ using MentalDesk.Tui.Settings;
 
 namespace ATeam.Dashboard;
 
-/// <summary>Settings' Dashboard page: whether sessions show every tool call, and which icons the app draws.</summary>
+/// <summary>Settings' Dashboard page: whether sessions and the Assistant show every tool call, and which icons the app draws.</summary>
 public sealed class DashboardPage : SettingsPage
 {
     internal const string Name = "Dashboard";
