@@ -94,15 +94,20 @@ dispatch() {
     if [ -z "$reasons" ]; then
       rm -f "$dir/${prefix}gave-up"
       forget_tries "$dir/${prefix}fingerprint"
-      [ "$creative" = true ] && [ $((now - last)) -ge $(($(cfg '.dispatch.creativeEvery // 180') * 60)) ] ||
-        return
+      creative_due || return
       reasons=$SCHEDULED
     fi
     items=$(jq -r '.items[]?' <<<"$triggers")
     fresh "$dir/${prefix}fingerprint" "$reasons" "$dir/latest.jsonl"
     case $? in
       1) return ;;
-      2) give_up_role; return ;;
+      2)
+        give_up_role
+        [ -f "$dir/${prefix}gave-up" ] && creative_due || return
+        reasons=$SCHEDULED items=''
+        launch
+        return
+        ;;
     esac
     card=$(jq -c 'select(.card) | {number: .card}' <<<"$triggers")
     launch
@@ -388,6 +393,12 @@ over_budget() {
 # The Lead's run on a timer, the same words each time however healthy, which is never counted as a try.
 SCHEDULED="it's been a while: time to pitch or discover"
 
+# creative_due: whether it's time for the role's run on a timer.
+creative_due() { [ "$creative" = true ] && [ $((now - last)) -ge $(($(cfg '.dispatch.creativeEvery // 180') * 60)) ]; }
+
+# ended_in_error <log>: whether the run logged there ended in an API failure or a usage limit, so it never got to try.
+ended_in_error() { [ "$(jq -R 'fromjson? | select(.type == "result") | .is_error == true' "$1" 2>/dev/null | tail -n 1)" = true ]; }
+
 # retry_wait <tries>: seconds before the next try, 15 minutes after the first and an hour after the rest, never above retryAfter.
 retry_wait() {
   local wait=60 longest
@@ -398,18 +409,20 @@ retry_wait() {
 
 # fresh <file> <reasons> <log>: whether these reasons are worth a run: 0 if so, 1 to wait, 2 if the tries have run out, with
 # $tries saying how many they were. A run that finished and left the reasons as they were is a try; one logged to <log> that
-# died before finishing, or started before the board last moved to a new format, which stopped it, isn't.
-# <file> holds "<fingerprint> <started> <tries>".
+# died before finishing, ended in an error, or started before the board last moved to a new format, which stopped it, isn't.
+# Whether other checks are still running doesn't make the reasons new. <file> holds "<fingerprint> <started> <tries>".
 fresh() {
   local fingerprint tried at
-  fingerprint=$(shasum <<<"$2" | cut -c1-12)
+  fingerprint=$(sed 's/, other checks still running$//' <<<"$2" | shasum | cut -c1-12)
   tries=''
   read -r tried at tries 2>/dev/null <"$1"
   tries=${tries:-1}
   if [ "$fingerprint" != "${tried:-}" ]; then
     tries=1
+  elif [ -f "$dir/${prefix}gave-up" ]; then
+    return 2
   elif [ "${at:-0}" -gt "$moved" ] && { $DRY_RUN || grep -q '"type":"result"' "$3" 2>/dev/null; }; then
-    if [ "$2" = "$SCHEDULED" ]; then
+    if [ "$2" = "$SCHEDULED" ] || ended_in_error "$3"; then
       [ $((now - ${at:-0})) -ge $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] || return 1
     else
       [ "$tries" -lt "$(cfg '.dispatch.maxRuns // 3')" ] || return 2

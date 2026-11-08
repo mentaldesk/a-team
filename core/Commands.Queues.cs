@@ -199,7 +199,7 @@ internal static partial class Commands
             }
         }
         if (Json.Text(pr["mergeable"]) == "CONFLICTING")
-            wake.Task(number, title, $"PR #{p} conflicts with its base: merge the base branch into it and resolve");
+            wake.Task(number, title, $"PR #{p} conflicts with its base at {board.ShortHead(p)}: merge the base branch into it and resolve");
     }
 
     private static void WakeOnHeld(Wake wake)

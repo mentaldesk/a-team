@@ -160,7 +160,7 @@ internal sealed partial class Board
         return _record.Rows($"""
             SELECT started, cost, log FROM runs JOIN run_items ON run_items.run = runs.id
                 WHERE team = {TeamQ} AND role = {Reconciler.Q(role)} AND item = {n} AND ended IS NOT NULL
-                AND COALESCE(outcome, '') NOT IN ('died', 'killed') ORDER BY runs.id DESC LIMIT {count};
+                AND outcome IS NULL ORDER BY runs.id DESC LIMIT {count};
             """).OfType<JsonNode>().Reverse().ToList();
     }
 
@@ -1162,6 +1162,13 @@ internal sealed partial class Board
         foreach (var hold in Holds(heldCards, said, GatedBlocked(all)))
         {
             hold.Remove("unread");
+            if (Json.Text(hold["heldBy"]) == StatusRoute.Dispatcher && prs.FirstOrDefault(pr => Json.Long(pr["n"]) == Json.Long(hold["number"])) is { } held)
+            {
+                hold["pr"] = held["pr"]?.DeepClone();
+                hold["prUrl"] = held["prUrl"]?.DeepClone();
+                hold["base"] = held["base"]?.DeepClone();
+                hold["branch"] = held["head"]?.DeepClone();
+            }
             waiting.Add(hold);
         }
         waiting.AddRange(UnrankedIdeas(all, said));

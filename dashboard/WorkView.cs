@@ -23,7 +23,7 @@ public sealed class WorkView : View
         ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && !item.Document && item.Status is "Idea" or "Pitched" && !item.GaveUp, null),
         ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs || item.Document) && item.Question.Length == 0 && !item.GaveUp, null),
         ("Blocked", null, Icon.Blocked, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0 || item.GaveUp, null),
-        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.WithTheDev || item.Status == "In review" && item.Holdup.Length > 0),
+        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0 && !item.GaveUp, item => !item.GaveUp && (item.WithTheDev || item.Status == "In review" && item.Holdup.Length > 0)),
     ];
 
     /// <summary>The gate a card waits at, as your time on it is split by; Other for one at none of them, like a task

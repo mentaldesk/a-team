@@ -97,7 +97,7 @@ internal sealed partial class Board
     }
 
     private static string WithoutMarkers(string body) =>
-        Regex.Replace(Regex.Replace(body, @"[ \t]*<!-- a-team:(lead|dev|customer|reviewer|shelved [^>]*) -->[ \t]*", ""), @"\s+$", "");
+        Regex.Replace(Regex.Replace(body, @"[ \t]*<!-- a-team:(lead|dev|customer|reviewer|dispatch|shelved [^>]*) -->[ \t]*", ""), @"\s+$", "");
 
     private static JsonObject Remark(JsonNode said, JsonNode? pr) => new()
     {

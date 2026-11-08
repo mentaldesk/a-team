@@ -107,6 +107,7 @@ public class AttentionTests
         Assert.Equal("Blocked", WorkView.GateOf(new WaitingItem(8, "", "Ready", "", "t", Question: "Which?")));
         Assert.Equal("Blocked", WorkView.GateOf(new WaitingItem(8, "", "In progress", "", "t", HeldBy: "dispatcher")));
         Assert.Equal("Blocked", WorkView.GateOf(new WaitingItem(8, "", "In review", "", "t", HeldBy: "dispatcher")));
+        Assert.Equal("Blocked", WorkView.GateOf(new WaitingItem(8, "", "In review", "", "t", Pr: 436, HeldBy: "dispatcher")));
         Assert.Equal("Blocked", WorkView.GateOf(new WaitingItem(8, "", "Pitched", "", "t", Pitch: true, HeldBy: "dispatcher")));
         Assert.Equal("Review", WorkView.GateOf(Task49));
         Assert.Equal("Review", WorkView.GateOf(new WaitingItem(9, "", "In review", "", "t")));

@@ -56,6 +56,21 @@ dispatch_dev --dry-run
 same "a run" 1 "$(starts 'would start: #12: CI failed on PR #912 at cafe123')"
 same "from the first try" 1 "$(cut -d' ' -f3 "$(tries_file)")"
 
+case_ "CI on one commit settling, or starting again, is the same reason: the wait and the count carry on"
+dispatcher
+dispatch_dev --dry-run
+one_task "$CI, other checks still running"
+aged "$(tries_file)" 14
+dispatch_dev --dry-run
+same "no second run yet" 1 "$(starts 'would start: #12')"
+aged "$(tries_file)" 15
+dispatch_dev --dry-run
+same "counted" 2 "$(cut -d' ' -f3 "$(tries_file)")"
+one_task
+aged "$(tries_file)" 60
+dispatch_dev --dry-run
+same "and on" 3 "$(cut -d' ' -f3 "$(tries_file)")"
+
 case_ "a task that's held drops out, and the Dev carries on with the others"
 dispatcher
 jq -n --arg ci "$CI" '{reasons: [$ci, "PR #914 is green but still a draft"], creative: false, ready: null, chores: [],
@@ -163,6 +178,27 @@ dispatch_dev --dry-run
 same "a new reason runs" 1 "$(starts 'demo lead: would start: something else')"
 [ ! -e "$A_TEAM_STATE/demo/lead/dry-gave-up" ] || fail "the note outlived its reasons"
 
+case_ "a Lead that gave up on a reason with no item still gets its scheduled runs"
+dispatcher
+jq -n '{reasons: ["room in Pitched for a drafted pitch"], creative: true, items: []}' >"$LEAD_TRIGGERS"
+dispatch_dev --dry-run
+aged "$(lead_file)" 15
+dispatch_dev --dry-run
+aged "$(lead_file)" 60
+dispatch_dev --dry-run
+aged "$(lead_file)" 60
+dispatch_dev --dry-run
+same "not due yet" 0 "$(starts 'demo lead: would start: it.s been a while')"
+echo $(($(date +%s) - 181 * 60)) >"$A_TEAM_STATE/demo/lead/dry-last-start"
+dispatch_dev --dry-run
+same "due" 1 "$(starts 'demo lead: would start: it.s been a while')"
+same "the stuck reason doesn't run" 3 "$(starts 'demo lead: would start: room in Pitched')"
+same "still given up" 3 "$(head -n 1 "$A_TEAM_STATE/demo/lead/dry-gave-up")"
+same "still counted" 3 "$(cut -d' ' -f3 "$(lead_file)")"
+dispatch_dev --dry-run
+same "not again until it's due" 1 "$(starts 'demo lead: would start: it.s been a while')"
+same "still no fourth" 3 "$(starts 'demo lead: would start: room in Pitched')"
+
 case_ "reasons that went away and came back start from nothing for the Lead"
 dispatcher
 jq -n '{reasons: ["room in Pitched for a drafted pitch"], creative: false, items: []}' >"$LEAD_TRIGGERS"
@@ -238,8 +274,12 @@ history_db "INSERT INTO runs (team, role, pid, log, started, ended, cost) VALUES
   ('demo', 'dev', 1, '$WORK/run1.jsonl', '2026-10-04T10:44:00Z', '2026-10-04T10:50:00Z', 1.25),
   ('demo', 'dev', 2, '$WORK/run2.jsonl', '2026-10-04T11:00:00Z', '2026-10-04T11:05:00Z', 1.00),
   ('demo', 'dev', 3, '$WORK/dead.jsonl', '2026-10-04T11:30:00Z', '2026-10-04T11:31:00Z', NULL),
-  ('demo', 'dev', 4, '$WORK/run3.jsonl', '2026-10-04T12:02:00Z', '2026-10-04T12:10:00Z', 0.06);
+  ('demo', 'dev', 4, '$WORK/run3.jsonl', '2026-10-04T12:02:00Z', '2026-10-04T12:10:00Z', 0.06),
+  ('demo', 'dev', 5, '$WORK/stopped.jsonl', '2026-10-04T12:30:00Z', '2026-10-04T12:31:00Z', 0.50),
+  ('demo', 'dev', 6, '$WORK/limit.jsonl', '2026-10-04T12:40:00Z', '2026-10-04T12:41:00Z', 0.25);
   UPDATE runs SET outcome = 'died' WHERE pid = 3;
+  UPDATE runs SET outcome = 'stopped' WHERE pid = 5;
+  UPDATE runs SET outcome = 'error' WHERE pid = 6;
   INSERT INTO run_items (run, item) SELECT id, 12 FROM runs WHERE team = 'demo';" >/dev/null
 printf '%s\n' "$CI" >"$WORK/reasons"
 run board demo give-up dev 12 3 "$WORK/reasons"
@@ -263,6 +303,23 @@ unset KEEP_BOARD
 same "once" 1 "$(jq -c '[.[] | select(.number == 40)] | length' "$OUT")"
 same "held" "{\"turn\":\"you\",\"heldBy\":\"dispatcher\",\"reason\":\"gave up after 3 runs: $CI\",\"question\":\"Gave up after 3 runs.\"}" \
   "$(jq -c '.[] | select(.number == 40) | {turn, heldBy, reason, question}' "$OUT")"
+
+case_ "a held task keeps its PR, and the conversation gives the comment without its marker"
+heads
+printf '%s\n' "$CI" >"$WORK/reasons"
+run board demo give-up dev 12 3 "$WORK/reasons"
+KEEP_BOARD=1
+gh_talk <<TALK
+12 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+12 comment $(ago 0) demo-app[bot] Gave up after 3 runs.\n\n<!-- a-team:dispatch -->
+12 pr-body ${TODAY}T07:30:00Z demo-app[bot] Closes #12\n<!-- a-team:dev -->
+TALK
+waiting
+same "PR" '{"pr":912,"branch":"feat/task-12","base":"main"}' "$(jq -c '.[] | select(.number == 12) | {pr, branch, base}' "$OUT")"
+run board demo conversation 12
+unset KEEP_BOARD
+same "who" dispatcher "$(jq -r '.[] | select(.body | startswith("Gave up")) | .who' "$OUT")"
+same "no marker" "Gave up after 3 runs." "$(jq -r '.[] | select(.body | startswith("Gave up")) | .body' "$OUT")"
 
 case_ "a held item drops out of triggers"
 heads
@@ -378,5 +435,25 @@ dispatch_dev
 ended
 same "the same reasons, freed, run on the next pass" $((started + 1)) "$(starts 'started .*#12')"
 same "from the first try" 1 "$(cut -d' ' -f3 "$TRIED")"
+
+case_ "a run that ended in an error isn't counted, and waits as it does today"
+echo '{"type":"result","is_error":true,"total_cost_usd":0}' >"$DISPATCH/result"
+: >"$GIVE_UPS"
+aged "$TRIED" 15
+dispatch_dev
+ended
+same "the run before it counted" 2 "$(cut -d' ' -f3 "$TRIED")"
+started=$(starts 'started .*#12')
+aged "$TRIED" 59
+dispatch_dev
+same "waits" "$started" "$(starts 'started .*#12')"
+for _ in 1 2 3; do
+  aged "$TRIED" 60
+  dispatch_dev
+  ended
+done
+same "runs again each hour" $((started + 3)) "$(starts 'started .*#12')"
+same "not counted" 2 "$(cut -d' ' -f3 "$TRIED")"
+same "never given up on" "" "$(cat "$GIVE_UPS")"
 
 finish_suite

@@ -68,6 +68,21 @@ run board demo triggers dev
 same "exit" 0 "$STATUS"
 same "reasons" '["CI failed on PR #912 at deadbee"]' "$(jq -c .reasons "$OUT")"
 
+case_ "a PR that conflicts says at which commit, so the next conflict is a new reason"
+jq '(.. | objects | select(has("isDraft"))) += {mergeable: "CONFLICTING"}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+in_progress - - windows
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["PR #912 conflicts with its base at deadbee: merge the base branch into it and resolve"]' "$(jq -c .reasons "$OUT")"
+echo '{"head": {"sha": "cafe1234567"}}' >"$PULL"
+run board demo triggers dev
+same "a new head" '["PR #912 conflicts with its base at cafe123: merge the base branch into it and resolve"]' "$(jq -c .reasons "$OUT")"
+echo '{"head": {"sha": "deadbeefcafe"}}' >"$PULL"
+gh_pr 912 true
+
 case_ "a draft PR that goes green wakes the Dev to mark it ready"
 gh_runs <<'RUNS'
 completed success 2025-09-19T09:00:00Z build
