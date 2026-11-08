@@ -533,7 +533,7 @@ public sealed class OverseerView : View
         if (selected)
             return GetAttributeForRole(VisualRole.Focus);
         var chip = card is null
-            ? GetAttributeForRole(VisualRole.Disabled)
+            ? GetAttributeForRole(lit ? VisualRole.Normal : VisualRole.Disabled)
             : CardCells.Colour(Priorities.Scheme(card.Priority), GetAttributeForRole(VisualRole.Normal));
         return lit ? Lit(chip) : chip;
     }

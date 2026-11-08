@@ -46,6 +46,24 @@ public class BundledThemesTests : StaticConfigurationTest
         }
     }
 
+    [Theory]
+    [InlineData("Low")]
+    [InlineData("Medium")]
+    [InlineData("High")]
+    [InlineData("Urgent")]
+    public void Every_theme_keeps_a_Priority_s_number_readable_on_a_lit_chip(string priority)
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            var ink = SchemeManager.GetScheme(Priorities.Scheme(priority)).GetAttributeForRole(VisualRole.Normal).Foreground;
+            var lit = SchemeManager.GetScheme(LogSchemes.Related).GetAttributeForRole(VisualRole.Normal).Background;
+            Assert.True(Contrast(ink, lit) >= 2, $"{theme} {priority} is {Contrast(ink, lit):0.00}:1");
+        }
+    }
+
     [Fact]
     public void Every_theme_fills_the_library_s_buttons()
     {
@@ -294,20 +312,5 @@ public class BundledThemesTests : StaticConfigurationTest
                 $"{theme} {role} is {Contrast(attribute.Foreground, attribute.Background):0.00}:1");
     }
 
-    static double Contrast(Color foreground, Color background)
-    {
-        var (a, b) = (Luminance(foreground), Luminance(background));
-        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
-    }
-
-    static double Luminance(Color colour)
-    {
-        static double Channel(byte value)
-        {
-            var v = value / 255.0;
-            return v <= 0.03928 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
-        }
-
-        return 0.2126 * Channel(colour.R) + 0.7152 * Channel(colour.G) + 0.0722 * Channel(colour.B);
-    }
+    static double Contrast(Color foreground, Color background) => LogSchemes.Contrast(foreground, background);
 }

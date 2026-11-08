@@ -1228,6 +1228,43 @@ public class OverseerTests : IDisposable
         Assert.Equal(related, At(warned.X + 7, warned.Y).Background);
     }
 
+    [Fact]
+    public void A_lit_count_is_drawn_in_the_normal_foreground_and_an_unlit_one_stays_dim()
+    {
+        LogSchemes.Register();
+        using var app = Terminal.Gui.App.Application.Create().Init(Terminal.Gui.Drivers.DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(120, 24);
+        var window = new Terminal.Gui.Views.Window();
+        var view = new OverseerView(["a"]) { Width = Terminal.Gui.ViewBase.Dim.Fill(), Height = Terminal.Gui.ViewBase.Dim.Fill() };
+        window.Add(view);
+        app.Begin(window);
+        view.Show([
+            Card(10, "Building", days: 1),
+            Card(20, "Building", days: 2),
+            .. Enumerable.Range(31, 30).Select(number => TaskOf(20, number, "Ready", priority: "Urgent")),
+            TaskOf(10, 61, "Ready"),
+        ]);
+        view.Select("a", 10);
+        var scheme = SchemeManager.GetScheme(Schemes.Base);
+        var related = SchemeManager.GetScheme(LogSchemes.Related).GetAttributeForRole(VisualRole.Normal).Background;
+        Terminal.Gui.Drawing.Attribute Count()
+        {
+            app.LayoutAndDraw(forceRedraw: true);
+            var cells = app.Driver.Contents!;
+            var place = Enumerable.Range(0, cells.GetLength(0))
+                .SelectMany(y => Enumerable.Range(0, cells.GetLength(1)).Select(x => (X: x, Y: y)))
+                .First(at => cells[at.Y, at.X].Grapheme == "+");
+            return cells[place.Y, place.X].Attribute!.Value;
+        }
+
+        var lit = Count();
+        Assert.Equal(related, lit.Background);
+        Assert.Equal(scheme.GetAttributeForRole(VisualRole.Normal).Foreground, lit.Foreground);
+
+        view.Select("a", 31);
+        Assert.Equal(scheme.GetAttributeForRole(VisualRole.Disabled), Count());
+    }
+
     private static OverseerBoard Board(IReadOnlyList<BoardCard> cards, IReadOnlyList<string>? teams = null)
     {
         var board = new OverseerBoard(teams ?? ["a"]);
