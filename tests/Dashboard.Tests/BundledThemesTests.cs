@@ -32,6 +32,21 @@ public class BundledThemesTests : StaticConfigurationTest
     }
 
     [Fact]
+    public void Every_theme_s_related_highlight_sits_between_its_selection_and_its_background()
+    {
+        BundledThemes.Load();
+
+        foreach (var theme in BundledThemes.Names)
+        {
+            BundledThemes.Apply(theme);
+            var cards = SchemeManager.GetScheme(Schemes.Base);
+            var related = SchemeManager.GetScheme(LogSchemes.Related).GetAttributeForRole(VisualRole.Normal).Background;
+            Assert.NotEqual(cards.GetAttributeForRole(VisualRole.Normal).Background, related);
+            Assert.NotEqual(cards.GetAttributeForRole(VisualRole.Focus).Background, related);
+        }
+    }
+
+    [Fact]
     public void Every_theme_fills_the_library_s_buttons()
     {
         BundledThemes.Load();

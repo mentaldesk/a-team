@@ -56,6 +56,12 @@ card that has waited longest.
 A column shows as many rows as fit with every lane on screen, and at least three, and puts the rest
 behind a count, as in `+7`.
 
+Select a pitch and the chip of each of its open tasks lights up, in whichever column it's in. Select a task and its
+pitch lights up. The light is a softer shade of the selection's colour, on the background alone, so a chip keeps its
+Priority colour, its marks, its amber and its animation. It follows the selection as you move, and a `+7` hiding a
+related card lights too, so you know to unfold it. The docs PR and your own items have nothing to light, and neither
+do a lane's heading or a `+7`.
+
 ## Moving around
 
 | Key | Does |

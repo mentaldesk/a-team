@@ -98,6 +98,17 @@ public sealed class OverseerBoard
     public BoardCard? SelectedCard =>
         Selected is { Number: { } number } place ? _cards.FirstOrDefault(card => card.Team == place.Team && card.Number == number) : null;
 
+    /// <summary>Whether <paramref name="card"/> goes with the selected card: its task if that's a pitch, its pitch if
+    /// that's a task.</summary>
+    public bool Related(BoardCard card) =>
+        SelectedCard is { } selected && selected.Team == card.Team
+        && (selected.Kind == CardKind.Pitch && card.Kind == CardKind.Task && card.Parent == selected.Number
+            || selected.Kind == CardKind.Task && card.Kind == CardKind.Pitch && selected.Parent == card.Number);
+
+    /// <summary>Whether a chip wears the related highlight: its card is related, or its <c>+N</c> hides one that is.</summary>
+    public bool Lit(string team, int column, Chip chip) =>
+        chip.Card is { } card ? Related(card) : Column(team, column).TakeLast(chip.Hidden).Any(Related);
+
     public bool OnMore => Selected is { Number: null, Heading: false };
 
     public bool OnHeading => Selected is { Heading: true };

@@ -1046,6 +1046,188 @@ public class OverseerTests : IDisposable
         new(team, number, $"#{number}", $"https://github.com/o/{team}/issues/{number}", status, priority, CardKind.Pitch,
             Now - TimeSpan.FromDays(days));
 
+    private static BoardCard TaskOf(int parent, int number, string status, string team = "a", string priority = "") =>
+        Card(number, status, days: 1, team, priority) with { Kind = CardKind.Task, Parent = parent };
+
+    private static bool LitInColumn(OverseerBoard board, string team, string status, int number)
+    {
+        var column = Array.IndexOf(OverseerBoard.Columns, status);
+        return board.Lit(team, column, board.Chips(team, column).Single(chip => chip.Card?.Number == number));
+    }
+
+    [Fact]
+    public void A_selected_pitch_lights_its_tasks_in_every_column_and_nothing_else()
+    {
+        var board = Board([Card(10, "Building", days: 1), Card(20, "Building", days: 2), TaskOf(10, 11, "Ready"),
+            TaskOf(10, 12, "In progress"), TaskOf(10, 13, "In review"), TaskOf(20, 21, "Ready")]);
+
+        Assert.True(board.Select("a", 10));
+
+        Assert.True(LitInColumn(board, "a", "Ready", 11));
+        Assert.True(LitInColumn(board, "a", "In progress", 12));
+        Assert.True(LitInColumn(board, "a", "In review", 13));
+        Assert.False(LitInColumn(board, "a", "Ready", 21));
+        Assert.False(LitInColumn(board, "a", "Building", 20));
+    }
+
+    [Fact]
+    public void A_selected_task_lights_its_pitch_and_not_the_tasks_beside_it()
+    {
+        var board = Board([Card(10, "Building", days: 1), TaskOf(10, 11, "Ready"), TaskOf(10, 12, "In progress")]);
+
+        Assert.True(board.Select("a", 11));
+
+        Assert.True(LitInColumn(board, "a", "Building", 10));
+        Assert.False(LitInColumn(board, "a", "In progress", 12));
+    }
+
+    [Fact]
+    public void A_task_whose_pitch_is_off_the_board_and_a_pitch_with_no_tasks_light_nothing()
+    {
+        var board = Board([Card(10, "Building", days: 1), TaskOf(99, 11, "Ready")]);
+
+        Assert.True(board.Select("a", 11));
+        Assert.False(LitInColumn(board, "a", "Building", 10));
+
+        Assert.True(board.Select("a", 10));
+        Assert.False(LitInColumn(board, "a", "Ready", 11));
+    }
+
+    [Theory]
+    [InlineData(CardKind.Docs)]
+    [InlineData(CardKind.Yours)]
+    public void A_card_with_no_relations_lights_nothing(CardKind kind)
+    {
+        var board = Board([Card(10, "Building", days: 1), TaskOf(10, 11, "Ready"), Card(12, "In review", days: 1) with { Kind = kind }]);
+
+        Assert.True(board.Select("a", 12));
+
+        Assert.False(LitInColumn(board, "a", "Building", 10));
+        Assert.False(LitInColumn(board, "a", "Ready", 11));
+    }
+
+    [Fact]
+    public void A_lane_heading_lights_nothing()
+    {
+        var board = Board([Card(10, "Building", days: 1), TaskOf(10, 11, "Ready")]);
+
+        Assert.True(board.SelectHeading("a"));
+
+        Assert.False(LitInColumn(board, "a", "Building", 10));
+        Assert.False(LitInColumn(board, "a", "Ready", 11));
+    }
+
+    [Fact]
+    public void The_same_number_in_another_team_is_never_lit()
+    {
+        var board = Board([Card(10, "Building", days: 1), TaskOf(10, 11, "Ready"),
+            Card(10, "Building", days: 1, team: "b"), TaskOf(10, 11, "Ready", team: "b")], ["a", "b"]);
+
+        Assert.True(board.Select("a", 10));
+
+        Assert.True(LitInColumn(board, "a", "Ready", 11));
+        Assert.False(LitInColumn(board, "b", "Ready", 11));
+        Assert.False(LitInColumn(board, "b", "Building", 10));
+    }
+
+    [Fact]
+    public void A_count_lights_when_it_hides_a_related_card_and_unfolding_shows_that_card_lit()
+    {
+        var ready = Array.IndexOf(OverseerBoard.Columns, "Ready");
+        var board = Board([Card(10, "Building", days: 1), Card(20, "Building", days: 2),
+            TaskOf(20, 31, "Ready", priority: "Urgent"), TaskOf(20, 32, "Ready", priority: "Urgent"),
+            TaskOf(20, 33, "Ready"), TaskOf(10, 34, "Ready")]);
+        var count = board.Chips("a", ready)[^1];
+        Assert.True(count.IsMore);
+
+        Assert.True(board.Select("a", 10));
+        Assert.True(board.Lit("a", ready, count));
+
+        Assert.True(board.Select("a", 20));
+        Assert.True(board.Lit("a", ready, count));
+        board.Unfold();
+        Assert.True(LitInColumn(board, "a", "Ready", 33));
+    }
+
+    [Fact]
+    public void A_count_hiding_only_unrelated_cards_stays_unlit()
+    {
+        var ready = Array.IndexOf(OverseerBoard.Columns, "Ready");
+        var board = Board([Card(10, "Building", days: 1), Card(20, "Building", days: 2),
+            TaskOf(10, 31, "Ready", priority: "Urgent"), TaskOf(20, 32, "Ready", priority: "Urgent"),
+            TaskOf(20, 33, "Ready"), TaskOf(20, 34, "Ready")]);
+
+        Assert.True(board.Select("a", 10));
+
+        Assert.False(board.Lit("a", ready, board.Chips("a", ready)[^1]));
+    }
+
+    [Fact]
+    public void The_light_follows_the_selection_on_an_arrow_key()
+    {
+        var board = Board([Card(10, "Building", days: 1), Card(20, "Building", days: 2), TaskOf(10, 21, "Ready")]);
+        Assert.True(board.Select("a", 20));
+        Assert.False(LitInColumn(board, "a", "Ready", 21));
+
+        board.MoveRow(+1);
+
+        Assert.Equal(10, board.SelectedCard?.Number);
+        Assert.True(LitInColumn(board, "a", "Ready", 21));
+    }
+
+    [Fact]
+    public void A_lit_chip_changes_only_its_background_and_an_overdue_age_or_warning_stays_amber()
+    {
+        LogSchemes.Register();
+        using var app = Terminal.Gui.App.Application.Create().Init(Terminal.Gui.Drivers.DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(120, 24);
+        var window = new Terminal.Gui.Views.Window();
+        var view = new OverseerView(["a"]) { Width = Terminal.Gui.ViewBase.Dim.Fill(), Height = Terminal.Gui.ViewBase.Dim.Fill() };
+        window.Add(view);
+        app.Begin(window);
+        view.Show([
+            Card(10, "Building", days: 1),
+            TaskOf(10, 77, "Ready", priority: "High") with { Since = Now - TimeSpan.FromDays(6), Blocked = true },
+            TaskOf(10, 78, "In progress"),
+            TaskOf(10, 79, "In review"),
+        ]);
+        view.Select("a", 10);
+        view.Show(OverseerState.Empty with
+        {
+            Now = Now,
+            Limits = new Dictionary<string, string> { ["Ready"] = "2d" },
+            Worked = new Dictionary<(string, int), string> { [("a", 78)] = "dev" },
+            Holding = new HashSet<(string, int)> { ("a", 79) },
+        });
+
+        app.LayoutAndDraw(forceRedraw: true);
+
+        var cells = app.Driver.Contents!;
+        Terminal.Gui.Drawing.Attribute At(int x, int y) => cells[y, x].Attribute!.Value;
+        (int X, int Y) Find(string first, string second) => Enumerable.Range(0, cells.GetLength(0))
+            .SelectMany(y => Enumerable.Range(0, cells.GetLength(1) - 1).Select(x => (X: x, Y: y)))
+            .First(place => cells[place.Y, place.X].Grapheme == first && cells[place.Y, place.X + 1].Grapheme == second);
+        var normal = SchemeManager.GetScheme(Schemes.Base).GetAttributeForRole(VisualRole.Normal);
+        var related = SchemeManager.GetScheme(LogSchemes.Related).GetAttributeForRole(VisualRole.Normal).Background;
+        var amber = SchemeManager.GetScheme(LogSchemes.Overdue).GetAttributeForRole(VisualRole.Normal);
+
+        var overdue = Find("7", "7");
+        Assert.Equal(related, At(overdue.X, overdue.Y).Background);
+        Assert.Equal(SchemeManager.GetScheme(Priorities.Scheme("High")).GetAttributeForRole(VisualRole.Normal).Foreground, At(overdue.X, overdue.Y).Foreground);
+        Assert.Equal(related, At(overdue.X + 4, overdue.Y).Background);
+        Assert.Equal(Icons.Glyph(Icon.Blocked, IconStyle.Unicode), cells[overdue.Y, overdue.X + 4].Grapheme);
+        Assert.Equal(amber, At(overdue.X + 5, overdue.Y));
+
+        var worked = Find("7", "8");
+        Assert.Equal(related, At(worked.X + 5, worked.Y).Background);
+        Assert.NotEqual(normal.Foreground, At(worked.X + 5, worked.Y).Foreground);
+
+        var warned = Find("7", "9");
+        Assert.Equal(Icons.Glyph(Icon.Warning, IconStyle.Unicode), cells[warned.Y, warned.X + 4].Grapheme);
+        Assert.Equal(amber, At(warned.X + 4, warned.Y));
+        Assert.Equal(related, At(warned.X + 7, warned.Y).Background);
+    }
+
     private static OverseerBoard Board(IReadOnlyList<BoardCard> cards, IReadOnlyList<string>? teams = null)
     {
         var board = new OverseerBoard(teams ?? ["a"]);

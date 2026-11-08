@@ -13,10 +13,12 @@ public static class LogSchemes
     public const string Reader = "Reader";
     public const string Warning = "Warning";
     public const string Overdue = "Overdue";
+    public const string Related = "Related";
 
     // Anything under 0.1 GetBrighterColor doubles, so that's the floor for a step it takes as asked.
     private const double Lift = 0.12;
     private const double WarningTint = 0.3;
+    private const double RelatedTint = 0.5;
     private static readonly Color Amber = new(0xFF, 0xC1, 0x07);
 
     public static void Register()
@@ -37,6 +39,7 @@ public static class LogSchemes
         SchemeManager.AddScheme(Form, form);
         SchemeManager.AddScheme(Warning, Tinted(SchemeManager.GetScheme(Schemes.Dialog), Amber, WarningTint));
         SchemeManager.AddScheme(Overdue, Tinted(baseScheme, Amber, WarningTint));
+        SchemeManager.AddScheme(Related, Tinted(baseScheme, baseScheme.GetAttributeForRole(VisualRole.Focus).Background, RelatedTint));
         Priorities.Register(baseScheme, form);
     }
 
