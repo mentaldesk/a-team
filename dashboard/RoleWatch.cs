@@ -45,6 +45,9 @@ public sealed class RoleWatch(string team, string role, string stateDir)
 
     internal string? SessionId => _log.SessionId;
 
+    /// <summary>What the dispatcher gave up on for the role, for its lane to say; null where it hasn't.</summary>
+    internal string? GaveUp { get; private set; }
+
     /// <summary>What the team's panel says about the role, after its name.</summary>
     internal string Line { get; private set; } = "";
 
@@ -68,6 +71,7 @@ public sealed class RoleWatch(string team, string role, string stateDir)
             .Concat(state is { Running: true, Card: { } card } ? [card] : []).Distinct()];
         Running = state.Running || Runs.Count > 0;
         Held = held;
+        GaveUp = state.GaveUp;
         LogPath = (Runs.LastOrDefault() ?? state.Latest) is { } newest && AgentState.Read(newest.Dir).LogPath is { } log ? log : state.LogPath;
         _log.Refresh(LogPath);
         var running = state with { Running = Running };

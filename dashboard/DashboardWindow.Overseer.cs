@@ -175,6 +175,8 @@ public sealed partial class DashboardWindow
             Stopped = _teamNames.Where(team => _checks?.Fatal(team) is { StopsTheTeam: true }).ToHashSet(),
             Stuck = _watches.Where(watch => watch.Status == RoleStatus.Stuck).GroupBy(watch => watch.Team)
                 .ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => watch.Role)]),
+            GaveUp = _watches.Where(watch => watch.GaveUp is not null).GroupBy(watch => watch.Team)
+                .ToDictionary(team => team.Key, team => (IReadOnlyList<string>)[.. team.Select(watch => $"{watch.Role} gave up: {watch.GaveUp}")]),
         });
     }
 

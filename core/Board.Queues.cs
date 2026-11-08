@@ -11,6 +11,7 @@ internal sealed partial class Board
 {
     private const string NoTalk = """{"data": {"repository": {}}}""";
     private const string AnyRole = "<!-- a-team:";
+    internal const string DispatchMarker = "<!-- a-team:dispatch -->";
     private const string RunsOnHead = """
         checkSuites(first: 50) { nodes {
             checkRuns(first: 100, filterBy: {checkType: LATEST}) { nodes { name status conclusion completedAt url } } } } } } }
@@ -150,6 +151,17 @@ internal sealed partial class Board
             """))
             last[Json.Long(run!["item"])] = run!;
         return last;
+    }
+
+    /// <summary>The role's last <paramref name="count"/> runs on #n that got as far as finishing, oldest first.</summary>
+    internal List<JsonNode> FinishedRuns(string role, string n, int count)
+    {
+        if (!Recorded) return [];
+        return _record.Rows($"""
+            SELECT started, cost, log FROM runs JOIN run_items ON run_items.run = runs.id
+                WHERE team = {TeamQ} AND role = {Reconciler.Q(role)} AND item = {n} AND ended IS NOT NULL
+                AND COALESCE(outcome, '') NOT IN ('died', 'killed') ORDER BY runs.id DESC LIMIT {count};
+            """).OfType<JsonNode>().Reverse().ToList();
     }
 
     /// <summary>Pitches with no theme and no `none` from the Lead: open ones, and done ones since runs were recorded.</summary>
@@ -635,7 +647,7 @@ internal sealed partial class Board
         foreach (var item in items)
         {
             var number = Json.Long(item["number"]);
-            if (blocked[Cards.N(item)] is not { } held || Json.Text(held["by"]) == "you") continue;
+            if (blocked[Cards.N(item)] is not { } held || Json.Text(held["by"]) is "you" or StatusRoute.Dispatcher) continue;
             var labelled = Epoch(Json.Text(held["at"]));
             var theirs = comments.Where(c => Json.Long(c["n"]) == number).ToList();
             var asked = LatestOf(theirs.Where(c => Json.Text(c["kind"]) == "comment" && TeamSaid(c, "<!-- a-team:dev -->") && Epoch(Json.Text(c["at"])) >= labelled - AskedBefore));
@@ -682,6 +694,8 @@ internal sealed partial class Board
         var labelled = Json.Text(held?["at"]);
         var since = labelled is null ? [] : comments.Where(c => Json.Long(c["n"]) == number && Json.Text(c["kind"]) == "comment"
             && Epoch(Json.Text(c["at"])) >= Epoch(labelled) - AskedBefore).ToList();
+        if (Json.Text(held?["by"]) == StatusRoute.Dispatcher)
+            return GaveUpOn(item, since, held!);
         var leads = since.Where(c => TeamSaid(c, "<!-- a-team:lead -->")).ToList();
         var lead = LatestOf(leads);
         var theirs = since.Where(c => FromStakeholder(c) && !TeamSaid(c, AnyRole)).ToList();
@@ -713,6 +727,23 @@ internal sealed partial class Board
         }
         return shown;
     }
+
+    private JsonObject GaveUpOn(JsonNode item, List<JsonObject> since, JsonObject held)
+    {
+        var why = Json.Text(held["why"]) ?? "";
+        var said = LatestOf(since.Where(c => TeamSaid(c, DispatchMarker)));
+        var shown = item.DeepClone().AsObject();
+        shown["heldBy"] = StatusRoute.Dispatcher;
+        shown["question"] = said is null ? why : Json.Text(said["body"])!.Replace(DispatchMarker, "").Trim();
+        shown["turn"] = "you";
+        shown["reason"] = why;
+        return shown;
+    }
+
+    /// <summary>Whether a stakeholder has said anything on #n since <paramref name="at"/>.</summary>
+    internal bool RepliedSince(List<JsonObject> comments, long n, string at) =>
+        comments.Any(c => Json.Long(c["n"]) == n && Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSaid(c, AnyRole)
+            && string.CompareOrdinal(Json.Text(c["at"]), at) > 0);
 
     /// <summary>The Ideas with no Priority, which never get pitched until a stakeholder gives them one. One the Lead has recommended a rank for carries it, and the case from its newest `recommend` comment.</summary>
     private List<JsonObject> UnrankedIdeas(List<JsonNode> all, List<JsonObject> said)
@@ -1038,7 +1069,7 @@ internal sealed partial class Board
             ["url"] = card["url"]?.DeepClone(),
             ["team"] = _team,
             ["priority"] = card["priority"]?.DeepClone(),
-            ["pitch"] = false,
+            ["pitch"] = Cards.GaveUp(card) && Cards.Pitch(card),
         };
         if (Cards.Dependabot(card))
         {
@@ -1123,7 +1154,7 @@ internal sealed partial class Board
         var main = detail?["main"] as JsonObject;
         var prs = GatedPrs(talk, main, all.Where(Cards.Fix).Select(Number).ToHashSet());
         var (upstream, reviewed) = UpstreamCards(all, stored);
-        var waiting = all.Where(card => Cards.Status(card) is "Pitched" or "In review" || (Cards.Status(card) == "In progress" && Cards.Dependabot(card)))
+        var waiting = all.Where(card => !Cards.GaveUp(card) && (Cards.Status(card) is "Pitched" or "In review" || (Cards.Status(card) == "In progress" && Cards.Dependabot(card))))
             .Select(card => Turn(Gated(card), said, prs)).ToList();
         foreach (var item in waiting)
             WithTasks(item, talk);

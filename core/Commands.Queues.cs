@@ -18,6 +18,8 @@ internal static partial class Commands
     /// <summary>What's been found to wake a role.</summary>
     private sealed class Wake(Board board, List<JsonNode> all, bool sweep)
     {
+        private readonly HashSet<long> _gaveUp = all.Where(Cards.GaveUp).Select(Board.Number).ToHashSet();
+
         internal Board Board => board;
 
         internal List<JsonNode> All => all;
@@ -45,6 +47,7 @@ internal static partial class Commands
         /// <summary>A reason the Dev has to start a run on task #n.</summary>
         internal void Task(long n, string title, string why)
         {
+            if (_gaveUp.Contains(n)) return;
             Reasons.Add(why);
             var task = Tasks.FirstOrDefault(one => Json.Long(one?["number"]) == n);
             if (task is not null)
@@ -55,6 +58,7 @@ internal static partial class Commands
 
         internal void Item(string reason, long n)
         {
+            if (_gaveUp.Contains(n)) return;
             Reasons.Add(reason);
             Items.Add(n);
         }
@@ -125,7 +129,7 @@ internal static partial class Commands
         var all = wake.All;
         var fixReady = all.Any(card => Cards.Startable(card) && Cards.Fix(card));
         var main = new Lazy<JsonObject?>(wake.Board.MainRed);
-        foreach (var card in all.Where(card => Cards.Marked(card, "dev") && Cards.Status(card) is "In progress" or "In review"))
+        foreach (var card in all.Where(card => Cards.Marked(card, "dev") && Cards.Status(card) is "In progress" or "In review" && !Cards.GaveUp(card)))
             WakeOnTask(wake, card, fixReady, main);
         WakeOnHeld(wake);
         WakeOnUpstream(wake);
@@ -272,7 +276,7 @@ internal static partial class Commands
     {
         var board = wake.Board;
         if (!board.ReviewerOn) return;
-        foreach (var card in wake.All.Where(card => Cards.Marked(card, "dev") && !Cards.Dependabot(card) && Cards.Status(card) is "In progress" or "In review"))
+        foreach (var card in wake.All.Where(card => Cards.Marked(card, "dev") && !Cards.Dependabot(card) && Cards.Status(card) is "In progress" or "In review" && !Cards.GaveUp(card)))
         {
             var n = Cards.N(card);
             var (read, pr) = board.PrFor(n);
@@ -319,7 +323,7 @@ internal static partial class Commands
 
     private static void WakeLead(Wake wake)
     {
-        foreach (var pitch in wake.All.Where(card => Cards.Pitch(card) && Cards.Status(card) is not ("Idea" or "Done")))
+        foreach (var pitch in wake.All.Where(card => Cards.Pitch(card) && Cards.Status(card) is not ("Idea" or "Done") && !Cards.GaveUp(card)))
             WakeOnPitch(wake, pitch);
         WakeOnHolds(wake);
         WakeOnUpdates(wake);

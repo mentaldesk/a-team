@@ -71,7 +71,7 @@ tabs, keep their place for when you come back.
 |---|---|
 | Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
-| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, either of them asking for a secret (🔑), you, or nobody who said why. A Dependabot PR the Dev can't make build is here too, with the Dev's reason under it, and so is a green one GitHub keeps refusing to merge, with GitHub's. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
+| Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, either of them asking for a secret (🔑), you, the dispatcher after runs that changed nothing, or nobody who said why. A Dependabot PR the Dev can't make build is here too, with the Dev's reason under it, and so is a green one GitHub keeps refusing to merge, with GitHub's. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, or another team's Dev's PR to this repo once it's ready. |
 
 Each column's heading counts its cards, and orders them with the ones [holding up a
@@ -119,7 +119,7 @@ A card reads as the issue's number, then its title:
   *skipped*, *held* or *waiting on <repo>#<n>* where they apply.
 - **Who held it.** Selecting a held task in Blocked puts who held it and why on the status bar, like
   `#524 · held by the Lead · Reply here once…`, `#575 · held by you · wait until…`, or
-  `#417 · held, no reason given`. Once you've replied to the Lead, its card reads
+  `#417 · held, no reason given`, or `#415 · held by the dispatcher · gave up after 3 runs: CI failed on PR #436 at 8cee3b4`. Once you've replied to the Lead, its card reads
   `#563 · lead · reading your answer` until the Lead has read it.
 - **Its PR.** The pull request that closes a task hangs under its card as a row of its own.
 - **Its branch.** Selecting a card with a PR (a task, the docs PR or a document pitch) ends the
@@ -326,6 +326,11 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
   `Enter` or **Hold** posts your reason on the task and the card moves to Blocked, where the Dev
   leaves it alone. `Enter` with no reason holds nothing: `Why:` turns red and the foot says `Why is needed`
   until you type one. `Esc` holds nothing.
+- **Free what the dispatcher gave up on.** *Held by the dispatcher* means three runs started for exactly the same
+  reasons each finished with nothing changed (`dispatch.maxRuns` sets how many), so it stopped starting them. It holds
+  the task, pitch or PR, whatever its status, and its comment, which the reader opens at, gives the reason, the runs, what
+  they cost and each one's last line. Reply with `c`, or press `h`, and a run starts for it on the next pass. A run that
+  died or was killed doesn't count, and a new commit, a new comment or the item moving starts the count again.
 - **Release a hold.** On a held card, the same `h` reads **Release hold**: it takes the hold off,
   whoever set it, and the card leaves Blocked for the Dev's queue. Reading a held task,
   `Ctrl+R` (**Release hold**, beside **Post**) does the same, posting anything you'd written first.

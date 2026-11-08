@@ -20,9 +20,9 @@ public sealed class WorkView : View
     /// its own. Each tab tallies its columns under the Tally icon.</summary>
     internal static readonly (string Name, Icon? Kind, Icon Tally, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
     [
-        ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && !item.Document && item.Status is "Idea" or "Pitched", null),
-        ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs || item.Document) && item.Question.Length == 0, null),
-        ("Blocked", null, Icon.Blocked, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0, null),
+        ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && !item.Document && item.Status is "Idea" or "Pitched" && !item.GaveUp, null),
+        ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs || item.Document) && item.Question.Length == 0 && !item.GaveUp, null),
+        ("Blocked", null, Icon.Blocked, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0 || item.GaveUp, null),
         ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0, item => item.WithTheDev || item.Status == "In review" && item.Holdup.Length > 0),
     ];
 

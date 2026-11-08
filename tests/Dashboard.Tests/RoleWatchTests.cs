@@ -313,6 +313,15 @@ public class RoleWatchTests : IDisposable
         Assert.Equal($"Reviewer: {Line}", string.Join(' ', rows));
     }
 
+    [Fact]
+    public void What_the_role_gave_up_on_reads_from_its_state()
+    {
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        Assert.Null(AgentState.Read(dir).GaveUp);
+        File.WriteAllText(Path.Combine(dir, "gave-up"), "3\nroom in Pitched for a drafted pitch\nanother\n");
+        Assert.Equal("room in Pitched for a drafted pitch; another · 3 runs", AgentState.Read(dir).GaveUp);
+    }
+
     private void WriteStuck(string runs, int pid)
     {
         Directory.CreateDirectory(Path.Combine(_dir, "runs", runs));

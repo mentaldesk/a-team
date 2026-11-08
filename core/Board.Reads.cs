@@ -113,6 +113,7 @@ internal sealed partial class Board
         foreach (var role in StatusRoute.Roles)
             if (TeamSaid(remark, $"<!-- a-team:{role} -->"))
                 return role;
+        if (TeamSaid(remark, DispatchMarker)) return StatusRoute.Dispatcher;
         var author = Json.Text(remark["author"]) ?? "";
         return Stakeholders.Contains(author) ? "you" : author;
     }

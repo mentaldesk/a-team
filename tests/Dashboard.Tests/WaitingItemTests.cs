@@ -79,6 +79,12 @@ public class WaitingItemTests
     [Fact]
     public void A_held_task_the_Dev_is_reading_the_answer_to_says_so_as_before()
     {
+        var gaveUp = new WaitingItem(415, "", "In progress", "", "tuicode", "you", "gave up after 3 runs: CI failed on PR #436 at 8cee3b4",
+            Question: "Gave up after 3 runs.\n\n<!-- a-team:dispatch -->", HeldBy: "dispatcher");
+        Assert.Equal("#415 · held by the dispatcher · gave up after 3 runs: CI failed on PR #436 at 8cee3b4", gaveUp.Line);
+        Assert.True(gaveUp.Holdable);
+        Assert.Equal("Gave up after 3 runs.", gaveUp.Asked);
+
         var item = new WaitingItem(192, "", "Ready", "", "a-team", "dev", "reading your answer since 10:50", Question: "Which?", HeldBy: "dev");
 
         Assert.Equal("#192 · dev · reading your answer since 10:50", item.Line);

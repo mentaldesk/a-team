@@ -58,7 +58,7 @@ short_read() {
 
 dispatch() {
   local team=$1 role=$2 config=$3
-  local dir="$STATE/$team/$role" now triggers reasons creative last live limit pid at
+  local dir="$STATE/$team/$role" now triggers reasons creative last live limit pid at tries
   local sweep='' prefix='' task='' number='' started=0 picked=' ' chores='' items='' card=''
   $DRY_RUN && prefix="dry-"
   mkdir -p "$dir/logs"
@@ -92,12 +92,18 @@ dispatch() {
     reasons=$(jq -r '.reasons[]' <<<"$triggers")
     creative=$(jq -r .creative <<<"$triggers")
     if [ -z "$reasons" ]; then
+      rm -f "$dir/${prefix}gave-up"
+      forget_tries "$dir/${prefix}fingerprint"
       [ "$creative" = true ] && [ $((now - last)) -ge $(($(cfg '.dispatch.creativeEvery // 180') * 60)) ] ||
         return
-      reasons="it's been a while: time to pitch or discover"
+      reasons=$SCHEDULED
     fi
-    fresh "$dir/${prefix}fingerprint" "$reasons" "$dir/latest.jsonl" || return
     items=$(jq -r '.items[]?' <<<"$triggers")
+    fresh "$dir/${prefix}fingerprint" "$reasons" "$dir/latest.jsonl"
+    case $? in
+      1) return ;;
+      2) give_up_role; return ;;
+    esac
     card=$(jq -c 'select(.card) | {number: .card}' <<<"$triggers")
     launch
     return
@@ -379,33 +385,95 @@ over_budget() {
  $($DRY_RUN && echo "would start ")no new runs until midnight"
 }
 
-# fresh <file> <reasons> <log>: whether these reasons are worth a run. The same ones as last time
-# wait retryAfter, unless that run, logged to <log>, died before finishing, or started before the
-# board last moved to a new format, which stopped it. <file> holds
-# "<fingerprint> <started>".
+# The Lead's run on a timer, the same words each time however healthy, which is never counted as a try.
+SCHEDULED="it's been a while: time to pitch or discover"
+
+# retry_wait <tries>: seconds before the next try, 15 minutes after the first and an hour after the rest, never above retryAfter.
+retry_wait() {
+  local wait=60 longest
+  longest=$(cfg '.dispatch.retryAfter // 60')
+  [ "$1" -gt 1 ] || wait=15
+  echo $(((wait < longest ? wait : longest) * 60))
+}
+
+# fresh <file> <reasons> <log>: whether these reasons are worth a run: 0 if so, 1 to wait, 2 if the tries have run out, with
+# $tries saying how many they were. A run that finished and left the reasons as they were is a try; one logged to <log> that
+# died before finishing, or started before the board last moved to a new format, which stopped it, isn't.
+# <file> holds "<fingerprint> <started> <tries>".
 fresh() {
   local fingerprint tried at
   fingerprint=$(shasum <<<"$2" | cut -c1-12)
-  read -r tried at 2>/dev/null <"$1"
-  if [ "$fingerprint" = "${tried:-}" ] && [ "${at:-0}" -gt "$moved" ] && [ $((now - ${at:-0})) -lt $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] &&
-    { $DRY_RUN || grep -q '"type":"result"' "$3" 2>/dev/null; }; then
+  tries=''
+  read -r tried at tries 2>/dev/null <"$1"
+  tries=${tries:-1}
+  if [ "$fingerprint" != "${tried:-}" ]; then
+    tries=1
+  elif [ "${at:-0}" -gt "$moved" ] && { $DRY_RUN || grep -q '"type":"result"' "$3" 2>/dev/null; }; then
+    if [ "$2" = "$SCHEDULED" ]; then
+      [ $((now - ${at:-0})) -ge $(($(cfg '.dispatch.retryAfter // 60') * 60)) ] || return 1
+    else
+      [ "$tries" -lt "$(cfg '.dispatch.maxRuns // 3')" ] || return 2
+      [ $((now - ${at:-0})) -ge "$(retry_wait "$tries")" ] || return 1
+      tries=$((tries + 1))
+    fi
+  fi
+  [ "$2" != "$SCHEDULED" ] || tries=0
+  rm -f "$dir/${prefix}gave-up"
+  echo "$fingerprint $now $tries" >"$1"
+}
+
+# forget_tries <file>: these reasons have gone, so if they come back they start from nothing.
+forget_tries() {
+  local tried at
+  read -r tried at _ 2>/dev/null <"$1" && echo "$tried $at 0" >"$1"
+}
+
+# give_up <n> <reasons>: holds #<n> for the stakeholder, as the team's App, saying what its $tries runs were for.
+give_up() {
+  local said file
+  file=$(mktemp "$dir/${prefix}give-up.XXXXXX")
+  printf '%s\n' "$2" >"$file"
+  if said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$team "$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" give-up "$role" "$1" "$tries" "$file" 2>&1); then
+    rm -f "$file"
+    passing "$dir/${prefix}give-up-failing" "$dir/${prefix}give-up-failed-once" "$team $role: giving up working again"
+    log "$team $role: ${said//$'\n'/; }"
+  else
+    rm -f "$file"
+    failing "$dir/${prefix}give-up-failing" "$dir/${prefix}give-up-failed-once" "${said//$'\n'/ }" "$team $role: couldn't give up on #$1"
     return 1
   fi
-  echo "$fingerprint $now" >"$1"
+}
+
+# give_up_role: holds each item the role's reasons name. Reasons that name none can't be held, so the role says it gave up.
+give_up_role() {
+  local item failed=false
+  for item in $(sort -un <<<"$items"); do
+    give_up "$item" "$reasons" || failed=true
+  done
+  if [ -n "$items" ] && ! $failed; then
+    $DRY_RUN || rm -f "$dir/${prefix}fingerprint"
+    return
+  fi
+  [ -f "$dir/${prefix}gave-up" ] || log "$team $role: gave up after $tries runs: $(paste -sd ';' - <<<"$reasons")"
+  printf '%s\n%s\n' "$tries" "$reasons" >"$dir/${prefix}gave-up"
 }
 
 # pick_task <team> <dir> <triggers>: the next task a Dev run is for, as {number, title, reasons},
 # passing over the tasks in $picked and any stopped by task. A task already in hand comes first;
 # only then is a Ready task claimed, before the run starts.
 pick_task() {
-  local row n claimed
+  local row n claimed why
   mkdir -p "$2/${prefix}tried"
   while IFS= read -r row; do
     n=$(jq -r .number <<<"$row")
     [[ $picked == *" $n "* ]] && continue
     [ -e "$2/runs/$n/held" ] && continue
-    fresh "$2/${prefix}tried/$n" "$(jq -r '.reasons[]' <<<"$row")" "$2/runs/$n/latest.jsonl" &&
-      { echo "$row"; return; }
+    why=$(jq -r '.reasons[]' <<<"$row")
+    fresh "$2/${prefix}tried/$n" "$why" "$2/runs/$n/latest.jsonl"
+    case $? in
+      0) echo "$row"; return ;;
+      2) give_up "$n" "$why" && { $DRY_RUN || rm -f "$2/tried/$n"; } ;;
+    esac
   done < <(jq -c '.tasks[]?' <<<"$3")
   [ "$role" = dev ] && [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
   if ! claimed=$("$ROOT/bin/a-team" board ${prefix:+--dry-run} "$1" claim dev 2>"$2/claim.err"); then

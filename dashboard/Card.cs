@@ -27,7 +27,7 @@ public sealed record Card(WaitingItem Item, bool IsPr, Icon? Column = null, bool
         : Item.Pr != 0 && Item.Pr != Item.Number ? [this with { IsPr = true }]
         : [];
 
-    internal bool StuckBump => Item.Dependency && Item.Held;
+    internal bool StuckBump => Item.Dependency && Item.Held && !Item.GaveUp;
 
     /// <summary>The reason in rows, a word too long for one, like a URL, broken across them so none of it is lost.</summary>
     private List<string> Reason => ReasonWidth <= 0
