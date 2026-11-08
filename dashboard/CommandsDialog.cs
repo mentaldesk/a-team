@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Filtering;
 using MentalDesk.Tui.Dialogs;
 using Terminal.Gui.Input;
@@ -13,7 +14,7 @@ public sealed class CommandsDialog : DashboardDialog
     private readonly IReadOnlyList<CommandDescriptor> _commands;
     private readonly List<CommandDescriptor> _matches = [];
     private readonly int _labelWidth;
-    private readonly TextField _filter;
+    private readonly PlaceholderField _filter;
     private readonly ListView _list;
     private readonly Label _noMatches;
     private readonly Button _enter;
@@ -27,7 +28,7 @@ public sealed class CommandsDialog : DashboardDialog
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);
 
-        _filter = new TextField { X = 0, Y = 0, Width = Dim.Fill() };
+        _filter = new PlaceholderField { X = 0, Y = 0, Width = Dim.Fill() };
         _filter.ValueChanged += (_, _) => Narrow();
         // The filter binds Home/End to its own cursor, so the list would never see them.
         _filter.KeyBindings.Remove(Key.Home);
@@ -58,7 +59,7 @@ public sealed class CommandsDialog : DashboardDialog
 
     internal ListView List => _list;
 
-    internal TextField Filter => _filter;
+    internal PlaceholderField Filter => _filter;
 
     internal bool NoMatches => _noMatches.Visible;
 

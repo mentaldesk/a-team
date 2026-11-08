@@ -1,5 +1,6 @@
 using System.Text;
 using MentalDesk.Tui.Dialogs;
+using MentalDesk.Tui.Fields;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -14,7 +15,7 @@ public sealed class AskFixDialog : DashboardDialog
     private readonly IReadOnlyList<string> _points;
     private readonly List<CheckBox> _boxes = [];
     private readonly View _list;
-    private readonly TextField _note;
+    private readonly PlaceholderField _note;
     private int _wrappedTo;
 
     public AskFixDialog(int number, IReadOnlyList<string> points)
@@ -38,7 +39,7 @@ public sealed class AskFixDialog : DashboardDialog
         foreach (var point in points)
             _boxes.Add(Box(point));
         var label = new Label { Text = "Note:", X = 1, Y = Pos.Bottom(_list) + 1 };
-        _note = new TextField { X = 7, Y = Pos.Top(label), Width = Dim.Fill(1) };
+        _note = new PlaceholderField { X = 7, Y = Pos.Top(label), Width = Dim.Fill(1) };
         Bind(AskId, Key.Enter.WithCtrl, "Ask", Ask, () => Ticked.Count > 0);
         Register(CancelId, "Cancel", RequestStop);
         AddButton(ButtonKind.Primary, AskId);
@@ -58,7 +59,7 @@ public sealed class AskFixDialog : DashboardDialog
 
     internal IReadOnlyList<CheckBox> Boxes => _boxes;
 
-    internal TextField Note => _note;
+    internal PlaceholderField Note => _note;
 
     internal IReadOnlyList<string> Ticked =>
         [.. _points.Where((_, i) => _boxes[i].Value == CheckState.Checked)];

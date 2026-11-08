@@ -1962,7 +1962,7 @@ public class ReaderDialogTests
         Assert.True(dialog.Shelving);
         Assert.True(dialog.Field.HasFocus);
         Assert.Equal("Not now #180", dialog.CommentTitle);
-        Assert.Equal(2, dialog.Weeks.Value);
+        Assert.Equal(2, dialog.ShelveWeeks);
         Assert.True(dialog.WeeksShown);
         Assert.Equal(2, dialog.Field.Frame.Y);
         Assert.Equal("Ctrl+Enter Not now · Esc Comment instead", Buttons(dialog));
@@ -2002,12 +2002,44 @@ public class ReaderDialogTests
 
         dialog.NewKeyDownEvent(Key.Tab.WithShift);
         Assert.True(dialog.Weeks.HasFocus);
-        dialog.Weeks.Value = 19;
-        dialog.Weeks.Value = 0;
+        dialog.Weeks.Text = "19";
+        dialog.Weeks.Text = "0";
+        dialog.Weeks.Text = "x";
 
-        Assert.Equal(19, dialog.Weeks.Value);
+        Assert.Equal("19", dialog.Weeks.Text);
+        Assert.Equal(19, dialog.ShelveWeeks);
         dialog.NewKeyDownEvent(Key.Tab);
         Assert.True(dialog.Field.HasFocus);
+    }
+
+    [Fact]
+    public void Up_and_down_change_the_weeks_and_stop_at_one()
+    {
+        using var dialog = Shelving(open: true);
+        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+
+        dialog.NewKeyDownEvent(Key.CursorUp);
+        Assert.Equal("3", dialog.Weeks.Text);
+
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal("1", dialog.Weeks.Text);
+        Assert.True(dialog.Weeks.HasFocus);
+    }
+
+    [Fact]
+    public void Clearing_the_weeks_keeps_the_last_number_and_puts_it_back_on_leaving()
+    {
+        using var dialog = Shelving(open: true);
+        dialog.NewKeyDownEvent(Key.Tab.WithShift);
+        dialog.Weeks.Text = "5";
+
+        dialog.Weeks.Text = "";
+        Assert.Equal(5, dialog.ShelveWeeks);
+
+        dialog.NewKeyDownEvent(Key.Tab);
+        Assert.Equal("5", dialog.Weeks.Text);
     }
 
     [Fact]
@@ -2018,7 +2050,7 @@ public class ReaderDialogTests
         using var dialog = Shelving((weeks, reason) => { shelved.Add((weeks, reason)); return Task.FromResult<string?>(null); },
             post: _ => Task.FromResult<string?>(++posted < 0 ? "" : null));
         dialog.NewKeyDownEvent(new Key('l'));
-        dialog.Weeks.Value = 3;
+        dialog.Weeks.Text = "3";
 
         dialog.NewKeyDownEvent(Key.Enter.WithCtrl);
 
