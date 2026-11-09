@@ -344,11 +344,11 @@ public sealed partial class DashboardWindow
             _syncing = null;
     }
 
-    /// <summary>Reads <paramref name="team"/>'s lane again, where Overseer has read it.</summary>
+    /// <summary>Reads <paramref name="team"/>'s lane from now, where Overseer has read it.</summary>
     private void ReadLane(string team)
     {
         if (_options.ReadBoard is not null && _boardReadAt.ContainsKey(team))
-            (_boarding ??= new TeamReads([], _options.ReadBoard)).Add(team);
+            (_boarding ??= new TeamReads([], _options.ReadBoard)).Restart(team);
     }
 
     /// <summary>A team is read again whenever the dispatcher's own sync has stored its cards' detail.</summary>

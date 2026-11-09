@@ -57,7 +57,7 @@ public sealed partial class DashboardWindow
         _shown is null && _paneWidths.Open is null
             ? _commands.Enabled
             : [.. _commands.Enabled.Where(command => command.Id is "help" or "commands"
-                || _shown is not null && command.Id is "work.new" or "work.viewImage"
+                || _shown is not null && (command.Id == "work.viewImage" || command.Id == "work.new" && _idea is not null)
                 || PaneWidths.Commands.Any(resize => resize.Id == command.Id))];
 
     /// <summary>What's offered, and going to a chip's card in Work where it isn't there, so running it can say why.</summary>

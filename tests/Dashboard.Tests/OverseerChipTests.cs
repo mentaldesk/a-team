@@ -52,7 +52,7 @@ public class OverseerChipTests : IDisposable
         Func<string, Task<Reading>>? readBoard = null, Func<string[], Task<string?>>? run = null, Func<WaitingItem, bool>? confirmAccept = null,
         int width = 160, int height = 30, Action<Handover>? handOver = null, Handover? resume = null, Func<string, LinkOutcome>? openUrl = null,
         bool onlyMine = false, Action<Offered>? reading = null, Func<WaitingItem, Task<Reading>>? readConversation = null,
-        Func<WaitingItem, Task<Reading>>? readHistory = null)
+        Func<WaitingItem, Task<Reading>>? readHistory = null, bool newIdea = false)
     {
         Directory.CreateDirectory(_root);
         var settings = new DashboardSettings(Config);
@@ -85,6 +85,7 @@ public class OverseerChipTests : IDisposable
                 ReadHistory = readHistory,
                 HandOver = handOver,
                 Resume = resume,
+                NewIdea = newIdea ? (_, _, _, _) => null : null,
             });
         window.Frame = new Rectangle(0, 0, width, height);
         window.Layout(new Size(width, height));
@@ -293,6 +294,62 @@ public class OverseerChipTests : IDisposable
         Assert.Single(shown);
         Assert.True(reads > before);
         Assert.Equal("Ready", window.Overseer.Board.Cards.Single(card => card.Number == 11).Status);
+    }
+
+    [Fact]
+    public void A_gate_moves_the_chip_even_when_a_read_from_before_it_is_still_running()
+    {
+        var accepted = false;
+        TaskCompletionSource<Reading>? running = null;
+        using var window = Open(out var shown,
+            readBoard: team =>
+            {
+                if (team != "team0")
+                    return Task.FromResult(new Reading("[]", null));
+                if (accepted)
+                    return Task.FromResult(new Reading("[" + Chip(11, "Ready") + "]", null));
+                return running?.Task ?? Task.FromResult(new Reading(Board, null));
+            },
+            run: arguments =>
+            {
+                accepted = arguments[2] == "accept";
+                return Task.FromResult<string?>(null);
+            },
+            confirmAccept: _ => true, reading: reader => Assert.True(reader.Accept!.Run()));
+        Select(window, 11);
+        running = new TaskCompletionSource<Reading>();
+        window.Commands.Execute("overseer.refresh");
+
+        window.Commands.Execute("overseer.read");
+        window.Refresh();
+        window.Refresh();
+        running.SetResult(new Reading(Board, null));
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Single(shown);
+        Assert.Equal("Ready", window.Overseer.Board.Cards.Single(card => card.Number == 11).Status);
+    }
+
+    [Fact]
+    public void The_comment_only_reader_offers_no_new_idea_and_the_gated_reader_does()
+    {
+        DashboardWindow? opened = null;
+        var offered = new List<(int Number, bool OnKeys, bool InCommands)>();
+        using var window = Open(out _, newIdea: true, reading: reader =>
+            offered.Add((reader.Item.Number,
+                (opened!.Keys.Here?.Groups ?? []).Concat(opened.Keys.Everywhere?.Groups ?? []).SelectMany(group => group.Rows).Any(row => row.Label == "New idea"),
+                opened.InCommands.Any(command => command.Id == "work.new"))));
+        opened = window;
+
+        Select(window, 16);
+        window.Commands.Execute("overseer.read");
+        window.Refresh();
+        Select(window, 11);
+        window.Commands.Execute("overseer.read");
+        window.Refresh();
+
+        Assert.Equal([(16, false, false), (11, true, true)], offered);
     }
 
     [Fact]
