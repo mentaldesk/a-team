@@ -175,3 +175,5 @@ grep -qF "usage: board.sh demo finished" "$ERR" || fail "usage: '$(cat "$ERR")'"
 case_ "the process names the dispatcher for this move, and the Dev's role says what a posted review out of draft needs"
 grep -q '^| In review ⛔ .*the dispatcher for a finished task' "$ROOT/process.md" || fail "process.md doesn't name the dispatcher"
 grep -q 'On a PR already out of draft, do the same' "$ROOT/roles/dev.md" || fail "roles/dev.md doesn't say"
+
+finish_suite
