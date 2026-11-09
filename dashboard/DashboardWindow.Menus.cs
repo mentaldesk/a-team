@@ -35,7 +35,7 @@ public sealed partial class DashboardWindow
     private void OpenCommands()
     {
         if (App is { } app)
-            CommandsDialog.Show(app, _commands, Offered);
+            CommandsDialog.Show(app, _commands, InCommands);
     }
 
     private void GoToTeam()
@@ -59,6 +59,12 @@ public sealed partial class DashboardWindow
             : [.. _commands.Enabled.Where(command => command.Id is "help" or "commands"
                 || _shown is not null && command.Id is "work.new" or "work.viewImage"
                 || PaneWidths.Commands.Any(resize => resize.Id == command.Id))];
+
+    /// <summary>What's offered, and going to a chip's card in Work where it isn't there, so running it can say why.</summary>
+    internal IReadOnlyList<CommandDescriptor> InCommands =>
+        _shown is null && _paneWidths.Open is null && _area == Area.Overseer && _overseer.Board.SelectedCard is not null && ChipInWork() is null
+            ? [.. _commands.Registered.Where(command => command.Id == "overseer.work" || _commands.IsEnabled(command.Id))]
+            : Offered;
 
     /// <summary>Where the window is now, for the keys that work only there.</summary>
     internal CommandScope Region =>

@@ -338,11 +338,17 @@ public sealed partial class DashboardWindow
             ReadTeam(team);
             if (read.Failure is { Length: > 0 })
                 continue;
-            if (_options.ReadBoard is not null && _boardReadAt.ContainsKey(team))
-                (_boarding ??= new TeamReads([], _options.ReadBoard)).Add(team);
+            ReadLane(team);
         }
         if (syncing.Done)
             _syncing = null;
+    }
+
+    /// <summary>Reads <paramref name="team"/>'s lane again, where Overseer has read it.</summary>
+    private void ReadLane(string team)
+    {
+        if (_options.ReadBoard is not null && _boardReadAt.ContainsKey(team))
+            (_boarding ??= new TeamReads([], _options.ReadBoard)).Add(team);
     }
 
     /// <summary>A team is read again whenever the dispatcher's own sync has stored its cards' detail.</summary>

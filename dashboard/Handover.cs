@@ -19,9 +19,12 @@ public sealed record TryHandover(
     /// <summary>When each team's cards were synced, for the status bar.</summary>
     public IReadOnlyDictionary<string, Synced> Synced { get; init; } = new Dictionary<string, Synced>();
 
+    /// <summary>The area the reader was opened from, which is where the window comes back.</summary>
+    public Area From { get; init; } = Area.Work;
+
     public override string[] Arguments => Item.Pr > 0 ? ["try", Item.Team, Item.Pr.ToString()] : ["try", Item.Team];
 
-    public override Area Area => Area.Work;
+    public override Area Area => From;
 
     /// <summary>Waits for <paramref name="hand"/> to give the terminal back, given the file try says why it failed in.
     /// A failure says what the try said, where it said anything.</summary>
@@ -119,9 +122,12 @@ public sealed record DocumentHandover(
     /// <summary>Whether the pitch has a new commit, so the reader reads it again.</summary>
     public bool Committed { get; init; }
 
+    /// <summary>The area the reader was opened from, which is where the window comes back.</summary>
+    public Area From { get; init; } = Area.Work;
+
     public override string[] Arguments => [.. Editor[1..], File];
 
-    public override Area Area => Area.Work;
+    public override Area Area => From;
 
     /// <summary>The file to hand your editor: the document's own name, so the editor knows what it is.</summary>
     public static string FileFor(WaitingItem item, DocumentPitch document) =>

@@ -137,6 +137,10 @@ public sealed partial class DashboardWindow
                 scopes: [Regions.Overseer, Regions.Team], menuLabels: details)
             .Register("overseer.fold", () => "Fold the lane", () => _overseer.Fold(), Key.Esc,
                 isEnabled: () => OnOverseer() && _overseer.CanFold, scopes: [Regions.Overseer])
+            .Register("overseer.read", () => "Read the card", ReadChip, new Key('o'),
+                isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is not null, menuLabel: () => "Read t_he card", scopes: [Regions.Overseer])
+            .Register("overseer.work", () => "Go to the card in Work", GoToChip, new Key('w'),
+                isEnabled: () => OnOverseer() && ChipInWork() is not null, scopes: [Regions.Overseer])
             .Register("overseer.github", () => "Open on GitHub", OpenChip, new Key('g'),
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, scopes: [Regions.Overseer])
             .Register("overseer.retry", () => "Read the boards that failed again", () => RetryBoards(_overseer.FailedTeams), new Key('r'),

@@ -61,6 +61,16 @@ public sealed class WorkView : View
     /// <summary>Raised when the keyboard moves between columns, so the window can name the region it's in.</summary>
     internal event Action? FocusChanged;
 
+    /// <summary>The card as Work has it, where one of its columns holds it: null for one it only sums up, or hasn't got.</summary>
+    internal WaitingItem? Waiting(string team, int number) =>
+        _items.FirstOrDefault(item => item.Team == team && item.Number == number) is { } item && Gates.Any(gate => gate.Holds(item)) ? item : null;
+
+    /// <summary>Whether <i>Only mine</i> leaves it on screen.</summary>
+    internal bool Shows(WaitingItem item) => !OnlyMine || item.Mine;
+
+    /// <summary>Whether it waits in Triage for a rank, so its reader opens with the ranks under it.</summary>
+    internal static bool ToRank(WaitingItem item) => Gates[0].Holds(item);
+
     /// <summary>The item the keyboard is on, whether it's on the item's own row or its PR's, or null before any
     /// column has had focus.</summary>
     internal WaitingItem? Selected => SelectedColumn()?.SelectedItem;
