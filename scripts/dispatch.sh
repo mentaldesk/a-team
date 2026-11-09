@@ -407,17 +407,18 @@ retry_wait() {
   echo $(((wait < longest ? wait : longest) * 60))
 }
 
-# fresh <file> <reasons> <log>: whether these reasons are worth a run: 0 if so, 1 to wait, 2 if the tries have run out, with
+# fresh <file> <reasons> <log> [<head>]: whether these reasons are worth a run: 0 if so, 1 to wait, 2 if the tries have run out, with
 # $tries saying how many they were. A run that finished and left the reasons as they were is a try; one logged to <log> that
 # died before finishing, ended in an error, or started before the board last moved to a new format, which stopped it, isn't.
-# Whether other checks are still running doesn't make the reasons new. <file> holds "<fingerprint> <started> <tries>".
+# Whether other checks are still running doesn't make the reasons new; a new <head> of the task's PR does, whatever they say.
+# <file> holds "<fingerprint> <started> <tries> <head>".
 fresh() {
-  local fingerprint tried at
+  local fingerprint tried at head
   fingerprint=$(sed 's/, other checks still running$//' <<<"$2" | shasum | cut -c1-12)
   tries=''
-  read -r tried at tries 2>/dev/null <"$1"
+  read -r tried at tries head 2>/dev/null <"$1"
   tries=${tries:-1}
-  if [ "$fingerprint" != "${tried:-}" ]; then
+  if [ "$fingerprint" != "${tried:-}" ] || { [ -n "${4:-}" ] && [ -n "${head:-}" ] && [ "$4" != "$head" ]; }; then
     tries=1
   elif [ -f "$dir/${prefix}gave-up" ]; then
     return 2
@@ -432,7 +433,7 @@ fresh() {
   fi
   [ "$2" != "$SCHEDULED" ] || tries=0
   rm -f "$dir/${prefix}gave-up"
-  echo "$fingerprint $now $tries" >"$1"
+  echo "$fingerprint $now $tries ${4:-}" >"$1"
 }
 
 # forget_tries <file>: these reasons have gone, so if they come back they start from nothing.
@@ -482,7 +483,7 @@ pick_task() {
     [[ $picked == *" $n "* ]] && continue
     [ -e "$2/runs/$n/held" ] && continue
     why=$(jq -r '.reasons[]' <<<"$row")
-    fresh "$2/${prefix}tried/$n" "$why" "$2/runs/$n/latest.jsonl"
+    fresh "$2/${prefix}tried/$n" "$why" "$2/runs/$n/latest.jsonl" "$(jq -r '.head // empty' <<<"$row")"
     case $? in
       0) echo "$row"; return ;;
       2) give_up "$n" "$why" && { $DRY_RUN || rm -f "$2/tried/$n"; } ;;

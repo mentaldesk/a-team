@@ -36,6 +36,8 @@ internal static partial class Commands
 
         internal List<JsonObject> Recent { get; set; } = [];
 
+        internal Dictionary<long, string?> Heads { get; } = [];
+
         internal string Ready { get; set; } = "";
 
         internal int ReadyCount { get; set; }
@@ -53,7 +55,11 @@ internal static partial class Commands
             if (task is not null)
                 task["reasons"]!.AsArray().Add((JsonNode?)why);
             else
-                Tasks.Add((JsonNode?)new JsonObject { ["number"] = n, ["title"] = title, ["reasons"] = new JsonArray((JsonNode?)why) });
+            {
+                var added = new JsonObject { ["number"] = n, ["title"] = title, ["reasons"] = new JsonArray((JsonNode?)why) };
+                if (Heads.GetValueOrDefault(n) is { } head) added["head"] = head;
+                Tasks.Add((JsonNode?)added);
+            }
         }
 
         internal void Item(string reason, long n)
@@ -163,6 +169,7 @@ internal static partial class Commands
         {
             var p = Board.Raw(pr["number"]);
             if (p != n) numbers.Add(p);
+            wake.Heads[number] = Json.Text(pr["headRefOid"]);
             wake.Recent.AddRange(board.PrReviews(p));
             WakeOnPr(wake, card, pr, p, what.Length > 0 ? what : $"PR #{p}", main);
         }
@@ -199,7 +206,7 @@ internal static partial class Commands
             }
         }
         if (Json.Text(pr["mergeable"]) == "CONFLICTING")
-            wake.Task(number, title, $"PR #{p} conflicts with its base at {board.ShortHead(p)}: merge the base branch into it and resolve");
+            wake.Task(number, title, $"PR #{p} conflicts with its base: merge the base branch into it and resolve");
     }
 
     private static void WakeOnHeld(Wake wake)
@@ -284,7 +291,10 @@ internal static partial class Commands
             if (pr is null || pr["isDraft"]?.GetValueKind() != System.Text.Json.JsonValueKind.True || Json.Text(pr["review"]) != "waiting") continue;
             var p = Board.Raw(pr["number"]);
             if (board.HeadVerdict(p) == "pass")
+            {
+                wake.Heads[Long(n)] = Json.Text(pr["headRefOid"]);
                 wake.Task(Long(n), Board.Raw(card["title"]), $"PR #{p} is green and waiting for its review");
+            }
         }
     }
 

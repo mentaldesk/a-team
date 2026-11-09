@@ -156,11 +156,11 @@ internal sealed partial class Board
                   repository(owner: $owner, name: $name) {
                     issue(number: $n) {
                       closedByPullRequestsReferences(first: 10, includeClosedPrs: false) {
-                        nodes { number url isDraft headRefName mergeable mergeStateStatus {{said}} }
+                        nodes { number url isDraft headRefName headRefOid mergeable mergeStateStatus {{said}} }
                       }
                     }
                     pullRequests(states: OPEN, first: 100) {
-                      nodes { number url isDraft headRefName mergeable mergeStateStatus body {{said}} }
+                      nodes { number url isDraft headRefName headRefOid mergeable mergeStateStatus body {{said}} }
                     }
                   }
                 }

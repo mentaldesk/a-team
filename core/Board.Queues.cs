@@ -368,7 +368,7 @@ internal sealed partial class Board
     /// <summary>A Dependabot PR the Dev has, as `PrFor` reports a task's. It closes no issue, and no Reviewer reads it.</summary>
     internal JsonObject? BumpView(string n)
     {
-        var view = Must(_gh.Run("pr", "view", n, "-R", _repo, "--json", "number,url,isDraft,headRefName,mergeable,mergeStateStatus"));
+        var view = Must(_gh.Run("pr", "view", n, "-R", _repo, "--json", "number,url,isDraft,headRefName,headRefOid,mergeable,mergeStateStatus"));
         if (Json.ParseMany(view.Out).OfType<JsonObject>().FirstOrDefault() is not { } pr) return null;
         pr["review"] = "off";
         return pr;

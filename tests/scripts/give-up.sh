@@ -11,7 +11,7 @@ starts() { grep -c "$1" "$A_TEAM_STATE/dispatch.log"; }
 tries_file() { echo "$A_TEAM_STATE/demo/dev/dry-tried/12"; }
 lead_file() { echo "$A_TEAM_STATE/demo/lead/dry-fingerprint"; }
 one_task() {
-  jq -n --arg ci "${1:-$CI}" '{reasons: [$ci], creative: false, tasks: [{number: 12, title: "Fix the pane", reasons: [$ci]}], ready: null, chores: []}' >"$DEV_TRIGGERS"
+  jq -n --arg ci "${1:-$CI}" --arg head "${2:-}" '{reasons: [$ci], creative: false, tasks: [{number: 12, title: "Fix the pane", reasons: [$ci], head: (if $head == "" then null else $head end)}], ready: null, chores: []}' >"$DEV_TRIGGERS"
 }
 dispatcher() {
   fixture <<JSON
@@ -55,6 +55,29 @@ one_task 'CI failed on PR #912 at cafe123'
 dispatch_dev --dry-run
 same "a run" 1 "$(starts 'would start: #12: CI failed on PR #912 at cafe123')"
 same "from the first try" 1 "$(cut -d' ' -f3 "$(tries_file)")"
+
+case_ "a new head starts the count again, with the same words and at once"
+REVIEW='PR #912 has its review: act on it'
+dispatcher
+one_task "$REVIEW" deadbee
+dispatch_dev --dry-run
+aged "$(tries_file)" 15
+dispatch_dev --dry-run
+same "counted on one head" 2 "$(cut -d' ' -f3 "$(tries_file)")"
+one_task "$REVIEW" cafe123
+aged "$(tries_file)" 1
+dispatch_dev --dry-run
+same "a run at once" 3 "$(starts 'would start: #12')"
+same "from the first try" 1 "$(cut -d' ' -f3 "$(tries_file)")"
+same "the new head kept" cafe123 "$(cut -d' ' -f4 "$(tries_file)")"
+
+case_ "a count kept before heads were recorded carries on"
+dispatcher
+mkdir -p "$A_TEAM_STATE/demo/dev/dry-tried"
+echo "$(shasum <<<"$CI" | cut -c1-12) $(($(date +%s) - 900)) 2" >"$(tries_file)"
+one_task "$CI" deadbee
+dispatch_dev --dry-run
+same "not started over" 2 "$(cut -d' ' -f3 "$(tries_file)")"
 
 case_ "CI on one commit settling, or starting again, is the same reason: the wait and the count carry on"
 dispatcher
