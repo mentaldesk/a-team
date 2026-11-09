@@ -876,6 +876,23 @@ public class WorkViewTests
     }
 
     [Theory]
+    [InlineData(436)]
+    [InlineData(0)]
+    public void A_held_task_In_review_is_only_in_Blocked_with_its_PR_under_it(int pr)
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show([new WaitingItem(415, "Stuck", "In review", "https://github.com/x/415", "a-team", "you", "gave up after 3 runs: CI failed",
+            Pr: pr, PrUrl: "https://github.com/x/436", HeldBy: "dispatcher")]);
+        LayOut(view, 120, 20);
+
+        Assert.Equal(1, view.Lanes[0].Columns[2].Count);
+        Assert.Equal(0, view.Lanes[0].Columns[3].Count);
+        Assert.Equal("", view.Lanes[0].Columns[3].Summary);
+        Assert.Equal(pr == 0 ? 1 : 2, view.Lanes[0].Columns[2].CardText.Count);
+    }
+
+    [Theory]
     [InlineData(0, true)]
     [InlineData(2, false)]
     public void Review_holds_a_validated_pitch_only_once_its_tasks_are_closed(int open, bool held)

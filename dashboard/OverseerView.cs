@@ -28,6 +28,9 @@ public sealed record OverseerState(
 
     /// <summary>Each team's stuck roles, which its lane names instead of showing them busy.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Stuck { get; init; } = new Dictionary<string, IReadOnlyList<string>>();
+
+    /// <summary>What each team's roles gave up on with no item to hold, which its lane says until the reasons change.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> GaveUp { get; init; } = new Dictionary<string, IReadOnlyList<string>>();
 }
 
 /// <summary>Where a busy role's header frame goes in its lane's title, in columns from the title's start.</summary>
@@ -44,6 +47,7 @@ public sealed record LaneFacts(string Team)
     public int Over { get; init; }
     public bool Stopped { get; init; }
     public IReadOnlyList<string> Stuck { get; init; } = [];
+    public IReadOnlyList<string> GaveUp { get; init; } = [];
 }
 
 /// <summary>Every team's board on one screen: a framed lane per team under one row of column headings, and the
@@ -230,6 +234,7 @@ public sealed class OverseerView : View
                 Over = Over(team),
                 Mirror = MirrorNote(team),
                 Stuck = state.Stuck.TryGetValue(team, out var stuck) ? stuck : [],
+                GaveUp = state.GaveUp.TryGetValue(team, out var gaveUp) ? gaveUp : [],
                 Stopped = state.Stopped.Contains(team),
             });
             lane.Slots = heading.Slots;
@@ -345,6 +350,8 @@ public sealed class OverseerView : View
         }
         if (lane.Busy.Count == 0 && lane.Stuck.Count == 0)
             title += Separator + (lane.Stopped ? "stopped" : "idle");
+        foreach (var gaveUp in lane.GaveUp)
+            title += Separator + gaveUp;
         if (lane.Over > 0)
             title += $"{Separator}{lane.Over} over";
         if (lane.Mirror is not null)

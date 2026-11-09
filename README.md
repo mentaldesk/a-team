@@ -131,9 +131,9 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
   passes, so a Mac that was off all weekend sweeps on its first pass: feedback left on Friday
   starts a run on Monday.
 - **One run per role at a time**, except the Dev, which runs up to `wip.devs` at once, each on its
-  own task. A run that's still going after `dispatch.maxRuntime` minutes is stopped. If the same triggers are still there after a run, the dispatcher waits
-  `dispatch.retryAfter` minutes before trying again, so a problem the role can't fix doesn't
-  start a run every 2 minutes.
+  own task. A run that's still going after `dispatch.maxRuntime` minutes is stopped. If the same triggers are still there after a run, the dispatcher tries again after 15 minutes
+  and then an hour (`dispatch.retryAfter`, if shorter, caps both), and after `dispatch.maxRuns` runs (3 by default) it stops and
+  holds what's stuck for you in Work's Blocked column, so a problem the role can't fix doesn't go on costing runs.
 - **Stopping a run.** `a-team stop <team> <role>` ends the role's live run and holds the role
   (`dispatch.hold` in the team config), so the dispatcher starts no replacement until
   `a-team resume <team> <role>`. It lists anything the run left claimed In progress; the next run

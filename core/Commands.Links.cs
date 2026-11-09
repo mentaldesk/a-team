@@ -9,6 +9,7 @@ internal static partial class Commands
 {
     private const string UpstreamRef = @"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)\z";
     private const int UpdateSettles = 600;
+    private const int LastLineShown = 200;
     private static readonly char[] Spaces = [' ', '\t', '\n', '\v', '\f', '\r'];
 
     private static Dictionary<string, Handler> Linking() => new()
@@ -17,6 +18,7 @@ internal static partial class Commands
         ["depends"] = Depends,
         ["undepend"] = Undepend,
         ["free"] = Free,
+        ["give-up"] = GiveUp,
         ["unlink"] = Unlink,
         ["unblock"] = Unblock,
         ["hold"] = Hold,
@@ -240,6 +242,90 @@ internal static partial class Commands
                 board.Log("dev", n, $"no longer blocked by {Raw(wait["ref"])}");
             board.Say($"#{n}: no longer waiting on {string.Join(", ", waits.Select(wait => Raw(wait["ref"])))}");
         }
+        var gaveUp = board.Items(open: true).OfType<JsonNode>().Where(Cards.GaveUp).ToList();
+        if (gaveUp.Count > 0) FreeGivenUp(board, gaveUp);
+        return 0;
+    }
+
+    /// <summary>Frees each item the dispatcher gave up on that a stakeholder has answered, or that's moved since.</summary>
+    private static void FreeGivenUp(Board board, List<JsonNode> held)
+    {
+        var (page, code, _) = board.GatedTalk(held.Select(Board.Number));
+        if (page is null) throw new Stop(code == 0 ? 1 : code, "");
+        var said = Board.GatedComments(page);
+        foreach (var it in held)
+        {
+            var hold = it["marks"]!["held"]!;
+            var replied = board.RepliedSince(said, Board.Number(it), Raw(hold["at"]));
+            if (!replied && Raw(hold["status"]) == Cards.Status(it)) continue;
+            var n = Cards.N(it);
+            ClearHold(board, n, it);
+            board.Log(StatusRoute.Dispatcher, n, replied ? "hold answered" : "hold cleared by a move");
+            board.Say($"#{n}: freed, {(replied ? "a stakeholder replied" : "it moved")}");
+        }
+    }
+
+    /// <summary>What the dispatcher says on an item it stops starting runs for.</summary>
+    private static string GaveUpNote(Board board, string role, string n, int runs, string why)
+    {
+        var finished = board.FinishedRuns(role, n, runs);
+        var times = finished.Select(run => Clock(Raw(run["started"]))).ToList();
+        var cost = finished.Sum(run => double.TryParse(Raw(run["cost"]), NumberStyles.Float, CultureInfo.InvariantCulture, out var spent) ? spent : 0);
+        var when = times.Count == 0 ? "" : $"\nRuns: {string.Join(" · ", times)} UTC (${cost.ToString("0.00", CultureInfo.InvariantCulture)})";
+        var last = string.Concat(finished.Select(run => $"\n- {Clock(Raw(run["started"]))}: \"{LastLine(Raw(run["log"]))}\""));
+        var lines = last.Length == 0 ? "" : $"\n\nEach run's last line:{last}";
+        return $"Gave up after {runs} runs, all started for the same thing.\n\nWhy: {why}{when}{lines}\n\nNothing will start for it until you reply here.\n\n{Board.DispatchMarker}";
+    }
+
+    private static string Clock(string at) =>
+        DateTimeOffset.Parse(at, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal).UtcDateTime.ToString("HH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>The last line of what a run ended by saying, cut short, and never read as a marker.</summary>
+    private static string LastLine(string log)
+    {
+        if (!File.Exists(log)) return "";
+        var said = File.ReadLines(log).Where(line => line.Contains("\"type\":\"result\"", StringComparison.Ordinal)).Select(TryResult).LastOrDefault(text => text is not null) ?? "";
+        var last = said.Split('\n').Select(line => line.Trim()).LastOrDefault(line => line.Length > 0) ?? "";
+        last = last.Replace("<!--", "", StringComparison.Ordinal);
+        return last.Length <= LastLineShown ? last : $"{last[..LastLineShown]}…";
+    }
+
+    private static string? TryResult(string line)
+    {
+        try
+        {
+            return Json.Text(Json.Parse(line)?["result"]);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The dispatcher's: holds #n, whatever its status, saying what its runs were for and what became of them.</summary>
+    internal static int GiveUp(Board board, string[] args)
+    {
+        if (args.Length != 4 || !int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out var runs))
+            throw new Die($"usage: board.sh {board.Team} give-up <role> <n> <runs> <file>");
+        var (role, n, file) = (args[0], args[1], args[3]);
+        CheckRole(role);
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("A_TEAM_RUN_STARTED"))) throw new Die("only the dispatcher gives up on an item");
+        NeedsFile(file);
+        var it = Must(board.Item(n), $"#{n} is not on the board");
+        if (Cards.Marked(it, "held"))
+        {
+            board.Say($"#{n}: already held");
+            return 0;
+        }
+        var reasons = File.ReadAllLines(file).Where(HasText).ToList();
+        var named = reasons.Where(reason => Regex.IsMatch(reason, $@"#{n}\b")).ToList();
+        var why = string.Join(" · ", named.Count > 0 ? named : reasons);
+        var body = GaveUpNote(board, role, n, runs, why);
+        board.Show(body);
+        board.PostComment(n, body);
+        board.Mark(n, "held", Json.Compact(new JsonObject { ["at"] = Board.Now(), ["by"] = StatusRoute.Dispatcher, ["status"] = Cards.Status(it), ["why"] = $"gave up after {runs} runs: {why}" }));
+        board.Log(StatusRoute.Dispatcher, n, $"held · gave up after {runs} runs");
+        board.Say($"#{n}: held, gave up after {runs} runs");
         return 0;
     }
 

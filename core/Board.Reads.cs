@@ -97,7 +97,7 @@ internal sealed partial class Board
     }
 
     private static string WithoutMarkers(string body) =>
-        Regex.Replace(Regex.Replace(body, @"[ \t]*<!-- a-team:(lead|dev|customer|reviewer|shelved [^>]*) -->[ \t]*", ""), @"\s+$", "");
+        Regex.Replace(Regex.Replace(body, @"[ \t]*<!-- a-team:(lead|dev|customer|reviewer|dispatch|shelved [^>]*) -->[ \t]*", ""), @"\s+$", "");
 
     private static JsonObject Remark(JsonNode said, JsonNode? pr) => new()
     {
@@ -113,6 +113,7 @@ internal sealed partial class Board
         foreach (var role in StatusRoute.Roles)
             if (TeamSaid(remark, $"<!-- a-team:{role} -->"))
                 return role;
+        if (TeamSaid(remark, DispatchMarker)) return StatusRoute.Dispatcher;
         var author = Json.Text(remark["author"]) ?? "";
         return Stakeholders.Contains(author) ? "you" : author;
     }

@@ -175,7 +175,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         Rank? rank = null, Func<bool>? confirmDiscard = null, IClipboard? clipboard = null, ReaderEdit? edit = null,
         Key? copyBranch = null, ReaderIdea? idea = null, Func<Key, bool>? window = null, Pictures? pictures = null,
         Func<string, LinkOutcome>? openUrl = null, Action<Picture, string>? viewImage = null)
-        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Secret is { } secret ? $" · {secret.Asker} asks for a secret" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
+        : base($"#{item.Number}  {item.Title}{(item.Question.Length == 0 ? "" : item.Secret is { } secret ? $" · {secret.Asker} asks for a secret" : item.GaveUp ? " · the dispatcher gave up" : item.Pitch || item.HeldBy == "lead" ? " · the Lead's question" : " · the Dev's question")}")
     {
         _pictures = pictures;
         _openUrl = openUrl;
@@ -501,13 +501,13 @@ public sealed partial class ReaderDialog : DashboardDialog
                 .FirstOrDefault(i => lines[i].Kind == LogLineKind.Heading && NeedsAnswer().IsMatch(lines[i].Text), -1);
             return heading < 0 ? null : heading;
         }
-        var role = item.HeldBy == "lead" ? "lead" : "dev";
+        var role = item.GaveUp ? "dispatcher" : item.HeldBy == "lead" ? "lead" : "dev";
         var asker = body.Remarks.Where(said => said.Remark.Who == role).ToList();
         return (asker.LastOrDefault(said => Marker().Replace(said.Remark.Body, "").Trim() == item.Question.Trim())
             ?? asker.LastOrDefault())?.Line;
     }
 
-    [GeneratedRegex(@"\s*<!-- a-team:(dev|lead) -->\s*$")]
+    [GeneratedRegex(@"\s*<!-- a-team:(dev|lead|dispatch) -->\s*$")]
     internal static partial Regex Marker();
 
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]

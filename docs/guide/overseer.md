@@ -12,7 +12,7 @@ Exploring, Pitched, Approved, Building, Ready, In progress and In review. Done i
 
 A lane's title names the team and its roles that are running now, each with its animation playing
 beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. A [stuck role](#a-stuck-role) is named on its own
-instead of as running, as in `a-team · Dev ⚠ stuck · Reviewer ⚠ stuck`. Where cards are past their column's limit, it counts them: `2 over`.
+instead of as running, as in `a-team · Dev ⚠ stuck · Reviewer ⚠ stuck`. Where cards are past their column's limit, it counts them: `2 over`. When the Lead or Customer lead gave up on a reason with no item to hold, it says so until the reasons change, as in `lead gave up: room in Pitched for a drafted pitch · 3 runs`.
 Where the team's GitHub Project hasn't caught up with its board yet, it says how far behind it is and why, as in
 `mirror 3 moves behind (GitHub rate limit, retry 11:20)`. `GitHub unreachable` means it really couldn't be reached;
 when GitHub turns the copy down, the note gives its reason after `GitHub refused:`. The board itself is never behind:
@@ -97,7 +97,7 @@ been there in full (`6d 2h 10m`), the column's limit if it has one, then
 [what a-team keeps about it](how-a-team-works.md#what-a-card-says-about-an-item), like the Lead's rank
 or a shelve, and why it's waiting where Work says. For a task waiting on a change in another repo, that's how far the change has got:
 `Waiting on tui-style-guide#84: merged, not released`. A task already in review says so on a line
-of its own: `Also waits on tui-style-guide#100 · in review, yours`. A task held for you says who held it and why, as Work's Blocked card does: `Blocked: held by the Lead · …`. For a card another task waits on, it gives the
+of its own: `Also waits on tui-style-guide#100 · in review, yours`. A task held for you says who held it and why, as Work's Blocked card does: `Blocked: held by the Lead · …`. An item the dispatcher gave up on after runs that changed nothing says `Blocked: held by the dispatcher · gave up after 3 runs: …` and wears `⊘`: reply on it in Work, or press `h` there, to free it ([Work](work.md)). For a card another task waits on, it gives the
 chain, as on Work's status bar: `a-team #499 waits on this · then MentalDesk.Tui's release`. For a pitch, it lists the open tasks under it,
 each with its column and age.
 

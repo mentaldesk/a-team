@@ -50,7 +50,9 @@ Two kinds of item share the board:
   published release carries it; the board frees it by itself
   when that happens, or, while Dependabot has a PR open bringing that release in, once it merges. A **hold** is for a task waiting on the stakeholder: for an answer,
   or because they're holding it. Never for a wait on another repo. The agent that held a task
-  reads the stakeholder's reply on it and clears the hold itself, never asking them to.
+  reads the stakeholder's reply on it and clears the hold itself, never asking them to. The dispatcher may hold
+  any item too, at whatever status it's got to, after `dispatch.maxRuns` runs started for the same reasons changed nothing:
+  no run starts for it until a stakeholder replies on it, which frees it.
 - A **fix** is a task that makes a red default branch green again. The Lead
   files it, with no pitch, when the board says the branch is red, one at a time. The Dev takes it
   before any other task, and the stakeholder accepts it like any other.
@@ -191,7 +193,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 `overview` is what its Overseer reads, `bumps` is how the dispatcher merges green dependency PRs and hands red ones to the Dev, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `tick` is how it saves a tick on a task's criteria, `gave` is how it frees a task once you've given its secret, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
-how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `free` is how the dispatcher frees a task once what it waits on in
+how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `give-up` is how the dispatcher holds what its runs couldn't clear, `free` is how the dispatcher frees a task once what it waits on in
 another repo has closed or been released, and `update` is how it brings a PR In review that's behind
 its base up to date. Don't run them.
 

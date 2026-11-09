@@ -529,6 +529,13 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_lane_says_what_a_role_gave_up_on_with_no_item_to_hold()
+    {
+        Assert.Equal("a-team · idle · lead gave up: room in Pitched for a drafted pitch · 3 runs",
+            OverseerView.Heading(new LaneFacts("a-team") { GaveUp = ["lead gave up: room in Pitched for a drafted pitch · 3 runs"] }).Title);
+    }
+
+    [Fact]
     public void A_lane_names_each_stuck_role_once_and_only_keeps_a_frame_for_the_busy_ones()
     {
         Assert.Equal("a-team · Dev ⚠ stuck · Reviewer ⚠ stuck", OverseerView.Heading(new LaneFacts("a-team") { Stuck = ["dev", "reviewer"] }).Title);

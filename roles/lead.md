@@ -166,6 +166,7 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
   same way, and if it is, close it with `a-team board {{team}} finish lead <pitch> <file> <pr>...`,
   naming the merged PRs that built it, the file saying which PRs did and what you tried. Never ask
   the stakeholder to close it.
+- An item the dispatcher held, after runs that changed nothing, isn't yours to clear: a stakeholder's reply frees it.
 - For each task you held that your prompt names (a held Ready task, your comment saying why), read `a-team board {{team}} feedback lead <task>`. If the stakeholder's reply says the
   thing is done, `a-team board {{team}} unblock lead <task>`, and it goes back in the Dev's queue. If
   it doesn't, or you can't tell, ask again in one line with `a-team board {{team}} comment lead <task>`.

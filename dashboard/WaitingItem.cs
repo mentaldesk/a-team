@@ -41,7 +41,10 @@ public sealed record WaitingItem(
     public bool WaitsUpstream => Upstream.Length > 0;
 
     /// <summary>Whether it's a held Ready task, which waits on you whoever held it.</summary>
-    public bool Held => Status == "Ready" && !WaitsUpstream;
+    public bool Held => (Status == "Ready" && !WaitsUpstream) || GaveUp;
+
+    /// <summary>Whether the dispatcher held it, after runs that changed nothing, at whatever status it had got to.</summary>
+    public bool GaveUp => HeldBy == "dispatcher";
 
     /// <summary>Whether it's a Dependabot PR the Dev is making green, which Review counts but never shows.</summary>
     public bool WithTheDev => Dependency && Status == "In progress";
@@ -50,7 +53,7 @@ public sealed record WaitingItem(
     public bool WaitsOnYou => !WaitsUpstream && !WithTheDev;
 
     /// <summary>Whether it's a Ready task you could hold, or release where it's <see cref="Held"/>.</summary>
-    public bool Holdable => Status == "Ready" && !Pitch;
+    public bool Holdable => (Status == "Ready" && !Pitch) || GaveUp;
 
     /// <summary>Who held it and why, as the status bar says it: <c>held by the Lead · &lt;its ask&gt;</c>.</summary>
     public string Hold => Secret is { } secret ? $"{secret.Asker} asks for a secret" : HeldBy switch
@@ -58,6 +61,7 @@ public sealed record WaitingItem(
         "dev" => $"held by the Dev · {Asked}",
         "lead" => $"held by the Lead · {Asked}",
         "you" => $"held by you · {Asked}",
+        "dispatcher" => $"held by the dispatcher · {Reason}",
         _ => "held, no reason given",
     };
 

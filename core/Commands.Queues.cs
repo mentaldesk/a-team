@@ -18,6 +18,8 @@ internal static partial class Commands
     /// <summary>What's been found to wake a role.</summary>
     private sealed class Wake(Board board, List<JsonNode> all, bool sweep)
     {
+        private readonly HashSet<long> _gaveUp = all.Where(Cards.GaveUp).Select(Board.Number).ToHashSet();
+
         internal Board Board => board;
 
         internal List<JsonNode> All => all;
@@ -34,6 +36,8 @@ internal static partial class Commands
 
         internal List<JsonObject> Recent { get; set; } = [];
 
+        internal Dictionary<long, string?> Heads { get; } = [];
+
         internal string Ready { get; set; } = "";
 
         internal int ReadyCount { get; set; }
@@ -45,16 +49,22 @@ internal static partial class Commands
         /// <summary>A reason the Dev has to start a run on task #n.</summary>
         internal void Task(long n, string title, string why)
         {
+            if (_gaveUp.Contains(n)) return;
             Reasons.Add(why);
             var task = Tasks.FirstOrDefault(one => Json.Long(one?["number"]) == n);
             if (task is not null)
                 task["reasons"]!.AsArray().Add((JsonNode?)why);
             else
-                Tasks.Add((JsonNode?)new JsonObject { ["number"] = n, ["title"] = title, ["reasons"] = new JsonArray((JsonNode?)why) });
+            {
+                var added = new JsonObject { ["number"] = n, ["title"] = title, ["reasons"] = new JsonArray((JsonNode?)why) };
+                if (Heads.GetValueOrDefault(n) is { } head) added["head"] = head;
+                Tasks.Add((JsonNode?)added);
+            }
         }
 
         internal void Item(string reason, long n)
         {
+            if (_gaveUp.Contains(n)) return;
             Reasons.Add(reason);
             Items.Add(n);
         }
@@ -125,7 +135,7 @@ internal static partial class Commands
         var all = wake.All;
         var fixReady = all.Any(card => Cards.Startable(card) && Cards.Fix(card));
         var main = new Lazy<JsonObject?>(wake.Board.MainRed);
-        foreach (var card in all.Where(card => Cards.Marked(card, "dev") && Cards.Status(card) is "In progress" or "In review"))
+        foreach (var card in all.Where(card => Cards.Marked(card, "dev") && Cards.Status(card) is "In progress" or "In review" && !Cards.GaveUp(card)))
             WakeOnTask(wake, card, fixReady, main);
         WakeOnHeld(wake);
         WakeOnUpstream(wake);
@@ -159,6 +169,7 @@ internal static partial class Commands
         {
             var p = Board.Raw(pr["number"]);
             if (p != n) numbers.Add(p);
+            wake.Heads[number] = Json.Text(pr["headRefOid"]);
             wake.Recent.AddRange(board.PrReviews(p));
             WakeOnPr(wake, card, pr, p, what.Length > 0 ? what : $"PR #{p}", main);
         }
@@ -272,7 +283,7 @@ internal static partial class Commands
     {
         var board = wake.Board;
         if (!board.ReviewerOn) return;
-        foreach (var card in wake.All.Where(card => Cards.Marked(card, "dev") && !Cards.Dependabot(card) && Cards.Status(card) is "In progress" or "In review"))
+        foreach (var card in wake.All.Where(card => Cards.Marked(card, "dev") && !Cards.Dependabot(card) && Cards.Status(card) is "In progress" or "In review" && !Cards.GaveUp(card)))
         {
             var n = Cards.N(card);
             var (read, pr) = board.PrFor(n);
@@ -280,7 +291,10 @@ internal static partial class Commands
             if (pr is null || pr["isDraft"]?.GetValueKind() != System.Text.Json.JsonValueKind.True || Json.Text(pr["review"]) != "waiting") continue;
             var p = Board.Raw(pr["number"]);
             if (board.HeadVerdict(p) == "pass")
+            {
+                wake.Heads[Long(n)] = Json.Text(pr["headRefOid"]);
                 wake.Task(Long(n), Board.Raw(card["title"]), $"PR #{p} is green and waiting for its review");
+            }
         }
     }
 
@@ -319,7 +333,7 @@ internal static partial class Commands
 
     private static void WakeLead(Wake wake)
     {
-        foreach (var pitch in wake.All.Where(card => Cards.Pitch(card) && Cards.Status(card) is not ("Idea" or "Done")))
+        foreach (var pitch in wake.All.Where(card => Cards.Pitch(card) && Cards.Status(card) is not ("Idea" or "Done") && !Cards.GaveUp(card)))
             WakeOnPitch(wake, pitch);
         WakeOnHolds(wake);
         WakeOnUpdates(wake);

@@ -261,7 +261,7 @@ public sealed partial class DashboardWindow
     {
         _leaving = null;
         _work.Leave(item);
-        Announce($"#{item.Number} back in the Dev's queue");
+        Announce(item.GaveUp ? $"#{item.Number} freed · a run starts for it on the next pass" : $"#{item.Number} back in the Dev's queue");
         SetNeedsLayout();
         SetNeedsDraw();
     }

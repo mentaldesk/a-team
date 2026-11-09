@@ -31,7 +31,11 @@ internal static class Cards
 
     /// <summary>A Ready task on hold, or a Dependabot PR the Dev can't make build, which waits the same way.</summary>
     internal static bool Held(JsonNode card) =>
-        (ReadyTask(card) || (Status(card) == "Ready" && Dependabot(card))) && Marked(card, "held");
+        GaveUp(card) || ((ReadyTask(card) || (Status(card) == "Ready" && Dependabot(card))) && Marked(card, "held"));
+
+    /// <summary>Held by the dispatcher, which stopped starting runs for it, at whatever status it had got to.</summary>
+    internal static bool GaveUp(JsonNode card) =>
+        Status(card) != "Done" && card["marks"]?["held"] is JsonObject held && Json.Text(held["by"]) == StatusRoute.Dispatcher;
 
     internal static bool Fix(JsonNode card) => Marked(card, "fix");
 

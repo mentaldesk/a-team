@@ -106,7 +106,8 @@ worktree as in step 2, using `gh ... -R <repo>`, since `a-team board` only reach
 marker, and `gh pr ready` once it's green. Leave the task in Ready: the board frees it by itself once
 the change is closed or released, and says on the task which release to upgrade to.
 
-A task a stakeholder held themselves, with no question from you, is theirs: leave it alone.
+A task a stakeholder held themselves, with no question from you, is theirs: leave it alone. So is one the
+dispatcher held after runs that changed nothing: no run starts for it until a stakeholder replies.
 
 ### 4. Build it
 

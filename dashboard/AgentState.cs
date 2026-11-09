@@ -35,6 +35,9 @@ public sealed record AgentState(
     /// <summary>The role's runs the dispatcher found stuck and that are still going, oldest first.</summary>
     public IReadOnlyList<StuckRun> Stuck { get; init; } = [];
 
+    /// <summary>The reasons with no item the dispatcher stopped starting runs for, and how many runs they had; null where it hasn't.</summary>
+    public string? GaveUp { get; init; }
+
     public static AgentState Read(string dir)
     {
         var running = IsAlive(Path.Combine(dir, "pid"));
@@ -51,7 +54,16 @@ public sealed record AgentState(
             Latest = task is null ? null : RunOf(Path.Combine(dir, "runs", task.Number.ToString(CultureInfo.InvariantCulture))),
             Card = ReadTask(Path.Combine(dir, "card"))?.Number,
             Stuck = ReadStuck(dir),
+            GaveUp = ReadGaveUp(dir),
         };
+    }
+
+    private static string? ReadGaveUp(string dir)
+    {
+        if (ReadText(Path.Combine(dir, "gave-up")) is not { Length: > 0 } text)
+            return null;
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return lines is [var runs, .. var reasons] && reasons.Length > 0 ? $"{string.Join("; ", reasons)} · {runs} runs" : null;
     }
 
     /// <summary>A run counts only while its pid file still holds its pid and that process is the one it was written for.</summary>
