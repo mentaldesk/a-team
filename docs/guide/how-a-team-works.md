@@ -136,6 +136,10 @@ hold off and the task goes back in the Dev's queue. If your reply doesn't say so
 line and the task stays held. A task that waits on a change in another repo is never held: it's
 recorded as waiting on that repo, and frees itself ([The board](#the-board)).
 
+The dispatcher can hold an item too, when three runs started for the same reasons each changed
+nothing, so a problem the team can't fix stops costing runs. It waits in **Blocked** saying what
+was tried, and any reply from you frees it ([Work](work.md#answering-from-a-card)).
+
 When a task needs a GitHub Actions secret, like a deploy token, the agent asks for it by name and never for
 its value in a comment. You [give it in Work](work.md#answering-from-a-card), and that frees the task with no reply.
 
