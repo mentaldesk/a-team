@@ -39,6 +39,7 @@ public class WritesTests
     [InlineData("A\n\n## What it'll look like\n\nNo picture: x.\n\n## Mockup\n\nm", "A\n\n" + Pics + "\n\n## Mockup\n\nm")]
     [InlineData("A\n\n## What it'll look like\n\nOld\n\n![Old](v)\n\n## Mockup\n\nm", "A\n\n" + Pics + "\n\n## Mockup\n\nm")]
     [InlineData("## Mockup\n\nm\n\n## What it'll look like\n\nOld\n\n---\n\nz", Pics + "\n\n## Mockup\n\nm\n\n---\n\nz")]
+    [InlineData("A\n\n## What it'll look like\n\nOld\n\n### Mockup\n\nm", "A\n\n" + Pics + "\n\n### Mockup\n\nm")]
     public void A_later_revision_replaces_the_pictures_rather_than_adding_a_second(string body, string with) =>
         Assert.Equal(with, Board.WithPitchPictures(body, Pics));
 

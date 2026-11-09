@@ -165,18 +165,20 @@ internal sealed partial class Board
                 skipping = true;
                 continue;
             }
-            if (skipping && !fenced[at] && Regex.IsMatch(lines[at], "^#{1,2}[ \\t]|^---+[ \\t]*\r?$|<!-- a-team:"))
+            if (skipping && !fenced[at] && (IsMockupHeading(lines[at]) || Regex.IsMatch(lines[at], "^#{1,2}[ \\t]|^---+[ \\t]*\r?$|<!-- a-team:")))
                 skipping = false;
             if (!skipping) kept.Add(lines[at]);
         }
         var inCode = NeedsAnswer.Fenced([.. kept]);
-        var mockup = Enumerable.Range(0, kept.Count).Where(at => !inCode[at] && Regex.IsMatch(kept[at], @"^#{1,3}[ \t]+Mockups?\b", RegexOptions.IgnoreCase))
+        var mockup = Enumerable.Range(0, kept.Count).Where(at => !inCode[at] && IsMockupHeading(kept[at]))
             .DefaultIfEmpty(-1).First();
         if (mockup < 0) return null;
         var above = mockup > 0 && kept[mockup - 1].TrimEnd().Length > 0 ? new[] { "", section, "" } : [section, ""];
         kept.InsertRange(mockup, above);
         return string.Join('\n', kept);
     }
+
+    private static bool IsMockupHeading(string line) => Regex.IsMatch(line, @"^#{1,3}[ \t]+Mockups?\b", RegexOptions.IgnoreCase);
 
     /// <summary>A PR body with the section <paramref name="section"/> heads swapped for that section, just above the `a-team try` line and the marker.</summary>
     internal static string WithSection(string body, string section)

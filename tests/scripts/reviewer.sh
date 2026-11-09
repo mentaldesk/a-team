@@ -299,8 +299,6 @@ TALK
 waiting
 same "unreviewed" null "$(jq -c '.[0].reviewed' "$OUT")"
 
-finish_suite
-
 case_ "lead pictures go above a pitch's text mockup, once, only on its own pitch and only with Mockups on"
 pitch_issue() {
   jq -n --arg body "$1" '{number: 30, title: "A pitch", body: $body}' >"$ISSUE"
@@ -373,3 +371,5 @@ pitch_issue "$(printf '%s\n' '## Mockup' '' 'text')"
 lead_refused "setting missing" "Mockups box is off" lead 30 "$WORK/form.png" "Cap"
 jq '.mockups = false' "$TEAM" >"$TEAM.off" && mv "$TEAM.off" "$TEAM"
 lead_refused "setting off" "Mockups box is off" lead 30 "$WORK/form.png" "Cap"
+
+finish_suite
