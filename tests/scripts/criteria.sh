@@ -183,6 +183,8 @@ pictures_part=$(sed -n '/^### Pictures of a screen/,$p' "$ROOT/roles/lead.md" | 
 grep -qF '"mockups": true' <<<"$pictures_part" || fail "lead.md: pictures aren't only for a team with Mockups on"
 grep -qF 'worktree add --detach' <<<"$pictures_part" || fail "lead.md: the scratch worktree isn't detached"
 grep -qF 'worktree remove --force' <<<"$pictures_part" || fail "lead.md: the scratch worktree isn't removed"
+sed '/worktree add --detach/,$d' <<<"$pictures_part" | grep -qF 'still there from a run cut short' || fail "lead.md: a stale scratch worktree isn't removed before adding one"
+grep -qF 'one an earlier run left for that pitch' "$ROOT/tasks/lead.md" || fail "task prompt: Lead not authorised to remove a stale scratch worktree"
 grep -qF 'never commit it, push it' <<<"$pictures_part" || fail "lead.md: doesn't say the scratch code is never pushed"
 grep -qF 'The code is thrown away' <<<"$pictures_part" || fail "lead.md: doesn't say the scratch code is thrown away"
 grep -qF 'No picture: <why>' <<<"$pictures_part" || fail "lead.md: no line for a screen with no picture"

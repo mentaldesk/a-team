@@ -298,7 +298,8 @@ screen of a terminal app. Do it when you write the pitch, once its `## Mockup` i
 before promoting a draft that has no `## What it'll look like` yet. Redo it on a revision only if the
 screen changes, and keep the section when you rewrite the body.
 
-1. `git -C <checkout> fetch origin`, then
+1. `git -C <checkout> fetch origin`. If `<workdir>/mockup-<n>` is still there from a run cut short,
+   remove it as in step 5. Then
    `git -C <checkout> worktree add --detach <workdir>/mockup-<n> origin/<default branch>`.
 2. There, build only that screen, as throwaway code: the real controls in the team's real theme,
    with made-up rows. Never real data: in a public repo the pictures are public.
