@@ -66,6 +66,8 @@ Find it with `a-team board {{team}} pr <n>`, then:
   `a-team board {{team}} comment dev <pr>`. Leave **Worth considering** to the stakeholder unless
   they ask for it, which may be one comment quoting several points: fix them all in one run. Do this
   once: the PR isn't reviewed again, and once you've answered, `pr` reports `"review": "answered"`.
+  On a PR already out of draft, do the same and end the run: the dispatcher moves the task to In review
+  once the review is answered and CI is green.
 - If the PR is still a draft and `checks` says `pass`, mark it ready with `gh pr ready <pr>`, and if
   the task is In progress, `a-team board {{team}} move dev <n> "In review"`. Only a green PR is
   marked ready, never a failing or pending one: this is the one exception to the stakeholder's

@@ -734,6 +734,7 @@ dev_dispatcher() {
 #!/usr/bin/env bash
 case " \$* " in
   *" bumps "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$BUMPS"; echo bumps >>"$FREES"; cat "$BUMPED"; [ ! -e "$BUMPED.fails" ] || { cat "$BUMPED.fails" >&2; exit 1; } ;;
+  *" finished"*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$DISPATCH/finished" ;;
   *" free "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$FREES"; cat "$FREED" ;;
   *" update"*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$UPDATES_RUN"; cat "$UPDATED_SAID" ;;
   *" give-up "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me}: \$(paste -sd ';' - <"\${!#}")" >>"$GIVE_UPS"; [ ! -e "$GIVE_UPS.fails" ] || { cat "$GIVE_UPS.fails" >&2; exit 1; }; echo "gave up" ;;

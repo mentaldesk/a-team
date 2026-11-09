@@ -63,6 +63,25 @@ grep -q 'demo: (dry run) PR #912: merged main into it$' "$A_TEAM_STATE/dispatch.
   fail "updated: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 : >"$UPDATED_SAID"
 
+case_ "every pass moves the team's finished tasks, as the team's App, leaving the ones a Dev run has or a stakeholder stopped"
+same "plain" "board --dry-run demo finished as demo $DISPATCH/bin" "$(tail -n 1 "$DISPATCH/finished")"
+mkdir -p "$A_TEAM_STATE/demo/dev/runs/15" "$A_TEAM_STATE/demo/dev/runs/16"
+sleep 30 &
+live=$!
+echo "$live" >"$A_TEAM_STATE/demo/dev/runs/15/pid"
+echo '{"number": 15}' >"$A_TEAM_STATE/demo/dev/runs/15/task"
+touch "$A_TEAM_STATE/demo/dev/runs/16/held"
+dispatch_dev --dry-run
+same "leaves" "board --dry-run demo finished 15 16 as demo $DISPATCH/bin" "$(tail -n 1 "$DISPATCH/finished")"
+kill "$live" 2>/dev/null
+wait "$live" 2>/dev/null
+rm -rf "$A_TEAM_STATE/demo/dev/runs/15" "$A_TEAM_STATE/demo/dev/runs/16"
+: >"$DISPATCH/finished"
+jq '.dispatch.hold = ["dev"]' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+dispatch_dev --dry-run
+same "dev held" "" "$(cat "$DISPATCH/finished")"
+jq '.dispatch.hold = []' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
 case_ "the same reasons again wait, and the next task with something new gets the run"
 jq '.tasks += [{number: 14, title: "Answer the review", reasons: ["stakeholder feedback on #914 (2025-09-19T09:00:00Z)"]}]' \
   "$DEV_TRIGGERS" >"$DEV_TRIGGERS.new" && mv "$DEV_TRIGGERS.new" "$DEV_TRIGGERS"

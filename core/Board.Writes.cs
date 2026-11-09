@@ -83,6 +83,15 @@ internal sealed partial class Board
         return pr["comments"]?["nodes"]?.AsArray().Any(comment => Said(comment, bot, "reviewer")) == true;
     }
 
+    internal const string Unreviewed = "This left draft before the Reviewer read it, so it's reached you unreviewed.";
+
+    /// <summary>The dispatcher has already said on this PR that it reached the stakeholder unreviewed.</summary>
+    internal bool SaidUnreviewed(JsonNode pr)
+    {
+        var bot = Bot;
+        return pr["comments"]?["nodes"]?.AsArray().Any(comment => Said(comment, bot, "dispatch") && Json.Text(comment?["body"])!.Contains(Unreviewed, StringComparison.Ordinal)) == true;
+    }
+
     internal string AttachmentLink(string path) => $"https://github.com/{_repo}/blob/{AttachmentBranch}/{path}?raw=true";
 
     /// <summary>Where a file goes on the attachments branch, named by its content, once it's an image of a size GitHub takes.</summary>

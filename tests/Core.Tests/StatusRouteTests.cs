@@ -46,6 +46,7 @@ public class StatusRouteTests
     [
         "you:Pitched>Approved", "lead:Pitched>Approved", "you:Idea>Done", "you:Pitched>Done", "you:In review>Done",
         "you:Pitched>Idea", "lead:Pitched>Idea", "dev:None>In progress", "dev:None>In review",
+        "dispatcher:In progress>In review",
     ];
 
     [Theory]
