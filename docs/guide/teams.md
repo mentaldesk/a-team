@@ -186,7 +186,9 @@ Terminal, click **Keep**. A page with changes you haven't kept shows `•` after
 setting that isn't at its default says what the default is on its row, like `(default: Midnight)`.
 `F1` lists the keys of the page you're on, and `Ctrl+G` opens this guide.
 
-- **Theme**: Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode.
+- **Theme**: Midnight, Daylight, Turbo Pascal or Modern Borland, the same four as TuiCode. The theme
+  colours the caret too: every box you type in draws its own, a steady block on the character where
+  typing will go, so your terminal's cursor colour, shape and blink don't apply there.
 - **Keyboard Shortcuts**: a row per key, with the command it runs and where it works: *Everywhere*,
   or a region like Work or Log. A command can have more than one. `Enter` on a row shows
   `Press keys…` and records a chord a key at a time, like `Ctrl+G` then `S`; `Enter` again adds it
