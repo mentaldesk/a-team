@@ -21,7 +21,7 @@ public class OverseerChipTests : IDisposable
     }
 
     private sealed record Offered(
-        WaitingItem Item, Func<bool>? Approve, ReaderCommand? Accept, ReaderComment? Comment, ReaderTry? Try, ReaderEdit? Edit, ReaderIdea? Idea, Rank? Rank)
+        WaitingItem Item, IssueBody Body, Func<bool>? Approve, ReaderCommand? Accept, ReaderComment? Comment, ReaderTry? Try, ReaderEdit? Edit, ReaderIdea? Idea, Rank? Rank)
     {
         /// <summary>Which of the reader's buttons were offered, as a comparison between two readers can see them.</summary>
         internal string[] Buttons =>
@@ -51,7 +51,8 @@ public class OverseerChipTests : IDisposable
         out List<Offered> shown, string waiting = "[" + Pitched + "," + Reviewing + "," + Triage + "," + Held + "," + WithReviewer + "," + Theirs + "]",
         Func<string, Task<Reading>>? readBoard = null, Func<string[], Task<string?>>? run = null, Func<WaitingItem, bool>? confirmAccept = null,
         int width = 160, int height = 30, Action<Handover>? handOver = null, Handover? resume = null, Func<string, LinkOutcome>? openUrl = null,
-        bool onlyMine = false, Action<Offered>? reading = null)
+        bool onlyMine = false, Action<Offered>? reading = null, Func<WaitingItem, Task<Reading>>? readConversation = null,
+        Func<WaitingItem, Task<Reading>>? readHistory = null)
     {
         Directory.CreateDirectory(_root);
         var settings = new DashboardSettings(Config);
@@ -67,9 +68,9 @@ public class OverseerChipTests : IDisposable
             team => Task.FromResult(new Reading(team == "team0" ? waiting : "[]", null)),
             _ => Task.FromResult(new Reading("{\"body\": \"The card's own words\"}", null)),
             openUrl ?? Opening.Opened,
-            (item, _, _, approve, accept, comment, tryIt, edit, _, idea, _, rank) =>
+            (item, body, _, approve, accept, comment, tryIt, edit, _, idea, _, rank) =>
             {
-                var shownNow = new Offered(item, approve, accept, comment, tryIt, edit, idea, rank);
+                var shownNow = new Offered(item, body, approve, accept, comment, tryIt, edit, idea, rank);
                 offered.Add(shownNow);
                 reading?.Invoke(shownNow);
                 return null;
@@ -80,6 +81,8 @@ public class OverseerChipTests : IDisposable
             {
                 ReadBoard = readBoard ?? (team => Task.FromResult(new Reading(team == "team0" ? Board : "[]", null))),
                 ConfirmAccept = confirmAccept,
+                ReadConversation = readConversation,
+                ReadHistory = readHistory,
                 HandOver = handOver,
                 Resume = resume,
             });
@@ -202,6 +205,24 @@ public class OverseerChipTests : IDisposable
         Assert.Equal(number, offered.Item.Number);
         Assert.Equal(status, offered.Item.Status);
         Assert.Equal(["Comment c"], offered.Buttons);
+    }
+
+    [Fact]
+    public void O_opens_the_reader_with_the_cards_body_history_and_comments()
+    {
+        var at = new DateTimeOffset(2026, 9, 29, 4, 31, 0, TimeSpan.Zero);
+        using var window = Open(out var shown,
+            readConversation: _ => Task.FromResult(new Reading($$"""[{"who": "dev", "at": "{{at:O}}", "body": "Done."}]""", null)),
+            readHistory: _ => Task.FromResult(new Reading($$"""{"events": [{"at": "{{at:O}}", "who": "dev", "what": "Ready → In progress"}]}""", null)));
+        Select(window, 16);
+
+        window.NewKeyDownEvent(new Key('o'));
+        window.Refresh();
+
+        var body = Assert.Single(shown).Body;
+        Assert.Contains("The card's own words", body.Text, StringComparison.Ordinal);
+        Assert.Contains(body.Remarks, said => said.Remark.Body == "Done.");
+        Assert.Contains(body.History!.Events, each => each.What == "Ready → In progress");
     }
 
     [Fact]
