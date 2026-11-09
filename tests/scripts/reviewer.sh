@@ -215,8 +215,8 @@ refused_pictures() {
   [ ! -e "$BIN/git.json" ] || fail "$1: stored something"
 }
 gh_reviewing
-for role in lead customer reviewer you; do
-  refused_pictures "$role pictures" "$role may not put pictures on a PR; only dev does, on its own task PR" \
+for role in customer reviewer you; do
+  refused_pictures "$role pictures" "$role may not put pictures on anything; only dev does, on its own task PR, and lead, on its own pitch" \
     "$role" 912 "$WORK/save.png" "Save"
 done
 printf 'notes' >"$WORK/notes.txt"
@@ -300,3 +300,76 @@ waiting
 same "unreviewed" null "$(jq -c '.[0].reviewed' "$OUT")"
 
 finish_suite
+
+case_ "lead pictures go above a pitch's text mockup, once, only on its own pitch and only with Mockups on"
+pitch_issue() {
+  jq -n --arg body "$1" '{number: 30, title: "A pitch", body: $body}' >"$ISSUE"
+}
+lead_refused() {
+  : >"$WRITES"
+  rm -f "$BIN/git.json"
+  run board demo pictures "${@:3}"
+  failed "$1"
+  one_line "$1"
+  grep -qF "$2" "$ERR" || fail "$1: '$(cat "$ERR")'"
+  same "$1 writes" "" "$(cat "$WRITES")"
+  [ ! -e "$BIN/git.json" ] || fail "$1: stored something"
+}
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 }, "mockups": true }
+JSON
+printf 'a screen' >"$WORK/form.png"
+printf 'another screen' >"$WORK/form2.png"
+gh_items <<'ITEMS'
+Exploring 30 A pitch
+Done 31 A finished pitch
+Ready 32 A task
+Idea 33 An idea
+ITEMS
+pitch_issue "$(printf '%s\n' '## Proposal' '' 'Do it' '' '## Mockup' '' 'text' '' '<!-- a-team:lead -->')"
+: >"$WRITES"
+rm -f "$BIN/git.json" "$EDITED"
+run board demo pictures lead 30 "$WORK/form.png" "The Teams form, with the new tick"
+same "exit" 0 "$STATUS"
+same "said" "#30: 1 picture(s) under What it'll look like" "$(cat "$OUT")"
+same "stored" 1 "$(jq -r 'select(.kind == "blobs") | .content' "$BIN/git.json" | grep -c '')"
+same "body" "## Proposal
+
+Do it
+
+## What it'll look like
+
+The Teams form, with the new tick
+
+![The Teams form, with the new tick]($(picture_link "$WORK/form.png"))
+
+## Mockup
+
+text
+
+<!-- a-team:lead -->" "$(cat "$EDITED")"
+pitch_issue "$(cat "$EDITED")"
+run board demo pictures lead 30 "$WORK/form2.png" "The form again"
+same "again exit" 0 "$STATUS"
+same "one section" 1 "$(grep -c "^## What it'll look like\$" "$EDITED")"
+same "replaced" "![The form again]($(picture_link "$WORK/form2.png"))" "$(grep '^!\[' "$EDITED")"
+same "marker last" "<!-- a-team:lead -->" "$(tail -1 "$EDITED")"
+lead_refused "no caption" "form.png needs a caption: what it shows" lead 30 "$WORK/form.png" " "
+run board demo pictures lead 30 "$WORK/form.png" "One
+Two"
+failed "two-line caption"
+grep -qF "a caption is one line" "$ERR" || fail "two-line caption: '$(cat "$ERR")'"
+for n in 31 32 33; do
+  lead_refused "item $n" "lead puts pictures only on its own pitches" lead "$n" "$WORK/form.png" "Cap"
+done
+pitch_issue "No mockup here"
+lead_refused "no mockup" "#30 has no ## Mockup section" lead 30 "$WORK/form.png" "Cap"
+for role in customer reviewer you; do
+  lead_refused "$role on a pitch" "$role may not put pictures on anything" "$role" 30 "$WORK/form.png" "Cap"
+done
+lead_refused "dev on a pitch" "#30" dev 30 "$WORK/form.png" "Cap"
+jq 'del(.mockups)' "$TEAM" >"$TEAM.off" && mv "$TEAM.off" "$TEAM"
+pitch_issue "$(printf '%s\n' '## Mockup' '' 'text')"
+lead_refused "setting missing" "Mockups box is off" lead 30 "$WORK/form.png" "Cap"
+jq '.mockups = false' "$TEAM" >"$TEAM.off" && mv "$TEAM.off" "$TEAM"
+lead_refused "setting off" "Mockups box is off" lead 30 "$WORK/form.png" "Cap"

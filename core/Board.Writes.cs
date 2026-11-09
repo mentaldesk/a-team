@@ -150,6 +150,34 @@ internal sealed partial class Board
         return false;
     }
 
+    /// <summary>A pitch's body with <paramref name="section"/> above its text mockup, replacing any there; null with no mockup. Headings in code blocks don't count.</summary>
+    internal static string? WithPitchPictures(string body, string section)
+    {
+        var heading = section.Split('\n')[0];
+        var lines = body.Split('\n');
+        var fenced = NeedsAnswer.Fenced(lines);
+        var kept = new List<string>();
+        var skipping = false;
+        for (var at = 0; at < lines.Length; at++)
+        {
+            if (!fenced[at] && lines[at].TrimEnd() == heading)
+            {
+                skipping = true;
+                continue;
+            }
+            if (skipping && !fenced[at] && Regex.IsMatch(lines[at], "^#{1,2}[ \\t]|^---+[ \\t]*\r?$|<!-- a-team:"))
+                skipping = false;
+            if (!skipping) kept.Add(lines[at]);
+        }
+        var inCode = NeedsAnswer.Fenced([.. kept]);
+        var mockup = Enumerable.Range(0, kept.Count).Where(at => !inCode[at] && Regex.IsMatch(kept[at], @"^#{1,3}[ \t]+Mockups?\b", RegexOptions.IgnoreCase))
+            .DefaultIfEmpty(-1).First();
+        if (mockup < 0) return null;
+        var above = mockup > 0 && kept[mockup - 1].TrimEnd().Length > 0 ? new[] { "", section, "" } : [section, ""];
+        kept.InsertRange(mockup, above);
+        return string.Join('\n', kept);
+    }
+
     /// <summary>A PR body with the section <paramref name="section"/> heads swapped for that section, just above the `a-team try` line and the marker.</summary>
     internal static string WithSection(string body, string section)
     {

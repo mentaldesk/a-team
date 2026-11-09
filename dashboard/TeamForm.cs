@@ -50,6 +50,8 @@ public sealed class TeamForm : AppDialog
     internal const string VisionReviewsCaption = "When the Lead proposes a refresh of the vision. Review the vision in Commands starts one now.";
     internal const string CustomerCaption = "Keeps the user docs right: a docs PR for you after each pitch is done.";
     internal const string ReviewerCaption = "Reviews each task PR once it's green, so the Dev fixes what it finds before you look.";
+    internal const string MockupsLabel = "Show pitches' new screens as pictures";
+    internal const string MockupsCaption = "The Lead builds the screens a pitch adds or changes, and puts pictures of them in the pitch.";
     internal const string WorktreesCaption = "How many tasks can be in flight, PRs included.";
     internal const string DevsCaption = "How many Dev runs build at once.";
     internal const string PitchedCaption = "How many pitches wait on you at once.";
@@ -99,6 +101,7 @@ public sealed class TeamForm : AppDialog
     private readonly NumericUpDown<int> _visionAfter;
     private readonly CheckBox _customer;
     private readonly CheckBox _reviewer;
+    private readonly CheckBox _mockups;
     private readonly NumericUpDown<int> _worktrees;
     private readonly NumericUpDown<int> _devs;
     private readonly NumericUpDown<int> _pitched;
@@ -298,6 +301,11 @@ public sealed class TeamForm : AppDialog
         _reviewer = Role("Reviewer", settings.Reviewer ? CheckState.Checked : CheckState.UnChecked, Pos.Right(_customer) + 2, row++);
         Caption(_reviewer, ReviewerCaption);
 
+        Add(new Label { Text = "Mockups", X = Inset, Y = row });
+        _mockups = new CheckBox { Text = MockupsLabel, Value = settings.Mockups ? CheckState.Checked : CheckState.UnChecked, X = FieldX, Y = row++ };
+        Add(_mockups);
+        Caption(_mockups, MockupsCaption);
+
         _docsRows.Y = row;
         _docsRows.Add(new Label { Text = "User docs", X = Inset, Y = 0 });
         _docsChoice = new OptionSelector<DocsChoice>
@@ -462,6 +470,8 @@ public sealed class TeamForm : AppDialog
 
     internal CheckBox Reviewer => _reviewer;
 
+    internal CheckBox Mockups => _mockups;
+
     internal NumericUpDown<int> Worktrees => _worktrees;
 
     internal NumericUpDown<int> Devs => _devs;
@@ -579,6 +589,7 @@ public sealed class TeamForm : AppDialog
                 _visionUnit.Value ?? _before.VisionReview.Unit, _visionAfter.Value),
             Customer = _customer.Value == CheckState.Checked,
             Reviewer = _reviewer.Value == CheckState.Checked,
+            Mockups = _mockups.Value == CheckState.Checked,
             Worktrees = _worktrees.Value,
             Devs = _devs.Value,
             Pitched = _pitched.Value,

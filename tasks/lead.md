@@ -16,6 +16,10 @@ I authorise you to do all of the following without asking me:
 - Create git worktrees and branches under {{workdir}}, build and try out the product there,
   commit, push branches other than the default branch to {{repo}}, and open draft PRs for
   document pitches.
+- Where the team config has `"mockups": true`, write throwaway product code in a scratch detached
+  worktree under {{workdir}}, only to build a pitch's screen and capture it with tuirec, then remove
+  that worktree and put the pictures on the pitch with
+  `a-team board {{team}} pictures lead <n> <image> "<caption>" ...`. Never commit or push that code.
 - Open issues on mentaldesk/a-team to suggest changes to how the team works.
 - Shelve a pitch the stakeholder asks to shelve or defer, with
   `a-team board {{team}} shelve lead <n> <weeks> <file>`.

@@ -179,6 +179,19 @@ grep -qF 'body <pr>` lists in `images`' "$ROOT/roles/reviewer.md" || fail "revie
 grep -qF "each picture against its caption and the contributor docs' UI" "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't check them"
 grep -qF 'that changes what the user sees with no pictures' "$ROOT/roles/reviewer.md" || fail "reviewer.md: doesn't flag a UI task with none"
 
+pictures_part=$(sed -n '/^### Pictures of a screen/,$p' "$ROOT/roles/lead.md" | sed '/^## Vision/,$d')
+grep -qF '"mockups": true' <<<"$pictures_part" || fail "lead.md: pictures aren't only for a team with Mockups on"
+grep -qF 'worktree add --detach' <<<"$pictures_part" || fail "lead.md: the scratch worktree isn't detached"
+grep -qF 'worktree remove --force' <<<"$pictures_part" || fail "lead.md: the scratch worktree isn't removed"
+grep -qF 'never commit it, push it' <<<"$pictures_part" || fail "lead.md: doesn't say the scratch code is never pushed"
+grep -qF 'The code is thrown away' <<<"$pictures_part" || fail "lead.md: doesn't say the scratch code is thrown away"
+grep -qF 'No picture: <why>' <<<"$pictures_part" || fail "lead.md: no line for a screen with no picture"
+grep -qF 'pictures lead <n>' <<<"$pictures_part" || fail "lead.md: doesn't put the pictures on the pitch"
+grep -qF "except the throwaway in *Pictures of a screen*" "$ROOT/roles/lead.md" || fail "lead.md: no exception to not writing product code"
+grep -qF 'pictures lead <n>' "$ROOT/tasks/lead.md" || fail "task prompt: Lead not authorised to put pictures on its pitch"
+grep -qF 'Never commit or push that code' "$ROOT/tasks/lead.md" || fail "task prompt: Lead may push the scratch code"
+grep -qF '"mockups": true' "$ROOT/tasks/lead.md" || fail "task prompt: authorisation isn't only for a team with Mockups on"
+
 grep -qF '## Needs changing' "$ROOT/roles/reviewer.md" || fail "reviewer.md: the board's count reads this heading"
 grep -qF '## Worth considering' "$ROOT/roles/reviewer.md" || fail "reviewer.md: the board's count reads this heading"
 grep -qF 'Nothing needs changing.' "$ROOT/roles/reviewer.md" || fail "reviewer.md: the board's count reads this opening"

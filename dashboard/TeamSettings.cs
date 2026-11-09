@@ -61,6 +61,9 @@ public sealed partial record TeamSettings(
     /// <summary>Whether a Reviewer reads each of the Dev's task PRs before it reaches you: <c>roles.reviewer</c>.</summary>
     public bool Reviewer { get; init; }
 
+    /// <summary>Whether a pitch that changes a screen shows it as pictures: <c>mockups</c>.</summary>
+    public bool Mockups { get; init; }
+
     /// <summary>The first page of the user docs, in the repo, which the Customer lead keeps right.</summary>
     public string Docs { get; init; } = "";
 
@@ -111,6 +114,7 @@ public sealed partial record TeamSettings(
             },
             Customer = Find(root, "roles", "customer") is { ValueKind: JsonValueKind.True },
             Reviewer = Find(root, "roles", "reviewer") is { ValueKind: JsonValueKind.True },
+            Mockups = Find(root, "mockups") is { ValueKind: JsonValueKind.True },
             Docs = Text(root, "docs"),
             Budget = Number(root, "dispatch", "budget") ?? 0,
             ContributesTo = Names(root, "contributesTo"),
@@ -210,6 +214,7 @@ public sealed partial record TeamSettings(
             config = ConfigEdit.Set(config, ["visionReview", "trigger"], VisionReview.Trigger.ToString().ToLowerInvariant());
         SetFlag(Customer, before.Customer, "roles", "customer");
         SetFlag(Reviewer, before.Reviewer, "roles", "reviewer");
+        SetFlag(Mockups, before.Mockups, "mockups");
         SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");
         SetNumber(Devs, before.Devs, "wip", "devs");
         SetNumber(Pitched, before.Pitched, "wip", "pitched");

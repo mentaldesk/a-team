@@ -318,7 +318,7 @@ public class TeamFormTests
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Contributes to", "Mirror", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Limits"],
+            ["Repo", "Stakeholders", "Contributes to", "Mirror", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Mockups", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -328,7 +328,7 @@ public class TeamFormTests
     {
         using var form = new TeamForm("a-team", Settings, _ => null);
 
-        var roles = form.SubViews.OfType<CheckBox>().ToList();
+        var roles = form.SubViews.OfType<CheckBox>().Where(box => box != form.Mockups).ToList();
 
         Assert.Equal(["Lead", "Dev", "Customer lead", "Reviewer"], roles.Select(role => role.Text));
         Assert.Equal([CheckState.Checked, CheckState.Checked, CheckState.UnChecked, CheckState.UnChecked],
@@ -361,6 +361,33 @@ public class TeamFormTests
 
         Assert.Equal(TeamForm.ReviewerCaption, form.Hints.Message.Says);
         Assert.Equal(Settings with { Reviewer = true }, form.Current());
+    }
+
+    [Fact]
+    public void Mockups_sits_on_its_own_row_under_Roles_unticked_and_says_what_it_does()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.SetFocus();
+
+        Assert.Equal("Show pitches' new screens as pictures", form.Mockups.Text);
+        Assert.Equal(CheckState.UnChecked, form.Mockups.Value);
+        Assert.Equal(((PosAbsolute)form.Reviewer.Y).Position + 1, ((PosAbsolute)form.Mockups.Y).Position);
+
+        form.Mockups.SetFocus();
+
+        Assert.Equal(TeamForm.MockupsCaption, form.Hints.Message.Says);
+    }
+
+    [Fact]
+    public void Ticking_Mockups_is_what_the_form_saves_and_it_shows_ticked_when_opened_again()
+    {
+        using var form = new TeamForm("a-team", Settings, _ => null);
+        form.Mockups.Value = CheckState.Checked;
+
+        Assert.Equal(Settings with { Mockups = true }, form.Current());
+
+        using var again = new TeamForm("a-team", form.Current(), _ => null);
+        Assert.Equal(CheckState.Checked, again.Mockups.Value);
     }
 
     [Fact]
@@ -629,7 +656,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Ctrl+Enter Create", "Esc Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Contributes to", "Mirror", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Contributes to", "Mirror", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Mockups", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
