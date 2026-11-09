@@ -528,23 +528,30 @@ public sealed class OverseerView : View
 
     internal static int ColumnWidth(int inside) => Math.Max(1, inside / OverseerBoard.Columns.Length);
 
-    private Attribute ChipAttribute(BoardCard? card, bool selected)
+    private Attribute ChipAttribute(BoardCard? card, bool selected, bool lit)
     {
         if (selected)
             return GetAttributeForRole(VisualRole.Focus);
-        if (card is null)
-            return GetAttributeForRole(VisualRole.Disabled);
-        return CardCells.Colour(Priorities.Scheme(card.Priority), GetAttributeForRole(VisualRole.Normal));
+        var chip = card is null
+            ? GetAttributeForRole(lit ? VisualRole.Normal : VisualRole.Disabled)
+            : CardCells.Colour(Priorities.Scheme(card.Priority), GetAttributeForRole(VisualRole.Normal));
+        return lit ? Lit(chip) : chip;
     }
 
-    /// <summary>An age is neutral, and amber only past its column's limit, so it never reads as a Priority.</summary>
-    private Attribute AgeAttribute(BoardCard card, bool selected)
+    private static Attribute Lit(Attribute chip) =>
+        SchemeManager.TryGetScheme(LogSchemes.Related, out var related)
+            ? chip with { Background = related.GetAttributeForRole(VisualRole.Normal).Background }
+            : chip;
+
+    /// <summary>An age is neutral, and amber only past its column's limit, so it never reads as a Priority. The amber
+    /// is its background, so it stays on a lit chip.</summary>
+    private Attribute AgeAttribute(BoardCard card, bool selected, bool lit)
     {
         if (selected)
             return GetAttributeForRole(VisualRole.Focus);
         if (ColumnLimits.IsOver(card, _state.Limits, _state.Now) && SchemeManager.TryGetScheme(LogSchemes.Overdue, out var overdue))
             return overdue.GetAttributeForRole(VisualRole.Normal);
-        return GetAttributeForRole(VisualRole.Normal);
+        return lit ? Lit(GetAttributeForRole(VisualRole.Normal)) : GetAttributeForRole(VisualRole.Normal);
     }
 
     private Attribute WarningAttribute(bool selected) =>
@@ -623,9 +630,10 @@ public sealed class OverseerView : View
                     var text = Card.Elide(full, width - 1);
                     var selected = board.Selected is { Heading: false } place && place.Team == team && place.Column == column
                         && place.Number == chip.Card?.Number;
+                    var lit = !selected && board.Lit(team, column, chip);
                     var age = chip.Card is not null && text == full ? AgeWidth : 0;
                     var warning = holding && age > 0 ? Flag(Icon.Warning, overseer._icons).Length : 0;
-                    SetAttribute(overseer.ChipAttribute(chip.Card, selected));
+                    SetAttribute(overseer.ChipAttribute(chip.Card, selected, lit));
                     AddStr(column * width, row, text[..^(age + warning)]);
                     if (warning > 0)
                     {
@@ -634,7 +642,7 @@ public sealed class OverseerView : View
                     }
                     if (chip.Card is { } shown && age > 0)
                     {
-                        var under = overseer.AgeAttribute(shown, selected);
+                        var under = overseer.AgeAttribute(shown, selected, lit);
                         SetAttribute(under);
                         AddStr(column * width + text[..^age].GetColumns(), row, text[^age..]);
                         if (animation is not null && frame is { } playing)

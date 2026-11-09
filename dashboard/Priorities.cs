@@ -28,6 +28,8 @@ public static class Priorities
         (Rank.Urgent, "#c1408d"),
     ];
 
+    internal static IEnumerable<Color> Inks => Levels.Select(level => new Color(level.Colour));
+
     internal static void Register(Scheme cards, Scheme form)
     {
         foreach (var (rank, colour) in Levels)
