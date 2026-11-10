@@ -45,6 +45,7 @@ internal static class StatusRoute
         ("lead", "Pitched", "Idea"),
         ("dev", None, "In progress"),
         ("dev", None, "In review"),
+        (Dispatcher, "In progress", "In review"),
     ];
 
     /// <summary>Dependabot's PRs, which the dispatcher merges, or hands to the Dev, wherever they've got to.</summary>

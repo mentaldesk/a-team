@@ -552,6 +552,25 @@ update_branches() {
   fi
 }
 
+# finish_tasks <team> <config>: moves the team's finished tasks to In review, as its App, but for one a Dev run or a stopped run has.
+finish_tasks() {
+  local dir="$STATE/$1/dev" args=(board) said n file
+  jq -e '.dispatch.hold // [] | index("dev")' "$2" >/dev/null 2>&1 && return
+  $DRY_RUN && args+=(--dry-run)
+  args+=("$1" finished)
+  for n in $(live_runs "$dir" | cut -d' ' -f4); do args+=("$n"); done
+  for file in "$dir"/runs/*/held; do
+    [ ! -e "$file" ] || args+=("$(basename "$(dirname "$file")")")
+  done
+  mkdir -p "$STATE/$1"
+  if said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$1 "$ROOT/bin/a-team" "${args[@]}" 2>"$STATE/$1/finished.err"); then
+    passing "$STATE/$1/finished-failing" "$STATE/$1/finished-failed-once" "$1: moving finished tasks working again"
+    [ -z "$said" ] || log "$1: ${said//$'\n'/; }"
+  else
+    failing "$STATE/$1/finished-failing" "$STATE/$1/finished-failed-once" "$(tr '\n' ' ' <"$STATE/$1/finished.err")" "$1: moving finished tasks failed"
+  fi
+}
+
 # sync_board <team>: brings the team's record up to date with GitHub, the cards' detail too, so the app's is a pass old at most.
 sync_board() {
   local said
@@ -615,6 +634,7 @@ for team in $(team_names); do
   sync_board "$team"
   now=$(date +%s)
   $DRY_RUN || settle_runs
+  finish_tasks "$team" "$config"
   held=false
   over_budget "$team" "$config" && held=true
   for role in $(team_roles "$config"); do

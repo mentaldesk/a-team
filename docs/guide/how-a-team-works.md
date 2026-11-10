@@ -108,7 +108,9 @@ Work waits for you in two places, and no agent moves it on without you.
   weeks, or decline it. Nothing gets built until you approve. A plain yes in a comment, like
   "Let's build it", approves it too, just as Not now in a comment shelves it: the Lead acts on your
   word and says so. A yes with a condition leaves the pitch for you to approve once it's revised.
-- **In review.** You merge a task's PR. Nothing is done until you say so. Once every task of a
+- **In review.** You merge a task's PR. Nothing is done until you say so. A task reaches you here
+  by itself once its PR is out of draft, green and clear of its base, however it left draft; if the
+  Reviewer never read it, the PR says so. Once every task of a
   pitch has closed, the Lead checks the whole and closes it, so a finished pitch doesn't come back
   to you. A pitch another pitch's work already built, the Lead closes too, naming the merged PRs
   that built it.

@@ -3,13 +3,14 @@ using System.Text.RegularExpressions;
 
 namespace ATeam.Core;
 
-/// <summary>The PRs that reach the board by themselves: Dependabot's, and the Dev's on other repos.</summary>
+/// <summary>The PRs that reach the board or move on it by themselves: Dependabot's, the Dev's on other repos, and finished tasks'.</summary>
 internal static partial class Commands
 {
     private static Dictionary<string, Handler> Arriving() => new()
     {
         ["bumps"] = Bumps,
         ["adopt"] = Adopt,
+        ["finished"] = Finished,
     };
 
     private const int RefusalsBeforeAsking = 3;
@@ -169,6 +170,33 @@ internal static partial class Commands
                 board.Log("dev", n, "In progress → In review");
                 board.Say($"#{n}: In progress → In review");
             }
+        }
+        return 0;
+    }
+
+    /// <summary>Moves each In progress task whose PR is out of draft, green and clear of its base to In review, but for a
+    /// review still to answer. <paramref name="args"/> are the tasks to leave, which a Dev run has or a stakeholder stopped.</summary>
+    internal static int Finished(Board board, string[] args)
+    {
+        if (!args.All(Digits))
+            throw new Die($"usage: board.sh {board.Team} finished [<task>...]");
+        foreach (var card in board.AllCards().Where(card => Cards.IsIssue(card) && Cards.Own(card, "dev") && Cards.Status(card) == "In progress"
+            && !Cards.Marked(card, "held") && !args.Contains(Cards.N(card))))
+        {
+            var n = Cards.N(card);
+            var (read, pr) = board.PrFor(n);
+            Board.Must(read);
+            if (pr is null || Json.Truthy(pr["isDraft"]) || Json.Text(pr["mergeable"]) != "MERGEABLE" || Json.Text(pr["review"]) == "posted") continue;
+            var p = Board.Raw(pr["number"]);
+            if (board.HeadVerdict(p) != "pass") continue;
+            if (Json.Text(pr["review"]) == "waiting")
+            {
+                if (board.TaskPr(p) is not { } said) continue;
+                if (!board.SaidUnreviewed(said)) board.PostComment(p, $"{Board.Unreviewed}\n\n{Board.DispatchMarker}");
+            }
+            board.SetStatus(n, "In progress", "In review", StatusRoute.Dispatcher);
+            board.Log(StatusRoute.Dispatcher, n, "In progress → In review");
+            board.Say($"#{n}: PR #{p} is finished, In progress → In review");
         }
         return 0;
     }

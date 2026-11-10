@@ -44,7 +44,7 @@ fi
   echo "board.sh: the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" >&2
   exit 1
 }
-[ "$1" = board ] && { [ "${!#}" = free ] || [ "${!#}" = update ] || [ "${!#}" = bumps ]; } && exit 0
+[ "$1" = board ] && { [ "${!#}" = free ] || [ "${!#}" = update ] || [ "${!#}" = bumps ] || [ "${!#}" = finished ]; } && exit 0
 [ "$1" = board ] && [ "${!#}" = adopt ] && { echo "$*" >>"${ADOPTED:-/dev/null}"; exit 0; }
 [ "$1" = board ] && [ "${!#}" = sync ] && { echo "$*" >>"${SYNCS:-/dev/null}"; exit 0; }
 echo '{"reasons": ["work to do"], "creative": false}'

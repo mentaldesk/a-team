@@ -196,13 +196,14 @@ internal static partial class Commands
         var running = checks["pending"]!.AsArray().Count == 0 ? "" : ", other checks still running";
         if (verdict == "fail")
             wake.Task(number, title, $"CI failed on {what} at {board.ShortHead(p)}{running}");
-        if (verdict == "pass" && pr["isDraft"]?.GetValueKind() == System.Text.Json.JsonValueKind.True)
+        var draft = pr["isDraft"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
+        if (verdict == "pass")
         {
             switch (Json.Text(pr["review"]))
             {
-                case "off": wake.Task(number, title, $"PR #{p} is green but still a draft"); break;
-                case "posted": wake.Task(number, title, $"PR #{p} has its review: act on it"); break;
-                case "answered": wake.Task(number, title, $"PR #{p} has its review answered and is green: mark it ready"); break;
+                case "off" when draft: wake.Task(number, title, $"PR #{p} is green but still a draft"); break;
+                case "posted" when draft || Cards.Status(card) == "In progress": wake.Task(number, title, $"PR #{p} has its review: act on it"); break;
+                case "answered" when draft: wake.Task(number, title, $"PR #{p} has its review answered and is green: mark it ready"); break;
             }
         }
         if (Json.Text(pr["mergeable"]) == "CONFLICTING")

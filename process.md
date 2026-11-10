@@ -22,7 +22,7 @@ Every item's Status is one of:
 | Building | Broken into tasks; tasks are in flight | Lead |
 | Ready | A task Dev can pick up | Lead (or stakeholder) |
 | In progress | Dev is working on it, or another team's Dev on a draft upstream PR | Dev, or the dispatcher for a red dependency PR or an upstream PR |
-| In review ⛔ | A PR (task, docs or upstream) is waiting on the stakeholder | Dev, Customer lead, or the dispatcher for an upstream PR |
+| In review ⛔ | A PR (task, docs or upstream) is waiting on the stakeholder | Dev, Customer lead, or the dispatcher for a finished task or an upstream PR |
 | Done | Merged, or a pitch whose tasks have all closed | **Stakeholder**, or the Lead for a pitch (`finish`) |
 
 ⛔ marks a gate. Agents move work *into* a gate and stop. Only the stakeholder moves it out. Pitched
@@ -194,7 +194,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 screenshot, `tick` is how it saves a tick on a task's criteria, `gave` is how it frees a task once you've given its secret, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
 how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `give-up` is how the dispatcher holds what its runs couldn't clear, `free` is how the dispatcher frees a task once what it waits on in
-another repo has closed or been released, and `update` is how it brings a PR In review that's behind
+another repo has closed or been released, `finished` is how it moves a task to In review once its PR is out of draft, green and clear of its base, and `update` is how it brings a PR In review that's behind
 its base up to date. Don't run them.
 
 Run it exactly as written here, one command per call. Don't put it in a shell variable or
