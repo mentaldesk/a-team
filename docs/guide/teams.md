@@ -111,7 +111,7 @@ ready, where `a` merges it. Releasing stays yours. For a repo not listed, the De
 
 Vision, First page, Stakeholders and Contributes to open at once and load from GitHub in their
 list. Until the rows are in, the pick or Done button is dimmed and `Enter` does nothing. If the read
-fails, the list says why, and `R` reads again without closing the picker.
+fails, the list says why, and `r` reads again without closing the picker.
 
 `Esc` in a picker leaves the field as it was. A new team's Workdir follows its Name, as
 `~/code/<name>`, until you type or pick one of your own.
@@ -134,7 +134,8 @@ the rows go, but the first page is kept for when you tick it again.
 ## Pausing a team
 
 A paused team picks up no new work, and a run already going finishes. `p` in Teams, or the
-team's own form, pauses it and starts it again. To pause one role and not the other, use `h` on its
+team's own form, pauses it and starts it again, as `a-team pause <team>` and `a-team resume <team>` do
+from a shell. To pause one role and not the other, use `h` on its
 team's panel in [Overseer](overseer.md#pausing-a-role).
 
 ## A daily budget
@@ -153,8 +154,8 @@ A run's cost counts once it has ended, so **Today** can pass the budget by what 
 ## Removing a team
 
 `x` asks first, and `Ctrl+Enter` removes it: A-Team forgets the team. Its repo, its board and
-everything it has built are untouched, and its file is kept as `<team>.json.removed`. Rename it back
-to `<team>.json` to bring the team back.
+everything it has built are untouched, and its file is kept as `<team>.json.removed`, or `<team>.json.removed.2` and so on if an older one is
+there. Rename it back to `<team>.json` to bring the team back.
 
 ## When a team can't run
 

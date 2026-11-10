@@ -44,7 +44,7 @@ its role's animation in place of its age:
 |---|---|---|
 | Dev | Decrypt: scrambled symbols lock into `</>`, `{;}`, `f()` or `0x1` | `ｱ#ﾘ` `</ｶ` `</>` in green |
 | Lead | Thought to idea: thought bubbles rise and burst into a spark | `.oO` `  ✺` `. ✧` in amber |
-| Customer lead | Typing: three dots bounce like someone typing | `⠶⠛⣤` `⣤⣤⣤` in blue |
+| Customer lead | Typing: three dots bounce like someone typing | `⠶⣤⣤` `⣤⠛⣤` in blue |
 | Reviewer | Magnifier: a lens works along one line of a diff, then back along the next | `⌕-+` `+⌕+` `+-⌕` in violet |
 
 A role with no animation of its own plays a dim spinner, `⠋⠙⠹`, in the theme's colour.
