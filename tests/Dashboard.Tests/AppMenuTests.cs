@@ -211,7 +211,7 @@ public class AppMenuTests : IDisposable
         window.Refresh();
 
         Assert.Equal(
-            ["_Show the session full-screen", "_Fold the lane", "Open on _GitHub", "_Read the boards that failed again", "R_efresh", "_Next team",
+            ["_Show the session full-screen", "_Fold the lane", "Read t_he card", "Go to the card in _Work", "Open on _GitHub", "_Read the boards that failed again", "R_efresh", "_Next team",
                 "_Previous team", "Open team's _board on GitHub", "_Dispatcher log", "De_cisions…", "Sett_ings", "_Teams", "_Quit"],
             Under(window, View(window)).Select(id => Item(window, id).Title));
     }
@@ -459,7 +459,7 @@ public class AppMenuTests : IDisposable
 
         window.Refresh();
 
-        string[] elsewhere = ["overseer.details", "overseer.fold", "overseer.github", "overseer.retry", "overseer.refresh"];
+        string[] elsewhere = ["overseer.details", "overseer.fold", "overseer.read", "overseer.work", "overseer.github", "overseer.retry", "overseer.refresh"];
         Assert.Subset(Under(window, View(window)).Concat(Under(window, Go(window))).ToHashSet(), elsewhere.ToHashSet());
         Assert.All(elsewhere, id => Assert.True(Item(window, id).Dimmed, id));
         Assert.False(Item(window, "view.overseer").Dimmed);

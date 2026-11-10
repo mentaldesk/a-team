@@ -51,4 +51,18 @@ public class TeamReadsTests
 
         Assert.Equal(1, asked);
     }
+
+    [Fact]
+    public void Restarting_a_read_drops_the_one_already_running()
+    {
+        var stale = new TaskCompletionSource<Reading>();
+        var answers = new Queue<Task<Reading>>([stale.Task, Task.FromResult(new Reading("fresh", null))]);
+        var reads = new TeamReads(["a"], _ => answers.Dequeue());
+
+        reads.Restart("a");
+        stale.SetResult(new Reading("stale", null));
+
+        Assert.Equal([("a", new Reading("fresh", null))], reads.Landed());
+        Assert.True(reads.Done);
+    }
 }

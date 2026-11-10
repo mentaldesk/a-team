@@ -47,7 +47,7 @@ public sealed partial class DashboardWindow
         Seen(item);
         _attention.Did("tried");
         _attention.HandOver();
-        _options.HandOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced) });
+        _options.HandOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced), From = _area });
     }
 
     /// <summary>Writes the document pitch's file for your editor, and hands the terminal to it.</summary>
@@ -69,7 +69,7 @@ public sealed partial class DashboardWindow
         _attention.Did("edited");
         _attention.HandOver();
         _options.HandOver(new DocumentHandover(item, document, file, EditorHandover.Command(Environment.GetEnvironmentVariable),
-            _work.SelectedCard is null, _work.Items, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced) });
+            _work.SelectedCard is null, _work.Items, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced), From = _area });
     }
 
     /// <summary>Back from a try, the cards as they were with no re-read; from an attach or the editor, Overseer. Either way, what
@@ -100,6 +100,7 @@ public sealed partial class DashboardWindow
                 _reopen = (tried.Item, place, failure, null, false);
                 failure = null;
             }
+            BackToChip(tried.From, tried.Item);
         }
         if (handover is DocumentHandover edited)
         {
@@ -110,6 +111,7 @@ public sealed partial class DashboardWindow
             ReadTrend();
             _reopen = (edited.Item, edited.Reader, failure, edited.Said, edited.Committed);
             failure = null;
+            BackToChip(edited.From, edited.Item);
         }
         if (_backTo is { Number: null } role)
         {
@@ -119,6 +121,12 @@ public sealed partial class DashboardWindow
         if (failure is { Length: > 0 })
             Reply(failure, Severity.Error);
         ShowMessage();
+    }
+
+    private void BackToChip(Area from, WaitingItem item)
+    {
+        if (from == Area.Overseer)
+            _backTo = (item.Team, item.Number, "", null);
     }
 
     private void Stamp(IReadOnlyDictionary<string, Synced> synced)
@@ -167,6 +175,8 @@ public sealed partial class DashboardWindow
         if (_resume is not { } resume)
             return;
         _resume = null;
+        if (_area != Area.Work)
+            return;
         switch (resume)
         {
             case TryHandover tried when !_work.Focus(tried.Item, tried.OnPr):
@@ -240,9 +250,9 @@ public sealed partial class DashboardWindow
         ReadBody(item, (read, body) => ShowBody(read, body, url, declining: declining, shelving: shelving), forReader: true);
     }
 
-    private void ReadRanking(WaitingItem item, bool declining = false)
+    private void ReadRanking(WaitingItem item, bool declining = false, string? url = null)
     {
-        var url = _work.SelectedUrl;
+        url ??= _work.SelectedUrl;
         ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Starting(read), declining: declining),
             forReader: true);
     }
@@ -304,9 +314,10 @@ public sealed partial class DashboardWindow
     }
 
     /// <summary>Nothing to read opens no dialog: the bar says why and you stay on the board. With
-    /// <paramref name="rank"/> it opens anyway, saying why, since you came to rank it.</summary>
+    /// <paramref name="rank"/> it opens anyway, saying why, since you came to rank it. Without
+    /// <paramref name="gates"/> it offers only commenting and GitHub: the card isn't waiting on you.</summary>
     private void ShowBody(WaitingItem item, IssueBody body, string? url, int? top = null, string? failure = null,
-        Rank? rank = null, bool declining = false, string? said = null, bool shelving = false)
+        Rank? rank = null, bool declining = false, string? said = null, bool shelving = false, bool gates = true)
     {
         if (rank is null && body.Failure is { Length: > 0 } unread)
             Reply(unread, Severity.Error);
@@ -314,27 +325,27 @@ public sealed partial class DashboardWindow
             Reply($"#{item.Number} has no description", Severity.Error);
         else
         {
-            _approvable = item.Approvable ? item : null;
+            _approvable = gates && item.Approvable ? item : null;
             _shown = item;
             _shownBody = body;
-            _attention.Open(item, WorkView.GateOf(item));
+            _attention.Open(item, gates ? WorkView.GateOf(item) : Attention.Other);
             Seen(item);
-            _idea = NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
+            _idea = gates && NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
             _image = new ReaderImage();
             if (body.Checklist is { } listed)
                 _unticked[Write.KeyOf(item)] = listed.Unticked;
             var chosen = _showBody(item, body, () => url is { Length: > 0 } ? _openUrl(url) : null, _approvable is null ? null : Approve,
-                item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
+                gates && item.Acceptable ? new ReaderCommand(_commands.KeyFor("work.accept"), "accept", Accept, item.Unacceptable.Length == 0) : null,
                 new ReaderComment(_commands.KeyFor("work.comment"), "comment", body => Post(item, body), _clock,
-                    item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
-                    item.Shelvable ? new ReaderShelve(_commands.KeyFor("work.notNow"), (weeks, reason) => Shelve(item, weeks, reason), shelving) : null,
-                    Attaching(), _image, item.Held ? new ReaderRelease(comment => Release(item, comment)) : null,
-                    item.Fixable && ToConsider(item, body).Count > 0 ? new ReaderCommand(_commands.KeyFor("work.fix"), "ask the Dev to fix", AskFix) : null,
-                    body.Checklist is not null ? new ReaderTick((criterion, ticked) => Tick(item, criterion, ticked), SettleWrites,
+                    gates && item.Declinable ? new ReaderDecline(_commands.KeyFor("work.decline"), reason => Decline(item, reason), declining) : null,
+                    gates && item.Shelvable ? new ReaderShelve(_commands.KeyFor("work.notNow"), (weeks, reason) => Shelve(item, weeks, reason), shelving) : null,
+                    Attaching(), _image, gates && item.Held ? new ReaderRelease(comment => Release(item, comment)) : null,
+                    gates && item.Fixable && ToConsider(item, body).Count > 0 ? new ReaderCommand(_commands.KeyFor("work.fix"), "ask the Dev to fix", AskFix) : null,
+                    gates && body.Checklist is not null ? new ReaderTick((criterion, ticked) => Tick(item, criterion, ticked), SettleWrites,
                         unticked => _unticked[Write.KeyOf(item)] = unticked) : null,
-                    item.Secret is not null ? new ReaderCommand(_commands.KeyFor("work.secret"), "give secret", GiveSecret) : null),
-                item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
-                item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
+                    gates && item.Secret is not null ? new ReaderCommand(_commands.KeyFor("work.secret"), "give secret", GiveSecret) : null),
+                gates && item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
+                gates && item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
                     top, said, failure) : null,
                 _commands.KeyFor("work.copyBranch"),

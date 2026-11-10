@@ -304,6 +304,10 @@ public sealed partial class DashboardWindow
             keys.Add($"{KeyHint("overseer.details")} full log");
         if (_commands.IsEnabled("agent.interrupt"))
             keys.Add($"{KeyHint("agent.interrupt")} {(CardHeld() ? "let it start again" : "interrupt")}");
+        if (_overseer.Board.SelectedCard is not null)
+            keys.Add($"{KeyHint("overseer.read")} Read");
+        if (ChipInWork() is not null)
+            keys.Add($"{KeyHint("overseer.work")} Work");
         if (_overseer.Board.SelectedCard is { Url.Length: > 0 })
             keys.Add($"{KeyHint("overseer.github")} GitHub");
         return string.Join(" · ", keys);
@@ -321,5 +325,41 @@ public sealed partial class DashboardWindow
     private void Open(string url)
     {
         Reply(Copying.Said(_openUrl(url)));
+    }
+
+    /// <summary>The selected chip's card, where Work is showing it.</summary>
+    private WaitingItem? ChipInWork() =>
+        _overseer.Board.SelectedCard is { } card && _work.Waiting(card.Team, card.Number) is { } item && _work.Shows(item) ? item : null;
+
+    private void GoToChip()
+    {
+        if (_overseer.Board.SelectedCard is not { } card)
+            return;
+        if (ChipInWork() is not { } item)
+        {
+            Reply($"#{card.Number} isn't in Work: nothing's waiting on you for it");
+            return;
+        }
+        Show(Area.Work);
+        _work.Pick(card.Team);
+        // A tab that's never been in front has no size to scroll within until it's laid out.
+        Layout();
+        _work.Focus(item, false);
+        ShowMessage();
+    }
+
+    /// <summary>The chip's card in Work's reader: with its gates where a column of Work's holds it, and otherwise to read
+    /// and comment on.</summary>
+    private void ReadChip()
+    {
+        if (_overseer.Board.SelectedCard is not { } card)
+            return;
+        if (_work.Waiting(card.Team, card.Number) is not { } item)
+            ReadBody(new WaitingItem(card.Number, card.Title, card.Status, card.Url, card.Team, Priority: card.Priority, Pitch: card.Kind == CardKind.Pitch) { Facts = card.Facts },
+                (read, body) => ShowBody(read, body, card.Url, gates: false), forReader: true);
+        else if (WorkView.ToRank(item))
+            ReadRanking(item, url: item.Url);
+        else
+            ReadBody(item, (read, body) => ShowBody(read, body, item.Url), forReader: true);
     }
 }

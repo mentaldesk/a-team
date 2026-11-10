@@ -409,5 +409,7 @@ public sealed partial class DashboardWindow
                 Announce($"vision review asked for · {write.Team}: the Lead starts it now");
                 break;
         }
+        if (write.Item is { } card && _area == Area.Overseer)
+            ReadLane(card.Team);
     }
 }

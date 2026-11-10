@@ -1,9 +1,9 @@
 # Overseer
 
 Every team's board on one screen, with how long each card has sat where it is, and what each team's agents
-are doing. `Ctrl+G O` opens it and `Ctrl+G W` goes to [Work](work.md). Approving, accepting and commenting stay in
-Work; here you read the agents' sessions, interrupt a run and pause a role. `a-team dashboard [team...]` opens the
-app here, on just the teams you name.
+are doing. `Ctrl+G O` opens it and `Ctrl+G W` goes to [Work](work.md). Here you read the agents' sessions, interrupt a run
+and pause a role, and from a card you can [read it, comment on it or decide it](#from-a-card), or go to it in Work.
+`a-team dashboard [team...]` opens the app here, on just the teams you name.
 
 ## Lanes and chips
 
@@ -73,10 +73,26 @@ nothing to light, and neither do a lane's heading or a `+7`.
 | `Esc` | Folds the lane back |
 | `i` | Interrupts the agent on the selected card, or the chosen role on a heading, and puts you in its conversation |
 | `h` | On a heading, pauses the chosen role, or lets it start again |
+| `o` | Opens the card in the reader, as [From a card](#from-a-card) describes |
+| `w` | Goes to the card in [Work](work.md) |
 | `g` | Opens the card on GitHub |
 | `b` | Opens the team's mirror, its Project board on GitHub, if it has one |
 | `r` | Reads again the boards that couldn't be read |
 | `F5` | Reads every board again |
+
+## From a card
+
+`o` opens the selected card in the reader [Work](work.md) opens, with its body, its history and its comments, for any
+card on the board.
+
+A card Work is showing offers what it offers there, with the same keys: Approve, Accept, Try, Decline, Not now, as
+they apply, and the ranks under a card still to rank. After you use one the reader closes, as it does in Work, and the chip moves to its new column
+once the board has taken it. Any other card offers Comment, GitHub and Close.
+
+`w` goes to the card in Work: Work opens on the card's team with the card selected. Only the cards Work is showing can
+be gone to, so on any other card `w` is dimmed in the menus and missing from the panel's keys, and running it from
+Commands (`Ctrl+E`) says so on the status bar, as in `#672 isn't in Work: nothing's waiting on you for it`, and leaves
+you in Overseer. A card that *Only mine* hides counts as one Work isn't showing. `Ctrl+G W` still goes back to where you last were in Work.
 
 ## Reading the boards
 
@@ -104,7 +120,7 @@ each with its column and age.
 Below the details is the session of the agent on the card, following live as it works: who's running,
 for how long and why, as in `Dev · running 14:02 · why: claimed #602`, then the tail of its log. With
 nothing running on the card, it shows the last run there was on it and when, as in
-`Dev · last ran 3h12m ago`, or says no agent has run on it yet. The panel's last line lists the keys that work on the card. Moving the
+`Dev · last ran 3h12m ago`, or says no agent has run on it yet. The panel's last line lists the keys that work on the card, as they're bound now. Moving the
 selection switches the panel to the new card straight away.
 
 `Enter` opens the session full-screen, as [Reading a session](#reading-a-session) describes. `Esc`
