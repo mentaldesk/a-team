@@ -34,7 +34,7 @@ Triage, Pitches, Blocked, Review and Other.
 and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
 and for the tasks you accepted, their median **Cycle** and how much of it was **With you**: In
-review, waiting for a slot your reviews were holding, or waiting for your answer to a question. Then
+review, or waiting for your answer to a question. Then
 **First time**, the share of the tasks you accepted that had no comment from you on the task or its PR
 once it reached review, like `75% of 12`, which leaves out docs PRs, dependency bumps and your own PRs,
 so it can be out of fewer than *Accepted*; **Touches**, your comments per one of those tasks from review

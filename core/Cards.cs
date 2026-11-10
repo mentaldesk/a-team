@@ -41,9 +41,9 @@ internal static class Cards
 
     internal static bool Fileable(JsonNode card) => Pitch(card) && Status(card) is "Approved" or "Building";
 
-    /// <summary>A task of the Dev's that takes up one of wip.worktrees.</summary>
+    /// <summary>A task of the Dev's that takes up one of wip.worktrees: one being built, not a PR waiting on the stakeholder.</summary>
     internal static bool Working(JsonNode card) =>
-        Marked(card, "dev") && Status(card) is "In progress" or "In review" && !Blocked(card);
+        Marked(card, "dev") && Status(card) == "In progress" && !Blocked(card);
 
     internal static bool Own(JsonNode card, string role) => role switch
     {

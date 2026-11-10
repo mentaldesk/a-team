@@ -52,7 +52,7 @@ public sealed class TeamForm : AppDialog
     internal const string ReviewerCaption = "Reviews each task PR once it's green, so the Dev fixes what it finds before you look.";
     internal const string MockupsLabel = "Show pitches' new screens as pictures";
     internal const string MockupsCaption = "The Lead builds the screens a pitch adds or changes, and puts pictures of them in the pitch.";
-    internal const string WorktreesCaption = "How many tasks can be in flight, PRs included.";
+    internal const string WorktreesCaption = "How many tasks can be building at once. A PR waiting on you doesn't count.";
     internal const string DevsCaption = "How many Dev runs build at once.";
     internal const string PitchedCaption = "How many pitches wait on you at once.";
     internal const string ExploringCaption = "How many drafted pitches wait for room in Pitched.";

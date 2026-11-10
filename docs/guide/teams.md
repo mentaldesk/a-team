@@ -133,6 +133,11 @@ the rows go, but the first page is kept for when you tick it again.
 
 ## Pausing a team
 
+**Worktrees** is how many tasks the Dev can be building at once. A PR waiting on you doesn't
+count, so however many wait for your review, the Dev keeps starting Ready work. An Urgent task or a
+fix may take one more. **Devs** is how many Dev runs go at once, whether building a task or answering
+a review on one.
+
 A paused team picks up no new work, and a run already going finishes. `p` in Teams, or the
 team's own form, pauses it and starts it again. To pause one role and not the other, use `h` on its
 team's panel in [Overseer](overseer.md#pausing-a-role).

@@ -146,34 +146,17 @@ slots='31 700 dev Ready → In progress
 32 650 dev Ready → In progress
 30 600 lead added as Ready
 31 500 dev In progress → In review
+32 450 dev In progress → In review
 31 300 you accepted · PR #931 merged
 30 200 dev Ready → In progress
 30 150 dev In progress → In review
 30 100 you accepted · PR #930 merged'
 
-case_ "trends: a Ready task waits on you while every slot is full and one is In review, not while all are In progress or one is free"
+case_ "trends: a Ready task doesn't wait on you while the Dev's slots are full of PRs In review"
 events <<<"$slots"
-same "slot wait" "[$((200 + 50))]" "$(with_you "\"$(before 600)\"")"
+same "slot wait" "[50]" "$(with_you "\"$(before 600)\"")"
 
-case_ "trends: a task in a slot but blocked by another doesn't hold it"
-events <<<"$slots
-32 480 dev blocked by #34
-34 400 you accepted · PR #934 merged"
-same "freed" "[$((20 + 100 + 50))]" "$(with_you "\"$(before 600)\"")"
-
-case_ "trends: another team's upstream PR adopted In progress holds no slot"
-events <<<"$slots
-86 650 dev added as In progress
-86 590 dev In progress → In review"
-same "upstream" "[$((200 + 50))]" "$(with_you "\"$(before 600)\"")"
-
-case_ "trends: a Ready task waiting on a prerequisite is the team's, until it's no longer blocked"
-events <<<"$slots
-30 450 dev blocked by #33
-30 400 dev no longer blocked by #33"
-same "prerequisite" "[$((50 + 100 + 50))]" "$(with_you "\"$(before 600)\"")"
-
-case_ "trends: a task handed back with a question waits on you until the answer, whatever the slots"
+case_ "trends: a task handed back with a question waits on you until the answer"
 events <<'EVENTS'
 40 600 lead added as Ready
 40 550 dev Ready → In progress
@@ -185,11 +168,6 @@ events <<'EVENTS'
 40 300 you accepted · PR #940 merged
 EVENTS
 same "question" "[$((80 + 100))]" "$(with_you "\"$(before 600)\"")"
-
-case_ "trends: with no wip.worktrees, only In review and questions count"
-jq 'del(.wip)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
-events <<<"$slots"
-same "no slots" "[50]" "$(with_you "\"$(before 600)\"")"
 
 touches_of() { trends | jq -c '[.touches[].touches]'; }
 # boarded <n> <content> [<marks>]: item n on the board, once trends has made the record's tables.

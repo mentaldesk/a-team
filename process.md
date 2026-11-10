@@ -235,7 +235,8 @@ tell what `$B` will run.
 2. Check the board before doing anything else. If there is nothing for your role to do, say so
    in one line and stop. An empty run should cost almost nothing.
 3. Finish existing work before starting new work. Respect the WIP limits in the team config:
-   - `worktrees`: the Dev's tasks In progress + In review, one worktree each. Blocked tasks,
+   - `worktrees`: the Dev's tasks In progress, one worktree each. A PR In review keeps its
+     worktree but takes no slot, so PRs waiting on the stakeholder never stop new work. Blocked tasks,
      either way, wait without taking a slot. While an unblocked Ready task is Urgent or a fix, one
      extra worktree is allowed, until it leaves Ready. The dispatcher claims a Ready task for a Dev run
      only while a slot is free, and each Dev run works on that one task.

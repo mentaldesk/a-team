@@ -169,7 +169,7 @@ public class TrendsTests
     }
 
     [Fact]
-    public void A_ready_task_waits_on_you_while_every_slot_is_full_and_one_is_in_review()
+    public void A_ready_task_doesnt_wait_on_you_while_the_slots_are_full_of_prs_in_review()
     {
         var events = new[]
         {
@@ -177,15 +177,14 @@ public class TrendsTests
             E(32, 50, "dev", "Ready → In progress"),
             E(30, 100, "lead", "added as Ready"),
             E(31, 200, "dev", "In progress → In review"),
+            E(32, 250, "dev", "In progress → In review"),
             E(31, 400, "you", "accepted · PR #931 merged"),
             E(30, 500, "dev", "Ready → In progress"),
             E(30, 550, "dev", "In progress → In review"),
             E(30, 600, "you", "accepted · PR #930 merged"),
         };
-        var waits = Trends.Waits(events, 2);
         var own = events.Where(e => e.Item == 30).ToList();
-        Assert.Equal((200 + 50) * 60, WithYou(Trends.Cycle(own, waits)));
-        Assert.Equal(50 * 60, WithYou(Trends.Cycle(own, Trends.Waits(events, null))));
+        Assert.Equal(50 * 60, WithYou(Trends.Cycle(own, Trends.Waits(events))));
     }
 
     [Fact]
@@ -202,27 +201,7 @@ public class TrendsTests
             E(40, 200, "dev", "In progress → In review"),
             E(40, 300, "you", "accepted · PR #940 merged"),
         };
-        Assert.Equal((80 + 100) * 60, WithYou(Trends.Cycle(events, Trends.Waits(events, null))));
-    }
-
-    [Fact]
-    public void A_task_in_a_slot_but_blocked_doesnt_hold_it_until_what_blocks_it_is_accepted()
-    {
-        var events = new[]
-        {
-            E(31, 0, "dev", "Ready → In progress"),
-            E(32, 50, "dev", "Ready → In progress"),
-            E(30, 100, "lead", "added as Ready"),
-            E(31, 200, "dev", "In progress → In review"),
-            E(32, 220, "dev", "blocked by #34"),
-            E(34, 300, "you", "accepted · PR #934 merged"),
-            E(31, 400, "you", "accepted · PR #931 merged"),
-            E(30, 500, "dev", "Ready → In progress"),
-            E(30, 550, "dev", "In progress → In review"),
-            E(30, 600, "you", "accepted · PR #930 merged"),
-        };
-        var own = events.Where(e => e.Item == 30).ToList();
-        Assert.Equal((20 + 100 + 50) * 60, WithYou(Trends.Cycle(own, Trends.Waits(events, 2))));
+        Assert.Equal((80 + 100) * 60, WithYou(Trends.Cycle(events, Trends.Waits(events))));
     }
 
     [Fact]

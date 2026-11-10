@@ -419,7 +419,7 @@ public class TeamFormTests
         Assert.Equal(form.Worktrees.Frame.X, form.Devs.Frame.X);
         Assert.Equal(form.Worktrees.Frame.Y + 1, form.Devs.Frame.Y);
         form.Worktrees.SetFocus();
-        Assert.Equal("How many tasks can be in flight, PRs included.", form.Hints.Message.Says);
+        Assert.Equal("How many tasks can be building at once. A PR waiting on you doesn't count.", form.Hints.Message.Says);
         form.Devs.SetFocus();
         Assert.Equal("How many Dev runs build at once.", form.Hints.Message.Says);
         Assert.Equal(Settings with { Devs = 3 }, form.Current());
