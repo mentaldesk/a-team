@@ -6,7 +6,7 @@ namespace ATeam.Core;
 internal static class NeedsAnswer
 {
     /// <summary>For each line, whether it's inside a ``` or ~~~ code block, its fences included.</summary>
-    private static List<bool> Fenced(string[] lines)
+    internal static List<bool> Fenced(string[] lines)
     {
         var fenced = new List<bool>(lines.Length);
         string? open = null;

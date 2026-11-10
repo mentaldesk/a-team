@@ -95,29 +95,54 @@ internal static partial class Commands
     internal static int Pictures(Board board, string[] args)
     {
         if (args.Length < 4 || args.Length % 2 != 0)
-            throw new Die($"usage: board.sh {board.Team} pictures dev <pr> <image> <caption> [<image> <caption>...]");
-        var (role, pr) = (args[0], args[1]);
-        Alone("dev", role, $"{role} may not put pictures on a PR; only dev does, on its own task PR");
+            throw new Die($"usage: board.sh {board.Team} pictures <dev|lead> <n> <image> <caption> [<image> <caption>...]");
+        var (role, n) = (args[0], args[1]);
+        if (role != "lead")
+            Alone("dev", role, $"{role} may not put pictures on anything; only dev does, on its own task PR, and lead, on its own pitch");
         var shots = new List<(string File, string Path, string Caption)>();
         for (var at = 2; at < args.Length; at += 2)
         {
             var (file, caption) = (args[at], args[at + 1]);
-            if (!HasText(caption)) throw new Die($"{Board.FileName(file)} needs a caption: the acceptance criterion it shows");
+            if (!HasText(caption)) throw new Die($"{Board.FileName(file)} needs a caption: {(role == "lead" ? "what it shows" : "the acceptance criterion it shows")}");
             if (caption.Contains('\n')) throw new Die($"a caption is one line: '{caption}'");
             shots.Add((file, Board.ImagePath(file), caption));
         }
-        var it = OwnTaskPr(board, role, pr, $"dev puts pictures only on its own open task PRs (#{pr} isn't one)");
-        var section = new StringBuilder("## What it looks like");
-        foreach (var (file, path, caption) in shots)
-        {
-            board.KeepImage(file, path);
+        return role == "lead" ? PitchPictures(board, n, shots) : TaskPrPictures(board, n, shots);
+    }
+
+    private static string PictureSection(Board board, string heading, List<(string File, string Path, string Caption)> shots)
+    {
+        var section = new StringBuilder(heading);
+        foreach (var (_, path, caption) in shots)
             section.Append($"\n\n{caption}\n\n![{caption.Replace("[", "").Replace("]", "")}]({board.AttachmentLink(path)})");
-        }
-        var body = Board.WithSection(Json.Text(it["body"]) ?? "", section.ToString());
+        return section.ToString();
+    }
+
+    private static int TaskPrPictures(Board board, string pr, List<(string File, string Path, string Caption)> shots)
+    {
+        var it = OwnTaskPr(board, "dev", pr, $"dev puts pictures only on its own open task PRs (#{pr} isn't one)");
+        var body = Board.WithSection(Json.Text(it["body"]) ?? "", PictureSection(board, "## What it looks like", shots));
+        foreach (var (file, path, _) in shots) board.KeepImage(file, path);
         board.Show(body);
         Board.Must(board.Post($"put {shots.Count} picture(s) on #{pr}", body + "\n", "pr", "edit", pr, "-R", board.Repo, "--body-file", "-"));
-        board.Log(role, RunTaskOr(pr), $"put {shots.Count} picture(s) on PR #{pr}");
+        board.Log("dev", RunTaskOr(pr), $"put {shots.Count} picture(s) on PR #{pr}");
         board.Say($"#{pr}: {shots.Count} picture(s) under What it looks like");
+        return 0;
+    }
+
+    private static int PitchPictures(Board board, string n, List<(string File, string Path, string Caption)> shots)
+    {
+        if (!board.MockupsOn) throw new Die("this team's Mockups box is off, so its pitches take no pictures");
+        var it = Must(board.Item(n), $"#{n} is not on the board");
+        if (!Cards.IsIssue(it) || !Cards.Pitch(it) || Cards.Status(it) is not ("Exploring" or "Pitched" or "Approved"))
+            throw new Die($"lead puts pictures only on its own pitches while they're Exploring, Pitched or Approved (#{n} isn't one)");
+        var body = Board.WithPitchPictures(board.IssueBody(n).TrimEnd('\n'), PictureSection(board, "## What it'll look like", shots))
+            ?? throw new Die($"#{n} has no ## Mockup section for its pictures to sit above");
+        foreach (var (file, path, _) in shots) board.KeepImage(file, path);
+        board.Show(body);
+        Board.Must(board.Post($"put {shots.Count} picture(s) on #{n}", body + "\n", "issue", "edit", n, "-R", board.Repo, "--body-file", "-"));
+        board.Log("lead", n, $"put {shots.Count} picture(s) on pitch #{n}");
+        board.Say($"#{n}: {shots.Count} picture(s) under What it'll look like");
         return 0;
     }
 

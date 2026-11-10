@@ -100,6 +100,21 @@ it needs. Answer on the PR and it's back with the Dev; close the PR and it's gon
 A green PR reaches you the same way if GitHub keeps refusing to merge it, because of a rule on the repo, say,
 with GitHub's reason. The dispatcher goes on trying, so changing what's stopping it is enough to merge it.
 
+## Pictures in a pitch
+
+Tick **Mockups** on a [team's form](teams.md#a-teams-settings) and a pitch that adds or changes a
+screen shows it, built for real. Before the pitch goes up, the Lead builds the screen in a scratch
+worktree with the real controls, the real theme and made-up rows, and takes one picture per screen.
+They go in the pitch under **What it'll look like**, each captioned with what it shows, above the
+text **Mockup**, which stays because it names each control for the Dev. Where the two disagree, the
+picture is what you approved.
+
+The scratch code is thrown away and never pushed, and the Dev starts from the pitch. A pitch that
+changes no screen has no such section. A picture never holds a pitch up: if the screen won't build or
+can't be captured, the pitch still goes up with its text mockup and one line saying why there's no
+picture. The pictures are stored on the `a-team/attachments` branch like any attached image, so
+in a public repo they're public, and the rows are made up for that reason.
+
 ## Where you decide
 
 Work waits for you in two places, and no agent moves it on without you.

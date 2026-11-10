@@ -276,6 +276,21 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void Mockups_are_off_when_the_config_has_no_word_on_them_and_saving_adds_nothing_unless_ticked()
+    {
+        const string config = """{"repo": "o/r"}""";
+        var before = TeamSettings.Read(Bytes(config));
+
+        var unchanged = before.Write(Bytes(config), before);
+        var on = (before with { Mockups = true }).Write(Bytes(config), before);
+
+        Assert.False(before.Mockups);
+        Assert.DoesNotContain("mockups", Text(unchanged));
+        Assert.True(TeamSettings.Read(on).Mockups);
+        Assert.Contains("\"mockups\": true", Text(on));
+    }
+
+    [Fact]
     public void The_Reviewer_is_off_until_roles_reviewer_turns_it_on_and_is_saved_beside_the_Customer_lead()
     {
         const string config = """{"repo": "o/r", "roles": {"customer": true}}""";

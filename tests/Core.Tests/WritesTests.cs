@@ -26,6 +26,37 @@ public class WritesTests
     public void A_section_replaces_the_one_already_there(string body, string with) =>
         Assert.Equal(with, Board.WithSection(body, Shots));
 
+    private const string Pics = "## What it'll look like\n\nCap\n\n![Cap](u)";
+
+    [Theory]
+    [InlineData("A\n\n## Mockup\n\nm\n\n## Scope", "A\n\n" + Pics + "\n\n## Mockup\n\nm\n\n## Scope")]
+    [InlineData("A\n## Mockup\nm", "A\n\n" + Pics + "\n\n## Mockup\nm")]
+    [InlineData("## Mockups\nm", Pics + "\n\n## Mockups\nm")]
+    public void A_pitchs_pictures_go_above_its_text_mockup(string body, string with) =>
+        Assert.Equal(with, Board.WithPitchPictures(body, Pics));
+
+    [Theory]
+    [InlineData("A\n\n## What it'll look like\n\nNo picture: x.\n\n## Mockup\n\nm", "A\n\n" + Pics + "\n\n## Mockup\n\nm")]
+    [InlineData("A\n\n## What it'll look like\n\nOld\n\n![Old](v)\n\n## Mockup\n\nm", "A\n\n" + Pics + "\n\n## Mockup\n\nm")]
+    [InlineData("## Mockup\n\nm\n\n## What it'll look like\n\nOld\n\n---\n\nz", Pics + "\n\n## Mockup\n\nm\n\n---\n\nz")]
+    [InlineData("A\n\n## What it'll look like\n\nOld\n\n### Mockup\n\nm", "A\n\n" + Pics + "\n\n### Mockup\n\nm")]
+    public void A_later_revision_replaces_the_pictures_rather_than_adding_a_second(string body, string with) =>
+        Assert.Equal(with, Board.WithPitchPictures(body, Pics));
+
+    [Fact]
+    public void A_heading_drawn_in_a_mockups_code_block_is_left_alone()
+    {
+        const string body = "## Mockup\n\n```\n## What it'll look like\n\nNo picture.\n```\n\n## Scope";
+
+        Assert.Equal(Pics + "\n\n" + body, Board.WithPitchPictures(body, Pics));
+    }
+
+    [Theory]
+    [InlineData("A\n\n## Scope")]
+    [InlineData("```\n## Mockup\n```\n")]
+    public void A_pitch_with_no_mockup_has_nowhere_for_its_pictures(string body) =>
+        Assert.Null(Board.WithPitchPictures(body, Pics));
+
     [Fact]
     public void Criteria_are_the_list_under_the_heading_up_to_the_next_one()
     {

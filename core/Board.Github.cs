@@ -21,6 +21,8 @@ internal sealed partial class Board
 
     internal bool CustomerOn => _config["roles"]?["customer"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
 
+    internal bool MockupsOn => _config["mockups"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
+
     /// <summary>Says what a dry run would do, and whether it's a dry run.</summary>
     internal bool Would(string what)
     {

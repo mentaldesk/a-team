@@ -431,6 +431,8 @@ images are public.**
 Windows Terminal), the reader draws each image in the body and its comments as wide as the pane.
 That includes the pictures the Dev puts in a task's PR under **What it looks like**: one per screen
 the task changes, under the line saying what it shows, and replaced when a fix changes the screen.
+So do the pictures the Lead puts in a pitch under **What it'll look like**, where the team has
+[Mockups](how-a-team-works.md#pictures-in-a-pitch) on.
 Put the cursor on one and press `Enter` to see it full-window; `Esc` closes it. In the Comment pane `Enter` starts a new line, so put the cursor on the image's line and pick
 **View image** from Commands (`Ctrl+E`). In any other terminal, over a connection that doesn't pass
 pictures on, or for an image your `gh` login can't read, the line stays as text and `Enter` opens

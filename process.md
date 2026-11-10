@@ -117,6 +117,9 @@ a-team board {{team}} review reviewer <pr> <file>  # Reviewer only: post the one
 a-team board {{team}} pictures dev <pr> <image> "<caption>" [<image> "<caption>"...]
                                                 # Dev only: store each image as an attached screenshot
                                                 # is, and make them the task PR's What it looks like
+a-team board {{team}} pictures lead <n> <image> "<caption>" [<image> "<caption>"...]
+                                                # Lead only, where the team has `mockups` on: the same, as
+                                                # pitch #<n>'s What it'll look like, above its Mockup
 a-team board {{team}} criteria <n> [<pr>]         # task #<n>'s acceptance criteria, numbered, as JSON: ticked or not,
                                                 # and how the team checked each, from its PR
 a-team board {{team}} checked dev <pr> <criterion>=screen|test ...

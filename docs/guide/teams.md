@@ -78,7 +78,7 @@ next run uses it.
 [reviews the vision](#reviewing-the-vision), which roles it runs, and its limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
 [Customer lead](how-a-team-works.md#the-customer-lead) (see [Turning on the Customer lead](#turning-on-the-customer-lead)),
 and untick it to take it away again. Tick **Reviewer** to have the
-[Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. **Stakeholders**, **Contributes to** and **Skills** open a list: type to
+[Reviewer](how-a-team-works.md#the-reviewer) review each task PR before it reaches you. Tick **Mockups** to have the Lead [show a pitch's new screens as pictures](how-a-team-works.md#pictures-in-a-pitch); every team starts with it off. **Stakeholders**, **Contributes to** and **Skills** open a list: type to
 narrow it as in Commands, `Space` marks a name, and `Enter` keeps what's marked. Each
 field says what it's for underneath. `Ctrl+Enter` (**Save**) saves them into the team's file, leaving everything else in it as it was, and
 `Esc` (**Cancel**) cancels. `Enter` never saves. `F1` lists every key the form takes. A save it won't take
