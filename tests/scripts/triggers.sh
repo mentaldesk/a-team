@@ -121,7 +121,7 @@ run board demo pr 12
 same "exit" 0 "$STATUS"
 same "pr" null "$(cat "$OUT")"
 
-case_ "a PR In review still wakes the Dev for red CI or a conflict with every worktree taken"
+case_ "a PR In review still wakes the Dev for red CI, a conflict or your comment with every worktree taken"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "worktrees": 1 } }
@@ -145,6 +145,14 @@ completed success 2025-09-19T09:00:00Z build
 RUNS
 run board demo triggers dev
 same "conflict" '["PR #912 conflicts with its base: merge the base branch into it and resolve"]' "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+jq '(.. | objects | select(has("isDraft"))) += {mergeable: "MERGEABLE"}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+gh_recent <<RECENT
+912 ${TODAY}T02:20:00Z reviewer 0 Rename the field.
+RECENT
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "feedback" "[\"stakeholder feedback on #912 (${TODAY}T02:20:00Z)\"]" "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+same "ready" null "$(jq -c .ready "$OUT")"
 
 case_ "triggers groups the Dev's reasons by task, and names the Ready task a run could claim"
 fixture <<'JSON'

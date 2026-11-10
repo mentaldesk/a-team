@@ -109,6 +109,11 @@ release. It looks after that PR as it does its own and marks it ready once it's 
 draft it shows In progress on the board of the team that runs that repo, then in Review once it's
 ready, where `a` merges it. Releasing stays yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
 
+**Worktrees** is how many tasks the Dev can be building at once. A PR waiting on you doesn't
+count, so however many wait for your review, the Dev keeps starting Ready work. An Urgent task or a
+fix may take one more. **Devs** is how many Dev runs go at once, whether building a task or answering
+a review on one.
+
 Vision, First page, Stakeholders and Contributes to open at once and load from GitHub in their
 list. Until the rows are in, the pick or Done button is dimmed and `Enter` does nothing. If the read
 fails, the list says why, and `R` reads again without closing the picker.
@@ -132,11 +137,6 @@ That page isn't counted under **Health** while it's waiting to be written. Untic
 the rows go, but the first page is kept for when you tick it again.
 
 ## Pausing a team
-
-**Worktrees** is how many tasks the Dev can be building at once. A PR waiting on you doesn't
-count, so however many wait for your review, the Dev keeps starting Ready work. An Urgent task or a
-fix may take one more. **Devs** is how many Dev runs go at once, whether building a task or answering
-a review on one.
 
 A paused team picks up no new work, and a run already going finishes. `p` in Teams, or the
 team's own form, pauses it and starts it again. To pause one role and not the other, use `h` on its
