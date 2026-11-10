@@ -200,6 +200,23 @@ edit_item 13 '.parent = {number: 20}'
 run board demo overview
 same "priorities" '[[10,"Urgent"],[11,null],[12,null],[13,"Low"]]' "$(jq -c 'map(select(.number) | [.number, .priority])' "$OUT")"
 
+case_ "a task says its pitch's Priority, and whether its own is that one"
+gh_items <<'ITEMS'
+Building 10 A Medium pitch
+Ready 13 Following it
+Ready 14 Ranked itself
+Ready 15 Under no pitch
+ITEMS
+edit_item 10 '.issueFieldValues.nodes = [{name: "Medium", field: {name: "Priority"}}]'
+edit_item 13 '.parent = {number: 10}'
+edit_item 14 '.parent = {number: 10} | .issueFieldValues.nodes = [{name: "High", field: {name: "Priority"}}]'
+run board demo overview
+same "overview" '[[10,"Medium",null,null],[13,"Medium","Medium",true],[14,"High","Medium",null],[15,null,null,null]]' \
+  "$(jq -c 'map(select(.number) | [.number, .priority, .pitchPriority, .inherited])' "$OUT")"
+run board demo list
+same "list" '[[13,"Medium",true],[14,"Medium",null]]' \
+  "$(jq -c 'map(select(.pitchPriority) | [.number, .pitchPriority, .inherited])' "$OUT")"
+
 case_ "claim refuses a task that's already claimed, and claims nothing"
 gh_items <<'ITEMS'
 In_progress 12 Taken by another run

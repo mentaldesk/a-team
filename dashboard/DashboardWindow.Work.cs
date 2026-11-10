@@ -250,10 +250,10 @@ public sealed partial class DashboardWindow
         ReadBody(item, (read, body) => ShowBody(read, body, url, declining: declining, shelving: shelving), forReader: true);
     }
 
-    private void ReadRanking(WaitingItem item, bool declining = false, string? url = null)
+    private void ReadRanking(WaitingItem item, bool declining = false, string? url = null, bool gates = true)
     {
         url ??= _work.SelectedUrl;
-        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Starting(read), declining: declining),
+        ReadBody(item, (read, body) => ShowBody(read, body, url, rank: Priorities.Starting(read), declining: declining, gates: gates),
             forReader: true);
     }
 
@@ -358,7 +358,7 @@ public sealed partial class DashboardWindow
             _approvable = null;
             _shown = null;
             _shownBody = null;
-            var reranked = chosen is { } ranked && ranked != Priorities.Of(item) ? chosen : null;
+            var reranked = chosen is { } ranked && item.Reranks(ranked) ? chosen : null;
             if (reranked is not null)
                 _attention.Did("ranked");
             if (_triedFrom is null && _editFrom is null)

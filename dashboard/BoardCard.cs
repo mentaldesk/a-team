@@ -16,7 +16,8 @@ public enum CardKind
 /// the column it's in.</summary>
 public sealed record BoardCard(
     string Team, int Number, string Title, string Url, string Status, string Priority, CardKind Kind,
-    DateTimeOffset? Since, int? Parent = null, bool Blocked = false, LastRun? LastRun = null, string Facts = "")
+    DateTimeOffset? Since, int? Parent = null, bool Blocked = false, LastRun? LastRun = null, string Facts = "",
+    string PitchPriority = "", bool Inherited = false)
 {
     /// <summary>The mark its chip wears: Work's icon for the card in a Nerd Font, and a one-cell shape otherwise.</summary>
     public string Mark(IconStyle style) => style == IconStyle.NerdFont
@@ -45,6 +46,11 @@ public sealed record BoardCard(
         _ => "Yours",
     };
 
+    /// <summary>It with <paramref name="rank"/> set, or with None, following its pitch where it has one.</summary>
+    public BoardCard RankedAs(Rank rank) => rank == Rank.None
+        ? this with { Priority = PitchPriority, Inherited = PitchPriority.Length > 0 }
+        : this with { Priority = rank.ToString(), Inherited = false };
+
     /// <summary>How long it has sat in its column; nothing where the board didn't say when it got there.</summary>
     public TimeSpan? Age(DateTimeOffset now) => Since is { } since ? now - since : null;
 
@@ -65,7 +71,8 @@ public sealed record BoardCard(
                         Text(item, "status"), Text(item, "priority"), KindOf(Text(item, "kind")), Time(item, "since"),
                         Numbered(item, "parent"),
                         item.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True,
-                        LastRunOf(item), Text(item, "facts")))
+                        LastRunOf(item), Text(item, "facts"), Text(item, "pitchPriority"),
+                        item.TryGetProperty("inherited", out var inherited) && inherited.ValueKind == JsonValueKind.True))
             ];
         }
         catch (JsonException)

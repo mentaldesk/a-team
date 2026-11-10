@@ -292,8 +292,7 @@ public sealed class WorkView : View
     /// and a ranked Idea — which `waiting` no longer returns — leaves the screen. A card that stays in the column
     /// keeps the selection, wearing the colour its new rank gives its number; one that leaves hands it to the next
     /// card down.</summary>
-    internal void Ranked(WaitingItem item, Rank rank) =>
-        Replace(item, now => now with { Priority = rank == Rank.None ? "" : rank.ToString() });
+    internal void Ranked(WaitingItem item, Rank rank) => Replace(item, now => now.RankedAs(rank));
 
     /// <summary>What an approval leaves on screen, with no re-read: Approved isn't a gate, so the card leaves and
     /// hands the selection to the next card down.</summary>

@@ -499,7 +499,8 @@ internal sealed partial class Board
                     labels.Add((JsonNode?)name);
             var pitch = all.Any(label => Json.Text(label) == "pitch");
             var status = row["status"]!;
-            var priority = row["priority"] ?? (status == "Idea" || pitch ? null : row["pitch_priority"]);
+            var follows = status != "Idea" && !pitch ? row["pitch_priority"] : null;
+            var priority = row["priority"] ?? follows;
             var item = new JsonObject
             {
                 ["id"] = row["mirror"] ?? "",
@@ -516,6 +517,8 @@ internal sealed partial class Board
                 ["parent"] = c["parent"]?.DeepClone(),
                 ["status"] = status,
             };
+            if (follows is not null) item["pitchPriority"] = follows;
+            if (follows is not null && row["priority"] is null) item["inherited"] = true;
             if (Json.Truthy(c["closed"])) item["closed"] = c["closed"]!.DeepClone();
             if (Json.Truthy(c["dependabot"])) item["dependabot"] = true;
             items.Add((JsonNode?)item);

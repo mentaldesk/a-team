@@ -31,6 +31,21 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void A_task_following_its_pitch_says_so_and_None_on_it_changes_nothing()
+    {
+        var items = WaitingItem.Parse("""
+            [{"number": 672, "title": "Follows", "status": "In review", "team": "a-team", "priority": "Medium", "pitchPriority": "Medium", "inherited": true},
+             {"number": 673, "title": "Its own", "status": "In review", "team": "a-team", "priority": "High", "pitchPriority": "Medium"}]
+            """);
+
+        Assert.Equal(["In review · Priority Medium, from its pitch", "In review · Priority High"], items.Select(item => item.Standing));
+        Assert.Equal([false, false, true], new[] { Rank.None, Rank.Medium, Rank.High }.Select(items[0].Reranks));
+        Assert.Equal([true, false], new[] { Rank.None, Rank.High }.Select(items[1].Reranks));
+        Assert.Equal(("Medium", true), (items[1].RankedAs(Rank.None).Priority, items[1].RankedAs(Rank.None).Inherited));
+        Assert.Equal(("Urgent", false), (items[0].RankedAs(Rank.Urgent).Priority, items[0].RankedAs(Rank.Urgent).Inherited));
+    }
+
+    [Fact]
     public void A_task_handed_back_with_a_question_brings_the_question_and_says_the_Dev_held_it()
     {
         var item = Assert.Single(WaitingItem.Parse("""

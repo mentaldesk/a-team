@@ -308,6 +308,8 @@ public sealed partial class DashboardWindow
             keys.Add($"{KeyHint("overseer.read")} Read");
         if (ChipInWork() is not null)
             keys.Add($"{KeyHint("overseer.work")} Work");
+        if (_overseer.Board.SelectedCard is not null)
+            keys.Add($"{KeyHint("overseer.priority")} Priority");
         if (_overseer.Board.SelectedCard is { Url.Length: > 0 })
             keys.Add($"{KeyHint("overseer.github")} GitHub");
         return string.Join(" · ", keys);
@@ -355,11 +357,30 @@ public sealed partial class DashboardWindow
         if (_overseer.Board.SelectedCard is not { } card)
             return;
         if (_work.Waiting(card.Team, card.Number) is not { } item)
-            ReadBody(new WaitingItem(card.Number, card.Title, card.Status, card.Url, card.Team, Priority: card.Priority, Pitch: card.Kind == CardKind.Pitch) { Facts = card.Facts },
-                (read, body) => ShowBody(read, body, card.Url, gates: false), forReader: true);
+            ReadBody(Unwaiting(card), (read, body) => ShowBody(read, body, card.Url, gates: false), forReader: true);
         else if (WorkView.ToRank(item))
             ReadRanking(item, url: item.Url);
         else
             ReadBody(item, (read, body) => ShowBody(read, body, item.Url), forReader: true);
     }
+
+    /// <summary>The chip's card in the reader with the ranks under it, starting on its Priority, and with its gates where
+    /// a column of Work's holds it.</summary>
+    private void RankChip()
+    {
+        if (_overseer.Board.SelectedCard is not { } card)
+            return;
+        if (_work.Waiting(card.Team, card.Number) is { } item)
+            ReadRanking(item, url: item.Url);
+        else
+            ReadRanking(Unwaiting(card), url: card.Url, gates: false);
+    }
+
+    private static WaitingItem Unwaiting(BoardCard card) =>
+        new(card.Number, card.Title, card.Status, card.Url, card.Team, Priority: card.Priority, Pitch: card.Kind == CardKind.Pitch)
+        {
+            Facts = card.Facts,
+            PitchPriority = card.PitchPriority,
+            Inherited = card.Inherited,
+        };
 }

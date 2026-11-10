@@ -356,7 +356,9 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
   ranks under it, **None** to **Urgent**, starting on the card's own, or on the Lead's
   recommendation if it has none, so `Enter` agrees with it. `←`/`→` or a rank's initial
   moves between them, and `Enter` sets it: the reader closes and the card moves to the column its
-  new Priority puts it in. `Esc` closes without changing it. You can still scroll, comment with
+  new Priority puts it in. `Esc` closes without changing it. A task with no Priority of its own
+  takes its pitch's, and says `Priority Medium, from its pitch` under its title; **None** on a task
+  with its own clears it, and the status bar says it now follows its pitch. You can still scroll, comment with
   `c`, approve with `a` and open it with `g` while the ranks show; there, `h` picks **High**
   rather than hiding History.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,
