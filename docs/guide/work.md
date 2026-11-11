@@ -52,7 +52,7 @@ total, with `–` for nothing. A pitch counts the runs on its tasks too, and a r
 split evenly between them, so a team's 7-day total matches Trends. Under each team, *Discovery &
 upkeep* is runs on no item, and *Other items* is runs on Ideas never pitched and on your own items.
 The Lead gives each pitch its theme when it drafts it, and Spending follows it. `Right` and `Left` expand and collapse a row, `Enter` on a pitch opens its card, and `Esc`
-closes it.
+closes it. To change the period, `Tab` to the periods above the table and pick one with `Left`/`Right`.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
 wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
