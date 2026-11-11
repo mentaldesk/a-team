@@ -46,9 +46,7 @@ The app opens only once there's a team, so your first one starts by hand:
 2. Create or pick a Project for the repo to mirror the board to, or set `"mirror": false` in step 3
    to go without one. Its Status field needs nine options, Idea, Exploring,
    Pitched, Approved, Building, Ready, In progress, In review and Done, or a `statusMap` in the team
-   config from those names to the ones it has. Under
-   its **Workflows**, turn on **Auto-add to project** for the repo, and **Item added to project**
-   with Status set to Idea, so an issue opened outside the team reaches Triage.
+   config from those names to the ones it has.
 3. Copy `examples/team.json` (`a-team teams` says where it is while you have no team) to
    `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
    your GitHub login in `stakeholders`, the Project, and where the product is checked out on this
@@ -57,7 +55,8 @@ The app opens only once there's a team, so your first one starts by hand:
    the Reviewer. Leave `app` as `null`: the next step fills it in. `a-team teams` lists the teams it finds. Check the team with
    `a-team board <name> check`: it prints one line per thing it finds, marked `problem` or `note`, and exits 1 if the team
    can't run, or 2 if it can but something's missing, like its vision or a label. The app's Teams
-   screen shows the same problems, and F12 (or *Repair*) in a team's form sets its board up again.
+   screen shows the same problems, and F12 (or *Repair*) in a team's form sets its board up again, as
+   `a-team board <name> setup` does.
 4. Give the team its own GitHub App (next section). The dispatcher won't run the team without one.
 5. Write the team's vision with `a-team vision <name>`, or **Write the vision with me** in the
    app's Commands: an interview that opens it as a draft PR for you to merge. Skip it and the Lead

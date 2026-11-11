@@ -106,4 +106,65 @@ public class ReconcilerTests
     [Fact]
     public void A_quote_in_a_title_cant_break_out_of_its_statement() =>
         Assert.Equal("'it''s'", Reconciler.Q("it's"));
+
+    private static string Issue(int number = 8, string state = "OPEN", string type = "Issue", string repo = "o/r", string author = "jamescrosswell") =>
+        $$$"""
+        {"__typename": "{{{type}}}", "id": "I_{{{number}}}", "number": {{{number}}}, "title": "T", "url": "u", "state": "{{{state}}}",
+         "repository": {"nameWithOwner": "{{{repo}}}"}, "labels": {"nodes": []}, "author": {"__typename": "User", "login": "{{{author}}}"}}
+        """;
+
+    private static ArrivalPlan Arrivals(string issues, Dictionary<string, Known>? had = null) =>
+        Reconciler.Arrivals(Nodes($"[{issues}]"), had ?? [], "demo", "o/r", "Priority", Now);
+
+    [Fact]
+    public void An_open_issue_the_board_hasnt_got_arrives_as_an_Idea_with_no_mirror_yet()
+    {
+        var plan = Arrivals(Issue());
+        Assert.Equal(["8"], plan.Arrived);
+        Assert.Contains("INSERT OR IGNORE INTO board", plan.Sql);
+        Assert.Contains("'Idea'", plan.Sql);
+        Assert.DoesNotContain("mirror,", plan.Sql);
+        Assert.Contains("\"author\":\"jamescrosswell\"", plan.Sql);
+    }
+
+    [Fact]
+    public void An_issue_already_on_the_board_keeps_its_status_and_its_mirror()
+    {
+        var plan = Arrivals(Issue(), new() { ["8"] = Row(status: "Pitched") });
+        Assert.Empty(plan.Arrived);
+        Assert.Empty(plan.Reopened);
+        Assert.Empty(plan.Sql);
+    }
+
+    [Fact]
+    public void An_issue_on_the_board_with_no_status_becomes_an_Idea()
+    {
+        var plan = Arrivals(Issue(), new() { ["8"] = Row(status: StatusRoute.None, mirrored: StatusRoute.None) });
+        Assert.Equal(["8"], plan.Arrived);
+        Assert.Contains("SET status = 'Idea'", plan.Sql);
+    }
+
+    [Fact]
+    public void A_closed_card_open_again_is_read_again_rather_than_added()
+    {
+        var plan = Arrivals(Issue(), new() { ["8"] = Row(status: "Done", shut: true) });
+        Assert.Empty(plan.Arrived);
+        Assert.Equal(["I_8"], plan.Reopened);
+        Assert.Empty(plan.Sql);
+    }
+
+    [Fact]
+    public void Closed_issues_pull_requests_and_other_repos_dont_arrive()
+    {
+        var plan = Arrivals(string.Join(",", Issue(state: "CLOSED"), Issue(9, type: "PullRequest"), Issue(10, repo: "o/other")));
+        Assert.Empty(plan.Arrived);
+        Assert.Empty(plan.Sql);
+    }
+
+    [Fact]
+    public void A_bot_author_is_kept_as_its_login_with_bot()
+    {
+        var bot = Issue().Replace("\"User\"", "\"Bot\"").Replace("jamescrosswell", "other-app");
+        Assert.Contains("\"author\":\"other-app[bot]\"", Arrivals(bot).Sql);
+    }
 }

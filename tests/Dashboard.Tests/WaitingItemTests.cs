@@ -46,6 +46,17 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void Someone_elses_unranked_issue_says_who_opened_it_and_that_it_waits_for_your_rank()
+    {
+        var item = Assert.Single(WaitingItem.Parse("""
+            [{"number": 45, "title": "Generate preview images", "status": "Idea", "team": "truman", "turn": "you",
+              "reason": "opened by breq-toren, waits for your rank", "recommendation": "Low", "facts": "Lead recommends Low"}]
+            """));
+
+        Assert.Equal("#45 · Lead recommends Low · opened by breq-toren, waits for your rank", item.Line);
+    }
+
+    [Fact]
     public void A_task_handed_back_with_a_question_brings_the_question_and_says_the_Dev_held_it()
     {
         var item = Assert.Single(WaitingItem.Parse("""

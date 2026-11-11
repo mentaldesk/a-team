@@ -271,12 +271,12 @@ conversation, under `reviewer` and `dev`.
 
 You steer the Lead with the Priority field on the board: Low, Medium, High or Urgent.
 
-- **Seed an idea** with [**New idea**](work.md#adding-an-idea) (`Ctrl+N`). With a mirror, an issue you
-  open on the product repo reaches Idea too.
+- **Seed an idea** with [**New idea**](work.md#adding-an-idea) (`Ctrl+N`). An issue anyone opens on
+  the product repo reaches Idea too, with or without a mirror.
 - **The Lead pitches the highest-priority Idea**, and between pitches it discovers new ones. Its own
   discoveries, and the Customer lead's, are marked as theirs.
-- **An Idea any agent wrote is only pitched once you give it a priority.** Until then it waits in
-  Triage. Close the ones you don't want.
+- **An Idea any agent wrote, or an issue someone else opened, is only pitched once you give it a
+  priority.** Until then it waits in Triage. Close the ones you don't want.
 - **The Lead recommends a rank for every Idea**, saying which theme in the vision it serves and how
   big it is. Your Priority always wins; among Ideas with the same Priority, or none, the Lead pitches
   the one it recommends higher first.
