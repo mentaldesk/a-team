@@ -52,11 +52,14 @@ public sealed class ImageAttachTests : IDisposable
     [Fact]
     public void Ctrl_V_with_text_on_the_clipboard_is_left_to_paste_the_text()
     {
-        var (field, attach) = Open("as typed");
+        var copied = new FakeClipboard();
+        copied.TrySetClipboardData("words");
+        var (field, attach) = Open("as typed", copied: copied);
 
         Assert.False(attach.Pressed(Key.V.WithCtrl));
         Assert.Equal("as typed", field.Text);
         Assert.Empty(_uploaded);
+        Assert.Empty(_said);
     }
 
     [Fact]
@@ -69,6 +72,19 @@ public sealed class ImageAttachTests : IDisposable
         Assert.False(attach.Pressed(Key.V.WithCtrl));
         Assert.Equal("as typed", field.Text);
         Assert.Empty(_uploaded);
+    }
+
+    [Fact]
+    public void Ctrl_V_with_nothing_on_the_clipboard_says_how_to_get_a_screenshot_and_leaves_the_text()
+    {
+        var (field, attach) = Open("as typed");
+
+        Assert.True(attach.Pressed(Key.V.WithCtrl));
+
+        Assert.Equal("as typed", field.Text);
+        Assert.Empty(_uploaded);
+        Assert.Equal((ImageAttach.NothingToPaste, Schemes.Accent), _said[^1]);
+        Assert.Equal("Nothing to paste. Copy a screenshot with ⌃⇧⌘4, or Ctrl+U to attach your latest.", _said[^1].Text);
     }
 
     [Theory]

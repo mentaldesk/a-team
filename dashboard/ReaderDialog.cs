@@ -268,6 +268,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         {
             _attaching = attaching;
             _attach = new ImageAttach(_field, file => attaching.Upload(item.Team, file), attaching.Clipboard, Say, text: _clipboard);
+            _field.Placeholder = ImageAttach.Placeholder;
         }
         _bodyFrame = new FrameView
         {
@@ -648,7 +649,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         Also("Enter", "View the picture", () => Reads() && _ranks is null && _scrolled == _body
             && (_body.ImageAtCaret is not null || CriterionAtCaret()?.Picture is not null));
         Also("Enter", "Show the comment", () => Reads() && _ranks is null && _scrolled == _history);
-        Also("Ctrl+V", "Paste", () => Writing);
+        Also("Ctrl+V", _attach is null ? "Paste" : ImageAttach.PasteKeys, () => Writing);
         Also("Ctrl+X", "Cut", () => _field.HasFocus);
         Also("Ctrl+Z", "Undo", () => _field.HasFocus);
         Also("↑/↓", "Weeks", () => _weeks.HasFocus);

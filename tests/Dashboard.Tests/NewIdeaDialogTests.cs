@@ -1,5 +1,7 @@
 using System.Drawing;
 using MentalDesk.Tui.Theming;
+using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -189,6 +191,58 @@ public class NewIdeaDialogTests
         Assert.True(dialog.Description.HasFocus);
         Assert.Equal("See: ![shot](https://example.com/shot.png)", dialog.Description.Text);
         Assert.Equal("Attached shot.png  •  10 B", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void With_attaching_F1_says_Ctrl_V_pastes_a_screenshot_too()
+    {
+        using var dialog = OpenAttaching([], () => null);
+
+        Assert.Contains(("Ctrl+V", "Paste text or a screenshot"), DialogTests.Rows(DialogTests.F1(dialog)));
+    }
+
+    [Fact]
+    public void The_empty_description_says_Ctrl_V_pastes_a_screenshot_until_you_type()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(90, 40);
+        using var dialog = OpenAttaching([], () => null);
+        app.Begin(dialog);
+
+        Assert.Equal("Write here. Ctrl+V pastes a screenshot.", dialog.Description.Placeholder);
+        Assert.Contains(dialog.Description.Placeholder, Screen(app, dialog));
+        dialog.Description.Text = "x";
+        Assert.DoesNotContain(dialog.Description.Placeholder, Screen(app, dialog));
+        dialog.Description.Text = "";
+        Assert.Contains(dialog.Description.Placeholder, Screen(app, dialog));
+    }
+
+    private static string Screen(IApplication app, Terminal.Gui.ViewBase.View view)
+    {
+        app.Driver!.ClearContents();
+        view.SetNeedsDraw();
+        view.Layout();
+        view.Draw();
+        var cells = app.Driver!.Contents!;
+        return string.Join('\n', Enumerable.Range(0, cells.GetLength(0)).Select(row =>
+            string.Concat(Enumerable.Range(0, cells.GetLength(1)).Select(column => cells[row, column].Grapheme))));
+    }
+
+    [Fact]
+    public void Ctrl_V_with_nothing_on_the_clipboard_says_so_in_the_message_line()
+    {
+        var uploads = new List<(string, string)>();
+        using var dialog = new NewIdeaDialog(["team0", "team1"], "team1",
+            new IdeaFiler(_ => Task.FromResult(new Reading("", null))), null,
+            attaching: new Attaching(Key.U.WithCtrl, (_, _) => Task.FromResult(new Reading("", null)), new ImageAttachTests.Clipboard(), () => null));
+        dialog.Layout(new Size(80, 30));
+        dialog.Description.Text = "Kept";
+        dialog.Description.SetFocus();
+
+        Assert.True(dialog.Description.NewKeyDownEvent(Key.V.WithCtrl));
+
+        Assert.Equal("Kept", dialog.Description.Text);
+        Assert.Equal(ImageAttach.NothingToPaste, dialog.Message.Says);
     }
 
     [Fact]

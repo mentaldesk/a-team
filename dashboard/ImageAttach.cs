@@ -15,6 +15,9 @@ public sealed class ImageAttach(
     string? home = null, TimeProvider? clock = null, IClipboard? text = null)
 {
     internal const string OverSsh = "Over SSH the clipboard is your own machine's: drop the image file here to attach it";
+    internal const string NothingToPaste = "Nothing to paste. Copy a screenshot with ⌃⇧⌘4, or Ctrl+U to attach your latest.";
+    internal const string Placeholder = "Write here. Ctrl+V pastes a screenshot.";
+    internal const string PasteKeys = "Paste text or a screenshot";
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
     private readonly string _home = home ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -25,8 +28,18 @@ public sealed class ImageAttach(
     public bool Uploading => _uploading > 0;
 
     /// <summary>Ctrl+V attaches the clipboard's image where it holds no text, so text copied with a picture of it
-    /// pastes as ever.</summary>
-    public bool Pressed(Key key) => key == Key.V.WithCtrl && Empty(text ?? field.App?.Clipboard) && PasteImage(sayOverSsh: true);
+    /// pastes as ever, and says so where it holds neither.</summary>
+    public bool Pressed(Key key)
+    {
+        if (key != Key.V.WithCtrl || !Empty(text ?? field.App?.Clipboard))
+            return false;
+        if (PasteImage(sayOverSsh: true))
+            return true;
+        if (clipboard.Remote)
+            return false;
+        say(NothingToPaste, Schemes.Accent);
+        return true;
+    }
 
     /// <summary>A paste the terminal delivered: a dropped image file attaches; an empty one is the terminal's paste
     /// of an image it couldn't pass on. True where it's taken care of, so the text doesn't go in.</summary>

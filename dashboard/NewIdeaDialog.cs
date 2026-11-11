@@ -71,10 +71,11 @@ public sealed class NewIdeaDialog : DashboardDialog
         if (attaching is not null)
         {
             _attach = new ImageAttach(_description, file => attaching.Upload(_team.Text, file), attaching.Clipboard, Say);
+            _description.Placeholder = ImageAttach.Placeholder;
             _description.KeyDown += (_, key) => key.Handled = key.Handled || _attach.Pressed(key);
             Bind(AttachId, attaching.Key, "Attach file", () => AttachFile());
         }
-        Also("Ctrl+V", "Paste");
+        Also("Ctrl+V", attaching is null ? "Paste" : ImageAttach.PasteKeys);
         Register(CancelId, "Cancel", () => Dismiss());
         Also("←/→", "Priority");
         Also("Tab/Shift+Tab", "Next / previous");

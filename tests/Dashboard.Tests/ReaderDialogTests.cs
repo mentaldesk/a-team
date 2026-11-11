@@ -2399,7 +2399,7 @@ public class ReaderDialogTests
         Assert.Equal(body.Remarks[0].Line, dialog.Body.TopLine);
     }
 
-    private static ReaderDialog Attaching(List<(string Team, string File)> uploads, Func<string, Task<string?>>? post = null)
+    private static ReaderDialog Attaching(List<(string Team, string File)> uploads, Func<string, Task<string?>>? post = null, int png = 10)
     {
         var dialog = new ReaderDialog(Item, new IssueBody(Pitch), () => null,
             comment: Commenting(post) with
@@ -2408,7 +2408,7 @@ public class ReaderDialogTests
                 {
                     uploads.Add((team, file));
                     return Task.FromResult(new Reading("https://example.com/shot.png", null));
-                }, new ImageAttachTests.Clipboard(png: 10), () => null),
+                }, new ImageAttachTests.Clipboard(png), () => null),
             });
         dialog.Layout(new Size(140, 20));
         return dialog;
@@ -2423,8 +2423,18 @@ public class ReaderDialogTests
 
         Assert.Equal("Ctrl+Enter Post · Ctrl+U Attach file · Esc Back", Buttons(dialog));
         Assert.Equal(
-            "Ctrl+Enter Post · Ctrl+U Attach file · Tab/Shift+Tab Switch pane · Shift+arrows Select · Ctrl+V Paste · Ctrl+X Cut · Ctrl+Z Undo · Esc Back",
+            "Ctrl+Enter Post · Ctrl+U Attach file · Tab/Shift+Tab Switch pane · Shift+arrows Select · Ctrl+V Paste text or a screenshot · Ctrl+X Cut · Ctrl+Z Undo · Esc Back",
             Keys(dialog));
+    }
+
+    [Fact]
+    public void The_empty_comment_says_Ctrl_V_pastes_a_screenshot()
+    {
+        using var dialog = Attaching([]);
+
+        dialog.NewKeyDownEvent(new Key('c'));
+
+        Assert.Equal("Write here. Ctrl+V pastes a screenshot.", dialog.Field.Placeholder);
     }
 
     [Fact]
@@ -2460,6 +2470,21 @@ public class ReaderDialogTests
 
         Assert.Equal(["a-team"], uploads.Select(upload => upload.Team));
         Assert.Matches(@"^!\[Screenshot .*\]\(https://example.com/shot.png\)$", dialog.Field.Text);
+    }
+
+    [Fact]
+    public void Ctrl_V_with_nothing_on_the_clipboard_says_so_and_leaves_the_comment()
+    {
+        var uploads = new List<(string Team, string File)>();
+        using var dialog = Attaching(uploads, png: 0);
+        dialog.NewKeyDownEvent(new Key('c'));
+        Type(dialog.Field, "Kept");
+
+        Assert.True(dialog.Field.NewKeyDownEvent(Key.V.WithCtrl));
+
+        Assert.Equal("Kept", dialog.Field.Text);
+        Assert.Empty(uploads);
+        Assert.Equal(ImageAttach.NothingToPaste, dialog.Message.Says);
     }
 
     [Fact]

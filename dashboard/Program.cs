@@ -151,7 +151,7 @@ Handover? Show(Handover? back)
             GiveSecret = (item, set, save) => GiveSecretDialog.Show(app, item, set, save),
             Secrets = new GitHubSecrets(new TeamCommand("gh"), Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN") is { Length: > 0 }),
             Attaching = key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
-                new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app)),
+                new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app, Screenshot.Latest())),
             ShowSpending = (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
                 names.SelectMany(teams.Roles), open),
             ShowDecisions = team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
