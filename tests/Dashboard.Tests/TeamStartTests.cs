@@ -160,6 +160,23 @@ public class TeamStartTests : IDisposable
         Assert.DoesNotContain("On project fretty (mentaldesk #7):", TeamStart.SetupPlan("  keep  Idea\n", project, "mentaldesk/fretty"));
     }
 
+    [Fact]
+    public void The_setup_plan_says_how_many_open_issues_will_arrive_in_Triage()
+    {
+        const string output = """
+            (dry run) created label pitch
+            (dry run) 33 open issues on mentaldesk/truman will arrive in Triage
+            """;
+
+        Assert.Equal(
+            [
+                "On mentaldesk/truman:",
+                "  create label pitch",
+                "33 open issues on mentaldesk/truman will arrive in Triage, for the Lead to rank. Close any you don't want.",
+            ],
+            TeamStart.SetupPlan(output, null, "mentaldesk/truman"));
+    }
+
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
     public void Every_step_is_offered_in_turn_and_Get_to_work_starts_the_team()
     {

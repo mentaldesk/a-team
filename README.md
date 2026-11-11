@@ -46,9 +46,7 @@ The app opens only once there's a team, so your first one starts by hand:
 2. Create or pick a Project for the repo to mirror the board to, or set `"mirror": false` in step 3
    to go without one. Its Status field needs nine options, Idea, Exploring,
    Pitched, Approved, Building, Ready, In progress, In review and Done, or a `statusMap` in the team
-   config from those names to the ones it has. Under
-   its **Workflows**, turn on **Auto-add to project** for the repo, and **Item added to project**
-   with Status set to Idea, so an issue opened outside the team reaches Triage.
+   config from those names to the ones it has.
 3. Copy `examples/team.json` (`a-team teams` says where it is while you have no team) to
    `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
    your GitHub login in `stakeholders`, the Project, and where the product is checked out on this

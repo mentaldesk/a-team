@@ -17,6 +17,10 @@ internal sealed partial class Board
         (_config["stakeholders"]?.AsArray().Select(Json.Text) ?? (Json.Text(_config["reviewer"]) is { } one ? [one] : []))
             .OfType<string>().ToList();
 
+    /// <summary>Who opened issue <paramref name="card"/>, where that's neither a stakeholder nor the team's App; null otherwise.</summary>
+    internal string? Opener(JsonNode card) =>
+        Json.Text(card["author"]) is { Length: > 0 } author && !Stakeholders.Contains(author) && author != Bot ? author : null;
+
     internal bool ReviewerOn => _config["roles"]?["reviewer"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
 
     internal bool CustomerOn => _config["roles"]?["customer"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;

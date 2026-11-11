@@ -69,7 +69,7 @@ tabs, keep their place for when you come back.
 
 | Column | What it holds |
 |---|---|
-| Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
+| Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Every open issue on the repo arrives here by itself. Nothing here is approved, and nothing the team found or someone else opened is pitched, until you give it one: the status bar says who opened it. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
 | Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, either of them asking for a secret (🔑), you, the dispatcher after runs that changed nothing, or nobody who said why. A Dependabot PR the Dev can't make build is here too, with the Dev's reason under it, and so is a green one GitHub keeps refusing to merge, with GitHub's. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, or another team's Dev's PR to this repo once it's ready. |
@@ -240,7 +240,7 @@ and who (`you`, the role: `lead`, `dev`, `customer` or `reviewer`, or `board` fo
 you or anyone else does on GitHub directly (a merge, a close, a comment)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. A closed issue or
 merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move.
-On a team with a mirror, reopening one brings it back at its last move, with a line saying so: a task whose PR had
+Reopening one brings it back at its last move, with a line saying so: a task whose PR had
 merged comes back Ready, to be built again. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
@@ -341,7 +341,7 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
   doesn't count as accepted. If the board refuses the decline, the status bar says why and the
   reason you typed is lost. A reason is required: with none, the pane's title turns red and the foot says
   `Why is needed`. `Esc` turns the pane back into a plain comment,
-  keeping what you wrote, and declines nothing. To undo a decline on a team with a mirror, reopen the issue on GitHub: the card
+  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub: the card
   comes back at its last move.
 - **Say Not now to a pitch.** On a pitch in Pitches, reading it or with its card selected, press
   `l`. The Comment pane opens as **Not now #n**, with **Back in [2] weeks** above it: `Shift+Tab`

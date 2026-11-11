@@ -231,13 +231,14 @@ internal sealed partial class Board
         }
     }
 
-    /// <summary>A stakeholder's Idea or one they prioritised, not skipped by the Lead since they last spoke, and not cooling after a Not now.</summary>
+    /// <summary>A stakeholder's Idea or one they prioritised, not skipped by the Lead since they last spoke, and not cooling after a Not now.
+    /// One opened by anyone else waits for a Priority.</summary>
     private bool Pitchable(JsonNode idea)
     {
         var n = Cards.N(idea);
         if (Cards.Marked(idea, "skipped") && OwedAnyway("lead", n) is { Count: 0 }) return false;
         if (Cooling(idea)) return false;
-        return idea["priority"] is not null || !(Cards.Marked(idea, "idea") || AgentWrote(n));
+        return idea["priority"] is not null || !(Cards.Marked(idea, "idea") || Opener(idea) is not null || AgentWrote(n));
     }
 
     private bool AgentWrote(string n)
@@ -763,7 +764,7 @@ internal sealed partial class Board
                 ["url"] = card["url"]?.DeepClone(),
                 ["team"] = _team,
                 ["turn"] = "you",
-                ["reason"] = cases.Count > 0 ? cases[^1] : "waiting to be ranked",
+                ["reason"] = Opener(card) is { } opener ? $"opened by {opener}, waits for your rank" : cases.Count > 0 ? cases[^1] : "waiting to be ranked",
             };
             if (Json.Truthy(card["marks"]?["rank"])) shown["recommendation"] = card["marks"]?["rank"]?.DeepClone();
             unranked.Add(shown);

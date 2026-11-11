@@ -6,6 +6,10 @@ namespace ATeam.Core;
 /// <summary>What a card's record says before a reconcile.</summary>
 internal sealed record Known(string Status, string? Priority, string Since, string? MirroredStatus, string? MirroredPriority, bool Shut);
 
+/// <summary>What reading the repo's open issues means for the record: the SQL, the issues it brings onto the board, and
+/// the nodes of those closed on it, to be read again as they are now.</summary>
+internal sealed record ArrivalPlan(string Sql, IReadOnlyList<string> Arrived, IReadOnlyList<string> Reopened);
+
 /// <summary>What seeing some nodes on GitHub means for the record. No I/O, so every case can be tested in process.</summary>
 internal sealed record ReconcilePlan(
     string Sql,
@@ -53,30 +57,8 @@ internal static class Reconciler
             var item = Json.Text(project?["id"]);
             var changed = Json.Text(project?["since"]);
             var since = changed ?? now;
-            string? ranked = null;
-            foreach (var value in c["issueFieldValues"]?["nodes"]?.AsArray() ?? [])
-            {
-                if (Json.Text(value?["field"]?["name"]) != priorityField) continue;
-                ranked = Json.Text(value?["name"]);
-                break;
-            }
+            var (contentQ, ranked) = Content(c, shut, cReason, priorityField);
             var type = Json.Text(c["__typename"]);
-            var labels = new JsonArray();
-            foreach (var label in c["labels"]?["nodes"]?.AsArray() ?? [])
-                labels.Add((JsonNode?)label?["name"]?.DeepClone());
-            var content = new JsonObject
-            {
-                ["type"] = c["__typename"]?.DeepClone(),
-                ["title"] = c["title"]?.DeepClone(),
-                ["url"] = c["url"]?.DeepClone(),
-                ["labels"] = labels,
-                ["blockedBy"] = Json.Truthy(c["issueDependenciesSummary"]?["blockedBy"]) ? c["issueDependenciesSummary"]!["blockedBy"]!.DeepClone() : 0,
-                ["parent"] = c["parent"]?["number"]?.DeepClone(),
-            };
-            if (shut) content["shut"] = true;
-            if (shut && cReason is not null) content["closed"] = cReason;
-            if (Json.Text(c["author"]?["login"]) == "dependabot") content["dependabot"] = true;
-            var contentQ = Q(Json.Compact(content));
 
             if (row is null && shown is not null)
             {
@@ -118,6 +100,70 @@ internal static class Reconciler
                 closings.Append(StatusRoute.Set(teamQ, number, "Done", now));
         }
         return new ReconcilePlan(inserts.ToString() + updates + closings, bounces, reopened, ranks);
+    }
+
+    /// <summary>What an issue or PR's record keeps of it, and its Priority.</summary>
+    private static (string ContentQ, string? Ranked) Content(JsonNode c, bool shut, string? cReason, string priorityField)
+    {
+        string? ranked = null;
+        foreach (var value in c["issueFieldValues"]?["nodes"]?.AsArray() ?? [])
+        {
+            if (Json.Text(value?["field"]?["name"]) != priorityField) continue;
+            ranked = Json.Text(value?["name"]);
+            break;
+        }
+        var labels = new JsonArray();
+        foreach (var label in c["labels"]?["nodes"]?.AsArray() ?? [])
+            labels.Add((JsonNode?)label?["name"]?.DeepClone());
+        var content = new JsonObject
+        {
+            ["type"] = c["__typename"]?.DeepClone(),
+            ["title"] = c["title"]?.DeepClone(),
+            ["url"] = c["url"]?.DeepClone(),
+            ["labels"] = labels,
+            ["blockedBy"] = Json.Truthy(c["issueDependenciesSummary"]?["blockedBy"]) ? c["issueDependenciesSummary"]!["blockedBy"]!.DeepClone() : 0,
+            ["parent"] = c["parent"]?["number"]?.DeepClone(),
+        };
+        if (shut) content["shut"] = true;
+        if (shut && cReason is not null) content["closed"] = cReason;
+        var login = Json.Text(c["author"]?["login"]);
+        if (login == "dependabot") content["dependabot"] = true;
+        if (Json.Text(c["__typename"]) == "Issue" && login is not null)
+            content["author"] = Json.Text(c["author"]?["__typename"]) == "Bot" ? $"{login}[bot]" : login;
+        return (Q(Json.Compact(content)), ranked);
+    }
+
+    /// <summary>Each open issue of <paramref name="repo"/> the record hasn't got arrives as an Idea, with no mirror yet; one
+    /// it has with no status becomes an Idea; one it has closed is read again. Every other card stays as it is.</summary>
+    internal static ArrivalPlan Arrivals(JsonArray issues, IReadOnlyDictionary<string, Known> had, string team, string repo, string priorityField, string now)
+    {
+        var sql = new StringBuilder();
+        var arrived = new List<string>();
+        var reopened = new List<string>();
+        var teamQ = Q(team);
+        foreach (var c in issues)
+        {
+            if (c is null || Json.Text(c["__typename"]) != "Issue" || Json.Text(c["state"]) != "OPEN") continue;
+            if (Json.Text(c["repository"]?["nameWithOwner"]) != repo) continue;
+            var number = c["number"]!.ToJsonString();
+            var node = Json.Text(c["id"]);
+            if (!had.TryGetValue(number, out var row))
+            {
+                var (contentQ, ranked) = Content(c, false, null, priorityField);
+                sql.Append(StatusRoute.Found(teamQ, number, Q(node), ranked, now, contentQ));
+                arrived.Add(number);
+            }
+            else if (row.Status == StatusRoute.None && !row.Shut)
+            {
+                sql.Append(StatusRoute.Set(teamQ, number, "Idea", now));
+                arrived.Add(number);
+            }
+            else if (row.Shut && node is not null)
+            {
+                reopened.Add(node);
+            }
+        }
+        return new ArrivalPlan(sql.ToString(), arrived, reopened);
     }
 
     /// <summary>Where an event's words say a card landed; null where they don't say.</summary>
