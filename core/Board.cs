@@ -107,9 +107,9 @@ internal sealed partial class Board
             .Select(row => row.First).ToHashSet();
         foreach (var column in new[] { "marks", "mirrored_rank", "mirrored_theme" })
             if (!columns.Contains($"board.{column}"))
-                _record.Exec($"ALTER TABLE board ADD COLUMN {column} TEXT;");
+                AddColumn("board", column);
         if (!columns.Contains("boards.repaired"))
-            _record.Exec("ALTER TABLE boards ADD COLUMN repaired TEXT;");
+            AddColumn("boards", "repaired");
         var was = _record.Scalar($"SELECT COALESCE((SELECT project FROM boards WHERE team = {TeamQ}), '-');");
         if (was == "-")
         {
@@ -120,7 +120,7 @@ internal sealed partial class Board
                 _seen = nodes.Select(node => Json.Text(node?["content"]?["id"])).OfType<string>().ToList();
             }
             var read = _mirror.Length > 0 ? Reconciler.Q(Now()) : "NULL";
-            _record.Exec($"INSERT INTO boards (team, project, read, repaired) VALUES ({TeamQ}, {Reconciler.Q(_mirror)}, {read}, {Reconciler.Q(Now())});");
+            _record.Exec($"INSERT OR IGNORE INTO boards (team, project, read, repaired) VALUES ({TeamQ}, {Reconciler.Q(_mirror)}, {read}, {Reconciler.Q(Now())});");
         }
         else if (was != _mirror)
         {
@@ -131,6 +131,17 @@ internal sealed partial class Board
                 """);
         }
         RepairLastMoves();
+    }
+
+    private void AddColumn(string table, string column)
+    {
+        try
+        {
+            _record.Exec($"ALTER TABLE {table} ADD COLUMN {column} TEXT;");
+        }
+        catch (InvalidOperationException e) when (e.Message.StartsWith("duplicate column name", StringComparison.Ordinal))
+        {
+        }
     }
 
     /// <summary>Once per team, puts each open card whose status differs from its last recorded move back at that move:
