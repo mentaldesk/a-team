@@ -351,10 +351,8 @@ internal static partial class Commands
         WakeOnRedMain(wake);
         WakeOnPitching(wake);
         WakeOnUnranked(wake);
-        var held = wake.All.Where(Cards.GaveUp).Select(Board.Number).ToHashSet();
-        var unthemed = wake.Board.Unthemed(wake.All).Select(Json.Long).Where(n => !held.Contains(n)).ToList();
-        if (unthemed.Count > 0)
-            wake.Reasons.Add($"pitches with no theme ({string.Join(", ", unthemed.Select(n => $"#{n}"))}): give each one");
+        foreach (var n in wake.Board.Unthemed(wake.All).Select(Json.Long))
+            wake.Item($"pitch #{n} has no theme: give it one", n);
         if (!wake.Board.Seeded) wake.Reasons.Add("the decision register isn't seeded: seed it");
     }
 

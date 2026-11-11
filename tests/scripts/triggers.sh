@@ -365,7 +365,8 @@ gh_items <<'ITEMS'
 Pitched 5 A pitch in front of me
 ITEMS
 run board demo triggers lead
-same "unthemed" '["pitches with no theme (#5): give each one"]' "$(jq -c .reasons "$OUT")"
+same "unthemed" '["pitch #5 has no theme: give it one"]' "$(jq -c .reasons "$OUT")"
+same "on the run" '[5]' "$(jq -c .items "$OUT")"
 edit_item 5 '.labels.nodes = [{name: "pitch"}, {name: "theme: Consistently good UX"}]'
 rm -f "$A_TEAM_STATE/demo/lead/seeded"
 run board demo triggers lead
