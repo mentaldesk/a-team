@@ -155,6 +155,12 @@ case_ "trends: a Ready task waits on you while every slot is full and one is In 
 events <<<"$slots"
 same "slot wait" "[$((200 + 50))]" "$(with_you "\"$(before 600)\"")"
 
+case_ "trends: a task the Lead filed is Ready from when it was filed, task or fix"
+events <<<"${slots/added as Ready/filed as Ready under #745}"
+same "filed task" "[$((200 + 50))]" "$(with_you "\"$(before 600)\"")"
+events <<<"${slots/added as Ready/filed as Ready to make main green}"
+same "filed fix" "[$((200 + 50))]" "$(with_you "\"$(before 600)\"")"
+
 case_ "trends: a task in a slot but blocked by another doesn't hold it"
 events <<<"$slots
 32 480 dev blocked by #34
