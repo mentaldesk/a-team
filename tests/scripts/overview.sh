@@ -156,6 +156,19 @@ case_ "trends: a Ready task doesn't wait on you while the Dev's slots are full o
 events <<<"$slots"
 same "slot wait" "[50]" "$(with_you "\"$(before 600)\"")"
 
+case_ "trends: a task the Lead filed is Ready from when it was filed, task or fix"
+events <<<"${slots/added as Ready/filed as Ready under #745}"
+same "filed task" "[50]" "$(with_you "\"$(before 600)\"")"
+events <<<"${slots/added as Ready/filed as Ready to make main green}"
+same "filed fix" "[50]" "$(with_you "\"$(before 600)\"")"
+
+case_ "trends: a task the Lead filed in an earlier week has its cycle too, from the record as it is"
+days10=$((60 * 24 * 10))
+events <<<"$(awk -v d=$days10 '{ $2 += d } 1' <<<"${slots/added as Ready/filed as Ready under #745}")"
+record=$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT * FROM events ORDER BY id")
+same "last week" "[50]" "$(with_you "\"$(before $((600 + days10)))\"")"
+same "record" "$record" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT * FROM events ORDER BY id")"
+
 case_ "trends: a task handed back with a question waits on you until the answer"
 events <<'EVENTS'
 40 600 lead added as Ready

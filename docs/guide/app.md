@@ -87,7 +87,7 @@ can change its key under [Settings → Keyboard Shortcuts](teams.md#settings).
 The menus list everything, wherever you are. An item that can't run here is dimmed, with its key
 beside it, and does nothing. With a menu open, each item's underlined letter is its own: press it to
 run that item. **Go** holds the screens and the Assistant, with the one you're on and a showing
-Assistant marked `●`, then a team and what's new. `Ctrl+Q` quits the app.
+Assistant marked `●`, **Details** for what's selected in Overseer, then a team and what's new. `Ctrl+Q` quits the app.
 
 ## Copying and links
 

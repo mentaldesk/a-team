@@ -122,6 +122,8 @@ public class TrendsTests
 
     [Theory]
     [InlineData("added as Ready", null, "Ready")]
+    [InlineData("filed as Ready under #745", null, "Ready")]
+    [InlineData("filed as Ready to make main green", null, "Ready")]
     [InlineData("Ready → In progress", "Ready", "In progress")]
     [InlineData("Done → Ready · reopened", "Done", "Ready")]
     public void A_line_that_moved_its_item_says_from_where_to_where(string what, string? from, string to)
@@ -153,6 +155,52 @@ public class TrendsTests
         Assert.Equal(At(10), Json.Text(cycle!["ready"]));
         Assert.Equal(At(90), Json.Text(cycle["accepted"]));
         Assert.Equal((10 + 30) * 60, WithYou(cycle));
+    }
+
+    [Theory]
+    [InlineData("filed as Ready under #745")]
+    [InlineData("filed as Ready to make main green")]
+    public void A_cycle_of_a_task_the_lead_filed_starts_when_it_was_filed(string filed)
+    {
+        var cycle = Cycle(
+            E(1, 10, "lead", filed),
+            E(1, 20, "dev", "Ready → In progress"),
+            E(1, 30, "dev", "In progress → In review"),
+            E(1, 90, "you", "accepted · PR #2 merged"));
+        Assert.Equal(At(10), Json.Text(cycle!["ready"]));
+        Assert.Equal(60 * 60, WithYou(cycle));
+    }
+
+    [Fact]
+    public void A_filed_task_is_ready_from_when_it_was_filed()
+    {
+        var events = new[]
+        {
+            E(30, 100, "lead", "filed as Ready under #745"),
+            E(30, 500, "dev", "Ready → In progress"),
+            E(30, 550, "dev", "In progress → In review"),
+            E(30, 600, "you", "accepted · PR #930 merged"),
+        };
+        var cycle = Trends.Cycle(events, Trends.Waits(events));
+        Assert.Equal(At(100), Json.Text(cycle!["ready"]));
+        Assert.Equal(50 * 60, WithYou(cycle));
+    }
+
+    [Fact]
+    public void A_filed_task_handed_back_with_a_question_waits_on_you_until_the_answer()
+    {
+        var events = new[]
+        {
+            E(40, 0, "lead", "filed as Ready to make main green"),
+            E(40, 50, "dev", "Ready → In progress"),
+            E(40, 100, "dev", "In progress → Ready"),
+            E(40, 100, "dev", "handed back with a question"),
+            E(40, 180, "dev", "question answered"),
+            E(40, 190, "dev", "Ready → In progress"),
+            E(40, 200, "dev", "In progress → In review"),
+            E(40, 300, "you", "accepted · PR #940 merged"),
+        };
+        Assert.Equal((80 + 100) * 60, WithYou(Trends.Cycle(events, Trends.Waits(events))));
     }
 
     [Fact]

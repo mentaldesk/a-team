@@ -344,19 +344,12 @@ checked
 says 2 "note     release   release is 'weekly': expected never, daily or continuous"
 jq 'del(.release)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
-case_ "a project that won't put new issues in Triage is a problem the team can still run with"
+case_ "a project with Auto-add and Item added off is no note: open issues reach Triage without them"
 board_workflows "Item closed"
-checked
-says 2 "note     workflow  \"Auto-add to project\" is off on mentaldesk project 1, so an issue opened on mentaldesk/demo, by you or another team, never reaches Triage
-note     workflow  \"Item added to project\" is off on mentaldesk project 1, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea"
-board_workflows "Auto-add to project (2)" "Item added to project"
 checked
 says 0 ""
 NO_PROJECT=1 checked
 says 1 "problem  project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
-echo '{"data": {"organization": {"projectV2": null}}}' >"$APP_BIN/board/workflows.json"
-checked
-says 0 ""
 board_workflows "Auto-add to project" "Item added to project" "Item closed"
 
 case_ "check reports every problem it finds, not just the first"

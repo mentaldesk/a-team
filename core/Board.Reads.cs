@@ -460,6 +460,7 @@ internal static class Trends
     /// <summary>The Status a line of history moved its item from and to, if it moved it.</summary>
     internal static (string? From, string? To)? Move(string what)
     {
+        if (what.StartsWith("filed as Ready", StringComparison.Ordinal)) return (null, "Ready");
         if (what.StartsWith("added as ", StringComparison.Ordinal)) return (null, what["added as ".Length..]);
         if (what.StartsWith("moved to ", StringComparison.Ordinal) || !what.Contains(" → ", StringComparison.Ordinal)) return null;
         var parts = what.Split(" · ")[0].Split(" → ");
