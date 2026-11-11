@@ -17,8 +17,11 @@ public sealed partial record Screenshot(string Path, DateTimeOffset Taken)
         if (!OperatingSystem.IsMacOS())
             return null;
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Find(Folder(Location(), home), DateTimeOffset.UtcNow);
+        return Find(Folder(Location(), home), DateTimeOffset.UtcNow) is { } shot ? shot with { Path = FromHome(shot.Path, home) } : null;
     }
+
+    internal static string FromHome(string path, string home) =>
+        path.StartsWith(home + "/", StringComparison.Ordinal) ? "~" + path[home.Length..] : path;
 
     /// <summary>Where the Mac saves screenshots: the folder set for them, or the Desktop.</summary>
     internal static string Folder(string? setting, string home) =>
