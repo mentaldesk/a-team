@@ -34,9 +34,9 @@ Each step says what it will do and waits for `Ctrl+Enter`. `Esc` skips it, and `
 step. The last asks whether to get to work or keep the team paused: `↑`/`↓` choose, `Ctrl+Enter`
 goes ahead with the one chosen, and `Esc` cancels the new team.
 
-If the team has a mirror, one part of its Project is yours to set up on GitHub: under its **Workflows**, turn on **Auto-add
-to project** for the repo, and **Item added to project** with Status set to Idea. Without them, an
-issue you or another team open on the repo never reaches Triage. Health notes it until both are on.
+Every open issue on the repo arrives in Triage by itself, within a read of the board, mirror or not, for the Lead
+to rank. Setting up the board says how many will arrive, so a repo with a backlog starts with a long Triage once:
+close any you don't want.
 
 ## Writing the vision
 
@@ -96,8 +96,8 @@ turns the label of every wrong field red and moves you to the first. The foot na
   the Lead or Customer lead will draft it.
 
 **Mirror** is the GitHub Project a-team copies the board to, so you can see it on GitHub. A-Team keeps the
-board itself, so the team works with *None* and needs no Project at all, but an issue opened on GitHub then
-never reaches Triage by itself: open ideas with [**New idea**](work.md#adding-an-idea) instead. A closed issue reopened on GitHub stays Done, too. `b` has no board to open. *A new project, named after
+board itself, so the team works with *None* and needs no Project at all: an issue opened on GitHub still reaches
+Triage, and a closed one reopened comes back at its last move. `b` has no board to open. *A new project, named after
 the team* makes one when you save, sets it up and copies the board onto it. The Project only shows the board: a card
 moves when you [answer it in Work](work.md#answering-from-a-card) or the team moves it. Moving a card on the Project isn't a move, so it goes back to the app's Status on the next sync,
 and the card's History says so. An issue's Priority is different: changing it on GitHub still counts as yours.

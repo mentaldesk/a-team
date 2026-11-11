@@ -285,21 +285,6 @@ internal sealed partial class Board
         return string.Join(", ", outside);
     }
 
-    internal void CheckWorkflows(Findings found, bool unreachable)
-    {
-        if (_mirror.Length == 0 || unreachable) return;
-        var read = Gql($$"""
-            query($owner: String!, $number: Int!) { {{_kind}}(login: $owner) { projectV2(number: $number) {
-                      workflows(first: 50) { nodes { name enabled } } } } }
-            """, "--jq", $".data.{_kind}.projectV2.workflows.nodes[] | select(.enabled) | .name");
-        if (!read.Ok) return;
-        var enabled = read.Out.Split('\n');
-        if (!enabled.Any(name => name.StartsWith("Auto-add to project", StringComparison.Ordinal)))
-            found.Note("workflow", $"\"Auto-add to project\" is off on {_owner} project {_number}, so an issue opened on {_repo}, by you or another team, never reaches Triage");
-        if (!enabled.Any(name => name.StartsWith("Item added to project", StringComparison.Ordinal)))
-            found.Note("workflow", $"\"Item added to project\" is off on {_owner} project {_number}, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea");
-    }
-
     internal void CheckLabels(Findings found)
     {
         var read = _gh.Run("label", "list", "-R", _repo, "--limit", "500", "--json", "name", "--jq", ".[].name");
@@ -493,6 +478,16 @@ internal sealed partial class Board
             Must(AddTextField(Json.Text(meta["id"])!, name));
             Console.Out.Write($"Field {name} added to {_owner} project {_number}\n");
         }
+    }
+
+    /// <summary>Says how many of the repo's open issues aren't on the board yet, and so will arrive in Triage.</summary>
+    internal void SayArrivals()
+    {
+        if (OpenIssues() is not { } open) return;
+        var had = _record.Query($"SELECT item FROM board WHERE team = {TeamQ};").Select(row => row.First).ToHashSet();
+        var coming = open.Count(issue => Json.Text(issue?["repository"]?["nameWithOwner"]) == _repo && !had.Contains(issue?["number"]?.ToJsonString()));
+        if (coming > 0)
+            Say($"{coming} open issue{(coming == 1 ? "" : "s")} on {_repo} will arrive in Triage");
     }
 
     /// <summary>Creates the labels the team needs, and puts right the ones that have changed.</summary>

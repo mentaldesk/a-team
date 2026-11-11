@@ -24,13 +24,17 @@ internal sealed partial class Board
           OR COALESCE(mirrored_rank, '') IS NOT COALESCE(json_extract(marks, '$.rank'), '')
           OR COALESCE(mirrored_theme, '') IS NOT COALESCE(json_extract(marks, '$.theme'), ''))
         """;
-    private const string ContentFields = """
-        __typename
-          ... on Issue { id number title url state stateReason repository { nameWithOwner } labels(first: 20) { nodes { name } }
+    private const string IssueFields = """
+        ... on Issue { id number title url state stateReason repository { nameWithOwner } labels(first: 20) { nodes { name } }
+                         author { __typename login }
                          parent { number }
                          issueDependenciesSummary { blockedBy }
                          issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue {
                            name field { ... on IssueFieldSingleSelect { name } } } } } }
+        """;
+    private const string ContentFields = $$"""
+        __typename
+          {{IssueFields}}
           ... on PullRequest { id number title url state repository { nameWithOwner } labels(first: 20) { nodes { name } }
                                author { login } }
         """;
@@ -108,8 +112,9 @@ internal sealed partial class Board
         foreach (var column in new[] { "marks", "mirrored_rank", "mirrored_theme" })
             if (!columns.Contains($"board.{column}"))
                 _record.Exec($"ALTER TABLE board ADD COLUMN {column} TEXT;");
-        if (!columns.Contains("boards.repaired"))
-            _record.Exec("ALTER TABLE boards ADD COLUMN repaired TEXT;");
+        foreach (var column in new[] { "repaired", "issues_read" })
+            if (!columns.Contains($"boards.{column}"))
+                _record.Exec($"ALTER TABLE boards ADD COLUMN {column} TEXT;");
         var was = _record.Scalar($"SELECT COALESCE((SELECT project FROM boards WHERE team = {TeamQ}), '-');");
         if (was == "-")
         {
@@ -263,9 +268,9 @@ internal sealed partial class Board
         label.StartsWith("a-team:", StringComparison.Ordinal) || label.StartsWith("rank:", StringComparison.Ordinal)
         || label.StartsWith("theme: ", StringComparison.Ordinal) || label == "blocked";
 
-    /// <summary>Once a command, reads the open items, and every so often the whole mirror, then catches the mirror up. Where
-    /// GitHub can't be read, the record stands as it is. <paramref name="cached"/> only moves the board over and carries any
-    /// old labels into it.</summary>
+    /// <summary>Once a command, reads the open items, and every so often the whole mirror and the repo's open issues, then
+    /// catches the mirror up. Where GitHub can't be read, the record stands as it is. <paramref name="cached"/> only moves the
+    /// board over and carries any old labels into it.</summary>
     internal void Sync(bool cached = false)
     {
         if (_synced) return;
@@ -274,15 +279,16 @@ internal sealed partial class Board
         AdoptLabels();
         if (cached) return;
         var seen = _seen ?? [];
-        if (_mirror.Length > 0 && _seen is null)
+        if (_mirror.Length > 0 && _seen is null && Stale("read") && MirrorNodes(shortEnds: false) is { } nodes)
         {
-            var stale = _record.Scalar($"SELECT COUNT(*) FROM boards WHERE team = {TeamQ} AND (read IS NULL OR read <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-{_readEvery} seconds'));");
-            if (stale != "0" && MirrorNodes(shortEnds: false) is { } nodes)
-            {
-                Reconcile(nodes, adopt: false);
-                _record.Exec($"UPDATE boards SET read = {Reconciler.Q(Now())} WHERE team = {TeamQ};");
-                seen = nodes.Select(node => Json.Text(node?["content"]?["id"])).OfType<string>().ToList();
-            }
+            Reconcile(nodes, adopt: false);
+            _record.Exec($"UPDATE boards SET read = {Reconciler.Q(Now())} WHERE team = {TeamQ};");
+            seen = nodes.Select(node => Json.Text(node?["content"]?["id"])).OfType<string>().ToList();
+        }
+        if (Stale("issues_read") && OpenIssues() is { } open)
+        {
+            Arrive(open);
+            _record.Exec($"UPDATE boards SET issues_read = {Reconciler.Q(Now())} WHERE team = {TeamQ};");
         }
         var ids = _record.Query($"SELECT node FROM board WHERE team = {TeamQ} AND status != 'Done' AND node != '';")
             .Select(row => row.First!).Distinct().Except(seen).Order(StringComparer.Ordinal).ToList();
@@ -291,6 +297,9 @@ internal sealed partial class Board
         AdoptLabels();
         MirrorPush(null);
     }
+
+    private bool Stale(string column) =>
+        _record.Scalar($"SELECT COUNT(*) FROM boards WHERE team = {TeamQ} AND ({column} IS NULL OR {column} <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-{_readEvery} seconds'));") != "0";
 
     private string _mirrorError = "";
 
@@ -362,6 +371,45 @@ internal sealed partial class Board
         return nodes;
     }
 
+    /// <summary>Every open issue on the repo, read again once if it comes back short; null if it can't be read whole.</summary>
+    internal JsonArray? OpenIssues()
+    {
+        var query = $$"""
+            query RepoIssues($owner: String!, $name: String!, $endCursor: String) {
+                  repository(owner: $owner, name: $name) { issues(states: OPEN, first: 100, after: $endCursor) {
+                    totalCount pageInfo { hasNextPage endCursor }
+                    nodes { __typename {{IssueFields}} } } } }
+            """;
+        var slash = _repo.IndexOf('/');
+        if (slash < 0) return null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var read = _gh.Run("api", "graphql", "--paginate", "-F", $"owner={_repo[..slash]}", "-F", $"name={_repo[(slash + 1)..]}", "-f", $"query={query}");
+            if (!read.Ok) return null;
+            List<JsonNode?> pages;
+            try
+            {
+                pages = Json.ParseMany(read.Out);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return null;
+            }
+            var issues = new JsonArray();
+            var total = -1L;
+            foreach (var page in pages)
+            {
+                if (page?["data"]?["repository"]?["issues"] is not { } connection) return null;
+                foreach (var node in connection["nodes"]?.AsArray() ?? [])
+                    issues.Add(node?.DeepClone());
+                if (connection["totalCount"] is { } count)
+                    total = Math.Max(total, count.GetValue<long>());
+            }
+            if (total >= 0 && issues.Count >= total) return issues;
+        }
+        return null;
+    }
+
     /// <summary>Those issues and PRs as GitHub has them now; `project` is null for one that isn't on the mirror.</summary>
     private JsonArray? FreshNodes(IReadOnlyList<string> ids)
     {
@@ -402,7 +450,7 @@ internal sealed partial class Board
         return result;
     }
 
-    private void Reconcile(JsonArray nodes, bool adopt)
+    private Dictionary<string, Known> Had()
     {
         var had = new Dictionary<string, Known>();
         foreach (var row in _record.Query($"""
@@ -412,7 +460,23 @@ internal sealed partial class Board
         {
             had[row["item"]!] = new Known(row["status"]!, row["priority"], row["since"]!, row["mirrored_status"], row["mirrored_priority"], row["shut"] == "1");
         }
-        var plan = Reconciler.Plan(nodes, had, _team, _repo, _priority, _mirror, _reverseMap, Now(), adopt);
+        return had;
+    }
+
+    /// <summary>Brings each open issue the board hasn't got onto it as an Idea, and one closed on it back as it was.</summary>
+    private void Arrive(JsonArray issues)
+    {
+        var plan = Reconciler.Arrivals(issues, Had(), _team, _repo, _priority, Now());
+        _record.Exec($"BEGIN; {plan.Sql} COMMIT;");
+        foreach (var n in plan.Arrived)
+            Log("board", n, "None → Idea · opened on GitHub");
+        if (plan.Reopened.Count > 0 && FreshNodes(plan.Reopened) is { } fresh)
+            Reconcile(fresh, adopt: false);
+    }
+
+    private void Reconcile(JsonArray nodes, bool adopt)
+    {
+        var plan = Reconciler.Plan(nodes, Had(), _team, _repo, _priority, _mirror, _reverseMap, Now(), adopt);
         _record.Exec($"BEGIN; {plan.Sql} COMMIT;");
         foreach (var (n, to, from) in plan.Bounces)
             Log("board", n, $"{from} on GitHub isn't a move: put back to {to}");
@@ -518,6 +582,7 @@ internal sealed partial class Board
             };
             if (Json.Truthy(c["closed"])) item["closed"] = c["closed"]!.DeepClone();
             if (Json.Truthy(c["dependabot"])) item["dependabot"] = true;
+            if (Json.Truthy(c["author"])) item["author"] = c["author"]!.DeepClone();
             items.Add((JsonNode?)item);
         }
         return items;
@@ -649,6 +714,10 @@ internal sealed partial class Board
         _record.Exec($"UPDATE boards SET failed = {Reconciler.Q(why)}, retry = {Reconciler.Q(retry)} WHERE team = {TeamQ};");
     }
 
+    /// <summary>The mirror's item for that issue or PR, where something else put it there first.</summary>
+    private string? MirrorItem(string node) =>
+        FreshNodes([node]) is [{ } fresh] ? Json.Text(fresh["project"]?["id"]) : null;
+
     private string StatusOnMirror(string status) =>
         (_config["project"]?["statusMap"] as JsonObject)?[status] is { } mapped && Json.Truthy(mapped) ? Json.Text(mapped) ?? status : status;
 
@@ -699,8 +768,8 @@ internal sealed partial class Board
                               addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } } }
                     """, "--jq", ".data.addProjectV2ItemById.item.id");
                 err = added.Err;
-                if (!added.Ok) break;
-                mirror = added.Said;
+                mirror = added.Ok ? added.Said : added.Err.Contains("already exists", StringComparison.Ordinal) ? MirrorItem(node) : null;
+                if (mirror is null) break;
                 _record.Exec($"UPDATE board SET mirror = {Reconciler.Q(mirror)} WHERE team = {TeamQ} AND item = {n};");
             }
             if (status != (row["shown"] ?? "-"))

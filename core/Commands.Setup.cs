@@ -27,7 +27,6 @@ internal static partial class Commands
         board.CheckDocs(found, reached);
         board.CheckRelease(found, reached);
         var unreachable = board.CheckProject(found);
-        board.CheckWorkflows(found, unreachable);
         if (reached) board.CheckLabels(found);
         board.CheckIdentity(found, unreachable);
         return found.Code;
@@ -59,6 +58,7 @@ internal static partial class Commands
         board.Quiet = true;
         board.SetUpProject();
         board.SetUpLabels();
+        board.SayArrivals();
         return 0;
     }
 }
