@@ -179,6 +179,17 @@ dispatch_dev --dry-run
 same "asked again" 2 "$(grep -c 'triggers lead.* --scheduled' "$TRIGGER_READS")"
 same "then it starts" 1 "$(starts 'demo lead: would start: it.s been a while')"
 
+case_ "a scheduled yes that a reason waiting out its retry left unused is asked again on the next pass"
+dispatcher
+jq -n '{reasons: ["room in Pitched for a drafted pitch"], creative: true, items: []}' >"$LEAD_TRIGGERS"
+dispatch_dev --dry-run
+echo $(($(date +%s) - 181 * 60)) | tee "$A_TEAM_STATE/demo/lead/dry-last-start" >"$A_TEAM_STATE/demo/lead/dry-last-scheduled"
+dispatch_dev --dry-run
+same "the reason waits" 1 "$(starts 'demo lead: would start')"
+echo '{"reasons": [], "creative": true}' >"$LEAD_TRIGGERS"
+dispatch_dev --dry-run
+same "the scheduled run starts" 1 "$(starts 'demo lead: would start: it.s been a while')"
+
 case_ "when the Lead gives up on reasons that name items, each is held, once"
 dispatcher
 ROOM='#31 was approved: break it down'

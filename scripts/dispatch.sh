@@ -89,7 +89,8 @@ dispatch() {
   fi
   passing "$dir/${prefix}triggers-failing" "$dir/${prefix}triggers-failed-once" "$team $role: triggers working again"
   [ -z "$sweep" ] || echo "$now" >"$dir/${prefix}last-sweep"
-  [ -z "$scheduled" ] || echo "$now" >"$dir/${prefix}last-scheduled"
+  # A yes is left unrecorded: it either starts a run, which resets the wait, or is asked again next pass.
+  [ -z "$scheduled" ] || [ "$(jq -r .creative <<<"$triggers")" = true ] || echo "$now" >"$dir/${prefix}last-scheduled"
 
   if [ "$role" != dev ] && [ "$role" != reviewer ]; then
     reasons=$(jq -r '.reasons[]' <<<"$triggers")
