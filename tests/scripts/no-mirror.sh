@@ -216,6 +216,7 @@ run board demo checks 912
 same "verdict" '"fail"' "$(jq -c .verdict "$OUT")"
 
 case_ "a red main starts the Lead until a fix is open"
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
 gh_items <<'ITEMS'
 Done 10 Something shipped
 ITEMS

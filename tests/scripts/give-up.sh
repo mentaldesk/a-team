@@ -164,6 +164,21 @@ aged "$(lead_file)" 59
 dispatch_dev --dry-run
 same "too soon" 0 "$(starts 'demo lead: would start')"
 
+case_ "the board is asked whether a scheduled run has work once each creativeEvery, and only then"
+dispatcher
+echo '{"reasons": [], "creative": false}' >"$LEAD_TRIGGERS"
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+same "asked once" 1 "$(grep -c 'triggers lead.* --scheduled' "$TRIGGER_READS")"
+same "nothing to pitch or discover" 0 "$(starts 'demo lead: would start')"
+echo '{"reasons": [], "creative": true}' >"$LEAD_TRIGGERS"
+dispatch_dev --dry-run
+same "a Priority set since waits for the next check" 0 "$(starts 'demo lead: would start')"
+echo $(($(date +%s) - 181 * 60)) >"$A_TEAM_STATE/demo/lead/dry-last-scheduled"
+dispatch_dev --dry-run
+same "asked again" 2 "$(grep -c 'triggers lead.* --scheduled' "$TRIGGER_READS")"
+same "then it starts" 1 "$(starts 'demo lead: would start: it.s been a while')"
+
 case_ "when the Lead gives up on reasons that name items, each is held, once"
 dispatcher
 ROOM='#31 was approved: break it down'
@@ -212,7 +227,7 @@ dispatch_dev --dry-run
 aged "$(lead_file)" 60
 dispatch_dev --dry-run
 same "not due yet" 0 "$(starts 'demo lead: would start: it.s been a while')"
-echo $(($(date +%s) - 181 * 60)) >"$A_TEAM_STATE/demo/lead/dry-last-start"
+echo $(($(date +%s) - 181 * 60)) | tee "$A_TEAM_STATE/demo/lead/dry-last-start" >"$A_TEAM_STATE/demo/lead/dry-last-scheduled"
 dispatch_dev --dry-run
 same "due" 1 "$(starts 'demo lead: would start: it.s been a while')"
 same "the stuck reason doesn't run" 3 "$(starts 'demo lead: would start: room in Pitched')"

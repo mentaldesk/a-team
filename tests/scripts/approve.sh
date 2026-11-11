@@ -259,7 +259,6 @@ case_ "the agents' settings deny decline"
 grep -qF '"Bash(a-team board * decline you *)"' "$ROOT/settings/agents.json" || fail "no decline deny rule"
 
 # Not now: a Pitched pitch back to Idea, held back from the Lead until a date.
-weeks_on() { jq -rn --argjson w "$1" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")'; }
 back_on() { jq -rn --arg d "$(weeks_on "$1")" '$d | strptime("%Y-%m-%d") | mktime | strftime("%d %b") | ltrimstr("0")'; }
 
 case_ "shelve posts your reason with the date, labels it, moves it to Idea and acks only that, so no run answers it"

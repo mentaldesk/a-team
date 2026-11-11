@@ -210,6 +210,8 @@ JSON
 gh_items <<'ITEMS'
 Pitched 7 A pitch in front of me
 ITEMS
+edit_item 7 '.labels.nodes += [{name: "theme: Consistently good UX"}]'
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
 gh_thread <<TALK
 body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
 comment ${TODAY}T02:20:00Z reviewer 0 Needs a second option.
@@ -419,6 +421,7 @@ same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 gh_items <<'ITEMS'
 Pitched 7 A pitch in front of me
 ITEMS
+edit_item 7 '.labels.nodes += [{name: "theme: Consistently good UX"}]'
 
 # Stakeholders: whoever the config lists, not one login, is who the team answers.
 KEPT_CONFIG=$CONFIG KEPT_TEAM=$TEAM

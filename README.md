@@ -120,8 +120,10 @@ commits are authored as `<app>[bot]`. Your own `gh` login and git config are unt
 
 - **Triggers** (`a-team board <team> triggers <role>`) list what a role has to react to. Reactive work
   starts within a couple of minutes. Pitching and discovering happen at most every
-  `dispatch.creativeEvery` minutes, except that the Lead pitches straight away when nothing is
-  Pitched or Exploring, so the stakeholder always has a pitch to decide on.
+  `dispatch.creativeEvery` minutes, and only when there's an Idea the Lead may pitch or room to
+  discover, except that the Lead pitches straight away when nothing is Pitched or Exploring, so the
+  stakeholder always has a pitch to decide on. A new Idea with no recommended rank, a Building pitch
+  with no tasks, a pitch with no theme and an unseeded decision register each start a Lead run too.
 - **Dependency updates.** A Dependabot PR the Lead hasn't commented on starts a Lead run. It
   reads what the new version brings, files an Idea for each change the product should adopt (a
   style guide's new rule, say), and lists them on the PR. Once its CI passes, the dispatcher merges it; while

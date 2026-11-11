@@ -127,6 +127,7 @@ vision_team() {
 JSON
   [ -z "${1:-}" ] || { jq --argjson review "$1" '.visionReview = $review' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"; }
   gh_items </dev/null
+  mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
 }
 lead_reasons() { run board demo triggers lead --sweep; jq -c '[.reasons[] | select(startswith("vision review"))]' "$OUT"; }
 

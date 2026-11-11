@@ -164,6 +164,13 @@ internal sealed partial class Board
             """).OfType<JsonNode>().Reverse().ToList();
     }
 
+    /// <summary>Whether a Lead run has started on #n since <paramref name="since"/>.</summary>
+    internal bool LeadRanOn(long n, string? since) =>
+        Recorded && _record.Query($"""
+            SELECT 1 FROM runs JOIN run_items ON run_items.run = runs.id
+                WHERE team = {TeamQ} AND role = 'lead' AND item = {n} AND started >= {Reconciler.Q(since ?? "")} LIMIT 1;
+            """).Count > 0;
+
     /// <summary>Pitches with no theme and no `none` from the Lead: open ones, and done ones since runs were recorded.</summary>
     internal JsonArray Unthemed(List<JsonNode> all)
     {

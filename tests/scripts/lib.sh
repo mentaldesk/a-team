@@ -522,6 +522,9 @@ gh_recent() {
 # ago <minutes>: a timestamp that long before now, for the cases that meet board.sh's own clock.
 ago() { jq -rn --argjson m "$1" 'now - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
 
+# weeks_on <weeks>: the local date that many weeks from now, as a shelve's until.
+weeks_on() { jq -rn --argjson w "$1" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")'; }
+
 # `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
 # <parent> ("-" for none) on the record and on GraphQL, carrying the comma-separated <labels> ("-" for none).
 # REST never reports the parent, as it doesn't for mentaldesk/website#79.
@@ -704,6 +707,7 @@ runs_recorded() {
 
 # A dispatcher whose a-team answers `triggers dev` with $DEV_TRIGGERS and `triggers reviewer` with
 # $REVIEWER_TRIGGERS, records each claim, and claims $CLAIMED. `task-prompt` is one line, and the Lead never has anything to do.
+# `triggers lead` says $LEAD_TRIGGERS, with creative only when asked --scheduled.
 dev_dispatcher() {
   DISPATCH=$(mktemp -d "$WORK/dispatch.XXXXXX")
   mkdir -p "$DISPATCH/bin" "$DISPATCH/scripts"
@@ -740,7 +744,7 @@ case " \$* " in
   *" give-up "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me}: \$(paste -sd ';' - <"\${!#}")" >>"$GIVE_UPS"; [ ! -e "$GIVE_UPS.fails" ] || { cat "$GIVE_UPS.fails" >&2; exit 1; }; echo "gave up" ;;
   *" claim dev "*) echo "\$*" >>"$CLAIMS"; cat "$CLAIMED" ;;
   *" triggers dev"*) echo "\$*" >>"$TRIGGER_READS"; cat "$DEV_TRIGGERS" ;;
-  *" triggers lead"*) cat "$LEAD_TRIGGERS" ;;
+  *" triggers lead"*) echo "\$*" >>"$TRIGGER_READS"; jq --argjson asked "\$([[ " \$* " == *" --scheduled "* ]] && echo true || echo false)" '.creative = (.creative and \$asked)' "$LEAD_TRIGGERS" ;;
   *" triggers customer"*) echo "\$*" >>"$CLAIMS"; cat "$CUSTOMER_TRIGGERS" ;;
   *" triggers reviewer"*) echo "\$*" >>"$TRIGGER_READS"; cat "$REVIEWER_TRIGGERS" ;;
   *" task-prompt "*) echo "Run one shift." ;;

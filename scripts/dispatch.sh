@@ -59,7 +59,7 @@ short_read() {
 dispatch() {
   local team=$1 role=$2 config=$3
   local dir="$STATE/$team/$role" now triggers reasons creative last live limit pid at tries
-  local sweep='' prefix='' task='' number='' started=0 picked=' ' chores='' items='' card=''
+  local sweep='' scheduled='' prefix='' task='' number='' started=0 picked=' ' chores='' items='' card=''
   $DRY_RUN && prefix="dry-"
   mkdir -p "$dir/logs"
   now=$(date +%s)
@@ -78,7 +78,10 @@ dispatch() {
   [ $((now - $(cat "$dir/${prefix}last-sweep" 2>/dev/null || echo 0))) \
     -ge $(($(cfg '.dispatch.sweepEvery // 30') * 60)) ] && sweep=--sweep
 
-  if ! triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" ${sweep:+"$sweep"} 2>&1); then
+  last=$(cat "$dir/${prefix}last-start" 2>/dev/null || echo 0)
+  [ "$role" = lead ] && scheduled_due && scheduled=--scheduled
+
+  if ! triggers=$("$ROOT/bin/a-team" board "$team" triggers "$role" ${sweep:+"$sweep"} ${scheduled:+"$scheduled"} 2>&1); then
     short_read "$triggers" "$team $role" && return
     failing "$dir/${prefix}triggers-failing" "$dir/${prefix}triggers-failed-once" \
       "${triggers//$'\n'/ }" "$team $role: triggers failed"
@@ -86,7 +89,7 @@ dispatch() {
   fi
   passing "$dir/${prefix}triggers-failing" "$dir/${prefix}triggers-failed-once" "$team $role: triggers working again"
   [ -z "$sweep" ] || echo "$now" >"$dir/${prefix}last-sweep"
-  last=$(cat "$dir/${prefix}last-start" 2>/dev/null || echo 0)
+  [ -z "$scheduled" ] || echo "$now" >"$dir/${prefix}last-scheduled"
 
   if [ "$role" != dev ] && [ "$role" != reviewer ]; then
     reasons=$(jq -r '.reasons[]' <<<"$triggers")
@@ -392,6 +395,13 @@ over_budget() {
 
 # The Lead's run on a timer, the same words each time however healthy, which is never counted as a try.
 SCHEDULED="it's been a while: time to pitch or discover"
+
+# scheduled_due: whether it's time to ask the board if the Lead's run on a timer has work, once per creativeEvery.
+scheduled_due() {
+  local checked
+  checked=$(cat "$dir/${prefix}last-scheduled" 2>/dev/null || echo 0)
+  [ $((now - (checked > last ? checked : last))) -ge $(($(cfg '.dispatch.creativeEvery // 180') * 60)) ]
+}
 
 # creative_due: whether it's time for the role's run on a timer.
 creative_due() { [ "$creative" = true ] && [ $((now - last)) -ge $(($(cfg '.dispatch.creativeEvery // 180') * 60)) ]; }
