@@ -144,6 +144,14 @@ run board demo lead-next
 same "not offered" null "$(jq -c '.item.number' "$OUT")"
 KEEP_BOARD=1 waiting
 same "waits for your rank" '"opened by breq-toren, waits for your rank"' "$(jq -c '.[] | select(.number == 45) | .reason' "$OUT")"
+gh_talk <<TALK
+45 body ${TODAY}T07:00:00Z breq-toren Please add previews
+45 comment ${TODAY}T07:20:00Z demo-app[bot] Recommended: **High** · theme 2, small · clears the queue\n\n<!-- a-team:lead -->
+TALK
+run board demo list
+KEEP_BOARD=1 waiting
+same "keeps the Lead's case" '"theme 2, small · clears the queue · opened by breq-toren"' \
+  "$(jq -c '.[] | select(.number == 45) | .reason' "$OUT")"
 jq '(.[] | select(.number == 45)).issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}]' "$REPO_ISSUES" >"$REPO_ISSUES.new" &&
   mv "$REPO_ISSUES.new" "$REPO_ISSUES"
 run board demo lead-next

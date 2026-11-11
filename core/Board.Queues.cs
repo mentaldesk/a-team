@@ -764,7 +764,13 @@ internal sealed partial class Board
                 ["url"] = card["url"]?.DeepClone(),
                 ["team"] = _team,
                 ["turn"] = "you",
-                ["reason"] = Opener(card) is { } opener ? $"opened by {opener}, waits for your rank" : cases.Count > 0 ? cases[^1] : "waiting to be ranked",
+                ["reason"] = (Opener(card), cases.Count > 0 ? cases[^1] : null) switch
+                {
+                    ({ } opener, { } lead) => $"{lead} · opened by {opener}",
+                    ({ } opener, null) => $"opened by {opener}, waits for your rank",
+                    (null, { } lead) => lead,
+                    _ => "waiting to be ranked",
+                },
             };
             if (Json.Truthy(card["marks"]?["rank"])) shown["recommendation"] = card["marks"]?["rank"]?.DeepClone();
             unranked.Add(shown);
