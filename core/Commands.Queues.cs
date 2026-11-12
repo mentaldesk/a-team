@@ -456,7 +456,7 @@ internal static partial class Commands
     {
         var pitched = all.Count(card => Cards.Pitch(card) && Cards.Status(card) == "Pitched");
         var exploring = all.Count(card => Cards.Pitch(card) && Cards.Status(card) == "Exploring");
-        var found = all.Count(card => Cards.Marked(card, "idea") && Cards.Status(card) == "Idea");
+        var found = board.WaitingForPriority(all);
         var limit = WipLimit(board, "pitched") ?? throw new Stop(2, "jq: Invalid JSON text passed to --argjson\n");
         var (promote, demote) = Cards.PitchSwap(all, limit);
         var idle = pitched + exploring == 0;
