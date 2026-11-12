@@ -109,6 +109,11 @@ release. It looks after that PR as it does its own and marks it ready once it's 
 draft it shows In progress on the board of the team that runs that repo, then in Review once it's
 ready, where `a` merges it. Releasing stays yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
 
+**Worktrees** is how many tasks the Dev can be building at once. A PR waiting on you doesn't
+count, so however many wait for your review, the Dev keeps starting Ready work. An Urgent task or a
+fix may take one more. **Devs** is how many Dev runs go at once, whether building a task or answering
+a review on one.
+
 Vision, First page, Stakeholders and Contributes to open at once and load from GitHub in their
 list. Until the rows are in, the pick or Done button is dimmed and `Enter` does nothing. If the read
 fails, the list says why, and `r` reads again without closing the picker.

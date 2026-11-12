@@ -235,8 +235,7 @@ internal sealed partial class Board
                       WHERE team = {{TeamQ}} AND json_extract(content, '$.type') = 'Issue'
                         AND (json_extract(content, '$.parent') IS NOT NULL OR json_extract(marks, '$.dev'))) AS tasks;
             """)[0]!;
-        var worktrees = _config["wip"]?["worktrees"];
-        var waits = Trends.Waits(Trends.Events(row["moves"]), worktrees?.GetValueKind() == System.Text.Json.JsonValueKind.Number ? worktrees.GetValue<double>() : null);
+        var waits = Trends.Waits(Trends.Events(row["moves"]));
         var tasks = Json.Parse(Json.Text(row["tasks"])!)!.AsArray();
         var said = Trends.Events(row["said"]);
         var fortnight = Json.Text(row["fortnight"])!;
@@ -434,8 +433,8 @@ internal static class Checklist
 /// <summary>One line of a team's history, as the trends read it.</summary>
 internal readonly record struct Happening(long Item, string At, string Who, string What);
 
-/// <summary>A stretch of time: which Ready tasks await an answer, which are free to start, and whether the Dev's slots are full with one In review.</summary>
-internal sealed record WaitSpan(long From, long To, HashSet<string> Asked, HashSet<string> Free, bool Full);
+/// <summary>A stretch of time, and which Ready tasks await an answer through it.</summary>
+internal sealed record WaitSpan(long From, long To, HashSet<string> Asked);
 
 /// <summary>How long work waits on you, read off the record's history.</summary>
 internal static class Trends
@@ -444,11 +443,7 @@ internal static class Trends
     {
         internal string? Status { get; set; }
 
-        internal bool Dev { get; set; }
-
         internal bool Asked { get; set; }
-
-        internal List<string> Deps { get; } = [];
     }
 
     private static bool IsTask(string? status) => status is "Ready" or "In progress" or "In review";
@@ -472,17 +467,11 @@ internal static class Trends
         return (parts[0], parts.Length > 1 ? parts[1] : null);
     }
 
-    private static WaitSpan Span(Dictionary<string, Tracked> items, string from, string to, double? worktrees)
-    {
-        var held = items.Values.Where(item => item.Dev && item.Status is "In progress" or "In review" && item.Deps.Count == 0).ToList();
-        HashSet<string> Ready(Func<Tracked, bool> which) =>
-            items.Where(item => item.Value.Status == "Ready" && which(item.Value)).Select(item => item.Key).ToHashSet();
-        return new WaitSpan(Seconds(from), Seconds(to), Ready(item => item.Asked), Ready(item => !item.Asked && item.Deps.Count == 0),
-            worktrees is { } slots && held.Count >= slots && held.Any(item => item.Status == "In review"));
-    }
+    private static WaitSpan Span(Dictionary<string, Tracked> items, string from, string to) =>
+        new(Seconds(from), Seconds(to), items.Where(item => item.Value.Status == "Ready" && item.Value.Asked).Select(item => item.Key).ToHashSet());
 
     /// <summary>A team's events, oldest first, as spans.</summary>
-    internal static List<WaitSpan> Waits(IEnumerable<Happening> events, double? worktrees)
+    internal static List<WaitSpan> Waits(IEnumerable<Happening> events)
     {
         var items = new Dictionary<string, Tracked>();
         var spans = new List<WaitSpan>();
@@ -490,41 +479,25 @@ internal static class Trends
         foreach (var e in events)
         {
             if (last is not null && Later(e.At, last))
-                spans.Add(Span(items, last, e.At, worktrees));
+                spans.Add(Span(items, last, e.At));
             last = e.At;
             var n = e.Item.ToString(CultureInfo.InvariantCulture);
             if (!items.TryGetValue(n, out var item))
                 items[n] = item = new Tracked();
-            Follow(items, item, n, e);
+            Follow(item, e);
         }
         return spans;
     }
 
-    private static string Number(string digits) => long.Parse(digits, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
-
-    private static void Follow(Dictionary<string, Tracked> items, Tracked item, string n, Happening e)
+    private static void Follow(Tracked item, Happening e)
     {
         if (Move(e.What) is { } move)
         {
             item.Status = move.To;
-            item.Dev = move.To is "In progress" or "In review" && (item.Dev || (e.Who == "dev" && move.From == "Ready" && move.To == "In progress"));
             item.Asked = item.Asked && move.To == "Ready";
         }
-        else if (Regex.IsMatch(e.What, "^blocked by #[0-9]+$"))
-            item.Deps.Add(Number(e.What["blocked by #".Length..]));
-        else if (Regex.IsMatch(e.What, "^blocked by [^ #]+#[0-9]+$"))
-            item.Deps.Add(e.What["blocked by ".Length..]);
-        else if (Regex.IsMatch(e.What, "^no longer blocked by #[0-9]+$"))
-            item.Deps.RemoveAll(dep => dep == Number(e.What["no longer blocked by #".Length..]));
-        else if (Regex.IsMatch(e.What, "^no longer blocked by [^ #]+#[0-9]+$"))
-            item.Deps.RemoveAll(dep => dep == e.What["no longer blocked by ".Length..]);
         else if (Regex.IsMatch(e.What, "^(accepted · |closed|declined)"))
-        {
             item.Status = "Done";
-            item.Dev = false;
-            foreach (var other in items.Values)
-                other.Deps.RemoveAll(dep => dep == n);
-        }
         else if (e.What == "handed back with a question")
             item.Asked = true;
         else if (e.What == "question answered")
@@ -555,7 +528,7 @@ internal static class Trends
         }
         var (from, to) = (Seconds(first.At), Seconds(accepted));
         var n = events[0].Item.ToString(CultureInfo.InvariantCulture);
-        var waited = waits.Where(wait => wait.To > from && wait.From < to && (wait.Asked.Contains(n) || (wait.Full && wait.Free.Contains(n))))
+        var waited = waits.Where(wait => wait.To > from && wait.From < to && wait.Asked.Contains(n))
             .Sum(wait => Math.Min(wait.To, to) - Math.Max(wait.From, from));
         return new JsonObject
         {

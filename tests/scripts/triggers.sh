@@ -4,36 +4,49 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
 
-case_ "with every worktree taken, the Dev isn't woken for a Ready task"
+case_ "with every worktree taken by a task being built, the Dev isn't woken for a Ready task"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "worktrees": 2 } }
 JSON
 gh_items <<'ITEMS'
-In_review 12 Waiting on a pane nobody has built
-In_review 14 Waiting on the reviewer
+In_progress 12 Building a pane
+In_progress 14 Building another
+In_review 16 Waiting on you
 Ready 13 Something to start
 Done 15 Merged with its blocked label left on
 ITEMS
 edit_item 15 '.labels.nodes = [{name: "a-team:dev"}, {name: "blocked"}]'
 run board demo triggers dev
 same "exit" 0 "$STATUS"
-same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+same "ready" null "$(jq -c .ready "$OUT")"
 
 case_ "a task blocked by another issue frees its worktree, and wip counts it apart"
 edit_item 12 '.issueDependenciesSummary.blockedBy = 1'
 run board demo triggers dev
 same "exit" 0 "$STATUS"
-same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
+same "ready" 13 "$(jq -c .ready "$OUT")"
 run board demo wip
 same "exit" 0 "$STATUS"
-same "dev" '{"Done":1,"In review":1,"blocked":1}' "$(jq -c .dev "$OUT")"
+same "dev" '{"Done":1,"In progress":1,"In review":1,"blocked":1}' "$(jq -c .dev "$OUT")"
 
 case_ "so does one the reviewer holds with the blocked label"
 edit_item 12 '.issueDependenciesSummary.blockedBy = 0 | .labels.nodes += [{name: "blocked"}]'
 run board demo triggers dev
 same "exit" 0 "$STATUS"
+same "ready" 13 "$(jq -c .ready "$OUT")"
+
+case_ "PRs waiting on you take no worktree, however many there are, so the Dev is woken for a Ready task"
+gh_items <<'ITEMS'
+In_review 12 Waiting on you
+In_review 14 Waiting on the reviewer
+In_review 16 Waiting on you too
+Ready 13 Something to start
+ITEMS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
 same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
+same "ready" 13 "$(jq -c .ready "$OUT")"
 
 case_ "a draft PR whose CI is still running doesn't wake the Dev"
 fixture <<'JSON'
@@ -107,6 +120,39 @@ same "reasons" '["#12 is In progress but has no PR: an earlier run didn'"'"'t fi
 run board demo pr 12
 same "exit" 0 "$STATUS"
 same "pr" null "$(cat "$OUT")"
+
+case_ "a PR In review still wakes the Dev for red CI, a conflict or your comment with every worktree taken"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 1 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 11 Being built
+In_review 12 Waiting on you
+Ready 13 Something to start
+ITEMS
+gh_pr 912 false
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "red" '["CI failed on PR #912 at deadbee"]' "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+same "ready" null "$(jq -c .ready "$OUT")"
+jq '(.. | objects | select(has("isDraft"))) += {mergeable: "CONFLICTING", headRefOid: "deadbee"}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+RUNS
+run board demo triggers dev
+same "conflict" '["PR #912 conflicts with its base: merge the base branch into it and resolve"]' "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+jq '(.. | objects | select(has("isDraft"))) += {mergeable: "MERGEABLE"}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+gh_recent <<RECENT
+912 ${TODAY}T02:20:00Z reviewer 0 Rename the field.
+RECENT
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "feedback" "[\"stakeholder feedback on #912 (${TODAY}T02:20:00Z)\"]" "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+same "ready" null "$(jq -c .ready "$OUT")"
 
 case_ "triggers groups the Dev's reasons by task, and names the Ready task a run could claim"
 fixture <<'JSON'
@@ -230,6 +276,19 @@ ITEMS
 run board demo claim dev
 same "exit" 0 "$STATUS"
 same "nothing" null "$(cat "$OUT")"
+
+case_ "claim takes a task with every worktree's worth of PRs In review and nothing In progress"
+gh_items <<'ITEMS'
+In_review 11 One
+In_review 12 Two
+In_review 15 Three
+In_review 17 Four
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
 
 case_ "another team's draft PR In progress takes no worktree, and next never offers it"
 gh_items <<'ITEMS'
