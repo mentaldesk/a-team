@@ -12,6 +12,7 @@
   "vision": "docs/vision.md",
   "docs": "docs/guide/index.md",
   "skills": [],
+  "focus": 30,
   "wip": {
     "worktrees": 3,
     "devs": 2,

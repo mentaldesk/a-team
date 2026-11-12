@@ -58,6 +58,8 @@ public sealed class TeamForm : AppDialog
     internal const string ExploringCaption = "How many drafted pitches wait for room in Pitched.";
     internal const string IdeasCaption = "How many of the Lead's ideas wait for you to prioritise them.";
     internal const string ReadyFloorCaption = "Below this many Ready tasks, the Lead warns the Dev is running out of work.";
+    internal static string FocusCaption(int focus) =>
+        $"0 keeps the lights on, 100 looks for step changes: {focus} in every 100 discoveries look for a step change.";
     internal const string BudgetCaption = "Most a day's runs may cost, at API prices, before the team stops starting new ones. 0 for no budget.";
     private const string ProblemsHeading = "Problems";
     private const int BandPadding = 1;
@@ -109,6 +111,7 @@ public sealed class TeamForm : AppDialog
     private readonly NumericUpDown<int> _ideas;
     private readonly NumericUpDown<int> _readyFloor;
     private readonly NumericUpDown<int> _budget;
+    private readonly NumericUpDown<int> _focus;
     private readonly StatusBar _hints = new();
     private readonly View _buttons = new() { X = Pos.Center(), Width = Dim.Auto(), Height = 1, CanFocus = true };
     private readonly Button _repair = FootButton(AppButton.Secondary($"{KeyChord.Display(RepairKey)} Repair"));
@@ -336,6 +339,12 @@ public sealed class TeamForm : AppDialog
         _ideas = Limit("Ideas", settings.Ideas, 1, row, IdeasCaption);
         _readyFloor = Limit("Ready floor", settings.ReadyFloor, 2, row++, ReadyFloorCaption);
         _budget = Limit("Budget $/day", settings.Budget, 0, row, BudgetCaption);
+        _focus = Limit("Focus", settings.Focus, 1, row, () => FocusCaption(_focus!.Value), most: 100);
+        _focus.ValueChanged += (_, _) =>
+        {
+            if (_focus.HasFocus)
+                Hint(FocusCaption(_focus.Value));
+        };
         row += 2;
 
         _problemsBand.X = 0;
@@ -478,6 +487,8 @@ public sealed class TeamForm : AppDialog
 
     internal NumericUpDown<int> Budget => _budget;
 
+    internal NumericUpDown<int> Focus => _focus;
+
     internal StatusBar Hints => _hints;
 
     internal MessageBar Message => _message;
@@ -597,6 +608,7 @@ public sealed class TeamForm : AppDialog
             Ideas = _ideas.Value,
             ReadyFloor = _readyFloor.Value,
             Budget = _budget.Value,
+            Focus = _focus.Value,
         };
 
     /// <summary>The owner's projects as a list to pick from, keeping the team's own where the list hasn't got it;
@@ -1004,7 +1016,10 @@ public sealed class TeamForm : AppDialog
         return role;
     }
 
-    private NumericUpDown<int> Limit(string label, int value, int column, int row, string caption, int least = 0)
+    private NumericUpDown<int> Limit(string label, int value, int column, int row, string caption, int least = 0) =>
+        Limit(label, value, column, row, () => caption, least);
+
+    private NumericUpDown<int> Limit(string label, int value, int column, int row, Func<string> caption, int least = 0, int most = int.MaxValue)
     {
         const int columnWidth = 22;
         var name = new Label { Text = label, X = FieldX + column * columnWidth, Y = BelowDocs(row) };
@@ -1012,7 +1027,7 @@ public sealed class TeamForm : AppDialog
         {
             Value = value, X = FieldX + column * columnWidth + Math.Max(12, label.Length + 1), Y = BelowDocs(row), Width = LimitWidth,
         };
-        limit.ValueChanging += (_, e) => e.Handled = e.NewValue < least;
+        limit.ValueChanging += (_, e) => e.Handled = e.NewValue < least || e.NewValue > most;
         Add(name, limit);
         Caption(limit, caption);
         return limit;
@@ -1026,11 +1041,13 @@ public sealed class TeamForm : AppDialog
     }
 
     /// <summary>What a field changes, said in the status bar as it takes focus.</summary>
-    private void Caption(View field, string caption) =>
+    private void Caption(View field, string caption) => Caption(field, () => caption);
+
+    private void Caption(View field, Func<string> caption) =>
         field.HasFocusChanged += (_, _) =>
         {
             if (field.HasFocus)
-                Hint(caption);
+                Hint(caption());
         };
 
     private void Hint(string caption)

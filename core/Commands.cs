@@ -183,6 +183,8 @@ internal static partial class Commands
             board.AddToBoard(n, Board.Must(board.Read("api", $"repos/{board.Repo}/{kind}/{n}", "--jq", ".node_id")).Said);
         if ((role, to) is ("lead", "Idea") or ("customer", "Idea"))
             board.Mark(n, "idea", "true");
+        if ((role, to) is ("lead", "Idea") && board.TakeStepChange())
+            board.Mark(n, "step", "true");
         else if ((role, to) is ("customer", "In review") or ("customer", "Pitched"))
             board.Mark(n, "customer", "true");
 

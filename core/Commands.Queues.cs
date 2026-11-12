@@ -476,9 +476,11 @@ internal static partial class Commands
         var turn = canPitch && (board.LeadTurnWas == "discover" || !canDiscover || idle) ? "pitch" : canDiscover ? "discover" : "none";
         if (turn != "none") board.LeadTurnIs(turn);
         if (turn == "pitch") board.ShowRunOn(idea!);
+        if (turn == "discover" && board.StepChangeDue()) turn = "step";
         var said = new JsonObject { ["promote"] = Announced(promote), ["demote"] = Announced(demote), ["turn"] = turn };
         if (turn == "pitch") said["item"] = idea;
         else if (turn == "discover") said["room"] = (ideas ?? 0) - found;
+        else if (turn == "step") said["room"] = 1;
         else said["reason"] = "Exploring and the discovery queue are both full, or there is no Idea to pitch";
         var floor = double.TryParse(board.Text("wip", "readyFloor"), NumberStyles.Float, CultureInfo.InvariantCulture, out var low) ? low : 0;
         said["ready"] = ready;

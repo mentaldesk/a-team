@@ -71,6 +71,12 @@ public sealed partial record TeamSettings(
     /// 0 for no budget.</summary>
     public int Budget { get; init; }
 
+    public const int DefaultFocus = 30;
+
+    /// <summary>How many in every 100 of the Lead's discovery turns look for a step change rather than friction:
+    /// <c>focus</c>, 0 to 100.</summary>
+    public int Focus { get; init; } = DefaultFocus;
+
     public VisionReview VisionReview { get; init; } = new();
 
     /// <summary>Whether a-team copies the board to a GitHub Project: <c>mirror</c>, on unless it's <c>false</c>.</summary>
@@ -117,6 +123,7 @@ public sealed partial record TeamSettings(
             Mockups = Find(root, "mockups") is { ValueKind: JsonValueKind.True },
             Docs = Text(root, "docs"),
             Budget = Number(root, "dispatch", "budget") ?? 0,
+            Focus = Math.Clamp(Number(root, "focus") ?? DefaultFocus, 0, 100),
             ContributesTo = Names(root, "contributesTo"),
             Mirror = Find(root, "mirror") is not { ValueKind: JsonValueKind.False },
             VisionReview = new VisionReview(
@@ -222,6 +229,7 @@ public sealed partial record TeamSettings(
         SetNumber(Ideas, before.Ideas, "wip", "ideas");
         SetNumber(ReadyFloor, before.ReadyFloor, "wip", "readyFloor");
         SetNumber(Budget, before.Budget, "dispatch", "budget");
+        SetNumber(Focus, before.Focus, "focus");
         return config;
     }
 

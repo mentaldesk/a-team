@@ -200,7 +200,8 @@ stakeholder sets Priority; this orders the Ideas within it and tells them why.
 Run `a-team board {{team}} lead-next` once. It returns the pitches to show the stakeholder now, and whether
 this run's new work is a pitch or a discovery. It alternates between the two so the stakeholder
 gets a blend of their own ideas refined and new ones found, and it respects the WIP limits.
-When nothing is Pitched or Exploring, it always pitches.
+When nothing is Pitched or Exploring, it always pitches. The team config's `focus` sets how many
+discoveries in every 100 are step changes.
 
 **`demote`** and **`promote`** are one swap, paired in order: each demoted pitch is displaced by
 the draft beside it, which always has a higher Priority; your recommended ranks never decide a swap. **Alternate** them — demote the first, promote the first, demote the second,
@@ -245,6 +246,16 @@ otherwise say nothing.
   and your marker. If a product you learned from isn't named in the vision, say so under
   **Why it fits**. Then `a-team board {{team}} add lead <n> Idea`. The stakeholder gives it a priority if they
   want it pitched and closes it if not. Don't pitch it yourself.
+- `"step"`: look for a step change and file exactly one Idea. Start from a promise the product
+  doesn't keep yet: a line of the vision's press release or customer FAQ, the end state of a
+  *Next themes* entry, or an internal FAQ risk. Ask what the product would need to do that it can't
+  do at all today; don't start from the repo's issues. Look outward first: who already does it,
+  what users of the products the vision learns from (and newer ones) ask for, and what that makes
+  possible here. Size it honestly: it may take several tasks. Body: the **Opportunity** from the
+  user's side, **The step** (what they could do after it that they can't now, with a rough sketch),
+  **Appetite** (its size, and the first slice they could use on its own), **Evidence** with links,
+  **Why it fits**, and your marker. Then `a-team board {{team}} add lead <n> Idea`, which marks it a
+  step change.
 - `"none"`: nothing new to start.
 
 **`unthemed`** lists the pitches with no theme yet. Give each one its theme, or `none`, as for a new

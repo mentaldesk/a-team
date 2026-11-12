@@ -81,6 +81,30 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void A_config_with_no_focus_reads_as_30_and_saves_unchanged_and_a_focus_set_is_written()
+    {
+        var before = TeamSettings.Read(Bytes(Config));
+        Assert.Equal(30, before.Focus);
+        Assert.Equal(Text(Bytes(Config)), Text(before.Write(Bytes(Config), before)));
+
+        var written = (before with { Focus = 0 }).Write(Bytes(Config), before);
+
+        Assert.Equal(0, TeamSettings.Read(written).Focus);
+        Assert.Contains("\"focus\": 0", Text(written));
+    }
+
+    [Theory]
+    [InlineData("150", 100)]
+    [InlineData("-5", 0)]
+    [InlineData("\"high\"", 30)]
+    public void A_focus_outside_0_to_100_reads_as_the_nearest_end_and_one_that_isn_t_a_number_as_30(string focus, int read)
+    {
+        var config = Config.Replace("\"repo\":", $"\"focus\": {focus}, \"repo\":");
+
+        Assert.Equal(read, TeamSettings.Read(Bytes(config)).Focus);
+    }
+
+    [Fact]
     public void A_budget_that_isn_t_a_whole_number_reads_as_0_like_the_dispatcher_reads_it()
     {
         var config = Config.Replace("\"retryAfter\": 60", "\"retryAfter\": 60, \"budget\": 12.5");

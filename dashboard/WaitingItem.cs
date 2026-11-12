@@ -17,6 +17,9 @@ public sealed record WaitingItem(
     /// <summary>Whether it's the task that makes the team's red default branch green again.</summary>
     public bool Fix { get; init; }
 
+    /// <summary>Whether it's an Idea the Lead found looking for a step change rather than friction.</summary>
+    public bool StepChange { get; init; }
+
     /// <summary>How many of a task's acceptance criteria aren't ticked.</summary>
     public int Unticked { get; init; }
 
@@ -174,6 +177,7 @@ public sealed record WaitingItem(
                     {
                         Fix = Flag(item, "fix"), Facts = Text(item, "facts"), PitchPriority = Text(item, "pitchPriority"),
                         Inherited = Flag(item, "inherited"), Unticked = Numbered(item, "unticked") ?? 0, Secret = SecretOf(item),
+                        StepChange = Flag(item, "stepChange"),
                     })
             ];
         }

@@ -31,6 +31,17 @@ public class WaitingItemTests
     }
 
     [Fact]
+    public void An_Idea_the_board_says_is_a_step_change_is_one_and_others_are_not()
+    {
+        var items = WaitingItem.Parse("""
+            [{"number": 801, "title": "I can't hand a team a web app", "status": "Idea", "team": "a-team", "stepChange": true},
+             {"number": 799, "title": "The Assistant forgets my card", "status": "Idea", "team": "a-team"}]
+            """);
+
+        Assert.Equal([true, false], items.Select(item => item.StepChange));
+    }
+
+    [Fact]
     public void A_task_following_its_pitch_says_so_and_None_on_it_changes_nothing()
     {
         var items = WaitingItem.Parse("""
