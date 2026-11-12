@@ -277,6 +277,17 @@ public class TeamSettingsTests : IDisposable
         Assert.Equal("""{"wip": {"inProgress": 3}}""", Text((before with { InProgress = 3 }).Write(Bytes(config), before)));
     }
 
+    [Theory]
+    [InlineData("""{"wip": {"worktrees": "3"}, "repo": "o/r"}""")]
+    [InlineData("""{"wip": {"inProgress": "4", "worktrees": 2}, "repo": "o/r"}""")]
+    public void Saving_another_setting_leaves_a_limit_the_form_cannot_read_alone(string config)
+    {
+        var before = TeamSettings.Read(Bytes(config));
+
+        Assert.False(before.SaysWorktrees);
+        Assert.Equal(config.Replace("o/r", "o/s"), Text((before with { Repo = "o/s" }).Write(Bytes(config), before)));
+    }
+
     [Fact]
     public void A_file_with_neither_name_gets_neither_unless_In_progress_changes()
     {

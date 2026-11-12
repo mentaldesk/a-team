@@ -53,7 +53,7 @@ public sealed partial record TeamSettings(
     /// <summary>The file names its one stakeholder under the old <c>reviewer</c> key, which saving replaces.</summary>
     public bool SaysReviewer { get; init; }
 
-    /// <summary>The file has In progress's old name, <c>wip.worktrees</c>, which saving replaces.</summary>
+    /// <summary>The file has In progress's old name, <c>wip.worktrees</c>, and the form could read the limit, so saving replaces it.</summary>
     public bool SaysWorktrees { get; init; }
 
     public TeamRelease Release { get; init; }
@@ -109,7 +109,8 @@ public sealed partial record TeamSettings(
             Names(root, "skills"))
         {
             SaysReviewer = Find(root, "stakeholders") is null && Text(root, "reviewer").Length > 0,
-            SaysWorktrees = Find(root, "wip", "worktrees") is not null,
+            SaysWorktrees = Find(root, "wip", "worktrees") is not null
+                && Number(root, "wip", Find(root, "wip", "inProgress") is null ? "worktrees" : "inProgress") is not null,
             Release = Text(root, "release") switch
             {
                 "daily" => TeamRelease.Daily,
