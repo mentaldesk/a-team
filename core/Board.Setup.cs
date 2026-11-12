@@ -237,12 +237,12 @@ internal sealed partial class Board
         var (meta, err) = ProjectMeta();
         if (meta is null)
         {
-            found.Problem("project", $"can't read {_owner} project {_number}: {Unprefixed(err.TrimEnd('\n').Split('\n')[^1], "gh: ")}");
+            found.Note("project", $"can't read {_owner} project {_number}: {Unprefixed(err.TrimEnd('\n').Split('\n')[^1], "gh: ")}");
             return true;
         }
         if (!Json.Truthy(meta["field"]?["id"]))
         {
-            found.Problem("project", $"no single-select field '{_field}' on {_owner} project {_number}");
+            found.Note("project", $"no single-select field '{_field}' on {_owner} project {_number}");
             return false;
         }
         foreach (var name in meta["clash"]!.AsArray().Select(Json.Text).OfType<string>())
@@ -257,12 +257,12 @@ internal sealed partial class Board
         var missing = StatusRoute.Statuses.Select(StatusOnMirror).Where(option => !names.Contains(option)).ToList();
         if (missing.Count > 0)
         {
-            found.Problem("status", $"{missing.Count} of {StatusRoute.Statuses.Length} options missing from '{_field}': {string.Join(", ", missing)}");
+            found.Note("status", $"{missing.Count} of {StatusRoute.Statuses.Length} options missing from '{_field}': {string.Join(", ", missing)}");
             return;
         }
         var unmapped = Unmapped();
         if (unmapped.Length > 0)
-            found.Problem("items", $"outside the team's states: {unmapped}");
+            found.Note("items", $"outside the team's states: {unmapped}");
         else
             Console.Out.Write($"ok: {_owner} project {_number}, field '{_field}'\n");
     }
@@ -362,16 +362,11 @@ internal sealed partial class Board
                           organization(login: $owner) { projectV2(number: $number) { items(first: 1) { totalCount } } } }
                 """, "--jq", ".data.organization.projectV2.items.totalCount");
             if (!project.Ok)
-            {
-                found.Problem("app", $"{bot} can't read project {_number}: grant the organisation's \"Projects: read and write\", and install the App on {_repo}");
-                return;
-            }
-            if (!Granted("organization_projects"))
-            {
-                found.Problem("app", $"{bot} can only read project {_number}: grant the organisation's \"Projects: read and write\"");
-                return;
-            }
-            line += $" · project {_number} read+write ok";
+                found.Note("app", $"{bot} can't read project {_number}: grant the organisation's \"Projects: read and write\", and install the App on {_repo}");
+            else if (!Granted("organization_projects"))
+                found.Note("app", $"{bot} can only read project {_number}: grant the organisation's \"Projects: read and write\"");
+            else
+                line += $" · project {_number} read+write ok";
         }
         if (mirrored)
         {
