@@ -138,6 +138,7 @@ cat >"$UPDATES" <<'JSON'
  {"number": 442, "title": "Bump Spectre.Console", "comments": [
    {"author": {"login": "stranger"}, "body": "<!-- a-team:lead -->"}]}]
 JSON
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
 run board demo triggers lead
 same "exit" 0 "$STATUS"
 same "reasons" '["Dependabot opened PR #440 (Bump MentalDesk.Tui): see what the update brings","Dependabot opened PR #442 (Bump Spectre.Console): see what the update brings"]' \
@@ -258,5 +259,120 @@ same "would claim" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
 grep -q "would mark #13 dev true" "$ERR" || fail "dry run: no mark in '$(cat "$ERR")'"
 grep -q "would set #13 to 'In progress'" "$ERR" || fail "dry run: no move in '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+
+# --- the Lead's scheduled run ---------------------------------------------------------------
+
+# scheduled_agrees <label> <turn>: lead-next gives <turn>, and a scheduled check says there's work exactly when that isn't none.
+scheduled_agrees() {
+  run board demo triggers lead --scheduled
+  same "$1: exit" 0 "$STATUS"
+  local creative
+  creative=$(jq .creative "$OUT")
+  run board --dry-run demo lead-next
+  same "$1: turn" "$2" "$(jq -r .turn "$OUT")"
+  same "$1: creative" "$([ "$2" = none ] && echo false || echo true)" "$creative"
+}
+
+case_ "a scheduled check says the Lead has work exactly when lead-next would give it a turn"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 3, "exploring": 2, "ideas": 2 } }
+JSON
+lead_board() {
+  gh_items "$@" <<'ITEMS'
+Pitched 5 A pitch in front of me
+Idea 7 A pitch for later
+Idea 8 An Idea the Lead found
+Idea 9 Another the Lead found
+Idea 10 One the Lead passed over
+ITEMS
+  edit_item 5 '.labels.nodes = [{name: "pitch"}, {name: "theme: Consistently good UX"}]'
+  edit_item 7 '.labels.nodes = [{name: "pitch"}, {name: "a-team:shelved"}, {name: "rank:low"}, {name: "theme: Consistently good UX"}]'
+  edit_item 8 '.labels.nodes = [{name: "a-team:idea"}, {name: "rank:low"}]'
+  edit_item 9 '.labels.nodes = [{name: "a-team:idea"}, {name: "rank:low"}]'
+  edit_item 10 '.labels.nodes = [{name: "a-team:skipped"}, {name: "rank:low"}]'
+  gh_thread <<THREAD
+comment $(ago 60) reviewer 1 Not now.\n\n<!-- a-team:shelved until=$(weeks_on 2) priority=High -->
+THREAD
+}
+lead_board 7
+scheduled_agrees "shelved, skipped and unprioritised discoveries, queue full" none
+lead_board 7 8
+scheduled_agrees "a discovery given a Priority" pitch
+lead_board 7
+jq '.wip.ideas = 3' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+scheduled_agrees "room in the discovery queue" discover
+jq '.wip.ideas = 2 | .wip.pitched = 1 | .wip.exploring = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+lead_board 7 8
+jq '.data.organization.projectV2.items.nodes += [.data.organization.projectV2.items.nodes[0]
+  | .id = "PVTI_6" | .fieldValueByName.name = "Exploring" | .content.number = 6 | .content.id = "I_6"]' \
+  "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+scheduled_agrees "Pitched and Exploring full, with a prioritised Idea" none
+jq '.wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "only a scheduled check asks after each Idea: the check every pass makes no call per Idea, and says no scheduled run"
+lead_board
+edit_item 8 '.labels.nodes = [{name: "rank:low"}]'
+: >"$BIN/args"
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "creative" false "$(jq .creative "$OUT")"
+grep -q 'repos/mentaldesk/demo/issues/8 ' "$BIN/args" && fail "an Idea read every pass: '$(cat "$BIN/args")'"
+run board demo triggers lead --scheduled
+grep -q 'repos/mentaldesk/demo/issues/8 ' "$BIN/args" || fail "the scheduled check didn't ask: '$(cat "$BIN/args")'"
+
+case_ "an Idea with no recommended rank starts the Lead, once"
+history_db "DELETE FROM runs; DELETE FROM run_items;"
+lead_board
+edit_item 9 '.labels.nodes = [{name: "a-team:idea"}]'
+since_ago() {
+  jq --argjson n "$1" --arg at "$(ago "$2")" '(.data.organization.projectV2.items.nodes[] | select(.content.number == $n)
+    .fieldValueByName.updatedAt) = $at' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+}
+since_ago 9 60
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '["Idea #9 has no recommended rank: recommend one"]' "$(jq -c .reasons "$OUT")"
+same "items" '[9]' "$(jq -c .items "$OUT")"
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'lead', 1, 'a', '$(ago 0)');
+  INSERT INTO run_items (run, item) VALUES ((SELECT MAX(id) FROM runs), 9);"
+run board demo triggers lead
+same "after its run" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "a Building pitch with no tasks starts the Lead once, and one with open tasks doesn't"
+history_db "DELETE FROM runs; DELETE FROM run_items;"
+gh_items <<'ITEMS'
+Building 21 A pitch another one built
+ITEMS
+edit_item 21 '.labels.nodes = [{name: "pitch"}, {name: "theme: Consistently good UX"}]'
+since_ago 21 60
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '["#21 is Building with no tasks: check whether another pitch already built it"]' "$(jq -c .reasons "$OUT")"
+same "items" '[21]' "$(jq -c .items "$OUT")"
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'lead', 1, 'a', '$(ago 0)');
+  INSERT INTO run_items (run, item) VALUES ((SELECT MAX(id) FROM runs), 21);"
+run board demo triggers lead
+same "after its run" '[]' "$(jq -c .reasons "$OUT")"
+history_db "DELETE FROM runs; DELETE FROM run_items;"
+echo '[{"state": "open"}]' >"$SUBS"
+run board demo triggers lead
+same "with a task" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "a pitch with no theme starts the Lead, and so does a register that isn't seeded"
+gh_items <<'ITEMS'
+Pitched 5 A pitch in front of me
+ITEMS
+run board demo triggers lead
+same "unthemed" '["pitch #5 has no theme: give it one"]' "$(jq -c .reasons "$OUT")"
+same "on the run" '[5]' "$(jq -c .items "$OUT")"
+edit_item 5 '.labels.nodes = [{name: "pitch"}, {name: "theme: Consistently good UX"}]'
+rm -f "$A_TEAM_STATE/demo/lead/seeded"
+run board demo triggers lead
+same "unseeded" "[\"the decision register isn't seeded: seed it\"]" "$(jq -c .reasons "$OUT")"
+touch "$A_TEAM_STATE/demo/lead/seeded"
+run board demo triggers lead
+same "neither" '[]' "$(jq -c .reasons "$OUT")"
 
 finish_suite
