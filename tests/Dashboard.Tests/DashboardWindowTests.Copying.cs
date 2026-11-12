@@ -175,7 +175,7 @@ public partial class DashboardWindowTests
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read this team again", "Read what's waiting again",
                 "Select the chip to the right", "Select the chip to the left", "Select the chip below", "Select the chip above",
                 "Select the next team's lane", "Select the previous team's lane", "Scroll the lanes down", "Scroll the lanes up",
-                "Show the session full-screen", "Fold the lane", "Read the card", "Go to the card in Work", "Open on GitHub", "Read the boards that failed again", "Read every board again",
+                "Show the session full-screen", "Fold the lane", "Read the card", "Go to the card in Work", "Set priority", "Open on GitHub", "Read the boards that failed again", "Read every board again",
                 "Choose the role below", "Choose the role above", "Work", "Overseer", "Assistant", "Details", "Dispatcher log", "Go to what's new",
                 "Pause this role", "Interrupt the agent on this card", "Run a dispatch pass now", "Commands", "Settings", "Teams", "New team", "Show keys", "Guide", "Messages", "About", "Trends", "Spending", "Decisions…", "Back to Overseer", "Quit",
                 "Widen pane", "Narrow pane", "Reset pane width",

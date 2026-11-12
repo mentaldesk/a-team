@@ -103,6 +103,13 @@ internal sealed partial class Board
         return $" since {local.ToString(format, CultureInfo.InvariantCulture)}";
     }
 
+    /// <summary>The Priority of the pitch a task follows, and whether its own Priority is that one, where it is.</summary>
+    internal static void PitchRank(JsonNode card, JsonObject shown)
+    {
+        if (card["pitchPriority"] is { } pitch) shown["pitchPriority"] = pitch.DeepClone();
+        if (Json.Truthy(card["inherited"])) shown["inherited"] = true;
+    }
+
     /// <summary>What an item's marks say, as the app shows it under the title; "" for none. A shelve shows while it's cooling.</summary>
     internal static string Facts(JsonNode card)
     {
@@ -1220,6 +1227,7 @@ internal sealed partial class Board
         if (Json.Text(item["status"]) == "In review" && reviewed[n] is { } chains) item["chains"] = chains.DeepClone();
         var card = all.FirstOrDefault(one => Number(one) == Json.Long(item["number"]));
         if (card is not null && Facts(card) is { Length: > 0 } facts) item["facts"] = facts;
+        if (card is not null) PitchRank(card, item);
         if (Json.Text(item["status"]) == "In review" && !Json.Truthy(item["pitch"]) && unticked.GetValueOrDefault(n) > 0)
             item["unticked"] = unticked[n];
     }

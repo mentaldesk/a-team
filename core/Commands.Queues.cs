@@ -559,6 +559,7 @@ internal static partial class Commands
             ["lastRun"] = run is null ? null : new JsonObject { ["role"] = run["role"]?.DeepClone(), ["log"] = run["log"]?.DeepClone(), ["started"] = run["started"]?.DeepClone() },
         };
         if (Board.Facts(card) is { Length: > 0 } facts) shown["facts"] = facts;
+        Board.PitchRank(card, shown);
         return shown;
     }
 }

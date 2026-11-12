@@ -34,7 +34,7 @@ internal sealed class Record : IDisposable
           CREATE TABLE IF NOT EXISTS board (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL, status TEXT NOT NULL,
             priority TEXT, since TEXT NOT NULL, content TEXT NOT NULL DEFAULT '{}', mirror TEXT, mirrored_status TEXT,
             mirrored_priority TEXT, marks TEXT, mirrored_rank TEXT, mirrored_theme TEXT, PRIMARY KEY (team, item));
-          CREATE TABLE IF NOT EXISTS boards (team TEXT PRIMARY KEY, project TEXT NOT NULL, read TEXT, failed TEXT, retry TEXT);
+          CREATE TABLE IF NOT EXISTS boards (team TEXT PRIMARY KEY, project TEXT NOT NULL, read TEXT, failed TEXT, retry TEXT, repaired TEXT);
           CREATE TABLE IF NOT EXISTS details (team TEXT PRIMARY KEY, detail TEXT, synced TEXT, failed TEXT);
           CREATE TABLE IF NOT EXISTS formats (team TEXT PRIMARY KEY, format INTEGER NOT NULL, version TEXT NOT NULL, moved TEXT);
           CREATE TABLE IF NOT EXISTS format_moves (team TEXT PRIMARY KEY, pid INTEGER NOT NULL);

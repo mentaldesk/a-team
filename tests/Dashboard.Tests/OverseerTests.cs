@@ -780,7 +780,7 @@ public class OverseerTests : IDisposable
         Assert.StartsWith("Dev · running ", window.Card.Session, StringComparison.Ordinal);
         Assert.EndsWith(" · why: claimed #12", window.Card.Session, StringComparison.Ordinal);
         Assert.Contains(window.Card.Lines, line => line.Text == "Reading the task");
-        Assert.Equal("Enter full log · i interrupt · o Read · g GitHub", window.Card.Hint);
+        Assert.Equal("Enter full log · i interrupt · o Read · p Priority · g GitHub", window.Card.Hint);
     }
 
     [Fact]

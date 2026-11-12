@@ -111,10 +111,10 @@ internal sealed partial class Board
             .Select(row => row.First).ToHashSet();
         foreach (var column in new[] { "marks", "mirrored_rank", "mirrored_theme" })
             if (!columns.Contains($"board.{column}"))
-                _record.Exec($"ALTER TABLE board ADD COLUMN {column} TEXT;");
+                AddColumn("board", column);
         foreach (var column in new[] { "repaired", "issues_read" })
             if (!columns.Contains($"boards.{column}"))
-                _record.Exec($"ALTER TABLE boards ADD COLUMN {column} TEXT;");
+                AddColumn("boards", column);
         var was = _record.Scalar($"SELECT COALESCE((SELECT project FROM boards WHERE team = {TeamQ}), '-');");
         if (was == "-")
         {
@@ -125,7 +125,7 @@ internal sealed partial class Board
                 _seen = nodes.Select(node => Json.Text(node?["content"]?["id"])).OfType<string>().ToList();
             }
             var read = _mirror.Length > 0 ? Reconciler.Q(Now()) : "NULL";
-            _record.Exec($"INSERT INTO boards (team, project, read, repaired) VALUES ({TeamQ}, {Reconciler.Q(_mirror)}, {read}, {Reconciler.Q(Now())});");
+            _record.Exec($"INSERT OR IGNORE INTO boards (team, project, read, repaired) VALUES ({TeamQ}, {Reconciler.Q(_mirror)}, {read}, {Reconciler.Q(Now())});");
         }
         else if (was != _mirror)
         {
@@ -136,6 +136,17 @@ internal sealed partial class Board
                 """);
         }
         RepairLastMoves();
+    }
+
+    private void AddColumn(string table, string column)
+    {
+        try
+        {
+            _record.Exec($"ALTER TABLE {table} ADD COLUMN {column} TEXT;");
+        }
+        catch (InvalidOperationException e) when (e.Message.StartsWith("duplicate column name", StringComparison.Ordinal))
+        {
+        }
     }
 
     /// <summary>Once per team, puts each open card whose status differs from its last recorded move back at that move:
@@ -563,7 +574,8 @@ internal sealed partial class Board
                     labels.Add((JsonNode?)name);
             var pitch = all.Any(label => Json.Text(label) == "pitch");
             var status = row["status"]!;
-            var priority = row["priority"] ?? (status == "Idea" || pitch ? null : row["pitch_priority"]);
+            var follows = status != "Idea" && !pitch ? row["pitch_priority"] : null;
+            var priority = row["priority"] ?? follows;
             var item = new JsonObject
             {
                 ["id"] = row["mirror"] ?? "",
@@ -580,6 +592,8 @@ internal sealed partial class Board
                 ["parent"] = c["parent"]?.DeepClone(),
                 ["status"] = status,
             };
+            if (follows is not null) item["pitchPriority"] = follows;
+            if (follows is not null && row["priority"] is null) item["inherited"] = true;
             if (Json.Truthy(c["closed"])) item["closed"] = c["closed"]!.DeepClone();
             if (Json.Truthy(c["dependabot"])) item["dependabot"] = true;
             if (Json.Truthy(c["author"])) item["author"] = c["author"]!.DeepClone();

@@ -312,7 +312,10 @@ public sealed partial class DashboardWindow
     private void Ranked(WaitingItem item, Rank rank)
     {
         _work.Ranked(item, rank);
-        Announce($"#{item.Number} · set to {rank}");
+        _overseer.Ranked(item.Team, item.Number, rank);
+        Announce(rank == Rank.None && item.PitchPriority.Length > 0
+            ? $"#{item.Number} · now follows its pitch: {item.PitchPriority}"
+            : $"#{item.Number} · set to {rank}");
         SetNeedsLayout();
         SetNeedsDraw();
     }

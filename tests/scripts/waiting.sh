@@ -411,6 +411,8 @@ edit_item 115 '.parent = {number: 106}'
 waiting
 same "exit" 0 "$STATUS"
 same "priorities" '["High","High"]' "$(jq -c '[.[].priority]' "$OUT")"
+same "followed" '[null,true]' "$(jq -c '[.[].inherited]' "$OUT")"
+same "its pitch's" '[null,"High"]' "$(jq -c '[.[].pitchPriority]' "$OUT")"
 
 case_ "the Ideas with no Priority are waiting on the reviewer to rank them"
 gh_items 26 <<'ITEMS'
