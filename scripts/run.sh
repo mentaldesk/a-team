@@ -27,7 +27,7 @@ else
   said=$(grep -m 1 . <<<"$limits" | sed 's/^gh: //')
   if grep -Eiq 'rate limit' <<<"$limits"; then
     echo "run.sh: GitHub rate limit for $APP ($said): this run stops, and the next starts once it's reset" >&2
-  elif grep -Eiq 'could not resolve host|error connecting|connection (refused|reset|closed|timed out)|internet connection|timed out|i/o timeout|handshake timeout|client\.timeout|deadline exceeded|network is|no route to host|dial tcp|no such host|: EOF|unexpected EOF|HTTP 5[0-9][0-9]' <<<"$limits"; then
+  elif grep -Eiq "could not resolve host|couldn't reach github|error connecting|connection (refused|reset|closed|timed out)|internet connection|timed out|i/o timeout|handshake timeout|client\.timeout|deadline exceeded|network is|no route to host|dial tcp|no such host|: EOF|unexpected EOF|HTTP 5[0-9][0-9]" <<<"$limits"; then
     echo "run.sh: GitHub unreachable ($said): this run stops; the dispatcher tries again next pass" >&2
   else
     echo "run.sh: $APP can't sign in to GitHub (${said:-gh said nothing}): see Health on the Teams screen" >&2

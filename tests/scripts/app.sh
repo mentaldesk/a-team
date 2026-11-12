@@ -420,6 +420,13 @@ GITHUB_SAYS=down PATH="$APP_BIN/board:$PATH" run run demo dev
 same "down exit" 3 "$STATUS"
 same "down" "run.sh: GitHub unreachable (error connecting to api.github.com): this run stops; the dispatcher tries again next pass" "$(cat "$ERR")"
 
+case_ "run stops as unreachable when the App's token has expired and GitHub can't be reached"
+cached ghs_expired 60
+CURL_DOWN=1 A_TEAM_RUN_TEAM=demo PATH="$ROOT/bin:$APP_BIN/board:$PATH" run run demo dev
+same "expired down exit" 3 "$STATUS"
+same "expired down" "run.sh: GitHub unreachable (a-team token: GitHub wouldn't say whether app 7 is installed on mentaldesk/demo: couldn't reach GitHub): this run stops; the dispatcher tries again next pass" "$(cat "$ERR")"
+cached ghs_cached 3600
+
 case_ "run stops when the App can't sign in, with gh's line, and points to Health"
 GITHUB_SAYS=invalid PATH="$APP_BIN/board:$PATH" run run demo dev
 same "invalid exit" 3 "$STATUS"
