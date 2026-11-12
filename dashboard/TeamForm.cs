@@ -52,7 +52,7 @@ public sealed class TeamForm : AppDialog
     internal const string ReviewerCaption = "Reviews each task PR once it's green, so the Dev fixes what it finds before you look.";
     internal const string MockupsLabel = "Show pitches' new screens as pictures";
     internal const string MockupsCaption = "The Lead builds the screens a pitch adds or changes, and puts pictures of them in the pitch.";
-    internal const string WorktreesCaption = "How many tasks can be building at once. A PR waiting on you doesn't count.";
+    internal const string InProgressCaption = "How many tasks can be In progress at once. A PR waiting on you doesn't count.";
     internal const string DevsCaption = "How many Dev runs build at once.";
     internal const string PitchedCaption = "How many pitches wait on you at once.";
     internal const string ExploringCaption = "How many drafted pitches wait for room in Pitched.";
@@ -102,7 +102,7 @@ public sealed class TeamForm : AppDialog
     private readonly CheckBox _customer;
     private readonly CheckBox _reviewer;
     private readonly CheckBox _mockups;
-    private readonly NumericUpDown<int> _worktrees;
+    private readonly NumericUpDown<int> _inProgress;
     private readonly NumericUpDown<int> _devs;
     private readonly NumericUpDown<int> _pitched;
     private readonly NumericUpDown<int> _exploring;
@@ -329,7 +329,7 @@ public sealed class TeamForm : AppDialog
         };
 
         Add(new Label { Text = "Limits", X = Inset, Y = BelowDocs(row) });
-        _worktrees = Limit("Worktrees", settings.Worktrees, 0, row, WorktreesCaption);
+        _inProgress = Limit("In progress", settings.InProgress, 0, row, InProgressCaption);
         _pitched = Limit("Pitched", settings.Pitched, 1, row, PitchedCaption);
         _exploring = Limit("Exploring", settings.Exploring, 2, row++, ExploringCaption);
         _devs = Limit("Devs", settings.Devs, 0, row, DevsCaption, least: 1);
@@ -472,7 +472,7 @@ public sealed class TeamForm : AppDialog
 
     internal CheckBox Mockups => _mockups;
 
-    internal NumericUpDown<int> Worktrees => _worktrees;
+    internal NumericUpDown<int> InProgress => _inProgress;
 
     internal NumericUpDown<int> Devs => _devs;
 
@@ -590,7 +590,7 @@ public sealed class TeamForm : AppDialog
             Customer = _customer.Value == CheckState.Checked,
             Reviewer = _reviewer.Value == CheckState.Checked,
             Mockups = _mockups.Value == CheckState.Checked,
-            Worktrees = _worktrees.Value,
+            InProgress = _inProgress.Value,
             Devs = _devs.Value,
             Pitched = _pitched.Value,
             Exploring = _exploring.Value,

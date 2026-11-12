@@ -19,7 +19,7 @@ public class TeamSettingsTests : IDisposable
             "a-team"
           ],
           "wip": {
-            "worktrees": 2,
+            "inProgress": 2,
             "pitched": 3,
             "exploring": 4,
             "ideas": 4,
@@ -234,6 +234,58 @@ public class TeamSettingsTests : IDisposable
         var before = TeamSettings.Read(Bytes(config));
 
         Assert.Equal(Config, Text(before.Write(Bytes(config), before)));
+    }
+
+    [Fact]
+    public void A_file_that_still_says_worktrees_shows_that_limit_under_In_progress()
+    {
+        var settings = TeamSettings.Read(Bytes(Config.Replace("\"inProgress\": 2", "\"worktrees\": 2")));
+
+        Assert.Equal(2, settings.InProgress);
+        Assert.True(settings.SaysWorktrees);
+    }
+
+    [Fact]
+    public void Saving_a_file_that_says_worktrees_writes_inProgress_in_its_place_even_with_nothing_changed()
+    {
+        var config = Config.Replace("\"inProgress\": 2", "\"worktrees\": 2");
+        var before = TeamSettings.Read(Bytes(config));
+
+        var after = before.Write(Bytes(config), before);
+
+        Assert.Equal(Config, Text(after));
+        Assert.Equal(2, TeamSettings.Read(after).InProgress);
+        Assert.False(TeamSettings.Read(after).SaysWorktrees);
+    }
+
+    [Fact]
+    public void InProgress_takes_precedence_over_a_leftover_worktrees_and_saving_drops_the_old_name()
+    {
+        const string config = """{"wip": {"inProgress": 4, "worktrees": 2}}""";
+        var before = TeamSettings.Read(Bytes(config));
+
+        Assert.Equal(4, before.InProgress);
+        Assert.Equal("""{"wip": {"inProgress": 4}}""", Text(before.Write(Bytes(config), before)));
+    }
+
+    [Fact]
+    public void Saving_a_file_where_worktrees_is_the_only_limit_leaves_inProgress_alone_in_wip()
+    {
+        const string config = """{"wip": {"worktrees": 2}}""";
+        var before = TeamSettings.Read(Bytes(config));
+
+        Assert.Equal("""{"wip": {"inProgress": 3}}""", Text((before with { InProgress = 3 }).Write(Bytes(config), before)));
+    }
+
+    [Fact]
+    public void A_file_with_neither_name_gets_neither_unless_In_progress_changes()
+    {
+        const string config = """{"repo": "o/r"}""";
+        var before = TeamSettings.Read(Bytes(config));
+
+        Assert.Equal(0, before.InProgress);
+        Assert.Equal(config, Text(before.Write(Bytes(config), before)));
+        Assert.Equal(5, TeamSettings.Read((before with { InProgress = 5 }).Write(Bytes(config), before)).InProgress);
     }
 
     [Fact]

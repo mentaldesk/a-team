@@ -25,7 +25,7 @@ public class TeamFormTests
         Assert.Equal("~/code/a-team", form.Workdir.Text);
         Assert.Equal("./bin/a-team dashboard", form.Try.Text);
         Assert.Equal(TeamStatus.Working, form.Status!.Value);
-        Assert.Equal(2, form.Worktrees.Value);
+        Assert.Equal(2, form.InProgress.Value);
         Assert.Equal(Settings, form.Current());
     }
 
@@ -51,8 +51,8 @@ public class TeamFormTests
         Assert.Equal("The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.", form.Hints.Message.Says);
         form.Try.SetFocus();
         Assert.Equal("What a-team try runs to let you try a change.", form.Hints.Message.Says);
-        form.Worktrees.SetFocus();
-        Assert.Equal(TeamForm.WorktreesCaption, form.Hints.Message.Says);
+        form.InProgress.SetFocus();
+        Assert.Equal(TeamForm.InProgressCaption, form.Hints.Message.Says);
     }
 
     [Fact]
@@ -409,17 +409,17 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void Devs_sits_directly_below_Worktrees_and_each_says_what_it_limits()
+    public void Devs_sits_directly_below_In_progress_and_each_says_what_it_limits()
     {
         using var form = new TeamForm("a-team", Settings with { Devs = 3 }, _ => null);
         form.SetFocus();
         form.Layout();
 
         Assert.Equal(3, form.Devs.Value);
-        Assert.Equal(form.Worktrees.Frame.X, form.Devs.Frame.X);
-        Assert.Equal(form.Worktrees.Frame.Y + 1, form.Devs.Frame.Y);
-        form.Worktrees.SetFocus();
-        Assert.Equal("How many tasks can be building at once. A PR waiting on you doesn't count.", form.Hints.Message.Says);
+        Assert.Equal(form.InProgress.Frame.X, form.Devs.Frame.X);
+        Assert.Equal(form.InProgress.Frame.Y + 1, form.Devs.Frame.Y);
+        form.InProgress.SetFocus();
+        Assert.Equal("How many tasks can be In progress at once. A PR waiting on you doesn't count.", form.Hints.Message.Says);
         form.Devs.SetFocus();
         Assert.Equal("How many Dev runs build at once.", form.Hints.Message.Says);
         Assert.Equal(Settings with { Devs = 3 }, form.Current());

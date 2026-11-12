@@ -93,7 +93,7 @@ a-team board {{team}} next                      # the next task Dev should take 
                                                 # first, then one a task waits on, then highest
                                                 # Priority (its pitch's where it has none), unset last
 a-team board {{team}} claim dev [<n>]           # move `next` (or Ready task <n>) to In progress for
-                                                # a Dev run, if a worktree is free
+                                                # a Dev run, if there is room In progress
 a-team board {{team}} lead-next                 # Lead only: pitch or discover this run (call once)
 a-team board {{team}} move <role> <n> <STATUS>
 a-team board {{team}} add <role> <n> <STATUS>   # put an existing issue or PR on the board
@@ -235,10 +235,9 @@ tell what `$B` will run.
 2. Check the board before doing anything else. If there is nothing for your role to do, say so
    in one line and stop. An empty run should cost almost nothing.
 3. Finish existing work before starting new work. Respect the WIP limits in the team config:
-   - `worktrees`: the Dev's tasks In progress, one worktree each. A PR In review keeps its
-     worktree but takes no slot, so PRs waiting on the stakeholder never stop new work. Blocked tasks,
-     either way, wait without taking a slot. While an unblocked Ready task is Urgent or a fix, one
-     extra worktree is allowed, until it leaves Ready. The dispatcher claims a Ready task for a Dev run
+   - `inProgress`: the Dev's tasks In progress. A PR In review takes no slot, so PRs waiting on
+     the stakeholder never stop new work. Blocked tasks, either way, wait without taking a slot. While
+     an unblocked Ready task is Urgent or a fix, one more is allowed In progress, until it leaves Ready. The dispatcher claims a Ready task for a Dev run
      only while a slot is free, and each Dev run works on that one task.
    - `devs`: how many Dev runs go at once, each on its own task. Only the stakeholder sets it.
    - `pitched`: pitches in front of the stakeholder

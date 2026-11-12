@@ -77,6 +77,9 @@ internal static partial class Commands
     private static int? WipLimit(Board board, string key) =>
         int.TryParse(board.Text("wip", key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit) ? limit : null;
 
+    /// <summary>wip.inProgress, or the name it had, wip.worktrees, where a config hasn't got it.</summary>
+    internal static int? InProgressLimit(Board board) => WipLimit(board, "inProgress") ?? WipLimit(board, "worktrees");
+
     private static JsonArray Words(IEnumerable<string> words) => Json.ArrayOf(words.Select(word => (JsonNode?)word));
 
     internal static int Triggers(Board board, string[] args)
@@ -263,7 +266,7 @@ internal static partial class Commands
     private static void WakeOnReady(Wake wake)
     {
         var used = wake.All.Count(Cards.Working);
-        var limit = WipLimit(wake.Board, "worktrees");
+        var limit = InProgressLimit(wake.Board);
         var fastTrack = (limit ?? 0) + 1;
         var startable = wake.All.Where(Cards.Startable).ToList();
         wake.ReadyCount = startable.Count;
@@ -278,12 +281,12 @@ internal static partial class Commands
             if (used < limit)
             {
                 wake.Ready = Cards.N(startable[0]);
-                wake.Reasons.Add($"Ready task available (e.g. #{wake.Ready}) and a free worktree");
+                wake.Reasons.Add($"Ready task available (e.g. #{wake.Ready}) and room In progress");
             }
             else if (used < fastTrack && Cards.ByPriority(startable).FirstOrDefault(card => Json.Text(card["priority"]) == "Urgent") is { } urgent)
             {
                 wake.Ready = Cards.N(urgent);
-                wake.Reasons.Add($"Ready task available (e.g. #{wake.Ready}, Urgent) and a fast-track worktree ({used} in use, {fastTrack} allowed while an Urgent task is Ready)");
+                wake.Reasons.Add($"Ready task available (e.g. #{wake.Ready}, Urgent) and fast-track room In progress ({used} in progress, {fastTrack} allowed while an Urgent task is Ready)");
             }
         }
     }
