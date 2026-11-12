@@ -278,7 +278,6 @@ grep -q "No longer blocked by #21: looked again" "$ERR" || fail "dry run: no com
 same "posted" "" "$(cat "$POSTED")"
 same "writes" "" "$(cat "$WRITES")"
 
-finish_suite
 
 case_ "lead-next spreads step changes evenly through discovery turns by the team's focus, 30 where it has none"
 fixture <<'JSON'
@@ -336,3 +335,5 @@ same "exit" 0 "$STATUS"
 same "step change" '{"idea":true,"step":true}' "$(marks 41)"
 KEEP_BOARD=1 waiting
 same "triage" '[[41,true],[42,null]]' "$(jq -c 'map(select(.status == "Idea") | [.number, .stepChange]) | sort' "$OUT")"
+
+finish_suite
