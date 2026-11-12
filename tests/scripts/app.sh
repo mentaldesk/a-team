@@ -206,6 +206,13 @@ fake "$APP_BIN/board/gh" <<SH
 #!/usr/bin/env bash
 refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
 case " \$* " in
+  *" api rate_limit "*) case "\${GITHUB_SAYS:-}" in
+      spent) echo '{"resources": {"core": {"remaining": 0, "reset": 1762398720}, "graphql": {"remaining": 4000, "reset": 1762399000}}}' >"$APP_BIN/board/limits.json" ;;
+      down) echo "error connecting to api.github.com" >&2; echo "check your internet connection or https://githubstatus.com" >&2; exit 1 ;;
+      invalid) echo "gh: Bad credentials (HTTP 401)" >&2; exit 1 ;;
+      *) echo '{"resources": {"core": {"remaining": 5000, "reset": 1762398720}, "graphql": {"remaining": 5000, "reset": 1762398720}}}' >"$APP_BIN/board/limits.json" ;;
+    esac
+    page="$APP_BIN/board/limits.json" ;;
   *" repos/mentaldesk/demo/contents/\${CONTENTS_DOWN:-none} "*) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;;
   *" repos/mentaldesk/demo/contents/"*) [ -z "\${NO_VISION:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     [ -z "\${LEAD_VISION:-}" ] || printf '# Vision\n\nWho it is for.\n\n<!-- a-team:lead -->\n'; exit 0 ;;
@@ -401,6 +408,22 @@ PATH="$APP_BIN/board:$PATH" run run demo lead
 same "exit" 0 "$STATUS"
 grep -q "^$CHECKOUT could not be brought up to date with origin/main, so read the product repo from origin/main" "$OUT" ||
   fail "diverged: '$(cat "$OUT")'"
+
+case_ "run stops on a spent rate limit, naming the App and when it resets, before it reads the board"
+GITHUB_SAYS=spent PATH="$APP_BIN/board:$PATH" run run demo dev
+same "spent exit" 3 "$STATUS"
+same "spent" "run.sh: GitHub rate limit for demo-app, resets 03:12 UTC: this run stops, and the next starts once it's reset" "$(cat "$ERR")"
+same "spent brief" '' "$(cat "$OUT")"
+
+case_ "run stops when GitHub doesn't answer, in gh's words"
+GITHUB_SAYS=down PATH="$APP_BIN/board:$PATH" run run demo dev
+same "down exit" 3 "$STATUS"
+same "down" "run.sh: GitHub unreachable (error connecting to api.github.com): this run stops; the dispatcher tries again next pass" "$(cat "$ERR")"
+
+case_ "run stops when the App can't sign in, with gh's line, and points to Health"
+GITHUB_SAYS=invalid PATH="$APP_BIN/board:$PATH" run run demo dev
+same "invalid exit" 3 "$STATUS"
+same "invalid" "run.sh: demo-app can't sign in to GitHub (Bad credentials (HTTP 401)): see Health on the Teams screen" "$(cat "$ERR")"
 
 case_ "run starts the Lead and the Dev on a team with the Customer lead turned on"
 jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
