@@ -448,6 +448,42 @@ public class TeamFormTests
     }
 
     [Fact]
+    public void Innovation_sits_beside_Budget_says_how_many_discoveries_look_for_a_step_change_and_saves_what_it_holds()
+    {
+        TeamSettings? written = null;
+        using var form = new TeamForm("a-team", Settings, now =>
+        {
+            written = now;
+            return null;
+        });
+        form.SetFocus();
+        form.Layout();
+
+        Assert.Equal(30, form.Innovation.Value);
+        Assert.Equal(form.Budget.Frame.Y, form.Innovation.Frame.Y);
+        form.Innovation.SetFocus();
+        Assert.Equal("0 keeps the lights on, 100 looks for step changes: 30 in every 100 discoveries look for a step change.",
+            form.Hints.Message.Says);
+        form.Innovation.Value = 50;
+        Assert.Equal(TeamForm.InnovationCaption(50), form.Hints.Message.Says);
+        form.NewKeyDownEvent(Key.Enter.WithCtrl);
+
+        Assert.Equal(Settings with { Innovation = 50 }, written);
+    }
+
+    [Fact]
+    public void Innovation_goes_no_lower_than_0_and_no_higher_than_100()
+    {
+        using var form = new TeamForm("a-team", Settings with { Innovation = 100 }, _ => null);
+
+        form.Innovation.Value = 101;
+        Assert.Equal(100, form.Innovation.Value);
+        form.Innovation.Value = 0;
+        form.Innovation.Value = -1;
+        Assert.Equal(0, form.Innovation.Value);
+    }
+
+    [Fact]
     public void The_list_rows_say_what_they_change_as_they_take_focus()
     {
         using var form = new TeamForm("a-team", Settings, _ => null);

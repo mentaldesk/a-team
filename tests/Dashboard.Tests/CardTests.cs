@@ -217,4 +217,13 @@ public class CardTests
         Assert.Equal("#6  The agents can't say what they'd change",
             new Card(Unranked with { Recommendation = "High", Priority = "Low" }, false).Text(0));
     }
+
+    [Fact]
+    public void A_step_change_says_so_beside_the_Lead_s_rank()
+    {
+        Assert.Equal("#6  High? · step change · The agents can't say what they'd change",
+            new Card(Unranked with { Recommendation = "High", StepChange = true }, false).Text(0));
+        Assert.Equal("#6  step change · The agents can't say what they'd change",
+            new Card(Unranked with { StepChange = true }, false).Text(0));
+    }
 }

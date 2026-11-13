@@ -81,6 +81,30 @@ public class TeamSettingsTests : IDisposable
     }
 
     [Fact]
+    public void A_config_with_no_innovation_reads_as_30_and_saves_unchanged_and_an_innovation_set_is_written()
+    {
+        var before = TeamSettings.Read(Bytes(Config));
+        Assert.Equal(30, before.Innovation);
+        Assert.Equal(Text(Bytes(Config)), Text(before.Write(Bytes(Config), before)));
+
+        var written = (before with { Innovation = 0 }).Write(Bytes(Config), before);
+
+        Assert.Equal(0, TeamSettings.Read(written).Innovation);
+        Assert.Contains("\"innovation\": 0", Text(written));
+    }
+
+    [Theory]
+    [InlineData("150", 100)]
+    [InlineData("-5", 0)]
+    [InlineData("\"high\"", 30)]
+    public void An_innovation_outside_0_to_100_reads_as_the_nearest_end_and_one_that_isn_t_a_number_as_30(string innovation, int read)
+    {
+        var config = Config.Replace("\"repo\":", $"\"innovation\": {innovation}, \"repo\":");
+
+        Assert.Equal(read, TeamSettings.Read(Bytes(config)).Innovation);
+    }
+
+    [Fact]
     public void A_budget_that_isn_t_a_whole_number_reads_as_0_like_the_dispatcher_reads_it()
     {
         var config = Config.Replace("\"retryAfter\": 60", "\"retryAfter\": 60, \"budget\": 12.5");

@@ -114,6 +114,13 @@ count, so however many wait for your review, the Dev keeps starting Ready work. 
 fix may take one more. **Devs** is how many Dev runs go at once, whether building a task or answering
 a review on one.
 
+**Innovation**, from 0 to 100, is how bold the Lead's discoveries are. 0 keeps the lights on: every
+discovery looks for friction and faults, as it always has. 100 looks for step changes: every discovery
+starts from something the vision promises that the product can't do at all yet, and files one Idea for
+it. In between, that many in every 100 discoveries look for a step change, spread evenly: at 30, 3 in
+every 10. A team that has never set it has 30. See
+[Ideas and priorities](how-a-team-works.md#ideas-and-priorities).
+
 Vision, First page, Stakeholders and Contributes to open at once and load from GitHub in their
 list. Until the rows are in, the pick or Done button is dimmed and `Enter` does nothing. If the read
 fails, the list says why, and `r` reads again without closing the picker.

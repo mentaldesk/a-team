@@ -275,6 +275,11 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
   the product repo reaches Idea too, with or without a mirror.
 - **The Lead pitches the highest-priority Idea**, and between pitches it discovers new ones. Its own
   discoveries, and the Customer lead's, are marked as theirs.
+- **A discovery is one of two kinds.** Most look for friction and faults in what's already there,
+  and file up to 2 Ideas. A **step change** starts from a promise in the vision the product doesn't
+  keep yet, looks at who already does it, and files one Idea: what you could do after it that you
+  can't now, how big it is, and the first slice you could use on its own. Its card in Triage says
+  `step change`. The team's [**Innovation**](teams.md#a-teams-settings) sets how many are step changes.
 - **An Idea any agent wrote, or an issue someone else opened, is only pitched once you give it a
   priority.** Until then it waits in Triage. Close the ones you don't want.
 - **The Lead recommends a rank for every Idea**, saying which theme in the vision it serves and how

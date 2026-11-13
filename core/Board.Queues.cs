@@ -803,6 +803,7 @@ internal sealed partial class Board
                 },
             };
             if (Json.Truthy(card["marks"]?["rank"])) shown["recommendation"] = card["marks"]?["rank"]?.DeepClone();
+            if (Cards.Marked(card, "step")) shown["stepChange"] = true;
             unranked.Add(shown);
         }
         return unranked;
@@ -1636,6 +1637,37 @@ internal sealed partial class Board
     internal string LeadTurnWas => File.Exists(Kept("lead-turn")) ? File.ReadAllText(Kept("lead-turn")).TrimEnd('\n') : "discover";
 
     internal void LeadTurnIs(string turn) => Keep(Kept("lead-turn"), $"{turn}\n");
+
+    internal const int DefaultInnovation = 30;
+
+    /// <summary>The team's <c>innovation</c>, 0 to 100: how many in every 100 discovery turns look for a step change.</summary>
+    internal int Innovation => int.TryParse(Text("innovation"), out var innovation) ? Math.Clamp(innovation, 0, 100) : DefaultInnovation;
+
+    /// <summary>Whether this discovery turn is a step change. Each turn adds Innovation to a credit, and a turn that brings it
+    /// to 100 spends it, so the step changes come evenly rather than by chance.</summary>
+    internal bool StepChangeDue()
+    {
+        var file = Kept("lead-innovation");
+        var credit = (File.Exists(file) && int.TryParse(File.ReadAllText(file).Trim(), out var kept) ? Math.Clamp(kept, 0, 99) : 0) + Innovation;
+        var due = credit >= 100;
+        if (!DryRun)
+        {
+            Keep(file, $"{(due ? credit - 100 : credit)}\n");
+            if (due) Keep(Kept("lead", "step"), $"{RunStarted}\n");
+        }
+        return due;
+    }
+
+    /// <summary>Whether this run's step-change turn has yet to file its one Idea, which the Idea then uses up.</summary>
+    internal bool TakeStepChange()
+    {
+        var file = Kept("lead", "step");
+        if (!File.Exists(file) || File.ReadAllText(file).TrimEnd('\n') != RunStarted) return false;
+        if (!DryRun) Forget(file);
+        return true;
+    }
+
+    private static string RunStarted => Environment.GetEnvironmentVariable("A_TEAM_RUN_STARTED") ?? "";
 
     /// <summary>A run started across the board shows on the Idea it pitches.</summary>
     internal void ShowRunOn(JsonNode idea)
