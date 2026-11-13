@@ -179,7 +179,8 @@ whether a file is there, so nothing is treated as missing. It's the same for the
 and it clears by itself once GitHub answers.
 
 `a-team board <team> check` reports the same from a shell, each line starting `problem`, which stops the
-team, or `note`, which doesn't.
+team, or `note`, which doesn't. Anything wrong with the team's GitHub Project is a note: the board is kept
+on this machine, and the Project is only a copy of it.
 
 ## Settings
 
