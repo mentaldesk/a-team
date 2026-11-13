@@ -200,7 +200,7 @@ stakeholder sets Priority; this orders the Ideas within it and tells them why.
 Run `a-team board {{team}} lead-next` once. It returns the pitches to show the stakeholder now, and whether
 this run's new work is a pitch or a discovery. It alternates between the two so the stakeholder
 gets a blend of their own ideas refined and new ones found, and it respects the WIP limits.
-When nothing is Pitched or Exploring, it always pitches. The team config's `focus` sets how many
+When nothing is Pitched or Exploring, it always pitches. The team config's `innovation` sets how many
 discoveries in every 100 are step changes.
 
 **`demote`** and **`promote`** are one swap, paired in order: each demoted pitch is displaced by

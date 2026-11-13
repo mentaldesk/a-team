@@ -279,7 +279,7 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
   and file up to 2 Ideas. A **step change** starts from a promise in the vision the product doesn't
   keep yet, looks at who already does it, and files one Idea: what you could do after it that you
   can't now, how big it is, and the first slice you could use on its own. Its card in Triage says
-  `step change`. The team's [**Focus**](teams.md#a-teams-settings) sets how many are step changes.
+  `step change`. The team's [**Innovation**](teams.md#a-teams-settings) sets how many are step changes.
 - **An Idea any agent wrote, or an issue someone else opened, is only pitched once you give it a
   priority.** Until then it waits in Triage. Close the ones you don't want.
 - **The Lead recommends a rank for every Idea**, saying which theme in the vision it serves and how

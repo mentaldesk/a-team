@@ -279,7 +279,7 @@ same "posted" "" "$(cat "$POSTED")"
 same "writes" "" "$(cat "$WRITES")"
 
 
-case_ "lead-next spreads step changes evenly through discovery turns by the team's focus, 30 where it has none"
+case_ "lead-next spreads step changes evenly through discovery turns by the team's innovation, 30 where it has none"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
@@ -288,7 +288,7 @@ gh_items <<'ITEMS'
 ITEMS
 turns() {
   local said=""
-  rm -f "$WORK/state/demo/lead-focus"
+  rm -f "$WORK/state/demo/lead-innovation"
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     A_TEAM_STATE="$WORK/state" run board demo lead-next
     said+=$(jq -r '.turn[0:1]' "$OUT")
@@ -296,26 +296,26 @@ turns() {
   echo "$said"
 }
 same "unset" dddsddsdds "$(turns)"
-for focus in 0:dddddddddd 30:dddsddsdds 50:dsdsdsdsds 100:ssssssssss; do
-  jq --argjson focus "${focus%%:*}" '.focus = $focus' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
-  same "focus ${focus%%:*}" "${focus#*:}" "$(turns)"
+for innovation in 0:dddddddddd 30:dddsddsdds 50:dsdsdsdsds 100:ssssssssss; do
+  jq --argjson innovation "${innovation%%:*}" '.innovation = $innovation' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+  same "innovation ${innovation%%:*}" "${innovation#*:}" "$(turns)"
 done
 A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "a step change's room" '{"turn":"step","room":1}' "$(jq -c '{turn, room}' "$OUT")"
 
 case_ "a step change waits for room in Ideas like any discovery"
-jq '.focus = 100 | .wip.ideas = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+jq '.innovation = 100 | .wip.ideas = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 gh_items <<'ITEMS'
 Idea 41 A discovery waiting for triage
 ITEMS
 edit_item 41 '.labels.nodes = [{name: "a-team:idea"}]'
-rm -f "$WORK/state/demo/lead-focus"
+rm -f "$WORK/state/demo/lead-innovation"
 A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "full" '"none"' "$(jq -c .turn "$OUT")"
-[ -e "$WORK/state/demo/lead-focus" ] && fail "full: a turn that wasn't taken counted"
+[ -e "$WORK/state/demo/lead-innovation" ] && fail "full: a turn that wasn't taken counted"
 
 case_ "the one Idea the Lead adds after a step-change turn in the same run is marked a step change, and shows so in Triage"
-jq '.focus = 100 | .wip.ideas = 4' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+jq '.innovation = 100 | .wip.ideas = 4' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 gh_items <<'ITEMS'
 Idea 41 I can't hand a team a web app
 Idea 42 The Assistant forgets the card I had open

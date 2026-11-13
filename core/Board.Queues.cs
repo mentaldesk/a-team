@@ -1638,17 +1638,17 @@ internal sealed partial class Board
 
     internal void LeadTurnIs(string turn) => Keep(Kept("lead-turn"), $"{turn}\n");
 
-    internal const int DefaultFocus = 30;
+    internal const int DefaultInnovation = 30;
 
-    /// <summary>The team's <c>focus</c>, 0 to 100: how many in every 100 discovery turns look for a step change.</summary>
-    internal int Focus => int.TryParse(Text("focus"), out var focus) ? Math.Clamp(focus, 0, 100) : DefaultFocus;
+    /// <summary>The team's <c>innovation</c>, 0 to 100: how many in every 100 discovery turns look for a step change.</summary>
+    internal int Innovation => int.TryParse(Text("innovation"), out var innovation) ? Math.Clamp(innovation, 0, 100) : DefaultInnovation;
 
-    /// <summary>Whether this discovery turn is a step change. Each turn adds Focus to a credit, and a turn that brings it
+    /// <summary>Whether this discovery turn is a step change. Each turn adds Innovation to a credit, and a turn that brings it
     /// to 100 spends it, so the step changes come evenly rather than by chance.</summary>
     internal bool StepChangeDue()
     {
-        var file = Kept("lead-focus");
-        var credit = (File.Exists(file) && int.TryParse(File.ReadAllText(file).Trim(), out var kept) ? Math.Clamp(kept, 0, 99) : 0) + Focus;
+        var file = Kept("lead-innovation");
+        var credit = (File.Exists(file) && int.TryParse(File.ReadAllText(file).Trim(), out var kept) ? Math.Clamp(kept, 0, 99) : 0) + Innovation;
         var due = credit >= 100;
         if (!DryRun)
         {
