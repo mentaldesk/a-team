@@ -16,7 +16,25 @@ CONFIG=$(team_config "$TEAM")
 command -v jq >/dev/null || { echo "run.sh: jq is not installed" >&2; exit 3; }
 # Not grep -q: quitting at the first match kills team_roles with SIGPIPE, and pipefail reports that.
 team_roles "$CONFIG" | grep -x "$ROLE" >/dev/null || { echo "run.sh: $TEAM has no $ROLE turned on" >&2; exit 3; }
-gh auth status >/dev/null 2>&1 || { echo "run.sh: gh is not authenticated" >&2; exit 3; }
+# Not gh auth status: it calls a spent rate limit and an unreachable GitHub an invalid token too. rate_limit isn't counted.
+APP=$(jq -r '.app.slug // "the team'"'"'s App"' "$CONFIG")
+if limits=$(gh api rate_limit --jq '[.resources.core, .resources.graphql] | map(select(.remaining == 0) | .reset) | max // empty' 2>&1); then
+  if [ -n "$limits" ]; then
+    echo "run.sh: GitHub rate limit for $APP, resets $(date -u -r "$limits" +%H:%M 2>/dev/null || date -u -d "@$limits" +%H:%M) UTC: this run stops, and the next starts once it's reset" >&2
+    exit 3
+  fi
+else
+  said=$(grep -m 1 . <<<"$limits" | sed 's/^gh: //')
+  if grep -Eiq 'rate limit' <<<"$limits"; then
+    echo "run.sh: GitHub rate limit for $APP ($said): this run stops, and the next starts once it's reset" >&2
+  elif grep -Eq "HTTP 401|gh auth login" <<<"$limits" ||
+    { grep -q '^a-team token: ' <<<"$limits" && ! grep -q "^a-team token: GitHub wouldn't" <<<"$limits"; }; then
+    echo "run.sh: $APP can't sign in to GitHub (${said:-gh said nothing}): see Health on the Teams screen" >&2
+  else
+    echo "run.sh: GitHub unreachable (${said:-gh said nothing}): this run stops; the dispatcher tries again next pass" >&2
+  fi
+  exit 3
+fi
 
 # check exits 2 for what's missing but leaves the team able to run, like a vision the Lead is yet to draft.
 health=$("$ROOT/bin/a-team" board "$TEAM" check 2>&1) || healthy=$?

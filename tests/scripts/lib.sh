@@ -907,7 +907,7 @@ stopped() { kill -0 "$(cat "$SUITE/pids")" 2>/dev/null && fail "$1: still runnin
 # A Keychain holding a real test key, and GitHub's App endpoints, stubbed on PATH. `security` has
 # no key when NO_KEY is set; `curl` records each mint in $MINTS, keeps the JWT it was sent in
 # $APP_BIN/jwt, grants what $APP_BIN/perms.json holds, turns down every JWT when MINT_FAILS is set,
-# and finds no installation when NOT_INSTALLED is.
+# finds no installation when NOT_INSTALLED is, and can't connect when CURL_DOWN is.
 app_fakes() {
   APP_BIN=$(mktemp -d "$WORK/app.XXXXXX")
   MINTS="$APP_BIN/mints" OPENED="$APP_BIN/opened"
@@ -924,6 +924,7 @@ SH
   fake "$APP_BIN/curl" <<SH
 #!/usr/bin/env bash
 answer() { printf '%s\n%s' "\$2" "\$1"; }
+[ -z "\${CURL_DOWN:-}" ] || exit 7
 [ -z "\${MINT_FAILS:-}" ] || { answer 401 '{"message": "Bad credentials"}'; exit; }
 for arg; do
   case "\$arg" in @*) sed -n 's/^Authorization: Bearer //p' "\${arg#@}" >"$APP_BIN/jwt" ;; esac
