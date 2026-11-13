@@ -51,6 +51,60 @@ internal static class ConfigEdit
         return Set(config, [to], values);
     }
 
+    /// <summary>The config without the property at <paramref name="path"/>, and the comma that kept it from its
+    /// neighbour; unchanged where it isn't there.</summary>
+    internal static byte[] Remove(byte[] config, IReadOnlyList<string> path)
+    {
+        JsonDocument.Parse(config).Dispose();
+        var reader = new Utf8JsonReader(config);
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("it isn't a JSON object");
+        for (var depth = 0; depth < path.Count; depth++)
+        {
+            var found = false;
+            while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var start = (int)reader.TokenStartIndex;
+                var matches = reader.ValueTextEquals(path[depth]);
+                reader.Read();
+                if (matches && depth == path.Count - 1)
+                {
+                    reader.Skip();
+                    return Cut(config, start, (int)reader.BytesConsumed);
+                }
+                if (matches)
+                {
+                    found = true;
+                    break;
+                }
+                reader.Skip();
+            }
+            if (!found || reader.TokenType != JsonTokenType.StartObject)
+                return config;
+        }
+        return config;
+    }
+
+    /// <summary>Cuts the property from <paramref name="start"/> to <paramref name="end"/> with the comma after it, or
+    /// before it where it came last.</summary>
+    private static byte[] Cut(byte[] config, int start, int end)
+    {
+        var next = Skip(config, end, 1);
+        if (config[next] == (byte)',')
+            return Splice(config, start, Skip(config, next + 1, 1), "");
+        var before = Skip(config, start - 1, -1);
+        return config[before] == (byte)','
+            ? Splice(config, before, end, "")
+            : Splice(config, before + 1, next, "");
+    }
+
+    private static int Skip(byte[] config, int at, int step)
+    {
+        while (config[at] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n')
+            at += step;
+        return at;
+    }
+
     /// <summary>The config with the value at <paramref name="path"/> set, adding it, or the objects on the way to
     /// it, where missing.</summary>
     private static byte[] SetLiteral(byte[] config, IReadOnlyList<string> path, string json)

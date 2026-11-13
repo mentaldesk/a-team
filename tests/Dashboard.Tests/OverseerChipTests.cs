@@ -52,7 +52,7 @@ public class OverseerChipTests : IDisposable
         Func<string, Task<Reading>>? readBoard = null, Func<string[], Task<string?>>? run = null, Func<WaitingItem, bool>? confirmAccept = null,
         int width = 160, int height = 30, Action<Handover>? handOver = null, Handover? resume = null, Func<string, LinkOutcome>? openUrl = null,
         bool onlyMine = false, Action<Offered>? reading = null, Func<WaitingItem, Task<Reading>>? readConversation = null,
-        Func<WaitingItem, Task<Reading>>? readHistory = null, bool newIdea = false)
+        Func<WaitingItem, Task<Reading>>? readHistory = null, bool newIdea = false, Func<Offered, Rank?>? choose = null)
     {
         Directory.CreateDirectory(_root);
         var settings = new DashboardSettings(Config);
@@ -73,7 +73,7 @@ public class OverseerChipTests : IDisposable
                 var shownNow = new Offered(item, body, approve, accept, comment, tryIt, edit, idea, rank);
                 offered.Add(shownNow);
                 reading?.Invoke(shownNow);
-                return null;
+                return choose?.Invoke(shownNow);
             },
             resume?.Area ?? Area.Overseer,
             IconStyle.Unicode,
@@ -404,7 +404,7 @@ public class OverseerChipTests : IDisposable
         using var window = Open(out _);
         Select(window, 11);
 
-        Assert.Equal("o Read · w Work · g GitHub", window.Card.Hint);
+        Assert.Equal("o Read · w Work · p Priority · g GitHub", window.Card.Hint);
 
         window.Commands.Keys.Unbind([new Key('o')], Regions.Overseer);
         window.Commands.Keys.Unbind([new Key('w')], Regions.Overseer);
@@ -412,7 +412,7 @@ public class OverseerChipTests : IDisposable
         window.Commands.Keys.Bind("y", "overseer.work", Regions.Overseer);
         window.Refresh();
 
-        Assert.Equal("z Read · y Work · g GitHub", window.Card.Hint);
+        Assert.Equal("z Read · y Work · p Priority · g GitHub", window.Card.Hint);
     }
 
     [Fact]
@@ -465,6 +465,197 @@ public class OverseerChipTests : IDisposable
         window.Commands.Execute("overseer.details");
         Assert.True(window.SessionFull);
         Assert.Empty(shown);
+    }
+
+    private static string Ranked(int number, string status, string kind, string priority = "", int? parent = null, string pitchPriority = "", bool inherited = false) =>
+        $$"""{"number": {{number}}, "title": "Chip {{number}}", "url": "https://github.com/o/r/issues/{{number}}", "status": "{{status}}", "since": "2026-10-0{{number % 9 + 1}}T00:00:00Z", "team": "team0", "kind": "{{kind}}", "priority": {{(priority.Length > 0 ? $"\"{priority}\"" : "null")}}, "parent": {{(parent is { } up ? up.ToString() : "null")}}, "pitchPriority": {{(pitchPriority.Length > 0 ? $"\"{pitchPriority}\"" : "null")}}, "inherited": {{(inherited ? "true" : "false")}}}""";
+
+    private static readonly string RankedBoard = "[" + string.Join(",",
+        Ranked(20, "Building", "pitch", "Medium"), Ranked(21, "Ready", "task", "High", 20, "Medium"),
+        Ranked(22, "Ready", "task", "Medium", 20, "Medium", inherited: true), Ranked(23, "Ready", "task", "Low"),
+        Ranked(24, "Idea", "yours")) + "]";
+
+    /// <summary>Once a write has gone, the lane's re-read never lands, so what the chip shows is the window's own doing.</summary>
+    private DashboardWindow OpenRanked(out List<Offered> shown, List<string[]> calls, Rank? choose, string? refusal = null, string waiting = "[]") =>
+        Open(out shown, waiting: waiting,
+            readBoard: team => calls.Count > 0 && team == "team0"
+                ? new TaskCompletionSource<Reading>().Task
+                : Task.FromResult(new Reading(team == "team0" ? RankedBoard : "[]", null)),
+            run: arguments =>
+            {
+                calls.Add(arguments);
+                return Task.FromResult(refusal);
+            },
+            choose: _ => choose);
+
+    private static int[] ReadyColumn(DashboardWindow window) =>
+        [.. window.Overseer.Board.Column("team0", Array.IndexOf(OverseerBoard.Columns, "Ready")).Select(card => card.Number)];
+
+    [Theory]
+    [InlineData(10, "High")]
+    [InlineData(12, "None")]
+    [InlineData(16, "None")]
+    [InlineData(20, "Medium")]
+    [InlineData(21, "High")]
+    [InlineData(22, "Medium")]
+    [InlineData(24, "None")]
+    public void P_opens_the_reader_on_the_chips_card_with_the_ranks_starting_on_its_Priority(int number, string rank)
+    {
+        using var window = Open(out var shown, readBoard: team =>
+            Task.FromResult(new Reading(team == "team0" ? Board[..^1] + "," + RankedBoard[1..] : "[]", null)));
+        Select(window, number);
+
+        Assert.True(window.Commands.IsEnabled("overseer.priority"));
+        window.NewKeyDownEvent(new Key('p'));
+        window.Refresh();
+
+        var reader = Assert.Single(shown);
+        Assert.Equal(number, reader.Item.Number);
+        Assert.Equal(Enum.Parse<Rank>(rank), reader.Rank);
+    }
+
+    [Fact]
+    public void P_is_dimmed_on_a_lane_heading()
+    {
+        using var window = Open(out _);
+
+        Assert.True(window.Overseer.SelectHeading("team0"));
+        window.Refresh();
+
+        Assert.False(window.Commands.IsEnabled("overseer.priority"));
+        Assert.True(window.MenuItems.Single(item => item.Id == "overseer.priority").Item.Dimmed);
+    }
+
+    [Fact]
+    public void P_is_dimmed_on_a_more_chip()
+    {
+        var crowded = "[" + string.Join(",", Enumerable.Range(30, 12).Select(number => Chip(number, "Ready"))) + "]";
+        using var window = Open(out _, readBoard: team => Task.FromResult(new Reading(team == "team0" ? crowded : "[]", null)), height: 12);
+        window.Overseer.Board.SelectFirst();
+        for (var step = 0; step < 12 && !window.Overseer.Board.OnMore; step++)
+            window.Overseer.Board.MoveRow(+1);
+        window.Refresh();
+
+        Assert.True(window.Overseer.Board.OnMore);
+        Assert.False(window.Commands.IsEnabled("overseer.priority"));
+    }
+
+    [Theory]
+    [InlineData(10)]
+    [InlineData(11)]
+    [InlineData(13)]
+    public void Ranking_a_card_waiting_on_you_offers_the_same_gates_as_p_in_Work(int number)
+    {
+        using var overseer = Open(out var fromChip);
+        Select(overseer, number);
+        overseer.Commands.Execute("overseer.priority");
+        overseer.Refresh();
+
+        using var work = Open(out var fromWork);
+        Select(work, number);
+        work.Commands.Execute("overseer.work");
+        work.Commands.Execute("work.priority");
+        work.Refresh();
+
+        Assert.Equal(Assert.Single(fromWork).Buttons, Assert.Single(fromChip).Buttons);
+        Assert.Contains("Ranks", fromChip[0].Buttons);
+    }
+
+    [Fact]
+    public void A_rank_set_from_a_chip_recolours_and_resorts_it_at_once_and_keeps_it_selected()
+    {
+        var calls = new List<string[]>();
+        using var window = OpenRanked(out _, calls, Rank.Urgent);
+        Select(window, 23);
+        Assert.Equal([21, 22, 23], ReadyColumn(window));
+
+        window.Commands.Execute("overseer.priority");
+        window.Refresh();
+
+        Assert.Equal([["board", "team0", "priority", "you", "23", "Urgent"]], calls);
+        Assert.Equal([23, 21, 22], ReadyColumn(window));
+        Assert.Equal("Urgent", window.Overseer.Board.SelectedCard?.Priority);
+        Assert.Equal(23, window.Overseer.Board.SelectedCard?.Number);
+        Assert.Equal("#23 · set to Urgent", window.Says());
+    }
+
+    [Fact]
+    public void A_refused_rank_leaves_the_chip_as_it_was_and_says_why()
+    {
+        var calls = new List<string[]>();
+        using var window = OpenRanked(out _, calls, Rank.Urgent, refusal: "no Priority field on the board");
+        Select(window, 23);
+
+        window.Commands.Execute("overseer.priority");
+        window.Refresh();
+
+        Assert.Single(calls);
+        Assert.Equal([21, 22, 23], ReadyColumn(window));
+        Assert.Equal("Low", window.Overseer.Board.SelectedCard?.Priority);
+        Assert.Contains("no Priority field on the board", window.Says(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(21, Rank.High)]
+    [InlineData(22, Rank.Medium)]
+    [InlineData(22, Rank.None)]
+    [InlineData(24, Rank.None)]
+    public void Choosing_the_rank_a_chip_already_shows_writes_nothing(int number, Rank rank)
+    {
+        var calls = new List<string[]>();
+        using var window = OpenRanked(out var shown, calls, rank);
+        Select(window, number);
+
+        window.Commands.Execute("overseer.priority");
+        window.Refresh();
+
+        Assert.Single(shown);
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void Esc_on_the_reader_writes_nothing()
+    {
+        var calls = new List<string[]>();
+        using var window = OpenRanked(out var shown, calls, null);
+        Select(window, 23);
+
+        window.Commands.Execute("overseer.priority");
+        window.Refresh();
+
+        Assert.Single(shown);
+        Assert.Empty(calls);
+        Assert.Equal("Low", window.Overseer.Board.SelectedCard?.Priority);
+    }
+
+    [Fact]
+    public void A_task_following_its_pitch_says_so_under_the_readers_title()
+    {
+        using var window = OpenRanked(out var shown, [], null);
+        Select(window, 22);
+        window.Commands.Execute("overseer.priority");
+        window.Refresh();
+        Select(window, 21);
+        window.Commands.Execute("overseer.priority");
+        window.Refresh();
+
+        Assert.Equal(["Ready · Priority Medium, from its pitch", "Ready · Priority High"], shown.Select(reader => reader.Item.Standing));
+    }
+
+    [Fact]
+    public void Clearing_a_tasks_own_rank_says_it_now_follows_its_pitch_and_wears_the_pitchs_colour()
+    {
+        var calls = new List<string[]>();
+        using var window = OpenRanked(out _, calls, Rank.None);
+        Select(window, 21);
+
+        window.Commands.Execute("overseer.priority");
+        window.Refresh();
+
+        Assert.Equal([["board", "team0", "priority", "you", "21", "none"]], calls);
+        Assert.Equal("#21 · now follows its pitch: Medium", window.Says());
+        Assert.Equal("Medium", window.Overseer.Board.SelectedCard?.Priority);
+        Assert.True(window.Overseer.Board.SelectedCard?.Inherited);
     }
 
     private string Config => Path.Combine(_root, "config");

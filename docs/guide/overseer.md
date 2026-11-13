@@ -75,6 +75,7 @@ nothing to light, and neither do a lane's heading or a `+7`.
 | `h` | On a heading, pauses the chosen role, or lets it start again |
 | `o` | Opens the card in the reader, as [From a card](#from-a-card) describes |
 | `w` | Goes to the card in [Work](work.md) |
+| `p` | Opens the card in the reader with the ranks under it, to set its Priority |
 | `g` | Opens the card on GitHub |
 | `b` | Opens the team's mirror, its Project board on GitHub, if it has one |
 | `r` | Reads again the boards that couldn't be read |
@@ -88,6 +89,14 @@ card on the board.
 A card Work is showing offers what it offers there, with the same keys: Approve, Accept, Try, Decline, Not now, as
 they apply, and the ranks under a card still to rank. After you use one the reader closes, as it does in Work, and the chip moves to its new column
 once the board has taken it. Any other card offers Comment, GitHub and Close.
+
+`p` opens the same reader with a row of ranks under it, **None** to **Urgent**, starting on the card's Priority, on
+any card: an Idea, a pitch or a task. `←`/`→` choose a rank and `Enter` sets it: the chip takes its new colour and moves
+to its new place in its column straight away, still selected, and the status bar says `#672 · set to High`, or why the
+board refused. `Esc`, or `Enter` on the rank it already has, changes nothing. A task with no Priority of its own shows
+its pitch's, and the line under the reader's title says `Priority Medium, from its pitch`; choosing **None** on a task
+that has its own clears it, and the status bar says `#672 · now follows its pitch: Medium`. On a heading or a `+7`, `p`
+is dimmed.
 
 `w` goes to the card in Work: Work opens on the card's team with the card selected. Only the cards Work is showing can
 be gone to, so on any other card `w` is dimmed in the menus and missing from the panel's keys, and running it from
@@ -163,7 +172,7 @@ The app checks each team when it starts and again whenever the team's file chang
 **Teams** shows. If something stops the team running, every role wears `⚠`, the panel
 says what's wrong above them, as in `misconfigured: checkout ~/code/TuiCode/main isn't there: …`,
 and the status bar says which checks failed. Fix it in **Teams** or in the file, and the
-`⚠` clears. What the check calls a note, like a missing vision, docs page or label, changes nothing here.
+`⚠` clears. What the check calls a note, like a missing vision, docs page or label, or a problem with the GitHub Project, changes nothing here.
 
 The keys act on the chosen role, the first until you choose another. `F6` or `Ctrl+G I` puts focus
 in the panel, where `↑` and `↓` choose a role, and `F6` goes back to the lanes. `Enter` opens the

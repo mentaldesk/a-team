@@ -237,12 +237,12 @@ internal sealed partial class Board
         var (meta, err) = ProjectMeta();
         if (meta is null)
         {
-            found.Problem("project", $"can't read {_owner} project {_number}: {Unprefixed(err.TrimEnd('\n').Split('\n')[^1], "gh: ")}");
+            found.Note("project", $"can't read {_owner} project {_number}: {Unprefixed(err.TrimEnd('\n').Split('\n')[^1], "gh: ")}");
             return true;
         }
         if (!Json.Truthy(meta["field"]?["id"]))
         {
-            found.Problem("project", $"no single-select field '{_field}' on {_owner} project {_number}");
+            found.Note("project", $"no single-select field '{_field}' on {_owner} project {_number}");
             return false;
         }
         foreach (var name in meta["clash"]!.AsArray().Select(Json.Text).OfType<string>())
@@ -257,12 +257,12 @@ internal sealed partial class Board
         var missing = StatusRoute.Statuses.Select(StatusOnMirror).Where(option => !names.Contains(option)).ToList();
         if (missing.Count > 0)
         {
-            found.Problem("status", $"{missing.Count} of {StatusRoute.Statuses.Length} options missing from '{_field}': {string.Join(", ", missing)}");
+            found.Note("status", $"{missing.Count} of {StatusRoute.Statuses.Length} options missing from '{_field}': {string.Join(", ", missing)}");
             return;
         }
         var unmapped = Unmapped();
         if (unmapped.Length > 0)
-            found.Problem("items", $"outside the team's states: {unmapped}");
+            found.Note("items", $"outside the team's states: {unmapped}");
         else
             Console.Out.Write($"ok: {_owner} project {_number}, field '{_field}'\n");
     }
@@ -283,21 +283,6 @@ internal sealed partial class Board
         var outside = (nodes ?? []).Where(node => Json.Text(node?["project"]?["status"]) is { } status && !known.Contains(status))
             .Select(node => $"#{node!["content"]?["number"]?.ToJsonString() ?? "null"} {Json.Text(node["project"]?["status"])}");
         return string.Join(", ", outside);
-    }
-
-    internal void CheckWorkflows(Findings found, bool unreachable)
-    {
-        if (_mirror.Length == 0 || unreachable) return;
-        var read = Gql($$"""
-            query($owner: String!, $number: Int!) { {{_kind}}(login: $owner) { projectV2(number: $number) {
-                      workflows(first: 50) { nodes { name enabled } } } } }
-            """, "--jq", $".data.{_kind}.projectV2.workflows.nodes[] | select(.enabled) | .name");
-        if (!read.Ok) return;
-        var enabled = read.Out.Split('\n');
-        if (!enabled.Any(name => name.StartsWith("Auto-add to project", StringComparison.Ordinal)))
-            found.Note("workflow", $"\"Auto-add to project\" is off on {_owner} project {_number}, so an issue opened on {_repo}, by you or another team, never reaches Triage");
-        if (!enabled.Any(name => name.StartsWith("Item added to project", StringComparison.Ordinal)))
-            found.Note("workflow", $"\"Item added to project\" is off on {_owner} project {_number}, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea");
     }
 
     internal void CheckLabels(Findings found)
@@ -377,16 +362,11 @@ internal sealed partial class Board
                           organization(login: $owner) { projectV2(number: $number) { items(first: 1) { totalCount } } } }
                 """, "--jq", ".data.organization.projectV2.items.totalCount");
             if (!project.Ok)
-            {
-                found.Problem("app", $"{bot} can't read project {_number}: grant the organisation's \"Projects: read and write\", and install the App on {_repo}");
-                return;
-            }
-            if (!Granted("organization_projects"))
-            {
-                found.Problem("app", $"{bot} can only read project {_number}: grant the organisation's \"Projects: read and write\"");
-                return;
-            }
-            line += $" · project {_number} read+write ok";
+                found.Note("app", $"{bot} can't read project {_number}: grant the organisation's \"Projects: read and write\", and install the App on {_repo}");
+            else if (!Granted("organization_projects"))
+                found.Note("app", $"{bot} can only read project {_number}: grant the organisation's \"Projects: read and write\"");
+            else
+                line += $" · project {_number} read+write ok";
         }
         if (mirrored)
         {
@@ -493,6 +473,16 @@ internal sealed partial class Board
             Must(AddTextField(Json.Text(meta["id"])!, name));
             Console.Out.Write($"Field {name} added to {_owner} project {_number}\n");
         }
+    }
+
+    /// <summary>Says how many of the repo's open issues aren't on the board yet, and so will arrive in Triage.</summary>
+    internal void SayArrivals()
+    {
+        if (OpenIssues() is not { } open) return;
+        var had = _record.Query($"SELECT item FROM board WHERE team = {TeamQ};").Select(row => row.First).ToHashSet();
+        var coming = open.Count(issue => Json.Text(issue?["repository"]?["nameWithOwner"]) == _repo && !had.Contains(issue?["number"]?.ToJsonString()));
+        if (coming > 0)
+            Say($"{coming} open issue{(coming == 1 ? "" : "s")} on {_repo} will arrive in Triage");
     }
 
     /// <summary>Creates the labels the team needs, and puts right the ones that have changed.</summary>

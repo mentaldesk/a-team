@@ -103,6 +103,13 @@ internal sealed partial class Board
         return $" since {local.ToString(format, CultureInfo.InvariantCulture)}";
     }
 
+    /// <summary>The Priority of the pitch a task follows, and whether its own Priority is that one, where it is.</summary>
+    internal static void PitchRank(JsonNode card, JsonObject shown)
+    {
+        if (card["pitchPriority"] is { } pitch) shown["pitchPriority"] = pitch.DeepClone();
+        if (Json.Truthy(card["inherited"])) shown["inherited"] = true;
+    }
+
     /// <summary>What an item's marks say, as the app shows it under the title; "" for none. A shelve shows while it's cooling.</summary>
     internal static string Facts(JsonNode card)
     {
@@ -163,6 +170,13 @@ internal sealed partial class Board
                 AND outcome IS NULL ORDER BY runs.id DESC LIMIT {count};
             """).OfType<JsonNode>().Reverse().ToList();
     }
+
+    /// <summary>Whether a Lead run has started on #n since <paramref name="since"/>.</summary>
+    internal bool LeadRanOn(long n, string? since) =>
+        Recorded && _record.Query($"""
+            SELECT 1 FROM runs JOIN run_items ON run_items.run = runs.id
+                WHERE team = {TeamQ} AND role = 'lead' AND item = {n} AND started >= {Reconciler.Q(since ?? "")} LIMIT 1;
+            """).Count > 0;
 
     /// <summary>Pitches with no theme and no `none` from the Lead: open ones, and done ones since runs were recorded.</summary>
     internal JsonArray Unthemed(List<JsonNode> all)
@@ -231,14 +245,31 @@ internal sealed partial class Board
         }
     }
 
-    /// <summary>A stakeholder's Idea or one they prioritised, not skipped by the Lead since they last spoke, and not cooling after a Not now.</summary>
+    /// <summary>A stakeholder's Idea or one they prioritised, not skipped by the Lead since they last spoke, and not cooling after a Not now.
+    /// One opened by anyone else waits for a Priority.</summary>
     private bool Pitchable(JsonNode idea)
     {
-        var n = Cards.N(idea);
-        if (Cards.Marked(idea, "skipped") && OwedAnyway("lead", n) is { Count: 0 }) return false;
+        if (SetAside(idea)) return false;
         if (Cooling(idea)) return false;
-        return idea["priority"] is not null || !(Cards.Marked(idea, "idea") || AgentWrote(n));
+        return idea["priority"] is not null || !(Cards.Marked(idea, "idea") || Opener(idea) is not null || AgentWrote(Cards.N(idea)));
     }
+
+    /// <summary>Skipped by the Lead, and no stakeholder has spoken on it since.</summary>
+    private bool SetAside(JsonNode idea)
+    {
+        if (!Cards.Marked(idea, "skipped")) return false;
+        var n = Cards.N(idea);
+        if (!_setAside.TryGetValue(n, out var aside))
+            _setAside[n] = aside = OwedAnyway("lead", n) is { Count: 0 };
+        return aside;
+    }
+
+    private readonly Dictionary<string, bool> _setAside = [];
+
+    /// <summary>The Lead's and Customer lead's discoveries that wait for a stakeholder's Priority, which wip.ideas limits.</summary>
+    internal int WaitingForPriority(IEnumerable<JsonNode> all, string? except = null) =>
+        all.Count(card => Cards.Marked(card, "idea") && Cards.Status(card) == "Idea" && card["priority"] is null
+            && Cards.N(card) != except && !SetAside(card));
 
     private bool AgentWrote(string n)
     {
@@ -763,7 +794,13 @@ internal sealed partial class Board
                 ["url"] = card["url"]?.DeepClone(),
                 ["team"] = _team,
                 ["turn"] = "you",
-                ["reason"] = cases.Count > 0 ? cases[^1] : "waiting to be ranked",
+                ["reason"] = (Opener(card), cases.Count > 0 ? cases[^1] : null) switch
+                {
+                    ({ } opener, { } lead) => $"{lead} · opened by {opener}",
+                    ({ } opener, null) => $"opened by {opener}, waits for your rank",
+                    (null, { } lead) => lead,
+                    _ => "waiting to be ranked",
+                },
             };
             if (Json.Truthy(card["marks"]?["rank"])) shown["recommendation"] = card["marks"]?["rank"]?.DeepClone();
             unranked.Add(shown);
@@ -1206,6 +1243,7 @@ internal sealed partial class Board
         if (Json.Text(item["status"]) == "In review" && reviewed[n] is { } chains) item["chains"] = chains.DeepClone();
         var card = all.FirstOrDefault(one => Number(one) == Json.Long(item["number"]));
         if (card is not null && Facts(card) is { Length: > 0 } facts) item["facts"] = facts;
+        if (card is not null) PitchRank(card, item);
         if (Json.Text(item["status"]) == "In review" && !Json.Truthy(item["pitch"]) && unticked.GetValueOrDefault(n) > 0)
             item["unticked"] = unticked[n];
     }

@@ -261,10 +261,15 @@ same "no token exit" 1 "$STATUS"
 grep -q "^problem  app       demo-app\[bot\] can't get a token: " "$OUT" || fail "no token: '$(cat "$OUT")'"
 cached ghs_cached 3600
 PROJECT_UNREADABLE=1 checked
-says 1 "problem  app       demo-app[bot] can't read project 1: grant the organisation's \"Projects: read and write\", and install the App on mentaldesk/demo"
+says 2 "note     app       demo-app[bot] can't read project 1: grant the organisation's \"Projects: read and write\", and install the App on mentaldesk/demo"
+same "identity past the project" 'identity: demo-app[bot] · token ok · Priority readable · push access to mentaldesk/demo ok' \
+  "$(grep '^identity' "$OUT")"
+PROJECT_UNREADABLE=1 PRIORITY_UNREADABLE=1 checked
+same "project and priority exit" 1 "$STATUS"
+grep -q "^problem  app       demo-app\[bot\] can't read the Priority field" "$OUT" || fail "priority after project: '$(cat "$OUT")'"
 grants '.permissions.organization_projects = "read"'
 checked
-says 1 "problem  app       demo-app[bot] can only read project 1: grant the organisation's \"Projects: read and write\""
+says 2 "note     app       demo-app[bot] can only read project 1: grant the organisation's \"Projects: read and write\""
 cached ghs_cached 3600
 PRIORITY_UNREADABLE=1 checked
 same "priority exit" 1 "$STATUS"
@@ -281,16 +286,30 @@ says 0 ""
 REPO_GONE=1 checked
 says 1 "problem  repo      can't reach mentaldesk/demo: Not Found (HTTP 404)"
 NO_PROJECT=1 checked
-says 1 "problem  project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
+says 2 "note     project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
 grep -q '^identity: demo-app\[bot\] · token ok · Priority readable' "$OUT" || fail "no project: the App's view in '$(cat "$OUT")'"
 NO_FIELD=1 checked
-says 1 "problem  project   no single-select field 'Status' on mentaldesk project 1"
+says 2 "note     project   no single-select field 'Status' on mentaldesk project 1"
 PARTIAL_READ=1 checked
-says 1 "problem  project   can't read mentaldesk project 1: Resource not accessible by integration"
+says 2 "note     project   can't read mentaldesk project 1: Resource not accessible by integration"
 board_options Idea Approved Building Ready "In progress" "In review" Done
 checked
-says 1 "problem  status    2 of 9 options missing from 'Status': Exploring, Pitched"
+says 2 "note     status    2 of 9 options missing from 'Status': Exploring, Pitched"
 board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
+cp "$APP_BIN/board/items.json" "$APP_BIN/board/items.json.kept"
+echo '{"data": {"organization": {"projectV2": {"items": {"totalCount": 1,
+  "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [{"id": "PVTI_5", "fieldValueByName": {"name": "Backlog"},
+  "content": {"__typename": "Issue", "id": "I_5", "number": 5, "title": "Stray", "url": "https://github.com/mentaldesk/demo/issues/5",
+  "repository": {"nameWithOwner": "mentaldesk/demo"}, "labels": {"nodes": []}}}]}}}}}' >"$APP_BIN/board/items.json"
+checked
+says 2 "note     items     outside the team's states: #5 Backlog"
+mv "$APP_BIN/board/items.json.kept" "$APP_BIN/board/items.json"
+
+case_ "run starts a team whose GitHub Project has a problem"
+NO_FIELD=1 PATH="$APP_BIN/board:$PATH" run run demo dev
+same "exit" 0 "$STATUS"
+grep -q "not usable" "$ERR" && fail "project problem stopped the run: '$(cat "$ERR")'"
+grep -q '^# a-team run: dev' "$OUT" || fail "no brief: '$(cat "$OUT")'"
 
 case_ "check names what's missing from the machine"
 rm -rf "$APP_BIN/work/main"
@@ -344,26 +363,19 @@ checked
 says 2 "note     release   release is 'weekly': expected never, daily or continuous"
 jq 'del(.release)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
-case_ "a project that won't put new issues in Triage is a problem the team can still run with"
+case_ "a project with Auto-add and Item added off is no note: open issues reach Triage without them"
 board_workflows "Item closed"
-checked
-says 2 "note     workflow  \"Auto-add to project\" is off on mentaldesk project 1, so an issue opened on mentaldesk/demo, by you or another team, never reaches Triage
-note     workflow  \"Item added to project\" is off on mentaldesk project 1, so an issue auto-added there gets no Status and never reaches Triage: turn it on, setting Status to Idea"
-board_workflows "Auto-add to project (2)" "Item added to project"
 checked
 says 0 ""
 NO_PROJECT=1 checked
-says 1 "problem  project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
-echo '{"data": {"organization": {"projectV2": null}}}' >"$APP_BIN/board/workflows.json"
-checked
-says 0 ""
+says 2 "note     project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
 board_workflows "Auto-add to project" "Item added to project" "Item closed"
 
 case_ "check reports every problem it finds, not just the first"
 board_labels
 NO_VISION=1 NO_FIELD=1 checked
-says 1 "note     vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
-problem  project   no single-select field 'Status' on mentaldesk project 1
+says 2 "note     vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
+note     project   no single-select field 'Status' on mentaldesk project 1
 note     labels    no 'pitch' label, so the team can't tell its pitches from tasks"
 board_labels pitch
 

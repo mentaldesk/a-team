@@ -167,12 +167,18 @@ RUNS
   : >"$VISION_MD"
   echo '{"data": {"repository": {}}}' >"$THEMES"
   echo '{}' >"$CONTENTS"
+  REPO_ISSUES="$BIN/repo-issues.json"
+  echo '[]' >"$REPO_ISSUES"
   fake "$BIN/gh" <<SH
 #!/usr/bin/env bash
 [ ! -e "$BIN/offline" ] || { echo "gh: error connecting to api.github.com" >&2; exit 1; }
 # Carrying a-team labels into the record happens once, on upgrade, so it isn't counted with a command's calls.
 case " \$* " in
   *HeldSince*) printf '%s\n' "\$*" >>"$BIN/args"; cat "$TALK"; exit 0 ;;
+  *RepoIssues*"on PullRequest"*) echo "gh: Fragment on PullRequest can't be spread inside Issue" >&2; exit 1 ;;
+  *RepoIssues*) echo >>"$BIN/issue-reads"; [ ! -e "$BIN/issues-read-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
+                jq --argjson short "\$([ -e "$BIN/issues-short" ] && echo 1 || echo 0)" \
+                  '{data: {repository: {issues: {totalCount: (length + \$short), nodes: .}}}}' "$REPO_ISSUES"; exit 0 ;;
   *"-X DELETE"*"/labels/"*) [ ! -e "$BIN/unlabel-fails" ] || { [ -s "$BIN/unlabel-fails" ] && [[ " \$* " != *"/\$(cat "$BIN/unlabel-fails") "* ]]; } ||
                               { echo "gh: HTTP 502" >&2; exit 1; }
                             echo "\$*" >>"$BIN/unlabelled"; exit 0 ;;
@@ -236,7 +242,8 @@ case " \$* " in
                    echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
   *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"
     if [ "\${@: -1}" = - ]; then cat >"$EDITED"; else printf '%s' "\${@: -1}" >"$EDITED"; fi; exit 0 ;;
-  *addProjectV2ItemById*) printf 'ADD %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo PVTI_new; exit 0 ;;
+  *addProjectV2ItemById*) [ ! -e "$BIN/add-exists" ] || { echo "gh: Content already exists in this project" >&2; exit 1; }
+                          printf 'ADD %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo PVTI_new; exit 0 ;;
   *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *sub_issues*) page="$SUBS" ;;
@@ -522,6 +529,9 @@ gh_recent() {
 # ago <minutes>: a timestamp that long before now, for the cases that meet board.sh's own clock.
 ago() { jq -rn --argjson m "$1" 'now - $m * 60 | strftime("%Y-%m-%dT%H:%M:%SZ")'; }
 
+# weeks_on <weeks>: the local date that many weeks from now, as a shelve's until.
+weeks_on() { jq -rn --argjson w "$1" 'now + $w * 7 * 86400 | strflocaltime("%Y-%m-%d")'; }
+
 # `gh_child <n> <parent> <labels> [body]`: the issue `link` and `unlink` read, a sub-issue of
 # <parent> ("-" for none) on the record and on GraphQL, carrying the comma-separated <labels> ("-" for none).
 # REST never reports the parent, as it doesn't for mentaldesk/website#79.
@@ -704,6 +714,7 @@ runs_recorded() {
 
 # A dispatcher whose a-team answers `triggers dev` with $DEV_TRIGGERS and `triggers reviewer` with
 # $REVIEWER_TRIGGERS, records each claim, and claims $CLAIMED. `task-prompt` is one line, and the Lead never has anything to do.
+# `triggers lead` says $LEAD_TRIGGERS, with creative only when asked --scheduled.
 dev_dispatcher() {
   DISPATCH=$(mktemp -d "$WORK/dispatch.XXXXXX")
   mkdir -p "$DISPATCH/bin" "$DISPATCH/scripts"
@@ -740,7 +751,7 @@ case " \$* " in
   *" give-up "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me}: \$(paste -sd ';' - <"\${!#}")" >>"$GIVE_UPS"; [ ! -e "$GIVE_UPS.fails" ] || { cat "$GIVE_UPS.fails" >&2; exit 1; }; echo "gave up" ;;
   *" claim dev "*) echo "\$*" >>"$CLAIMS"; cat "$CLAIMED" ;;
   *" triggers dev"*) echo "\$*" >>"$TRIGGER_READS"; cat "$DEV_TRIGGERS" ;;
-  *" triggers lead"*) cat "$LEAD_TRIGGERS" ;;
+  *" triggers lead"*) echo "\$*" >>"$TRIGGER_READS"; jq --argjson asked "\$([[ " \$* " == *" --scheduled "* ]] && echo true || echo false)" '.creative = (.creative and \$asked)' "$LEAD_TRIGGERS" ;;
   *" triggers customer"*) echo "\$*" >>"$CLAIMS"; cat "$CUSTOMER_TRIGGERS" ;;
   *" triggers reviewer"*) echo "\$*" >>"$TRIGGER_READS"; cat "$REVIEWER_TRIGGERS" ;;
   *" task-prompt "*) echo "Run one shift." ;;

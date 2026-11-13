@@ -4,36 +4,49 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
 
-case_ "with every worktree taken, the Dev isn't woken for a Ready task"
+case_ "with every worktree taken by a task being built, the Dev isn't woken for a Ready task"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "worktrees": 2 } }
 JSON
 gh_items <<'ITEMS'
-In_review 12 Waiting on a pane nobody has built
-In_review 14 Waiting on the reviewer
+In_progress 12 Building a pane
+In_progress 14 Building another
+In_review 16 Waiting on you
 Ready 13 Something to start
 Done 15 Merged with its blocked label left on
 ITEMS
 edit_item 15 '.labels.nodes = [{name: "a-team:dev"}, {name: "blocked"}]'
 run board demo triggers dev
 same "exit" 0 "$STATUS"
-same "reasons" '[]' "$(jq -c .reasons "$OUT")"
+same "ready" null "$(jq -c .ready "$OUT")"
 
 case_ "a task blocked by another issue frees its worktree, and wip counts it apart"
 edit_item 12 '.issueDependenciesSummary.blockedBy = 1'
 run board demo triggers dev
 same "exit" 0 "$STATUS"
-same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
+same "ready" 13 "$(jq -c .ready "$OUT")"
 run board demo wip
 same "exit" 0 "$STATUS"
-same "dev" '{"Done":1,"In review":1,"blocked":1}' "$(jq -c .dev "$OUT")"
+same "dev" '{"Done":1,"In progress":1,"In review":1,"blocked":1}' "$(jq -c .dev "$OUT")"
 
 case_ "so does one the reviewer holds with the blocked label"
 edit_item 12 '.issueDependenciesSummary.blockedBy = 0 | .labels.nodes += [{name: "blocked"}]'
 run board demo triggers dev
 same "exit" 0 "$STATUS"
-same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
+same "ready" 13 "$(jq -c .ready "$OUT")"
+
+case_ "PRs waiting on you take no worktree, however many there are, so the Dev is woken for a Ready task"
+gh_items <<'ITEMS'
+In_review 12 Waiting on you
+In_review 14 Waiting on the reviewer
+In_review 16 Waiting on you too
+Ready 13 Something to start
+ITEMS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "reasons" '["Ready task available (e.g. #13) and room In progress"]' "$(jq -c .reasons "$OUT")"
+same "ready" 13 "$(jq -c .ready "$OUT")"
 
 case_ "a draft PR whose CI is still running doesn't wake the Dev"
 fixture <<'JSON'
@@ -108,6 +121,39 @@ run board demo pr 12
 same "exit" 0 "$STATUS"
 same "pr" null "$(cat "$OUT")"
 
+case_ "a PR In review still wakes the Dev for red CI, a conflict or your comment with every worktree taken"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "worktrees": 1 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 11 Being built
+In_review 12 Waiting on you
+Ready 13 Something to start
+ITEMS
+gh_pr 912 false
+gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "red" '["CI failed on PR #912 at deadbee"]' "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+same "ready" null "$(jq -c .ready "$OUT")"
+jq '(.. | objects | select(has("isDraft"))) += {mergeable: "CONFLICTING", headRefOid: "deadbee"}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+RUNS
+run board demo triggers dev
+same "conflict" '["PR #912 conflicts with its base: merge the base branch into it and resolve"]' "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+jq '(.. | objects | select(has("isDraft"))) += {mergeable: "MERGEABLE"}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+gh_recent <<RECENT
+912 ${TODAY}T02:20:00Z reviewer 0 Rename the field.
+RECENT
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "feedback" "[\"stakeholder feedback on #912 (${TODAY}T02:20:00Z)\"]" "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+same "ready" null "$(jq -c .ready "$OUT")"
+
 case_ "triggers groups the Dev's reasons by task, and names the Ready task a run could claim"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
@@ -138,6 +184,7 @@ cat >"$UPDATES" <<'JSON'
  {"number": 442, "title": "Bump Spectre.Console", "comments": [
    {"author": {"login": "stranger"}, "body": "<!-- a-team:lead -->"}]}]
 JSON
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
 run board demo triggers lead
 same "exit" 0 "$STATUS"
 same "reasons" '["Dependabot opened PR #440 (Bump MentalDesk.Tui): see what the update brings","Dependabot opened PR #442 (Bump Spectre.Console): see what the update brings"]' \
@@ -200,6 +247,23 @@ edit_item 13 '.parent = {number: 20}'
 run board demo overview
 same "priorities" '[[10,"Urgent"],[11,null],[12,null],[13,"Low"]]' "$(jq -c 'map(select(.number) | [.number, .priority])' "$OUT")"
 
+case_ "a task says its pitch's Priority, and whether its own is that one"
+gh_items <<'ITEMS'
+Building 10 A Medium pitch
+Ready 13 Following it
+Ready 14 Ranked itself
+Ready 15 Under no pitch
+ITEMS
+edit_item 10 '.issueFieldValues.nodes = [{name: "Medium", field: {name: "Priority"}}]'
+edit_item 13 '.parent = {number: 10}'
+edit_item 14 '.parent = {number: 10} | .issueFieldValues.nodes = [{name: "High", field: {name: "Priority"}}]'
+run board demo overview
+same "overview" '[[10,"Medium",null,null],[13,"Medium","Medium",true],[14,"High","Medium",null],[15,null,null,null]]' \
+  "$(jq -c 'map(select(.number) | [.number, .priority, .pitchPriority, .inherited])' "$OUT")"
+run board demo list
+same "list" '[[13,"Medium",true],[14,"Medium",null]]' \
+  "$(jq -c 'map(select(.pitchPriority) | [.number, .pitchPriority, .inherited])' "$OUT")"
+
 case_ "claim refuses a task that's already claimed, and claims nothing"
 gh_items <<'ITEMS'
 In_progress 12 Taken by another run
@@ -221,7 +285,7 @@ ITEMS
 claimable
 run board demo claim dev
 failed "no worktree"
-grep -q "no free worktree for #13" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
+grep -q "no room In progress for #13" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 gh_items <<'ITEMS'
 In_progress 12 Two
@@ -229,6 +293,19 @@ ITEMS
 run board demo claim dev
 same "exit" 0 "$STATUS"
 same "nothing" null "$(cat "$OUT")"
+
+case_ "claim takes a task with every worktree's worth of PRs In review and nothing In progress"
+gh_items <<'ITEMS'
+In_review 11 One
+In_review 12 Two
+In_review 15 Three
+In_review 17 Four
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
 
 case_ "another team's draft PR In progress takes no worktree, and next never offers it"
 gh_items <<'ITEMS'
@@ -258,5 +335,190 @@ same "would claim" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
 grep -q "would mark #13 dev true" "$ERR" || fail "dry run: no mark in '$(cat "$ERR")'"
 grep -q "would set #13 to 'In progress'" "$ERR" || fail "dry run: no move in '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
+
+
+# --- the Lead's scheduled run ---------------------------------------------------------------
+
+# scheduled_agrees <label> <turn>: lead-next gives <turn>, and a scheduled check says there's work exactly when that isn't none.
+scheduled_agrees() {
+  run board demo triggers lead --scheduled
+  same "$1: exit" 0 "$STATUS"
+  local creative
+  creative=$(jq .creative "$OUT")
+  run board --dry-run demo lead-next
+  same "$1: turn" "$2" "$(jq -r .turn "$OUT")"
+  same "$1: creative" "$([ "$2" = none ] && echo false || echo true)" "$creative"
+}
+
+case_ "a scheduled check says the Lead has work exactly when lead-next would give it a turn"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "pitched": 3, "exploring": 2, "ideas": 2 } }
+JSON
+lead_board() {
+  gh_items "$@" <<'ITEMS'
+Pitched 5 A pitch in front of me
+Idea 7 A pitch for later
+Idea 8 An Idea the Lead found
+Idea 9 Another the Lead found
+Idea 10 One the Lead passed over
+ITEMS
+  edit_item 5 '.labels.nodes = [{name: "pitch"}, {name: "theme: Consistently good UX"}]'
+  edit_item 7 '.labels.nodes = [{name: "pitch"}, {name: "a-team:shelved"}, {name: "rank:low"}, {name: "theme: Consistently good UX"}]'
+  edit_item 8 '.labels.nodes = [{name: "a-team:idea"}, {name: "rank:low"}]'
+  edit_item 9 '.labels.nodes = [{name: "a-team:idea"}, {name: "rank:low"}]'
+  edit_item 10 '.labels.nodes = [{name: "a-team:skipped"}, {name: "rank:low"}]'
+  gh_thread <<THREAD
+comment $(ago 60) reviewer 1 Not now.\n\n<!-- a-team:shelved until=$(weeks_on 2) priority=High -->
+THREAD
+}
+lead_board 7
+scheduled_agrees "shelved, skipped and unprioritised discoveries, queue full" none
+lead_board 7 8
+scheduled_agrees "a discovery given a Priority" pitch
+lead_board 7
+jq '.wip.ideas = 3' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+scheduled_agrees "room in the discovery queue" discover
+jq '.wip.ideas = 2 | .wip.pitched = 1 | .wip.exploring = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+lead_board 7 8
+jq '.data.organization.projectV2.items.nodes += [.data.organization.projectV2.items.nodes[0]
+  | .id = "PVTI_6" | .fieldValueByName.name = "Exploring" | .content.number = 6 | .content.id = "I_6"]' \
+  "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+scheduled_agrees "Pitched and Exploring full, with a prioritised discovery leaving room" discover
+jq '.wip.ideas = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+scheduled_agrees "Pitched, Exploring and the discovery queue full" none
+jq '.wip.ideas = 2 | .wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "only a discovery waiting for a Priority fills wip.ideas: a prioritised, Priority-shelved or skipped one leaves room"
+jq '.wip.ideas = 1 | .wip.pitched = 1 | .wip.exploring = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+# discovery <labels> <unanswered|answered> [8 for a Priority]: Pitched and Exploring full, and one discovery, #8.
+discovery() {
+  local labels=$1 said=$2
+  shift 2
+  gh_items "$@" <<'ITEMS'
+Pitched 5 A pitch in front of me
+Exploring 6 A drafted pitch
+Idea 8 An Idea the Lead found
+ITEMS
+  edit_item 8 ".labels.nodes = ($labels | split(\",\") | map({name: .}))"
+  local eyes=1
+  [ "$said" = unanswered ] && eyes=0
+  gh_thread <<THREAD
+comment $(ago 60) reviewer $eyes Worth another look.\n\n<!-- a-team:shelved until=$(weeks_on 2) priority=$([ $# -gt 0 ] && echo High || echo none) -->
+THREAD
+}
+discovery '"a-team:idea,rank:low"' answered
+scheduled_agrees "no Priority" none
+discovery '"a-team:idea,rank:low"' answered 8
+scheduled_agrees "prioritised" discover
+discovery '"a-team:idea,a-team:shelved,rank:low"' answered 8
+scheduled_agrees "shelved with a Priority" discover
+discovery '"a-team:idea,a-team:shelved,rank:low"' answered
+scheduled_agrees "shelved with no Priority" none
+discovery '"a-team:idea,a-team:skipped,rank:low"' answered
+scheduled_agrees "skipped" discover
+discovery '"a-team:idea,a-team:skipped,rank:low"' answered 8
+scheduled_agrees "skipped after being prioritised" discover
+discovery '"a-team:idea,a-team:skipped,rank:low"' unanswered
+scheduled_agrees "skipped, then a stakeholder comment brings it back" none
+jq '.wip.ideas = 2 | .wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "only a scheduled check asks after each Idea: the check every pass makes no call per Idea, and says no scheduled run"
+lead_board
+edit_item 8 '.labels.nodes = [{name: "rank:low"}]'
+: >"$BIN/args"
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "creative" false "$(jq .creative "$OUT")"
+grep -q 'repos/mentaldesk/demo/issues/8 ' "$BIN/args" && fail "an Idea read every pass: '$(cat "$BIN/args")'"
+run board demo triggers lead --scheduled
+grep -q 'repos/mentaldesk/demo/issues/8 ' "$BIN/args" || fail "the scheduled check didn't ask: '$(cat "$BIN/args")'"
+
+case_ "an Idea with no recommended rank starts the Lead, once"
+history_db "DELETE FROM runs; DELETE FROM run_items;"
+lead_board
+edit_item 9 '.labels.nodes = [{name: "a-team:idea"}]'
+since_ago() {
+  jq --argjson n "$1" --arg at "$(ago "$2")" '(.data.organization.projectV2.items.nodes[] | select(.content.number == $n)
+    .fieldValueByName.updatedAt) = $at' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+}
+since_ago 9 60
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '["Idea #9 has no recommended rank: recommend one"]' "$(jq -c .reasons "$OUT")"
+same "items" '[9]' "$(jq -c .items "$OUT")"
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'lead', 1, 'a', '$(ago 0)');
+  INSERT INTO run_items (run, item) VALUES ((SELECT MAX(id) FROM runs), 9);"
+run board demo triggers lead
+same "after its run" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "a Building pitch with no tasks starts the Lead once, and one with open tasks doesn't"
+history_db "DELETE FROM runs; DELETE FROM run_items;"
+gh_items <<'ITEMS'
+Building 21 A pitch another one built
+ITEMS
+edit_item 21 '.labels.nodes = [{name: "pitch"}, {name: "theme: Consistently good UX"}]'
+since_ago 21 60
+run board demo triggers lead
+same "exit" 0 "$STATUS"
+same "reasons" '["#21 is Building with no tasks: check whether another pitch already built it"]' "$(jq -c .reasons "$OUT")"
+same "items" '[21]' "$(jq -c .items "$OUT")"
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'lead', 1, 'a', '$(ago 0)');
+  INSERT INTO run_items (run, item) VALUES ((SELECT MAX(id) FROM runs), 21);"
+run board demo triggers lead
+same "after its run" '[]' "$(jq -c .reasons "$OUT")"
+history_db "DELETE FROM runs; DELETE FROM run_items;"
+echo '[{"state": "open"}]' >"$SUBS"
+run board demo triggers lead
+same "with a task" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "a pitch with no theme starts the Lead, and so does a register that isn't seeded"
+gh_items <<'ITEMS'
+Pitched 5 A pitch in front of me
+ITEMS
+run board demo triggers lead
+same "unthemed" '["pitch #5 has no theme: give it one"]' "$(jq -c .reasons "$OUT")"
+same "on the run" '[5]' "$(jq -c .items "$OUT")"
+edit_item 5 '.labels.nodes = [{name: "pitch"}, {name: "theme: Consistently good UX"}]'
+rm -f "$A_TEAM_STATE/demo/lead/seeded"
+run board demo triggers lead
+same "unseeded" "[\"the decision register isn't seeded: seed it\"]" "$(jq -c .reasons "$OUT")"
+touch "$A_TEAM_STATE/demo/lead/seeded"
+run board demo triggers lead
+same "neither" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "wip.inProgress alone sets the limit, in the claim's refusal and the Dev's wake"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "inProgress": 2 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo triggers dev
+same "ready" null "$(jq -c .ready "$OUT")"
+run board demo claim dev
+failed "no room"
+same "refusal" "board.sh: no room In progress for #13 (2 in progress, wip.inProgress is 2)" "$(cat "$ERR")"
+
+case_ "wip.inProgress wins over a leftover wip.worktrees"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "inProgress": 3, "worktrees": 2 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo triggers dev
+same "ready" 13 "$(jq -c .ready "$OUT")"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
 
 finish_suite

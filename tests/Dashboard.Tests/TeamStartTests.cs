@@ -40,7 +40,7 @@ public class TeamStartTests : IDisposable
 
         Assert.Equal(("", "", (int?)null, "", ""), (settings.Repo, settings.ProjectOwner, settings.ProjectNumber, settings.Workdir, settings.Try));
         Assert.Equal("docs/vision.md", settings.Vision);
-        Assert.Equal((3, 2, 3, 6, 6, 3), (settings.Worktrees, settings.Devs, settings.Pitched, settings.Exploring, settings.Ideas, settings.ReadyFloor));
+        Assert.Equal((3, 2, 3, 6, 6, 3), (settings.InProgress, settings.Devs, settings.Pitched, settings.Exploring, settings.Ideas, settings.ReadyFloor));
         Assert.Equal(["jamescrosswell"], settings.Stakeholders);
         Assert.Empty(settings.Skills);
         Assert.False(settings.Working);
@@ -158,6 +158,23 @@ public class TeamStartTests : IDisposable
             ],
             TeamStart.SetupPlan(output, project, "mentaldesk/fretty"));
         Assert.DoesNotContain("On project fretty (mentaldesk #7):", TeamStart.SetupPlan("  keep  Idea\n", project, "mentaldesk/fretty"));
+    }
+
+    [Fact]
+    public void The_setup_plan_says_how_many_open_issues_will_arrive_in_Triage()
+    {
+        const string output = """
+            (dry run) created label pitch
+            (dry run) 33 open issues on mentaldesk/truman will arrive in Triage
+            """;
+
+        Assert.Equal(
+            [
+                "On mentaldesk/truman:",
+                "  create label pitch",
+                "33 open issues on mentaldesk/truman will arrive in Triage, for the Lead to rank. Close any you don't want.",
+            ],
+            TeamStart.SetupPlan(output, null, "mentaldesk/truman"));
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]

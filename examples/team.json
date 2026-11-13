@@ -13,7 +13,7 @@
   "docs": "docs/guide/index.md",
   "skills": [],
   "wip": {
-    "worktrees": 3,
+    "inProgress": 3,
     "devs": 2,
     "pitched": 3,
     "exploring": 6,

@@ -174,6 +174,14 @@ public sealed class OverseerView : View
         Changed();
     }
 
+    /// <summary>A rank just set shows on its chip at once, which moves to its new place in its column and stays
+    /// selected.</summary>
+    public void Ranked(string team, int number, Rank rank)
+    {
+        _board.Show([.. _board.Cards.Select(card => card.Team == team && card.Number == number ? card.RankedAs(rank) : card)]);
+        Changed();
+    }
+
     /// <summary>A read of <paramref name="team"/> has started. A lane showing chips keeps them while it reads.</summary>
     public void Reading(string team)
     {

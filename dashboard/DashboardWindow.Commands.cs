@@ -141,6 +141,8 @@ public sealed partial class DashboardWindow
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is not null, menuLabel: () => "Read t_he card", scopes: [Regions.Overseer])
             .Register("overseer.work", () => "Go to the card in Work", GoToChip, new Key('w'),
                 isEnabled: () => OnOverseer() && ChipInWork() is not null, scopes: [Regions.Overseer])
+            .Register("overseer.priority", () => "Set priority", RankChip, new Key('p'),
+                isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is not null, menuLabel: () => "Set pri_ority", scopes: [Regions.Overseer])
             .Register("overseer.github", () => "Open on GitHub", OpenChip, new Key('g'),
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, scopes: [Regions.Overseer])
             .Register("overseer.retry", () => "Read the boards that failed again", () => RetryBoards(_overseer.FailedTeams), new Key('r'),

@@ -85,6 +85,21 @@ public class TeamHealthTests
     }
 
     [Fact]
+    public void Project_notes_are_counted_and_repairable_but_fail_no_check()
+    {
+        var health = TeamHealth.Parse(new Reading("""
+            note     project   can't read aaif-goose project 2: Not Found
+            note     status    2 of 9 options missing from 'Status': Exploring, Pitched
+            note     items     outside the team's states: #5 Backlog
+            note     app       goose-app[bot] can only read project 2: grant the organisation's "Projects: read and write"
+            """, null));
+
+        Assert.Null(health.Failed("goose"));
+        Assert.Equal("4 problems", health.Column);
+        Assert.True(health.CanRepair);
+    }
+
+    [Fact]
     public void A_problem_beside_a_note_is_the_reason_given_and_the_note_is_not()
     {
         var health = TeamHealth.Parse(new Reading("""

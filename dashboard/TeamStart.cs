@@ -300,15 +300,19 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
     }
 
     /// <summary>What <c>board setup --dry-run</c> printed, as the confirmation lists it: the Status options it would
-    /// add or keep, the project fields it would add, then the labels it would create or update.</summary>
+    /// add or keep, the project fields it would add, the labels it would create or update, then how many open issues will
+    /// arrive in Triage.</summary>
     public static IReadOnlyList<string> SetupPlan(string output, ProjectChoice? project, string repo)
     {
         List<string> options = [];
         List<string> fields = [];
         List<string> labels = [];
+        List<string> arriving = [];
         foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (FieldLine().Match(line) is { Success: true } field)
+            if (ArrivalLine().Match(line) is { Success: true } arrival)
+                arriving.Add($"{arrival.Groups[1].Value}, for the Lead to rank. Close any you don't want.");
+            else if (FieldLine().Match(line) is { Success: true } field)
                 fields.Add($"  add   field {field.Groups[1].Value.Trim()}");
             else if (OptionLine().Match(line) is { Success: true } option)
                 options.Add($"  {option.Groups[1].Value.PadRight(6)}{option.Groups[2].Value.Trim()}");
@@ -321,8 +325,12 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             .. project is null || fields.Count == 0 ? Array.Empty<string>() : [$"On project {project}:", .. fields],
             $"On {repo}:",
             .. labels.Count == 0 ? ["  labels already set up"] : labels,
+            .. arriving,
         ];
     }
+
+    [GeneratedRegex(@"^(?:\(dry run\) )?(\d+ open issues? on .+ will arrive in Triage)$")]
+    private static partial Regex ArrivalLine();
 
     [GeneratedRegex(@"^\s+add\s+field\s+(.+)$")]
     private static partial Regex FieldLine();

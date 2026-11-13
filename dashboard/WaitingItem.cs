@@ -27,9 +27,24 @@ public sealed record WaitingItem(
     /// or a wait on another repo.</summary>
     public string Facts { get; init; } = "";
 
+    /// <summary>The Priority of the pitch it's a task of, which it takes while it has none of its own.</summary>
+    public string PitchPriority { get; init; } = "";
+
+    /// <summary>Whether its <see cref="Priority"/> is its pitch's, for having none of its own.</summary>
+    public bool Inherited { get; init; }
+
     /// <summary>The line under its title in the reader: its Status, its Priority, then its <see cref="Facts"/>.</summary>
     public string Standing => string.Join(" · ",
-        new[] { Status, $"Priority {(Priority.Length > 0 ? Priority : "none")}", Facts }.Where(part => part.Length > 0));
+        new[] { Status, $"Priority {(Priority.Length > 0 ? Priority : "none")}{(Inherited ? ", from its pitch" : "")}", Facts }
+            .Where(part => part.Length > 0));
+
+    /// <summary>It as it stands with <paramref name="rank"/> set, or with None, following its pitch where it has one.</summary>
+    public WaitingItem RankedAs(Rank rank) => rank == Rank.None
+        ? this with { Priority = PitchPriority, Inherited = PitchPriority.Length > 0 }
+        : this with { Priority = rank.ToString(), Inherited = false };
+
+    /// <summary>Whether choosing <paramref name="rank"/> in the reader changes what it carries.</summary>
+    public bool Reranks(Rank rank) => rank != Priorities.Of(this) && !(rank == Rank.None && Inherited);
 
     /// <summary>The tasks this card holds up, found across every team's cards by <see cref="Holds.Tag"/>.</summary>
     public IReadOnlyList<Hold> Holding { get; init; } = [];
@@ -156,7 +171,10 @@ public sealed record WaitingItem(
                         Flag(item, "document"), Text(item, "branch"), Flag(item, "dependency"), Text(item, "upstream"),
                         Linked(item) is { Count: > 0 } chains ? chains : null,
                         Numbers(item, "frees") is { Count: > 0 } frees ? frees : null, Text(item, "heldBy"))
-                    { Fix = Flag(item, "fix"), Facts = Text(item, "facts"), Unticked = Numbered(item, "unticked") ?? 0, Secret = SecretOf(item) })
+                    {
+                        Fix = Flag(item, "fix"), Facts = Text(item, "facts"), PitchPriority = Text(item, "pitchPriority"),
+                        Inherited = Flag(item, "inherited"), Unticked = Numbered(item, "unticked") ?? 0, Secret = SecretOf(item),
+                    })
             ];
         }
         catch (JsonException)

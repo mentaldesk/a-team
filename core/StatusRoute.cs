@@ -83,6 +83,11 @@ internal static class StatusRoute
     internal static string Enter(string teamQ, string n, string nodeQ, string status, string since) =>
         $"INSERT OR IGNORE INTO board (team, item, node, status, since) VALUES ({teamQ}, {n}, {nodeQ}, {Reconciler.Q(status)}, {Reconciler.Q(since)});";
 
+    /// <summary>An open issue the board hasn't had, as an Idea that isn't on the mirror yet.</summary>
+    internal static string Found(string teamQ, string n, string nodeQ, string? priority, string since, string contentQ) =>
+        $"INSERT OR IGNORE INTO board (team, item, node, status, priority, since, content, mirrored_priority)\n"
+        + $" VALUES ({teamQ}, {n}, {nodeQ}, 'Idea', {Reconciler.Q(priority)}, {Reconciler.Q(since)}, {contentQ}, {Reconciler.Q(priority ?? "none")});\n";
+
     internal static string Arrive(string teamQ, string n, string nodeQ, string status, string? priority, string since, string contentQ, string? mirror) =>
         $"INSERT INTO board (team, item, node, status, priority, since, content, mirror, mirrored_status,\n"
         + $" mirrored_priority) VALUES ({teamQ}, {n}, {nodeQ}, {Reconciler.Q(status)},\n"

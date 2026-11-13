@@ -34,7 +34,7 @@ Triage, Pitches, Blocked, Review and Other.
 and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,
 and for the tasks you accepted, their median **Cycle** and how much of it was **With you**: In
-review, waiting for a slot your reviews were holding, or waiting for your answer to a question. Then
+review, or waiting for your answer to a question. Then
 **First time**, the share of the tasks you accepted that had no comment from you on the task or its PR
 once it reached review, like `75% of 12`, which leaves out docs PRs, dependency bumps and your own PRs,
 so it can be out of fewer than *Accepted*; **Touches**, your comments per one of those tasks from review
@@ -69,7 +69,7 @@ tabs, keep their place for when you come back.
 
 | Column | What it holds |
 |---|---|
-| Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Nothing here is approved, and nothing the team found is pitched, until you give it one. |
+| Triage | Ideas and pitches with no Priority, in the order the Lead recommends, highest first. Every open issue on the repo arrives here by itself. Nothing here is approved, and nothing the team found or someone else opened is pitched, until you give it one: the status bar says who opened it. |
 | Pitches | Pitches waiting for your approval, at [the first place you decide](how-a-team-works.md#where-you-decide), and document pitches: a vision draft or review, or the Customer lead's docs proposal, which you agree to by accepting it. |
 | Blocked | Every task held for you, whoever held it: the Dev with a question, the Lead while breaking a pitch down, either of them asking for a secret (🔑), you, the dispatcher after runs that changed nothing, or nobody who said why. A Dependabot PR the Dev can't make build is here too, with the Dev's reason under it, and so is a green one GitHub keeps refusing to merge, with GitHub's. Pitches the Lead can't go on with until you answer are here too. So is a task waiting on a change in another repo, saying what it waits on, though it asks you nothing: it frees itself ([How a team works](how-a-team-works.md#the-board)). |
 | Review | Finished work you can accept now: a task whose PR is ready to merge, the Customer lead's docs PR, or another team's Dev's PR to this repo once it's ready. |
@@ -240,7 +240,7 @@ and who (`you`, the role: `lead`, `dev`, `customer` or `reviewer`, or `board` fo
 you or anyone else does on GitHub directly (a merge, a close, a comment)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. A closed issue or
 merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move.
-On a team with a mirror, reopening one brings it back at its last move, with a line saying so: a task whose PR had
+Reopening one brings it back at its last move, with a line saying so: a task whose PR had
 merged comes back Ready, to be built again. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
@@ -341,7 +341,7 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
   doesn't count as accepted. If the board refuses the decline, the status bar says why and the
   reason you typed is lost. A reason is required: with none, the pane's title turns red and the foot says
   `Why is needed`. `Esc` turns the pane back into a plain comment,
-  keeping what you wrote, and declines nothing. To undo a decline on a team with a mirror, reopen the issue on GitHub: the card
+  keeping what you wrote, and declines nothing. To undo a decline, reopen the issue on GitHub: the card
   comes back at its last move.
 - **Say Not now to a pitch.** On a pitch in Pitches, reading it or with its card selected, press
   `l`. The Comment pane opens as **Not now #n**, with **Back in [2] weeks** above it: `Shift+Tab`
@@ -356,7 +356,9 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
   ranks under it, **None** to **Urgent**, starting on the card's own, or on the Lead's
   recommendation if it has none, so `Enter` agrees with it. `←`/`→` or a rank's initial
   moves between them, and `Enter` sets it: the reader closes and the card moves to the column its
-  new Priority puts it in. `Esc` closes without changing it. You can still scroll, comment with
+  new Priority puts it in. `Esc` closes without changing it. A task with no Priority of its own
+  takes its pitch's, and says `Priority Medium, from its pitch` under its title; **None** on a task
+  with its own clears it, and the status bar says it now follows its pitch. You can still scroll, comment with
   `c`, approve with `a` and open it with `g` while the ranks show; there, `h` picks **High**
   rather than hiding History.
 - **Try it.** On a task with a PR, or reading one, press `t`. The terminal runs that PR's version,

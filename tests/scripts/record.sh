@@ -226,6 +226,16 @@ same "mirror reads" 0 "$(grep -c 'projectV2(number' "$BIN/args")"
 [ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
 rm -f "$A_TEAM_STATE/dry-run.db"
 
+case_ "first reads side by side on a new record, as the dashboard makes in a try sandbox, all succeed"
+for i in 1 2 3 4 5 6; do
+  (OUT=$OUT.$i ERR=$ERR.$i KEEP_BOARD=1 run board --dry-run demo overview; echo "$STATUS" >"$OUT.$i.status") &
+done
+wait
+for i in 1 2 3 4 5 6; do
+  same "read $i" 0 "$(cat "$OUT.$i.status")" || cat "$ERR.$i" >&2
+done
+rm -f "$A_TEAM_STATE/dry-run.db"
+
 case_ "a move is the record's, and the mirror shows it after: next, wip and claim all read the record"
 gh_items <<'ITEMS'
 Ready 13 Something to start
