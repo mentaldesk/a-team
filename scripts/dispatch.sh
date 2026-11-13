@@ -502,8 +502,8 @@ pick_task() {
   done < <(jq -c '.tasks[]?' <<<"$3")
   [ "$role" = dev ] && [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
   if ! claimed=$("$ROOT/bin/a-team" board ${prefix:+--dry-run} "$1" claim dev 2>"$2/claim.err"); then
-    # Once a run has started this pass, the worktrees running out is expected.
-    short_read "$(<"$2/claim.err")" "$1 dev" || { [ "$started" -gt 0 ] && grep -q 'no free worktree' "$2/claim.err"; } ||
+    # Once a run has started this pass, room In progress running out is expected.
+    short_read "$(<"$2/claim.err")" "$1 dev" || { [ "$started" -gt 0 ] && grep -q 'no room In progress' "$2/claim.err"; } ||
       log "$1 dev: claim failed: $(tr '\n' ' ' <"$2/claim.err")"
     return 1
   fi

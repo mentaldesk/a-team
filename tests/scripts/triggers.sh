@@ -45,7 +45,7 @@ Ready 13 Something to start
 ITEMS
 run board demo triggers dev
 same "exit" 0 "$STATUS"
-same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
+same "reasons" '["Ready task available (e.g. #13) and room In progress"]' "$(jq -c .reasons "$OUT")"
 same "ready" 13 "$(jq -c .ready "$OUT")"
 
 case_ "a draft PR whose CI is still running doesn't wake the Dev"
@@ -285,7 +285,7 @@ ITEMS
 claimable
 run board demo claim dev
 failed "no worktree"
-grep -q "no free worktree for #13" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
+grep -q "no room In progress for #13" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 gh_items <<'ITEMS'
 In_progress 12 Two
@@ -450,5 +450,39 @@ same "unseeded" "[\"the decision register isn't seeded: seed it\"]" "$(jq -c .re
 touch "$A_TEAM_STATE/demo/lead/seeded"
 run board demo triggers lead
 same "neither" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "wip.inProgress alone sets the limit, in the claim's refusal and the Dev's wake"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "inProgress": 2 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo triggers dev
+same "ready" null "$(jq -c .ready "$OUT")"
+run board demo claim dev
+failed "no room"
+same "refusal" "board.sh: no room In progress for #13 (2 in progress, wip.inProgress is 2)" "$(cat "$ERR")"
+
+case_ "wip.inProgress wins over a leftover wip.worktrees"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "inProgress": 3, "worktrees": 2 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo triggers dev
+same "ready" 13 "$(jq -c .ready "$OUT")"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
 
 finish_suite

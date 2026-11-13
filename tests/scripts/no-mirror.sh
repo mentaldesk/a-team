@@ -175,7 +175,7 @@ edit_item 16 '.labels.nodes += [{name: "a-team:fix"}]'
 claimable
 run board demo claim dev
 failed "no extra worktree"
-grep -q "no free worktree for #16" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
+grep -q "no room In progress for #16" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
 run board demo triggers dev
 same "ready" null "$(jq -c .ready "$OUT")"
 

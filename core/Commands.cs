@@ -218,9 +218,9 @@ internal static partial class Commands
         }
         var n = Cards.N(it);
         var used = all.Count(Cards.Working);
-        var limit = int.TryParse(board.Text("wip", "worktrees"), out var worktrees) ? worktrees : (int?)null;
+        var limit = InProgressLimit(board);
         if (!(used < limit) && !(used < (limit ?? 0) + 1 && (Json.Text(it["priority"]) == "Urgent" || Cards.Fix(it))))
-            throw new Die($"no free worktree for #{n} ({used} in use, wip.worktrees is {limit})");
+            throw new Die($"no room In progress for #{n} ({used} in progress, wip.inProgress is {limit})");
         board.Mark(n, "dev", "true");
         board.SetStatus(n, "Ready", "In progress", "dev");
         board.Log("dev", n, "Ready → In progress");
