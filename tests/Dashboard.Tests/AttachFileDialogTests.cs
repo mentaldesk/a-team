@@ -68,6 +68,34 @@ public class AttachFileDialogTests
         Assert.Equal("sh", dialog.File.Text);
     }
 
+    [Fact]
+    public void Your_latest_screenshot_starts_in_File_with_when_you_took_it_under_it()
+    {
+        var now = new DateTimeOffset(2026, 11, 11, 21, 42, 12, TimeSpan.Zero);
+        const string path = "/Users/me/Desktop/Screenshot 2026-11-11 at 21.40.12.png";
+        using var dialog = new AttachFileDialog(new Screenshot(path, now.AddMinutes(-2)), new FixedClock(now));
+        dialog.Layout(new Size(80, 20));
+
+        Assert.Equal(path, dialog.File.Text);
+        Assert.Equal("Your latest screenshot, taken 2 minutes ago", dialog.Taken!.Text);
+        Assert.True(dialog.NewKeyDownEvent(Key.Enter.WithCtrl));
+        Assert.Equal(path, dialog.Chosen);
+    }
+
+    [Fact]
+    public void With_no_recent_screenshot_File_starts_empty()
+    {
+        using var dialog = Open();
+
+        Assert.Equal("", dialog.File.Text);
+        Assert.Null(dialog.Taken);
+    }
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
     internal static List<(string Keys, string Label)> Rows(KeySheet sheet) =>
         [.. sheet.Here!.Groups.SelectMany(group => group.Rows).Select(row => (row.Keys, row.Label))];
 }

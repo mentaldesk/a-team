@@ -409,15 +409,23 @@ keep what you're typing in view, with a scroll bar once the text is taller than 
 the start and end of the row you can see, and `Ctrl+Home` and `Ctrl+End` to the start and end of
 the text. Hold `Shift` with any of them to select; `Ctrl+A` selects everything.
 
-**Attaching a screenshot.** In a comment or a description, there are three ways to attach an image:
+**Attaching a screenshot.** On a Mac, a screenshot reaches a comment or a description in two keys:
 
-- **Paste it.** With a screenshot on the clipboard (`⌃⇧⌘4` on a Mac), press `Ctrl+V`. That works in
-  every terminal, iTerm2 and Ghostty included. `⌘V` works too where the terminal passes on a paste
-  with nothing in it; if it does nothing, use `Ctrl+V`. With text on the clipboard, both paste the
-  text.
+- `⌃⇧⌘4` copies a screenshot to the clipboard; then `Ctrl+V` pastes it.
+- `⇧⌘4` saves a screenshot to a file; then `Ctrl+U`, `Ctrl+Enter` attaches it.
+
+An empty Comment or Description says `Write here. Ctrl+V pastes a screenshot.` until you type. There
+are three ways to attach an image:
+
+- **Paste it.** With a screenshot on the clipboard, press `Ctrl+V`. That works in every terminal,
+  iTerm2 and Ghostty included. `⌘V` works too where the terminal passes on a paste with nothing in
+  it; if it does nothing, use `Ctrl+V`. With text on the clipboard, both paste the text. With
+  neither, the dialog says `Nothing to paste.` and how to get a screenshot.
 - **Drop it.** Drag a `.png`, `.jpg`, `.gif` or `.webp` file onto the terminal. A dropped file of any
   other kind pastes its path, as before.
-- **Name it.** `Ctrl+U` opens **Attach image file**: type the path, and `Ctrl+Enter` attaches it.
+- **Name it.** `Ctrl+U` opens **Attach image file**: type the path, and `Ctrl+Enter` attaches it. On a
+  Mac, if you took a screenshot in the last 10 minutes, **File** starts with the newest one, from the
+  folder you save screenshots to (the Desktop unless you've changed it), and says when you took it.
 
 A line like `![Screenshot 2026-10-13 at 07.02.09](uploading…)` goes in at the cursor, and becomes the
 image's link once it's up; edit, move or delete it like any other text. The bar says
