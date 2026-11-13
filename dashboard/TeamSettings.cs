@@ -40,7 +40,7 @@ public sealed partial record TeamSettings(
     string Workdir,
     string Try,
     bool Working,
-    int Worktrees,
+    int InProgress,
     int Devs,
     int Pitched,
     int Exploring,
@@ -52,6 +52,9 @@ public sealed partial record TeamSettings(
 {
     /// <summary>The file names its one stakeholder under the old <c>reviewer</c> key, which saving replaces.</summary>
     public bool SaysReviewer { get; init; }
+
+    /// <summary>The file has In progress's old name, <c>wip.worktrees</c>, and the form could read the limit, so saving replaces it.</summary>
+    public bool SaysWorktrees { get; init; }
 
     public TeamRelease Release { get; init; }
 
@@ -99,7 +102,7 @@ public sealed partial record TeamSettings(
             Text(root, "workdir"),
             Text(root, "try"),
             Find(root, "dispatch", "enabled") is { ValueKind: JsonValueKind.True },
-            Number(root, "wip", "worktrees") ?? 0,
+            Number(root, "wip", "inProgress") ?? Number(root, "wip", "worktrees") ?? 0,
             Number(root, "wip", "devs") ?? 1,
             Number(root, "wip", "pitched") ?? 0,
             Number(root, "wip", "exploring") ?? 0,
@@ -112,6 +115,8 @@ public sealed partial record TeamSettings(
             Names(root, "skills"))
         {
             SaysReviewer = Find(root, "stakeholders") is null && Text(root, "reviewer").Length > 0,
+            SaysWorktrees = Find(root, "wip", "worktrees") is not null
+                && Number(root, "wip", Find(root, "wip", "inProgress") is null ? "worktrees" : "inProgress") is not null,
             Release = Text(root, "release") switch
             {
                 "daily" => TeamRelease.Daily,
@@ -222,7 +227,13 @@ public sealed partial record TeamSettings(
         SetFlag(Customer, before.Customer, "roles", "customer");
         SetFlag(Reviewer, before.Reviewer, "roles", "reviewer");
         SetFlag(Mockups, before.Mockups, "mockups");
-        SetNumber(Worktrees, before.Worktrees, "wip", "worktrees");
+        if (before.SaysWorktrees)
+        {
+            config = ConfigEdit.Set(config, ["wip", "inProgress"], InProgress);
+            config = ConfigEdit.Remove(config, ["wip", "worktrees"]);
+        }
+        else
+            SetNumber(InProgress, before.InProgress, "wip", "inProgress");
         SetNumber(Devs, before.Devs, "wip", "devs");
         SetNumber(Pitched, before.Pitched, "wip", "pitched");
         SetNumber(Exploring, before.Exploring, "wip", "exploring");

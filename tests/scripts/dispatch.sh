@@ -10,7 +10,7 @@ fixture <<'JSON'
 { "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "dispatch": { "enabled": true } }
 JSON
 dev_dispatcher
-jq -n '{reasons: ["CI failed on PR #912 at deadbee", "Ready task available (e.g. #13) and a free worktree"], creative: false,
+jq -n '{reasons: ["CI failed on PR #912 at deadbee", "Ready task available (e.g. #13) and room In progress"], creative: false,
         tasks: [{number: 12, title: "Fix the pane", reasons: ["CI failed on PR #912 at deadbee"]}],
         ready: 13, chores: ["PR #900 has merged: clean up its worktree"]}' >"$DEV_TRIGGERS"
 dispatch_dev --dry-run
@@ -103,7 +103,7 @@ grep -q 'demo dev: would start: #12' "$A_TEAM_STATE/dispatch.log" || fail "after
 
 case_ "with nothing in hand, a Ready task is claimed before the run starts"
 dev_dispatcher
-jq -n '{reasons: ["Ready task available (e.g. #13) and a free worktree"], creative: false, tasks: [], ready: 13, chores: []}' \
+jq -n '{reasons: ["Ready task available (e.g. #13) and room In progress"], creative: false, tasks: [], ready: 13, chores: []}' \
   >"$DEV_TRIGGERS"
 echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
 dispatch_dev --dry-run
@@ -113,10 +113,10 @@ grep -q 'demo dev: would start: #13: Ready task #13 to build' "$A_TEAM_STATE/dis
 same "why" "Ready task #13 to build" "$(cat "$A_TEAM_STATE/demo/dev/dry-last-reasons")"
 
 case_ "a claim that's refused starts nothing, and says why"
-sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: no free worktree for #13" >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team.body"
+sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: no room In progress for #13" >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team.body"
 : >"$A_TEAM_STATE/dispatch.log"
 dispatch_dev --dry-run
-grep -q 'demo dev: claim failed: board.sh: no free worktree for #13' "$A_TEAM_STATE/dispatch.log" ||
+grep -q 'demo dev: claim failed: board.sh: no room In progress for #13' "$A_TEAM_STATE/dispatch.log" ||
   fail "refused: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 grep -q 'would start' "$A_TEAM_STATE/dispatch.log" && fail "refused: a run started"
 sed -i.bak 's|^  \*" claim dev "\*).*|  *" claim dev "*) echo "board.sh: the board read came back incomplete (100 of 358 items), twice. Nothing was changed: end this run, and the next one reads the board again." >\&2; exit 1 ;;|' "$DISPATCH/bin/a-team.body"
@@ -178,7 +178,7 @@ FAILING="  *\" demo triggers dev\"*) [ -s $FAILS ] && { cat $FAILS >&2; exit 1; 
 FAILING=$FAILING perl -i -pe 'print "$ENV{FAILING}\n" if /^  \*" triggers dev"\*\)/' "$DISPATCH/bin/a-team.body"
 echo "gh: connection reset" >"$FAILS"
 echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
-jq '.ready = 13 | .reasons = ["Ready task available (e.g. #13) and a free worktree"]' "$DEV_TRIGGERS" >"$DISPATCH/ready.json"
+jq '.ready = 13 | .reasons = ["Ready task available (e.g. #13) and room In progress"]' "$DEV_TRIGGERS" >"$DISPATCH/ready.json"
 cp "$DISPATCH/ready.json" "$DEV_TRIGGERS"
 dispatch_dev --dry-run
 grep -q 'demo dev' "$A_TEAM_STATE/dispatch.log" && fail "blip: '$(cat "$A_TEAM_STATE/dispatch.log")'"
@@ -321,7 +321,7 @@ case " \$* " in
   *" claim dev "*)
     echo "\$*" >>"$CLAIMS"
     n=\$(head -n 1 "$QUEUE")
-    [ -n "\$n" ] || { echo "board.sh: no free worktree for #99 (3 in use, wip.worktrees is 3)" >&2; exit 1; }
+    [ -n "\$n" ] || { echo "board.sh: no room In progress for #99 (3 in progress, wip.inProgress is 3)" >&2; exit 1; }
     tail -n +2 "$QUEUE" >"$QUEUE.rest" && mv "$QUEUE.rest" "$QUEUE"
     echo "{\"number\": \$n, \"title\": \"Task \$n\"}" ;;
   *" triggers dev"*) cat "$DEV_TRIGGERS" ;;

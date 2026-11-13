@@ -109,7 +109,7 @@ release. It looks after that PR as it does its own and marks it ready once it's 
 draft it shows In progress on the board of the team that runs that repo, then in Review once it's
 ready, where `a` merges it. Releasing stays yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
 
-**Worktrees** is how many tasks the Dev can be building at once. A PR waiting on you doesn't
+**In progress** is how many tasks can be In progress at once. A PR waiting on you doesn't
 count, so however many wait for your review, the Dev keeps starting Ready work. An Urgent task or a
 fix may take one more. **Devs** is how many Dev runs go at once, whether building a task or answering
 a review on one.
@@ -186,7 +186,8 @@ whether a file is there, so nothing is treated as missing. It's the same for the
 and it clears by itself once GitHub answers.
 
 `a-team board <team> check` reports the same from a shell, each line starting `problem`, which stops the
-team, or `note`, which doesn't.
+team, or `note`, which doesn't. Anything wrong with the team's GitHub Project is a note: the board is kept
+on this machine, and the Project is only a copy of it.
 
 ## Settings
 

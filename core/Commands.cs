@@ -142,7 +142,7 @@ internal static partial class Commands
                 if (!board.CustomerOn) throw new Die(noCustomer);
                 if (!Board.SaysTrue(board.Read("api", issue, "--jq", """.pull_request == null and .state == "open" and ((.body // "") | contains("<!-- a-team:customer -->"))""")))
                     throw new Die($"customer may only add an open issue it opened as an Idea (#{n} isn't one)");
-                var found = board.AllCards().Count(card => Cards.Marked(card, "idea") && Cards.Status(card) == "Idea" && Cards.N(card) != n);
+                var found = board.WaitingForPriority(board.AllCards(), n);
                 var limit = int.TryParse(board.Text("wip", "ideas"), out var ideas) ? ideas : 0;
                 if (found >= limit)
                     throw new Die($"{found} discovered Ideas are waiting for triage (wip.ideas is {limit}): leave #{n} off the board");
@@ -220,9 +220,9 @@ internal static partial class Commands
         }
         var n = Cards.N(it);
         var used = all.Count(Cards.Working);
-        var limit = int.TryParse(board.Text("wip", "worktrees"), out var worktrees) ? worktrees : (int?)null;
+        var limit = InProgressLimit(board);
         if (!(used < limit) && !(used < (limit ?? 0) + 1 && (Json.Text(it["priority"]) == "Urgent" || Cards.Fix(it))))
-            throw new Die($"no free worktree for #{n} ({used} in use, wip.worktrees is {limit})");
+            throw new Die($"no room In progress for #{n} ({used} in progress, wip.inProgress is {limit})");
         board.Mark(n, "dev", "true");
         board.SetStatus(n, "Ready", "In progress", "dev");
         board.Log("dev", n, "Ready → In progress");

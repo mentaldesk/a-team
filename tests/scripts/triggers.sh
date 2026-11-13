@@ -45,7 +45,7 @@ Ready 13 Something to start
 ITEMS
 run board demo triggers dev
 same "exit" 0 "$STATUS"
-same "reasons" '["Ready task available (e.g. #13) and a free worktree"]' "$(jq -c .reasons "$OUT")"
+same "reasons" '["Ready task available (e.g. #13) and room In progress"]' "$(jq -c .reasons "$OUT")"
 same "ready" 13 "$(jq -c .ready "$OUT")"
 
 case_ "a draft PR whose CI is still running doesn't wake the Dev"
@@ -285,7 +285,7 @@ ITEMS
 claimable
 run board demo claim dev
 failed "no worktree"
-grep -q "no free worktree for #13" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
+grep -q "no room In progress for #13" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
 same "writes" "" "$(cat "$WRITES")"
 gh_items <<'ITEMS'
 In_progress 12 Two
@@ -384,8 +384,44 @@ lead_board 7 8
 jq '.data.organization.projectV2.items.nodes += [.data.organization.projectV2.items.nodes[0]
   | .id = "PVTI_6" | .fieldValueByName.name = "Exploring" | .content.number = 6 | .content.id = "I_6"]' \
   "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-scheduled_agrees "Pitched and Exploring full, with a prioritised Idea" none
-jq '.wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+scheduled_agrees "Pitched and Exploring full, with a prioritised discovery leaving room" discover
+jq '.wip.ideas = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+scheduled_agrees "Pitched, Exploring and the discovery queue full" none
+jq '.wip.ideas = 2 | .wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "only a discovery waiting for a Priority fills wip.ideas: a prioritised, Priority-shelved or skipped one leaves room"
+jq '.wip.ideas = 1 | .wip.pitched = 1 | .wip.exploring = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+# discovery <labels> <unanswered|answered> [8 for a Priority]: Pitched and Exploring full, and one discovery, #8.
+discovery() {
+  local labels=$1 said=$2
+  shift 2
+  gh_items "$@" <<'ITEMS'
+Pitched 5 A pitch in front of me
+Exploring 6 A drafted pitch
+Idea 8 An Idea the Lead found
+ITEMS
+  edit_item 8 ".labels.nodes = ($labels | split(\",\") | map({name: .}))"
+  local eyes=1
+  [ "$said" = unanswered ] && eyes=0
+  gh_thread <<THREAD
+comment $(ago 60) reviewer $eyes Worth another look.\n\n<!-- a-team:shelved until=$(weeks_on 2) priority=$([ $# -gt 0 ] && echo High || echo none) -->
+THREAD
+}
+discovery '"a-team:idea,rank:low"' answered
+scheduled_agrees "no Priority" none
+discovery '"a-team:idea,rank:low"' answered 8
+scheduled_agrees "prioritised" discover
+discovery '"a-team:idea,a-team:shelved,rank:low"' answered 8
+scheduled_agrees "shelved with a Priority" discover
+discovery '"a-team:idea,a-team:shelved,rank:low"' answered
+scheduled_agrees "shelved with no Priority" none
+discovery '"a-team:idea,a-team:skipped,rank:low"' answered
+scheduled_agrees "skipped" discover
+discovery '"a-team:idea,a-team:skipped,rank:low"' answered 8
+scheduled_agrees "skipped after being prioritised" discover
+discovery '"a-team:idea,a-team:skipped,rank:low"' unanswered
+scheduled_agrees "skipped, then a stakeholder comment brings it back" none
+jq '.wip.ideas = 2 | .wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 case_ "only a scheduled check asks after each Idea: the check every pass makes no call per Idea, and says no scheduled run"
 lead_board
@@ -450,5 +486,39 @@ same "unseeded" "[\"the decision register isn't seeded: seed it\"]" "$(jq -c .re
 touch "$A_TEAM_STATE/demo/lead/seeded"
 run board demo triggers lead
 same "neither" '[]' "$(jq -c .reasons "$OUT")"
+
+case_ "wip.inProgress alone sets the limit, in the claim's refusal and the Dev's wake"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "inProgress": 2 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo triggers dev
+same "ready" null "$(jq -c .ready "$OUT")"
+run board demo claim dev
+failed "no room"
+same "refusal" "board.sh: no room In progress for #13 (2 in progress, wip.inProgress is 2)" "$(cat "$ERR")"
+
+case_ "wip.inProgress wins over a leftover wip.worktrees"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "inProgress": 3, "worktrees": 2 } }
+JSON
+gh_items <<'ITEMS'
+In_progress 11 One
+In_progress 12 Two
+Ready 13 Something to start
+ITEMS
+claimable
+run board demo triggers dev
+same "ready" 13 "$(jq -c .ready "$OUT")"
+run board demo claim dev
+same "exit" 0 "$STATUS"
+same "claimed" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
 
 finish_suite

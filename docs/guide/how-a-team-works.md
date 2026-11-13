@@ -290,8 +290,9 @@ You steer the Lead with the Priority field on the board: Low, Medium, High or Ur
   with the same Priority never does, whatever the Lead recommends.
 - **A pitch you say Not now to** goes back to Idea, and the Lead won't pitch it again until the
   date you picked, or until you change its Priority. See [Work](work.md#answering-from-a-card).
-- **The Lead's own Ideas are limited too.** Once **Ideas** in the team's settings are waiting on
-  you, it stops discovering until you rank or close one.
+- **The Lead's own Ideas are limited too.** Once **Ideas** in the team's settings are waiting for
+  your Priority, it stops discovering. Ranking one, as well as closing it, makes room for the next.
+  One it skipped doesn't wait on you, until you comment on it.
 - **An Idea the Lead sets aside** is marked skipped, with a comment saying why. Comment
   on it to put it back in the running.
 

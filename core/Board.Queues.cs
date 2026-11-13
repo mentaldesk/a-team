@@ -249,11 +249,27 @@ internal sealed partial class Board
     /// One opened by anyone else waits for a Priority.</summary>
     private bool Pitchable(JsonNode idea)
     {
-        var n = Cards.N(idea);
-        if (Cards.Marked(idea, "skipped") && OwedAnyway("lead", n) is { Count: 0 }) return false;
+        if (SetAside(idea)) return false;
         if (Cooling(idea)) return false;
-        return idea["priority"] is not null || !(Cards.Marked(idea, "idea") || Opener(idea) is not null || AgentWrote(n));
+        return idea["priority"] is not null || !(Cards.Marked(idea, "idea") || Opener(idea) is not null || AgentWrote(Cards.N(idea)));
     }
+
+    /// <summary>Skipped by the Lead, and no stakeholder has spoken on it since.</summary>
+    private bool SetAside(JsonNode idea)
+    {
+        if (!Cards.Marked(idea, "skipped")) return false;
+        var n = Cards.N(idea);
+        if (!_setAside.TryGetValue(n, out var aside))
+            _setAside[n] = aside = OwedAnyway("lead", n) is { Count: 0 };
+        return aside;
+    }
+
+    private readonly Dictionary<string, bool> _setAside = [];
+
+    /// <summary>The Lead's and Customer lead's discoveries that wait for a stakeholder's Priority, which wip.ideas limits.</summary>
+    internal int WaitingForPriority(IEnumerable<JsonNode> all, string? except = null) =>
+        all.Count(card => Cards.Marked(card, "idea") && Cards.Status(card) == "Idea" && card["priority"] is null
+            && Cards.N(card) != except && !SetAside(card));
 
     private bool AgentWrote(string n)
     {
