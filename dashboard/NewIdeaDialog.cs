@@ -73,7 +73,7 @@ public sealed class NewIdeaDialog : DashboardDialog
             _attach = new ImageAttach(_description, file => attaching.Upload(_team.Text, file), attaching.Clipboard, Say);
             _description.Placeholder = ImageAttach.Placeholder;
             _description.KeyDown += (_, key) => key.Handled = key.Handled || _attach.Pressed(key);
-            Bind(AttachId, attaching.Key, "Attach file", () => AttachFile());
+            Bind(AttachId, attaching.Key, "Browse for an image", () => AttachFile());
         }
         Also("Ctrl+V", attaching is null ? "Paste" : ImageAttach.PasteKeys);
         Register(CancelId, "Cancel", () => Dismiss());

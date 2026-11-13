@@ -167,12 +167,12 @@ public class NewIdeaDialogTests
     }
 
     [Fact]
-    public void With_attaching_Attach_file_is_a_button_too()
+    public void With_attaching_Browse_for_an_image_is_a_button_too()
     {
         using var dialog = OpenAttaching([], () => null);
 
-        Assert.Equal(["Ctrl+Enter Add", "Ctrl+U Attach file", "Esc Cancel"], dialog.ButtonLabels);
-        Assert.Contains(("Ctrl+U", "Attach file"), DialogTests.Rows(DialogTests.F1(dialog)));
+        Assert.Equal(["Ctrl+Enter Add", "Ctrl+U Browse for an image", "Esc Cancel"], dialog.ButtonLabels);
+        Assert.Contains(("Ctrl+U", "Browse for an image"), DialogTests.Rows(DialogTests.F1(dialog)));
     }
 
     [Fact]
@@ -191,6 +191,35 @@ public class NewIdeaDialogTests
         Assert.True(dialog.Description.HasFocus);
         Assert.Equal("See: ![shot](https://example.com/shot.png)", dialog.Description.Text);
         Assert.Equal("Attached shot.png  •  10 B", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Ctrl_U_on_a_file_that_isn_t_an_image_says_why_and_attaches_nothing()
+    {
+        var notes = Path.Combine(Directory.CreateTempSubdirectory().FullName, "notes.md");
+        File.WriteAllText(notes, "");
+        var uploads = new List<(string, string)>();
+        using var dialog = OpenAttaching(uploads, () => notes);
+        dialog.Description.Text = "See: ";
+
+        Assert.True(dialog.NewKeyDownEvent(Key.U.WithCtrl));
+
+        Assert.Empty(uploads);
+        Assert.Equal("See: ", dialog.Description.Text);
+        Assert.Equal("Attach failed: notes.md isn't a .png, .jpg, .gif or .webp", dialog.Message.Says);
+    }
+
+    [Fact]
+    public void Ctrl_U_cancelled_leaves_the_description_alone()
+    {
+        var uploads = new List<(string, string)>();
+        using var dialog = OpenAttaching(uploads, () => null);
+        dialog.Description.Text = "See: ";
+
+        Assert.True(dialog.NewKeyDownEvent(Key.U.WithCtrl));
+
+        Assert.Empty(uploads);
+        Assert.Equal("See: ", dialog.Description.Text);
     }
 
     [Fact]

@@ -11,17 +11,10 @@ public sealed partial record Screenshot(string Path, DateTimeOffset Taken)
     [GeneratedRegex(@"^(Screenshot|Screen Shot) \d{4}-\d{2}-\d{2} at ")]
     private static partial Regex MacName();
 
-    /// <summary>The newest screenshot you took in the last 10 minutes, on macOS; null anywhere else.</summary>
-    public static Screenshot? Latest()
-    {
-        if (!OperatingSystem.IsMacOS())
-            return null;
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Find(Folder(Location(), home), DateTimeOffset.UtcNow) is { } shot ? shot with { Path = FromHome(shot.Path, home) } : null;
-    }
-
-    internal static string FromHome(string path, string home) =>
-        path.StartsWith(home + "/", StringComparison.Ordinal) ? "~" + path[home.Length..] : path;
+    /// <summary>The newest screenshot you took in the last 10 minutes in the folder <paramref name="setting"/> names, on
+    /// macOS; null anywhere else.</summary>
+    public static Screenshot? Latest(string? setting, string home) =>
+        OperatingSystem.IsMacOS() ? Find(Folder(setting, home), DateTimeOffset.UtcNow) : null;
 
     /// <summary>Where the Mac saves screenshots: the folder set for them, or the Desktop.</summary>
     internal static string Folder(string? setting, string home) =>
@@ -45,15 +38,11 @@ public sealed partial record Screenshot(string Path, DateTimeOffset Taken)
         }
     }
 
-    internal string Said(DateTimeOffset now) => (int)(now - Taken).TotalMinutes switch
+    /// <summary>The folder set for screenshots, on macOS; null where none is set.</summary>
+    public static string? Setting()
     {
-        <= 0 => "Your latest screenshot, taken just now",
-        1 => "Your latest screenshot, taken 1 minute ago",
-        var minutes => $"Your latest screenshot, taken {minutes} minutes ago",
-    };
-
-    private static string? Location()
-    {
+        if (!OperatingSystem.IsMacOS())
+            return null;
         try
         {
             var read = new TeamCommand("defaults").Read("read", "com.apple.screencapture", "location");

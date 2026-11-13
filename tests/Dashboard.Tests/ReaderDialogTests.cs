@@ -2415,15 +2415,15 @@ public class ReaderDialogTests
     }
 
     [Fact]
-    public void Writing_a_comment_offers_Post_Attach_file_and_Back_and_F1_lists_the_editing_keys()
+    public void Writing_a_comment_offers_Post_Browse_for_an_image_and_Back_and_F1_lists_the_editing_keys()
     {
         using var dialog = Attaching([]);
 
         dialog.NewKeyDownEvent(new Key('c'));
 
-        Assert.Equal("Ctrl+Enter Post · Ctrl+U Attach file · Esc Back", Buttons(dialog));
+        Assert.Equal("Ctrl+Enter Post · Ctrl+U Browse for an image · Esc Back", Buttons(dialog));
         Assert.Equal(
-            "Ctrl+Enter Post · Ctrl+U Attach file · Tab/Shift+Tab Switch pane · Shift+arrows Select · Ctrl+V Paste text or a screenshot · Ctrl+X Cut · Ctrl+Z Undo · Esc Back",
+            "Ctrl+Enter Post · Ctrl+U Browse for an image · Tab/Shift+Tab Switch pane · Shift+arrows Select · Ctrl+V Paste text or a screenshot · Ctrl+X Cut · Ctrl+Z Undo · Esc Back",
             Keys(dialog));
     }
 

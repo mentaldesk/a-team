@@ -73,20 +73,4 @@ public sealed class ScreenshotTests : IDisposable
         Assert.Null(Screenshot.Find(Path.Combine(_home, "Desktop"), Now));
     }
 
-    [Fact]
-    public void It_shows_a_path_under_home_from_the_tilde()
-    {
-        Assert.Equal("~/Desktop/shot.png", Screenshot.FromHome("/Users/me/Desktop/shot.png", "/Users/me"));
-        Assert.Equal("/Volumes/x/shot.png", Screenshot.FromHome("/Volumes/x/shot.png", "/Users/me"));
-    }
-
-    [Theory]
-    [InlineData(20, "Your latest screenshot, taken just now")]
-    [InlineData(70, "Your latest screenshot, taken 1 minute ago")]
-    [InlineData(150, "Your latest screenshot, taken 2 minutes ago")]
-    [InlineData(599, "Your latest screenshot, taken 9 minutes ago")]
-    public void It_says_how_long_ago_you_took_it(int seconds, string said)
-    {
-        Assert.Equal(said, new Screenshot("shot.png", Now - TimeSpan.FromSeconds(seconds)).Said(Now));
-    }
 }

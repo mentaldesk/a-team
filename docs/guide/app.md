@@ -76,7 +76,7 @@ you to the first. The foot names the field you're on and how many more there are
 `Repo is required  •  2 more to fix`, and follows you as you `Tab` to another. Each mark goes as you
 fix it, and what you typed stays. A refusal about one field that comes later, like a team name
 that's already taken, marks it the same way. Confirming with nothing typed doesn't cancel: only `Esc`
-does. The exception is **Attach image file**, which an empty path just closes.
+does.
 
 `Ctrl+E` opens Commands: everything the app can do where you are, with the key for each. Type to
 narrow the list. Letters that start words match first, so `gt` finds **Go to team…**, then names

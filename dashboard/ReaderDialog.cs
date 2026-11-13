@@ -605,7 +605,7 @@ public sealed partial class ReaderDialog : DashboardDialog
             Bind(PostId, Key.Enter.WithCtrl, "Post", Post, () => CommentShown);
         }
         if (_attaching is not null)
-            Bind(AttachId, _attaching.Key, "Attach file", AttachFile, () => Writing);
+            Bind(AttachId, _attaching.Key, "Browse for an image", AttachFile, () => Writing);
         if (_comment?.Decline is { } decline)
             Bind(DeclineId, decline.Key, "Decline", Decline, Reads);
         if (_comment?.Shelve is { } shelve)

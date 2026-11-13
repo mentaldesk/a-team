@@ -57,6 +57,7 @@ var news = new WhatsNew(DateTimeOffset.UtcNow);
 var writes = new WriteQueue(command.Run);
 var macKeys = new MacKeys("ateam");
 var title = TerminalTitle.ForConsole().Names(wanted);
+var attachPicker = new AttachPicker(home, Screenshot.Setting, setting => Screenshot.Latest(setting, home));
 
 return CrashReport.Guard(Run, stateRoot, args, Console.Error);
 
@@ -151,7 +152,7 @@ Handover? Show(Handover? back)
             GiveSecret = (item, set, save) => GiveSecretDialog.Show(app, item, set, save),
             Secrets = new GitHubSecrets(new TeamCommand("gh"), Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN") is { Length: > 0 }),
             Attaching = key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
-                new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app, Screenshot.Latest())),
+                new SystemClipboardImage(Environment.GetEnvironmentVariable), () => attachPicker.Browse(app)),
             ShowSpending = (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
                 names.SelectMany(teams.Roles), open),
             ShowDecisions = team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),

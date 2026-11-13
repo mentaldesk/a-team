@@ -103,7 +103,7 @@ public sealed partial class DashboardWindow
             .Register("work.accept", "Accept", () => Accept(), new Key('a'), isEnabled: () => Acceptable() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.comment", "Comment on the item you're reading", () => { }, new Key('c'), isEnabled: () => _shown is not null)
             .Register("work.edit", "Edit the document pitch you're reading", () => { }, new Key('e'), isEnabled: () => _shown is { Document: true })
-            .Register("work.attach", "Attach image file to what you're writing", () => { }, Key.U.WithCtrl,
+            .Register("work.attach", "Browse for an image to attach to what you're writing", () => { }, Key.U.WithCtrl,
                 isEnabled: () => _shown is not null && _options.Attaching is not null)
             .Register("work.viewImage", () => "View image", () => _image?.View(), isEnabled: () => _image?.Viewable() == true)
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
