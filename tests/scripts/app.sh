@@ -210,6 +210,7 @@ case " \$* " in
       spent) echo '{"resources": {"core": {"remaining": 0, "reset": 1762398720}, "graphql": {"remaining": 4000, "reset": 1762399000}}}' >"$APP_BIN/board/limits.json" ;;
       down) echo "error connecting to api.github.com" >&2; echo "check your internet connection or https://githubstatus.com" >&2; exit 1 ;;
       invalid) echo "gh: Bad credentials (HTTP 401)" >&2; exit 1 ;;
+      odd) echo "gh: stream error: stream ID 3; INTERNAL_ERROR; received from peer" >&2; exit 1 ;;
       *) echo '{"resources": {"core": {"remaining": 5000, "reset": 1762398720}, "graphql": {"remaining": 5000, "reset": 1762398720}}}' >"$APP_BIN/board/limits.json" ;;
     esac
     page="$APP_BIN/board/limits.json" ;;
@@ -431,6 +432,19 @@ case_ "run stops when the App can't sign in, with gh's line, and points to Healt
 GITHUB_SAYS=invalid PATH="$APP_BIN/board:$PATH" run run demo dev
 same "invalid exit" 3 "$STATUS"
 same "invalid" "run.sh: demo-app can't sign in to GitHub (Bad credentials (HTTP 401)): see Health on the Teams screen" "$(cat "$ERR")"
+
+case_ "run calls a wording it doesn't know unreachable, not a failed sign-in"
+GITHUB_SAYS=odd PATH="$APP_BIN/board:$PATH" run run demo dev
+same "odd exit" 3 "$STATUS"
+same "odd" "run.sh: GitHub unreachable (stream error: stream ID 3; INTERNAL_ERROR; received from peer): this run stops; the dispatcher tries again next pass" "$(cat "$ERR")"
+
+case_ "run says the App can't sign in when its token can't be minted for want of a key"
+cached ghs_expired 60
+NO_KEY=1 A_TEAM_RUN_TEAM=demo PATH="$ROOT/bin:$APP_BIN/board:$PATH" run run demo dev
+same "no key exit" 3 "$STATUS"
+grep -q "^run.sh: demo-app can't sign in to GitHub (a-team token: no private key in the login Keychain .*): see Health on the Teams screen$" "$ERR" ||
+  fail "no key: '$(cat "$ERR")'"
+cached ghs_cached 3600
 
 case_ "run starts the Lead and the Dev on a team with the Customer lead turned on"
 jq '.roles.customer = true' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
