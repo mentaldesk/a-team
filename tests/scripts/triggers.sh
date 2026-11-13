@@ -384,8 +384,44 @@ lead_board 7 8
 jq '.data.organization.projectV2.items.nodes += [.data.organization.projectV2.items.nodes[0]
   | .id = "PVTI_6" | .fieldValueByName.name = "Exploring" | .content.number = 6 | .content.id = "I_6"]' \
   "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-scheduled_agrees "Pitched and Exploring full, with a prioritised Idea" none
-jq '.wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+scheduled_agrees "Pitched and Exploring full, with a prioritised discovery leaving room" discover
+jq '.wip.ideas = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+scheduled_agrees "Pitched, Exploring and the discovery queue full" none
+jq '.wip.ideas = 2 | .wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "only a discovery waiting for a Priority fills wip.ideas: a prioritised, Priority-shelved or skipped one leaves room"
+jq '.wip.ideas = 1 | .wip.pitched = 1 | .wip.exploring = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+# discovery <labels> <unanswered|answered> [8 for a Priority]: Pitched and Exploring full, and one discovery, #8.
+discovery() {
+  local labels=$1 said=$2
+  shift 2
+  gh_items "$@" <<'ITEMS'
+Pitched 5 A pitch in front of me
+Exploring 6 A drafted pitch
+Idea 8 An Idea the Lead found
+ITEMS
+  edit_item 8 ".labels.nodes = ($labels | split(\",\") | map({name: .}))"
+  local eyes=1
+  [ "$said" = unanswered ] && eyes=0
+  gh_thread <<THREAD
+comment $(ago 60) reviewer $eyes Worth another look.\n\n<!-- a-team:shelved until=$(weeks_on 2) priority=$([ $# -gt 0 ] && echo High || echo none) -->
+THREAD
+}
+discovery '"a-team:idea,rank:low"' answered
+scheduled_agrees "no Priority" none
+discovery '"a-team:idea,rank:low"' answered 8
+scheduled_agrees "prioritised" discover
+discovery '"a-team:idea,a-team:shelved,rank:low"' answered 8
+scheduled_agrees "shelved with a Priority" discover
+discovery '"a-team:idea,a-team:shelved,rank:low"' answered
+scheduled_agrees "shelved with no Priority" none
+discovery '"a-team:idea,a-team:skipped,rank:low"' answered
+scheduled_agrees "skipped" discover
+discovery '"a-team:idea,a-team:skipped,rank:low"' answered 8
+scheduled_agrees "skipped after being prioritised" discover
+discovery '"a-team:idea,a-team:skipped,rank:low"' unanswered
+scheduled_agrees "skipped, then a stakeholder comment brings it back" none
+jq '.wip.ideas = 2 | .wip.pitched = 3 | .wip.exploring = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
 case_ "only a scheduled check asks after each Idea: the check every pass makes no call per Idea, and says no scheduled run"
 lead_board

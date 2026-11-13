@@ -1067,6 +1067,28 @@ A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "exit" 0 "$STATUS"
 same "lead-next" '{"turn":"none","room":null}' "$(jq -c '{turn, room}' "$OUT")"
 
+case_ "only discoveries waiting for a Priority fill the Customer lead's wip.ideas: a prioritised or skipped one leaves room"
+jq '.wip.ideas = 1' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+customer_ideas() {
+  gh_items "$@" <<'ITEMS'
+Idea 41 I can't find how to pause one role
+Idea 42 I can't tell which team a card is from
+Idea 43 I can't find where the logs are
+ITEMS
+  edit_item 41 '.labels.nodes = [{name: "a-team:idea"}]'
+  edit_item 42 '.labels.nodes = [{name: "a-team:idea"}, {name: "a-team:skipped"}]'
+  customer_issue 43 "<!-- a-team:customer -->"
+}
+customer_ideas 41
+run board --dry-run demo add customer 43 Idea
+same "room" 0 "$STATUS"
+customer_ideas
+run board demo add customer 43 Idea
+failed "its Priority cleared"
+grep -qF "1 discovered Ideas are waiting for triage (wip.ideas is 1): leave #43 off the board" "$ERR" ||
+  fail "its Priority cleared: '$(cat "$ERR")'"
+jq '.wip.ideas = 2' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
 case_ "the Lead pitches a Customer lead's Idea once it's ranked, like its own discoveries"
 gh_items 41 <<'ITEMS'
 Idea 41 I can't find how to pause one role
