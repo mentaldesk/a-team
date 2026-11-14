@@ -54,6 +54,7 @@ var attention = new Attention(TimeProvider.System, visit =>
         recording.Add(command.Run(visit.Arguments));
 });
 var news = new WhatsNew(DateTimeOffset.UtcNow);
+var images = new ImagePicker();
 var writes = new WriteQueue(command.Run);
 var macKeys = new MacKeys("ateam");
 var title = TerminalTitle.ForConsole().Names(wanted);
@@ -151,7 +152,7 @@ Handover? Show(Handover? back)
             GiveSecret = (item, set, save) => GiveSecretDialog.Show(app, item, set, save),
             Secrets = new GitHubSecrets(new TeamCommand("gh"), Environment.GetEnvironmentVariable("A_TEAM_DRY_RUN") is { Length: > 0 }),
             Attaching = key => new Attaching(key, (team, file) => command.Read("board", team, "attach", "you", file),
-                new SystemClipboardImage(Environment.GetEnvironmentVariable), () => AttachFileDialog.Show(app, Screenshot.Latest())),
+                new SystemClipboardImage(Environment.GetEnvironmentVariable), () => images.Pick(app)),
             ShowSpending = (names, open) => SpendingDialog.Show(app, names, team => command.Read("board", team, "spending"),
                 names.SelectMany(teams.Roles), open),
             ShowDecisions = team => DecisionsDialog.Show(app, team, () => command.Read("board", team, "decisions", "--replaced"),
