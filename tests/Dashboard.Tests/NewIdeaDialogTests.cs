@@ -171,8 +171,8 @@ public class NewIdeaDialogTests
     {
         using var dialog = OpenAttaching([], () => null);
 
-        Assert.Equal(["Ctrl+Enter Add", "Ctrl+U Attach file", "Esc Cancel"], dialog.ButtonLabels);
-        Assert.Contains(("Ctrl+U", "Attach file"), DialogTests.Rows(DialogTests.F1(dialog)));
+        Assert.Equal(["Ctrl+Enter Add", "Ctrl+U Attach file…", "Esc Cancel"], dialog.ButtonLabels);
+        Assert.Contains(("Ctrl+U", "Attach file…"), DialogTests.Rows(DialogTests.F1(dialog)));
     }
 
     [Fact]

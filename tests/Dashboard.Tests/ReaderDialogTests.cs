@@ -2421,9 +2421,9 @@ public class ReaderDialogTests
 
         dialog.NewKeyDownEvent(new Key('c'));
 
-        Assert.Equal("Ctrl+Enter Post · Ctrl+U Attach file · Esc Back", Buttons(dialog));
+        Assert.Equal("Ctrl+Enter Post · Ctrl+U Attach file… · Esc Back", Buttons(dialog));
         Assert.Equal(
-            "Ctrl+Enter Post · Ctrl+U Attach file · Tab/Shift+Tab Switch pane · Shift+arrows Select · Ctrl+V Paste text or a screenshot · Ctrl+X Cut · Ctrl+Z Undo · Esc Back",
+            "Ctrl+Enter Post · Ctrl+U Attach file… · Tab/Shift+Tab Switch pane · Shift+arrows Select · Ctrl+V Paste text or a screenshot · Ctrl+X Cut · Ctrl+Z Undo · Esc Back",
             Keys(dialog));
     }
 

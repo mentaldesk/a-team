@@ -22,7 +22,9 @@ public sealed class ImagePickerTests : IDisposable
         return At(relative);
     }
 
-    private ImagePicker Picker() => new(_home, new FixedClock(Now));
+    private readonly FixedClock _clock = new(Now);
+
+    private ImagePicker Picker() => new(_home, _clock);
 
     [Fact]
     public void It_starts_in_the_last_folder_picked_then_the_screenshots_folder_then_the_Desktop_then_home()
@@ -67,7 +69,9 @@ public sealed class ImagePickerTests : IDisposable
         Write("Pictures/Shots/notes.md");
         var shot = Write("Pictures/Shots/Screenshot 2026-11-11 at 21.40.12.png", TimeSpan.FromMinutes(2));
         var images = Picker();
+        _clock.Now = Now - TimeSpan.FromMinutes(5);
         Remember(images, At("work/old.png"));
+        _clock.Now = Now;
 
         using var picker = images.Create("~/Pictures/Shots");
 
@@ -75,6 +79,36 @@ public sealed class ImagePickerTests : IDisposable
         Assert.Equal(shot, picker.Selected?.FullPath);
         Assert.True(picker.NewKeyDownEvent(Key.Enter));
         Assert.Equal("~/Pictures/Shots/Screenshot 2026-11-11 at 21.40.12.png", images.Picked(picker));
+    }
+
+    [Fact]
+    public void A_screenshot_taken_before_the_last_pick_does_not_take_it_back_to_the_screenshots_folder()
+    {
+        Write("Desktop/Screenshot 2026-11-11 at 21.39.12.png", TimeSpan.FromMinutes(3));
+        var images = Picker();
+
+        Assert.Equal("~/work/notes.md", Remember(images, Write("work/notes.md")));
+        using var next = images.Create(null);
+
+        Assert.Equal("~/work", next.Where);
+        Assert.Equal("../", next.Selected?.Label);
+    }
+
+    [Fact]
+    public void Once_the_screenshot_is_attached_the_next_one_opens_in_its_folder_without_it_selected()
+    {
+        Write("Desktop/Screenshot 2026-11-11 at 21.39.12.png", TimeSpan.FromMinutes(3));
+        var images = Picker();
+        using (var first = images.Create(null))
+        {
+            Assert.True(first.NewKeyDownEvent(Key.Enter));
+            Assert.Equal("~/Desktop/Screenshot 2026-11-11 at 21.39.12.png", images.Picked(first));
+        }
+
+        using var next = images.Create(null);
+
+        Assert.Equal("~/Desktop", next.Where);
+        Assert.Equal("../", next.Selected?.Label);
     }
 
     [Fact]
@@ -157,6 +191,8 @@ public sealed class ImagePickerTests : IDisposable
 
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => now;
+        public DateTimeOffset Now { get; set; } = now;
+
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 }

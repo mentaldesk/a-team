@@ -427,10 +427,10 @@ are three ways to attach an image:
   files by name. `Enter` on a folder goes into it, and `Backspace` with nothing typed goes up. Typing
   searches this folder and every folder below it, and a path starting with `~` or `/` goes straight
   to that file. `Enter` on an image attaches it, and `Esc` closes the browser. On a Mac, if you took
-  a screenshot in the last 10 minutes, it opens in the folder you save screenshots to (the Desktop
-  unless you've changed it) with the newest one selected, so `Enter` attaches it. Otherwise it opens
-  in the folder of the last file you picked, or the first time in your screenshots folder, else the
-  Desktop, else your home folder.
+  a screenshot in the last 10 minutes, and since you last picked a file, it opens in the folder you
+  save screenshots to (the Desktop unless you've changed it) with the newest one selected, so `Enter`
+  attaches it. Otherwise it opens in the folder of the last file you picked, or the first time in
+  your screenshots folder, else the Desktop, else your home folder.
 
 A line like `![Screenshot 2026-10-13 at 07.02.09](uploading…)` goes in at the cursor, and becomes the
 image's link once it's up; edit, move or delete it like any other text. The bar says
