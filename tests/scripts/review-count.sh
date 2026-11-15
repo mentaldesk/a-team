@@ -306,6 +306,8 @@ edit_item 11 '.labels.nodes = []'
 run board demo depends dev 11 mentaldesk/style#84 released "needs it"
 KEEP_BOARD=1 run board demo depends dev 11 mentaldesk/style#84 released MentalDesk.Tui "needs it"
 same "task: one" "11|mentaldesk/style#84|released|MentalDesk.Tui" "$(waits_table)"
+KEEP_BOARD=1 run board demo depends dev 11 MentalDesk/Style#84 released MentalDesk.Tui "needs it"
+same "task: one whatever the case" "11|MentalDesk/Style#84|released|MentalDesk.Tui" "$(waits_table)"
 
 case_ "depends refuses a pitch outside Building, one of its own team's issues, and a wait that isn't on a release or another repo"
 for status in Exploring Pitched Approved; do
@@ -378,6 +380,12 @@ grep -qx "No longer blocked by mentaldesk/style#52: it shipped another way" "$PO
 same "gone" "" "$(waits_table)"
 KEEP_BOARD=1 run board demo triggers lead
 same "woken" 1 "$(closed_wake)"
+waiting_pitch
+echo '{"id": 9052, "number": 52}' >"$ISSUE"
+run board demo depends lead 10 MentalDesk/Style#52 closed "needs the fix"
+KEEP_BOARD=1 run board demo undepend lead 10 mentaldesk/style#52 "it shipped another way"
+same "any case: exit" 0 "$STATUS"
+same "any case: gone" "" "$(waits_table)"
 echo '[]' >"$BLOCKED"
 
 case_ "a wait is written whole or not at all"

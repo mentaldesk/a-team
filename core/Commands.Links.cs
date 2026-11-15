@@ -179,7 +179,7 @@ internal static partial class Commands
 
     private static void UndependUpstream(Board board, string role, string task, string prereq, string why, string repo, string upN)
     {
-        if (!board.WaitsOn(task).Any(wait => Json.Text(wait?["ref"]) == prereq)) throw new Die($"#{task} is not waiting on {prereq}");
+        if (!board.WaitsOn(task).Any(wait => string.Equals(Json.Text(wait?["ref"]), prereq, StringComparison.OrdinalIgnoreCase))) throw new Die($"#{task} is not waiting on {prereq}");
         var number = long.Parse(upN, CultureInfo.InvariantCulture);
         var id = FirstId(Board.Must(BlockedBy(board, task)).Out, row => Json.Long(row?["number"]) == number
             && (Json.Text(row?["repository_url"]) ?? "").EndsWith("/" + repo, StringComparison.OrdinalIgnoreCase));
