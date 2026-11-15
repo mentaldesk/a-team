@@ -57,15 +57,12 @@ public sealed partial class DashboardWindow
 
     private void RefreshWatches(DateTimeOffset now)
     {
-        DateTimeOffset? nextCheck = long.TryParse(ReadText(_nextPass), out var seconds)
-            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
-            : null;
+        var pass = DispatcherState.NextPass(_stateRoot);
         var paused = _watches.Select(watch => watch.Team).Distinct().ToDictionary(team => team, _teams.IsPaused);
         _checks?.Follow(paused.Keys);
         ShowChecks();
-        var passing = DispatcherState.Passing(_stateRoot);
         foreach (var watch in _watches)
-            watch.Refresh(now, nextCheck, paused[watch.Team], _teams.IsHeld(watch.Team, watch.Role), _checks?.Fatal(watch.Team), passing);
+            watch.Refresh(now, pass?.Due, paused[watch.Team], _teams.IsHeld(watch.Team, watch.Role), _checks?.Fatal(watch.Team), pass?.Running ?? false);
     }
 
     /// <summary>A team's failed check stays on the bar as news until a later check passes.</summary>

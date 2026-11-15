@@ -196,12 +196,6 @@ public sealed partial class DashboardWindow
         typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion.Split('+')[0] ?? "";
 
-    private static string? ReadText(string path)
-    {
-        try { return File.ReadAllText(path).Trim(); }
-        catch (IOException) { return null; }
-    }
-
     private static IReadOnlyList<LogLine> ReadTail(string path, int count)
     {
         try

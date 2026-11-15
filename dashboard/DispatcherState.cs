@@ -53,21 +53,34 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
     public static DispatcherState Read(string stateRoot, DateTimeOffset now, string home)
     {
         var record = Record(stateRoot);
+        var pass = NextPass(stateRoot, record);
         if (record is null)
-            return Time(Path.Combine(stateRoot, "next-pass")) is { } due && (now - due <= Grace || Passing(stateRoot))
-                ? Unrecorded
-                : NotInstalled;
+            return pass is { } unrecorded && (now - unrecorded.Due <= Grace || unrecorded.Running) ? Unrecorded : NotInstalled;
+
+        var (due, running) = pass!;
+        if (now - due > Grace && !running)
+            return new(null, $"stopped {Ages.Ago(now - (due - TimeSpan.FromSeconds(record.Interval)))} ago", true);
+
+        var next = $"next pass {Ages.Clock(Max(due - now, TimeSpan.Zero))}";
+        return record.DryRun
+            ? new(null, $"dry run: nothing will actually start · {next}", true)
+            : new($"{Home(record.Bin, home)} {record.Version}", next, false);
+    }
+
+    internal sealed record Pass(DateTimeOffset Due, bool Running);
+
+    /// <summary>When the next pass is due and whether one is going, or null when the dispatcher has never passed.</summary>
+    internal static Pass? NextPass(string stateRoot) => NextPass(stateRoot, Record(stateRoot));
+
+    private static Pass? NextPass(string stateRoot, Installed? record)
+    {
+        if (record is null)
+            return Time(Path.Combine(stateRoot, "next-pass")) is { } due ? new(due, Passing(stateRoot)) : null;
 
         var interval = TimeSpan.FromSeconds(record.Interval);
         var passed = Time(Path.Combine(stateRoot, record.DryRun ? "dry-next-pass" : "next-pass")) - interval;
         var last = passed is { } pass && pass > record.InstalledAt ? pass : record.InstalledAt;
-        if (now - last > interval + Grace && !Passing(stateRoot, record.DryRun))
-            return new(null, $"stopped {Ages.Ago(now - last)} ago", true);
-
-        var next = $"next pass {Ages.Clock(Max(last + interval - now, TimeSpan.Zero))}";
-        return record.DryRun
-            ? new(null, $"dry run: nothing will actually start · {next}", true)
-            : new($"{Home(record.Bin, home)} {record.Version}", next, false);
+        return new(last + interval, Passing(stateRoot, record.DryRun));
     }
 
     private static readonly TimeSpan Grace = TimeSpan.FromMinutes(1);

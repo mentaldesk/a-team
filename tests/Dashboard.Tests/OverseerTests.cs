@@ -864,6 +864,29 @@ public class OverseerTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void An_idle_role_counts_down_to_the_pass_the_dispatcher_title_shows(bool dryRun)
+    {
+        Directory.CreateDirectory(Path.Combine(Config, "teams"));
+        File.WriteAllText(Path.Combine(Config, "teams", "team0.json"), """{"dispatch": {"enabled": true}}""");
+        WriteRun("team0", "dev", 12);
+        File.WriteAllText(Path.Combine(_root, "dispatcher.json"), $$"""
+            { "bin": "/opt/homebrew/bin/a-team", "version": "0.3.7", "dryRun": {{(dryRun ? "true" : "false")}}, "interval": 120,
+              "installedAt": {{(Now - TimeSpan.FromHours(1)).ToUnixTimeSeconds()}} }
+            """);
+        File.WriteAllText(Path.Combine(_root, dryRun ? "dry-next-pass" : "next-pass"), (Now + TimeSpan.FromSeconds(72)).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+        using var window = Open(clock: new Clock());
+        window.Press("Ctrl+G O");
+        window.Refresh();
+
+        Assert.True(window.NewKeyDownEvent(Key.CursorUp));
+
+        Assert.EndsWith("next pass 1:12", DispatcherState.Read(_root, Now, "").Title(), StringComparison.Ordinal);
+        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run · next check 1:12", window.Team.Lines[0]);
+    }
+
+    [Theory]
     [InlineData(160, true)]
     [InlineData(120, false)]
     public void Up_from_a_lane_s_top_row_shows_the_team_beside_the_lanes_or_at_their_foot_and_Down_goes_back(int width, bool beside)

@@ -132,6 +132,40 @@ public class DispatcherStateTests : IDisposable
     }
 
     [Fact]
+    public void The_next_pass_is_the_one_the_title_counts_down_to()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12");
+        NextPass(TimeSpan.FromSeconds(72));
+
+        Assert.Equal(new DispatcherState.Pass(Now + TimeSpan.FromSeconds(72), false), DispatcherState.NextPass(_root));
+    }
+
+    [Fact]
+    public void A_dry_run_dispatcher_s_next_pass_is_its_own()
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12", dryRun: true, installedAt: Now - TimeSpan.FromHours(1));
+        NextPass(TimeSpan.FromSeconds(48), "dry-next-pass");
+        NextPass(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(Now + TimeSpan.FromSeconds(48), DispatcherState.NextPass(_root)?.Due);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void An_overdue_next_pass_says_whether_a_pass_is_still_going(bool going)
+    {
+        Install("/opt/homebrew/bin/a-team", "0.1.12", installedAt: Now - TimeSpan.FromHours(1));
+        NextPass(-TimeSpan.FromMinutes(3));
+        Pass(going ? Environment.ProcessId : int.MaxValue);
+
+        Assert.Equal(new DispatcherState.Pass(Now - TimeSpan.FromMinutes(3), going), DispatcherState.NextPass(_root));
+    }
+
+    [Fact]
+    public void A_dispatcher_that_has_never_passed_has_no_next_pass() => Assert.Null(DispatcherState.NextPass(_root));
+
+    [Fact]
     public void Nothing_installed_says_how_to_install_it_in_the_Error_scheme()
     {
         var state = Read();
