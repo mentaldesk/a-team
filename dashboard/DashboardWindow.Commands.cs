@@ -23,7 +23,7 @@ public sealed partial class DashboardWindow
         _bar.KeyPressed();
         if (key == MacCopy && !_menu.Bar.IsOpen() && _commands.IsEnabled(CopyLines))
             return _commands.Execute(CopyLines);
-        if (InAssistant && _commands.PendingChord is null && IsTyping(key))
+        if ((InAssistant || InFilter) && _commands.PendingChord is null && IsTyping(key))
             return base.OnKeyDown(key);
         if (InAssistant && key == Key.Esc)
         {
@@ -59,6 +59,7 @@ public sealed partial class DashboardWindow
         string[] interrupt = ["Interrupt", "Let it start again"];
         string[] mine = ["Show only mine", "Show all"];
         string[] holdTask = ["Hold", "Release hold"];
+        string[] fold = ["Fold the lane", "Close the filter"];
         _commands
             .Register("assistant.send", "Send question", () => _assistant?.Send(), Key.Enter, isEnabled: () => InAssistant, scopes: [Regions.Assistant])
             .Register("assistant.stop", "Stop answering", () => _assistant?.Stop(), Key.Esc,
@@ -135,8 +136,9 @@ public sealed partial class DashboardWindow
             .Register("overseer.details", () => details[_overseer.Board.OnMore ? 1 : 0], OverseerEnter, Key.Enter,
                 isEnabled: () => OnOverseer() && (_overseer.Board.OnMore || _cardRun is not null || Chosen() is { LogPath: not null }),
                 scopes: [Regions.Overseer, Regions.Team], menuLabels: details)
-            .Register("overseer.fold", () => "Fold the lane", () => _overseer.Fold(), Key.Esc,
-                isEnabled: () => OnOverseer() && _overseer.CanFold, scopes: [Regions.Overseer])
+            .Register("overseer.fold", () => fold[_overseer.FilterOpen ? 1 : 0], FoldOrCloseFilter, Key.Esc,
+                isEnabled: () => OnOverseer() && (_overseer.FilterOpen || _overseer.CanFold), scopes: [Regions.Overseer, Regions.Filter],
+                menuLabels: fold)
             .Register("overseer.read", () => "Read the card", ReadChip, new Key('o'),
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is not null, menuLabel: () => "Read t_he card", scopes: [Regions.Overseer])
             .Register("overseer.work", () => "Go to the card in Work", GoToChip, new Key('w'),
@@ -145,6 +147,10 @@ public sealed partial class DashboardWindow
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is not null, menuLabel: () => "Set pri_ority", scopes: [Regions.Overseer])
             .Register("overseer.github", () => "Open on GitHub", OpenChip, new Key('g'),
                 isEnabled: () => OnOverseer() && _overseer.Board.SelectedCard is { Url.Length: > 0 }, scopes: [Regions.Overseer])
+            .Register("overseer.filter", () => "Filter cards", OpenFilter, Key.F.WithCtrl, isEnabled: OnOverseer, menuLabel: () => "Fi_lter cards",
+                scopes: [Regions.Overseer, Regions.Filter])
+            .Register("overseer.matches", "Go to the matching cards", ToMatches, Key.CursorDown,
+                isEnabled: () => InFilter && _overseer.Board.Matching > 0, scopes: [Regions.Filter])
             .Register("overseer.retry", () => "Read the boards that failed again", () => RetryBoards(_overseer.FailedTeams), new Key('r'),
                 isEnabled: () => OnOverseer() && _overseer.Failed, scopes: [Regions.Overseer])
             .Register("overseer.refresh", () => "Read every board again", ReadBoards, Key.F5, isEnabled: OnOverseer,
@@ -184,6 +190,7 @@ public sealed partial class DashboardWindow
             .Register("agent.collapse", () => _dispatcherOpen ? "Back from the dispatcher's log" : "Back to Overseer", Collapse, Key.Esc,
                 isEnabled: () => _dispatcherOpen || _sessionFull, menuLabel: () => "Back", scopes: [Regions.Log])
             .Register("quit", "Quit", Quit, Key.Q.WithCtrl);
+        _commands.Keys.Bind("Tab", "overseer.matches", Regions.Filter);
         foreach (var (id, label, run) in PaneWidths.Commands)
             _commands.Register(id, label, () => run(_paneWidths.Open!), isEnabled: () => _paneWidths.Open?.CanResize == true);
         for (var tab = 0; tab < 9; tab++)

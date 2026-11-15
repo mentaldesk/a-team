@@ -1,3 +1,5 @@
+using MentalDesk.Tui.Filtering;
+
 namespace ATeam.Dashboard;
 
 /// <summary>A chip in a column: a card, or the <c>+N</c> that stands in for the cards a folded lane hides.</summary>
@@ -49,6 +51,41 @@ public sealed class OverseerBoard
 
     public bool Unfolded(string team) => _unfolded.Contains(team);
 
+    /// <summary>What the filter bar holds: while it has text, every lane shows only the cards it matches, unfolded.</summary>
+    public string Filter { get; private set; } = "";
+
+    public bool Filtering => Filter.Length > 0;
+
+    /// <summary>Narrows every lane to the cards <paramref name="query"/> matches, selecting the first of them.</summary>
+    public void FilterBy(string query)
+    {
+        if (query == Filter)
+            return;
+        Filter = query;
+        if (Filtering)
+            SelectFirst();
+    }
+
+    /// <summary>Whether <paramref name="card"/>'s number or whole title matches <paramref name="query"/>, as a list
+    /// filters, with a leading <c>#</c> ignored.</summary>
+    public static bool Matches(string query, BoardCard card) =>
+        query.TrimStart('#').Trim() is not { Length: > 0 } wanted || ListFilter.Score(wanted, $"#{card.Number} {card.Title}") is not null;
+
+    /// <summary>How many cards the filter finds across every lane.</summary>
+    public int Matching => _cards.Count(card => _teams.Contains(card.Team) && Columns.Contains(card.Status) && Matches(Filter, card));
+
+    /// <summary>What the filter bar says of <see cref="Matching"/>.</summary>
+    public string MatchCount => Matching switch
+    {
+        0 => "No results",
+        1 => "1 card",
+        var count => $"{count} cards",
+    };
+
+    /// <summary>Whether the filter leaves <paramref name="team"/>'s lane with no cards at all.</summary>
+    public bool NoMatches(string team) =>
+        Filtering && _cards.Any(card => card.Team == team) && Enumerable.Range(0, Columns.Length).All(column => Column(team, column).Count == 0);
+
     /// <summary>Folds at the most rows that keep every lane, with <paramref name="frame"/> rows each around it,
     /// within <paramref name="height"/>, and never fewer than <see cref="MinFoldRows"/>.</summary>
     public void FitTo(int height, int frame)
@@ -72,7 +109,7 @@ public sealed class OverseerBoard
 
     /// <summary>A column's cards, highest Priority first, and among equals the one that has waited longest.</summary>
     public IReadOnlyList<BoardCard> Column(string team, int column) =>
-        [.. _cards.Where(card => card.Team == team && card.Status == Columns[column])
+        [.. _cards.Where(card => card.Team == team && card.Status == Columns[column] && Matches(Filter, card))
             .OrderByDescending(card => Priorities.Of(card.Priority))
             .ThenBy(card => card.Since ?? DateTimeOffset.MaxValue)
             .ThenBy(card => card.Number)];
@@ -84,7 +121,7 @@ public sealed class OverseerBoard
     private IReadOnlyList<Chip> Chips(string team, int column, int fold)
     {
         var cards = Column(team, column);
-        if (cards.Count <= fold || Unfolded(team))
+        if (cards.Count <= fold || Unfolded(team) || Filtering)
             return [.. cards.Select(card => new Chip(card))];
         return [.. cards.Take(fold - 1).Select(card => new Chip(card)), new Chip(null, cards.Count - (fold - 1))];
     }
@@ -140,6 +177,19 @@ public sealed class OverseerBoard
             return false;
         var chips = Chips(team, column);
         Selected = chips.Any(chip => chip.Card == card) ? new ChipPlace(team, column, number) : At(team, column, chips.Count - 1);
+        return true;
+    }
+
+    /// <summary>Selects the card, unfolding its lane if the card is folded away behind the <c>+N</c>.</summary>
+    public bool Reveal(string team, int number)
+    {
+        if (!Select(team, number))
+            return false;
+        if (Selected?.Number != number)
+        {
+            _unfolded.Add(team);
+            Select(team, number);
+        }
         return true;
     }
 

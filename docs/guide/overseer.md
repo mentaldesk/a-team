@@ -70,7 +70,7 @@ nothing to light, and neither do a lane's heading or a `+7`.
 | `Tab`, `Shift+Tab` | Go to the next or previous team's lane |
 | `PgUp`, `PgDn` | Scroll the lanes a screen at a time, when they don't all fit |
 | `Enter` | Opens the session of the agent on the selected card full-screen, or the chosen role's latest on a heading. On a `+7`, shows the whole lane |
-| `Esc` | Folds the lane back |
+| `Esc` | Folds the lane back, or closes the [filter](#filtering-cards) |
 | `i` | Interrupts the agent on the selected card, or the chosen role on a heading, and puts you in its conversation |
 | `h` | On a heading, pauses the chosen role, or lets it start again |
 | `o` | Opens the card in the reader, as [From a card](#from-a-card) describes |
@@ -80,6 +80,23 @@ nothing to light, and neither do a lane's heading or a `+7`.
 | `b` | Opens the team's mirror, its Project board on GitHub, if it has one |
 | `r` | Reads again the boards that couldn't be read |
 | `F5` | Reads every board again |
+| `Ctrl+F` | Filters every lane to the cards matching a number or title, as [Filtering cards](#filtering-cards) describes |
+
+## Filtering cards
+
+`Ctrl+F`, or *View › Filter cards*, opens a filter bar above the column headings. Type part of a card's number or
+title, and every team's lane narrows to the cards that match, as you type. It matches the way the guide's lists do:
+the start of each word, as `dpath` finds *Dispatched runs have no /usr/local/bin on PATH*, or any run of letters in
+it, as `docker` does, in any case. `823` and `#823` both find `#823`. The whole title counts, not only what fits on the
+chip.
+
+While the bar has text, no lane is folded behind a `+7`, a lane with nothing matching says `(no matches)`, and the
+bar's right end counts the matches across every team: `7 cards`, or `No results`. Reading the boards again keeps the
+filter on.
+
+`↓` or `Tab` goes from the bar to the first matching card, where the arrows, `Enter` and `i` work as usual on the
+narrowed board, and `Ctrl+F` goes back to the bar with its text selected. `Esc` closes the bar and brings back the
+whole board, with the card you picked still selected, or the one you were on before you opened it.
 
 ## From a card
 

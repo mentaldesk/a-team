@@ -50,7 +50,7 @@ public class KeysSheetTests : IDisposable
                 ("→", "Select the chip to the right"), ("←", "Select the chip to the left"),
                 ("↓", "Select the chip below"), ("↑", "Select the chip above"),
                 ("Tab", "Select the next team's lane"), ("Shift+Tab", "Select the previous team's lane"),
-                ("PgDn", "Scroll the lanes down"), ("PgUp", "Scroll the lanes up"), ("F5", "Read every board again"),
+                ("PgDn", "Scroll the lanes down"), ("PgUp", "Scroll the lanes up"), ("Ctrl+F", "Filter cards"), ("F5", "Read every board again"),
             ],
             Rows(here));
     }

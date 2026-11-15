@@ -63,7 +63,8 @@ public sealed class OverseerView : View
     private const int AgeWidth = 3;
 
     private readonly OverseerBoard _board;
-    private readonly Label _header = new() { X = 1, Y = 0, Width = Dim.Fill(), CanFocus = false };
+    private readonly OverseerFilterBar _filter = new() { X = 0, Y = 0, Width = Dim.Fill(), Visible = false };
+    private readonly Label _header = new() { X = 1, Width = Dim.Fill(), CanFocus = false };
     private readonly View _lanes;
     private readonly List<Lane> _laneViews = [];
     private readonly FrameView _details;
@@ -73,17 +74,20 @@ public sealed class OverseerView : View
     private string _steps = "";
     private IconStyle _icons = IconStyle.Unicode;
     private bool _beside;
+    private ChipPlace? _beforeFilter;
+    private bool _picked;
 
     public OverseerView(IReadOnlyList<string> teams)
     {
         CanFocus = true;
         _board = new OverseerBoard(teams);
+        _header.Y = Pos.Func(_ => FilterRows());
         _lanes = new View
         {
             X = 0,
-            Y = HeaderRows,
+            Y = Pos.Func(_ => FilterRows() + HeaderRows),
             Width = Dim.Fill(),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - HeaderRows - DetailHeight()), this),
+            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - FilterRows() - HeaderRows - DetailHeight()), this),
             CanFocus = false,
         };
         _lanes.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
@@ -102,13 +106,81 @@ public sealed class OverseerView : View
             Visible = false,
         };
         _details.Add(_detailText);
-        Add(_header, _lanes, _details);
+        _filter.Changed += Filtered;
+        Add(_filter, _header, _lanes, _details);
         foreach (var team in teams)
             AddLane(team);
         SubViewLayout += (_, _) => ShowHeader();
     }
 
     internal OverseerBoard Board => _board;
+
+    internal OverseerFilterBar FilterBar => _filter;
+
+    public bool FilterOpen => _filter.Visible;
+
+    /// <summary>The filter's field has focus, so the keys you type go into it.</summary>
+    public bool InFilter => FilterOpen && _filter.Field.HasFocus;
+
+    /// <summary>Ctrl+F: opens the filter bar, or goes back to it, with its text selected.</summary>
+    public void OpenFilter()
+    {
+        if (!FilterOpen)
+        {
+            _beforeFilter = _board.Selected;
+            _picked = false;
+            _filter.Visible = true;
+            SetNeedsLayout();
+        }
+        _filter.Editing = true;
+        _filter.Field.SetFocus();
+        _filter.Field.SelectAll();
+        Changed();
+    }
+
+    /// <summary>Down or Tab from the bar: the first matching card, with the arrows on the narrowed board.</summary>
+    public void ToMatches()
+    {
+        if (!FilterOpen || _board.Matching == 0)
+            return;
+        _board.SelectFirst();
+        LeaveField();
+        Picked();
+    }
+
+    /// <summary>Esc: the whole board again, on the card picked from the narrowed one, or else the card selected before.</summary>
+    public void CloseFilter()
+    {
+        if (!FilterOpen)
+            return;
+        var keep = _picked && _board.SelectedCard is not null ? _board.Selected : _beforeFilter;
+        _filter.Visible = false;
+        _filter.Field.Text = "";
+        LeaveField();
+        _board.FilterBy("");
+        if (keep is { Number: { } number } card)
+            _board.Reveal(card.Team, number);
+        else if (keep is { Heading: true } heading)
+            _board.SelectHeading(heading.Team);
+        Changed();
+        ScrollToSelection();
+    }
+
+    private void LeaveField()
+    {
+        _filter.Editing = false;
+        SetFocus();
+    }
+
+    private void Filtered()
+    {
+        _board.FilterBy(_filter.Query);
+        _picked = false;
+        Changed();
+        ScrollToSelection();
+    }
+
+    private int FilterRows() => FilterOpen ? OverseerFilterBar.Rows : 0;
 
     internal OverseerState State => _state;
 
@@ -132,6 +204,8 @@ public sealed class OverseerView : View
     internal IReadOnlyList<string> LaneTitles => [.. _laneViews.Select(lane => lane.Title)];
 
     internal const string NothingOnTheBoard = "Nothing on the board";
+
+    internal const string NoMatches = "(no matches)";
 
     /// <summary>Whether any lane couldn't be read, so <c>R</c> would read it again.</summary>
     internal bool Failed => _laneViews.Any(lane => lane.Load.State == LoadState.Failed);
@@ -287,8 +361,7 @@ public sealed class OverseerView : View
         if (lanes.FirstOrDefault(lane => _board.SelectLane(LaneTeam(lane), column)) is null)
             return;
         _lanes.Viewport = _lanes.Viewport with { Y = y };
-        Changed();
-        ScrollToSelection();
+        Picked();
     }
 
     /// <summary>Enter on a <c>+N</c>: unfolds its lane.</summary>
@@ -299,8 +372,7 @@ public sealed class OverseerView : View
     {
         if (!_board.SelectHeading(team))
             return false;
-        Changed();
-        ScrollToSelection();
+        Picked();
         return true;
     }
 
@@ -309,8 +381,7 @@ public sealed class OverseerView : View
     {
         if (!_board.Select(team, number))
             return false;
-        Changed();
-        ScrollToSelection();
+        Picked();
         return true;
     }
 
@@ -427,6 +498,13 @@ public sealed class OverseerView : View
     private void Move(Action move)
     {
         move();
+        Picked();
+    }
+
+    /// <summary>The selection moved other than by the filter, so Esc out of the filter keeps it.</summary>
+    private void Picked()
+    {
+        _picked = true;
         Changed();
         ScrollToSelection();
     }
@@ -443,6 +521,7 @@ public sealed class OverseerView : View
 
     private void Changed()
     {
+        _filter.Count = _board.Filtering ? _board.MatchCount : "";
         ShowDetails();
         SelectionChanged?.Invoke();
         Redraw();
@@ -630,6 +709,12 @@ public sealed class OverseerView : View
             var state = overseer._state;
             var width = ColumnWidth(Viewport.Width);
             var elapsed = overseer.Elapsed;
+            if (board.NoMatches(team))
+            {
+                SetAttribute(GetAttributeForRole(VisualRole.ReadOnly));
+                AddStr(0, 0, Card.Elide(NoMatches, Viewport.Width));
+                return true;
+            }
             for (var column = 0; column < OverseerBoard.Columns.Length; column++)
             {
                 var chips = board.Chips(team, column);
