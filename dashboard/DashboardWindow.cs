@@ -57,6 +57,7 @@ public sealed partial class DashboardWindow : Window
     private readonly List<string> _teamNames;
     private readonly string _dispatchLog;
     private readonly string _stateRoot;
+    private string _nextCheck = "";
     private static readonly string BaseScheme = SchemeManager.SchemesToSchemeName(Schemes.Base)!;
     private static readonly string ErrorScheme = SchemeManager.SchemesToSchemeName(Schemes.Error)!;
     private readonly string _home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

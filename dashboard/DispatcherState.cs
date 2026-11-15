@@ -83,6 +83,15 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
         return new(last + interval, Passing(stateRoot, record.DryRun));
     }
 
+    /// <summary>When the dispatcher next checks every team, for Overseer's status bar.</summary>
+    internal static string NextCheck(Pass? pass, DateTimeOffset now) => pass switch
+    {
+        null => "dispatcher hasn't run",
+        var (due, _) when due - now >= TimeSpan.Zero => $"next check {Ages.Clock(due - now)}",
+        var (due, running) when running || now - due < Grace => "checking now",
+        _ => "dispatcher not running",
+    };
+
     private static readonly TimeSpan Grace = TimeSpan.FromMinutes(1);
 
     /// <summary>A pass is still going, however overdue its next-pass: see scripts/dispatch.sh.</summary>

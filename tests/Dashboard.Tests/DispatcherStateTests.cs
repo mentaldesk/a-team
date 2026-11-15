@@ -166,6 +166,18 @@ public class DispatcherStateTests : IDisposable
     public void A_dispatcher_that_has_never_passed_has_no_next_pass() => Assert.Null(DispatcherState.NextPass(_root));
 
     [Fact]
+    public void The_next_check_counts_down_or_says_why_it_can_t()
+    {
+        var overdue = Now - TimeSpan.FromMinutes(3);
+
+        Assert.Equal("next check 1:12", DispatcherState.NextCheck(new(Now + TimeSpan.FromSeconds(72), false), Now));
+        Assert.Equal("checking now", DispatcherState.NextCheck(new(Now - TimeSpan.FromSeconds(30), false), Now));
+        Assert.Equal("checking now", DispatcherState.NextCheck(new(overdue, true), Now));
+        Assert.Equal("dispatcher not running", DispatcherState.NextCheck(new(overdue, false), Now));
+        Assert.Equal("dispatcher hasn't run", DispatcherState.NextCheck(null, Now));
+    }
+
+    [Fact]
     public void Nothing_installed_says_how_to_install_it_in_the_Error_scheme()
     {
         var state = Read();

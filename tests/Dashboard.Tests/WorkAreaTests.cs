@@ -736,7 +736,7 @@ public partial class WorkAreaTests : IDisposable
 
         window.Press("Ctrl+G O");
 
-        Assert.Equal("Overseer", window.Status.FocusWord);
+        Assert.Equal("Overseer · dispatcher hasn't run", window.Status.FocusWord);
     }
 
     [Fact]

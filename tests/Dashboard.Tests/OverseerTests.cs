@@ -675,7 +675,7 @@ public class OverseerTests : IDisposable
         clock.Now += TimeSpan.FromMinutes(3);
         window.Refresh();
 
-        Assert.Equal("Overseer · read 3m ago", window.Status.FocusWord);
+        Assert.Equal("Overseer · read 3m ago · dispatcher hasn't run", window.Status.FocusWord);
         Assert.True(window.NewKeyDownEvent(Key.F5));
         Assert.Equal(4, reads);
     }
@@ -866,7 +866,7 @@ public class OverseerTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void An_idle_role_counts_down_to_the_pass_the_dispatcher_title_shows(bool dryRun)
+    public void Overseer_counts_down_once_to_the_pass_the_dispatcher_title_shows(bool dryRun)
     {
         Directory.CreateDirectory(Path.Combine(Config, "teams"));
         File.WriteAllText(Path.Combine(Config, "teams", "team0.json"), """{"dispatch": {"enabled": true}}""");
@@ -883,7 +883,8 @@ public class OverseerTests : IDisposable
         Assert.True(window.NewKeyDownEvent(Key.CursorUp));
 
         Assert.EndsWith("next pass 1:12", DispatcherState.Read(_root, Now, "").Title(), StringComparison.Ordinal);
-        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run · next check 1:12", window.Team.Lines[0]);
+        Assert.EndsWith(" · next check 1:12", window.Status.FocusWord, StringComparison.Ordinal);
+        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run", window.Team.Lines[0]);
     }
 
     [Theory]
@@ -910,7 +911,7 @@ public class OverseerTests : IDisposable
         Assert.Equal(beside ? 1 : 30 - 1 - window.Team.Rows, window.Team.Frame.Y);
         Assert.Equal(beside ? 30 - 2 : 30 - 2 - window.Team.Rows, window.Overseer.Frame.Height);
         Assert.Equal(2, window.Team.Lines.Count);
-        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run · dispatcher hasn't run", window.Team.Lines[0]);
+        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run", window.Team.Lines[0]);
         Assert.StartsWith(Icons.Field(Icon.Running, IconStyle.Unicode) + "Dev           running ", window.Team.Lines[1], StringComparison.Ordinal);
         Assert.EndsWith(" · #12", window.Team.Lines[1], StringComparison.Ordinal);
         Assert.Equal("F6 choose a role · h pause", window.Team.Hint);

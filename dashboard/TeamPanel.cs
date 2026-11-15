@@ -6,7 +6,7 @@ using Terminal.Gui.Text;
 namespace ATeam.Dashboard;
 
 /// <summary>Overseer's panel for a selected lane heading: a line per role saying whether it's running or idle, when it
-/// last ran and when the dispatcher next checks, with what's wrong where the team can't run and why its mirror is behind.</summary>
+/// last ran, with what's wrong where the team can't run and why its mirror is behind.</summary>
 public sealed class TeamPanel : FrameView
 {
     private const int NameWidth = 14;

@@ -106,9 +106,11 @@ you in Overseer. A card that *Only mine* hides counts as one Work isn't showing.
 ## Reading the boards
 
 Overseer reads the boards when you open it and on `F5`, and the status bar says how long ago the
-selected card's board was read. Ages and animations keep moving between reads. Each lane is read on
-its own, and says so in the lane while it reads, when its board has nothing on it, or when it
-couldn't be read, with `r retry` under the reason; the other lanes keep their cards. A board that
+selected card's board was read, then when the dispatcher next checks every team for work:
+`read 2m ago · next check 3:41`. Where it isn't checking, it says so instead of counting down:
+`dispatcher hasn't run`, `checking now` while a pass runs long, or `dispatcher not running`. Ages
+and animations keep moving between reads. Each lane is read on its own, and says so in the lane
+while it reads, when its board has nothing on it, or when it couldn't be read, with `r retry` under the reason; the other lanes keep their cards. A board that
 came back with items missing says `Board read incomplete (<got> of <total> items)` instead of
 showing some of its cards.
 
@@ -162,10 +164,8 @@ it's doing:
 Where a Nerd Font is in effect, each wears that font's glyph instead.
 
 Then the role's name and what it's doing: `running 14:02 · #602` with the cards it's on, or
-`idle · ran 12m ago · next check 3:41`, adding `failed` or `cut short` where its last run didn't
-finish cleanly. Where the dispatcher isn't checking, the line says so instead of counting down:
-`dispatcher hasn't run`, `checking now` while a pass runs long, or `dispatcher not running`. A role you
-paused says `paused · ran 12m ago`, or `paused · stopped by you 3m ago` if you stopped its run, and
+`idle · ran 12m ago`, adding `failed` or `cut short` where its last run didn't finish cleanly. A
+role you paused says `paused · ran 12m ago`, or `paused · stopped by you 3m ago` if you stopped its run, and
 one whose team is paused says `team paused`.
 
 The app checks each team when it starts and again whenever the team's file changes, the same check
