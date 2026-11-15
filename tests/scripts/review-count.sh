@@ -360,7 +360,7 @@ contains v0.9.17
 KEEP_BOARD=1 run board demo free
 same "freed" "#10: no longer waiting on mentaldesk/demo#30" "$(cat "$OUT")"
 day=$(jq -rn '"2026-11-13T12:00:00Z" | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")')
-grep -qx "mentaldesk/demo#30 is in v0.9.17 (released $day). No longer blocked: upgrade to 0.9.17 first." "$POSTED" || fail "note: '$(cat "$POSTED")'"
+grep -qx "mentaldesk/demo#30 is in v0.9.17 (released $day). No longer blocked." "$POSTED" || fail "note: '$(cat "$POSTED")'"
 grep -q '<!-- a-team:lead -->' "$POSTED" || fail "freed: no lead marker in '$(cat "$POSTED")'"
 same "gone" "" "$(waits_table)"
 same "unmarked" null "$(marks 10 | jq -c .upstream)"

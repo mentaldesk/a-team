@@ -211,9 +211,9 @@ internal static partial class Commands
         return $"{reference} has {(state == "merged" ? "merged" : "closed")}.";
     }
 
-    private static string FreedNote(List<JsonObject> waits)
+    private static string FreedNote(List<JsonObject> waits, bool pitch)
     {
-        var versions = waits.Where(wait => Raw(wait["state"]) == "released").Select(Upgrade).ToList();
+        var versions = pitch ? [] : waits.Where(wait => Raw(wait["state"]) == "released").Select(Upgrade).ToList();
         var tail = versions.Count == 0 ? "." : $": upgrade {string.Join(" and ", versions)} first.";
         var markers = string.Concat(waits.Select(wait => WaitMarker("unwait", Raw(wait["repo"]), Raw(wait["n"]))));
         return $"{string.Join(" ", waits.Select(WaitOver))} No longer blocked{tail}\n\n{markers}";
@@ -239,7 +239,7 @@ internal static partial class Commands
             if (!waits.All(wait => Json.Truthy(wait["met"]))) continue;
             var role = Cards.Pitch(card) ? "lead" : "dev";
             board.DropWaits(n, waits.Select(wait => Raw(wait["ref"])));
-            DependNote(board, role, n, FreedNote(waits));
+            DependNote(board, role, n, FreedNote(waits, role == "lead"));
             foreach (var wait in waits)
                 board.Log(role, n, $"no longer blocked by {Raw(wait["ref"])}");
             board.Say($"#{n}: no longer waiting on {string.Join(", ", waits.Select(wait => Raw(wait["ref"])))}");
