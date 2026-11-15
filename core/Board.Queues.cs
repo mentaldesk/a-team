@@ -1512,7 +1512,7 @@ internal sealed partial class Board
     {
         var slug = Text("app", "slug");
         var prs = Aloud("pr", "list", "-R", upstream, "--author", $"app/{slug}", "--state", "open",
-            "--json", "number,isDraft,headRefOid,body,createdAt,comments,reviews,statusCheckRollup");
+            "--json", "number,isDraft,headRefOid,body,createdAt,comments,reviews,statusCheckRollup,mergeable");
         if (!prs.Ok || prs.Said == "[]") return [];
         var lines = Aloud("api", "--paginate", $"repos/{upstream}/pulls/comments?since={ADayAgo()}&per_page=100",
             "--jq", """.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: {login: .user.login}, createdAt: .created_at}""");
@@ -1564,6 +1564,7 @@ internal sealed partial class Board
         }
         if (verdict == "pass" && Json.Truthy(pr["isDraft"])) yield return (n, $"{theirs} is green but still a draft");
         if (asked is not null) yield return (n, $"stakeholder feedback on {theirs} ({asked})");
+        if (Json.Text(pr["mergeable"]) == "CONFLICTING") yield return (n, $"{theirs} conflicts with its base: merge the base branch into it and resolve");
     }
 
     private static bool OwnBot(JsonNode comment, string slug)

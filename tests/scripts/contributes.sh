@@ -37,12 +37,18 @@ cat >"$UPSTREAM" <<'JSON'
   "statusCheckRollup": [{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "FAILURE"}]},
  {"number": 76, "isDraft": true, "headRefOid": "ddddddd", "createdAt": "2026-10-01T09:00:00Z",
   "body": "Needed by mentaldesk/demo#15\n\n<!-- a-team:dev -->", "comments": [], "reviews": [],
-  "statusCheckRollup": [{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "FAILURE"}]}]
+  "statusCheckRollup": [{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "FAILURE"}]},
+ {"number": 78, "isDraft": false, "headRefOid": "fffffff", "createdAt": "2026-10-01T09:00:00Z", "mergeable": "CONFLICTING",
+  "body": "Needed by mentaldesk/demo#13\n\n<!-- a-team:dev -->", "comments": [], "reviews": [], "statusCheckRollup": []},
+ {"number": 79, "isDraft": false, "headRefOid": "fffffff", "createdAt": "2026-10-01T09:00:00Z", "mergeable": "CONFLICTING",
+  "body": "Needed by mentaldesk/demo#15\n\n<!-- a-team:dev -->", "comments": [], "reviews": [], "statusCheckRollup": []}]
 JSON
 run board demo triggers dev
 same "exit" 0 "$STATUS"
-same "tasks" '[{"number":13,"title":"Needs a style guide change","reasons":["mentaldesk/style#71 is green but still a draft","CI failed on mentaldesk/style#72 at 0123456","stakeholder feedback on mentaldesk/style#73 (2026-10-04T09:00:00Z)","mentaldesk/lib#71 is green but still a draft","CI failed on mentaldesk/lib#72 at 0123456","stakeholder feedback on mentaldesk/lib#73 (2026-10-04T09:00:00Z)"]}]' \
+same "tasks" '[{"number":13,"title":"Needs a style guide change","reasons":["mentaldesk/style#71 is green but still a draft","CI failed on mentaldesk/style#72 at 0123456","stakeholder feedback on mentaldesk/style#73 (2026-10-04T09:00:00Z)","mentaldesk/style#78 conflicts with its base: merge the base branch into it and resolve","mentaldesk/lib#71 is green but still a draft","CI failed on mentaldesk/lib#72 at 0123456","stakeholder feedback on mentaldesk/lib#73 (2026-10-04T09:00:00Z)","mentaldesk/lib#78 conflicts with its base: merge the base branch into it and resolve"]}]' \
   "$(jq -c .tasks "$OUT")"
+grep -q -- "--json number,isDraft,headRefOid,body,createdAt,comments,reviews,statusCheckRollup,mergeable" "$UPSTREAM_CALLS" ||
+  fail "the PR list asks for mergeability: '$(cat "$UPSTREAM_CALLS")'"
 same "one list per repo, of the App's PRs" "pr list -R mentaldesk/style --author app/demo-app|pr list -R mentaldesk/lib --author app/demo-app" \
   "$(sed 's/ --state.*//' "$UPSTREAM_CALLS" | paste -sd '|' -)"
 
