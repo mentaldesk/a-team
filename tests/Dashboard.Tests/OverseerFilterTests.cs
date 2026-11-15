@@ -233,6 +233,22 @@ public class OverseerFilterTests : IDisposable
     }
 
     [Fact]
+    public void Esc_from_a_card_picked_on_the_narrowed_board_keeps_it_selected_when_the_whole_board_folds_it_away()
+    {
+        var ideas = Enumerable.Range(830, 30).Select(number => Chip(number, "Idea", $"Idea {number}")).Append(Chip(870, "Idea", "Quokka habitats"));
+        using var window = Open(readBoard: team => Task.FromResult(new Reading(Cards(team, [.. ideas]), null)));
+        Assert.DoesNotContain(window.Overseer.Board.Chips("team0", 0), chip => chip.Card?.Number == 870);
+        window.NewKeyDownEvent(Key.F.WithCtrl);
+        Type(window, "quokka");
+        window.NewKeyDownEvent(Key.CursorDown);
+
+        window.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal(870, window.Overseer.Board.SelectedCard?.Number);
+        Assert.True(window.Overseer.Board.Unfolded("team0"));
+    }
+
+    [Fact]
     public void A_board_read_while_the_bar_is_open_keeps_the_filter_and_narrows_the_new_cards()
     {
         var extra = Array.Empty<string>();

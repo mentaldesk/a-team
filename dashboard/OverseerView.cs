@@ -161,7 +161,7 @@ public sealed class OverseerView : View
         LeaveField();
         _board.FilterBy("");
         if (keep is { Number: { } number } card)
-            _board.Select(card.Team, number);
+            _board.Reveal(card.Team, number);
         else if (keep is { Heading: true } heading)
             _board.SelectHeading(heading.Team);
         Changed();

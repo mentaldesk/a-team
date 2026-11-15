@@ -180,6 +180,19 @@ public sealed class OverseerBoard
         return true;
     }
 
+    /// <summary>Selects the card, unfolding its lane if the card is folded away behind the <c>+N</c>.</summary>
+    public bool Reveal(string team, int number)
+    {
+        if (!Select(team, number))
+            return false;
+        if (Selected?.Number != number)
+        {
+            _unfolded.Add(team);
+            Select(team, number);
+        }
+        return true;
+    }
+
     /// <summary>Left and right go to the nearest column that way with chips in it, on the same row or its last.</summary>
     public void MoveColumn(int step)
     {
