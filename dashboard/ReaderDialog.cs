@@ -24,7 +24,14 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
     ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null, ReaderRelease? Release = null,
-    ReaderCommand? Fix = null, ReaderTick? Tick = null, ReaderCommand? Secret = null);
+    ReaderCommand? Fix = null, ReaderTick? Tick = null, ReaderCommand? Secret = null, ReaderReview? Review = null);
+
+/// <summary>Showing the Reviewer's review from the reader, on <paramref name="Key"/>. The reader sets <see cref="Show"/>
+/// on a reviewed task, for Commands to run.</summary>
+public sealed record ReaderReview(Key Key)
+{
+    public Action? Show { get; set; }
+}
 
 /// <summary>Ticking a criterion from the reader: Run saves it on the task, with null once it's saved or else why not;
 /// Settle takes in writes that have finished, which nothing else does while the reader is open; Changed is told how many
@@ -100,6 +107,7 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string EditId = "reader.edit";
     private const string GitHubId = "reader.github";
     private const string HistoryId = "reader.history";
+    private const string ReviewId = "reader.review";
     private const string CopyId = "reader.copy";
     private const string QuoteId = "reader.quote";
     private const string BranchId = "reader.branch";
@@ -131,6 +139,11 @@ public sealed partial class ReaderDialog : DashboardDialog
     private readonly FrameView _bodyFrame;
     private readonly LogView _history;
     private readonly FrameView _historyFrame;
+    private readonly LogView _review;
+    private readonly View _reviewTab;
+    private readonly View _historyTab;
+    private readonly TeamTabs? _tabs;
+    private readonly View _side;
     private readonly FrameView _commentFrame;
     private readonly MultiLineField _field;
     private readonly View _commentMark = new();
@@ -306,9 +319,45 @@ public sealed partial class ReaderDialog : DashboardDialog
             SelectsText = true,
             Lines = (body.History ?? new History([])).Lines,
         };
-        _historyFrame.Add(_history);
+        var review = item.Reviewed ? body.Review(item.Pr) : null;
+        _review = new LogView
+        {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+            CanFocus = true,
+            Following = false,
+            Scrolls = true,
+            ReadsMarkdown = true,
+            SelectsText = true,
+            SchemeName = LogSchemes.Reader,
+            Lines = review is null ? [] : Markdown.Lines($"{review.Heading()}\n\n{review.Body}"),
+        };
+        _historyTab = new View { Title = "History", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
+        _reviewTab = new View { Title = ReviewTitle(item.Consider), CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
+        if (review is null)
+        {
+            _historyFrame.Add(_history);
+            _side = _historyFrame;
+        }
+        else
+        {
+            _historyTab.Add(_history);
+            _reviewTab.Add(_review);
+            // Tabs draw their box on each tab, so the pane draws the border you drag, over the tabs' left edge.
+            _tabs = new TeamTabs { X = -1, Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = true };
+            _tabs.Add(_historyTab, _reviewTab);
+            _side = new View { Y = 1, Height = Dim.Func(_ => PaneRows(), this), CanFocus = true, BorderStyle = LineStyle.Single };
+            _side.Border!.Thickness = new Thickness(1, 0, 0, 0);
+            _side.Add(_tabs);
+        }
+        if (comment?.Review is { } showing && _tabs is not null)
+            showing.Show = () =>
+            {
+                ShowReview();
+                Offer();
+            };
         _scrolled = _body;
-        foreach (var pane in new[] { _body, _history })
+        foreach (var pane in new[] { _body, _history, _review })
         {
             pane.HasFocusChanged += (_, _) =>
             {
@@ -375,13 +424,19 @@ public sealed partial class ReaderDialog : DashboardDialog
         Alert.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - Alert.Lines), this);
         AddKeys();
 
-        Add(_standing, _commentFrame, _bodyFrame, _historyFrame, Foot, _message);
+        Add(_standing, _commentFrame, _bodyFrame, _side, Foot, _message);
         if (_band is not null)
             Add(_band);
+        if (_tabs is not null)
+        {
+            // Set once they're in the dialog: chosen any earlier, the first tab takes the front back.
+            _tabs.Value = _panes.ReviewInFront ? _reviewTab : _historyTab;
+            _tabs.ValueChanged += FrontChanged;
+        }
         Sides = _panes.Widths.For(this, Region, said => Say(said, Schemes.Accent))
             .AddSide(_commentFrame, PaneWidths.Comment, ReaderPanes.CommentWidth)
             .AddMain(_bodyFrame)
-            .AddSide(_historyFrame, PaneWidths.History, ReaderPanes.HistoryWidth);
+            .AddSide(_side, PaneWidths.History, ReaderPanes.HistoryWidth);
         Resizes(Sides, _panes.Widths);
         ShowHistory(_panes.OpensWithHistory(width));
         if ((tryIt?.Failure ?? edit?.Failure ?? body.Failure) is { Length: > 0 } failure)
@@ -417,9 +472,18 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     internal LogView HistoryLog => _history;
 
+    internal LogView ReviewLog => _review;
+
+    /// <summary>The tabs beside the body on a reviewed task, or null where History is alone.</summary>
+    internal Tabs? SideTabs => _tabs;
+
+    internal bool ReviewInFront => _tabs?.Value == _reviewTab;
+
+    internal string ReviewTabTitle => _reviewTab.Title;
+
     internal SidePanes Sides { get; }
 
-    internal bool HistoryShown => _historyFrame.Visible;
+    internal bool HistoryShown => _side.Visible;
 
     internal bool CommentShown => _commentFrame.Visible;
 
@@ -513,6 +577,9 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex NeedsAnswer();
+
+    /// <summary>Counts the points left to consider as the card does, and says nothing where there are none.</summary>
+    internal static string ReviewTitle(int consider) => consider == 0 ? "Review" : $"Review · {consider}";
 
     /// <summary>The lines quoted as a reply quotes them, on lines of their own with a blank line after.</summary>
     internal static string Quote(IEnumerable<string> lines, bool midLine) =>
@@ -618,6 +685,8 @@ public sealed partial class ReaderDialog : DashboardDialog
             Bind(TryId, _try.Key, "Try", Try, Reads);
         if (_edit is not null)
             Bind(EditId, _edit.Key, "Edit", Edit, Reads);
+        if (_tabs is not null)
+            Bind(ReviewId, _comment?.Review?.Key ?? new Key('v'), "Show review", ShowReview, Reads);
         Bind(GitHubId, new Key('g'), "GitHub", OnGitHub, Reads);
         Register(CancelId, "Close", () => Run(CancelId, () => Writing ? Unfocus() : Escape()));
         foreach (var (id, kind) in new[]
@@ -626,10 +695,11 @@ public sealed partial class ReaderDialog : DashboardDialog
             (AcceptId, ButtonKind.Primary), (FixId, ButtonKind.Secondary), (SecretId, ButtonKind.Primary), (CommentId, ButtonKind.Secondary), (PostId, ButtonKind.Primary), (ReleaseId, ButtonKind.Secondary),
             (AttachId, ButtonKind.Secondary), (DeclineId, ButtonKind.Danger),
             (NotNowId, ButtonKind.Secondary), (IdeaId, ButtonKind.Secondary), (TryId, ButtonKind.Secondary),
-            (EditId, ButtonKind.Secondary), (GitHubId, ButtonKind.Secondary), (CancelId, ButtonKind.Secondary),
+            (EditId, ButtonKind.Secondary), (ReviewId, ButtonKind.Secondary), (GitHubId, ButtonKind.Secondary),
+            (CancelId, ButtonKind.Secondary),
         })
             if (Commands.Find(id) is not null)
-                AddButton(kind, id);
+                AddButton(kind, id, id == ReviewId ? "Review" : null);
 
         if (_comment?.Tick is not null && _text.Checklist is not null)
             Bind(TickId, Key.Space, "Tick", Tick, () => Reads() && _ranks is null && _scrolled == _body && CriterionAtCaret() is not null);
@@ -706,12 +776,13 @@ public sealed partial class ReaderDialog : DashboardDialog
         var reading = _ranks is null && !Writing;
         _body.ShowsCaret = reading && _scrolled == _body;
         _history.ShowsCaret = reading && _scrolled == _history;
+        _review.ShowsCaret = reading && _scrolled == _review;
     }
 
     private void ShowHistory(bool shown)
     {
-        _historyFrame.Visible = shown;
-        if (!shown && _scrolled == _history)
+        _side.Visible = shown;
+        if (!shown && _scrolled != _body)
             Scroll(_body);
         Offer();
         SetNeedsLayout();
@@ -720,9 +791,37 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     private bool ToggleHistory()
     {
-        _panes.HistoryShown = !_historyFrame.Visible;
+        _panes.HistoryShown = !_side.Visible;
         ShowHistory(_panes.HistoryShown);
         return true;
+    }
+
+    /// <summary>Review in front, with the keyboard in it, showing the pane if <c>h</c> had hidden it.</summary>
+    private bool ShowReview()
+    {
+        if (!HistoryShown)
+        {
+            _panes.HistoryShown = true;
+            ShowHistory(true);
+            // The tabs place their headers as they're laid out, so one brought forward while hidden draws none.
+            Layout();
+        }
+        _tabs!.Value = _reviewTab;
+        Scroll(_review);
+        return true;
+    }
+
+    /// <summary>The log in the tab in front, or History where there are no tabs.</summary>
+    private LogView Front() => ReviewInFront ? _review : _history;
+
+    /// <summary>Remembered for the next reviewed card; the keyboard follows a click on a tab into it.</summary>
+    private void FrontChanged(object? sender, ValueChangedEventArgs<View?> e)
+    {
+        _panes.ReviewInFront = ReviewInFront;
+        if (_scrolled != _body || _side.HasFocus)
+            Scroll(Front());
+        Offer();
+        SetNeedsDraw();
     }
 
     /// <summary>Weeks, Comment, Body and History in turn, leaving out whichever isn't showing.</summary>
@@ -731,7 +830,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         List<View> panes =
         [
             .. _shelving ? [_weeks] : Array.Empty<View>(), .. CommentShown ? [_field] : Array.Empty<View>(),
-            _body, .. HistoryShown ? [_history] : Array.Empty<View>(),
+            _body, .. HistoryShown ? [Front()] : Array.Empty<View>(),
         ];
         var at = panes.IndexOf(_field.HasFocus ? _field : _weeks.HasFocus ? _weeks : _scrolled);
         var next = panes[(at + by + panes.Count) % panes.Count];
@@ -762,9 +861,9 @@ public sealed partial class ReaderDialog : DashboardDialog
     }
 
     private FocusRegion? Region() =>
-        _commentFrame.HasFocus ? PaneWidths.Comment : FocusedPane() == _history ? PaneWidths.History : null;
+        _commentFrame.HasFocus ? PaneWidths.Comment : FocusedPane() != _body ? PaneWidths.History : null;
 
-    private LogView FocusedPane() => _history.HasFocus ? _history : _body.HasFocus ? _body : _scrolled;
+    private LogView FocusedPane() => _history.HasFocus ? _history : _review.HasFocus ? _review : _body.HasFocus ? _body : _scrolled;
 
     private bool Scrolled(Action scroll)
     {
@@ -1111,7 +1210,7 @@ public sealed partial class ReaderDialog : DashboardDialog
 
     private bool Back()
     {
-        Scroll(_scrolled == _history && !HistoryShown ? _body : _scrolled);
+        Scroll(_scrolled != _body && !HistoryShown ? _body : _scrolled);
         return true;
     }
 

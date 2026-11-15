@@ -77,6 +77,10 @@ public sealed record IssueBody(string Text = "", string? Failure = null, History
         return this with { Text = Text + conversation.Markdown(since), Remarks = remarks };
     }
 
+    /// <summary>The Reviewer's review of PR <paramref name="pr"/>, or null where it has none.</summary>
+    public Remark? Review(int pr) =>
+        pr > 0 ? Remarks.LastOrDefault(said => said.Remark.Who == "reviewer" && said.Remark.Pr == pr)?.Remark : null;
+
     /// <summary>The body with <paramref name="line"/> above it, its remarks moved down to match.</summary>
     public IssueBody Headed(string line) => line.Length == 0 ? this : this with
     {

@@ -110,6 +110,9 @@ public sealed class ReaderPanes(PaneWidths? widths = null)
 
     public bool HistoryShown { get; set; } = true;
 
+    /// <summary>Whether Review was the tab in front beside the body, the last time a reviewed task was read.</summary>
+    public bool ReviewInFront { get; set; }
+
     /// <summary>Narrower than this, the body would be too cramped beside History.</summary>
     public int NarrowestSplit => ChosenHistory + BodyBesideHistory;
 

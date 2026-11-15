@@ -254,6 +254,15 @@ that comment in the body. `h` hides
 History to give the body the full width, and shows it again; it stays as you left it until you
 restart the app. On a terminal too narrow for both, the reader opens with History hidden.
 
+**Read the Reviewer's review.** On a task the Reviewer has reviewed, the pane beside the body has two
+tabs, **History** and **Review**. Review shows the Reviewer's comment on the task's PR as it wrote it,
+**Needs changing** then **Worth considering**, and its title counts the points left to consider, like
+`Review · 2`, as the card does. `v` (**Show review**) brings it to the front with the cursor in it, from
+anywhere in the reader, and shows the pane if `h` had hidden it; a click on a tab does the same. `Tab`
+moves between the body and the tab in front, and you select, copy and quote (`q`) in Review as in
+History. Whichever tab you last had in front is the one the next reviewed task opens with, until you
+restart the app. Any other card shows History alone.
+
 **Make History or Comment wider or narrower.** Drag the border between it and the body with the
 mouse, or, with the cursor in it, pick **Widen pane** or **Narrow pane** in Commands (`Ctrl+E`) to
 change it by 5 columns, and **Reset pane width** to put it back. Neither has a key until you give one
