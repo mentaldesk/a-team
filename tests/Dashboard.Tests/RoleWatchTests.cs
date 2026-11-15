@@ -130,7 +130,7 @@ public class RoleWatchTests : IDisposable
         Write(Path.Combine(_dir, "runs", "192"), Run(), 200, 192);
         var watch = new RoleWatch("a-team", "dev", _dir);
 
-        watch.Refresh(Now, Now.AddMinutes(1), paused: false, held: false);
+        watch.Refresh(Now, paused: false, held: false);
 
         Assert.True(watch.Running);
         Assert.Equal([246, 192], watch.Working);
@@ -149,7 +149,7 @@ public class RoleWatchTests : IDisposable
         File.WriteAllText(Path.Combine(_dir, "runs", "192", "latest.jsonl"), "{}\n");
         var watch = new RoleWatch("a-team", "dev", _dir);
 
-        watch.Refresh(Now, Now.AddMinutes(1), paused: false, held: false);
+        watch.Refresh(Now, paused: false, held: false);
 
         Assert.Equal(new FileInfo(Path.Combine(_dir, "runs", "192", "latest.jsonl")).FullName, watch.LogPath);
     }
@@ -163,10 +163,10 @@ public class RoleWatchTests : IDisposable
             """{"type":"system","subtype":"init","session_id":"s1"}""" + "\n" + """{"type":"result","is_error":true,"num_turns":2,"total_cost_usd":0.1}""" + "\n");
         var watch = new RoleWatch("a-team", "lead", _dir);
 
-        watch.Refresh(Now, Now.AddSeconds(90), paused: false, held: false);
+        watch.Refresh(Now, paused: false, held: false);
 
         Assert.Equal(RoleStatus.Failed, watch.Status);
-        Assert.Equal("idle · ran 12m ago · failed · next check 1:30", watch.Line);
+        Assert.Equal("idle · ran 12m ago · failed", watch.Line);
         Assert.Equal("s1", watch.SessionId);
         Assert.EndsWith("latest.jsonl", watch.LogPath, StringComparison.Ordinal);
     }
@@ -204,7 +204,7 @@ public class RoleWatchTests : IDisposable
         var running = new AgentState(true, Now - TimeSpan.FromSeconds(75), [], null);
 
         Assert.Equal(RoleStatus.Running, RoleWatch.StatusOf(running, paused: false, held: true, RunVerdict.None));
-        Assert.Equal("running 1:15 · #12 · paused", RoleWatch.Says(running, [12], Now, Now.AddMinutes(2), RoleStatus.Running, held: true));
+        Assert.Equal("running 1:15 · #12 · paused", RoleWatch.Says(running, [12], Now, RoleStatus.Running, held: true));
     }
 
     [Fact]
@@ -213,8 +213,8 @@ public class RoleWatchTests : IDisposable
         var stopped = new AgentState(false, Now - TimeSpan.FromMinutes(30), [], null, Now - TimeSpan.FromMinutes(4));
         var finished = new AgentState(false, Now - TimeSpan.FromMinutes(5), [], null);
 
-        Assert.Equal("paused · stopped by you 4m ago", RoleWatch.Says(stopped, [], Now, Now.AddMinutes(2), RoleStatus.StoppedByYou, held: true));
-        Assert.Equal("paused · ran 5m ago", RoleWatch.Says(finished, [], Now, Now.AddMinutes(2), RoleStatus.Held, held: true));
+        Assert.Equal("paused · stopped by you 4m ago", RoleWatch.Says(stopped, [], Now, RoleStatus.StoppedByYou, held: true));
+        Assert.Equal("paused · ran 5m ago", RoleWatch.Says(finished, [], Now, RoleStatus.Held, held: true));
     }
 
     [Fact]
@@ -223,28 +223,17 @@ public class RoleWatchTests : IDisposable
         var state = new AgentState(Running: false, LastStart: null, [], null);
 
         Assert.Equal(RoleStatus.NeverRun, RoleWatch.StatusOf(state, paused: false, held: false, RunVerdict.None));
-        Assert.Equal("idle · never run · next check 2:00", RoleWatch.Says(state, [], Now, Now.AddMinutes(2), RoleStatus.NeverRun, held: false));
+        Assert.Equal("idle · never run", RoleWatch.Says(state, [], Now, RoleStatus.NeverRun, held: false));
     }
 
     [Fact]
-    public void An_idle_role_counts_down_to_the_next_check_unless_its_team_is_paused()
+    public void An_idle_role_says_when_it_last_ran_and_whether_its_team_is_paused()
     {
         var idle = new AgentState(Running: false, Now - TimeSpan.FromMinutes(5), [], null);
 
-        Assert.Equal("idle · ran 5m ago · next check 2:00", RoleWatch.Says(idle, [], Now, Now.AddMinutes(2), RoleStatus.Ok, held: false));
+        Assert.Equal("idle · ran 5m ago", RoleWatch.Says(idle, [], Now, RoleStatus.Ok, held: false));
         Assert.Equal("idle · ran 5m ago · team paused",
-            RoleWatch.Says(idle, [], Now, Now.AddMinutes(2), RoleStatus.Paused, held: false, teamPaused: true));
-    }
-
-    [Fact]
-    public void A_pass_overdue_but_still_going_is_checking_not_a_stopped_dispatcher()
-    {
-        var idle = new AgentState(Running: false, Now - TimeSpan.FromMinutes(5), [], null);
-        var overdue = Now - TimeSpan.FromMinutes(3);
-
-        Assert.Equal("idle · ran 5m ago · checking now", RoleWatch.Says(idle, [], Now, overdue, RoleStatus.Ok, held: false, passing: true));
-        Assert.Equal("idle · ran 5m ago · dispatcher not running", RoleWatch.Says(idle, [], Now, overdue, RoleStatus.Ok, held: false));
-        Assert.Equal("idle · ran 5m ago · dispatcher hasn't run", RoleWatch.Says(idle, [], Now, null, RoleStatus.Ok, held: false));
+            RoleWatch.Says(idle, [], Now, RoleStatus.Paused, held: false, teamPaused: true));
     }
 
     [Fact]
@@ -252,7 +241,7 @@ public class RoleWatchTests : IDisposable
     {
         var idle = new AgentState(Running: false, Now - TimeSpan.FromMinutes(12), [], null);
 
-        Assert.Equal("idle · ran 12m ago · cut short · next check 1:30", RoleWatch.Says(idle, [], Now, Now.AddSeconds(90), RoleStatus.CutShort, held: false));
+        Assert.Equal("idle · ran 12m ago · cut short", RoleWatch.Says(idle, [], Now, RoleStatus.CutShort, held: false));
     }
 
     [Theory]
@@ -337,7 +326,7 @@ public class RoleWatchTests : IDisposable
         WriteStuck("516", Environment.ProcessId);
         var watch = new RoleWatch("a-team", "reviewer", _dir);
 
-        watch.Refresh(Now, Now.AddMinutes(2), paused: true, held: false);
+        watch.Refresh(Now, paused: true, held: false);
 
         Assert.Equal(RoleStatus.Stuck, watch.Status);
         Assert.Equal($"stuck · run {Environment.ProcessId} is on #516, closed 29 Oct", watch.Line);

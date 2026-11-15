@@ -675,7 +675,7 @@ public class OverseerTests : IDisposable
         clock.Now += TimeSpan.FromMinutes(3);
         window.Refresh();
 
-        Assert.Equal("Overseer · read 3m ago", window.Status.FocusWord);
+        Assert.Equal("Overseer · read 3m ago · dispatcher hasn't run", window.Status.FocusWord);
         Assert.True(window.NewKeyDownEvent(Key.F5));
         Assert.Equal(4, reads);
     }
@@ -864,6 +864,30 @@ public class OverseerTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Overseer_counts_down_once_to_the_pass_the_dispatcher_title_shows(bool dryRun)
+    {
+        Directory.CreateDirectory(Path.Combine(Config, "teams"));
+        File.WriteAllText(Path.Combine(Config, "teams", "team0.json"), """{"dispatch": {"enabled": true}}""");
+        WriteRun("team0", "dev", 12);
+        File.WriteAllText(Path.Combine(_root, "dispatcher.json"), $$"""
+            { "bin": "/opt/homebrew/bin/a-team", "version": "0.3.7", "dryRun": {{(dryRun ? "true" : "false")}}, "interval": 120,
+              "installedAt": {{(Now - TimeSpan.FromHours(1)).ToUnixTimeSeconds()}} }
+            """);
+        File.WriteAllText(Path.Combine(_root, dryRun ? "dry-next-pass" : "next-pass"), (Now + TimeSpan.FromSeconds(72)).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+        using var window = Open(clock: new Clock());
+        window.Press("Ctrl+G O");
+        window.Refresh();
+
+        Assert.True(window.NewKeyDownEvent(Key.CursorUp));
+
+        Assert.EndsWith("next pass 1:12", DispatcherState.Read(_root, Now, "").Title(), StringComparison.Ordinal);
+        Assert.EndsWith(" · next check 1:12", window.Status.FocusWord, StringComparison.Ordinal);
+        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run", window.Team.Lines[0]);
+    }
+
+    [Theory]
     [InlineData(160, true)]
     [InlineData(120, false)]
     public void Up_from_a_lane_s_top_row_shows_the_team_beside_the_lanes_or_at_their_foot_and_Down_goes_back(int width, bool beside)
@@ -887,7 +911,7 @@ public class OverseerTests : IDisposable
         Assert.Equal(beside ? 1 : 30 - 1 - window.Team.Rows, window.Team.Frame.Y);
         Assert.Equal(beside ? 30 - 2 : 30 - 2 - window.Team.Rows, window.Overseer.Frame.Height);
         Assert.Equal(2, window.Team.Lines.Count);
-        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run · dispatcher hasn't run", window.Team.Lines[0]);
+        Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run", window.Team.Lines[0]);
         Assert.StartsWith(Icons.Field(Icon.Running, IconStyle.Unicode) + "Dev           running ", window.Team.Lines[1], StringComparison.Ordinal);
         Assert.EndsWith(" · #12", window.Team.Lines[1], StringComparison.Ordinal);
         Assert.Equal("F6 choose a role · h pause", window.Team.Hint);

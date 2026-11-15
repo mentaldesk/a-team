@@ -56,8 +56,8 @@ public sealed partial class DashboardWindow : Window
     private IReadOnlyDictionary<string, string> _limits;
     private readonly List<string> _teamNames;
     private readonly string _dispatchLog;
-    private readonly string _nextPass;
     private readonly string _stateRoot;
+    private string _nextCheck = "";
     private static readonly string BaseScheme = SchemeManager.SchemesToSchemeName(Schemes.Base)!;
     private static readonly string ErrorScheme = SchemeManager.SchemesToSchemeName(Schemes.Error)!;
     private readonly string _home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -186,7 +186,6 @@ public sealed partial class DashboardWindow : Window
         _confirmStop = _options.ConfirmStop ?? (_ => false);
         _area = area;
         _dispatchLog = Path.Combine(stateRoot, "dispatch.log");
-        _nextPass = Path.Combine(stateRoot, "next-_options.Pass");
         _stateRoot = stateRoot;
         _teamNames = [.. agents.Select(agent => agent.Team).Distinct()];
 

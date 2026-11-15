@@ -19,8 +19,6 @@ public enum RoleStatus
 /// last run went, and what its line in the team's panel says.</summary>
 public sealed class RoleWatch(string team, string role, string stateDir)
 {
-    private const string Stopped = "dispatcher not running";
-
     private readonly SessionLog _log = new();
 
     internal string Team { get; } = team;
@@ -62,7 +60,7 @@ public sealed class RoleWatch(string team, string role, string stateDir)
     }
 
     public void Refresh(
-        DateTimeOffset now, DateTimeOffset? nextCheck, bool paused, bool held, TeamProblem? misconfigured = null, bool passing = false)
+        DateTimeOffset now, bool paused, bool held, TeamProblem? misconfigured = null)
     {
         var state = AgentState.Read(stateDir);
         Runs = [.. state.Runs.Where(run => run.Held is null)];
@@ -76,7 +74,7 @@ public sealed class RoleWatch(string team, string role, string stateDir)
         _log.Refresh(LogPath);
         var running = state with { Running = Running };
         Status = StatusOf(running, paused, held, _log.Verdict, misconfigured is not null);
-        Line = Status == RoleStatus.Stuck ? SaysStuck(state.Stuck) : Says(running, Working, now, nextCheck, Status, held, paused, passing);
+        Line = Status == RoleStatus.Stuck ? SaysStuck(state.Stuck) : Says(running, Working, now, Status, held, paused);
     }
 
     /// <summary>A misconfigured team wins, then a stuck run, then a held role that isn't running, then pause, then running,
@@ -94,10 +92,9 @@ public sealed class RoleWatch(string team, string role, string stateDir)
                 _ => state.LastStart is null ? RoleStatus.NeverRun : RoleStatus.CutShort,
             };
 
-    /// <summary>Running for how long and on which cards, or idle with when it last ran and the next check, or paused.</summary>
+    /// <summary>Running for how long and on which cards, or idle with when it last ran, or paused.</summary>
     internal static string Says(
-        AgentState state, IReadOnlyList<int> working, DateTimeOffset now, DateTimeOffset? nextCheck, RoleStatus status, bool held,
-        bool teamPaused = false, bool passing = false)
+        AgentState state, IReadOnlyList<int> working, DateTimeOffset now, RoleStatus status, bool held, bool teamPaused = false)
     {
         if (state.Running)
         {
@@ -115,7 +112,7 @@ public sealed class RoleWatch(string team, string role, string stateDir)
         };
         if (held)
             return $"paused · {ran}{went}";
-        return $"idle · {ran}{went} · {(teamPaused ? "team paused" : NextCheck(now, nextCheck, passing))}";
+        return $"idle · {ran}{went}" + (teamPaused ? " · team paused" : "");
     }
 
     /// <summary>The oldest stuck run, and how many more there are.</summary>
@@ -124,12 +121,4 @@ public sealed class RoleWatch(string team, string role, string stateDir)
 
     internal static string Misconfigured(TeamProblem problem) =>
         problem.StopsTheTeam ? $"stopped: {problem.Detail}" : $"misconfigured: {problem.Topic} {problem.Detail}";
-
-    private static string NextCheck(DateTimeOffset now, DateTimeOffset? nextCheck, bool passing) => nextCheck switch
-    {
-        null => "dispatcher hasn't run",
-        { } next when next - now >= TimeSpan.Zero => $"next check {Ages.Clock(next - now)}",
-        { } next when passing || now - next < TimeSpan.FromMinutes(1) => "checking now",
-        _ => Stopped,
-    };
 }

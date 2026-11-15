@@ -67,7 +67,7 @@ public sealed partial class DashboardWindow
         var stamp = _dispatcherOpen ? "" : _area switch
         {
             Area.Work => _work.Current is { } lane && _synced.TryGetValue(lane.Team, out var synced) ? synced.Stamp(_clock.GetUtcNow()) : "",
-            _ => Stamped(BoardReadAt(), _clock.GetUtcNow()),
+            _ => string.Join(" · ", new[] { Stamped(BoardReadAt(), _clock.GetUtcNow()), _nextCheck }.Where(part => part.Length > 0)),
         };
         var place = InAssistant ? "Assistant" : _dispatcherOpen ? "Dispatcher log" : _area switch
         {
