@@ -318,6 +318,30 @@ public sealed partial class DashboardWindow
     /// <summary>A letter key as you type it, as the guide writes it.</summary>
     private string KeyHint(string id) => _commands.KeysFor(id, Regions.Overseer) is { Length: 1 } letter ? letter.ToLowerInvariant() : _commands.KeysFor(id, Regions.Overseer);
 
+    /// <summary>The filter's field has focus, so what you type goes into it rather than to a letter's command.</summary>
+    private bool InFilter => _area == Area.Overseer && _overseer.InFilter;
+
+    private void FoldOrCloseFilter()
+    {
+        if (_overseer.FilterOpen)
+            _overseer.CloseFilter();
+        else
+            _overseer.Fold();
+        ShowMessage();
+    }
+
+    private void OpenFilter()
+    {
+        _overseer.OpenFilter();
+        ShowMessage();
+    }
+
+    private void ToMatches()
+    {
+        _overseer.ToMatches();
+        ShowMessage();
+    }
+
     private void OpenChip()
     {
         if (_overseer.Board.SelectedCard is { Url.Length: > 0 } card)

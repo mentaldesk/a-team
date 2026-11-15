@@ -71,6 +71,7 @@ public sealed partial class DashboardWindow
         InAssistant ? Regions.Assistant
         : _dispatcherOpen || _sessionFull ? Regions.Log
         : _area == Area.Work ? Regions.Work
+        : InFilter ? Regions.Filter
         : _team.HasFocus ? Regions.Team
         : Regions.Overseer;
 
