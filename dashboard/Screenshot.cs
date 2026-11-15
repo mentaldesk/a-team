@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace ATeam.Dashboard;
 
-/// <summary>A screenshot the Mac saved to a file, which <c>Ctrl+U</c> offers while it's recent.</summary>
+/// <summary>A screenshot the Mac saved to a file, which <c>Ctrl+U</c> opens on while it's recent.</summary>
 public sealed partial record Screenshot(string Path, DateTimeOffset Taken)
 {
     internal static readonly TimeSpan Recent = TimeSpan.FromMinutes(10);
@@ -11,23 +11,15 @@ public sealed partial record Screenshot(string Path, DateTimeOffset Taken)
     [GeneratedRegex(@"^(Screenshot|Screen Shot) \d{4}-\d{2}-\d{2} at ")]
     private static partial Regex MacName();
 
-    /// <summary>The newest screenshot you took in the last 10 minutes, on macOS; null anywhere else.</summary>
-    public static Screenshot? Latest()
-    {
-        if (!OperatingSystem.IsMacOS())
-            return null;
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Find(Folder(Location(), home), DateTimeOffset.UtcNow) is { } shot ? shot with { Path = FromHome(shot.Path, home) } : null;
-    }
-
-    internal static string FromHome(string path, string home) =>
-        path.StartsWith(home + "/", StringComparison.Ordinal) ? "~" + path[home.Length..] : path;
+    /// <summary>The folder set for Mac screenshots, as <c>defaults</c> has it; null where none is, or off macOS.</summary>
+    public static string? Setting() => OperatingSystem.IsMacOS() ? Location() : null;
 
     /// <summary>Where the Mac saves screenshots: the folder set for them, or the Desktop.</summary>
-    internal static string Folder(string? setting, string home) =>
-        setting is { Length: > 0 } && Directory.Exists(TeamSettings.Expand(setting.Trim(), home))
-            ? TeamSettings.Expand(setting.Trim(), home)
-            : System.IO.Path.Combine(home, "Desktop");
+    internal static string Folder(string? setting, string home) => SetFolder(setting, home) ?? System.IO.Path.Combine(home, "Desktop");
+
+    /// <summary>The folder set for screenshots, where it's there.</summary>
+    internal static string? SetFolder(string? setting, string home) =>
+        setting is { Length: > 0 } && Directory.Exists(TeamSettings.Expand(setting.Trim(), home)) ? TeamSettings.Expand(setting.Trim(), home) : null;
 
     internal static Screenshot? Find(string folder, DateTimeOffset now)
     {
@@ -44,13 +36,6 @@ public sealed partial record Screenshot(string Path, DateTimeOffset Taken)
             return null;
         }
     }
-
-    internal string Said(DateTimeOffset now) => (int)(now - Taken).TotalMinutes switch
-    {
-        <= 0 => "Your latest screenshot, taken just now",
-        1 => "Your latest screenshot, taken 1 minute ago",
-        var minutes => $"Your latest screenshot, taken {minutes} minutes ago",
-    };
 
     private static string? Location()
     {

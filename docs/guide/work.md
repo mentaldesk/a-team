@@ -412,7 +412,7 @@ the text. Hold `Shift` with any of them to select; `Ctrl+A` selects everything.
 **Attaching a screenshot.** On a Mac, a screenshot reaches a comment or a description in two keys:
 
 - `⌃⇧⌘4` copies a screenshot to the clipboard; then `Ctrl+V` pastes it.
-- `⇧⌘4` saves a screenshot to a file; then `Ctrl+U`, `Ctrl+Enter` attaches it.
+- `⇧⌘4` saves a screenshot to a file; then `Ctrl+U`, `Enter` attaches it.
 
 An empty Comment or Description says `Write here. Ctrl+V pastes a screenshot.` until you type. There
 are three ways to attach an image:
@@ -423,9 +423,14 @@ are three ways to attach an image:
   neither, the dialog says `Nothing to paste.` and how to get a screenshot.
 - **Drop it.** Drag a `.png`, `.jpg`, `.gif` or `.webp` file onto the terminal. A dropped file of any
   other kind pastes its path, as before.
-- **Name it.** `Ctrl+U` opens **Attach image file**: type the path, and `Ctrl+Enter` attaches it. On a
-  Mac, if you took a screenshot in the last 10 minutes, **File** starts with the newest one, from the
-  folder you save screenshots to (the Desktop unless you've changed it), and says when you took it.
+- **Pick it.** `Ctrl+U` opens **Attach image file**, a file browser: `../` and folders first, then
+  files by name. `Enter` on a folder goes into it, and `Backspace` with nothing typed goes up. Typing
+  searches this folder and every folder below it, and a path starting with `~` or `/` goes straight
+  to that file. `Enter` on an image attaches it, and `Esc` closes the browser. On a Mac, if you took
+  a screenshot in the last 10 minutes, and since you last picked a file, it opens in the folder you
+  save screenshots to (the Desktop unless you've changed it) with the newest one selected, so `Enter`
+  attaches it. Otherwise it opens in the folder of the last file you picked, or the first time in
+  your screenshots folder, else the Desktop, else your home folder.
 
 A line like `![Screenshot 2026-10-13 at 07.02.09](uploading…)` goes in at the cursor, and becomes the
 image's link once it's up; edit, move or delete it like any other text. The bar says
