@@ -37,7 +37,8 @@ Two kinds of item share the board:
 
 - A **pitch** carries the `pitch` label and travels Idea → Exploring → Pitched → Approved →
   Building → Done. Its tasks are GitHub sub-issues of it, and the Lead closes it once they've
-  all closed.
+  all closed. A pitch in Building whose whole works only once a release ships or another repo
+  changes waits on that as a task does, and the board frees it the same way.
 - A **document pitch** is a proposal that is itself a document, like the product vision. It's a
   draft PR with the `pitch` label that goes straight to Pitched, even when Pitched is full. The
   stakeholder may edit it on its branch, and approves it by merging, which moves it to Done. A

@@ -65,9 +65,90 @@ internal sealed partial class Board
         _record.Exec($"UPDATE board SET content = json_remove(content, '$.parent') WHERE team = {TeamQ} AND item = {n};");
     }
 
-    /// <summary>What task #n still waits on in other repos, stopping where GitHub won't say.</summary>
-    internal JsonArray WaitsOnTask(string n) =>
-        WaitsIn(Must(_gh.Run("api", "--paginate", $"repos/{_repo}/issues/{n}/comments")), Bot);
+    /// <summary>What #n waits on in another repo or a release, as the record has it.</summary>
+    internal JsonArray WaitsOn(string n)
+    {
+        var waits = new JsonArray();
+        foreach (var row in _record.Query($"SELECT ref, repo, n, until, package FROM waits WHERE team = {TeamQ} AND item = {n} ORDER BY ref;"))
+        {
+            waits.Add((JsonNode?)new JsonObject
+            {
+                ["ref"] = row["ref"],
+                ["repo"] = row["repo"],
+                ["n"] = long.Parse(row["n"]!, CultureInfo.InvariantCulture),
+                ["until"] = row["until"],
+                ["package"] = row["package"],
+            });
+        }
+        return waits;
+    }
+
+    /// <summary>Records #n's wait, replacing one on the same item, and its card's mark with it, in one transaction.</summary>
+    internal void AddWait(string n, string repo, string upN, string until, string package)
+    {
+        if (Would($"record #{n} waiting on {repo}#{upN}")) return;
+        Atomically($"{InsertWait(n, repo, upN, until, package, "OR REPLACE")} {UpstreamMarkFromWaits(n)}");
+    }
+
+    /// <summary>Drops those of #n's waits, and its card's mark with the last of them, in one transaction.</summary>
+    internal void DropWaits(string n, IEnumerable<string> refs)
+    {
+        var gone = string.Join(", ", refs.Select(Reconciler.Q));
+        if (Would($"drop #{n}'s waits on {gone}")) return;
+        Atomically($"DELETE FROM waits WHERE team = {TeamQ} AND item = {n} AND ref IN ({gone}); {UpstreamMarkFromWaits(n)}");
+    }
+
+    /// <summary>All of it or, where any of it fails, none.</summary>
+    internal void Atomically(string sql)
+    {
+        try
+        {
+            _record.Exec($"BEGIN IMMEDIATE; {sql} COMMIT;");
+        }
+        catch (InvalidOperationException)
+        {
+            _record.TryRollback();
+            throw;
+        }
+    }
+
+    private string InsertWait(string n, string repo, string upN, string until, string package, string conflict) =>
+        $"""
+        INSERT {conflict} INTO waits (team, item, ref, repo, n, until, package, since) VALUES ({TeamQ}, {n},
+            {Reconciler.Q($"{repo}#{upN}")}, {Reconciler.Q(repo)}, {upN}, {Nullable(until)}, {Nullable(package)}, {Reconciler.Q(Now())});
+        """;
+
+    private static string Nullable(string? text) => string.IsNullOrEmpty(text) ? "NULL" : Reconciler.Q(text);
+
+    private string UpstreamMarkFromWaits(string n) =>
+        $"""
+        UPDATE board SET marks = CASE WHEN EXISTS (SELECT 1 FROM waits WHERE team = {TeamQ} AND item = {n})
+            THEN json_set(COALESCE(marks, json_object()), '$.upstream',
+              json((SELECT json_group_array(ref) FROM (SELECT ref FROM waits WHERE team = {TeamQ} AND item = {n} ORDER BY ref))))
+            ELSE json_remove(COALESCE(marks, json_object()), '$.upstream') END
+          WHERE team = {TeamQ} AND item = {n};
+        """;
+
+    /// <summary>Copies the waits named by markers in #n's comments into the record, keeping any it has, and its mark
+    /// with them; false where GitHub won't say.</summary>
+    private bool CopyWaits(string n)
+    {
+        if (WaitsOn(n, _repo, Bot) is not { } waits) return false;
+        if (waits.Count == 0) return true;
+        var rows = string.Concat(waits.OfType<JsonNode>().Select(wait =>
+            InsertWait(n, Json.Text(wait["repo"])!, wait["n"]!.ToJsonString(), Json.Text(wait["until"]) ?? "", Json.Text(wait["package"]) ?? "", "OR IGNORE")));
+        Atomically($"{rows} {UpstreamMarkFromWaits(n)}");
+        return true;
+    }
+
+    /// <summary>Format 2: the waits open on the board's items move out of their comments' markers into the record.</summary>
+    private void MoveWaitsIntoRecord()
+    {
+        var waiting = _record.Query($"SELECT item FROM board WHERE team = {TeamQ} AND status != 'Done' AND json_extract(marks, '$.upstream') IS NOT NULL;");
+        foreach (var n in waiting.Select(row => row.First!))
+            if (!CopyWaits(n))
+                throw new Die($"can't read #{n}'s comments to move what it waits on into the record: try again");
+    }
 
     /// <summary>This repo's open Dependabot PRs; none where GitHub won't say.</summary>
     internal JsonArray OpenBumps()

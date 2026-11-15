@@ -87,6 +87,13 @@ internal static partial class Commands
         var (role, task, prereq) = (args[0], args[1], args[2]);
         CheckDependant(role);
         board.OwnTask(role, task);
+        if (board.Item(task) is { } card && Cards.Pitch(card))
+        {
+            if (Cards.Status(card) != "Building")
+                throw new Die($"#{task} is a pitch in {Cards.Status(card)}: only a pitch in Building can wait, on a release or another repo");
+            if (!upstream.Success)
+                throw new Die($"pitch #{task} waits only on a release or another repo: depends {role} {task} <owner/repo#n> <closed|released> \"<why>\"");
+        }
         if (upstream.Success)
         {
             DependsUpstream(board, args, upstream.Groups[1].Value, upstream.Groups[2].Value);
@@ -111,31 +118,29 @@ internal static partial class Commands
         if (until is not ("closed" or "released")) throw new Die($"#{task} waits for {prereq} to be closed or released, not '{until}'");
         if (package.Length > 0 && until != "released") throw new Die("only a wait until released names a package to upgrade");
         if (package.Length > 0 && !Regex.IsMatch(package, @"^[A-Za-z0-9_.-]+\z")) throw new Die($"'{package}' isn't a package name");
-        if (string.Equals(repo, board.Repo, StringComparison.OrdinalIgnoreCase))
+        var pitch = board.Item(task) is { } card && Cards.Pitch(card);
+        var own = string.Equals(repo, board.Repo, StringComparison.OrdinalIgnoreCase);
+        if (own && !pitch)
             throw new Die($"{prereq} is in {board.Repo} itself: depends {role} {task} {upN} \"<why>\"");
-        var read = board.Read("api", $"repos/{repo}/issues/{upN}", "--jq", "{id, pr: (.pull_request != null)}");
+        if (own && until != "released")
+            throw new Die($"{prereq} is one of {board.Repo}'s own: pitch #{task} can wait on it only until a release carries it");
+        var read = board.Read("api", $"repos/{repo}/issues/{upN}", "--jq", "{id, pr: (.pull_request != null), merged: (.pull_request.merged_at != null)}");
         if (!read.Ok)
         {
             var reason = Board.Refusal(read);
             throw new Die($"can't read {prereq} ({(reason.StartsWith("gh: ", StringComparison.Ordinal) ? reason[4..] : reason)})");
         }
         var up = Json.Parse(read.Out);
+        if (own && !Json.Truthy(up?["merged"]))
+            throw new Die($"{prereq} isn't a merged PR: pitch #{task} can wait on {board.Repo} only for a release to carry a merged PR");
         var linked = !Json.Truthy(up?["pr"])
             && board.Write($"block #{task} on {prereq}", "api", "-X", "POST", $"repos/{board.Repo}/issues/{task}/dependencies/blocked_by", "-F", $"issue_id={Raw(up?["id"])}").Ok;
-        board.Mark(task, "upstream", board.Item(task) is { } it ? WaitsWith(it, prereq) : "");
+        board.AddWait(task, repo, upN, until, package);
         var note = $"Blocked by {prereq}, until {until}: {why}";
         if (!linked) note += $"\n\nGitHub can't link {prereq} as a dependency, so the wait is recorded here.";
         DependNote(board, role, task, $"{note}\n\n{WaitMarker("wait", repo, upN, until, package)}");
         board.Log(role, task, $"blocked by {prereq}");
         board.Say($"#{task} now waits for {prereq} to be {until}, and said why on #{task}");
-    }
-
-    private static string WaitsWith(JsonNode it, string reference)
-    {
-        var waits = new JsonArray();
-        foreach (var wait in (it["marks"]?["upstream"] as JsonArray ?? []).Select(Json.Text).OfType<string>().Append(reference).Distinct().Order(StringComparer.Ordinal))
-            waits.Add((JsonNode?)wait);
-        return Json.Compact(waits);
     }
 
     internal static int Undepend(Board board, string[] args)
@@ -174,19 +179,14 @@ internal static partial class Commands
 
     private static void UndependUpstream(Board board, string role, string task, string prereq, string why, string repo, string upN)
     {
-        var waits = board.WaitsOnTask(task);
-        if (!waits.Any(wait => Json.Text(wait?["ref"]) == prereq)) throw new Die($"#{task} is not waiting on {prereq}");
+        if (!board.WaitsOn(task).Any(wait => string.Equals(Json.Text(wait?["ref"]), prereq, StringComparison.OrdinalIgnoreCase))) throw new Die($"#{task} is not waiting on {prereq}");
         var number = long.Parse(upN, CultureInfo.InvariantCulture);
         var id = FirstId(Board.Must(BlockedBy(board, task)).Out, row => Json.Long(row?["number"]) == number
             && (Json.Text(row?["repository_url"]) ?? "").EndsWith("/" + repo, StringComparison.OrdinalIgnoreCase));
         if (id.Length > 0)
             Board.Must(board.Write($"unblock #{task} from {prereq}", "api", "-X", "DELETE", $"repos/{board.Repo}/issues/{task}/dependencies/blocked_by/{id}"));
+        board.DropWaits(task, [prereq]);
         DependNote(board, role, task, $"No longer blocked by {prereq}: {why}\n\n{WaitMarker("unwait", repo, upN)}");
-        var left = new JsonArray();
-        foreach (var wait in waits.Select(wait => Json.Text(wait?["ref"])).Where(reference => reference != prereq))
-            left.Add((JsonNode?)wait);
-        if (left.Count == 0) board.ClearMark(task, "upstream");
-        else board.Mark(task, "upstream", Json.Compact(left));
         board.Log(role, task, $"no longer blocked by {prereq}");
         board.Say($"#{task} no longer waits on {prereq}, and said why on #{task}");
     }
@@ -211,9 +211,9 @@ internal static partial class Commands
         return $"{reference} has {(state == "merged" ? "merged" : "closed")}.";
     }
 
-    private static string FreedNote(List<JsonObject> waits)
+    private static string FreedNote(List<JsonObject> waits, bool pitch)
     {
-        var versions = waits.Where(wait => Raw(wait["state"]) == "released").Select(Upgrade).ToList();
+        var versions = pitch ? [] : waits.Where(wait => Raw(wait["state"]) == "released").Select(Upgrade).ToList();
         var tail = versions.Count == 0 ? "." : $": upgrade {string.Join(" and ", versions)} first.";
         var markers = string.Concat(waits.Select(wait => WaitMarker("unwait", Raw(wait["repo"]), Raw(wait["n"]))));
         return $"{string.Join(" ", waits.Select(WaitOver))} No longer blocked{tail}\n\n{markers}";
@@ -224,10 +224,11 @@ internal static partial class Commands
         if (args.Length != 0)
             throw new Die($"usage: board.sh {board.Team} free");
         JsonArray? bumps = null;
-        var waiting = board.Items(open: true).OfType<JsonNode>().Where(card => Cards.IsIssue(card) && Cards.Marked(card, "upstream")).Select(Cards.N).ToList();
-        foreach (var n in waiting)
+        var waiting = board.Items(open: true).OfType<JsonNode>().Where(card => Cards.IsIssue(card) && Cards.Marked(card, "upstream")).ToList();
+        foreach (var card in waiting)
         {
-            var read = board.WaitsOnTask(n);
+            var n = Cards.N(card);
+            var read = board.WaitsOn(n);
             if (read.Count == 0) continue;
             var waits = board.UpstreamState(read);
             if (waits.Any(wait => Raw(wait["state"]) == "released" && Json.Truthy(wait["package"])))
@@ -236,10 +237,11 @@ internal static partial class Commands
                 Board.WithBumps(waits, bumps);
             }
             if (!waits.All(wait => Json.Truthy(wait["met"]))) continue;
-            board.ClearMark(n, "upstream");
-            DependNote(board, "dev", n, FreedNote(waits));
+            var role = Cards.Pitch(card) ? "lead" : "dev";
+            board.DropWaits(n, waits.Select(wait => Raw(wait["ref"])));
+            DependNote(board, role, n, FreedNote(waits, role == "lead"));
             foreach (var wait in waits)
-                board.Log("dev", n, $"no longer blocked by {Raw(wait["ref"])}");
+                board.Log(role, n, $"no longer blocked by {Raw(wait["ref"])}");
             board.Say($"#{n}: no longer waiting on {string.Join(", ", waits.Select(wait => Raw(wait["ref"])))}");
         }
         var gaveUp = board.Items(open: true).OfType<JsonNode>().Where(Cards.GaveUp).ToList();

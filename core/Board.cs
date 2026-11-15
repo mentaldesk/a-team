@@ -252,11 +252,10 @@ internal sealed partial class Board
             var marks = Json.Merge(Json.Parse(string.IsNullOrEmpty(row["marks"]) ? "{}" : row["marks"]!)!.AsObject(), MarksOf(labels));
             if (Json.Truthy(marks["held"]) && held[n] is { } since)
                 marks["held"] = since.DeepClone();
-            if (Json.Truthy(marks["upstream"]) && old.Contains("a-team:upstream") && UpstreamRefs(n) is { } refs)
-                marks["upstream"] = refs;
             if (Json.Truthy(marks["shelved"]) && old.Contains("a-team:shelved") && Shelved(n) is { } shelf)
                 marks["shelved"] = shelf;
             _record.Exec($"UPDATE board SET marks = {Reconciler.Q(Json.Compact(marks))} WHERE team = {TeamQ} AND item = {n};");
+            if (Json.Truthy(marks["upstream"]) && old.Contains("a-team:upstream")) CopyWaits(n);
             var gone = new HashSet<string>();
             foreach (var label in old)
                 if (Write($"unlabel #{n} {label}", "api", "-X", "DELETE", $"repos/{_repo}/issues/{n}/labels/{Uri.EscapeDataString(label)}").Ok)

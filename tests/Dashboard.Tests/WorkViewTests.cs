@@ -949,6 +949,20 @@ public class WorkViewTests
     }
 
     [Fact]
+    public void A_Building_pitch_waiting_on_a_release_is_in_Blocked_saying_how_that_stands()
+    {
+        using var view = Open(["a-team"]);
+
+        view.Show(Holds.Tag([new WaitingItem(800, "Installs itself", "Building", "https://github.com/x/800", "a-team", "upstream",
+            "waiting on demo#30: merged, not released", Pitch: true, Upstream: "demo#30: merged, not released")]));
+        LayOut(view, 120, 20);
+
+        var blocked = view.Lanes[0].Columns.Single(column => column.Gate == "Blocked");
+        Assert.Equal("Blocked · 1", blocked.Title);
+        Assert.StartsWith("#800 ⛓ waits on demo#30: merged, not released  Installs itself", blocked.CardText[0]);
+    }
+
+    [Fact]
     public void A_Dependabot_PR_the_Dev_cant_make_build_shows_its_whole_reason_at_any_width()
     {
         using var view = Open(["a-team"]);

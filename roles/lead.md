@@ -161,7 +161,12 @@ For each item in `a-team board {{team}} mine lead Building`, run `children`:
   - file follow-up tasks (as in step 2) if something's missing, or
   - close it with `a-team board {{team}} finish lead <pitch> <file>`, the file saying in a line or
     two what you tried. The stakeholder has already tried and merged every task, so the pitch
-    doesn't come back to them.
+    doesn't come back to them, or
+  - if the whole works only once a release ships or another repo changes, record that wait on the
+    pitch instead of leaving a "not yet" comment:
+    `a-team board {{team}} depends lead <pitch> <owner/repo>#<n> <closed|released> "<why>"`, where
+    `released` may name a merged PR in {{repo}} itself. The board frees it when that lands and wakes
+    you again: check it and close it as usual.
 - A pitch with no tasks may already be built by another pitch's task. Check it on `origin/main` the
   same way, and if it is, close it with `a-team board {{team}} finish lead <pitch> <file> <pr>...`,
   naming the merged PRs that built it, the file saying which PRs did and what you tried. Never ask
