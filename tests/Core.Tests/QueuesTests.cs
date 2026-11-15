@@ -298,6 +298,17 @@ public class QueuesTests
     }
 
     [Fact]
+    public void Its_PR_upstream_that_conflicts_with_its_base_wakes_the_Dev()
+    {
+        const string conflict = "12 mentaldesk/style#84 conflicts with its base: merge the base branch into it and resolve";
+        Assert.Equal([conflict], Reasons(Upstream("[]", """, "mergeable": "CONFLICTING" """)));
+        Assert.Empty(Reasons(Upstream("[]", """, "mergeable": "MERGEABLE" """)));
+        Assert.Empty(Reasons(Upstream("[]", """, "mergeable": "UNKNOWN" """)));
+        Assert.Empty(Reasons(Upstream("[]", """, "mergeable": "CONFLICTING" """), open: 13));
+        Assert.Empty(Reasons(Upstream("[]", """, "mergeable": "CONFLICTING" """).Replace("<!-- a-team:dev -->", "")));
+    }
+
+    [Fact]
     public void A_stakeholders_word_upstream_wakes_it_until_the_Dev_speaks_after_it()
     {
         const string asked = """{"author": {"login": "reviewer"}, "createdAt": "2026-10-01T09:00:00Z", "body": "Why?"}""";

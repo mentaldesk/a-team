@@ -104,8 +104,9 @@ whether the reply answers it:
 If it's Ready and waiting on another repo (`list` shows it in `marks.upstream`), it waits on a change there. If that's a PR
 you opened on a repo the team contributes to, and this run is for that PR, look after it in its
 worktree as in step 2, using `gh ... -R <repo>`, since `a-team board` only reaches {{repo}}:
-`gh pr checks`, fix what fails, answer each stakeholder comment with `gh pr comment` ending in your
-marker, and `gh pr ready` once it's green. Leave the task in Ready: the board frees it by itself once
+`gh pr checks`, fix what fails, merge its base branch in and resolve when `gh pr view --json mergeable`
+says `CONFLICTING`, answer each stakeholder comment with `gh pr comment` ending in your marker, and
+`gh pr ready` once it's green. Leave the task in Ready: the board frees it by itself once
 the change is closed or released, and says on the task which release to upgrade to.
 
 A task a stakeholder held themselves, with no question from you, is theirs: leave it alone. So is one the
