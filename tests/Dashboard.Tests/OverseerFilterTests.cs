@@ -233,6 +233,20 @@ public class OverseerFilterTests : IDisposable
     }
 
     [Fact]
+    public void Esc_keeps_a_card_selected_while_the_bar_had_focus_rather_than_the_one_from_before()
+    {
+        using var window = Open();
+        Assert.True(window.Overseer.Select("team0", 825));
+        window.NewKeyDownEvent(Key.F.WithCtrl);
+        Type(window, "docker");
+        Assert.True(window.Overseer.Select("team1", 900));
+
+        window.NewKeyDownEvent(Key.Esc);
+
+        Assert.Equal(("team1", 900), (window.Overseer.Board.SelectedCard?.Team, window.Overseer.Board.SelectedCard?.Number));
+    }
+
+    [Fact]
     public void Esc_from_a_card_picked_on_the_narrowed_board_keeps_it_selected_when_the_whole_board_folds_it_away()
     {
         var ideas = Enumerable.Range(830, 30).Select(number => Chip(number, "Idea", $"Idea {number}")).Append(Chip(870, "Idea", "Quokka habitats"));

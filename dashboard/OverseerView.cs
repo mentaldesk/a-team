@@ -144,10 +144,8 @@ public sealed class OverseerView : View
         if (!FilterOpen || _board.Matching == 0)
             return;
         _board.SelectFirst();
-        _picked = true;
         LeaveField();
-        Changed();
-        ScrollToSelection();
+        Picked();
     }
 
     /// <summary>Esc: the whole board again, on the card picked from the narrowed one, or else the card selected before.</summary>
@@ -363,8 +361,7 @@ public sealed class OverseerView : View
         if (lanes.FirstOrDefault(lane => _board.SelectLane(LaneTeam(lane), column)) is null)
             return;
         _lanes.Viewport = _lanes.Viewport with { Y = y };
-        Changed();
-        ScrollToSelection();
+        Picked();
     }
 
     /// <summary>Enter on a <c>+N</c>: unfolds its lane.</summary>
@@ -375,8 +372,7 @@ public sealed class OverseerView : View
     {
         if (!_board.SelectHeading(team))
             return false;
-        Changed();
-        ScrollToSelection();
+        Picked();
         return true;
     }
 
@@ -385,8 +381,7 @@ public sealed class OverseerView : View
     {
         if (!_board.Select(team, number))
             return false;
-        Changed();
-        ScrollToSelection();
+        Picked();
         return true;
     }
 
@@ -503,6 +498,13 @@ public sealed class OverseerView : View
     private void Move(Action move)
     {
         move();
+        Picked();
+    }
+
+    /// <summary>The selection moved other than by the filter, so Esc out of the filter keeps it.</summary>
+    private void Picked()
+    {
+        _picked = true;
         Changed();
         ScrollToSelection();
     }
