@@ -7,11 +7,14 @@ namespace ATeam.Core;
 /// <summary>The state's format and what moves it, and what `check` and `setup` ask of the machine, the Project and the repo.</summary>
 internal sealed partial class Board
 {
-    private const int DefaultFormat = 1;
+    private const int DefaultFormat = 2;
     private const string KeychainService = "a-team-app";
 
     /// <summary>What moves a team's state up to each format, safe to repeat. A format with nothing to move has no step.</summary>
-    internal static readonly IReadOnlyDictionary<int, Action<Board>> FormatSteps = new Dictionary<int, Action<Board>>();
+    internal static readonly IReadOnlyDictionary<int, Action<Board>> FormatSteps = new Dictionary<int, Action<Board>>
+    {
+        [2] = board => board.MoveWaitsIntoRecord(),
+    };
 
     /// <summary>The labels setup creates, and what goes wrong without each.</summary>
     private static readonly (string Name, string Color, string Description, string Without)[] TeamLabels =

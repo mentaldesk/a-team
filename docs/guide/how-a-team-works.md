@@ -69,6 +69,13 @@ you nothing. If its PR is already up, its card stays in **Review** and says the 
 card's details in the [Overseer](overseer.md) (`Enter`) to see how far the change has got, like
 `Waiting on tui-style-guide#84: merged, not released`.
 
+A pitch can wait the same way once its tasks have closed, when the whole works only once a release
+ships or another repo changes: say, an installer the next release publishes. The Lead records the
+wait on the pitch, on a merged PR in the team's own repo until a release carries it, or on an issue
+or PR in another repo. While it waits, its card sits in **Blocked** saying what it waits on, like
+`waits on a-team#52: merged, not released`, and nothing asks you about it. Once the wait is over
+the board says so on the pitch, and the Lead checks it and closes it.
+
 Whatever another task waits on comes first: the Dev takes a Ready task some task waits on before
 any other, and the Lead pitches such an Idea before any other, whatever their Priority. Priority
 still orders them among themselves, and nobody's Priority changes.
@@ -168,7 +175,7 @@ reader ([Work](work.md#answering-from-a-card)).
 
 a-team keeps what it knows about an item beyond its Status and Priority in its own record, not as
 labels on your issues: the rank the Lead recommends, the theme a pitch serves, a shelve and its date,
-a skip, a hold, and what a task waits on in another repo. A card's details in Overseer and the line
+a skip, a hold, and what a task or pitch waits on in another repo or a release. A card's details in Overseer and the line
 under the reader's title show them, like `Idea · Priority none · Lead recommends Medium · theme:
 Consistently good UX`. The GitHub Project shows the Lead's rank and the theme as its **Lead rank** and
 **Theme** fields, which setting the board up adds, or else the first copy that needs one. If your

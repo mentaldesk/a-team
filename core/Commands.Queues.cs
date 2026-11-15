@@ -368,7 +368,7 @@ internal static partial class Commands
         var at = board.FeedbackAt(wake.Recent, "lead", n, wake.Sweep);
         if (at.Length > 0) wake.Reasons.Add($"stakeholder feedback on #{n} ({at})");
         if (status == "Approved") wake.Reasons.Add($"#{n} was approved: break it down");
-        if (status == "Building" && board.SubIssues(n) is { } tasks)
+        if (status == "Building" && !Cards.Marked(pitch, "upstream") && board.SubIssues(n) is { } tasks)
         {
             if (tasks is { Total: > 0, Open: 0 })
                 wake.Reasons.Add($"all of #{n}'s tasks are closed: check it and close it");

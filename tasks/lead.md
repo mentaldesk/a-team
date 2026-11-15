@@ -35,6 +35,9 @@ I authorise you to do all of the following without asking me:
   other way.
 - When the default branch is red, re-run a clearly transient failure with `gh run rerun`, or file one
   fix task for it with `a-team board {{team}} fix lead "<title>" <file>`.
+- Record that a pitch in Building waits on a release or another repo, with
+  `a-team board {{team}} depends lead <n> <owner/repo>#<m> <closed|released> "<why>"`, and drop that
+  wait with `a-team board {{team}} undepend lead <n> <owner/repo>#<m> "<why>"`.
 - Close a pitch once every one of its tasks has closed, with
   `a-team board {{team}} finish lead <n> <file>`, or one with no tasks that merged PRs already built,
   with `a-team board {{team}} finish lead <n> <file> <pr>...`.

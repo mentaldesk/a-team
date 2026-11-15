@@ -914,24 +914,17 @@ internal sealed partial class Board
     }
 
     private static bool WaitsUpstream(JsonNode card) =>
-        ((Cards.ReadyTask(card) && Cards.Marked(card, "upstream"))
-            || (Cards.Status(card) == "In review" && Cards.IsIssue(card) && Cards.Marked(card, "upstream")))
-        && !Cards.Marked(card, "held");
+        Cards.Marked(card, "upstream") && !Cards.Marked(card, "held")
+        && (Cards.ReadyTask(card) || (Cards.Status(card) is "In review" or "Building" && Cards.IsIssue(card)));
 
-    /// <summary>For each task waiting upstream, how far its waits have got. Where GitHub won't say, the last detail stands.</summary>
-    private JsonObject UpstreamDetail(List<JsonNode> all, JsonObject was)
+    /// <summary>For each task or pitch waiting upstream, how far its waits have got.</summary>
+    private JsonObject UpstreamDetail(List<JsonNode> all)
     {
         var upstream = new JsonObject();
         JsonArray? bumps = null;
         foreach (var n in all.Where(WaitsUpstream).Select(Cards.N))
         {
-            var read = Aloud("api", "--paginate", $"repos/{_repo}/issues/{n}/comments");
-            if (!read.Ok)
-            {
-                if (was["detail"]?["upstream"]?[n] is { } kept) upstream[n] = kept.DeepClone();
-                continue;
-            }
-            var said = WaitsIn(read, Bot);
+            var said = WaitsOn(n);
             if (said.Count == 0) continue;
             var waits = UpstreamState(said);
             foreach (var wait in waits)
@@ -1004,7 +997,6 @@ internal sealed partial class Board
     internal void SyncDetail()
     {
         var all = OpenCards();
-        var was = Detail();
         if (TooFewRequestsLeft()) return;
         CatchUp(all);
         var ready = all.Where(card => Cards.ReadyTask(card) && Json.Long(card["blockedBy"]) > 0).Select(Number);
@@ -1019,7 +1011,7 @@ internal sealed partial class Board
         var frees = Frees(repository);
         foreach (var key in repository.Select(entry => entry.Key).Where(key => !Regex.IsMatch(key, "^x[0-9]+$")).ToList())
             repository.Remove(key);
-        var detail = new JsonObject { ["talk"] = page, ["main"] = main, ["frees"] = frees, ["upstream"] = UpstreamDetail(all, was) };
+        var detail = new JsonObject { ["talk"] = page, ["main"] = main, ["frees"] = frees, ["upstream"] = UpstreamDetail(all) };
         _record.Exec($"INSERT INTO details (team, detail, synced) VALUES ({TeamQ}, {Reconciler.Q(Json.Compact(detail))}, {Reconciler.Q(Now())})\n    ON CONFLICT (team) DO UPDATE SET detail = excluded.detail, synced = excluded.synced, failed = NULL;");
         DetailSynced();
     }
@@ -1148,7 +1140,7 @@ internal sealed partial class Board
                 ["url"] = card["url"]?.DeepClone(),
                 ["team"] = _team,
                 ["priority"] = card["priority"]?.DeepClone(),
-                ["pitch"] = false,
+                ["pitch"] = Cards.Pitch(card),
                 ["turn"] = "upstream",
                 ["upstream"] = line,
                 ["reason"] = $"waiting on {line}",

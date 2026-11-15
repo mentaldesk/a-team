@@ -62,7 +62,7 @@ run() {
   esac
   for db in history.db dry-run.db; do
     [ -n "${KEEP_BOARD:-}" ] || [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
-      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo';" 2>/dev/null
+      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo'; DELETE FROM waits WHERE team = 'demo';" 2>/dev/null
   done
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" "$@" >"$OUT" 2>"$ERR"
   STATUS=$?

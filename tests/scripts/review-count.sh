@@ -258,6 +258,175 @@ grep -qF 'feedback lead <task>' "$ROOT/roles/lead.md" || fail "lead.md: doesn't 
 grep -qF 'unblock lead <task>' "$ROOT/roles/lead.md" || fail "lead.md: doesn't clear its holds"
 grep -qF 'unblock lead <n>' "$ROOT/tasks/lead.md" || fail "task prompt: Lead not authorised to clear its holds"
 
+# waiting_pitch: pitch #10 in Building, with one task, closed, and nothing waiting on another repo yet.
+waiting_pitch() {
+  waiting_upstream
+  edit_item 10 '.labels.nodes = [{name: "pitch"}]'
+  edit_item 11 '.labels.nodes = []'
+  echo '[]' >"$WAITING_ON"
+  echo '[{"number": 11, "state": "closed"}]' >"$SUBS"
+  mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
+}
+waits_table() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT item, ref, COALESCE(until, ''), COALESCE(package, '') FROM waits WHERE team = 'demo' ORDER BY item, ref;"; }
+closed_wake() { jq -r '.reasons[]' "$OUT" | grep -c "all of #10's tasks are closed: check it and close it"; }
+
+case_ "a Building pitch waits on another repo's change, or on a release carrying one of its own repo's merged PRs, as a task does"
+waiting_pitch
+echo '{"id": 9052, "number": 52}' >"$ISSUE"
+run board demo depends lead 10 mentaldesk/style#52 released "the signed apt repo is published only by a release"
+same "exit" 0 "$STATUS"
+same "said" "#10 now waits for mentaldesk/style#52 to be released, and said why on #10" "$(cat "$OUT")"
+grep -qx "Blocked by mentaldesk/style#52, until released: the signed apt repo is published only by a release" "$POSTED" || fail "note: '$(cat "$POSTED")'"
+grep -q '<!-- a-team:lead -->' "$POSTED" || fail "no lead marker in '$(cat "$POSTED")'"
+same "recorded" "10|mentaldesk/style#52|released|" "$(waits_table)"
+same "marked" '["mentaldesk/style#52"]' "$(marks 10 | jq -c .upstream)"
+echo '{"id": 9053, "number": 53}' >"$ISSUE"
+KEEP_BOARD=1 run board demo depends lead 10 mentaldesk/style#53 closed "needs the fix"
+same "closed exit" 0 "$STATUS"
+echo '{"id": 930, "number": 30, "pull_request": {"merged_at": "2026-11-10T09:00:00Z"}}' >"$ISSUE"
+: >"$WRITES"
+KEEP_BOARD=1 run board demo depends lead 10 mentaldesk/demo#30 released "#30 adds it to the release workflow"
+same "own repo exit" 0 "$STATUS"
+grep -q "dependencies/blocked_by" "$WRITES" && fail "own PR: linked as a dependency"
+same "three waits" "10|mentaldesk/demo#30|released|
+10|mentaldesk/style#52|released|
+10|mentaldesk/style#53|closed|" "$(waits_table)"
+same "all marked" '["mentaldesk/demo#30","mentaldesk/style#52","mentaldesk/style#53"]' "$(marks 10 | jq -c .upstream)"
+
+case_ "recording the same wait twice leaves one wait"
+waiting_pitch
+echo '{"id": 9052, "number": 52}' >"$ISSUE"
+run board demo depends lead 10 mentaldesk/style#52 closed "why"
+KEEP_BOARD=1 run board demo depends lead 10 mentaldesk/style#52 released "why, again"
+same "exit" 0 "$STATUS"
+same "one" "10|mentaldesk/style#52|released|" "$(waits_table)"
+same "marked once" '["mentaldesk/style#52"]' "$(marks 10 | jq -c .upstream)"
+waiting_upstream
+edit_item 11 '.labels.nodes = []'
+run board demo depends dev 11 mentaldesk/style#84 released "needs it"
+KEEP_BOARD=1 run board demo depends dev 11 mentaldesk/style#84 released MentalDesk.Tui "needs it"
+same "task: one" "11|mentaldesk/style#84|released|MentalDesk.Tui" "$(waits_table)"
+
+case_ "depends refuses a pitch outside Building, one of its own team's issues, and a wait that isn't on a release or another repo"
+for status in Exploring Pitched Approved; do
+  waiting_pitch
+  jq --arg s "$status" '(.data.organization.projectV2.items.nodes[] | select(.content.number == 10) | .fieldValueByName.name) = $s' \
+    "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
+  : >"$WRITES"
+  run board demo depends lead 10 mentaldesk/style#52 released "why"
+  failed "$status"
+  one_line "$status"
+  grep -q "#10 is a pitch in $status: only a pitch in Building can wait" "$ERR" || fail "$status: '$(cat "$ERR")'"
+  same "$status writes" "" "$(cat "$WRITES")$(cat "$POSTED")"
+done
+waiting_pitch
+echo '{"id": 921, "number": 21}' >"$ISSUE"
+for args in "mentaldesk/demo#21 closed" "mentaldesk/demo#21 released" "21"; do
+  : >"$WRITES"
+  # shellcheck disable=SC2086
+  run board demo depends lead 10 $args "why"
+  failed "own: $args"
+  one_line "own: $args"
+  same "own: $args writes" "" "$(cat "$WRITES")$(cat "$POSTED")"
+done
+run board demo depends lead 10 mentaldesk/demo#21 closed "why"
+grep -q "can wait on it only until a release carries it" "$ERR" || fail "own closed: '$(cat "$ERR")'"
+run board demo depends lead 10 mentaldesk/demo#21 released "why"
+grep -q "mentaldesk/demo#21 isn't a merged PR" "$ERR" || fail "own issue: '$(cat "$ERR")'"
+echo '{"id": 931, "number": 31, "pull_request": {"merged_at": null}}' >"$ISSUE"
+run board demo depends lead 10 mentaldesk/demo#31 released "why"
+grep -q "mentaldesk/demo#31 isn't a merged PR" "$ERR" || fail "own open PR: '$(cat "$ERR")'"
+run board demo depends lead 10 21 "why"
+grep -q "pitch #10 waits only on a release or another repo" "$ERR" || fail "plain: '$(cat "$ERR")'"
+same "nothing recorded" "" "$(waits_table)"
+
+case_ "a waiting pitch doesn't wake the Lead to close it; freed when its release ships, it does, and the note says which release"
+waiting_pitch
+run board demo triggers lead
+same "before" 1 "$(closed_wake)"
+echo '{"id": 930, "number": 30, "pull_request": {"merged_at": "2026-11-10T09:00:00Z"}}' >"$ISSUE"
+KEEP_BOARD=1 run board demo depends lead 10 mentaldesk/demo#30 released "#30 adds it to the release workflow"
+KEEP_BOARD=1 run board demo triggers lead
+same "waiting" 0 "$(closed_wake)"
+upstream_items <<<"30 PullRequest MERGED abc123"
+KEEP_BOARD=1 run board demo free
+same "not released" "" "$(cat "$OUT")"
+KEEP_BOARD=1 waiting
+same "shown" '[{"number":10,"pitch":true,"turn":"upstream","upstream":"demo#30: merged, not released"}]' \
+  "$(jq -c 'map(select(.number == 10) | {number, pitch, turn, upstream})' "$OUT")"
+releases <<<"v0.9.17 2026-11-13T12:00:00Z"
+contains v0.9.17
+: >"$POSTED"
+KEEP_BOARD=1 run board demo free
+same "freed" "#10: no longer waiting on mentaldesk/demo#30" "$(cat "$OUT")"
+day=$(jq -rn '"2026-11-13T12:00:00Z" | fromdateiso8601 | strflocaltime("%d %b") | ltrimstr("0")')
+grep -qx "mentaldesk/demo#30 is in v0.9.17 (released $day). No longer blocked: upgrade to 0.9.17 first." "$POSTED" || fail "note: '$(cat "$POSTED")'"
+grep -q '<!-- a-team:lead -->' "$POSTED" || fail "freed: no lead marker in '$(cat "$POSTED")'"
+same "gone" "" "$(waits_table)"
+same "unmarked" null "$(marks 10 | jq -c .upstream)"
+KEEP_BOARD=1 run board demo triggers lead
+same "after" 1 "$(closed_wake)"
+
+case_ "undepend drops a pitch's wait, saying why, and the Lead is woken to close it again"
+waiting_pitch
+echo '{"id": 9052, "number": 52}' >"$ISSUE"
+run board demo depends lead 10 mentaldesk/style#52 closed "needs the fix"
+echo '[{"number": 52, "id": 9052, "repository_url": "https://api.github.com/repos/mentaldesk/style"}]' >"$BLOCKED"
+KEEP_BOARD=1 run board demo undepend lead 10 mentaldesk/style#52 "it shipped another way"
+same "exit" 0 "$STATUS"
+grep -qx "No longer blocked by mentaldesk/style#52: it shipped another way" "$POSTED" || fail "note: '$(cat "$POSTED")'"
+same "gone" "" "$(waits_table)"
+KEEP_BOARD=1 run board demo triggers lead
+same "woken" 1 "$(closed_wake)"
+echo '[]' >"$BLOCKED"
+
+case_ "a wait is written whole or not at all"
+waiting_pitch
+echo '{"id": 9052, "number": 52}' >"$ISSUE"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TRIGGER refuse_marks BEFORE UPDATE OF marks ON board BEGIN SELECT RAISE(ABORT, 'refused'); END;"
+KEEP_BOARD=1 run board demo depends lead 10 mentaldesk/style#52 closed "why"
+failed "depends"
+same "nothing recorded" "" "$(waits_table)"
+sqlite3 "$A_TEAM_STATE/history.db" "DROP TRIGGER refuse_marks;"
+KEEP_BOARD=1 run board demo depends lead 10 mentaldesk/style#52 closed "why"
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TRIGGER refuse_marks BEFORE UPDATE OF marks ON board BEGIN SELECT RAISE(ABORT, 'refused'); END;"
+upstream_items <<<"52 Issue CLOSED"
+KEEP_BOARD=1 run board demo free
+failed "free"
+same "still recorded" "10|mentaldesk/style#52|closed|" "$(waits_table)"
+sqlite3 "$A_TEAM_STATE/history.db" "DROP TRIGGER refuse_marks;"
+
+case_ "format 2 moves the waits open on tasks out of their markers into the record, once, and the board reads markers no more"
+waiting_upstream
+edit_item 11 '.labels.nodes = []'
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = json_set(COALESCE(marks, '{}'), '$.upstream', json('[\"mentaldesk/style#84\"]')) WHERE team = 'demo' AND item = 11;
+  UPDATE formats SET format = 1 WHERE team = 'demo';"
+printf 'mentaldesk/style#84 released MentalDesk.Tui\nmentaldesk/style#85 closed\n' | waits
+jq '. + [{node_id: "IC_x", user: {login: "demo-app[bot]"}, created_at: "2026-10-11T09:00:00Z", body: "No longer blocked.\n\n<!-- a-team:unwait repo=mentaldesk/style n=85 -->"},
+  {node_id: "IC_y", user: {login: "stranger"}, created_at: "2026-10-11T09:00:00Z", body: "<!-- a-team:wait repo=mentaldesk/lib n=9 until=closed -->"}]' \
+  "$THREAD" >"$THREAD.new" && mv "$THREAD.new" "$THREAD"
+KEEP_BOARD=1 run board demo format
+same "exit" 0 "$STATUS"
+same "moved" "11|mentaldesk/style#84|released|MentalDesk.Tui" "$(waits_table)"
+same "stamped" 2 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE formats SET format = 1 WHERE team = 'demo';"
+KEEP_BOARD=1 run board demo format
+same "again" "11|mentaldesk/style#84|released|MentalDesk.Tui" "$(waits_table)"
+waits <<<"mentaldesk/lib#9 closed"
+upstream_items <<<"84 PullRequest MERGED abc123"
+KEEP_BOARD=1 waiting
+same "a marker added later" '"style#84: merged, not released"' "$(jq -c '.[] | select(.number == 11) | .upstream' "$OUT")"
+KEEP_BOARD=1 run board demo undepend dev 11 mentaldesk/lib#9 "why"
+failed "undepend a marker"
+
+case_ "the Lead records a Building pitch's wait with depends instead of a \"not yet\" comment, and may"
+step=$(sed -n '/^### 3\. Tend pitches in Building/,/^### 4/p' "$ROOT/roles/lead.md")
+grep -qF 'depends lead <pitch> <owner/repo>#<n> <closed|released> "<why>"' <<<"$step" || fail "lead.md: no pitch wait in step 3"
+grep -qF 'instead of leaving a "not yet" comment' <<<"$step" || fail "lead.md: still leaves a comment"
+grep -qF 'depends lead <n> <owner/repo>#<m> <closed|released>' "$ROOT/tasks/lead.md" || fail "task prompt: Lead not authorised to record a pitch's wait"
+
 # other_team <name> <repo> <slug>: another team on this machine.
 other_team() {
   jq -n --arg repo "$2" --arg slug "$3" '{repo: $repo, app: {slug: $slug}, project: {owner: "mentaldesk", number: 2}}' \
@@ -406,8 +575,10 @@ ITEMS
   other_team app mentaldesk/app app-bot
   (source "$ROOT/scripts/common.sh"; history_sql "DELETE FROM board WHERE team = 'app';
     INSERT INTO board (team, item, node, status, since, content, marks) VALUES ('app', 5, 'I_5', 'Ready',
-      '2026-10-10T09:00:00Z', '{\"type\": \"Issue\"}', '{\"upstream\": [\"mentaldesk/demo#21\"]}');" >/dev/null)
-  gh_thread <<<'comment 2026-10-10T09:00:00Z app-bot[bot] 0 Blocked by mentaldesk/demo#21.\n\n<!-- a-team:wait repo=mentaldesk/demo n=21 until=released -->'
+      '2026-10-10T09:00:00Z', '{\"type\": \"Issue\"}', '{\"upstream\": [\"mentaldesk/demo#21\"]}');
+    DELETE FROM waits WHERE team = 'app';
+    INSERT INTO waits (team, item, ref, repo, n, until, since) VALUES ('app', 5, 'mentaldesk/demo#21', 'mentaldesk/demo', 21,
+      'released', '2026-10-10T09:00:00Z');" >/dev/null)
 }
 
 case_ "the Dev takes a task another team waits on before a higher Priority, and otherwise as before"
@@ -764,22 +935,22 @@ case_ "a worktree whose a-team would migrate refuses every command, and points a
 format_board
 format_home "$INSTALLED"
 on_real "$INSTALLED" demo list
-AHEAD=$(format_copy "" 2)
+AHEAD=$(format_copy "" 3)
 for command in list wip triggers\ dev; do
   # shellcheck disable=SC2086 # the command and its argument
   on_real "$AHEAD" demo $command
   failed "$command"
   one_line "$command"
-  grep -q "would move the board from format 1 to 2, and only the installed one ($INSTALLED/bin/a-team) may: try it with --dry-run, or with A_TEAM_STATE set to a copy" "$ERR" ||
+  grep -q "would move the board from format 1 to 3, and only the installed one ($INSTALLED/bin/a-team) may: try it with --dry-run, or with A_TEAM_STATE set to a copy" "$ERR" ||
     fail "$command: '$(cat "$ERR")'"
 done
 same "stamp" "1|0.3.0|0" "$(stamp)"
-[ ! -e "$FORMAT_STATE/format-2-ran" ] || fail "the step ran"
+[ ! -e "$FORMAT_STATE/format-3-ran" ] || fail "the step ran"
 A_TEAM_RUN_TEAM=demo on_real "$AHEAD" demo list
 grep -q "only the installed one .* may: try it with --dry-run" "$ERR" || fail "a run from a worktree: '$(cat "$ERR")'"
-RELEASE_AHEAD=$(format_copy 0.2.0 2)
+RELEASE_AHEAD=$(format_copy 0.2.0 3)
 A_TEAM_RUN_TEAM=demo on_real "$RELEASE_AHEAD" demo list
-same "a run on another release" "board.sh: this run is on 0.2.0, and only the installed a-team (0.3.0) may move the board from format 1 to 2: stopping" "$(cat "$ERR")"
+same "a run on another release" "board.sh: this run is on 0.2.0, and only the installed a-team (0.3.0) may move the board from format 1 to 3: stopping" "$(cat "$ERR")"
 
 case_ "--dry-run and a state of its own still work from that worktree, and the real state stays put"
 on_real "$AHEAD" --dry-run demo list
@@ -790,24 +961,24 @@ OWN=$(mktemp -d "$WORK/state.XXXXXX")
 cp "$FORMAT_STATE/history.db" "$OWN/"
 A_TEAM_STATE=$OWN A_TEAM_CONFIG="$CONFIG" "$AHEAD/bin/a-team" board demo list >"$OUT" 2>"$ERR"
 same "own state exit" 0 "$?"
-same "own state moved" 2 "$(sqlite3 "$OWN/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+same "own state moved" 3 "$(sqlite3 "$OWN/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
 same "own state stamp" "1|0.3.0|0" "$(stamp)"
 
 case_ "the installed a-team moves it forward, once, and a run's copy of that release may too"
-NEWER=$(format_copy 0.4.0 2)
+NEWER=$(format_copy 0.4.0 3)
 format_home "$NEWER"
 format_board
-RUN_COPY=$(format_copy 0.4.0 2)
+RUN_COPY=$(format_copy 0.4.0 3)
 on_real "$NEWER" demo list
 same "unstamped exit" 0 "$STATUS"
-same "ran once" demo "$(cat "$FORMAT_STATE/format-2-ran")"
-same "moved" "2|0.4.0|1" "$(stamp)"
+same "ran once" demo "$(cat "$FORMAT_STATE/format-3-ran")"
+same "moved" "3|0.4.0|1" "$(stamp)"
 on_real "$NEWER" demo list
-same "ran once more" demo "$(cat "$FORMAT_STATE/format-2-ran")"
+same "ran once more" demo "$(cat "$FORMAT_STATE/format-3-ran")"
 format_home "$NEWER"
 on_real "$RUN_COPY" demo list
 same "run copy exit" 0 "$STATUS"
-same "run copy moved" "2|0.4.0|1" "$(stamp)"
+same "run copy moved" "3|0.4.0|1" "$(stamp)"
 
 case_ "commands that find the board behind take turns, so the step runs once"
 for round in 1 2 3 4 5; do
@@ -818,8 +989,8 @@ for round in 1 2 3 4 5; do
     env -u A_TEAM_STATE -u XDG_STATE_HOME HOME="$FORMAT_HOME" A_TEAM_CONFIG="$CONFIG" "$NEWER/bin/a-team" board demo format >/dev/null 2>"$ERR.$racer" &
   done
   wait
-  same "round $round ran" 1 "$(grep -c '' <"$FORMAT_STATE/format-2-ran")"
-  same "round $round moved" "2|0.4.0|1" "$(stamp)"
+  same "round $round ran" 1 "$(grep -c '' <"$FORMAT_STATE/format-3-ran")"
+  same "round $round moved" "3|0.4.0|1" "$(stamp)"
   same "round $round left no turn behind" 0 "$(sqlite3 "$FORMAT_STATE/history.db" "SELECT COUNT(*) FROM format_moves;")"
   for racer in 1 2 3 4; do
     same "round $round stderr" "" "$(cat "$ERR.$racer")"
@@ -832,11 +1003,11 @@ on_real "$INSTALLED" demo list
 set_stamp 1 0.3.0
 on_real "$NEWER" demo overview
 same "exit" 0 "$STATUS"
-same "ran once" demo "$(cat "$FORMAT_STATE/format-2-ran")"
-same "moved" "2|0.4.0|1" "$(stamp)"
+same "ran once" demo "$(cat "$FORMAT_STATE/format-3-ran")"
+same "moved" "3|0.4.0|1" "$(stamp)"
 on_real "$INSTALLED" demo overview
 failed "refused"
-same "words" "board.sh: the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
+same "words" "board.sh: the board is in format 3, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
 
 case_ "a command that died moving the board doesn't hold up the next, which repeats its step"
 format_home "$NEWER"
@@ -848,30 +1019,30 @@ wait "$DEAD"
 sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO format_moves (team, pid) VALUES ('demo', $DEAD);"
 on_real "$NEWER" demo format
 same "exit" 0 "$STATUS"
-same "ran" demo "$(cat "$FORMAT_STATE/format-2-ran")"
-same "moved" "2|0.4.0|1" "$(stamp)"
+same "ran" demo "$(cat "$FORMAT_STATE/format-3-ran")"
+same "moved" "3|0.4.0|1" "$(stamp)"
 
 case_ "an a-team older than the state refuses every board command, read or write, whichever team moved it"
 format_board
 format_home "$NEWER"
 on_real "$INSTALLED" demo list
-sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO formats (team, format, version) VALUES ('other', 2, '0.4.0');"
+sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO formats (team, format, version) VALUES ('other', 3, '0.4.0');"
 for command in "demo list" "demo wip" "demo move dev 7 Ready" "--dry-run demo list" "demo body 7"; do
   # shellcheck disable=SC2086 # the command and its arguments
   A_TEAM_RUN_TEAM=demo on_real "$INSTALLED" $command
   failed "$command"
   one_line "$command"
-  same "$command" "board.sh: the board is in format 2, from a-team 0.4.0, and this run is on 0.3.0: stopping" "$(cat "$ERR")"
+  same "$command" "board.sh: the board is in format 3, from a-team 0.4.0, and this run is on 0.3.0: stopping" "$(cat "$ERR")"
 done
 on_real "$INSTALLED" demo list
-same "installed" "board.sh: the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
+same "installed" "board.sh: the board is in format 3, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
 on_real "$SAME_FORMAT" demo list
 grep -q "is on unknown: merge the default branch" "$ERR" || fail "worktree: '$(cat "$ERR")'"
 
 case_ "check reports a board problem while the a-team is behind the state, and runs its other checks"
 on_real "$INSTALLED" demo check
 same "exit" 1 "$STATUS"
-grep -q '^problem  board     the board is in format 2, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team$' "$OUT" ||
+grep -q '^problem  board     the board is in format 3, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team$' "$OUT" ||
   fail "check: '$(cat "$OUT")'"
 grep -q '^problem  app ' "$OUT" || fail "check stopped early: '$(cat "$OUT")'"
 

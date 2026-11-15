@@ -352,7 +352,7 @@ internal sealed partial class Board
         }
     }
 
-    /// <summary>What task #n still waits on in other repos, by the wait markers on it.</summary>
+    /// <summary>The waits the markers in #n's comments name, read only to move them into the record.</summary>
     private JsonArray? WaitsOn(string n, string repo, string bot)
     {
         var read = _gh.Run("api", "--paginate", $"repos/{repo}/issues/{n}/comments");
@@ -386,15 +386,6 @@ internal sealed partial class Board
         foreach (var wait in waits)
             array.Add((JsonNode?)wait);
         return array;
-    }
-
-    private JsonArray? UpstreamRefs(string n)
-    {
-        if (WaitsOn(n, _repo, Bot) is not { Count: > 0 } waits) return null;
-        var refs = new JsonArray();
-        foreach (var wait in waits)
-            refs.Add(wait?["ref"]?.DeepClone());
-        return refs;
     }
 
     private JsonObject? Shelved(string n)
@@ -477,14 +468,12 @@ internal sealed partial class Board
             var slug = Json.Text(config?["app"]?["slug"]) ?? "";
             if (repo.Length == 0 || slug.Length == 0 || string.Equals(repo, _repo, StringComparison.OrdinalIgnoreCase)) continue;
             foreach (var row in _record.Query($"""
-                SELECT item FROM board WHERE team = {Reconciler.Q(team)} AND status != 'Done'
-                  AND json_extract(content, '$.type') = 'Issue' AND (json_extract(marks, '$.upstream') IS NOT NULL
-                    OR (marks IS NULL AND EXISTS (SELECT 1 FROM json_each(content, '$.labels') WHERE value = 'a-team:upstream')));
+                SELECT w.repo, w.n FROM waits w JOIN board b ON b.team = w.team AND b.item = w.item
+                  WHERE w.team = {Reconciler.Q(team)} AND b.status != 'Done';
                 """))
             {
-                foreach (var wait in WaitsOn(row.First!, repo, $"{slug}[bot]") ?? [])
-                    if (string.Equals(Json.Text(wait?["repo"]), _repo, StringComparison.OrdinalIgnoreCase))
-                        named.Add(wait!["n"]!.GetValue<long>());
+                if (string.Equals(row["repo"], _repo, StringComparison.OrdinalIgnoreCase))
+                    named.Add(long.Parse(row["n"]!, CultureInfo.InvariantCulture));
             }
         }
         named.AddRange(Prerequisites(all.Where(card => Cards.ReadyTask(card) && Json.Long(card["blockedBy"]) > 0).Select(Cards.N).ToList()));
