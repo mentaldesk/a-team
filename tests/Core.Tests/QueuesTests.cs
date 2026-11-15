@@ -306,6 +306,8 @@ public class QueuesTests
         Assert.Empty(Reasons(Upstream("[]", """, "mergeable": "UNKNOWN" """)));
         Assert.Empty(Reasons(Upstream("[]", """, "mergeable": "CONFLICTING" """), open: 13));
         Assert.Empty(Reasons(Upstream("[]", """, "mergeable": "CONFLICTING" """).Replace("<!-- a-team:dev -->", "")));
+        Assert.Equal(["12 mentaldesk/style#84 is green but still a draft", conflict],
+            Reasons(Upstream("""[{"status": "COMPLETED", "conclusion": "SUCCESS"}]""", """, "mergeable": "CONFLICTING" """)));
     }
 
     [Fact]
