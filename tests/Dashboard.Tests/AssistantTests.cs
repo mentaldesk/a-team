@@ -25,7 +25,7 @@ public sealed class AssistantTests : IDisposable
 
     private string Config => Path.Combine(_root, "config");
 
-    private DashboardWindow Open(IReadOnlyList<(string, string)>? agents = null, int width = 0, Area area = Area.Work)
+    private DashboardWindow Open(IReadOnlyList<(string, string)>? agents = null, int width = 0, Area area = Area.Work, string waiting = "[]")
     {
         Directory.CreateDirectory(_root);
         var config = Config;
@@ -44,7 +44,7 @@ public sealed class AssistantTests : IDisposable
             new DashboardSettings(config),
             new TeamConfigs(config),
             _ => Task.FromResult<string?>(null),
-            _ => Task.FromResult(new Reading("[]", null)),
+            _ => Task.FromResult(new Reading(waiting, null)),
             _ => Task.FromResult(new Reading("{}", null)),
             Opening.Opened,
             (_, _, _, _, _, _, _, _, _, _, _, _) => null,
@@ -237,6 +237,39 @@ public sealed class AssistantTests : IDisposable
         Assert.True(window.Overseer.HasFocus);
         window.NewKeyDownEvent(Key.F6);
         Assert.True(window.Assistant!.InputHasFocus);
+    }
+
+    private const string Blocking = """
+        [{"number": 828, "title": "Worth considering", "status": "In review", "url": "https://github.com/mentaldesk/a-team/issues/828",
+          "team": "a-team", "turn": "you", "reason": "awaiting your acceptance", "pr": 829, "frees": [831]}]
+        """;
+
+    [Fact]
+    public void In_Work_the_Assistant_and_the_Priority_Inbox_are_tabs_and_closing_the_Assistant_leaves_the_inbox_alone()
+    {
+        using var window = Open(width: 120, waiting: Blocking);
+        window.Refresh();
+        Assert.True(window.Inbox.Visible);
+        Assert.False(window.InboxTabbed);
+
+        window.Press("Ctrl+G A");
+
+        Assert.True(window.InboxTabbed);
+        Assert.Equal("Inbox 1", window.Inbox.TabTitle);
+        Assert.True(window.Assistant!.InputHasFocus);
+        Assert.True(window.Inbox.AssistantInFront);
+        window.Press("Ctrl+G P");
+        Assert.True(window.Inbox.InboxInFront);
+        Assert.True(window.Inbox.List.HasFocus);
+        window.Press("Ctrl+G A");
+        Assert.True(window.Assistant.InputHasFocus);
+
+        window.Press("Ctrl+G A");
+
+        Assert.False(window.InboxTabbed);
+        Assert.False(window.Assistant.Visible);
+        Assert.True(window.Inbox.Visible);
+        Assert.Equal("Priority Inbox 1", window.Inbox.Title);
     }
 
     [Fact]

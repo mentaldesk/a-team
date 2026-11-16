@@ -321,10 +321,10 @@ public class AppMenuTests : IDisposable
         window.Refresh();
 
         Assert.Equal(["_View", AppMenu.Go], window.Menus.Take(2).Select(menu => menu.Title));
-        Assert.Equal(["view.work", "view.overseer", "assistant", "view.details"], Above(window, Go(window)));
+        Assert.Equal(["view.work", "view.overseer", "assistant", "view.details", "view.inbox"], Above(window, Go(window)));
         Assert.Equal(["work.team", "work.whatsNew"], Below(window, Go(window)));
-        Assert.Equal(["Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
-        Assert.DoesNotContain(Under(window, View(window)), id => id is "view.work" or "view.overseer" or "view.details" or "assistant" or "work.team" or "work.whatsNew");
+        Assert.Equal(["Ctrl+G W", "Ctrl+G O", "Ctrl+G A", "Ctrl+G I", "Ctrl+G P", "", "Ctrl+G N"], Under(window, Go(window)).Select(id => Keys(window, id)));
+        Assert.DoesNotContain(Under(window, View(window)), id => id is "view.work" or "view.overseer" or "view.details" or "view.inbox" or "assistant" or "work.team" or "work.whatsNew");
     }
 
     [Fact]
