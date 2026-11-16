@@ -180,9 +180,9 @@ case_ "triggers starts the Lead for each Dependabot PR it hasn't commented on ye
 cat >"$UPDATES" <<'JSON'
 [{"number": 440, "title": "Bump MentalDesk.Tui", "comments": []},
  {"number": 441, "title": "Bump Terminal.Gui", "comments": [
-   {"author": {"login": "demo-app"}, "body": "Nothing to adopt.\n\n<!-- a-team:lead -->"}]},
+   {"author": {"login": "demo-app"}, "body": "Nothing to adopt.\n\n<!-- a-team:lead -->", "url": "https://github.com/mentaldesk/demo/pull/441#issuecomment-4410001"}]},
  {"number": 442, "title": "Bump Spectre.Console", "comments": [
-   {"author": {"login": "stranger"}, "body": "<!-- a-team:lead -->"}]}]
+   {"author": {"login": "stranger"}, "createdAt": "2026-10-10T09:00:00Z", "body": "<!-- a-team:lead -->", "url": "https://github.com/mentaldesk/demo/pull/442#issuecomment-4420001"}]}]
 JSON
 mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
 run board demo triggers lead

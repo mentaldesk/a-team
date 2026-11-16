@@ -15,10 +15,9 @@ internal static partial class Commands
 
     private const int RefusalsBeforeAsking = 3;
 
-    private static bool Merges(JsonNode pr, string slug) =>
+    private static bool Merges(Board board, JsonNode pr) =>
         Json.Text(pr["author"]?["login"]) == "app/dependabot" && !Json.Truthy(pr["isDraft"]) && Json.Text(pr["mergeable"]) == "MERGEABLE"
-        && (pr["comments"]?.AsArray().Any(comment => Json.Text(comment?["author"]?["login"]) == slug
-            && (Json.Text(comment?["body"]) ?? "").Contains("<!-- a-team:lead -->", StringComparison.Ordinal)) ?? false);
+        && board.LeadSaid(pr["comments"] as JsonArray);
 
     /// <summary>Counts a refusal of a green bump. Enough in a row hold it, with the Dev's marker, so it reads as any bump the
     /// Dev can't make build. Passes go on trying, so fixing the cause merges it.</summary>
@@ -62,7 +61,6 @@ internal static partial class Commands
         var prs = Json.Parse(listed.Out)?.AsArray() ?? [];
         if (prs.Count == 0) return 0;
         var all = board.AllCards();
-        var slug = board.Text("app", "slug");
         JsonObject? main = null;
         var mainRead = false;
         var stuck = 0;
@@ -83,7 +81,7 @@ internal static partial class Commands
                 verdict = Board.AgainstMain(checks, main);
             }
             var it = all.FirstOrDefault(card => Cards.N(card) == p);
-            if (verdict == "pass" && Merges(row, slug))
+            if (verdict == "pass" && Merges(board, row))
             {
                 string? why = null;
                 board.Quiet = true;

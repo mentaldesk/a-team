@@ -10,7 +10,6 @@ namespace ATeam.Core;
 internal sealed partial class Board
 {
     private const string NoTalk = """{"data": {"repository": {}}}""";
-    private const string AnyRole = "<!-- a-team:";
     internal const string DispatchMarker = "<!-- a-team:dispatch -->";
     private const string RunsOnHead = """
         checkSuites(first: 50) { nodes {
@@ -293,15 +292,15 @@ internal sealed partial class Board
         }
     }
 
-    private GhResult ReviewsRead(string n)
+    private GhResult ReviewsRead(string n, bool eyes = false)
     {
         var (owner, name) = RepoParts;
-        return Aloud("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"number={n}", "-f", """
+        return Aloud("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"number={n}", "-f", $$"""
             query=
                 query($owner: String!, $name: String!, $number: Int!) {
                   repository(owner: $owner, name: $name) { pullRequest(number: $number) {
                     reviews(last: 50) { nodes { id url state body submittedAt author { __typename login }
-                      reactions(content: EYES) { totalCount } } } } } }
+                      {{(eyes ? "reactions(content: EYES) { totalCount }" : "")}} } } } } }
             """, "--jq", $$"""
             .data.repository.pullRequest.reviews.nodes[]
                       | select((.body // "") != "" or .state == "CHANGES_REQUESTED")
@@ -336,16 +335,17 @@ internal sealed partial class Board
     private List<JsonObject>? OwedAnyway(string role, string n)
     {
         var said = CommentsAnyway(n);
-        if (Unreadable(said, $"<!-- a-team:{role} -->")) return null;
+        if (Unreadable(said, role)) return null;
         var left = Unanswered(role, said);
         WithImages(left);
         return left;
     }
 
     /// <summary>Whether jq stopped on those comments, as an error body among them made it, so that nothing was owed on them.</summary>
-    private bool Unreadable(List<JsonObject> said, string marker)
+    private bool Unreadable(List<JsonObject> said, string role)
     {
-        var stopped = said.FirstOrDefault(c => !TeamSaid(c, marker) && string.CompareOrdinal(Json.Text(c["at"]), AckFrom) < 0
+        var marker = MarkerOf(role);
+        var stopped = said.FirstOrDefault(c => !SaidBy(c, role) && string.CompareOrdinal(Json.Text(c["at"]), AckFrom) < 0
             && c["body"]?.GetValueKind() != System.Text.Json.JsonValueKind.String);
         if (stopped is null) return false;
         var body = stopped["body"];
@@ -359,9 +359,9 @@ internal sealed partial class Board
     {
         var since = ADayAgo();
         var issues = Aloud("api", "--paginate", $"repos/{_repo}/issues/comments?since={since}&per_page=100",
-            "--jq", """.[] | {n: (.issue_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // ""), eyes: .reactions.eyes}""");
+            "--jq", """.[] | {n: (.issue_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // ""), url: .html_url}""");
         var pulls = Aloud("api", "--paginate", $"repos/{_repo}/pulls/comments?since={since}&per_page=100",
-            "--jq", """.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // ""), eyes: .reactions.eyes}""");
+            "--jq", """.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: .user.login, at: .created_at, body: (.body // ""), url: .html_url}""");
         return ([.. Documents(issues), .. Documents(pulls)], pulls.Code);
     }
 
@@ -378,7 +378,7 @@ internal sealed partial class Board
     {
         var number = long.Parse(n, CultureInfo.InvariantCulture);
         var theirs = recent.Where(c => Json.Long(c["n"]) == number).ToList();
-        return Unreadable(theirs, $"<!-- a-team:{role} -->") ? "" : Newest(Unanswered(role, theirs)) ?? "";
+        return Unreadable(theirs, role) ? "" : Newest(Unanswered(role, theirs)) ?? "";
     }
 
     /// <summary>When a stakeholder last asked that role something on #n and got no answer. The day window keeps that cheap; a sweep falls back to #n's whole history, however old.</summary>
@@ -435,7 +435,7 @@ internal sealed partial class Board
     internal (JsonNode? Page, int Code, string Err) GatedTalk(IEnumerable<long> numbers, bool checks = false, string extra = "", bool aloud = true)
     {
         var runs = checks ? PrHeadRuns : "";
-        var reviewed = $"{TalkedOn} url isDraft mergeable mergeStateStatus baseRefName headRefName {runs}\n              reviews(last: 50) {{ nodes {{ createdAt body state author {{ __typename login }} {SeenBy}\n              comments(first: 50) {{ nodes {{ createdAt body author {{ __typename login }} {SeenBy} }} }} }} }}";
+        var reviewed = $"{TalkedOn} url isDraft mergeable mergeStateStatus baseRefName headRefName {runs}\n              reviews(last: 50) {{ nodes {{ createdAt body url state author {{ __typename login }}\n              comments(first: 50) {{ nodes {{ createdAt body url author {{ __typename login }} }} }} }} }}";
         var query = string.Concat(numbers.Select(n => $" x{n}: issueOrPullRequest(number: {n}) {{\n      ... on Issue {{ {TalkedOn} subIssuesSummary {{ total completed }}\n        closedByPullRequestsReferences(first: 1, includeClosedPrs: false) {{ nodes {{ {reviewed} }} }} }}\n      ... on PullRequest {{ {reviewed} }} }}"));
         if (query.Length + extra.Length == 0) return (Json.Parse(NoTalk), 0, "");
         var read = TalkRead($"{query} {extra}\n      openPrs: pullRequests(states: OPEN, first: 100) {{ nodes {{ number body }} }} }} ", aloud);
@@ -481,8 +481,8 @@ internal sealed partial class Board
         ["at"] = said["createdAt"]?.DeepClone(),
         ["author"] = LoginOf(said["author"]),
         ["body"] = Json.Text(said["body"]) ?? "",
-        ["eyes"] = said["reactions"]?["totalCount"]?.DeepClone() ?? 0,
         ["kind"] = kind,
+        ["url"] = said["url"]?.DeepClone(),
     };
 
     private static IEnumerable<JsonObject> AllSaidOn(JsonNode item)
@@ -499,7 +499,7 @@ internal sealed partial class Board
         }
     }
 
-    /// <summary>Everything said on those items, as {at, author, body, eyes, kind, n}.</summary>
+    /// <summary>Everything said on those items, as {at, author, body, kind, url, n}.</summary>
     internal static List<JsonObject> GatedComments(JsonNode? talk)
     {
         var said = new List<JsonObject>();
@@ -595,9 +595,9 @@ internal sealed partial class Board
         return points;
     }
 
-    /// <summary>When the role last spoke on this thread. Before AckFrom a marker anywhere counted, and that history keeps reading as it did.</summary>
-    private string RoleSpoke(string marker, List<JsonObject> comments) =>
-        comments.Where(c => TeamSaid(c, marker) || (string.CompareOrdinal(Json.Text(c["at"]), AckFrom) < 0 && (Json.Text(c["body"]) ?? "").Contains(marker, StringComparison.Ordinal)))
+    /// <summary>When the record says the role last spoke on this thread.</summary>
+    private string RoleSpoke(string role, List<JsonObject> comments) =>
+        comments.Where(c => SaidBy(c, role))
             .Select(c => Json.Text(c["at"]) ?? "").DefaultIfEmpty("").Max(StringComparer.Ordinal)!;
 
     /// <summary>An item with its PR, whose move it is and why. A gate is the stakeholders' until one comments, and an unanswered comment outranks a PR's troubles.</summary>
@@ -613,12 +613,12 @@ internal sealed partial class Board
         var mine = prs.Where(pr => Json.Long(pr["n"]) == number).ToList();
         var pr = mine.FirstOrDefault(p => !Json.Truthy(p["self"]) || ownRole == "customer" || status == "In review" || dependency);
         var own = mine.FirstOrDefault(p => Json.Truthy(p["self"]));
-        var said = RoleSpoke($"<!-- a-team:{role} -->", theirs);
+        var said = RoleSpoke(role, theirs);
         var asked = settled ? "" : Newest(Unanswered(role, theirs)) ?? "";
         var bodies = theirs.Where(c => Json.Text(c["kind"]) == "body").ToList();
         var question = status == "Pitched" && (Json.Truthy(item["pitch"]) || Json.Truthy(item["document"]))
             ? NeedsAnswer.In(Json.Text(bodies.FirstOrDefault()?["body"]) ?? "") : "";
-        var review = theirs.LastOrDefault(c => Json.Text(c["kind"]) == "comment" && TeamSaid(c, "<!-- a-team:reviewer -->"));
+        var review = theirs.LastOrDefault(c => Json.Text(c["kind"]) == "comment" && SaidBy(c, "reviewer"));
         var wrong = WrongWith(pr, item, role, review is not null);
         var shown = item.DeepClone().AsObject();
         if (pr is not null)
@@ -663,7 +663,7 @@ internal sealed partial class Board
         return shown;
     }
 
-    /// <summary>The Ready tasks the Dev handed back with a question, the Dev's turn once a stakeholder replies, and `unread` the newest reply no run has left a 👀 on.</summary>
+    /// <summary>The Ready tasks the Dev handed back with a question, the Dev's turn once a stakeholder replies, and `unread` the newest reply the record says no run has read.</summary>
     internal List<JsonObject> Questions(IEnumerable<JsonNode> items, List<JsonObject> comments, JsonObject blocked)
     {
         var questions = new List<JsonObject>();
@@ -673,15 +673,15 @@ internal sealed partial class Board
             if (blocked[Cards.N(item)] is not { } held || Json.Text(held["by"]) is "you" or StatusRoute.Dispatcher) continue;
             var labelled = Epoch(Json.Text(held["at"]));
             var theirs = comments.Where(c => Json.Long(c["n"]) == number).ToList();
-            var asked = LatestOf(theirs.Where(c => Json.Text(c["kind"]) == "comment" && TeamSaid(c, "<!-- a-team:dev -->") && Epoch(Json.Text(c["at"])) >= labelled - AskedBefore));
+            var asked = LatestOf(theirs.Where(c => Json.Text(c["kind"]) == "comment" && SaidBy(c, "dev") && Epoch(Json.Text(c["at"])) >= labelled - AskedBefore));
             if (asked is null) continue;
             var at = Json.Text(asked["at"]);
-            var replies = theirs.Where(c => Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSaid(c, AnyRole)
+            var replies = theirs.Where(c => Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSpoke(c)
                 && string.CompareOrdinal(Json.Text(c["at"]), at) > 0).ToList();
             var replied = Newest(replies) ?? "";
             var shown = item.DeepClone().AsObject();
             shown["question"] = Regex.Replace(Json.Text(asked["body"]) ?? "", @"\s*<!-- a-team:dev -->\s*$", "");
-            shown["unread"] = Newest(replies.Where(c => Eyes(c) == 0)) ?? "";
+            shown["unread"] = Newest(replies.Where(c => !WasRead(c))) ?? "";
             shown["turn"] = replied.Length > 0 ? "dev" : "you";
             shown["reason"] = replied.Length > 0 ? $"reading your answer{Since(replied)}" : $"asked you{Since(at ?? "")}";
             questions.Add(shown);
@@ -719,9 +719,9 @@ internal sealed partial class Board
             && Epoch(Json.Text(c["at"])) >= Epoch(labelled) - AskedBefore).ToList();
         if (Json.Text(held?["by"]) == StatusRoute.Dispatcher)
             return GaveUpOn(item, since, held!);
-        var leads = since.Where(c => TeamSaid(c, "<!-- a-team:lead -->")).ToList();
+        var leads = since.Where(c => SaidBy(c, "lead")).ToList();
         var lead = LatestOf(leads);
-        var theirs = since.Where(c => FromStakeholder(c) && !TeamSaid(c, AnyRole)).ToList();
+        var theirs = since.Where(c => FromStakeholder(c) && !TeamSpoke(c)).ToList();
         var shown = item.DeepClone().AsObject();
         if (lead is not null && Json.Text(held?["by"]) != "you"
             && (theirs.Count == 0 || string.CompareOrdinal(Json.Text(EarliestOf(theirs)?["at"]), Json.Text(EarliestOf(leads)?["at"])) > 0))
@@ -731,7 +731,7 @@ internal sealed partial class Board
             var replied = Newest(replies) ?? "";
             shown["heldBy"] = "lead";
             shown["question"] = Regex.Replace(Json.Text(lead["body"]) ?? "", @"\s*<!-- a-team:lead -->\s*$", "");
-            shown["unread"] = Newest(replies.Where(c => Eyes(c) == 0)) ?? "";
+            shown["unread"] = Newest(replies.Where(c => !WasRead(c))) ?? "";
             shown["turn"] = replied.Length > 0 ? "lead" : "you";
             shown["reason"] = replied.Length > 0 ? $"reading your answer{Since(replied)}" : $"held by the Lead{Since(at ?? "")}";
         }
@@ -754,7 +754,7 @@ internal sealed partial class Board
     private JsonObject GaveUpOn(JsonNode item, List<JsonObject> since, JsonObject held)
     {
         var why = Json.Text(held["why"]) ?? "";
-        var said = LatestOf(since.Where(c => TeamSaid(c, DispatchMarker)));
+        var said = LatestOf(since.Where(c => SaidBy(c, StatusRoute.Dispatcher)));
         var shown = item.DeepClone().AsObject();
         shown["heldBy"] = StatusRoute.Dispatcher;
         shown["question"] = said is null ? why : Json.Text(said["body"])!.Replace(DispatchMarker, "").Trim();
@@ -765,7 +765,7 @@ internal sealed partial class Board
 
     /// <summary>Whether a stakeholder has said anything on #n since <paramref name="at"/>.</summary>
     internal bool RepliedSince(List<JsonObject> comments, long n, string at) =>
-        comments.Any(c => Json.Long(c["n"]) == n && Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSaid(c, AnyRole)
+        comments.Any(c => Json.Long(c["n"]) == n && Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSpoke(c)
             && string.CompareOrdinal(Json.Text(c["at"]), at) > 0);
 
     /// <summary>The Ideas with no Priority, which never get pitched until a stakeholder gives them one. One the Lead has recommended a rank for carries it, and the case from its newest `recommend` comment.</summary>
@@ -775,7 +775,7 @@ internal sealed partial class Board
         foreach (var card in all.Where(card => Cards.Status(card) == "Idea" && Cards.IsIssue(card) && card["priority"] is null))
         {
             var n = Number(card);
-            var cases = said.Where(c => Json.Long(c["n"]) == n && Json.Text(c["kind"]) == "comment" && TeamSaid(c, "<!-- a-team:lead -->"))
+            var cases = said.Where(c => Json.Long(c["n"]) == n && Json.Text(c["kind"]) == "comment" && SaidBy(c, "lead"))
                 .Select(c => Regex.Match(Json.Text(c["body"]) ?? "", "^Recommended: \\*\\*[A-Za-z]+\\*\\* · (?<case>[^\n]+)"))
                 .Where(match => match.Success).Select(match => match.Groups["case"].Value).ToList();
             var shown = new JsonObject

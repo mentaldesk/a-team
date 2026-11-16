@@ -53,15 +53,29 @@ with_token() {
   jq -n '{token: "ghs_app", expires_at: (now + 86400 | floor | todate), permissions: {}}' >"$cache"
 }
 
+# The SQL that stamps a record a test is about to make with today's format; nothing for one that's there.
+new_stamp() {
+  [ ! -e "$A_TEAM_STATE/history.db" ] || return 0
+  format_stamp
+}
+
+# The SQL that stamps the record with today's format, where it has no stamp yet.
+format_stamp() {
+  echo "CREATE TABLE IF NOT EXISTS formats (team TEXT PRIMARY KEY, format INTEGER NOT NULL, version TEXT NOT NULL, moved TEXT);
+    INSERT OR IGNORE INTO formats (team, format, version) VALUES ('demo', $(sed -n 's/.*DefaultFormat = \([0-9]*\);/\1/p' "$ROOT/core/Board.Setup.cs"), 'test');"
+}
+
 # The record's cards as gh_items' page has them, the board as the stakeholder left it, until the board has a command behind it.
 seed_board() {
   [ -n "${ITEMS:-}" ] && [ -f "$ITEMS" ] || return 0
   [ ! -f "$A_TEAM_STATE/history.db" ] ||
     [ "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT COUNT(*) FROM boards WHERE team = 'demo';" 2>/dev/null || echo 0)" = 0 ] || return 0
-  local repo
+  local repo stamp=""
   repo=$(jq -r '.repo // "mentaldesk/demo"' "$TEAM" 2>/dev/null || echo mentaldesk/demo)
   mkdir -p "$A_TEAM_STATE"
-  sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE IF NOT EXISTS board (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL,
+  stamp=$(new_stamp)
+  sqlite3 "$A_TEAM_STATE/history.db" "$stamp
+    CREATE TABLE IF NOT EXISTS board (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL,
       status TEXT NOT NULL, priority TEXT, since TEXT NOT NULL, content TEXT NOT NULL DEFAULT '{}', marks TEXT, PRIMARY KEY (team, item));
     DELETE FROM board WHERE team = 'demo';
     $(jq -r --arg repo "$repo" --arg now "$(jq -rn 'now | todate')" 'def q: if . == null then "NULL" else "'"'"'" + (tostring | gsub("'"'"'"; "'"'"''"'"'")) + "'"'"'" end;
@@ -80,6 +94,44 @@ seed_board() {
           \(.fieldValueByName.updatedAt // $now | q), \($content | tojson | q));"' "$ITEMS")"
 }
 
+# What the fixtures' comments say in 👀 and markers, copied into the record as a team's move to format 4 does,
+# unless NO_SEED_TALK is set: then only what a command recorded counts.
+seed_talk() {
+  [ -z "${NO_SEED_TALK:-}" ] && [ -n "${BIN:-}" ] && [ -n "$TEAM" ] || return 0
+  local slug f sql=""
+  slug=$(jq -r '.app.slug // ""' "$TEAM" 2>/dev/null)
+  for f in "$BIN"/*.json ${UPDATES:+"$UPDATES"}; do
+    [ -s "$f" ] || continue
+    sql+=$(jq -r --arg slug "$slug" '
+      def q: "'"'"'" + (tostring | gsub("'"'"'"; "'"'"''"'"'")) + "'"'"'";
+      def login: if (.author | type) == "object"
+        then (if .author.__typename == "Bot" then "\(.author.login)[bot]" else .author.login // "" end)
+        elif .author then .author else .user.login // "" end;
+      def roles: ["lead", "dev", "customer", "reviewer", "dispatch"];
+      def marked($who; $at; $body; $role): "<!-- a-team:\($role) -->" as $m
+        | if $slug != "" and ($who == "\($slug)[bot]" or $who == $slug) then $body | contains($m)
+          elif $at >= "2026-09-29T00:00:00Z" then false
+          else ($body | split("\n") | map(sub("[ \t\r]+$"; "")) | map(select(length > 0)) | last // "") | startswith($m) end;
+      .. | objects | select(has("body") and ((.url // .html_url // "") | test("#(issuecomment-|pullrequestreview-|discussion_r)[0-9]+$")))
+      | ((.url // .html_url) | split("#") | last) as $key | login as $who | (.body // "") as $body
+      | (.createdAt // .created_at // .submittedAt // "") as $at
+      | ([roles[] | select(marked($who; $at; $body; .))] + if $at < "2026-09-24T00:00:00Z" then [roles[] | select(. as $r | $body | contains("<!-- a-team:\($r) -->"))] else [] end) as $said
+      | if ($said | length) > 0 then
+          "INSERT OR IGNORE INTO comments_said (team, item, comment, role, at) VALUES (\("demo" | q), 0, \($key | q), \(if $said[0] == "dispatch" then "dispatcher" else $said[0] end | q), \($at | q));"
+        elif ((.reactions.totalCount // .reactions.eyes // .eyes // 0) > 0) then
+          "INSERT OR IGNORE INTO comments_read (team, item, comment, at) VALUES (\("demo" | q), 0, \($key | q), \($at | q));"
+        else empty end' "$f" 2>/dev/null)
+  done
+  [ -n "$sql" ] || return 0
+  mkdir -p "$A_TEAM_STATE"
+  sqlite3 "$A_TEAM_STATE/history.db" "$(new_stamp)
+    CREATE TABLE IF NOT EXISTS comments_read (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
+      at TEXT NOT NULL, PRIMARY KEY (team, comment));
+    CREATE TABLE IF NOT EXISTS comments_said (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
+      role TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY (team, comment));
+    $sql"
+}
+
 # Each board command starts from the board on the test's page, unless KEEP_BOARD is set.
 run() {
   local db
@@ -90,10 +142,12 @@ run() {
   if [ -z "${KEEP_BOARD:-}" ]; then
     for db in history.db dry-run.db; do
       [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
-        sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo'; DELETE FROM waits WHERE team = 'demo';" 2>/dev/null
+        sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo'; DELETE FROM waits WHERE team = 'demo';
+          DELETE FROM comments_read WHERE team = 'demo'; DELETE FROM comments_said WHERE team = 'demo';" 2>/dev/null
     done
   fi
   seed_board
+  seed_talk
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" "$@" >"$OUT" 2>"$ERR"
   STATUS=$?
 }
@@ -229,16 +283,16 @@ case " \$* " in
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
   *"api rate_limit"*) page="$BIN/rate.json"; jq -n --argjson left "\$(cat "$BIN/remaining" 2>/dev/null || echo null)" \
                          '{resources: {graphql: {reset: $QUOTA_RESET, remaining: \$left}, core: {reset: $((QUOTA_RESET - 1800)), remaining: \$left}}}' >"\$page" ;;
-  *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
+  *"pr list"*"app/dependabot"*) [ ! -e "$BIN/bumps-fail" ] || { echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; }; page="$UPDATES" ;;
   *"pr view"*) page="$BUMP_VIEW" ;;
   *"pr list"*"app/demo-app"*) echo "\$*" >>"$UPSTREAM_CALLS"; page="$UPSTREAM" ;;
   *BoardRefresh*) jq --argjson ids "\$(printf '%s' "\$*" | sed -n 's/.*nodes(ids: \(\[[^]]*\]\)).*/\1/p')" \
                     '{data: {nodes: [.data.organization.projectV2.items.nodes[].content | select(.id | IN(\$ids[]))]}}' "$ITEMS"; exit 0 ;;
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
-  *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"issue comment"*) cat >"$POSTED"; [ ! -e "$BIN/comment-url" ] || cat "$BIN/comment-url"; exit 0 ;;
   *"-X POST"*"/issues/"*"/comments"*) cat >"$POSTED"; echo IC_posted; exit 0 ;;
-  *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
+  *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; [ ! -e "$BIN/comment-url" ] || cat "$BIN/comment-url"; exit 0 ;;
   *"pr edit"*) echo "PR EDIT \$*" >>"$WRITES"; cat >"$BIN/pr-body"; exit 0 ;;
   *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
                     echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;
@@ -416,7 +470,7 @@ gh_pr() {
 # `gh_reviewed [<login>]`: the Reviewer's review on the PR gh_pr wrote, posted as <login>, by default the team's App.
 gh_reviewed() {
   jq --arg login "${1:-demo-app[bot]}" '(.. | objects | select(has("isDraft"))) += {comments: {nodes: [
-      {body: "Nothing needs changing.\n\n<!-- a-team:reviewer -->",
+      {body: "Nothing needs changing.\n\n<!-- a-team:reviewer -->", createdAt: "2026-10-10T09:00:00Z", url: "https://github.com/mentaldesk/demo/pull/912#issuecomment-9120000",
        author: (if $login | endswith("[bot]") then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))}
                 else {__typename: "User", login: $login} end)}]}}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
   gh_reviewing
@@ -444,20 +498,21 @@ gh_talk() {
       then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))} else {__typename: "User", login: $login} end;
     def seen: {reactions: {totalCount: (if .seen then 1 else 0 end)}};
     def node($rows; $number; $url):
+      def key($i): 1000000 + $number * 1000 + $i;
       ($rows | map(select(.kind == "body")) | first) as $body
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
          author: who($body.author // ""), reactions: {totalCount: 0},
          timelineItems: {nodes: ($rows | map(select(.kind == "labeled")
            | {createdAt: .at, label: {name: .body}, actor: who(.author)}))},
          comments: {nodes: ($rows | map(select(.kind == "comment")) | to_entries | map(.key as $i | .value
-           | seen + {createdAt: .at, body: .body, url: "\($url)#issuecomment-\($i + 1)", author: who(.author)}))},
-         reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
+           | seen + {createdAt: .at, body: .body, url: "\($url)#issuecomment-\(key($i + 1))", author: who(.author)}))},
+         reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")) | to_entries | map(.key as $i | .value
            | if .kind == "review"
-             then seen + {createdAt: .at, body: .body, state: "COMMENTED",
+             then seen + {createdAt: .at, body: .body, state: "COMMENTED", url: "\($url)#pullrequestreview-\(key($i + 1))",
                    author: who(.author), comments: {nodes: []}}
              else {createdAt: .at, body: "", state: "COMMENTED", author: who(.author),
                    reactions: {totalCount: 0},
-                   comments: {nodes: [seen + {createdAt: .at, body: .body,
+                   comments: {nodes: [seen + {createdAt: .at, body: .body, url: "\($url)#discussion_r\(key($i + 1))",
                                               author: who(.author)}]}}
              end))}};
     def open_pr($rows; $number): node($rows; $number; "https://github.com/mentaldesk/demo/pull/\($number)")
@@ -492,7 +547,7 @@ gh_thread() {
     | map(.key as $i | .value | split(" ") as $f
       | {id: "IC_\($i)", kind: $f[0], at: $f[1], author: $f[2], eyes: ($f[3] | tonumber),
          body: ($f[4:] | join(" ") | split("\\n") | join("\n")),
-         url: "https://github.com/mentaldesk/demo/issues/7#\($i)"})')
+         url: "https://github.com/mentaldesk/demo/issues/7#\({review: "pullrequestreview-", line: "discussion_r"}[$f[0]] // "issuecomment-")\(2000000 + $i)"})')
   local rest='{node_id: .id, user: {login: .author}, created_at: .at, body: .body,
                html_url: .url, reactions: {eyes: .eyes}}'
   jq --arg pull "${1:-}" "(map(select(.kind == \"body\")) | first // {})
@@ -511,8 +566,9 @@ gh_thread() {
 # The repo-wide conversation comments of the last day that `triggers` reads, from lines of
 # "<n> <timestamp> <author> <eyes> <text...>", where `\n` in the text is a line break.
 gh_recent() {
-  jq -R -s 'split("\n") | map(select(length > 0)) | map(split(" ") as $f
+  jq -R -s 'split("\n") | map(select(length > 0)) | to_entries | map(.key as $i | .value | split(" ") as $f
     | {issue_url: "https://api.github.com/repos/mentaldesk/demo/issues/\($f[0])",
+       html_url: "https://github.com/mentaldesk/demo/issues/\($f[0])#issuecomment-\(3000000 + $i)",
        user: {login: $f[2]}, created_at: $f[1],
        body: ($f[4:] | join(" ") | split("\\n") | join("\n")),
        reactions: {eyes: ($f[3] | tonumber)}})' >"$RECENT"
@@ -734,7 +790,10 @@ alive() { kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/$1/pid")" 2>/dev/null; }
 
 at() { sqlite3 :memory: "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', $((midnight + $1)), 'unixepoch')"; }
 
-today() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo today; }
+# The dispatcher made the record, so the board finds it unstamped and would move it up from format 1.
+dispatched_board() { sqlite3 "$A_TEAM_STATE/history.db" "$(format_stamp)"; A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo "$@"; }
+
+today() { dispatched_board today; }
 
 seen() { for _ in $(seq 50); do [ -s "$SEEN/$1" ] && break; sleep 0.1; done; cat "$SEEN/$1" 2>/dev/null; }
 

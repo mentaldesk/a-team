@@ -12,13 +12,19 @@ public class LinksTests
     private static Board Demo(Record? record = null)
     {
         var config = new JsonObject { ["repo"] = "mentaldesk/demo", ["stakeholders"] = new JsonArray("reviewer"), ["app"] = new JsonObject { ["slug"] = "demo-app" } };
-        return new Board("demo", config, () => record ?? throw new InvalidOperationException("no record here"), new Gh(null), dryRun: false);
+        return new Board("demo", config, () => record ?? Record.Open(":memory:"), new Gh(null), dryRun: false);
     }
 
     private static JsonObject Held(string by) => new() { ["at"] = $"{Today}T09:00:00Z", ["by"] = by };
 
+    private static int _comments;
+
     private static JsonObject Said(string kind, string time, string author, string body) =>
-        new() { ["kind"] = kind, ["at"] = $"{Today}T{time}Z", ["author"] = author, ["body"] = body };
+        new()
+        {
+            ["kind"] = kind, ["at"] = $"{Today}T{time}Z", ["author"] = author, ["body"] = body,
+            ["url"] = $"https://github.com/mentaldesk/demo/issues/7#issuecomment-{Interlocked.Increment(ref _comments)}",
+        };
 
     private static JsonObject Bot(string time, string marker) => Said("comment", time, "demo-app[bot]", $"Words.\n\n{marker}");
 
@@ -34,7 +40,9 @@ public class LinksTests
         };
         foreach (var one in said)
             one["n"] = 7;
-        var hold = Demo().Holds([card], said, Board.GatedBlocked([card]))[0];
+        var board = Demo();
+        board.CopyTalk("7", said);
+        var hold = board.Holds([card], said, Board.GatedBlocked([card]))[0];
         return (Json.Text(hold["heldBy"]), Json.Text(hold["turn"]) ?? "you");
     }
 

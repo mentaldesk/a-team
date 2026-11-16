@@ -37,6 +37,7 @@ same "mirror entries" 0 "$(jq '[.[] | select(has("mirror"))] | length' "$OUT")"
 
 case_ "overview: each card's last run, from the run record, whichever role it was"
 rm -f "$A_TEAM_STATE/history.db"
+sqlite3 "$A_TEAM_STATE/history.db" "$(new_stamp)"
 history_db "INSERT INTO runs (id, team, role, pid, log, started) VALUES
     (1, 'demo', 'lead', 1, 'old.jsonl', '2026-10-01T08:00:00Z'), (2, 'demo', 'lead', 2, 'new.jsonl', '2026-10-02T08:00:00Z'),
     (3, 'demo', 'dev', 3, 'dev.jsonl', '2026-10-01T09:00:00Z'), (4, 'other', 'lead', 4, 'other.jsonl', '2026-10-03T08:00:00Z');
