@@ -26,7 +26,7 @@ run board demo overview
 same "exit" 0 "$STATUS"
 same "numbers" '[404,414,415,395]' "$(jq -c '[.[].number]' "$OUT")"
 same "kinds" '["pitch","task","docs","yours"]' "$(jq -c '[.[].kind]' "$OUT")"
-same "fields" '["blocked","kind","lastRun","number","parent","priority","since","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
+same "fields" '["blocked","kind","lane","lastRun","number","parent","priority","since","status","team","title","url"]' "$(jq -c '.[0] | keys' "$OUT")"
 same "since" '"2026-10-01T08:00:00Z"' "$(jq -c '.[0].since' "$OUT")"
 same "parent" '404' "$(jq -c '.[1].parent' "$OUT")"
 same "blocked" '[false,true,false,true]' "$(jq -c '[.[].blocked]' "$OUT")"

@@ -54,6 +54,13 @@ public sealed record BoardCard(
     /// <summary>How long it has sat in its column; nothing where the board didn't say when it got there.</summary>
     public TimeSpan? Age(DateTimeOffset now) => Since is { } since ? now - since : null;
 
+    /// <summary>The column a card shows in: the lane the board gave it, else its status where Overseer has a column for it,
+    /// else Idea.</summary>
+    private static string LaneOf(JsonElement item) =>
+        Text(item, "lane") is var lane && OverseerBoard.Columns.Contains(lane) ? lane
+        : Text(item, "status") is var status && OverseerBoard.Columns.Contains(status) ? status
+        : "Idea";
+
     /// <summary>What that command printed. Anything that isn't an item with a number is left out.</summary>
     public static IReadOnlyList<BoardCard> Parse(string json)
     {
@@ -68,7 +75,7 @@ public sealed record BoardCard(
                     .Where(item => item.ValueKind == JsonValueKind.Object && Numbered(item, "number") is not null)
                     .Select(item => new BoardCard(
                         Text(item, "team"), Numbered(item, "number")!.Value, Text(item, "title"), Text(item, "url"),
-                        Text(item, "status"), Text(item, "priority"), KindOf(Text(item, "kind")), Time(item, "since"),
+                        LaneOf(item), Text(item, "priority"), KindOf(Text(item, "kind")), Time(item, "since"),
                         Numbered(item, "parent"),
                         item.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True,
                         LastRunOf(item), Text(item, "facts"), Text(item, "pitchPriority"),

@@ -10,6 +10,10 @@ and pause a role, and from a card you can [read it, comment on it or decide it](
 Each team is a lane, in the order your teams are listed, under one row of column headings: Idea,
 Exploring, Pitched, Approved, Building, Ready, In progress and In review. Done isn't shown.
 
+Every open issue and PR on a team's repo is on its lane. A PR that closes a card on the board shows on that card; any
+other PR arrives by itself, a draft in In progress and the rest in In review. A card with no status shows in Idea, or In
+review for a PR, and one whose status A-Team doesn't know shows in Idea and says so in its details.
+
 A lane's title names the team and its roles that are running now, each with its animation playing
 beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. A [stuck role](#a-stuck-role) is named on its own
 instead of as running, as in `a-team · Dev ⚠ stuck · Reviewer ⚠ stuck`. Where cards are past their column's limit, it counts them: `2 over`. When the Lead or Customer lead gave up on a reason with no item to hold, it says so until the reasons change, as in `lead gave up: room in Pitched for a drafted pitch · 3 runs`.

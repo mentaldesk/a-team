@@ -924,4 +924,46 @@ same "held" 'null' "$(marks 303 | jq -c .held)"
 same "secret" 'null' "$(marks 303 | jq -c .secret)"
 unset KEEP_BOARD
 
+case_ "a turn whose role nothing will start a run for is yours, saying what's stuck, until the role's triggers wake for it"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+In_review 130 Theme tokens for the status bar
+ITEMS
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+106 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+130 body ${TODAY}T08:00:00Z other-app[bot] Needed by mentaldesk/other#5\n<!-- a-team:dev -->
+130 comment ${TODAY}T09:00:00Z reviewer Please fix the conflict.
+130 comment ${TODAY}T09:40:00Z other-app[bot] Merged main in.\n<!-- a-team:dev -->
+TALK
+UNWOKEN=1 waiting
+same "exit" 0 "$STATUS"
+same "turns" '[["you",true],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+same "pitch" '"lead: answering your feedback since 09:30, but nothing will start a run for it"' "$(jq -c '.[0].reason' "$OUT")"
+same "answered elsewhere" '"dev answered on demo#130, but nothing will start a run for it"' "$(jq -c '.[1].reason' "$OUT")"
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO woken (team, role, repo, item, at) VALUES ('other', 'lead', 'mentaldesk/demo', 106, '2026-01-01T00:00:00Z');"
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "woken" '[["lead",null],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+
+case_ "a card held at any status is yours, as Work's Blocked shows it"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Approved 140 A pitch to break down
+In_progress 141 A task half built
+ITEMS
+edit_item 140 '.labels.nodes += [{name: "blocked"}]'
+edit_item 141 '.labels.nodes += [{name: "blocked"}]'
+gh_talk <<TALK
+140 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+141 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+TALK
+waiting
+same "exit" 0 "$STATUS"
+same "held" '[[140,"Approved","you",true],[141,"In progress","you",true]]' "$(jq -c '[.[] | [.number, .status, .turn, .held]]' "$OUT")"
+
 finish_suite

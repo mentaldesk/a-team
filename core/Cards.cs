@@ -7,6 +7,18 @@ internal static class Cards
 {
     internal static readonly string[] Ranks = ["Urgent", "High", "Medium", "Low"];
 
+    /// <summary>Overseer's lanes: every status but Done.</summary>
+    internal static readonly string[] Lanes = [.. StatusRoute.Statuses.Where(status => status != "Done")];
+
+    /// <summary>The lane an open card shows in: its status's, a PR with none In review and an issue with none an Idea, and a
+    /// status a-team doesn't know an Idea.</summary>
+    internal static string Lane(JsonNode card) =>
+        Lanes.Contains(Status(card)) ? Status(card) : Status(card) == StatusRoute.None && IsPr(card) ? "In review" : "Idea";
+
+    /// <summary>Whether its status is one a-team doesn't know.</summary>
+    internal static bool Unknown(JsonNode card) =>
+        Status(card) is { Length: > 0 } status && status != StatusRoute.None && !StatusRoute.Statuses.Contains(status);
+
     internal static string N(JsonNode card) => card["number"]!.ToJsonString();
 
     internal static string Status(JsonNode card) => Json.Text(card["status"]) ?? "";

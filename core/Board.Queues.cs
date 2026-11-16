@@ -113,8 +113,9 @@ internal sealed partial class Board
     /// <summary>What an item's marks say, as the app shows it under the title; "" for none. A shelve shows while it's cooling.</summary>
     internal static string Facts(JsonNode card)
     {
-        if (card["marks"] is not JsonObject marks) return "";
         var facts = new List<string>();
+        if (Cards.Unknown(card)) facts.Add($"status '{Cards.Status(card)}' isn't one a-team knows");
+        if (card["marks"] is not JsonObject marks) return string.Join(" · ", facts);
         if (Json.Truthy(marks["rank"])) facts.Add($"Lead recommends {Raw(marks["rank"])}");
         if (Json.Truthy(marks["theme"])) facts.Add($"theme: {Raw(marks["theme"])}");
         if (Cooling(card)) facts.Add($"shelved until {ShelvedDay(card)}");
@@ -647,6 +648,7 @@ internal sealed partial class Board
         {
             shown["turn"] = role;
             shown["reason"] = $"answering your feedback{Since(asked)}";
+            if (Answered($"<!-- a-team:{role} -->", theirs, asked)) shown["answered"] = true;
         }
         else if (wrong is { } trouble)
         {
@@ -661,6 +663,56 @@ internal sealed partial class Board
             shown["reason"] = $"{why}{Since(said.Length > 0 ? said : Newest(bodies) ?? "")}";
         }
         return shown;
+    }
+
+    /// <summary>Whether any team's run of the role has spoken on the thread since <paramref name="asked"/>, from this
+    /// team's App or another's.</summary>
+    private bool Answered(string marker, List<JsonObject> comments, string asked) =>
+        comments.Any(c => !FromStakeholder(c) && (Json.Text(c["body"]) ?? "").Contains(marker, StringComparison.Ordinal)
+            && string.CompareOrdinal(Json.Text(c["at"]), asked) > 0);
+
+    /// <summary>Troubles that clear without any role's run: CI finishing, GitHub working out a merge, the dispatcher
+    /// updating or merging a PR, or a fix for the red default branch.</summary>
+    internal static bool ClearsItself(JsonNode item) => Json.Text(item["trouble"]) is { } trouble
+        && (trouble is "CI running" or "resolving mergeable status" or "green, about to merge"
+            || trouble.StartsWith("behind ", StringComparison.Ordinal) || trouble.EndsWith(" is red", StringComparison.Ordinal));
+
+    /// <summary>A turn that names a role nothing will start a run for is the stakeholder's instead, saying what's stuck.</summary>
+    internal static void Settle(JsonObject item, string repo, Func<string, long, bool> covered)
+    {
+        var role = Json.Text(item["turn"]);
+        if (role is null || !StatusRoute.Roles.Contains(role) || ClearsItself(item) || covered(role, Json.Long(item["number"]))) return;
+        var stuck = Json.Truthy(item["answered"])
+            ? $"{role} answered on {repo[(repo.LastIndexOf('/') + 1)..]}#{Raw(item["number"])}"
+            : $"{role}: {Json.Text(item["reason"])}";
+        item["turn"] = "you";
+        item["stuck"] = true;
+        item["reason"] = $"{stuck}, but nothing will start a run for it";
+    }
+
+    /// <summary>What some role's triggers last woke for on this repo, from any team, and what a run of it is on now.</summary>
+    internal HashSet<(string Role, long N)> Woken()
+    {
+        var covered = new HashSet<(string, long)>();
+        if (!Recorded) return covered;
+        var minutes = int.TryParse(Text("dispatch", "maxRuntime"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit) ? limit : 120;
+        foreach (var row in _record.Query($"""
+            SELECT role, item FROM woken WHERE repo = {Reconciler.Q(_repo)}
+            UNION SELECT role, item FROM runs JOIN run_items ON run_items.run = runs.id
+                WHERE team = {TeamQ} AND ended IS NULL AND started >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-{minutes} minutes');
+            """))
+            covered.Add((row["role"]!, long.Parse(row["item"]!, CultureInfo.InvariantCulture)));
+        return covered;
+    }
+
+    /// <summary>Keeps what the role's triggers woke for this time, in place of what they woke for last time.</summary>
+    internal void Woke(string role, IEnumerable<(string Repo, long N)> items)
+    {
+        if (DryRun || !Recorded) return;
+        var sql = new StringBuilder($"BEGIN; DELETE FROM woken WHERE team = {TeamQ} AND role = {Reconciler.Q(role)};\n");
+        foreach (var (repo, n) in items.Distinct())
+            sql.Append($"INSERT INTO woken (team, role, repo, item, at) VALUES ({TeamQ}, {Reconciler.Q(role)}, {Reconciler.Q(repo)}, {n}, {Reconciler.Q(Now())});\n");
+        _record.Exec(sql.Append("COMMIT;").ToString());
     }
 
     /// <summary>The Ready tasks the Dev handed back with a question, the Dev's turn once a stakeholder replies, and `unread` the newest reply no run has left a 👀 on.</summary>
@@ -1180,10 +1232,14 @@ internal sealed partial class Board
             .Select(card => Turn(Gated(card), said, prs)).ToList();
         foreach (var item in waiting)
             WithTasks(item, talk);
-        var heldCards = all.Where(Cards.Held).Select(HeldCard).Cast<JsonNode>().ToList();
+        var turned = waiting.Select(Number).ToHashSet();
+        var heldCards = all.Where(card => Cards.Held(card) || (Cards.Marked(card, "held") && !turned.Contains(Number(card))
+                && !WaitsUpstream(card) && !(Cards.Status(card) == "Idea" && Cards.IsIssue(card) && card["priority"] is null)))
+            .Select(HeldCard).Cast<JsonNode>().ToList();
         foreach (var hold in Holds(heldCards, said, GatedBlocked(all)))
         {
             hold.Remove("unread");
+            hold["held"] = true;
             if (Json.Text(hold["heldBy"]) == StatusRoute.Dispatcher && prs.FirstOrDefault(pr => Json.Long(pr["n"]) == Json.Long(hold["number"])) is { } held)
             {
                 hold["pr"] = held["pr"]?.DeepClone();
@@ -1195,6 +1251,9 @@ internal sealed partial class Board
         }
         waiting.AddRange(UnrankedIdeas(all, said));
         waiting.AddRange(upstream);
+        var woken = Woken();
+        foreach (var item in waiting)
+            Settle(item, _repo, (role, n) => woken.Contains((role, n)));
         var frees = detail?["frees"] as JsonObject ?? [];
         var unticked = UntickedOn(talk);
         foreach (var item in waiting)
@@ -1499,8 +1558,9 @@ internal sealed partial class Board
         return fields.Length == 2 && long.TryParse(fields[0], out var total) && long.TryParse(fields[1], out var open) ? (total, open) : null;
     }
 
-    /// <summary>[task, why] for each reason the Dev has to look at one of its PRs on a repo the team contributes to, on the open task its body says it's needed by.</summary>
-    internal List<(long N, string Why)> UpstreamWakes(string upstream, List<JsonNode> all)
+    /// <summary>[task, why, PR] for each reason the Dev has to look at one of its PRs on a repo the team contributes to, on the
+    /// open task its body says it's needed by. A stakeholder comment the Dev has answered there gets its 👀, as at home.</summary>
+    internal List<(long N, string Why, long Pr)> UpstreamWakes(string upstream, List<JsonNode> all)
     {
         var slug = Text("app", "slug");
         var prs = Aloud("pr", "list", "-R", upstream, "--author", $"app/{slug}", "--state", "open",
@@ -1510,14 +1570,41 @@ internal sealed partial class Board
             "--jq", """.[] | {n: (.pull_request_url | split("/") | last | tonumber), author: {login: .user.login}, createdAt: .created_at}""");
         var said = lines.Ok ? Documents(lines) : [];
         var open = all.Where(card => Cards.Status(card) != "Done").Select(Number).ToHashSet();
-        var wakes = new List<(long, string)>();
+        var wakes = new List<(long, string, long)>();
         foreach (var pr in Json.TryParse(prs.Out) as JsonArray ?? [])
         {
             var number = Json.Long(pr?["number"]);
-            wakes.AddRange(UpstreamReasons(pr!, said.Where(line => Json.Long(line["n"]) == number).ToList(), upstream, slug, open));
+            AckUpstream(pr!, upstream, slug);
+            wakes.AddRange(UpstreamReasons(pr!, said.Where(line => Json.Long(line["n"]) == number).ToList(), upstream, slug, open)
+                .Select(wake => (wake.N, wake.Why, number)));
         }
         return wakes;
     }
+
+    /// <summary>A 👀 on each stakeholder comment on our PR in <paramref name="upstream"/> that the Dev has spoken after.</summary>
+    private void AckUpstream(JsonNode pr, string upstream, string slug)
+    {
+        const string dev = "<!-- a-team:dev -->";
+        var comments = (pr["comments"] as JsonArray ?? []).OfType<JsonNode>().ToList();
+        var said = comments.Where(c => OwnBot(c, slug) && (Json.Text(c["body"]) ?? "").Contains(dev, StringComparison.Ordinal))
+            .Select(c => Json.Text(c["createdAt"])).Max(StringComparer.Ordinal);
+        if (said is null) return;
+        foreach (var c in comments.Where(c => Stakeholders.Contains(Json.Text(c["author"]?["login"]) ?? "")
+            && string.CompareOrdinal(Json.Text(c["createdAt"]), said) < 0 && !Seen(c) && Json.Text(c["id"]) is not null))
+        {
+            var what = $"your comment of {Json.Text(c["createdAt"])} on {upstream}#{Raw(pr["number"])}";
+            if (!Write($"add 👀 to {what}", "api", "graphql", "-F", $"subject={Json.Text(c["id"])}", "-f", """
+                query=
+                    mutation($subject: ID!) {
+                      addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }
+                """).Ok)
+                Console.Error.WriteLine($"board.sh: couldn't add 👀 to {what}");
+        }
+    }
+
+    private static bool Seen(JsonNode comment) =>
+        (comment["reactionGroups"] as JsonArray ?? []).OfType<JsonNode>()
+            .Any(group => Json.Text(group["content"]) == "EYES" && Json.Long(group["users"]?["totalCount"]) > 0);
 
     private static string RollupVerdict(JsonNode pr)
     {

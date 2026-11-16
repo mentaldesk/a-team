@@ -90,17 +90,29 @@ run() {
   if [ -z "${KEEP_BOARD:-}" ]; then
     for db in history.db dry-run.db; do
       [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
-        sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo'; DELETE FROM waits WHERE team = 'demo';" 2>/dev/null
+        sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo'; DELETE FROM waits WHERE team = 'demo'; DELETE FROM woken WHERE team = 'demo';" 2>/dev/null
     done
   fi
   seed_board
+  [ "${WAKE_ALL:-}" != 1 ] || wake_all
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" "$@" >"$OUT" 2>"$ERR"
   STATUS=$?
 }
 
 # waiting: runs `waiting`, keeping its entry saying when the detail was synced apart from the items, in $OUT.synced.
+# wake_all: records every role's triggers as having woken for every card, for a case about whose turn it is rather than
+# whether a run will start for it.
+wake_all() {
+  sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE IF NOT EXISTS woken (team TEXT NOT NULL, role TEXT NOT NULL,
+      repo TEXT NOT NULL COLLATE NOCASE, item INTEGER NOT NULL, at TEXT NOT NULL);
+    WITH RECURSIVE n(item) AS (SELECT 1 UNION ALL SELECT item + 1 FROM n WHERE item < 999)
+    INSERT INTO woken (team, role, repo, item, at)
+      SELECT 'demo', role.name, 'mentaldesk/demo', n.item, '2026-01-01T00:00:00Z' FROM n,
+        (SELECT 'lead' AS name UNION SELECT 'dev' UNION SELECT 'customer' UNION SELECT 'reviewer') AS role;"
+}
+
 waiting() {
-  run board demo waiting
+  if [ -n "${UNWOKEN:-}" ]; then run board demo waiting; else WAKE_ALL=1 run board demo waiting; fi
   [ "$STATUS" -eq 0 ] || return 0
   jq -c 'map(select(has("synced"))) | first' "$OUT" >"$OUT.synced"
   jq 'map(select(has("synced") | not))' "$OUT" >"$OUT.items" && mv "$OUT.items" "$OUT"
@@ -199,9 +211,11 @@ case " \$* " in
   *HeldSince*) printf '%s\n' "\$*" >>"$BIN/args"; cat "$TALK"; exit 0 ;;
   *RepoIssues*"on PullRequest"*) echo "gh: Fragment on PullRequest can't be spread inside Issue" >&2; exit 1 ;;
   *RepoIssues*) echo >>"$BIN/issue-reads"; [ ! -e "$BIN/issues-read-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
-                jq --argjson short "\$([ -e "$BIN/issues-short" ] && echo 1 || echo 0)" \
-                  '{data: {repository: {issues: {totalCount: (length + \$short), nodes: .}}}}' "$REPO_ISSUES"; exit 0 ;;
-  *RepoPullRequests*) jq '{data: {repository: {pullRequests: {totalCount: length, nodes: .}}}}' "$REPO_PULLS"; exit 0 ;;
+                jq -c --argjson short "\$([ -e "$BIN/issues-short" ] && echo 1 || echo 0)" \
+                  '. as \$all | ([range(0; length; 100)] | if length == 0 then [0] else . end)[]
+                   | {data: {repository: {issues: {totalCount: ((\$all | length) + \$short), nodes: \$all[.:. + 100]}}}}' "$REPO_ISSUES"; exit 0 ;;
+  *RepoPullRequests*) jq -c '. as \$all | ([range(0; length; 100)] | if length == 0 then [0] else . end)[]
+                        | {data: {repository: {pullRequests: {totalCount: (\$all | length), nodes: \$all[.:. + 100]}}}}' "$REPO_PULLS"; exit 0 ;;
   *"-X DELETE"*"/labels/"*) [ ! -e "$BIN/unlabel-fails" ] || { [ -s "$BIN/unlabel-fails" ] && [[ " \$* " != *"/\$(cat "$BIN/unlabel-fails") "* ]]; } ||
                               { echo "gh: HTTP 502" >&2; exit 1; }
                             echo "\$*" >>"$BIN/unlabelled"; exit 0 ;;

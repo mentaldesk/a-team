@@ -52,6 +52,28 @@ grep -q -- "--json number,isDraft,headRefOid,body,createdAt,comments,reviews,sta
 same "one list per repo, of the App's PRs" "pr list -R mentaldesk/style --author app/demo-app|pr list -R mentaldesk/lib --author app/demo-app" \
   "$(sed 's/ --state.*//' "$UPSTREAM_CALLS" | paste -sd '|' -)"
 
+case_ "the Dev's triggers record what they woke for, here and upstream, and its answers upstream leave a 👀 there"
+same "woken" "dev mentaldesk/demo 13|dev mentaldesk/lib 71|dev mentaldesk/lib 72|dev mentaldesk/lib 73|dev mentaldesk/lib 78|dev mentaldesk/style 71|dev mentaldesk/style 72|dev mentaldesk/style 73|dev mentaldesk/style 78" \
+  "$(sqlite3 -separator ' ' "$A_TEAM_STATE/history.db" "SELECT DISTINCT role, repo, item FROM woken WHERE team = 'demo' ORDER BY repo, item;" | paste -sd '|' -)"
+cat >"$UPSTREAM" <<'JSON'
+[{"number": 130, "isDraft": false, "headRefOid": "aaaaaaa", "createdAt": "2026-10-01T09:00:00Z", "mergeable": "MERGEABLE",
+  "body": "Needed by mentaldesk/demo#13\n\n<!-- a-team:dev -->",
+  "comments": [{"id": "IC_asked", "author": {"login": "reviewer"}, "createdAt": "2026-10-02T09:00:00Z", "body": "Fix the conflict", "reactionGroups": []},
+               {"id": "IC_seen", "author": {"login": "reviewer"}, "createdAt": "2026-10-02T09:10:00Z", "body": "And this",
+                "reactionGroups": [{"content": "EYES", "users": {"totalCount": 1}}]},
+               {"id": "IC_stranger", "author": {"login": "stranger"}, "createdAt": "2026-10-02T09:20:00Z", "body": "Me too", "reactionGroups": []},
+               {"id": "IC_answer", "author": {"login": "demo-app"}, "createdAt": "2026-10-02T10:00:00Z", "body": "Merged main in.\n\n<!-- a-team:dev -->"},
+               {"id": "IC_after", "author": {"login": "reviewer"}, "createdAt": "2026-10-02T11:00:00Z", "body": "Thanks, one more", "reactionGroups": []}],
+  "reviews": [], "statusCheckRollup": [{"__typename": "StatusContext", "state": "SUCCESS"}]}]
+JSON
+: >"$ACKED"
+run board demo triggers dev
+same "exit" 0 "$STATUS"
+same "acked" "IC_asked|IC_asked" "$(paste -sd '|' - <"$ACKED")"
+: >"$ACKED"
+run board --dry-run demo triggers dev
+same "dry run acks nothing" "" "$(cat "$ACKED")"
+
 case_ "a stakeholder's line comments on an upstream PR wake the Dev, though their review has no body"
 cat >"$UPSTREAM" <<'JSON'
 [{"number": 77, "isDraft": false, "headRefOid": "eeeeeee", "createdAt": "2026-10-01T09:00:00Z",

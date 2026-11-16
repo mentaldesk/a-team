@@ -36,6 +36,9 @@ internal static partial class Commands
 
         internal List<long> Items { get; } = [];
 
+        /// <summary>The issues and PRs, by repo, that a run of the role will be started for.</summary>
+        internal List<(string Repo, long N)> Covers { get; } = [];
+
         internal List<JsonObject> Recent { get; set; } = [];
 
         internal Dictionary<long, string?> Heads { get; } = [];
@@ -53,6 +56,7 @@ internal static partial class Commands
         {
             if (_gaveUp.Contains(n)) return;
             Reasons.Add(why);
+            Covers.Add((board.Repo, n));
             var task = Tasks.FirstOrDefault(one => Json.Long(one?["number"]) == n);
             if (task is not null)
                 task["reasons"]!.AsArray().Add((JsonNode?)why);
@@ -69,6 +73,7 @@ internal static partial class Commands
             if (_gaveUp.Contains(n)) return;
             Reasons.Add(reason);
             Items.Add(n);
+            Covers.Add((board.Repo, n));
         }
     }
 
@@ -119,6 +124,7 @@ internal static partial class Commands
             case "customer": WakeCustomer(wake); break;
             default: WakeLead(wake); break;
         }
+        board.Woke(role, wake.Covers);
         return SayPretty(Woken(wake, role));
     }
 
@@ -246,8 +252,11 @@ internal static partial class Commands
         if (wake.Board.Text("app", "slug").Length == 0) return;
         foreach (var upstream in wake.Board.ContributesTo)
         {
-            foreach (var (n, why) in wake.Board.UpstreamWakes(upstream, wake.All))
+            foreach (var (n, why, pr) in wake.Board.UpstreamWakes(upstream, wake.All))
+            {
                 wake.Task(n, Board.Raw(wake.All.FirstOrDefault(card => Board.Number(card) == n)?["title"]), Board.Tsv(why));
+                wake.Covers.Add((upstream, pr));
+            }
         }
     }
 
@@ -553,6 +562,7 @@ internal static partial class Commands
             ["title"] = card["title"]?.DeepClone(),
             ["url"] = card["url"]?.DeepClone(),
             ["status"] = card["status"]?.DeepClone(),
+            ["lane"] = Cards.Lane(card),
             ["priority"] = card["priority"]?.DeepClone(),
             ["since"] = card["since"]?.DeepClone(),
             ["parent"] = card["parent"]?.DeepClone(),
