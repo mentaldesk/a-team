@@ -252,7 +252,7 @@ same "writes" "" "$(cat "$WRITES")"
 bump_updates() {
   jq -n --argjson n "$1" '[{id: "PR_\($n)", number: $n, title: "Bump MentalDesk.Tui from 0.3.8 to 0.3.9",
       author: {login: "app/dependabot"}, isDraft: false, mergeable: "MERGEABLE", headRefOid: "deadbeefcafe",
-      comments: [{author: {login: "demo-app"}, body: "Nothing new to adopt.\\n\\n<!-- a-team:lead -->"}]}] | map('"${2:-.}"')' >"$UPDATES"
+      comments: [{author: {login: "demo-app"}, createdAt: "2026-10-10T09:00:00Z", body: "Nothing new to adopt.\\n\\n<!-- a-team:lead -->", url: "https://github.com/mentaldesk/demo/pull/535#issuecomment-5350001"}]}] | map('"${2:-.}"')' >"$UPDATES"
 }
 # `bump_board <status>`: Dependabot's PR #535 on the board, with an ordinary task In progress beside it.
 bump_board() {

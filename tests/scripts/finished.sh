@@ -36,7 +36,7 @@ finishes() {
   same "$what: status" "$expected" "$(status_of)"
 }
 
-said() { jq --arg body "$1" --arg login "$2" '(.. | objects | select(has("isDraft"))).comments.nodes += [{body: $body, author: {__typename: "Bot", login: $login}}]' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"; gh_reviewing; }
+said() { jq --arg body "$1" --arg login "$2" '(.. | objects | select(has("isDraft"))).comments.nodes |= . + [{body: $body, url: "https://github.com/mentaldesk/demo/pull/912#issuecomment-\(9120001 + length)", author: {__typename: "Bot", login: $login}}]' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"; gh_reviewing; }
 dev_answers() { said "Done.
 
 <!-- a-team:dev -->" demo-app; }

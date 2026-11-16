@@ -145,8 +145,8 @@ Comment on the issue or the PR. The agents read your comments on their next run 
 Ask the Lead, the Dev or the Customer lead for a follow-up and it files it as an Idea, which waits
 in Triage until you rank it.
 
-The 👀 reaction on your comment means a run has read it. Leave that one to the agents: every other
-reaction is yours. A comment you make while a run is going gets a run of its own, so nothing you say
+The 👀 reaction on your comment shows a run has read it. a-team keeps that in its own record, so a 👀
+from you or anyone else doesn't mark your comment read: react however you like. A comment you make while a run is going gets a run of its own, so nothing you say
 is missed.
 
 When the Dev can't go on without you, it hands its task back with a question and holds it.

@@ -40,6 +40,11 @@ internal sealed class Record : IDisposable
           CREATE TABLE IF NOT EXISTS format_moves (team TEXT PRIMARY KEY, pid INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS waits (team TEXT NOT NULL, item INTEGER NOT NULL, ref TEXT NOT NULL COLLATE NOCASE, repo TEXT NOT NULL COLLATE NOCASE,
             n INTEGER NOT NULL, until TEXT, package TEXT, since TEXT NOT NULL, PRIMARY KEY (team, item, ref));
+          CREATE TABLE IF NOT EXISTS comments_read (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
+            at TEXT NOT NULL, PRIMARY KEY (team, comment));
+          CREATE TABLE IF NOT EXISTS comments_said (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('lead', 'dev', 'customer', 'reviewer', 'dispatcher')), at TEXT NOT NULL,
+            PRIMARY KEY (team, comment));
         """;
 
     private readonly IntPtr _db;

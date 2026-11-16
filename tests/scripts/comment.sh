@@ -559,4 +559,80 @@ same "acked" "" "$(cat "$ACKED")"
 same "posted" "" "$(cat "$POSTED")"
 grep -q "would add 👀 to your comment of $ASKED on #7" "$ERR" || fail "dry run: nothing about the 👀 in '$(cat "$ERR")'"
 
+# NO_SEED_TALK leaves the fixtures' 👀 and markers out of the record, so only what the commands recorded counts.
+read_record() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT comment FROM comments_read WHERE team = 'demo' ORDER BY comment;"; }
+
+case_ "a 👀 from anyone but a run leaves your comment unanswered, in feedback, triggers and Work"
+export NO_SEED_TALK=1
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 7 A pitch in front of me
+ITEMS
+edit_item 7 '.labels.nodes += [{name: "theme: Consistently good UX"}]'
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
+gh_thread <<TALK
+body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
+comment ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
+TALK
+run board demo feedback lead 7
+same "feedback" '["Needs a second option."]' "$(jq -c '[.[].body]' "$OUT")"
+gh_recent <<RECENT
+7 ${TODAY}T02:20:00Z reviewer 1 Needs a second option.
+RECENT
+run board demo triggers lead
+same "triggers" "[\"stakeholder feedback on #7 (${TODAY}T02:20:00Z)\"]" "$(jq -c .reasons "$OUT")"
+gh_talk <<TALK
+7 body ${TODAY}T02:10:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+7 comment+seen ${TODAY}T02:20:00Z reviewer Needs a second option.
+TALK
+waiting
+same "Work" '"lead"' "$(jq -c '.[0].turn' "$OUT")"
+
+case_ "a comment a run read stays read once its 👀 is gone"
+gh_thread <<TALK
+body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
+comment ${TODAY}T02:20:00Z reviewer 0 Needs a second option.
+TALK
+: >"$ACKED"
+echo "Added one." >"$WORK/reply"
+A_TEAM_RUN_STARTED=${TODAY}T02:30:00Z run board demo comment lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "acked" "IC_1" "$(cat "$ACKED")"
+same "recorded" "issuecomment-2000001" "$(read_record)"
+KEEP_BOARD=1 run board demo feedback lead 7
+same "feedback" '[]' "$(jq -c . "$OUT")"
+: >"$ACKED"
+KEEP_BOARD=1 A_TEAM_RUN_STARTED=${TODAY}T02:30:00Z run board demo comment lead 7 "$WORK/reply"
+same "not acked again" "" "$(cat "$ACKED")"
+
+case_ "a run that fails between the 👀 and recording the read leaves your comment unanswered"
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TRIGGER no_reads BEFORE INSERT ON comments_read BEGIN SELECT RAISE(ABORT, 'disk full'); END;"
+: >"$ACKED"
+KEEP_BOARD=1 A_TEAM_RUN_STARTED=${TODAY}T02:30:00Z run board demo comment lead 7 "$WORK/reply"
+failed "comment"
+same "acked" "IC_1" "$(cat "$ACKED")"
+sqlite3 "$A_TEAM_STATE/history.db" "DROP TRIGGER no_reads;"
+same "recorded" "" "$(read_record)"
+KEEP_BOARD=1 run board demo feedback lead 7
+same "feedback" '["Needs a second option."]' "$(jq -c '[.[].body]' "$OUT")"
+
+case_ "what a role posts through a-team board is recorded as said by it, and your own words aren't"
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
+echo "https://github.com/mentaldesk/demo/issues/7#issuecomment-555" >"$BIN/comment-url"
+A_TEAM_RUN_STARTED=${TODAY}T02:30:00Z run board demo comment lead 7 "$WORK/reply"
+same "exit" 0 "$STATUS"
+same "said" "7|issuecomment-555|lead" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT item, comment, role FROM comments_said WHERE team = 'demo';")"
+echo "https://github.com/mentaldesk/demo/issues/7#issuecomment-556" >"$BIN/comment-url"
+KEEP_BOARD=1 run board demo comment you 7 "$WORK/reply"
+same "yours" "issuecomment-555" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT group_concat(comment) FROM comments_said WHERE team = 'demo';")"
+rm -f "$BIN/comment-url"
+unset NO_SEED_TALK
+
 finish_suite
