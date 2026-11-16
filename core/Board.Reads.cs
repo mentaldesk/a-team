@@ -170,6 +170,13 @@ internal sealed partial class Board
         return new JsonObject { ["since"] = string.IsNullOrEmpty(since) ? null : since, ["events"] = events };
     }
 
+    /// <summary>Whether #n's last move was arriving on the board by itself from GitHub.</summary>
+    internal bool ArrivedByItself(string n) =>
+        _record.Scalar($"""
+            SELECT what FROM events WHERE team = {TeamQ} AND item = {n}
+              AND (what LIKE '%→%' OR what LIKE 'added as %' OR what LIKE 'filed as %') ORDER BY id DESC LIMIT 1;
+            """)?.EndsWith(" · opened on GitHub", StringComparison.Ordinal) == true;
+
     internal JsonArray EventsSince(string since) =>
         _record.Rows($"SELECT item, at, who, what FROM events WHERE team = {TeamQ} AND at >= {Reconciler.Q(since)}\n  ORDER BY at, id;");
 

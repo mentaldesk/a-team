@@ -159,7 +159,7 @@ internal static partial class Commands
         var existing = board.Item(n);
         if (existing is not null)
         {
-            if (Cards.Status(existing) is not (StatusRoute.None or "Idea"))
+            if (Cards.Status(existing) is not (StatusRoute.None or "Idea") && !board.ArrivedByItself(n))
                 throw new Die($"#{n} is already on the board (use move)");
             var body = board.Read("api", issue, "--jq", ".body");
             if (role == "you")

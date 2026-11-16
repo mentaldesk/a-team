@@ -948,6 +948,30 @@ sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO woken (team, role, repo, item, a
 KEEP_BOARD=1 UNWOKEN=1 waiting
 same "woken" '[["lead",null],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
 
+case_ "a role whose runs fill its slots will come to its turns, though the dispatcher hasn't asked its triggers"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "devs": 2 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 107 Both gates are mine
+In_review 131 Theme tokens for the status bar
+ITEMS
+gh_talk <<TALK
+107 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+107 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+131 body ${TODAY}T08:00:00Z other-app[bot] Needed by mentaldesk/other#5\n<!-- a-team:dev -->
+131 comment ${TODAY}T09:00:00Z reviewer Please fix the conflict.
+131 comment ${TODAY}T09:40:00Z other-app[bot] Merged main in.\n<!-- a-team:dev -->
+TALK
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'lead', 1, 'a', '$(ago 1)'), ('demo', 'dev', 2, 'b', '$(ago 1)'),
+  ('demo', 'lead', 3, 'c', '$(ago 500)');" >/dev/null
+UNWOKEN=1 waiting
+same "one of two Dev slots" '[["lead",null],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'dev', 4, 'd', '$(ago 1)');" >/dev/null
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "both" '[["lead",null],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+
 case_ "a card held at any status is yours, as Work's Blocked shows it"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }

@@ -86,6 +86,25 @@ same "writes" "" "$(cat "$WRITES")"
 kept board demo overview
 same "lanes" '[["In progress","In progress"],["In review","In review"],["In progress","In progress"]]' "$(jq -c '[.[] | [.status, .lane]]' "$OUT")"
 
+case_ "a role's own PR that arrived by itself before the role added it is still the role's to place"
+demo_team
+gh_items </dev/null
+repo_pull 50 "Vision review" true
+run board demo list
+same "arrived" '[[50,"In progress"]]' "$(statuses)"
+jq -n '{node_id: "PR_50", number: 50, state: "open", pull_request: {}, body: "The vision, reviewed\n\n<!-- a-team:dev -->"}' >"$ISSUE"
+kept board demo add lead 50 Pitched
+failed "someone else's"
+grep -q "#50 is already on the board and isn't lead's (use move)" "$ERR" || fail "someone else's: '$(cat "$ERR")'"
+jq '.body = "The vision, reviewed\n\n<!-- a-team:lead -->"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"
+kept board demo add lead 50 Pitched
+same "exit" 0 "$STATUS"
+kept board demo list
+same "placed" '[[50,"Pitched"]]' "$(statuses)"
+kept board demo add lead 50 Pitched
+failed "once placed"
+grep -q "#50 is already on the board (use move)" "$ERR" || fail "once placed: '$(cat "$ERR")'"
+
 case_ "a repo with more than 100 open issues and PRs has every one on the board"
 demo_team
 gh_items </dev/null

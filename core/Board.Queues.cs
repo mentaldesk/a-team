@@ -690,19 +690,25 @@ internal sealed partial class Board
         item["reason"] = $"{stuck}, but nothing will start a run for it";
     }
 
-    /// <summary>What some role's triggers last woke for on this repo, from any team, and what a run of it is on now.</summary>
-    internal HashSet<(string Role, long N)> Woken()
+    /// <summary>Whether a run of the role will come to #n: its triggers last woke for it, on this repo from any team, a
+    /// run of it is on it now, or its runs fill every slot, when the dispatcher doesn't ask its triggers.</summary>
+    internal Func<string, long, bool> Woken()
     {
         var covered = new HashSet<(string, long)>();
-        if (!Recorded) return covered;
+        var busy = new HashSet<string>();
+        if (!Recorded) return (_, _) => false;
         var minutes = int.TryParse(Text("dispatch", "maxRuntime"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit) ? limit : 120;
+        var live = $"team = {TeamQ} AND ended IS NULL AND started >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-{minutes} minutes')";
         foreach (var row in _record.Query($"""
             SELECT role, item FROM woken WHERE repo = {Reconciler.Q(_repo)}
-            UNION SELECT role, item FROM runs JOIN run_items ON run_items.run = runs.id
-                WHERE team = {TeamQ} AND ended IS NULL AND started >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-{minutes} minutes');
+            UNION SELECT role, item FROM runs JOIN run_items ON run_items.run = runs.id WHERE {live};
             """))
             covered.Add((row["role"]!, long.Parse(row["item"]!, CultureInfo.InvariantCulture)));
-        return covered;
+        var devs = int.TryParse(Text("wip", "devs"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var d) ? d : 1;
+        foreach (var row in _record.Query($"SELECT role, COUNT(*) AS n FROM runs WHERE {live} GROUP BY role;"))
+            if (int.Parse(row["n"]!, CultureInfo.InvariantCulture) >= (row["role"] == "dev" ? devs : 1))
+                busy.Add(row["role"]!);
+        return (role, n) => busy.Contains(role) || covered.Contains((role, n));
     }
 
     /// <summary>Keeps what the role's triggers woke for this time, in place of what they woke for last time.</summary>
@@ -1253,7 +1259,7 @@ internal sealed partial class Board
         waiting.AddRange(upstream);
         var woken = Woken();
         foreach (var item in waiting)
-            Settle(item, _repo, (role, n) => woken.Contains((role, n)));
+            Settle(item, _repo, woken);
         var frees = detail?["frees"] as JsonObject ?? [];
         var unticked = UntickedOn(talk);
         foreach (var item in waiting)
