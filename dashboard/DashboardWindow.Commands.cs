@@ -95,7 +95,6 @@ public sealed partial class DashboardWindow
             .Register("work.copyBranch", "Copy branch name", CopyBranch, new Key('y'),
                 isEnabled: () => OnWork() && _work.Selected is { Branch.Length: > 0 }, onCard: true, scopes: [Regions.Work])
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true, scopes: [Regions.Work])
-            .Register("team.board", "Open team's board on GitHub", OpenBoard, new Key('b'), isEnabled: () => SelectedTeam() is not null)
             .Register("team.vision", () => SelectedTeam() is { } team ? $"Write the vision with me · {team}" : "Write the vision with me",
                 () => WriteVision(SelectedTeam()), isEnabled: () => _options.HandOver is not null && SelectedTeam() is not null, name: "Write the vision with me")
             .Register("team.visionReview", () => SelectedTeam() is { } team ? $"Review the vision · {team}" : "Review the vision",

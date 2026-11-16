@@ -149,7 +149,7 @@ public class TeamsDialogTests : IDisposable
 
         Assert.Equal(["alpha  mentaldesk/alpha  working  ok", "goose  aaif-goose/goose  paused   checking…"], TeamRows(dialog));
 
-        goose.SetResult(new TeamHealth([new TeamProblem("project", "no field"), new TeamProblem("labels", "1 of 6 missing")]));
+        goose.SetResult(new TeamHealth([new TeamProblem("release", "no release.yml"), new TeamProblem("labels", "1 of 6 missing")]));
         Assert.Equal(["alpha  mentaldesk/alpha  working  ok", "goose  aaif-goose/goose  paused   2 problems"], TeamRows(dialog));
     }
 
@@ -299,7 +299,7 @@ public class TeamsDialogTests : IDisposable
     {
         if (OperatingSystem.IsWindows())
             return;
-        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "project": {"owner": "mentaldesk", "number": 1}, "vision": "v", "workdir": "w"}""");
+        WriteTeam("alpha", """{"repo": "mentaldesk/alpha", "vision": "v", "workdir": "w"}""");
         var path = Path.Combine(_configRoot, "teams", "alpha.json");
         File.SetUnixFileMode(path, UnixFileMode.UserRead);
         using var dialog = Open();
@@ -457,7 +457,7 @@ public class TeamsDialogTests : IDisposable
         dialog.NewTeam();
 
         Assert.Empty(TeamRows(dialog));
-        Assert.Equal("fretty is cancelled. Its clone, App and project are still there.", dialog.Message.Says);
+        Assert.Equal("fretty is cancelled. Its clone and App are still there.", dialog.Message.Says);
     }
 
     [Fact]

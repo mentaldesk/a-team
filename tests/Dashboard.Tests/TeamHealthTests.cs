@@ -6,10 +6,9 @@ public class TeamHealthTests
     public void Each_problem_line_check_prints_is_a_problem_and_its_ok_lines_are_not()
     {
         const string output = """
-            ok: mentaldesk project 3, field 'Status'
             note     vision    docs/vision.md isn't in mentaldesk/goose yet: the Lead will draft one and open it as a draft PR
             problem  labels    no 'pitch' label, so the team can't tell its pitches from tasks
-            identity: a-team-app[bot] · token ok · project 3 read+write ok · Priority readable · push access to mentaldesk/goose ok
+            identity: a-team-app[bot] · token ok · push access to mentaldesk/goose ok
             """;
 
         var health = TeamHealth.Parse(new Reading(output, "note     vision    docs/vision.md isn't in mentaldesk/goose yet"));
@@ -26,7 +25,7 @@ public class TeamHealthTests
     [Fact]
     public void A_healthy_team_is_ok()
     {
-        var health = TeamHealth.Parse(new Reading("ok: mentaldesk project 3, field 'Status'\nidentity: a-team-app[bot] · token ok\n", null));
+        var health = TeamHealth.Parse(new Reading("identity: a-team-app[bot] · token ok · push access to mentaldesk/goose ok\n", null));
 
         Assert.Empty(health.Problems);
         Assert.Equal("ok", health.Column);
@@ -60,7 +59,6 @@ public class TeamHealthTests
     [Theory]
     [InlineData("release", "release is continuous, but mentaldesk/goose has no release.yml workflow for it to run")]
     [InlineData("release", "release is 'weekly': expected never, daily or continuous")]
-    [InlineData("project", "goose.json names no GitHub Project to copy the board to: pick one, or None, under Mirror in its settings")]
     [InlineData("anything", "a topic the app has never heard of")]
     public void A_note_stops_nothing_whatever_it_is_about_and_is_still_listed(string topic, string detail)
     {
@@ -76,27 +74,12 @@ public class TeamHealthTests
     public void A_topic_can_be_a_problem_on_one_line_and_a_note_on_another()
     {
         var health = TeamHealth.Parse(new Reading("""
-            note     project   goose.json names no GitHub Project to copy the board to
-            problem  project   can't read aaif-goose project 2: Not Found
+            note     release   release is 'weekly': expected never, daily or continuous
+            problem  release   can't reach mentaldesk/goose: Not Found
             """, null));
 
-        Assert.Equal("project", Assert.Single(health.Fatal).Topic);
-        Assert.Equal("can't read aaif-goose project 2: Not Found", health.Fatal[0].Detail);
-    }
-
-    [Fact]
-    public void Project_notes_are_counted_and_repairable_but_fail_no_check()
-    {
-        var health = TeamHealth.Parse(new Reading("""
-            note     project   can't read aaif-goose project 2: Not Found
-            note     status    2 of 9 options missing from 'Status': Exploring, Pitched
-            note     items     outside the team's states: #5 Backlog
-            note     app       goose-app[bot] can only read project 2: grant the organisation's "Projects: read and write"
-            """, null));
-
-        Assert.Null(health.Failed("goose"));
-        Assert.Equal("4 problems", health.Column);
-        Assert.True(health.CanRepair);
+        Assert.Equal("release", Assert.Single(health.Fatal).Topic);
+        Assert.Equal("can't reach mentaldesk/goose: Not Found", health.Fatal[0].Detail);
     }
 
     [Fact]
@@ -163,9 +146,8 @@ public class TeamHealthTests
     }
 
     [Theory]
-    [InlineData("status", true)]
     [InlineData("labels", true)]
-    [InlineData("project", false)]
+    [InlineData("status", false)]
     [InlineData("app", false)]
     [InlineData("vision", false)]
     public void Only_what_setting_the_board_up_puts_right_can_be_repaired(string topic, bool repairable) =>
@@ -174,8 +156,8 @@ public class TeamHealthTests
     [Fact]
     public void A_problem_reads_as_its_topic_in_a_column_then_what_s_wrong() =>
         Assert.Equal(
-            "project   no single-select field 'Status' on aaif-goose project 2",
-            new TeamProblem("project", "no single-select field 'Status' on aaif-goose project 2").ToString());
+            "labels    no 'pitch' label, so the team can't tell its pitches from tasks",
+            new TeamProblem("labels", "no 'pitch' label, so the team can't tell its pitches from tasks").ToString());
 
     [Fact]
     public void A_problem_too_wide_for_its_rows_wraps_its_detail_under_itself() =>

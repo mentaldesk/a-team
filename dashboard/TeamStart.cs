@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Terminal.Gui.Drawing;
 
@@ -31,16 +30,11 @@ public enum Answer
 /// and asking it to get to work. Each is offered, never done unasked.</summary>
 public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCommand gh, string home, Func<bool> dispatcherInstalled)
 {
-    internal const string StatusField = "Status";
-
     /// <summary>The new team form's starting values, from <c>examples/team.json</c>.</summary>
     public TeamSettings Defaults() => TeamSettings.New(File.ReadAllBytes(example), "");
 
     /// <summary>Who's signed in to GitHub, the new team's first stakeholder; empty where it can't be read.</summary>
     public async Task<string> Me() => (await gh.Read("api", "user", "--jq", ".login")).Output.Trim();
-
-    public Task<Reading> Projects(string owner) =>
-        gh.Read("project", "list", "--owner", owner, "--format", "json", "--limit", "100");
 
     /// <summary>The other repos <paramref name="team"/>'s App can reach, for its Contributes to.</summary>
     public Task<ReachableRepos> Repos(string team, string repo) => ReachableRepos.Read(aTeam, team, repo);
@@ -106,14 +100,12 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
         [
             () => Cloned() ? null : CloneStep(teams.Settings(team), TeamSettings.Expand(Checkout(), home)),
             App,
-            () => teams.Settings(team).NewMirror ? ProjectStep(teams, team, teams.Settings(team)) : null,
             () => BoardStep(team, teams.Settings(team)),
             () => VisionStep(team),
             () => teams.HasApp(team) ? WorkStep(team) : null,
         ];
         const int appStep = 1;
-        const int projectStep = 2;
-        const int visionStep = 4;
+        const int visionStep = 3;
         var vision = false;
         Stack<int> shown = [];
         for (var at = 0; at < steps.Count;)
@@ -139,14 +131,12 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
                 uninstalled = answer != Answer.Done;
             if (at == visionStep)
                 vision = answer == Answer.Done;
-            if (at == projectStep && teams.Settings(team).NewMirror)
-                return ($"{team} is paused: it has no project to copy its board to. Pick one, or None, in its settings.", Schemes.Accent);
             if (at == steps.Count - 1)
             {
                 if (answer == Answer.Cancelled)
                 {
                     teams.Delete(team);
-                    return ($"{team} is cancelled. Its clone, App and project are still there.", Schemes.Base);
+                    return ($"{team} is cancelled. Its clone and App are still there.", Schemes.Base);
                 }
                 if (answer == Answer.Done)
                     teams.SetWorking(team, true);
@@ -179,11 +169,8 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
     /// <summary>What <c>board check</c> finds wrong with the team.</summary>
     public async Task<TeamHealth> Check(string team) => TeamHealth.Parse(await aTeam.Report("board", team, "check"));
 
-    /// <summary>Setting the board up again, which puts right its Status options and labels.</summary>
+    /// <summary>Setting the board up again, which puts right its labels.</summary>
     public Step Repair(string team, TeamSettings settings) => BoardStep(team, settings);
-
-    /// <summary>Making the project a team copies its board to, once its settings ask for a new one.</summary>
-    public Step NewMirror(TeamConfigs teams, string team) => ProjectStep(teams, team, teams.Settings(team));
 
     private Step BoardStep(string team, TeamSettings settings) =>
         new(
@@ -194,11 +181,10 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             line => aTeam.Stream(line, "board", team, "setup"),
             async () =>
             {
-                var plan = aTeam.Read("board", team, "setup", "--dry-run");
-                var project = settings.Mirror ? Project(settings) : Task.FromResult<ProjectChoice?>(null);
-                return (await plan).Failure is { } failure
+                var plan = await aTeam.Read("board", team, "setup", "--dry-run");
+                return plan.Failure is { } failure
                     ? (null, $"Can't set up {team}'s board: {failure}")
-                    : (SetupPlan((await plan).Output, await project, settings.Repo), null);
+                    : (SetupPlan(plan.Output, settings.Repo), null);
             });
 
     private static Step VisionStep(string team) =>
@@ -241,88 +227,21 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
             line => aTeam.Stream(line, "app", "create", team),
             ShowOutput: true);
 
-    private Step ProjectStep(TeamConfigs teams, string team, TeamSettings settings)
+    /// <summary>What <c>board setup --dry-run</c> printed, as the confirmation lists it: the labels it would create or
+    /// update, then how many open issues will arrive in Triage.</summary>
+    public static IReadOnlyList<string> SetupPlan(string output, string repo)
     {
-        var owner = settings.RepoOwner;
-        return new Step(
-            $"Create a project for {team}?",
-            [
-                $"{team} copies its board to a GitHub Project, so you can see it on GitHub, and hasn't got one yet.",
-                $"gh project create --owner {owner} --title {team}",
-                $"Then link it to {settings.Repo}.",
-            ],
-            "create it",
-            "skip",
-            line => CreateProject(teams, team, line));
-    }
-
-    /// <summary>Creates the team's project unless an earlier try already did, and links it to the repo.</summary>
-    private async Task<string?> CreateProject(TeamConfigs teams, string team, Action<string> line)
-    {
-        var settings = teams.Settings(team);
-        var owner = settings.RepoOwner;
-        if (settings.NoProject)
-        {
-            var made = await gh.Read("project", "create", "--owner", owner, "--title", team, "--format", "json");
-            if (made.Failure is { } failure)
-                return failure;
-            if (CreatedNumber(made.Output) is not { } created)
-                return "gh project create didn't say which number the new project got.";
-            teams.Save(team, settings, settings with { ProjectOwner = owner, ProjectNumber = created });
-            settings = teams.Settings(team);
-            line($"Created project {new ProjectChoice(owner, created, team)}.");
-        }
-        return await gh.Stream(line, "project", "link", $"{settings.ProjectNumber}", "--owner", owner, "--repo", settings.Repo);
-    }
-
-    private static int? CreatedNumber(string output)
-    {
-        try
-        {
-            using var project = JsonDocument.Parse(output);
-            return project.RootElement.TryGetProperty("number", out var number) &&
-                   number.ValueKind == JsonValueKind.Number && number.TryGetInt32(out var value)
-                ? value
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>The team's project with its title, or with none where the list can't be read.</summary>
-    private async Task<ProjectChoice?> Project(TeamSettings settings)
-    {
-        var number = settings.ProjectNumber ?? 0;
-        var listed = ProjectChoice.Parse(await Projects(settings.ProjectOwner), settings.ProjectOwner);
-        return listed?.FirstOrDefault(project => project.Number == number) ?? new ProjectChoice(settings.ProjectOwner, number, "");
-    }
-
-    /// <summary>What <c>board setup --dry-run</c> printed, as the confirmation lists it: the Status options it would
-    /// add or keep, the project fields it would add, the labels it would create or update, then how many open issues will
-    /// arrive in Triage.</summary>
-    public static IReadOnlyList<string> SetupPlan(string output, ProjectChoice? project, string repo)
-    {
-        List<string> options = [];
-        List<string> fields = [];
         List<string> labels = [];
         List<string> arriving = [];
         foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
             if (ArrivalLine().Match(line) is { Success: true } arrival)
                 arriving.Add($"{arrival.Groups[1].Value}, for the Lead to rank. Close any you don't want.");
-            else if (FieldLine().Match(line) is { Success: true } field)
-                fields.Add($"  add   field {field.Groups[1].Value.Trim()}");
-            else if (OptionLine().Match(line) is { Success: true } option)
-                options.Add($"  {option.Groups[1].Value.PadRight(6)}{option.Groups[2].Value.Trim()}");
             else if (LabelLine().Match(line) is { Success: true } label)
                 labels.Add($"  {(label.Groups[1].Value == "created" ? "create" : "update")} label {label.Groups[2].Value.Trim()}");
         }
         return
         [
-            .. project is null ? Array.Empty<string>() : [$"On project {project}, field '{StatusField}':", .. options],
-            .. project is null || fields.Count == 0 ? Array.Empty<string>() : [$"On project {project}:", .. fields],
             $"On {repo}:",
             .. labels.Count == 0 ? ["  labels already set up"] : labels,
             .. arriving,
@@ -331,12 +250,6 @@ public sealed partial class TeamStart(string example, TeamCommand aTeam, TeamCom
 
     [GeneratedRegex(@"^(?:\(dry run\) )?(\d+ open issues? on .+ will arrive in Triage)$")]
     private static partial Regex ArrivalLine();
-
-    [GeneratedRegex(@"^\s+add\s+field\s+(.+)$")]
-    private static partial Regex FieldLine();
-
-    [GeneratedRegex(@"^\s+(keep|add|drop)\s+(.+)$")]
-    private static partial Regex OptionLine();
 
     [GeneratedRegex(@"^(?:\(dry run\) )?(created|updated) label (.+)$")]
     private static partial Regex LabelLine();

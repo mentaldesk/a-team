@@ -89,7 +89,7 @@ run board demo move lead 11 Exploring
 same "exit" 0 "$STATUS"
 same "displaced" true "$(marks 11 | jq -c .displaced)"
 grep -q '/labels' "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
-grep -q "option=OPT_exploring" "$WRITES" || fail "status not set: '$(cat "$WRITES")'"
+same "moved" Exploring "$(status_of 11)"
 
 case_ "a repeat demote moves without marking again"
 edit_item 11 '.labels.nodes += [{name: "a-team:displaced"}]'
@@ -97,7 +97,7 @@ edit_item 11 '.labels.nodes += [{name: "a-team:displaced"}]'
 run board demo move lead 11 Exploring
 same "exit" 0 "$STATUS"
 same "label" 0 "$(grep -c '/labels' "$WRITES")"
-grep -q "option=OPT_exploring" "$WRITES" || fail "status not set: '$(cat "$WRITES")'"
+same "moved" Exploring "$(status_of 11)"
 
 case_ "--dry-run says it would mark a first demote, and marks nothing"
 edit_item 11 '.labels.nodes -= [{name: "a-team:displaced"}]'
@@ -112,18 +112,6 @@ run board --dry-run demo setup
 same "exit" 0 "$STATUS"
 same "labels" "(dry run) created label pitch" "$(grep 'created label' "$OUT")"
 
-case_ "setup drops the Todo and In Progress GitHub made, unless an item has one"
-cp "$META" "$BIN/meta.saved"
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_todo", name: "Todo"}, {id: "OPT_ip", name: "In Progress"}]' \
-  "$BIN/meta.saved" >"$META"
-jq '.data.organization.projectV2.items.nodes[0].fieldValueByName.name = "In Progress"' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-run board --dry-run demo setup
-same "exit" 0 "$STATUS"
-grep -q '^  drop  Todo$' "$OUT" || fail "setup: Todo not dropped in '$(cat "$OUT")'"
-grep -q '^  keep  In Progress$' "$OUT" || fail "setup: In Progress in use but not kept in '$(cat "$OUT")'"
-grep -q '^  keep  Exploring$' "$OUT" || fail "setup: '$(cat "$OUT")'"
-mv "$BIN/meta.saved" "$META"
-
 case_ "setup applies exactly what its dry run listed"
 run board --dry-run demo setup
 listed=$(cat "$OUT")
@@ -131,62 +119,9 @@ listed=$(cat "$OUT")
 run board demo setup
 same "exit" 0 "$STATUS"
 [ -n "$listed" ] || fail "dry run: nothing listed"
-same "options" "$(grep -v '^  add   field ' <<<"$listed" | sed -En 's/^  (keep|add ) {2}//p')" \
-  "$(jq -r '.variables.input.singleSelectOptions[].name' "$BIN/mutation.json")"
+same "project calls" 0 "$(grep -ci projectv2 "$BIN/args")"
 same "labels" "$(sed -n 's/^(dry run) created label //p' <<<"$listed")" \
   "$(sed -n 's/^label create \([^ ]*\) .*/\1/p' "$WRITES")"
-
-case_ "setup adds whichever of the Lead rank and Theme fields the project lacks, and its dry run lists them"
-add_field() { jq --arg name "$1" '.data.organization.projectV2.fields.nodes += [{id: "PVTF_\($name)", name: $name, dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"; }
-listed_fields() { sed -n 's/^  add   field //p' "$OUT" | paste -sd, -; }
-added_fields() { sed -n 's/^FIELD .*name=\(.*\) FIELD -f.*/\1/p' "$WRITES" | paste -sd, -; }
-run board --dry-run demo setup
-same "neither: listed" "Lead rank,Theme" "$(listed_fields)"
-: >"$WRITES"
-run board demo setup
-same "exit" 0 "$STATUS"
-same "neither: added" "Lead rank,Theme" "$(added_fields)"
-cp "$META" "$BIN/meta.saved"
-add_field Theme
-run board --dry-run demo setup
-same "only Theme: listed" "Lead rank" "$(listed_fields)"
-: >"$WRITES"
-run board demo setup
-same "only Theme: added" "Lead rank" "$(added_fields)"
-add_field "Lead rank"
-run board --dry-run demo setup
-same "both: listed" "" "$(listed_fields)"
-: >"$WRITES"
-run board demo setup
-same "exit" 0 "$STATUS"
-same "both: added" "" "$(added_fields)"
-mv "$BIN/meta.saved" "$META"
-
-case_ "setup and check name a Lead rank or Theme field of the project's own, before setup changes anything"
-cp "$META" "$BIN/meta.saved"
-jq '.data.organization.projectV2.fields.nodes += [{id: "PVTSSF_theme", name: "Theme", dataType: "SINGLE_SELECT", options: []},
-    {id: "PVTF_rank", name: "Lead rank", dataType: "TEXT"}]' "$BIN/meta.saved" >"$META"
-clash="mentaldesk project 1 has a Theme field that isn't text, so a-team can't copy to it: rename that field"
-rm -f "$BIN/mutation.json"
-: >"$WRITES"
-run board demo setup
-same "exit" 1 "$STATUS"
-grep -qF "$clash" "$ERR" || fail "setup: nothing about the clash in '$(cat "$ERR")'"
-[ ! -e "$BIN/mutation.json" ] || fail "setup: Status options changed"
-same "writes" "" "$(cat "$WRITES")"
-run board --dry-run demo setup
-same "dry run: exit" 1 "$STATUS"
-grep -qF "$clash" "$ERR" || fail "dry run: nothing about the clash in '$(cat "$ERR")'"
-run board demo check
-grep -qF "note     fields    $clash" "$OUT" || fail "check: nothing about the clash in '$(cat "$OUT")'"
-mv "$BIN/meta.saved" "$META"
-
-case_ "setup names GitHub's reason when it can't read the project"
-echo "gh: Could not resolve to a ProjectV2 with the number 1." >"$BIN/project-read-fails"
-run board demo setup
-failed "setup"
-grep -qF "Could not resolve to a ProjectV2 with the number 1." "$ERR" || fail "setup: '$(cat "$ERR")'"
-rm "$BIN/project-read-fails"
 
 case_ "either role may block either task, across pitches and at any status"
 fixture <<'JSON'
@@ -322,7 +257,6 @@ Idea 42 The Assistant forgets the card I had open
 ITEMS
 edit_item 41 '.labels.nodes = [{name: "a-team:idea"}]'
 edit_item 42 '.labels.nodes = [{name: "a-team:idea"}]'
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 rm -f "$WORK/state/demo/lead/step"
 A_TEAM_RUN_STARTED=2026-11-12T01:00:00Z A_TEAM_STATE="$WORK/state" run board demo lead-next
 same "turn" '"step"' "$(jq -c .turn "$OUT")"

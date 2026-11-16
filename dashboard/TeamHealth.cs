@@ -37,8 +37,8 @@ public sealed partial record TeamHealth(IReadOnlyList<TeamProblem> Problems)
 {
     internal const string Checking = "checking…";
 
-    /// <summary>What <c>board setup</c> puts right: the Status options and the labels.</summary>
-    private static readonly string[] Repairable = ["status", "labels"];
+    /// <summary>What <c>board setup</c> puts right: the labels.</summary>
+    private static readonly string[] Repairable = ["labels"];
 
     public bool CanRepair => Problems.Any(problem => Repairable.Contains(problem.Topic));
 

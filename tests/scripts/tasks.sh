@@ -59,16 +59,15 @@ Pitched 12 A pitch in front of the stakeholder
 Idea 13 An idea
 Ready 40 A task
 ITEMS
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_ready", name: "Ready"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 printf '## Context\n\nFor #10.\n' >"$WORK/task"
 for pitch in 10 11; do
   gh_child 77 - -
   run board demo task lead "$pitch" "b opens the board on GitHub" "$WORK/task"
   same "task under #$pitch exit" 0 "$STATUS"
   same "task under #$pitch said" "#77: filed as Ready under #$pitch" "$(cat "$OUT")"
-  same "task under #$pitch order" "CREATE POST ADD api" "$(awk '{print $1}' "$WRITES" | paste -sd ' ' -)"
+  same "task under #$pitch order" "CREATE POST" "$(awk '{print $1}' "$WRITES" | paste -sd ' ' -)"
   grep -qF -- "--title b opens the board on GitHub" "$WRITES" || fail "task under #$pitch: no title in '$(cat "$WRITES")'"
-  grep -q 'item=PVTI_new .*option=OPT_ready' "$WRITES" || fail "task under #$pitch: not Ready in '$(cat "$WRITES")'"
+  same "task under #$pitch status" Ready "$(status_of 77)"
   grep -q "^POST .*/issues/$pitch/sub_issues .*sub_issue_id=9077" "$WRITES" || fail "task under #$pitch: no link in '$(cat "$WRITES")'"
   same "task under #$pitch body" "$(printf '## Context\n\nFor #10.\n\n<!-- a-team:lead -->')" "$(cat "$POSTED")"
 done
@@ -392,13 +391,12 @@ case_ "the Dev puts a follow-up it opened on the board as an Idea, without the L
 gh_items <<'ITEMS'
 In_progress 12 A task
 ITEMS
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_child 41 - - "Follow-up from #12.
 
 <!-- a-team:dev -->"
 A_TEAM_RUN_TASK=12 run board demo add dev 41 Idea
 same "exit" 0 "$STATUS"
-grep -q "OPT_idea" "$WRITES" || fail "no move to Idea in '$(cat "$WRITES")'"
+same "status" Idea "$(status_of 41)"
 grep -q "a-team:idea" "$WRITES" && fail "labelled as the Lead's discovery: '$(cat "$WRITES")'"
 
 case_ "the Dev adds no issue it didn't open, and nothing but an Idea"

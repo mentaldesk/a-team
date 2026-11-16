@@ -13,11 +13,6 @@ Exploring, Pitched, Approved, Building, Ready, In progress and In review. Done i
 A lane's title names the team and its roles that are running now, each with its animation playing
 beside it, as in `a-team · Lead ✺ · Dev >`, or says `idle`. A [stuck role](#a-stuck-role) is named on its own
 instead of as running, as in `a-team · Dev ⚠ stuck · Reviewer ⚠ stuck`. Where cards are past their column's limit, it counts them: `2 over`. When the Lead or Customer lead gave up on a reason with no item to hold, it says so until the reasons change, as in `lead gave up: room in Pitched for a drafted pitch · 3 runs`.
-Where the team's GitHub Project hasn't caught up with its board yet, it says how far behind it is and why, as in
-`mirror 3 moves behind (GitHub rate limit, retry 11:20)`. `GitHub unreachable` means it really couldn't be reached;
-when GitHub turns the copy down, the note gives its reason after `GitHub refused:`. The board itself is never behind:
-once GitHub is back, the Project catches up and the note goes. Where the title has no room for the whole note, select the
-heading and the team's panel shows all of it.
 
 Each card is a chip: a mark for what it is, its number, and how long it has been in that column, in
 the largest unit, as in `◆404  6d`.
@@ -77,7 +72,6 @@ nothing to light, and neither do a lane's heading or a `+7`.
 | `w` | Goes to the card in [Work](work.md) |
 | `p` | Opens the card in the reader with the ranks under it, to set its Priority |
 | `g` | Opens the card on GitHub |
-| `b` | Opens the team's mirror, its Project board on GitHub, if it has one |
 | `r` | Reads again the boards that couldn't be read |
 | `F5` | Reads every board again |
 | `Ctrl+F` | Filters every lane to the cards matching a number or title, as [Filtering cards](#filtering-cards) describes |
@@ -189,7 +183,7 @@ The app checks each team when it starts and again whenever the team's file chang
 **Teams** shows. If something stops the team running, every role wears `⚠`, the panel
 says what's wrong above them, as in `misconfigured: checkout ~/code/TuiCode/main isn't there: …`,
 and the status bar says which checks failed. Fix it in **Teams** or in the file, and the
-`⚠` clears. What the check calls a note, like a missing vision, docs page or label, or a problem with the GitHub Project, changes nothing here.
+`⚠` clears. What the check calls a note, like a missing vision, docs page or label, changes nothing here.
 
 The keys act on the chosen role, the first until you choose another. `F6` or `Ctrl+G I` puts focus
 in the panel, where `↑` and `↓` choose a role, and `F6` goes back to the lanes. `Enter` opens the

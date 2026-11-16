@@ -169,7 +169,7 @@ public partial class DashboardWindowTests
                 "Jump to the top of the log", "Jump to the bottom of the log", "Show tool calls in full",
                 "Copy the selected lines", "Copy the whole log", "Open the whole log in your editor",
                 "Select the column to the right", "Select the column to the left", "Select the card below",
-                "Select the card above", "Open", "Set priority", "Try", "Copy branch name", "Open on GitHub", "Open team's board on GitHub",
+                "Select the card above", "Open", "Set priority", "Try", "Copy branch name", "Open on GitHub",
                 "Write the vision with me", "Review the vision", "Approve the pitch you're reading", "Accept",
                 "Comment on the item you're reading", "Edit the document pitch you're reading", "Browse for an image file to attach to what you're writing", "View image", "Decline", "Not now", "Hold", "Give secret…", "Ask the Dev to fix…",
                 "Next team", "Previous team", "Go to team…", "New idea", "Show only what's your move", "Read this team again", "Read what's waiting again",

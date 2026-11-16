@@ -43,7 +43,6 @@ public sealed record LaneHeading(string Title, IReadOnlyList<HeaderSlot> Slots);
 public sealed record LaneFacts(string Team)
 {
     public IReadOnlyList<string> Busy { get; init; } = [];
-    public string? Mirror { get; init; }
     public int Over { get; init; }
     public bool Stopped { get; init; }
     public IReadOnlyList<string> Stuck { get; init; } = [];
@@ -58,7 +57,6 @@ public sealed class OverseerView : View
     private const int FrameRows = 2;
     private const int MaxDetailRows = 8;
     private const string Separator = " · ";
-    private readonly Dictionary<string, MirrorLag> _mirrors = [];
     private const int NumberWidth = 5;
     private const int AgeWidth = 3;
 
@@ -198,9 +196,6 @@ public sealed class OverseerView : View
 
     internal int ScrolledTo => _lanes.Viewport.Y;
 
-    /// <summary>What <paramref name="team"/>'s heading says of its mirror, which its title cuts off where it doesn't fit.</summary>
-    internal string? MirrorNote(string team) => _mirrors.TryGetValue(team, out var mirror) ? mirror.Note : null;
-
     internal IReadOnlyList<string> LaneTitles => [.. _laneViews.Select(lane => lane.Title)];
 
     internal const string NothingOnTheBoard = "Nothing on the board";
@@ -232,14 +227,9 @@ public sealed class OverseerView : View
         Changed();
     }
 
-    /// <summary>Replaces <paramref name="team"/>'s chips alone, leaving every other lane as it was, and what its
-    /// heading says of its mirror.</summary>
-    public void Show(string team, IReadOnlyList<BoardCard> cards, MirrorLag? mirror = null)
+    /// <summary>Replaces <paramref name="team"/>'s chips alone, leaving every other lane as it was.</summary>
+    public void Show(string team, IReadOnlyList<BoardCard> cards)
     {
-        if (mirror is null)
-            _mirrors.Remove(team);
-        else
-            _mirrors[team] = mirror;
         _board.Show([.. _board.Cards.Where(card => card.Team != team), .. cards]);
         if (LaneOf(team) is { } lane)
             Landed(lane);
@@ -314,7 +304,6 @@ public sealed class OverseerView : View
             {
                 Busy = state.Busy.TryGetValue(team, out var busy) ? busy : [],
                 Over = Over(team),
-                Mirror = MirrorNote(team),
                 Stuck = state.Stuck.TryGetValue(team, out var stuck) ? stuck : [],
                 GaveUp = state.GaveUp.TryGetValue(team, out var gaveUp) ? gaveUp : [],
                 Stopped = state.Stopped.Contains(team),
@@ -433,8 +422,6 @@ public sealed class OverseerView : View
             title += Separator + gaveUp;
         if (lane.Over > 0)
             title += $"{Separator}{lane.Over} over";
-        if (lane.Mirror is not null)
-            title += Separator + lane.Mirror;
         return new(title, slots);
     }
 

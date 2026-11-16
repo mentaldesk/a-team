@@ -248,7 +248,6 @@ public sealed partial class DashboardWindow
         _team.Show(team,
             [.. _watches.Where(watch => watch.Team == team).Select(watch => (watch.Role, Icons.Field(Icons.For(watch.Status), _drawn), watch.Line))],
             _checks?.Fatal(team) is { } problem ? RoleWatch.Misconfigured(problem) : null,
-            _overseer.MirrorNote(team),
             [.. _watches.Where(watch => watch.Team == team && watch.Status == RoleStatus.Stuck).Select(watch => (watch.Role, watch.Line))]);
         _team.ShowHint(TeamHint());
         if (!_sessionFull)

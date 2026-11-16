@@ -25,7 +25,7 @@ b64url_decode() {
 mkdir -p "$APP_BIN/work/main"
 app_fixture() {
   fixture <<JSON
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer",
   "vision": "docs/vision.md", "workdir": "$APP_BIN/work", "app": { "id": 7, "slug": "demo-app" } }
 JSON
   rm -f "$CACHE" "$MINTS"
@@ -100,7 +100,7 @@ grep -q "app 7 isn't installed on mentaldesk/demo: install it at https://github.
 
 case_ "a team with no app key has no token, and is told how to get one"
 NO_APP=1 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer" }
 JSON
 run token demo
 failed "no app"
@@ -180,31 +180,15 @@ for order in "$ROOT/bin:$COPY/bin" "$COPY/bin:$ROOT/bin"; do
   same "git in a run" 'demo-app[bot]' "$(cat "$OUT")"
 done
 
-# board.sh's check against a board that's fine, with the App's own view of it broken by
-# PROJECT_UNREADABLE or PRIORITY_UNREADABLE when it asks with the cached token, and the board itself
-# by REPO_GONE, NO_VISION, LEAD_VISION, NO_PROJECT, NO_FIELD, and the options in meta.json, labels in labels.json
-# and the project's enabled workflows in workflows.json.
+# board.sh's check against a board that's fine, broken by REPO_GONE, NO_VISION, LEAD_VISION and the labels in labels.json,
+# with every call it makes in args.
 mkdir -p "$APP_BIN/board"
-board_options() {
-  jq -n --args '{data: {organization: {projectV2: {id: "PVT_1", fields: {nodes: [{id: "PVTSSF_status", name: "Status", options:
-    ($ARGS.positional | map({id: ., name: .}))}]}}}}}' "$@" >"$APP_BIN/board/meta.json"
-}
-board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
 board_labels() { jq -n --args '$ARGS.positional | map({name: .})' "$@" >"$APP_BIN/board/labels.json"; }
 board_labels pitch a-team:dev a-team:idea a-team:skipped a-team:displaced a-team:shelved blocked
-board_workflows() {
-  jq -n --args '{data: {organization: {projectV2: {workflows: {nodes:
-    ($ARGS.positional | map({name: ., enabled: true}) + [{name: "Pull request merged", enabled: false}])}}}}}' \
-    "$@" >"$APP_BIN/board/workflows.json"
-}
-board_workflows "Auto-add to project" "Item added to project" "Item closed"
-echo '{"data": {"organization": {"projectV2": {"items": {"totalCount": 0,
-  "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": []}}}}}' >"$APP_BIN/board/items.json"
-echo '{"data": {"organization": {"issueFields": {"nodes": [{"id": "IF_priority", "name": "Priority",
-  "options": []}]}}}}' >"$APP_BIN/board/fields.json"
+echo '{}' >"$APP_BIN/board/empty.json"
 fake "$APP_BIN/board/gh" <<SH
 #!/usr/bin/env bash
-refused() { echo "gh: Resource not accessible by integration" >&2; exit 1; }
+printf '%s\n' "\$*" >>"$APP_BIN/board/args"
 case " \$* " in
   *" api rate_limit "*) case "\${GITHUB_SAYS:-}" in
       spent) echo '{"resources": {"core": {"remaining": 0, "reset": 1762398720}, "graphql": {"remaining": 4000, "reset": 1762399000}}}' >"$APP_BIN/board/limits.json" ;;
@@ -221,18 +205,7 @@ case " \$* " in
   *"/actions/workflows/release.yml "*) [ -z "\${RELEASE_DOWN:-}" ] || { echo "error connecting to api.github.com" >&2; exit 1; }
     [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"label list"*) page="$APP_BIN/board/labels.json" ;;
-  *"workflows(first"*) page="$APP_BIN/board/workflows.json" ;;
-  *ProjectV2SingleSelectField*)
-    [ -z "\${NO_PROJECT:-}" ] || { echo '{"data": {"organization": {"projectV2": null}}}'
-      echo "gh: Could not resolve to a ProjectV2 with the number 1." >&2; exit 1; }
-    [ -z "\${NO_FIELD:-}" ] || { echo '{"data": {"organization": {"projectV2": {"id": "PVT_1", "fields": {"nodes": []}}}}}'; exit 0; }
-    [ -z "\${PARTIAL_READ:-}" ] || { cat "$APP_BIN/board/meta.json"; echo "gh: Resource not accessible by integration" >&2; exit 1; }
-    page="$APP_BIN/board/meta.json" ;;
-  *"items(first: 1) { totalCount }"*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PROJECT_UNREADABLE:-}" ] || refused
-                page="$APP_BIN/board/items.json" ;;
-  *issueFields*) [ "\${GH_TOKEN:-}" = ghs_cached ] && [ -z "\${PRIORITY_UNREADABLE:-}" ] || refused
-                 page="$APP_BIN/board/fields.json" ;;
-  *) page="$APP_BIN/board/items.json" ;;
+  *) page="$APP_BIN/board/empty.json" ;;
 esac
 filter=
 while [ \$# -gt 0 ]; do
@@ -245,7 +218,7 @@ grants() { jq "$1" "$CACHE" >"$CACHE.new" && mv "$CACHE.new" "$CACHE"; }
 
 case_ "check fails a team with no app key, and names the command"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer" }
 JSON
 checked
 same "no app exit" 1 "$STATUS"
@@ -257,8 +230,7 @@ app_fixture
 cached ghs_cached 3600
 checked
 same "exit" 0 "$STATUS"
-same "identity" 'identity: demo-app[bot] · token ok · project 1 read+write ok · Priority readable · push access to mentaldesk/demo ok' \
-  "$(grep '^identity' "$OUT")"
+same "identity" 'identity: demo-app[bot] · token ok · push access to mentaldesk/demo ok' "$(grep '^identity' "$OUT")"
 
 case_ "check says which part of the identity is wrong, and what to do about it"
 NO_KEY=1 checked
@@ -268,21 +240,6 @@ MINT_FAILS=1 checked
 same "no token exit" 1 "$STATUS"
 grep -q "^problem  app       demo-app\[bot\] can't get a token: " "$OUT" || fail "no token: '$(cat "$OUT")'"
 cached ghs_cached 3600
-PROJECT_UNREADABLE=1 checked
-says 2 "note     app       demo-app[bot] can't read project 1: grant the organisation's \"Projects: read and write\", and install the App on mentaldesk/demo"
-same "identity past the project" 'identity: demo-app[bot] · token ok · Priority readable · push access to mentaldesk/demo ok' \
-  "$(grep '^identity' "$OUT")"
-PROJECT_UNREADABLE=1 PRIORITY_UNREADABLE=1 checked
-same "project and priority exit" 1 "$STATUS"
-grep -q "^problem  app       demo-app\[bot\] can't read the Priority field" "$OUT" || fail "priority after project: '$(cat "$OUT")'"
-grants '.permissions.organization_projects = "read"'
-checked
-says 2 "note     app       demo-app[bot] can only read project 1: grant the organisation's \"Projects: read and write\""
-cached ghs_cached 3600
-PRIORITY_UNREADABLE=1 checked
-same "priority exit" 1 "$STATUS"
-grep -q "^problem  app       demo-app\[bot\] can't read the Priority field: grant the organisation's \"Issue Fields: read\"" "$OUT" ||
-  fail "priority: '$(cat "$OUT")'"
 grants '.permissions.contents = "read"'
 checked
 says 1 "problem  app       demo-app[bot] can't push to mentaldesk/demo: grant the repository's \"Contents: read and write\""
@@ -293,31 +250,18 @@ checked
 says 0 ""
 REPO_GONE=1 checked
 says 1 "problem  repo      can't reach mentaldesk/demo: Not Found (HTTP 404)"
-NO_PROJECT=1 checked
-says 2 "note     project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
-grep -q '^identity: demo-app\[bot\] · token ok · Priority readable' "$OUT" || fail "no project: the App's view in '$(cat "$OUT")'"
-NO_FIELD=1 checked
-says 2 "note     project   no single-select field 'Status' on mentaldesk project 1"
-PARTIAL_READ=1 checked
-says 2 "note     project   can't read mentaldesk project 1: Resource not accessible by integration"
-board_options Idea Approved Building Ready "In progress" "In review" Done
-checked
-says 2 "note     status    2 of 9 options missing from 'Status': Exploring, Pitched"
-board_options Idea Exploring Pitched Approved Building Ready "In progress" "In review" Done
-cp "$APP_BIN/board/items.json" "$APP_BIN/board/items.json.kept"
-echo '{"data": {"organization": {"projectV2": {"items": {"totalCount": 1,
-  "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [{"id": "PVTI_5", "fieldValueByName": {"name": "Backlog"},
-  "content": {"__typename": "Issue", "id": "I_5", "number": 5, "title": "Stray", "url": "https://github.com/mentaldesk/demo/issues/5",
-  "repository": {"nameWithOwner": "mentaldesk/demo"}, "labels": {"nodes": []}}}]}}}}}' >"$APP_BIN/board/items.json"
-checked
-says 2 "note     items     outside the team's states: #5 Backlog"
-mv "$APP_BIN/board/items.json.kept" "$APP_BIN/board/items.json"
 
-case_ "run starts a team whose GitHub Project has a problem"
-NO_FIELD=1 PATH="$APP_BIN/board:$PATH" run run demo dev
-same "exit" 0 "$STATUS"
-grep -q "not usable" "$ERR" && fail "project problem stopped the run: '$(cat "$ERR")'"
-grep -q '^# a-team run: dev' "$OUT" || fail "no brief: '$(cat "$OUT")'"
+case_ "check on a config that still names a Project and a mirror says nothing of either, and asks GitHub nothing about one"
+jq '.mirror = true | .project = {owner: "mentaldesk", number: 1, statusField: "Status", statusMap: {}}' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+: >"$APP_BIN/board/args"
+checked
+says 0 ""
+grep -qi 'project\|mirror' "$OUT" && fail "project said: '$(cat "$OUT")'"
+same "project calls" 0 "$(grep -ciE 'projectv2|issueFields' "$APP_BIN/board/args")"
+jq 'del(.mirror, .project)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
+
+case_ "a new App asks for no Projects or Issue Fields permission"
+same "manifest grants" 0 "$(grep -cE 'organization_projects|issue_fields' "$ROOT/scripts/app.sh")"
 
 case_ "check names what's missing from the machine"
 rm -rf "$APP_BIN/work/main"
@@ -371,23 +315,14 @@ checked
 says 2 "note     release   release is 'weekly': expected never, daily or continuous"
 jq 'del(.release)' "$TEAM" >"$TEAM.new" && mv "$TEAM.new" "$TEAM"
 
-case_ "a project with Auto-add and Item added off is no note: open issues reach Triage without them"
-board_workflows "Item closed"
-checked
-says 0 ""
-NO_PROJECT=1 checked
-says 2 "note     project   can't read mentaldesk project 1: Could not resolve to a ProjectV2 with the number 1."
-board_workflows "Auto-add to project" "Item added to project" "Item closed"
-
 case_ "check reports every problem it finds, not just the first"
 board_labels
-NO_VISION=1 NO_FIELD=1 checked
+NO_VISION=1 checked
 says 2 "note     vision    docs/vision.md isn't in mentaldesk/demo yet: the Lead will draft one and open it as a draft PR
-note     project   no single-select field 'Status' on mentaldesk project 1
 note     labels    no 'pitch' label, so the team can't tell its pitches from tasks"
 board_labels pitch
 
-case_ "check reports a config it can't read, or one with no repo or project, as problems"
+case_ "check reports a config it can't read, or one with no repo, as problems"
 before=$(cat "$TEAM")
 printf '{\n "repo": "mentaldesk/demo",\n}\n' >"$TEAM"
 checked
@@ -396,11 +331,10 @@ grep -q "^problem  config    can't read demo.json: .*line 3" "$OUT" || fail "unp
 echo '["not a team"]' >"$TEAM"
 checked
 says 1 "problem  config    demo.json isn't a JSON object"
-echo "$before" | jq 'del(.repo, .project.number)' >"$TEAM"
+echo "$before" | jq 'del(.repo)' >"$TEAM"
 checked
 same "no repo exit" 1 "$STATUS"
 grep -q '^problem  repo      demo.json names no repo$' "$OUT" || fail "no repo: '$(cat "$OUT")'"
-grep -q '^note     project   demo.json names no GitHub Project to copy the board to' "$OUT" || fail "no project number: '$(cat "$OUT")'"
 echo "$before" >"$TEAM"
 
 case_ "any other command refuses a config it can't read, in one line"
@@ -614,7 +548,7 @@ unset A_TEAM_STATE
 export A_TEAM_STATE
 A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" },
   "wip": { "worktrees": 2 } }
 JSON
 
@@ -631,8 +565,6 @@ Pitched 7 A pitch
 In_review 8 A task in front of me
 Idea 6 An idea
 ITEMS
-claimable
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 run board demo move dev 12 "In progress"
 recorded "move" 12 "dev Ready → In progress"
 run board demo claim dev 12
@@ -654,7 +586,6 @@ Pitched 7 A pitch
 Idea 6 An idea
 Building 10 A pitch
 ITEMS
-claimable
 gh_child 41 10 -
 run board demo add lead 41 Ready
 recorded "add" 41 "lead added as Ready"
@@ -684,7 +615,6 @@ ITEMS
 gh_child 40 - -
 run board demo link 10 40
 recorded "link" 40 "lead made a sub-issue of #10"
-claimable
 gh_child 77 - -
 run board demo task lead 10 "A task" "$WORK/reply"
 recorded "task" 77 "lead filed as Ready under #10"

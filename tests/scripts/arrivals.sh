@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The repo's open issues arriving on the board by themselves, with a mirror or without.
+# The repo's open issues arriving on the board by themselves.
 # shellcheck source=tests/scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
@@ -21,35 +21,35 @@ issues_from_items() {
 
 count_of() { jq --argjson n "$1" 'map(select(.number == $n)) | length' "$OUT"; }
 
-mirrored() {
+demo_team() {
   fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "pitched": 3, "exploring": 3, "ideas": 3 } }
 JSON
 }
 
-case_ "an open issue on neither the board nor its project arrives in Triage once, and the mirror gets it"
-mirrored
+case_ "an open issue the board hasn't got arrives in Triage once, with no Priority, whatever GitHub's field says"
+demo_team
 gh_items <<'ITEMS'
 Pitched 30 A pitch
 Ready 31 A task
 ITEMS
-every_status
 issues_from_items
 repo_issue 45 "Generate preview images"
+jq '(.[] | select(.number == 45)).issueFieldValues.nodes = [{name: "High", field: {name: "Priority"}}]' "$REPO_ISSUES" >"$REPO_ISSUES.new" &&
+  mv "$REPO_ISSUES.new" "$REPO_ISSUES"
 run board demo list
 same "exit" 0 "$STATUS"
 same "board" '[[30,"Pitched"],[31,"Ready"],[45,"Idea"]]' "$(statuses)"
-grep -q "ADD .*content=I_45" "$WRITES" || fail "not added to the mirror: $(cat "$WRITES")"
-grep -c "ADD " "$WRITES" | grep -qx 1 || fail "added more than #45: $(cat "$WRITES")"
+same "no Priority" null "$(jq -c '.[] | select(.number == 45) | .priority' "$OUT")"
+same "writes" "" "$(cat "$WRITES")"
 same "history" "board None → Idea · opened on GitHub" "$(history_lines 45)"
 kept board demo list
 same "once" 1 "$(count_of 45)"
 same "board again" '[[30,"Pitched"],[31,"Ready"],[45,"Idea"]]' "$(statuses)"
-same "mirror link kept" PVTI_30 "$(jq -r '.[] | select(.number == 30) | .id' "$OUT")"
 
 case_ "closed issues, pull requests and other repos' issues don't arrive"
-mirrored
+demo_team
 gh_items <<'ITEMS'
 Ready 31 A task
 ITEMS
@@ -61,7 +61,7 @@ run board demo list
 same "board" '[[31,"Ready"]]' "$(statuses)"
 
 case_ "a failed or short read of the repo's issues changes nothing, and is tried again"
-mirrored
+demo_team
 gh_items <<'ITEMS'
 Ready 31 A task
 ITEMS
@@ -80,40 +80,8 @@ rm "$BIN/issues-short"
 kept board demo list
 same "next read" '[[31,"Ready"],[45,"Idea"]]' "$(statuses)"
 
-case_ "an issue the project added by itself, with no Status, arrives once in Triage"
-mirrored
-gh_items <<'ITEMS'
-Ready 31 A task
-ITEMS
-every_status
-add_card 45 null "Auto-added"
-issues_from_items
-run board demo list
-same "board" '[[31,"Ready"],[45,"Idea"]]' "$(statuses)"
-grep -q "ADD " "$WRITES" && fail "added again: $(cat "$WRITES")"
-grep -q "item=PVTI_45 .*option=OPT_idea" "$WRITES" || fail "Status not set on the mirror: $(cat "$WRITES")"
-
-case_ "the project adding an issue the read brought in first makes one card, with no Content already exists failure (#619)"
-mirrored
-gh_items <<'ITEMS'
-Ready 31 A task
-ITEMS
-every_status
-run board demo list
-add_card 45 Idea "Auto-added"
-issues_from_items
-touch "$BIN/read-fails" "$BIN/add-exists"
-kept board demo list
-same "board" '[[31,"Ready"],[45,"Idea"]]' "$(statuses)"
-same "mirror item" PVTI_45 "$(jq -r '.[] | select(.number == 45) | .id' "$OUT")"
-same "no failure" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT COALESCE(failed, '') FROM boards WHERE team = 'demo';")"
-rm "$BIN/read-fails" "$BIN/add-exists"
-
-case_ "with no mirror, an issue opened on GitHub reaches Triage, and one closed and reopened comes back where it was (#715)"
-fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "mirror": false,
-  "wip": { "pitched": 3, "exploring": 3, "ideas": 3 } }
-JSON
+case_ "an issue opened on GitHub reaches Triage, and one closed and reopened comes back where it was (#715)"
+demo_team
 gh_items <<'ITEMS'
 Idea 45 Generate preview images
 ITEMS
@@ -130,11 +98,11 @@ issues_from_items
 kept board demo list
 same "reopened" '[[45,"Idea"]]' "$(statuses)"
 history_lines 45 | grep -qx "board Done → Idea · reopened" || fail "history: $(history_lines 45)"
-same "project calls" 0 "$(grep -ci projectv2 "$BIN/args")"
+same "project calls" 0 "$(grep -ciE 'projectv2|projectItems' "$BIN/args")"
 
 case_ "someone else's issue waits in Triage for a Priority; a stakeholder's can be pitched unranked"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "app": { "id": 7, "slug": "demo-app" }, "mirror": false,
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "app": { "id": 7, "slug": "demo-app" },
   "wip": { "pitched": 3, "exploring": 3, "ideas": 3 } }
 JSON
 gh_items </dev/null
@@ -155,6 +123,9 @@ same "keeps the Lead's case" '"theme 2, small · clears the queue · opened by b
 jq '(.[] | select(.number == 45)).issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}}]' "$REPO_ISSUES" >"$REPO_ISSUES.new" &&
   mv "$REPO_ISSUES.new" "$REPO_ISSUES"
 run board demo lead-next
+same "ranked on GitHub, not offered" null "$(jq -c '.item.number' "$OUT")"
+kept board demo priority you 45 Low
+kept board demo lead-next
 same "ranked, offered" 45 "$(jq -c '.item.number' "$OUT")"
 echo '[]' >"$REPO_ISSUES"
 repo_issue 45 "Generate preview images" reviewer
@@ -162,11 +133,10 @@ run board demo lead-next
 same "a stakeholder's, offered" 45 "$(jq -c '.item.number' "$OUT")"
 
 case_ "setup says how many of the repo's open issues will arrive in Triage"
-mirrored
+demo_team
 gh_items <<'ITEMS'
 Ready 31 A task
 ITEMS
-every_status
 issues_from_items
 repo_issue 45 "One"
 repo_issue 46 "Two"

@@ -38,7 +38,7 @@ public class TeamStartTests : IDisposable
     {
         var settings = TeamSettings.New(File.ReadAllBytes(Example), "jamescrosswell");
 
-        Assert.Equal(("", "", (int?)null, "", ""), (settings.Repo, settings.ProjectOwner, settings.ProjectNumber, settings.Workdir, settings.Try));
+        Assert.Equal(("", "", ""), (settings.Repo, settings.Workdir, settings.Try));
         Assert.Equal("docs/vision.md", settings.Vision);
         Assert.Equal((3, 2, 3, 6, 6, 3), (settings.InProgress, settings.Devs, settings.Pitched, settings.Exploring, settings.Ideas, settings.ReadyFloor));
         Assert.Equal(["jamescrosswell"], settings.Stakeholders);
@@ -52,8 +52,6 @@ public class TeamStartTests : IDisposable
         var settings = TeamSettings.New(File.ReadAllBytes(Example), "jamescrosswell") with
         {
             Repo = "mentaldesk/fretty",
-            ProjectOwner = "mentaldesk",
-            ProjectNumber = 7,
             Workdir = "~/code/fretty",
             Working = true,
         };
@@ -63,8 +61,8 @@ public class TeamStartTests : IDisposable
         using var file = JsonDocument.Parse(File.ReadAllText(Path.Combine(_teams.TeamsDirectory, "fretty.json")));
         var root = file.RootElement;
         Assert.Equal("mentaldesk/fretty", root.GetProperty("repo").GetString());
-        Assert.Equal(7, root.GetProperty("project").GetProperty("number").GetInt32());
-        Assert.Equal("Status", root.GetProperty("project").GetProperty("statusField").GetString());
+        Assert.False(root.TryGetProperty("project", out _));
+        Assert.False(root.TryGetProperty("mirror", out _));
         Assert.Equal("~/code/fretty", root.GetProperty("workdir").GetString());
         Assert.Equal("~/code/fretty/main", root.GetProperty("checkout").GetString());
         Assert.Equal("jamescrosswell", root.GetProperty("stakeholders")[0].GetString());
@@ -107,11 +105,6 @@ public class TeamStartTests : IDisposable
     public void The_setup_dry_run_becomes_the_list_the_confirmation_shows()
     {
         const string output = """
-              keep  Idea
-              add   Exploring
-              add   Pitched
-              keep  Done
-              drop  Todo
             (dry run) created label pitch
             (dry run) created label a-team:dev
             (dry run) updated label blocked: colour and description
@@ -119,45 +112,12 @@ public class TeamStartTests : IDisposable
 
         Assert.Equal(
             [
-                "On project fretty (mentaldesk #7), field 'Status':",
-                "  keep  Idea",
-                "  add   Exploring",
-                "  add   Pitched",
-                "  keep  Done",
-                "  drop  Todo",
                 "On mentaldesk/fretty:",
                 "  create label pitch",
                 "  create label a-team:dev",
                 "  update label blocked: colour and description",
             ],
-            TeamStart.SetupPlan(output, new ProjectChoice("mentaldesk", 7, "fretty"), "mentaldesk/fretty"));
-    }
-
-    [Fact]
-    public void The_setup_plan_lists_the_project_fields_it_would_add_beside_the_Status_options()
-    {
-        const string output = """
-              add   Idea
-              drop  Todo
-              add   field Lead rank
-              add   field Theme
-            (dry run) created label pitch
-            """;
-        var project = new ProjectChoice("mentaldesk", 7, "fretty");
-
-        Assert.Equal(
-            [
-                "On project fretty (mentaldesk #7), field 'Status':",
-                "  add   Idea",
-                "  drop  Todo",
-                "On project fretty (mentaldesk #7):",
-                "  add   field Lead rank",
-                "  add   field Theme",
-                "On mentaldesk/fretty:",
-                "  create label pitch",
-            ],
-            TeamStart.SetupPlan(output, project, "mentaldesk/fretty"));
-        Assert.DoesNotContain("On project fretty (mentaldesk #7):", TeamStart.SetupPlan("  keep  Idea\n", project, "mentaldesk/fretty"));
+            TeamStart.SetupPlan(output, "mentaldesk/fretty"));
     }
 
     [Fact]
@@ -174,7 +134,7 @@ public class TeamStartTests : IDisposable
                 "  create label pitch",
                 "33 open issues on mentaldesk/truman will arrive in Triage, for the Lead to rank. Close any you don't want.",
             ],
-            TeamStart.SetupPlan(output, null, "mentaldesk/truman"));
+            TeamStart.SetupPlan(output, "mentaldesk/truman"));
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -263,7 +223,7 @@ public class TeamStartTests : IDisposable
 
         var (lines, failure) = await setup!.Load!();
         Assert.Null(failure);
-        Assert.Equal(["On project fretty (mentaldesk #7), field 'Status':", "  add   Exploring", "On mentaldesk/fretty:", "  create label pitch"], lines);
+        Assert.Equal(["On mentaldesk/fretty:", "  create label pitch"], lines);
         Assert.DoesNotContain("board fretty setup", Ran());
 
         Assert.Null(await setup.Work!(_ => { }));
@@ -292,7 +252,7 @@ public class TeamStartTests : IDisposable
         var said = Start().Follow(_teams, "fretty", step => step.Title == "Get to work?" ? Answer.Cancelled : Answer.Skipped);
 
         Assert.DoesNotContain("fretty", _teams.Names());
-        Assert.Equal(("fretty is cancelled. Its clone, App and project are still there.", Schemes.Base), said);
+        Assert.Equal(("fretty is cancelled. Its clone and App are still there.", Schemes.Base), said);
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -339,26 +299,9 @@ public class TeamStartTests : IDisposable
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
-    public void A_team_without_a_project_is_offered_one_before_its_board_and_stays_paused_without_it()
+    public void A_team_whose_config_still_names_a_Project_is_offered_no_Project_step()
     {
-        Team("fretty", app: true, checkout: true, project: false);
-        List<string> asked = [];
-
-        var said = Start().Follow(_teams, "fretty", step =>
-        {
-            asked.Add(step.Title);
-            return Answer.Skipped;
-        });
-
-        Assert.Equal(["Create a project for fretty?"], asked);
-        Assert.Equal(("fretty is paused: it has no project to copy its board to. Pick one, or None, in its settings.", Schemes.Accent), said);
-        Assert.Empty(Ran());
-    }
-
-    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
-    public void A_team_with_Mirror_None_is_offered_no_project()
-    {
-        Team("fretty", app: true, checkout: true, project: false, mirror: false);
+        Team("fretty", app: true, checkout: true, project: true);
         List<string> asked = [];
 
         Start().Follow(_teams, "fretty", step =>
@@ -367,32 +310,8 @@ public class TeamStartTests : IDisposable
             return Answer.Skipped;
         });
 
-        Assert.DoesNotContain("Create a project for fretty?", asked);
-        Assert.Contains("Set up fretty's board?", asked);
-    }
-
-    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
-    public async Task Creating_the_project_saves_its_number_and_links_it_and_a_retry_doesn_t_create_another()
-    {
-        Team("fretty", app: true, checkout: true, project: false);
-        Step? create = null;
-        Start().Follow(_teams, "fretty", step =>
-        {
-            create ??= step;
-            return Answer.Skipped;
-        });
-
-        Assert.Equal("gh project create --owner mentaldesk --title fretty", create!.Lines[1]);
-        Assert.Null(await create.Work!(_ => { }));
-        Assert.Equal(("mentaldesk", (int?)9), (_teams.Settings("fretty").ProjectOwner, _teams.Settings("fretty").ProjectNumber));
-        await create.Work!(_ => { });
-        Assert.Equal(
-            [
-                "project create --owner mentaldesk --title fretty --format json",
-                "project link 9 --owner mentaldesk --repo mentaldesk/fretty",
-                "project link 9 --owner mentaldesk --repo mentaldesk/fretty",
-            ],
-            Ran());
+        Assert.Equal(["Set up fretty's board?", "Write fretty's vision with you?", "Get to work?"], asked);
+        Assert.DoesNotContain(Ran(), ran => ran.StartsWith("project", StringComparison.Ordinal));
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
@@ -528,7 +447,7 @@ public class TeamStartTests : IDisposable
 
         Assert.Equal(["fret"], _teams.Names());
         Assert.True(_teams.HasApp("fret"));
-        Assert.Equal(("~/code/fret", "~/code/fret/main", (int?)7), (_teams.Settings("fret").Workdir, _teams.Settings("fret").CheckoutPath, _teams.Settings("fret").ProjectNumber));
+        Assert.Equal(("~/code/fret", "~/code/fret/main"), (_teams.Settings("fret").Workdir, _teams.Settings("fret").CheckoutPath));
     }
 
     [Fact]
@@ -635,7 +554,6 @@ public class TeamStartTests : IDisposable
     public async Task A_check_that_exits_non_zero_still_reports_the_problems_it_printed()
     {
         var start = new TeamStart(Example, new TeamCommand(Fake("a-team", """
-            echo "ok: mentaldesk project 7, field 'Status'"
             echo "note     labels    1 of 6 missing: blocked"
             exit 2
             """)), new TeamCommand(Fake("gh", "")), Path.Combine(_root, "home"), () => true);
@@ -655,7 +573,7 @@ public class TeamStartTests : IDisposable
         var (lines, failure) = await step.Load!();
         Assert.Null(failure);
         Assert.Equal(
-            ["On project fretty (mentaldesk #7), field 'Status':", "  add   Exploring", "On mentaldesk/fretty:", "  create label pitch"],
+            ["On mentaldesk/fretty:", "  create label pitch"],
             lines);
         Assert.Equal(["board fretty setup --dry-run"], Ran().Where(ran => ran.StartsWith("board", StringComparison.Ordinal)));
 
@@ -666,26 +584,19 @@ public class TeamStartTests : IDisposable
     private TeamStart Start(bool dispatcher = true, bool installed = true) =>
         new(Example, new TeamCommand(Fake("a-team", $$"""
             if [ "$1 $3 $4" = "board setup --dry-run" ]; then
-              printf '  add   Exploring\n(dry run) created label pitch\n'
+              printf '(dry run) created label pitch\n'
             fi
             if [ "$1 $2" = "app create" ]; then
               sed -i.bak 's/"dispatch"/"app": {"id": 1, "slug": "a-team-mentaldesk"}, "dispatch"/' "{{_teams.TeamsDirectory}}/$3.json"
               {{(installed ? "" : "echo \"a-team: a-team-mentaldesk isn't installed on mentaldesk/$3 yet\" >&2; exit 1")}}
             fi
-            """)), new TeamCommand(Fake("gh", """
-            if [ "$1 $2" = "project create" ]; then
-              echo '{"number": 9, "title": "fretty"}'
-            fi
-            if [ "$1 $2" = "project list" ]; then
-              echo '{"projects": [{"number": 7, "title": "fretty", "owner": {"login": "mentaldesk"}}]}'
-            fi
-            """)), Path.Combine(_root, "home"), () => dispatcher);
+            """)), new TeamCommand(Fake("gh", "")), Path.Combine(_root, "home"), () => dispatcher);
 
-    private void Team(string name, bool app, bool checkout = false, bool project = true, bool mirror = true)
+    private void Team(string name, bool app, bool checkout = false, bool project = false)
     {
         Directory.CreateDirectory(_teams.TeamsDirectory);
         File.WriteAllText(Path.Combine(_teams.TeamsDirectory, $"{name}.json"), $$$"""
-            {"repo": "mentaldesk/{{{name}}}", {{{(mirror ? "" : "\"mirror\": false,")}}} "project": {{{(project ? "{\"owner\": \"mentaldesk\", \"number\": 7}" : "{\"owner\": \"\", \"number\": null}")}}}, "vision": "docs/vision.md",
+            {"repo": "mentaldesk/{{{name}}}", {{{(project ? "\"project\": {\"owner\": \"mentaldesk\", \"number\": 7}," : "")}}} "vision": "docs/vision.md",
              "workdir": "~/code/{{{name}}}", "checkout": "~/code/{{{name}}}/main", {{{(app ? "\"app\": {\"id\": 1, \"slug\": \"a-team-mentaldesk\"}," : "")}}}
              "dispatch": {"enabled": false}}
             """);

@@ -535,8 +535,6 @@ internal static partial class Commands
         var cards = new JsonArray();
         foreach (var card in board.OpenCards())
             cards.Add((JsonNode?)OverviewOf(card, board.Team, last));
-        if (board.MirrorLag() is { } lag)
-            cards.Add((JsonNode?)new JsonObject { ["team"] = board.Team, ["mirror"] = lag });
         return SayPretty(cards);
     }
 

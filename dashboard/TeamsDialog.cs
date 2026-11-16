@@ -60,12 +60,9 @@ public sealed class TeamsDialog : DashboardDialog
 
         RepairTeam = team => App is { } app && _start is { } begun &&
             StepDialog.Show(app, begun.Repair(team, _teams.Settings(team))) == Answer.Done;
-        MakeMirror = team => App is { } app && _start is { } begun &&
-            StepDialog.Show(app, begun.NewMirror(_teams, team)) == Answer.Done &&
-            StepDialog.Show(app, begun.Repair(team, _teams.Settings(team))) == Answer.Done;
         EditTeam = (team, settings, save) =>
             App is { } app
-                ? TeamForm.Show(app, team, settings, save, ListProjects, _checks?.Latest(team),
+                ? TeamForm.Show(app, team, settings, save, _checks?.Latest(team),
                     () => Repaired(team), _icons, _start is { } begun ? begun.Repos : null)
                 : null;
         CreateTeam = (again, create) =>
@@ -77,10 +74,10 @@ public sealed class TeamsDialog : DashboardDialog
                 ? $"~{_teams.TeamsDirectory[home.Length..]}"
                 : _teams.TeamsDirectory;
             return again is null
-                ? TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Projects, _start.Me(),
+                ? TeamForm.ShowNew(app, _start.Defaults(), _teams.Names(), directory, create, _start.Me(),
                     repos: _start.Repos)
                 : TeamForm.ShowNew(app, _teams.Settings(again), [.. _teams.Names().Where(name => name != again)], directory, create,
-                    _start.Projects, Task.FromResult(""), again, _start.Repos);
+                    Task.FromResult(""), again, _start.Repos);
         };
         FollowTeam = team => App is { } app && _start is not null
             ? _start.Follow(_teams, team, step => StepDialog.Show(app, step), () => VisionFor = team)
@@ -153,9 +150,6 @@ public sealed class TeamsDialog : DashboardDialog
 
     /// <summary>Sets a team's board up again, once you've seen what that does, and says whether it did.</summary>
     internal Func<string, bool> RepairTeam { get; set; }
-
-    /// <summary>Makes the project a team's settings now ask for, and sets it up; true once both are done.</summary>
-    internal Func<string, bool> MakeMirror { get; set; }
 
     /// <summary>The new team whose vision you chose to write now, which closes the dialog for the interview.</summary>
     internal string? VisionFor { get; private set; }
@@ -254,8 +248,6 @@ public sealed class TeamsDialog : DashboardDialog
         }
         if (EditTeam(team.Name, before, after => SaveTeam(team.Name, before, after)) is not { } saved)
             return true;
-        if (saved.NewMirror && !before.NewMirror)
-            MakeMirror(team.Name);
         _rows[index] = _teams.Row(team.Name);
         Check(team.Name);
         ReadToday(team.Name);
@@ -290,7 +282,7 @@ public sealed class TeamsDialog : DashboardDialog
             {
                 _teams.Delete(was);
                 ReadTeams(was);
-                Say($"{was} is cancelled. Its clone, App and project are still there.", Schemes.Base);
+                Say($"{was} is cancelled. Its clone and App are still there.", Schemes.Base);
                 return true;
             }
             team = redone;
@@ -328,9 +320,6 @@ public sealed class TeamsDialog : DashboardDialog
             return $"Couldn't save {team}: {e.Message}";
         }
     }
-
-    private static Task<Reading> ListProjects(string owner) =>
-        new TeamCommand("gh").Read("project", "list", "--owner", owner, "--format", "json", "--limit", "100");
 
     private TeamRow? SelectedTeam() =>
         _list.Value is { } index && index >= 0 && index < _rows.Count ? _rows[index] : null;

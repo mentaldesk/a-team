@@ -8,12 +8,6 @@ public class TeamSettingsTests : IDisposable
         {
           "repo": "mentaldesk/a-team",
           "stakeholders": ["jamescrosswell"],
-          "project": {
-            "owner": "mentaldesk",
-            "number": 3,
-            "statusField": "Status",
-            "statusMap": {}
-          },
           "vision": "docs/vision.md",
           "skills": [
             "a-team"
@@ -58,7 +52,7 @@ public class TeamSettingsTests : IDisposable
 
         Assert.Equal(
             new TeamSettings(
-                "mentaldesk/a-team", "mentaldesk", 3, "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
+                "mentaldesk/a-team", "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
                 2, 1, 3, 4, 4, 2, "~/code/a-team/main", settings.Stakeholders, settings.Skills),
             settings);
         Assert.Equal(["jamescrosswell"], settings.Stakeholders);
@@ -400,9 +394,9 @@ public class TeamSettingsTests : IDisposable
         const string config = """{"repo": "o/r"}""";
         var before = TeamSettings.Read(Bytes(config));
 
-        var after = Text((before with { ProjectOwner = "o", ProjectNumber = 7, Try = "make \"run\"" }).Write(Bytes(config), before));
+        var after = Text((before with { Docs = "docs/guide.md", Try = "make \"run\"" }).Write(Bytes(config), before));
 
-        Assert.Equal("""{"try": "make \"run\"","project": {"number": 7,"owner": "o"},"repo": "o/r"}""", after);
+        Assert.Equal("""{"try": "make \"run\"","docs": "docs/guide.md","repo": "o/r"}""", after);
     }
 
     [Theory]
@@ -413,21 +407,6 @@ public class TeamSettingsTests : IDisposable
     public void A_missing_repo_or_one_not_shaped_owner_repo_is_refused(string repo, string? refusal) =>
         Assert.Equal(refusal, (Settings() with { Repo = repo }).RepoRefusal());
 
-    [Theory]
-    [InlineData("", 1, "Mirror needs an owner and a number", "Owner is required for a mirror", null)]
-    [InlineData("o", null, "Mirror needs an owner and a number", null, "Number is required for a mirror")]
-    [InlineData("o", 0, "Mirror's number must be above 0", null, "Number must be above 0")]
-    [InlineData("o", 1, null, null, null)]
-    public void Half_a_project_or_a_number_below_1_is_refused(
-        string owner, int? number, string? mirror, string? ownerRefusal, string? numberRefusal)
-    {
-        var settings = Settings() with { ProjectOwner = owner, ProjectNumber = number };
-
-        Assert.Equal(mirror, settings.MirrorRefusal());
-        Assert.Equal(ownerRefusal, settings.OwnerRefusal());
-        Assert.Equal(numberRefusal, settings.NumberRefusal());
-    }
-
     [Fact]
     public void A_missing_vision_or_workdir_is_refused()
     {
@@ -437,26 +416,19 @@ public class TeamSettingsTests : IDisposable
         Assert.Null(Settings().WorkdirRefusal());
     }
 
-    [Theory]
-    [InlineData(true, "", null, null)]
-    [InlineData(true, "o", null, "Mirror needs an owner and a number")]
-    [InlineData(true, "", 1, "Mirror needs an owner and a number")]
-    [InlineData(false, "o", null, null)]
-    public void A_team_may_leave_its_project_to_be_made_or_have_none_but_not_name_half_of_one(
-        bool mirror, string owner, int? number, string? refusal) =>
-        Assert.Equal(refusal, (Settings() with { Repo = "o/r", Mirror = mirror, ProjectOwner = owner, ProjectNumber = number }).MirrorRefusal());
-
     [Fact]
-    public void Mirror_None_is_written_as_mirror_false_and_read_back()
+    public void Saving_a_config_that_still_has_a_project_or_mirror_drops_both_and_keeps_the_rest()
     {
-        const string config = """{"repo": "o/r", "project": {"owner": "o", "number": 3}}""";
+        const string config = """
+            {"repo": "o/r", "project": {"owner": "o", "number": 3, "statusMap": {}}, "mirror": false, "vision": "v", "later": [1]}
+            """;
         var before = TeamSettings.Read(Bytes(config));
 
-        var after = (before with { Mirror = false }).Write(Bytes(config), before);
+        var after = Text(before.Write(Bytes(config), before));
 
-        Assert.True(before.Mirror);
-        Assert.False(TeamSettings.Read(after).Mirror);
-        Assert.Contains("\"mirror\": false", Text(after));
+        Assert.True(before.SaysMirror);
+        Assert.Equal("""{"repo": "o/r", "vision": "v", "later": [1]}""", after.Trim());
+        Assert.False(TeamSettings.Read(Bytes(after)).SaysMirror);
     }
 
     [Fact]
@@ -575,31 +547,8 @@ public class TeamSettingsTests : IDisposable
     public void Only_a_checkout_other_than_workdir_main_is_shown(string? checkout, string? shown) =>
         Assert.Equal(shown, (Settings() with { Workdir = "~/code/demo", Checkout = checkout }).OtherCheckout);
 
-    [Fact]
-    public void The_project_list_is_read_from_gh_project_list()
-    {
-        const string json = """
-            {"projects":[
-              {"number":3,"title":"a-team","owner":{"login":"mentaldesk","type":"Organization"}},
-              {"number":4,"title":"TuiCode","owner":{"login":"mentaldesk","type":"Organization"}}
-            ],"totalCount":2}
-            """;
-
-        Assert.Equal(
-            [new ProjectChoice("mentaldesk", 3, "a-team"), new ProjectChoice("mentaldesk", 4, "TuiCode")],
-            ProjectChoice.Parse(new Reading(json, null), "mentaldesk"));
-        Assert.Equal("TuiCode (mentaldesk #4)", new ProjectChoice("mentaldesk", 4, "TuiCode").ToString());
-    }
-
-    [Theory]
-    [InlineData("", "gh: missing scope read:project")]
-    [InlineData("not json", null)]
-    [InlineData("""{"totalCount": 0}""", null)]
-    public void A_project_list_that_cannot_be_read_is_null(string output, string? failure) =>
-        Assert.Null(ProjectChoice.Parse(new Reading(output, failure), "mentaldesk"));
-
     private static TeamSettings Settings() =>
-        new("o/r", "o", 1, "docs/vision.md", "~/code/demo", "", true, 3, 1, 3, 6, 6, 3, null, [], []);
+        new("o/r", "docs/vision.md", "~/code/demo", "", true, 3, 1, 3, 6, 6, 3, null, [], []);
 
     private void Skill(params string[] path)
     {

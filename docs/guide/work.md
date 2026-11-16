@@ -184,7 +184,6 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 | `1` to `9` | Go to the first team's tab, the second's, and so on |
 | `Enter` | Read the card, and on a card in Triage, rank it |
 | `g` | Open the card, or the PR row you're on, on GitHub |
-| `b` | Open the team's mirror, its Project board on GitHub, for everything that isn't waiting on you |
 | `p` | Read the card and set its Priority |
 | `Ctrl+T M` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `Ctrl+G N` | Go to the newest card that has become your move |
@@ -239,7 +238,7 @@ accept, decline, Not now, comment, Priority, recommendation, skip, review, link 
 and who (`you`, the role: `lead`, `dev`, `customer` or `reviewer`, or `board` for what a-team did by itself). What
 you or anyone else does on GitHub directly (a merge, a close, a comment)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. A closed issue or
-merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move.
+merged PR is Done.
 Reopening one brings it back at its last move, with a line saying so: a task whose PR had
 merged comes back Ready, to be built again. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight

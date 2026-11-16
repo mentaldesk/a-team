@@ -198,12 +198,11 @@ gh_items 14 <<'ITEMS'
 Ready 13 Something to start
 Ready 14 Something more pressing
 ITEMS
-claimable
 run board demo claim dev
 same "exit" 0 "$STATUS"
 same "claimed" '{"number":14,"title":"Something more pressing"}' "$(cat "$OUT")"
 same "claimed by the Dev" true "$(marks 14 | jq -c .dev)"
-grep -q 'item=PVTI_14 .*option=OPT_progress' "$WRITES" || fail "claim: no move in '$(cat "$WRITES")'"
+same "claim status" "In progress" "$(status_of 14)"
 
 case_ "a task with no Priority takes its pitch's, so next passes over an older task under a lower pitch"
 gh_items <<'ITEMS'
@@ -217,7 +216,6 @@ edit_item 10 '.issueFieldValues.nodes = [{name: "Low", field: {name: "Priority"}
 edit_item 11 '.issueFieldValues.nodes = [{name: "Urgent", field: {name: "Priority"}}]'
 edit_item 13 '.parent = {number: 10}'
 edit_item 14 '.parent = {number: 11}'
-claimable
 run board demo next
 same "next" 14 "$(jq .number "$OUT")"
 run board demo list
@@ -269,7 +267,6 @@ gh_items <<'ITEMS'
 In_progress 12 Taken by another run
 Ready 13 Something to start
 ITEMS
-claimable
 run board demo claim dev 12
 failed "already claimed"
 one_line "already claimed"
@@ -282,7 +279,6 @@ In_progress 12 Two
 In_progress 15 Three
 Ready 13 Something to start
 ITEMS
-claimable
 run board demo claim dev
 failed "no worktree"
 grep -q "no room In progress for #13" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
@@ -302,7 +298,6 @@ In_review 15 Three
 In_review 17 Four
 Ready 13 Something to start
 ITEMS
-claimable
 run board demo claim dev
 same "exit" 0 "$STATUS"
 same "claimed" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
@@ -315,7 +310,6 @@ In_progress 86 Make MenuLetters.Pick public
 Ready 13 Something to start
 ITEMS
 edit_item 86 '.__typename = "PullRequest" | .labels.nodes = []'
-claimable
 run board demo wip
 same "dev" '{"In progress":2,"blocked":0}' "$(jq -c .dev "$OUT")"
 run board demo next
@@ -328,7 +322,6 @@ case_ "claim --dry-run prints the claim instead of making it"
 gh_items <<'ITEMS'
 Ready 13 Something to start
 ITEMS
-claimable
 run board --dry-run demo claim dev
 same "exit" 0 "$STATUS"
 same "would claim" '{"number":13,"title":"Something to start"}' "$(cat "$OUT")"
@@ -497,7 +490,6 @@ In_progress 11 One
 In_progress 12 Two
 Ready 13 Something to start
 ITEMS
-claimable
 run board demo triggers dev
 same "ready" null "$(jq -c .ready "$OUT")"
 run board demo claim dev
@@ -514,7 +506,6 @@ In_progress 11 One
 In_progress 12 Two
 Ready 13 Something to start
 ITEMS
-claimable
 run board demo triggers dev
 same "ready" 13 "$(jq -c .ready "$OUT")"
 run board demo claim dev

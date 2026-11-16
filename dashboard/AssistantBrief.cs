@@ -27,7 +27,7 @@ internal static class AssistantBrief
         Look things up with the files above, `a-team status`, `gh`, and `a-team board <team> <command>`, whose commands process.md
         lists: `body <n>`, `conversation <n>` and `history <n>` for a card, `list`, `wip` and `waiting` for the board, `spending`
         and `trend` for the record. To change anything, act as the stakeholder through `a-team board <team> <command> you ...`,
-        never `gh project` or another way round the board script. When it refuses, that's the answer: say why. Every command you
+        never another way round the board script. When it refuses, that's the answer: say why. Every command you
         run is shown to the stakeholder first, to allow or deny.
 
         Keep answers short: they're read in a narrow pane.

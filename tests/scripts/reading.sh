@@ -1,30 +1,8 @@
 #!/usr/bin/env bash
-# Reading a card: status fields, body, conversation, priority.
+# Reading a card: body, conversation, priority.
 # shellcheck source=tests/scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
-
-case_ "a board whose Done is called something else has that left off instead"
-fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1, "statusMap": { "Done": "Shipped" } } }
-JSON
-gh_items <<'ITEMS'
-Shipped 99 Already merged
-ITEMS
-waiting
-same "exit" 0 "$STATUS"
-same "nothing waiting" '[]' "$(cat "$OUT")"
-
-case_ "a status field whose name isn't one word is read whole, since a filter GitHub can't match finds nothing"
-fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1, "statusField": "Work state" } }
-JSON
-gh_items <<'ITEMS'
-Done 99 Already merged
-ITEMS
-jq '.data.organization.projectV2.fields.nodes[0].name = "Work state"' "$META" >"$META.new" && mv "$META.new" "$META"
-waiting
-same "exit" 0 "$STATUS"
 
 case_ "body returns an issue's number, title and body, in one call"
 fixture <<'JSON'
@@ -137,7 +115,7 @@ one_line "unreadable conversation"
 grep -q "can't read the conversation on #6 (gh: HTTP 502)" "$ERR" || fail "unreadable conversation: '$(cat "$ERR")'"
 
 # Ranking: the one field the app writes, and the gate it is the reviewer's alone to clear.
-case_ "priority sets the field's own option on the issue, and nothing on the project"
+case_ "priority sets the record's Priority, and writes nothing on GitHub"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
@@ -150,21 +128,16 @@ TALK
 run board demo priority you 6 High
 same "exit" 0 "$STATUS"
 same "said" "#6: Priority set to 'High'" "$(cat "$OUT")"
-same "writes" 1 "$(grep -c '' <"$WRITES")"
-grep -q "issue=I_6 " "$WRITES" || fail "priority: not the issue's node id in '$(cat "$WRITES")'"
-grep -q "field=IF_priority " "$WRITES" || fail "priority: not the field's id in '$(cat "$WRITES")'"
-grep -q "option=OP_high " "$WRITES" || fail "priority: not the option's id in '$(cat "$WRITES")'"
-grep -q "updateIssueFieldValue" "$WRITES" || fail "priority: not the issue-field mutation"
-grep -q "singleSelectOptionId" "$WRITES" || fail "priority: no option in the mutation"
+same "writes" "" "$(cat "$WRITES")"
+same "project calls" 0 "$(grep -ciE 'projectv2|issueField' "$BIN/args")"
+same "recorded" High "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT priority FROM board WHERE team = 'demo' AND item = 6;")"
 
-case_ "none clears it rather than setting an option"
-: >"$WRITES"
+case_ "none clears it"
 KEEP_BOARD=1 run board demo priority you 6 none
 same "exit" 0 "$STATUS"
 same "said" "#6: Priority cleared" "$(cat "$OUT")"
-same "writes" 1 "$(grep -c '' <"$WRITES")"
-grep -q "delete: true" "$WRITES" || fail "priority none: nothing deleted in '$(cat "$WRITES")'"
-grep -q "singleSelectOptionId" "$WRITES" && fail "priority none: an option was set as well"
+same "writes" "" "$(cat "$WRITES")"
+same "cleared" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT priority FROM board WHERE team = 'demo' AND item = 6;")"
 
 case_ "a value the field hasn't got is refused by name, listing the ones it has"
 : >"$WRITES"

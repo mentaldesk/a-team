@@ -232,7 +232,6 @@ internal static partial class Commands
         if (value != "none" && !Cards.Ranks.Contains(value))
             throw new Die($"unknown {field} '{value}' ({string.Join(" | ", Cards.Ranks)} | none)");
         board.SetPriority(n, value);
-        board.MirrorPush(n);
         board.Log(role, n, value == "none" ? $"{field} cleared" : $"{field} set to {value}");
         board.Say(value == "none" ? $"#{n}: {field} cleared" : $"#{n}: {field} set to '{value}'");
         return 0;
@@ -318,7 +317,6 @@ internal static partial class Commands
             throw new Die($"recommend is only for Ideas (#{n} is in '{Cards.Status(it)}')");
         var name = char.ToUpperInvariant(level[0]) + level[1..];
         board.Mark(n, "rank", Json.Compact((JsonNode?)name));
-        board.MirrorPush(n);
         var body = $"Recommended: **{name}** · {said[0]}\n\n<!-- a-team:{role} -->";
         board.Show(body);
         Commented(board, n, body);
@@ -349,7 +347,6 @@ internal static partial class Commands
             board.Log(role, n, $"theme: {heading}");
             board.Say($"#{n}: theme: {heading}");
         }
-        board.MirrorPush(n);
         return 0;
     }
 

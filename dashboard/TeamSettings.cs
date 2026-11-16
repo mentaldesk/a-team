@@ -34,8 +34,6 @@ public sealed record VisionReview(VisionTrigger Trigger = VisionTrigger.Manually
 /// <summary>What the team form shows and changes. Every other key in the file is left as it is.</summary>
 public sealed partial record TeamSettings(
     string Repo,
-    string ProjectOwner,
-    int? ProjectNumber,
     string Vision,
     string Workdir,
     string Try,
@@ -52,6 +50,9 @@ public sealed partial record TeamSettings(
 {
     /// <summary>The file names its one stakeholder under the old <c>reviewer</c> key, which saving replaces.</summary>
     public bool SaysReviewer { get; init; }
+
+    /// <summary>The file still has the old <c>project</c> or <c>mirror</c> keys, which saving removes.</summary>
+    public bool SaysMirror { get; init; }
 
     /// <summary>The file has In progress's old name, <c>wip.worktrees</c>, and the form could read the limit, so saving replaces it.</summary>
     public bool SaysWorktrees { get; init; }
@@ -82,9 +83,6 @@ public sealed partial record TeamSettings(
 
     public VisionReview VisionReview { get; init; } = new();
 
-    /// <summary>Whether a-team copies the board to a GitHub Project: <c>mirror</c>, on unless it's <c>false</c>.</summary>
-    public bool Mirror { get; init; } = true;
-
     /// <summary>Other repos the Dev may open draft PRs on: <c>contributesTo</c>.</summary>
     public IReadOnlyList<string> ContributesTo { get; init; } = [];
 
@@ -96,8 +94,6 @@ public sealed partial record TeamSettings(
             throw new JsonException("it isn't a JSON object");
         return new TeamSettings(
             Text(root, "repo"),
-            Text(root, "project", "owner"),
-            Number(root, "project", "number"),
             Text(root, "vision"),
             Text(root, "workdir"),
             Text(root, "try"),
@@ -115,6 +111,7 @@ public sealed partial record TeamSettings(
             Names(root, "skills"))
         {
             SaysReviewer = Find(root, "stakeholders") is null && Text(root, "reviewer").Length > 0,
+            SaysMirror = Find(root, "project") is not null || Find(root, "mirror") is not null,
             SaysWorktrees = Find(root, "wip", "worktrees") is not null
                 && Number(root, "wip", Find(root, "wip", "inProgress") is null ? "worktrees" : "inProgress") is not null,
             Release = Text(root, "release") switch
@@ -130,7 +127,6 @@ public sealed partial record TeamSettings(
             Budget = Number(root, "dispatch", "budget") ?? 0,
             Innovation = Math.Clamp(Number(root, "innovation") ?? DefaultInnovation, 0, 100),
             ContributesTo = Names(root, "contributesTo"),
-            Mirror = Find(root, "mirror") is not { ValueKind: JsonValueKind.False },
             VisionReview = new VisionReview(
                 Text(root, "visionReview", "trigger") switch
                 {
@@ -155,8 +151,6 @@ public sealed partial record TeamSettings(
         Read(example) with
         {
             Repo = "",
-            ProjectOwner = "",
-            ProjectNumber = null,
             Workdir = "",
             Try = "",
             Working = false,
@@ -205,9 +199,11 @@ public sealed partial record TeamSettings(
             config = ConfigEdit.Set(config, ["stakeholders"], Stakeholders);
         if (!ContributesTo.SequenceEqual(before.ContributesTo))
             config = ConfigEdit.Set(config, ["contributesTo"], ContributesTo);
-        SetFlag(Mirror, before.Mirror, "mirror");
-        Set(ProjectOwner, before.ProjectOwner, "project", "owner");
-        SetNumber(ProjectNumber, before.ProjectNumber, "project", "number");
+        if (before.SaysMirror)
+        {
+            config = ConfigEdit.Remove(config, ["project"]);
+            config = ConfigEdit.Remove(config, ["mirror"]);
+        }
         Set(Vision, before.Vision, "vision");
         Set(Docs, before.Docs, "docs");
         Set(Workdir, before.Workdir, "workdir");
@@ -249,24 +245,9 @@ public sealed partial record TeamSettings(
         : !RepoShape().IsMatch(Repo.Trim()) ? $"Repo must be owner/repo, like mentaldesk/a-team, not {Repo.Trim()}"
         : null;
 
-    /// <summary>A team with no project has one made for it, so only half of one is refused.</summary>
-    public string? MirrorRefusal() =>
-        HalfAProject ? "Mirror needs an owner and a number"
-        : ProjectNumber <= 0 ? "Mirror's number must be above 0"
-        : null;
-
-    public string? OwnerRefusal() => HalfAProject && ProjectOwner.Trim().Length == 0 ? "Owner is required for a mirror" : null;
-
-    public string? NumberRefusal() =>
-        HalfAProject && ProjectNumber is null ? "Number is required for a mirror"
-        : ProjectNumber <= 0 ? "Number must be above 0"
-        : null;
-
     public string? VisionRefusal() => Vision.Trim().Length == 0 ? "Vision is required" : null;
 
     public string? WorkdirRefusal() => Workdir.Trim().Length == 0 ? "Workdir is required" : null;
-
-    private bool HalfAProject => Mirror && !NoProject && (ProjectOwner.Trim().Length == 0 || ProjectNumber is null);
 
     /// <summary>What's true of these that the team won't like, though it's still worth saving: a workdir that
     /// isn't there, a skill this machine hasn't got, or a vision the repo hasn't got yet.</summary>
@@ -299,11 +280,6 @@ public sealed partial record TeamSettings(
     /// <summary>A checkout other than <c>&lt;workdir&gt;/main</c>, which the form shows but doesn't change.</summary>
     public string? OtherCheckout =>
         Checkout is { } checkout && checkout.TrimEnd('/') != $"{Workdir.TrimEnd('/')}/main" ? checkout : null;
-
-    public bool NoProject => ProjectOwner.Trim().Length == 0 && ProjectNumber is null;
-
-    /// <summary>A mirror to make: on, with no project named yet.</summary>
-    public bool NewMirror => Mirror && NoProject;
 
     public string RepoOwner => Repo.Split('/')[0].Trim();
 

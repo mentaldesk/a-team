@@ -3,12 +3,6 @@
   "stakeholders": ["your-github-login"],
   "contributesTo": [],
   "app": null,
-  "project": {
-    "owner": "owner",
-    "number": 1,
-    "statusField": "Status",
-    "statusMap": {}
-  },
   "vision": "docs/vision.md",
   "docs": "docs/guide/index.md",
   "skills": [],
