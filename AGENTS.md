@@ -48,8 +48,9 @@ Two rules hold by construction. `PlacementTests` in both test projects check the
   a card shows on it instead), and `Cards.Lane` gives every status, none and unknown included, one of Overseer's lanes.
 - **Every turn names something that will act on it, or is the stakeholder's in a Work column.** A turn may name a
   role only while that role's triggers woke for the card (the `woken` table), a run of it is on it, or its runs fill
-  every slot (when the dispatcher doesn't ask its triggers), or while what's wrong clears itself (`Board.ClearsItself`); otherwise `Board.Settle` makes it the stakeholder's. Work's Blocked
-  takes any card of theirs no other column does.
+  every slot (when the dispatcher doesn't ask its triggers), or while what's wrong clears itself
+  (`Board.ClearsItself`); otherwise `Board.Settle` makes it the stakeholder's. Work's Blocked takes any card of theirs
+  no other column does.
 
 New state and new turns start from these: a new status needs a lane, and a new turn a trigger that covers it.
 
