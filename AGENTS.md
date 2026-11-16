@@ -41,7 +41,8 @@ nothing to restart.
 
 ## Nothing falls through the cracks
 
-Two rules hold by construction, and `PlacementTests` in both test projects check them over generated boards:
+Two rules hold by construction. `PlacementTests` in both test projects check them over generated boards, and
+`tests/scripts/waiting.sh` runs each role's real triggers and then `waiting`, so a turn no trigger covers fails CI:
 
 - **Every open item is on the board, in a lane.** Every open issue and PR in a team's repo arrives (a PR that closes
   a card shows on it instead), and `Cards.Lane` gives every status, none and unknown included, one of Overseer's lanes.
