@@ -278,7 +278,7 @@ case " \$* " in
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
   *"api rate_limit"*) page="$BIN/rate.json"; jq -n --argjson left "\$(cat "$BIN/remaining" 2>/dev/null || echo null)" \
                          '{resources: {graphql: {reset: $QUOTA_RESET, remaining: \$left}, core: {reset: $((QUOTA_RESET - 1800)), remaining: \$left}}}' >"\$page" ;;
-  *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
+  *"pr list"*"app/dependabot"*) [ ! -e "$BIN/bumps-fail" ] || { echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; }; page="$UPDATES" ;;
   *"pr view"*) page="$BUMP_VIEW" ;;
   *"pr list"*"app/demo-app"*) echo "\$*" >>"$UPSTREAM_CALLS"; page="$UPSTREAM" ;;
   *BoardRefresh*) jq --argjson ids "\$(printf '%s' "\$*" | sed -n 's/.*nodes(ids: \(\[[^]]*\]\)).*/\1/p')" \

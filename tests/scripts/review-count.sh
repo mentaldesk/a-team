@@ -916,6 +916,12 @@ talk_table() {
   sqlite3 "$A_TEAM_STATE/history.db" "SELECT 'read ' || comment FROM comments_read WHERE team = 'demo'
     UNION ALL SELECT 'said ' || comment || ' ' || role FROM comments_said WHERE team = 'demo' ORDER BY 1;"
 }
+touch "$BIN/bumps-fail"
+KEEP_BOARD=1 run board demo format
+failed "format, with the Dependabot PRs unread"
+grep -q "can't read the open Dependabot PRs" "$ERR" || fail "stderr: '$(cat "$ERR")'"
+same "not stamped" 3 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+rm "$BIN/bumps-fail"
 KEEP_BOARD=1 run board demo format
 same "exit" 0 "$STATUS"
 same "stamped" 4 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT format FROM formats WHERE team = 'demo';")"

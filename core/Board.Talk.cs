@@ -97,7 +97,7 @@ internal sealed partial class Board
         var (talk, _, err) = GatedTalk(open.Select(n => long.Parse(n, CultureInfo.InvariantCulture)), aloud: false);
         if (talk is null) throw new Die($"can't read the board's conversations to move who read and said what into the record ({FirstLine(err)}): try again");
         var prs = GatedPrs(talk, null, new HashSet<long>()).Select(pr => pr["pr"]!.ToJsonString());
-        var bumps = OpenBumps().Select(pr => pr!["number"]!.ToJsonString());
+        var bumps = (ReadBumps() ?? throw new Die("can't read the open Dependabot PRs to move who read and said what into the record: try again")).Select(pr => pr!["number"]!.ToJsonString());
         foreach (var n in open.Concat(prs).Concat(bumps).Distinct())
             CopyTalk(n, Comments(n, eyes: true) ?? throw new Die($"can't read #{n}'s comments to move who read and said what into the record: try again"));
     }
