@@ -588,20 +588,9 @@ internal sealed partial class Board
         return null;
     }
 
-    /// <summary>How many points a review's "Worth considering" section makes, one per top-level list item.</summary>
-    internal static int Considered(string review)
-    {
-        var lines = review.Replace("\r", "").Split('\n');
-        var at = Array.FindIndex(lines, line => Regex.IsMatch(line, @"^#{1,6}[ \t]+Worth considering[ \t]*$", RegexOptions.IgnoreCase));
-        if (at < 0) return 0;
-        var points = 0;
-        foreach (var line in lines.Skip(at + 1))
-        {
-            if (Regex.IsMatch(line, @"^#{1,6}[ \t]|<!-- a-team:")) break;
-            if (Regex.IsMatch(line, @"^(?:[-*+]|[0-9]+[.)])[ \t]+")) points++;
-        }
-        return points;
-    }
+    /// <summary>How many of a review's "Worth considering" points the Dev hasn't ticked as fixed.</summary>
+    internal static int Considered(string review) =>
+        ReviewPoints.Read(review).Count(point => point.Section == "worth considering" && !point.Ticked);
 
     /// <summary>When the role last spoke on this thread. Before AckFrom a marker anywhere counted, and that history keeps reading as it did.</summary>
     private string RoleSpoke(string marker, List<JsonObject> comments) =>

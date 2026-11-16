@@ -84,16 +84,28 @@ public class ReaderReviewTests
     }
 
     [Theory]
-    [InlineData(2, "Review · 2", "reviewed · 2 to consider")]
-    [InlineData(1, "Review · 1", "reviewed · 1 to consider")]
-    [InlineData(0, "Review", "reviewed")]
-    public void The_tab_counts_the_points_to_consider_as_the_card_does(int consider, string title, string card)
+    [InlineData("- Rename it.\n- Split it.", "Review · 2")]
+    [InlineData("- [x] Rename it.\n- [ ] Split it.", "Review · 1")]
+    [InlineData("- [x] Rename it.\n- [X] Split it.", "Review")]
+    public void The_tab_counts_the_points_the_Dev_has_not_ticked(string points, string title)
     {
-        var item = Task with { Consider = consider };
-        using var dialog = Open(item, Reviewed());
+        using var dialog = Open(Task, Body(new Remark("reviewer", At, $"## Worth considering\n\n{points}", 830)));
 
         Assert.Equal(title, dialog.ReviewTabTitle);
-        Assert.Equal(card, item.Review);
+    }
+
+    [Fact]
+    public void Each_point_shows_a_box_ticked_once_the_Dev_has_fixed_it()
+    {
+        const string review = "## Needs changing\n- [x] a.sh:1 off by one.\n\n## Worth considering\n- [ ] Rename it.\n- Split it.\n\n## Notes\n- Not a point.";
+        using var dialog = Open(Task, Body(new Remark("reviewer", At, review, 830)));
+
+        var lines = Text(dialog.ReviewLog).Split('\n');
+        Assert.Contains("[x] a.sh:1 off by one.", lines);
+        Assert.Contains("[ ] Rename it.", lines);
+        Assert.Contains("[ ] Split it.", lines);
+        Assert.Contains("- Not a point.", lines);
+        Assert.Equal("Review · 2", dialog.ReviewTabTitle);
     }
 
     [Fact]

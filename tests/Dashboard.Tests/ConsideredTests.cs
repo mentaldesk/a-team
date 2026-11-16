@@ -20,6 +20,10 @@ public class ConsideredTests
     }
 
     [Fact]
+    public void A_ticked_point_is_fixed_and_isn_t_asked_for_again() =>
+        Assert.Equal(["Split it."], Considered.Points("## Worth considering\n- [x] Rename it.\n  Its second line.\n- [ ] Split it."));
+
+    [Fact]
     public void No_section_no_points() => Assert.Empty(Considered.Points("Nothing needs changing."));
 
     [Fact]

@@ -613,3 +613,45 @@ internal static class Trends
         };
     }
 }
+
+/// <summary>The points of a Reviewer's review: each top-level list item under Needs changing or Worth considering,
+/// numbered from 1 down the review, with a box the Dev ticks once it's fixed.</summary>
+internal static partial class ReviewPoints
+{
+    internal sealed record Point(int Line, string Section, bool Ticked, string Text);
+
+    internal static List<Point> Read(string review)
+    {
+        var points = new List<Point>();
+        var section = "";
+        var lines = review.Replace("\r", "").Split('\n');
+        for (var at = 0; at < lines.Length; at++)
+        {
+            var line = lines[at];
+            if (Heading().Match(line) is { Success: true } heading)
+                section = heading.Groups["name"].Success ? heading.Groups["name"].Value.ToLowerInvariant() : "";
+            else if (line.Contains("<!-- a-team:", StringComparison.Ordinal))
+                section = "";
+            else if (section.Length > 0 && Item().Match(line) is { Success: true } item)
+                points.Add(new Point(at, section, item.Groups["box"].Success && item.Groups["box"].Value != " ", item.Groups["text"].Value));
+        }
+        return points;
+    }
+
+    /// <summary>The review with each of those points' boxes set to <paramref name="mark"/>, adding a box where it had none.</summary>
+    internal static string Boxed(string review, IEnumerable<int> lines, string mark)
+    {
+        var those = lines.ToHashSet();
+        return string.Join("\n", review.Replace("\r", "").Split('\n').Select((line, at) =>
+            those.Contains(at) ? Item().Replace(line, found => $"{found.Groups["lead"].Value}[{mark}] {found.Groups["text"].Value}", 1) : line));
+    }
+
+    /// <summary>A review as it's posted: every point unticked.</summary>
+    internal static string Unticked(string review) => Boxed(review, Read(review).Select(point => point.Line), " ");
+
+    [GeneratedRegex(@"^#{1,6}[ \t]+(?:(?<name>Needs changing|Worth considering)[ \t]*$)?", RegexOptions.IgnoreCase)]
+    private static partial Regex Heading();
+
+    [GeneratedRegex(@"^(?<lead>(?:[-*+]|[0-9]+[.)])[ \t]+)(?:\[(?<box>[ xX])\][ \t]*)?(?<text>.*)$")]
+    private static partial Regex Item();
+}

@@ -57,7 +57,7 @@ internal sealed partial class Board
             query=
                 query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
                   pullRequest(number: $n) { state isDraft body labels(first: 20) { nodes { name } }
-                    comments(last: 100) { nodes { body author { __typename login } } } } } }
+                    comments(last: 100) { nodes { databaseId body author { __typename login } } } } } }
             """);
         var customer = Seek(pr)?["marks"]?["customer"];
         if (Json.TryParse(read.Out)?["data"]?["repository"]?["pullRequest"] is not JsonObject found) return null;
@@ -81,6 +81,13 @@ internal sealed partial class Board
     {
         var bot = Bot;
         return pr["comments"]?["nodes"]?.AsArray().Any(comment => Said(comment, bot, "reviewer")) == true;
+    }
+
+    /// <summary>The Reviewer's review on this PR, or null where it has none.</summary>
+    internal JsonNode? Review(JsonNode pr)
+    {
+        var bot = Bot;
+        return pr["comments"]?["nodes"]?.AsArray().LastOrDefault(comment => Said(comment, bot, "reviewer"));
     }
 
     internal const string Unreviewed = "This left draft before the Reviewer read it, so it's reached you unreviewed.";

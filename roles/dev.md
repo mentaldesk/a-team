@@ -64,7 +64,9 @@ Find it with `a-team board {{team}} pr <n>`, then:
   fix each one with a test that fails without the fix and push, or say why not. A point that means
   changing code the PR doesn't otherwise touch, say so and leave it. Answer them all in one
   `a-team board {{team}} comment dev <pr>`. Leave **Worth considering** to the stakeholder unless
-  they ask for it, which may be one comment quoting several points: fix them all in one run. Do this
+  they ask for it, which may be one comment quoting several points: fix them all in one run. Once
+  the fixes are pushed, tick each point you fixed with `a-team board {{team}} fixed dev <pr> <point> ...`,
+  numbering the points from 1 down the review, never one you declined. Do this
   once: the PR isn't reviewed again, and once you've answered, `pr` reports `"review": "answered"`.
   On a PR already out of draft, do the same and end the run: the dispatcher moves the task to In review
   once the review is answered and CI is green.

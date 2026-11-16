@@ -234,6 +234,7 @@ case " \$* " in
   *"issue comment"*) cat >"$POSTED"; exit 0 ;;
   *"-X POST"*"/issues/"*"/comments"*) cat >"$POSTED"; echo IC_posted; exit 0 ;;
   *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
+  *"-X PATCH"*"/issues/comments/"*) echo "PATCH \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
   *"pr edit"*) echo "PR EDIT \$*" >>"$WRITES"; cat >"$BIN/pr-body"; exit 0 ;;
   *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
                     echo "CREATE \$*" >>"$WRITES"; cat >"$POSTED"; echo "https://github.com/mentaldesk/demo/issues/77"; exit 0 ;;

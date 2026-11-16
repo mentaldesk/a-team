@@ -330,10 +330,10 @@ public sealed partial class ReaderDialog : DashboardDialog
             ReadsMarkdown = true,
             SelectsText = true,
             SchemeName = LogSchemes.Reader,
-            Lines = review is null ? [] : Markdown.Lines($"{review.Heading()}\n\n{review.Body}"),
+            Lines = review is null ? [] : Markdown.Lines($"{review.Heading()}\n\n{Considered.Boxed(review.Body)}"),
         };
         _historyTab = new View { Title = "History", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
-        _reviewTab = new View { Title = ReviewTitle(item.Consider), CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
+        _reviewTab = new View { Title = ReviewTitle(review is null ? 0 : Considered.Open(review.Body)), CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
         if (review is null)
         {
             _historyFrame.Add(_history);
@@ -578,8 +578,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     [GeneratedRegex(@"^##\s+Needs your answer\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex NeedsAnswer();
 
-    /// <summary>Counts the points left to consider as the card does, and says nothing where there are none.</summary>
-    internal static string ReviewTitle(int consider) => consider == 0 ? "Review" : $"Review · {consider}";
+    /// <summary>Counts the review's points the Dev hasn't ticked as fixed, and says nothing where there are none.</summary>
+    internal static string ReviewTitle(int open) => open == 0 ? "Review" : $"Review · {open}";
 
     /// <summary>The lines quoted as a reply quotes them, on lines of their own with a blank line after.</summary>
     internal static string Quote(IEnumerable<string> lines, bool midLine) =>

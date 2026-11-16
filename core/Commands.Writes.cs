@@ -18,6 +18,7 @@ internal static partial class Commands
         ["priority"] = Priority,
         ["comment"] = Comment,
         ["review"] = Review,
+        ["fixed"] = Fixed,
         ["skip"] = Skip,
         ["recommend"] = Recommend,
         ["theme"] = Theme,
@@ -272,11 +273,38 @@ internal static partial class Commands
         if (board.Reviewed(it)) throw new Die($"#{pr} has its review already: a PR is reviewed once");
         if (!Json.Truthy(it["isDraft"])) throw new Die($"#{pr} is ready for review already: it went to the stakeholders unreviewed");
         if (board.HeadVerdict(pr) != "pass") throw new Die($"#{pr} isn't green: it's reviewed once CI passes");
-        var body = WithMarker(file, role);
+        var body = ReviewPoints.Unticked(WithMarker(file, role));
         board.Show(body);
         Console.Out.Write(Board.Must(board.Post($"comment on #{pr}", body + "\n", "pr", "comment", pr, "-R", board.Repo, "--body-file", "-")).Out);
         board.Log(role, RunTaskOr(pr), $"reviewed PR #{pr}");
         board.Say($"#{pr}: reviewed");
+        return 0;
+    }
+
+    internal static int Fixed(Board board, string[] args)
+    {
+        if (args.Length < 3)
+            throw new Die($"usage: board.sh {board.Team} fixed dev <pr> <point> ...");
+        var (role, pr) = (args[0], args[1]);
+        Alone("dev", role, $"{role} may not tick a review's points; only dev does, on its own task PR");
+        var it = OwnTaskPr(board, role, pr, $"dev ticks review points only on its own open task PRs (#{pr} isn't one)");
+        var review = board.Review(it) ?? throw new Die($"#{pr} has no review to tick");
+        var said = (Json.Text(review["body"]) ?? "").TrimEnd('\n');
+        var points = ReviewPoints.Read(said);
+        var lines = new List<int>();
+        foreach (var each in args[2..])
+        {
+            if (!int.TryParse(each, NumberStyles.None, CultureInfo.InvariantCulture, out var at) || at < 1 || at > points.Count)
+                throw new Die($"'{each}' isn't a point of #{pr}'s review: it has {points.Count}, numbered from 1 down the review");
+            lines.Add(points[at - 1].Line);
+        }
+        var ticked = ReviewPoints.Boxed(said, lines, "x");
+        board.Show(ticked);
+        Board.Must(board.Post($"tick {lines.Count} point(s) of #{pr}'s review", ticked + "\n",
+            "api", "-X", "PATCH", $"repos/{board.Repo}/issues/comments/{Json.Long(review["databaseId"])}", "-F", "body=@-", "--silent"));
+        var left = ReviewPoints.Read(ticked).Count(point => !point.Ticked);
+        board.Log(role, RunTaskOr(pr), $"ticked {lines.Count} review point(s), {left} left");
+        board.Say($"#{pr}: {points.Count - left} of {points.Count} review points fixed");
         return 0;
     }
 
