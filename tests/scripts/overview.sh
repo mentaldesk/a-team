@@ -5,7 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
 app_fakes
 
-case_ "overview returns every card but Done, with when its Status was set, in one call"
+case_ "overview returns every card but Done, with when its Status was set, calling GitHub for none of it, and no mirror entry"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
@@ -32,10 +32,12 @@ same "parent" '404' "$(jq -c '.[1].parent' "$OUT")"
 same "blocked" '[false,true,false,true]' "$(jq -c '[.[].blocked]' "$OUT")"
 same "priority" '"High"' "$(jq -c '.[0].priority' "$OUT")"
 same "status" '"In review"' "$(jq -c '.[2].status' "$OUT")"
-same "api calls" 1 "$(grep -c '' <"$CALLS")"
+same "api calls" 0 "$(cat "$CALLS" 2>/dev/null | grep -c '')"
+same "mirror entries" 0 "$(jq '[.[] | select(has("mirror"))] | length' "$OUT")"
 
 case_ "overview: each card's last run, from the run record, whichever role it was"
 rm -f "$A_TEAM_STATE/history.db"
+sqlite3 "$A_TEAM_STATE/history.db" "$(new_stamp)"
 history_db "INSERT INTO runs (id, team, role, pid, log, started) VALUES
     (1, 'demo', 'lead', 1, 'old.jsonl', '2026-10-01T08:00:00Z'), (2, 'demo', 'lead', 2, 'new.jsonl', '2026-10-02T08:00:00Z'),
     (3, 'demo', 'dev', 3, 'dev.jsonl', '2026-10-01T09:00:00Z'), (4, 'other', 'lead', 4, 'other.jsonl', '2026-10-03T08:00:00Z');
@@ -78,7 +80,7 @@ same "none" '[]' "$(jq -c . "$OUT")"
 unrecorded "moves"
 
 case_ "moves: the team's events from a time on, oldest first, and nothing before it"
-sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, team TEXT NOT NULL, item INTEGER NOT NULL,
     at TEXT NOT NULL, who TEXT NOT NULL, what TEXT NOT NULL);
   INSERT INTO events (team, item, at, who, what) VALUES
     ('demo', 7, '2026-10-11T08:59:59Z', 'lead', 'Exploring → Pitched'),

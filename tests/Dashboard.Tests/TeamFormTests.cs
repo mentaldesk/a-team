@@ -10,7 +10,7 @@ namespace ATeam.Dashboard.Tests;
 public class TeamFormTests
 {
     private static readonly TeamSettings Settings =
-        new("mentaldesk/a-team", "mentaldesk", 3, "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
+        new("mentaldesk/a-team", "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
             2, 1, 3, 4, 4, 2, "~/code/a-team/main", ["jamescrosswell"], ["a-team"]);
 
     [Fact]
@@ -20,7 +20,6 @@ public class TeamFormTests
 
         Assert.Equal("Team: a-team", form.Title);
         Assert.Equal("mentaldesk/a-team", form.Repo.Text);
-        Assert.Equal("mentaldesk #3", form.Project.Text);
         Assert.Equal("docs/vision.md", form.Vision.Text);
         Assert.Equal("~/code/a-team", form.Workdir.Text);
         Assert.Equal("./bin/a-team dashboard", form.Try.Text);
@@ -102,45 +101,6 @@ public class TeamFormTests
         Assert.DoesNotContain(Fields(usual), field => field.Text == "~/code/a-team/main");
         var checkout = Assert.Single(Fields(other), field => field.Text == "~/src/a-team");
         Assert.True(checkout.ReadOnly);
-    }
-
-    [Fact]
-    public void The_project_list_shows_the_owner_s_projects_on_the_team_s_own()
-    {
-        using var form = new TeamForm("a-team", Settings, _ => null);
-
-        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode"), new ProjectChoice("mentaldesk", 3, "a-team")]);
-
-        Assert.Equal("a-team (mentaldesk #3)", form.Project.Text);
-        Assert.Equal([TeamForm.NoMirror, TeamForm.NewProject, "TuiCode (mentaldesk #4)", "a-team (mentaldesk #3)"], Choices(form));
-        form.Project.Text = "TuiCode (mentaldesk #4)";
-        Assert.Equal(("mentaldesk", 4), (form.Current().ProjectOwner, form.Current().ProjectNumber));
-    }
-
-    [Fact]
-    public void A_project_the_list_has_not_got_stays_at_the_top()
-    {
-        using var form = new TeamForm("a-team", Settings with { ProjectOwner = "someone" }, _ => null);
-
-        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
-
-        Assert.Equal([TeamForm.NoMirror, TeamForm.NewProject, "someone #3", "TuiCode (mentaldesk #4)"], Choices(form));
-        Assert.Equal("someone #3", form.Project.Text);
-    }
-
-    [Fact]
-    public void A_project_list_that_cannot_be_read_becomes_owner_and_number_fields()
-    {
-        using var form = new TeamForm("a-team", Settings, _ => null);
-
-        form.ShowProjects(null);
-
-        Assert.False(form.Project.Visible);
-        Assert.True(form.Owner.Visible);
-        Assert.Equal("mentaldesk", form.Owner.Text);
-        Assert.Equal("3", form.Number.Text);
-        form.Number.Text = "5";
-        Assert.Equal(5, form.Current().ProjectNumber);
     }
 
     [Fact]
@@ -245,7 +205,7 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void Enter_in_the_open_project_list_picks_rather_than_saves()
+    public void Enter_in_an_open_picker_picks_rather_than_saves()
     {
         var saved = false;
         using var form = new TeamForm("a-team", Settings, _ =>
@@ -311,14 +271,14 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void Stakeholders_sit_between_Repo_and_Mirror_and_Skills_between_Workdir_and_Try()
+    public void Stakeholders_sit_between_Repo_and_Vision_and_Skills_between_Workdir_and_Try()
     {
         using var form = new TeamForm("a-team", Settings with { Skills = [] }, _ => null);
 
         Assert.Equal("jamescrosswell", form.StakeholdersRow.Text);
         Assert.Equal("none", form.SkillsRow.Text);
         Assert.Equal(
-            ["Repo", "Stakeholders", "Contributes to", "Mirror", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Mockups", "Limits"],
+            ["Repo", "Stakeholders", "Contributes to", "Vision", "Workdir", "Skills", "Try", "Status", "Releases", "Vision", "reviews", "Roles", "Mockups", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -679,7 +639,7 @@ public class TeamFormTests
     }
 
     private static readonly TeamSettings Blank =
-        new("", "", null, "docs/vision.md", "", "", false, 3, 2, 3, 6, 6, 3, null, ["jamescrosswell"], []);
+        new("", "docs/vision.md", "", "", false, 3, 2, 3, 6, 6, 3, null, ["jamescrosswell"], []);
 
     [Fact]
     public void A_new_team_s_form_starts_on_Name_with_no_Status_and_offers_Enter_create()
@@ -692,7 +652,7 @@ public class TeamFormTests
         Assert.Null(form.Status);
         Assert.Equal(["Ctrl+Enter Create", "Esc Cancel"], Buttons(form));
         Assert.Equal(
-            ["Name", "Repo", "Stakeholders", "Contributes to", "Mirror", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Mockups", "Limits"],
+            ["Name", "Repo", "Stakeholders", "Contributes to", "Vision", "Workdir", "Skills", "Try", "Releases", "Vision", "reviews", "Roles", "Mockups", "Limits"],
             form.SubViews.OfType<Label>().Where(label => label.Visible && label.X.ToString() == Pos.Absolute(1).ToString())
                 .OrderBy(label => label.Frame.Y).Select(label => label.Text));
     }
@@ -827,57 +787,6 @@ public class TeamFormTests
     }
 
     [Fact]
-    public void With_the_projects_unread_half_a_project_marks_Owner_or_Number_where_the_keyboard_can_reach_it()
-    {
-        using var form = new TeamForm("a-team", Settings, _ => null);
-        form.SetFocus();
-        form.ShowProjects(null);
-        form.Owner.Text = "";
-
-        form.Save();
-
-        Assert.True(form.Owner.HasFocus);
-        Assert.Equal("Owner is required for a mirror", form.Alert.Message);
-        form.Owner.Text = "mentaldesk";
-        form.Number.Text = "0";
-
-        form.Save();
-
-        Assert.True(form.Number.HasFocus);
-        Assert.Equal("Number must be above 0", form.Alert.Message);
-    }
-
-    [Fact]
-    public void A_project_that_can_t_be_used_marks_Mirror_while_the_list_is_showing()
-    {
-        using var form = new TeamForm("a-team", Settings with { ProjectNumber = 0 }, _ => null);
-        form.SetFocus();
-
-        form.Save();
-
-        Assert.True(form.Project.HasFocus);
-        Assert.Equal(SchemeNames.Error, LabelNamed(form, "Mirror").SchemeName);
-        Assert.Equal("Mirror's number must be above 0", form.Alert.Message);
-    }
-
-    [Theory]
-    [InlineData("TuiCode (mentaldesk #4)")]
-    [InlineData(TeamForm.NewProject)]
-    public void Picking_a_project_that_can_be_used_clears_the_mark_on_Mirror(string choice)
-    {
-        using var form = new TeamForm("a-team", Settings with { ProjectNumber = 0 }, _ => null);
-        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
-        form.SetFocus();
-        form.Save();
-        Assert.Equal(SchemeNames.Error, LabelNamed(form, "Mirror").SchemeName);
-
-        form.Project.Text = choice;
-
-        Assert.NotEqual(SchemeNames.Error, LabelNamed(form, "Mirror").SchemeName);
-        Assert.Equal("", form.Alert.Message);
-    }
-
-    [Fact]
     public void Enter_creates_the_team_under_its_name()
     {
         string? named = null;
@@ -888,90 +797,12 @@ public class TeamFormTests
         });
         form.NameField!.Text = "fretty";
         form.Repo.Text = "mentaldesk/fretty";
-        form.ShowProjects(null);
-        form.Owner.Text = "mentaldesk";
-        form.Number.Text = "7";
 
         form.Save();
 
         Assert.Equal("fretty", named);
         Assert.Equal("fretty", form.SavedName);
         Assert.Equal(("mentaldesk/fretty", "~/code/fretty", false), (form.Saved?.Repo, form.Saved?.Workdir, form.Saved?.Working));
-    }
-
-    [Fact]
-    public void A_new_team_can_leave_its_project_to_be_created_for_it()
-    {
-        TeamSettings? created = null;
-        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (_, settings) =>
-        {
-            created = settings;
-            return null;
-        });
-        form.NameField!.Text = "fretty";
-        form.Repo.Text = "mentaldesk/fretty";
-        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
-
-        Assert.Equal([TeamForm.NoMirror, TeamForm.NewProject, "TuiCode (mentaldesk #4)"], Choices(form));
-        Assert.Equal(TeamForm.NewProject, form.Project.Text);
-        form.Project.Text = "TuiCode (mentaldesk #4)";
-        form.Project.Text = TeamForm.NewProject;
-        form.Save();
-
-        Assert.Equal(("", (int?)null, true), (created?.ProjectOwner, created?.ProjectNumber, created?.Mirror));
-    }
-
-    [Fact]
-    public void Mirror_None_saves_a_team_with_no_project_at_all()
-    {
-        TeamSettings? created = null;
-        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (_, settings) =>
-        {
-            created = settings;
-            return null;
-        });
-        form.NameField!.Text = "fretty";
-        form.Repo.Text = "mentaldesk/fretty";
-        form.ShowProjects([new ProjectChoice("mentaldesk", 4, "TuiCode")]);
-
-        form.Project.Text = TeamForm.NoMirror;
-        form.Save();
-
-        Assert.Equal(("", (int?)null, false), (created?.ProjectOwner, created?.ProjectNumber, created?.Mirror));
-    }
-
-    [Fact]
-    public void An_existing_team_s_Mirror_shows_the_project_it_uses_or_None_and_can_be_moved_to_a_new_one()
-    {
-        using var form = new TeamForm("a-team", Settings, _ => null);
-        form.ShowProjects([new ProjectChoice("mentaldesk", 3, "a-team")]);
-
-        Assert.Equal("a-team (mentaldesk #3)", form.Project.Text);
-        form.Project.Text = TeamForm.NewProject;
-        Assert.Equal(("", (int?)null, true), (form.Current().ProjectOwner, form.Current().ProjectNumber, form.Current().Mirror));
-
-        using var none = new TeamForm("a-team", Settings with { Mirror = false }, _ => null);
-        none.ShowProjects([new ProjectChoice("mentaldesk", 3, "a-team")]);
-
-        Assert.Equal(TeamForm.NoMirror, none.Project.Text);
-        Assert.False(none.Current().Mirror);
-    }
-
-    [Fact]
-    public void The_project_list_is_read_again_each_time_it_takes_focus()
-    {
-        var reads = 0;
-        using var form = TeamForm.New(Blank, [], "~/.config/a-team/teams", (_, _) => null);
-        form.Repo.Text = "mentaldesk/fretty";
-        form.LoadProjects(_ =>
-        {
-            reads++;
-            return Task.FromResult(new Reading("{\"projects\": []}", null));
-        });
-
-        form.Project.SetFocus();
-
-        Assert.Equal(2, reads);
     }
 
     [Fact]
@@ -1051,13 +882,13 @@ public class TeamFormTests
 
         form.Watch(Task.FromResult(new TeamHealth(
         [
-            new TeamProblem("project", "no single-select field 'Status' on aaif-goose project 2"),
+            new TeamProblem("release", "release is continuous, but mentaldesk/goose has no release.yml workflow for it to run"),
             new TeamProblem("labels", "no 'pitch' label, so the team can't tell its pitches from tasks"),
         ])));
 
         Assert.True(form.Problems.Visible);
         Assert.Equal(
-            ["project   no single-select field 'Status' on aaif-goose project 2", "labels    no 'pitch' label, so the team can't tell its pitches from tasks"],
+            ["release   release is continuous, but mentaldesk/goose has no release.yml workflow for it to run", "labels    no 'pitch' label, so the team can't tell its pitches from tasks"],
             ProblemRows(form));
         Assert.Equal(["F12 Repair", "Ctrl+Enter Save", "Esc Cancel"], Buttons(form));
     }
@@ -1162,7 +993,4 @@ public class TeamFormTests
 
     private static IReadOnlyList<TextField> Fields(TeamForm form) =>
         [.. form.SubViews.OfType<TextField>().Where(field => field is not DropDownList)];
-
-    private static IReadOnlyList<string> Choices(TeamForm form) =>
-        [.. Enumerable.Range(0, form.Project.Source?.Count ?? 0).Select(i => form.Project.Source!.ToList()[i]?.ToString() ?? "")];
 }

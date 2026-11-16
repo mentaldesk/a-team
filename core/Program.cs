@@ -83,7 +83,7 @@ internal static class Program
         {
             var text = File.ReadAllText(file);
             return !string.IsNullOrWhiteSpace(text) && Json.Parse(text) is JsonObject config
-                && config["project"] is null or JsonObject && config["app"] is null or JsonObject ? config : null;
+                && config["app"] is null or JsonObject ? config : null;
         }
         catch (Exception problem) when (problem is System.Text.Json.JsonException or ArgumentException)
         {

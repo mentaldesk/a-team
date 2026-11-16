@@ -399,12 +399,9 @@ internal static partial class Commands
 
     private static void WakeOnUpdates(Wake wake)
     {
-        var slug = wake.Board.Text("app", "slug");
         foreach (var update in wake.Board.DependabotUpdates().OfType<JsonNode>())
         {
-            var answered = (update["comments"] as JsonArray ?? []).Any(comment => Json.Text(comment?["author"]?["login"]) == slug
-                && (Json.Text(comment?["body"]) ?? "").Contains("<!-- a-team:lead -->", StringComparison.Ordinal));
-            if (!answered)
+            if (!wake.Board.LeadSaid(update["comments"] as JsonArray))
                 wake.Item($"Dependabot opened PR #{Board.Raw(update["number"])} ({Board.Tsv(Board.Raw(update["title"]))}): see what the update brings", Json.Long(update["number"]));
         }
     }
@@ -535,8 +532,6 @@ internal static partial class Commands
         var cards = new JsonArray();
         foreach (var card in board.OpenCards())
             cards.Add((JsonNode?)OverviewOf(card, board.Team, last));
-        if (board.MirrorLag() is { } lag)
-            cards.Add((JsonNode?)new JsonObject { ["team"] = board.Team, ["mirror"] = lag });
         return SayPretty(cards);
     }
 

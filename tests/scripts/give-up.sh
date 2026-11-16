@@ -407,6 +407,31 @@ unset KEEP_BOARD
 same "freed" null "$(marks 12 | jq -c .held)"
 grep -q '#12: freed, a stakeholder replied' "$OUT" || fail "said: '$(cat "$OUT")'"
 
+case_ "the dispatcher's give-up is known from the record, and your reply after it still frees the item"
+heads
+export NO_SEED_TALK=1
+echo "https://github.com/mentaldesk/demo/issues/12#issuecomment-1012001" >"$BIN/comment-url"
+run board demo give-up dev 12 3 "$WORK/reasons"
+rm -f "$BIN/comment-url"
+same "said" "12|issuecomment-1012001|dispatcher" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT item, comment, role FROM comments_said WHERE team = 'demo';")"
+KEEP_BOARD=1
+gh_talk <<TALK
+12 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+12 comment $(ago 0) demo-app[bot] Gave up after 3 runs.
+TALK
+waiting
+same "question" '"Gave up after 3 runs."' "$(jq -c '.[] | select(.number == 12) | .question' "$OUT")"
+HELD_AT=$(marks 12 | jq -r .held.at)
+LATER=$(date -u -d "$HELD_AT + 1 minute" +%FT%TZ 2>/dev/null || date -u -j -v+1M -f %FT%TZ "$HELD_AT" +%FT%TZ)
+gh_talk <<TALK
+12 body ${TODAY}T07:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+12 comment ${LATER} reviewer Try again now.
+TALK
+sed -i.bak 's/#issuecomment-1012001/#issuecomment-1012002/' "$TALK"
+run board demo free
+unset KEEP_BOARD NO_SEED_TALK
+same "freed" null "$(marks 12 | jq -c .held)"
+
 case_ "a comment from before it was held doesn't free it"
 heads
 run board demo give-up dev 12 3 "$WORK/reasons"

@@ -136,17 +136,17 @@ public partial class DashboardWindowTests : IDisposable
     }
 
     [Fact]
-    public void b_opens_the_selected_heading_s_team_board_and_says_so()
+    public void b_on_a_heading_opens_no_Project_even_for_a_config_that_still_names_one()
     {
         WriteTeam("team1", """{"project": {"owner": "someone", "number": 4, "ownerType": "user"}}""");
         var opened = new List<string>();
         using var window = Open(agents: Agents(4), openUrl: Opening.Into(opened));
         SelectAgent(window, 2);
 
-        Assert.True(window.NewKeyDownEvent(new Key('b')));
+        window.NewKeyDownEvent(new Key('b'));
 
-        Assert.Equal(["https://github.com/users/someone/projects/4"], opened);
-        Assert.Equal("Opened https://github.com/users/someone/projects/4", window.Says());
+        Assert.Empty(opened);
+        Assert.DoesNotContain(window.Commands.Registered, command => command.Keys == "b");
     }
 
     [Fact]

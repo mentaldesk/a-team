@@ -32,14 +32,19 @@ internal sealed class Record : IDisposable
           CREATE TABLE IF NOT EXISTS spent (team TEXT NOT NULL, item INTEGER, at TEXT NOT NULL, seconds INTEGER NOT NULL,
             gate TEXT NOT NULL, what TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS board (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL, status TEXT NOT NULL,
-            priority TEXT, since TEXT NOT NULL, content TEXT NOT NULL DEFAULT '{}', mirror TEXT, mirrored_status TEXT,
-            mirrored_priority TEXT, marks TEXT, mirrored_rank TEXT, mirrored_theme TEXT, PRIMARY KEY (team, item));
-          CREATE TABLE IF NOT EXISTS boards (team TEXT PRIMARY KEY, project TEXT NOT NULL, read TEXT, failed TEXT, retry TEXT, repaired TEXT);
+            priority TEXT, since TEXT NOT NULL, content TEXT NOT NULL DEFAULT '{}', marks TEXT,
+            PRIMARY KEY (team, item));
+          CREATE TABLE IF NOT EXISTS boards (team TEXT PRIMARY KEY, repaired TEXT, issues_read TEXT);
           CREATE TABLE IF NOT EXISTS details (team TEXT PRIMARY KEY, detail TEXT, synced TEXT, failed TEXT);
           CREATE TABLE IF NOT EXISTS formats (team TEXT PRIMARY KEY, format INTEGER NOT NULL, version TEXT NOT NULL, moved TEXT);
           CREATE TABLE IF NOT EXISTS format_moves (team TEXT PRIMARY KEY, pid INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS waits (team TEXT NOT NULL, item INTEGER NOT NULL, ref TEXT NOT NULL COLLATE NOCASE, repo TEXT NOT NULL COLLATE NOCASE,
             n INTEGER NOT NULL, until TEXT, package TEXT, since TEXT NOT NULL, PRIMARY KEY (team, item, ref));
+          CREATE TABLE IF NOT EXISTS comments_read (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
+            at TEXT NOT NULL, PRIMARY KEY (team, comment));
+          CREATE TABLE IF NOT EXISTS comments_said (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('lead', 'dev', 'customer', 'reviewer', 'dispatcher')), at TEXT NOT NULL,
+            PRIMARY KEY (team, comment));
         """;
 
     private readonly IntPtr _db;

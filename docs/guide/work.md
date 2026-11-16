@@ -175,6 +175,34 @@ tag.
 
 The tag wears a link glyph where the icons are a Nerd Font's.
 
+## Priority Inbox
+
+When a card that's your move holds up other work, on any team, Work shows a **Priority Inbox** down
+its right, titled with how many rows it has. Each row is one card: its team, the card, your move on
+it and what it frees.
+
+```
+╭ Priority Inbox 3 ──────────────────────────────────╮
+│tui      PR #130  review  frees a-team #672 · #673   │
+│a-team   #828     review  frees a-team #831          │
+│tuicode  #412     answer  frees tuicode #415         │
+```
+
+It holds only cards that a task, a wait on another repo or a Dependabot bump waits on, and only
+yours: a card that's an agent's move frees nothing you can act on now. The card that frees the most,
+directly or further down a chain, is at the top, so a review that frees two tasks is above one that
+frees one. It's the same whichever team's tab is in front.
+
+With nothing held up, the inbox isn't there and the columns take the whole width. It appears by
+itself when something is, and goes again once it's freed. With the Assistant open too, they share the
+right side as two tabs, *Inbox* and *Assistant*.
+
+`Ctrl+G P` (*Go → Priority Inbox*) puts focus in it, and `F6` moves between it and the columns.
+Selecting a row puts its whole chain on the status bar, like `⛓ tui PR #130 → a-team #672 → a-team #673`,
+and `Enter` takes you to that card on its team's tab, where you act on it as usual. Drag its edge,
+or with focus in it pick **Widen pane**, **Narrow pane** or **Reset pane width** in Commands (`Ctrl+E`),
+to give it or the columns more room.
+
 ## Moving around
 
 | Key | Does |
@@ -184,10 +212,10 @@ The tag wears a link glyph where the icons are a Nerd Font's.
 | `1` to `9` | Go to the first team's tab, the second's, and so on |
 | `Enter` | Read the card, and on a card in Triage, rank it |
 | `g` | Open the card, or the PR row you're on, on GitHub |
-| `b` | Open the team's mirror, its Project board on GitHub, for everything that isn't waiting on you |
 | `p` | Read the card and set its Priority |
 | `Ctrl+T M` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `Ctrl+G N` | Go to the newest card that has become your move |
+| `Ctrl+G P` | Go to the [Priority Inbox](#priority-inbox), while it's showing. `F6` moves between it and the columns |
 | `r` | In a tab that couldn't be read, read that team again |
 | `F5` | Read what's waiting again |
 
@@ -239,7 +267,7 @@ accept, decline, Not now, comment, Priority, recommendation, skip, review, link 
 and who (`you`, the role: `lead`, `dev`, `customer` or `reviewer`, or `board` for what a-team did by itself). What
 you or anyone else does on GitHub directly (a merge, a close, a comment)
 appears there too, within a read or two of Work, with someone else shown by their GitHub login. A closed issue or
-merged PR is Done, and a card moved on the team's mirror goes back, with a line saying a change there isn't a move.
+merged PR is Done.
 Reopening one brings it back at its last move, with a line saying so: a task whose PR had
 merged comes back Ready, to be built again. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight

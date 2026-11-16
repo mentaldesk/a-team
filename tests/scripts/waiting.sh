@@ -26,7 +26,7 @@ same "fields" '["number","pitch","priority","reason","status","team","title","tu
 same "title" '"Both gates are mine"' "$(jq -c '.[0].title' "$OUT")"
 same "url" '"https://github.com/mentaldesk/demo/issues/106"' "$(jq -c '.[0].url' "$OUT")"
 same "team" '"demo"' "$(jq -c '.[0].team' "$OUT")"
-same "api calls" 3 "$(grep -c '' <"$CALLS")"
+same "api calls" 2 "$(grep -c '' <"$CALLS")"
 
 # The read above began the record, so every read from here also catches up from GitHub: one call more.
 case_ "a gate nobody has answered is the reviewer's, since the item was opened"
@@ -90,7 +90,7 @@ waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "so it is when GitHub hasn't linked that PR to the task, and only its body closes it"
 gh_talk false MERGEABLE unlinked <<TALK
@@ -104,7 +104,7 @@ waiting
 same "exit" 0 "$STATUS"
 same "task turn" '"dev"' "$(jq -c '.[1].turn' "$OUT")"
 same "task reason" '"answering your feedback since 10:15"' "$(jq -c '.[1].reason' "$OUT")"
-same "api calls" 5 "$(grep -c '' <"$CALLS")"
+same "api calls" 4 "$(grep -c '' <"$CALLS")"
 
 case_ "but a PR the Dev didn't open isn't taken for the task's on its word"
 gh_talk false MERGEABLE unlinked <<TALK
@@ -391,7 +391,7 @@ ITEMS
 waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a gated item carries the Priority the cards colour its number by"
 gh_items 106 <<'ITEMS'
@@ -434,7 +434,7 @@ same "idea turn" '"you"' "$(jq -c '.[2].turn' "$OUT")"
 same "idea reason" '"waiting to be ranked"' "$(jq -c '.[2].reason' "$OUT")"
 same "idea fields" '["number","reason","status","team","title","turn","url"]' "$(jq -c '.[2] | keys' "$OUT")"
 same "idea url" '"https://github.com/mentaldesk/demo/issues/6"' "$(jq -c '.[2].url' "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a team whose every Idea is ranked has none of them waiting"
 gh_items 6 26 <<'ITEMS'
@@ -444,7 +444,7 @@ ITEMS
 waiting
 same "exit" 0 "$STATUS"
 same "items" '[]' "$(jq -c . "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a pitch that needs the reviewer's answer comes with that section as its question"
 gh_items <<'ITEMS'
@@ -544,7 +544,7 @@ same "turn" '"you"' "$(jq -c '.[1].turn' "$OUT")"
 same "reason" '"asked you since 08:23"' "$(jq -c '.[1].reason' "$OUT")"
 same "question" '"Which marker should it post?"' "$(jq -c '.[1].question' "$OUT")"
 same "held by" '"dev"' "$(jq -c '.[1].heldBy' "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 case_ "a held task with no ask from either agent since it was labelled is held for no reason given"
 same "turn" '"you"' "$(jq -c '.[2].turn' "$OUT")"

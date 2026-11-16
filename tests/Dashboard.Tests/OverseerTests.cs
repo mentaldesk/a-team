@@ -548,40 +548,22 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
-    public void A_lane_whose_mirror_is_behind_says_by_how_much_and_why()
+    public void A_lane_s_heading_says_nothing_of_a_mirror_even_when_an_older_overview_reports_one_behind()
     {
-        var retry = new DateTimeOffset(2026, 10, 31, 11, 20, 0, TimeSpan.Zero);
-        var lag = MirrorLag.Parse("""
-            [{"number": 7, "team": "a-team"},
-             {"team": "a-team", "mirror": {"behind": 3, "failed": "GitHub rate limit", "retry": "2026-10-31T11:20:00Z"}}]
-            """);
-
-        Assert.Equal($"mirror 3 moves behind (GitHub rate limit, retry {retry.ToLocalTime():HH:mm})", lag!.Note);
-        Assert.Equal($"a-team · idle · {lag.Note}", OverseerView.Heading(new LaneFacts("a-team") { Mirror = lag.Note }).Title);
-        Assert.Equal("mirror 1 move behind", new MirrorLag(1).Note);
-        Assert.Null(MirrorLag.Parse("""[{"number": 7, "team": "a-team"}]"""));
-        Assert.Single(BoardCard.Parse("""[{"number": 7, "team": "a-team"}, {"team": "a-team", "mirror": {"behind": 3}}]"""));
-    }
-
-    [Theory]
-    [InlineData(100, 3)]
-    [InlineData(160, 2)]
-    public void The_team_s_panel_shows_the_whole_of_a_mirror_note_the_title_has_no_room_for(int width, int rows)
-    {
-        var lag = new MirrorLag(3, "GitHub refused: " + string.Join(' ', Enumerable.Repeat("much too long for any title", 6)));
-        using var window = Open(width: width);
+        const string overview = """
+            [{"number": 7, "team": "team0", "status": "Ready"},
+             {"team": "team0", "mirror": {"behind": 3, "failed": "GitHub rate limit", "retry": "2026-10-31T11:20:00Z"}}]
+            """;
+        using var window = Open(width: 160);
         window.Press("Ctrl+G O");
         window.Refresh();
-        Assert.True(window.NewKeyDownEvent(Key.CursorUp));
-        window.Layout(new Size(width, 30));
-        var without = window.Team.RowsAt(width);
 
-        window.Overseer.Show("team0", [], lag);
-        window.Layout(new Size(width, 30));
+        window.Overseer.Show("team0", BoardCard.Parse(overview));
+        window.Refresh();
 
-        Assert.Equal(lag.Note, window.Team.Mirror);
-        Assert.Equal(without + rows, window.Team.RowsAt(width));
-        Assert.Equal(width >= 140 ? 1 : 30 - 1 - window.Team.Rows, window.Team.Frame.Y);
+        Assert.Single(BoardCard.Parse(overview));
+        Assert.DoesNotContain(window.Overseer.LaneTitles, title => title.Contains("behind", StringComparison.Ordinal));
+        Assert.Equal("a-team · idle", OverseerView.Heading(new LaneFacts("a-team")).Title);
     }
 
     [Fact]

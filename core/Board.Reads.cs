@@ -9,10 +9,9 @@ internal sealed partial class Board
 {
     private const string AttachmentBranch = "a-team/attachments";
     private const string AttachmentTypes = "png|jpe?g|gif|webp";
-    private const string SeenBy = "reactions(content: EYES) { totalCount }";
-    private const string TalkedOn = $$"""
+    private const string TalkedOn = """
         number createdAt body author { __typename login }
-                comments(last: 50) { nodes { createdAt body url author { __typename login } {{SeenBy}} } }
+                comments(last: 50) { nodes { createdAt body url author { __typename login } } }
         """;
 
     /// <summary>Whether this state has a record to read at all.</summary>
@@ -110,10 +109,7 @@ internal sealed partial class Board
 
     private string WhoSaid(JsonObject remark)
     {
-        foreach (var role in StatusRoute.Roles)
-            if (TeamSaid(remark, $"<!-- a-team:{role} -->"))
-                return role;
-        if (TeamSaid(remark, DispatchMarker)) return StatusRoute.Dispatcher;
+        if ((Speaker(remark) ?? Speakers.FirstOrDefault(role => MarkedBy(remark, MarkerOf(role)))) is { } speaker) return speaker;
         var author = Json.Text(remark["author"]) ?? "";
         return Stakeholders.Contains(author) ? "you" : author;
     }

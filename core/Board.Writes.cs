@@ -57,7 +57,7 @@ internal sealed partial class Board
             query=
                 query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
                   pullRequest(number: $n) { state isDraft body labels(first: 20) { nodes { name } }
-                    comments(last: 100) { nodes { databaseId body author { __typename login } } } } } }
+                    comments(last: 100) { nodes { body url } } } } }
             """);
         var customer = Seek(pr)?["marks"]?["customer"];
         if (Json.TryParse(read.Out)?["data"]?["repository"]?["pullRequest"] is not JsonObject found) return null;
@@ -77,27 +77,19 @@ internal sealed partial class Board
         Closes(pr).Select(n => n.ToString(CultureInfo.InvariantCulture)).FirstOrDefault();
 
     /// <summary>The Reviewer has posted its one review on this PR.</summary>
-    internal bool Reviewed(JsonNode pr)
-    {
-        var bot = Bot;
-        return pr["comments"]?["nodes"]?.AsArray().Any(comment => Said(comment, bot, "reviewer")) == true;
-    }
+    internal bool Reviewed(JsonNode pr) =>
+        pr["comments"]?["nodes"]?.AsArray().OfType<JsonNode>().Any(comment => SaidBy(comment, "reviewer")) == true;
 
     /// <summary>The Reviewer's review on this PR, or null where it has none.</summary>
-    internal JsonNode? Review(JsonNode pr)
-    {
-        var bot = Bot;
-        return pr["comments"]?["nodes"]?.AsArray().LastOrDefault(comment => Said(comment, bot, "reviewer"));
-    }
+    internal JsonNode? Review(JsonNode pr) =>
+        pr["comments"]?["nodes"]?.AsArray().OfType<JsonNode>().LastOrDefault(comment => SaidBy(comment, "reviewer"));
 
     internal const string Unreviewed = "This left draft before the Reviewer read it, so it's reached you unreviewed.";
 
     /// <summary>The dispatcher has already said on this PR that it reached the stakeholder unreviewed.</summary>
-    internal bool SaidUnreviewed(JsonNode pr)
-    {
-        var bot = Bot;
-        return pr["comments"]?["nodes"]?.AsArray().Any(comment => Said(comment, bot, "dispatch") && Json.Text(comment?["body"])!.Contains(Unreviewed, StringComparison.Ordinal)) == true;
-    }
+    internal bool SaidUnreviewed(JsonNode pr) =>
+        pr["comments"]?["nodes"]?.AsArray().OfType<JsonNode>().Any(comment => SaidBy(comment, StatusRoute.Dispatcher)
+            && (Json.Text(comment["body"]) ?? "").Contains(Unreviewed, StringComparison.Ordinal)) == true;
 
     internal string AttachmentLink(string path) => $"https://github.com/{_repo}/blob/{AttachmentBranch}/{path}?raw=true";
 

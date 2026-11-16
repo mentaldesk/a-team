@@ -32,6 +32,40 @@ public sealed partial class DashboardWindow
         SetNeedsDraw();
     }
 
+    /// <summary>Whether Work has the Priority Inbox down its right: it's in front and something of yours holds up other work.</summary>
+    private bool InboxShown => _area == Area.Work && !_dispatcherOpen && _inbox.Rows.Count > 0;
+
+    private void ShowInbox()
+    {
+        var had = _inbox.Rows.Count > 0;
+        _inbox.Show(ATeam.Dashboard.Inbox.Rows(_work.Items));
+        if (had != _inbox.Rows.Count > 0)
+            Arrange();
+        ShowMessage();
+    }
+
+    /// <summary>Ctrl+G P: the inbox in front, with focus in it.</summary>
+    private void FocusInbox()
+    {
+        if (!InboxShown)
+            return;
+        _inbox.ShowList();
+        ShowMessage();
+    }
+
+    /// <summary>Enter on a row: its card, on its team's tab.</summary>
+    private void GoToInboxCard()
+    {
+        if (_inbox.Selected is not { } row)
+            return;
+        _work.Pick(row.Item.Team);
+        // A tab that's never been in front has no size to scroll within until it's laid out.
+        Layout();
+        if (!_work.Focus(row.Item, false))
+            Reply($"#{row.Item.Number} isn't in a column of {row.Item.Team}'s");
+        ShowMessage();
+    }
+
     /// <summary>Hands the terminal to <c>a-team try</c> for the card's PR, from its own row or the PR's.</summary>
     private void Try()
     {
@@ -213,18 +247,6 @@ public sealed partial class DashboardWindow
         if (team is null)
             return;
         _options.HandOver?.Invoke(new VisionHandover(team, _area, _area == Area.Work ? _work.Place : _left));
-    }
-
-    private void OpenBoard()
-    {
-        if (SelectedTeam() is not { } team)
-            return;
-        if (_teams.BoardUrl(team) is not { } url)
-        {
-            Reply($"{team}'s config names no project board", Severity.Error);
-            return;
-        }
-        Open(url);
     }
 
     /// <summary>Opens the reader with the ranks under it, starting on the card's own.</summary>

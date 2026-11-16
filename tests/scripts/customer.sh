@@ -99,14 +99,12 @@ ITEMS
 docs_pr 9
 jq '(.data.organization.projectV2.items.nodes[] | select(.content.number == 9)) |= (.fieldValueByName = null)' \
   "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
-  "$META" >"$META.new" && mv "$META.new" "$META"
 jq -n '{node_id: "PR_9", number: 9, state: "open", pull_request: {},
         body: "- Help → Guide covers the Customer lead (#48)\n\n<!-- a-team:customer -->"}' >"$ISSUE"
 run board demo add customer 9 "In review"
 same "exit" 0 "$STATUS"
 same "the Customer lead's" true "$(marks 9 | jq -c .customer)"
-grep -q 'item=PVTI_9 .*option=OPT_review' "$WRITES" || fail "add: no move in '$(cat "$WRITES")'"
+same "add" "In review" "$(status_of 9)"
 
 case_ "it may add nothing but its own open docs PR, and only one at a time"
 : >"$WRITES"
@@ -162,14 +160,13 @@ same "posted" "" "$(cat "$POSTED")"
 
 case_ "accepting the docs PR squash-merges it, deletes its branch and moves it to Done"
 : >"$WRITES"
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 echo '{"head": {"sha": "deadbeefcafe", "ref": "docs/customer-lead", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
 run board demo accept you 9
 same "exit" 0 "$STATUS"
 same "said" "#9: merged docs PR #9" "$(cat "$OUT")"
 grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/9/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
 grep -q 'DELETE api -X DELETE repos/mentaldesk/demo/git/refs/heads/docs/customer-lead' "$WRITES" || fail "branch: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_9 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+same "Done" "Done" "$(status_of 9)"
 
 case_ "waiting shows the docs PR as the Customer lead's, with itself as the PR to merge"
 gh_talk <<TALK
@@ -191,16 +188,10 @@ TALK
 run board demo conversation 9
 same "who" '[{"who":"customer","body":"Covered #48"}]' "$(jq -c 'map({who, body})' "$OUT")"
 
-reviewable() {
-  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}, {id: "OPT_done", name: "Done"}]' \
-    "$META" >"$META.new" && mv "$META.new" "$META"
-}
-
 case_ "the Lead may no longer add a Dependabot PR to In review"
 gh_items <<'ITEMS'
 In_progress 7 A task being built
 ITEMS
-reviewable
 jq -n '{node_id: "PR_535", number: 535, state: "open", pull_request: {}, user: {login: "dependabot[bot]"},
         body: "Bumps MentalDesk.Tui from 0.3.8 to 0.3.9."}' >"$ISSUE"
 jq -n '[{user: {login: "demo-app[bot]"}, body: "Nothing new to adopt.\n\n<!-- a-team:lead -->"}]' >"$THREAD"
@@ -239,14 +230,13 @@ same "failing" '{"turn":"dev","trouble":"CI failing","unready":"CI failing"}' \
   "$(jq -c '.[] | select(.number == 535) | {turn, trouble, unready}' "$OUT")"
 
 case_ "accepting a Dependabot PR squash-merges it and moves it to Done"
-reviewable
 : >"$WRITES"
 echo '{"head": {"sha": "deadbeefcafe", "ref": "dependabot/nuget/MentalDesk.Tui-0.3.9", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
 run board demo accept you 535
 same "exit" 0 "$STATUS"
 same "said" "#535: merged PR #535" "$(cat "$OUT")"
 grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/535/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_535 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+same "Done" "Done" "$(status_of 535)"
 
 case_ "a Dependabot PR is accepted only from In review"
 gh_items <<'ITEMS'
@@ -262,7 +252,7 @@ same "writes" "" "$(cat "$WRITES")"
 bump_updates() {
   jq -n --argjson n "$1" '[{id: "PR_\($n)", number: $n, title: "Bump MentalDesk.Tui from 0.3.8 to 0.3.9",
       author: {login: "app/dependabot"}, isDraft: false, mergeable: "MERGEABLE", headRefOid: "deadbeefcafe",
-      comments: [{author: {login: "demo-app"}, body: "Nothing new to adopt.\\n\\n<!-- a-team:lead -->"}]}] | map('"${2:-.}"')' >"$UPDATES"
+      comments: [{author: {login: "demo-app"}, createdAt: "2026-10-10T09:00:00Z", body: "Nothing new to adopt.\\n\\n<!-- a-team:lead -->", url: "https://github.com/mentaldesk/demo/pull/535#issuecomment-5350001"}]}] | map('"${2:-.}"')' >"$UPDATES"
 }
 # `bump_board <status>`: Dependabot's PR #535 on the board, with an ordinary task In progress beside it.
 bump_board() {
@@ -271,8 +261,6 @@ In_progress 7 A task being built
 $1 535 Bump MentalDesk.Tui from 0.3.8 to 0.3.9
 ITEMS
   dependabot_pr 535
-  reviewable
-  claimable
   gh_pr
   jq -n '{number: 535, url: "https://github.com/mentaldesk/demo/pull/535", isDraft: false,
           headRefName: "dependabot/nuget/MentalDesk.Tui-0.3.9", mergeable: "MERGEABLE", mergeStateStatus: "CLEAN"}' >"$BUMP_VIEW"
@@ -289,7 +277,6 @@ gh_items <<'ITEMS'
 In_progress 7 A task being built
 ITEMS
 bump_updates 535
-reviewable
 echo '{"head": {"sha": "deadbeefcafe", "ref": "dependabot/nuget/MentalDesk.Tui-0.3.9", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
 gh_runs <<'RUNS'
 completed success 2025-09-19T09:00:00Z build
@@ -300,7 +287,6 @@ same "exit" 0 "$STATUS"
 same "said" "PR #535 (Bump MentalDesk.Tui from 0.3.8 to 0.3.9): merged" "$(cat "$OUT")"
 grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/535/merge -f merge_method=squash -f sha=deadbeefcafe' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
 grep -q 'DELETE api -X DELETE repos/mentaldesk/demo/git/refs/heads/dependabot/nuget/MentalDesk.Tui-0.3.9' "$WRITES" || fail "branch: '$(cat "$WRITES")'"
-grep -q 'ADD ' "$WRITES" && fail "merge: it came onto the board in '$(cat "$WRITES")'"
 same "history" '{"who":"dispatcher","what":"merged · PR #535"}' "$(history_json 535 | jq -c '.events[0] | {who, what}')"
 waiting
 same "never in Work" '' "$(jq -c '.[] | select(.number == 535) | .number' "$OUT")"
@@ -359,7 +345,6 @@ case_ "a green PR GitHub keeps refusing is put to the stakeholder once, and merg
 gh_items <<'ITEMS'
 In_progress 7 A task being built
 ITEMS
-claimable
 bump_updates 535
 rm -f "$POSTED"
 touch "$BIN/merge-fails"
@@ -375,8 +360,8 @@ failed "third"
 same "said" "PR #535: GitHub keeps refusing to merge it, asked the stakeholder" "$(cat "$OUT")"
 grep -q "GitHub won't merge it: can't merge PR #535 (gh: Pull Request is not mergeable (HTTP 405))" "$POSTED" || fail "reason: '$(cat "$POSTED")'"
 same "marker" "<!-- a-team:dev -->" "$(tail -n 1 "$POSTED")"
-grep -q "ADD .*content=PR_535" "$WRITES" || fail "add: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_new .*option=OPT_ready' "$WRITES" || fail "Ready: '$(cat "$WRITES")'"
+[ -n "$(status_of 535)" ] || fail "add: #535 isn't on the board"
+same "Ready" "Ready" "$(status_of 535)"
 same "held by" '"dev"' "$(marks 535 | jq -c .held.by)"
 same "history" '{"who":"dispatcher","what":"held"}' "$(history_json 535 | jq -c '.events[0] | {who, what}')"
 rm -f "$POSTED"
@@ -389,7 +374,7 @@ rm -f "$BIN/merge-fails"
 KEEP_BOARD=1 run board demo bumps
 same "exit" 0 "$STATUS"
 same "merged" "PR #535 (Bump MentalDesk.Tui from 0.3.8 to 0.3.9): merged" "$(cat "$OUT")"
-grep -q 'item=PVTI_new .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+same "Done" "Done" "$(status_of 535)"
 
 case_ "refusals are counted afresh once a merge succeeds"
 rm -rf "$A_TEAM_STATE/demo/bump-refusals"
@@ -410,13 +395,12 @@ bump_updates 535
 : >"$WRITES"
 run board demo bumps
 same "exit" 0 "$STATUS"
-grep -q 'item=PVTI_535 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+same "Done" "Done" "$(status_of 535)"
 
 case_ "a red Dependabot PR goes on the board with the Dev, In progress"
 gh_items <<'ITEMS'
 In_progress 7 A task being built
 ITEMS
-claimable
 bump_updates 535
 gh_runs <<'RUNS'
 completed failure 2025-09-19T09:00:00Z build
@@ -428,7 +412,7 @@ RUNS
 run board demo bumps
 same "exit" 0 "$STATUS"
 same "said" "PR #535 (Bump MentalDesk.Tui from 0.3.8 to 0.3.9): CI failing, with the Dev" "$(cat "$OUT")"
-grep -q "ADD .*content=PR_535" "$WRITES" || fail "add: '$(cat "$WRITES")'"
+[ -n "$(status_of 535)" ] || fail "add: #535 isn't on the board"
 grep -q 'merge' "$WRITES" && fail "merged a red PR: '$(cat "$WRITES")'"
 same "the Dev's" true "$(marks 535 | jq -c .dev)"
 same "history" '{"who":"dispatcher","what":"added as In progress"}' "$(history_json 535 | jq -c '.events[0] | {who, what}')"
@@ -437,7 +421,6 @@ case_ "a red PR with no Lead comment still goes to the Dev"
 gh_items <<'ITEMS'
 In_progress 7 A task being built
 ITEMS
-claimable
 bump_updates 535 '.comments = []'
 gh_runs <<'RUNS'
 completed failure 2025-09-19T09:00:00Z build
@@ -445,7 +428,7 @@ RUNS
 : >"$WRITES"
 run board demo bumps
 same "exit" 0 "$STATUS"
-grep -q "ADD .*content=PR_535" "$WRITES" || fail "add: '$(cat "$WRITES")'"
+[ -n "$(status_of 535)" ] || fail "add: #535 isn't on the board"
 
 case_ "a red PR failing only what main fails waits for the fix"
 gh_main_runs <<'RUNS'
@@ -479,7 +462,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"dev\":true}' WH
 : >"$WRITES"
 KEEP_BOARD=1 run board demo bumps
 same "exit" 0 "$STATUS"
-grep -q 'item=PVTI_535 .*option=OPT_progress' "$WRITES" || fail "back: '$(cat "$WRITES")'"
+same "back" "In progress" "$(status_of 535)"
 same "history" '{"who":"dispatcher","what":"Ready → In progress"}' "$(history_json 535 | jq -c '.events[0] | {who, what}')"
 
 case_ "a red PR with the Dev starts a Dev run on it, ahead of an ordinary Ready task"
@@ -523,8 +506,6 @@ same "tasks" '[]' "$(jq -c .tasks "$OUT")"
 gh_main_runs </dev/null
 
 case_ "the Dev never moves a Dependabot PR to In review, and no Reviewer reads it"
-reviewable
-claimable
 run board demo move dev 535 "In review"
 failed "to In review"
 grep -q "a Dependabot PR merges itself once it's green: leave #535 In progress" "$ERR" || fail "refusal: '$(cat "$ERR")'"
@@ -562,8 +543,6 @@ In_progress 535 Bump MentalDesk.Tui from 0.3.8 to 0.3.9
 ITEMS
 dependabot_pr 535
 edit_item 535 '.labels.nodes = [{name: "a-team:dev"}]'
-reviewable
-claimable
 echo "Can't build: it needs an AgentSpec." >"$BIN/why"
 run board demo hold dev 535 "$BIN/why"
 same "hold" 0 "$STATUS"
@@ -617,26 +596,23 @@ upstream_pr() {
 upstream_edit() { jq "$1" "$UPSTREAM" >"$UPSTREAM.new" && mv "$UPSTREAM.new" "$UPSTREAM"; }
 
 case_ "adopt puts another repo's Dev PR In review once it's ready"
-reviewable
 upstream_pr "mentaldesk/a-team#538"
 run board demo adopt
 same "exit" 0 "$STATUS"
 same "said" "#86: added as In review" "$(cat "$OUT")"
-grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_new .*option=OPT_review' "$WRITES" || fail "In review: '$(cat "$WRITES")'"
+[ -n "$(status_of 86)" ] || fail "add: #86 isn't on the board"
+same "In review" "In review" "$(status_of 86)"
 same "one list of the App's PRs" "pr list -R mentaldesk/demo --author app/demo-app --state open --json id,number,isDraft,body" \
   "$(cat "$UPSTREAM_CALLS")"
 
 case_ "adopt puts another repo's Dev PR In progress while it's a draft"
-reviewable
-claimable
 upstream_pr "mentaldesk/a-team#538"
 upstream_edit '.[0].isDraft = true'
 run board demo adopt
 same "exit" 0 "$STATUS"
 same "said" "#86: added as In progress" "$(cat "$OUT")"
-grep -q 'ADD .*content=PR_86' "$WRITES" || fail "add: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_new .*option=OPT_progress' "$WRITES" || fail "In progress: '$(cat "$WRITES")'"
+[ -n "$(status_of 86)" ] || fail "add: #86 isn't on the board"
+same "In progress" "In progress" "$(status_of 86)"
 
 case_ "adopt leaves a stakeholder's draft, a PR already on the board, and one for a task in this repo"
 for edit in '.[0].body |= sub("mentaldesk/a-team#538"; "mentaldesk/demo#12")' '.[0].isDraft = true | .[0].body |= sub("<!-- a-team:dev -->"; "")' \
@@ -664,7 +640,7 @@ jq '(.data.organization.projectV2.items.nodes[] | select(.id == "PVTI_86") | .fi
 run board demo adopt
 same "exit" 0 "$STATUS"
 same "said" "#86: In progress → In review" "$(cat "$OUT")"
-grep -q 'item=PVTI_86 .*option=OPT_review' "$WRITES" || fail "In review: '$(cat "$WRITES")'"
+same "In review" "In review" "$(status_of 86)"
 upstream_edit '.[0].isDraft = true'
 : >"$WRITES"
 run board demo adopt
@@ -751,14 +727,13 @@ same "upstream PR" '{"number":86,"pr":86,"branch":"feat/public-menu-letters","tu
   "$(jq -c '.[] | select(.number == 86) | {number, pr, branch, turn, unready}' "$OUT")"
 
 case_ "accepting another repo's Dev PR squash-merges it and moves it to Done"
-reviewable
 : >"$WRITES"
 echo '{"head": {"sha": "deadbeefcafe", "ref": "feat/public-menu-letters", "repo": {"full_name": "mentaldesk/demo"}}}' >"$PULL"
 run board demo accept you 86
 same "exit" 0 "$STATUS"
 same "said" "#86: merged PR #86" "$(cat "$OUT")"
 grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/86/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_86 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+same "Done" "Done" "$(status_of 86)"
 
 case_ "a stakeholder's comment on the docs PR triggers the Customer lead, and only it"
 gh_items <<'ITEMS'
@@ -807,8 +782,6 @@ run board demo triggers customer
 same "exit" 0 "$STATUS"
 same "reasons" "[\"no user docs yet: propose where they'll live\"]" "$(jq -c .reasons "$OUT")"
 [ -e "$AUDITED" ] && fail "the audit isn't due as soon as the docs page appears"
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
-  mv "$META.new" "$META"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
 run board demo add customer 15 "In review"
 failed "a docs PR with no docs page"
@@ -830,7 +803,7 @@ same "exit" 0 "$STATUS"
 same "said" "#12: added as Pitched" "$(cat "$OUT")"
 same "the Customer lead's" true "$(marks 12 | jq -c .customer)"
 grep -q 'labels\[\]=pitch' "$WRITES" && fail "propose: labelled a pitch, which is the Lead's"
-grep -q 'item=PVTI_12 .*option=OPT_pitched' "$WRITES" || fail "propose: no move in '$(cat "$WRITES")'"
+same "propose" "Pitched" "$(status_of 12)"
 
 case_ "it proposes only with its own open draft PR, one at a time, and only while the docs page is missing"
 : >"$WRITES"
@@ -881,13 +854,11 @@ same "writes" "" "$(cat "$WRITES")"
 
 case_ "a docs PR goes into In review beside a leftover proposal once the docs page is in the repo"
 rm "$WORK/no-docs"
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
-  mv "$META.new" "$META"
 jq -n '{node_id: "PR_15", number: 15, state: "open", draft: false, body: "<!-- a-team:customer -->"}' >"$PULL"
 run board demo add customer 15 "In review"
 same "exit" 0 "$STATUS"
-grep -q 'option=OPT_review' "$WRITES" || fail "beside a proposal: no move in '$(cat "$WRITES")'"
-grep -q 'PVTI_12' "$WRITES" && fail "beside a proposal: the proposal moved in '$(cat "$WRITES")'"
+same "beside a proposal" "In review" "$(status_of 15)"
+same "proposal" Pitched "$(status_of 12)"
 touch "$WORK/no-docs"
 : >"$WRITES"
 
@@ -940,7 +911,7 @@ same "exit" 0 "$STATUS"
 same "said" "#12: merged document pitch #12" "$(cat "$OUT")"
 same "first write" "READY pr ready 12 -R mentaldesk/demo" "$(head -1 "$WRITES")"
 grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/12/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_12 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+same "Done" "Done" "$(status_of 12)"
 
 case_ "once the docs page is there, the audit writes the docs it outlines, and done pitches come back"
 rm "$WORK/no-docs"
@@ -954,8 +925,6 @@ run board demo triggers customer
 same "reasons" '["pitch #16 is done: check the docs cover what it shipped","weekly docs audit: check the docs as a whole"]' \
   "$(jq -c .reasons "$OUT")"
 jq -n '{node_id: "PR_15", number: 15, state: "open", pull_request: {}, body: "<!-- a-team:customer -->"}' >"$ISSUE"
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_review", name: "In review"}]' "$META" >"$META.new" &&
-  mv "$META.new" "$META"
 run board demo add customer 15 "In review"
 same "docs PR" 0 "$STATUS"
 run board demo covered customer 16
@@ -1019,7 +988,6 @@ jq '.wip = {pitched: 2, exploring: 4, ideas: 2}' "$TEAM" >"$TEAM.new" && mv "$TE
 gh_items <<'ITEMS'
 Idea 41 I can't find how to pause one role
 ITEMS
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 customer_issue 41 "**Evidence**: the guide's Dashboard page doesn't say.
 
 <!-- a-team:customer -->"

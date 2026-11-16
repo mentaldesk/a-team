@@ -18,11 +18,11 @@ public sealed class TeamFormDocsTests : IDisposable
     public void Dispose() => Directory.Delete(_checkout, recursive: true);
 
     private TeamSettings Settings =>
-        new("mentaldesk/a-team", "mentaldesk", 3, "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
+        new("mentaldesk/a-team", "docs/vision.md", "~/code/a-team", "./bin/a-team dashboard", true,
             2, 1, 3, 4, 4, 2, _checkout, ["jamescrosswell"], ["a-team"]);
 
     private static readonly TeamSettings Blank =
-        new("", "", null, "docs/vision.md", "", "", false, 3, 2, 3, 6, 6, 3, null, ["jamescrosswell"], []);
+        new("", "docs/vision.md", "", "", false, 3, 2, 3, 6, 6, 3, null, ["jamescrosswell"], []);
 
     [Fact]
     public void With_the_Customer_lead_off_there_are_no_docs_controls_and_ticking_it_shows_them()

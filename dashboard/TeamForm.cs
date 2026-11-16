@@ -30,11 +30,6 @@ public sealed class TeamForm : AppDialog
     internal const string RepoCaption = "The GitHub repo the team works on, as owner/repo.";
     internal const string StakeholdersCaption = "Whose comments the team acts on. You, unless you add others.";
     internal const string ContributesCaption = "Other repos the Dev may open draft PRs on. Merging stays yours.";
-    internal const string ProjectCaption = "A GitHub Project a-team copies the board to, so you can see it on GitHub. a-team keeps the board itself.";
-    internal const string NoMirror = "None";
-    internal const string NewProject = "A new project, named after the team";
-    internal const string OwnerCaption = "Who owns the Project: the user or organisation in its URL.";
-    internal const string NumberCaption = "The Project's number, the last part of its URL.";
     internal const string VisionCaption = "The Lead's yardstick, in the repo. Missing? It drafts one for you to approve.";
     internal const string SuggestedDocs = "docs/guide/index.md";
     internal const string SuggestedDocsCaption = "Suggested. The Customer lead proposes the docs here.";
@@ -85,10 +80,6 @@ public sealed class TeamForm : AppDialog
     private readonly PickRow _stakeholders;
     private readonly PickRow _contributes;
     private readonly PickRow _skills;
-    private readonly DropDownList _project;
-    private readonly PlaceholderField _owner;
-    private readonly PlaceholderField _number;
-    private readonly View _ownedBy;
     private readonly PlaceholderField _vision;
     private readonly View _docsRows = new() { X = 0, Width = Dim.Fill(), Height = DocsRows, CanFocus = true };
     private readonly OptionSelector<DocsChoice> _docsChoice;
@@ -125,13 +116,9 @@ public sealed class TeamForm : AppDialog
     private bool _workdirFollows;
     private bool _settingWorkdir;
     private int _wrappedTo;
-    private List<ProjectChoice> _projects = [];
-    private bool _mirror;
     private IReadOnlyList<string> _stakeholderNames;
     private IReadOnlyList<string> _contributesTo;
     private IReadOnlyList<string> _skillNames;
-    private Func<string, Task<Reading>>? _listProjects;
-    private string? _projectsOwner;
 
     /// <summary><paramref name="save"/> writes what the form holds, and says why it couldn't.</summary>
     public TeamForm(string team, TeamSettings settings, Func<TeamSettings, string?> save)
@@ -152,7 +139,6 @@ public sealed class TeamForm : AppDialog
         : base(team is null ? "New team" : $"Team: {team}", width: 0, contentRows: 0)
     {
         _before = settings;
-        _mirror = settings.Mirror;
         _save = save;
         _team = team;
         _taken = taken;
@@ -197,38 +183,8 @@ public sealed class TeamForm : AppDialog
             };
         }
         _repo = Field("Repo", settings.Repo, row++, RepoCaption, () => Current().RepoRefusal());
-        _repo.HasFocusChanged += (_, _) =>
-        {
-            if (!_repo.HasFocus && _listProjects is { } list && Current().RepoOwner != _projectsOwner)
-                LoadProjects(list);
-        };
         _stakeholders = Picks("Stakeholders", _stakeholderNames, row++, StakeholdersCaption, PickStakeholders);
         _contributes = Picks("Contributes to", _contributesTo, row++, ContributesCaption, PickContributes);
-
-        var mirrorLabel = new Label { Text = "Mirror", X = Inset, Y = row };
-        _project = new DropDownList { X = FieldX, Y = row, Width = Dim.Fill(Inset), ReadOnly = true };
-        _ownedBy = new View { X = FieldX, Y = row, Width = Dim.Fill(Inset), Height = 1, CanFocus = true, Visible = false };
-        var ownerLabel = new Label { Text = "Owner", X = 0, Y = 0 };
-        _owner = new PlaceholderField { Text = settings.ProjectOwner, X = Pos.Right(ownerLabel) + 1, Y = 0, Width = 20 };
-        var numberLabel = new Label { Text = "Number", X = Pos.Right(_owner) + 2, Y = 0 };
-        _number = new PlaceholderField { Text = settings.ProjectNumber?.ToString() ?? "", X = Pos.Right(numberLabel) + 1, Y = 0, Width = 8 };
-        _ownedBy.Add(ownerLabel, _owner, numberLabel, _number);
-        Add(mirrorLabel, _project, _ownedBy);
-        // Before Check's own handler, which rechecks what Pick sets.
-        _project.TextChanged += (_, _) => Pick();
-        Check(_project, mirrorLabel, () => _project.Visible ? Current().MirrorRefusal() : null);
-        Check(_owner, ownerLabel, () => _ownedBy.Visible ? Current().OwnerRefusal() : null);
-        Check(_number, numberLabel, () => _ownedBy.Visible ? Current().NumberRefusal() : null);
-        Caption(_project, ProjectCaption);
-        Caption(_owner, OwnerCaption);
-        Caption(_number, NumberCaption);
-        _project.HasFocusChanged += (_, _) =>
-        {
-            if (_project.HasFocus && _listProjects is { } list)
-                LoadProjects(list);
-        };
-        ShowProjects([]);
-        row++;
 
         _vision = PathField("Vision", settings.Vision, row++, () => FileCaption(_vision!, VisionCaption, VisionMissing), PickVision, refusal: () => Current().VisionRefusal());
         _workdir = PathField("Workdir", settings.Workdir, row++, () => WorkdirCaption, PickWorkdir, refusal: () => Current().WorkdirRefusal());
@@ -444,12 +400,6 @@ public sealed class TeamForm : AppDialog
         new(KeyChord.Display(Key.Esc), "Cancel"),
     ]);
 
-    internal DropDownList Project => _project;
-
-    internal PlaceholderField Owner => _owner;
-
-    internal PlaceholderField Number => _number;
-
     internal PlaceholderField Vision => _vision;
 
     internal PlaceholderField Docs => _docs;
@@ -583,9 +533,6 @@ public sealed class TeamForm : AppDialog
         _before with
         {
             Repo = _repo.Text.Trim(),
-            Mirror = _mirror,
-            ProjectOwner = _owner.Text.Trim(),
-            ProjectNumber = int.TryParse(_number.Text.Trim(), out var number) ? number : null,
             Vision = _vision.Text.Trim(),
             Docs = DocsPage(),
             Workdir = _workdir.Text.Trim(),
@@ -611,52 +558,7 @@ public sealed class TeamForm : AppDialog
             Innovation = _innovation.Value,
         };
 
-    /// <summary>The owner's projects as a list to pick from, keeping the team's own where the list hasn't got it;
-    /// null, when they can't be read, puts the owner and number fields in its place.</summary>
-    internal void ShowProjects(IReadOnlyList<ProjectChoice>? projects)
-    {
-        if (projects is null)
-        {
-            var focused = _project.HasFocus;
-            _project.Visible = false;
-            _ownedBy.Visible = true;
-            if (focused)
-                _owner.SetFocus();
-            return;
-        }
-        _project.Visible = true;
-        _ownedBy.Visible = false;
-        _projects = [.. projects];
-        var owner = _owner.Text.Trim();
-        var chosen = int.TryParse(_number.Text.Trim(), out var number) && owner.Length > 0
-            ? _projects.Find(project => project.Owner == owner && project.Number == number)
-              ?? new ProjectChoice(owner, number, "")
-            : null;
-        if (chosen is not null && !_projects.Contains(chosen))
-            _projects.Insert(0, chosen);
-        string[] choices = [NoMirror, NewProject, .. _projects.Select(project => project.ToString())];
-        _project.Source = new ListWrapper<string>(new ObservableCollection<string>(choices));
-        _project.Text = !_mirror ? NoMirror : chosen?.ToString() ?? NewProject;
-    }
-
-    /// <summary>Fetches the repo owner's projects and puts them in the list when they arrive, again each time the list
-    /// takes focus so a project made meanwhile shows up.</summary>
-    internal void LoadProjects(Func<string, Task<Reading>> list)
-    {
-        _listProjects = list;
-        var owner = Current().RepoOwner is { Length: > 0 } repoOwner ? repoOwner : _before.ProjectOwner;
-        _projectsOwner = Current().RepoOwner;
-        if (owner.Length == 0)
-            return;
-        list(owner).ContinueWith(read =>
-        {
-            var projects = read.Status == TaskStatus.RanToCompletion ? ProjectChoice.Parse(read.Result, owner) : null;
-            App?.Invoke(() => ShowProjects(projects));
-        }, TaskScheduler.Default);
-    }
-
-    /// <summary>Enter reaches a Dialog as Accept, from any field alike, and never saves: Ctrl+Enter does. The
-    /// project list's own Enter picks a project.</summary>
+    /// <summary>Enter reaches a Dialog as Accept, from any field alike, and never saves: Ctrl+Enter does.</summary>
     protected override bool OnAccepting(CommandEventArgs args) =>
         args.Context?.Source is not { } source || !source.TryGetTarget(out var from) || !Picking(from);
 
@@ -683,7 +585,7 @@ public sealed class TeamForm : AppDialog
 
     /// <summary>Opens the form, and returns what it saved, or null where it was cancelled.</summary>
     public static TeamSettings? Show(
-        IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save, Func<string, Task<Reading>> projects,
+        IApplication app, string team, TeamSettings settings, Func<TeamSettings, string?> save,
         Task<TeamHealth>? health = null, Func<Task<TeamHealth>?>? repair = null, IconStyle icons = IconStyle.Unicode,
         Func<string, string, Task<ReachableRepos>>? repos = null)
     {
@@ -692,14 +594,14 @@ public sealed class TeamForm : AppDialog
             form.FindRepos = repos;
         if (health is not null)
             form.Watch(health);
-        return Run(app, form, projects) ? form.Saved : null;
+        return Run(app, form) ? form.Saved : null;
     }
 
     /// <summary>Opens the form for a new team, and returns the name it was created under, or null where it was
     /// cancelled.</summary>
     public static string? ShowNew(
         IApplication app, TeamSettings settings, IReadOnlyCollection<string> taken, string teamsDirectory,
-        Func<string, TeamSettings, string?> create, Func<string, Task<Reading>> projects, Task<string> me, string name = "",
+        Func<string, TeamSettings, string?> create, Task<string> me, string name = "",
         Func<string, string, Task<ReachableRepos>>? repos = null)
     {
         using var form = New(settings, taken, teamsDirectory, create, name);
@@ -710,12 +612,11 @@ public sealed class TeamForm : AppDialog
             if (read.Status == TaskStatus.RanToCompletion)
                 form.App?.Invoke(() => form.ShowMe(read.Result));
         }, TaskScheduler.Default);
-        return Run(app, form, projects) ? form.SavedName : null;
+        return Run(app, form) ? form.SavedName : null;
     }
 
-    private static bool Run(IApplication app, TeamForm form, Func<string, Task<Reading>> projects)
+    private static bool Run(IApplication app, TeamForm form)
     {
-        form.LoadProjects(projects);
         app.Run(form);
         return form.Saved is not null;
     }
@@ -750,28 +651,6 @@ public sealed class TeamForm : AppDialog
         Saved = saved;
         RequestStop();
         return true;
-    }
-
-    /// <summary>Keeps the owner and number fields on the project picked, so they're what's saved either way.</summary>
-    private void Pick()
-    {
-        if (_project.Text == NoMirror)
-        {
-            _mirror = false;
-            return;
-        }
-        if (_project.Text == NewProject)
-        {
-            _mirror = true;
-            _owner.Text = "";
-            _number.Text = "";
-            return;
-        }
-        if (_projects.Find(project => project.ToString() == _project.Text) is not { } picked)
-            return;
-        _mirror = true;
-        _owner.Text = picked.Owner;
-        _number.Text = picked.Number.ToString();
     }
 
     /// <summary>Puts who's signed in as the stakeholder, unless some have been picked already.</summary>

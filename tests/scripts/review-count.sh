@@ -7,7 +7,7 @@ app_fakes
 
 case_ "the board counts each review fixture's Worth considering points as the dashboard reads them"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" },
   "wip": { "worktrees": 1 } }
 JSON
 for fixture in "$ROOT"/tests/Dashboard.Tests/fixtures/reviews/*.md; do
@@ -47,7 +47,7 @@ releases() {
 
 waiting_upstream() {
   fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" },
   "wip": { "worktrees": 3 } }
 JSON
   gh_items <<'ITEMS'
@@ -70,12 +70,11 @@ same "depends upstream" '["mentaldesk/style#84"]' "$(marks 11 | jq -c .upstream)
 grep -q "label" "$WRITES" && fail "depends upstream: labelled in '$(cat "$WRITES")'"
 grep -qx "Blocked by mentaldesk/style#84, until released: needs the Mac word keys in MentalDesk.Tui" "$POSTED" ||
   fail "depends upstream: '$(cat "$POSTED")'"
-grep -qF '<!-- a-team:wait repo=mentaldesk/style n=84 until=released -->' "$POSTED" || fail "depends upstream: no wait in '$(cat "$POSTED")'"
+grep -q '<!-- a-team:wait' "$POSTED" && fail "depends upstream: a wait marker in '$(cat "$POSTED")'"
 run board demo depends dev 11 mentaldesk/style#84 released MentalDesk.Tui "needs the Mac word keys"
 same "package exit" 0 "$STATUS"
 grep -qx "Blocked by mentaldesk/style#84, until released: needs the Mac word keys" "$POSTED" || fail "package: '$(cat "$POSTED")'"
-grep -qF '<!-- a-team:wait repo=mentaldesk/style n=84 until=released package=MentalDesk.Tui -->' "$POSTED" ||
-  fail "package: no package in '$(cat "$POSTED")'"
+same "package" "MentalDesk.Tui" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT package FROM waits WHERE team = 'demo' AND item = 11;")"
 grep -q "GitHub can't link" "$POSTED" && fail "depends upstream: said it couldn't link"
 grep -q '<!-- a-team:dev -->' "$POSTED" || fail "depends upstream: no dev marker"
 same "recorded" "dev blocked by mentaldesk/style#84" "$(history_table 11 | head -1)"
@@ -88,7 +87,7 @@ same "exit" 0 "$STATUS"
 grep -q "dependencies/blocked_by" "$WRITES" && fail "upstream PR: linked as a dependency"
 grep -qx "Blocked by mentaldesk/style#85, until closed: the guide's PR has the new rule" "$POSTED" || fail "upstream PR: '$(cat "$POSTED")'"
 grep -q "GitHub can't link mentaldesk/style#85 as a dependency, so the wait is recorded here." "$POSTED" || fail "upstream PR: no fallback in '$(cat "$POSTED")'"
-grep -qF '<!-- a-team:wait repo=mentaldesk/style n=85 until=closed -->' "$POSTED" || fail "upstream PR: no wait"
+grep -q '<!-- a-team:wait' "$POSTED" && fail "upstream PR: a wait marker in '$(cat "$POSTED")'"
 : >"$WRITES"
 echo '{"id": 9084, "number": 84}' >"$ISSUE"
 touch "$BIN/link-refused"
@@ -148,7 +147,7 @@ same "exit" 0 "$STATUS"
 same "said" "#11: no longer waiting on mentaldesk/style#84" "$(cat "$OUT")"
 same "closed" null "$(marks 11 | jq -c .upstream)"
 grep -qx "mentaldesk/style#84 has closed. No longer blocked." "$POSTED" || fail "closed: '$(cat "$POSTED")'"
-grep -qF '<!-- a-team:unwait repo=mentaldesk/style n=84 -->' "$POSTED" || fail "closed: no unwait in '$(cat "$POSTED")'"
+grep -q '<!-- a-team:unwait' "$POSTED" && fail "closed: an unwait marker in '$(cat "$POSTED")'"
 same "recorded" "dev no longer blocked by mentaldesk/style#84" "$(history_table 11 | head -1)"
 for case in "v0.3.9:v0.3.9" "v0.3.9 v0.3.8:v0.3.8"; do
   waiting_upstream
@@ -206,6 +205,7 @@ run board demo free
   printf 'comment 2026-10-12T09:00:00Z demo-app[bot] 0 %s\n' "$(sed 's/$/\\n/' "$POSTED" | tr -d '\n')"; } | gh_thread
 : >"$POSTED"
 : >"$WRITES"
+edit_item 11 '.labels.nodes = []'
 run board demo free
 same "again" "" "$(cat "$OUT")$(cat "$POSTED")$(cat "$WRITES")"
 waiting_upstream
@@ -232,7 +232,7 @@ same "exit" 0 "$STATUS"
 same "said" "#11 no longer waits on mentaldesk/style#84, and said why on #11" "$(cat "$OUT")"
 grep -q "DELETE .*/issues/11/dependencies/blocked_by/9084" "$WRITES" || fail "undepend upstream: '$(cat "$WRITES")'"
 same "undepend upstream" null "$(marks 11 | jq -c .upstream)"
-grep -qF '<!-- a-team:unwait repo=mentaldesk/style n=84 -->' "$POSTED" || fail "undepend upstream: no unwait"
+grep -q '<!-- a-team:unwait' "$POSTED" && fail "undepend upstream: an unwait marker in '$(cat "$POSTED")'"
 run board demo undepend dev 11 mentaldesk/style#99 "why"
 failed "not waiting"
 one_line "not waiting"
@@ -418,7 +418,7 @@ jq '. + [{node_id: "IC_x", user: {login: "demo-app[bot]"}, created_at: "2026-10-
 KEEP_BOARD=1 run board demo format
 same "exit" 0 "$STATUS"
 same "moved" "11|mentaldesk/style#84|released|MentalDesk.Tui" "$(waits_table)"
-same "stamped" 2 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+same "stamped" 4 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
 sqlite3 "$A_TEAM_STATE/history.db" "UPDATE formats SET format = 1 WHERE team = 'demo';"
 KEEP_BOARD=1 run board demo format
 same "again" "11|mentaldesk/style#84|released|MentalDesk.Tui" "$(waits_table)"
@@ -573,7 +573,7 @@ same "frees" '[{"number":13,"status":"Ready","frees":[12]}]' "$(jq -c 'map(selec
 # holding_team: demo, with a Ready task ranked High and one another team's task waits on.
 holding_team() {
   fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+{ "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" },
   "wip": { "worktrees": 3, "pitched": 3, "exploring": 2, "ideas": 4 } }
 JSON
   gh_items "$1" <<ITEMS
@@ -593,7 +593,6 @@ case_ "the Dev takes a task another team waits on before a higher Priority, and 
 holding_team 20 Ready
 run board demo next
 same "next" 21 "$(jq -r .number "$OUT")"
-claimable
 run board demo claim dev
 same "claimed" '{"number":21,"title":"Unranked, and another team waits on it"}' "$(cat "$OUT")"
 rm "$CONFIG/teams/app.json"
@@ -859,6 +858,96 @@ for latest in v1.2.3 v1.2.2; do
   same "exit with $latest latest" 0 "$STATUS"
 done
 
+case_ "format 3 takes the mirror's columns out of a format 2 record, keeps every card's status, and is safe to repeat"
+KEPT_STATE=$A_TEAM_STATE
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+gh_items <<'ITEMS'
+Building 7 A pitch
+ITEMS
+sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE board (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL, status TEXT NOT NULL,
+    priority TEXT, since TEXT NOT NULL, content TEXT NOT NULL DEFAULT '{}', mirror TEXT, mirrored_status TEXT,
+    mirrored_priority TEXT, marks TEXT, mirrored_rank TEXT, mirrored_theme TEXT, PRIMARY KEY (team, item));
+  CREATE TABLE boards (team TEXT PRIMARY KEY, project TEXT NOT NULL, read TEXT, failed TEXT, retry TEXT, repaired TEXT, issues_read TEXT);
+  CREATE TABLE formats (team TEXT PRIMARY KEY, format INTEGER NOT NULL, version TEXT NOT NULL, moved TEXT);
+  INSERT INTO board VALUES ('demo', 7, 'I_7', 'Building', 'High', '2026-11-01T00:00:00Z', '{\"type\":\"Issue\",\"title\":\"A pitch\",\"labels\":[\"pitch\"]}',
+    'PVTI_7', 'Building', 'High', '{}', '', '');
+  INSERT INTO boards VALUES ('demo', 'mentaldesk/1', '2026-11-01T00:00:00Z', 'GitHub rate limit', '2026-11-01T01:00:00Z', '2026-11-01T00:00:00Z', NULL);
+  INSERT INTO formats VALUES ('demo', 2, '0.3.0', NULL);"
+columns() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT group_concat(name, ',') FROM (SELECT name FROM pragma_table_info('$1') ORDER BY cid);"; }
+KEEP_BOARD=1 run board demo format
+same "exit" 0 "$STATUS"
+same "stamped" 4 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+same "board columns" "team,item,node,status,priority,since,content,marks" "$(columns board)"
+same "boards columns" "team,repaired,issues_read" "$(columns boards)"
+same "card" "Building|High" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT status, priority FROM board WHERE team = 'demo' AND item = 7;")"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE formats SET format = 2 WHERE team = 'demo';"
+KEEP_BOARD=1 run board demo format
+same "again exit" 0 "$STATUS"
+same "again stderr" "" "$(cat "$ERR")"
+KEEP_BOARD=1 run board demo list
+same "listed" '[[7,"Building","High"]]' "$(jq -c 'map([.number, .status, .priority])' "$OUT")"
+A_TEAM_STATE=$KEPT_STATE
+
+case_ "format 4 copies who read and who said what on each open card into the record, once, and nothing reads a 👀 or marker after"
+KEPT_STATE=$A_TEAM_STATE
+A_TEAM_STATE=$(mktemp -d "$WORK/state.XXXXXX")
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "app": { "id": 7, "slug": "demo-app" } }
+JSON
+gh_items <<'ITEMS'
+Pitched 7 A pitch
+ITEMS
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
+echo '[]' >"$UPDATES"
+gh_talk <<TALK
+7 body ${TODAY}T02:10:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+TALK
+gh_thread <<TALK
+body ${TODAY}T02:10:00Z demo-app[bot] 0 The pitch\n<!-- a-team:lead -->
+comment ${TODAY}T02:20:00Z reviewer 1 Seen.
+comment ${TODAY}T02:25:00Z demo-app[bot] 0 Answered.\n\n<!-- a-team:lead -->
+comment ${TODAY}T02:30:00Z reviewer 0 Not seen yet.
+comment ${TODAY}T02:35:00Z stranger 1 Me too.
+TALK
+export NO_SEED_TALK=1
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE formats SET format = 3 WHERE team = 'demo';"
+talk_table() {
+  sqlite3 "$A_TEAM_STATE/history.db" "SELECT 'read ' || comment FROM comments_read WHERE team = 'demo'
+    UNION ALL SELECT 'said ' || comment || ' ' || role FROM comments_said WHERE team = 'demo' ORDER BY 1;"
+}
+touch "$BIN/bumps-fail"
+KEEP_BOARD=1 run board demo format
+failed "format, with the Dependabot PRs unread"
+grep -q "can't read the open Dependabot PRs" "$ERR" || fail "stderr: '$(cat "$ERR")'"
+same "not stamped" 3 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+rm "$BIN/bumps-fail"
+KEEP_BOARD=1 run board demo format
+same "exit" 0 "$STATUS"
+same "stamped" 4 "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+same "copied" "read issuecomment-2000001
+said issuecomment-2000002 lead" "$(talk_table)"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE formats SET format = 3 WHERE team = 'demo';"
+KEEP_BOARD=1 run board demo format
+same "again" "read issuecomment-2000001
+said issuecomment-2000002 lead" "$(talk_table)"
+sed -i.bak 's/"eyes":1/"eyes":0/' "$THREAD"
+: >"$BIN/args"
+KEEP_BOARD=1 run board demo feedback lead 7
+same "feedback" '["Not seen yet."]' "$(jq -c '[.[].body]' "$OUT")"
+gh_talk <<TALK
+7 body ${TODAY}T02:10:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+7 comment ${TODAY}T02:20:00Z reviewer Seen.
+7 comment ${TODAY}T02:30:00Z reviewer Not seen yet.
+TALK
+sed -i.bak 's/#issuecomment-100700\([12]\)/#issuecomment-200000\1/; s/#issuecomment-2000002"/#issuecomment-2000003"/' "$TALK"
+KEEP_BOARD=1 waiting
+same "Work" '"answering your feedback since 02:30"' "$(jq -c '.[0].reason' "$OUT")"
+KEEP_BOARD=1 run board demo triggers lead
+grep -q reactions "$BIN/args" && fail "a 👀 was read: '$(grep reactions "$BIN/args")'"
+unset NO_SEED_TALK
+A_TEAM_STATE=$KEPT_STATE
+
 # A copy of a-team at board format $2, as a release at version $1 or, with "", as a worktree. A checkout's core, and only
 # that, reads A_TEAM_BOARD_FORMAT, and has a step for that format that adds the team to $STATE/format-$2-ran.
 format_copy() {
@@ -882,6 +971,7 @@ format_home() {
 }
 # on_real <a-team> <args...>: that a-team against the real state, as a worktree's ./bin/a-team board runs it.
 on_real() {
+  A_TEAM_STATE="$FORMAT_STATE" seed_board
   env -u A_TEAM_STATE -u XDG_STATE_HOME HOME="$FORMAT_HOME" A_TEAM_CONFIG="$CONFIG" "$1/bin/a-team" board "${@:2}" >"$OUT" 2>"$ERR"
   STATUS=$?
 }
@@ -891,7 +981,7 @@ set_stamp() {
 }
 format_board() {
   fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "project": { "owner": "mentaldesk", "number": 1 } }
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"] }
 JSON
   gh_items <<'ITEMS'
 Idea 7 A seed
@@ -943,22 +1033,22 @@ case_ "a worktree whose a-team would migrate refuses every command, and points a
 format_board
 format_home "$INSTALLED"
 on_real "$INSTALLED" demo list
-AHEAD=$(format_copy "" 3)
+AHEAD=$(format_copy "" 5)
 for command in list wip triggers\ dev; do
   # shellcheck disable=SC2086 # the command and its argument
   on_real "$AHEAD" demo $command
   failed "$command"
   one_line "$command"
-  grep -q "would move the board from format 1 to 3, and only the installed one ($INSTALLED/bin/a-team) may: try it with --dry-run, or with A_TEAM_STATE set to a copy" "$ERR" ||
+  grep -q "would move the board from format 1 to 5, and only the installed one ($INSTALLED/bin/a-team) may: try it with --dry-run, or with A_TEAM_STATE set to a copy" "$ERR" ||
     fail "$command: '$(cat "$ERR")'"
 done
 same "stamp" "1|0.3.0|0" "$(stamp)"
-[ ! -e "$FORMAT_STATE/format-3-ran" ] || fail "the step ran"
+[ ! -e "$FORMAT_STATE/format-5-ran" ] || fail "the step ran"
 A_TEAM_RUN_TEAM=demo on_real "$AHEAD" demo list
 grep -q "only the installed one .* may: try it with --dry-run" "$ERR" || fail "a run from a worktree: '$(cat "$ERR")'"
-RELEASE_AHEAD=$(format_copy 0.2.0 3)
+RELEASE_AHEAD=$(format_copy 0.2.0 5)
 A_TEAM_RUN_TEAM=demo on_real "$RELEASE_AHEAD" demo list
-same "a run on another release" "board.sh: this run is on 0.2.0, and only the installed a-team (0.3.0) may move the board from format 1 to 3: stopping" "$(cat "$ERR")"
+same "a run on another release" "board.sh: this run is on 0.2.0, and only the installed a-team (0.3.0) may move the board from format 1 to 5: stopping" "$(cat "$ERR")"
 
 case_ "--dry-run and a state of its own still work from that worktree, and the real state stays put"
 on_real "$AHEAD" --dry-run demo list
@@ -969,24 +1059,24 @@ OWN=$(mktemp -d "$WORK/state.XXXXXX")
 cp "$FORMAT_STATE/history.db" "$OWN/"
 A_TEAM_STATE=$OWN A_TEAM_CONFIG="$CONFIG" "$AHEAD/bin/a-team" board demo list >"$OUT" 2>"$ERR"
 same "own state exit" 0 "$?"
-same "own state moved" 3 "$(sqlite3 "$OWN/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
+same "own state moved" 5 "$(sqlite3 "$OWN/history.db" "SELECT format FROM formats WHERE team = 'demo';")"
 same "own state stamp" "1|0.3.0|0" "$(stamp)"
 
 case_ "the installed a-team moves it forward, once, and a run's copy of that release may too"
-NEWER=$(format_copy 0.4.0 3)
+NEWER=$(format_copy 0.4.0 5)
 format_home "$NEWER"
 format_board
-RUN_COPY=$(format_copy 0.4.0 3)
+RUN_COPY=$(format_copy 0.4.0 5)
 on_real "$NEWER" demo list
 same "unstamped exit" 0 "$STATUS"
-same "ran once" demo "$(cat "$FORMAT_STATE/format-3-ran")"
-same "moved" "3|0.4.0|1" "$(stamp)"
+same "ran once" demo "$(cat "$FORMAT_STATE/format-5-ran")"
+same "moved" "5|0.4.0|1" "$(stamp)"
 on_real "$NEWER" demo list
-same "ran once more" demo "$(cat "$FORMAT_STATE/format-3-ran")"
+same "ran once more" demo "$(cat "$FORMAT_STATE/format-5-ran")"
 format_home "$NEWER"
 on_real "$RUN_COPY" demo list
 same "run copy exit" 0 "$STATUS"
-same "run copy moved" "3|0.4.0|1" "$(stamp)"
+same "run copy moved" "5|0.4.0|1" "$(stamp)"
 
 case_ "commands that find the board behind take turns, so the step runs once"
 for round in 1 2 3 4 5; do
@@ -997,8 +1087,8 @@ for round in 1 2 3 4 5; do
     env -u A_TEAM_STATE -u XDG_STATE_HOME HOME="$FORMAT_HOME" A_TEAM_CONFIG="$CONFIG" "$NEWER/bin/a-team" board demo format >/dev/null 2>"$ERR.$racer" &
   done
   wait
-  same "round $round ran" 1 "$(grep -c '' <"$FORMAT_STATE/format-3-ran")"
-  same "round $round moved" "3|0.4.0|1" "$(stamp)"
+  same "round $round ran" 1 "$(grep -c '' <"$FORMAT_STATE/format-5-ran")"
+  same "round $round moved" "5|0.4.0|1" "$(stamp)"
   same "round $round left no turn behind" 0 "$(sqlite3 "$FORMAT_STATE/history.db" "SELECT COUNT(*) FROM format_moves;")"
   for racer in 1 2 3 4; do
     same "round $round stderr" "" "$(cat "$ERR.$racer")"
@@ -1011,11 +1101,11 @@ on_real "$INSTALLED" demo list
 set_stamp 1 0.3.0
 on_real "$NEWER" demo overview
 same "exit" 0 "$STATUS"
-same "ran once" demo "$(cat "$FORMAT_STATE/format-3-ran")"
-same "moved" "3|0.4.0|1" "$(stamp)"
+same "ran once" demo "$(cat "$FORMAT_STATE/format-5-ran")"
+same "moved" "5|0.4.0|1" "$(stamp)"
 on_real "$INSTALLED" demo overview
 failed "refused"
-same "words" "board.sh: the board is in format 3, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
+same "words" "board.sh: the board is in format 5, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
 
 case_ "a command that died moving the board doesn't hold up the next, which repeats its step"
 format_home "$NEWER"
@@ -1027,30 +1117,30 @@ wait "$DEAD"
 sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO format_moves (team, pid) VALUES ('demo', $DEAD);"
 on_real "$NEWER" demo format
 same "exit" 0 "$STATUS"
-same "ran" demo "$(cat "$FORMAT_STATE/format-3-ran")"
-same "moved" "3|0.4.0|1" "$(stamp)"
+same "ran" demo "$(cat "$FORMAT_STATE/format-5-ran")"
+same "moved" "5|0.4.0|1" "$(stamp)"
 
 case_ "an a-team older than the state refuses every board command, read or write, whichever team moved it"
 format_board
 format_home "$NEWER"
 on_real "$INSTALLED" demo list
-sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO formats (team, format, version) VALUES ('other', 3, '0.4.0');"
+sqlite3 "$FORMAT_STATE/history.db" "INSERT INTO formats (team, format, version) VALUES ('other', 5, '0.4.0');"
 for command in "demo list" "demo wip" "demo move dev 7 Ready" "--dry-run demo list" "demo body 7"; do
   # shellcheck disable=SC2086 # the command and its arguments
   A_TEAM_RUN_TEAM=demo on_real "$INSTALLED" $command
   failed "$command"
   one_line "$command"
-  same "$command" "board.sh: the board is in format 3, from a-team 0.4.0, and this run is on 0.3.0: stopping" "$(cat "$ERR")"
+  same "$command" "board.sh: the board is in format 5, from a-team 0.4.0, and this run is on 0.3.0: stopping" "$(cat "$ERR")"
 done
 on_real "$INSTALLED" demo list
-same "installed" "board.sh: the board is in format 3, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
+same "installed" "board.sh: the board is in format 5, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team" "$(cat "$ERR")"
 on_real "$SAME_FORMAT" demo list
 grep -q "is on unknown: merge the default branch" "$ERR" || fail "worktree: '$(cat "$ERR")'"
 
 case_ "check reports a board problem while the a-team is behind the state, and runs its other checks"
 on_real "$INSTALLED" demo check
 same "exit" 1 "$STATUS"
-grep -q '^problem  board     the board is in format 3, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team$' "$OUT" ||
+grep -q '^problem  board     the board is in format 5, from a-team 0.4.0, and this is 0.3.0: brew upgrade a-team$' "$OUT" ||
   fail "check: '$(cat "$OUT")'"
 grep -q '^problem  app ' "$OUT" || fail "check stopped early: '$(cat "$OUT")'"
 

@@ -301,7 +301,7 @@ public sealed partial class DashboardWindow
             }
             _boardReadAt[team] = _clock.GetUtcNow();
             Sync(team);
-            _overseer.Show(team, BoardCard.Parse(read.Output), MirrorLag.Parse(read.Output));
+            _overseer.Show(team, BoardCard.Parse(read.Output));
             BackToCard(team);
         }
         if (boarding.Done)

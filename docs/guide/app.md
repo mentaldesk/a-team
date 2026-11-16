@@ -35,7 +35,7 @@ says so in a line, with the command that signs you in.
 
 The keys come in TuiCode's families. `Ctrl+G` then a letter goes somewhere: `Ctrl+G W`
 Work, `Ctrl+G O` Overseer, `Ctrl+G A` the Assistant, `Ctrl+G I` the panel for what's selected in
-Overseer, `Ctrl+G T` [Teams](teams.md) and `Ctrl+G N` what's new. `Ctrl+T` then a letter turns something on or off: `Ctrl+T T` tool calls and
+Overseer, `Ctrl+G P` Work's [Priority Inbox](work.md#priority-inbox), `Ctrl+G T` [Teams](teams.md) and `Ctrl+G N` what's new. `Ctrl+T` then a letter turns something on or off: `Ctrl+T T` tool calls and
 `Ctrl+T M` only your moves. Everyday commands are a Ctrl key: `Ctrl+E` Commands, `Ctrl+,` [Settings](teams.md#settings),
 `Ctrl+N` a new idea, `Ctrl+Q` quit, and `Ctrl+L` a new conversation in the Assistant. The keys for a
 selected card or log line, like `a` to accept or `l` to copy, stay single letters.

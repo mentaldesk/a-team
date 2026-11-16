@@ -68,8 +68,8 @@ public sealed partial class DashboardWindow
                 scopes: [Regions.Assistant])
             .Register("assistant.toolCalls", "Show tool calls in full", () => _assistant?.ToggleToolCalls(), chord: "Ctrl+T T", isEnabled: () => InAssistant,
                 scopes: [Regions.Assistant])
-            .Register("pane.next", "Next pane", SwitchPane, Key.F6, isEnabled: () => _assistant is { Visible: true } || PanelShown)
-            .Register("pane.previous", "Previous pane", SwitchPane, Key.F6.WithShift, isEnabled: () => _assistant is { Visible: true } || PanelShown)
+            .Register("pane.next", "Next pane", SwitchPane, Key.F6, isEnabled: () => _assistant is { Visible: true } || PanelShown || InboxShown)
+            .Register("pane.previous", "Previous pane", SwitchPane, Key.F6.WithShift, isEnabled: () => _assistant is { Visible: true } || PanelShown || InboxShown)
             .Register("log.lineDown", "Select the next line of the log", () => Reader()?.MoveLine(+1, extend: false), Key.CursorDown, isEnabled: Reading, scopes: [Regions.Log])
             .Register("log.lineUp", "Select the line above in the log", () => Reader()?.MoveLine(-1, extend: false), Key.CursorUp, isEnabled: Reading, scopes: [Regions.Log])
             .Register("log.extendDown", "Extend the selection down", () => Reader()?.MoveLine(+1, extend: true), Key.CursorDown.WithShift, isEnabled: Reading, scopes: [Regions.Log])
@@ -95,7 +95,6 @@ public sealed partial class DashboardWindow
             .Register("work.copyBranch", "Copy branch name", CopyBranch, new Key('y'),
                 isEnabled: () => OnWork() && _work.Selected is { Branch.Length: > 0 }, onCard: true, scopes: [Regions.Work])
             .Register("work.github", "Open on GitHub", OpenSelected, new Key('g'), isEnabled: () => OnWork() && _work.SelectedUrl is { Length: > 0 }, onCard: true, scopes: [Regions.Work])
-            .Register("team.board", "Open team's board on GitHub", OpenBoard, new Key('b'), isEnabled: () => SelectedTeam() is not null)
             .Register("team.vision", () => SelectedTeam() is { } team ? $"Write the vision with me · {team}" : "Write the vision with me",
                 () => WriteVision(SelectedTeam()), isEnabled: () => _options.HandOver is not null && SelectedTeam() is not null, name: "Write the vision with me")
             .Register("team.visionReview", () => SelectedTeam() is { } team ? $"Review the vision · {team}" : "Review the vision",
@@ -162,6 +161,9 @@ public sealed partial class DashboardWindow
             .Register("view.overseer", "Overseer", () => Show(Area.Overseer), chord: "Ctrl+G O")
             .Register("assistant", () => "Assistant", ToggleAssistant, isEnabled: () => _assistant is not null, chord: "Ctrl+G A")
             .Register("view.details", () => "Details", FocusDetails, isEnabled: () => PanelShown, chord: "Ctrl+G I")
+            .Register("view.inbox", () => "Priority Inbox", FocusInbox, isEnabled: () => InboxShown, chord: "Ctrl+G P")
+            .Register("inbox.go", "Go to the card", GoToInboxCard, Key.Enter, isEnabled: () => InboxShown && _inbox.Selected is not null,
+                scopes: [Regions.Inbox])
             .Register("view.dispatcher", "Dispatcher log", OpenDispatcher, isEnabled: () => !_dispatcherOpen)
             .Register("work.whatsNew", () => "Go to what's new", GoToNew, isEnabled: () => _news.Newest is not null, menuLabel: () => "What's new", chord: "Ctrl+G N")
             .Register("agent.hold", () => Chosen() is { Held: true } ? hold[1] : hold[0], ToggleHold, new Key('h'),
@@ -193,7 +195,7 @@ public sealed partial class DashboardWindow
             .Register("quit", "Quit", Quit, Key.Q.WithCtrl);
         _commands.Keys.Bind("Tab", "overseer.matches", Regions.Filter);
         foreach (var (id, label, run) in PaneWidths.Commands)
-            _commands.Register(id, label, () => run(_paneWidths.Open!), isEnabled: () => _paneWidths.Open?.CanResize == true);
+            _commands.Register(id, label, () => run(_paneWidths.Open ?? _workPanes), isEnabled: () => (_paneWidths.Open ?? _workPanes).CanResize);
         for (var tab = 0; tab < 9; tab++)
         {
             var index = tab;

@@ -25,16 +25,15 @@ press `Ctrl+Enter` (**Create**). A-Team writes the team's file, paused, then off
 
 1. Clone the repo.
 2. Give the team its GitHub App, and install it on the repo.
-3. Create its Project, if **Mirror** says *A new project*.
-4. Set its board up.
-5. Write its vision with you.
-6. Get to work.
+3. Set its board up.
+4. Write its vision with you.
+5. Get to work.
 
 Each step says what it will do and waits for `Ctrl+Enter`. `Esc` skips it, and `Backspace` goes back a
 step. The last asks whether to get to work or keep the team paused: `↑`/`↓` choose, `Ctrl+Enter`
 goes ahead with the one chosen, and `Esc` cancels the new team.
 
-Every open issue on the repo arrives in Triage by itself, within a read of the board, mirror or not, for the Lead
+Every open issue on the repo arrives in Triage by itself, within a read of the board, for the Lead
 to rank. Setting up the board says how many will arrive, so a repo with a backlog starts with a long Triage once:
 close any you don't want.
 
@@ -73,7 +72,7 @@ next run uses it.
 
 ## A team's settings
 
-`Enter` on a team opens its form: repo, stakeholders, the other repos it contributes to, mirror, vision, workdir, skills, the command
+`Enter` on a team opens its form: repo, stakeholders, the other repos it contributes to, vision, workdir, skills, the command
 `a-team try` runs, whether it's working or paused, when it releases, when the Lead
 [reviews the vision](#reviewing-the-vision), which roles it runs, and its limits. Every team has a Lead and a Dev; tick **Customer lead** to add the
 [Customer lead](how-a-team-works.md#the-customer-lead) (see [Turning on the Customer lead](#turning-on-the-customer-lead)),
@@ -95,17 +94,16 @@ turns the label of every wrong field red and moves you to the first. The foot na
   and `Enter` to pick one. Type a path that isn't there and `Enter` uses it anyway: the field then says
   the Lead or Customer lead will draft it.
 
-**Mirror** is the GitHub Project a-team copies the board to, so you can see it on GitHub. A-Team keeps the
-board itself, so the team works with *None* and needs no Project at all: an issue opened on GitHub still reaches
-Triage, and a closed one reopened comes back at its last move. `b` has no board to open. *A new project, named after
-the team* makes one when you save, sets it up and copies the board onto it. The Project only shows the board: a card
-moves when you [answer it in Work](work.md#answering-from-a-card) or the team moves it. Moving a card on the Project isn't a move, so it goes back to the app's Status on the next sync,
-and the card's History says so. An issue's Priority is different: changing it on GitHub still counts as yours.
+A-Team keeps the board on this machine and copies it nowhere: a card moves when you
+[answer it in Work](work.md#answering-from-a-card) or the team moves it, and its Priority is the one you set with `p`.
+A team that used to copy its board to a GitHub Project leaves that Project as it was, no longer updated: close or
+delete it on GitHub when you like. Saving the team's settings takes its old `project` and `mirror` out of its file.
 
 **Contributes to** lists the other repos the Dev may open draft PRs on, picked from the ones the
 team's GitHub App can reach. When a task needs a change in one of them first, like the style guide,
 the Dev opens that draft PR itself and hands the task back with it linked, for you to review and
-release. It looks after that PR as it does its own and marks it ready once it's green. While it's a
+release. It looks after that PR as it does its own: it fixes failing CI, answers your comments, merges the
+base in when the PR conflicts with it, and marks it ready once it's green. While it's a
 draft it shows In progress on the board of the team that runs that repo, then in Review once it's
 ready, where `a` merges it. Releasing stays yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
 
@@ -176,7 +174,7 @@ it found. That count includes notes, which the team runs with, so a team can rea
 working. A note puts no `⚠` on its roles in [Overseer](overseer.md).
 
 - **Problems**: open the team, and its form lists them at the top, one a line, notes among them, each naming what it's
-  about and what's wrong. A board that's missing a Status option or a label can be set
+  about and what's wrong. A board that's missing a label can be set
   up again with `F12` (*Repair*).
 - **`can't read this file`**: the team's file isn't valid. Select it, and the foot of the screen names
   the line that's wrong. Fix it in the file; the team can't be started or paused until you do.
@@ -186,8 +184,7 @@ whether a file is there, so nothing is treated as missing. It's the same for the
 and it clears by itself once GitHub answers.
 
 `a-team board <team> check` reports the same from a shell, each line starting `problem`, which stops the
-team, or `note`, which doesn't. Anything wrong with the team's GitHub Project is a note: the board is kept
-on this machine, and the Project is only a copy of it.
+team, or `note`, which doesn't.
 
 ## Settings
 

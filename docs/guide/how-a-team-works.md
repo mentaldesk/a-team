@@ -3,7 +3,7 @@
 A team is two agents working on one GitHub repository, and you. You can add the
 [Customer lead](#the-customer-lead) and the [Reviewer](#the-reviewer). They coordinate through the team's
 board: if it isn't on the board, in an issue or in a PR, the team doesn't know about it. A-Team keeps the board on
-this machine, and can copy it to a GitHub Project, its mirror, so you can see it on GitHub too.
+this machine, and nowhere else.
 
 ## Who does what
 
@@ -145,8 +145,8 @@ Comment on the issue or the PR. The agents read your comments on their next run 
 Ask the Lead, the Dev or the Customer lead for a follow-up and it files it as an Idea, which waits
 in Triage until you rank it.
 
-The 👀 reaction on your comment means a run has read it. Leave that one to the agents: every other
-reaction is yours. A comment you make while a run is going gets a run of its own, so nothing you say
+The 👀 reaction on your comment shows a run has read it. a-team keeps that in its own record, so a 👀
+from you or anyone else doesn't mark your comment read: react however you like. A comment you make while a run is going gets a run of its own, so nothing you say
 is missed.
 
 When the Dev can't go on without you, it hands its task back with a question and holds it.
@@ -177,10 +177,7 @@ a-team keeps what it knows about an item beyond its Status and Priority in its o
 labels on your issues: the rank the Lead recommends, the theme a pitch serves, a shelve and its date,
 a skip, a hold, and what a task or pitch waits on in another repo or a release. A card's details in Overseer and the line
 under the reader's title show them, like `Idea · Priority none · Lead recommends Medium · theme:
-Consistently good UX`. The GitHub Project shows the Lead's rank and the theme as its **Lead rank** and
-**Theme** fields, which setting the board up adds, or else the first copy that needs one. If your
-project already has a field of either name that isn't text, a-team can't copy to it: `check`, setup
-and the mirror's note in Overseer say so, and renaming your field clears it. Upgrading
+Consistently good UX`. Upgrading
 takes the old `rank:`, `theme:` and `a-team:` labels, and `blocked`, off your open issues once their
 state is in the record; `pitch` and your own labels stay.
 
@@ -276,10 +273,10 @@ conversation, under `reviewer` and `dev`.
 
 ## Ideas and priorities
 
-You steer the Lead with the Priority field on the board: Low, Medium, High or Urgent.
+You steer the Lead with each card's Priority, which you set in [Work](work.md) with `p`: Low, Medium, High or Urgent.
 
 - **Seed an idea** with [**New idea**](work.md#adding-an-idea) (`Ctrl+N`). An issue anyone opens on
-  the product repo reaches Idea too, with or without a mirror.
+  the product repo reaches Idea too.
 - **The Lead pitches the highest-priority Idea**, and between pitches it discovers new ones. Its own
   discoveries, and the Customer lead's, are marked as theirs.
 - **A discovery is one of two kinds.** Most look for friction and faults in what's already there,

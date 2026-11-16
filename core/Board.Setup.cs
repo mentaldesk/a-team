@@ -4,36 +4,40 @@ using System.Text.Json.Nodes;
 
 namespace ATeam.Core;
 
-/// <summary>The state's format and what moves it, and what `check` and `setup` ask of the machine, the Project and the repo.</summary>
+/// <summary>The state's format and what moves it, and what `check` and `setup` ask of the machine and the repo.</summary>
 internal sealed partial class Board
 {
-    private const int DefaultFormat = 2;
+    private const int DefaultFormat = 4;
     private const string KeychainService = "a-team-app";
 
     /// <summary>What moves a team's state up to each format, safe to repeat. A format with nothing to move has no step.</summary>
     internal static readonly IReadOnlyDictionary<int, Action<Board>> FormatSteps = new Dictionary<int, Action<Board>>
     {
         [2] = board => board.MoveWaitsIntoRecord(),
+        [3] = board => board.DropMirrorColumns(),
+        [4] = board => board.MoveTalkIntoRecord(),
     };
+
+    private static readonly string[] MirrorColumns =
+        ["board.mirror", "board.mirrored_status", "board.mirrored_priority", "board.mirrored_rank", "board.mirrored_theme",
+         "boards.project", "boards.read", "boards.failed", "boards.retry"];
+
+    /// <summary>Takes the record's copy of each card on a GitHub Project away, for every team at once.</summary>
+    private void DropMirrorColumns()
+    {
+        var columns = _record.Query("SELECT 'board.' || name FROM pragma_table_info('board') UNION ALL SELECT 'boards.' || name FROM pragma_table_info('boards');")
+            .Select(row => row.First).ToHashSet();
+        foreach (var column in MirrorColumns.Where(columns.Contains))
+        {
+            var dot = column.IndexOf('.');
+            _record.Exec($"ALTER TABLE {column[..dot]} DROP COLUMN {column[(dot + 1)..]};");
+        }
+    }
 
     /// <summary>The labels setup creates, and what goes wrong without each.</summary>
     private static readonly (string Name, string Color, string Description, string Without)[] TeamLabels =
     [
         ("pitch", "5319e7", "An a-team pitch: Lead shapes it, reviewer approves it", "the team can't tell its pitches from tasks"),
-    ];
-
-    /// <summary>The Status options setup adds, for a status the Project has no option for.</summary>
-    private static readonly (string Status, string Color, string Description)[] StatusOptionsWanted =
-    [
-        ("Idea", "GRAY", "A seed worth a look"),
-        ("Exploring", "PURPLE", "Lead is researching and writing a pitch"),
-        ("Pitched", "PINK", "Waiting on the reviewer: approve or comment"),
-        ("Approved", "GREEN", "Reviewer approved; Lead to break it down"),
-        ("Building", "BLUE", "Broken into tasks; tasks in flight"),
-        ("Ready", "BLUE", "A task Dev can pick up"),
-        ("In progress", "YELLOW", "Dev is working on it"),
-        ("In review", "ORANGE", "Waiting on the reviewer: merge, accept or comment"),
-        ("Done", "GREEN", "Merged or accepted"),
     ];
 
 #if DEBUG
@@ -130,18 +134,6 @@ internal sealed partial class Board
     private static string AtHome(string path) =>
         path.StartsWith('~') ? (Environment.GetEnvironmentVariable("HOME") ?? "") + path[1..] : path;
 
-    private string FieldClash(string name) =>
-        $"{_owner} project {_number} has a {name} field that isn't text, so a-team can't copy to it: rename that field";
-
-    private static string TextFieldName(string key) => key == "rank" ? RankField : ThemeField;
-
-    private GhResult AddTextField(string project, string name) =>
-        _gh.Run("api", "graphql", "-F", $"project={project}", "-f", $"name={name}", "-f", """
-            query=mutation($project: ID!, $name: String!) {
-                  createProjectV2Field(input: {projectId: $project, dataType: TEXT, name: $name}) {
-                    projectV2Field { ... on ProjectV2Field { id } } } }
-            """, "--jq", ".data.createProjectV2Field.projectV2Field.id");
-
     private static void NotThere(Findings found, string topic, int there, string file, string missing) =>
         found.Note(topic, there == 1 ? missing : $"GitHub didn't answer for {file}: checking again next pass");
 
@@ -224,70 +216,6 @@ internal sealed partial class Board
             NotThere(found, "release", there, "release.yml", $"release is {release}, but {_repo} has no release.yml workflow for it to run");
     }
 
-    /// <summary>What the mirror's Project lacks, and whether nobody can read it.</summary>
-    internal bool CheckProject(Findings found)
-    {
-        if (_config["mirror"]?.GetValueKind() == JsonValueKind.False)
-        {
-            Console.Out.Write("mirror: none, so the board is only on this machine\n");
-            return false;
-        }
-        if (_number.Length == 0)
-        {
-            found.Note("project", $"{_team}.json names no GitHub Project to copy the board to: pick one, or None, under Mirror in its settings");
-            return false;
-        }
-        var (meta, err) = ProjectMeta();
-        if (meta is null)
-        {
-            found.Note("project", $"can't read {_owner} project {_number}: {Unprefixed(err.TrimEnd('\n').Split('\n')[^1], "gh: ")}");
-            return true;
-        }
-        if (!Json.Truthy(meta["field"]?["id"]))
-        {
-            found.Note("project", $"no single-select field '{_field}' on {_owner} project {_number}");
-            return false;
-        }
-        foreach (var name in meta["clash"]!.AsArray().Select(Json.Text).OfType<string>())
-            found.Note("fields", FieldClash(name));
-        CheckStatuses(found, meta["field"]!["options"]!.AsArray());
-        return false;
-    }
-
-    private void CheckStatuses(Findings found, JsonArray options)
-    {
-        var names = options.Select(option => Json.Text(option?["name"])).ToHashSet();
-        var missing = StatusRoute.Statuses.Select(StatusOnMirror).Where(option => !names.Contains(option)).ToList();
-        if (missing.Count > 0)
-        {
-            found.Note("status", $"{missing.Count} of {StatusRoute.Statuses.Length} options missing from '{_field}': {string.Join(", ", missing)}");
-            return;
-        }
-        var unmapped = Unmapped();
-        if (unmapped.Length > 0)
-            found.Note("items", $"outside the team's states: {unmapped}");
-        else
-            Console.Out.Write($"ok: {_owner} project {_number}, field '{_field}'\n");
-    }
-
-    /// <summary>The items on the mirror in a status the team doesn't have; nothing if it can't be read whole.</summary>
-    private string Unmapped()
-    {
-        JsonArray? nodes;
-        try
-        {
-            nodes = MirrorNodes(shortEnds: false);
-        }
-        catch (JsonException)
-        {
-            return "";
-        }
-        var known = StatusRoute.Statuses.Concat(_reverseMap.Keys).ToHashSet();
-        var outside = (nodes ?? []).Where(node => Json.Text(node?["project"]?["status"]) is { } status && !known.Contains(status))
-            .Select(node => $"#{node!["content"]?["number"]?.ToJsonString() ?? "null"} {Json.Text(node["project"]?["status"])}");
-        return string.Join(", ", outside);
-    }
-
     internal void CheckLabels(Findings found)
     {
         var read = _gh.Run("label", "list", "-R", _repo, "--limit", "500", "--json", "name", "--jq", ".[].name");
@@ -320,22 +248,8 @@ internal sealed partial class Board
         }
     }
 
-    private bool PriorityReadable()
-    {
-        var read = PriorityRead();
-        if (!read.Ok) return false;
-        try
-        {
-            return Json.Parse(read.Out)?["data"]?["organization"]?["issueFields"]?["nodes"] is JsonArray;
-        }
-        catch (Exception e) when (e is InvalidOperationException or JsonException)
-        {
-            return false;
-        }
-    }
-
     /// <summary>What the team's App can do, each part of its identity in turn, as far as the first that's wrong.</summary>
-    internal void CheckIdentity(Findings found, bool unreachable)
+    internal void CheckIdentity(Findings found)
     {
         var bot = Bot;
         if (bot.Length == 0)
@@ -355,127 +269,12 @@ internal sealed partial class Board
             found.Problem("app", $"{bot} can't get a token: {Unprefixed(token, "a-team token: ")}");
             return;
         }
-        var app = new Board(_team, _config, () => _record, new Gh(token), DryRun);
-        var line = $"identity: {bot} · token ok";
-        var mirrored = _mirror.Length > 0;
-        if (mirrored && !unreachable)
-        {
-            var project = app.Gql("""
-                query($owner: String!, $number: Int!) {
-                          organization(login: $owner) { projectV2(number: $number) { items(first: 1) { totalCount } } } }
-                """, "--jq", ".data.organization.projectV2.items.totalCount");
-            if (!project.Ok)
-                found.Note("app", $"{bot} can't read project {_number}: grant the organisation's \"Projects: read and write\", and install the App on {_repo}");
-            else if (!Granted("organization_projects"))
-                found.Note("app", $"{bot} can only read project {_number}: grant the organisation's \"Projects: read and write\"");
-            else
-                line += $" · project {_number} read+write ok";
-        }
-        if (mirrored)
-        {
-            if (!app.PriorityReadable())
-            {
-                found.Problem("app", $"{bot} can't read the {_priority} field: grant the organisation's \"Issue Fields: read\", or `triggers` fails with \"Resource not accessible by integration\"");
-                return;
-            }
-            line += $" · {_priority} readable";
-        }
         if (!Granted("contents"))
         {
             found.Problem("app", $"{bot} can't push to {_repo}: grant the repository's \"Contents: read and write\"");
             return;
         }
-        Console.Out.Write($"{line} · push access to {_repo} ok\n");
-    }
-
-    /// <summary>What setup asks GitHub to make the Status field: the team's statuses first, each keeping an option it has, then the
-    /// field's others, less `dropped`, the defaults GitHub gives a new project while no item has them.</summary>
-    internal static JsonObject StatusOptions(JsonNode field, IReadOnlyCollection<string> used, Func<string, string> onMirror)
-    {
-        var options = field["options"]!.AsArray();
-        JsonNode? Named(string name) => options.FirstOrDefault(option => Json.Text(option?["name"]) == name);
-        var wanted = new JsonArray();
-        foreach (var (status, color, description) in StatusOptionsWanted)
-        {
-            var name = onMirror(status);
-            wanted.Add(Named(name)?.DeepClone() ?? new JsonObject { ["name"] = name, ["color"] = color, ["description"] = description });
-        }
-        var names = wanted.Select(option => Json.Text(option?["name"])).ToHashSet();
-        var dropped = new JsonArray();
-        foreach (var other in options.Where(option => !names.Contains(Json.Text(option?["name"]))))
-        {
-            if (Json.Text(other?["name"]) is "Todo" or "In Progress" && !used.Contains(Json.Text(other?["name"])!))
-                dropped.Add(other?.DeepClone());
-            else
-                wanted.Add(other?.DeepClone());
-        }
-        return new JsonObject { ["fieldId"] = field["id"]?.DeepClone(), ["singleSelectOptions"] = wanted, ["dropped"] = dropped };
-    }
-
-    /// <summary>The Status names the mirror's items are in; a read short twice ends the command.</summary>
-    private HashSet<string> StatusesInUse()
-    {
-        var pages = BoardPages($$"""
-            query($owner: String!, $number: Int!, $field: String!, $endCursor: String) {
-                      {{_kind}}(login: $owner) { projectV2(number: $number) {
-                        items(first: 100, after: $endCursor) { totalCount pageInfo { hasNextPage endCursor }
-                          nodes { fieldValueByName(name: $field) { ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }
-            """, true, "-F", $"field={_field}") ?? throw new Stop(1, _mirrorError);
-        Console.Error.Write(_mirrorError);
-        return pages.SelectMany(page => page?["data"]?[_kind]?["projectV2"]?["items"]?["nodes"]?.AsArray() ?? [])
-            .Select(node => Json.Text(node?["fieldValueByName"]?["name"])).OfType<string>().ToHashSet();
-    }
-
-    private void ApplyStatusOptions(JsonObject input)
-    {
-        if (Would("set the Status options"))
-        {
-            foreach (var option in input["singleSelectOptions"]!.AsArray())
-                Console.Out.Write($"  {(Json.Truthy(option?["id"]) ? "keep" : "add ")}  {Json.Text(option?["name"])}\n");
-            foreach (var option in input["dropped"]!.AsArray())
-                Console.Out.Write($"  drop  {Json.Text(option?["name"])}\n");
-            return;
-        }
-        var kept = input.DeepClone().AsObject();
-        kept.Remove("dropped");
-        var body = new JsonObject
-        {
-            ["variables"] = new JsonObject { ["input"] = kept },
-            ["query"] = "mutation($input: UpdateProjectV2FieldInput!) { updateProjectV2Field(input: $input) { clientMutationId } }",
-        };
-        Must(Post("set the Status options", Json.Pretty(body) + "\n", "api", "graphql", "--input", "-"));
-        Console.Out.Write($"Status options set on {_owner} project {_number}\n");
-    }
-
-    /// <summary>Gives the Project the Status options and text fields the team needs, or in a dry run lists them.</summary>
-    internal void SetUpProject()
-    {
-        if (_mirror.Length == 0)
-        {
-            if (_config["mirror"]?.GetValueKind() != JsonValueKind.False)
-                throw new Die($"{_team}.json names no GitHub Project: pick one, or None, under Mirror in its settings");
-            return;
-        }
-        var raw = ProjectRaw();
-        if (!raw.Ok) throw new Stop(1, raw.Err);
-        var meta = MetaOf(raw.Out) ?? throw new Stop(4, raw.Err);
-        Console.Error.Write(raw.Err);
-        var field = meta["field"];
-        if (!Json.Truthy(field?["id"])) throw new Die($"no single-select field '{_field}' on {_owner} project {_number}");
-        if (Json.Text(meta["clash"]!.AsArray().FirstOrDefault()) is { } clash) throw new Die(FieldClash(clash));
-        ApplyStatusOptions(StatusOptions(field!, StatusesInUse(), StatusOnMirror));
-        foreach (var key in new[] { "rank", "theme" })
-        {
-            if (Json.Truthy(meta[key]?["id"])) continue;
-            var name = TextFieldName(key);
-            if (Would($"add the {name} field"))
-            {
-                Console.Out.Write($"  add   field {name}\n");
-                continue;
-            }
-            Must(AddTextField(Json.Text(meta["id"])!, name));
-            Console.Out.Write($"Field {name} added to {_owner} project {_number}\n");
-        }
+        Console.Out.Write($"identity: {bot} · token ok · push access to {_repo} ok\n");
     }
 
     /// <summary>Says how many of the repo's open issues aren't on the board yet, and so will arrive in Triage.</summary>

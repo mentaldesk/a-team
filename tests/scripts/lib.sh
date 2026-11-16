@@ -23,7 +23,7 @@ FAKE_LIMIT=300
 OUT="$WORK/out" ERR="$WORK/err"
 # Board writes record history in the state folder, which mustn't be the real one.
 export A_TEAM_STATE="$WORK/state"
-# Every command reads the whole mirror back, so a test's board page is the board as the stakeholder left it.
+# Every command reads the repo's open issues afresh.
 export A_TEAM_BOARD_READ_EVERY=0
 CONFIG=$WORK TEAM='' STATUS=0
 # When the stub's GitHub quota resets: always ahead, so a retry stays due later.
@@ -53,17 +53,101 @@ with_token() {
   jq -n '{token: "ghs_app", expires_at: (now + 86400 | floor | todate), permissions: {}}' >"$cache"
 }
 
-# Each board command starts from a board moved over afresh from the test's page, unless KEEP_BOARD is set.
+# The SQL that stamps a record a test is about to make with today's format; nothing for one that's there.
+new_stamp() {
+  [ ! -e "$A_TEAM_STATE/history.db" ] || return 0
+  format_stamp
+}
+
+# The SQL that stamps the record with today's format, where it has no stamp yet.
+format_stamp() {
+  echo "CREATE TABLE IF NOT EXISTS formats (team TEXT PRIMARY KEY, format INTEGER NOT NULL, version TEXT NOT NULL, moved TEXT);
+    INSERT OR IGNORE INTO formats (team, format, version) VALUES ('demo', $(sed -n 's/.*DefaultFormat = \([0-9]*\);/\1/p' "$ROOT/core/Board.Setup.cs"), 'test');"
+}
+
+# The record's cards as gh_items' page has them, the board as the stakeholder left it, until the board has a command behind it.
+seed_board() {
+  [ -n "${ITEMS:-}" ] && [ -f "$ITEMS" ] || return 0
+  [ ! -f "$A_TEAM_STATE/history.db" ] ||
+    [ "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT COUNT(*) FROM boards WHERE team = 'demo';" 2>/dev/null || echo 0)" = 0 ] || return 0
+  local repo stamp=""
+  repo=$(jq -r '.repo // "mentaldesk/demo"' "$TEAM" 2>/dev/null || echo mentaldesk/demo)
+  mkdir -p "$A_TEAM_STATE"
+  stamp=$(new_stamp)
+  sqlite3 "$A_TEAM_STATE/history.db" "$stamp
+    CREATE TABLE IF NOT EXISTS board (team TEXT NOT NULL, item INTEGER NOT NULL, node TEXT NOT NULL,
+      status TEXT NOT NULL, priority TEXT, since TEXT NOT NULL, content TEXT NOT NULL DEFAULT '{}', marks TEXT, PRIMARY KEY (team, item));
+    DELETE FROM board WHERE team = 'demo';
+    $(jq -r --arg repo "$repo" --arg now "$(jq -rn 'now | todate')" 'def q: if . == null then "NULL" else "'"'"'" + (tostring | gsub("'"'"'"; "'"'"''"'"'")) + "'"'"'" end;
+      .data.organization.projectV2.items.nodes[] | select(.content.repository.nameWithOwner == $repo) | .content as $c
+      | ((if $c.state then ($c.state | IN("CLOSED", "MERGED")) else (($c.stateReason // "REOPENED") != "REOPENED") end)) as $shut
+      | ({type: $c.__typename, title: $c.title, url: $c.url, labels: [$c.labels.nodes[]?.name],
+          blockedBy: (if ($c.issueDependenciesSummary.blockedBy // 0) == 0 then 0 else $c.issueDependenciesSummary.blockedBy end),
+          parent: $c.parent.number}
+         + (if $shut then {shut: true} else {} end)
+         + (if $shut and $c.stateReason then {closed: $c.stateReason} else {} end)
+         + (if $c.author.login == "dependabot" then {dependabot: true} else {} end)
+         + (if $c.__typename == "Issue" and $c.author.login then
+             {author: (if $c.author.__typename == "Bot" then "\($c.author.login)[bot]" else $c.author.login end)} else {} end)) as $content
+      | "INSERT OR REPLACE INTO board (team, item, node, status, priority, since, content) VALUES (\u0027demo\u0027, \($c.number), \($c.id | q),
+          \(.fieldValueByName.name // "None" | q), \([$c.issueFieldValues.nodes[]? | select(.field.name == "Priority") | .name][0] | q),
+          \(.fieldValueByName.updatedAt // $now | q), \($content | tojson | q));"' "$ITEMS")"
+}
+
+# What the fixtures' comments say in 👀 and markers, copied into the record as a team's move to format 4 does,
+# unless NO_SEED_TALK is set: then only what a command recorded counts.
+seed_talk() {
+  [ -z "${NO_SEED_TALK:-}" ] && [ -n "${BIN:-}" ] && [ -n "$TEAM" ] || return 0
+  local slug f sql=""
+  slug=$(jq -r '.app.slug // ""' "$TEAM" 2>/dev/null)
+  for f in "$BIN"/*.json ${UPDATES:+"$UPDATES"}; do
+    [ -s "$f" ] || continue
+    sql+=$(jq -r --arg slug "$slug" '
+      def q: "'"'"'" + (tostring | gsub("'"'"'"; "'"'"''"'"'")) + "'"'"'";
+      def login: if (.author | type) == "object"
+        then (if .author.__typename == "Bot" then "\(.author.login)[bot]" else .author.login // "" end)
+        elif .author then .author else .user.login // "" end;
+      def roles: ["lead", "dev", "customer", "reviewer", "dispatch"];
+      def marked($who; $at; $body; $role): "<!-- a-team:\($role) -->" as $m
+        | if $slug != "" and ($who == "\($slug)[bot]" or $who == $slug) then $body | contains($m)
+          elif $at >= "2026-09-29T00:00:00Z" then false
+          else ($body | split("\n") | map(sub("[ \t\r]+$"; "")) | map(select(length > 0)) | last // "") | startswith($m) end;
+      .. | objects | select(has("body") and ((.url // .html_url // "") | test("#(issuecomment-|pullrequestreview-|discussion_r)[0-9]+$")))
+      | ((.url // .html_url) | split("#") | last) as $key | login as $who | (.body // "") as $body
+      | (.createdAt // .created_at // .submittedAt // "") as $at
+      | ([roles[] | select(marked($who; $at; $body; .))] + if $at < "2026-09-24T00:00:00Z" then [roles[] | select(. as $r | $body | contains("<!-- a-team:\($r) -->"))] else [] end) as $said
+      | if ($said | length) > 0 then
+          "INSERT OR IGNORE INTO comments_said (team, item, comment, role, at) VALUES (\("demo" | q), 0, \($key | q), \(if $said[0] == "dispatch" then "dispatcher" else $said[0] end | q), \($at | q));"
+        elif ((.reactions.totalCount // .reactions.eyes // .eyes // 0) > 0) then
+          "INSERT OR IGNORE INTO comments_read (team, item, comment, at) VALUES (\("demo" | q), 0, \($key | q), \($at | q));"
+        else empty end' "$f" 2>/dev/null)
+  done
+  [ -n "$sql" ] || return 0
+  mkdir -p "$A_TEAM_STATE"
+  sqlite3 "$A_TEAM_STATE/history.db" "$(new_stamp)
+    CREATE TABLE IF NOT EXISTS comments_read (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
+      at TEXT NOT NULL, PRIMARY KEY (team, comment));
+    CREATE TABLE IF NOT EXISTS comments_said (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
+      role TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY (team, comment));
+    $sql"
+}
+
+# Each board command starts from the board on the test's page, unless KEEP_BOARD is set.
 run() {
   local db
   case " $* " in
     *" check "*) ;;
     " board "* | " stop "*) with_token ;;
   esac
-  for db in history.db dry-run.db; do
-    [ -n "${KEEP_BOARD:-}" ] || [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
-      sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo'; DELETE FROM waits WHERE team = 'demo';" 2>/dev/null
-  done
+  if [ -z "${KEEP_BOARD:-}" ]; then
+    for db in history.db dry-run.db; do
+      [ ! -f "${A_TEAM_STATE:-}/$db" ] ||
+        sqlite3 "$A_TEAM_STATE/$db" "DELETE FROM board WHERE team = 'demo'; DELETE FROM boards WHERE team = 'demo'; DELETE FROM details WHERE team = 'demo'; DELETE FROM waits WHERE team = 'demo';
+          DELETE FROM comments_read WHERE team = 'demo'; DELETE FROM comments_said WHERE team = 'demo';" 2>/dev/null
+    done
+  fi
+  seed_board
+  seed_talk
   A_TEAM_CONFIG="$CONFIG" "$A_TEAM" "$@" >"$OUT" 2>"$ERR"
   STATUS=$?
 }
@@ -124,15 +208,7 @@ gh_items() {
   : >"$POSTED"
   : >"$WRITES"
   gh_blocked </dev/null
-  FIELDS="$BIN/fields.json"
-  jq -n '{data: {organization: {issueFields: {nodes: [{id: "IF_priority", name: "Priority", options: [
-    {id: "OP_urgent", name: "Urgent"}, {id: "OP_high", name: "High"},
-    {id: "OP_medium", name: "Medium"}, {id: "OP_low", name: "Low"}]}]}}}}' >"$FIELDS"
   echo '[]' >"$EMPTY"
-  META="$BIN/meta.json"
-  jq -n '{data: {organization: {projectV2: {id: "PVT_1", title: "demo", fields: {nodes: [{id: "PVTSSF_status", name: "Status", options: [
-    {id: "OPT_exploring", name: "Exploring"}, {id: "OPT_pitched", name: "Pitched"},
-    {id: "OPT_approved", name: "Approved"}, {id: "OPT_done", name: "Done"}]}]}}}}}' >"$META"
   gh_thread </dev/null
   gh_recent </dev/null
   RUNS="$BIN/runs.json"
@@ -167,8 +243,8 @@ RUNS
   : >"$VISION_MD"
   echo '{"data": {"repository": {}}}' >"$THEMES"
   echo '{}' >"$CONTENTS"
-  REPO_ISSUES="$BIN/repo-issues.json"
-  echo '[]' >"$REPO_ISSUES"
+  REPO_ISSUES="$BIN/repo-issues.json" REPO_PULLS="$BIN/repo-pulls.json"
+  echo '[]' | tee "$REPO_ISSUES" "$REPO_PULLS" >/dev/null
   fake "$BIN/gh" <<SH
 #!/usr/bin/env bash
 [ ! -e "$BIN/offline" ] || { echo "gh: error connecting to api.github.com" >&2; exit 1; }
@@ -179,6 +255,7 @@ case " \$* " in
   *RepoIssues*) echo >>"$BIN/issue-reads"; [ ! -e "$BIN/issues-read-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
                 jq --argjson short "\$([ -e "$BIN/issues-short" ] && echo 1 || echo 0)" \
                   '{data: {repository: {issues: {totalCount: (length + \$short), nodes: .}}}}' "$REPO_ISSUES"; exit 0 ;;
+  *RepoPullRequests*) jq '{data: {repository: {pullRequests: {totalCount: length, nodes: .}}}}' "$REPO_PULLS"; exit 0 ;;
   *"-X DELETE"*"/labels/"*) [ ! -e "$BIN/unlabel-fails" ] || { [ -s "$BIN/unlabel-fails" ] && [[ " \$* " != *"/\$(cat "$BIN/unlabel-fails") "* ]]; } ||
                               { echo "gh: HTTP 502" >&2; exit 1; }
                             echo "\$*" >>"$BIN/unlabelled"; exit 0 ;;
@@ -204,36 +281,18 @@ case " \$* " in
                                   echo "\${kind}-sha"; exit 0 ;;
   *"/git/refs"*"a-team/attachments"*) echo "REF \$*" >>"$WRITES"; exit 0 ;;
   *addReaction*) printf '%s\n' "\$@" | sed -n 's/^subject=//p' >>"$ACKED"; echo '{}'; exit 0 ;;
-  *createProjectV2Field*) printf 'FIELD %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo PVTF_new; exit 0 ;;
-  *clearProjectV2ItemFieldValue*) printf 'CLEAR %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
-  *updateIssueFieldValue*) printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo '{}'; exit 0 ;;
-  *updateProjectV2ItemFieldValue*)
-    [ ! -e "$BIN/mirror-fails" ] || { echo "gh: API rate limit exceeded for installation ID 7 (HTTP 403)" >&2; exit 1; }
-    printf '%s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"
-    # With live, the page shows the move, as the Project would.
-    if [ -e "$BIN/live" ]; then
-      for arg in "\$@"; do case \$arg in item=*) item=\${arg#item=} ;; option=*) option=\${arg#option=} ;; esac; done
-      jq --arg i "\$item" --arg n "\$(jq -r --arg o "\$option" '[.. | objects | select(.id? == \$o) | .name][0]' "$META")" \
-        '(.data.organization.projectV2.items.nodes[] | select(.id == \$i)).fieldValueByName = {name: \$n}' "$ITEMS" >"$ITEMS.new" &&
-        mv "$ITEMS.new" "$ITEMS"
-    fi
-    echo '{}'; exit 0 ;;
   *"api rate_limit"*) page="$BIN/rate.json"; jq -n --argjson left "\$(cat "$BIN/remaining" 2>/dev/null || echo null)" \
                          '{resources: {graphql: {reset: $QUOTA_RESET, remaining: \$left}, core: {reset: $((QUOTA_RESET - 1800)), remaining: \$left}}}' >"\$page" ;;
-  *"pr list"*"app/dependabot"*) page="$UPDATES" ;;
+  *"pr list"*"app/dependabot"*) [ ! -e "$BIN/bumps-fail" ] || { echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; }; page="$UPDATES" ;;
   *"pr view"*) page="$BUMP_VIEW" ;;
   *"pr list"*"app/demo-app"*) echo "\$*" >>"$UPSTREAM_CALLS"; page="$UPSTREAM" ;;
-  *ProjectV2SingleSelectField*) [ ! -e "$BIN/project-read-fails" ] || { cat "$BIN/project-read-fails" >&2; exit 1; }
-                                page="$META" ;;
-  *BoardRefresh*) jq --argjson off "\$(cat "$BIN/off-mirror" 2>/dev/null || echo '[]')" '{data: {nodes: [.data.organization.projectV2.items.nodes[]
-                        | .content + {projectItems: {nodes: (if .content.number | IN(\$off[]) then [] else [
-                        {id, project: {number: 1, owner: {login: "mentaldesk"}}, fieldValueByName}] end)}}]}}' "$ITEMS"; exit 0 ;;
-  *issueFields*) page="$FIELDS" ;;
+  *BoardRefresh*) jq --argjson ids "\$(printf '%s' "\$*" | sed -n 's/.*nodes(ids: \(\[[^]]*\]\)).*/\1/p')" \
+                    '{data: {nodes: [.data.organization.projectV2.items.nodes[].content | select(.id | IN(\$ids[]))]}}' "$ITEMS"; exit 0 ;;
   *": issue(number"*) jq '{data: {repository: ([.data.organization.projectV2.items.nodes[].content
                         | {key: "i\(.number)", value: {issueFieldValues}}] | from_entries)}}' "$ITEMS"; exit 0 ;;
-  *"issue comment"*) cat >"$POSTED"; exit 0 ;;
+  *"issue comment"*) cat >"$POSTED"; [ ! -e "$BIN/comment-url" ] || cat "$BIN/comment-url"; exit 0 ;;
   *"-X POST"*"/issues/"*"/comments"*) cat >"$POSTED"; echo IC_posted; exit 0 ;;
-  *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
+  *"pr comment"*) echo "PR COMMENT \$*" >>"$WRITES"; cat >"$POSTED"; [ ! -e "$BIN/comment-url" ] || cat "$BIN/comment-url"; exit 0 ;;
   *"-X PATCH"*"/issues/comments/"*) echo "PATCH \$*" >>"$WRITES"; cat >"$POSTED"; exit 0 ;;
   *"pr edit"*) echo "PR EDIT \$*" >>"$WRITES"; cat >"$BIN/pr-body"; exit 0 ;;
   *"issue create"*) [ ! -e "$BIN/create-fails" ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; }
@@ -243,18 +302,10 @@ case " \$* " in
                    echo "CLOSE \$*" >>"$WRITES"; exit 0 ;;
   *"issue edit"*"--body"*) echo "EDIT \$*" >>"$WRITES"
     if [ "\${@: -1}" = - ]; then cat >"$EDITED"; else printf '%s' "\${@: -1}" >"$EDITED"; fi; exit 0 ;;
-  *addProjectV2ItemById*) [ ! -e "$BIN/add-exists" ] || { echo "gh: Content already exists in this project" >&2; exit 1; }
-                          printf 'ADD %s ' "\$@" | tr -d '\n' >>"$WRITES"; echo >>"$WRITES"; echo PVTI_new; exit 0 ;;
   *"-X POST"*sub_issues*) echo "POST \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *"-X DELETE"*sub_issue*) echo "DELETE \$*" >>"$WRITES"; echo '{}'; exit 0 ;;
   *sub_issues*) page="$SUBS" ;;
   *"--remove-label"* | *"--add-label"*) echo "\$*" >>"$WRITES"
-    if [ -e "$BIN/live" ]; then
-      set -- \$*
-      jq --argjson n "\$3" --arg l "\${@: -1}" --arg op "\${@: -2:1}" '(.data.organization.projectV2.items.nodes[].content
-        | select(.number == \$n).labels.nodes) |= if \$op == "--add-label" then . + [{name: \$l}] else map(select(.name != \$l)) end' \
-        "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-    fi
     exit 0 ;;
   *"/labels -f labels[]="*) echo "\$*" >>"$WRITES"; echo '[]'; exit 0 ;;
   *"label list"*) page="$EMPTY" ;;
@@ -328,16 +379,8 @@ while [ \$# -gt 0 ]; do
   [ "\$1" = --jq ] && { filter=\$2; break; }
   shift
 done
-# A board page holds every item unless short-reads says how many reads come back short, and with how many items.
 if [ "\$page" = "$ITEMS" ]; then
   [ ! -e "$BIN/read-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
-  jq '.data.organization.projectV2.items |= (.totalCount //= (.nodes | length))' "\$page" >"\$page.counted"
-  if read -r times keep 2>/dev/null <"$BIN/short-reads" && [ "\$times" -gt 0 ]; then
-    echo "\$((times - 1)) \$keep" >"$BIN/short-reads"
-    jq --argjson keep "\$keep" '.data.organization.projectV2.items.nodes |= .[:\$keep]' "\$page.counted" >"\$page.short"
-    mv "\$page.short" "\$page.counted"
-  fi
-  page="\$page.counted"
 fi
 if [ -n "\$filter" ]; then jq -r "\$filter" "\$page"; else cat "\$page"; fi
 SH
@@ -374,6 +417,9 @@ docs_pr_on_board() {
       url: "https://github.com/mentaldesk/demo/pull/912", state: "OPEN", repository: {nameWithOwner: "mentaldesk/demo"},
       labels: {nodes: [{name: "a-team:customer"}]}}}] else [] end)' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
 }
+
+# #<n>'s Status in the record.
+status_of() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT status FROM board WHERE team = 'demo' AND item = $1;"; }
 
 # What the record keeps of #<n> beyond Status and Priority.
 marks() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT COALESCE(marks, '{}') FROM board WHERE team = 'demo' AND item = $1;" | jq -c .; }
@@ -425,7 +471,7 @@ gh_pr() {
 # `gh_reviewed [<login>]`: the Reviewer's review on the PR gh_pr wrote, posted as <login>, by default the team's App.
 gh_reviewed() {
   jq --arg login "${1:-demo-app[bot]}" '(.. | objects | select(has("isDraft"))) += {comments: {nodes: [
-      {body: "Nothing needs changing.\n\n<!-- a-team:reviewer -->",
+      {body: "Nothing needs changing.\n\n<!-- a-team:reviewer -->", createdAt: "2026-10-10T09:00:00Z", url: "https://github.com/mentaldesk/demo/pull/912#issuecomment-9120000",
        author: (if $login | endswith("[bot]") then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))}
                 else {__typename: "User", login: $login} end)}]}}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
   gh_reviewing
@@ -453,20 +499,21 @@ gh_talk() {
       then {__typename: "Bot", login: ($login | rtrimstr("[bot]"))} else {__typename: "User", login: $login} end;
     def seen: {reactions: {totalCount: (if .seen then 1 else 0 end)}};
     def node($rows; $number; $url):
+      def key($i): 1000000 + $number * 1000 + $i;
       ($rows | map(select(.kind == "body")) | first) as $body
       | {number: $number, createdAt: $body.at, body: ($body.body // ""),
          author: who($body.author // ""), reactions: {totalCount: 0},
          timelineItems: {nodes: ($rows | map(select(.kind == "labeled")
            | {createdAt: .at, label: {name: .body}, actor: who(.author)}))},
          comments: {nodes: ($rows | map(select(.kind == "comment")) | to_entries | map(.key as $i | .value
-           | seen + {createdAt: .at, body: .body, url: "\($url)#issuecomment-\($i + 1)", author: who(.author)}))},
-         reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")
+           | seen + {createdAt: .at, body: .body, url: "\($url)#issuecomment-\(key($i + 1))", author: who(.author)}))},
+         reviews: {nodes: ($rows | map(select(.kind == "review" or .kind == "line")) | to_entries | map(.key as $i | .value
            | if .kind == "review"
-             then seen + {createdAt: .at, body: .body, state: "COMMENTED",
+             then seen + {createdAt: .at, body: .body, state: "COMMENTED", url: "\($url)#pullrequestreview-\(key($i + 1))",
                    author: who(.author), comments: {nodes: []}}
              else {createdAt: .at, body: "", state: "COMMENTED", author: who(.author),
                    reactions: {totalCount: 0},
-                   comments: {nodes: [seen + {createdAt: .at, body: .body,
+                   comments: {nodes: [seen + {createdAt: .at, body: .body, url: "\($url)#discussion_r\(key($i + 1))",
                                               author: who(.author)}]}}
              end))}};
     def open_pr($rows; $number): node($rows; $number; "https://github.com/mentaldesk/demo/pull/\($number)")
@@ -501,7 +548,7 @@ gh_thread() {
     | map(.key as $i | .value | split(" ") as $f
       | {id: "IC_\($i)", kind: $f[0], at: $f[1], author: $f[2], eyes: ($f[3] | tonumber),
          body: ($f[4:] | join(" ") | split("\\n") | join("\n")),
-         url: "https://github.com/mentaldesk/demo/issues/7#\($i)"})')
+         url: "https://github.com/mentaldesk/demo/issues/7#\({review: "pullrequestreview-", line: "discussion_r"}[$f[0]] // "issuecomment-")\(2000000 + $i)"})')
   local rest='{node_id: .id, user: {login: .author}, created_at: .at, body: .body,
                html_url: .url, reactions: {eyes: .eyes}}'
   jq --arg pull "${1:-}" "(map(select(.kind == \"body\")) | first // {})
@@ -520,8 +567,9 @@ gh_thread() {
 # The repo-wide conversation comments of the last day that `triggers` reads, from lines of
 # "<n> <timestamp> <author> <eyes> <text...>", where `\n` in the text is a line break.
 gh_recent() {
-  jq -R -s 'split("\n") | map(select(length > 0)) | map(split(" ") as $f
+  jq -R -s 'split("\n") | map(select(length > 0)) | to_entries | map(.key as $i | .value | split(" ") as $f
     | {issue_url: "https://api.github.com/repos/mentaldesk/demo/issues/\($f[0])",
+       html_url: "https://github.com/mentaldesk/demo/issues/\($f[0])#issuecomment-\(3000000 + $i)",
        user: {login: $f[2]}, created_at: $f[1],
        body: ($f[4:] | join(" ") | split("\\n") | join("\n")),
        reactions: {eyes: ($f[3] | tonumber)}})' >"$RECENT"
@@ -550,41 +598,14 @@ gh_child() {
   : >"$EDITED"
 }
 
-# A project whose Status field has the options a claim moves through.
-claimable() {
-  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_ready", name: "Ready"}, {id: "OPT_progress", name: "In progress"}]' \
-    "$META" >"$META.new" && mv "$META.new" "$META"
-}
-
 # kept <command...>: a board command that keeps the record as the commands before it left it.
 kept() { KEEP_BOARD=1 run "$@"; }
 
 # history_lines <n>: #n's history, oldest first, as "<who> <what>" lines.
 history_lines() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history "$1" | jq -r '.events | reverse[] | "\(.who) \(.what)"'; }
 
-# drag <n> <status>: someone, or GitHub's own automation, changes #n's card on the mirror.
-drag() {
-  jq --arg i "PVTI_$1" --arg s "$2" '(.data.organization.projectV2.items.nodes[] | select(.id == $i)).fieldValueByName =
-      {name: $s, updatedAt: (now + 1 | todate)}' \
-    "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-}
-
-# add_card <n> <status|null> <title>: the Project adds an issue to itself, and sets that Status on it if it isn't null.
-add_card() {
-  jq --argjson n "$1" --arg s "$2" --arg title "$3" '.data.organization.projectV2.items.nodes += [(.data.organization.projectV2.items.nodes[0]
-      | .id = "PVTI_\($n)" | .fieldValueByName = (if $s == "null" then null else {name: $s, updatedAt: (now + 1 | todate)} end)
-      | .content |= (.id = "I_\($n)" | .number = $n | .title = $title | .url = "https://github.com/mentaldesk/demo/issues/\($n)"
-          | .labels.nodes = [] | .issueFieldValues.nodes = []))]' "$ITEMS" >"$ITEMS.new" && mv "$ITEMS.new" "$ITEMS"
-}
-
 # statuses: each card's number and Status, as the last command printed them.
 statuses() { jq -c 'map([.number, .status])' "$OUT"; }
-
-every_status() {
-  jq '.data.organization.projectV2.fields.nodes[0].options = ([["Idea", "idea"], ["Exploring", "exploring"], ["Pitched", "pitched"],
-      ["Approved", "approved"], ["Building", "building"], ["Ready", "ready"], ["In progress", "progress"],
-      ["In review", "review"], ["Done", "done"]] | map({id: "OPT_\(.[1])", name: .[0]}))' "$META" >"$META.new" && mv "$META.new" "$META"
-}
 
 # The Customer lead: a third role a team can turn on, which touches only its own docs PR.
 # `docs_pr <n>`: #<n> on the page gh_items wrote is the Customer lead's PR. `accepted <n> [<reason>]`:
@@ -770,7 +791,10 @@ alive() { kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/$1/pid")" 2>/dev/null; }
 
 at() { sqlite3 :memory: "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', $((midnight + $1)), 'unixepoch')"; }
 
-today() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo today; }
+# The dispatcher made the record, so the board finds it unstamped and would move it up from format 1.
+dispatched_board() { sqlite3 "$A_TEAM_STATE/history.db" "$(format_stamp)"; A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo "$@"; }
+
+today() { dispatched_board today; }
 
 seen() { for _ in $(seq 50); do [ -s "$SEEN/$1" ] && break; sleep 0.1; done; cat "$SEEN/$1" 2>/dev/null; }
 
@@ -916,7 +940,7 @@ app_fakes() {
   openssl rsa -in "$APP_BIN/key.pem" -pubout 2>/dev/null >"$APP_BIN/pub.pem"
   openssl base64 -A <"$APP_BIN/key.pem" >"$APP_BIN/key.b64"
   rm "$APP_BIN/key.pem"
-  echo '{"contents": "write", "issues": "write", "organization_projects": "write"}' >"$APP_BIN/perms.json"
+  echo '{"contents": "write", "issues": "write"}' >"$APP_BIN/perms.json"
   fake "$APP_BIN/security" <<SH
 #!/usr/bin/env bash
 [ -z "\${NO_KEY:-}" ] || exit 44

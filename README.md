@@ -1,7 +1,7 @@
 # a-team
 
 A small team of Claude agents that works on one GitHub repository and coordinates through
-its own board, which you can also see as a GitHub Project:
+its own board:
 
 - **Lead** researches opportunities, pitches them to you with a mockup, revises them on your
   feedback, breaks approved pitches into tasks, and checks the finished feature.
@@ -28,8 +28,7 @@ here.
 brew install mentaldesk/tap/a-team
 ```
 
-Claude Code must be installed and logged in, and for a team that mirrors its board to a GitHub
-Project, `gh` needs the `project` scope (`gh auth refresh -s project`). Then add a team (see *Starting a team*) and run
+Claude Code must be installed and logged in. Then add a team (see *Starting a team*) and run
 `a-team install` to start the dispatcher. `brew upgrade a-team` moves every team to the latest
 release, whenever you like: a run already going finishes on the release it started on, unless the
 new release moves the board's format. Then it stops at its next board command, and the dispatcher's
@@ -42,14 +41,9 @@ takes it from there.
 
 The app opens only once there's a team, so your first one starts by hand:
 
-1. If the team will have a mirror, make sure `gh` can manage projects: `gh auth refresh -s project`.
-2. Create or pick a Project for the repo to mirror the board to, or set `"mirror": false` in step 3
-   to go without one. Its Status field needs nine options, Idea, Exploring,
-   Pitched, Approved, Building, Ready, In progress, In review and Done, or a `statusMap` in the team
-   config from those names to the ones it has.
-3. Copy `examples/team.json` (`a-team teams` says where it is while you have no team) to
+1. Copy `examples/team.json` (`a-team teams` says where it is while you have no team) to
    `~/.config/a-team/teams/<name>.json` and fill it in: the repo,
-   your GitHub login in `stakeholders`, the Project, and where the product is checked out on this
+   your GitHub login in `stakeholders`, and where the product is checked out on this
    machine (`workdir` for its worktrees, `checkout` for its main clone), and optionally `try`,
    the command that runs the product from a worktree, and `roles` to turn on the Customer lead or
    the Reviewer. Leave `app` as `null`: the next step fills it in. `a-team teams` lists the teams it finds. Check the team with
@@ -57,12 +51,12 @@ The app opens only once there's a team, so your first one starts by hand:
    can't run, or 2 if it can but something's missing, like its vision or a label. The app's Teams
    screen shows the same problems, and F12 (or *Repair*) in a team's form sets its board up again, as
    `a-team board <name> setup` does.
-4. Give the team its own GitHub App (next section). The dispatcher won't run the team without one.
-5. Write the team's vision with `a-team vision <name>`, or **Write the vision with me** in the
+2. Give the team its own GitHub App (next section). The dispatcher won't run the team without one.
+3. Write the team's vision with `a-team vision <name>`, or **Write the vision with me** in the
    app's Commands: an interview that opens it as a draft PR for you to merge. Skip it and the Lead
    drafts one from the repo.
-6. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
-7. Install the dispatcher, first in dry-run mode, which only logs what it would start:
+4. Set `dispatch.enabled` to `true` when you want the dispatcher to run the team.
+5. Install the dispatcher, first in dry-run mode, which only logs what it would start:
 
    ```
    a-team install --dry-run
@@ -101,8 +95,7 @@ a-team app create <team>
    (service `a-team-app`, account `<owner>`, base64-encoded) — never on disk — and writes
    `app: { id, slug }` into the team's config.
 3. The App's install page opens. Install it on the team's repo, then run
-   `a-team board <team> check`: its `identity:` line says whether a token mints, the project (if there's a mirror) reads
-   and writes, the Priority field reads and the App can push, and what to grant if one can't.
+   `a-team board <team> check`: its `identity:` line says whether a token mints and the App can push, and what to grant if it can't.
 
 One App serves every team under the same account. Run `app create` for a second team there and it
 reuses the first team's App; install that App on the second repo too. If the key is in the Keychain

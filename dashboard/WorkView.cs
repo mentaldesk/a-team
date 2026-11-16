@@ -61,6 +61,9 @@ public sealed class WorkView : View
     /// <summary>Raised when the keyboard moves between columns, so the window can name the region it's in.</summary>
     internal event Action? FocusChanged;
 
+    /// <summary>Raised when the cards change, from a read or from something done to one.</summary>
+    internal event Action? ItemsChanged;
+
     /// <summary>The card as Work has it, where one of its columns holds it: null for one it only sums up, or hasn't got.</summary>
     internal WaitingItem? Waiting(string team, int number) =>
         _items.FirstOrDefault(item => item.Team == team && item.Number == number) is { } item && Gates.Any(gate => gate.Holds(item)) ? item : null;
@@ -158,6 +161,7 @@ public sealed class WorkView : View
         }
         _items = Holds.Tag([.. _items.Where(item => !teams.Contains(item.Team))]);
         Lay(follow: false);
+        ItemsChanged?.Invoke();
         if (current is not null && _lanes.Contains(current))
             Pick(current);
     }
@@ -314,6 +318,7 @@ public sealed class WorkView : View
         var first = Unread;
         _items = Holds.Tag(items);
         Lay(follow);
+        ItemsChanged?.Invoke();
         if (first && focused is not null)
             FocusFirstCard();
         if (first || focused is null)

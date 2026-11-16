@@ -233,7 +233,6 @@ internal static partial class Commands
         if (value != "none" && !Cards.Ranks.Contains(value))
             throw new Die($"unknown {field} '{value}' ({string.Join(" | ", Cards.Ranks)} | none)");
         board.SetPriority(n, value);
-        board.MirrorPush(n);
         board.Log(role, n, value == "none" ? $"{field} cleared" : $"{field} set to {value}");
         board.Say(value == "none" ? $"#{n}: {field} cleared" : $"#{n}: {field} set to '{value}'");
         return 0;
@@ -289,6 +288,8 @@ internal static partial class Commands
         Alone("dev", role, $"{role} may not tick a review's points; only dev does, on its own task PR");
         var it = OwnTaskPr(board, role, pr, $"dev ticks review points only on its own open task PRs (#{pr} isn't one)");
         var review = board.Review(it) ?? throw new Die($"#{pr} has no review to tick");
+        var id = Board.CommentKey(Json.Text(review["url"]))?.Replace("issuecomment-", "", StringComparison.Ordinal)
+            ?? throw new Die($"#{pr}'s review has no comment URL to edit");
         var said = (Json.Text(review["body"]) ?? "").TrimEnd('\n');
         var points = ReviewPoints.Read(said);
         var lines = new List<int>();
@@ -301,7 +302,7 @@ internal static partial class Commands
         var ticked = ReviewPoints.Boxed(said, lines, "x");
         board.Show(ticked);
         Board.Must(board.Post($"tick {lines.Count} point(s) of #{pr}'s review", ticked + "\n",
-            "api", "-X", "PATCH", $"repos/{board.Repo}/issues/comments/{Json.Long(review["databaseId"])}", "-F", "body=@-", "--silent"));
+            "api", "-X", "PATCH", $"repos/{board.Repo}/issues/comments/{id}", "-F", "body=@-", "--silent"));
         var left = ReviewPoints.Read(ticked).Count(point => !point.Ticked);
         board.Log(role, RunTaskOr(pr), $"ticked {lines.Count} review point(s), {left} left");
         board.Say($"#{pr}: {points.Count - left} of {points.Count} review points fixed");
@@ -346,7 +347,6 @@ internal static partial class Commands
             throw new Die($"recommend is only for Ideas (#{n} is in '{Cards.Status(it)}')");
         var name = char.ToUpperInvariant(level[0]) + level[1..];
         board.Mark(n, "rank", Json.Compact((JsonNode?)name));
-        board.MirrorPush(n);
         var body = $"Recommended: **{name}** · {said[0]}\n\n<!-- a-team:{role} -->";
         board.Show(body);
         Commented(board, n, body);
@@ -377,7 +377,6 @@ internal static partial class Commands
             board.Log(role, n, $"theme: {heading}");
             board.Say($"#{n}: theme: {heading}");
         }
-        board.MirrorPush(n);
         return 0;
     }
 

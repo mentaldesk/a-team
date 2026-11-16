@@ -70,9 +70,6 @@ internal static partial class Commands
         Console.Out.Write(Board.Must(board.Post($"comment on #{task}", body + "\n", "issue", "comment", task, "-R", board.Repo, "--body-file", "-")).Out);
     }
 
-    private static string WaitMarker(string kind, string repo, string n, string until = "", string package = "") =>
-        $"<!-- a-team:{kind} repo={repo} n={n}{(until.Length > 0 ? $" until={until}" : "")}{(package.Length > 0 ? $" package={package}" : "")} -->";
-
     private static void CheckDependant(string role)
     {
         CheckRole(role);
@@ -138,7 +135,7 @@ internal static partial class Commands
         board.AddWait(task, repo, upN, until, package);
         var note = $"Blocked by {prereq}, until {until}: {why}";
         if (!linked) note += $"\n\nGitHub can't link {prereq} as a dependency, so the wait is recorded here.";
-        DependNote(board, role, task, $"{note}\n\n{WaitMarker("wait", repo, upN, until, package)}");
+        DependNote(board, role, task, note);
         board.Log(role, task, $"blocked by {prereq}");
         board.Say($"#{task} now waits for {prereq} to be {until}, and said why on #{task}");
     }
@@ -186,7 +183,7 @@ internal static partial class Commands
         if (id.Length > 0)
             Board.Must(board.Write($"unblock #{task} from {prereq}", "api", "-X", "DELETE", $"repos/{board.Repo}/issues/{task}/dependencies/blocked_by/{id}"));
         board.DropWaits(task, [prereq]);
-        DependNote(board, role, task, $"No longer blocked by {prereq}: {why}\n\n{WaitMarker("unwait", repo, upN)}");
+        DependNote(board, role, task, $"No longer blocked by {prereq}: {why}");
         board.Log(role, task, $"no longer blocked by {prereq}");
         board.Say($"#{task} no longer waits on {prereq}, and said why on #{task}");
     }
@@ -215,8 +212,7 @@ internal static partial class Commands
     {
         var versions = pitch ? [] : waits.Where(wait => Raw(wait["state"]) == "released").Select(Upgrade).ToList();
         var tail = versions.Count == 0 ? "." : $": upgrade {string.Join(" and ", versions)} first.";
-        var markers = string.Concat(waits.Select(wait => WaitMarker("unwait", Raw(wait["repo"]), Raw(wait["n"]))));
-        return $"{string.Join(" ", waits.Select(WaitOver))} No longer blocked{tail}\n\n{markers}";
+        return $"{string.Join(" ", waits.Select(WaitOver))} No longer blocked{tail}";
     }
 
     internal static int Free(Board board, string[] args)
