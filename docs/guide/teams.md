@@ -105,7 +105,8 @@ and the card's History says so. An issue's Priority is different: changing it on
 **Contributes to** lists the other repos the Dev may open draft PRs on, picked from the ones the
 team's GitHub App can reach. When a task needs a change in one of them first, like the style guide,
 the Dev opens that draft PR itself and hands the task back with it linked, for you to review and
-release. It looks after that PR as it does its own and marks it ready once it's green. While it's a
+release. It looks after that PR as it does its own: it fixes failing CI, answers your comments, merges the
+base in when the PR conflicts with it, and marks it ready once it's green. While it's a
 draft it shows In progress on the board of the team that runs that repo, then in Review once it's
 ready, where `a` merges it. Releasing stays yours. For a repo not listed, the Dev hands the task back saying the team doesn't contribute to it.
 
