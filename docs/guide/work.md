@@ -215,6 +215,7 @@ to give it or the columns more room.
 | `p` | Read the card and set its Priority |
 | `Ctrl+T M` | Show only what's your move, or everything again. The foot says which, and it's kept for next time |
 | `Ctrl+G N` | Go to the newest card that has become your move |
+| `Ctrl+G P` | Go to the [Priority Inbox](#priority-inbox), while it's showing. `F6` moves between it and the columns |
 | `r` | In a tab that couldn't be read, read that team again |
 | `F5` | Read what's waiting again |
 
