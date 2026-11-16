@@ -990,4 +990,35 @@ waiting
 same "exit" 0 "$STATUS"
 same "held" '[[140,"Approved","you",true],[141,"In progress","you",true]]' "$(jq -c '[.[] | [.number, .status, .turn, .held]]' "$OUT")"
 
+case_ "every turn waiting names a role for is one that role's own triggers wake for"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 108 Both gates are mine
+In_review 12 Theme tokens for the status bar
+ITEMS
+gh_talk <<TALK
+108 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+108 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+12 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+12 pr-body ${TODAY}T08:30:00Z demo-app[bot] Closes #12\n<!-- a-team:dev -->
+12 pr-comment ${TODAY}T09:00:00Z reviewer Rename the field.
+TALK
+gh_pr 912 false
+history_db "UPDATE runs SET ended = started WHERE team = 'demo';" >/dev/null
+gh_recent <<RECENT
+108 ${TODAY}T09:30:00Z reviewer 0 What about the second gate?
+912 ${TODAY}T09:00:00Z reviewer 0 Rename the field.
+RECENT
+UNWOKEN=1 waiting
+same "unwoken" '[["lead",true],["dev",true]]' "$(jq -c '[.[] | [(.reason | split(":")[0]), .stuck]]' "$OUT")"
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
+for role in lead dev customer reviewer; do
+  KEEP_BOARD=1 run board demo triggers "$role"
+  same "triggers $role" 0 "$STATUS"
+done
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "woken by their triggers" '[["lead",null],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+
 finish_suite

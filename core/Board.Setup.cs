@@ -276,7 +276,7 @@ internal sealed partial class Board
         Console.Out.Write($"identity: {bot} · token ok · push access to {_repo} ok\n");
     }
 
-    /// <summary>Notes the repo's open issues and PRs that show on no card, after the board has had its chance to bring them in.</summary>
+    /// <summary>Notes the repo's open issues and PRs that show on no card though they were open when the board last read them.</summary>
     internal void CheckOpen(Findings found)
     {
         JsonArray cards;
@@ -291,8 +291,10 @@ internal sealed partial class Board
         if (OpenIssues() is not { } open || OpenOnRepo("RepoPullRequests", "pullRequests", PullFields) is not { } pulls) return;
         var shown = cards.Where(card => Cards.Status(card!) != "Done").Select(card => Cards.N(card!)).ToHashSet();
         var had = cards.Select(card => Cards.N(card!)).ToHashSet();
+        var read = _record.Scalar($"SELECT issues_read FROM boards WHERE team = {TeamQ};");
         var missing = open.Concat(pulls).OfType<JsonNode>()
             .Where(item => Json.Text(item["repository"]?["nameWithOwner"]) == _repo && Json.Text(item["state"]) == "OPEN")
+            .Where(item => string.IsNullOrEmpty(read) || string.CompareOrdinal(Json.Text(item["createdAt"]) ?? "", read) <= 0)
             .Where(item => !shown.Contains(item["number"]!.ToJsonString()) && !Reconciler.Closes(item, _repo).Any(had.Contains))
             .Select(item => Json.Long(item["number"])).Order().ToList();
         if (missing.Count > 0)

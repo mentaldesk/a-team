@@ -174,7 +174,7 @@ The **Health** column reads `checking…` while A-Team checks each team, then `o
 it found. That count includes notes, which the team runs with, so a team can read `1 problem` and be
 working. A note puts no `⚠` on its roles in [Overseer](overseer.md). One note counts the repo's open issues and PRs
 that show on no card, and names them, like `2 open on GitHub not on the board: #131, #140`. It shows only while they
-differ.
+differ, and leaves out one opened since the board last read the repo, which arrives on the next read.
 
 - **Problems**: open the team, and its form lists them at the top, one a line, notes among them, each naming what it's
   about and what's wrong. A board that's missing a label can be set

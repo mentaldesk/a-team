@@ -211,7 +211,7 @@ repo_issue 47 "Three"
 KEEP_BOARD=1 run board --dry-run demo setup
 grep -qx "(dry run) 1 open issue on mentaldesk/demo will arrive in Triage" "$OUT" || fail "setup: $(cat "$OUT")"
 
-case_ "check notes the repo's open issues and PRs no card shows, and says nothing while they agree"
+case_ "check notes the repo's open issues and PRs no card shows, but not one opened since the board last read them"
 demo_team
 gh_items <<'ITEMS'
 In_progress 31 A task
@@ -222,8 +222,10 @@ run board demo list
 KEEP_BOARD=1 run board demo check
 grep -q "^note     issues " "$OUT" && fail "agreeing: $(cat "$OUT")"
 sqlite3 "$A_TEAM_STATE/history.db" "UPDATE boards SET issues_read = '2999-01-01T00:00:00Z' WHERE team = 'demo';"
-repo_issue 46 "Opened since the last read"
-repo_pull 47 "A PR since the last read"
+repo_issue 46 "Missed by the last read"
+repo_pull 47 "A PR missed by the last read"
+repo_pull 48 "A PR opened since the last read"
+jq '(.[] | select(.number == 48)).createdAt = "2999-01-01T00:05:00Z"' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
 KEEP_BOARD=1 run board demo check
 grep -qx "note     issues    2 open on GitHub not on the board: #46, #47" "$OUT" || fail "differing: $(cat "$OUT")"
 

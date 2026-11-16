@@ -17,13 +17,13 @@ internal sealed class Stop(int code, string said) : Exception(said)
 internal sealed partial class Board
 {
     private const string IssueFields = """
-        ... on Issue { id number title url state stateReason repository { nameWithOwner } labels(first: 20) { nodes { name } }
+        ... on Issue { id number title url state stateReason createdAt repository { nameWithOwner } labels(first: 20) { nodes { name } }
                          author { __typename login }
                          parent { number }
                          issueDependenciesSummary { blockedBy } }
         """;
     private const string PullFields = """
-        ... on PullRequest { id number title url state isDraft repository { nameWithOwner } labels(first: 20) { nodes { name } }
+        ... on PullRequest { id number title url state isDraft createdAt repository { nameWithOwner } labels(first: 20) { nodes { name } }
                              author { login }
                              closingIssuesReferences(first: 20) { nodes { number repository { nameWithOwner } } } }
         """;
