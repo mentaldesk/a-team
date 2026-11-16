@@ -127,6 +127,14 @@ public class ReconcilerTests
     }
 
     [Fact]
+    public void A_closed_pull_request_open_again_is_read_again()
+    {
+        var plan = Arrivals(Issue(type: "PullRequest"), new() { ["8"] = Row(status: "Done", shut: true) });
+        Assert.Empty(plan.Arrived);
+        Assert.Equal(["I_8"], plan.Reopened);
+    }
+
+    [Fact]
     public void Closed_issues_pull_requests_and_other_repos_dont_arrive()
     {
         var plan = Arrivals(string.Join(",", Issue(state: "CLOSED"), Issue(9, type: "PullRequest"), Issue(10, repo: "o/other")));

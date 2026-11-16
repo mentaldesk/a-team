@@ -65,7 +65,7 @@ internal static class Reconciler
     }
 
     /// <summary>Each open issue of <paramref name="repo"/> the record hasn't got arrives as an Idea; one
-    /// it has with no status becomes an Idea; one it has closed is read again. Every other card stays as it is.</summary>
+    /// it has with no status becomes an Idea; an issue or PR it has closed is read again. Every other card stays as it is.</summary>
     internal static ArrivalPlan Arrivals(JsonArray issues, IReadOnlyDictionary<string, Known> had, string team, string repo, string now)
     {
         var sql = new StringBuilder();
@@ -74,10 +74,16 @@ internal static class Reconciler
         var teamQ = Q(team);
         foreach (var c in issues)
         {
-            if (c is null || Json.Text(c["__typename"]) != "Issue" || Json.Text(c["state"]) != "OPEN") continue;
+            if (c is null || Json.Text(c["state"]) != "OPEN") continue;
             if (Json.Text(c["repository"]?["nameWithOwner"]) != repo) continue;
             var number = c["number"]!.ToJsonString();
             var node = Json.Text(c["id"]);
+            if (Json.Text(c["__typename"]) == "PullRequest")
+            {
+                if (had.TryGetValue(number, out var pull) && pull.Shut && node is not null) reopened.Add(node);
+                continue;
+            }
+            if (Json.Text(c["__typename"]) != "Issue") continue;
             if (!had.TryGetValue(number, out var row))
             {
                 sql.Append(StatusRoute.Found(teamQ, number, Q(node), now, Content(c, false, null)));

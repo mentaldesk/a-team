@@ -189,8 +189,8 @@ RUNS
   : >"$VISION_MD"
   echo '{"data": {"repository": {}}}' >"$THEMES"
   echo '{}' >"$CONTENTS"
-  REPO_ISSUES="$BIN/repo-issues.json"
-  echo '[]' >"$REPO_ISSUES"
+  REPO_ISSUES="$BIN/repo-issues.json" REPO_PULLS="$BIN/repo-pulls.json"
+  echo '[]' | tee "$REPO_ISSUES" "$REPO_PULLS" >/dev/null
   fake "$BIN/gh" <<SH
 #!/usr/bin/env bash
 [ ! -e "$BIN/offline" ] || { echo "gh: error connecting to api.github.com" >&2; exit 1; }
@@ -201,6 +201,7 @@ case " \$* " in
   *RepoIssues*) echo >>"$BIN/issue-reads"; [ ! -e "$BIN/issues-read-fails" ] || { echo "gh: HTTP 502" >&2; exit 1; }
                 jq --argjson short "\$([ -e "$BIN/issues-short" ] && echo 1 || echo 0)" \
                   '{data: {repository: {issues: {totalCount: (length + \$short), nodes: .}}}}' "$REPO_ISSUES"; exit 0 ;;
+  *RepoPullRequests*) jq '{data: {repository: {pullRequests: {totalCount: length, nodes: .}}}}' "$REPO_PULLS"; exit 0 ;;
   *"-X DELETE"*"/labels/"*) [ ! -e "$BIN/unlabel-fails" ] || { [ -s "$BIN/unlabel-fails" ] && [[ " \$* " != *"/\$(cat "$BIN/unlabel-fails") "* ]]; } ||
                               { echo "gh: HTTP 502" >&2; exit 1; }
                             echo "\$*" >>"$BIN/unlabelled"; exit 0 ;;

@@ -3,8 +3,11 @@
 # shellcheck source=tests/scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
-# open_issues: the repo's open issues as the page has them.
-open_issues() { jq '[.data.organization.projectV2.items.nodes[].content | select(.__typename == "Issue") | .state //= "OPEN" | select(.state == "OPEN")]' "$ITEMS" >"$REPO_ISSUES"; }
+# open_issues: the repo's open issues and PRs as the page has them.
+open_issues() {
+  jq '[.data.organization.projectV2.items.nodes[].content | select(.__typename == "Issue") | .state //= "OPEN" | select(.state == "OPEN")]' "$ITEMS" >"$REPO_ISSUES"
+  jq '[.data.organization.projectV2.items.nodes[].content | select(.__typename == "PullRequest") | .state //= "OPEN" | select(.state == "OPEN")]' "$ITEMS" >"$REPO_PULLS"
+}
 
 case_ "the board is the record's, Status and Priority, and a later read refreshes only its open items"
 fixture <<'JSON'
@@ -302,6 +305,22 @@ same "line" "board Done → Ready · reopened" "$(history_lines 641 | tail -n 1)
 kept board demo claim dev 641
 kept board demo list
 same "work restarts" '"In progress"' "$(jq -c '.[] | select(.number == 641) | .status' "$OUT")"
+
+case_ "a closed PR that's reopened comes back to its last move"
+gh_items <<'ITEMS'
+In_review 642 Closed, then reopened
+ITEMS
+edit_item 642 '.__typename = "PullRequest" | .author = {login: "someone"}'
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO events (team, item, at, who, what) VALUES ('demo', 642, '2026-11-03T09:38:00Z', 'dev', 'In progress → In review');"
+edit_item 642 '.state = "CLOSED"'
+kept board demo list
+same "closed" '[[642,"Done"]]' "$(statuses)"
+edit_item 642 '.state = "OPEN"'
+open_issues
+kept board demo list
+same "reopened" '[[642,"In review"]]' "$(statuses)"
+same "line" "board Done → In review · reopened" "$(history_lines 642 | tail -n 1)"
 
 case_ "the repair puts a card back at its last recorded move, once, and leaves alone a card with none"
 gh_items <<'ITEMS'

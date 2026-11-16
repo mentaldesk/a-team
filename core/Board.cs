@@ -22,11 +22,14 @@ internal sealed partial class Board
                          parent { number }
                          issueDependenciesSummary { blockedBy } }
         """;
+    private const string PullFields = """
+        ... on PullRequest { id number title url state repository { nameWithOwner } labels(first: 20) { nodes { name } }
+                             author { login } }
+        """;
     private const string ContentFields = $$"""
         __typename
           {{IssueFields}}
-          ... on PullRequest { id number title url state repository { nameWithOwner } labels(first: 20) { nodes { name } }
-                               author { login } }
+          {{PullFields}}
         """;
 
     private readonly string _team;
@@ -231,7 +234,7 @@ internal sealed partial class Board
         label.StartsWith("a-team:", StringComparison.Ordinal) || label.StartsWith("rank:", StringComparison.Ordinal)
         || label.StartsWith("theme: ", StringComparison.Ordinal) || label == "blocked";
 
-    /// <summary>Once a command, reads the open items, and every so often the repo's open issues. Where GitHub can't be
+    /// <summary>Once a command, reads the open items, and every so often the repo's open issues and PRs. Where GitHub can't be
     /// read, the record stands as it is. <paramref name="cached"/> only moves the board over and carries any old labels into it.</summary>
     internal void Sync(bool cached = false)
     {
@@ -240,8 +243,10 @@ internal sealed partial class Board
         BoardReady();
         AdoptLabels();
         if (cached) return;
-        if (Stale("issues_read") && OpenIssues() is { } open)
+        if (Stale("issues_read") && OpenIssues() is { } open && OpenOnRepo("RepoPullRequests", "pullRequests", PullFields) is { } pulls)
         {
+            foreach (var pull in pulls)
+                open.Add(pull?.DeepClone());
             Arrive(open);
             _record.Exec($"UPDATE boards SET issues_read = {Reconciler.Q(Now())} WHERE team = {TeamQ};");
         }
@@ -255,14 +260,16 @@ internal sealed partial class Board
     private bool Stale(string column) =>
         _record.Scalar($"SELECT COUNT(*) FROM boards WHERE team = {TeamQ} AND ({column} IS NULL OR {column} <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-{_readEvery} seconds'));") != "0";
 
-    /// <summary>Every open issue on the repo, read again once if it comes back short; null if it can't be read whole.</summary>
-    internal JsonArray? OpenIssues()
+    internal JsonArray? OpenIssues() => OpenOnRepo("RepoIssues", "issues", IssueFields);
+
+    /// <summary>Every open issue or PR on the repo, read again once if it comes back short; null if it can't be read whole.</summary>
+    private JsonArray? OpenOnRepo(string name, string connection, string fields)
     {
         var query = $$"""
-            query RepoIssues($owner: String!, $name: String!, $endCursor: String) {
-                  repository(owner: $owner, name: $name) { issues(states: OPEN, first: 100, after: $endCursor) {
+            query {{name}}($owner: String!, $name: String!, $endCursor: String) {
+                  repository(owner: $owner, name: $name) { {{connection}}(states: OPEN, first: 100, after: $endCursor) {
                     totalCount pageInfo { hasNextPage endCursor }
-                    nodes { __typename {{IssueFields}} } } } }
+                    nodes { __typename {{fields}} } } } }
             """;
         var slash = _repo.IndexOf('/');
         if (slash < 0) return null;
@@ -283,10 +290,10 @@ internal sealed partial class Board
             var total = -1L;
             foreach (var page in pages)
             {
-                if (page?["data"]?["repository"]?["issues"] is not { } connection) return null;
-                foreach (var node in connection["nodes"]?.AsArray() ?? [])
+                if (page?["data"]?["repository"]?[connection] is not { } found) return null;
+                foreach (var node in found["nodes"]?.AsArray() ?? [])
                     issues.Add(node?.DeepClone());
-                if (connection["totalCount"] is { } count)
+                if (found["totalCount"] is { } count)
                     total = Math.Max(total, count.GetValue<long>());
             }
             if (total >= 0 && issues.Count >= total) return issues;
