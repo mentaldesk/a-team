@@ -64,23 +64,20 @@ public class PlacementTests
     }
 
     /// <summary>Each open item of every kind, against a board that has it at every status, or hasn't got it, shut or not.</summary>
-    public static IEnumerable<object[]> Boards()
+    public static TheoryData<string, string?, bool> Boards()
     {
-        var kinds = new (string Name, Func<int, JsonObject> Make)[]
-        {
-            ("issue", n => Open(n, "Issue")),
-            ("PR closing nothing", n => Open(n, "PullRequest")),
-            ("draft PR", n => Open(n, "PullRequest", draft: true)),
-            ("Dependabot's PR", n => Open(n, "PullRequest", author: "dependabot")),
-            ("PR closing a card", n => Open(n, "PullRequest", closes: [(1, Repo)])),
-            ("PR closing an issue not on the board", n => Open(n, "PullRequest", closes: [(2, Repo)])),
-            ("PR closing an issue in another repo", n => Open(n, "PullRequest", closes: [(1, "o/other")])),
-        };
-        foreach (var (name, _) in kinds)
+        string[] kinds =
+        [
+            "issue", "PR closing nothing", "draft PR", "Dependabot's PR", "PR closing a card",
+            "PR closing an issue not on the board", "PR closing an issue in another repo",
+        ];
+        var data = new TheoryData<string, string?, bool>();
+        foreach (var kind in kinds)
             foreach (var had in AnyStatus.Prepend(null))
                 foreach (var shut in new[] { false, true })
                     if (had is not null || !shut)
-                        yield return [name, had, shut];
+                        data.Add(kind, had, shut);
+        return data;
     }
 
     [Theory]
