@@ -7,7 +7,7 @@ namespace ATeam.Core;
 /// <summary>The state's format and what moves it, and what `check` and `setup` ask of the machine and the repo.</summary>
 internal sealed partial class Board
 {
-    private const int DefaultFormat = 3;
+    private const int DefaultFormat = 4;
     private const string KeychainService = "a-team-app";
 
     /// <summary>What moves a team's state up to each format, safe to repeat. A format with nothing to move has no step.</summary>
@@ -15,6 +15,7 @@ internal sealed partial class Board
     {
         [2] = board => board.MoveWaitsIntoRecord(),
         [3] = board => board.DropMirrorColumns(),
+        [4] = board => board.MoveTalkIntoRecord(),
     };
 
     private static readonly string[] MirrorColumns =

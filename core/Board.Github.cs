@@ -53,8 +53,13 @@ internal sealed partial class Board
     internal GhResult Write(string what, params string[] args) =>
         Would(what) ? new GhResult(0, "", "") : _gh.Run(args);
 
-    internal GhResult Post(string what, string body, params string[] args) =>
-        Would(what) ? new GhResult(0, "", "") : _gh.Feed(body, args);
+    internal GhResult Post(string what, string body, params string[] args)
+    {
+        if (Would(what)) return new GhResult(0, "", "");
+        var posted = _gh.Feed(body, args);
+        NoteSaid(body, args, posted);
+        return posted;
+    }
 
     /// <summary>What a command under `set -e` did with a call that failed: stops there, with gh's own words.</summary>
     internal static GhResult Must(GhResult result)
@@ -133,9 +138,6 @@ internal sealed partial class Board
 
     private (string Owner, string Name) RepoParts => (_repo[.._repo.IndexOf('/')], _repo[(_repo.IndexOf('/') + 1)..]);
 
-    private static bool Said(JsonNode? comment, string bot, string role) =>
-        LoginOf(comment?["author"]) == bot && (Json.Text(comment?["body"]) ?? "").Contains($"<!-- a-team:{role} -->", StringComparison.Ordinal);
-
     private static string LoginOf(JsonNode? author)
     {
         if (author is null) return "";
@@ -154,7 +156,7 @@ internal sealed partial class Board
     /// <summary>The open PR that closes #n, with `review` saying where the Reviewer has got to with it.</summary>
     internal (GhResult Read, JsonObject? Pr) PrFor(string n)
     {
-        const string said = "comments(last: 100) { nodes { body author { __typename login } } }";
+        const string said = "comments(last: 100) { nodes { url } }";
         var (owner, name) = RepoParts;
         var read = _gh.Run("api", "graphql", "-F", $"owner={owner}", "-F", $"name={name}", "-F", $"n={n}", "-f", $$"""
             query=
@@ -177,15 +179,14 @@ internal sealed partial class Board
         var found = repository?["issue"]?["closedByPullRequestsReferences"]?["nodes"]?.AsArray().FirstOrDefault()
             ?? repository?["pullRequests"]?["nodes"]?.AsArray().FirstOrDefault(pr => Closes(pr).Contains(number));
         if (found is null) return (read, null);
-        var bot = Bot;
-        var comments = found["comments"]?["nodes"]?.AsArray().ToList() ?? [];
-        var spoke = comments.Select(c => Said(c, bot, "reviewer") ? "review" : Said(c, bot, "dev") ? "dev" : null).OfType<string>().ToList();
-        var at = spoke.IndexOf("review");
+        var comments = found["comments"]?["nodes"]?.AsArray().OfType<JsonNode>().ToList() ?? [];
+        var spoke = comments.Select(Speaker).ToList();
+        var at = spoke.IndexOf("reviewer");
         var result = found.DeepClone().AsObject();
         result.Remove("body");
         result.Remove("comments");
         result["review"] = at >= 0 && spoke.Skip(at).Contains("dev") ? "answered"
-            : comments.Any(c => Said(c, bot, "reviewer")) ? "posted"
+            : at >= 0 ? "posted"
             : ReviewerOn ? "waiting" : "off";
         return (read, result);
     }
@@ -262,14 +263,14 @@ internal sealed partial class Board
     private GhResult Aloud(params string[] args) => Through(_gh.Run(args));
 
     /// <summary>All that's been said on #n, oldest first; null where GitHub won't say.</summary>
-    internal List<JsonObject>? Comments(string n)
+    internal List<JsonObject>? Comments(string n, bool eyes = false)
     {
-        var (all, code) = CommentsSoFar(n);
+        var (all, code) = CommentsSoFar(n, eyes);
         return code == 0 ? all : null;
     }
 
     /// <summary>All that's been said on #n as far as GitHub would say, null for nothing, and the exit code of the read it stopped at, or 0.</summary>
-    internal (List<JsonObject>? All, int Code) CommentsSoFar(string n)
+    internal (List<JsonObject>? All, int Code) CommentsSoFar(string n, bool eyes = false)
     {
         var read = Aloud("api", $"repos/{_repo}/issues/{n}");
         if (!read.Ok) return (null, read.Code);
@@ -282,7 +283,7 @@ internal sealed partial class Board
         all.AddRange(Paged(comments).Select(c => Comment("comment", c)));
         if (issue?["pull_request"] is not null)
         {
-            var reviews = ReviewsRead(n);
+            var reviews = ReviewsRead(n, eyes);
             if (!reviews.Ok) return Stopped(reviews.Code);
             all.AddRange(Json.ParseMany(reviews.Out).OfType<JsonObject>());
             var lines = Aloud("api", "--paginate", $"repos/{_repo}/pulls/{n}/comments");
@@ -298,46 +299,35 @@ internal sealed partial class Board
         return Stopped(0);
     }
 
-    /// <summary>The team wrote this, as the role whose marker is <paramref name="marker"/>.</summary>
-    private bool TeamSaid(JsonNode comment, string marker)
-    {
-        var bot = Bot;
-        var body = Json.Text(comment["body"]) ?? "";
-        if (bot.Length > 0 && Json.Text(comment["author"]) == bot)
-            return body.Contains(marker, StringComparison.Ordinal);
-        if (string.CompareOrdinal(Json.Text(comment["at"]), AppFrom) >= 0)
-            return false;
-        var last = body.Replace("\r", "").Split('\n').Select(line => line.TrimEnd(' ', '\t')).LastOrDefault(line => line.Length > 0) ?? "";
-        return last.StartsWith(marker, StringComparison.Ordinal);
-    }
-
     private bool FromStakeholder(JsonNode comment) => Stakeholders.Contains(Json.Text(comment["author"]) ?? "");
 
-    private static long Eyes(JsonNode comment) => Json.Long(comment["eyes"]);
-
-    /// <summary>The stakeholders' comments on #n that no run has left a 👀 on.</summary>
+    /// <summary>The stakeholders' comments on #n that the record says no run has read.</summary>
     internal List<JsonObject> UnansweredFeedback(string role, string n)
     {
         var comments = Comments(n) ?? throw new Stop(1, $"board.sh: couldn't read what's been said on #{n}\n");
         return Unanswered(role, comments);
     }
 
-    /// <summary>Of what's been said on a card, the stakeholders' comments no run has left a 👀 on.</summary>
+    /// <summary>Of what's been said on a card, the stakeholders' comments the record says no run has read.</summary>
     internal List<JsonObject> Unanswered(string role, List<JsonObject> comments)
     {
-        var since = RoleSpoke($"<!-- a-team:{role} -->", comments);
-        return comments.Where(c => Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSaid(c, "<!-- a-team:") && Eyes(c) == 0
+        var since = RoleSpoke(role, comments);
+        return comments.Where(c => Json.Text(c["kind"]) != "body" && FromStakeholder(c) && !TeamSpoke(c) && !WasRead(c)
             && (string.CompareOrdinal(Json.Text(c["at"]), AckFrom) >= 0 || string.CompareOrdinal(Json.Text(c["at"]), since) > 0)).ToList();
     }
 
-    internal void React(string subject, string what) =>
+    /// <summary>A 👀 on that comment, and then the record of a run having read it.</summary>
+    internal void React(string n, string subject, string? url, string what)
+    {
         Must(Write($"add 👀 to {what}", "api", "graphql", "-F", $"subject={subject}", "-f", """
             query=
                 mutation($subject: ID!) {
                   addReaction(input: {subjectId: $subject, content: EYES}) { reaction { content } } }
             """));
+        NoteRead(n, url);
+    }
 
-    /// <summary>A 👀 on every stakeholder comment on #n this run could have seen. One that arrived mid-run is newer than the
+    /// <summary>A 👀 on every stakeholder comment on #n this run could have seen, each recorded as read. One that arrived mid-run is newer than the
     /// run's start, so it stays unanswered and gets a run of its own.</summary>
     internal void Ack(string n)
     {
@@ -347,8 +337,8 @@ internal sealed partial class Board
         {
             var at = Json.Text(comment["at"]);
             if (string.CompareOrdinal(at, started) < 0 && Json.Text(comment["kind"]) != "body" && FromStakeholder(comment)
-                && !TeamSaid(comment, "<!-- a-team:") && Eyes(comment) == 0)
-                React(Json.Text(comment["id"])!, $"your comment of {at} on #{n}");
+                && !TeamSpoke(comment) && !WasRead(comment))
+                React(n, Json.Text(comment["id"])!, Json.Text(comment["url"]), $"your comment of {at} on #{n}");
         }
     }
 

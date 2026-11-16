@@ -70,6 +70,7 @@ public sealed partial class DashboardWindow
     internal CommandScope Region =>
         InAssistant ? Regions.Assistant
         : _dispatcherOpen || _sessionFull ? Regions.Log
+        : _area == Area.Work && _inbox.HasFocus ? Regions.Inbox
         : _area == Area.Work ? Regions.Work
         : InFilter ? Regions.Filter
         : _team.HasFocus ? Regions.Team

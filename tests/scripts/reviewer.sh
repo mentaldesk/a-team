@@ -54,7 +54,8 @@ case_ "once the Dev answers the review, its next green run is told to mark the P
 # `dev_said <before|after>`: a Dev comment from the team's App, added before or after the review.
 dev_said() {
   jq --arg where "$1" '(.. | objects | select(has("isDraft"))).comments.nodes |=
-      ([{body: "Done.\n\n<!-- a-team:dev -->", author: {__typename: "Bot", login: "demo-app"}}] as $c
+      ([{body: "Done.\n\n<!-- a-team:dev -->", url: "https://github.com/mentaldesk/demo/pull/912#issuecomment-\(if $where == "before" then 9129001 else 9129002 end)",
+         author: {__typename: "Bot", login: "demo-app"}}] as $c
        | if $where == "before" then $c + . else . + $c end)' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
   gh_reviewing
 }
@@ -82,6 +83,36 @@ same "said" "#912: reviewed" "$(cat "$OUT")"
 grep -q '^PR COMMENT pr comment 912 ' "$WRITES" || fail "review: no PR comment in '$(cat "$WRITES")'"
 same "first line" "Nothing needs changing." "$(head -1 "$POSTED")"
 same "marker" "<!-- a-team:reviewer -->" "$(tail -1 "$POSTED")"
+
+case_ "the review is posted, then answered, as the record has the Reviewer's and the Dev's words, not as their markers say"
+export NO_SEED_TALK=1
+gh_pr 912 true
+echo "https://github.com/mentaldesk/demo/pull/912#issuecomment-9127001" >"$BIN/comment-url"
+run board demo review reviewer 912 "$WORK/review"
+same "exit" 0 "$STATUS"
+# `pr_comment <n> <body>`: a comment on PR #912, as GitHub gives it.
+pr_comment() {
+  jq --arg url "https://github.com/mentaldesk/demo/pull/912#issuecomment-$1" --arg body "$2" \
+    '(.. | objects | select(has("isDraft"))).comments.nodes += [{body: $body, url: $url, author: {__typename: "Bot", login: "demo-app"}}]' \
+    "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+  gh_reviewing
+}
+pr_comment 9127001 "Nothing needs changing."
+KEEP_BOARD=1 run board demo pr 12
+same "posted" '"posted"' "$(jq -c .review "$OUT")"
+pr_comment 9127002 "Done.
+
+<!-- a-team:dev -->"
+KEEP_BOARD=1 run board demo pr 12
+same "a marker alone" '"posted"' "$(jq -c .review "$OUT")"
+echo "https://github.com/mentaldesk/demo/pull/912#issuecomment-9127003" >"$BIN/comment-url"
+echo "Done." >"$WORK/answer"
+KEEP_BOARD=1 run board demo comment dev 912 "$WORK/answer"
+pr_comment 9127003 "Done."
+KEEP_BOARD=1 run board demo pr 12
+same "answered" '"answered"' "$(jq -c .review "$OUT")"
+rm -f "$BIN/comment-url"
+unset NO_SEED_TALK
 
 case_ "a second review, a red or ready PR, and anything but the Dev's open task PR are refused"
 gh_reviewed

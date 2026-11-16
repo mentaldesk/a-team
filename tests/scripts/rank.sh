@@ -528,7 +528,8 @@ Done 90 Untouched
 ITEMS
 edit_item 81 '.labels.nodes = [{name: "pitch"}, {name: "theme: Think bigger"}]'
 edit_item 517 '.parent = {number: 81}'
-sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE runs (id INTEGER PRIMARY KEY, team TEXT NOT NULL, role TEXT NOT NULL,
+sqlite3 "$A_TEAM_STATE/history.db" "$(new_stamp)
+  CREATE TABLE runs (id INTEGER PRIMARY KEY, team TEXT NOT NULL, role TEXT NOT NULL,
     pid INTEGER NOT NULL, log TEXT NOT NULL, started TEXT NOT NULL, ended TEXT, cost REAL, outcome TEXT);
   CREATE TABLE run_items (run INTEGER NOT NULL, item INTEGER NOT NULL);
   INSERT INTO runs (id, team, role, pid, log, started, cost) VALUES (1, 'demo', 'dev', 1, 'a', '2026-10-09T00:00:00Z', 1.25),

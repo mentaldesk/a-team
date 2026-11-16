@@ -5,6 +5,7 @@ using MentalDesk.Tui;
 using MentalDesk.Tui.Chrome;
 using MentalDesk.Tui.Commands;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Layout;
 using MentalDesk.Tui.Links;
 using MentalDesk.Tui.Shell;
 using Terminal.Gui;
@@ -48,6 +49,9 @@ public sealed partial class DashboardWindow : Window
     private readonly FrameView _dispatchFrame;
     private readonly LogView _dispatchAll;
     private readonly WorkView _work;
+    private readonly View _workRow;
+    private readonly InboxPane _inbox = new() { Visible = false };
+    private readonly SidePanes _workPanes;
     private readonly OverseerView _overseer;
     private TeamReads? _boarding;
     private TeamReads? _syncing;
@@ -208,17 +212,28 @@ public sealed partial class DashboardWindow : Window
 
         _title = new Label { X = 1, Y = MenuLines, Width = Dim.Func(_ => Math.Max(0, BesideAssistant() - 1), this), Text = "Work", Visible = area == Area.Work };
         Add(_title);
-        _work = new WorkView(_teamNames)
+        _workRow = new View
         {
             X = 0,
             Y = MenuLines + TitleLines,
             Width = Dim.Func(_ => BesideAssistant(), this),
             Height = Dim.Func(_ => WorkHeight(), this),
+            CanFocus = true,
             Visible = area == Area.Work,
         };
+        _work = new WorkView(_teamNames) { Y = 0, Height = Dim.Fill(), Visible = area == Area.Work };
         _work.FocusChanged += ShowMessage;
+        _work.ItemsChanged += ShowInbox;
         _work.ShowOnlyMine(settings.ReadOnlyMine());
-        Add(_work);
+        _inbox.Y = 0;
+        _inbox.Height = Dim.Fill();
+        _inbox.SelectionChanged += ShowMessage;
+        _inbox.HasFocusChanged += (_, _) => ShowMessage();
+        _workRow.Add(_work, _inbox);
+        _workPanes = _paneWidths.For(_workRow, () => _inbox.HasFocus ? PaneWidths.Inbox : null, text => Reply(text))
+            .AddMain(_work)
+            .AddSide(_inbox, PaneWidths.Inbox, AssistantColumns);
+        Add(_workRow);
         _overseer = new OverseerView(_teamNames)
         {
             X = 0,
@@ -302,6 +317,11 @@ public sealed partial class DashboardWindow : Window
     internal bool DispatcherOpen => _dispatcherOpen;
 
     internal WorkView Work => _work;
+
+    internal InboxPane Inbox => _inbox;
+
+    /// <summary>Whether the Priority Inbox and the Assistant share Work's right side, as tabs.</summary>
+    internal bool InboxTabbed => _inbox.Tabbed;
 
     internal OverseerView Overseer => _overseer;
 

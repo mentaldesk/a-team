@@ -151,10 +151,13 @@ internal sealed partial class Board
     }
 
     /// <summary>This repo's open Dependabot PRs; none where GitHub won't say.</summary>
-    internal JsonArray OpenBumps()
+    internal JsonArray OpenBumps() => ReadBumps() ?? [];
+
+    /// <summary>This repo's open Dependabot PRs, or null where GitHub won't say.</summary>
+    private JsonArray? ReadBumps()
     {
         var read = _gh.Run("pr", "list", "-R", _repo, "--author", "app/dependabot", "--state", "open", "--json", "number,title");
-        return read.Ok && Json.TryParse(read.Out) is JsonArray bumps ? bumps : [];
+        return read.Ok && Json.TryParse(read.Out) is JsonArray bumps ? bumps : null;
     }
 
     /// <summary>A released wait naming a package is still held while a Dependabot PR bumping it is open, which it says.</summary>

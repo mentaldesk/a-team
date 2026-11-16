@@ -200,10 +200,10 @@ internal static partial class Commands
         var back = until.ToString("dd MMM", CultureInfo.InvariantCulture).TrimStart('0');
         var body = $"{(Blank(reason) ? "" : $"{reason}\n\n")}Not now: back on {back}.{(role == "you" ? "" : $"\n\n<!-- a-team:{role} -->")}";
         board.Show(body);
-        var posted = Board.Must(board.Post($"comment on #{n}", body + "\n", "api", "-X", "POST", $"repos/{board.Repo}/issues/{n}/comments", "-F", "body=@-", "--jq", ".node_id")).Said;
+        var posted = Board.Must(board.Post($"comment on #{n}", body + "\n", "api", "-X", "POST", $"repos/{board.Repo}/issues/{n}/comments", "-F", "body=@-", "--jq", """.node_id + " " + .html_url""")).Said.Split(' ');
         if (role == "you")
         {
-            if (posted.Length > 0) board.React(posted, $"your Not now on #{n}");
+            if (posted[0].Length > 0) board.React(n, posted[0], posted.ElementAtOrDefault(1), $"your Not now on #{n}");
         }
         else
         {

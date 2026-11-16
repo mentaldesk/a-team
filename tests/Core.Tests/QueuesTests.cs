@@ -18,8 +18,18 @@ public class QueuesTests
             ["app"] = new JsonObject { ["slug"] = "demo-app" },
             ["roles"] = new JsonObject { ["reviewer"] = reviewer },
         };
-        return new Board("demo", config, () => throw new InvalidOperationException("no record here"), new Gh(null), dryRun: false);
+        return new Board("demo", config, () => Record.Open(":memory:"), new Gh(null), dryRun: false);
     }
+
+    /// <summary>A board whose record has those comments in it, as a team's move to format 4 copies them.</summary>
+    private static Board Heard(List<JsonObject> said, bool reviewer = false)
+    {
+        var board = Demo(reviewer);
+        board.CopyTalk("7", said);
+        return board;
+    }
+
+    private static int _comments;
 
     private static JsonObject Said(long n, string kind, string time, string author, string body, long eyes = 0) => new()
     {
@@ -29,6 +39,7 @@ public class QueuesTests
         ["eyes"] = eyes,
         ["kind"] = kind,
         ["n"] = n,
+        ["url"] = $"https://github.com/mentaldesk/demo/issues/{n}#issuecomment-{Interlocked.Increment(ref _comments)}",
     };
 
     private static JsonObject Item(long n, string status, bool pitch = false) => new()
@@ -67,7 +78,7 @@ public class QueuesTests
 
     private static string Turned(JsonObject item, List<JsonObject> said, List<JsonObject> prs, bool reviewer = false)
     {
-        var turned = Demo(reviewer).Turn(item, said, prs);
+        var turned = Heard(said, reviewer).Turn(item, said, prs);
         return $"{Json.Text(turned["turn"])}: {Json.Text(turned["reason"])}".Split(" since ")[0];
     }
 
@@ -139,7 +150,7 @@ public class QueuesTests
     {
         var page = Json.Parse("""
             {"data": {"repository": {"x7": {"number": 7, "createdAt": "A", "body": null, "author": {"__typename": "Bot", "login": "demo-app"},
-               "comments": {"nodes": [{"createdAt": "B", "body": "Hi", "author": {"__typename": "User", "login": "reviewer"}, "reactions": {"totalCount": 2}}]},
+               "comments": {"nodes": [{"createdAt": "B", "body": "Hi", "url": "https://github.com/mentaldesk/demo/issues/7#issuecomment-2", "author": {"__typename": "User", "login": "reviewer"}}]},
                "closedByPullRequestsReferences": {"nodes": [{"number": 9, "createdAt": "C", "body": "PR", "author": null,
                  "reviews": {"nodes": [
                    {"createdAt": "D", "body": "", "state": "COMMENTED", "author": null, "comments": {"nodes": [{"createdAt": "E", "body": "Line", "author": null}]}},
@@ -150,7 +161,7 @@ public class QueuesTests
         Assert.Equal(["A body", "B comment", "C body", "E line", "F review", "G review"], said.Select(c => $"{Json.Text(c["at"])} {Json.Text(c["kind"])}"));
         Assert.All(said, c => Assert.Equal(7, Json.Long(c["n"])));
         Assert.Equal("demo-app[bot]", Json.Text(said[0]["author"]));
-        Assert.Equal(2, Json.Long(said[1]["eyes"]));
+        Assert.Equal("https://github.com/mentaldesk/demo/issues/7#issuecomment-2", Json.Text(said[1]["url"]));
         Assert.Equal("", Json.Text(said[2]["author"]));
     }
 
@@ -186,6 +197,30 @@ public class QueuesTests
     }
 
     [Fact]
+    public void Only_the_record_says_a_comment_was_read_whoever_reacted_to_it()
+    {
+        var body = Said(7, "body", "08:00:00", "demo-app[bot]", $"The task\n{Lead}");
+        var eyed = Said(7, "comment", "09:00:00", "reviewer", "No.", eyes: 1);
+        Assert.Equal("dev", Json.Text(Demo().Turn(Item(7, "In review"), [body, eyed], [])["turn"]));
+        var read = Said(7, "comment", "09:00:00", "reviewer", "No.", eyes: 1);
+        var board = Heard([read]);
+        read["eyes"] = 0;
+        var turned = board.Turn(Item(7, "In review"), [body, read], []);
+        Assert.Equal("you", Json.Text(turned["turn"]));
+    }
+
+    [Fact]
+    public void A_comment_is_named_by_its_urls_fragment_whichever_API_gave_it()
+    {
+        Assert.Equal("issuecomment-12", Board.CommentKey("https://github.com/o/r/pull/5#issuecomment-12"));
+        Assert.Equal("issuecomment-12", Board.CommentKey("https://github.com/o/r/issues/5#issuecomment-12\n"));
+        Assert.Equal("pullrequestreview-3", Board.CommentKey("https://github.com/o/r/pull/5#pullrequestreview-3"));
+        Assert.Equal("discussion_r9", Board.CommentKey("https://github.com/o/r/pull/5#discussion_r9"));
+        Assert.Null(Board.CommentKey("https://github.com/o/r/issues/5"));
+        Assert.Null(Board.CommentKey(null));
+    }
+
+    [Fact]
     public void An_unanswered_comment_outranks_a_PRs_troubles_and_those_go_in_order()
     {
         var comment = Said(7, "comment", "09:00:00", "reviewer", "No.");
@@ -204,7 +239,7 @@ public class QueuesTests
     public void A_reviews_points_ride_along_and_it_stops_waiting_on_the_reviewer()
     {
         var review = Said(7, "comment", "09:00:00", "demo-app[bot]", "## Worth considering\n- One\n\n<!-- a-team:reviewer -->");
-        var turned = Demo(reviewer: true).Turn(Item(7, "In review"), [review], [Pr(7, 9, "pass", draft: true)]);
+        var turned = Heard([review], reviewer: true).Turn(Item(7, "In review"), [review], [Pr(7, 9, "pass", draft: true)]);
         Assert.Equal("dev", Json.Text(turned["turn"]));
         Assert.True(Json.Truthy(turned["reviewed"]));
         Assert.Equal(1, Json.Long(turned["consider"]));
@@ -235,7 +270,7 @@ public class QueuesTests
     private static JsonObject Blocked(string by = "team") => new() { ["7"] = new JsonObject { ["at"] = $"{Day}T09:00:00Z", ["by"] = by } };
 
     private static JsonObject Hold(List<JsonObject> said, JsonObject? blocked = null) =>
-        Assert.Single(Demo().Holds([Item(7, "Ready")], said, blocked ?? Blocked()));
+        Assert.Single(Heard(said).Holds([Item(7, "Ready")], said, blocked ?? Blocked()));
 
     [Fact]
     public void A_Dev_comment_just_before_the_hold_is_its_question()
@@ -246,10 +281,12 @@ public class QueuesTests
         Assert.Equal("Which one?", Json.Text(question["question"]));
         Assert.Equal("you", Json.Text(question["turn"]));
         Assert.Null(question["unread"]);
-        var answered = Assert.Single(Demo().Questions([Item(7, "Ready")], [asked, Said(7, "comment", "09:30:00", "reviewer", "This.")], Blocked()));
+        List<JsonObject> replied = [asked, Said(7, "comment", "09:30:00", "reviewer", "This.")];
+        var answered = Assert.Single(Heard(replied).Questions([Item(7, "Ready")], replied, Blocked()));
         Assert.Equal("dev", Json.Text(answered["turn"]));
         Assert.Equal($"{Day}T09:30:00Z", Json.Text(answered["unread"]));
-        Assert.Empty(Demo().Questions([Item(7, "Ready")], [Said(7, "comment", "08:49:59", "demo-app[bot]", $"Too early.\n\n{Dev}")], Blocked()));
+        List<JsonObject> early = [Said(7, "comment", "08:49:59", "demo-app[bot]", $"Too early.\n\n{Dev}")];
+        Assert.Empty(Heard(early).Questions([Item(7, "Ready")], early, Blocked()));
     }
 
     [Fact]

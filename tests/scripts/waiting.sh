@@ -939,6 +939,7 @@ gh_talk <<TALK
 130 comment ${TODAY}T09:00:00Z reviewer Please fix the conflict.
 130 comment ${TODAY}T09:40:00Z other-app[bot] Merged main in.\n<!-- a-team:dev -->
 TALK
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT OR IGNORE INTO comments_said (team, item, comment, role, at) VALUES ('other', 5, 'issuecomment-1130002', 'dev', '${TODAY}T09:40:00Z');"
 UNWOKEN=1 waiting
 same "exit" 0 "$STATUS"
 same "turns" '[["you",true],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"

@@ -66,7 +66,7 @@ same "bodies" '["Closes #6","Draft PR #906 is up.","Does it scroll?","+1","It do
 same "prs" '[906,null,906,null,906,null]' "$(jq -c '[.[].pr]' "$OUT")"
 same "description" '[true,false,false,false,false,false]' "$(jq -c '[.[].description]' "$OUT")"
 same "at" '"2026-10-01T08:05:00Z"' "$(jq -c '.[0].at' "$OUT")"
-same "urls" '["https://github.com/mentaldesk/demo/pull/906","https://github.com/mentaldesk/demo/issues/6#issuecomment-1","https://github.com/mentaldesk/demo/pull/906#issuecomment-1","https://github.com/mentaldesk/demo/issues/6#issuecomment-2","https://github.com/mentaldesk/demo/pull/906#issuecomment-2","https://github.com/mentaldesk/demo/issues/6#issuecomment-3"]' \
+same "urls" '["https://github.com/mentaldesk/demo/pull/906","https://github.com/mentaldesk/demo/issues/6#issuecomment-1006001","https://github.com/mentaldesk/demo/pull/906#issuecomment-1906001","https://github.com/mentaldesk/demo/issues/6#issuecomment-1006002","https://github.com/mentaldesk/demo/pull/906#issuecomment-1906002","https://github.com/mentaldesk/demo/issues/6#issuecomment-1006003"]' \
   "$(jq -c '[.[].url]' "$OUT")"
 same "api calls" 1 "$(grep -c '' <"$CALLS")"
 

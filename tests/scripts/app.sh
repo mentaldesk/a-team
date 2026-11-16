@@ -205,6 +205,7 @@ case " \$* " in
   *"/actions/workflows/release.yml "*) [ -z "\${RELEASE_DOWN:-}" ] || { echo "error connecting to api.github.com" >&2; exit 1; }
     [ -z "\${NO_RELEASE_WORKFLOW:-}" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }; exit 0 ;;
   *"label list"*) page="$APP_BIN/board/labels.json" ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
   *) page="$APP_BIN/board/empty.json" ;;
 esac
 filter=

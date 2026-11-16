@@ -20,6 +20,9 @@ nothing to restart.
 - **Decisions that gate anything go in the board, not in prose.** Who may move an item where
   is `core/StatusRoute.cs`. An agent can talk itself out of a sentence, but not out of a
   refused command.
+- **State the board acts on lives in the record.** Keep each relationship in a table whose keys and constraints
+  enforce its rules, and change it in one transaction. A GitHub comment tells people what changed; the board never
+  reads its state back from one.
 - **Anything a role is allowed to do goes in its task prompt (`tasks/<role>.md`).** Auto mode
   treats the prompt as the reviewer's intent and the brief `run.sh` prints as command output,
   so authorisation that only lives in a role file doesn't count.

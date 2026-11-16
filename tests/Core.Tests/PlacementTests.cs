@@ -12,13 +12,17 @@ public class PlacementTests
 
     private static readonly string[] AnyStatus = [.. StatusRoute.Statuses, StatusRoute.None, "?Foo", "Triage"];
 
-    private static Board Demo(bool reviewer) => new("demo", new JsonObject
+    private static Board Demo(bool reviewer, string team = "demo", Record? record = null)
     {
-        ["repo"] = Repo,
-        ["stakeholders"] = new JsonArray("reviewer"),
-        ["app"] = new JsonObject { ["slug"] = "demo-app" },
-        ["roles"] = new JsonObject { ["reviewer"] = reviewer, ["customer"] = true },
-    }, () => throw new InvalidOperationException("no record here"), new Gh(null), dryRun: false);
+        record ??= Record.Open(":memory:");
+        return new(team, new JsonObject
+        {
+            ["repo"] = Repo,
+            ["stakeholders"] = new JsonArray("reviewer"),
+            ["app"] = new JsonObject { ["slug"] = $"{team}-app" },
+            ["roles"] = new JsonObject { ["reviewer"] = reviewer, ["customer"] = true },
+        }, () => record, new Gh(null), dryRun: false);
+    }
 
     public static TheoryData<string, string> StatusesAndTypes()
     {
@@ -110,6 +114,8 @@ public class PlacementTests
         Assert.DoesNotContain(plan.Arrived, one => one.Number == "9");
     }
 
+    private static int _comments;
+
     private static JsonObject Said(string kind, string time, string author, string body, long eyes = 0) => new()
     {
         ["at"] = $"2026-10-01T{time}Z",
@@ -118,6 +124,7 @@ public class PlacementTests
         ["eyes"] = eyes,
         ["kind"] = kind,
         ["n"] = 8,
+        ["url"] = $"https://github.com/o/r/issues/8#issuecomment-{Interlocked.Increment(ref _comments)}",
     };
 
     private static JsonObject Pr(string checks, bool draft, bool conflicting, bool behind, bool self) => new()
@@ -183,10 +190,12 @@ public class PlacementTests
         var words = pr.Split(' ');
         List<JsonObject> prs = pr == "none" ? [] : [Pr(words[0], words.Contains("draft"), words.Contains("conflicting"), words.Contains("behind"), kind is "dependency" or "docs")];
         var board = Demo(reviewer);
+        var said = Talk[talk]();
+        board.CopyTalk("8", said);
 
         foreach (var woken in new[] { false, true })
         {
-            var turned = board.Turn(item, Talk[talk](), prs);
+            var turned = board.Turn(item, said, prs);
             var named = Json.Text(turned["turn"]);
             Board.Settle(turned, Repo, (role, n) => woken && role == named && n == 8);
             var turn = Json.Text(turned["turn"]);
@@ -202,7 +211,9 @@ public class PlacementTests
     {
         var item = new JsonObject { ["number"] = 130, ["status"] = "In review", ["title"] = "T", ["url"] = "u", ["team"] = "tui" };
         var said = Talk["your comment answered from another team's App"]().Select(c => { c["n"] = 130; return c; }).ToList();
-        var turned = Demo(reviewer: false).Turn(item, said, []);
+        var record = Record.Open(":memory:");
+        Demo(reviewer: false, team: "other", record).CopyTalk("130", said);
+        var turned = Demo(reviewer: false, record: record).Turn(item, said, []);
         Board.Settle(turned, "mentaldesk/tui-style-guide", (_, _) => false);
         Assert.Equal("you", Json.Text(turned["turn"]));
         Assert.Equal("dev answered on tui-style-guide#130, but nothing will start a run for it", Json.Text(turned["reason"]));

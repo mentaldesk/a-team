@@ -67,7 +67,7 @@ public sealed partial class DashboardWindow
         return pane;
     }
 
-    private int AssistantWidth() => _assistant is { Visible: true } && !Tabbed ? Math.Min(AssistantColumns, Viewport.Width / 2) : 0;
+    private int AssistantWidth() => _assistant is { Visible: true } && !Tabbed && !InboxTabbed ? Math.Min(AssistantColumns, Viewport.Width / 2) : 0;
 
     private int BesideAssistant() => Math.Max(0, Viewport.Width - AssistantWidth() - PanelWidth());
 
@@ -100,14 +100,17 @@ public sealed partial class DashboardWindow
     private void Arrange()
     {
         var tabbed = Docked && _assistant is { Visible: true };
+        var inboxTabbed = InboxShown && _assistant is { Visible: true };
         var panel = Panel;
         var other = panel == _team ? (View)_card : _team;
-        View? focused = _assistant is { HasFocus: true } ? _assistant : _card.HasFocus ? _card : _team.HasFocus ? _team : null;
+        View? focused = _assistant is { HasFocus: true } ? _assistant : _card.HasFocus ? _card : _team.HasFocus ? _team : _inbox.HasFocus ? _inbox : null;
         var assistantFront = tabbed && (_side.Visible ? _side.Value == _assistantTab : _assistant!.HasFocus || !panel.HasFocus);
         Move(other, this);
         Move(panel, tabbed ? _detailsTab : this);
         if (_assistant is not null)
-            Move(_assistant, tabbed ? _assistantTab : this);
+            Move(_assistant, tabbed ? _assistantTab : inboxTabbed ? _inbox.AssistantTab : this);
+        _inbox.ShareWithAssistant(inboxTabbed);
+        _inbox.Visible = InboxShown;
         if (_side.Visible != tabbed)
         {
             _side.Visible = tabbed;
@@ -135,16 +138,18 @@ public sealed partial class DashboardWindow
         _team.Visible = overseer && OnHeading && !_sessionFull;
         _overseer.Visible = overseer && !_sessionFull;
         _overseer.Beside = Docked;
-        _work.Visible = _title.Visible = _area == Area.Work && !_dispatcherOpen;
+        _work.Visible = _workRow.Visible = _title.Visible = _area == Area.Work && !_dispatcherOpen;
         _dispatchFrame.Visible = _dispatcherOpen;
         if (_assistant is not null)
         {
-            if (tabbed)
+            if (tabbed || inboxTabbed)
                 Fill(_assistant);
             else
                 Place(_assistant);
         }
-        if (focused is { HasFocus: false, Visible: true } && focused.SuperView is { Visible: true })
+        if (focused == _inbox && !_inbox.Visible)
+            FocusArea();
+        else if (focused is { HasFocus: false, Visible: true } && focused.SuperView is { Visible: true })
         {
             if (focused == _assistant)
                 _assistant!.FocusInput();
@@ -201,9 +206,11 @@ public sealed partial class DashboardWindow
     {
         if (_assistant is not { } pane)
             return;
-        if (Tabbed && _side.Value != _assistantTab)
+        if (Tabbed && _side.Value != _assistantTab || InboxTabbed && !_inbox.AssistantInFront)
         {
-            _side.Value = _assistantTab;
+            if (Tabbed)
+                _side.Value = _assistantTab;
+            _inbox.ShowAssistant();
             pane.FocusInput();
             ShowSelection();
             ShowMessage();
@@ -215,6 +222,7 @@ public sealed partial class DashboardWindow
         {
             if (Tabbed)
                 _side.Value = _assistantTab;
+            _inbox.ShowAssistant();
             ShowAsking();
             pane.FocusInput();
             _ = pane.Controller.EnsureStartedAsync().ContinueWith(started => _ = started.Exception, TaskScheduler.Default);
@@ -226,10 +234,17 @@ public sealed partial class DashboardWindow
         SetNeedsDraw();
     }
 
-    /// <summary>Between the area and the panel beside it: the Assistant, or in Overseer whichever of its tabs is in front.</summary>
+    /// <summary>Between the area and the pane beside it: the Assistant, Work's inbox, or whichever tab of theirs is in front.</summary>
     private void SwitchPane()
     {
-        if (PanelShown && (!Tabbed || _side.Value == _detailsTab))
+        if (InboxShown && _inbox.InboxInFront)
+        {
+            if (_inbox.HasFocus)
+                FocusArea();
+            else
+                _inbox.ShowList();
+        }
+        else if (PanelShown && (!Tabbed || _side.Value == _detailsTab))
         {
             if (Panel.HasFocus)
                 FocusArea();
