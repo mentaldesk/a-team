@@ -4,7 +4,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
 
-case_ "recommend records an Idea's rank, shows it on the mirror, and posts the case as the Lead"
+case_ "recommend records an Idea's rank, writes nothing to a Project or an issue field, and posts the case as the Lead"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" },
   "project": { "owner": "mentaldesk", "number": 1 }, "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
@@ -19,9 +19,8 @@ run board demo recommend lead 41 High "$WORK/case"
 same "exit" 0 "$STATUS"
 same "marks" '{"rank":"High"}' "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT marks FROM board WHERE team = 'demo' AND item = 41;")"
 grep -q 'label' "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
-grep -q 'FIELD .*name=Lead rank' "$WRITES" || fail "no Lead rank field made: '$(cat "$WRITES")'"
-grep -q 'updateProjectV2ItemFieldValue.*field=PVTF_new.*text=High\|item=PVTI_41 -F field=PVTF_new -f text=High' "$WRITES" ||
-  fail "rank not mirrored: '$(cat "$WRITES")'"
+same "writes" "" "$(cat "$WRITES")"
+same "project calls" 0 "$(grep -ciE 'projectv2|issueField' "$BIN/args")"
 same "posted" 'Recommended: **High** · theme 3, small · a stack trace is the only error path there is
 
 <!-- a-team:lead -->' "$(cat "$POSTED")"
@@ -118,7 +117,7 @@ waiting
 same "exit" 0 "$STATUS"
 same "ideas" '[[6,"High","theme 2, small · clears the queue"],[7,null,"waiting to be ranked"]]' \
   "$(jq -c 'map(select(.status == "Idea") | [.number, .recommendation, .reason])' "$OUT")"
-same "api calls" 4 "$(grep -c '' <"$CALLS")"
+same "api calls" 3 "$(grep -c '' <"$CALLS")"
 
 vision_team() {
   fixture <<'JSON'
@@ -343,7 +342,6 @@ document_pitch() {
 ${2:-Pitched} $1 Vision review: themes 1 and 5 have run dry
 ITEMS
   edit_item "$1" '.__typename = "PullRequest" | .labels.nodes = [{name: "pitch"}] | del(.issueDependenciesSummary, .issueFieldValues)'
-  jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_done", name: "Done"}]' "$META" >"$META.new" && mv "$META.new" "$META"
   echo '{"head": {"sha": "deadbeefcafe", "ref": "a-team/vision", "repo": {"full_name": "mentaldesk/demo"}}, "draft": true}' >"$PULL"
 }
 
@@ -356,7 +354,7 @@ same "said" "#60: merged document pitch #60" "$(cat "$OUT")"
 same "first write" "READY pr ready 60 -R mentaldesk/demo" "$(head -1 "$WRITES")"
 grep -q 'PUT api -X PUT repos/mentaldesk/demo/pulls/60/merge -f merge_method=squash' "$WRITES" || fail "merge: '$(cat "$WRITES")'"
 grep -q 'DELETE api -X DELETE repos/mentaldesk/demo/git/refs/heads/a-team/vision' "$WRITES" || fail "branch: '$(cat "$WRITES")'"
-grep -q 'item=PVTI_60 .*option=OPT_done' "$WRITES" || fail "Done: '$(cat "$WRITES")'"
+same "Done" Done "$(status_of 60)"
 
 case_ "accept refuses a document pitch that isn't in Pitched"
 document_pitch 61 Approved
@@ -445,7 +443,7 @@ same "promote" '[73]' "$(jq -c '[.promote[].number]' "$OUT")"
 
 
 # --- themes and Spending ---------------------------------------------------------------------
-case_ "theme records a pitch's vision theme in place of any other, and shows it on the mirror"
+case_ "theme records a pitch's vision theme in place of any other, and writes nothing to a Project"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "app": { "id": 7, "slug": "demo-app" },
   "project": { "owner": "mentaldesk", "number": 1 }, "wip": { "pitched": 2, "exploring": 4, "ideas": 4 } }
@@ -460,17 +458,17 @@ KEEP_BOARD=1 run board demo theme lead 81 "Consistently good UX"
 same "exit" 0 "$STATUS"
 same "theme" '"Consistently good UX"' "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT json_extract(marks, '$.theme') FROM board WHERE team = 'demo' AND item = 81;" | jq -R .)"
 grep -q 'label' "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
-grep -q 'text=Consistently good UX' "$WRITES" || fail "theme not mirrored: '$(cat "$WRITES")'"
+same "writes" "" "$(cat "$WRITES")"
+same "project calls" 0 "$(grep -ciE 'projectv2|issueField' "$BIN/args")"
 grep -q 'labels/theme%3A%20Think%20bigger' "$BIN/unlabelled" || fail "old label kept: '$(cat "$BIN/unlabelled")'"
 same "history" "lead theme: Consistently good UX" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
 
-case_ "none takes the theme off, on the mirror too"
-jq '.data.organization.projectV2.fields.nodes += [{id: "PVTF_theme", name: "Theme", dataType: "TEXT"}]' "$META" >"$META.new" && mv "$META.new" "$META"
+case_ "none takes the theme off"
 : >"$WRITES"
 KEEP_BOARD=1 run board demo theme lead 81 none
 same "exit" 0 "$STATUS"
 same "theme" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT json_extract(marks, '$.theme') FROM board WHERE team = 'demo' AND item = 81;")"
-grep -q 'CLEAR .*item=PVTI_81' "$WRITES" || fail "theme left on the mirror: '$(cat "$WRITES")'"
+same "writes" "" "$(cat "$WRITES")"
 same "history" "lead no theme" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 81 | jq -r '.events[0] | "\(.who) \(.what)"')"
 
 case_ "only the Lead sets a theme, and only on a pitch"
@@ -537,6 +535,7 @@ sqlite3 "$A_TEAM_STATE/history.db" "CREATE TABLE runs (id INTEGER PRIMARY KEY, t
     (2, 'demo', 'lead', 2, 'b', '2026-10-08T00:00:00Z', 0.5), (3, 'demo', 'lead', 3, 'c', '2026-10-10T00:00:00Z', NULL),
     (4, 'other', 'dev', 4, 'd', '2026-10-01T00:00:00Z', 9);
   INSERT INTO run_items VALUES (1, 517), (3, 40), (3, 999), (4, 90);"
+seed_board
 : >"$CALLS"
 spending >"$OUT"
 same "since" '"2026-10-08T00:00:00Z"' "$(jq -c .since "$OUT")"

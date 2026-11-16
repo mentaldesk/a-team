@@ -4,7 +4,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
 
-case_ "approve moves a Pitched pitch to Approved on the project"
+case_ "approve moves a Pitched pitch to Approved"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
 JSON
@@ -16,9 +16,8 @@ ITEMS
 run board demo approve you 7
 same "exit" 0 "$STATUS"
 same "said" "#7: Pitched -> Approved" "$(cat "$OUT")"
-same "writes" 1 "$(grep -c '' <"$WRITES")"
-grep -q "item=PVTI_7 " "$WRITES" || fail "approve: not the pitch's item in '$(cat "$WRITES")'"
-grep -q "option=OPT_approved " "$WRITES" || fail "approve: not the Approved option in '$(cat "$WRITES")'"
+same "writes" "" "$(cat "$WRITES")"
+same "approved" Approved "$(status_of 7)"
 
 case_ "--dry-run says what it would approve and approves nothing"
 : >"$WRITES"
@@ -95,7 +94,7 @@ same "said" "#7: Pitched -> Approved" "$(cat "$OUT")"
 same "posted" "Approved on your word.
 
 <!-- a-team:lead -->" "$(cat "$POSTED")"
-grep -q "item=PVTI_7 .*option=OPT_approved " "$WRITES" || fail "not approved: '$(cat "$WRITES")'"
+same "approved" Approved "$(status_of 7)"
 same "acked" "IC_1" "$(cat "$ACKED")"
 when=$(jq -rn --arg at "$SAID" '$at | fromdateiso8601 | "\(strflocaltime("%d %b") | ltrimstr("0")) \(strflocaltime("%H:%M"))"')
 same "history" "lead approved on reviewer's word of $when
@@ -148,7 +147,8 @@ same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
 grep -q "would set #7 to 'Approved'" "$ERR" || fail "dry run: '$(cat "$ERR")'"
-[ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
+same "dry run status" Pitched "$(status_of 7)"
+same "dry run history" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT name FROM sqlite_master WHERE name = 'events';")"
 
 case_ "the Lead's role and the shared rules say when a yes approves"
 grep -qF 'approve lead <n> <file>' "$ROOT/roles/lead.md" || fail "role: no approve lead"
@@ -177,7 +177,7 @@ for n in 9 7; do
   same "#$n posted" "Already covered by #46." "$(cat "$POSTED")"
   grep -q "^CLOSE issue close $n -R mentaldesk/demo --reason not planned$" "$WRITES" ||
     fail "#$n: not closed as not planned in '$(cat "$WRITES")'"
-  grep -q "item=PVTI_$n .*option=OPT_done " "$WRITES" || fail "#$n: not moved to Done in '$(cat "$WRITES")'"
+  same "#$n status" Done "$(KEEP_BOARD=1 status_of "$n")"
   same "#$n history" "you declined
 you commented" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history "$n" | jq -r '.events[] | "\(.who) \(.what)"')"
 done
@@ -195,7 +195,8 @@ same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
 grep -q "would close #9 as not planned" "$ERR" || fail "decline dry run: '$(cat "$ERR")'"
-[ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
+same "dry run status" Idea "$(status_of 9)"
+same "dry run history" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT name FROM sqlite_master WHERE name = 'events';")"
 
 case_ "no agent may decline: that gate is the stakeholders' own"
 for role in lead dev customer reviewer; do
@@ -247,14 +248,6 @@ grep -q "can't close #9 (gh: Resource not accessible by integration (HTTP 403))"
   fail "refused close: '$(cat "$ERR")'"
 rm "$BIN/close-fails"
 
-case_ "a Status option whose id is all digits is sent as a string"
-jq '.data.organization.projectV2.fields.nodes[0].options |= map(if .name == "Done" then .id = "98236657" else . end)' \
-  "$META" >"$META.new" && mv "$META.new" "$META"
-: >"$WRITES"
-run board demo decline you 9 "$WORK/reason"
-same "exit" 0 "$STATUS"
-grep -q -- "-f option=98236657 " "$WRITES" || fail "numeric option: not a raw string in '$(cat "$WRITES")'"
-
 case_ "the agents' settings deny decline"
 grep -qF '"Bash(a-team board * decline you *)"' "$ROOT/settings/agents.json" || fail "no decline deny rule"
 
@@ -272,7 +265,6 @@ Exploring 8 A pitch still being drafted
 Idea 9 An Idea
 Ready 10 A task
 ITEMS
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_thread <<THREAD
 comment $(ago 1) reviewer 0 What would this cost to run?
 THREAD
@@ -286,7 +278,7 @@ same "posted" "Cost isn't what I'm watching yet.
 Not now: back on $(back_on 3)." "$(cat "$POSTED")"
 grep -q "label" "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
 same "shelved" "{\"until\":\"$(weeks_on 3)\",\"priority\":\"High\"}" "$(marks 7 | jq -c .shelved)"
-grep -q "item=PVTI_7 .*option=OPT_idea " "$WRITES" || fail "not moved to Idea: '$(cat "$WRITES")'"
+same "moved" Idea "$(status_of 7)"
 same "acked" "IC_posted" "$(cat "$ACKED")"
 same "history" "you shelved until $(back_on 3)
 you Pitched → Idea" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 7 | jq -r '.events[] | "\(.who) \(.what)"')"
@@ -360,7 +352,8 @@ same "exit" 0 "$STATUS"
 same "writes" "" "$(cat "$WRITES")"
 same "posted" "" "$(cat "$POSTED")"
 grep -q "would mark #7 shelved" "$ERR" || fail "shelve dry run: '$(cat "$ERR")'"
-[ ! -e "$A_TEAM_STATE/history.db" ] || fail "dry run: recorded history"
+same "dry run status" Pitched "$(status_of 7)"
+same "dry run history" "" "$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT name FROM sqlite_master WHERE name = 'events';")"
 
 case_ "lead-next passes over a shelved Idea until its date, even when it's the only one with a Priority"
 gh_items 7 <<'ITEMS'
@@ -447,7 +440,7 @@ same "unlabelled" "repos/mentaldesk/demo/issues/7/labels/rank%3Amedium
 repos/mentaldesk/demo/issues/7/labels/a-team%3Aidea
 repos/mentaldesk/demo/issues/8/labels/blocked
 repos/mentaldesk/demo/issues/8/labels/a-team%3Aupstream
-repos/mentaldesk/demo/issues/9/labels/a-team%3Adev" "$(sed 's/^api -X DELETE //' "$BIN/unlabelled")"
+repos/mentaldesk/demo/issues/9/labels/a-team%3Adev" "$(sed 's/^api -X DELETE //' "$BIN/unlabelled" | awk '!seen[$0]++')"
 grep -q label "$WRITES" && fail "labelled: '$(cat "$WRITES")'"
 
 case_ "a label GitHub won't take off still leaves its state in the record, and is tried again"

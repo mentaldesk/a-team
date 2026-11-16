@@ -88,42 +88,22 @@ public partial class WorkAreaTests
         Assert.Equal(did == "failed", window.Status.MessageSeverity == Severity.Error);
     }
 
-    [Theory]
-    [InlineData("opened")]
-    [InlineData("copied")]
-    [InlineData("failed")]
-    public void b_opens_the_board_of_the_selected_cards_team_and_says_what_happened(string did)
+    [Fact]
+    public void b_on_a_card_opens_no_Project_even_for_a_config_that_still_names_one()
     {
         var teams = Path.Combine(Config, "teams");
         Directory.CreateDirectory(teams);
         File.WriteAllText(Path.Combine(teams, "team0.json"), """{"project": {"owner": "mentaldesk", "number": 9}}""");
-        const string url = "https://github.com/orgs/mentaldesk/projects/9";
-        var opened = new List<string>();
-        using var window = Open(openUrl: Opening.Into(opened, did));
-        window.Refresh();
-        LayOut(window, 120, 30);
-
-        window.NewKeyDownEvent(Key.CursorRight);
-        Assert.Equal("team0", window.Work.Selected?.Team);
-        Assert.True(window.NewKeyDownEvent(new Key('b')));
-
-        Assert.Equal([url], opened);
-        Assert.Equal(Opening.Outcome(did, url).Message, window.Says());
-        Assert.Equal(did == "failed", window.Status.MessageSeverity == Severity.Error);
-    }
-
-    [Fact]
-    public void b_says_why_when_the_team_config_names_no_board()
-    {
         var opened = new List<string>();
         using var window = Open(openUrl: Opening.Into(opened));
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.True(window.NewKeyDownEvent(new Key('b')));
+        window.NewKeyDownEvent(Key.CursorRight);
+        window.NewKeyDownEvent(new Key('b'));
 
         Assert.Empty(opened);
-        Assert.Equal("team0's config names no project board", window.Says());
+        Assert.DoesNotContain(window.Commands.Registered, command => command.Keys == "b");
     }
 
     [Fact]

@@ -23,7 +23,7 @@ board_moved_over() {
   : >"$TRACE"
 }
 events() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT who, what FROM events WHERE team = 'demo' AND item = $1 ORDER BY id;"; }
-card() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT status, mirror, mirrored_status, mirrored_priority, marks FROM board WHERE team = 'demo' AND item = $1;"; }
+card() { sqlite3 "$A_TEAM_STATE/history.db" "SELECT status, priority, marks FROM board WHERE team = 'demo' AND item = $1;"; }
 
 case_ "what a build generates doesn't make a checkout's core look out of date"
 core_bin="$ROOT/core/bin/Debug/net10.0/a-team-core"
@@ -57,34 +57,26 @@ KEEP_BOARD=1 run board demo list
 same "exit" 0 "$STATUS"
 same "handled" "handled list" "$(traced)"
 same "pretty" '  {' "$(sed -n 2p "$OUT")"
-same "fields" 'id,number,node,type,title,url,labels,marks,blockedBy,priority,since,parent,status' "$(jq -r '.[0] | keys_unsorted | join(",")' "$OUT")"
+same "fields" 'number,node,type,title,url,labels,marks,blockedBy,priority,since,parent,status' "$(jq -r '.[0] | keys_unsorted | join(",")' "$OUT")"
 same "title" 'An "idea" with a quote and ünïcode' "$(jq -r '.[0].title' "$OUT")"
 KEEP_BOARD=1 run board demo list Ready "Done"
 same "filtered" "[8,13]" "$(jq -c 'map(.number)' "$OUT")"
 
-case_ "a move reaches the mirror where the mirror has the status, and is kept to push where it hasn't"
-with_option() { jq '(.. | objects | select(.name? == "Status") | .options) += [{id: "O_progress", name: "In progress"}]' "$META" >"$META.new" && mv "$META.new" "$META"; }
-for option in without with; do
-  core_fixture
-  gh_items <<'ITEMS'
+case_ "a move is the record's alone"
+core_fixture
+gh_items <<'ITEMS'
 Ready 8 A task
 Exploring 7 A pitch
 ITEMS
-  [ "$option" = without ] || with_option
-  board_moved_over
-  KEEP_BOARD=1 run board demo move dev 8 "In progress"
-  same "$option exit" 0 "$STATUS"
-  same "$option said" "#8: Ready -> In progress" "$(cat "$OUT")"
-  same "$option handled" "handled move" "$(traced)"
-  same "$option marks" '{"dev":true}' "$(marks 8)"
-  same "$option history" "dev|Ready → In progress" "$(events 8)"
-  if [ "$option" = with ]; then
-    same "$option record" 'In progress|PVTI_8|In progress|none|{"dev":true}' "$(card 8)"
-  else
-    same "$option record" 'In progress|PVTI_8|Ready|none|{"dev":true}' "$(card 8)"
-    grep -q "no 'In progress' option" <<<"$(sqlite3 "$A_TEAM_STATE/history.db" "SELECT failed FROM boards WHERE team = 'demo';")" || fail "why it's behind"
-  fi
-done
+board_moved_over
+: >"$BIN/args"
+KEEP_BOARD=1 run board demo move dev 8 "In progress"
+same "exit" 0 "$STATUS"
+same "said" "#8: Ready -> In progress" "$(cat "$OUT")"
+same "handled" "handled move" "$(traced)"
+same "record" 'In progress||{"dev":true}' "$(card 8)"
+same "history" "dev|Ready → In progress" "$(events 8)"
+same "project calls" 0 "$(grep -ci projectv2 "$BIN/args")"
 
 case_ "the route's refusals are in the board's own words"
 core_fixture
@@ -260,18 +252,16 @@ KEEP_BOARD=1 run board demo format now
 same "refused exit" 1 "$STATUS"
 grep -q "the board is in format 99, from a-team 9.9.9" "$ERR" || fail "gate: '$(cat "$ERR")'"
 
-case_ "a config whose project isn't an object is refused as board.sh refused it, and check reports it"
+case_ "a config whose old project isn't an object still runs, and check says nothing of it"
 core_fixture
 gh_items <<'ITEMS'
 Ready 8 A task
 ITEMS
-echo '{ "repo": "mentaldesk/demo", "project": "mentaldesk/1" }' >"$TEAM"
+echo '{ "repo": "mentaldesk/demo", "project": "mentaldesk/1", "mirror": true }' >"$TEAM"
 run board demo wip
-same "wip exit" 1 "$STATUS"
-same "wip words" "board.sh: demo.json isn't a JSON object" "$(cat "$ERR")"
+same "wip exit" 0 "$STATUS"
 run board demo check
-same "check exit" 1 "$STATUS"
-same "check words" "problem  config    demo.json isn't a JSON object" "$(cat "$OUT")"
+grep -qi 'project\|mirror' "$OUT" && fail "check: '$(cat "$OUT")'"
 
 case_ "a record check can't read doesn't stop its other checks"
 core_fixture
@@ -351,17 +341,5 @@ board_moved_over
 KEEP_BOARD=1 run board demo move lead 7 Exploring
 same "handled" "handled move" "$(traced)"
 grep -q "may move #7 out of Pitched only when" "$ERR" || fail "swap said: '$(cat "$ERR")'"
-
-case_ "a mirror GitHub won't write to fails the push and not the move"
-core_fixture
-gh_items <<'ITEMS'
-Ready 8 A task
-ITEMS
-board_moved_over
-touch "$BIN/read-fails"
-KEEP_BOARD=1 run board demo move dev 8 "In progress"
-rm -f "$BIN/read-fails"
-same "exit" 0 "$STATUS"
-same "handled" "handled move" "$(traced)"
 
 finish_suite

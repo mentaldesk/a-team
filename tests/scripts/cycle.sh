@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
-# A team with no mirror, red main and fixes.
+# A team through a whole cycle, red main and fixes.
 # shellcheck source=tests/scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
 
-case_ "a team with no mirror goes through a whole pitch and task cycle without a GitHub Project"
+case_ "a team whose config still names a Project goes through a whole pitch and task cycle, and never calls Projects"
 fixture <<'JSON'
-{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "mirror": false,
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "mirror": true,
+  "project": { "owner": "mentaldesk", "number": 1, "statusField": "Status", "statusMap": {} },
   "wip": { "worktrees": 3, "pitched": 3, "exploring": 3, "ideas": 3 } }
 JSON
 gh_items <<'ITEMS'
-Pitched 30 A pitch
-Ready 77 Its task
+Exploring 30 A pitch
+Idea 31 An idea
+None 77 Its task
 ITEMS
-echo '{"number": 30, "node_id": "I_30", "body": "An idea"}' >"$ISSUE"
+echo 'A case' >"$WORK/task.md"
+run board demo list
 : >"$BIN/args"
-run board demo add you 30 Idea
-same "added" 0 "$STATUS"
-kept board demo move lead 30 Exploring
+kept board demo recommend lead 31 high "$WORK/task.md"
+same "recommended" 0 "$STATUS"
 kept board demo move lead 30 Pitched
 kept board demo approve you 30
 kept board demo move lead 30 Building
@@ -26,104 +28,19 @@ echo 'A task' >"$WORK/task.md"
 echo '{"id": 77, "number": 77, "node_id": "I_77", "body": "A task\n\n<!-- a-team:lead -->"}' >"$ISSUE"
 kept board demo task lead 30 "Its task" "$WORK/task.md"
 same "filed" 0 "$STATUS"
-claimable
 kept board demo claim dev
 same "claimed" 77 "$(jq -c .number "$OUT")"
+kept board demo priority you 77 High
+kept board demo theme lead 30 "Consistently good UX"
 kept board demo move dev 77 "In review"
 edit_item 77 '.state = "CLOSED" | .stateReason = "COMPLETED"'
 kept board demo list
-same "board" '[[30,"Building"],[77,"Done"]]' "$(jq -c 'map([.number, .status])' "$OUT")"
-same "project calls" 0 "$(grep -ci projectv2 "$BIN/args")"
+same "board" '[[30,"Building"],[31,"Idea"],[77,"Done"]]' "$(jq -c 'map([.number, .status])' "$OUT")"
+same "project calls" 0 "$(grep -ciE 'projectv2|projectItems|issueFields|updateIssueFieldValue' "$BIN/args")"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
   "wip": { "worktrees": 3 } }
 JSON
-
-# short_reads <times> <keep>: the next <times> board reads come back with only their first <keep> items.
-short_reads() { echo "$1 $2" >"$BIN/short-reads"; }
-SHORT='the board read came back incomplete (1 of 3 items), twice. Nothing was changed'
-
-case_ "a board read that comes back short once is read again and carries on, filtered or not"
-gh_items <<'ITEMS'
-Ready 13 Something to start
-In_review 14 Waiting on you
-Done 15 Merged
-ITEMS
-run board demo list
-complete=$(jq 'map(del(.since))' "$OUT")
-short_reads 1 1
-run board demo list
-same "exit" 0 "$STATUS"
-same "items" "$complete" "$(jq 'map(del(.since))' "$OUT")"
-same "stderr" "" "$(cat "$ERR")"
-short_reads 1 0
-waiting
-same "filtered exit" 0 "$STATUS"
-same "filtered stderr" "" "$(cat "$ERR")"
-
-case_ "a board read short twice, or empty with items to read, ends the command saying so, and changes nothing"
-short_reads 2 1
-run board demo list
-failed "short twice"
-one_line "short twice"
-grep -qF "board.sh: $SHORT" "$ERR" || fail "short twice: '$(cat "$ERR")'"
-same "stdout" "" "$(cat "$OUT")"
-short_reads 2 0
-waiting
-failed "empty"
-grep -qF 'incomplete (0 of 3 items), twice' "$ERR" || fail "empty: '$(cat "$ERR")'"
-
-case_ "a board read gh fails on ends the command, rather than reading as an empty board"
-touch "$BIN/read-fails"
-run board demo list
-rm "$BIN/read-fails"
-failed "read fails"
-same "stdout" "" "$(cat "$OUT")"
-
-case_ "next and claim on a short board read claim nothing"
-claimable
-short_reads 2 1
-run board demo next
-failed "next"
-same "next stdout" "" "$(cat "$OUT")"
-grep -qF "$SHORT" "$ERR" || fail "next: '$(cat "$ERR")'"
-short_reads 2 1
-run board demo claim dev
-failed "claim"
-grep -qF "$SHORT" "$ERR" || fail "claim: '$(cat "$ERR")'"
-same "writes" "" "$(cat "$WRITES")"
-
-case_ "lead-next on a short board read uses up no turn"
-mkdir -p "$A_TEAM_STATE/demo" && echo discover >"$A_TEAM_STATE/demo/lead-turn"
-short_reads 2 1
-run board demo lead-next
-failed "lead-next"
-grep -qF "$SHORT" "$ERR" || fail "lead-next: '$(cat "$ERR")'"
-same "turn" discover "$(cat "$A_TEAM_STATE/demo/lead-turn")"
-
-case_ "setup on a short board read drops no Status option"
-short_reads 2 1
-rm -f "$BIN/mutation.json"
-run board demo setup
-failed "setup"
-grep -qF "$SHORT" "$ERR" || fail "setup: '$(cat "$ERR")'"
-[ ! -e "$BIN/mutation.json" ] || fail "setup: Status options changed"
-
-case_ "a truly empty board reads as empty, and other repos' items on a shared project count towards its total"
-gh_items </dev/null
-run board demo list
-same "empty exit" 0 "$STATUS"
-same "empty" "[]" "$(jq -c . "$OUT")"
-same "empty stderr" "" "$(cat "$ERR")"
-gh_items <<'ITEMS'
-Ready 13 Something to start
-Ready 14 Another team's task
-ITEMS
-edit_item 14 '.repository.nameWithOwner = "mentaldesk/other"'
-run board demo list
-same "shared exit" 0 "$STATUS"
-same "shared" "[13]" "$(jq -c 'map(.number)' "$OUT")"
-same "shared stderr" "" "$(cat "$ERR")"
 
 case_ "next and claim take a fix first, even over an Urgent task, and in the extra worktree"
 gh_items 14 <<'ITEMS'
@@ -136,7 +53,6 @@ Ready 16 Main builds again
 ITEMS
 edit_item 14 '.issueFieldValues.nodes = [{name: "Urgent", field: {name: "Priority"}}]'
 edit_item 16 '.labels.nodes += [{name: "a-team:fix"}]'
-claimable
 run board demo next
 same "next" 16 "$(jq -c .number "$OUT")"
 run board demo triggers dev
@@ -158,7 +74,6 @@ Ready 14 Something pressing
 ITEMS
 edit_item 10 '.issueFieldValues.nodes = [{name: "Urgent", field: {name: "Priority"}}]'
 edit_item 14 '.parent = {number: 10}'
-claimable
 run board demo claim dev
 same "exit" 0 "$STATUS"
 same "claimed" '{"number":14,"title":"Something pressing"}' "$(cat "$OUT")"
@@ -172,7 +87,6 @@ In_progress 17 Four
 Ready 16 Main builds again
 ITEMS
 edit_item 16 '.labels.nodes += [{name: "a-team:fix"}]'
-claimable
 run board demo claim dev
 failed "no extra worktree"
 grep -q "no room In progress for #16" "$ERR" || fail "no worktree: '$(cat "$ERR")'"
@@ -243,7 +157,6 @@ ITEMS
 gh_main_runs <<'RUNS'
 completed failure 2025-09-19T08:00:00Z build
 RUNS
-claimable
 printf 'build fails since #880 and #881 merged.\n' >"$WORK/fix"
 run board demo fix dev "Main builds again" "$WORK/fix"
 failed "dev files a fix"
@@ -254,7 +167,7 @@ grep -q 'CREATE issue create -R mentaldesk/demo --title Main builds again --body
   fail "fix: no issue in '$(cat "$WRITES")'"
 grep -q 'label' "$WRITES" && fail "fix: labelled in '$(cat "$WRITES")'"
 same "fix" true "$(marks 77 | jq -c .fix)"
-grep -q 'option=OPT_ready' "$WRITES" || fail "fix: not put in Ready in '$(cat "$WRITES")'"
+same "fix status" Ready "$(status_of 77)"
 grep -q 'sub_issues' "$WRITES" && fail "fix: made a sub-issue in '$(cat "$WRITES")'"
 grep -qF '<!-- a-team:lead -->' "$POSTED" || fail "fix: no marker in '$(cat "$POSTED")'"
 
@@ -288,7 +201,6 @@ gh_items <<'ITEMS'
 In_progress 12 This run's task
 In_progress 16 Another run's task
 ITEMS
-claimable
 gh_pr
 echo 'Which marker?' >"$WORK/question"
 A_TEAM_RUN_TASK=12 run board demo move dev 12 Ready
@@ -318,7 +230,6 @@ gh_items <<'ITEMS'
 In_progress 12 A task with a question
 In_progress 16 A task that can't be finished
 ITEMS
-claimable
 edit_item 12 '.labels.nodes += [{name: "blocked"}]'
 A_TEAM_RUN_TASK=12 run board demo move dev 12 Ready
 same "exit" 0 "$STATUS"

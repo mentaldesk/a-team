@@ -215,18 +215,6 @@ public sealed partial class DashboardWindow
         _options.HandOver?.Invoke(new VisionHandover(team, _area, _area == Area.Work ? _work.Place : _left));
     }
 
-    private void OpenBoard()
-    {
-        if (SelectedTeam() is not { } team)
-            return;
-        if (_teams.BoardUrl(team) is not { } url)
-        {
-            Reply($"{team}'s config names no project board", Severity.Error);
-            return;
-        }
-        Open(url);
-    }
-
     /// <summary>Opens the reader with the ranks under it, starting on the card's own.</summary>
     private void SetPriority()
     {

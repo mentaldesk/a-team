@@ -26,9 +26,8 @@ internal static partial class Commands
         if (reached) board.CheckVision(found);
         board.CheckDocs(found, reached);
         board.CheckRelease(found, reached);
-        var unreachable = board.CheckProject(found);
         if (reached) board.CheckLabels(found);
-        board.CheckIdentity(found, unreachable);
+        board.CheckIdentity(found);
         return found.Code;
     }
 
@@ -56,7 +55,6 @@ internal static partial class Commands
     internal static int Setup(Board board, string[] args)
     {
         board.Quiet = true;
-        board.SetUpProject();
         board.SetUpLabels();
         board.SayArrivals();
         return 0;

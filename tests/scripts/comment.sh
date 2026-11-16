@@ -180,11 +180,10 @@ same "fetched once" 1 "$(grep -c RAW "$WRITES")"
 unset TMPDIR
 
 case_ "add you puts your own issue on the board as an Idea, with no label"
-jq '.data.organization.projectV2.fields.nodes[0].options += [{id: "OPT_idea", name: "Idea"}]' "$META" >"$META.new" && mv "$META.new" "$META"
 gh_child 41 - - "It always starts on the first team."
 run board demo add you 41 Idea
 same "exit" 0 "$STATUS"
-grep -q "OPT_idea" "$WRITES" || fail "add you: no move to Idea in '$(cat "$WRITES")'"
+same "add you status" Idea "$(status_of 41)"
 grep -q "labels" "$WRITES" && fail "add you: labelled '$(cat "$WRITES")'"
 
 case_ "add you adds only an Idea"

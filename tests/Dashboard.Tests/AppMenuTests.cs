@@ -212,7 +212,7 @@ public class AppMenuTests : IDisposable
 
         Assert.Equal(
             ["_Show the session full-screen", "_Fold the lane", "Read t_he card", "Go to the card in _Work", "Set pri_ority", "Open on _GitHub", "Fi_lter cards", "_Read the boards that failed again", "R_efresh", "_Next team",
-                "_Previous team", "Open team's _board on GitHub", "_Dispatcher log", "De_cisions…", "Sett_ings", "_Teams", "_Quit"],
+                "_Previous team", "_Dispatcher log", "De_cisions…", "Sett_ings", "_Teams", "_Quit"],
             Under(window, View(window)).Select(id => Item(window, id).Title));
     }
 

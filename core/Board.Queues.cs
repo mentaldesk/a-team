@@ -138,14 +138,6 @@ internal sealed partial class Board
             && Json.Text(shelved["priority"]) == Json.Text(card["priority"]);
     }
 
-    /// <summary>How far behind the mirror is and why, as {behind, failed, retry}; null while it's caught up.</summary>
-    internal JsonNode? MirrorLag()
-    {
-        if (_mirror.Length == 0) return null;
-        var row = _record.Rows($"SELECT (SELECT COUNT(*) FROM board WHERE team = {TeamQ} AND node != '' AND {Lagging}) AS behind,\n      failed, retry FROM boards WHERE team = {TeamQ};").FirstOrDefault();
-        return row is not null && Json.Long(row["behind"]) > 0 ? row.DeepClone() : null;
-    }
-
     /// <summary>Each card's newest run, by the card's number.</summary>
     internal Dictionary<long, JsonNode> LastRuns()
     {
