@@ -149,7 +149,7 @@ public partial class WorkAreaTests
 
         Assert.NotEqual("", window.Says());
         Assert.Equal(new Rectangle(0, 0, window.Viewport.Width, 1), window.Menu.Frame);
-        Assert.Equal(new Rectangle(0, 2, window.Viewport.Width, window.Viewport.Height - 3), window.Work.Frame);
+        Assert.Equal(new Rectangle(0, 2, window.Viewport.Width, window.Viewport.Height - 3), window.Work.FrameToScreen());
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public partial class WorkAreaTests
         Assert.Equal(
             [
                 "overseer.details", "overseer.fold", "overseer.read", "overseer.work", "overseer.priority", "overseer.github", "overseer.filter", "overseer.retry", "overseer.refresh", "work.nextTeam", "work.previousTeam",
-                "view.dispatcher", "decisions", "settings", "teams", "quit", "view.work", "view.overseer", "assistant", "view.details", "work.team", "work.whatsNew", "work.read",
+                "view.dispatcher", "decisions", "settings", "teams", "quit", "view.work", "view.overseer", "assistant", "view.details", "view.inbox", "work.team", "work.whatsNew", "work.read",
                 "work.priority", "work.try", "work.copyBranch", "work.github", "work.accept", "work.decline", "work.notNow", "work.hold", "work.secret", "work.fix", "work.new", "work.refresh",
                 "work.mine", "agent.hold", "agent.interrupt", "dispatch.pass", "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor", "help",
                 "guide", "messages", "commands", "about",

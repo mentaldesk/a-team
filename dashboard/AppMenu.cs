@@ -25,7 +25,7 @@ internal sealed class AppMenu
     [
         ("_View", ["overseer.details", "overseer.fold", "overseer.read", "overseer.work", "overseer.priority", "overseer.github", "overseer.filter", "overseer.retry", "overseer.refresh", "work.nextTeam", "work.previousTeam",
             "view.dispatcher", Separator, "decisions", "settings", "teams", Separator, "quit"]),
-        (Go, ["view.work", "view.overseer", "assistant", "view.details", Separator, "work.team", "work.whatsNew"]),
+        (Go, ["view.work", "view.overseer", "assistant", "view.details", "view.inbox", Separator, "work.team", "work.whatsNew"]),
         (Cards, [Separator, "work.new", "work.refresh", "work.mine"]),
         (Agents, ["agent.hold", "agent.interrupt", "dispatch.pass", Separator, "log.toolCalls", "agent.collapse", "log.copyLines", "log.copyAll", "log.editor"]),
         ("_Help", ["help", "guide", "messages", "commands", "about"]),

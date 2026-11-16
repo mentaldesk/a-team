@@ -60,6 +60,7 @@ public sealed partial class DashboardWindow
             : _writes.Status() is { Length: > 0 } writing ? writing
             : _pass.Progress is { } passing ? passing
             : _dispatcherOpen ? ""
+            : InboxShown && _inbox.HasFocus && _inbox.InboxInFront && _inbox.Selected is { } row ? $"{Icons.Glyph(Icon.Chain, _drawn)} {row.Chain}"
             : _area == Area.Work && _work.Selected is { } card && (card.Reason.Length > 0 || card.Holding.Count > 0 || card.Facts.Length > 0) ? card.Line
             : _area == Area.Work && _work.Region is { } region ? region
             : _area == Area.Overseer && _overseer.Region is { } chip ? chip
