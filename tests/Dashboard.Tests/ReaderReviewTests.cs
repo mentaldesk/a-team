@@ -248,4 +248,29 @@ public class ReaderReviewTests
 
         Assert.Equal(widened, dialog.SideTabs.SuperView!.Frame.Width);
     }
+
+    [Theory]
+    [InlineData(124)]
+    [InlineData(136)]
+    public void The_pane_s_right_edge_is_drawn_whichever_tab_is_in_front(int columns)
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(columns, 41);
+        using var dialog = new ReaderDialog(Task, Reviewed(), () => null, width: columns);
+        app.Begin(dialog);
+
+        string Edge()
+        {
+            app.LayoutAndDraw(true);
+            var pane = dialog.SideTabs!.SuperView!.FrameToScreen();
+            var below = pane.Y + 3;
+            return string.Concat(Enumerable.Range(below, pane.Bottom - below - 1).Select(row => app.Driver.Contents![row, pane.Right - 1].Grapheme));
+        }
+
+        var history = Edge();
+        dialog.NewKeyDownEvent(new Key('v'));
+
+        Assert.Matches("^│+$", history);
+        Assert.Equal(history, Edge());
+    }
 }
