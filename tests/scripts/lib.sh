@@ -56,6 +56,11 @@ with_token() {
 # The SQL that stamps a record a test is about to make with today's format; nothing for one that's there.
 new_stamp() {
   [ ! -e "$A_TEAM_STATE/history.db" ] || return 0
+  format_stamp
+}
+
+# The SQL that stamps the record with today's format, where it has no stamp yet.
+format_stamp() {
   echo "CREATE TABLE IF NOT EXISTS formats (team TEXT PRIMARY KEY, format INTEGER NOT NULL, version TEXT NOT NULL, moved TEXT);
     INSERT OR IGNORE INTO formats (team, format, version) VALUES ('demo', $(sed -n 's/.*DefaultFormat = \([0-9]*\);/\1/p' "$ROOT/core/Board.Setup.cs"), 'test');"
 }
@@ -785,7 +790,10 @@ alive() { kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/$1/pid")" 2>/dev/null; }
 
 at() { sqlite3 :memory: "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', $((midnight + $1)), 'unixepoch')"; }
 
-today() { A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo today; }
+# The dispatcher made the record, so the board finds it unstamped and would move it up from format 1.
+dispatched_board() { sqlite3 "$A_TEAM_STATE/history.db" "$(format_stamp)"; A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo "$@"; }
+
+today() { dispatched_board today; }
 
 seen() { for _ in $(seq 50); do [ -s "$SEEN/$1" ] && break; sleep 0.1; done; cat "$SEEN/$1" 2>/dev/null; }
 

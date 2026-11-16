@@ -468,7 +468,7 @@ SH
 run_gone() { for _ in $(seq 50); do kill -0 "$(cat "$A_TEAM_STATE/demo/dev/runs/$1/pid")" 2>/dev/null || return; sleep 0.1; done; }
 dispatch_dev
 same "running" "dev 13 0 - -" "$(runs_recorded)"
-A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 13 >"$OUT"
+dispatched_board history 13 >"$OUT"
 same "history while running" '{"who":"dev","what":"run","run":{"ended":null,"cost":null,"outcome":null}}' \
   "$(jq -c '.events[0] | del(.at)' "$OUT")"
 echo '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":4.12}' >"$DISPATCH/result"
@@ -487,7 +487,7 @@ jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DE
 dispatch_dev
 same "two runs" "dev 13 1 4.12 -
 dev 13 1 - died" "$(runs_recorded)"
-A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 13 >"$OUT"
+dispatched_board history 13 >"$OUT"
 same "history" "died -" "$(jq -r '[.events[] | .run.outcome // "-"] | join(" ")' "$OUT")"
 
 case_ "an errored run says so"
