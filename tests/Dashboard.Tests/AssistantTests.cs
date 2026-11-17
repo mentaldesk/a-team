@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using MentalDesk.Tui.Assistant;
+using MentalDesk.Tui.Layout;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard.Tests;
@@ -25,7 +26,8 @@ public sealed class AssistantTests : IDisposable
 
     private string Config => Path.Combine(_root, "config");
 
-    private DashboardWindow Open(IReadOnlyList<(string, string)>? agents = null, int width = 0, Area area = Area.Work, string waiting = "[]")
+    private DashboardWindow Open(
+        IReadOnlyList<(string, string)>? agents = null, int width = 0, Area area = Area.Work, string waiting = "[]", PaneWidths? widths = null)
     {
         Directory.CreateDirectory(_root);
         var config = Config;
@@ -53,6 +55,7 @@ public sealed class AssistantTests : IDisposable
             new DashboardOptions
             {
                 Assistant = setup,
+                PaneWidths = widths,
             });
         if (width > 0)
         {
@@ -106,6 +109,15 @@ public sealed class AssistantTests : IDisposable
         Assert.Contains("history.db", brief);
         Assert.Contains("dispatch.log", brief);
         Assert.Contains("a-team board <team> <command> you", brief);
+    }
+
+    [Fact]
+    public void The_brief_asks_for_answers_at_a_glance_without_calling_the_pane_narrow()
+    {
+        var brief = AssistantBrief.For("/opt/a-team", "/teams", "/state", ["a-team"]);
+
+        Assert.DoesNotContain("narrow pane", brief);
+        Assert.Contains("read at a glance", brief);
     }
 
     [Fact]
@@ -299,6 +311,262 @@ public sealed class AssistantTests : IDisposable
         Assert.False(window.Card.Visible);
         Assert.False(window.Commands.IsEnabled("view.details"));
         Assert.True(window.Assistant!.InputHasFocus);
+    }
+
+    [Fact]
+    public void On_its_own_the_Assistant_starts_48_columns_wide_and_Widen_gives_it_5_more_from_Work()
+    {
+        var widths = new PaneWidths();
+        using var window = Open(width: 120, widths: widths);
+        window.Press("Ctrl+G A");
+        window.Layout(new System.Drawing.Size(120, 30));
+        Assert.Equal(48, window.AssistantAlone.Frame.Width);
+
+        window.Commands.Execute(SidePanes.WidenId);
+        window.Layout(new System.Drawing.Size(120, 30));
+
+        Assert.Equal(53, window.AssistantAlone.Frame.Width);
+        Assert.Equal(120 - 53, window.Work.Frame.Width);
+        Assert.Equal(53, widths.Width(PaneWidths.Assistant, 0));
+    }
+
+    [Fact]
+    public void On_its_own_in_a_narrow_window_the_Assistant_takes_at_most_half()
+    {
+        using var window = Open(width: 90);
+        window.Press("Ctrl+G A");
+        window.Layout(new System.Drawing.Size(90, 30));
+
+        Assert.Equal(45, window.AssistantAlone.Frame.Width);
+    }
+
+    [Fact]
+    public void Widen_stops_where_Work_keeps_40_columns_and_says_so()
+    {
+        using var window = Open(width: 120);
+        window.Press("Ctrl+G A");
+
+        for (var i = 0; i < 20; i++)
+        {
+            window.Commands.Execute(SidePanes.WidenId);
+            window.Layout(new System.Drawing.Size(120, 30));
+        }
+
+        Assert.Equal(80, window.AssistantAlone.Frame.Width);
+        Assert.Equal(SidePanes.MinimumMainWidth, window.Work.Frame.Width);
+        Assert.Equal("Assistant is as wide as it can be", window.Status.Says);
+    }
+
+    [Fact]
+    public void Narrow_stops_at_15_columns_and_says_so()
+    {
+        using var window = Open(width: 120);
+        window.Press("Ctrl+G A");
+
+        for (var i = 0; i < 10; i++)
+        {
+            window.Commands.Execute(SidePanes.NarrowId);
+            window.Layout(new System.Drawing.Size(120, 30));
+        }
+
+        Assert.Equal(SidePanes.MinimumWidth, window.AssistantAlone.Frame.Width);
+        Assert.Equal("Assistant is as narrow as it can be", window.Status.Says);
+    }
+
+    [Fact]
+    public void A_remembered_width_gives_way_in_a_narrow_window_and_comes_back_in_a_wide_one()
+    {
+        var widths = new PaneWidths();
+        using (var first = Open(width: 160, widths: widths))
+        {
+            first.Press("Ctrl+G A");
+            for (var i = 0; i < 4; i++)
+                first.Commands.Execute(SidePanes.WidenId);
+        }
+        Assert.Equal(68, widths.Width(PaneWidths.Assistant, 0));
+
+        using var window = Open(width: 100, widths: widths);
+        window.Press("Ctrl+G A");
+        window.Layout(new System.Drawing.Size(100, 30));
+        Assert.Equal(60, window.AssistantAlone.Frame.Width);
+
+        window.Frame = new System.Drawing.Rectangle(0, 0, 160, 30);
+        window.Layout(new System.Drawing.Size(160, 30));
+        Assert.Equal(68, window.AssistantAlone.Frame.Width);
+    }
+
+    [Fact]
+    public void Reset_puts_the_Assistant_back_to_48_columns()
+    {
+        var widths = new PaneWidths();
+        using var window = Open(width: 120, widths: widths);
+        window.Press("Ctrl+G A");
+        window.Commands.Execute(SidePanes.WidenId);
+
+        window.Commands.Execute(SidePanes.ResetId);
+        window.Layout(new System.Drawing.Size(120, 30));
+
+        Assert.Equal(48, window.AssistantAlone.Frame.Width);
+        Assert.Equal(-1, widths.Width(PaneWidths.Assistant, -1));
+    }
+
+    [Fact]
+    public void The_panel_beside_the_lanes_starts_at_two_fifths_and_keeps_a_width_of_its_own()
+    {
+        var widths = new PaneWidths();
+        using var window = Open(width: 160, widths: widths);
+        window.Press("Ctrl+G O");
+        window.Press("Ctrl+G A");
+        window.Layout(new System.Drawing.Size(160, 30));
+        Assert.Equal(64, window.BesideLanes.Frame.Width);
+
+        window.Commands.Execute(SidePanes.WidenId);
+        window.Layout(new System.Drawing.Size(160, 30));
+
+        Assert.Equal(69, window.BesideLanes.Frame.Width);
+        Assert.Equal(160 - 69, window.Overseer.Frame.Width);
+        Assert.Equal(69, widths.Width(PaneWidths.Panel, 0));
+        Assert.Equal(-1, widths.Width(PaneWidths.Assistant, -1));
+    }
+
+    [Fact]
+    public void The_panel_s_remembered_width_gives_way_below_140_columns_and_comes_back_above()
+    {
+        var widths = new PaneWidths();
+        using (var first = Open(width: 160, area: Area.Overseer, widths: widths))
+        {
+            first.Press("Ctrl+G A");
+            for (var i = 0; i < 4; i++)
+                first.Commands.Execute(SidePanes.WidenId);
+        }
+        Assert.Equal(84, widths.Width(PaneWidths.Panel, 0));
+
+        using var window = Open(width: 120, area: Area.Overseer, widths: widths);
+        window.Press("Ctrl+G A");
+        window.Layout(new System.Drawing.Size(120, 30));
+        Assert.False(window.BesideLanes.Visible);
+        Assert.Equal(48, window.AssistantAlone.Frame.Width);
+
+        window.Frame = new System.Drawing.Rectangle(0, 0, 160, 30);
+        window.Layout(new System.Drawing.Size(160, 30));
+        Assert.Equal(84, window.BesideLanes.Frame.Width);
+        Assert.Equal(160 - 84, window.Overseer.Frame.Width);
+    }
+
+    [Fact]
+    public void The_card_draws_its_own_lines_again_once_it_leaves_the_panel()
+    {
+        using var window = Open(width: 160, area: Area.Overseer);
+        Assert.True(window.Card.SuperViewRendersLineCanvas);
+
+        window.Frame = new System.Drawing.Rectangle(0, 0, 120, 30);
+        window.Layout(new System.Drawing.Size(120, 30));
+
+        Assert.False(window.Card.SuperViewRendersLineCanvas);
+    }
+
+    [Fact]
+    public void Details_in_the_panel_resize_it_too_and_Reset_puts_back_two_fifths()
+    {
+        var widths = new PaneWidths();
+        using var window = Open(width: 160, widths: widths);
+        window.Press("Ctrl+G O");
+        window.Press("Ctrl+G A");
+        window.Press("Ctrl+G I");
+
+        window.Commands.Execute(SidePanes.NarrowId);
+        window.Layout(new System.Drawing.Size(160, 30));
+        Assert.Equal(59, window.BesideLanes.Frame.Width);
+
+        window.Commands.Execute(SidePanes.ResetId);
+        window.Layout(new System.Drawing.Size(160, 30));
+        Assert.Equal(64, window.BesideLanes.Frame.Width);
+    }
+
+    [Fact]
+    public void The_resize_commands_are_offered_only_with_focus_in_a_side_pane()
+    {
+        using var window = Open(width: 160);
+        window.Press("Ctrl+G O");
+        window.Press("Ctrl+G A");
+        Assert.True(window.Commands.IsEnabled(SidePanes.WidenId));
+
+        window.NewKeyDownEvent(Key.F6);
+
+        Assert.True(window.Overseer.HasFocus);
+        Assert.False(window.Commands.IsEnabled(SidePanes.WidenId));
+        Assert.False(window.Commands.IsEnabled(SidePanes.NarrowId));
+        Assert.False(window.Commands.IsEnabled(SidePanes.ResetId));
+    }
+
+    [Fact]
+    public void Resizing_has_no_key_until_one_is_given_and_then_F1_lists_it_in_the_Assistant()
+    {
+        using (var plain = Open(width: 120))
+        {
+            plain.Press("Ctrl+G A");
+            Assert.DoesNotContain("Widen pane", F1(plain));
+        }
+        Directory.CreateDirectory(Config);
+        File.WriteAllText(Path.Combine(Config, "dashboard.json"), $$$"""{"keys": {"{{{SidePanes.WidenId}}}": "Alt+W"} }""");
+
+        using var window = Open(width: 120);
+        window.Press("Ctrl+G A");
+
+        Assert.Contains("Alt+W Widen pane", F1(window));
+        Assert.True(window.NewKeyDownEvent(Key.W.WithAlt));
+        window.Layout(new System.Drawing.Size(120, 30));
+        Assert.Equal(53, window.AssistantAlone.Frame.Width);
+    }
+
+    private static IEnumerable<string> F1(DashboardWindow window) =>
+        (window.Keys.Here?.Groups ?? []).Concat(window.Keys.Everywhere?.Groups ?? []).SelectMany(group => group.Rows)
+            .Select(row => $"{row.Keys} {row.Label}".Trim());
+
+    [Fact]
+    public void Dragging_the_Assistant_s_left_border_widens_it_and_Work_gives_way()
+    {
+        var widths = new PaneWidths();
+        using var app = Terminal.Gui.App.Application.Create().Init(Terminal.Gui.Drivers.DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(120, 30);
+        using var window = Open(widths: widths);
+        window.Press("Ctrl+G A");
+        app.Begin(window);
+        app.LayoutAndDraw(true);
+        var frame = window.AssistantAlone.FrameToScreen();
+        var border = new System.Drawing.Point(frame.X, frame.Y + frame.Height / 2);
+        var to = border with { X = border.X - 10 };
+
+        app.Mouse.RaiseMouseEvent(new Mouse { ScreenPosition = border, Flags = MouseFlags.LeftButtonPressed });
+        app.Mouse.RaiseMouseEvent(new Mouse { ScreenPosition = to, Flags = MouseFlags.LeftButtonPressed | MouseFlags.PositionReport });
+        app.Mouse.RaiseMouseEvent(new Mouse { ScreenPosition = to, Flags = MouseFlags.LeftButtonReleased });
+        app.LayoutAndDraw(true);
+
+        Assert.Equal(58, window.AssistantAlone.Frame.Width);
+        Assert.Equal(120 - 58, window.Work.Frame.Width);
+        Assert.Equal(58, widths.Width(PaneWidths.Assistant, 0));
+    }
+
+    [Fact]
+    public void Dragging_the_panel_s_left_border_widens_it()
+    {
+        var widths = new PaneWidths();
+        using var app = Terminal.Gui.App.Application.Create().Init(Terminal.Gui.Drivers.DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(160, 30);
+        using var window = Open(area: Area.Overseer, widths: widths);
+        app.Begin(window);
+        app.LayoutAndDraw(true);
+        var frame = window.BesideLanes.FrameToScreen();
+        var border = new System.Drawing.Point(frame.X, frame.Y + frame.Height / 2);
+        var to = border with { X = border.X - 6 };
+
+        app.Mouse.RaiseMouseEvent(new Mouse { ScreenPosition = border, Flags = MouseFlags.LeftButtonPressed });
+        app.Mouse.RaiseMouseEvent(new Mouse { ScreenPosition = to, Flags = MouseFlags.LeftButtonPressed | MouseFlags.PositionReport });
+        app.Mouse.RaiseMouseEvent(new Mouse { ScreenPosition = to, Flags = MouseFlags.LeftButtonReleased });
+        app.LayoutAndDraw(true);
+
+        Assert.Equal(70, window.BesideLanes.Frame.Width);
+        Assert.Equal(70, widths.Width(PaneWidths.Panel, 0));
     }
 
     [Fact]

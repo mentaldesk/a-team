@@ -195,7 +195,7 @@ public sealed partial class DashboardWindow
             .Register("quit", "Quit", Quit, Key.Q.WithCtrl);
         _commands.Keys.Bind("Tab", "overseer.matches", Regions.Filter);
         foreach (var (id, label, run) in PaneWidths.Commands)
-            _commands.Register(id, label, () => run(_paneWidths.Open ?? _workPanes), isEnabled: () => (_paneWidths.Open ?? _workPanes).CanResize);
+            _commands.Register(id, label, () => run(Resizing), isEnabled: () => Resizing.CanResize);
         for (var tab = 0; tab < 9; tab++)
         {
             var index = tab;

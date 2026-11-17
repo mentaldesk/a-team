@@ -5,6 +5,7 @@ using MentalDesk.Tui;
 using MentalDesk.Tui.Chrome;
 using MentalDesk.Tui.Commands;
 using MentalDesk.Tui.Keys;
+using MentalDesk.Tui.Layout;
 using MentalDesk.Tui.Links;
 using MentalDesk.Tui.Shell;
 using Terminal.Gui;
@@ -61,32 +62,36 @@ public sealed partial class DashboardWindow
     private AssistantPane NewAssistant(AssistantSetup setup, bool toolCallsInFull)
     {
         var pane = setup.Pane(_stateRoot, action => App?.Invoke(action), () => App, toolCallsInFull);
-        Place(pane);
+        Inset(pane);
         pane.Visible = false;
         pane.HasFocusChanged += (_, _) => ShowMessage();
         return pane;
     }
 
-    private int AssistantWidth() => _assistant is { Visible: true } && !Tabbed && !InboxTabbed ? Math.Min(AssistantColumns, Viewport.Width / 2) : 0;
+    /// <summary>A side pane of the window's, whose left border you drag to resize it.</summary>
+    private static View Beside()
+    {
+        var side = new View { Y = MenuLines, CanFocus = true, Visible = false, BorderStyle = LineStyle.Single };
+        side.Border!.Thickness = new Thickness(1, 0, 0, 0);
+        return side;
+    }
 
-    private int BesideAssistant() => Math.Max(0, Viewport.Width - AssistantWidth() - PanelWidth());
+    private SidePanes Resizing => _paneWidths.Open ?? (_windowPanes.CanResize ? _windowPanes : _workPanes);
 
     /// <summary>Whether the window is wide enough for the card's panel beside Overseer's lanes.</summary>
     internal static bool Wide(int width) => width >= WideColumns;
 
-    /// <summary>About two fifths of the window.</summary>
+    /// <summary>About two fifths of the window, until you choose a width.</summary>
     internal static int PanelWidth(int width) => width * 2 / 5;
 
     /// <summary>The selection's panel is beside the lanes: Overseer, wide, and no log full-screen.</summary>
     private bool Docked => _area == Area.Overseer && Wide(Viewport.Width) && !_sessionFull && !_dispatcherOpen;
 
-    private int PanelWidth() => Docked ? PanelWidth(Viewport.Width) : 0;
-
     private bool OnHeading => _area == Area.Overseer && _overseer.Board.OnHeading;
 
     /// <summary>Rows the team's panel takes at the foot of the lanes, where the window is too narrow for it beside them.</summary>
     private int TeamFoot() =>
-        OnHeading && !_sessionFull && !_dispatcherOpen && !Wide(Viewport.Width) ? _team.RowsAt(BesideAssistant()) : 0;
+        OnHeading && !_sessionFull && !_dispatcherOpen && !Wide(Viewport.Width) ? _team.RowsAt(_areaWidth.Frame.Width) : 0;
 
     /// <summary>The selection has a panel of its own, beside the lanes or, for a team, at their foot.</summary>
     private bool PanelShown => Docked || TeamFoot() > 0;
@@ -106,9 +111,9 @@ public sealed partial class DashboardWindow
         View? focused = _assistant is { HasFocus: true } ? _assistant : _card.HasFocus ? _card : _team.HasFocus ? _team : _inbox.HasFocus ? _inbox : null;
         var assistantFront = tabbed && (_side.Visible ? _side.Value == _assistantTab : _assistant!.HasFocus || !panel.HasFocus);
         Move(other, this);
-        Move(panel, tabbed ? _detailsTab : this);
+        Move(panel, tabbed ? _detailsTab : Docked ? _panel : this);
         if (_assistant is not null)
-            Move(_assistant, tabbed ? _assistantTab : inboxTabbed ? _inbox.AssistantTab : this);
+            Move(_assistant, tabbed ? _assistantTab : inboxTabbed ? _inbox.AssistantTab : _alone);
         _inbox.ShareWithAssistant(inboxTabbed);
         _inbox.Visible = InboxShown;
         if (_side.Visible != tabbed)
@@ -119,19 +124,25 @@ public sealed partial class DashboardWindow
         }
         if (tabbed)
             Fill(panel);
+        else if (panel.SuperView == _panel)
+            Inset(panel);
+        _panel.Visible = Docked;
+        _alone.Visible = _assistant is { Visible: true } && !tabbed && !inboxTabbed;
         if (_card.SuperView == this)
         {
-            _card.X = _sessionFull ? 0 : Pos.Func(_ => BesideAssistant(), this);
+            _card.SuperViewRendersLineCanvas = false;
+            _card.X = 0;
             _card.Y = MenuLines;
-            _card.Width = Dim.Func(_ => _sessionFull ? BesideAssistant() : PanelWidth(), this);
+            _card.Width = Dim.Width(_areaWidth);
             _card.Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this);
         }
         if (_team.SuperView == this)
         {
-            _team.X = Pos.Func(_ => Docked ? BesideAssistant() : 0, this);
-            _team.Y = Pos.Func(_ => Docked ? MenuLines : Math.Max(0, Viewport.Height - StatusLines - TeamFoot()), this);
-            _team.Width = Dim.Func(_ => Docked ? PanelWidth() : BesideAssistant(), this);
-            _team.Height = Dim.Func(_ => Docked ? Math.Max(0, Viewport.Height - MenuLines - StatusLines) : TeamFoot(), this);
+            _team.SuperViewRendersLineCanvas = false;
+            _team.X = 0;
+            _team.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines - TeamFoot()), this);
+            _team.Width = Dim.Width(_areaWidth);
+            _team.Height = Dim.Func(_ => TeamFoot(), this);
         }
         var overseer = _area == Area.Overseer && !_dispatcherOpen;
         _card.Visible = overseer && (_sessionFull || (Docked && !OnHeading));
@@ -145,7 +156,7 @@ public sealed partial class DashboardWindow
             if (tabbed || inboxTabbed)
                 Fill(_assistant);
             else
-                Place(_assistant);
+                Inset(_assistant);
         }
         if (focused == _inbox && !_inbox.Visible)
             FocusArea();
@@ -173,14 +184,17 @@ public sealed partial class DashboardWindow
         view.Y = 0;
         view.Width = Dim.Fill();
         view.Height = Dim.Fill();
+        view.SuperViewRendersLineCanvas = false;
     }
 
-    private void Place(AssistantPane pane)
+    // The side pane draws the border you drag, over the left edge of what's in it, and joins that edge's corners to it.
+    private static void Inset(View view)
     {
-        pane.X = Pos.Func(_ => Viewport.Width - AssistantWidth(), this);
-        pane.Y = MenuLines;
-        pane.Width = Dim.Func(_ => AssistantWidth(), this);
-        pane.Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this);
+        view.X = -1;
+        view.Y = 0;
+        view.Width = Dim.Fill();
+        view.Height = Dim.Fill();
+        view.SuperViewRendersLineCanvas = true;
     }
 
     /// <summary>Ctrl+G I: the card's details or the team's roles in front, with focus in them.</summary>

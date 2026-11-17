@@ -30,7 +30,7 @@ internal static class AssistantBrief
         never another way round the board script. When it refuses, that's the answer: say why. Every command you
         run is shown to the stakeholder first, to allow or deny.
 
-        Keep answers short: they're read in a narrow pane.
+        Keep answers short, so they read at a glance.
         """;
 
     /// <summary>The brief appended to Claude Code's own system prompt, with none of the user's settings loaded, so an

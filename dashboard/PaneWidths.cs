@@ -6,7 +6,7 @@ using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The widths the reader's, the Guide's and Work's side panes were left at, kept in the dashboard's settings, and the
+/// <summary>The widths the reader's, the Guide's and the window's side panes were left at, kept in the dashboard's settings, and the
 /// side panes of whichever of them is open, for the window's Commands to resize.</summary>
 public sealed class PaneWidths
 {
@@ -14,6 +14,8 @@ public sealed class PaneWidths
     public static readonly FocusRegion Comment = new("Comment", new CommandScope("Comment"));
     public static readonly FocusRegion Contents = new("Contents", new CommandScope("Contents"));
     public static readonly FocusRegion Inbox = new("Inbox", Regions.Inbox);
+    public static readonly FocusRegion Assistant = new("Assistant", Regions.Assistant);
+    public static readonly FocusRegion Panel = new("Panel", new CommandScope("Panel"));
 
     public static readonly IReadOnlyList<(string Id, string Label, Action<SidePanes> Run)> Commands =
     [
