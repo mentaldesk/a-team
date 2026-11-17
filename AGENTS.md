@@ -42,6 +42,21 @@ nothing to restart.
 - Role files are read by a model on every run: keep them short, imperative and free of history.
   Explain *why* a rule exists in the commit message instead.
 
+## Nothing falls through the cracks
+
+Two rules hold by construction. `PlacementTests` in both test projects check them over generated boards, and
+`tests/scripts/waiting.sh` runs each role's real triggers and then `waiting`, so a turn no trigger covers fails CI:
+
+- **Every open item is on the board, in a lane.** Every open issue and PR in a team's repo arrives (a PR that closes
+  a card shows on it instead), and `Cards.Lane` gives every status, none and unknown included, one of Overseer's lanes.
+- **Every turn names something that will act on it, or is the stakeholder's in a Work column.** A turn may name a
+  role only while that role's triggers woke for the card (the `woken` table), a run of it is on it, or its runs fill
+  every slot (when the dispatcher doesn't ask its triggers), or while what's wrong clears itself
+  (`Board.ClearsItself`); otherwise `Board.Settle` makes it the stakeholder's. Work's Blocked takes any card of theirs
+  no other column does.
+
+New state and new turns start from these: a new status needs a lane, and a new turn a trigger that covers it.
+
 ## What the machine doesn't promise
 
 The dispatcher runs unattended for weeks, so state it writes outlives what it describes. Write

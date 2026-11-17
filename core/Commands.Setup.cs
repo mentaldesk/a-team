@@ -27,6 +27,7 @@ internal static partial class Commands
         board.CheckDocs(found, reached);
         board.CheckRelease(found, reached);
         if (reached) board.CheckLabels(found);
+        if (reached) board.CheckOpen(found);
         board.CheckIdentity(found);
         return found.Code;
     }

@@ -83,8 +83,8 @@ internal static class StatusRoute
     internal static string Enter(string teamQ, string n, string nodeQ, string status, string since) =>
         $"INSERT OR IGNORE INTO board (team, item, node, status, since) VALUES ({teamQ}, {n}, {nodeQ}, {Reconciler.Q(status)}, {Reconciler.Q(since)});";
 
-    /// <summary>An open issue the board hasn't had, as an Idea.</summary>
-    internal static string Found(string teamQ, string n, string nodeQ, string since, string contentQ) =>
+    /// <summary>An open issue or PR the board hasn't had, at <paramref name="status"/>.</summary>
+    internal static string Found(string teamQ, string n, string nodeQ, string status, string since, string contentQ) =>
         $"INSERT OR IGNORE INTO board (team, item, node, status, since, content)\n"
-        + $" VALUES ({teamQ}, {n}, {nodeQ}, 'Idea', {Reconciler.Q(since)}, {contentQ});\n";
+        + $" VALUES ({teamQ}, {n}, {nodeQ}, {Reconciler.Q(status)}, {Reconciler.Q(since)}, {contentQ});\n";
 }

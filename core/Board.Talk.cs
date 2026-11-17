@@ -11,6 +11,7 @@ internal sealed partial class Board
 
     private Dictionary<string, string>? _said;
     private HashSet<string>? _read;
+    private Dictionary<string, string>? _saidAnyTeam;
 
     /// <summary>What names a comment across GitHub's APIs: its URL's fragment, like `issuecomment-123`.</summary>
     internal static string? CommentKey(string? url) =>
@@ -24,6 +25,12 @@ internal sealed partial class Board
 
     private HashSet<string> ReadRows => _read ??= _record
         .Query($"SELECT comment FROM comments_read WHERE team = {TeamQ};").Select(row => row.First!).ToHashSet();
+
+    private Dictionary<string, string> SaidAnyTeamRows => _saidAnyTeam ??= _record
+        .Query("SELECT comment, role FROM comments_said;").GroupBy(row => row["comment"]!).ToDictionary(g => g.Key, g => g.First()["role"]!);
+
+    /// <summary>The role the record says wrote that comment, on any team's board, or null for anyone else's.</summary>
+    private string? SpeakerAnyTeam(JsonNode comment) => KeyOf(comment) is { } key ? SaidAnyTeamRows.GetValueOrDefault(key) : null;
 
     /// <summary>The role the record says wrote that comment, or null for anyone else's.</summary>
     private string? Speaker(JsonNode comment) => KeyOf(comment) is { } key ? SaidRows.GetValueOrDefault(key) : null;

@@ -17,14 +17,15 @@ internal sealed class Stop(int code, string said) : Exception(said)
 internal sealed partial class Board
 {
     private const string IssueFields = """
-        ... on Issue { id number title url state stateReason repository { nameWithOwner } labels(first: 20) { nodes { name } }
+        ... on Issue { id number title url state stateReason createdAt repository { nameWithOwner } labels(first: 20) { nodes { name } }
                          author { __typename login }
                          parent { number }
                          issueDependenciesSummary { blockedBy } }
         """;
     private const string PullFields = """
-        ... on PullRequest { id number title url state repository { nameWithOwner } labels(first: 20) { nodes { name } }
-                             author { login } }
+        ... on PullRequest { id number title url state isDraft createdAt repository { nameWithOwner } labels(first: 20) { nodes { name } }
+                             author { login }
+                             closingIssuesReferences(first: 20) { nodes { number repository { nameWithOwner } } } }
         """;
     private const string ContentFields = $$"""
         __typename
@@ -331,13 +332,13 @@ internal sealed partial class Board
         return had;
     }
 
-    /// <summary>Brings each open issue the board hasn't got onto it as an Idea, and one closed on it back as it was.</summary>
+    /// <summary>Brings each open issue and PR the board hasn't got onto it, and one Done on it back as it was.</summary>
     private void Arrive(JsonArray issues)
     {
         var plan = Reconciler.Arrivals(issues, Had(), _team, _repo, Now());
         _record.Exec($"BEGIN; {plan.Sql} COMMIT;");
-        foreach (var n in plan.Arrived)
-            Log("board", n, "None → Idea · opened on GitHub");
+        foreach (var (n, to) in plan.Arrived)
+            Log("board", n, $"None → {to} · opened on GitHub");
         if (plan.Reopened.Count > 0 && FreshNodes(plan.Reopened) is { } fresh)
             Reconcile(fresh);
     }

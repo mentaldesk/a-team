@@ -15,16 +15,21 @@ public sealed class WorkView : View
     /// <summary>The columns, and what each holds. Priority decides what gets pitched and approved next, so an
     /// Idea or a pitch that carries none is still to rank; by In review it's decided, and a PR waits for
     /// acceptance whatever its rank. A document pitch, the vision or the Customer lead's docs proposal, is a PR, so it
-    /// can't carry one. A held task, whoever held it, a pitch the Lead asks on and one in Building waiting on a release or another repo wait in Blocked whatever their rank. Review holds only what Accept would take, and sums up the rest under its
+    /// can't carry one. A held task, whoever held it, a pitch the Lead asks on, one in Building waiting on a release or another repo, one whose turn names a role nothing will start, and any other card of yours no column takes wait in Blocked whatever their rank. Review holds only what Accept would take, and sums up the rest under its
     /// cards. Triage and Pitches wear the kind they hold in their heading, and only a card of another kind wears
     /// its own. Each tab tallies its columns under the Tally icon.</summary>
     internal static readonly (string Name, Icon? Kind, Icon Tally, Func<WaitingItem, bool> Holds, Func<WaitingItem, bool>? Aside)[] Gates =
     [
         ("Triage", Icon.Idea, Icon.Idea, item => item.Priority.Length == 0 && item.Question.Length == 0 && !item.Docs && !item.Document && item.Status is "Idea" or "Pitched" && !item.GaveUp, null),
         ("Pitches", Icon.Pitch, Icon.Pitch, item => item.Status == "Pitched" && (item.Priority.Length > 0 || item.Docs || item.Document) && item.Question.Length == 0 && !item.GaveUp, null),
-        ("Blocked", null, Icon.Blocked, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0 || item.Status == "Building" && item.WaitsUpstream || item.GaveUp, null),
-        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0 && !item.GaveUp, item => !item.GaveUp && (item.WithTheDev || item.Status == "In review" && item.Holdup.Length > 0)),
+        ("Blocked", null, Icon.Blocked, item => item.Status == "Ready" || item.Status == "Pitched" && item.Question.Length > 0 || item.Status == "Building" && item.WaitsUpstream || item.GaveUp || item.Stuck || Unplaced(item), null),
+        ("Review", null, Icon.PullRequest, item => item.Status == "In review" && item.Holdup.Length == 0 && !item.GaveUp && !item.Stuck, item => !item.GaveUp && !item.Stuck && (item.WithTheDev || item.Status == "In review" && item.Holdup.Length > 0)),
     ];
+
+    /// <summary>A card of yours that no other column takes, which waits in Blocked with its reason. A ranked Idea has left
+    /// Work, unless it's held.</summary>
+    private static bool Unplaced(WaitingItem item) =>
+        item.Mine && !item.WaitsUpstream && item.Status != "Done" && (item.OnHold || item.Status != "Idea" || item.Priority.Length == 0) && Gates.Where(gate => gate.Name != "Blocked").All(gate => !gate.Holds(item) && gate.Aside?.Invoke(item) != true);
 
     /// <summary>The gate a card waits at, as your time on it is split by; Other for one at none of them, like a task
     /// waiting on another repo, which shows under Blocked but asks you nothing.</summary>

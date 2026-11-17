@@ -34,7 +34,8 @@ step. The last asks whether to get to work or keep the team paused: `↑`/`↓` 
 goes ahead with the one chosen, and `Esc` cancels the new team.
 
 Every open issue on the repo arrives in Triage by itself, within a read of the board, for the Lead
-to rank. Setting up the board says how many will arrive, so a repo with a backlog starts with a long Triage once:
+to rank. An open PR that closes no card on the board arrives too, in In progress while it's a draft and In review
+after. Setting up the board says how many will arrive, so a repo with a backlog starts with a long Triage once:
 close any you don't want.
 
 ## Writing the vision
@@ -171,7 +172,9 @@ there. Rename it back to `<team>.json` to bring the team back.
 
 The **Health** column reads `checking…` while A-Team checks each team, then `ok` or how many problems
 it found. That count includes notes, which the team runs with, so a team can read `1 problem` and be
-working. A note puts no `⚠` on its roles in [Overseer](overseer.md).
+working. A note puts no `⚠` on its roles in [Overseer](overseer.md). One note counts the repo's open issues and PRs
+that show on no card, and names them, like `2 open on GitHub not on the board: #131, #140`. It shows only while they
+differ, and leaves out one opened since the board last read the repo, which arrives on the next read.
 
 - **Problems**: open the team, and its form lists them at the top, one a line, notes among them, each naming what it's
   about and what's wrong. A board that's missing a label can be set

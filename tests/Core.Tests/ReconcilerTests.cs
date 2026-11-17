@@ -94,7 +94,7 @@ public class ReconcilerTests
     public void An_open_issue_the_board_hasnt_got_arrives_as_an_Idea()
     {
         var plan = Arrivals(Issue());
-        Assert.Equal(["8"], plan.Arrived);
+        Assert.Equal([("8", "Idea")], plan.Arrived);
         Assert.Contains("INSERT OR IGNORE INTO board", plan.Sql);
         Assert.Contains("'Idea'", plan.Sql);
         Assert.Contains("\"author\":\"jamescrosswell\"", plan.Sql);
@@ -113,7 +113,7 @@ public class ReconcilerTests
     public void An_issue_on_the_board_with_no_status_becomes_an_Idea()
     {
         var plan = Arrivals(Issue(), new() { ["8"] = Row(status: StatusRoute.None) });
-        Assert.Equal(["8"], plan.Arrived);
+        Assert.Equal([("8", "Idea")], plan.Arrived);
         Assert.Contains("SET status = 'Idea'", plan.Sql);
     }
 
@@ -135,11 +135,80 @@ public class ReconcilerTests
     }
 
     [Fact]
-    public void Closed_issues_pull_requests_and_other_repos_dont_arrive()
+    public void Closed_items_and_other_repos_dont_arrive()
     {
-        var plan = Arrivals(string.Join(",", Issue(state: "CLOSED"), Issue(9, type: "PullRequest"), Issue(10, repo: "o/other")));
+        var plan = Arrivals(string.Join(",", Issue(state: "CLOSED"), Issue(9, type: "PullRequest", state: "CLOSED"), Issue(10, repo: "o/other")));
         Assert.Empty(plan.Arrived);
         Assert.Empty(plan.Sql);
+    }
+
+    private static string Pull(int number = 9, bool draft = false, string closes = "", string author = "jamescrosswell") =>
+        Issue(number, type: "PullRequest", author: author).TrimEnd()[..^1]
+        + $$$""", "isDraft": {{{(draft ? "true" : "false")}}}, "closingIssuesReferences": {"nodes": [{{{closes}}}]}}""";
+
+    private static string Closing(int number, string repo = "o/r") =>
+        $$$"""{"number": {{{number}}}, "repository": {"nameWithOwner": "{{{repo}}}"}}""";
+
+    [Theory]
+    [InlineData(false, "In review")]
+    [InlineData(true, "In progress")]
+    public void A_PR_that_closes_nothing_on_the_board_arrives_in_the_lane_its_draft_says(bool draft, string lane)
+    {
+        var plan = Arrivals(Pull(draft: draft));
+        Assert.Equal([("9", lane)], plan.Arrived);
+        Assert.Contains($"'{lane}'", plan.Sql);
+        Assert.DoesNotContain("priority", plan.Sql);
+    }
+
+    [Fact]
+    public void A_PR_that_closes_a_card_on_the_board_shows_on_that_card_instead()
+    {
+        var plan = Arrivals(Pull(closes: Closing(8)), new() { ["8"] = Row(status: "In progress") });
+        Assert.Empty(plan.Arrived);
+        Assert.Empty(plan.Sql);
+    }
+
+    [Fact]
+    public void A_PR_closing_an_issue_arriving_with_it_shows_on_that_issues_card()
+    {
+        var plan = Arrivals($"{Pull(closes: Closing(8))}, {Issue()}");
+        Assert.Equal([("8", "Idea")], plan.Arrived);
+    }
+
+    [Fact]
+    public void A_PR_closing_an_issue_the_board_hasnt_got_or_one_in_another_repo_arrives()
+    {
+        var plan = Arrivals(Pull(closes: $"{Closing(8, "o/other")}, {Closing(40)}"), new() { ["8"] = Row() });
+        Assert.Equal([("9", "In review")], plan.Arrived);
+    }
+
+    [Fact]
+    public void Dependabots_PR_arrives_In_progress_for_the_dispatcher_to_merge_or_hand_on() =>
+        Assert.Equal([("9", "In progress")], Arrivals(Pull(author: "dependabot")).Arrived);
+
+    [Fact]
+    public void A_PR_on_the_board_with_no_status_goes_to_its_lane()
+    {
+        var plan = Arrivals(Pull(draft: true), new() { ["9"] = Row(status: StatusRoute.None) });
+        Assert.Equal([("9", "In progress")], plan.Arrived);
+        Assert.Contains("SET status = 'In progress'", plan.Sql);
+    }
+
+    [Theory]
+    [InlineData("Issue")]
+    [InlineData("PullRequest")]
+    public void A_Done_card_open_on_GitHub_is_read_again_though_the_board_never_saw_it_close(string type)
+    {
+        var plan = Arrivals(Issue(type: type), new() { ["8"] = Row(status: "Done", shut: false) });
+        Assert.Empty(plan.Arrived);
+        Assert.Equal(["I_8"], plan.Reopened);
+    }
+
+    [Fact]
+    public void A_Done_card_open_on_GitHub_comes_back_though_its_record_never_saw_it_shut()
+    {
+        var plan = Plan(Node(state: "OPEN"), Row(status: "Done", shut: false));
+        Assert.Equal([("8", (string?)"Issue")], plan.Reopened);
     }
 
     [Fact]

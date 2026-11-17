@@ -17,6 +17,12 @@ public sealed record WaitingItem(
     /// <summary>Whether it's the task that makes the team's red default branch green again.</summary>
     public bool Fix { get; init; }
 
+    /// <summary>Whether its turn named a role that nothing will start a run for, which makes it yours.</summary>
+    public bool Stuck { get; init; }
+
+    /// <summary>Whether someone held it, at whatever status it had got to.</summary>
+    public bool OnHold { get; init; }
+
     /// <summary>Whether it's an Idea the Lead found looking for a step change rather than friction.</summary>
     public bool StepChange { get; init; }
 
@@ -177,7 +183,7 @@ public sealed record WaitingItem(
                     {
                         Fix = Flag(item, "fix"), Facts = Text(item, "facts"), PitchPriority = Text(item, "pitchPriority"),
                         Inherited = Flag(item, "inherited"), Unticked = Numbered(item, "unticked") ?? 0, Secret = SecretOf(item),
-                        StepChange = Flag(item, "stepChange"),
+                        StepChange = Flag(item, "stepChange"), Stuck = Flag(item, "stuck"), OnHold = Flag(item, "held"),
                     })
             ];
         }

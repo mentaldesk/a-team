@@ -924,4 +924,102 @@ same "held" 'null' "$(marks 303 | jq -c .held)"
 same "secret" 'null' "$(marks 303 | jq -c .secret)"
 unset KEEP_BOARD
 
+case_ "a turn whose role nothing will start a run for is yours, saying what's stuck, until the role's triggers wake for it"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 106 Both gates are mine
+In_review 130 Theme tokens for the status bar
+ITEMS
+gh_talk <<TALK
+106 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+106 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+130 body ${TODAY}T08:00:00Z other-app[bot] Needed by mentaldesk/other#5\n<!-- a-team:dev -->
+130 comment ${TODAY}T09:00:00Z reviewer Please fix the conflict.
+130 comment ${TODAY}T09:40:00Z other-app[bot] Merged main in.\n<!-- a-team:dev -->
+TALK
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT OR IGNORE INTO comments_said (team, item, comment, role, at) VALUES ('other', 5, 'issuecomment-1130002', 'dev', '${TODAY}T09:40:00Z');"
+UNWOKEN=1 waiting
+same "exit" 0 "$STATUS"
+same "turns" '[["you",true],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+same "pitch" '"lead: answering your feedback since 09:30, but nothing will start a run for it"' "$(jq -c '.[0].reason' "$OUT")"
+same "answered elsewhere" '"dev answered on demo#130, but nothing will start a run for it"' "$(jq -c '.[1].reason' "$OUT")"
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO woken (team, role, repo, item, at) VALUES ('other', 'lead', 'mentaldesk/demo', 106, '2026-01-01T00:00:00Z');"
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "woken" '[["lead",null],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+
+case_ "a role whose runs fill its slots will come to its turns, though the dispatcher hasn't asked its triggers"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "wip": { "devs": 2 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 107 Both gates are mine
+In_review 131 Theme tokens for the status bar
+ITEMS
+gh_talk <<TALK
+107 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+107 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+131 body ${TODAY}T08:00:00Z other-app[bot] Needed by mentaldesk/other#5\n<!-- a-team:dev -->
+131 comment ${TODAY}T09:00:00Z reviewer Please fix the conflict.
+131 comment ${TODAY}T09:40:00Z other-app[bot] Merged main in.\n<!-- a-team:dev -->
+TALK
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'lead', 1, 'a', '$(ago 1)'), ('demo', 'dev', 2, 'b', '$(ago 1)'),
+  ('demo', 'lead', 3, 'c', '$(ago 500)');" >/dev/null
+UNWOKEN=1 waiting
+same "one of two Dev slots" '[["lead",null],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+history_db "INSERT INTO runs (team, role, pid, log, started) VALUES ('demo', 'dev', 4, 'd', '$(ago 1)');" >/dev/null
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "both" '[["lead",null],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+
+case_ "a card held at any status is yours, as Work's Blocked shows it"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Approved 140 A pitch to break down
+In_progress 141 A task half built
+ITEMS
+edit_item 140 '.labels.nodes += [{name: "blocked"}]'
+edit_item 141 '.labels.nodes += [{name: "blocked"}]'
+gh_talk <<TALK
+140 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+141 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+TALK
+waiting
+same "exit" 0 "$STATUS"
+same "held" '[[140,"Approved","you",true],[141,"In progress","you",true]]' "$(jq -c '[.[] | [.number, .status, .turn, .held]]' "$OUT")"
+
+case_ "every turn waiting names a role for is one that role's own triggers wake for"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+gh_items <<'ITEMS'
+Pitched 108 Both gates are mine
+In_review 12 Theme tokens for the status bar
+ITEMS
+gh_talk <<TALK
+108 body ${TODAY}T08:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+108 comment ${TODAY}T09:30:00Z reviewer What about the second gate?
+12 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+12 pr-body ${TODAY}T08:30:00Z demo-app[bot] Closes #12\n<!-- a-team:dev -->
+12 pr-comment ${TODAY}T09:00:00Z reviewer Rename the field.
+TALK
+gh_pr 912 false
+history_db "UPDATE runs SET ended = started WHERE team = 'demo';" >/dev/null
+gh_recent <<RECENT
+108 ${TODAY}T09:30:00Z reviewer 0 What about the second gate?
+912 ${TODAY}T09:00:00Z reviewer 0 Rename the field.
+RECENT
+UNWOKEN=1 waiting
+same "unwoken" '[["lead",true],["dev",true]]' "$(jq -c '[.[] | [(.reason | split(":")[0]), .stuck]]' "$OUT")"
+mkdir -p "$A_TEAM_STATE/demo/lead" && touch "$A_TEAM_STATE/demo/lead/seeded"
+for role in lead dev customer reviewer; do
+  KEEP_BOARD=1 run board demo triggers "$role"
+  same "triggers $role" 0 "$STATUS"
+done
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "woken by their triggers" '[["lead",null],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+
 finish_suite

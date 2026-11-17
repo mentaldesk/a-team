@@ -113,12 +113,12 @@ internal static partial class Commands
                 board.Log(StatusRoute.Dispatcher, p, $"merged · PR #{p}");
                 board.Say($"PR #{p} ({title}): merged");
             }
-            else if (verdict == "fail" && !(it is not null && (Cards.Marked(it, "held") || Cards.Status(it) == "In progress")))
+            else if (verdict == "fail" && !(it is not null && (Cards.Marked(it, "held") || (Cards.Marked(it, "dev") && Cards.Status(it) == "In progress"))))
             {
                 string moved;
                 if (it is not null)
                 {
-                    moved = $"{Cards.Status(it)} → In progress";
+                    moved = Cards.Status(it) == "In progress" ? "with the Dev" : $"{Cards.Status(it)} → In progress";
                 }
                 else
                 {
@@ -126,7 +126,8 @@ internal static partial class Commands
                     moved = "added as In progress";
                 }
                 board.Mark(p, "dev", "true");
-                board.SetStatus(p, it is null ? StatusRoute.None : Cards.Status(it), "In progress", StatusRoute.Dispatcher);
+                if (it is null || Cards.Status(it) != "In progress")
+                    board.SetStatus(p, it is null ? StatusRoute.None : Cards.Status(it), "In progress", StatusRoute.Dispatcher);
                 board.Log(StatusRoute.Dispatcher, p, moved);
                 board.Say($"PR #{p} ({title}): CI failing, with the Dev");
             }

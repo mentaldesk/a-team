@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The repo's open issues arriving on the board by themselves.
+# The repo's open issues and PRs arriving on the board by themselves.
 # shellcheck source=tests/scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck disable=SC2034,SC2154 # helpers read what an area sets, and an area reads what lib.sh sets
@@ -48,17 +48,83 @@ kept board demo list
 same "once" 1 "$(count_of 45)"
 same "board again" '[[30,"Pitched"],[31,"Ready"],[45,"Idea"]]' "$(statuses)"
 
-case_ "closed issues, pull requests and other repos' issues don't arrive"
+case_ "closed issues and other repos' issues don't arrive"
 demo_team
 gh_items <<'ITEMS'
 Ready 31 A task
 ITEMS
 repo_issue 46 "Closed long ago" reviewer CLOSED
-repo_issue 47 "A PR" reviewer OPEN PullRequest
 repo_issue 48 "Elsewhere"
 jq '(.[] | select(.number == 48)).repository.nameWithOwner = "mentaldesk/other"' "$REPO_ISSUES" >"$REPO_ISSUES.new" && mv "$REPO_ISSUES.new" "$REPO_ISSUES"
 run board demo list
 same "board" '[[31,"Ready"]]' "$(statuses)"
+
+# repo_pull <n> <title> [draft] [closes]: an open PR the repo's read returns, a draft if said, closing issue <closes> if given.
+repo_pull() {
+  jq --argjson n "$1" --arg title "$2" --argjson draft "${3:-false}" --arg closes "${4:-}" \
+    '. + [{__typename: "PullRequest", id: "PR_\($n)", number: $n, title: $title, url: "https://github.com/mentaldesk/demo/pull/\($n)",
+           state: "OPEN", isDraft: $draft, repository: {nameWithOwner: "mentaldesk/demo"}, labels: {nodes: []}, author: {login: "reviewer"},
+           closingIssuesReferences: {nodes: (if $closes == "" then [] else [{number: ($closes | tonumber), repository: {nameWithOwner: "mentaldesk/demo"}}] end)}}]' \
+    "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
+}
+
+case_ "an open PR that closes nothing on the board arrives in the lane its draft says, with no Priority; one that closes a card doesn't"
+demo_team
+gh_items <<'ITEMS'
+In_progress 31 A task
+ITEMS
+issues_from_items
+repo_pull 47 "Tidy the README"
+repo_pull 48 "Try a new layout" true
+repo_pull 49 "Build the task" false 31
+run board demo list
+same "exit" 0 "$STATUS"
+same "board" '[[31,"In progress"],[47,"In review"],[48,"In progress"]]' "$(statuses)"
+same "no Priority" '[null,null]' "$(jq -c '[.[] | select(.number >= 47) | .priority]' "$OUT")"
+same "history" "board None → In review · opened on GitHub" "$(history_lines 47)"
+same "writes" "" "$(cat "$WRITES")"
+kept board demo overview
+same "lanes" '[["In progress","In progress"],["In review","In review"],["In progress","In progress"]]' "$(jq -c '[.[] | [.status, .lane]]' "$OUT")"
+
+case_ "a role's own PR that arrived by itself before the role added it is still the role's to place"
+demo_team
+gh_items </dev/null
+repo_pull 50 "Vision review" true
+run board demo list
+same "arrived" '[[50,"In progress"]]' "$(statuses)"
+jq -n '{node_id: "PR_50", number: 50, state: "open", pull_request: {}, body: "The vision, reviewed\n\n<!-- a-team:dev -->"}' >"$ISSUE"
+kept board demo add lead 50 Pitched
+failed "someone else's"
+grep -q "#50 is already on the board and isn't lead's (use move)" "$ERR" || fail "someone else's: '$(cat "$ERR")'"
+jq '.body = "The vision, reviewed\n\n<!-- a-team:lead -->"' "$ISSUE" >"$ISSUE.new" && mv "$ISSUE.new" "$ISSUE"
+kept board demo add lead 50 Pitched
+same "exit" 0 "$STATUS"
+kept board demo list
+same "placed" '[[50,"Pitched"]]' "$(statuses)"
+kept board demo add lead 50 Pitched
+failed "once placed"
+grep -q "#50 is already on the board (use move)" "$ERR" || fail "once placed: '$(cat "$ERR")'"
+
+case_ "a repo with more than 100 open issues and PRs has every one on the board"
+demo_team
+gh_items </dev/null
+for n in $(seq 1 130); do repo_issue "$n" "Issue $n"; done
+for n in $(seq 201 305); do repo_pull "$n" "PR $n"; done
+run board demo list
+same "exit" 0 "$STATUS"
+same "issues" 130 "$(jq '[.[] | select(.status == "Idea")] | length' "$OUT")"
+same "PRs" 105 "$(jq '[.[] | select(.status == "In review")] | length' "$OUT")"
+
+case_ "a card Done on the board but open on GitHub comes back at its last move, though the board never saw it close"
+demo_team
+gh_items <<'ITEMS'
+Done 45 Generate preview images
+ITEMS
+edit_item 45 '.state = "OPEN"'
+issues_from_items
+run board demo list
+same "back" '[[45,"Idea"]]' "$(statuses)"
+history_lines 45 | grep -qx "board Done → Idea · reopened" || fail "history: $(history_lines 45)"
 
 case_ "a failed or short read of the repo's issues changes nothing, and is tried again"
 demo_team
@@ -144,5 +210,23 @@ run board demo list
 repo_issue 47 "Three"
 KEEP_BOARD=1 run board --dry-run demo setup
 grep -qx "(dry run) 1 open issue on mentaldesk/demo will arrive in Triage" "$OUT" || fail "setup: $(cat "$OUT")"
+
+case_ "check notes the repo's open issues and PRs no card shows, but not one opened since the board last read them"
+demo_team
+gh_items <<'ITEMS'
+In_progress 31 A task
+ITEMS
+issues_from_items
+repo_pull 49 "Build the task" false 31
+run board demo list
+KEEP_BOARD=1 run board demo check
+grep -q "^note     issues " "$OUT" && fail "agreeing: $(cat "$OUT")"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE boards SET issues_read = '2999-01-01T00:00:00Z' WHERE team = 'demo';"
+repo_issue 46 "Missed by the last read"
+repo_pull 47 "A PR missed by the last read"
+repo_pull 48 "A PR opened since the last read"
+jq '(.[] | select(.number == 48)).createdAt = "2999-01-01T00:05:00Z"' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
+KEEP_BOARD=1 run board demo check
+grep -qx "note     issues    2 open on GitHub not on the board: #46, #47" "$OUT" || fail "differing: $(cat "$OUT")"
 
 finish_suite
