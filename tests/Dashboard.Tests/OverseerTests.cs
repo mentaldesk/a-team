@@ -1055,6 +1055,34 @@ public class OverseerTests : IDisposable
         Assert.Equal(new Dictionary<string, string> { ["Ready"] = "2d" }, settings.ReadLimits());
     }
 
+    [Fact]
+    public void A_decision_moves_its_chip_at_once_keeps_it_through_a_read_and_a_refusal_moves_it_back()
+    {
+        var view = new OverseerView(["a"]);
+        BoardCard[] read = [Card(107, "Pitched", days: 1), Card(108, "Pitched", days: 2), Card(6, "Idea", days: 3),
+            Card(49, "In review", days: 1) with { Kind = CardKind.Task }];
+        view.Show(read);
+        Assert.True(view.Board.Select("a", 107));
+        Write approve = Decision(WriteKind.Approve, 107), shelve = Decision(WriteKind.Shelve, 108),
+            rank = Decision(WriteKind.Rank, 6) with { Rank = Rank.High }, accept = Decision(WriteKind.Accept, 49);
+
+        view.ShowDeciding([approve, shelve, rank, accept]);
+        view.Show(read);
+
+        Assert.Equal([(107, "Approved"), (108, "Idea"), (6, "Idea")], view.Board.Cards.Select(card => (card.Number, card.Status)));
+        Assert.Equal("High", view.Board.Cards.Single(card => card.Number == 6).Priority);
+        Assert.Equal(107, view.Board.SelectedCard?.Number);
+
+        view.Decided(shelve);
+        view.ShowDeciding([shelve, rank, accept]);
+
+        Assert.Equal((107, "Pitched"), (view.Board.SelectedCard?.Number, view.Board.SelectedCard?.Status));
+        Assert.Equal("Idea", view.Board.Cards.Single(card => card.Number == 108).Status);
+    }
+
+    private static Write Decision(WriteKind kind, int number) =>
+        new(kind, $"a#{number}", [], "", "", "", new WaitingItem(number, "", "", "", "a", "you", ""));
+
     private static BoardCard Card(int number, string status, int days, string team = "a", string priority = "") =>
         new(team, number, $"#{number}", $"https://github.com/o/{team}/issues/{number}", status, priority, CardKind.Pitch,
             Now - TimeSpan.FromDays(days));

@@ -238,8 +238,16 @@ public sealed partial class DashboardWindow
     private void Queue(Write write)
     {
         _writes.Add(write);
-        _work.ShowWriting(Writing());
+        ShowWrites();
         ShowMessage();
+    }
+
+    private void ShowWrites()
+    {
+        _work.ShowWriting(Writing());
+        var deciding = Deciding.In(_writes);
+        _work.ShowDeciding(deciding);
+        _overseer.ShowDeciding(deciding);
     }
 
     private IEnumerable<WaitingItem> Writing() =>

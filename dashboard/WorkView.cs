@@ -38,7 +38,9 @@ public sealed class WorkView : View
 
     private readonly TeamTabs _tabs = new();
     private readonly List<WorkLane> _lanes = [];
+    private IReadOnlyList<WaitingItem> _read = [];
     private IReadOnlyList<WaitingItem> _items = [];
+    private IReadOnlyList<Write> _deciding = [];
     private WorkLane? _picked;
     private WorkLane? _current;
     private IReadOnlySet<(string Team, int Number)> _new = new HashSet<(string, int)>();
@@ -99,11 +101,14 @@ public sealed class WorkView : View
     /// <summary>The region focus is in, for the message bar: the gate and the team.</summary>
     internal string? Region => FocusedColumn() is { } column ? $"{column.Gate} · {column.Team}" : null;
 
-    /// <summary>Every item the last read brought, shown or filtered out.</summary>
+    /// <summary>Every item the last read brought, shown or filtered out, as the decisions under way leave them.</summary>
     internal IReadOnlyList<WaitingItem> Items => _items;
 
+    /// <summary>Every item the last read brought, as the board has it.</summary>
+    internal IReadOnlyList<WaitingItem> Read => _read;
+
     /// <summary>Whether no read has landed yet, so there are no cards to look at.</summary>
-    internal bool Unread => _items.Count == 0;
+    internal bool Unread => _read.Count == 0;
 
     /// <summary>Whether the tab in front couldn't be read, so <c>R</c> would read it again.</summary>
     internal bool Failed => Current?.Load.State == LoadState.Failed;
@@ -126,7 +131,7 @@ public sealed class WorkView : View
     /// <summary>Replaces <paramref name="team"/>'s cards alone, leaving every other tab as it was.</summary>
     public void Show(string team, IReadOnlyList<WaitingItem> items)
     {
-        Keep([.. _items.Where(item => item.Team != team), .. items], follow: true);
+        Keep([.. _read.Where(item => item.Team != team), .. items], follow: true);
         LaneOf(team)?.Landed(Hidden(LaneOf(team)!));
     }
 
@@ -164,7 +169,8 @@ public sealed class WorkView : View
             _tabs.Remove(lane);
             lane.Dispose();
         }
-        _items = Holds.Tag([.. _items.Where(item => !teams.Contains(item.Team))]);
+        _read = [.. _read.Where(item => !teams.Contains(item.Team))];
+        _items = Holds.Tag([.. Deciding.Apply(_deciding, _read)]);
         Lay(follow: false);
         ItemsChanged?.Invoke();
         if (current is not null && _lanes.Contains(current))
@@ -194,6 +200,16 @@ public sealed class WorkView : View
     }
 
     internal bool IsWriting(WaitingItem item) => _writing.Contains((item.Team, item.Number));
+
+    /// <summary>Puts each card a decision is under way on where the decision puts it, and a card whose decision
+    /// was refused back where the board has it. A card that leaves hands the selection to the next card down.</summary>
+    internal void ShowDeciding(IReadOnlyList<Write> deciding)
+    {
+        if (deciding.SequenceEqual(_deciding))
+            return;
+        _deciding = deciding;
+        Keep(_read, follow: false);
+    }
 
     /// <summary>Hides everything that isn't the reviewer's move, or brings it all back, staying on the
     /// selected card when the filter still shows it.</summary>
@@ -312,7 +328,7 @@ public sealed class WorkView : View
 
     /// <summary>Found by team and number, since a read while the write ran may have brought the card back changed.</summary>
     private void Replace(WaitingItem item, Func<WaitingItem, WaitingItem?> now) =>
-        Keep([.. _items.Select(each => each.Team == item.Team && each.Number == item.Number ? now(each) : each).OfType<WaitingItem>()],
+        Keep([.. _read.Select(each => each.Team == item.Team && each.Number == item.Number ? now(each) : each).OfType<WaitingItem>()],
             follow: false);
 
     /// <summary>Shows <paramref name="items"/>, each tab keeping its selection, and gives the keyboard back to the
@@ -321,7 +337,8 @@ public sealed class WorkView : View
     {
         var focused = At() is { } at ? _lanes[at.Lane] : null;
         var first = Unread;
-        _items = Holds.Tag(items);
+        _read = items;
+        _items = Holds.Tag([.. Deciding.Apply(_deciding, items)]);
         Lay(follow);
         ItemsChanged?.Invoke();
         if (first && focused is not null)

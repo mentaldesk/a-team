@@ -68,6 +68,8 @@ public sealed class OverseerView : View
     private readonly FrameView _details;
     private readonly Label _detailText = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = false };
     private OverseerState _state = OverseerState.Empty;
+    private IReadOnlyList<BoardCard> _read = [];
+    private IReadOnlyList<Write> _deciding = [];
     private readonly long _started = Stopwatch.GetTimestamp();
     private string _steps = "";
     private IconStyle _icons = IconStyle.Unicode;
@@ -219,7 +221,7 @@ public sealed class OverseerView : View
 
     public void Show(IReadOnlyList<BoardCard> cards)
     {
-        _board.Show(cards);
+        ShowRead(cards);
         foreach (var lane in _laneViews)
             Landed(lane);
         if (_board.Selected is null)
@@ -230,7 +232,7 @@ public sealed class OverseerView : View
     /// <summary>Replaces <paramref name="team"/>'s chips alone, leaving every other lane as it was.</summary>
     public void Show(string team, IReadOnlyList<BoardCard> cards)
     {
-        _board.Show([.. _board.Cards.Where(card => card.Team != team), .. cards]);
+        ShowRead([.. _read.Where(card => card.Team != team), .. cards]);
         if (LaneOf(team) is { } lane)
             Landed(lane);
         if (_board.Selected is null)
@@ -238,12 +240,29 @@ public sealed class OverseerView : View
         Changed();
     }
 
-    /// <summary>A rank just set shows on its chip at once, which moves to its new place in its column and stays
-    /// selected.</summary>
-    public void Ranked(string team, int number, Rank rank)
+    /// <summary>Each chip a decision is under way on shows in the column the decision puts it in, and moves back
+    /// once one is refused. A chip that moves stays selected.</summary>
+    public void ShowDeciding(IReadOnlyList<Write> deciding)
     {
-        _board.Show([.. _board.Cards.Select(card => card.Team == team && card.Number == number ? card.RankedAs(rank) : card)]);
+        if (deciding.SequenceEqual(_deciding))
+            return;
+        _deciding = deciding;
+        ShowRead(_read);
         Changed();
+    }
+
+    /// <summary>What the board has taken stays on its chip until the next read says what the board has now.</summary>
+    public void Decided(Write write)
+    {
+        ShowRead([.. _read.Select(card => Deciding.Decides(write, card.Team, card.Number) ? Deciding.OnOverseer(write, card) : card)
+            .OfType<BoardCard>()]);
+        Changed();
+    }
+
+    private void ShowRead(IReadOnlyList<BoardCard> cards)
+    {
+        _read = cards;
+        _board.Show([.. Deciding.Apply(_deciding, cards)]);
     }
 
     /// <summary>A read of <paramref name="team"/> has started. A lane showing chips keeps them while it reads.</summary>
@@ -289,6 +308,7 @@ public sealed class OverseerView : View
             _lanes.Remove(lane);
             lane.Dispose();
         }
+        _read = [.. _read.Where(card => !teams.Contains(card.Team))];
         _board.Forget(teams);
         Changed();
     }
