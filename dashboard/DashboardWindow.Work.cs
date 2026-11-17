@@ -147,6 +147,7 @@ public sealed partial class DashboardWindow
             failure = null;
             BackToChip(edited.From, edited.Item);
         }
+        ShowWrites();
         if (_backTo is { Number: null } role)
         {
             RefreshWatches(_clock.GetUtcNow());

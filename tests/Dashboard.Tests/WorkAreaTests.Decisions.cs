@@ -420,6 +420,21 @@ public partial class WorkAreaTests
     }
 
     [Fact]
+    public void Back_from_a_try_a_decision_still_running_keeps_its_card_off_Work()
+    {
+        var writes = new Writes();
+        var queue = new WriteQueue(writes.Run);
+        using var first = OpenDeciding(writes, "approve", queue);
+        Decide(first, "approve");
+        var items = WaitingItem.Parse(Waiting("team0"));
+        Assert.Contains(items, item => item.Number == 107);
+
+        using var back = OpenDeciding(writes, "approve", queue, new TryHandover(items[0], false, items, DateTimeOffset.UtcNow));
+
+        Assert.DoesNotContain(back.Work.Items, item => item.Number == 107);
+    }
+
+    [Fact]
     public void A_refused_approval_puts_the_card_back_selected_and_says_why()
     {
         var writes = new Writes();
@@ -458,10 +473,12 @@ public partial class WorkAreaTests
         Assert.Equal(108, window.Work.Selected?.Number);
     }
 
-    private DashboardWindow OpenDeciding(Writes writes, string decision)
+    private DashboardWindow OpenDeciding(Writes writes, string decision, WriteQueue? queue = null, Handover? resume = null)
     {
         var window = Open(
             run: writes.Run,
+            writes: queue,
+            resume: resume,
             readBody: _ => Task.FromResult(new Reading(Body, null)),
             showBody: (item, _, _, onApprove, _, comment, _) =>
             {
