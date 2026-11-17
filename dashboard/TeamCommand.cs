@@ -127,7 +127,7 @@ public sealed class TeamCommand(string executable, IReadOnlyDictionary<string, s
                 return new Reading(output.GetAwaiter().GetResult(), null);
             return new Reading(
                 keepOutput ? output.GetAwaiter().GetResult() : "",
-                FirstLine(error.GetAwaiter().GetResult()) ?? $"{said} exited {process.ExitCode}");
+                Why(error.GetAwaiter().GetResult()) ?? $"{said} exited {process.ExitCode}");
         }
         catch (Exception e) when (e is IOException or Win32Exception or InvalidOperationException)
         {
@@ -135,6 +135,13 @@ public sealed class TeamCommand(string executable, IReadOnlyDictionary<string, s
         }
     }
 
-    private static string? FirstLine(string text) =>
-        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+    /// <summary>Its first line, unless a board command stopped stuck, when the line naming the wait is the one to show.</summary>
+    internal static string? Why(string text)
+    {
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return lines.LastOrDefault(IsStuck) ?? lines.FirstOrDefault();
+    }
+
+    internal static bool IsStuck(string line) =>
+        line.StartsWith("board stuck: ", StringComparison.Ordinal) && line.EndsWith(", stopping", StringComparison.Ordinal);
 }

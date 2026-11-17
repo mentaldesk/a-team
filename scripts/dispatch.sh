@@ -320,7 +320,7 @@ $(sed 's/^/- /' <<<"$reasons")"
 
   pid=$(
     cd "$workdir" || exit 1
-    PATH="$release/bin:$PATH" A_TEAM_RUN_TEAM="$team" A_TEAM_RUN_TASK="$number" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
+    PATH="$release/bin:$PATH" A_TEAM_RUN_TEAM="$team" A_TEAM_RUN_ROLE="$role" A_TEAM_RUN_TASK="$number" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
       --permission-mode auto --permission-prompts none \
       --settings "$settings" \
       --name "a-team · $team · $role${number:+ · #$number}" \

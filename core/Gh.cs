@@ -22,18 +22,20 @@ internal sealed class Gh(string? token)
         using var process = Process.Start(Starting(args)) ?? throw new Die("couldn't start gh");
         var err = process.StandardError.ReadToEndAsync();
         var output = process.StandardOutput.ReadToEndAsync();
-        try
+        var fed = Task.Run(() =>
         {
-            if (input is not null)
-                process.StandardInput.Write(input);
-            process.StandardInput.Close();
-        }
-        catch (IOException)
-        {
-            // It stopped reading, and its exit code says why.
-        }
-        output.Wait();
-        process.WaitForExit();
+            try
+            {
+                if (input is not null)
+                    process.StandardInput.Write(input);
+                process.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+                // It stopped reading, and its exit code says why.
+            }
+        });
+        Watch.Await(process, Watch.Label("gh", args), output, err, fed);
         return new GhResult(process.ExitCode, output.Result, err.Result);
     }
 
@@ -43,10 +45,8 @@ internal sealed class Gh(string? token)
         using var process = Process.Start(Starting(args)) ?? throw new Die("couldn't start gh");
         process.StandardInput.Close();
         var err = process.StandardError.ReadToEndAsync();
-        using (var saved = File.Create(file))
-            process.StandardOutput.BaseStream.CopyTo(saved);
-        err.Wait();
-        process.WaitForExit();
+        using var saved = File.Create(file);
+        Watch.Await(process, Watch.Label("gh", args), process.StandardOutput.BaseStream.CopyToAsync(saved), err);
         return process.ExitCode == 0;
     }
 

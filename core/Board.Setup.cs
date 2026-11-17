@@ -121,7 +121,8 @@ internal sealed partial class Board
                 continue;
             }
             if (waited++ >= 300) throw new Die($"another a-team (pid {holder}) has been moving the board forward for 5 minutes");
-            Thread.Sleep(1000);
+            using (Watch.On($"another a-team (pid {holder}) moving the board forward"))
+                Thread.Sleep(1000);
         }
     }
 

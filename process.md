@@ -268,6 +268,8 @@ out stops everyone.
 - If an `a-team board` call says the board is in a newer format or only the installed a-team may
   move it, and ends in `stopping`, end the run there and say that line in your summary. Don't retry,
   and don't comment: the dispatcher's next pass carries on from the board on the installed release.
+- If an `a-team board` call ends in a `board stuck: ... stopping` line, end the run there and say
+  that line in your summary. Don't retry: the next pass starts afresh.
 
 ## Never
 

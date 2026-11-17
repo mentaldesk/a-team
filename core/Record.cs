@@ -67,12 +67,14 @@ internal sealed class Record : IDisposable
 
     internal void Exec(string sql)
     {
+        using var waiting = Watch.On("the record");
         if (Sqlite.sqlite3_exec(_db, Sqlite.Utf8(sql), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero) != 0)
             throw new InvalidOperationException(Error());
     }
 
     internal List<Row> Query(string sql, params string?[] args)
     {
+        using var waiting = Watch.On("the record");
         if (Sqlite.sqlite3_prepare_v2(_db, Sqlite.Utf8(sql), -1, out var stmt, IntPtr.Zero) != 0)
             throw new InvalidOperationException(Error());
         var rows = new List<Row>();

@@ -23,9 +23,9 @@ internal static class Proc
         {
             using var process = Process.Start(start)!;
             var err = process.StandardError.ReadToEndAsync();
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            return (process.ExitCode, (output + err.Result).TrimEnd('\n'));
+            var output = process.StandardOutput.ReadToEndAsync();
+            Watch.Await(process, Watch.Label(Path.GetFileName(file), args), output, err);
+            return (process.ExitCode, (output.Result + err.Result).TrimEnd('\n'));
         }
         catch (System.ComponentModel.Win32Exception problem)
         {

@@ -127,7 +127,9 @@ selected card's board was read, then when the dispatcher next checks every team 
 and animations keep moving between reads. Each lane is read on its own, and says so in the lane
 while it reads, when its board has nothing on it, or when it couldn't be read, with `r retry` under the reason; the other lanes keep their cards. A board that
 came back with items missing says `Board read incomplete (<got> of <total> items)` instead of
-showing some of its cards.
+showing some of its cards. One whose read or sync with GitHub got no answer stops within minutes and says what it was
+waiting on, like `board stuck: gh api graphql RepoIssues (team truman, sync) gave no answer in 3 minutes, stopping`,
+in its lane or on the status bar, and in the dispatch log.
 
 ## The card's panel
 

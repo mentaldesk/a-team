@@ -248,9 +248,9 @@ internal sealed partial class Board
             start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new Die("couldn't start git");
         var err = process.StandardError.ReadToEndAsync();
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        return new GhResult(process.ExitCode, output, err.Result);
+        var output = process.StandardOutput.ReadToEndAsync();
+        Watch.Await(process, Watch.Label("git", args), output, err);
+        return new GhResult(process.ExitCode, output.Result, err.Result);
     }
 
     /// <summary>The linked worktrees on a branch, from `git worktree list --porcelain`. The first listed is the clone itself, and one with no
