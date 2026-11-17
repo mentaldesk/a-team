@@ -130,6 +130,7 @@ public sealed partial class DashboardWindow
         _alone.Visible = _assistant is { Visible: true } && !tabbed && !inboxTabbed;
         if (_card.SuperView == this)
         {
+            _card.SuperViewRendersLineCanvas = false;
             _card.X = 0;
             _card.Y = MenuLines;
             _card.Width = Dim.Width(_areaWidth);
@@ -137,6 +138,7 @@ public sealed partial class DashboardWindow
         }
         if (_team.SuperView == this)
         {
+            _team.SuperViewRendersLineCanvas = false;
             _team.X = 0;
             _team.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines - TeamFoot()), this);
             _team.Width = Dim.Width(_areaWidth);

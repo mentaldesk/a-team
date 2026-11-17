@@ -430,6 +430,42 @@ public sealed class AssistantTests : IDisposable
     }
 
     [Fact]
+    public void The_panel_s_remembered_width_gives_way_below_140_columns_and_comes_back_above()
+    {
+        var widths = new PaneWidths();
+        using (var first = Open(width: 160, area: Area.Overseer, widths: widths))
+        {
+            first.Press("Ctrl+G A");
+            for (var i = 0; i < 4; i++)
+                first.Commands.Execute(SidePanes.WidenId);
+        }
+        Assert.Equal(84, widths.Width(PaneWidths.Panel, 0));
+
+        using var window = Open(width: 120, area: Area.Overseer, widths: widths);
+        window.Press("Ctrl+G A");
+        window.Layout(new System.Drawing.Size(120, 30));
+        Assert.False(window.BesideLanes.Visible);
+        Assert.Equal(48, window.AssistantAlone.Frame.Width);
+
+        window.Frame = new System.Drawing.Rectangle(0, 0, 160, 30);
+        window.Layout(new System.Drawing.Size(160, 30));
+        Assert.Equal(84, window.BesideLanes.Frame.Width);
+        Assert.Equal(160 - 84, window.Overseer.Frame.Width);
+    }
+
+    [Fact]
+    public void The_card_draws_its_own_lines_again_once_it_leaves_the_panel()
+    {
+        using var window = Open(width: 160, area: Area.Overseer);
+        Assert.True(window.Card.SuperViewRendersLineCanvas);
+
+        window.Frame = new System.Drawing.Rectangle(0, 0, 120, 30);
+        window.Layout(new System.Drawing.Size(120, 30));
+
+        Assert.False(window.Card.SuperViewRendersLineCanvas);
+    }
+
+    [Fact]
     public void Details_in_the_panel_resize_it_too_and_Reset_puts_back_two_fifths()
     {
         var widths = new PaneWidths();
