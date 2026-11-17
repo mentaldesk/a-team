@@ -378,7 +378,10 @@ public sealed partial class DashboardWindow
     private void Settled(Write write)
     {
         if (Deciding.Moves(write))
+        {
             _overseer.Decided(write);
+            ReadAgain(write.Item!.Team);
+        }
         switch (write.Kind)
         {
             case WriteKind.Accept:
@@ -415,5 +418,14 @@ public sealed partial class DashboardWindow
         }
         if (write.Item is { } card && _area == Area.Overseer)
             ReadLane(card.Team);
+    }
+
+    /// <summary>A read of <paramref name="team"/> already running may be from before the board took the decision.</summary>
+    private void ReadAgain(string team)
+    {
+        _reading?.Again(team);
+        _boarding?.Again(team);
+        if (_teamReads.ContainsKey(team))
+            _teamReads[team] = (_readWaiting(team), _clock.GetUtcNow());
     }
 }

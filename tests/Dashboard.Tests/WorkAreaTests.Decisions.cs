@@ -420,6 +420,33 @@ public partial class WorkAreaTests
     }
 
     [Fact]
+    public void A_read_that_started_before_the_board_took_the_decision_doesn_t_bring_the_card_back()
+    {
+        var writes = new Writes();
+        var reads = new List<TaskCompletionSource<Reading>>();
+        using var window = OpenDeciding(writes, "approve", read: team =>
+        {
+            if (team != "team0" || reads.Count == 0 && writes.Calls.Count == 0)
+                return Task.FromResult(new Reading(team == "team0" ? Waiting(team) : "[]", null));
+            var read = new TaskCompletionSource<Reading>();
+            reads.Add(read);
+            return read.Task;
+        });
+        Decide(window, "approve");
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+        var stale = Assert.Single(reads);
+
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+        stale.SetResult(new Reading(Waiting("team0"), null));
+        window.Refresh();
+
+        Assert.DoesNotContain(window.Work.Items, item => item.Number == 107);
+        Assert.Equal(2, reads.Count);
+    }
+
+    [Fact]
     public void Back_from_a_try_a_decision_still_running_keeps_its_card_off_Work()
     {
         var writes = new Writes();
@@ -473,9 +500,11 @@ public partial class WorkAreaTests
         Assert.Equal(108, window.Work.Selected?.Number);
     }
 
-    private DashboardWindow OpenDeciding(Writes writes, string decision, WriteQueue? queue = null, Handover? resume = null)
+    private DashboardWindow OpenDeciding(Writes writes, string decision, WriteQueue? queue = null, Handover? resume = null,
+        Func<string, Task<Reading>>? read = null)
     {
         var window = Open(
+            read: read,
             run: writes.Run,
             writes: queue,
             resume: resume,
