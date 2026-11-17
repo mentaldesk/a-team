@@ -268,8 +268,9 @@ panel in [Overseer](overseer.md#the-teams-panel). Each review is a run, so it co
 - **Only task PRs.** Pitches, the Customer lead's docs PR and your own PRs are never reviewed.
 
 In the [Work](work.md) area, a reviewed task's card says `reviewed`, and how many points it left to
-consider, like `reviewed · 1 to consider`. Its reader shows the review and the Dev's reply in the
-conversation, under `reviewer` and `dev`.
+consider, like `reviewed · 1 to consider`. Its reader shows the review in a **Review** tab beside
+History (`v`), and the review and the Dev's reply in the conversation, under `reviewer` and `dev`
+([Reading a card](work.md#reading-a-card)).
 
 ## Ideas and priorities
 
