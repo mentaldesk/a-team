@@ -101,4 +101,28 @@ kill -0 "$holder" 2>/dev/null || fail "stopped the a-team it waited on"
 kill "$holder"
 wait "$holder" 2>/dev/null
 
+case_ "a call the command's deadline stops is the last thing it says, and it acts on nothing after"
+limits_fixture
+rm -f "$A_TEAM_STATE/dispatch.log"
+mkfifo "$A_TEAM_STATE/dispatch.log"
+(sleep 4 && cat "$A_TEAM_STATE/dispatch.log" >"$WORK/limits-logged") &
+reader=$!
+started=$SECONDS
+PATH="$STALL:$PATH" A_TEAM_CALL_LIMIT=30 A_TEAM_COMMAND_LIMIT=2 run board demo list
+TOOK=$((SECONDS - started))
+wait "$reader"
+same "exit" 124 "$STATUS"
+same "only the stuck line" "board stuck: gh api graphql RepoIssues (team demo, list) was still waiting after 2 seconds, stopping" "$(cat "$ERR")"
+same "dispatch log" "demo: board stuck: gh api graphql RepoIssues (team demo, list) was still waiting after 2 seconds, stopping" "$(cut -d' ' -f2- "$WORK/limits-logged")"
+[ "$TOOK" -le 8 ] || fail "took ${TOOK}s"
+no_stall_left gh
+
+case_ "a dry run stopped stuck says so but writes no dispatch log"
+limits_fixture
+rm -f "$A_TEAM_STATE/dispatch.log"
+stalled 1 --dry-run demo list
+same "exit" 124 "$STATUS"
+same "last line" "board stuck: gh api graphql RepoIssues (team demo, list) gave no answer in 1 second, stopping" "$(tail -n 1 "$ERR")"
+[ -e "$A_TEAM_STATE/dispatch.log" ] && fail "wrote the dispatch log"
+
 finish_suite

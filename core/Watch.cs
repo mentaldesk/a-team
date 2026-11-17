@@ -21,16 +21,16 @@ internal static class Watch
     private static Process? _child;
     private static Action? _leaving;
     private static Timer? _deadline;
-    private static bool _stopped;
+    private static bool _stopped, _dry;
 
     private static TimeSpan Limit(string variable, int seconds) =>
         TimeSpan.FromSeconds(double.TryParse(Environment.GetEnvironmentVariable(variable), NumberStyles.Float, CultureInfo.InvariantCulture,
             out var set) && set > 0 ? set : seconds);
 
     /// <summary>Starts the command's own deadline. <paramref name="leaving"/> tidies up what a stop skips past.</summary>
-    internal static void Begin(string team, string step, string role, string state, Action leaving)
+    internal static void Begin(string team, string step, string role, string state, bool dry, Action leaving)
     {
-        (_team, _step, _role, _state, _leaving) = (team, step, role, state, leaving);
+        (_team, _step, _role, _state, _dry, _leaving) = (team, step, role, state, dry, leaving);
         _deadline = new Timer(_ => Overdue(), null, CommandLimit, Timeout.InfiniteTimeSpan);
     }
 
@@ -76,11 +76,15 @@ internal static class Watch
         }
         finally
         {
+            bool stopped;
             lock (Gate)
             {
                 _child = null;
                 _waiting = was;
+                stopped = _stopped;
             }
+            // The deadline killed this call and is exiting: nothing may act on it meanwhile.
+            if (stopped) Thread.Sleep(Timeout.Infinite);
         }
     }
 
@@ -114,12 +118,12 @@ internal static class Watch
 
     private static string Plural(int n, string unit) => $"{n} {unit}{(n == 1 ? "" : "s")}";
 
-    /// <summary>Says the line on stderr, its last, and in the dispatch log.</summary>
+    /// <summary>Says the line on stderr, its last, and in the dispatch log unless this is a dry run.</summary>
     internal static void Report(string line)
     {
         Console.Out.Flush();
         Console.Error.WriteLine(line);
-        if (_state.Length == 0) return;
+        if (_state.Length == 0 || _dry) return;
         try
         {
             var who = Environment.GetEnvironmentVariable("A_TEAM_RUN_ROLE") is { Length: > 0 } running ? running : _role;

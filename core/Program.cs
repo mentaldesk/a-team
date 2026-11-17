@@ -128,7 +128,7 @@ internal static class Program
         var state = Dir("A_TEAM_STATE", "XDG_STATE_HOME", ".local/state");
         string? copy = null;
         var role = command == "lead-next" ? "lead" : Spoken.Contains(command) ? SpeakerOf(command, rest) : "";
-        Watch.Begin(team, command, StatusRoute.Roles.Contains(role) ? role : "", state,
+        Watch.Begin(team, command, StatusRoute.Roles.Contains(role) ? role : "", state, dry,
             () => { if (copy is not null) File.Delete(copy); });
         Board.State = state;
         Board.Root = RootDir;
