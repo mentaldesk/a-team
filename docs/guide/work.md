@@ -286,7 +286,9 @@ restart the app. On a terminal too narrow for both, the reader opens with Histor
 tabs, **History** and **Review**. Review shows the Reviewer's comment on the task's PR as it wrote it,
 **Needs changing** then **Worth considering**, each point with a box the Dev ticks once it has fixed it,
 and its title counts the points not ticked yet, like `Review · 2`. `v` (**Show review**) brings it to the front with the cursor in it, from
-anywhere in the reader, and shows the pane if `h` had hidden it; a click on a tab does the same. `Tab`
+anywhere in the reader, and shows the pane if `h` had hidden it; a click on a tab does the same. `Ctrl+PgDn`
+(**Next tab**) and `Ctrl+PgUp` (**Previous tab**) switch between the tabs, showing the pane if it was hidden, and
+with Review in front `h` brings History back instead of hiding the pane. `Tab`
 moves between the body and the tab in front, and you select, copy and quote (`q`) in Review as in
 History. Whichever tab you last had in front is the one the next reviewed task opens with, until you
 restart the app. Any other card shows History alone.
