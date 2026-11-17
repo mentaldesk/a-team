@@ -106,6 +106,8 @@ public sealed partial class DashboardWindow
             .Register("work.attach", "Browse for an image file to attach to what you're writing", () => { }, Key.U.WithCtrl,
                 isEnabled: () => _shown is not null && _options.Attaching is not null)
             .Register("work.review", "Show review", () => _review?.Show?.Invoke(), new Key('v'), isEnabled: () => _review?.Show is not null)
+            .Register("work.nextTab", "Next tab", () => _review?.Turn?.Invoke(+1), Key.PageDown.WithCtrl, isEnabled: () => _review is not null)
+            .Register("work.previousTab", "Previous tab", () => _review?.Turn?.Invoke(-1), Key.PageUp.WithCtrl, isEnabled: () => _review is not null)
             .Register("work.viewImage", () => "View image", () => _image?.View(), isEnabled: () => _image?.Viewable() == true)
             .Register("work.decline", "Decline", () => ReadSelected(declining: true), new Key('x'),
                 isEnabled: () => OnWork() && _work.SelectedCard is { Declinable: true }, onCard: true, scopes: [Regions.Work])

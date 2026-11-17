@@ -354,7 +354,7 @@ public sealed partial class DashboardWindow
             Seen(item);
             _idea = gates && NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
             _image = new ReaderImage();
-            _review = new ReaderReview(_commands.KeyFor("work.review"));
+            _review = new ReaderReview(_commands.KeyFor("work.review"), _commands.KeyFor("work.nextTab"), _commands.KeyFor("work.previousTab"));
             if (body.Checklist is { } listed)
                 _unticked[Write.KeyOf(item)] = listed.Unticked;
             var chosen = _showBody(item, body, () => url is { Length: > 0 } ? _openUrl(url) : null, _approvable is null ? null : Approve,

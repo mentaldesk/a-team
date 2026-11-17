@@ -353,6 +353,25 @@ public class OverseerChipTests : IDisposable
     }
 
     [Fact]
+    public void Commands_offers_the_reader_s_tab_keys_only_while_it_s_open()
+    {
+        DashboardWindow? opened = null;
+        var offered = new List<string>();
+        using var window = Open(out _, reading: reader =>
+            offered.AddRange(opened!.InCommands.Select(command => command.Id).Where(id => id is "work.nextTab" or "work.previousTab")));
+        opened = window;
+
+        Select(window, 11);
+        window.Commands.Execute("overseer.read");
+        window.Refresh();
+
+        Assert.Equal(["work.nextTab", "work.previousTab"], offered.Order());
+        Assert.DoesNotContain(window.InCommands, command => command.Id is "work.nextTab" or "work.previousTab");
+        Assert.Equal(Key.PageDown.WithCtrl, window.Commands.KeyFor("work.nextTab"));
+        Assert.Equal(Key.PageUp.WithCtrl, window.Commands.KeyFor("work.previousTab"));
+    }
+
+    [Fact]
     public void A_refused_gate_leaves_the_chip_where_it_was()
     {
         var reads = 0;

@@ -133,7 +133,7 @@ public class ReaderDialogTests
         Assert.Equal(dialog.Viewport.Height - 1, dialog.Foot.Frame.Y);
         Assert.Empty(dialog.SubViews.OfType<StatusBar>());
         Assert.Equal(
-            "g GitHub · h Show history · Alt+↑ Previous remark · Alt+↓ Next remark · Ctrl+C Copy · Arrows/PgUp/PgDn Move · Shift+arrows Select · Esc Close",
+            "g GitHub · h Show history · Ctrl+PgDn Next tab · Ctrl+PgUp Previous tab · Alt+↑ Previous remark · Alt+↓ Next remark · Ctrl+C Copy · Arrows/PgUp/PgDn Move · Shift+arrows Select · Esc Close",
             Keys(dialog));
     }
 
