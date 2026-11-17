@@ -31,6 +31,12 @@ conversation. `F6` moves between the Assistant and the area beside it. The last 
 there again the next time you open the app. If Claude Code can't start or isn't signed in, the pane
 says so in a line, with the command that signs you in.
 
+Drag the Assistant's left border to make it wider or narrower, or with focus in it pick **Widen pane**,
+**Narrow pane** or **Reset pane width** in Commands (`Ctrl+E`) to change it by 5 columns or put it back to
+48. None has a key until you give it one under [Settings → Keyboard Shortcuts](teams.md#settings). It
+keeps the width you chose after a restart; a narrower terminal narrows it first, and a wider one gives
+the width back. Sharing a pane with the Priority Inbox or Overseer's panel, it takes that pane's width.
+
 ## Commands and keys
 
 The keys come in TuiCode's families. `Ctrl+G` then a letter goes somewhere: `Ctrl+G W`

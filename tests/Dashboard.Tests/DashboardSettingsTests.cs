@@ -48,6 +48,19 @@ public class DashboardSettingsTests : IDisposable
     }
 
     [Fact]
+    public void The_Assistant_s_and_the_panel_s_widths_are_kept_under_their_own_names_and_a_bad_one_falls_back()
+    {
+        var settings = new DashboardSettings(_configRoot);
+        settings.WritePaneWidths(new JsonObject { ["Assistant"] = 60, ["Panel"] = "wide", ["Inbox"] = 50 });
+
+        var widths = new PaneWidths(new DashboardSettings(_configRoot).ReadPaneWidths, settings.WritePaneWidths);
+
+        Assert.Equal(60, widths.Width(PaneWidths.Assistant, 48));
+        Assert.Equal(64, widths.Width(PaneWidths.Panel, 64));
+        Assert.Equal(50, widths.Width(PaneWidths.Inbox, 48));
+    }
+
+    [Fact]
     public void No_pane_widths_saved_reads_as_none()
     {
         Assert.Null(new DashboardSettings(_configRoot).ReadPaneWidths());

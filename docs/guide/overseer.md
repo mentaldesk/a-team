@@ -161,6 +161,10 @@ With the [Assistant](app.md#the-assistant) open too, the panel has two tabs, *De
 `F6` moves focus between the lanes and the panel. Closing the Assistant leaves *Details*. Below 140
 columns the Assistant stays on the right on its own.
 
+Drag the panel's left border to give it or the lanes more room, or with focus in it pick **Widen pane**,
+**Narrow pane** or **Reset pane width** in Commands (`Ctrl+E`). Its width is the same for a card, a team and
+the Assistant's tab, and it keeps it after a restart. The lanes keep at least 40 columns.
+
 ## The team's panel
 
 `↑` from a lane's top row selects the lane's heading, and the panel shows the team instead of a card.

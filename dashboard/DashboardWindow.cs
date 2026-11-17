@@ -136,6 +136,11 @@ public sealed partial class DashboardWindow : Window
     private readonly CardPanel _card;
     private readonly TeamPanel _team = new() { Visible = false };
     private readonly Tabs _side;
+    // Draws nothing: the side panes give it what they leave, and the area's views take its width.
+    private readonly View _areaWidth = new() { X = 0, Y = 0, Height = 0, CanFocus = false };
+    private readonly View _panel = Beside();
+    private readonly View _alone = Beside();
+    private readonly SidePanes _windowPanes;
     private readonly View _detailsTab;
     private readonly View _assistantTab;
     private CardRun? _cardRun;
@@ -202,7 +207,7 @@ public sealed partial class DashboardWindow : Window
             Title = "dispatcher",
             X = 0,
             Y = MenuLines,
-            Width = Dim.Func(_ => BesideAssistant(), this),
+            Width = Dim.Width(_areaWidth),
             Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this),
             CanFocus = true,
             Visible = false,
@@ -211,13 +216,13 @@ public sealed partial class DashboardWindow : Window
         _dispatchFrame.Add(_dispatchAll);
         Add(_dispatchFrame);
 
-        _title = new Label { X = 1, Y = MenuLines, Width = Dim.Func(_ => Math.Max(0, BesideAssistant() - 1), this), Text = "Work", Visible = area == Area.Work };
+        _title = new Label { X = 1, Y = MenuLines, Width = Dim.Func(_ => Math.Max(0, _areaWidth.Frame.Width - 1), _areaWidth), Text = "Work", Visible = area == Area.Work };
         Add(_title);
         _workRow = new View
         {
             X = 0,
             Y = MenuLines + TitleLines,
-            Width = Dim.Func(_ => BesideAssistant(), this),
+            Width = Dim.Width(_areaWidth),
             Height = Dim.Func(_ => WorkHeight(), this),
             CanFocus = true,
             Visible = area == Area.Work,
@@ -239,7 +244,7 @@ public sealed partial class DashboardWindow : Window
         {
             X = 0,
             Y = MenuLines,
-            Width = Dim.Func(_ => BesideAssistant(), this),
+            Width = Dim.Width(_areaWidth),
             Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines - TeamFoot()), this),
             Visible = area == Area.Overseer,
         };
@@ -252,20 +257,21 @@ public sealed partial class DashboardWindow : Window
         _card = new CardPanel(settings.ReadExpandToolCalls()) { Visible = false };
         _detailsTab = new View { Title = "Details", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
         _assistantTab = new View { Title = "Assistant", CanFocus = true, Width = Dim.Fill(), Height = Dim.Fill() };
-        _side = new Tabs
-        {
-            X = Pos.Func(_ => BesideAssistant(), this),
-            Y = MenuLines,
-            Width = Dim.Func(_ => PanelWidth(), this),
-            Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this),
-            CanFocus = true,
-            Visible = false,
-        };
+        _side = new Tabs { CanFocus = true, Visible = false };
+        Inset(_side);
+        _side.SuperViewRendersLineCanvas = false;
         _side.Add(_detailsTab, _assistantTab);
-        Add(_card, _team, _side);
+        _panel.Add(_side);
+        Add(_areaWidth, _card, _team, _panel, _alone);
         ShowIcons(settings.ReadIcons());
         if (_options.Assistant is not null)
-            Add(_assistant = NewAssistant(_options.Assistant, settings.ReadExpandToolCalls()));
+            _alone.Add(_assistant = NewAssistant(_options.Assistant, settings.ReadExpandToolCalls()));
+        _windowPanes = _paneWidths.For(this, () => _alone.HasFocus ? PaneWidths.Assistant : _panel.HasFocus ? PaneWidths.Panel : null, text => Reply(text))
+            .AddMain(_areaWidth)
+            .AddSide(_panel, PaneWidths.Panel, PanelWidth)
+            .AddSide(_alone, PaneWidths.Assistant, width => Math.Min(AssistantColumns, width / 2));
+        foreach (var side in new[] { _panel, _alone })
+            side.Height = Dim.Func(_ => Math.Max(0, Viewport.Height - MenuLines - StatusLines), this);
 
         _bar.Y = Pos.Func(_ => Math.Max(0, Viewport.Height - StatusLines), this);
         Add(_bar);
@@ -346,6 +352,12 @@ public sealed partial class DashboardWindow : Window
     internal AssistantPane? Assistant => _assistant;
 
     internal CardPanel Card => _card;
+
+    /// <summary>The panel beside Overseer's lanes, which holds the card's details, the team's roles or their tabs.</summary>
+    internal View BesideLanes => _panel;
+
+    /// <summary>The Assistant's pane while it's on its own, beside whichever area is showing.</summary>
+    internal View AssistantAlone => _alone;
 
     internal TeamPanel Team => _team;
 

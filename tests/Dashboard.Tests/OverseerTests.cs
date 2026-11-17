@@ -889,8 +889,8 @@ public class OverseerTests : IDisposable
         Assert.True(window.Team.Visible);
         Assert.False(window.Card.Visible);
         Assert.Equal("team0", window.Team.Title);
-        Assert.Equal(beside ? width * 2 / 5 : width, window.Team.Frame.Width);
-        Assert.Equal(beside ? 1 : 30 - 1 - window.Team.Rows, window.Team.Frame.Y);
+        Assert.Equal(beside ? width * 2 / 5 : width, window.Team.FrameToScreen().Width);
+        Assert.Equal(beside ? 1 : 30 - 1 - window.Team.Rows, window.Team.FrameToScreen().Y);
         Assert.Equal(beside ? 30 - 2 : 30 - 2 - window.Team.Rows, window.Overseer.Frame.Height);
         Assert.Equal(2, window.Team.Lines.Count);
         Assert.Equal(Icons.Field(Icon.NeverRun, IconStyle.Unicode) + "Lead          idle · never run", window.Team.Lines[0]);
