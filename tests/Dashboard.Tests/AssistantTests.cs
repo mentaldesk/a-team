@@ -464,6 +464,30 @@ public sealed class AssistantTests : IDisposable
     }
 
     [Fact]
+    public void Resizing_has_no_key_until_one_is_given_and_then_F1_lists_it_in_the_Assistant()
+    {
+        using (var plain = Open(width: 120))
+        {
+            plain.Press("Ctrl+G A");
+            Assert.DoesNotContain("Widen pane", F1(plain));
+        }
+        Directory.CreateDirectory(Config);
+        File.WriteAllText(Path.Combine(Config, "dashboard.json"), $$$"""{"keys": {"{{{SidePanes.WidenId}}}": "Alt+W"} }""");
+
+        using var window = Open(width: 120);
+        window.Press("Ctrl+G A");
+
+        Assert.Contains("Alt+W Widen pane", F1(window));
+        Assert.True(window.NewKeyDownEvent(Key.W.WithAlt));
+        window.Layout(new System.Drawing.Size(120, 30));
+        Assert.Equal(53, window.AssistantAlone.Frame.Width);
+    }
+
+    private static IEnumerable<string> F1(DashboardWindow window) =>
+        (window.Keys.Here?.Groups ?? []).Concat(window.Keys.Everywhere?.Groups ?? []).SelectMany(group => group.Rows)
+            .Select(row => $"{row.Keys} {row.Label}".Trim());
+
+    [Fact]
     public void Dragging_the_Assistant_s_left_border_widens_it_and_Work_gives_way()
     {
         var widths = new PaneWidths();
