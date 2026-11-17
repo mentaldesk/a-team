@@ -80,6 +80,10 @@ internal sealed partial class Board
     internal bool Reviewed(JsonNode pr) =>
         pr["comments"]?["nodes"]?.AsArray().OfType<JsonNode>().Any(comment => SaidBy(comment, "reviewer")) == true;
 
+    /// <summary>The Reviewer's review on this PR, or null where it has none.</summary>
+    internal JsonNode? Review(JsonNode pr) =>
+        pr["comments"]?["nodes"]?.AsArray().OfType<JsonNode>().LastOrDefault(comment => SaidBy(comment, "reviewer"));
+
     internal const string Unreviewed = "This left draft before the Reviewer read it, so it's reached you unreviewed.";
 
     /// <summary>The dispatcher has already said on this PR that it reached the stakeholder unreviewed.</summary>

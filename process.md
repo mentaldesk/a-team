@@ -114,7 +114,9 @@ a-team board {{team}} finish <role> <n> <file> [<pr>...]  # Lead only: once ever
 a-team board {{team}} comment <role> <n> <file> # post a comment, marked as yours
                                                 # (as `you`, stakeholder only: no marker, no 👀)
 a-team board {{team}} review reviewer <pr> <file>  # Reviewer only: post the one review on a green
-                                                # draft task PR
+                                                # draft task PR, each point a box
+a-team board {{team}} fixed dev <pr> <point> ...   # Dev only: tick the review's points it has fixed,
+                                                # numbered from 1 down the review
 a-team board {{team}} pictures dev <pr> <image> "<caption>" [<image> "<caption>"...]
                                                 # Dev only: store each image as an attached screenshot
                                                 # is, and make them the task PR's What it looks like

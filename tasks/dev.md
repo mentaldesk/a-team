@@ -10,7 +10,8 @@ I authorise you to do all of the following without asking me:
 
 - Run `a-team board {{team}} ...` to read the board, to claim and move items, and to put the
   snapshots you took on your own task PR with `a-team board {{team}} pictures dev ...`, and to say which
-  criteria you checked, ticking them on its issue, with `a-team board {{team}} checked dev ...`.
+  criteria you checked, ticking them on its issue, with `a-team board {{team}} checked dev ...`,
+  and to tick the review points you fixed with `a-team board {{team}} fixed dev ...`.
 - Create git worktrees and branches under {{workdir}}, build, test and try out the product there,
   commit, and push branches other than the default branch to {{repo}}, Dependabot's branch included
   when this run is for its PR.

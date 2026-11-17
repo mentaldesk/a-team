@@ -114,6 +114,50 @@ same "answered" '"answered"' "$(jq -c .review "$OUT")"
 rm -f "$BIN/comment-url"
 unset NO_SEED_TALK
 
+case_ "the Reviewer's points are posted as boxes the Dev ticks"
+gh_pr 912 true
+printf '%s\n' '## Needs changing' '- a.sh:1 off by one.' '  It drops the last.' '' '## Worth considering' '* Rename it.' '- [x] Split it.' '' 'Thanks.' >"$WORK/review"
+run board demo review reviewer 912 "$WORK/review"
+same "exit" 0 "$STATUS"
+same "boxed" "## Needs changing
+- [ ] a.sh:1 off by one.
+  It drops the last.
+
+## Worth considering
+* [ ] Rename it.
+- [ ] Split it.
+
+Thanks.
+
+
+<!-- a-team:reviewer -->" "$(cat "$POSTED")"
+
+case_ "the Dev ticks the points it fixed on the review, numbered down it"
+gh_reviewing ".comments.nodes = [{url: \"https://github.com/mentaldesk/demo/pull/912#issuecomment-4321\", author: {__typename: \"Bot\", login: \"demo-app\"}, body: $(jq -Rs . "$POSTED")}]"
+: >"$WRITES"
+run board demo fixed dev 912 1 3
+same "exit" 0 "$STATUS"
+same "said" "#912: 2 of 3 review points fixed" "$(cat "$OUT")"
+grep -q '^PATCH api -X PATCH repos/mentaldesk/demo/issues/comments/4321 -F body=@-' "$WRITES" || fail "fixed: no edit in '$(cat "$WRITES")'"
+same "ticked" "- [x] a.sh:1 off by one.|* [ ] Rename it.|- [x] Split it." "$(grep -E '^[-*] \[' "$POSTED" | paste -sd'|' -)"
+same "marker kept" "<!-- a-team:reviewer -->" "$(tail -1 "$POSTED")"
+
+case_ "fixed is the Dev's alone, for a point the review has, on a reviewed task PR of its own"
+refused_fixed() {
+  : >"$WRITES"
+  run board demo fixed "${@:3}"
+  failed "$1"
+  grep -qF "$2" "$ERR" || fail "$1: '$(cat "$ERR")'"
+  same "$1 writes" "" "$(cat "$WRITES")"
+}
+refused_fixed "no such point" "'4' isn't a point of #912's review: it has 3" dev 912 4
+refused_fixed "not a number" "'x' isn't a point of #912's review" dev 912 x
+refused_fixed "reviewer" "reviewer may not tick a review's points" reviewer 912 1
+gh_reviewing '.body = "My own change"'
+refused_fixed "stakeholder's PR" "dev ticks review points only on its own open task PRs" dev 912 1
+gh_reviewing
+refused_fixed "unreviewed" "#912 has no review to tick" dev 912 1
+
 case_ "a second review, a red or ready PR, and anything but the Dev's open task PR are refused"
 gh_reviewed
 refused_review "second review" "#912 has its review already: a PR is reviewed once"
@@ -316,6 +360,13 @@ waiting
 same "exit" 0 "$STATUS"
 same "reviewed" true "$(jq -c '.[0].reviewed' "$OUT")"
 same "consider" 2 "$(jq -c '.[0].consider' "$OUT")"
+gh_talk <<TALK
+115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->
+115 pr-comment ${TODAY}T08:40:00Z demo-app[bot] ## Worth considering\n- [x] Rename it.\n- [ ] Split it.\n\n<!-- a-team:reviewer -->
+TALK
+waiting
+same "a ticked point isn't left to consider" 1 "$(jq -c '.[0].consider' "$OUT")"
 gh_talk <<TALK
 115 body ${TODAY}T08:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
 115 pr-body ${TODAY}T08:25:00Z demo-app[bot] Closes #115\n<!-- a-team:dev -->

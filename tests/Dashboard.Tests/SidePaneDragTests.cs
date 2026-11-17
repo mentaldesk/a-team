@@ -28,6 +28,24 @@ public class SidePaneDragTests
     }
 
     [Fact]
+    public void A_dragged_border_stays_where_it_was_left_when_switching_tabs()
+    {
+        var reviewed = new WaitingItem(829, "A task", "In review", "https://x/829", "a-team", "you", Pr: 830, Reviewed: true);
+        var body = new IssueBody("Body", History: new History([]))
+            .With(new Conversation([new Remark("reviewer", DateTimeOffset.UnixEpoch, "## Needs changing\n\n- One.", 830)]));
+        using var app = Started();
+        using var dialog = new ReaderDialog(reviewed, body, () => null, width: Columns);
+        dialog.NewKeyDownEvent(new Key('v'));
+        Drag(app, dialog, dialog.SideTabs!.SuperView!, by: -10);
+        Assert.Equal(ReaderPanes.HistoryWidth + 10, dialog.SideTabs.SuperView!.Frame.Width);
+
+        dialog.SideTabs.Value = dialog.SideTabs.SubViews.Single(tab => tab.Title == "History");
+        app.LayoutAndDraw(true);
+
+        Assert.Equal(ReaderPanes.HistoryWidth + 10, dialog.SideTabs.SuperView!.Frame.Width);
+    }
+
+    [Fact]
     public void A_drag_stops_where_the_body_keeps_40_columns()
     {
         using var app = Started();

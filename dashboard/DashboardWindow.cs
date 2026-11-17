@@ -107,6 +107,7 @@ public sealed partial class DashboardWindow : Window
     private string? _added;
     private ReaderIdea? _idea;
     private ReaderImage? _image;
+    private ReaderReview? _review;
     private TeamReads? _reading;
     private readonly Dictionary<string, Synced> _synced = [];
     private readonly Dictionary<string, DateTime> _detailSynced = [];

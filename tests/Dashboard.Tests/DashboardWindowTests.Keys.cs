@@ -106,8 +106,8 @@ public partial class DashboardWindowTests
     {
         using var window = Open(agents: Agents(4));
 
-        Assert.Equal(["A", "T", "P", "X", "L", "H", "F", "G", "Y", "C", "E", "I"],
-            new[] { "work.accept", "work.try", "work.priority", "work.decline", "work.notNow", "work.hold", "work.fix", "work.github", "work.copyBranch", "work.comment",
+        Assert.Equal(["A", "T", "P", "X", "L", "H", "F", "V", "G", "Y", "C", "E", "I"],
+            new[] { "work.accept", "work.try", "work.priority", "work.decline", "work.notNow", "work.hold", "work.fix", "work.review", "work.github", "work.copyBranch", "work.comment",
                 "log.editor", "agent.interrupt" }.Select(id => window.Commands.KeysFor(id)));
     }
 

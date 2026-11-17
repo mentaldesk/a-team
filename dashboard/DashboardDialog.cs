@@ -46,9 +46,10 @@ public abstract class DashboardDialog : AppDialog
     /// <summary>Enter reaches a Dialog as Accept and would close it; what Enter does is up to the dialog's keys.</summary>
     protected override bool OnAccepting(CommandEventArgs args) => true;
 
-    protected Button AddButton(ButtonKind kind, string commandId)
+    /// <param name="label">The button's own label, where it's shorter than the command's.</param>
+    protected Button AddButton(ButtonKind kind, string commandId, string? label = null)
     {
-        var button = AppButton.Of(kind, Caption(commandId, Commands.Find(commandId)!.Label));
+        var button = AppButton.Of(kind, Caption(commandId, label ?? Commands.Find(commandId)!.Label));
         button.CanFocus = false;
         button.Accepting += (_, e) =>
         {

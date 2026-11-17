@@ -2,8 +2,8 @@ using System.Text.RegularExpressions;
 
 namespace ATeam.Dashboard;
 
-/// <summary>The points of a review's <b>Worth considering</b> section, one per top-level list item, read as the board's
-/// <c>considered</c> counts them in <c>scripts/board.sh</c>, and the comment asking the Dev to fix some.</summary>
+/// <summary>The points of a review's <b>Worth considering</b> section the Dev hasn't ticked as fixed, one per top-level
+/// list item, read as the board's <c>Considered</c> counts them, and the comment asking the Dev to fix some.</summary>
 public static partial class Considered
 {
     /// <summary>The points of the Reviewer's review of PR <paramref name="pr"/>, or none where it left none.</summary>
@@ -22,8 +22,9 @@ public static partial class Considered
         {
             if (Item().Match(line) is { Success: true } item)
             {
-                points.Add([line[item.Length..].Trim()]);
-                open = true;
+                open = !item.Groups["box"].Success || item.Groups["box"].Value == " ";
+                if (open)
+                    points.Add([line[item.Length..].Trim()]);
             }
             else if (line.Trim().Length == 0)
             {
@@ -36,6 +37,28 @@ public static partial class Considered
                 open = false;
         }
         return [.. points.Select(point => string.Join('\n', point).TrimEnd())];
+    }
+
+    /// <summary>The review as the Review tab shows it: each point of Needs changing and Worth considering with a box,
+    /// ticked once the Dev has fixed it.</summary>
+    public static string Boxed(string review) =>
+        string.Join('\n', Lines(review).Select(line => line.Point is { } item
+            ? $"[{(item.Groups["box"].Value is "x" or "X" ? 'x' : ' ')}] {line.Text[item.Length..]}"
+            : line.Text));
+
+    /// <summary>How many points of Needs changing and Worth considering the Dev hasn't ticked.</summary>
+    public static int Open(string review) =>
+        Lines(review).Count(line => line.Point is { } item && item.Groups["box"].Value is not ("x" or "X"));
+
+    private static IEnumerable<(string Text, Match? Point)> Lines(string review)
+    {
+        var inside = false;
+        foreach (var line in review.Replace("\r", "").Split('\n'))
+        {
+            if (AnyHeading().IsMatch(line) || line.Contains("<!-- a-team:", StringComparison.Ordinal))
+                inside = Sections().IsMatch(line);
+            yield return (line, inside && Item().Match(line) is { Success: true } item ? item : null);
+        }
     }
 
     /// <summary>The one comment: each point quoted, then the ask and the note, if any.</summary>
@@ -52,6 +75,12 @@ public static partial class Considered
     [GeneratedRegex(@"^#{1,6}[ \t]|<!-- a-team:")]
     private static partial Regex SectionEnd();
 
-    [GeneratedRegex(@"^(?:[-*+]|[0-9]+[.)])[ \t]+")]
+    [GeneratedRegex(@"^#{1,6}[ \t]+(?:Needs changing|Worth considering)[ \t]*$", RegexOptions.IgnoreCase)]
+    private static partial Regex Sections();
+
+    [GeneratedRegex(@"^#{1,6}[ \t]")]
+    private static partial Regex AnyHeading();
+
+    [GeneratedRegex(@"^(?:[-*+]|[0-9]+[.)])[ \t]+(?:\[(?<box>[ xX])\][ \t]*)?")]
     private static partial Regex Item();
 }
