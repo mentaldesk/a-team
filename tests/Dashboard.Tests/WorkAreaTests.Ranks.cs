@@ -309,7 +309,7 @@ public partial class WorkAreaTests
 
         Assert.Equal([(reading!.Team, "From https://github.com/x/6")], asked);
         Assert.Equal($"#412 added to {reading.Team}'s ideas", said);
-        Assert.Equal(["New idea"], offered);
+        Assert.Equal(["New idea", "Next tab", "Previous tab"], offered);
         Assert.Equal([false], keys);
     }
 

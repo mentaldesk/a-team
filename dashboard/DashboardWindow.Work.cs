@@ -356,6 +356,7 @@ public sealed partial class DashboardWindow
             _idea = gates && NewIdeaEnabled() ? new ReaderIdea(_commands.KeyFor("work.new"), description => AddIdea(item.Team, description)) : null;
             _image = new ReaderImage();
             _review = new ReaderReview(_commands.KeyFor("work.review"));
+            _tabs = new ReaderTabs(_commands.KeyFor("work.nextTab"), _commands.KeyFor("work.previousTab"));
             if (body.Checklist is { } listed)
                 _unticked[Write.KeyOf(item)] = listed.Unticked;
             var chosen = _showBody(item, body, () => url is { Length: > 0 } ? _openUrl(url) : null, _approvable is null ? null : Approve,
@@ -368,7 +369,7 @@ public sealed partial class DashboardWindow
                     gates && body.Checklist is not null ? new ReaderTick((criterion, ticked) => Tick(item, criterion, ticked), SettleWrites,
                         unticked => _unticked[Write.KeyOf(item)] = unticked) : null,
                     gates && item.Secret is not null ? new ReaderCommand(_commands.KeyFor("work.secret"), "give secret", GiveSecret) : null,
-                    _review),
+                    _review, _tabs),
                 gates && item.Triable ? new ReaderTry(_commands.KeyFor("work.try"), (shown, at) => _triedFrom = (shown, at), top, failure) : null,
                 gates && item.Document ? new ReaderEdit(_commands.KeyFor("work.edit"), (shown, at) => _editFrom = (shown, at),
                     body.Document is { } document ? document.Uneditable(item.Number) : $"couldn't read what #{item.Number} changes",
@@ -380,6 +381,7 @@ public sealed partial class DashboardWindow
             _idea = null;
             _image = null;
             _review = null;
+            _tabs = null;
             _opened.Open(item.Team, item.Number, _clock.GetUtcNow());
             _approvable = null;
             _shown = null;

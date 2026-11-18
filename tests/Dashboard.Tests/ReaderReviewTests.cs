@@ -34,8 +34,8 @@ public class ReaderReviewTests
         return dialog;
     }
 
-    private static ReaderComment Commenting(ReaderCommand? fix = null, ReaderReview? review = null) =>
-        new(new Key('c'), "comment", _ => System.Threading.Tasks.Task.FromResult<string?>(null), Fix: fix, Review: review);
+    private static ReaderComment Commenting(ReaderCommand? fix = null, ReaderReview? review = null, ReaderTabs? tabs = null) =>
+        new(new Key('c'), "comment", _ => System.Threading.Tasks.Task.FromResult<string?>(null), Fix: fix, Review: review, Tabs: tabs);
 
     private static string Text(LogView log) => string.Join('\n', log.Lines.Select(line => line.Text));
 
@@ -144,6 +144,154 @@ public class ReaderReviewTests
         Assert.True(dialog.HistoryShown);
         Assert.True(panes.HistoryShown);
         Assert.True(dialog.ReviewLog.HasFocus);
+    }
+
+    private static ReaderDialog Begun(IApplication app, WaitingItem item, IssueBody body, ReaderPanes? panes = null,
+        ReaderComment? comment = null, Func<Key, bool>? window = null)
+    {
+        var dialog = new ReaderDialog(item, body, () => null, comment: comment, panes: panes, width: 140, window: window);
+        app.Begin(dialog);
+        dialog.Layout(new Size(140, 30));
+        return dialog;
+    }
+
+    public static TheoryData<bool, bool, bool> FromEachTab => new()
+    {
+        { false, true, true }, { false, false, true }, { true, true, false }, { true, false, false },
+        { false, true, false }, { false, false, false }, { true, true, true }, { true, false, true },
+    };
+
+    [Theory]
+    [MemberData(nameof(FromEachTab))]
+    public void Ctrl_PgDn_and_Ctrl_PgUp_bring_the_other_tab_forward_shown_and_focused(bool reviewFirst, bool hidden, bool down)
+    {
+        var panes = new ReaderPanes { ReviewInFront = reviewFirst, HistoryShown = !hidden };
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var dialog = Begun(app, Task, Reviewed(), panes);
+        Assert.Equal(!hidden, dialog.HistoryShown);
+
+        Assert.True(dialog.NewKeyDownEvent(down ? Key.PageDown.WithCtrl : Key.PageUp.WithCtrl));
+
+        Assert.True(dialog.HistoryShown);
+        Assert.Equal(!reviewFirst, dialog.ReviewInFront);
+        Assert.True((reviewFirst ? dialog.HistoryLog : dialog.ReviewLog).HasFocus);
+        Assert.Equal(!reviewFirst, panes.ReviewInFront);
+    }
+
+    [Fact]
+    public void The_arrows_move_the_caret_in_the_tab_a_key_brought_forward()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var dialog = Begun(app, Task, Reviewed());
+
+        dialog.NewKeyDownEvent(Key.PageDown.WithCtrl);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+        dialog.NewKeyDownEvent(Key.CursorDown);
+
+        Assert.True(dialog.ReviewLog.HasFocus);
+        Assert.True(dialog.ReviewLog.Caret?.Line > 0);
+    }
+
+    [Fact]
+    public void Without_a_review_the_tab_keys_say_there_s_only_History_and_change_nothing()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        foreach (var hidden in new[] { false, true })
+        {
+            using var dialog = Begun(app, Task with { Reviewed = false }, Body());
+            if (hidden)
+                dialog.NewKeyDownEvent(new Key('h'));
+
+            foreach (var key in new[] { Key.PageDown.WithCtrl, Key.PageUp.WithCtrl })
+            {
+                Assert.True(dialog.NewKeyDownEvent(key));
+                Assert.Equal(!hidden, dialog.HistoryShown);
+                Assert.True(dialog.Body.HasFocus);
+                Assert.Contains("only History", dialog.Message.Text);
+            }
+        }
+    }
+
+    [Fact]
+    public void h_brings_History_forward_from_Review_then_hides_and_shows_the_tab_last_in_front()
+    {
+        var panes = new ReaderPanes();
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var dialog = Begun(app, Task, Reviewed(), panes);
+        dialog.NewKeyDownEvent(new Key('v'));
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('h')));
+        Assert.True(dialog.HistoryShown);
+        Assert.False(dialog.ReviewInFront);
+        Assert.True(dialog.HistoryLog.HasFocus);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('h')));
+        Assert.False(dialog.HistoryShown);
+        Assert.True(dialog.NewKeyDownEvent(new Key('h')));
+        Assert.True(dialog.HistoryShown);
+        Assert.False(dialog.ReviewInFront);
+    }
+
+    [Fact]
+    public void h_shows_the_hidden_pane_with_Review_where_it_was_last_in_front()
+    {
+        var panes = new ReaderPanes { HistoryShown = false, ReviewInFront = true };
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var dialog = Begun(app, Task, Reviewed(), panes);
+        Assert.False(dialog.HistoryShown);
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('h')));
+
+        Assert.True(dialog.HistoryShown);
+        Assert.True(dialog.ReviewInFront);
+    }
+
+    [Fact]
+    public void Without_a_review_h_hides_and_shows_History_as_before()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var dialog = Begun(app, Task with { Reviewed = false }, Body());
+
+        Assert.True(dialog.NewKeyDownEvent(new Key('h')));
+        Assert.False(dialog.HistoryShown);
+        Assert.True(dialog.NewKeyDownEvent(new Key('h')));
+        Assert.True(dialog.HistoryShown);
+    }
+
+    [Fact]
+    public void The_reader_s_tab_keys_don_t_reach_the_window()
+    {
+        var reached = new List<Key>();
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        foreach (var reviewed in new[] { true, false })
+        {
+            using var dialog = Begun(app, Task with { Reviewed = reviewed }, reviewed ? Reviewed() : Body(), window: key =>
+            {
+                reached.Add(key);
+                return true;
+            });
+            Assert.True(dialog.NewKeyDownEvent(Key.PageDown.WithCtrl));
+            Assert.True(dialog.NewKeyDownEvent(Key.PageUp.WithCtrl));
+        }
+
+        Assert.Empty(reached);
+    }
+
+    [Fact]
+    public void F1_lists_the_tab_keys_and_Commands_can_run_them()
+    {
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        var tabs = new ReaderTabs(Key.PageDown.WithCtrl, Key.PageUp.WithCtrl);
+        using var dialog = Begun(app, Task, Reviewed(), comment: Commenting(tabs: tabs));
+
+        var rows = DialogTests.Rows(DialogTests.F1(dialog));
+        Assert.Contains(rows, row => row is { Keys: "Ctrl+PgDn", Label: "Next tab" });
+        Assert.Contains(rows, row => row is { Keys: "Ctrl+PgUp", Label: "Previous tab" });
+
+        tabs.Turn!(+1);
+        Assert.True(dialog.ReviewInFront);
+        tabs.Turn!(-1);
+        Assert.False(dialog.ReviewInFront);
     }
 
     [Fact]

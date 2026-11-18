@@ -24,13 +24,21 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
     ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null, ReaderRelease? Release = null,
-    ReaderCommand? Fix = null, ReaderTick? Tick = null, ReaderCommand? Secret = null, ReaderReview? Review = null);
+    ReaderCommand? Fix = null, ReaderTick? Tick = null, ReaderCommand? Secret = null, ReaderReview? Review = null,
+    ReaderTabs? Tabs = null);
 
 /// <summary>Showing the Reviewer's review from the reader, on <paramref name="Key"/>. The reader sets <see cref="Show"/>
 /// on a reviewed task, for Commands to run.</summary>
 public sealed record ReaderReview(Key Key)
 {
     public Action? Show { get; set; }
+}
+
+/// <summary>Switching the tabs beside the reader's body, on <paramref name="Next"/> and <paramref name="Previous"/>. The
+/// reader sets <see cref="Turn"/>, for Commands to run.</summary>
+public sealed record ReaderTabs(Key Next, Key Previous)
+{
+    public Action<int>? Turn { get; set; }
 }
 
 /// <summary>Ticking a criterion from the reader: Run saves it on the task, with null once it's saved or else why not;
@@ -108,6 +116,8 @@ public sealed partial class ReaderDialog : DashboardDialog
     private const string GitHubId = "reader.github";
     private const string HistoryId = "reader.history";
     private const string ReviewId = "reader.review";
+    private const string NextTabId = "reader.nextTab";
+    private const string PreviousTabId = "reader.previousTab";
     private const string CopyId = "reader.copy";
     private const string QuoteId = "reader.quote";
     private const string BranchId = "reader.branch";
@@ -354,6 +364,12 @@ public sealed partial class ReaderDialog : DashboardDialog
             showing.Show = () =>
             {
                 ShowReview();
+                Offer();
+            };
+        if (comment?.Tabs is { } turning)
+            turning.Turn = by =>
+            {
+                Turn(by);
                 Offer();
             };
         _scrolled = _body;
@@ -704,6 +720,8 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (_comment?.Tick is not null && _text.Checklist is not null)
             Bind(TickId, Key.Space, "Tick", Tick, () => Reads() && _ranks is null && _scrolled == _body && CriterionAtCaret() is not null);
         Bind(HistoryId, new Key('h'), "Show history", ToggleHistory, () => Reads() && _ranks is null);
+        Bind(NextTabId, _comment?.Tabs?.Next ?? Key.PageDown.WithCtrl, "Next tab", () => Turn(+1), () => Reads() && _ranks is null);
+        Bind(PreviousTabId, _comment?.Tabs?.Previous ?? Key.PageUp.WithCtrl, "Previous tab", () => Turn(-1), () => Reads() && _ranks is null);
         Bind("reader.previousRemark", Key.CursorUp.WithAlt, "Previous remark", () => ToRemark(-1), () => Reads() && _scrolled == _body);
         Bind("reader.nextRemark", Key.CursorDown.WithAlt, "Next remark", () => ToRemark(+1), () => Reads() && _scrolled == _body);
         Bind(CopyId, Key.C.WithCtrl, "Copy", Copy, Reads);
@@ -755,7 +773,7 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (_comment is not null)
             Rename(QuoteId, $"Quote {Lines(marked)}");
         Rename(TickId, CriterionAtCaret() is { Ticked: true } ? "Untick" : "Tick");
-        Rename(HistoryId, HistoryShown ? "Hide history" : "Show history");
+        Rename(HistoryId, HistoryShown && !ReviewInFront ? "Hide history" : "Show history");
         Rename(CancelId, Writing ? _declining ? "Cancel" : _shelving ? "Comment instead" : "Back" : marked > 0 ? "Clear" : "Close");
         Restyle(CancelId, !Writing && marked == 0 && !string.IsNullOrWhiteSpace(_field.Text) ? ButtonKind.Danger : ButtonKind.Secondary);
         ShowButtons();
@@ -789,15 +807,32 @@ public sealed partial class ReaderDialog : DashboardDialog
         SetNeedsDraw();
     }
 
+    /// <summary>With Review in front, History comes forward instead of the pane hiding.</summary>
     private bool ToggleHistory()
     {
+        if (HistoryShown && ReviewInFront)
+            return Bring(_historyTab);
         _panes.HistoryShown = !_side.Visible;
         ShowHistory(_panes.HistoryShown);
         return true;
     }
 
-    /// <summary>Review in front, with the keyboard in it, showing the pane if <c>h</c> had hidden it.</summary>
-    private bool ShowReview()
+    private bool ShowReview() => Bring(_reviewTab);
+
+    /// <summary>The next or previous tab beside the body, wrapping round; where History is alone, only says so.</summary>
+    private bool Turn(int by)
+    {
+        if (_tabs is null)
+        {
+            Say("There's only History beside the body", Schemes.Error);
+            return true;
+        }
+        List<View> tabs = [_historyTab, _reviewTab];
+        return Bring(tabs[(tabs.IndexOf(_tabs.Value ?? _historyTab) + by + tabs.Count) % tabs.Count]);
+    }
+
+    /// <summary><paramref name="tab"/> in front, with the keyboard in it, showing the pane if <c>h</c> had hidden it.</summary>
+    private bool Bring(View tab)
     {
         if (!HistoryShown)
         {
@@ -806,8 +841,8 @@ public sealed partial class ReaderDialog : DashboardDialog
             // The tabs place their headers as they're laid out, so one brought forward while hidden draws none.
             Layout();
         }
-        _tabs!.Value = _reviewTab;
-        Scroll(_review);
+        _tabs!.Value = tab;
+        Scroll(Front());
         return true;
     }
 
