@@ -20,7 +20,8 @@ cost by theme and pitch.
 ## [Overseer](overseer.md)
 
 Every team's board on one screen: where each card is, how long it has waited there, which ones an
-agent is on, and the time limits that flag a card that has sat too long. What each agent is doing:
+agent is on, and the time limits that flag a card that has sat too long. Filtering every lane to the
+cards you're after, and reading, ranking or deciding a card without leaving it. What each agent is doing:
 reading its session, pausing a role, interrupting a run to step into it, the warning when a role is
 stuck, and the dispatcher's log.
 
