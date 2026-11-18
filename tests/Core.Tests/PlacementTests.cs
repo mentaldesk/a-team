@@ -228,4 +228,18 @@ public class PlacementTests
         Assert.Equal("dev", Json.Text(turned["turn"]));
         Assert.False(Json.Truthy(turned["stuck"]));
     }
+
+    [Theory]
+    [InlineData(239, 240, "dev")]
+    [InlineData(241, 240, "you")]
+    [InlineData(1, 0, "you")]
+    public void A_turn_just_handed_over_is_covered_for_the_grace_before_it_is_stuck(long after, long grace, string turn)
+    {
+        var item = new JsonObject { ["number"] = 8, ["status"] = "In review", ["title"] = "T", ["url"] = "u", ["team"] = "demo" };
+        var turned = Demo(reviewer: false).Turn(item, Talk["your comment unread"](), []);
+        var asked = DateTimeOffset.Parse(Json.Text(turned["handed"])!, System.Globalization.CultureInfo.InvariantCulture).ToUnixTimeSeconds();
+        Board.Settle(turned, Repo, (_, _) => false, grace, asked + after);
+        Assert.Equal(turn, Json.Text(turned["turn"]));
+        Assert.Equal(turn == "you", Json.Truthy(turned["stuck"]));
+    }
 }

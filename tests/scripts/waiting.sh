@@ -1022,4 +1022,39 @@ done
 KEEP_BOARD=1 UNWOKEN=1 waiting
 same "woken by their triggers" '[["lead",null],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
 
+case_ "a turn just handed to a role isn't stuck for two dispatcher passes, unless the team's dispatch is off"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "dispatch": { "enabled": true } }
+JSON
+gh_items <<'ITEMS'
+Pitched 150 Both gates are mine
+In_review 151 Theme tokens for the status bar
+ITEMS
+gh_talk <<TALK
+150 body ${TODAY}T00:00:00Z demo-app[bot] The pitch\n<!-- a-team:lead -->
+150 comment $(ago 1) reviewer What about the second gate?
+151 body ${TODAY}T00:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+151 comment $(ago 5) reviewer This one needs a test.
+TALK
+rm -f "$A_TEAM_STATE/dispatcher.json"
+UNWOKEN=1 waiting
+same "exit" 0 "$STATUS"
+same "no record: 120 s a pass" '[["lead",null],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+same "stuck as today" '"dev: answering your feedback"' "$(jq -c '.[1].reason | split(" since")[0]' "$OUT")"
+same "and why" true "$(jq -c '.[1].reason | endswith(", but nothing will start a run for it")' "$OUT")"
+echo '{"interval": 600}' >"$A_TEAM_STATE/dispatcher.json"
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "the recorded interval" '[["lead",null],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+echo 'not json' >"$A_TEAM_STATE/dispatcher.json"
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "an unreadable record: 120 s" '[["lead",null],["you",true]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO woken (team, role, repo, item, at) VALUES ('demo', 'dev', 'mentaldesk/demo', 151, '2026-01-01T00:00:00Z');"
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "woken stays covered" '[["lead",null],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+rm -f "$A_TEAM_STATE/dispatcher.json"
+jq '.dispatch.enabled = false' "$TEAM" >"$TEAM.off" && mv "$TEAM.off" "$TEAM"
+KEEP_BOARD=1 UNWOKEN=1 waiting
+same "dispatch off: stuck at once" '[["you",true],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
+
 finish_suite
