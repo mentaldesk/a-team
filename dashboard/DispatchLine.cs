@@ -24,7 +24,7 @@ public static class DispatchLine
     {
         var said = Said(line);
         if (said.StartsWith("triggers failed:", StringComparison.Ordinal) || said.StartsWith("killed run", StringComparison.Ordinal)
-            || said.StartsWith("failed:", StringComparison.Ordinal) || IsStuck(said))
+            || said.StartsWith("failed:", StringComparison.Ordinal) || IsStuck(said) || TeamCommand.IsStuck(said))
             return LogLineKind.DispatchFailed;
         return said.StartsWith("would start:", StringComparison.Ordinal)
             ? LogLineKind.DispatchSkipped

@@ -295,8 +295,7 @@ public sealed partial class DashboardWindow
                 _bar.Withdraw(was);
             if (read.Failure is { Length: > 0 } failure)
             {
-                if (_overseer.Fail(team, Reason(failure), RetryHint("overseer.retry"), () => RetryBoards([team])))
-                    _boardFailures[team] = Announce($"{team}: {Reason(failure)}", Severity.Error);
+                FailBoard(team, failure);
                 continue;
             }
             _boardReadAt[team] = _clock.GetUtcNow();
@@ -306,6 +305,14 @@ public sealed partial class DashboardWindow
         }
         if (boarding.Done)
             _boarding = null;
+    }
+
+    private void FailBoard(string team, string failure)
+    {
+        if (_boardFailures.Remove(team, out var was))
+            _bar.Withdraw(was);
+        if (_overseer.Fail(team, Reason(failure), RetryHint("overseer.retry"), () => RetryBoards([team])))
+            _boardFailures[team] = Announce($"{team}: {Reason(failure)}", Severity.Error);
     }
 
     /// <summary>How soon after a team's last sync with GitHub another read of it syncs again.</summary>
@@ -333,8 +340,12 @@ public sealed partial class DashboardWindow
         {
             _detailSynced[team] = DetailSynced(team);
             ReadTeam(team);
-            if (read.Failure is { Length: > 0 })
+            if (read.Failure is { Length: > 0 } failure)
+            {
+                if (TeamCommand.IsStuck(failure))
+                    FailBoard(team, failure);
                 continue;
+            }
             ReadLane(team);
         }
         if (syncing.Done)

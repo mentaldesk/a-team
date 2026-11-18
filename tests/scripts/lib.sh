@@ -5,7 +5,7 @@
 # shellcheck disable=SC2034,SC2120,SC2154 # a helper reads what its area set and takes what it passes, and an area reads what this sets
 set -uo pipefail
 # As in CI: a run's own team would otherwise reach every test's gh and git.
-unset A_TEAM_RUN_TEAM A_TEAM_RUN_TASK A_TEAM_RUN_STARTED
+unset A_TEAM_RUN_TEAM A_TEAM_RUN_ROLE A_TEAM_RUN_TASK A_TEAM_RUN_STARTED
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 A_TEAM="$ROOT/bin/a-team"

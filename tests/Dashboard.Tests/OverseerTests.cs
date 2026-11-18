@@ -1372,6 +1372,29 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_sync_that_stopped_stuck_says_so_as_a_failed_read_and_the_other_boards_still_refresh()
+    {
+        const string Stuck = "board stuck: gh api graphql RepoIssues (team team1, sync) gave no answer in 3 minutes, stopping";
+        var synced = false;
+        var syncs = new Dictionary<string, TaskCompletionSource<Reading>> { ["team0"] = new(), ["team1"] = new() };
+        using var window = Open(
+            readBoard: team => Task.FromResult(new Reading(team == "team0" && synced ? "[]" : Overview(team), null)),
+            syncBoard: team => syncs[team].Task);
+        window.Commands.Execute("view.overseer");
+        window.Refresh();
+
+        synced = true;
+        syncs["team0"].SetResult(new Reading("", null));
+        syncs["team1"].SetResult(new Reading("", Stuck));
+        window.Refresh();
+        window.Refresh();
+
+        Assert.Equal([21, 22], window.Overseer.Board.Cards.Select(card => card.Number).Order());
+        Assert.Equal(1, window.Status.UnreadErrors);
+        Assert.Equal(LoadState.Empty, window.Overseer.LoadOf("team0")!.State);
+    }
+
+    [Fact]
     public void A_board_with_nothing_on_it_says_so()
     {
         using var window = Open(readBoard: team => Task.FromResult(new Reading(team == "team1" ? "[]" : Overview(team), null)));

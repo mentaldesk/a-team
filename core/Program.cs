@@ -43,6 +43,12 @@ internal static class Program
             Console.Error.WriteLine($"board.sh: {refusal.Message}");
             return 1;
         }
+        catch (Stuck stuck)
+        {
+            Trace($"handled {what}");
+            Watch.Report(stuck.Message);
+            return Watch.StuckCode;
+        }
         catch (Stop stopped)
         {
             Trace($"handled {what}");
@@ -56,6 +62,7 @@ internal static class Program
         }
         finally
         {
+            Watch.End();
             if (scratch is not null) File.Delete(scratch);
         }
     }
@@ -119,13 +126,17 @@ internal static class Program
         }
 
         var state = Dir("A_TEAM_STATE", "XDG_STATE_HOME", ".local/state");
+        string? copy = null;
+        var role = command == "lead-next" ? "lead" : Spoken.Contains(command) ? SpeakerOf(command, rest) : "";
+        Watch.Begin(team, command, StatusRoute.Roles.Contains(role) ? role : "", state, dry,
+            () => { if (copy is not null) File.Delete(copy); });
         Board.State = state;
         Board.Root = RootDir;
         Board.ConfigDir = configDir;
         var token = command == "lead-next" ? Speaker(team, command, "lead", state, config)
             : Spoken.Contains(command) ? Speaker(team, command, SpeakerOf(command, rest), state, config) : null;
 
-        var history = Scratch(dry, state, scratch) ?? Path.Combine(state, "history.db");
+        var history = Scratch(dry, state, made => scratch(copy = made)) ?? Path.Combine(state, "history.db");
         var existed = File.Exists(history);
         Record Open()
         {

@@ -38,6 +38,17 @@ public class TeamCommandTests : IDisposable
     }
 
     [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
+    public async Task A_board_command_that_stopped_stuck_reports_the_line_naming_its_wait()
+    {
+        var command = new TeamCommand(Script("""
+            echo "a warning first" >&2
+            echo "board stuck: gh pr list (team demo, sync) gave no answer in 3 minutes, stopping" >&2
+            exit 124
+            """));
+        Assert.Equal("board stuck: gh pr list (team demo, sync) gave no answer in 3 minutes, stopping", (await command.Read("board", "demo", "sync")).Failure);
+    }
+
+    [Fact(Skip = "a-team is a shell script", SkipUnless = nameof(HasAShell))]
     public async Task A_command_that_failed_silently_still_reports_something()
     {
         var command = new TeamCommand(Script("exit 3"));

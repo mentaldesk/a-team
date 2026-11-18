@@ -12,6 +12,7 @@ public class DispatchLineTests
     [InlineData("2026-09-20T17:01:17Z a-team reviewer: run 51200 is stuck: on #516, which closed 29 Oct", LogLineKind.DispatchFailed)]
     [InlineData("2026-09-20T17:01:17Z a-team dev: run 67118 is stuck: outlived its 2h limit", LogLineKind.DispatchFailed)]
     [InlineData("2026-09-20T17:01:17Z a-team reviewer: run 51200 no longer stuck", LogLineKind.Prose)]
+    [InlineData("2026-09-20T17:01:17Z truman lead: board stuck: gh api graphql RepoIssues (team truman, lead-next) gave no answer in 3 minutes, stopping", LogLineKind.DispatchFailed)]
     [InlineData("2026-09-20T17:01:17Z something else entirely", LogLineKind.Prose)]
     public void A_line_is_coloured_by_what_it_says(string line, LogLineKind kind) =>
         Assert.Equal(kind, DispatchLine.KindOf(line));
