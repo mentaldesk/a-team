@@ -1057,4 +1057,37 @@ jq '.dispatch.enabled = false' "$TEAM" >"$TEAM.off" && mv "$TEAM.off" "$TEAM"
 KEEP_BOARD=1 UNWOKEN=1 waiting
 same "dispatch off: stuck at once" '[["you",true],["dev",null]]' "$(jq -c '[.[] | [.turn, .stuck]]' "$OUT")"
 
+case_ "an answer to a held task's question isn't stuck for two dispatcher passes, the Dev's or the Lead's"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },
+  "dispatch": { "enabled": true } }
+JSON
+gh_items <<'ITEMS'
+Ready 192 I can reply to a pitch
+Ready 195 Held by the Lead
+ITEMS
+edit_item 192 '.labels.nodes = [{name: "a-team:dev"}, {name: "blocked"}]'
+edit_item 195 '.labels.nodes = [{name: "blocked"}]'
+held_talk() {
+  gh_talk <<TALK
+192 body ${TODAY}T00:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+192 comment $(ago 31) demo-app[bot] Which marker should it post?\n<!-- a-team:dev -->
+192 labeled $(ago 30) demo-app[bot] blocked
+192 comment $(ago "$1") reviewer The Dev's own.
+195 body ${TODAY}T00:00:00Z demo-app[bot] The task\n<!-- a-team:lead -->
+195 labeled $(ago 30) demo-app[bot] blocked
+195 comment $(ago 29) demo-app[bot] Reply here once the SDK is in.\n<!-- a-team:lead -->
+195 comment $(ago "$1") reviewer Installed.
+TALK
+}
+rm -f "$A_TEAM_STATE/dispatcher.json"
+held_talk 1
+UNWOKEN=1 waiting
+same "exit" 0 "$STATUS"
+same "just answered" '[[192,"dev",null],[195,"lead",null]]' "$(jq -c '[.[] | [.number, .turn, .stuck]]' "$OUT")"
+held_talk 5
+UNWOKEN=1 waiting
+same "answered past the grace" '[[192,"you",true],[195,"you",true]]' "$(jq -c '[.[] | [.number, .turn, .stuck]]' "$OUT")"
+same "and why" '[true,true]' "$(jq -c '[.[].reason | endswith(", but nothing will start a run for it")]' "$OUT")"
+
 finish_suite
