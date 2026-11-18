@@ -49,6 +49,18 @@ public class AttentionTests
     }
 
     [Fact]
+    public void Reading_a_report_counts_up_to_two_minutes_without_a_key()
+    {
+        var timer = Timer();
+        timer.Browsing("team0", Attention.Reports);
+        After(1, timer);
+        After(5, timer);
+        timer.Stop();
+
+        Assert.Equal(TimeSpan.FromMinutes(1 + 2), Assert.Single(_visits).Spent);
+    }
+
+    [Fact]
     public void Going_to_GitHub_stops_the_clock_until_the_next_key()
     {
         var timer = Timer();

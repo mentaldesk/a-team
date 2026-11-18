@@ -20,8 +20,8 @@ has, and with nothing recorded yet the title shows only what's waiting.
 
 *Of yours* is the time you spent in Work in the last 7 days, and *per hour* what you accepted for
 each hour of it. a-team times you only here, never on GitHub, and only while you're there: between
-cards it stops counting 15 seconds after your last key, and on a card 2 minutes after it, until the
-next one. Opening a card on GitHub (`g`) stops the clock until your next key in Work. Time with a
+cards it stops counting 15 seconds after your last key, and on a card or in a report 2 minutes after
+it, until the next one. Opening a card on GitHub (`g`) stops the clock until your next key in Work. Time with a
 card's reader open, commenting included, counts against that card, and a try counts in full, up to
 30 minutes. Time in Work with no reader open counts as *other* for the team whose lane is selected.
 Time in Overseer doesn't count. Neither figure shows until some time has been recorded.

@@ -26,8 +26,8 @@ public sealed record Visit(string Team, int? Item, string Gate, DateTimeOffset A
 
 /// <summary>Times what you spend in Work: each card from opening its reader to closing it, or for the whole of a try
 /// started from it, and the time between cards as <see cref="Other"/> for the selected lane's team, split by what it went
-/// on. With no key for <see cref="IdleOnCard"/> on a card or <see cref="IdleBetweenCards"/> between them, or once you've
-/// gone to GitHub, time stops counting until the next one.</summary>
+/// on. With no key for <see cref="IdleOnCard"/> on a card or in a report, or <see cref="IdleBetweenCards"/> elsewhere between
+/// cards, or once you've gone to GitHub, time stops counting until the next one.</summary>
 public sealed class Attention(TimeProvider clock, Action<Visit> record)
 {
     public const string Other = "Other";
@@ -142,7 +142,7 @@ public sealed class Attention(TimeProvider clock, Action<Visit> record)
     private void Accrue(DateTimeOffset now)
     {
         if (_stretch is { } stretch && !_away)
-            stretch.Spent += Min(now - _last, stretch.Item is null ? IdleBetweenCards : IdleOnCard);
+            stretch.Spent += Min(now - _last, stretch.Item is null && stretch.Doing != Reports ? IdleBetweenCards : IdleOnCard);
         _last = now;
     }
 
