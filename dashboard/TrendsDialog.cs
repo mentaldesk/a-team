@@ -56,7 +56,7 @@ public sealed class TrendsDialog : DashboardDialog
             X = Pos.AnchorEnd(GatesWide + Inset),
             Y = 2,
             Width = GatesWide,
-            Height = TeamRecord.Gates.Length + 4,
+            Height = TeamRecord.SpentRows.Length + 4,
             CanFocus = false,
             FullRowSelect = false,
             Visible = false,
@@ -174,7 +174,7 @@ public sealed class TrendsDialog : DashboardDialog
     private const int Wide = 120;
 
     /// <summary>The split by gate: its row names, then a column of minutes per team.</summary>
-    private int GatesWide => "This week".Length + 2 + _teams.Sum(team => Math.Max(team.Team.Length, "10h 00m".Length) + 1);
+    private int GatesWide => TeamRecord.SpentRows.Max(row => row.Label.Length) + 2 + _teams.Sum(team => Math.Max(team.Team.Length, "10h 00m".Length) + 1);
 
     private void Loaded(Reading[]? readings)
     {
@@ -213,10 +213,11 @@ public sealed class TrendsDialog : DashboardDialog
         });
         for (var column = 1; column < 12; column++)
             _table.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
-        var gates = new Dictionary<string, Func<string, object>> { ["This week"] = gate => gate };
+        var gates = new Dictionary<string, Func<SpentRow, object>> { ["This week"] = row => row.Label };
         foreach (var (team, record) in _teams.Zip(_records))
-            gates[team.Team] = gate => record.SpentInWeek(_now, gate) is { } spent ? Visit.Duration(spent) : "–";
-        _gates.Table = new EnumerableTableSource<string>(TeamRecord.Gates, gates);
+            gates[team.Team] = row => record.SpentInWeek(_now, row) is { } spent && (row.Doing is null || spent > TimeSpan.Zero)
+                ? Visit.Duration(spent) : "–";
+        _gates.Table = new EnumerableTableSource<SpentRow>(TeamRecord.SpentRows, gates);
         for (var column = 1; column <= _teams.Count; column++)
             _gates.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
         _legend.Entries = [.. _teams.Select((team, i) => (Cell(i), team.Team))];

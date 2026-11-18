@@ -37,11 +37,63 @@ public partial class WorkAreaTests
         attention.Key();
         window.Commands.Execute("view.work");
         window.Refresh();
-        clock.Now += TimeSpan.FromMinutes(1);
+        clock.Now += TimeSpan.FromSeconds(10);
         attention.Stop();
 
-        Assert.Equal([("team0", (int?)null, "Other", 3.0), ("team0", null, "Other", 1.0)],
-            visits.Select(visit => (visit.Team, visit.Item, visit.Gate, visit.Spent.TotalMinutes)));
+        Assert.Equal([("team0", (int?)null, "Other", Attention.Finding, 15.0), ("team0", null, "Other", Attention.Finding, 10.0)],
+            visits.Select(visit => (visit.Team, visit.Item, visit.Gate, visit.What, visit.Spent.TotalSeconds)));
+    }
+
+    [Fact]
+    public void g_from_a_column_stops_the_clock_until_the_next_key()
+    {
+        var clock = new Clock();
+        var visits = new List<Visit>();
+        var attention = new Attention(clock, visits.Add);
+        using var window = Open(clock: clock, attention: attention);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        window.NewKeyDownEvent(Key.CursorRight);
+
+        clock.Now += TimeSpan.FromSeconds(5);
+        attention.Key();
+        window.Commands.Execute("work.github");
+        clock.Now += TimeSpan.FromSeconds(10);
+        attention.Key();
+        clock.Now += TimeSpan.FromSeconds(4);
+        attention.Stop();
+
+        Assert.Equal(TimeSpan.FromSeconds(5 + 4), Assert.Single(visits).Spent);
+    }
+
+    [Fact]
+    public void Time_in_Trends_is_Reports_and_back_in_Work_it_is_Finding_a_card_again()
+    {
+        var clock = new Clock();
+        var visits = new List<Visit>();
+        var attention = new Attention(clock, visits.Add);
+        DashboardWindow? shown = null;
+        using var window = Open(clock: clock, attention: attention, showTrends: _ =>
+        {
+            clock.Now += TimeSpan.FromSeconds(8);
+            attention.Key();
+            shown!.Refresh();
+            clock.Now += TimeSpan.FromSeconds(6);
+            attention.Key();
+        });
+        shown = window;
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        clock.Now += TimeSpan.FromSeconds(3);
+        attention.Key();
+        window.Commands.Execute("trends");
+        clock.Now += TimeSpan.FromSeconds(2);
+        attention.Key();
+        attention.Stop();
+
+        Assert.Equal([(Attention.Finding, 3), (Attention.Reports, 14), (Attention.Finding, 2)],
+            visits.Select(visit => (visit.What, (int)visit.Spent.TotalSeconds)));
     }
 
     [Fact]

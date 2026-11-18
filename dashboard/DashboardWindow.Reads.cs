@@ -19,7 +19,7 @@ public sealed partial class DashboardWindow
 {
     public void Refresh()
     {
-        _attention.Browsing(_area == Area.Work ? _work.Current?.Team : null);
+        Browse();
         Settle();
         SettleWrites();
         SettleTeamReads();
@@ -53,6 +53,27 @@ public sealed partial class DashboardWindow
         ShowAsking();
         _menu.Refresh();
         ShowMessage();
+    }
+
+    private void Browse() => _attention.Browsing(_area == Area.Work ? _work.Current?.Team : null, Doing);
+
+    /// <summary>What the time between cards goes on: what <see cref="While"/> opened, or anything else open over Work.</summary>
+    private string Doing => _doing ?? (App?.TopRunnableView is { } top && top != this ? Attention.Elsewhere : Attention.Finding);
+
+    private void While(string doing, Action open)
+    {
+        var was = _doing;
+        _doing = doing;
+        Browse();
+        try
+        {
+            open();
+        }
+        finally
+        {
+            _doing = was;
+            Browse();
+        }
     }
 
     private void RefreshWatches(DateTimeOffset now)

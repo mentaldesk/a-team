@@ -228,7 +228,9 @@ internal sealed partial class Board
                       WHERE team = {{TeamQ}} AND at > {{SqlNow("-45 days")}} ORDER BY at, id)) AS moves,
                     (SELECT ROUND(COALESCE(SUM(cost), 0), 2) FROM runs WHERE team = {{TeamQ}} AND started > {{SqlNow("-7 days")}}) AS cost,
                     (SELECT MIN(at) FROM spent WHERE team = {{TeamQ}}) AS spentSince,
-                    (SELECT json_group_array(json_object('at', at, 'seconds', seconds, 'gate', gate)) FROM (SELECT at, seconds, gate
+                    (SELECT json_group_array(json(CASE WHEN item IS NULL AND what <> ''
+                        THEN json_object('at', at, 'seconds', seconds, 'gate', gate, 'doing', what)
+                        ELSE json_object('at', at, 'seconds', seconds, 'gate', gate) END)) FROM (SELECT item, at, seconds, gate, what
                       FROM spent WHERE team = {{TeamQ}} AND at > {{SqlNow("-15 days")}} ORDER BY at)) AS spent,
                     {{SqlNow("-15 days")}} AS fortnight,
                     (SELECT json_group_array(json_object('item', item, 'at', at, 'who', who, 'what', what)) FROM (SELECT * FROM events

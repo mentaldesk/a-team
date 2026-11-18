@@ -19,17 +19,22 @@ installed: until it has a week's record the comparison is left out and *accepted
 has, and with nothing recorded yet the title shows only what's waiting.
 
 *Of yours* is the time you spent in Work in the last 7 days, and *per hour* what you accepted for
-each hour of it. a-team times you only here, never on GitHub, and only while you're active: after 5
-minutes with no key pressed it stops counting until the next one. Time with a card's reader open,
-commenting included, counts against that card, and a try counts in full, up to 30 minutes. Time in
-Work with no reader open counts as *other* for the team whose lane is selected. Time in
-Overseer doesn't count. Neither figure shows until some time has been recorded.
+each hour of it. a-team times you only here, never on GitHub, and only while you're there: between
+cards it stops counting 15 seconds after your last key, and on a card 2 minutes after it, until the
+next one. Opening a card on GitHub (`g`) stops the clock until your next key in Work. Time with a
+card's reader open, commenting included, counts against that card, and a try counts in full, up to
+30 minutes. Time in Work with no reader open counts as *other* for the team whose lane is selected.
+Time in Overseer doesn't count. Neither figure shows until some time has been recorded.
 
 To compare the teams day by day, open **Trends** in Commands (`Ctrl+E`). It charts the last 14 days,
 one line per team, for what was waiting on you, what you accepted each day, the hours to accept:
 the median time the tasks you accepted that day took from first entering Ready, or **Your time**,
 in minutes a day. With *Your time* chosen, a table beside the legend splits this week's time by gate:
-Triage, Pitches, Blocked, Review and Other.
+Triage, Pitches, Blocked, Review and Other. Under Other, three rows say what the time between cards
+went on: **Finding a card** is moving between cards, columns and team tabs, *Go to team…* and
+*What's new*; **Reports** is Trends, Spending and Decisions; **Settings & other** is Settings,
+Commands and anything else. Other is their total, plus time recorded before the split, which
+shows under Other alone.
 `Left`/`Right` switch between them. Days before a team's record began are left blank,
 and so are days with nothing accepted when charting hours. Underneath, a table lists each team's
 waiting now and a week ago, what you accepted in the last 7 days, what its runs cost in that time,

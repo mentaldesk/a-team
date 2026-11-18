@@ -193,8 +193,38 @@ public class TrendsDialogTests
         Assert.True(dialog.Gates.Visible);
         Assert.Equal(["This week", "a-team", "tuicode"], dialog.Gates.Table!.ColumnNames);
         Assert.Equal(
-            [["Triage", "10m", "–"], ["Pitches", "0m", "–"], ["Blocked", "0m", "–"], ["Review", "25m", "–"], ["Other", "5m", "–"]],
-            Enumerable.Range(0, 5).Select(row => Cells(dialog.Gates, row, 0, 1, 2)));
+            [["Triage", "10m", "–"], ["Pitches", "0m", "–"], ["Blocked", "0m", "–"], ["Review", "25m", "–"], ["Other", "5m", "–"],
+             ["  Finding a card", "–", "–"], ["  Reports", "–", "–"], ["  Settings & other", "–", "–"]],
+            Enumerable.Range(0, 8).Select(row => Cells(dialog.Gates, row, 0, 1, 2)));
+    }
+
+    private const string Split = """
+        {"since": "2026-09-20T00:00:00Z", "queue": [], "cycles": [], "cost": 0, "accepted": [],
+         "spentSince": "2026-10-06T09:00:00Z",
+         "spent": [{"at": "2026-10-08T08:00:00Z", "seconds": 300, "gate": "Other"},
+                   {"at": "2026-10-08T09:00:00Z", "seconds": 60, "gate": "Other", "doing": "Finding a card"},
+                   {"at": "2026-10-08T09:01:00Z", "seconds": 240, "gate": "Other", "doing": "Reports"},
+                   {"at": "2026-10-08T09:05:00Z", "seconds": 60, "gate": "Other", "doing": "Finding a card"},
+                   {"at": "2026-10-08T09:06:00Z", "seconds": 120, "gate": "Review"}]}
+        """;
+
+    private const string Finding = """
+        {"since": "2026-09-20T00:00:00Z", "queue": [], "cycles": [], "cost": 0, "accepted": [],
+         "spentSince": "2026-10-06T09:00:00Z",
+         "spent": [{"at": "2026-10-08T09:00:00Z", "seconds": 180, "gate": "Other", "doing": "Finding a card"}]}
+        """;
+
+    [Fact]
+    public void Other_splits_into_what_the_time_between_cards_went_on_and_still_totals_it()
+    {
+        using var dialog = Open(("a-team", 4, Split), ("tuicode", null, Finding));
+
+        dialog.Measure.Value = 3;
+
+        Assert.Equal(
+            [["Other", "11m", "3m"], ["  Finding a card", "2m", "3m"], ["  Reports", "4m", "–"], ["  Settings & other", "–", "–"]],
+            Enumerable.Range(4, 4).Select(row => Cells(dialog.Gates, row, 0, 1, 2)));
+        Assert.Equal(["Review", "2m", "0m"], Cells(dialog.Gates, 3, 0, 1, 2));
     }
 
     [Fact]

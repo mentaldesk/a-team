@@ -314,7 +314,7 @@ same "built by, unapproved" "[false,false]" "$(finished_of)"
 case_ "spent records your time on a card, or between cards, for History, trend and trends"
 rm -f "$A_TEAM_STATE/history.db"
 d9=$(ago $((60 * 24 * 9))) d16=$(ago $((60 * 24 * 16))) m90=$(ago 90) m30=$(ago 30)
-for visit in "7 $d16 600 Pitches read" "7 $d9 120 Pitches commented" "8 $m90 372 Review tried,_accepted" "- $m30 300 Other _"; do
+for visit in "7 $d16 600 Pitches read" "7 $d9 120 Pitches commented" "8 $m90 372 Review tried,_accepted" "- $m30 300 Other _" "- $m30 20 Other Reports"; do
   read -r n at seconds gate what <<<"${visit//_/ }"
   run board demo spent you "$n" "$at" "$seconds" "$gate" "${what# }"
   same "exit $n $gate" 0 "$STATUS"
@@ -323,8 +323,8 @@ cp "$TEAM" "$CONFIG/teams/other.json"
 A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board other spent you 8 "$m30" 60 Review read >/dev/null
 run board demo history 8
 same "history" "[{\"at\":\"$m90\",\"who\":\"you\",\"what\":\"tried, accepted\",\"spent\":372}]" "$(jq -c .events "$OUT")"
-same "trend" '{"spentSince":"'"$d16"'","spent":672}' "$(trend | jq -c '{spentSince, spent}')"
-same "trends" '{"spentSince":"'"$d16"'","spent":[{"at":"'"$d9"'","seconds":120,"gate":"Pitches"},{"at":"'"$m90"'","seconds":372,"gate":"Review"},{"at":"'"$m30"'","seconds":300,"gate":"Other"}]}' \
+same "trend" '{"spentSince":"'"$d16"'","spent":692}' "$(trend | jq -c '{spentSince, spent}')"
+same "trends" '{"spentSince":"'"$d16"'","spent":[{"at":"'"$d9"'","seconds":120,"gate":"Pitches"},{"at":"'"$m90"'","seconds":372,"gate":"Review"},{"at":"'"$m30"'","seconds":300,"gate":"Other"},{"at":"'"$m30"'","seconds":20,"gate":"Other","doing":"Reports"}]}' \
   "$(trends | jq -c '{spentSince, spent}')"
 
 case_ "only your own time is recorded, at a gate, and a dry run records none"

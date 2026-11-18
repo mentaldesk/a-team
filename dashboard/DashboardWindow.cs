@@ -98,6 +98,7 @@ public sealed partial class DashboardWindow : Window
     private DateTimeOffset _readingAsked;
     private NewItem? _goingTo;
     private Area _area;
+    private string? _doing;
     private readonly WriteQueue _writes;
     private readonly Func<Write?, IReadOnlyList<Write>, bool> _confirmQuit;
     private WaitingItem? _approvable;
