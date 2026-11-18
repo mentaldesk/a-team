@@ -636,6 +636,7 @@ internal sealed partial class Board
         if (asked.Length > 0)
         {
             shown["turn"] = role;
+            shown["handed"] = asked;
             shown["reason"] = $"answering your feedback{Since(asked)}";
             if (Answered(role, theirs, asked)) shown["answered"] = true;
         }
@@ -664,11 +665,14 @@ internal sealed partial class Board
         && (trouble is "CI running" or "resolving mergeable status" or "green, about to merge"
             || trouble.StartsWith("behind ", StringComparison.Ordinal) || trouble.EndsWith(" is red", StringComparison.Ordinal));
 
-    /// <summary>A turn that names a role nothing will start a run for is the stakeholder's instead, saying what's stuck.</summary>
-    internal static void Settle(JsonObject item, string repo, Func<string, long, bool> covered)
+    /// <summary>A turn that names a role nothing will start a run for is the stakeholder's instead, saying what's stuck, unless a
+    /// stakeholder handed it over less than <paramref name="grace"/> seconds ago, before the dispatcher could ask its triggers.</summary>
+    internal static void Settle(JsonObject item, string repo, Func<string, long, bool> covered, long grace = 0, long? now = null)
     {
         var role = Json.Text(item["turn"]);
         if (role is null || !StatusRoute.Roles.Contains(role) || ClearsItself(item) || covered(role, Json.Long(item["number"]))) return;
+        if (grace > 0 && Json.Text(item["handed"]) is { Length: > 0 } handed
+            && (now ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds()) - Epoch(handed) < grace) return;
         var stuck = Json.Truthy(item["answered"])
             ? $"{role} answered on {repo[(repo.LastIndexOf('/') + 1)..]}#{Raw(item["number"])}"
             : $"{role}: {Json.Text(item["reason"])}";
@@ -676,6 +680,24 @@ internal sealed partial class Board
         item["stuck"] = true;
         item["reason"] = $"{stuck}, but nothing will start a run for it";
     }
+
+    /// <summary>Two dispatcher passes, the time a turn just handed to a role counts as covered, or none while the team's dispatch is off.</summary>
+    internal long HandOverGrace => Text("dispatch", "enabled") == "true" ? 2 * DispatchInterval() : 0;
+
+    private static long DispatchInterval()
+    {
+        try
+        {
+            return Json.Parse(File.ReadAllText(Path.Combine(State, "dispatcher.json")))?["interval"] is JsonValue value
+                && value.TryGetValue<long>(out var seconds) && seconds > 0 ? seconds : DefaultInterval;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return DefaultInterval;
+        }
+    }
+
+    private const long DefaultInterval = 120;
 
     /// <summary>Whether a run of the role will come to #n: its triggers last woke for it, on this repo from any team, a
     /// run of it is on it now, or its runs fill every slot, when the dispatcher doesn't ask its triggers.</summary>
@@ -728,6 +750,7 @@ internal sealed partial class Board
             shown["question"] = Regex.Replace(Json.Text(asked["body"]) ?? "", @"\s*<!-- a-team:dev -->\s*$", "");
             shown["unread"] = Newest(replies.Where(c => !WasRead(c))) ?? "";
             shown["turn"] = replied.Length > 0 ? "dev" : "you";
+            if (replied.Length > 0) shown["handed"] = replied;
             shown["reason"] = replied.Length > 0 ? $"reading your answer{Since(replied)}" : $"asked you{Since(at ?? "")}";
             questions.Add(shown);
         }
@@ -778,6 +801,7 @@ internal sealed partial class Board
             shown["question"] = Regex.Replace(Json.Text(lead["body"]) ?? "", @"\s*<!-- a-team:lead -->\s*$", "");
             shown["unread"] = Newest(replies.Where(c => !WasRead(c))) ?? "";
             shown["turn"] = replied.Length > 0 ? "lead" : "you";
+            if (replied.Length > 0) shown["handed"] = replied;
             shown["reason"] = replied.Length > 0 ? $"reading your answer{Since(replied)}" : $"held by the Lead{Since(at ?? "")}";
         }
         else if (theirs.Count > 0)
@@ -1245,8 +1269,9 @@ internal sealed partial class Board
         waiting.AddRange(UnrankedIdeas(all, said));
         waiting.AddRange(upstream);
         var woken = Woken();
+        var grace = HandOverGrace;
         foreach (var item in waiting)
-            Settle(item, _repo, woken);
+            Settle(item, _repo, woken, grace);
         var frees = detail?["frees"] as JsonObject ?? [];
         var unticked = UntickedOn(talk);
         foreach (var item in waiting)
