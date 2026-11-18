@@ -34,8 +34,8 @@ public class ReaderReviewTests
         return dialog;
     }
 
-    private static ReaderComment Commenting(ReaderCommand? fix = null, ReaderReview? review = null) =>
-        new(new Key('c'), "comment", _ => System.Threading.Tasks.Task.FromResult<string?>(null), Fix: fix, Review: review);
+    private static ReaderComment Commenting(ReaderCommand? fix = null, ReaderReview? review = null, ReaderTabs? tabs = null) =>
+        new(new Key('c'), "comment", _ => System.Threading.Tasks.Task.FromResult<string?>(null), Fix: fix, Review: review, Tabs: tabs);
 
     private static string Text(LogView log) => string.Join('\n', log.Lines.Select(line => line.Text));
 
@@ -230,7 +230,6 @@ public class ReaderReviewTests
         Assert.True(dialog.NewKeyDownEvent(new Key('h')));
         Assert.True(dialog.HistoryShown);
         Assert.False(dialog.ReviewInFront);
-
     }
 
     [Fact]
@@ -282,16 +281,16 @@ public class ReaderReviewTests
     public void F1_lists_the_tab_keys_and_Commands_can_run_them()
     {
         using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
-        var review = new ReaderReview(new Key('v'), Key.PageDown.WithCtrl, Key.PageUp.WithCtrl);
-        using var dialog = Begun(app, Task, Reviewed(), comment: Commenting(review: review));
+        var tabs = new ReaderTabs(Key.PageDown.WithCtrl, Key.PageUp.WithCtrl);
+        using var dialog = Begun(app, Task, Reviewed(), comment: Commenting(tabs: tabs));
 
         var rows = DialogTests.Rows(DialogTests.F1(dialog));
         Assert.Contains(rows, row => row is { Keys: "Ctrl+PgDn", Label: "Next tab" });
         Assert.Contains(rows, row => row is { Keys: "Ctrl+PgUp", Label: "Previous tab" });
 
-        review.Turn!(+1);
+        tabs.Turn!(+1);
         Assert.True(dialog.ReviewInFront);
-        review.Turn!(-1);
+        tabs.Turn!(-1);
         Assert.False(dialog.ReviewInFront);
     }
 

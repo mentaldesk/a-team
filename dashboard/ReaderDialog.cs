@@ -24,14 +24,20 @@ public sealed record ReaderCommand(Key Key, string Hint, Func<bool> Run, bool En
 public sealed record ReaderComment(
     Key Key, string Hint, Func<string, Task<string?>> Post, TimeProvider? Clock = null, ReaderDecline? Decline = null,
     ReaderShelve? Shelve = null, Attaching? Attach = null, ReaderImage? Image = null, ReaderRelease? Release = null,
-    ReaderCommand? Fix = null, ReaderTick? Tick = null, ReaderCommand? Secret = null, ReaderReview? Review = null);
+    ReaderCommand? Fix = null, ReaderTick? Tick = null, ReaderCommand? Secret = null, ReaderReview? Review = null,
+    ReaderTabs? Tabs = null);
 
-/// <summary>Showing the Reviewer's review from the reader, on <paramref name="Key"/>, and switching the tabs beside the
-/// body. The reader sets <see cref="Show"/> on a reviewed task and <see cref="Turn"/> on any, for Commands to run.</summary>
-public sealed record ReaderReview(Key Key, Key? Next = null, Key? Previous = null)
+/// <summary>Showing the Reviewer's review from the reader, on <paramref name="Key"/>. The reader sets <see cref="Show"/>
+/// on a reviewed task, for Commands to run.</summary>
+public sealed record ReaderReview(Key Key)
 {
     public Action? Show { get; set; }
+}
 
+/// <summary>Switching the tabs beside the reader's body, on <paramref name="Next"/> and <paramref name="Previous"/>. The
+/// reader sets <see cref="Turn"/>, for Commands to run.</summary>
+public sealed record ReaderTabs(Key Next, Key Previous)
+{
     public Action<int>? Turn { get; set; }
 }
 
@@ -360,7 +366,7 @@ public sealed partial class ReaderDialog : DashboardDialog
                 ShowReview();
                 Offer();
             };
-        if (comment?.Review is { } turning)
+        if (comment?.Tabs is { } turning)
             turning.Turn = by =>
             {
                 Turn(by);
@@ -714,8 +720,8 @@ public sealed partial class ReaderDialog : DashboardDialog
         if (_comment?.Tick is not null && _text.Checklist is not null)
             Bind(TickId, Key.Space, "Tick", Tick, () => Reads() && _ranks is null && _scrolled == _body && CriterionAtCaret() is not null);
         Bind(HistoryId, new Key('h'), "Show history", ToggleHistory, () => Reads() && _ranks is null);
-        Bind(NextTabId, _comment?.Review?.Next ?? Key.PageDown.WithCtrl, "Next tab", () => Turn(+1), () => Reads() && _ranks is null);
-        Bind(PreviousTabId, _comment?.Review?.Previous ?? Key.PageUp.WithCtrl, "Previous tab", () => Turn(-1), () => Reads() && _ranks is null);
+        Bind(NextTabId, _comment?.Tabs?.Next ?? Key.PageDown.WithCtrl, "Next tab", () => Turn(+1), () => Reads() && _ranks is null);
+        Bind(PreviousTabId, _comment?.Tabs?.Previous ?? Key.PageUp.WithCtrl, "Previous tab", () => Turn(-1), () => Reads() && _ranks is null);
         Bind("reader.previousRemark", Key.CursorUp.WithAlt, "Previous remark", () => ToRemark(-1), () => Reads() && _scrolled == _body);
         Bind("reader.nextRemark", Key.CursorDown.WithAlt, "Next remark", () => ToRemark(+1), () => Reads() && _scrolled == _body);
         Bind(CopyId, Key.C.WithCtrl, "Copy", Copy, Reads);
