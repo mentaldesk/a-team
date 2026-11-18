@@ -378,6 +378,166 @@ public partial class WorkAreaTests
 
     /// <summary>Each board write it's asked for, left running until the test finishes it.</summary>
     /// <summary>Each write waits on its own <see cref="Finishes"/> entry, except one given a result up front.</summary>
+    [Theory]
+    [InlineData("approve", 107, "Approving #107…")]
+    [InlineData("decline", 107, "Declining #107…")]
+    [InlineData("shelve", 107, "Shelving #107…")]
+    [InlineData("rank", 6, "Setting #6 to High…")]
+    public void A_decision_takes_its_card_off_Work_before_the_board_has_taken_it(string decision, int number, string doing)
+    {
+        var writes = new Writes();
+        using var window = OpenDeciding(writes, decision);
+        var cards = window.Work.Lanes[0].Count;
+
+        Decide(window, decision);
+
+        Assert.Single(writes.Calls);
+        Assert.Equal(cards - 1, window.Work.Lanes[0].Count);
+        Assert.DoesNotContain(window.Work.Lanes[0].Columns, column => column.CardText.Any(text => text.Contains($"#{number} ")));
+        Assert.Equal(decision == "rank" ? 107 : 108, window.Work.Selected?.Number);
+        Assert.Equal(doing, window.Status.RestingText);
+    }
+
+    [Fact]
+    public void A_read_while_the_write_runs_keeps_the_card_off_and_one_after_it_shows_the_board()
+    {
+        var writes = new Writes();
+        using var window = OpenDeciding(writes, "approve");
+        Decide(window, "approve");
+
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.DoesNotContain(window.Work.Items, item => item.Number == 107);
+
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+        Assert.DoesNotContain(window.Work.Items, item => item.Number == 107);
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+
+        Assert.Contains(window.Work.Items, item => item.Number == 107);
+    }
+
+    [Fact]
+    public void A_read_that_started_before_the_board_took_the_decision_doesn_t_bring_the_card_back()
+    {
+        var writes = new Writes();
+        var reads = new List<TaskCompletionSource<Reading>>();
+        using var window = OpenDeciding(writes, "approve", read: team =>
+        {
+            if (team != "team0" || reads.Count == 0 && writes.Calls.Count == 0)
+                return Task.FromResult(new Reading(team == "team0" ? Waiting(team) : "[]", null));
+            var read = new TaskCompletionSource<Reading>();
+            reads.Add(read);
+            return read.Task;
+        });
+        Decide(window, "approve");
+        window.Commands.Execute("work.refresh");
+        window.Refresh();
+        var stale = Assert.Single(reads);
+
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+        stale.SetResult(new Reading(Waiting("team0"), null));
+        window.Refresh();
+
+        Assert.DoesNotContain(window.Work.Items, item => item.Number == 107);
+        Assert.Equal(2, reads.Count);
+    }
+
+    [Fact]
+    public void Back_from_a_try_a_decision_still_running_keeps_its_card_off_Work()
+    {
+        var writes = new Writes();
+        var queue = new WriteQueue(writes.Run);
+        using var first = OpenDeciding(writes, "approve", queue);
+        Decide(first, "approve");
+        var items = WaitingItem.Parse(Waiting("team0"));
+        Assert.Contains(items, item => item.Number == 107);
+
+        using var back = OpenDeciding(writes, "approve", queue, new TryHandover(items[0], false, items, DateTimeOffset.UtcNow));
+
+        Assert.DoesNotContain(back.Work.Items, item => item.Number == 107);
+    }
+
+    [Fact]
+    public void A_refused_approval_puts_the_card_back_selected_and_says_why()
+    {
+        var writes = new Writes();
+        using var window = OpenDeciding(writes, "approve");
+        Decide(window, "approve");
+        window.NewKeyDownEvent(Key.CursorLeft);
+        Assert.Equal(6, window.Work.Selected?.Number);
+
+        writes.Finishes[0].SetResult("board.sh: #107 is not Pitched");
+        window.Refresh();
+
+        Assert.Equal(107, window.Work.Selected?.Number);
+        Assert.Equal("approving #107: board.sh: #107 is not Pitched", window.Says());
+        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(108, window.Work.Selected?.Number);
+    }
+
+    [Fact]
+    public void Refusing_the_second_of_two_approvals_brings_back_only_its_card()
+    {
+        var writes = new Writes();
+        using var window = OpenDeciding(writes, "approve");
+        Decide(window, "approve");
+        Assert.Equal(108, window.Work.Selected?.Number);
+        window.NewKeyDownEvent(Key.Enter);
+        window.Refresh();
+        Assert.DoesNotContain(window.Work.Items, item => item.Number is 107 or 108);
+
+        writes.Finishes[0].SetResult(null);
+        window.Refresh();
+        writes.Finishes[1].SetResult("board.sh: #108 is not Pitched");
+        window.Refresh();
+
+        Assert.DoesNotContain(window.Work.Items, item => item.Number == 107);
+        Assert.Contains(window.Work.Items, item => item.Number == 108);
+        Assert.Equal(108, window.Work.Selected?.Number);
+    }
+
+    private DashboardWindow OpenDeciding(Writes writes, string decision, WriteQueue? queue = null, Handover? resume = null,
+        Func<string, Task<Reading>>? read = null)
+    {
+        var window = Open(
+            read: read,
+            run: writes.Run,
+            writes: queue,
+            resume: resume,
+            readBody: _ => Task.FromResult(new Reading(Body, null)),
+            showBody: (item, _, _, onApprove, _, comment, _) =>
+            {
+                if (decision == "approve")
+                    onApprove!();
+                else if (decision == "decline")
+                    Assert.Null(comment!.Decline!.Run("No.").Result);
+                else if (decision == "shelve")
+                    Assert.Null(comment!.Shelve!.Run(3, "").Result);
+            },
+            chooseRank: (_, _, _) => decision == "rank" ? Rank.High : null);
+        window.Refresh();
+        LayOut(window, 120, 30);
+        return window;
+    }
+
+    private static void Decide(DashboardWindow window, string decision)
+    {
+        if (decision == "rank")
+        {
+            window.Commands.Execute("work.priority");
+            window.Refresh();
+            return;
+        }
+        window.NewKeyDownEvent(Key.CursorRight);
+        Assert.Equal(107, window.Work.Selected?.Number);
+        window.NewKeyDownEvent(decision switch { "decline" => new Key('x'), "shelve" => new Key('l'), _ => Key.Enter });
+        window.Refresh();
+    }
+
     private sealed class Writes(params string?[] results)
     {
         internal List<string[]> Calls { get; } = [];

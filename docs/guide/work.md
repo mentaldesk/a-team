@@ -423,12 +423,13 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
 
 Approving, accepting, ranking or declining a card, and in Overseer pausing or interrupting
 an agent or asking for a vision review, never makes you wait: carry straight on to the next card.
-Each one is written to the board in the background, one at a time in the order you made them. The
-card wears `⋯` in place of its `✓` until the board has taken it, then leaves or moves as above,
-and the status bar says what's being written and how many more are queued, like
-`Merging PR #459… · 1 more queued`. Acting on that card again says it's already under way. If the
-board refuses one, the status bar says which card and why, the card stays where it was, and the
-rest still run.
+Each one is written to the board in the background, one at a time in the order you made them.
+Approving, accepting, declining, shelving or ranking moves the card the moment you confirm it, in
+Work and in Overseer, and the selection goes to the next card down. Anything else you do to a card
+leaves it wearing `⋯` in place of its `✓` until the board has taken it. The status bar says what's
+being written and how many more are queued, like `Merging PR #459… · 1 more queued`, and acting on
+a card again says it's already under way. If the board refuses one, the card comes back where it
+was, selected, the status bar says which card and why, and the rest still run.
 Quitting while some are still queued asks first: `Ctrl+Enter` quits and drops them, `Esc` stays.
 The one being written finishes either way.
 

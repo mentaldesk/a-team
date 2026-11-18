@@ -799,7 +799,8 @@ public partial class WorkAreaTests : IDisposable
         Func<string, Task<Reading>>? syncBoard = null,
         Func<WaitingItem, IReadOnlyList<string>, string?>? askFix = null,
         Func<WaitingItem, Task<bool>, Func<string, Task<string?>>, bool>? giveSecret = null,
-        GitHubSecrets? secrets = null)
+        GitHubSecrets? secrets = null,
+        WriteQueue? writes = null)
     {
         Directory.CreateDirectory(_root);
         return new DashboardWindow(
@@ -843,6 +844,7 @@ public partial class WorkAreaTests : IDisposable
                 GiveSecret = giveSecret,
                 Secrets = secrets,
                 SyncBoard = syncBoard,
+                Writes = writes,
             });
     }
 

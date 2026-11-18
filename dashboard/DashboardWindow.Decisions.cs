@@ -17,8 +17,7 @@ namespace ATeam.Dashboard;
 
 public sealed partial class DashboardWindow
 {
-    /// <summary>Approves the pitch the reader is showing once you've said so. Like a rank, the card stays put until the
-    /// board takes it. True once it's under way, or already was.</summary>
+    /// <summary>Approves the pitch the reader is showing once you've said so. True once it's under way, or already was.</summary>
     private bool Approve()
     {
         if (_approvable is not { } item)
@@ -88,8 +87,7 @@ public sealed partial class DashboardWindow
         return refused;
     }
 
-    /// <summary>Closes the item as not planned with your reason. The reader closes on it at once, and the card leaves
-    /// once the board has taken it.</summary>
+    /// <summary>Closes the item as not planned with your reason. The reader closes on it at once.</summary>
     private Task<string?> Decline(WaitingItem item, string reason)
     {
         if (_writes.Holding(Write.KeyOf(item)) is { } already)
@@ -114,7 +112,7 @@ public sealed partial class DashboardWindow
     }
 
     /// <summary>Shelves the pitch for <paramref name="weeks"/>, with your reason if you gave one. Like a decline, the
-    /// reader closes on it at once, and the card leaves once the board has taken it.</summary>
+    /// reader closes on it at once.</summary>
     private Task<string?> Shelve(WaitingItem item, int weeks, string reason)
     {
         if (_writes.Holding(Write.KeyOf(item)) is { } already)
@@ -308,11 +306,9 @@ public sealed partial class DashboardWindow
             item, rank));
     }
 
-    /// <summary>What the board took: the card moves to the column its new Priority puts it in, and the bar says so.</summary>
     private void Ranked(WaitingItem item, Rank rank)
     {
         _work.Ranked(item, rank);
-        _overseer.Ranked(item.Team, item.Number, rank);
         Announce(rank == Rank.None && item.PitchPriority.Length > 0
             ? $"#{item.Number} · now follows its pitch: {item.PitchPriority}"
             : $"#{item.Number} · set to {rank}");
@@ -364,20 +360,28 @@ public sealed partial class DashboardWindow
         var settled = _writes.Settle();
         if (settled.Count == 0)
             return;
-        _work.ShowWriting(Writing());
         foreach (var (write, failure) in settled)
             write.Outcome?.TrySetResult(failure);
         foreach (var (write, refused) in settled.Where(done => done.Failure is not { Length: > 0 }))
             Settled(write);
+        ShowWrites();
+        if (_area == Area.Work && _shown is null
+            && settled.LastOrDefault(done => done.Failure is { Length: > 0 } && Deciding.Moves(done.Write)).Write?.Item is { } back)
+            _work.Focus(back, onPr: false);
         var refusals = settled.Where(done => done.Failure is { Length: > 0 })
             .Select(done => $"{done.Write.Queued}: {done.Failure}").ToList();
         if (refusals.Count > 0)
             Announce(string.Join(" · ", refusals), Severity.Error);
     }
 
-    /// <summary>Nothing moves until the board has taken it: a refused write leaves its card as it was.</summary>
+    /// <summary>The board has taken it, so its card stays where the decision put it.</summary>
     private void Settled(Write write)
     {
+        if (Deciding.Moves(write))
+        {
+            _overseer.Decided(write);
+            ReadAgain(write.Item!.Team);
+        }
         switch (write.Kind)
         {
             case WriteKind.Accept:
@@ -414,5 +418,14 @@ public sealed partial class DashboardWindow
         }
         if (write.Item is { } card && _area == Area.Overseer)
             ReadLane(card.Team);
+    }
+
+    /// <summary>A read of <paramref name="team"/> already running may be from before the board took the decision.</summary>
+    private void ReadAgain(string team)
+    {
+        _reading?.Again(team);
+        _boarding?.Again(team);
+        if (_teamReads.ContainsKey(team))
+            _teamReads[team] = (_readWaiting(team), _clock.GetUtcNow());
     }
 }

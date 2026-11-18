@@ -32,6 +32,13 @@ internal sealed partial class TeamReads
     /// <summary>Reads <paramref name="team"/> from now, dropping a read already running, which may be from before what changed.</summary>
     internal void Restart(string team) => _left[team] = _read(team);
 
+    /// <summary>Reads <paramref name="team"/> again only where a read of it is already running.</summary>
+    internal void Again(string team)
+    {
+        if (_left.ContainsKey(team))
+            Restart(team);
+    }
+
     /// <summary>The reads that have finished since last asked, a read that threw as a failed one.</summary>
     internal IReadOnlyList<(string Team, Reading Read)> Landed()
     {

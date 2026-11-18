@@ -103,7 +103,7 @@ card on the board.
 
 A card Work is showing offers what it offers there, with the same keys: Approve, Accept, Try, Decline, Not now, as
 they apply, and the ranks under a card still to rank. After you use one the reader closes, as it does in Work, and the chip moves to its new column
-once the board has taken it. Any other card offers Comment, GitHub and Close.
+at once, or back again if the board refuses it. Any other card offers Comment, GitHub and Close.
 
 `p` opens the same reader with a row of ranks under it, **None** to **Urgent**, starting on the card's Priority, on
 any card: an Idea, a pitch or a task. `←`/`→` choose a rank and `Enter` sets it: the chip takes its new colour and moves

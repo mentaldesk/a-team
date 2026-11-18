@@ -81,7 +81,7 @@ public sealed partial class DashboardWindow
         Seen(item);
         _attention.Did("tried");
         _attention.HandOver();
-        _options.HandOver(new TryHandover(item, _work.SelectedCard is null, _work.Items, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced), From = _area });
+        _options.HandOver(new TryHandover(item, _work.SelectedCard is null, _work.Read, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced), From = _area });
     }
 
     /// <summary>Writes the document pitch's file for your editor, and hands the terminal to it.</summary>
@@ -103,7 +103,7 @@ public sealed partial class DashboardWindow
         _attention.Did("edited");
         _attention.HandOver();
         _options.HandOver(new DocumentHandover(item, document, file, EditorHandover.Command(Environment.GetEnvironmentVariable),
-            _work.SelectedCard is null, _work.Items, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced), From = _area });
+            _work.SelectedCard is null, _work.Read, _readAt, reader) { Synced = new Dictionary<string, Synced>(_synced), From = _area });
     }
 
     /// <summary>Back from a try, the cards as they were with no re-read; from an attach or the editor, Overseer. Either way, what
@@ -147,6 +147,7 @@ public sealed partial class DashboardWindow
             failure = null;
             BackToChip(edited.From, edited.Item);
         }
+        ShowWrites();
         if (_backTo is { Number: null } role)
         {
             RefreshWatches(_clock.GetUtcNow());

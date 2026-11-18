@@ -26,22 +26,21 @@ public partial class WorkAreaTests
         using var window = OpenTwoReviews(writes);
 
         window.NewKeyDownEvent(new Key('a'));
-        window.NewKeyDownEvent(Key.CursorDown);
-        window.NewKeyDownEvent(Key.CursorDown);
+        Assert.Equal(50, window.Work.Selected?.Number);
         window.NewKeyDownEvent(new Key('a'));
         window.Refresh();
         LayOut(window, 120, 30);
 
         Assert.Equal(["49"], writes.Calls.Select(call => call[^1]));
         Assert.Equal("Merging PR #122… · 1 more queued", window.Says());
-        Assert.Equal(["⋯", "⋯"], window.Work.Lanes[0].Columns[3].CardIcons.Where((_, row) => row % 2 == 0).Select(icon => icon.Glyph));
+        Assert.Empty(Reviewing(window));
 
         writes.Finishes[0].SetResult(null);
         window.Refresh();
         LayOut(window, 120, 30);
 
         Assert.Equal(["49", "50"], writes.Calls.Select(call => call[^1]));
-        Assert.Equal([50], Reviewing(window));
+        Assert.Empty(Reviewing(window));
         Assert.Equal("merged PR #122", window.Says());
         Assert.Equal("Merging PR #123…", window.Status.RestingText);
 
@@ -91,24 +90,22 @@ public partial class WorkAreaTests
     }
 
     [Fact]
-    public void Accepting_a_card_already_being_merged_says_so_and_merges_it_once()
+    public void A_second_A_accepts_the_next_card_down_not_the_one_being_merged()
     {
         var writes = new Writes();
-        var asked = 0;
-        using var window = OpenTwoReviews(writes, confirmAccept: _ => ++asked > 0);
+        var asked = new List<int>();
+        using var window = OpenTwoReviews(writes, confirmAccept: item =>
+        {
+            asked.Add(item.Number);
+            return true;
+        });
 
         window.NewKeyDownEvent(new Key('a'));
         window.NewKeyDownEvent(new Key('a'));
 
-        Assert.Equal(1, asked);
+        Assert.Equal([49, 50], asked);
         Assert.Single(writes.Calls);
-        Assert.Equal("#49 is already being merged", window.Says());
-
-        writes.Finishes[0].SetResult(null);
-        window.Refresh();
-
-        Assert.Single(writes.Calls);
-        Assert.Equal([50], Reviewing(window));
+        Assert.Equal("Merging PR #122… · 1 more queued", window.Says());
     }
 
     [Fact]
@@ -183,11 +180,9 @@ public partial class WorkAreaTests
 
         window.Commands.Execute("work.priority");
         window.Refresh();
-        window.NewKeyDownEvent(Key.CursorRight);
         Assert.Equal(107, window.Work.Selected?.Number);
         window.NewKeyDownEvent(Key.Enter);
         window.Refresh();
-        window.NewKeyDownEvent(Key.CursorDown);
         Assert.Equal(108, window.Work.Selected?.Number);
         window.NewKeyDownEvent(new Key('x'));
         window.Refresh();
