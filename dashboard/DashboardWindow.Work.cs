@@ -225,8 +225,10 @@ public sealed partial class DashboardWindow
 
     private void OpenSelected()
     {
-        if (_work.SelectedUrl is { Length: > 0 } url)
-            Open(url);
+        if (_work.SelectedUrl is not { Length: > 0 } url)
+            return;
+        Open(url);
+        _attention.Away();
     }
 
     /// <summary>The team of the selected column in Work, or of the selected chip or heading in Overseer.</summary>

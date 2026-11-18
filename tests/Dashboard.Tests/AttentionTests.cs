@@ -9,14 +9,16 @@ public class AttentionTests
 
     private Attention Timer() => new(_clock, _visits.Add);
 
-    private void After(int minutes, Attention timer)
+    private void After(int minutes, Attention timer) => AfterSeconds(minutes * 60, timer);
+
+    private void AfterSeconds(int seconds, Attention timer)
     {
-        _clock.Now += TimeSpan.FromMinutes(minutes);
+        _clock.Now += TimeSpan.FromSeconds(seconds);
         timer.Key();
     }
 
     [Fact]
-    public void A_visit_counts_from_opening_the_reader_to_closing_it_and_cuts_idle_stretches_at_five_minutes()
+    public void A_visit_counts_from_opening_the_reader_to_closing_it_and_cuts_idle_stretches_at_two_minutes()
     {
         var timer = Timer();
         var opened = _clock.Now;
@@ -29,8 +31,69 @@ public class AttentionTests
         timer.Close();
 
         var visit = Assert.Single(_visits);
-        Assert.Equal(new Visit("team0", 49, "Review", opened, TimeSpan.FromMinutes(2 + 5 + 1 + 1), []), visit with { Did = [] });
+        Assert.Equal(new Visit("team0", 49, "Review", opened, TimeSpan.FromMinutes(2 + 2 + 1 + 1), []), visit with { Did = [] });
         Assert.Equal("read", visit.What);
+    }
+
+    [Fact]
+    public void A_gap_between_cards_counts_only_its_first_fifteen_seconds()
+    {
+        var timer = Timer();
+        timer.Browsing("team0");
+        AfterSeconds(10, timer);
+        After(4, timer);
+        AfterSeconds(5, timer);
+        timer.Stop();
+
+        Assert.Equal(TimeSpan.FromSeconds(10 + 15 + 5), Assert.Single(_visits).Spent);
+    }
+
+    [Fact]
+    public void Reading_a_report_counts_up_to_two_minutes_without_a_key()
+    {
+        var timer = Timer();
+        timer.Browsing("team0", Attention.Reports);
+        After(1, timer);
+        After(5, timer);
+        timer.Stop();
+
+        Assert.Equal(TimeSpan.FromMinutes(1 + 2), Assert.Single(_visits).Spent);
+    }
+
+    [Fact]
+    public void Going_to_GitHub_stops_the_clock_until_the_next_key()
+    {
+        var timer = Timer();
+        timer.Browsing("team0");
+        AfterSeconds(5, timer);
+        timer.Away();
+        _clock.Now += TimeSpan.FromSeconds(10);
+        timer.Browsing("team0", Attention.Reports);
+        AfterSeconds(10, timer);
+        AfterSeconds(3, timer);
+        timer.Stop();
+
+        Assert.Equal([(Attention.Finding, 5), (Attention.Reports, 3)], _visits.Select(visit => (visit.What, (int)visit.Spent.TotalSeconds)));
+    }
+
+    [Fact]
+    public void A_stretch_between_cards_splits_by_what_it_went_on()
+    {
+        var timer = Timer();
+        timer.Browsing("team0");
+        AfterSeconds(8, timer);
+        timer.Browsing("team0", Attention.Reports);
+        AfterSeconds(12, timer);
+        timer.Browsing("team0", Attention.Elsewhere);
+        AfterSeconds(4, timer);
+        timer.Browsing("team0");
+        AfterSeconds(2, timer);
+        timer.Stop();
+
+        Assert.Equal(
+            [(Attention.Finding, 8), (Attention.Reports, 12), (Attention.Elsewhere, 4), (Attention.Finding, 2)],
+            _visits.Select(visit => (visit.What, (int)visit.Spent.TotalSeconds)));
+        Assert.All(_visits, visit => Assert.Equal(Attention.Other, visit.Gate));
     }
 
     [Fact]
@@ -62,22 +125,22 @@ public class AttentionTests
     {
         var timer = Timer();
         timer.Browsing("team0");
-        After(3, timer);
+        AfterSeconds(3, timer);
         timer.Browsing("team1");
-        After(2, timer);
+        AfterSeconds(2, timer);
         timer.Open(Task49, "Review");
         After(1, timer);
         timer.Browsing("team1");
         timer.Close();
         timer.Browsing(null);
-        After(4, timer);
+        AfterSeconds(4, timer);
         timer.Browsing("team0");
-        After(1, timer);
+        AfterSeconds(1, timer);
         timer.Stop();
 
         Assert.Equal(
-            [("team0", (int?)null, "Other", 3), ("team1", null, "Other", 2), ("team0", 49, "Review", 1), ("team0", null, "Other", 1)],
-            _visits.Select(visit => (visit.Team, visit.Item, visit.Gate, (int)visit.Spent.TotalMinutes)));
+            [("team0", (int?)null, "Other", 3), ("team1", null, "Other", 2), ("team0", 49, "Review", 60), ("team0", null, "Other", 1)],
+            _visits.Select(visit => (visit.Team, visit.Item, visit.Gate, (int)visit.Spent.TotalSeconds)));
     }
 
     [Fact]
@@ -87,8 +150,8 @@ public class AttentionTests
             TimeSpan.FromSeconds(421.6), ["commented", "tried", "commented"]);
 
         Assert.Equal(["board", "team0", "spent", "you", "49", "2026-10-03T11:55:00Z", "421", "Review", "commented, tried"], visit.Arguments);
-        Assert.Equal(["board", "team1", "spent", "you", "-", "2026-10-03T11:55:00Z", "60", "Other", ""],
-            (visit with { Team = "team1", Item = null, Gate = "Other", Spent = TimeSpan.FromMinutes(1) }).Arguments);
+        Assert.Equal(["board", "team1", "spent", "you", "-", "2026-10-03T11:55:00Z", "60", "Other", "Reports"],
+            (visit with { Team = "team1", Item = null, Gate = "Other", Spent = TimeSpan.FromMinutes(1), Doing = Attention.Reports }).Arguments);
     }
 
     [Theory]

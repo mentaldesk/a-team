@@ -13,8 +13,15 @@ public enum TrendMeasure
 
 public sealed record QueueCount(DateTimeOffset At, int Waiting);
 
-/// <summary>A visit's worth of your time, from <paramref name="At"/>, at one of Work's gates or Other.</summary>
-public sealed record SpentTime(DateTimeOffset At, TimeSpan Spent, string Gate);
+/// <summary>A visit's worth of your time, from <paramref name="At"/>, at one of Work's gates or Other, and for time
+/// between cards what it went on, where it was recorded.</summary>
+public sealed record SpentTime(DateTimeOffset At, TimeSpan Spent, string Gate, string? Doing = null);
+
+/// <summary>A row of Trends' split of your time: a gate, or under Other what the time between cards went on.</summary>
+public sealed record SpentRow(string Gate, string? Doing = null)
+{
+    public string Label => Doing is null ? Gate : "  " + Doing;
+}
 
 /// <summary>A task's span from first entering Ready to being accepted, and how long of it waited on you.</summary>
 public sealed record Cycle(DateTimeOffset Ready, DateTimeOffset Accepted, TimeSpan WaitedOnYou)
@@ -66,6 +73,9 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
 
     public static readonly string[] Gates = [.. WorkView.Gates.Select(gate => gate.Name), Attention.Other];
 
+    public static readonly SpentRow[] SpentRows =
+        [.. Gates.Select(gate => new SpentRow(gate)), .. Attention.Doings.Select(doing => new SpentRow(Attention.Other, doing))];
+
     public static readonly TeamRecord Empty = new(null, [], [], [], 0);
 
     public static TeamRecord? Of(Reading reading) =>
@@ -106,8 +116,9 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
     public IEnumerable<Cycle> CyclesInWeek(DateTimeOffset now) => Cycles.Where(cycle => cycle.Accepted > now.AddDays(-WorkTrend.Week));
 
     /// <summary>Your time in the last 7 days, or null before timing began.</summary>
-    public TimeSpan? SpentInWeek(DateTimeOffset now, string? gate = null) => SpentSince is null ? null
-        : (Spent ?? []).Where(spent => spent.At > now.AddDays(-WorkTrend.Week) && (gate is null || spent.Gate == gate))
+    public TimeSpan? SpentInWeek(DateTimeOffset now, SpentRow? row = null) => SpentSince is null ? null
+        : (Spent ?? []).Where(spent => spent.At > now.AddDays(-WorkTrend.Week)
+                && (row is null || spent.Gate == row.Gate && (row.Doing is null || spent.Doing == row.Doing)))
             .Aggregate(TimeSpan.Zero, (sum, spent) => sum + spent.Spent);
 
     /// <summary>The last 7 days' touches, or null before the record began.</summary>
@@ -144,7 +155,8 @@ public sealed record TeamRecord(DateTimeOffset? Since, IReadOnlyList<QueueCount>
                     ? spentSince.GetDateTimeOffset() : null,
                 root.TryGetProperty("spent", out var spent) && spent.ValueKind == JsonValueKind.Array
                     ? [.. spent.EnumerateArray().Select(each => new SpentTime(each.GetProperty("at").GetDateTimeOffset(),
-                        TimeSpan.FromSeconds(each.GetProperty("seconds").GetDouble()), Gate(each.GetProperty("gate").GetString())))]
+                        TimeSpan.FromSeconds(each.GetProperty("seconds").GetDouble()), Gate(each.GetProperty("gate").GetString()),
+                        each.TryGetProperty("doing", out var doing) ? doing.GetString() : null))]
                     : [],
                 root.TryGetProperty("touches", out var touches) && touches.ValueKind == JsonValueKind.Array
                     ? [.. touches.EnumerateArray().Select(task => new Touched(task.GetProperty("accepted").GetDateTimeOffset(), task.GetProperty("touches").GetInt32()))]

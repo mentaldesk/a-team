@@ -119,7 +119,7 @@ public sealed partial class DashboardWindow
             .Register("work.fix", "Ask the Dev to fix…", () => AskFix(), new Key('f'), isEnabled: () => Fixable() is not null, onCard: true, scopes: [Regions.Work])
             .Register("work.nextTeam", () => "Next team", () => _work.MoveTeam(+1), Key.PageDown.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
             .Register("work.previousTeam", () => "Previous team", () => _work.MoveTeam(-1), Key.PageUp.WithCtrl, isEnabled: OnWork, scopes: [Regions.Work])
-            .Register("work.team", () => "Go to team…", GoToTeam, isEnabled: OnWork, menuLabel: () => "Team…", scopes: [Regions.Work])
+            .Register("work.team", () => "Go to team…", () => While(Attention.Finding, GoToTeam), isEnabled: OnWork, menuLabel: () => "Team…", scopes: [Regions.Work])
             .Register("work.new", "New idea", NewIdea, Key.N.WithCtrl, isEnabled: NewIdeaEnabled)
             .Register("work.mine", () => "Show only what's your move", ToggleOnlyMine, chord: "Ctrl+T M", isEnabled: OnWork,
                 menuLabel: () => mine[_work.OnlyMine ? 1 : 0], scopes: [Regions.Work], menuLabels: mine)
@@ -179,18 +179,18 @@ public sealed partial class DashboardWindow
                     : _cardRun is { State.Running: true } || CardHeld()),
                 menuLabel: () => UnlessStopped(interrupt[0], interrupt[1]), scopes: [Regions.Overseer, Regions.Team, Regions.Log], menuLabels: interrupt)
             .Register("dispatch.pass", "Run a dispatch pass now", PassNow)
-            .Register("commands", "Commands", OpenCommands, Key.E.WithCtrl, isEnabled: HasApp)
-            .Register("settings", "Settings", () => OpenSettings(), chord: "Ctrl+,", isEnabled: HasApp)
+            .Register("commands", "Commands", () => While(Attention.Elsewhere, OpenCommands), Key.E.WithCtrl, isEnabled: HasApp)
+            .Register("settings", "Settings", () => While(Attention.Elsewhere, OpenSettings), chord: "Ctrl+,", isEnabled: HasApp)
             .Register("teams", () => "Teams", () => OpenTeams(), isEnabled: HasApp, menuLabel: () => "_Teams", chord: "Ctrl+G T")
             .Register("teams.new", "New team", () => OpenTeams(newTeam: true), isEnabled: HasApp)
             .Register("help", () => "Show keys", OpenKeys, Key.F1, isEnabled: HasApp, menuLabel: () => "Show _keys")
             .Register("guide", "Guide", () => _showGuide(_area == Area.Work ? GuideDialog.Work : GuideDialog.Overseer))
             .Register("messages", () => "Messages", OpenMessages, isEnabled: HasApp, menuLabel: () => "Messages…")
             .Register("about", "About", OpenAbout, isEnabled: HasApp)
-            .Register("trends", "Trends", OpenTrends, isEnabled: () => _options.ShowTrends is not null)
-            .Register("spending", "Spending", OpenSpending, isEnabled: () => _options.ShowSpending is not null)
+            .Register("trends", "Trends", () => While(Attention.Reports, OpenTrends), isEnabled: () => _options.ShowTrends is not null)
+            .Register("spending", "Spending", () => While(Attention.Reports, OpenSpending), isEnabled: () => _options.ShowSpending is not null)
             .Register("decisions", () => SelectedTeam() is { } team ? $"Decisions… · {team}" : "Decisions…",
-                () => _options.ShowDecisions?.Invoke(SelectedTeam()!), isEnabled: () => _options.ShowDecisions is not null && SelectedTeam() is not null,
+                () => While(Attention.Reports, () => _options.ShowDecisions?.Invoke(SelectedTeam()!)), isEnabled: () => _options.ShowDecisions is not null && SelectedTeam() is not null,
                 menuLabel: () => "Decisions…")
             .Register("agent.collapse", () => _dispatcherOpen ? "Back from the dispatcher's log" : "Back to Overseer", Collapse, Key.Esc,
                 isEnabled: () => _dispatcherOpen || _sessionFull, menuLabel: () => "Back", scopes: [Regions.Log])
