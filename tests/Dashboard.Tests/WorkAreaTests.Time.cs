@@ -97,6 +97,74 @@ public partial class WorkAreaTests
     }
 
     [Fact]
+    public void Time_in_Settings_is_Settings_and_other_and_back_in_Work_it_is_Finding_a_card_again()
+    {
+        var clock = new Clock();
+        var visits = new List<Visit>();
+        var attention = new Attention(clock, visits.Add);
+        var theme = ThemeManager.Theme;
+        BundledThemes.Load();
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open(clock: clock, attention: attention);
+        app.Begin(window);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        clock.Now += TimeSpan.FromSeconds(3);
+        attention.Key();
+        app.AddTimeout(TimeSpan.Zero, () =>
+        {
+            clock.Now += TimeSpan.FromSeconds(7);
+            attention.Key();
+            app.RequestStop();
+            return false;
+        });
+        try
+        {
+            window.Commands.Execute("settings");
+        }
+        finally
+        {
+            BundledThemes.Apply(theme);
+        }
+        clock.Now += TimeSpan.FromSeconds(2);
+        attention.Key();
+        attention.Stop();
+
+        Assert.Equal([(Attention.Finding, 3), (Attention.Elsewhere, 7), (Attention.Finding, 2)],
+            visits.Select(visit => (visit.What, (int)visit.Spent.TotalSeconds)));
+    }
+
+    [Fact]
+    public void Time_under_any_other_dialog_over_Work_is_Settings_and_other()
+    {
+        var clock = new Clock();
+        var visits = new List<Visit>();
+        var attention = new Attention(clock, visits.Add);
+        using var app = Application.Create().Init(DriverRegistry.Names.ANSI);
+        using var window = Open(clock: clock, attention: attention);
+        app.Begin(window);
+        window.Refresh();
+        LayOut(window, 120, 30);
+
+        clock.Now += TimeSpan.FromSeconds(3);
+        attention.Key();
+        using var dialog = new Dialog();
+        var session = app.Begin(dialog);
+        window.Refresh();
+        clock.Now += TimeSpan.FromSeconds(7);
+        attention.Key();
+        app.End(session!);
+        window.Refresh();
+        clock.Now += TimeSpan.FromSeconds(2);
+        attention.Key();
+        attention.Stop();
+
+        Assert.Equal([(Attention.Finding, 3), (Attention.Elsewhere, 7), (Attention.Finding, 2)],
+            visits.Select(visit => (visit.What, (int)visit.Spent.TotalSeconds)));
+    }
+
+    [Fact]
     public void A_try_from_a_card_counts_the_whole_session_against_it_up_to_half_an_hour()
     {
         var clock = new Clock();
