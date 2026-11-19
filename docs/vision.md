@@ -180,6 +180,10 @@ borrow and what to avoid, and for newer ones.
 - **[Orca](https://github.com/stablyai/orca), [Conductor](https://www.conductor.build/),
   [Superset](https://superset.sh/)**: one developer supervising many agents. The attention cost
   we remove.
+- **[Paseo](https://github.com/getpaseo/paseo)**: one daemon running many coding agents across
+  providers, reached from desktop, web, CLI and full phone apps; agents that launch and talk to
+  other agents. How a supervisor follows the work from anywhere, which our phone-first
+  stakeholder needs.
 - **[Atoms](https://atoms.dev/), [Replit Agent](https://replit.com/),
   [Lovable](https://lovable.dev/)**: idea to app for people who don't code. Our Later customer.
 - **[GitHub Agent HQ](https://github.blog/news-insights/company-news/welcome-home-agents/),
