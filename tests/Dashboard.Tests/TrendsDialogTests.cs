@@ -151,7 +151,7 @@ public class TrendsDialogTests
     {
         using var dialog = Open(("a-team", 4, Touchy));
 
-        var names = dialog.Table.Table!.ColumnNames;
+        var names = Headers(dialog.Table);
         Assert.Equal(["With you", "First time", "Touches", "Untouched", "Yours (7d)"], names.Skip(6).Take(5));
     }
 
@@ -191,7 +191,7 @@ public class TrendsDialogTests
         dialog.Measure.Value = 3;
 
         Assert.True(dialog.Gates.Visible);
-        Assert.Equal(["This week", "a-team", "tuicode"], dialog.Gates.Table!.ColumnNames);
+        Assert.Equal(["This week", "a-team", "tuicode"], Headers(dialog.Gates));
         Assert.Equal(
             [["Triage", "10m", "–"], ["Pitches", "0m", "–"], ["Blocked", "0m", "–"], ["Review", "25m", "–"], ["Other", "5m", "–"],
              ["  Finding a card", "–", "–"], ["  Reports", "–", "–"], ["  Settings & other", "–", "–"]],
@@ -238,21 +238,54 @@ public class TrendsDialogTests
         Assert.Equal(["Other", "0m", "–"], Cells(dialog.Gates, 4, 0, 1, 2));
     }
 
-    [Fact]
-    public void The_table_still_fits_a_120_wide_terminal()
+    [Theory]
+    [InlineData(140, 12)]
+    [InlineData(120, 10)]
+    public void The_dialog_is_wide_enough_for_every_column_and_narrower_the_last_ones_drop(int terminal, int columns)
     {
-        var host = new View { Width = 120, Height = 40 };
+        var host = new View { Width = terminal, Height = 40 };
         using var dialog = Open(("a-team", 4, Timed), ("tuicode", null, Nothing));
         host.Add(dialog);
-        host.Layout(new System.Drawing.Size(120, 40));
+        host.Layout(new System.Drawing.Size(terminal, 40));
 
-        var table = dialog.Table.Table!;
-        var needed = Enumerable.Range(0, table.Columns)
-            .Sum(column => Enumerable.Range(0, table.Rows).Select(row => table[row, column].ToString()!.Length)
-                .Append(table.ColumnNames[column].Length).Max() + 1);
+        var fit = dialog.Table.RowLayout.Fit(dialog.Table.Rows, dialog.Table.Viewport.Width);
 
-        Assert.True(dialog.Table.Viewport.Width >= needed, $"{needed} wide in {dialog.Table.Viewport.Width}");
+        Assert.Equal(Headers(dialog.Table)[..columns], fit.Placed.Select(placed => placed.Column.Header));
     }
+
+    [Fact]
+    public void Wide_the_figures_and_their_headers_align_right()
+    {
+        using var dialog = Open(("a-team", 4, Recorded), ("tuicode", null, Nothing));
+
+        var fit = dialog.Table.RowLayout.Fit(dialog.Table.Rows, 120);
+
+        Assert.Equal("Team     Waiting now  A week ago", fit.Header![..32]);
+        Assert.Equal("a-team             4          12", fit.Row(dialog.Rows[0])[..32]);
+    }
+
+    [Fact]
+    public void Narrow_the_team_figures_drop_from_the_right_and_waiting_now_stays_longest()
+    {
+        using var dialog = Open(("a-team", 4, Recorded), ("tuicode", null, Nothing));
+
+        Assert.Equal(["Team", "Waiting now", "A week ago", "Accepted (7d)"], Shown(dialog.Table, 50));
+        Assert.Equal(["Team", "Waiting now"], Shown(dialog.Table, 22));
+    }
+
+    [Fact]
+    public void Narrow_the_week_by_gate_cuts_its_row_names_before_it_drops_a_team()
+    {
+        using var dialog = Open(("a-team", 4, Timed), ("tuicode", null, Nothing));
+
+        var fit = dialog.Gates.RowLayout.Fit(dialog.Gates.Rows, 30);
+
+        Assert.Equal("This week      a-team  tuicode", fit.Header);
+        Assert.Equal("  Settings &…       –        –", fit.Row(TeamRecord.SpentRows[^1]));
+    }
+
+    private static string[] Shown<T>(MentalDesk.Tui.Columns.ColumnTable<T> table, int width) =>
+        [.. table.RowLayout.Fit(table.Rows, width).Placed.Select(placed => placed.Column.Header)];
 
     public static TheoryData<int, int> NameLengths() =>
         [.. Enumerable.Range(1, 24).SelectMany(length => new[] { (length, 0), (length, 3) })];
@@ -282,6 +315,9 @@ public class TrendsDialogTests
         Assert.Equal(days, ticks);
         Assert.Equal(graph.Viewport.Width - 1, days[^1]);
     }
+
+    private static string[] Headers<T>(MentalDesk.Tui.Columns.ColumnTable<T> table) =>
+        [.. table.RowLayout.Columns.Select(column => column.Header)];
 
     private static string[] Cells(TableView table, int row, params int[] columns) =>
         [.. columns.Select(column => table.Table![row, column].ToString()!)];

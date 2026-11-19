@@ -30,6 +30,31 @@ public class DecisionsTests
     private static List<int> Ids(IEnumerable<Decision> entries) => [.. entries.Select(entry => entry.Id)];
 
     [Fact]
+    public void Wide_every_column_shows_and_the_decision_is_in_full()
+    {
+        var shown = Read().Shown("", allTeams: true, replaced: false);
+
+        var fit = DecisionRegister.Layout.Fit(shown, 120);
+
+        Assert.Equal(["Confirmed", "Who", "Kind", "Scope", "Decision", "From"], fit.Placed.Select(placed => placed.Column.Header));
+        Assert.Contains("Card commands go in the Cards menu, not the hint bar  #34", fit.Row(shown[0]));
+    }
+
+    [Fact]
+    public void Narrow_the_decision_shrinks_then_From_Confirmed_Who_and_Kind_drop_and_Scope_stays()
+    {
+        var shown = Read().Shown("", allTeams: true, replaced: false);
+
+        Assert.Equal(["Confirmed", "Who", "Kind", "Scope", "Decision"], Shown(shown, 50));
+        Assert.Equal(["Kind", "Scope", "Decision"], Shown(shown, 36));
+        Assert.Equal(["Scope", "Decision"], Shown(shown, 20));
+        Assert.Equal("all teams  Card comm…", DecisionRegister.Layout.Fit(shown, 21).Row(shown[0]));
+    }
+
+    private static string[] Shown(IReadOnlyList<Decision> shown, int width) =>
+        [.. DecisionRegister.Layout.Fit(shown, width).Placed.Select(placed => placed.Column.Header)];
+
+    [Fact]
     public void An_empty_edit_marks_Decision_keeps_the_editor_and_changes_nothing()
     {
         var changes = new List<DecisionChange>();

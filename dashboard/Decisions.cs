@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using MentalDesk.Tui.Columns;
 
 namespace ATeam.Dashboard;
 
@@ -27,7 +28,15 @@ public sealed record Decision(
 /// or the one line saying why it couldn't be read.</summary>
 public sealed record DecisionRegister(IReadOnlyList<Decision> Entries, string? Failure = null)
 {
-    public static readonly string[] Columns = ["Confirmed", "Who", "Kind", "Scope", "Decision", "From"];
+    public static readonly RowLayout<Decision> Layout = new(
+        Column<Decision>.Text("Confirmed", entry => Decision.Day(entry.Confirmed)),
+        Column<Decision>.Text("Who", entry => entry.Speaker),
+        Column<Decision>.Text("Kind", entry => entry.Kind),
+        Column<Decision>.Text("Scope", entry => entry.Scope),
+        Column<Decision>.Name("Decision", entry => entry.Shown, minWidth: 16),
+        Column<Decision>.Text("From", entry => $"#{entry.Item}"));
+
+    public static IReadOnlyList<string> Columns => [.. Layout.Columns.Select(column => column.Header)];
 
     public const string Empty = "Nothing in the register yet. The Lead adds decisions as you make them.";
 
@@ -46,8 +55,7 @@ public sealed record DecisionRegister(IReadOnlyList<Decision> Entries, string? F
             .ThenByDescending(entry => entry.Id)];
     }
 
-    public static string[] Row(Decision entry) =>
-        [Decision.Day(entry.Confirmed), entry.Speaker, entry.Kind, entry.Scope, entry.Shown, $"#{entry.Item}"];
+    public static string[] Row(Decision entry) => [.. Layout.Columns.Select(column => column.Value(entry))];
 
     /// <summary>The selected entry in full: the decision, why, where and when it was said, and what it replaced or
     /// was replaced by.</summary>

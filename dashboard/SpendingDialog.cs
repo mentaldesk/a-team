@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Globalization;
 using System.Text;
+using MentalDesk.Tui.Columns;
 using Terminal.Gui.Input;
 
 namespace ATeam.Dashboard;
@@ -12,6 +13,9 @@ public sealed class SpendingDialog : DashboardDialog
     private const int Inset = 1;
     private const int Wide = 96;
     private const int WhatWide = 40;
+    private const string Expanded = "▾ ";
+    private const string Collapsed = "▸ ";
+    private const string Leaf = "  ";
 
     private static readonly Dictionary<string, string> RoleNames = new()
     {
@@ -23,11 +27,12 @@ public sealed class SpendingDialog : DashboardDialog
     private readonly Action<string, SpendingItem>? _open;
     private readonly DateTimeOffset _now;
     private readonly OptionSelector _period;
-    private readonly TableView _table;
     private readonly Label _message;
     private readonly Label _footer;
+    private readonly HashSet<string> _expanded = [];
+    private ColumnTable<SpendingLine> _table;
     private IReadOnlyList<(string Team, TeamSpending Spending)>? _spending;
-    private TreeView<SpendingRow>? _tree;
+    private bool _shownBefore;
 
     public SpendingDialog(IReadOnlyList<string> teams, Task<Reading[]> reading, IEnumerable<string> rolesOn, DateTimeOffset now,
         Action<string, SpendingItem>? open = null)
@@ -53,31 +58,7 @@ public sealed class SpendingDialog : DashboardDialog
         _period.ValueChanged += (_, _) => Show();
         _period.KeyDown += (_, key) =>
             key.Handled = key == Key.CursorRight ? Step(+1) : key == Key.CursorLeft && Step(-1);
-        _table = new TableView
-        {
-            X = Inset,
-            Y = 2,
-            Width = Dim.Fill(Inset),
-            Height = Dim.Fill(3),
-            FullRowSelect = true,
-            Visible = false,
-            Style =
-            {
-                ShowHorizontalHeaderOverline = false,
-                ShowHorizontalBottomLine = false,
-                ShowVerticalCellLines = false,
-                ShowVerticalHeaderLines = false,
-                ExpandLastColumn = false,
-            },
-        };
-        _table.KeyDown += (_, key) =>
-        {
-            if (key == Key.Enter && SelectedRow is { Pitch: { } pitch } row)
-            {
-                _open?.Invoke(row.Team, pitch);
-                key.Handled = true;
-            }
-        };
+        _table = NewTable([]);
         _message = new Label { X = Inset, Y = 2, Width = Dim.Fill(Inset), Text = "Reading the record…" };
         _footer = new Label { X = Inset, Y = Pos.AnchorEnd(2), Width = Dim.Fill(Inset), Text = "" };
         var hint = new Button
@@ -107,7 +88,7 @@ public sealed class SpendingDialog : DashboardDialog
 
     internal OptionSelector Period => _period;
 
-    internal TableView Table => _table;
+    internal ColumnTable<SpendingLine> Table => _table;
 
     internal Label Message => _message;
 
@@ -115,17 +96,14 @@ public sealed class SpendingDialog : DashboardDialog
 
     internal IReadOnlyList<SpendingRow> Rows { get; private set; } = [];
 
-    internal IReadOnlyList<string> Columns => _table.Table?.ColumnNames ?? [];
+    internal IReadOnlyList<string> Columns => [.. _table.RowLayout.Columns.Select(column => column.Header)];
 
     internal bool HasClosed { get; private set; }
 
-    internal SpendingRow? SelectedRow =>
-        _tree is not null && _table.Table is { Rows: > 0 } && _table.Value?.SelectedCell.Y is { } y && y >= 0 && y < _table.Table.Rows
-            ? ((TreeTableSource<SpendingRow>)_table.Table).GetObjectOnRow(y)
-            : null;
+    internal SpendingRow? SelectedRow => _table.Visible ? _table.SelectedRow?.Row : null;
 
     /// <summary>The rows as they're shown, expanded or not.</summary>
-    internal IReadOnlyList<SpendingRow> Shown => _table.Table is TreeTableSource<SpendingRow> source ? [.. source.GetAllObjects()] : [];
+    internal IReadOnlyList<SpendingRow> Shown => [.. _table.Rows.Select(line => line.Row)];
 
     private void Loaded(Reading[]? readings)
     {
@@ -164,43 +142,94 @@ public sealed class SpendingDialog : DashboardDialog
             _period.SetFocus();
             return;
         }
+        if (!_shownBefore)
+            _expanded.Add(PlaceOf(Rows[0], ""));
+        _shownBefore = true;
         var roles = Spending.Roles(_rolesOn, Rows);
-        var columns = new Dictionary<string, Func<SpendingRow, object>> { ["Runs"] = row => row.Runs.ToString(CultureInfo.InvariantCulture) };
-        foreach (var role in roles)
-            columns[RoleNames[role]] = row => Money(row.Spent(role));
-        columns["Total $"] = row => Money(row.Total);
-
-        var old = _table.Table as IDisposable;
-        _tree = new TreeView<SpendingRow>(new DelegateTreeBuilder<SpendingRow>(row => row.Children, row => row.Children.Count > 0))
-        {
-            AspectGetter = row => Fit(row.Label, WhatWide - 2 * Depth(row)),
-        };
-        _tree.Style.ShowBranchLines = false;
-        _tree.Style.ExpandableSymbol = (Rune)'▸';
-        _tree.Style.CollapseableSymbol = (Rune)'▾';
-        _tree.AddObjects(Rows);
-        _tree.Expand(Rows[0]);
-        _table.Style.ColumnStyles.Clear();
-        _table.Style.GetOrCreateColumnStyle(0).MinWidth = WhatWide;
-        for (var column = 1; column <= columns.Count; column++)
-            _table.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
-        _table.Table = new TreeTableSource<SpendingRow>(_table, "What", _tree, columns);
-        old?.Dispose();
+        var selected = _table.SelectedRow?.Key;
+        if (!_table.RowLayout.Columns.Skip(3).Select(column => column.Header).SequenceEqual(roles.Select(role => RoleNames[role])))
+            Replace(NewTable(roles));
+        Lay(selected);
         _message.Visible = false;
         _table.Visible = true;
+    }
+
+    private ColumnTable<SpendingLine> NewTable(IReadOnlyList<string> roles)
+    {
+        var columns = new List<Column<SpendingLine>>
+        {
+            Column<SpendingLine>.Name("What", line => line.Text, minWidth: 20) with { Width = WhatWide },
+            Column<SpendingLine>.Number("Total $", line => Money(line.Row.Total)),
+            Column<SpendingLine>.Number("Runs", line => line.Row.Runs.ToString(CultureInfo.InvariantCulture)),
+        };
+        columns.AddRange(roles.Select(role => Column<SpendingLine>.Number(RoleNames[role], line => Money(line.Row.Spent(role)))));
+        var table = new ColumnTable<SpendingLine>(new RowLayout<SpendingLine>(columns), [])
+        {
+            X = Inset,
+            Y = 2,
+            Width = Dim.Fill(Inset),
+            Height = Dim.Fill(3),
+            Visible = false,
+        };
+        table.KeyDown += (_, key) => key.Handled = Pressed(key);
+        return table;
+    }
+
+    private void Replace(ColumnTable<SpendingLine> table)
+    {
+        var focused = _table.HasFocus;
+        Remove(_table);
+        _table.Dispose();
+        _table = table;
+        _table.Visible = true;
+        Add(_table);
+        if (focused)
+            _table.SetFocus();
+    }
+
+    private bool Pressed(Key key)
+    {
+        if (_table.SelectedRow is not { } line)
+            return false;
+        if (key == Key.Enter)
+        {
+            if (line.Row.Pitch is { } pitch)
+                _open?.Invoke(line.Row.Team, pitch);
+            return line.Row.Pitch is not null;
+        }
+        if (key == Key.CursorRight && line.Row.Children.Count > 0 && _expanded.Add(line.Key))
+            Lay(line.Key);
+        else if (key == Key.CursorLeft && _expanded.Remove(line.Key))
+            Lay(line.Key);
+        return key == Key.CursorRight || key == Key.CursorLeft;
+    }
+
+    /// <summary>Lists the expanded rows, keeping the selection on the row with the same place in the tree.</summary>
+    private void Lay(string? selected)
+    {
+        var lines = new List<SpendingLine>();
+        foreach (var row in Rows)
+            Flatten(row, "", 0, lines);
+        _table.Rows = lines;
+        var at = lines.FindIndex(line => line.Key == selected);
+        _table.Value = new TableSelection(new Point(0, Math.Max(0, at)));
         _table.SetNeedsDraw();
     }
 
-    private static int Depth(SpendingRow row) => row.Kind switch
+    private void Flatten(SpendingRow row, string parent, int depth, List<SpendingLine> lines)
     {
-        SpendingKind.Team => 0,
-        SpendingKind.Pitch => 2,
-        _ => 1,
-    };
+        var key = PlaceOf(row, parent);
+        var open = _expanded.Contains(key);
+        var symbol = row.Children.Count == 0 ? Leaf : open ? Expanded : Collapsed;
+        lines.Add(new SpendingLine(row, key, new string(' ', 2 * depth) + symbol + row.Label));
+        if (open)
+            foreach (var child in row.Children)
+                Flatten(child, key, depth + 1, lines);
+    }
+
+    private static string PlaceOf(SpendingRow row, string parent) => $"{parent}/{row.Label}";
 
     private static string Money(decimal cost) => cost == 0 ? "–" : cost.ToString("0.00", CultureInfo.InvariantCulture);
-
-    private static string Fit(string text, int wide) => text.Length <= wide ? text : text[..(wide - 1)] + "…";
 
     private bool Step(int by)
     {
@@ -236,3 +265,6 @@ public sealed class SpendingDialog : DashboardDialog
         DialogHost.Run(app, dialog);
     }
 }
+
+/// <summary>A row of Spending as it's listed: indented to its depth, with ▸ or ▾ when it has rows under it.</summary>
+public sealed record SpendingLine(SpendingRow Row, string Key, string Text);
