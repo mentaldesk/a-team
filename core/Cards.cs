@@ -51,6 +51,14 @@ internal static class Cards
 
     internal static bool Fix(JsonNode card) => Marked(card, "fix");
 
+    /// <summary>The stakeholder's by the board's own record: no pitch, no task of the team's and not its docs PR.</summary>
+    internal static bool Yours(JsonNode card) =>
+        !Pitch(card) && !Marked(card, "customer") && !Marked(card, "dev") && card["parent"] is null;
+
+    /// <summary>One of the stakeholder's Ideas, which follows a PR that closes it to In progress.</summary>
+    internal static bool FollowsPr(JsonNode card) =>
+        Status(card) == "Idea" && IsIssue(card) && Yours(card) && !Marked(card, "idea") && card["closed"] is null;
+
     internal static bool Fileable(JsonNode card) => Pitch(card) && Status(card) is "Approved" or "Building";
 
     /// <summary>A task of the Dev's that takes up one of wip.inProgress: one being built, not a PR waiting on the stakeholder.</summary>

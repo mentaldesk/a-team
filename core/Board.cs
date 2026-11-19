@@ -339,6 +339,10 @@ internal sealed partial class Board
         _record.Exec($"BEGIN; {plan.Sql} COMMIT;");
         foreach (var (n, to) in plan.Arrived)
             Log("board", n, $"None → {to} · opened on GitHub");
+        var follow = Reconciler.Follow(issues, AllCards(), _team, _repo, Now(), OpenedBy);
+        _record.Exec($"BEGIN; {follow.Sql} COMMIT;");
+        foreach (var (n, what) in follow.Moved)
+            Log("board", n, what);
         if (plan.Reopened.Count > 0 && FreshNodes(plan.Reopened) is { } fresh)
             Reconcile(fresh);
     }

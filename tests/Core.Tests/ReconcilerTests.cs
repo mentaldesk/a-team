@@ -217,4 +217,93 @@ public class ReconcilerTests
         var bot = Issue().Replace("\"User\"", "\"Bot\"").Replace("jamescrosswell", "other-app");
         Assert.Contains("\"author\":\"other-app[bot]\"", Arrivals(bot).Sql);
     }
+
+    private static JsonNode Card(int number = 8, string status = "Idea", string? label = null, string? mark = null, JsonObject? following = null, int? parent = null)
+    {
+        var marks = new JsonObject();
+        if (mark is not null) marks[mark] = true;
+        if (following is not null) marks["following"] = following;
+        return new JsonObject
+        {
+            ["number"] = number, ["type"] = "Issue", ["status"] = status, ["parent"] = parent,
+            ["labels"] = label is null ? new JsonArray() : new JsonArray(label), ["marks"] = marks,
+        };
+    }
+
+    private static FollowPlan Follow(string open, params JsonNode[] cards) =>
+        Reconciler.Follow(Nodes($"[{open}]"), cards, "demo", "o/r", Now, login => login == "jamescrosswell" ? "you" : login ?? "someone");
+
+    private static JsonObject Following(int pr = 9, bool gone = false)
+    {
+        var mark = new JsonObject { ["pr"] = pr, ["draft"] = false, ["by"] = "you" };
+        if (gone) mark["gone"] = true;
+        return mark;
+    }
+
+    [Fact]
+    public void Your_Idea_an_open_PR_closes_goes_In_progress_marked_with_the_PR()
+    {
+        var plan = Follow($"{Issue()}, {Pull(draft: true, closes: Closing(8))}", Card());
+        Assert.Equal([("8", "Idea → In progress · PR #9 opened")], plan.Moved);
+        Assert.Contains("SET status = 'In progress'", plan.Sql);
+        Assert.Contains("""{"pr":9,"draft":true,"by":"you"}""", plan.Sql);
+    }
+
+    [Theory]
+    [InlineData("Ready", null, null, null)]
+    [InlineData("Idea", "pitch", null, null)]
+    [InlineData("Idea", null, "dev", null)]
+    [InlineData("Idea", null, "idea", null)]
+    [InlineData("Idea", null, null, 3)]
+    public void A_pitch_a_task_a_discovery_or_an_item_past_Idea_stays_where_it_is(string status, string? label, string? mark, int? parent) =>
+        Assert.Empty(Follow($"{Issue()}, {Pull(closes: Closing(8))}", Card(status: status, label: label, mark: mark, parent: parent)).Sql);
+
+    [Fact]
+    public void A_PR_in_another_repo_moves_nothing() =>
+        Assert.Empty(Follow($"{Issue()}, {Pull(closes: Closing(8)).Replace("\"nameWithOwner\": \"o/r\"}, \"labels\"", "\"nameWithOwner\": \"o/other\"}, \"labels\"")}", Card()).Sql);
+
+    [Fact]
+    public void Its_PR_gone_from_one_read_it_stays_In_progress_in_case_the_PR_merged_mid_read()
+    {
+        var plan = Follow(Issue(), Card(status: "In progress", following: Following()));
+        Assert.Empty(plan.Moved);
+        Assert.DoesNotContain("SET status", plan.Sql);
+        Assert.Contains("'$.following.gone'", plan.Sql);
+    }
+
+    [Fact]
+    public void Its_PR_back_in_the_next_read_clears_the_doubt() =>
+        Assert.Contains("""{"pr":9,"draft":false,"by":"you"}""",
+            Follow($"{Issue()}, {Pull(closes: Closing(8))}", Card(status: "In progress", following: Following(gone: true))).Sql);
+
+    [Fact]
+    public void Its_PR_closing_unmerged_takes_it_back_to_Idea_on_the_second_read()
+    {
+        var plan = Follow(Issue(), Card(status: "In progress", following: Following(gone: true)));
+        Assert.Equal([("8", "In progress → Idea · PR #9 closed unmerged")], plan.Moved);
+        Assert.Contains("SET status = 'Idea'", plan.Sql);
+        Assert.Contains("json_remove(marks, '$.following')", plan.Sql);
+    }
+
+    [Fact]
+    public void Its_PR_no_longer_closing_it_takes_it_back_and_says_so() =>
+        Assert.Equal([("8", "In progress → Idea · PR #9 no longer closes it")],
+            Follow($"{Issue()}, {Pull()}", Card(status: "In progress", following: Following(gone: true))).Moved);
+
+    [Fact]
+    public void Closed_with_its_PR_merged_it_waits_for_the_sync_to_take_it_to_Done() =>
+        Assert.Empty(Follow("", Card(status: "In progress", following: Following(gone: true))).Sql);
+
+    [Fact]
+    public void Another_open_PR_closing_it_keeps_it_In_progress_naming_that_one()
+    {
+        var plan = Follow($"{Issue()}, {Pull(12, closes: Closing(8), author: "demo-app")}", Card(status: "In progress", following: Following()));
+        Assert.Empty(plan.Moved);
+        Assert.Contains("""{"pr":12,"draft":false,"by":"demo-app"}""", plan.Sql);
+        Assert.Empty(Follow($"{Issue()}, {Pull(closes: Closing(8))}", Card(status: "In progress", following: Following())).Sql);
+    }
+
+    [Fact]
+    public void One_In_progress_that_follows_no_PR_is_the_teams_and_stays() =>
+        Assert.Empty(Follow(Issue(), Card(status: "In progress", mark: "dev")).Sql);
 }

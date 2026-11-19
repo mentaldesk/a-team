@@ -13,6 +13,9 @@ internal sealed record ArrivalPlan(string Sql, IReadOnlyList<(string Number, str
 /// <summary>What seeing some issues and PRs on GitHub means for the record. No I/O, so every case can be tested in process.</summary>
 internal sealed record ReconcilePlan(string Sql, IReadOnlyList<(string Number, string? Type)> Reopened);
 
+/// <summary>The stakeholder's Ideas that follow the PR closing them, as the SQL and the history line for each that moved.</summary>
+internal sealed record FollowPlan(string Sql, IReadOnlyList<(string Number, string What)> Moved);
+
 internal static class Reconciler
 {
     internal static string Q(string? text) => text is null ? "NULL" : "'" + text.Replace("'", "''") + "'";
@@ -109,6 +112,58 @@ internal static class Reconciler
         "PullRequest" when !Closes(c, repo).Any(onBoard.Contains) => Json.Truthy(c["isDraft"]) || Json.Text(c["author"]?["login"]) == "dependabot" ? "In progress" : "In review",
         _ => null,
     };
+
+    /// <summary>Each of the stakeholder's Ideas an open PR of <paramref name="repo"/> closes goes In progress, marked with that PR,
+    /// and goes back to Idea once two reads apart find no open PR closing it while it's still open, so a PR merging mid-read
+    /// isn't taken for one closed unmerged. One that closed is left for the sync to take to Done. <paramref name="by"/> says who opened a PR, from its author's login.</summary>
+    internal static FollowPlan Follow(JsonArray open, IEnumerable<JsonNode> cards, string team, string repo, string now, Func<string?, string> by)
+    {
+        var sql = new StringBuilder();
+        var moved = new List<(string, string)>();
+        var teamQ = Q(team);
+        var inRepo = open.OfType<JsonNode>()
+            .Where(c => Json.Text(c["state"]) == "OPEN" && Json.Text(c["repository"]?["nameWithOwner"]) == repo).ToList();
+        var pulls = inRepo.Where(c => Json.Text(c["__typename"]) == "PullRequest").OrderBy(c => Json.Long(c["number"])).ToList();
+        var issues = inRepo.Where(c => Json.Text(c["__typename"]) == "Issue").Select(c => c["number"]!.ToJsonString()).ToHashSet();
+        var closer = new Dictionary<string, JsonNode>();
+        foreach (var pull in pulls)
+            foreach (var n in Closes(pull, repo))
+                closer.TryAdd(n, pull);
+        foreach (var card in cards)
+        {
+            var n = Cards.N(card);
+            var following = card["marks"]?["following"] as JsonObject;
+            var pr = closer.GetValueOrDefault(n);
+            var mark = pr is null ? null : new JsonObject
+            {
+                ["pr"] = Json.Long(pr["number"]),
+                ["draft"] = Json.Truthy(pr["isDraft"]),
+                ["by"] = by(Json.Text(pr["author"]?["login"])),
+            };
+            if (mark is not null && Cards.FollowsPr(card))
+            {
+                sql.Append(StatusRoute.Set(teamQ, n, "In progress", now)).Append(Marking(teamQ, n, mark));
+                moved.Add((n, $"Idea → In progress · PR #{mark["pr"]} opened"));
+            }
+            else if (following is null || Cards.Status(card) != "In progress") continue;
+            else if (mark is not null && !JsonNode.DeepEquals(mark, following))
+                sql.Append(Marking(teamQ, n, mark));
+            else if (mark is null && issues.Contains(n) && !Json.Truthy(following["gone"]))
+                sql.Append($"UPDATE board SET marks = json_set(marks, '$.following.gone', json('true')) WHERE team = {teamQ} AND item = {n};\n");
+            else if (mark is null && issues.Contains(n))
+            {
+                var was = Json.Long(following["pr"]);
+                var still = pulls.Any(pull => Json.Long(pull["number"]) == was);
+                sql.Append(StatusRoute.Set(teamQ, n, "Idea", now))
+                    .Append($"UPDATE board SET marks = json_remove(marks, '$.following') WHERE team = {teamQ} AND item = {n};\n");
+                moved.Add((n, $"In progress → Idea · PR #{was} {(still ? "no longer closes it" : "closed unmerged")}"));
+            }
+        }
+        return new FollowPlan(sql.ToString(), moved);
+    }
+
+    private static string Marking(string teamQ, string n, JsonObject mark) =>
+        $"UPDATE board SET marks = json_set(COALESCE(marks, '{{}}'), '$.following', json({Q(Json.Compact(mark))})) WHERE team = {teamQ} AND item = {n};\n";
 
     /// <summary>The issues of <paramref name="repo"/> a PR closes when it merges.</summary>
     internal static IEnumerable<string> Closes(JsonNode pr, string repo) =>

@@ -17,7 +17,7 @@ public enum CardKind
 public sealed record BoardCard(
     string Team, int Number, string Title, string Url, string Status, string Priority, CardKind Kind,
     DateTimeOffset? Since, int? Parent = null, bool Blocked = false, LastRun? LastRun = null, string Facts = "",
-    string PitchPriority = "", bool Inherited = false)
+    string PitchPriority = "", bool Inherited = false, string Following = "")
 {
     /// <summary>The mark its chip wears: Work's icon for the card in a Nerd Font, and a one-cell shape otherwise.</summary>
     public string Mark(IconStyle style) => style == IconStyle.NerdFont
@@ -79,7 +79,8 @@ public sealed record BoardCard(
                         Numbered(item, "parent"),
                         item.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True,
                         LastRunOf(item), Text(item, "facts"), Text(item, "pitchPriority"),
-                        item.TryGetProperty("inherited", out var inherited) && inherited.ValueKind == JsonValueKind.True))
+                        item.TryGetProperty("inherited", out var inherited) && inherited.ValueKind == JsonValueKind.True,
+                        Text(item, "following")))
             ];
         }
         catch (JsonException)

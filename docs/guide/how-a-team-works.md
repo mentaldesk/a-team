@@ -47,7 +47,7 @@ Idea → Exploring → Pitched → Approved → Building ───────�
 | Approved | You agreed; the Lead breaks it into tasks |
 | Building | Its tasks are in flight |
 | Ready | A task the Dev can pick up |
-| In progress | The Dev is building it, or another team's Dev is getting its change to this repo ready |
+| In progress | The Dev is building it, another team's Dev is getting its change to this repo ready, or it's one of your Ideas an open PR closes |
 | In review | A PR waiting for you: a task's, the Customer lead's docs PR, or another team's Dev's change to this repo |
 | Done | Merged or closed, or a pitch whose tasks have all closed |
 
@@ -55,6 +55,12 @@ A pitch is an issue with the `pitch` label, and its tasks are its sub-issues. Th
 it the vision theme it serves. A task is one
 pull request that changes something you can see or do. A task that needs another merged first is
 blocked by it on GitHub, and becomes ready to start by itself when that one closes.
+
+One of your own Ideas moves by itself when an open PR says it closes it, the link GitHub closes it by on merge,
+whoever opened the PR: you by hand, or the Dev for another task. On the board's next read it goes to In progress, and
+its history says `Idea → In progress · PR #739 opened`. It leaves Triage, and the Lead doesn't rank it, pitch it or
+discover around it. If the PR closes without merging, it goes back to Idea with its Priority as it was; merged, it closes
+and goes to Done. A pitch, or an item of yours already past Idea, never moves this way.
 
 A task that needs a change in another repo first, like a fix in a shared library, waits on that
 repo's issue or PR instead. It waits either until that closes or until a

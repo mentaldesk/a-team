@@ -21,6 +21,10 @@ internal sealed partial class Board
     internal string? Opener(JsonNode card) =>
         Json.Text(card["author"]) is { Length: > 0 } author && !Stakeholders.Contains(author) && author != Bot ? author : null;
 
+    /// <summary>Who opened a PR, from its author's login: you, the team's App, or that login.</summary>
+    private string OpenedBy(string? login) =>
+        login is null ? "someone" : Stakeholders.Contains(login) ? "you" : $"{login}[bot]" == Bot || login == Bot ? "the team" : login;
+
     internal bool ReviewerOn => _config["roles"]?["reviewer"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
 
     internal bool CustomerOn => _config["roles"]?["customer"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
