@@ -126,6 +126,12 @@ internal sealed partial class Board
         return string.Join(" · ", facts);
     }
 
+    /// <summary>The PR an item of yours follows, as the app shows it on its card's panel; null while it follows none.</summary>
+    internal static string? Following(JsonNode card) =>
+        Cards.Status(card) == "In progress" && card["marks"]?["following"] is JsonObject pr
+            ? $"PR #{Raw(pr["pr"])}{(Json.Truthy(pr["draft"]) ? " (draft)" : "")} · opened by {Raw(pr["by"])}"
+            : null;
+
     private static string ShelvedDay(JsonNode card) =>
         DateTime.ParseExact(Json.Text(card["marks"]?["shelved"]?["until"])!, "yyyy-MM-dd", CultureInfo.InvariantCulture)
             .ToString("dd MMM", CultureInfo.InvariantCulture).TrimStart('0');

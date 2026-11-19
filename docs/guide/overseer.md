@@ -10,8 +10,10 @@ and pause a role, and from a card you can [read it, comment on it or decide it](
 Each team is a lane, in the order your teams are listed, under one row of column headings: Idea,
 Exploring, Pitched, Approved, Building, Ready, In progress and In review. Done isn't shown.
 
-Every open issue and PR on a team's repo is on its lane. A PR that closes a card on the board shows on that card; any
-other PR arrives by itself, a draft in In progress and the rest in In review. A card with no status shows in Idea, or In
+Every open issue and PR on a team's repo is on its lane. A PR that closes a card on the board has no chip of its own,
+and you see it in that card's conversation in the reader; any other PR arrives by itself, a draft in In progress and the
+rest in In review. One of your own Ideas that an open PR closes, whoever opened it, moves to In progress by itself
+([How a team works](how-a-team-works.md#the-board)), and its panel names the PR. A card with no status shows in Idea, or In
 review for a PR, and one whose status A-Team doesn't know shows in Idea and says so in its details.
 
 A lane's title names the team and its roles that are running now, each with its animation playing
@@ -139,7 +141,8 @@ window. Narrower, its details sit at the foot of the lanes instead, without the 
 The panel gives the card's title, what it is, its Priority, team and column, how long it has
 been there in full (`6d 2h 10m`), the column's limit if it has one, then
 [what a-team keeps about it](how-a-team-works.md#what-a-card-says-about-an-item), like the Lead's rank
-or a shelve, and why it's waiting where Work says. For a task waiting on a change in another repo, that's how far the change has got:
+or a shelve, and why it's waiting where Work says. One of your items following a PR names it on a line of its own:
+`PR #739 (draft) · opened by you`. For a task waiting on a change in another repo, that's how far the change has got:
 `Waiting on tui-style-guide#84: merged, not released`. A task already in review says so on a line
 of its own: `Also waits on tui-style-guide#100 · in review, yours`. A task held for you says who held it and why, as Work's Blocked card does: `Blocked: held by the Lead · …`. An item the dispatcher gave up on after runs that changed nothing says `Blocked: held by the dispatcher · gave up after 3 runs: …` and wears `⊘`: reply on it in Work, or press `h` there, to free it ([Work](work.md)). For a card another task waits on, it gives the
 chain, as on Work's status bar: `a-team #499 waits on this · then MentalDesk.Tui's release`. For a pitch, it lists the open tasks under it,

@@ -547,8 +547,8 @@ internal static partial class Commands
     private static string KindOf(JsonNode card) =>
         Cards.Pitch(card) ? "pitch"
         : Cards.Marked(card, "customer") ? "docs"
-        : Cards.Marked(card, "dev") || card["parent"] is not null ? "task"
-        : "yours";
+        : Cards.Yours(card) ? "yours"
+        : "task";
 
     private static JsonObject OverviewOf(JsonNode card, string team, Dictionary<long, JsonNode> last)
     {
@@ -569,6 +569,7 @@ internal static partial class Commands
             ["lastRun"] = run is null ? null : new JsonObject { ["role"] = run["role"]?.DeepClone(), ["log"] = run["log"]?.DeepClone(), ["started"] = run["started"]?.DeepClone() },
         };
         if (Board.Facts(card) is { Length: > 0 } facts) shown["facts"] = facts;
+        if (Board.Following(card) is { } following) shown["following"] = following;
         Board.PitchRank(card, shown);
         return shown;
     }

@@ -479,6 +479,8 @@ public sealed class OverseerView : View
             string.Join(Separator, new[] { card.KindName, card.Priority.Length > 0 ? card.Priority : "Unranked", card.Team,
                 $"{card.Status}{age}{limit}", card.Facts }.Where(part => part.Length > 0)),
         ];
+        if (card.Following.Length > 0)
+            lines.Add(card.Following);
         if (state.Waiting(card.Team, card.Number) is { WaitsUpstream: true } upstream)
             lines.Add($"Waiting on {upstream.Upstream}");
         else if (state.Waiting(card.Team, card.Number) is { Held: true, Mine: true } held)

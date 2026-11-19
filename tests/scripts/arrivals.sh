@@ -198,6 +198,70 @@ repo_issue 45 "Generate preview images" reviewer
 run board demo lead-next
 same "a stakeholder's, offered" 45 "$(jq -c '.item.number' "$OUT")"
 
+case_ "your Idea follows the PR that closes it to In progress, and back to Idea if it closes unmerged; merged, it's Done"
+fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "stakeholders": ["reviewer"], "app": { "id": 7, "slug": "demo-app" },
+  "wip": { "pitched": 3, "exploring": 3, "ideas": 3 } }
+JSON
+gh_items <<'ITEMS'
+Idea 45 Generate preview images
+Idea 46 Previews, the pitch
+Pitched 47 Another pitch
+Ready 31 A task
+ITEMS
+edit_item 46 '.labels.nodes = [{name: "pitch"}]'
+edit_item 47 '.labels.nodes = [{name: "pitch"}]'
+issues_from_items
+run board demo list
+kept board demo priority you 45 Low
+repo_pull 49 "Previews" true 45
+repo_pull 50 "Pitch previews" false 46
+repo_pull 51 "Another" false 47
+repo_pull 52 "Build the task" false 31
+jq '(.[] | select(.number == 52)).author.login = "demo-app"' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
+: >"$CALLS"
+kept board demo list
+moved=$(wc -l <"$CALLS")
+same "followed" '[[45,"In progress"],[46,"Idea"],[47,"Pitched"],[31,"Ready"]]' "$(statuses)"
+history_lines 45 | grep -qx "board Idea → In progress · PR #49 opened" || fail "history: $(history_lines 45)"
+: >"$CALLS"
+kept board demo list
+same "no extra reads" "$moved" "$(wc -l <"$CALLS")"
+kept board demo overview
+same "panel" '"PR #49 (draft) · opened by you"' "$(jq -c '.[] | select(.number == 45) | .following' "$OUT")"
+same "kind" '"yours"' "$(jq -c '.[] | select(.number == 45) | .kind' "$OUT")"
+kept board demo lead-next
+same "not offered" false "$(jq -c '.item.number == 45' "$OUT")"
+kept board demo triggers lead
+same "not the Lead's" false "$(jq -c '.items | index(45) != null' "$OUT")"
+KEEP_BOARD=1 waiting
+same "not waiting" 0 "$(jq '[.[] | select(.number == 45)] | length' "$OUT")"
+jq 'map(select(.number != 52)) | (.[] | select(.number == 49)).isDraft = false' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
+repo_pull 53 "Previews, again" false 31
+jq '(.[] | select(.number == 53)).closingIssuesReferences.nodes += [{number: 45, repository: {nameWithOwner: "mentaldesk/demo"}}]' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
+jq '(.[] | select(.number == 53)).author.login = "demo-app"' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
+kept board demo list
+kept board demo overview
+same "out of draft" '"PR #49 · opened by you"' "$(jq -c '.[] | select(.number == 45) | .following' "$OUT")"
+jq 'map(select(.number != 49))' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
+kept board demo list
+kept board demo overview
+same "the other PR" '"PR #53 · opened by the team"' "$(jq -c '.[] | select(.number == 45) | .following' "$OUT")"
+echo '[]' >"$REPO_PULLS"
+kept board demo list
+same "back" '[[45,"Idea","Low"]]' "$(jq -c 'map(select(.number == 45) | [.number, .status, .priority])' "$OUT")"
+history_lines 45 | grep -qx "board In progress → Idea · PR #53 closed unmerged" || fail "history: $(history_lines 45)"
+repo_pull 54 "Previews, at last" false 45
+kept board demo list
+same "again" '[[45,"In progress"]]' "$(jq -c 'map(select(.number == 45) | [.number, .status])' "$OUT")"
+echo '[]' >"$REPO_PULLS"
+edit_item 45 '.state = "CLOSED" | .stateReason = "COMPLETED"'
+issues_from_items
+jq 'map(select(.number != 45))' "$REPO_ISSUES" >"$REPO_ISSUES.new" && mv "$REPO_ISSUES.new" "$REPO_ISSUES"
+kept board demo list
+same "merged" '[[45,"Done"]]' "$(jq -c 'map(select(.number == 45) | [.number, .status])' "$OUT")"
+same "said unmerged once" 1 "$(history_lines 45 | grep -c "closed unmerged")"
+
 case_ "setup says how many of the repo's open issues will arrive in Triage"
 demo_team
 gh_items <<'ITEMS'

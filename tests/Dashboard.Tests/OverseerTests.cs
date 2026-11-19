@@ -203,6 +203,18 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void Your_item_following_a_PR_names_it_under_its_first_line()
+    {
+        var card = Assert.Single(BoardCard.Parse("""
+            [{"team": "a", "number": 726, "title": "One test file", "status": "In progress", "kind": "yours",
+              "following": "PR #739 (draft) · opened by you"}]
+            """));
+        var state = OverseerState.Empty with { Now = Now };
+
+        Assert.Equal(["Yours · Unranked · a · In progress", "PR #739 (draft) · opened by you"], OverseerView.Describe(card, [card], state));
+    }
+
+    [Fact]
     public void A_held_task_says_in_its_details_that_it_s_Blocked_and_who_held_it()
     {
         var card = Card(524, "Ready", days: 1) with { Kind = CardKind.Task };

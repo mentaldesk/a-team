@@ -21,7 +21,7 @@ Every item's Status is one of:
 | Approved | Stakeholder agreed; Lead to break it down | **Stakeholder**, or the Lead on their plain yes (`approve`) |
 | Building | Broken into tasks; tasks are in flight | Lead |
 | Ready | A task Dev can pick up | Lead (or stakeholder) |
-| In progress | Dev is working on it, or another team's Dev on a draft upstream PR | Dev, or the dispatcher for a red dependency PR or an upstream PR |
+| In progress | Dev is working on it, another team's Dev on a draft upstream PR, or an open PR closes a stakeholder's Idea | Dev, the dispatcher for a red dependency PR or an upstream PR, or the board for a stakeholder's Idea, which it moves back if the PR closes unmerged |
 | In review ⛔ | A PR (task, docs or upstream) is waiting on the stakeholder | Dev, Customer lead, or the dispatcher for a finished task or an upstream PR |
 | Done | Merged, or a pitch whose tasks have all closed | **Stakeholder**, or the Lead for a pitch (`finish`) |
 

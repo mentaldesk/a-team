@@ -67,9 +67,12 @@ internal static class StatusRoute
                 yield return (Dispatcher, from, to);
     }
 
-    /// <summary>Where a sync can take a card that nobody moved: closed or merged on GitHub, or opened again.</summary>
+    /// <summary>Where a sync can take a card that nobody moved: closed or merged on GitHub, opened again, or following the
+    /// PR that closes it.</summary>
     internal static IEnumerable<(string From, string To)> Follows()
     {
+        yield return ("Idea", "In progress");
+        yield return ("In progress", "Idea");
         foreach (var status in Statuses.Prepend(None))
         {
             if (status != "Done") yield return (status, "Done");
