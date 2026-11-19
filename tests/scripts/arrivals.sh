@@ -205,6 +205,7 @@ fixture <<'JSON'
 JSON
 gh_items <<'ITEMS'
 Idea 45 Generate preview images
+Idea 48 Faster previews
 Idea 46 Previews, the pitch
 Pitched 47 Another pitch
 Ready 31 A task
@@ -214,7 +215,10 @@ edit_item 47 '.labels.nodes = [{name: "pitch"}]'
 issues_from_items
 run board demo list
 kept board demo priority you 45 Low
+KEEP_BOARD=1 waiting
+same "waiting before its PR" 1 "$(jq '[.[] | select(.number == 48)] | length' "$OUT")"
 repo_pull 49 "Previews" true 45
+repo_pull 55 "Faster" true 48
 repo_pull 50 "Pitch previews" false 46
 repo_pull 51 "Another" false 47
 repo_pull 52 "Build the task" false 31
@@ -222,7 +226,7 @@ jq '(.[] | select(.number == 52)).author.login = "demo-app"' "$REPO_PULLS" >"$RE
 : >"$CALLS"
 kept board demo list
 moved=$(wc -l <"$CALLS")
-same "followed" '[[45,"In progress"],[46,"Idea"],[47,"Pitched"],[31,"Ready"]]' "$(statuses)"
+same "followed" '[[45,"In progress"],[48,"In progress"],[46,"Idea"],[47,"Pitched"],[31,"Ready"]]' "$(statuses)"
 history_lines 45 | grep -qx "board Idea → In progress · PR #49 opened" || fail "history: $(history_lines 45)"
 : >"$CALLS"
 kept board demo list
@@ -235,8 +239,8 @@ same "not offered" false "$(jq -c '.item.number == 45' "$OUT")"
 kept board demo triggers lead
 same "not the Lead's" false "$(jq -c '.items | index(45) != null' "$OUT")"
 KEEP_BOARD=1 waiting
-same "not waiting" 0 "$(jq '[.[] | select(.number == 45)] | length' "$OUT")"
-jq 'map(select(.number != 52)) | (.[] | select(.number == 49)).isDraft = false' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
+same "not waiting" 0 "$(jq '[.[] | select(.number == 48)] | length' "$OUT")"
+jq 'map(select(.number != 52 and .number != 55)) | (.[] | select(.number == 49)).isDraft = false' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
 repo_pull 53 "Previews, again" false 31
 jq '(.[] | select(.number == 53)).closingIssuesReferences.nodes += [{number: 45, repository: {nameWithOwner: "mentaldesk/demo"}}]' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
 jq '(.[] | select(.number == 53)).author.login = "demo-app"' "$REPO_PULLS" >"$REPO_PULLS.new" && mv "$REPO_PULLS.new" "$REPO_PULLS"
@@ -249,12 +253,16 @@ kept board demo overview
 same "the other PR" '"PR #53 · opened by the team"' "$(jq -c '.[] | select(.number == 45) | .following' "$OUT")"
 echo '[]' >"$REPO_PULLS"
 kept board demo list
+same "not back on one read" '[[45,"In progress"]]' "$(jq -c 'map(select(.number == 45) | [.number, .status])' "$OUT")"
+kept board demo list
 same "back" '[[45,"Idea","Low"]]' "$(jq -c 'map(select(.number == 45) | [.number, .status, .priority])' "$OUT")"
 history_lines 45 | grep -qx "board In progress → Idea · PR #53 closed unmerged" || fail "history: $(history_lines 45)"
 repo_pull 54 "Previews, at last" false 45
 kept board demo list
 same "again" '[[45,"In progress"]]' "$(jq -c 'map(select(.number == 45) | [.number, .status])' "$OUT")"
 echo '[]' >"$REPO_PULLS"
+kept board demo list
+same "merged mid-read" '[[45,"In progress"]]' "$(jq -c 'map(select(.number == 45) | [.number, .status])' "$OUT")"
 edit_item 45 '.state = "CLOSED" | .stateReason = "COMPLETED"'
 issues_from_items
 jq 'map(select(.number != 45))' "$REPO_ISSUES" >"$REPO_ISSUES.new" && mv "$REPO_ISSUES.new" "$REPO_ISSUES"

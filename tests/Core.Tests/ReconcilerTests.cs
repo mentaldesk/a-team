@@ -233,7 +233,12 @@ public class ReconcilerTests
     private static FollowPlan Follow(string open, params JsonNode[] cards) =>
         Reconciler.Follow(Nodes($"[{open}]"), cards, "demo", "o/r", Now, login => login == "jamescrosswell" ? "you" : login ?? "someone");
 
-    private static JsonObject Following(int pr = 9) => new() { ["pr"] = pr, ["draft"] = false, ["by"] = "you" };
+    private static JsonObject Following(int pr = 9, bool gone = false)
+    {
+        var mark = new JsonObject { ["pr"] = pr, ["draft"] = false, ["by"] = "you" };
+        if (gone) mark["gone"] = true;
+        return mark;
+    }
 
     [Fact]
     public void Your_Idea_an_open_PR_closes_goes_In_progress_marked_with_the_PR()
@@ -258,9 +263,23 @@ public class ReconcilerTests
         Assert.Empty(Follow($"{Issue()}, {Pull(closes: Closing(8)).Replace("\"nameWithOwner\": \"o/r\"}, \"labels\"", "\"nameWithOwner\": \"o/other\"}, \"labels\"")}", Card()).Sql);
 
     [Fact]
-    public void Its_PR_closing_unmerged_takes_it_back_to_Idea()
+    public void Its_PR_gone_from_one_read_it_stays_In_progress_in_case_the_PR_merged_mid_read()
     {
         var plan = Follow(Issue(), Card(status: "In progress", following: Following()));
+        Assert.Empty(plan.Moved);
+        Assert.DoesNotContain("SET status", plan.Sql);
+        Assert.Contains("'$.following.gone'", plan.Sql);
+    }
+
+    [Fact]
+    public void Its_PR_back_in_the_next_read_clears_the_doubt() =>
+        Assert.Contains("""{"pr":9,"draft":false,"by":"you"}""",
+            Follow($"{Issue()}, {Pull(closes: Closing(8))}", Card(status: "In progress", following: Following(gone: true))).Sql);
+
+    [Fact]
+    public void Its_PR_closing_unmerged_takes_it_back_to_Idea_on_the_second_read()
+    {
+        var plan = Follow(Issue(), Card(status: "In progress", following: Following(gone: true)));
         Assert.Equal([("8", "In progress → Idea · PR #9 closed unmerged")], plan.Moved);
         Assert.Contains("SET status = 'Idea'", plan.Sql);
         Assert.Contains("json_remove(marks, '$.following')", plan.Sql);
@@ -269,11 +288,11 @@ public class ReconcilerTests
     [Fact]
     public void Its_PR_no_longer_closing_it_takes_it_back_and_says_so() =>
         Assert.Equal([("8", "In progress → Idea · PR #9 no longer closes it")],
-            Follow($"{Issue()}, {Pull()}", Card(status: "In progress", following: Following())).Moved);
+            Follow($"{Issue()}, {Pull()}", Card(status: "In progress", following: Following(gone: true))).Moved);
 
     [Fact]
     public void Closed_with_its_PR_merged_it_waits_for_the_sync_to_take_it_to_Done() =>
-        Assert.Empty(Follow("", Card(status: "In progress", following: Following())).Sql);
+        Assert.Empty(Follow("", Card(status: "In progress", following: Following(gone: true))).Sql);
 
     [Fact]
     public void Another_open_PR_closing_it_keeps_it_In_progress_naming_that_one()

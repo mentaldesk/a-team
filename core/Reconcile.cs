@@ -114,8 +114,8 @@ internal static class Reconciler
     };
 
     /// <summary>Each of the stakeholder's Ideas an open PR of <paramref name="repo"/> closes goes In progress, marked with that PR,
-    /// and goes back to Idea once no open PR closes it while it's still open. One that closed is left for the sync to take to
-    /// Done. <paramref name="by"/> says who opened a PR, from its author's login.</summary>
+    /// and goes back to Idea once two reads apart find no open PR closing it while it's still open, so a PR merging mid-read
+    /// isn't taken for one closed unmerged. One that closed is left for the sync to take to Done. <paramref name="by"/> says who opened a PR, from its author's login.</summary>
     internal static FollowPlan Follow(JsonArray open, IEnumerable<JsonNode> cards, string team, string repo, string now, Func<string?, string> by)
     {
         var sql = new StringBuilder();
@@ -148,6 +148,8 @@ internal static class Reconciler
             else if (following is null || Cards.Status(card) != "In progress") continue;
             else if (mark is not null && !JsonNode.DeepEquals(mark, following))
                 sql.Append(Marking(teamQ, n, mark));
+            else if (mark is null && issues.Contains(n) && !Json.Truthy(following["gone"]))
+                sql.Append($"UPDATE board SET marks = json_set(marks, '$.following.gone', json('true')) WHERE team = {teamQ} AND item = {n};\n");
             else if (mark is null && issues.Contains(n))
             {
                 var was = Json.Long(following["pr"]);
