@@ -39,11 +39,11 @@ public class SpendingDialogTests
         Assert.Equal(0, dialog.Period.Value);
         Assert.True(dialog.Table.Visible);
         Assert.False(dialog.Message.Visible);
-        Assert.Equal(["What", "Runs", "Lead $", "Dev $", "Total $"], dialog.Columns);
+        Assert.Equal(["What", "Total $", "Runs", "Lead $", "Dev $"], dialog.Columns);
         Assert.Equal(["a-team", "tui"], dialog.Rows.Select(row => row.Team));
         Assert.Equal(["a-team", "Think bigger", SpendingRow.Discovery, SpendingRow.Other, "tui"], dialog.Shown.Select(row => row.Label));
-        Assert.Equal("8.00", dialog.Table.Table![0, 4]);
-        Assert.Equal("–", dialog.Table.Table[3, 3]);
+        Assert.Equal("8.00", dialog.Table.Table![0, 1]);
+        Assert.Equal("–", dialog.Table.Table[3, 4]);
         Assert.Equal("Costs at API prices, from " + new DateTimeOffset(2026, 10, 8, 2, 0, 0, TimeSpan.Zero).ToLocalTime().ToString("d MMM",
             System.Globalization.CultureInfo.InvariantCulture) + ".", dialog.Footer.Text);
     }
@@ -63,7 +63,7 @@ public class SpendingDialogTests
     {
         using var dialog = Open(roles: ["lead", "dev", "reviewer"], teams: [("a-team", Recorded)]);
 
-        Assert.Equal(["What", "Runs", "Lead $", "Dev $", "Reviewer $", "Total $"], dialog.Columns);
+        Assert.Equal(["What", "Total $", "Runs", "Lead $", "Dev $", "Reviewer $"], dialog.Columns);
     }
 
     [Fact]
@@ -80,6 +80,53 @@ public class SpendingDialogTests
     }
 
     [Fact]
+    public void Each_row_is_indented_to_its_depth_with_a_mark_where_it_has_rows_under_it()
+    {
+        using var dialog = Open(teams: [("a-team", Recorded)]);
+
+        dialog.Table.SetSelection(0, 1, false);
+        dialog.Table.NewKeyDownEvent(Key.CursorRight);
+
+        Assert.Equal(["▾ a-team", "  ▾ Think bigger", "      #81 Bets", "    Discovery & upkeep"], Lines(dialog, 4));
+    }
+
+    [Fact]
+    public void A_longer_period_keeps_what_s_expanded_and_the_selected_row()
+    {
+        using var dialog = Open(teams: [("a-team", Recorded)]);
+        dialog.Table.SetSelection(0, 1, false);
+        dialog.Table.NewKeyDownEvent(Key.CursorRight);
+        dialog.Table.SetSelection(0, 2, false);
+
+        dialog.Period.Value = 2;
+
+        Assert.Equal("#81 Bets", dialog.SelectedRow!.Label);
+        Assert.Contains(dialog.Shown, row => row.Label == "#81 Bets");
+    }
+
+    [Fact]
+    public void Wide_every_column_shows_with_figures_aligned_right()
+    {
+        using var dialog = Open(roles: ["lead", "dev", "reviewer"], teams: [("a-team", Recorded)]);
+
+        var fit = dialog.Table.RowLayout.Fit(dialog.Table.Rows, 96);
+
+        Assert.Equal("What                                      Total $  Runs  Lead $  Dev $  Reviewer $", fit.Header);
+        Assert.Equal("▾ a-team                                     8.00     3    3.00   5.00           –", fit.Row(dialog.Table.Rows[0]));
+    }
+
+    [Fact]
+    public void Narrow_What_shrinks_with_an_ellipsis_then_the_roles_drop_and_the_total_stays()
+    {
+        using var dialog = Open(roles: ["lead", "dev", "reviewer"], teams: [("a-team", Recorded)]);
+
+        Assert.Equal("What                  Total $  Runs  Lead $", Fit(dialog, 43).Header);
+        Assert.Equal("    Discovery & upk…     1.00     1    1.00", Fit(dialog, 43).Row(dialog.Table.Rows[2]));
+        Assert.Equal("What                  Total $", Fit(dialog, 29).Header);
+        Assert.Equal("▾ a-team                 8.00", Fit(dialog, 29).Row(dialog.Table.Rows[0]));
+    }
+
+    [Fact]
     public void Enter_on_a_pitch_opens_it_and_on_any_other_row_does_nothing()
     {
         var opened = new List<(string Team, int Number)>();
@@ -93,6 +140,12 @@ public class SpendingDialogTests
 
         Assert.Equal([("a-team", 81)], opened);
     }
+
+    private static MentalDesk.Tui.Columns.ColumnFit<SpendingLine> Fit(SpendingDialog dialog, int width) =>
+        dialog.Table.RowLayout.Fit(dialog.Table.Rows, width);
+
+    private static string[] Lines(SpendingDialog dialog, int count) =>
+        [.. dialog.Table.Rows.Take(count).Select(line => line.Text)];
 
     [Fact]
     public void With_no_runs_in_the_period_it_says_so_in_place_of_the_table()

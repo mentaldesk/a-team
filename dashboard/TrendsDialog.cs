@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Globalization;
 using System.Text;
+using MentalDesk.Tui.Columns;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Attribute = Terminal.Gui.Drawing.Attribute;
@@ -33,8 +34,8 @@ public sealed class TrendsDialog : DashboardDialog
     private readonly IReadOnlyList<DateOnly> _dates;
     private readonly OptionSelector _measure;
     private readonly GraphView _graph;
-    private readonly TableView _table;
-    private readonly TableView _gates;
+    private readonly ColumnTable<TeamTrendRow> _table;
+    private readonly ColumnTable<SpentRow> _gates;
     private readonly Label _message;
     private readonly Legend _legend;
     private IReadOnlyList<TeamRecord>? _records;
@@ -51,17 +52,15 @@ public sealed class TrendsDialog : DashboardDialog
         Width = Dim.Func(_ => Fits(Wide + GetAdornmentsThickness().Horizontal, Room()?.Width), this);
         Height = Dim.Func(_ => Fits(2 + GraphRows + AxisRows + 1 + tableRows + 2 + GetAdornmentsThickness().Vertical, Room()?.Height), this);
 
-        _gates = new TableView
+        _gates = new ColumnTable<SpentRow>(GateColumns(), TeamRecord.SpentRows)
         {
-            X = Pos.AnchorEnd(GatesWide + Inset),
             Y = 2,
             Width = GatesWide,
-            Height = TeamRecord.SpentRows.Length + 4,
+            Height = TeamRecord.SpentRows.Length + 1,
             CanFocus = false,
-            FullRowSelect = false,
             Visible = false,
-            Style = { ShowVerticalHeaderLines = false, ShowVerticalCellLines = false, ExpandLastColumn = false },
         };
+        Unselected(_gates);
         _measure = new OptionSelector
         {
             X = Inset,
@@ -84,7 +83,7 @@ public sealed class TrendsDialog : DashboardDialog
         {
             X = Inset,
             Y = 2,
-            Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Inset * 2 - LegendWide - (_gates.Visible ? GatesWide + 1 : 0)), this),
+            Width = Dim.Func(_ => Math.Max(0, Math.Min(Viewport.Width, ChartWide) - Inset * 2 - LegendWide - (_gates.Visible ? GatesWide + 1 : 0)), this),
             Height = Dim.Fill(tableRows + 3),
             MarginBottom = AxisRows,
             MarginLeft = (uint)LabelWidth,
@@ -99,25 +98,17 @@ public sealed class TrendsDialog : DashboardDialog
             Height = teams.Count,
             Visible = false,
         };
-        _table = new TableView
+        _gates.X = Pos.Right(_legend) + 1;
+        _table = new ColumnTable<TeamTrendRow>(TeamColumns, [])
         {
             X = Inset,
             Y = Pos.AnchorEnd(tableRows + 2),
             Width = Dim.Fill(Inset),
             Height = tableRows,
             CanFocus = false,
-            FullRowSelect = false,
             Visible = false,
-            Style =
-            {
-                ShowHorizontalHeaderOverline = false,
-                ShowHorizontalHeaderUnderline = false,
-                ShowHorizontalBottomLine = false,
-                ShowVerticalCellLines = false,
-                ShowVerticalHeaderLines = false,
-                ExpandLastColumn = false,
-            },
         };
+        Unselected(_table);
         _message = new Label { X = Inset, Y = 0, Width = Dim.Fill(Inset), Text = "Reading the record…" };
         var hint = new Button
         {
@@ -149,9 +140,9 @@ public sealed class TrendsDialog : DashboardDialog
 
     internal Label Message => _message;
 
-    internal TableView Table => _table;
+    internal ColumnTable<TeamTrendRow> Table => _table;
 
-    internal TableView Gates => _gates;
+    internal ColumnTable<SpentRow> Gates => _gates;
 
     internal IReadOnlyList<TeamTrendRow> Rows { get; private set; } = [];
 
@@ -170,11 +161,14 @@ public sealed class TrendsDialog : DashboardDialog
         _ => TrendMeasure.Waiting,
     };
 
-    /// <summary>Wide enough for every column of the table, which a 120-wide terminal has room for.</summary>
-    private const int Wide = 120;
+    /// <summary>Wide enough for every column of the table; narrower, the last ones drop.</summary>
+    private const int Wide = 128;
+
+    /// <summary>The chart, legend and week by gate stay as wide as they were before the table needed <see cref="Wide"/>.</summary>
+    private const int ChartWide = 120;
 
     /// <summary>The split by gate: its row names, then a column of minutes per team.</summary>
-    private int GatesWide => TeamRecord.SpentRows.Max(row => row.Label.Length) + 2 + _teams.Sum(team => Math.Max(team.Team.Length, "10h 00m".Length) + 1);
+    private int GatesWide => TeamRecord.SpentRows.Max(row => row.Label.Length) + _teams.Sum(team => RowLayout<SpentRow>.Gap + Math.Max(team.Team.Length, "10h 00m".Length));
 
     private void Loaded(Reading[]? readings)
     {
@@ -196,36 +190,42 @@ public sealed class TrendsDialog : DashboardDialog
         }
         Rows = [.. _teams.Select((team, i) => TeamTrendRow.Of(team.Team, team.Waiting, _records[i], _now))];
         All = TeamTrendRow.All(Rows, [.. _records.SelectMany(record => record.CyclesInWeek(_now))]);
-        _table.Table = new EnumerableTableSource<TeamTrendRow>([.. Rows, All], new Dictionary<string, Func<TeamTrendRow, object>>
-        {
-            ["Team"] = row => row.Team,
-            ["Waiting now"] = row => Number(row.WaitingNow),
-            ["A week ago"] = row => Number(row.WeekAgo),
-            ["Accepted (7d)"] = row => Number(row.Accepted),
-            ["Runs $"] = row => row.Cost.ToString("0.00", CultureInfo.InvariantCulture),
-            ["Cycle"] = row => row.Cycle is { } hours ? hours.ToString("0.0", CultureInfo.InvariantCulture) + "h" : "–",
-            ["With you"] = row => row.WithYou is { } share ? share.ToString("0%", CultureInfo.InvariantCulture) : "–",
-            ["First time"] = row => row.Touches?.FirstTimeText ?? "",
-            ["Touches"] = row => row.Touches?.TouchesText ?? "",
-            ["Untouched"] = row => row.Touches?.UntouchedText ?? "",
-            ["Yours (7d)"] = row => row.Yours is { } yours ? Visit.Duration(yours) : "–",
-            ["/h"] = row => row.PerHour ?? "–",
-        });
-        for (var column = 1; column < 12; column++)
-            _table.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
-        var gates = new Dictionary<string, Func<SpentRow, object>> { ["This week"] = row => row.Label };
-        foreach (var (team, record) in _teams.Zip(_records))
-            gates[team.Team] = row => record.SpentInWeek(_now, row) is { } spent && (row.Doing is null || spent > TimeSpan.Zero)
-                ? Visit.Duration(spent) : "–";
-        _gates.Table = new EnumerableTableSource<SpentRow>(TeamRecord.SpentRows, gates);
-        for (var column = 1; column <= _teams.Count; column++)
-            _gates.Style.GetOrCreateColumnStyle(column).Alignment = Alignment.End;
+        _table.Rows = [.. Rows, All];
+        _gates.Rows = TeamRecord.SpentRows;
         _legend.Entries = [.. _teams.Select((team, i) => (Cell(i), team.Team))];
         _message.Visible = false;
         _measure.Visible = _graph.Visible = _legend.Visible = _table.Visible = true;
         _measure.SetFocus();
         Plot();
     }
+
+    private static readonly RowLayout<TeamTrendRow> TeamColumns = new(
+        Column<TeamTrendRow>.Name("Team", row => row.Team),
+        Column<TeamTrendRow>.Number("Waiting now", row => Number(row.WaitingNow)),
+        Column<TeamTrendRow>.Number("A week ago", row => Number(row.WeekAgo)),
+        Column<TeamTrendRow>.Number("Accepted (7d)", row => Number(row.Accepted)),
+        Column<TeamTrendRow>.Number("Runs $", row => row.Cost.ToString("0.00", CultureInfo.InvariantCulture)),
+        Column<TeamTrendRow>.Number("Cycle", row => row.Cycle is { } hours ? hours.ToString("0.0", CultureInfo.InvariantCulture) + "h" : "–"),
+        Column<TeamTrendRow>.Number("With you", row => row.WithYou is { } share ? share.ToString("0%", CultureInfo.InvariantCulture) : "–"),
+        Column<TeamTrendRow>.Number("First time", row => row.Touches?.FirstTimeText ?? ""),
+        Column<TeamTrendRow>.Number("Touches", row => row.Touches?.TouchesText ?? ""),
+        Column<TeamTrendRow>.Number("Untouched", row => row.Touches?.UntouchedText ?? ""),
+        Column<TeamTrendRow>.Number("Yours (7d)", row => row.Yours is { } yours ? Visit.Duration(yours) : "–"),
+        Column<TeamTrendRow>.Number("/h", row => row.PerHour ?? "–"));
+
+    private RowLayout<SpentRow> GateColumns() => new(
+        [
+            Column<SpentRow>.Name("This week", row => row.Label),
+            .. _teams.Select((team, i) => Column<SpentRow>.Number(team.Team, row => Spent(i, row))),
+        ]);
+
+    private string Spent(int team, SpentRow row) =>
+        _records?[team].SpentInWeek(_now, row) is { } spent && (row.Doing is null || spent > TimeSpan.Zero) ? Visit.Duration(spent) : "–";
+
+    /// <summary>A table that can't take focus has nothing selected, but TableView always selects a cell.</summary>
+    private static void Unselected(TableView table) =>
+        table.Style.RowColorGetter = _ => table.GetScheme() is var scheme
+            ? new Scheme(scheme) { Focus = scheme.Normal, Active = scheme.Normal, Highlight = scheme.Normal } : null;
 
     private bool Step(int by)
     {

@@ -1,4 +1,5 @@
 using System.Drawing;
+using MentalDesk.Tui.Columns;
 using MentalDesk.Tui.Dialogs;
 using MentalDesk.Tui.Fields;
 using MentalDesk.Tui.Links;
@@ -26,7 +27,7 @@ public sealed class DecisionsDialog : DashboardDialog
     private readonly PlaceholderField _search = new() { X = 8, Y = 0, Width = 28 };
     private readonly CheckBox _allTeams = new() { Text = "Include all-teams", Value = CheckState.Checked, Y = 0 };
     private readonly CheckBox _replaced = new() { Text = "Show replaced", Value = CheckState.UnChecked, Y = 0 };
-    private readonly TableView _table;
+    private readonly ColumnTable<Decision> _table;
     private readonly Label _empty = new() { X = 1, Y = 2, Width = Dim.Fill(1), Visible = false };
     private readonly Line _rule = new() { X = 0, Width = Dim.Fill() };
     private readonly LogView _detail = new() { X = 1, Width = Dim.Fill(1), Height = DetailRows, CanFocus = false };
@@ -52,15 +53,12 @@ public sealed class DecisionsDialog : DashboardDialog
 
         _allTeams.X = Pos.Right(_search) + 3;
         _replaced.X = Pos.Right(_allTeams) + 3;
-        _table = new TableView
+        _table = new ColumnTable<Decision>(DecisionRegister.Layout, [])
         {
             X = 0,
             Y = 2,
             Width = Dim.Fill(),
             Height = Dim.Func(_ => Math.Max(1, FootRow() - 2 - DetailRows - 2), this),
-            FullRowSelect = true,
-            Style = { ShowVerticalCellLines = false, ShowVerticalHeaderLines = false, ShowHorizontalHeaderOverline = false,
-                ShowHorizontalBottomLine = false, ExpandLastColumn = false },
         };
         _rule.Y = Pos.Bottom(_table);
         _detail.Y = Pos.Bottom(_rule);
@@ -103,10 +101,9 @@ public sealed class DecisionsDialog : DashboardDialog
 
     internal IReadOnlyList<Decision> Shown => _shown;
 
-    internal Decision? Selected => _table.Visible && _table.Value?.SelectedCell.Y is { } row && row >= 0 && row < _shown.Count
-        ? _shown[row] : null;
+    internal Decision? Selected => _table.Visible ? _table.SelectedRow : null;
 
-    internal TableView Table => _table;
+    internal ColumnTable<Decision> Table => _table;
 
     internal PlaceholderField Search => _search;
 
@@ -159,9 +156,7 @@ public sealed class DecisionsDialog : DashboardDialog
             _empty.Y = 4;
             _empty.Visible = _shown.Count == 0;
             _table.Visible = true;
-            _table.Table = new EnumerableTableSource<Decision>(_shown, new Dictionary<string, Func<Decision, object>>(
-                DecisionRegister.Columns.Select((column, i) =>
-                    KeyValuePair.Create(column, (Func<Decision, object>)(entry => DecisionRegister.Row(entry)[i])))));
+            _table.Rows = _shown;
             var row = Math.Max(0, _shown.ToList().FindIndex(entry => entry.Id == keep));
             if (_shown.Count > 0)
                 _table.Value = new TableSelection(new Point(0, row));

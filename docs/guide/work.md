@@ -52,12 +52,17 @@ record began isn't counted in either. `Esc` closes it.
 
 To see what the money bought, open **Spending** in Commands (`Ctrl+E`). It rolls the cost of every
 team's runs up by team, then by the vision theme each pitch serves, then by pitch, over the last 7
-days, the last 30 or everything recorded. Each row shows its runs, what each role cost and the
-total, with `–` for nothing. A pitch counts the runs on its tasks too, and a run on several items is
+days, the last 30 or everything recorded. Each row shows its total, its runs and what each role
+cost, with `–` for nothing. A pitch counts the runs on its tasks too, and a run on several items is
 split evenly between them, so a team's 7-day total matches Trends. Under each team, *Discovery &
 upkeep* is runs on no item, and *Other items* is runs on Ideas never pitched and on your own items.
 The Lead gives each pitch its theme when it drafts it, and Spending follows it. `Right` and `Left` expand and collapse a row, `Enter` on a pitch opens its card, and `Esc`
 closes it. To change the period, `Tab` to the periods above the table and pick one with `Left`/`Right`.
+
+On a narrow terminal, the tables in Trends, Spending and Decisions give way the same way: the column
+that names the row (*Team*, *What* or *Decision*) shrinks first, cut with `…`, and then the columns
+beside it drop, the last first. A figure is never cut. Spending keeps *Total $* longest, and Decisions
+keeps *Scope* and the decision.
 
 Each team has a tab, in the order the teams are set up, titled with the team and how many cards
 wait in each column, after the column's icon: like `a-team 💡4 ◇ 2 PR1` for 4 in Triage, 2 in
