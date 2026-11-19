@@ -10,7 +10,7 @@ internal static class Program
     private static readonly HashSet<string> Spoken =
     [
         "accept", "add", "approve", "attach", "audited", "claim", "comment", "covered", "decide", "decision", "decline", "depends", "edit",
-        "feedback", "finish", "fix", "fixed", "gave", "hold", "mine", "move", "new", "pictures", "priority", "recommend", "reconfirm", "release",
+        "feedback", "finish", "fix", "fixed", "gave", "hold", "mine", "move", "new", "noticed", "pictures", "priority", "recommend", "reconfirm", "release",
         "replace", "review", "secret", "seeded", "shelve", "skip", "spent", "task", "theme", "triggers", "unblock", "undepend", "unlink",
         "vision-review",
     ];

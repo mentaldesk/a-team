@@ -819,6 +819,40 @@ public class OverseerTests : IDisposable
     }
 
     [Fact]
+    public void A_finished_runs_notes_show_under_its_session_with_what_the_Lead_did_with_them()
+    {
+        WriteRun("team1", "lead", card: 21);
+        var logs = Path.Combine(_root, "team1", "lead", "logs");
+        Directory.CreateDirectory(logs);
+        WriteLog(logs, "Pitched it");
+        var log = Path.Combine(logs, "latest.jsonl");
+        var started = (Now - TimeSpan.FromHours(2)).ToString("O", CultureInfo.InvariantCulture);
+        var notes = """[{"text": "The skill is stale"}, {"text": "The export line", "handled": "dropped", "why": "already fixed"}, {"text": "Ask", "handled": "filed", "ref": 871}]""";
+        using var window = Open(width: 160, clock: new Clock(), readBoard: team => Task.FromResult(new Reading(team == "team1"
+            ? Overview(team).Replace("\"kind\": \"pitch\"", $$"""
+              "kind": "pitch", "lastRun": {"role": "lead", "log": {{System.Text.Json.JsonSerializer.Serialize(log)}}, "started": "{{started}}", "notes": {{notes}}}
+              """, StringComparison.Ordinal)
+            : Overview(team), null)));
+        window.Press("Ctrl+G O");
+        window.Refresh();
+
+        window.Overseer.Select("team1", 22);
+
+        Assert.Equal("Noticed:\n• The skill is stale\n• The export line (dropped: already fixed)\n• Ask (filed as #871)", window.Card.Noticed);
+        window.Overseer.Select("team1", 21);
+        Assert.Equal("", window.Card.Noticed);
+    }
+
+    [Fact]
+    public void A_run_that_noticed_nothing_shows_nothing_under_its_session()
+    {
+        var last = new LastRun("dev", "/tmp/a.jsonl", Now, []);
+        Assert.Equal("", RunNote.Under(last, "/tmp/a.jsonl"));
+        Assert.Equal("", RunNote.Under(last with { Notes = [new RunNote("x", "", null, "")] }, "/tmp/b.jsonl"));
+        Assert.Equal("Noticed:\n• x", RunNote.Under(last with { Notes = [new RunNote("x", "", null, "")] }, "/tmp/a.jsonl"));
+    }
+
+    [Fact]
     public void The_live_run_wins_over_an_older_one_by_another_role()
     {
         WriteFinished("team0", "reviewer", 12, Now - TimeSpan.FromHours(1));

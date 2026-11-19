@@ -12,6 +12,7 @@ public sealed class CardPanel : FrameView
 
     private readonly Label _details = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = 0, CanFocus = false };
     private readonly Label _session = new() { X = 0, Width = Dim.Fill(), CanFocus = false };
+    private readonly Label _noticed = new() { X = 0, Width = Dim.Fill(), Height = 0, CanFocus = false, Visible = false };
     private readonly Line _rule = new() { X = 0, Width = Dim.Fill() };
     private readonly LogView _log;
     private readonly Label _hint = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill(), CanFocus = false, SchemeName = LogSchemes.Dimmed };
@@ -24,9 +25,10 @@ public sealed class CardPanel : FrameView
         CanFocus = true;
         SchemeName = BaseScheme;
         _session.Y = Pos.Bottom(_details);
-        _rule.Y = Pos.Bottom(_session);
+        _noticed.Y = Pos.Bottom(_session);
+        _rule.Y = Pos.Bottom(_noticed);
         _log = new LogView { X = 0, Y = Pos.Bottom(_rule), Width = Dim.Fill(), Height = Dim.Fill(1), Expanded = expandToolCalls };
-        Add(_details, _session, _rule, _log, _hint);
+        Add(_details, _session, _noticed, _rule, _log, _hint);
     }
 
     internal string Details => _details.Text;
@@ -35,6 +37,8 @@ public sealed class CardPanel : FrameView
     private int DetailRows => _details.Text.Split('\n').Length + 1;
 
     internal string Session => _session.Text;
+
+    internal string Noticed => _noticed.Text;
 
     internal string Hint => _hint.Text;
 
@@ -76,14 +80,24 @@ public sealed class CardPanel : FrameView
         }
         if (_hint.Text != hint)
             _hint.Text = hint;
-        Show($"#{card.Number} {card.Title}", run?.State.LogPath, says);
+        Show($"#{card.Number} {card.Title}", run?.State.LogPath, says, RunNote.Under(card.LastRun, run?.State.LogPath));
+    }
+
+    private void ShowNoticed(string text)
+    {
+        if (_noticed.Text == text)
+            return;
+        _noticed.Text = text;
+        _noticed.Visible = text.Length > 0;
+        _noticed.Height = text.Length == 0 ? 0 : Dim.Auto(DimAutoStyle.Text);
     }
 
     /// <summary>Shows the session at <paramref name="path"/> under <paramref name="title"/>, read on from where it was
     /// when it's still the same log.</summary>
-    public void Show(string title, string? path, string says)
+    public void Show(string title, string? path, string says, string noticed = "")
     {
         Set(this, title);
+        ShowNoticed(noticed);
         if (_session.Text != says)
             _session.Text = says;
         var switched = path != _shown;

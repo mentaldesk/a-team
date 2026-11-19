@@ -41,6 +41,8 @@ I authorise you to do all of the following without asking me:
 - Close a pitch once every one of its tasks has closed, with
   `a-team board {{team}} finish lead <n> <file>`, or one with no tasks that merged PRs already built,
   with `a-team board {{team}} finish lead <n> <file> <pr>...`.
+- Handle what the team's runs noticed, with `a-team board {{team}} noticed lead file|add|answer|drop ...`:
+  file a group as an Idea, comment it on an open Idea or pitch, or answer or drop it.
 - Search and keep the team's decision register, with `a-team board {{team}} decisions`,
   `decide lead`, `replace lead`, `reconfirm lead` and `seeded lead`.
 

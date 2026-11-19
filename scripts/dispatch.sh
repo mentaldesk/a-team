@@ -351,9 +351,9 @@ record_run() {
 }
 
 # settle_runs: records the end of each of the team's runs that has finished since the last pass, with
-# its cost if its log got as far as a result.
+# its cost if its log got as far as a result, and keeps what it noticed.
 settle_runs() {
-  local id pid log result ended cost outcome
+  local id pid log result ended cost outcome kept
   [ -f "$STATE/history.db" ] || return 0
   while IFS='|' read -r id pid log; do
     alive "$pid" "$log" && continue
@@ -367,6 +367,12 @@ settle_runs() {
     fi
     history_sql "UPDATE runs SET ended = $(sql "$(iso "$ended")"), cost = $cost,
       outcome = COALESCE(outcome, $([ -n "$outcome" ] && sql "$outcome" || echo NULL)) WHERE id = $id;" >/dev/null
+    [ -n "$result" ] || continue
+    if kept=$("$ROOT/bin/a-team" board "$team" notes "$id" 2>&1); then
+      [ -z "$kept" ] || log "$team: $kept"
+    else
+      log "$team: couldn't keep what run $id noticed: ${kept//$'\n'/ }"
+    fi
   done < <(history_sql "SELECT id, pid, log FROM runs WHERE team = $(sql "$team") AND ended IS NULL;")
 }
 

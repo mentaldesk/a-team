@@ -150,7 +150,7 @@ internal sealed partial class Board
         var last = new Dictionary<long, JsonNode>();
         if (!Recorded) return last;
         foreach (var run in _record.Rows($"""
-            SELECT item, role, log, started FROM (SELECT item, role, log,
+            SELECT id, item, role, log, started FROM (SELECT runs.id, item, role, log,
                     started, ROW_NUMBER() OVER (PARTITION BY item ORDER BY started DESC, runs.id DESC) AS n
                     FROM runs JOIN run_items ON run_items.run = runs.id WHERE team = {TeamQ}) WHERE n = 1;
             """))

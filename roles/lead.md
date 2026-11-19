@@ -191,7 +191,26 @@ For each Dependabot PR your prompt names:
 - Then `a-team board {{team}} comment lead <pr> <file>`, listing the Ideas you filed, or saying
   there's nothing to adopt. Leave the PR itself alone: once it's green, your comment lets it merge by itself.
 
-### 5. Recommend a rank for each Idea
+### 5. Handle what the runs noticed
+
+If your brief has *Noticed since the last Lead run*, handle every group in it, each one way, naming
+its notes by number. Treat groups that say the same thing as one.
+
+- **File** it as an Idea when it's worth the stakeholder's eye and no open item covers it:
+  `a-team board {{team}} noticed lead file "<title>" <file> <note>...`. Write the body as for
+  `discover` below; the board adds who noticed it under **Evidence**. It counts toward `wip.ideas`:
+  past the brief's room, the board refuses and the notes wait for a later run.
+- **Add** it to the open Idea or pitch it bears on:
+  `a-team board {{team}} noticed lead add <n> <file> <note>...`, the file saying what it adds.
+- **Answer** a question you can settle yourself, like whether to file something:
+  `a-team board {{team}} noticed lead answer <file> <note>...`. Where a note is about how the team
+  works, the answer may be an issue on `mentaldesk/a-team`, as *Never* allows.
+- **Drop** one that's stale, already fixed or not worth anyone's time:
+  `a-team board {{team}} noticed lead drop <file> <note>...`, the file the one-line reason.
+
+Say in your summary what you did with each group, and why you dropped any.
+
+### 6. Recommend a rank for each Idea
 
 For each item in `a-team board {{team}} list Idea` with no `marks.rank`, run
 `a-team board {{team}} recommend lead <n> <urgent|high|medium|low> <file>`. Rank the Ideas against
@@ -200,7 +219,7 @@ higher; then your confidence it's worth doing. The file is one line naming the t
 appetite, then why, like `theme 2, small · clears the Triage queue in one sitting`. Only the
 stakeholder sets Priority; this orders the Ideas within it and tells them why.
 
-### 6. Swap Pitched, then pitch or discover
+### 7. Swap Pitched, then pitch or discover
 
 Run `a-team board {{team}} lead-next` once. It returns the pitches to show the stakeholder now, and whether
 this run's new work is a pitch or a discovery. It alternates between the two so the stakeholder
@@ -346,8 +365,8 @@ feedback on it (`a-team board {{team}} feedback lead <pr>`) by pushing to the br
 
 ### Vision review
 
-When your prompt says a vision review is due or was asked for, do it after step 5, in place of
-step 6. The board script has decided it's due; don't second-guess that.
+When your prompt says a vision review is due or was asked for, do it after step 6, in place of
+step 7. The board script has decided it's due; don't second-guess that.
 
 1. Gather what's happened since the vision last changed on the default branch
    (`git log -1 --format=%cs origin/<default branch> -- <vision>`): the pitches done since, the themes
