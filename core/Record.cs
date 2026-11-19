@@ -47,6 +47,9 @@ internal sealed class Record : IDisposable
           CREATE TABLE IF NOT EXISTS comments_said (team TEXT NOT NULL, item INTEGER NOT NULL, comment TEXT NOT NULL,
             role TEXT NOT NULL CHECK (role IN ('lead', 'dev', 'customer', 'reviewer', 'dispatcher')), at TEXT NOT NULL,
             PRIMARY KEY (team, comment));
+          CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, run INTEGER NOT NULL, n INTEGER NOT NULL, text TEXT NOT NULL,
+            handled TEXT CHECK (handled IN ('filed', 'added', 'answered', 'dropped')), ref INTEGER, why TEXT, at TEXT,
+            UNIQUE (run, n));
         """;
 
     private readonly IntPtr _db;

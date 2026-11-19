@@ -190,6 +190,12 @@ a-team board {{team}} pr <n>                    # the open PR that closes issue 
                                                 # and its review: waiting | posted | answered | off
 a-team board {{team}} checks <pr>               # CI verdict: pass | fail | pending | main-red, where
                                                 # every job it fails fails on the default branch too
+a-team board {{team}} noticed lead file "<title>" <file> <note>...  # Lead only: file the notes as an Idea,
+                                                # <file> its body, the board adding who noticed it under Evidence
+a-team board {{team}} noticed lead add <n> <file> <note>...  # Lead only: comment <file> on open Idea or
+                                                # pitch #<n>, with who noticed the notes
+a-team board {{team}} noticed lead <answer|drop> <file> <note>...  # Lead only: settle the notes, <file>
+                                                # the one-line answer or reason
 a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a run for;
                                                 # --sweep also reads old feedback on your items
 ```
@@ -199,7 +205,7 @@ a-team board {{team}} triggers <role> [--sweep]  # what the dispatcher starts a 
 `overview` is what its Overseer reads, `bumps` is how the dispatcher merges green dependency PRs and hands red ones to the Dev, `sync` is how both bring the board up to date with GitHub behind them, `decision` is how its Decisions dialog corrects the register, `new` is how it opens an Idea, `attach` is how it uploads a
 screenshot, `tick` is how it saves a tick on a task's criteria, `gave` is how it frees a task once you've given its secret, `spent` is how it records the
 stakeholder's time, `document` and `edit` are how it edits a document pitch, and `vision-review` is
-how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `give-up` is how the dispatcher holds what its runs couldn't clear, `free` is how the dispatcher frees a task once what it waits on in
+how it asks for a vision review. `format` is how the dispatcher brings the board's state up to its format, `give-up` is how the dispatcher holds what its runs couldn't clear, `notes` is how the dispatcher keeps what a run noticed, `free` is how the dispatcher frees a task once what it waits on in
 another repo has closed or been released, `finished` is how it moves a task to In review once its PR is out of draft, green and clear of its base, and `update` is how it brings a PR In review that's behind
 its base up to date. Don't run them.
 
@@ -251,7 +257,11 @@ tell what `$B` will run.
 4. Never wait for input. Nobody is watching the run. If you're stuck, write down why on the
    item (`a-team board {{team}} comment`), move it back if your role can, and carry on with
    something else: for the Lead, the next step; for the Dev, end the run, and the next one takes the next task.
-5. End with a short summary: what moved, what's waiting on the stakeholder, and anything odd.
+5. End with a short summary: what moved, what's waiting on the stakeholder, and anything odd. Its
+   last part is a `Noticed:` list: anything outside your task worth the stakeholder's eye, like a
+   stale instruction, a broken skill or a question for them, one `- ` line each, or `Noticed: none`.
+   The dispatcher keeps it, and the Lead's next run files, answers or drops each one, so put a
+   question there rather than asking it of nobody.
 
 ## Waiting and the GitHub API
 

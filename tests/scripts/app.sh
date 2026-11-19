@@ -364,6 +364,20 @@ same "exit" 0 "$STATUS"
 grep -q "^$CHECKOUT could not be brought up to date with origin/main, so read the product repo from origin/main" "$OUT" ||
   fail "diverged: '$(cat "$OUT")'"
 
+case_ "the Lead's brief lists what runs noticed that no Lead run has handled, and no other role's does"
+history_db "INSERT INTO runs (id, team, role, pid, log, started, ended) VALUES (1, 'demo', 'dev', 1, 'x', '2026-11-12T08:00:00Z', '2026-11-12T09:00:00Z');
+  INSERT INTO run_items (run, item) VALUES (1, 801);"
+sqlite3 "$A_TEAM_STATE/history.db" "INSERT INTO notes (run, n, text) VALUES (1, 1, 'The skill is stale');"
+PATH="$APP_BIN/board:$PATH" run run demo lead
+same "exit" 0 "$STATUS"
+grep -q '^## Noticed since the last Lead run (1 group, 1 note)$' "$OUT" || fail "lead: '$(cat "$OUT")'"
+grep -qF '1. Dev ×1: The skill is stale' "$OUT" || fail "group: '$(cat "$OUT")'"
+PATH="$APP_BIN/board:$PATH" run run demo dev
+grep -q '^## Noticed since' "$OUT" && fail "dev: told what runs noticed"
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE notes SET handled = 'dropped', why = 'stale';"
+PATH="$APP_BIN/board:$PATH" run run demo lead
+grep -q '^## Noticed since' "$OUT" && fail "handled: still in the brief"
+
 case_ "run stops on a spent rate limit, naming the App and when it resets, before it reads the board"
 GITHUB_SAYS=spent PATH="$APP_BIN/board:$PATH" run run demo dev
 same "spent exit" 3 "$STATUS"

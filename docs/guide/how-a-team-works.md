@@ -181,6 +181,20 @@ Consistently good UX`. Upgrading
 takes the old `rank:`, `theme:` and `a-team:` labels, and `blocked`, off your open issues once their
 state is in the record; `pitch` and your own labels stay.
 
+## What a run noticed
+
+Every run ends its summary with a short **Noticed** list: what the agent saw outside its task that's
+worth your eye, like a stale instruction, a broken skill or a question for you. The dispatcher keeps
+it with the run, and Overseer shows it under the run's session when you select its card.
+
+You don't triage notes yourself. The Lead's next run reads every note no Lead run has handled,
+grouped where they say the same thing, and does one thing with each group: files it as an Idea, adds
+it to an open Idea or pitch in a comment, answers it, or drops it with a reason. An Idea filed from
+notes reaches Triage like any other, counts toward the Ideas limit, and says under **Evidence** who
+noticed it and how often, like *Noticed by the Dev on #801 and #818, and the Lead once*. A note that
+doesn't fit waits for a later Lead run. Notes never start a run on their own. A dropped note stays on
+its run's card, with the Lead's reason beside it.
+
 ## What the team remembers
 
 When you answer something that will come up again, the Lead records it in a decision register,

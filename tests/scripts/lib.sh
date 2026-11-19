@@ -791,6 +791,7 @@ case " \$* " in
   *" triggers customer"*) echo "\$*" >>"$CLAIMS"; cat "$CUSTOMER_TRIGGERS" ;;
   *" triggers reviewer"*) echo "\$*" >>"$TRIGGER_READS"; cat "$REVIEWER_TRIGGERS" ;;
   *" task-prompt "*) echo "Run one shift." ;;
+  *" notes "*) echo "\$*" >>"$DISPATCH/notes"; echo "run \${@: -1}: kept 1 note" ;;
   *" version "*) cat "\$(dirname "\$0")/../VERSION" ;;
 esac
 SH

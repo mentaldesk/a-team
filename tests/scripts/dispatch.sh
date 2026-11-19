@@ -477,6 +477,8 @@ run_gone 13
 jq -n '{reasons: [], creative: false, tasks: [], ready: null, chores: []}' >"$DEV_TRIGGERS"
 dispatch_dev
 same "finished" "dev 13 1 4.12 -" "$(runs_recorded)"
+same "notes kept" "board demo notes 1" "$(cat "$DISPATCH/notes")"
+grep -q "demo: run 1: kept 1 note$" "$A_TEAM_STATE/dispatch.log" || fail "notes: '$(cat "$A_TEAM_STATE/dispatch.log")'"
 
 case_ "a retried run is a second line, and one that dies without a result has no cost"
 rm "$DISPATCH/result"
@@ -489,6 +491,7 @@ same "two runs" "dev 13 1 4.12 -
 dev 13 1 - died" "$(runs_recorded)"
 dispatched_board history 13 >"$OUT"
 same "history" "died -" "$(jq -r '[.events[] | .run.outcome // "-"] | join(" ")' "$OUT")"
+same "no notes from a run cut short" "board demo notes 1" "$(cat "$DISPATCH/notes")"
 
 case_ "an errored run says so"
 echo '{"type":"result","subtype":"error_during_execution","is_error":true,"total_cost_usd":0.5}' >"$DISPATCH/result"

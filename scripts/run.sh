@@ -89,6 +89,13 @@ if [ -n "${A_TEAM_RUN_TASK:-}" ]; then
   printf '## Your task\n\nThis run is for #%s and nothing else. The dispatcher picked it, and claimed it if it was Ready.\n\n' \
     "$A_TEAM_RUN_TASK"
 fi
+if [ "$ROLE" = lead ]; then
+  if noticed=$("$ROOT/bin/a-team" board "$TEAM" noticed 2>&1); then
+    [ -z "$noticed" ] || printf '%s\n\n' "$noticed"
+  else
+    printf "## Noticed since the last Lead run\n\nThe board couldn't list them (%s): they wait for the next run.\n\n" "${noticed#board.sh: }"
+  fi
+fi
 sed "s/{{team}}/$TEAM/g" "$ROOT/process.md"
 echo
 sed "s/{{team}}/$TEAM/g" "$ROOT/roles/$ROLE.md"

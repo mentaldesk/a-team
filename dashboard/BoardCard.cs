@@ -99,8 +99,14 @@ public sealed record BoardCard(
     private static LastRun? LastRunOf(JsonElement item) =>
         item.TryGetProperty("lastRun", out var run) && run.ValueKind == JsonValueKind.Object
         && Text(run, "role") is { Length: > 0 } role && Time(run, "started") is { } started
-            ? new LastRun(role, Text(run, "log"), started)
+            ? new LastRun(role, Text(run, "log"), started, NotesOf(run))
             : null;
+
+    private static IReadOnlyList<RunNote> NotesOf(JsonElement run) =>
+        run.TryGetProperty("notes", out var notes) && notes.ValueKind == JsonValueKind.Array
+            ? [.. notes.EnumerateArray().Where(note => note.ValueKind == JsonValueKind.Object && Text(note, "text").Length > 0)
+                .Select(note => new RunNote(Text(note, "text"), Text(note, "handled"), Numbered(note, "ref"), Text(note, "why")))]
+            : [];
 
     private static int? Numbered(JsonElement item, string name) =>
         item.TryGetProperty(name, out var number) && number.ValueKind == JsonValueKind.Number && number.TryGetInt32(out var value)
@@ -118,8 +124,31 @@ public sealed record BoardCard(
             : "";
 }
 
-/// <summary>The last run the run record has on a card, whichever role it was.</summary>
-public sealed record LastRun(string Role, string Log, DateTimeOffset Started);
+/// <summary>The last run the run record has on a card, whichever role it was, and what it noticed.</summary>
+public sealed record LastRun(string Role, string Log, DateTimeOffset Started, IReadOnlyList<RunNote>? Notes = null);
+
+/// <summary>Something a run noticed, and what the Lead did with it: <paramref name="Handled"/> is empty until it has.</summary>
+public sealed record RunNote(string Text, string Handled, int? Ref, string Why)
+{
+    public string Says => Handled switch
+    {
+        "filed" => $"{Text} (filed as #{Ref})",
+        "added" => $"{Text} (added to #{Ref})",
+        "answered" => $"{Text} (answered: {Why})",
+        "dropped" => $"{Text} (dropped: {Why})",
+        _ => Text,
+    };
+
+    /// <summary>What the shown session noticed, when it's the card's last run, as lines under it.</summary>
+    public static string Under(LastRun? last, string? shown)
+    {
+        if (last?.Notes is not { Count: > 0 } notes || shown is null || !SameFile(last.Log, shown))
+            return "";
+        return string.Join("\n", ["Noticed:", .. notes.Select(note => $"• {note.Says}")]);
+    }
+
+    private static bool SameFile(string a, string b) => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.Ordinal);
+}
 
 /// <summary>How long a card has waited: in its largest unit on a chip, in full in the details.</summary>
 public static class Ages

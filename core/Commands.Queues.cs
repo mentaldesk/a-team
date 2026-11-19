@@ -537,10 +537,11 @@ internal static partial class Commands
         if (args.Length != 0)
             throw new Die($"usage: board.sh {board.Team} overview");
         var last = board.LastRuns();
+        var noticed = board.NotesOfRuns(last.Values.Select(run => Json.Long(run["id"])));
         board.Sync(cached: true);
         var cards = new JsonArray();
         foreach (var card in board.OpenCards())
-            cards.Add((JsonNode?)OverviewOf(card, board.Team, last));
+            cards.Add((JsonNode?)OverviewOf(card, board.Team, last, noticed));
         return SayPretty(cards);
     }
 
@@ -550,9 +551,10 @@ internal static partial class Commands
         : Cards.Marked(card, "dev") || card["parent"] is not null ? "task"
         : "yours";
 
-    private static JsonObject OverviewOf(JsonNode card, string team, Dictionary<long, JsonNode> last)
+    private static JsonObject OverviewOf(JsonNode card, string team, Dictionary<long, JsonNode> last, Dictionary<long, JsonArray> noticed)
     {
         var run = last.GetValueOrDefault(Board.Number(card));
+        var notes = run is null ? null : noticed.GetValueOrDefault(Json.Long(run["id"]));
         var shown = new JsonObject
         {
             ["number"] = card["number"]?.DeepClone(),
@@ -568,6 +570,7 @@ internal static partial class Commands
             ["kind"] = KindOf(card),
             ["lastRun"] = run is null ? null : new JsonObject { ["role"] = run["role"]?.DeepClone(), ["log"] = run["log"]?.DeepClone(), ["started"] = run["started"]?.DeepClone() },
         };
+        if (notes is not null) shown["lastRun"]!["notes"] = notes.DeepClone();
         if (Board.Facts(card) is { Length: > 0 } facts) shown["facts"] = facts;
         Board.PitchRank(card, shown);
         return shown;
