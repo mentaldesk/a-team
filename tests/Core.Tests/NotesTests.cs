@@ -106,6 +106,21 @@ public class NotesTests
     }
 
     [Fact]
+    public void Evidence_counts_each_run_on_a_card_that_noticed_it_more_than_once()
+    {
+        using var record = Record.Open(":memory:");
+        var board = Demo(record);
+        Run(record, 1, "dev", 801);
+        Run(record, 2, "dev", 801);
+        Run(record, 3, "dev", 818);
+        board.KeepNotes(1, ["Same thing"]);
+        board.KeepNotes(2, ["same thing"]);
+        board.KeepNotes(3, ["Same thing."]);
+        var group = Assert.Single(Notes.Group(board.UnhandledNotes()));
+        Assert.Equal("Noticed by the Dev on #801 twice and #818", Notes.Evidence(group));
+    }
+
+    [Fact]
     public void Notes_that_say_the_same_thing_are_one_group_saying_who_noticed_it_and_how_often()
     {
         using var record = Record.Open(":memory:");

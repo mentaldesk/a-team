@@ -101,14 +101,14 @@ internal static partial class Notes
         group.Notes.DistinctBy(note => note.Run).GroupBy(note => note.Role)
             .OrderByDescending(role => role.Count()).ThenBy(role => Array.IndexOf(RoleOrder, role.Key));
 
-    /// <summary>Who noticed it and how often, as an Idea's Evidence says it: <c>Noticed by the Dev on #801 and #818, and the Lead once</c>.</summary>
+    /// <summary>Who noticed it and how often, as an Idea's Evidence says it: <c>Noticed by the Dev on #801 twice and #818, and the Lead once</c>.</summary>
     internal static string Evidence(NoteGroup group)
     {
         var said = ByRole(group).Select(role =>
         {
-            var cards = role.Where(note => note.Card is not null).Select(note => note.Card!.Value).Distinct().Order().ToList();
+            var cards = role.Where(note => note.Card is not null).GroupBy(note => note.Card!.Value).OrderBy(card => card.Key).ToList();
             var others = role.Count(note => note.Card is null);
-            var on = cards.Count == 0 ? "" : $" on {And(cards.Select(card => $"#{card}"))}";
+            var on = cards.Count == 0 ? "" : $" on {And(cards.Select(card => card.Count() == 1 ? $"#{card.Key}" : $"#{card.Key} {Times(card.Count())}"))}";
             var times = others == 0 ? "" : cards.Count == 0 ? $" {Times(others)}" : $" and {Times(others)} more";
             return $"the {RoleName(role.Key)}{on}{times}";
         }).ToList();
