@@ -154,6 +154,11 @@ nothing running on the card, it shows the last run there was on it and when, as 
 `Dev · last ran 3h12m ago`, or says no agent has run on it yet. The panel's last line lists the keys that work on the card, as they're bound now. Moving the
 selection switches the panel to the new card straight away.
 
+When the session shown is the card's last run and it noticed anything outside its task, a **Noticed**
+list sits under the session line, one `•` per note. Once the Lead has handled a note, it says what
+became of it, as in `(filed as #871)`, `(added to #806)`, `(answered: …)` or `(dropped: …)`. Where
+notes go is in [How a team works](how-a-team-works.md#what-a-run-noticed).
+
 `Enter` opens the session full-screen, as [Reading a session](#reading-a-session) describes. `Esc`
 comes back to the same card.
 
