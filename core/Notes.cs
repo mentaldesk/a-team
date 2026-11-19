@@ -40,19 +40,26 @@ internal static partial class Notes
         if (start < 0) return found;
         var rest = Heading().Match(lines[start]).Groups["rest"].Value;
         Keep(found, rest);
-        var listed = false;
+        int? indent = null;
         for (var i = start + 1; i < lines.Length; i++)
         {
             var line = lines[i];
             if (line.Trim().Length == 0)
             {
-                if (listed) break;
+                if (indent is not null) break;
                 continue;
             }
+            var listed = indent is not null;
+            var depth = line.Length - line.TrimStart().Length;
             if (Bullet().Match(line) is { Success: true } bullet)
             {
+                if (listed && depth > indent && found.Count > 0)
+                {
+                    found[^1] = Clean($"{found[^1]}; {bullet.Groups["note"].Value.Trim()}");
+                    continue;
+                }
                 Keep(found, bullet.Groups["note"].Value);
-                listed = true;
+                indent ??= depth;
             }
             else if (listed && char.IsWhiteSpace(line[0]) && found.Count > 0)
             {

@@ -60,6 +60,15 @@ public class NotesTests
     }
 
     [Fact]
+    public void An_indented_sub_bullet_stays_with_the_note_above()
+    {
+        Assert.Equal(
+            ["The build is slow; restore takes a minute", "Second"],
+            Notes.Parse("Noticed:\n- The build is slow\n  - restore takes a minute\n- Second"));
+        Assert.Equal(["First", "Second"], Notes.Parse("Noticed:\n  - First\n  - Second"));
+    }
+
+    [Fact]
     public void Only_the_last_list_is_the_runs()
     {
         Assert.Equal(["later"], Notes.Parse("Noticed:\n- earlier\n\nThen more work.\n\nNoticed:\n- later"));
