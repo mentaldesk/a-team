@@ -51,6 +51,24 @@ public class DecisionsTests
         Assert.Equal("all teams  Card comm…", DecisionRegister.Layout.Fit(shown, 21).Row(shown[0]));
     }
 
+    [Fact]
+    public void On_a_narrow_screen_each_shown_decision_ends_in_an_ellipsis_inside_the_dialog()
+    {
+        using var app = Terminal.Gui.App.Application.Create().Init(Terminal.Gui.Drivers.DriverRegistry.Names.ANSI);
+        app.Driver!.SetScreenSize(41, 30);
+        using var dialog = Open(Register);
+        app.Begin(dialog);
+        dialog.Layout();
+        dialog.Draw();
+
+        var contents = app.Driver.Contents!;
+        var table = dialog.Table.FrameToScreen();
+        string Line(int y) => string.Concat(Enumerable.Range(0, 41).Select(x => contents[y, x].Grapheme));
+        var rows = Enumerable.Range(table.Y + 1, dialog.Shown.Count).Select(Line).ToList();
+
+        Assert.All(rows, row => Assert.EndsWith("…┃", row.TrimEnd()));
+    }
+
     private static string[] Shown(IReadOnlyList<Decision> shown, int width) =>
         [.. DecisionRegister.Layout.Fit(shown, width).Placed.Select(placed => placed.Column.Header)];
 

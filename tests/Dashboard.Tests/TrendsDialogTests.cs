@@ -253,6 +253,24 @@ public class TrendsDialogTests
         Assert.Equal(Headers(dialog.Table)[..columns], fit.Placed.Select(placed => placed.Column.Header));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public void A_wide_terminal_leaves_the_chart_and_legend_as_wide_as_a_120_column_dialog_did(int measure)
+    {
+        var host = new View { Width = 140, Height = 40 };
+        using var dialog = Open(("a-team", 4, Timed), ("tuicode", null, Nothing));
+        host.Add(dialog);
+        dialog.Measure.Value = measure;
+        host.Layout(new System.Drawing.Size(140, 40));
+
+        var legendWide = "tuicode".Length + 3;
+        var gates = dialog.Gates.Visible ? dialog.Gates.Frame.Width + 1 : 0;
+        Assert.Equal(120 - 2 - legendWide - gates, dialog.Graph.Frame.Width);
+        if (dialog.Gates.Visible)
+            Assert.Equal(120 - 1 - dialog.Gates.Frame.Width, dialog.Gates.Frame.X);
+    }
+
     [Fact]
     public void Wide_the_figures_and_their_headers_align_right()
     {

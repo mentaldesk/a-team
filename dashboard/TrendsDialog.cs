@@ -54,7 +54,6 @@ public sealed class TrendsDialog : DashboardDialog
 
         _gates = new ColumnTable<SpentRow>(GateColumns(), TeamRecord.SpentRows)
         {
-            X = Pos.AnchorEnd(GatesWide + Inset),
             Y = 2,
             Width = GatesWide,
             Height = TeamRecord.SpentRows.Length + 1,
@@ -84,7 +83,7 @@ public sealed class TrendsDialog : DashboardDialog
         {
             X = Inset,
             Y = 2,
-            Width = Dim.Func(_ => Math.Max(0, Viewport.Width - Inset * 2 - LegendWide - (_gates.Visible ? GatesWide + 1 : 0)), this),
+            Width = Dim.Func(_ => Math.Max(0, Math.Min(Viewport.Width, ChartWide) - Inset * 2 - LegendWide - (_gates.Visible ? GatesWide + 1 : 0)), this),
             Height = Dim.Fill(tableRows + 3),
             MarginBottom = AxisRows,
             MarginLeft = (uint)LabelWidth,
@@ -99,6 +98,7 @@ public sealed class TrendsDialog : DashboardDialog
             Height = teams.Count,
             Visible = false,
         };
+        _gates.X = Pos.Right(_legend) + 1;
         _table = new ColumnTable<TeamTrendRow>(TeamColumns, [])
         {
             X = Inset,
@@ -163,6 +163,9 @@ public sealed class TrendsDialog : DashboardDialog
 
     /// <summary>Wide enough for every column of the table; narrower, the last ones drop.</summary>
     private const int Wide = 128;
+
+    /// <summary>The chart, legend and week by gate stay as wide as they were before the table needed <see cref="Wide"/>.</summary>
+    private const int ChartWide = 120;
 
     /// <summary>The split by gate: its row names, then a column of minutes per team.</summary>
     private int GatesWide => TeamRecord.SpentRows.Max(row => row.Label.Length) + _teams.Sum(team => RowLayout<SpentRow>.Gap + Math.Max(team.Team.Length, "10h 00m".Length));
