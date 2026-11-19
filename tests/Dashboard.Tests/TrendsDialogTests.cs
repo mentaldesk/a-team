@@ -253,6 +253,24 @@ public class TrendsDialogTests
         Assert.Equal(Headers(dialog.Table)[..columns], fit.Placed.Select(placed => placed.Column.Header));
     }
 
+    [Fact]
+    public void Widening_the_terminal_brings_the_dropped_columns_back()
+    {
+        var host = new View { Width = Dim.Fill(), Height = Dim.Fill() };
+        using var dialog = Open(("a-team", 4, Timed), ("tuicode", null, Nothing));
+        host.Add(dialog);
+
+        host.Layout(new System.Drawing.Size(60, 40));
+        var narrow = Visible(dialog.Table);
+        host.Layout(new System.Drawing.Size(140, 40));
+
+        Assert.Equal(["Team", "Waiting now", "A week ago", "Accepted (7d)", "Runs $"], narrow);
+        Assert.Equal(Headers(dialog.Table), Visible(dialog.Table));
+    }
+
+    private static string[] Visible<T>(MentalDesk.Tui.Columns.ColumnTable<T> table) =>
+        [.. table.RowLayout.Columns.Where((_, i) => table.Style.GetColumnStyleIfAny(i)?.Visible ?? true).Select(column => column.Header)];
+
     [Theory]
     [InlineData(0)]
     [InlineData(3)]
