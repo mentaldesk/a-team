@@ -787,7 +787,7 @@ case " \$* " in
   *" finished"*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$DISPATCH/finished" ;;
   *" free "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$FREES"; cat "$FREED" ;;
   *" update"*) echo "\$* as \${A_TEAM_RUN_TEAM:-me} \${PATH%%:*}" >>"$UPDATES_RUN"; cat "$UPDATED_SAID" ;;
-  *" give-up "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me}: \$(paste -sd ';' - <"\${!#}")" >>"$GIVE_UPS"; [ ! -e "$GIVE_UPS.fails" ] || { cat "$GIVE_UPS.fails" >&2; exit 1; }; echo "gave up" ;;
+  *" give-up "*) echo "\$* as \${A_TEAM_RUN_TEAM:-me}: \$(paste -sd ';' - <"\${!#}")" >>"$GIVE_UPS"; [ ! -e "$GIVE_UPS.fails" ] || { cat "$GIVE_UPS.fails" >&2; exit 1; }; cat "$GIVE_UPS.says" 2>/dev/null || echo "gave up"; [ ! -e "$GIVE_UPS.held" ] || exit 3 ;;
   *" claim dev "*) echo "\$*" >>"$CLAIMS"; cat "$CLAIMED" ;;
   *" triggers dev"*) echo "\$*" >>"$TRIGGER_READS"; cat "$DEV_TRIGGERS" ;;
   *" triggers lead"*) echo "\$*" >>"$TRIGGER_READS"; jq --argjson asked "\$([[ " \$* " == *" --scheduled "* ]] && echo true || echo false)" '.creative = (.creative and \$asked)' "$LEAD_TRIGGERS" ;;

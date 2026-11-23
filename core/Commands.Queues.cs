@@ -182,15 +182,16 @@ internal static partial class Commands
             pr = found;
         }
         var numbers = new List<string> { n };
+        var held = Cards.Marked(card, "held");
         if (pr is not null)
         {
             var p = Board.Raw(pr["number"]);
             if (p != n) numbers.Add(p);
             wake.Heads[number] = Json.Text(pr["headRefOid"]);
             wake.Recent.AddRange(board.PrReviews(p));
-            WakeOnPr(wake, card, pr, p, what.Length > 0 ? what : $"PR #{p}", main);
+            if (!held) WakeOnPr(wake, card, pr, p, what.Length > 0 ? what : $"PR #{p}", main);
         }
-        else if (Cards.Status(card) == "In progress")
+        else if (Cards.Status(card) == "In progress" && !held)
         {
             wake.Task(number, title, $"#{n} is In progress but has no PR: an earlier run didn't finish");
         }
