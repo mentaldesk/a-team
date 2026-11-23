@@ -521,6 +521,9 @@ grep -q 'The dispatcher may hold' "$ROOT/process.md" || fail "process.md"
 grep -q 'dispatcher held' "$ROOT/roles/dev.md" || fail "dev.md"
 grep -q 'the dispatcher held' "$ROOT/roles/lead.md" || fail "lead.md"
 
+case_ "the Dev holds a task whose CI it can neither fix nor re-run"
+grep -q 'neither fix nor re-run' "$ROOT/roles/dev.md" || fail "dev.md"
+
 case_ "a run that died isn't counted and is retried at once; one that finished waits and counts"
 dispatcher
 WORKDIR=$(mktemp -d "$WORK/workdir.XXXXXX")
