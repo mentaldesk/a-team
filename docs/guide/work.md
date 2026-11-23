@@ -366,7 +366,7 @@ Ticking never stops you accepting: `a` only says how many are left, like `3 crit
   in GitHub's settings and reply.
 - **Ask the Dev to fix what the Reviewer left to consider.** On a task that says `reviewed · N to
   consider`, reading it or with its card selected, press `f` (**Cards → Ask the Dev to fix…**).
-  **Ask the Dev to fix #n** lists each **Worth considering** point with a check box, and a `Note:`
+  **Ask the Dev to fix #n** lists each **Worth considering** point with a check box, opening with why it's optional, and a `Note:`
   line for anything you want to add. `Space` ticks a point and `Tab` moves on. **Ask** (`Ctrl+Enter`)
   stays greyed out until a box is ticked. It posts one comment on the PR as you, quoting each ticked
   point and ending `Please fix these.` and your note, and the Dev fixes them all in one run. `Esc` asks

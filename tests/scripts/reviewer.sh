@@ -116,7 +116,7 @@ unset NO_SEED_TALK
 
 case_ "the Reviewer's points are posted as boxes the Dev ticks"
 gh_pr 912 true
-printf '%s\n' '## Needs changing' '- a.sh:1 off by one.' '  It drops the last.' '' '## Worth considering' '* Rename it.' '- [x] Split it.' '' 'Thanks.' >"$WORK/review"
+printf '%s\n' '## Needs changing' '- a.sh:1 off by one.' '  It drops the last.' '' '## Worth considering' '* [readability] Rename it.' '- [x] [outside: b.sh] Split it.' '' 'Thanks.' >"$WORK/review"
 run board demo review reviewer 912 "$WORK/review"
 same "exit" 0 "$STATUS"
 same "boxed" "## Needs changing
@@ -124,8 +124,8 @@ same "boxed" "## Needs changing
   It drops the last.
 
 ## Worth considering
-* [ ] Rename it.
-- [ ] Split it.
+* [ ] [readability] Rename it.
+- [ ] [outside: b.sh] Split it.
 
 Thanks.
 
@@ -139,7 +139,7 @@ run board demo fixed dev 912 1 3
 same "exit" 0 "$STATUS"
 same "said" "#912: 2 of 3 review points fixed" "$(cat "$OUT")"
 grep -q '^PATCH api -X PATCH repos/mentaldesk/demo/issues/comments/4321 -F body=@-' "$WRITES" || fail "fixed: no edit in '$(cat "$WRITES")'"
-same "ticked" "- [x] a.sh:1 off by one.|* [ ] Rename it.|- [x] Split it." "$(grep -E '^[-*] \[' "$POSTED" | paste -sd'|' -)"
+same "ticked" "- [x] a.sh:1 off by one.|* [ ] [readability] Rename it.|- [x] [outside: b.sh] Split it." "$(grep -E '^[-*] \[' "$POSTED" | paste -sd'|' -)"
 same "marker kept" "<!-- a-team:reviewer -->" "$(tail -1 "$POSTED")"
 
 case_ "fixed is the Dev's alone, for a point the review has, on a reviewed task PR of its own"
@@ -157,6 +157,35 @@ gh_reviewing '.body = "My own change"'
 refused_fixed "stakeholder's PR" "dev ticks review points only on its own open task PRs" dev 912 1
 gh_reviewing
 refused_fixed "unreviewed" "#912 has no review to tick" dev 912 1
+
+case_ "each Worth considering point says why it's optional, and outside names a file the PR doesn't change"
+gh_pr 912 true
+echo '[{"filename": "a.sh"}, {"filename": "core/Board.cs"}]' >"$FILES"
+printf '%s\n' '## Worth considering' '- [approach] Swap it.' '- [Readability] Rename it.' '- [outside: `b.sh:12`] Split it.' >"$WORK/review"
+run board demo review reviewer 912 "$WORK/review"
+same "three reasons" 0 "$STATUS"
+gh_pr 912 true
+printf '%s\n' '## Needs changing' '- a.sh:1 off by one.' '' '## Worth considering' '- [approach] Swap it.' \
+  '- When the PR is closed and reopened it stays Done, as the PR says.' >"$WORK/review"
+refused_review "no reason" 'Worth considering point 3 ("When the PR is closed and reopened it…") doesn'"'"'t say why it'"'"'s optional'
+printf '%s\n' '## Worth considering' '- [follow-up] Do it later.' >"$WORK/review"
+refused_review "unknown reason" 'Worth considering point 1 ("[follow-up] Do it later.") doesn'"'"'t say why it'"'"'s optional'
+printf '%s\n' '## Worth considering' '- [outside: ] Somewhere.' >"$WORK/review"
+refused_review "outside nothing" "Worth considering point 1"
+printf '%s\n' '## Worth considering' '- [approach] Swap it.' '- [outside: core/Board.cs:40] A killed child exits 0.' >"$WORK/review"
+refused_review "outside a changed file" 'point 2 ("[outside: core/Board.cs:40] A killed child exits 0.") says it'"'"'s outside the PR, but PR #912 changes core/Board.cs: a wrong result there is Needs changing'
+printf '%s\n' '## Worth considering' '- [outside: Board.cs] A killed child exits 0.' >"$WORK/review"
+refused_review "outside a changed file, by its bare name" 'but PR #912 changes core/Board.cs: a wrong result there is Needs changing'
+printf '%s\n' '## Worth considering' '- [outside: /core/Board.cs] A killed child exits 0.' >"$WORK/review"
+refused_review "outside a changed file, from the root" 'but PR #912 changes core/Board.cs: a wrong result there is Needs changing'
+printf '%s\n' '## Worth considering' '- [outside: ard.cs] Not a whole name.' >"$WORK/review"
+run board demo review reviewer 912 "$WORK/review"
+same "outside a partial name posts" 0 "$STATUS"
+gh_pr 912 true
+printf '%s\n' '## Needs changing' '- [outside: a.sh] Filed here, any reason is fine.' >"$WORK/review"
+run board demo review reviewer 912 "$WORK/review"
+same "Needs changing needs no reason" 0 "$STATUS"
+echo '[]' >"$FILES"
 
 case_ "a second review, a red or ready PR, and anything but the Dev's open task PR are refused"
 gh_reviewed

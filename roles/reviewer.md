@@ -43,14 +43,23 @@ and nothing else.
    - [ ] <file>:<line> <what's wrong, for a wrong result naming the case: when X, it does Y>, and why it matters.
 
    ## Worth considering
-   - [ ] <what could be better>, which needn't hold the PR up.
+   - [ ] [approach] <what could be better>, which needn't hold the PR up.
    ```
 
    **Needs changing** is for what you'd hold the PR for: a missed acceptance criterion, a test that
    doesn't test the change, and any wrong result in code the PR changes that you can name a case
    for, whether or not the task mentions that case. "This could fail", with no case, isn't one.
-   **Worth considering** holds only what's optional: other approaches, naming and readability, and
-   problems in code the PR didn't touch. If nothing needs changing, the review opens with the one
+   These are wrong results too, and so **Needs changing**, naming the case:
+   - one the PR admits to;
+   - one whose fix is a design change: offer the fix;
+   - one that works as coded but undercuts what the task is for.
+
+   An unticked acceptance criterion the diff already meets is **Needs changing** as *Tick criterion N*.
+
+   **Worth considering** holds only what's optional, and each point opens with why:
+   `[approach]` another way to do it, `[readability]` naming and clarity, or `[outside: <file>]` a
+   problem in a file the PR doesn't change. The board refuses a point with none of them, or an
+   `outside` file the PR changes. If nothing needs changing, the review opens with the one
    line `Nothing needs changing.`, followed by any **Worth considering** section; a review that
    names a wrong result never opens with it. One point per list item, each a line or two, with a box the Dev ticks once it's fixed.
 5. `a-team board {{team}} review reviewer <pr> <file>`. It posts the review once; a second is

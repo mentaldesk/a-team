@@ -654,8 +654,33 @@ internal static partial class ReviewPoints
     /// <summary>A review as it's posted: every point unticked.</summary>
     internal static string Unticked(string review) => Boxed(review, Read(review).Select(point => point.Line), " ");
 
+    /// <summary>Why a Worth considering point is optional, from its opening <c>[approach]</c>, <c>[readability]</c> or
+    /// <c>[outside: &lt;file&gt;]</c>: the kind, and for <c>outside</c> the file; null where it opens with none of them.</summary>
+    internal static (string Kind, string? File)? Reason(string text)
+    {
+        if (Why().Match(text) is not { Success: true } why) return null;
+        if (why.Groups["kind"].Success) return (why.Groups["kind"].Value.ToLowerInvariant(), null);
+        var file = Location().Replace(why.Groups["file"].Value.Trim().Trim('`'), "");
+        if (file.StartsWith("./", StringComparison.Ordinal)) file = file[2..];
+        file = file.TrimStart('/');
+        return file.Length == 0 ? null : ("outside", file);
+    }
+
+    /// <summary>A point's first few words, to name it by.</summary>
+    internal static string Opening(string text)
+    {
+        var words = text.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        return words.Length <= 8 ? string.Join(' ', words) : string.Join(' ', words.Take(8)) + "…";
+    }
+
     [GeneratedRegex(@"^#{1,6}[ \t]+(?:(?<name>Needs changing|Worth considering)[ \t]*$)?", RegexOptions.IgnoreCase)]
     private static partial Regex Heading();
+
+    [GeneratedRegex(@"^[ \t]*\[(?:(?<kind>approach|readability)|outside:(?<file>[^\]]*))\]", RegexOptions.IgnoreCase)]
+    private static partial Regex Why();
+
+    [GeneratedRegex(@"(?::[0-9]+(?:-[0-9]+)?)?$")]
+    private static partial Regex Location();
 
     [GeneratedRegex(@"^(?<lead>(?:[-*+]|[0-9]+[.)])[ \t]+)(?:\[(?<box>[ xX])\][ \t]*)?(?<text>.*)$")]
     private static partial Regex Item();

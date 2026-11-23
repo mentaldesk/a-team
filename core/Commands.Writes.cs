@@ -273,6 +273,7 @@ internal static partial class Commands
         if (!Json.Truthy(it["isDraft"])) throw new Die($"#{pr} is ready for review already: it went to the stakeholders unreviewed");
         if (board.HeadVerdict(pr) != "pass") throw new Die($"#{pr} isn't green: it's reviewed once CI passes");
         var body = ReviewPoints.Unticked(WithMarker(file, role));
+        Filed(board, pr, body);
         board.Show(body);
         Console.Out.Write(Board.Must(board.Post($"comment on #{pr}", body + "\n", "pr", "comment", pr, "-R", board.Repo, "--body-file", "-")).Out);
         board.Log(role, RunTaskOr(pr), $"reviewed PR #{pr}");
@@ -456,6 +457,28 @@ internal static partial class Commands
         board.Log(role, n, $"edited {path}");
         board.Say($"#{n}: committed your edit to {path}");
         return 0;
+    }
+
+    /// <summary>Refuses a review with a Worth considering point that doesn't say why it's optional, or calls a file
+    /// this PR changes <c>outside</c>.</summary>
+    private static void Filed(Board board, string pr, string review)
+    {
+        var optional = ReviewPoints.Read(review).Select((point, at) => (Point: point, Number: at + 1))
+            .Where(each => each.Point.Section == "worth considering").ToList();
+        foreach (var (point, number) in optional)
+            if (ReviewPoints.Reason(point.Text) is null)
+                throw new Die($"Worth considering point {number} (\"{ReviewPoints.Opening(point.Text)}\") doesn't say why it's optional: " +
+                    "open it with [approach], [readability] or [outside: <file>], or move it to Needs changing");
+        var outside = optional.Where(each => ReviewPoints.Reason(each.Point.Text)?.Kind == "outside").ToList();
+        if (outside.Count == 0) return;
+        var listed = board.Read("api", "--paginate", $"repos/{board.Repo}/pulls/{pr}/files", "--jq", ".[].filename");
+        if (!listed.Ok) throw new Die($"can't read the files PR #{pr} changes ({Board.Refusal(listed)})");
+        var changed = listed.Said.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var (point, number) in outside)
+            if (ReviewPoints.Reason(point.Text)?.File is { } path
+                && changed.FirstOrDefault(file => file == path || file.EndsWith("/" + path, StringComparison.Ordinal)) is { } match)
+                throw new Die($"Worth considering point {number} (\"{ReviewPoints.Opening(point.Text)}\") says it's outside the PR, " +
+                    $"but PR #{pr} changes {match}: a wrong result there is Needs changing");
     }
 
     internal static int VisionReview(Board board, string[] args)

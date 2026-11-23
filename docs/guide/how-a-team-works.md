@@ -276,9 +276,13 @@ panel in [Overseer](overseer.md#the-teams-panel). Each review is a run, so it co
 - **What it says.** One comment on the PR, in two sections. **Needs changing** has each point with
   the file and line and why: a missed acceptance criterion, a test that doesn't test the change, or
   a wrong result in code the PR changes, naming the case, like *when the read is rate limited, it
-  says the PR isn't merged*, whether or not the task mentioned that case. **Worth considering** holds
-  only what's optional: other approaches, naming and readability, and problems in code the PR didn't
-  touch. It leaves out whatever is fine. If nothing needs changing, it says so in one line.
+  says the PR isn't merged*, whether or not the task mentioned that case. That includes a wrong result
+  the PR admits to, one whose fix is a design change, and one that undercuts what the task is for. An
+  acceptance criterion the PR meets but hasn't ticked is a **Needs changing** point too: *Tick criterion
+  N*. **Worth considering** holds only what's optional, and each point opens with why: `[approach]`
+  another way to do it, `[readability]` naming and clarity, or `[outside: <file>]` a problem in a file
+  the PR doesn't change. The board refuses a review with a point that has none of them, or names a file
+  the PR changes as `outside`. It leaves out whatever is fine. If nothing needs changing, it says so in one line.
 - **What happens next.** The Dev fixes each **Needs changing** point with a test, or replies why
   not, then marks the PR ready as usual. A point that means changing code the PR doesn't otherwise
   touch it says so about and leaves, for you to see on the PR. It leaves **Worth considering** to
