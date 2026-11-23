@@ -109,10 +109,11 @@ dispatcher
 mkdir -p "$A_TEAM_STATE/demo/dev/dry-tried"
 echo "$(shasum <<<"$CI" | cut -c1-12) $(($(date +%s) - 36000)) 3" >"$(tries_file)"
 echo "#12: already held, gave up after 3 runs" >"$GIVE_UPS.says"
+: >"$GIVE_UPS.held"
 dispatch_dev --dry-run
 dispatch_dev --dry-run
 dispatch_dev --dry-run
-rm -f "$GIVE_UPS.says"
+rm -f "$GIVE_UPS.says" "$GIVE_UPS.held"
 same "asked once" 1 "$(grep -c 'give-up dev 12 3' "$GIVE_UPS")"
 same "logged once" 1 "$(starts 'demo dev: #12: already held, gave up after 3 runs')"
 same "no run" 0 "$(starts 'would start: #12')"
@@ -270,6 +271,7 @@ case_ "when the Lead gives up on an item something else held, the role says so o
 dispatcher
 jq -n '{reasons: ["#31 was approved: break it down"], creative: false, items: [31]}' >"$LEAD_TRIGGERS"
 echo "#31: already held, gave up after 3 runs" >"$GIVE_UPS.says"
+: >"$GIVE_UPS.held"
 dispatch_dev --dry-run
 aged "$(lead_file)" 15
 dispatch_dev --dry-run
@@ -280,7 +282,7 @@ dispatch_dev --dry-run
 aged "$(lead_file)" 600
 dispatch_dev --dry-run
 dispatch_dev --dry-run
-rm -f "$GIVE_UPS.says"
+rm -f "$GIVE_UPS.says" "$GIVE_UPS.held"
 same "runs" 3 "$(starts 'demo lead: would start')"
 same "asked once" 1 "$(grep -c 'give-up lead 31 3' "$GIVE_UPS")"
 same "logged once" 1 "$(starts 'demo lead: #31: already held, gave up after 3 runs')"
@@ -350,7 +352,7 @@ KEEP_BOARD=1
 : >"$POSTED"
 run board demo give-up dev 12 3 "$WORK/reasons"
 unset KEEP_BOARD
-same "exit" 0 "$STATUS"
+same "exit" 3 "$STATUS"
 same "said" "#12: already held, gave up after 3 runs" "$(cat "$OUT")"
 same "still yours" '"you"' "$(marks 12 | jq -c .held.by)"
 same "posted" "" "$(cat "$POSTED")"

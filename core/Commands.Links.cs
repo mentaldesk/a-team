@@ -10,6 +10,7 @@ internal static partial class Commands
     private const string UpstreamRef = @"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)\z";
     private const int UpdateSettles = 600;
     private const int LastLineShown = 200;
+    internal const int AlreadyHeld = 3;
     private static readonly char[] Spaces = [' ', '\t', '\n', '\v', '\f', '\r'];
 
     private static Dictionary<string, Handler> Linking() => new()
@@ -300,7 +301,7 @@ internal static partial class Commands
         }
     }
 
-    /// <summary>The dispatcher's: holds #n, whatever its status, saying what its runs were for and what became of them.</summary>
+    /// <summary>The dispatcher's: holds #n, whatever its status, saying what its runs were for and what became of them; exits 3 if something else already held it.</summary>
     internal static int GiveUp(Board board, string[] args)
     {
         if (args.Length != 4 || !int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out var runs))
@@ -313,7 +314,7 @@ internal static partial class Commands
         if (Cards.Marked(it, "held"))
         {
             board.Say($"#{n}: already held, gave up after {runs} runs");
-            return 0;
+            return AlreadyHeld;
         }
         var reasons = File.ReadAllLines(file).Where(HasText).ToList();
         var named = reasons.Where(reason => Regex.IsMatch(reason, $@"#{n}\b")).ToList();

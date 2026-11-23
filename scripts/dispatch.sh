@@ -462,17 +462,17 @@ forget_tries() {
 # give_up <n> <reasons>: holds #<n> for the stakeholder, as the team's App, saying what its $tries runs were for.
 # $was_held says whether something else already held it, so the hold won't stop these reasons and the count has to.
 give_up() {
-  local said file
+  local said file status=0
   was_held=false
   file=$(mktemp "$dir/${prefix}give-up.XXXXXX")
   printf '%s\n' "$2" >"$file"
-  if said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$team "$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" give-up "$role" "$1" "$tries" "$file" 2>&1); then
-    rm -f "$file"
-    [[ $said != *"already held"* ]] || was_held=true
+  said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$team "$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" give-up "$role" "$1" "$tries" "$file" 2>&1) || status=$?
+  rm -f "$file"
+  [ "$status" -ne 3 ] || { was_held=true; status=0; }
+  if [ "$status" -eq 0 ]; then
     passing "$dir/${prefix}give-up-failing" "$dir/${prefix}give-up-failed-once" "$team $role: giving up working again"
     log "$team $role: ${said//$'\n'/; }"
   else
-    rm -f "$file"
     failing "$dir/${prefix}give-up-failing" "$dir/${prefix}give-up-failed-once" "${said//$'\n'/ }" "$team $role: couldn't give up on #$1"
     return 1
   fi
