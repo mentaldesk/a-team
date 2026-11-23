@@ -381,3 +381,28 @@ public class SpendingTests
         Assert.Equal("""[{"number":81,"title":"#81","url":"u/81","status":"Done","parent":null,"pitch":true,"theme":"Think bigger"},{"number":517,"title":"#517","url":"u/517","status":"Done","parent":81,"pitch":false,"theme":null}]""", Json.Compact(spent["items"]));
     }
 }
+
+public class ReviewReasonTests
+{
+    [Theory]
+    [InlineData("[approach] Swap it.", "approach", null)]
+    [InlineData("[Readability] Rename it.", "readability", null)]
+    [InlineData("[outside: core/Board.cs] Split it.", "outside", "core/Board.cs")]
+    [InlineData("[outside: `./core/Board.cs:40-52`] Split it.", "outside", "core/Board.cs")]
+    public void A_point_says_why_it_s_optional(string text, string kind, string? file) =>
+        Assert.Equal((kind, file), ReviewPoints.Reason(text));
+
+    [Theory]
+    [InlineData("Swap it [approach].")]
+    [InlineData("[follow-up] Do it later.")]
+    [InlineData("[outside: ] Somewhere.")]
+    [InlineData("[outside] Somewhere.")]
+    public void A_point_with_no_reason_has_none(string text) => Assert.Null(ReviewPoints.Reason(text));
+
+    [Fact]
+    public void A_point_is_named_by_its_first_eight_words()
+    {
+        Assert.Equal("Rename it.", ReviewPoints.Opening("Rename it."));
+        Assert.Equal("one two three four five six seven eight…", ReviewPoints.Opening("one two three four five six seven eight nine"));
+    }
+}

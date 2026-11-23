@@ -29,6 +29,14 @@ public class AskFixDialogTests
     }
 
     [Fact]
+    public void Each_point_shows_with_its_reason()
+    {
+        using var dialog = Open([.. Considered.Points("## Worth considering\n- [ ] [approach] Swap it.\n- [ ] [outside: core/Board.cs] Split it.")]);
+
+        Assert.Equal(["[approach] Swap it.", "[outside: core/Board.cs] Split it."], dialog.Boxes.Select(box => box.Text));
+    }
+
+    [Fact]
     public void Ask_is_disabled_until_a_box_is_ticked_and_again_once_none_is()
     {
         using var dialog = Open("Rename it.", "Split it.");
