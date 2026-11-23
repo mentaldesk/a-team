@@ -104,6 +104,24 @@ dispatch_dev --dry-run
 same "held" 1 "$(grep -c 'give-up dev 12 3' "$GIVE_UPS")"
 same "the other starts" 1 "$(starts 'would start: #14')"
 
+case_ "giving up on a task something else held counts as given up: logged once, and the same reasons start nothing"
+dispatcher
+mkdir -p "$A_TEAM_STATE/demo/dev/dry-tried"
+echo "$(shasum <<<"$CI" | cut -c1-12) $(($(date +%s) - 36000)) 3" >"$(tries_file)"
+echo "#12: already held, gave up after 3 runs" >"$GIVE_UPS.says"
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+rm -f "$GIVE_UPS.says"
+same "asked once" 1 "$(grep -c 'give-up dev 12 3' "$GIVE_UPS")"
+same "logged once" 1 "$(starts 'demo dev: #12: already held, gave up after 3 runs')"
+same "no run" 0 "$(starts 'would start: #12')"
+same "the count kept" 3 "$(cut -d' ' -f3 "$(tries_file)")"
+one_task 'stakeholder feedback on #12 (now)'
+dispatch_dev --dry-run
+same "a new reason runs" 1 "$(starts 'would start: #12: stakeholder feedback on #12')"
+[ ! -e "$(tries_file).gave-up" ] || fail "the give-up outlived its reasons"
+
 case_ "a giving up that fails starts nothing and is logged once"
 dispatcher
 mkdir -p "$A_TEAM_STATE/demo/dev/dry-tried"
@@ -248,6 +266,30 @@ dispatch_dev --dry-run
 same "not again until it's due" 1 "$(starts 'demo lead: would start: it.s been a while')"
 same "still no fourth" 3 "$(starts 'demo lead: would start: room in Pitched')"
 
+case_ "when the Lead gives up on an item something else held, the role says so once and the reasons start nothing"
+dispatcher
+jq -n '{reasons: ["#31 was approved: break it down"], creative: false, items: [31]}' >"$LEAD_TRIGGERS"
+echo "#31: already held, gave up after 3 runs" >"$GIVE_UPS.says"
+dispatch_dev --dry-run
+aged "$(lead_file)" 15
+dispatch_dev --dry-run
+aged "$(lead_file)" 60
+dispatch_dev --dry-run
+aged "$(lead_file)" 60
+dispatch_dev --dry-run
+aged "$(lead_file)" 600
+dispatch_dev --dry-run
+dispatch_dev --dry-run
+rm -f "$GIVE_UPS.says"
+same "runs" 3 "$(starts 'demo lead: would start')"
+same "asked once" 1 "$(grep -c 'give-up lead 31 3' "$GIVE_UPS")"
+same "logged once" 1 "$(starts 'demo lead: #31: already held, gave up after 3 runs')"
+same "the role gave up" 1 "$(starts 'demo lead: gave up after 3 runs')"
+jq -n '{reasons: ["something else"], creative: false, items: []}' >"$LEAD_TRIGGERS"
+dispatch_dev --dry-run
+same "a new reason runs" 1 "$(starts 'demo lead: would start: something else')"
+[ ! -e "$A_TEAM_STATE/demo/lead/dry-gave-up-held" ] || fail "the held items outlived their reasons"
+
 case_ "reasons that went away and came back start from nothing for the Lead"
 dispatcher
 jq -n '{reasons: ["room in Pitched for a drafted pitch"], creative: false, items: []}' >"$LEAD_TRIGGERS"
@@ -299,6 +341,19 @@ grep -q 'Gave up after 3 runs' "$POSTED" || fail "comment: '$(cat "$POSTED")'"
 grep -q 'Nothing will start for it until you reply here' "$POSTED" || fail "comment: '$(cat "$POSTED")'"
 same "marker last" '<!-- a-team:dispatch -->' "$(sed '/^$/d' "$POSTED" | tail -n 1)"
 same "history" "held · gave up after 3 runs" "$(A_TEAM_CONFIG="$CONFIG" "$A_TEAM" board demo history 12 | jq -r '.events[0].what')"
+
+case_ "giving up on an item something else held says it gave up, and changes nothing"
+heads
+run board demo list
+sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"dev\":true,\"held\":{\"at\":\"2025-09-19T08:00:00Z\",\"by\":\"you\"}}' WHERE team = 'demo' AND item = 12;"
+KEEP_BOARD=1
+: >"$POSTED"
+run board demo give-up dev 12 3 "$WORK/reasons"
+unset KEEP_BOARD
+same "exit" 0 "$STATUS"
+same "said" "#12: already held, gave up after 3 runs" "$(cat "$OUT")"
+same "still yours" '"you"' "$(marks 12 | jq -c .held.by)"
+same "posted" "" "$(cat "$POSTED")"
 
 case_ "a role's run can't give up on an item"
 A_TEAM_RUN_STARTED=${TODAY}T09:00:00Z run board demo give-up dev 12 3 "$WORK/reasons"

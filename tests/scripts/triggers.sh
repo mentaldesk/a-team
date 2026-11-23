@@ -154,6 +154,63 @@ same "exit" 0 "$STATUS"
 same "feedback" "[\"stakeholder feedback on #912 (${TODAY}T02:20:00Z)\"]" "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
 same "ready" null "$(jq -c .ready "$OUT")"
 
+# held_task <status> <by>: task #12 with its PR #912, held by <by>.
+held_task() {
+  fixture <<'JSON'
+{ "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 } }
+JSON
+  gh_items <<ITEMS
+$1 12 A held task
+ITEMS
+  edit_item 12 '.labels.nodes = [{name: "a-team:dev"}]'
+  run board demo list
+  sqlite3 "$A_TEAM_STATE/history.db" "UPDATE board SET marks = '{\"dev\":true,\"held\":{\"at\":\"2025-09-19T08:00:00Z\",\"by\":\"$2\"}}' WHERE team = 'demo' AND item = 12;"
+}
+
+case_ "a held task's red CI, review, conflict or green draft doesn't wake the Dev"
+for by in dev lead you; do
+  for status in In_progress In_review; do
+    held_task "$status" "$by"
+    gh_pr 912 true
+    gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+    KEEP_BOARD=1 run board demo triggers dev
+    same "$by $status: exit" 0 "$STATUS"
+    same "$by $status: red" '[]' "$(jq -c .tasks "$OUT")"
+    jq '(.. | objects | select(has("isDraft"))) += {mergeable: "CONFLICTING", headRefOid: "cafe123"}' "$PRS" >"$PRS.new" && mv "$PRS.new" "$PRS"
+    gh_runs <<'RUNS'
+completed success 2025-09-19T09:00:00Z build
+RUNS
+    KEEP_BOARD=1 run board demo triggers dev
+    same "$by $status: conflict and green draft on a new commit" '[]' "$(jq -c .tasks "$OUT")"
+    gh_pr 912 true
+    gh_reviewed
+    KEEP_BOARD=1 run board demo triggers dev
+    same "$by $status: review" '[]' "$(jq -c .tasks "$OUT")"
+  done
+done
+held_task In_progress dev
+gh_pr
+KEEP_BOARD=1 run board demo triggers dev
+same "no PR yet" '[]' "$(jq -c .tasks "$OUT")"
+
+case_ "a stakeholder's comment on a held task, or on its PR, still wakes the Dev"
+for n in 12 912; do
+  held_task In_review you
+  gh_pr 912 false
+  gh_runs <<'RUNS'
+completed failure 2025-09-19T09:00:00Z build
+RUNS
+  gh_recent <<RECENT
+$n ${TODAY}T02:20:00Z reviewer 0 Go ahead.
+RECENT
+  KEEP_BOARD=1 run board demo triggers dev
+  same "#$n: exit" 0 "$STATUS"
+  same "#$n: feedback only" "[\"stakeholder feedback on #$n (${TODAY}T02:20:00Z)\"]" "$(jq -c '.tasks[] | select(.number == 12) | .reasons' "$OUT")"
+  : >"$RECENT"
+done
+
 case_ "triggers groups the Dev's reasons by task, and names the Ready task a run could claim"
 fixture <<'JSON'
 { "repo": "mentaldesk/demo", "reviewer": "reviewer", "app": { "id": 7, "slug": "demo-app" }, "project": { "owner": "mentaldesk", "number": 1 },

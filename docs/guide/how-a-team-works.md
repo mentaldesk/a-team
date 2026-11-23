@@ -159,6 +159,8 @@ When the Dev can't go on without you, it hands its task back with a question and
 The Lead may hold a task too while it breaks a pitch down, and asks on a pitch under
 **Needs your answer** in its description. All of them wait in **Blocked** in the Work area until you
 answer: a held task with the latest ask on it, or `held, no reason given` where no agent said why.
+A held task costs nothing while it waits: red CI, a review, a conflict or a new commit on its PR
+starts no run, and only your comment on the task or its PR does.
 
 You never need to take the hold off a task an agent held. Reply on it instead, from the reader or on GitHub:
 the agent that held it reads your reply on its next run and, if it says the thing is done, takes the

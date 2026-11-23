@@ -312,7 +312,7 @@ internal static partial class Commands
         var it = Must(board.Item(n), $"#{n} is not on the board");
         if (Cards.Marked(it, "held"))
         {
-            board.Say($"#{n}: already held");
+            board.Say($"#{n}: already held, gave up after {runs} runs");
             return 0;
         }
         var reasons = File.ReadAllLines(file).Where(HasText).ToList();

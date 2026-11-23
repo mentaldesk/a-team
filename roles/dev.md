@@ -47,7 +47,9 @@ Find it with `a-team board {{team}} pr <n>`, then:
   --failed`, not fixed. GitHub allows that only once the whole run has finished; until then,
   leave it. If it's `main-red`, every job it fails also fails on the default branch: leave it, since
   a fix task for that branch is the Dev's first, and CI reruns once that merges. A fix task's own PR
-  never reads `main-red`: its failures are yours to fix.
+  never reads `main-red`: its failures are yours to fix. If it fails for a reason outside the code
+  that you can neither fix nor re-run, like a switched-off service or a missing secret, hold it with
+  your question (`a-team board {{team}} hold dev <n> <file>`), move it back to Ready, and end the run.
 - `a-team board {{team}} feedback dev <pr>` and `a-team board {{team}} feedback dev <n>`: the stakeholder may comment on
   either the PR or the issue. Address each point, push, and reply with `a-team board {{team}} comment` where
   the comment was made. If you disagree with a point, say why in the reply instead of changing

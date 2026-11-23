@@ -96,7 +96,7 @@ dispatch() {
     reasons=$(jq -r '.reasons[]' <<<"$triggers")
     creative=$(jq -r .creative <<<"$triggers")
     if [ -z "$reasons" ]; then
-      rm -f "$dir/${prefix}gave-up"
+      rm -f "$dir/${prefix}gave-up" "$dir/${prefix}gave-up-held"
       forget_tries "$dir/${prefix}fingerprint"
       creative_due || return
       reasons=$SCHEDULED
@@ -449,7 +449,7 @@ fresh() {
     fi
   fi
   [ "$2" != "$SCHEDULED" ] || tries=0
-  rm -f "$dir/${prefix}gave-up"
+  rm -f "$dir/${prefix}gave-up" "$dir/${prefix}gave-up-held"
   echo "$fingerprint $now $tries ${4:-}" >"$1"
 }
 
@@ -460,12 +460,15 @@ forget_tries() {
 }
 
 # give_up <n> <reasons>: holds #<n> for the stakeholder, as the team's App, saying what its $tries runs were for.
+# $was_held says whether something else already held it, so the hold won't stop these reasons and the count has to.
 give_up() {
   local said file
+  was_held=false
   file=$(mktemp "$dir/${prefix}give-up.XXXXXX")
   printf '%s\n' "$2" >"$file"
   if said=$(PATH="$ROOT/bin:$PATH" A_TEAM_RUN_TEAM=$team "$ROOT/bin/a-team" board ${dry:+"$dry"} "$team" give-up "$role" "$1" "$tries" "$file" 2>&1); then
     rm -f "$file"
+    [[ $said != *"already held"* ]] || was_held=true
     passing "$dir/${prefix}give-up-failing" "$dir/${prefix}give-up-failed-once" "$team $role: giving up working again"
     log "$team $role: ${said//$'\n'/; }"
   else
@@ -479,7 +482,12 @@ give_up() {
 give_up_role() {
   local item failed=false
   for item in $(sort -un <<<"$items"); do
+    grep -qx "$item" "$dir/${prefix}gave-up-held" 2>/dev/null && { failed=true; continue; }
     give_up "$item" "$reasons" || failed=true
+    if $was_held; then
+      failed=true
+      echo "$item" >>"$dir/${prefix}gave-up-held"
+    fi
   done
   if [ -n "$items" ] && ! $failed; then
     $DRY_RUN || rm -f "$dir/${prefix}fingerprint"
@@ -502,8 +510,16 @@ pick_task() {
     why=$(jq -r '.reasons[]' <<<"$row")
     fresh "$2/${prefix}tried/$n" "$why" "$2/runs/$n/latest.jsonl" "$(jq -r '.head // empty' <<<"$row")"
     case $? in
-      0) echo "$row"; return ;;
-      2) give_up "$n" "$why" && { $DRY_RUN || rm -f "$2/tried/$n"; } ;;
+      0) rm -f "$2/${prefix}tried/$n.gave-up"; echo "$row"; return ;;
+      2)
+        [ -e "$2/${prefix}tried/$n.gave-up" ] && continue
+        give_up "$n" "$why" || continue
+        if $was_held; then
+          touch "$2/${prefix}tried/$n.gave-up"
+        else
+          $DRY_RUN || rm -f "$2/tried/$n"
+        fi
+        ;;
     esac
   done < <(jq -c '.tasks[]?' <<<"$3")
   [ "$role" = dev ] && [ "$(jq -r '.ready // empty' <<<"$3")" != "" ] || return 0
