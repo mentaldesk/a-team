@@ -333,6 +333,15 @@ for shell in "failing exited 3" "slow took over 1s" "quiet printed no PATH"; do
   grep -qF ":$GUARD:" <<<":$(found path):" || fail "${shell%% *}: lost the dispatcher's PATH: '$(found path)'"
 done
 
+case_ "a shell stopped for being slow takes what its profile was stuck in with it"
+fake "$WORK/stuck" <<SH
+sh -c 'sh -c "echo \\\$\\\$ >$WORK/stuck.pid; exec sleep 300"; :'
+SH
+path_run SHELL="$WORK/stuck" A_TEAM_PATH_LIMIT=1
+STUCK=$(cat "$WORK/stuck.pid")
+[ -n "$STUCK" ] || fail "the profile never ran"
+kill -0 "$STUCK" 2>/dev/null && { kill -9 "$STUCK"; fail "left $STUCK running"; }
+
 case_ "a workdir that isn't there starts nothing, and says so rather than recording a start"
 STATE_DIR="$A_TEAM_STATE/demo/dev"
 rm -rf "$STATE_DIR"

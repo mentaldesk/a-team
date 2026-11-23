@@ -274,6 +274,14 @@ copy_release() {
   "$ROOT/bin/a-team" version >"$1/VERSION"
 }
 
+# kill_tree <pid>: kills <pid> and every process under it, stopping each first so it can't start more.
+kill_tree() {
+  local child
+  kill -STOP "$1" 2>/dev/null
+  for child in $(pgrep -P "$1"); do kill_tree "$child"; done
+  kill -9 "$1" 2>/dev/null
+}
+
 # shell_path: the PATH a new terminal would have, or the dispatcher's own plus Homebrew's when the shell fails or is slow.
 shell_path() {
   local shell flags out pid status=0 why='' limit=${A_TEAM_PATH_LIMIT:-5} tick=0 found
@@ -287,7 +295,7 @@ shell_path() {
   pid=$!
   while kill -0 "$pid" 2>/dev/null && [ "$tick" -lt $((limit * 10)) ]; do sleep 0.1; tick=$((tick + 1)); done
   if kill -0 "$pid" 2>/dev/null; then
-    kill -9 "$pid" 2>/dev/null
+    kill_tree "$pid"
     why="took over ${limit}s"
   fi
   wait "$pid" 2>/dev/null || status=$?
