@@ -226,5 +226,5 @@ act on a board in a newer format than it knows. Instead it says why and stops, a
 you to merge the default branch.
 `a-team install` asks before replacing a dispatcher installed from somewhere else, so trying a
 clone can't take over the real one by accident. When a
-dispatcher starts an agent, it puts its own `bin` first on the agent's `PATH` and fills in the
+dispatcher starts an agent, it puts its own `bin` first on the agent's `PATH`, ahead of your login shell's, and fills in the
 permission rules from its own location, so the agent uses that same copy of a-team.

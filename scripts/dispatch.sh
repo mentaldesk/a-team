@@ -274,11 +274,48 @@ copy_release() {
   "$ROOT/bin/a-team" version >"$1/VERSION"
 }
 
+# kill_tree <pid>: kills <pid> and every process under it, stopping each first so it can't start more.
+kill_tree() {
+  local child
+  kill -STOP "$1" 2>/dev/null
+  for child in $(pgrep -P "$1"); do kill_tree "$child"; done
+  kill -9 "$1" 2>/dev/null
+}
+
+# shell_path: the PATH a new terminal would have, or the dispatcher's own plus Homebrew's when the shell fails or is slow.
+shell_path() {
+  local shell flags out pid status=0 why='' limit=${A_TEAM_PATH_LIMIT:-5} tick=0 found
+  shell=${SHELL:-$(dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{ print $2 }')}
+  shell=${shell:-/bin/zsh}
+  # +m stops an interactive shell taking the terminal from the app; fish reads its config without -i.
+  flags=(-l -i +m)
+  [ "${shell##*/}" != fish ] || flags=(-l)
+  out=$(mktemp "${TMPDIR:-/tmp}/a-team-path.XXXXXX")
+  "$shell" "${flags[@]}" -c "printf '\n__A_TEAM_PATH__='; printenv PATH" </dev/null >"$out" 2>/dev/null &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$tick" -lt $((limit * 10)) ]; do sleep 0.1; tick=$((tick + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill_tree "$pid"
+    why="took over ${limit}s"
+  fi
+  wait "$pid" 2>/dev/null || status=$?
+  found=$(sed -n 's/^__A_TEAM_PATH__=//p' "$out" | tail -n 1)
+  rm -f "$out"
+  [ -n "$why" ] || [ "$status" -eq 0 ] || why="exited $status"
+  [ -n "$why" ] || [ -n "$found" ] || why="printed no PATH"
+  if [ -z "$why" ]; then
+    echo "$found"
+    return
+  fi
+  log "$team $role: couldn't read PATH from $shell ($why): using the dispatcher's plus /usr/local/bin and /opt/homebrew/bin"
+  echo "$PATH:/usr/local/bin:/opt/homebrew/bin" | tr : '\n' | awk 'NF && !seen[$0]++' | paste -sd: -
+}
+
 # launch: starts a run for $reasons (and $task, for the Dev or Reviewer). Such a run keeps its state under
 # runs/<task>, and the role's own files follow the run started last. Each run runs on its own copy
 # of the release, so an upgrade mid-run can't change it.
 launch() {
-  local what run logfile prompt settings workdir pid release version own
+  local what run logfile prompt settings workdir pid release version own path
   workdir=$(cfg .workdir)
   if ! $DRY_RUN && [ ! -d "${workdir/#\~/$HOME}" ]; then
     log "$team $role: cannot start: workdir $workdir: no such directory"
@@ -318,9 +355,10 @@ This run is for #$number $(jq -r .title <<<"$task"), and only that task.
 This run was started because:
 $(sed 's/^/- /' <<<"$reasons")"
 
+  path=$(shell_path)
   pid=$(
     cd "$workdir" || exit 1
-    PATH="$release/bin:$PATH" A_TEAM_RUN_TEAM="$team" A_TEAM_RUN_ROLE="$role" A_TEAM_RUN_TASK="$number" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
+    PATH="$release/bin:$path" A_TEAM_RUN_TEAM="$team" A_TEAM_RUN_ROLE="$role" A_TEAM_RUN_TASK="$number" A_TEAM_RUN_STARTED="$(iso "$now")" nohup claude -p "$prompt" \
       --permission-mode auto --permission-prompts none \
       --settings "$settings" \
       --name "a-team · $team · $role${number:+ · #$number}" \
