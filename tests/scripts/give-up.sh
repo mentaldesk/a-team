@@ -523,6 +523,7 @@ grep -q 'the dispatcher held' "$ROOT/roles/lead.md" || fail "lead.md"
 
 case_ "the Dev holds a task whose CI it can neither fix nor re-run"
 grep -q 'neither fix nor re-run' "$ROOT/roles/dev.md" || fail "dev.md"
+grep -A4 'neither fix nor re-run' "$ROOT/roles/dev.md" | grep -q 'missing Actions secret, ask for it with `a-team board {{team}} secret dev' || fail "dev.md: secret"
 
 case_ "a run that died isn't counted and is retried at once; one that finished waits and counts"
 dispatcher
