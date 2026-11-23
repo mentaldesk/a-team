@@ -276,11 +276,14 @@ copy_release() {
 
 # shell_path: the PATH a new terminal would have, or the dispatcher's own plus Homebrew's when the shell fails or is slow.
 shell_path() {
-  local shell out pid status=0 why='' limit=${A_TEAM_PATH_LIMIT:-5} tick=0 found
+  local shell flags out pid status=0 why='' limit=${A_TEAM_PATH_LIMIT:-5} tick=0 found
   shell=${SHELL:-$(dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{ print $2 }')}
   shell=${shell:-/bin/zsh}
+  # +m stops an interactive shell taking the terminal from the app; fish reads its config without -i.
+  flags=(-l -i +m)
+  [ "${shell##*/}" != fish ] || flags=(-l)
   out=$(mktemp "${TMPDIR:-/tmp}/a-team-path.XXXXXX")
-  "$shell" -l -i -c "printf '\n__A_TEAM_PATH__='; printenv PATH" </dev/null >"$out" 2>/dev/null &
+  "$shell" "${flags[@]}" -c "printf '\n__A_TEAM_PATH__='; printenv PATH" </dev/null >"$out" 2>/dev/null &
   pid=$!
   while kill -0 "$pid" 2>/dev/null && [ "$tick" -lt $((limit * 10)) ]; do sleep 0.1; tick=$((tick + 1)); done
   if kill -0 "$pid" 2>/dev/null; then

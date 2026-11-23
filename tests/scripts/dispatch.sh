@@ -272,7 +272,7 @@ fake "$TOOLS/docker" <<<'exit 0'
 fake "$LATER/kubectl" <<<'exit 0'
 echo "PATH=$TOOLS:/usr/bin:/bin" >"$PROFILE"
 fake "$WORK/zsh" <<SH
-[ "\$*" = "-l -i -c \${*: -1}" ] || exit 9
+[ "\$*" = "-l -i +m -c \${*: -1}" ] || exit 9
 echo "Welcome back"; echo "/elsewhere:/bin"
 source "$PROFILE"; export PATH FROM_PROFILE=yes
 exec bash --norc --noprofile -c "\${*: -1}"
@@ -291,6 +291,33 @@ same "added later" "$LATER/kubectl" "$(found kubectl)"
 case_ "a pass the app starts gives its run the same PATH as one launchd starts"
 path_run SHELL="$WORK/zsh" PATH="/usr/bin:/bin:$(dirname "$(command -v jq)"):$(dirname "$(command -v sqlite3)")"
 same "path" "$RELEASE:$TOOLS:$LATER:/usr/bin:/bin" "$(found path)"
+
+case_ "fish is asked for its PATH without -i, since it reads its config without it"
+fake "$WORK/fish" <<SH
+[ "\$*" = "-l -c \${*: -1}" ] || exit 9
+source "$PROFILE"; export PATH
+exec bash --norc --noprofile -c "\${*: -1}"
+SH
+path_run SHELL="$WORK/fish"
+same "path" "$RELEASE:$TOOLS:$LATER:/usr/bin:/bin" "$(found path)"
+
+case_ "reading zsh's PATH leaves the terminal with the app that started the pass"
+if ZSH=$(command -v zsh) && command -v script >/dev/null; then
+  mkdir -p "$WORK/zdot"
+  cat >"$WORK/pass.sh" <<SH
+ps -o tpgid= -p \$\$ >"$WORK/tpgid"
+SHELL="$ZSH" ZDOTDIR="$WORK/zdot" A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/dispatch.sh"
+ps -o tpgid= -p \$\$ >>"$WORK/tpgid"
+SH
+  rm -rf "$A_TEAM_STATE/demo/dev"
+  echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
+  if script --version >/dev/null 2>&1; then
+    script -qec "bash $WORK/pass.sh" /dev/null </dev/null >/dev/null
+  else
+    script -q /dev/null bash "$WORK/pass.sh" </dev/null >/dev/null
+  fi
+  [ "$(sort -u "$WORK/tpgid" | wc -l)" -eq 1 ] || fail "terminal's foreground group moved: $(paste -sd ' ' - <"$WORK/tpgid")"
+fi
 
 case_ "a shell that fails, is slow or prints no PATH still starts the run, on the dispatcher's PATH and Homebrew's, saying why"
 fake "$WORK/failing" <<<'exit 3'
