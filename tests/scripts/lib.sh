@@ -18,6 +18,9 @@ for tool in gh curl security claude open launchctl; do
   fake "$GUARD/$tool" <<<"echo \"$tool: a test reached the real one\" >&2; exit 99"
 done
 PATH="$GUARD:$PATH"
+# A run's PATH comes from a login shell, which mustn't be yours: this one adds nothing to it.
+fake "$GUARD/login-shell" <<<'exec bash --norc --noprofile -c "${*: -1}"'
+export SHELL="$GUARD/login-shell"
 # How long a fake waits, so one a killed suite leaves behind still ends.
 FAKE_LIMIT=300
 OUT="$WORK/out" ERR="$WORK/err"

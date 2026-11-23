@@ -250,6 +250,62 @@ grep -q '^This run is for #13 Something to start, and only that task.$' "$LAUNCH
   fail "prompt: '$(cat "$LAUNCHED")'"
 same "state" '{"number":13,"title":"Something to start"}' "$(cat "$A_TEAM_STATE/demo/dev/task")"
 
+# path_run [<env>...]: a run for #13 from a dispatcher started with <env>, its claude recording what it finds on PATH.
+path_run() {
+  rm -rf "$A_TEAM_STATE/demo/dev"
+  : >"$A_TEAM_STATE/dispatch.log"
+  : >"$LAUNCHED"
+  echo '{"number": 13, "title": "Something to start"}' >"$CLAIMED"
+  fake "$DISPATCH/bin/claude" <<SH
+{ echo "path: \$PATH"; echo "docker: \$(command -v docker)"; echo "kubectl: \$(command -v kubectl)"
+  echo "a-team: \$(command -v a-team)"; echo "from profile: \${FROM_PROFILE:-}"; } >"$LAUNCHED"
+SH
+  env "$@" A_TEAM_CONFIG="$CONFIG" bash "$DISPATCH/scripts/dispatch.sh"
+  for _ in $(seq 50); do [ -s "$LAUNCHED" ] && break; sleep 0.1; done
+}
+found() { sed -n "s/^$1: //p" "$LAUNCHED"; }
+
+case_ "a run finds what the login shell's PATH has, read afresh each run, with its release first and nothing else from the shell"
+TOOLS="$WORK/tools" LATER="$WORK/later" PROFILE="$WORK/profile"
+mkdir -p "$TOOLS" "$LATER"
+fake "$TOOLS/docker" <<<'exit 0'
+fake "$LATER/kubectl" <<<'exit 0'
+echo "PATH=$TOOLS:/usr/bin:/bin" >"$PROFILE"
+fake "$WORK/zsh" <<SH
+[ "\$*" = "-l -i -c \${*: -1}" ] || exit 9
+echo "Welcome back"; echo "/elsewhere:/bin"
+source "$PROFILE"; export PATH FROM_PROFILE=yes
+exec bash --norc --noprofile -c "\${*: -1}"
+SH
+path_run SHELL="$WORK/zsh"
+RELEASE="$A_TEAM_STATE/demo/dev/runs/13/release/bin"
+same "path" "$RELEASE:$TOOLS:/usr/bin:/bin" "$(found path)"
+same "docker" "$TOOLS/docker" "$(found docker)"
+same "a-team" "$RELEASE/a-team" "$(found a-team)"
+same "from profile" "" "$(found 'from profile')"
+grep -q 'PATH' "$A_TEAM_STATE/dispatch.log" && fail "logged: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+echo "PATH=$TOOLS:$LATER:/usr/bin:/bin" >"$PROFILE"
+path_run SHELL="$WORK/zsh"
+same "added later" "$LATER/kubectl" "$(found kubectl)"
+
+case_ "a pass the app starts gives its run the same PATH as one launchd starts"
+path_run SHELL="$WORK/zsh" PATH="/usr/bin:/bin:$(dirname "$(command -v jq)"):$(dirname "$(command -v sqlite3)")"
+same "path" "$RELEASE:$TOOLS:$LATER:/usr/bin:/bin" "$(found path)"
+
+case_ "a shell that fails, is slow or prints no PATH still starts the run, on the dispatcher's PATH and Homebrew's, saying why"
+fake "$WORK/failing" <<<'exit 3'
+fake "$WORK/slow" <<<"until [ \"\$SECONDS\" -ge $FAKE_LIMIT ]; do sleep 0.1; done"
+fake "$WORK/quiet" <<<'echo "Welcome back"'
+for shell in "failing exited 3" "slow took over 1s" "quiet printed no PATH"; do
+  path_run SHELL="$WORK/${shell%% *}" A_TEAM_PATH_LIMIT=1
+  grep -qF "demo dev: couldn't read PATH from $WORK/${shell%% *} (${shell#* }): using the dispatcher's plus /usr/local/bin and /opt/homebrew/bin" \
+    "$A_TEAM_STATE/dispatch.log" || fail "${shell%% *} log: '$(cat "$A_TEAM_STATE/dispatch.log")'"
+  same "${shell%% *} first" "$RELEASE" "$(found path | cut -d: -f1)"
+  same "${shell%% *} homebrew" "/opt/homebrew/bin /usr/local/bin" \
+    "$(found path | tr : '\n' | grep -xE "/usr/local/bin|/opt/homebrew/bin" | sort | paste -sd ' ' -)"
+  grep -qF ":$GUARD:" <<<":$(found path):" || fail "${shell%% *}: lost the dispatcher's PATH: '$(found path)'"
+done
+
 case_ "a workdir that isn't there starts nothing, and says so rather than recording a start"
 STATE_DIR="$A_TEAM_STATE/demo/dev"
 rm -rf "$STATE_DIR"

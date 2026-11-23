@@ -28,7 +28,11 @@ this machine, and nowhere else.
 
 Neither agent runs all the time. A dispatcher checks every couple of minutes whether a role has
 something to do, like your feedback, an approved pitch or failing CI, and starts a run for it when it
-does. An idle team costs nothing.
+does. An idle team costs nothing. A run sees the tools your terminal sees: it starts with the `PATH`
+your login shell gives a new terminal, read afresh each time, so a tool you add to `.zprofile` or
+`.zshrc` is there from the next run without reinstalling anything. If your shell can't be read
+within 5 seconds, the run starts anyway with `/usr/local/bin` and `/opt/homebrew/bin` added, and the
+[dispatcher's log](overseer.md#the-dispatchers-log) says why.
 
 ## The board
 
