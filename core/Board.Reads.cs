@@ -661,7 +661,9 @@ internal static partial class ReviewPoints
         if (Why().Match(text) is not { Success: true } why) return null;
         if (why.Groups["kind"].Success) return (why.Groups["kind"].Value.ToLowerInvariant(), null);
         var file = Location().Replace(why.Groups["file"].Value.Trim().Trim('`'), "");
-        return file.Length == 0 ? null : ("outside", file.StartsWith("./", StringComparison.Ordinal) ? file[2..] : file);
+        if (file.StartsWith("./", StringComparison.Ordinal)) file = file[2..];
+        file = file.TrimStart('/');
+        return file.Length == 0 ? null : ("outside", file);
     }
 
     /// <summary>A point's first few words, to name it by.</summary>

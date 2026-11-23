@@ -473,11 +473,12 @@ internal static partial class Commands
         if (outside.Count == 0) return;
         var listed = board.Read("api", "--paginate", $"repos/{board.Repo}/pulls/{pr}/files", "--jq", ".[].filename");
         if (!listed.Ok) throw new Die($"can't read the files PR #{pr} changes ({Board.Refusal(listed)})");
-        var changed = listed.Said.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
+        var changed = listed.Said.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         foreach (var (point, number) in outside)
-            if (ReviewPoints.Reason(point.Text)?.File is { } path && changed.Contains(path))
+            if (ReviewPoints.Reason(point.Text)?.File is { } path
+                && changed.FirstOrDefault(file => file == path || file.EndsWith("/" + path, StringComparison.Ordinal)) is { } match)
                 throw new Die($"Worth considering point {number} (\"{ReviewPoints.Opening(point.Text)}\") says it's outside the PR, " +
-                    $"but PR #{pr} changes {path}: a wrong result there is Needs changing");
+                    $"but PR #{pr} changes {match}: a wrong result there is Needs changing");
     }
 
     internal static int VisionReview(Board board, string[] args)

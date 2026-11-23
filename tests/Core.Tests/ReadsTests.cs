@@ -389,6 +389,7 @@ public class ReviewReasonTests
     [InlineData("[Readability] Rename it.", "readability", null)]
     [InlineData("[outside: core/Board.cs] Split it.", "outside", "core/Board.cs")]
     [InlineData("[outside: `./core/Board.cs:40-52`] Split it.", "outside", "core/Board.cs")]
+    [InlineData("[outside: /core/Board.cs] Split it.", "outside", "core/Board.cs")]
     public void A_point_says_why_it_s_optional(string text, string kind, string? file) =>
         Assert.Equal((kind, file), ReviewPoints.Reason(text));
 

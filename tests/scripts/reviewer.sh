@@ -174,6 +174,14 @@ printf '%s\n' '## Worth considering' '- [outside: ] Somewhere.' >"$WORK/review"
 refused_review "outside nothing" "Worth considering point 1"
 printf '%s\n' '## Worth considering' '- [approach] Swap it.' '- [outside: core/Board.cs:40] A killed child exits 0.' >"$WORK/review"
 refused_review "outside a changed file" 'point 2 ("[outside: core/Board.cs:40] A killed child exits 0.") says it'"'"'s outside the PR, but PR #912 changes core/Board.cs: a wrong result there is Needs changing'
+printf '%s\n' '## Worth considering' '- [outside: Board.cs] A killed child exits 0.' >"$WORK/review"
+refused_review "outside a changed file, by its bare name" 'but PR #912 changes core/Board.cs: a wrong result there is Needs changing'
+printf '%s\n' '## Worth considering' '- [outside: /core/Board.cs] A killed child exits 0.' >"$WORK/review"
+refused_review "outside a changed file, from the root" 'but PR #912 changes core/Board.cs: a wrong result there is Needs changing'
+printf '%s\n' '## Worth considering' '- [outside: ard.cs] Not a whole name.' >"$WORK/review"
+run board demo review reviewer 912 "$WORK/review"
+same "outside a partial name posts" 0 "$STATUS"
+gh_pr 912 true
 printf '%s\n' '## Needs changing' '- [outside: a.sh] Filed here, any reason is fine.' >"$WORK/review"
 run board demo review reviewer 912 "$WORK/review"
 same "Needs changing needs no reason" 0 "$STATUS"
