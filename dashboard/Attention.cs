@@ -1,4 +1,5 @@
 using System.Globalization;
+using MentalDesk.Tui;
 
 namespace ATeam.Dashboard;
 
@@ -16,12 +17,7 @@ public sealed record Visit(string Team, int? Item, string Gate, DateTimeOffset A
         ((int)Spent.TotalSeconds).ToString(CultureInfo.InvariantCulture), Gate, What,
     ];
 
-    /// <summary><c>3h 10m</c>, or <c>45m</c> under an hour.</summary>
-    public static string Duration(TimeSpan spent)
-    {
-        var minutes = (int)Math.Round(spent.TotalMinutes);
-        return minutes < 60 ? $"{minutes}m" : $"{minutes / 60}h {minutes % 60:00}m";
-    }
+    public static string Duration(TimeSpan spent) => Times.Took(spent);
 }
 
 /// <summary>Times what you spend in Work: each card from opening its reader to closing it, or for the whole of a try

@@ -271,7 +271,7 @@ public partial class WorkAreaTests : IDisposable
         Assert.Equal(LoadState.Failed, bad.Load.State);
         Assert.Equal("gh: API rate limit exceeded for mentaldesk/TuiCode", bad.Load.Says);
         Assert.Equal(0, window.Status.UnreadErrors);
-        Assert.Equal("All items · synced just now", window.Status.FocusWord);
+        Assert.Equal("All items · synced now", window.Status.FocusWord);
 
         window.Work.Pick("team1");
         window.Refresh();
@@ -672,12 +672,12 @@ public partial class WorkAreaTests : IDisposable
         window.Refresh();
         LayOut(window, 120, 30);
 
-        Assert.Equal("All items · synced just now", window.Status.FocusWord);
+        Assert.Equal("All items · synced now", window.Status.FocusWord);
 
         window.Press("Ctrl+T M");
         LayOut(window, 120, 30);
 
-        Assert.Equal("My items · synced just now", window.Status.FocusWord);
+        Assert.Equal("My items · synced now", window.Status.FocusWord);
     }
 
     [Fact]
@@ -688,7 +688,7 @@ public partial class WorkAreaTests : IDisposable
         LayOut(window, 120, 30);
 
         Assert.Equal("#6 · waiting to be ranked", window.Status.RestingText);
-        Assert.Equal("All items · synced just now", window.Status.FocusWord);
+        Assert.Equal("All items · synced now", window.Status.FocusWord);
         Assert.Equal("Press F1 for help", window.Status.Hints.Says);
         Assert.Equal(window.Status.FrameToScreen().Right - 1, window.Status.Hints.FrameToScreen().Right);
         Assert.DoesNotContain(window.Status.SubViews, view => view.Visible && view.Text.Contains("a-team "));

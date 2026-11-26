@@ -16,6 +16,7 @@ namespace ATeam.Dashboard.Tests;
 public class OverseerTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+    private static readonly TimeZoneInfo Zone = TimeZoneInfo.CreateCustomTimeZone("Test +13", TimeSpan.FromHours(13), "Test +13", "Test +13");
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"a-team-{Guid.NewGuid():n}");
     private readonly PlatformKeyBinding _quit = Application.DefaultKeyBindings![Command.Quit];
 
@@ -28,21 +29,36 @@ public class OverseerTests : IDisposable
     }
 
     [Theory]
-    [InlineData(0, 0, 0, "0m")]
-    [InlineData(0, 0, 30, "30m")]
-    [InlineData(0, 0, 59, "59m")]
-    [InlineData(0, 5, 10, "5h")]
-    [InlineData(6, 2, 10, "6d")]
-    public void A_chip_s_age_is_in_its_largest_unit(int days, int hours, int minutes, string shown) =>
-        Assert.Equal(shown, Ages.Short(new TimeSpan(days, hours, minutes, 0)));
+    [InlineData(0, 0, 0, 30, "now")]
+    [InlineData(0, 0, 30, 0, "30m")]
+    [InlineData(0, 0, 59, 0, "59m")]
+    [InlineData(0, 5, 10, 0, "5h")]
+    [InlineData(6, 2, 10, 0, "6d")]
+    [InlineData(7, 0, 0, 0, "7d")]
+    [InlineData(12, 3, 0, 0, "12d")]
+    public void A_chip_s_age_is_in_one_whole_unit(int days, int hours, int minutes, int seconds, string shown)
+    {
+        var card = Card(2, "Building", days: 0) with { Since = Now - new TimeSpan(days, hours, minutes, seconds) };
+
+        Assert.Equal($"◆2    {shown,3}", OverseerView.ChipText(new Chip(card), Now, null, IconStyle.Unicode));
+    }
 
     [Theory]
-    [InlineData(6, 2, 10, "6d 2h 10m")]
-    [InlineData(1, 0, 5, "1d 0h 5m")]
-    [InlineData(0, 3, 0, "3h 0m")]
-    [InlineData(0, 0, 12, "12m")]
-    public void The_details_give_the_age_in_full(int days, int hours, int minutes, string shown) =>
-        Assert.Equal(shown, Ages.Full(new TimeSpan(days, hours, minutes, 0)));
+    [InlineData(2, 4, 10, "2d 4h · since 7 Oct 20:50")]
+    [InlineData(0, 3, 0, "3h · since 9 Oct 22:00")]
+    [InlineData(0, 0, 12, "12m · since 00:48")]
+    public void The_details_say_how_long_in_two_units_and_since_when(int days, int hours, int minutes, string shown)
+    {
+        var card = Card(81, "In review", days: 0) with { Kind = CardKind.Task, Since = Now - new TimeSpan(days, hours, minutes, 0) };
+        var state = OverseerState.Empty with
+        {
+            Now = Now,
+            Zone = Zone,
+            Limits = new Dictionary<string, string> { ["In review"] = "3d" },
+        };
+
+        Assert.Equal($"Task · Unranked · a · In review for {shown} (limit 3d)", OverseerView.Describe(card, [card], state)[0]);
+    }
 
     [Theory]
     [InlineData("30m", 0, 0, 30)]
@@ -163,7 +179,7 @@ public class OverseerTests : IDisposable
         app.Begin(window);
         view.ShowIcons(style);
         view.Show([Card(1, "Idea", days: 1), Card(81, "In review", days: 6)]);
-        view.Show(OverseerState.Empty with { Now = Now, Holding = new HashSet<(string, int)> { ("a", 81) } });
+        view.Show(OverseerState.Empty with { Now = Now, Zone = Zone, Holding = new HashSet<(string, int)> { ("a", 81) } });
 
         app.LayoutAndDraw(forceRedraw: true);
 
@@ -182,10 +198,10 @@ public class OverseerTests : IDisposable
         {
             Holding = [new Hold("b", 499, [new ChainLink("tui", [], "MentalDesk.Tui's release", "yours")])],
         };
-        var state = OverseerState.Empty with { Now = Now, Waiting = (_, number) => number == 81 ? held : null };
+        var state = OverseerState.Empty with { Now = Now, Zone = Zone, Waiting = (_, number) => number == 81 ? held : null };
 
         Assert.Equal(
-            ["Task · Unranked · a · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "b #499 waits on this · then MentalDesk.Tui's release"],
+            ["Task · Unranked · a · In review for 1d · since 9 Oct 01:00", "Waiting: awaiting your acceptance", "b #499 waits on this · then MentalDesk.Tui's release"],
             OverseerView.Describe(card, [card], state));
     }
 
@@ -196,7 +212,7 @@ public class OverseerTests : IDisposable
             [{"team": "a", "number": 7, "title": "A pitch for later", "status": "Idea", "priority": "", "kind": "pitch",
               "facts": "theme: Consistently good UX · shelved until 22 Nov"}]
             """));
-        var state = OverseerState.Empty with { Now = Now };
+        var state = OverseerState.Empty with { Now = Now, Zone = Zone };
 
         Assert.Equal("Pitch · Unranked · a · Idea · theme: Consistently good UX · shelved until 22 Nov",
             OverseerView.Describe(card, [card], state)[0]);
@@ -209,7 +225,7 @@ public class OverseerTests : IDisposable
             [{"team": "a", "number": 726, "title": "One test file", "status": "In progress", "kind": "yours",
               "following": "PR #739 (draft) · opened by you"}]
             """));
-        var state = OverseerState.Empty with { Now = Now };
+        var state = OverseerState.Empty with { Now = Now, Zone = Zone };
 
         Assert.Equal(["Yours · Unranked · a · In progress", "PR #739 (draft) · opened by you"], OverseerView.Describe(card, [card], state));
     }
@@ -219,10 +235,10 @@ public class OverseerTests : IDisposable
     {
         var card = Card(524, "Ready", days: 1) with { Kind = CardKind.Task };
         var held = new WaitingItem(524, "", "Ready", "", "a", "you", "held by the Lead since 09:00", Question: "Install the SDK.", HeldBy: "lead");
-        var state = OverseerState.Empty with { Now = Now, Waiting = (_, number) => number == 524 ? held : null };
+        var state = OverseerState.Empty with { Now = Now, Zone = Zone, Waiting = (_, number) => number == 524 ? held : null };
 
         Assert.Equal(
-            ["Task · Unranked · a · Ready for 1d 0h 0m", "Blocked: held by the Lead · Install the SDK."],
+            ["Task · Unranked · a · Ready for 1d · since 9 Oct 01:00", "Blocked: held by the Lead · Install the SDK."],
             OverseerView.Describe(card, [card], state));
     }
 
@@ -238,17 +254,18 @@ public class OverseerTests : IDisposable
         var state = OverseerState.Empty with
         {
             Now = Now,
+            Zone = Zone,
             Waiting = (team, number) => items.FirstOrDefault(item => item.Team == team && item.Number == number),
             Holding = Holds.Holders(items),
         };
 
         Assert.Contains(("a", 100), state.Holding);
         Assert.Equal(
-            ["Task · Unranked · a · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "b #541 waits on this · then MentalDesk.Tui's release"],
+            ["Task · Unranked · a · In review for 1d · since 9 Oct 01:00", "Waiting: awaiting your acceptance", "b #541 waits on this · then MentalDesk.Tui's release"],
             OverseerView.Describe(card, [card], state));
         var held = Card(541, "In review", days: 1) with { Team = "b", Kind = CardKind.Task };
         Assert.Equal(
-            ["Task · Unranked · b · In review for 1d 0h 0m", "Waiting: awaiting your acceptance", "Also waits on tui-style-guide#100 · in review, yours"],
+            ["Task · Unranked · b · In review for 1d · since 9 Oct 01:00", "Waiting: awaiting your acceptance", "Also waits on tui-style-guide#100 · in review, yours"],
             OverseerView.Describe(held, [held], state));
     }
 
@@ -586,6 +603,7 @@ public class OverseerTests : IDisposable
         var state = OverseerState.Empty with
         {
             Now = Now,
+            Zone = Zone,
             Limits = new Dictionary<string, string> { ["Building"] = "14d" },
             Waiting = (_, number) => number == 46 ? new WaitingItem(46, "", "Building", "", "a", "lead", "drafting tasks") : null,
         };
@@ -593,7 +611,7 @@ public class OverseerTests : IDisposable
         var lines = OverseerView.Describe(pitch, [pitch, task], state);
 
         Assert.Equal(
-            ["Pitch · High · a · Building for 30d 0h 0m (limit 14d)", "Waiting: lead · drafting tasks", "Open tasks:", "  #387 Triage in order (Ready, 2d)"],
+            ["Pitch · High · a · Building for 30d · since 10 Sep 01:00 (limit 14d)", "Waiting: lead · drafting tasks", "Open tasks:", "  #387 Triage in order (Ready, 2d)"],
             lines);
     }
 
@@ -604,6 +622,7 @@ public class OverseerTests : IDisposable
         var state = OverseerState.Empty with
         {
             Now = Now,
+            Zone = Zone,
             Waiting = (_, number) => number == 469
                 ? new WaitingItem(469, "", "Ready", "", "a", "upstream", "waiting on tui-style-guide#63: merged, not released",
                     Upstream: "tui-style-guide#63: merged, not released")
@@ -611,7 +630,7 @@ public class OverseerTests : IDisposable
         };
 
         Assert.Equal(
-            ["Task · Unranked · a · Ready for 2d 0h 0m", "Waiting on tui-style-guide#63: merged, not released"],
+            ["Task · Unranked · a · Ready for 2d · since 8 Oct 01:00", "Waiting on tui-style-guide#63: merged, not released"],
             OverseerView.Describe(task, [task], state));
     }
 
@@ -620,7 +639,7 @@ public class OverseerTests : IDisposable
     {
         var task = Card(387, "Ready", days: 2) with { Kind = CardKind.Task };
 
-        Assert.Equal(["Task · Unranked · a · Ready for 2d 0h 0m"], OverseerView.Describe(task, [task], OverseerState.Empty with { Now = Now }));
+        Assert.Equal(["Task · Unranked · a · Ready for 2d · since 8 Oct 01:00"], OverseerView.Describe(task, [task], OverseerState.Empty with { Now = Now, Zone = Zone }));
     }
 
     [Fact]
@@ -789,7 +808,7 @@ public class OverseerTests : IDisposable
         window.Overseer.Select("team1", 21);
 
         Assert.Equal("#21 Twenty-one", window.Card.Title);
-        Assert.Equal("Dev · last ran 3h00m ago · why: claimed #21", window.Card.Session);
+        Assert.Equal("Dev · last ran 3h ago · why: claimed #21", window.Card.Session);
         Assert.Contains(window.Card.Lines, line => line.Text == "Draft PR is up");
         Assert.False(window.Commands.IsEnabled("agent.interrupt"));
     }
@@ -813,7 +832,7 @@ public class OverseerTests : IDisposable
 
         window.Overseer.Select("team1", 22);
 
-        Assert.Equal("Lead · last ran 2h00m ago", window.Card.Session);
+        Assert.Equal("Lead · last ran 2h ago", window.Card.Session);
         Assert.Contains(window.Card.Lines, line => line.Text == "Pitched it");
         Assert.Null(CardRun.For(_root, "team1", ["lead", "dev"], 11));
     }
@@ -1282,6 +1301,7 @@ public class OverseerTests : IDisposable
         view.Show(OverseerState.Empty with
         {
             Now = Now,
+            Zone = Zone,
             Limits = new Dictionary<string, string> { ["Ready"] = "2d" },
             Worked = new Dictionary<(string, int), string> { [("a", 78)] = "dev" },
             Holding = new HashSet<(string, int)> { ("a", 79) },

@@ -12,9 +12,7 @@ public sealed record Synced(DateTimeOffset? At, DateTimeOffset? Failed)
     /// <summary>What the status bar says of it.</summary>
     public string Stamp(DateTimeOffset now)
     {
-        var synced = At is not { } at ? ""
-            : now - at < TimeSpan.FromMinutes(1) ? "synced just now"
-            : $"synced {Ages.Ago(now - at)} ago";
+        var synced = At is { } at ? $"synced {When.At(now).Ago(at)}" : "";
         return string.Join(" · ", new[] { synced, Failed is null ? "" : Unreachable }.Where(part => part.Length > 0));
     }
 

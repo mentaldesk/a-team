@@ -2144,7 +2144,7 @@ public class ReaderDialogTests
     [Theory]
     [InlineData(2, 0, "2026-10-28", "28 Oct")]
     [InlineData(3, 0, "2026-11-04", "4 Nov")]
-    [InlineData(19, 0, "2027-02-24", "24 Feb")]
+    [InlineData(19, 0, "2027-02-24", "24 Feb 2027")]
     [InlineData(2, 13, "2026-10-29", "29 Oct")]
     [InlineData(2, -5, "2026-10-28", "28 Oct")]
     public void The_weeks_give_the_day_it_comes_back_on_the_local_calendar(int weeks, int offset, string until, string backOn)

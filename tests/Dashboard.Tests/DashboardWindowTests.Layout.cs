@@ -40,9 +40,9 @@ public partial class DashboardWindowTests
         window.Commands.Execute("view.dispatcher");
 
         Assert.Equal(
-            ["16:53 a-team lead: would start: 3 Ideas to shape",
-             "17:01 tuicode dev: triggers failed: gh: Not Found (HTTP 404)",
-             "17:04 tuicode dev: started 41234: 1 task Ready"],
+            ["05:53 a-team lead: would start: 3 Ideas to shape",
+             "06:01 tuicode dev: triggers failed: gh: Not Found (HTTP 404)",
+             "06:04 tuicode dev: started 41234: 1 task Ready"],
             window.WholeDispatchLog.Lines.Select(line => line.Text));
         Assert.Equal(
             [LogLineKind.DispatchSkipped, LogLineKind.DispatchFailed, LogLineKind.Prose],

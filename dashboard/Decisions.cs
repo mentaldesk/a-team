@@ -21,7 +21,7 @@ public sealed record Decision(
     /// <summary>The Decision column, saying why an entry no longer stands.</summary>
     public string Shown => ReplacedBy is not null ? $"(replaced) {Text}" : Retired is not null ? $"(retired) {Text}" : Text;
 
-    internal static string Day(DateTimeOffset at) => at.ToLocalTime().ToString("dd MMM", CultureInfo.InvariantCulture);
+    internal static string Day(DateTimeOffset at) => When.Day(at);
 }
 
 /// <summary>The register as the Decisions dialog shows it: the team's entries and all teams', replaced ones included,

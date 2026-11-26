@@ -120,7 +120,7 @@ public sealed class SpendingDialog : DashboardDialog
         _spending = [.. _teams.Zip(spending!.OfType<TeamSpending>())];
         var since = _spending.Select(team => team.Spending.Since).OfType<DateTimeOffset>().ToList();
         if (since.Count > 0)
-            _footer.Text = $"Costs at API prices, from {since.Min().ToLocalTime().ToString("d MMM", CultureInfo.InvariantCulture)}.";
+            _footer.Text = $"Costs at API prices, from {When.Day(since.Min(), When.At(_now))}.";
         _period.Visible = true;
         Show();
         if (_table.Visible)

@@ -47,7 +47,7 @@ public partial class WorkAreaTests
 
         Assert.DoesNotContain("Syncing…", window.WorkTitle);
         Assert.Equal(4, reads);
-        Assert.Equal("All items · synced just now", window.Status.FocusWord);
+        Assert.Equal("All items · synced now", window.Status.FocusWord);
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public partial class WorkAreaTests
         Assert.Equal(2, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
         Assert.NotNull(window.Work.SelectedCard);
-        Assert.EndsWith("synced 4m ago", window.Status.FocusWord);
+        Assert.EndsWith("synced 5m ago", window.Status.FocusWord);
     }
 
     [Fact]
@@ -271,7 +271,7 @@ public partial class WorkAreaTests
 
         Assert.Equal(4, reads);
         Assert.Equal(107, window.Work.Selected?.Number);
-        Assert.EndsWith("synced just now", window.Status.FocusWord);
+        Assert.EndsWith("synced now", window.Status.FocusWord);
     }
 
     [Fact]

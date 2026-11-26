@@ -155,11 +155,11 @@ public class AttentionTests
     }
 
     [Theory]
-    [InlineData(0, "0m")]
-    [InlineData(45 * 60 + 20, "45m")]
+    [InlineData(0, "0s")]
+    [InlineData(45 * 60 + 20, "45m 20s")]
     [InlineData(3 * 3600 + 10 * 60, "3h 10m")]
-    [InlineData(2 * 3600 + 5 * 60 + 40, "2h 06m")]
-    public void Durations_read_in_hours_and_minutes(int seconds, string said) =>
+    [InlineData(2 * 3600 + 5 * 60 + 40, "2h 5m")]
+    public void Durations_read_in_their_two_largest_units(int seconds, string said) =>
         Assert.Equal(said, Visit.Duration(TimeSpan.FromSeconds(seconds)));
 
     [Fact]

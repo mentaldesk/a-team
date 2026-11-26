@@ -416,7 +416,7 @@ public partial class WorkAreaTests
     {
         var now = DateTimeOffset.UtcNow;
 
-        Assert.Equal("synced just now", new Synced(now, null).Stamp(now.AddSeconds(30)));
+        Assert.Equal("synced now", new Synced(now, null).Stamp(now.AddSeconds(30)));
         Assert.Equal("synced 14m ago", new Synced(now, null).Stamp(now.AddMinutes(14)));
     }
 

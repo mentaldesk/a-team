@@ -253,7 +253,7 @@ public sealed partial class DashboardWindow
 
     /// <summary>When Overseer's boards were last read, for the status bar.</summary>
     internal static string Stamped(DateTimeOffset? at, DateTimeOffset now) =>
-        at is { } read ? $"read {Ages.Ago(now - read)} ago" : "";
+        at is { } read ? $"read {When.At(now).Ago(read)}" : "";
 
     /// <summary>Reads every team's gates at once. A second go while one is running is refused, not queued.</summary>
     private void ReadWaiting()

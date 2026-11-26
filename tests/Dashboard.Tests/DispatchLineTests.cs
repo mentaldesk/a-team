@@ -17,11 +17,16 @@ public class DispatchLineTests
     public void A_line_is_coloured_by_what_it_says(string line, LogLineKind kind) =>
         Assert.Equal(kind, DispatchLine.KindOf(line));
 
-    [Fact]
-    public void The_timestamp_is_cut_to_the_hour_and_minute_it_already_says() =>
+    [Theory]
+    [InlineData("2026-09-20T17:01:17Z", 13, "06:01")]
+    [InlineData("2026-09-20T23:58:00Z", 13, "12:58")]
+    [InlineData("2026-09-20T00:30:00Z", -5, "19:30")]
+    [InlineData("2026-09-20T17:01:17Z", 0, "17:01")]
+    public void The_timestamp_is_cut_to_the_hour_and_minute_in_your_own_time(string stamp, int offset, string shown) =>
         Assert.Equal(
-            "17:01 tuicode dev: started 41234 on 0.1.7: 1 task Ready",
-            DispatchLine.Shorten("2026-09-20T17:01:17Z tuicode dev: started 41234 on 0.1.7: 1 task Ready"));
+            $"{shown} tuicode dev: started 41234 on 0.1.7: 1 task Ready",
+            DispatchLine.Shorten($"{stamp} tuicode dev: started 41234 on 0.1.7: 1 task Ready",
+                TimeZoneInfo.CreateCustomTimeZone("test", TimeSpan.FromHours(offset), "test", "test")));
 
     [Theory]
     [InlineData("not a timestamp at all")]

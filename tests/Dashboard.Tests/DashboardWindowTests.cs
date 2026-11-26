@@ -167,7 +167,7 @@ public partial class DashboardWindowTests : IDisposable
         Assert.Equal(SchemeManager.SchemesToSchemeName(Schemes.Error), window.Dispatcher.SchemeName);
         Assert.Equal(
             [
-                new LogLine("10:00 a-team dev: started 1 on 0.1.12", LogLineKind.Prose),
+                new LogLine("23:00 a-team dev: started 1 on 0.1.12", LogLineKind.Prose),
                 new LogLine("── the dispatcher's own output since then ──", LogLineKind.DispatchFailed),
                 new LogLine("jq: parse error", LogLineKind.DispatchFailed),
             ],
@@ -299,6 +299,7 @@ public partial class DashboardWindowTests : IDisposable
             auto,
             new DashboardOptions
             {
+                Clock = new InZone(),
                 HandOver = handOver,
                 Resume = resume,
                 ShowGuide = showGuide,
@@ -370,5 +371,13 @@ public partial class DashboardWindowTests : IDisposable
         File.WriteAllText(
             Path.Combine(teams, team + ".json"),
             "{\"dispatch\": {\"enabled\": true, \"hold\": [\"" + role + "\"]}}");
+    }
+
+    /// <summary>The system's now, read in a zone 13 hours ahead of UTC, as Auckland is in summer.</summary>
+    private sealed class InZone : TimeProvider
+    {
+        public static readonly TimeZoneInfo Zone = TimeZoneInfo.CreateCustomTimeZone("Test +13", TimeSpan.FromHours(13), "Test +13", "Test +13");
+
+        public override TimeZoneInfo LocalTimeZone => Zone;
     }
 }

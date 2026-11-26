@@ -4,6 +4,7 @@ using Terminal.Gui.Configuration;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Text;
 using Attribute = Terminal.Gui.Drawing.Attribute;
+using MentalDesk.Tui;
 
 namespace ATeam.Dashboard;
 
@@ -14,7 +15,8 @@ public sealed record OverseerState(
     IReadOnlyDictionary<string, string> Limits,
     IReadOnlyDictionary<(string Team, int Number), string> Worked,
     IReadOnlyDictionary<string, IReadOnlyList<string>> Busy,
-    Func<string, int, WaitingItem?> Waiting)
+    Func<string, int, WaitingItem?> Waiting,
+    TimeZoneInfo? Zone = null)
 {
     public static readonly OverseerState Empty = new(
         DateTimeOffset.MinValue, new Dictionary<string, string>(), new Dictionary<(string, int), string>(),
@@ -460,7 +462,7 @@ public sealed class OverseerView : View
     {
         if (chip.Card is not { } card)
             return $"+{chip.Hidden}";
-        var age = playing ?? (card.Age(now) is { } waited ? Ages.Short(waited) : "");
+        var age = playing ?? (card.Since is { } since ? When.Chip(since, When.At(now)) : "");
         var marks = (card.Blocked ? Flag(Icon.Blocked, style) : "") + (holding ? Flag(Icon.Warning, style) : "");
         return $"{card.Mark(style)}{card.Number,-(NumberWidth - 1)}{(marks.Length > 0 ? marks : " ")}{age,AgeWidth}";
     }
@@ -472,7 +474,8 @@ public sealed class OverseerView : View
     /// <summary>The details pane's lines for <paramref name="card"/>.</summary>
     internal static IReadOnlyList<string> Describe(BoardCard card, IReadOnlyList<BoardCard> all, OverseerState state)
     {
-        var age = card.Age(state.Now) is { } waited ? $" for {Ages.Full(waited)}" : "";
+        var times = When.At(state.Now, state.Zone);
+        var age = card.Since is { } since ? $" for {Times.Took(state.Now - since)} · since {times.At(since)}" : "";
         var limit = ColumnLimits.Limit(state.Limits, card.Status) is not null ? $" (limit {state.Limits[card.Status]})" : "";
         List<string> lines =
         [
@@ -496,7 +499,7 @@ public sealed class OverseerView : View
             var tasks = all.Where(task => task.Team == card.Team && task.Parent == card.Number).OrderBy(task => task.Number).ToList();
             lines.Add(tasks.Count == 0 ? "Open tasks: none" : "Open tasks:");
             lines.AddRange(tasks.Select(task =>
-                $"  #{task.Number} {task.Title} ({task.Status}{(task.Age(state.Now) is { } taskAge ? $", {Ages.Short(taskAge)}" : "")})"));
+                $"  #{task.Number} {task.Title} ({task.Status}{(task.Since is { } taskSince ? $", {When.Chip(taskSince, times)}" : "")})"));
         }
         return lines;
     }

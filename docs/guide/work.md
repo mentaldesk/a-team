@@ -252,7 +252,7 @@ whose read fails says why in its tab, in red, with `r retry` under it, and the o
 cards. A board GitHub sent back with items missing, twice, fails rather than showing some of its
 cards, and says so: `Board read incomplete (100 of 358 items)`. A read again with cards on screen keeps them, with a spinner at the right of the tabs' top
 border; if it fails, the cards stay and the foot says so in red. The foot's `synced 2m ago` says when the
-cards of the team whose tab is in front were last synced from GitHub, `synced just now` within a
+cards of the team whose tab is in front were last synced from GitHub, `synced now` within a
 minute of it. When a sync can't reach GitHub, the cards stay as they were and it says
 `synced 14m ago · GitHub unreachable, retrying`, with the age of the last sync that worked.
 
@@ -283,7 +283,7 @@ merged comes back Ready, to be built again. It
 keeps history from the day it's installed. A comment you post from the reader appears there straight
 away.
 Each run the dispatcher started for the card is a line too: `running since 12:51` while it goes, then
-how long it took and what it cost, like `run 38 min · $4.12`. One that didn't finish says why:
+how long it took and what it cost, like `run 38m · $4.12`. One that didn't finish says why:
 `stopped` by you, `killed` at the time limit, `error`, or `died` with no result, and no cost.
 Each of your visits to the card is a line as well: how long you spent on it and what you did, like
 `6m · approved` or `1m · read`.
