@@ -7,8 +7,8 @@ How to run A-Team's agent teams from the app. Open it from **Help → Guide**, o
 
 Who does what: you, the Lead, the Dev, the Customer lead and the Reviewer, and how your README and vision steer the team. The stages
 work moves through on the board, how Dependabot's updates merge by themselves, the pictures of a pitch's screens, where you decide,
-what the 👀 on your comment means, what the team remembers of your decisions, and how Ideas and their priorities steer what the Lead
-does next.
+what the 👀 on your comment means, what happens to what each run noticed, what the team remembers of your decisions, and how Ideas and
+their priorities steer what the Lead does next.
 
 ## [Work](work.md)
 
@@ -22,8 +22,8 @@ cost by theme and pitch.
 Every team's board on one screen: where each card is, how long it has waited there, which ones an
 agent is on, and the time limits that flag a card that has sat too long. Filtering every lane to the
 cards you're after, and reading, ranking or deciding a card without leaving it. What each agent is doing:
-reading its session, pausing a role, interrupting a run to step into it, the warning when a role is
-stuck, and the dispatcher's log.
+reading its session and what its last run noticed, pausing a role, interrupting a run to step into it, the
+warning when a role is stuck, and the dispatcher's log.
 
 ## [Around the app](app.md)
 
