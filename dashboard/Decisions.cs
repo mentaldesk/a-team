@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using MentalDesk.Tui;
 using MentalDesk.Tui.Columns;
 
 namespace ATeam.Dashboard;
@@ -21,15 +22,17 @@ public sealed record Decision(
     /// <summary>The Decision column, saying why an entry no longer stands.</summary>
     public string Shown => ReplacedBy is not null ? $"(replaced) {Text}" : Retired is not null ? $"(retired) {Text}" : Text;
 
-    internal static string Day(DateTimeOffset at) => at.ToLocalTime().ToString("dd MMM", CultureInfo.InvariantCulture);
+    internal static string Day(DateTimeOffset at, Times? times = null) => When.Day(at, times);
 }
 
 /// <summary>The register as the Decisions dialog shows it: the team's entries and all teams', replaced ones included,
 /// or the one line saying why it couldn't be read.</summary>
 public sealed record DecisionRegister(IReadOnlyList<Decision> Entries, string? Failure = null)
 {
-    public static readonly RowLayout<Decision> Layout = new(
-        Column<Decision>.Text("Confirmed", entry => Decision.Day(entry.Confirmed)),
+    public static readonly RowLayout<Decision> Layout = LayoutAt(When.System);
+
+    public static RowLayout<Decision> LayoutAt(Times times) => new(
+        Column<Decision>.Text("Confirmed", entry => Decision.Day(entry.Confirmed, times)),
         Column<Decision>.Text("Who", entry => entry.Speaker),
         Column<Decision>.Text("Kind", entry => entry.Kind),
         Column<Decision>.Text("Scope", entry => entry.Scope),
@@ -55,30 +58,30 @@ public sealed record DecisionRegister(IReadOnlyList<Decision> Entries, string? F
             .ThenByDescending(entry => entry.Id)];
     }
 
-    public static string[] Row(Decision entry) => [.. Layout.Columns.Select(column => column.Value(entry))];
+    public static string[] Row(Decision entry, Times? times = null) => [.. (times is null ? Layout : LayoutAt(times)).Columns.Select(column => column.Value(entry))];
 
     /// <summary>The selected entry in full: the decision, why, where and when it was said, and what it replaced or
     /// was replaced by.</summary>
-    public IReadOnlyList<string> Detail(Decision entry)
+    public IReadOnlyList<string> Detail(Decision entry, Times? times = null)
     {
         var lines = new List<string> { entry.Text };
         if (entry.Why.Length > 0)
             lines.AddRange(entry.Why.Split('\n'));
-        var said = $"Said on #{entry.Item} · {Decision.Day(entry.Said)}";
+        var said = $"Said on #{entry.Item} · {Decision.Day(entry.Said, times)}";
         if (entry.ConfirmedOn is { } on)
-            said += $" · reconfirmed on #{on} · {Decision.Day(entry.Confirmed)}";
+            said += $" · reconfirmed on #{on} · {Decision.Day(entry.Confirmed, times)}";
         lines.Add($"{said} · recorded by the Lead");
-        lines.AddRange(Entries.Where(older => older.ReplacedBy == entry.Id).Select(older => $"Replaces: {Quoted(older)}"));
+        lines.AddRange(Entries.Where(older => older.ReplacedBy == entry.Id).Select(older => $"Replaces: {Quoted(older, times)}"));
         if (entry.ReplacedBy is { } newer)
-            lines.Add(Entries.FirstOrDefault(other => other.Id == newer) is { } by ? $"Replaced by: {Quoted(by)}" : "Replaced");
+            lines.Add(Entries.FirstOrDefault(other => other.Id == newer) is { } by ? $"Replaced by: {Quoted(by, times)}" : "Replaced");
         if (entry.Retired is { } retired)
-            lines.Add($"Retired by you · {Decision.Day(retired)}");
+            lines.Add($"Retired by you · {Decision.Day(retired, times)}");
         else if (entry.Yours is { } yours)
-            lines.Add($"Corrected by you · {Decision.Day(yours)}");
+            lines.Add($"Corrected by you · {Decision.Day(yours, times)}");
         return lines;
     }
 
-    private static string Quoted(Decision entry) => $"\"{entry.Text}\" (#{entry.Item} · {Decision.Day(entry.Said)})";
+    private static string Quoted(Decision entry, Times? times) => $"\"{entry.Text}\" (#{entry.Item} · {Decision.Day(entry.Said, times)})";
 
     private static string Searched(Decision entry) => $"{entry.Text}\n{entry.Why}";
 

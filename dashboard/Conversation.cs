@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using MentalDesk.Tui;
 
 namespace ATeam.Dashboard;
 
@@ -8,8 +9,8 @@ namespace ATeam.Dashboard;
 public sealed record Remark(string Who, DateTimeOffset At, string Body, int? Pr = null, bool Description = false, string? Url = null)
 {
     /// <summary>Headed <c>new</c> when it was posted after <paramref name="since"/>.</summary>
-    public string Heading(DateTimeOffset? since = null) =>
-        $"───── {(Description ? $"PR #{Pr} · " : "")}{Who} · {At.ToLocalTime().ToString("dd MMM HH:mm", CultureInfo.InvariantCulture)}{(IsNewSince(since) ? " · new" : "")} ─────";
+    public string Heading(DateTimeOffset? since = null, Times? times = null) =>
+        $"───── {(Description ? $"PR #{Pr} · " : "")}{Who} · {(times ?? When.System).At(At)}{(IsNewSince(since) ? " · new" : "")} ─────";
 
     public bool IsNewSince(DateTimeOffset? since) => since is { } last && At > last;
 }

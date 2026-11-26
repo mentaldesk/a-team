@@ -32,7 +32,7 @@ public partial class DashboardWindowTests
 
         Assert.Equal("Pass done: started 1 run.", window.Says());
         window.Commands.Execute("view.dispatcher");
-        Assert.Equal("10:02 a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build", Assert.Single(window.WholeDispatchLog.Lines).Text);
+        Assert.Equal("23:02 a-team dev: started 42 on 0.1.12: #334: Ready task #334 to build", Assert.Single(window.WholeDispatchLog.Lines).Text);
     }
 
     [Fact]

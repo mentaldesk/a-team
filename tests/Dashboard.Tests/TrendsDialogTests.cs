@@ -193,7 +193,7 @@ public class TrendsDialogTests
         Assert.True(dialog.Gates.Visible);
         Assert.Equal(["This week", "a-team", "tuicode"], Headers(dialog.Gates));
         Assert.Equal(
-            [["Triage", "10m", "–"], ["Pitches", "0m", "–"], ["Blocked", "0m", "–"], ["Review", "25m", "–"], ["Other", "5m", "–"],
+            [["Triage", "10m", "–"], ["Pitches", "0s", "–"], ["Blocked", "0s", "–"], ["Review", "25m", "–"], ["Other", "5m", "–"],
              ["  Finding a card", "–", "–"], ["  Reports", "–", "–"], ["  Settings & other", "–", "–"]],
             Enumerable.Range(0, 8).Select(row => Cells(dialog.Gates, row, 0, 1, 2)));
     }
@@ -224,7 +224,7 @@ public class TrendsDialogTests
         Assert.Equal(
             [["Other", "11m", "3m"], ["  Finding a card", "2m", "3m"], ["  Reports", "4m", "–"], ["  Settings & other", "–", "–"]],
             Enumerable.Range(4, 4).Select(row => Cells(dialog.Gates, row, 0, 1, 2)));
-        Assert.Equal(["Review", "2m", "0m"], Cells(dialog.Gates, 3, 0, 1, 2));
+        Assert.Equal(["Review", "2m", "0s"], Cells(dialog.Gates, 3, 0, 1, 2));
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public class TrendsDialogTests
         dialog.Measure.Value = 3;
 
         Assert.Equal(["Blocked", "5m", "–"], Cells(dialog.Gates, 2, 0, 1, 2));
-        Assert.Equal(["Other", "0m", "–"], Cells(dialog.Gates, 4, 0, 1, 2));
+        Assert.Equal(["Other", "0s", "–"], Cells(dialog.Gates, 4, 0, 1, 2));
     }
 
     [Theory]

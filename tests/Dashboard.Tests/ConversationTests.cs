@@ -6,7 +6,7 @@ public class ConversationTests
     private static readonly DateTimeOffset Asked = new(2026, 9, 29, 4, 10, 0, TimeSpan.Zero);
 
     private static string Local(DateTimeOffset at) =>
-        at.ToLocalTime().ToString("dd MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        When.System.At(at);
 
     [Fact]
     public void Each_remark_follows_the_body_under_a_rule_naming_who_and_when()

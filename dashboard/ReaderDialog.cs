@@ -76,7 +76,7 @@ public sealed record ReaderShelve(Key Key, Func<int, string, Task<string?>> Run,
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone ?? TimeZoneInfo.Local).DateTime.AddDays(7 * weeks));
 
     public static string BackOn(DateTimeOffset now, int weeks, TimeZoneInfo? zone = null) =>
-        Until(now, weeks, zone).ToString("d MMM", CultureInfo.InvariantCulture);
+        When.Day(Until(now, weeks, zone), Until(now, 0, zone));
 }
 
 /// <summary>Trying from the reader: Run hands over what it shows and the row it's scrolled to. Reopened after the

@@ -236,6 +236,23 @@ public class RoleWatchTests : IDisposable
             RoleWatch.Says(idle, [], Now, RoleStatus.Paused, held: false, teamPaused: true));
     }
 
+    [Theory]
+    [InlineData(0, 0, 0, 40, "idle · ran now")]
+    [InlineData(0, 0, 5, 0, "idle · ran 5m ago")]
+    [InlineData(0, 3, 10, 0, "idle · ran 3h ago")]
+    [InlineData(2, 4, 0, 0, "idle · ran 2d ago")]
+    [InlineData(7, 0, 0, 0, "idle · ran 1 Nov")]
+    [InlineData(400, 0, 0, 0, "idle · ran 4 Oct 2025")]
+    public void An_idle_role_says_when_it_ran_relative_while_recent_then_by_its_local_date(
+        int days, int hours, int minutes, int seconds, string says)
+    {
+        var now = new DateTimeOffset(2026, 11, 9, 2, 0, 0, TimeSpan.Zero);
+        var zone = TimeZoneInfo.CreateCustomTimeZone("Test -5", TimeSpan.FromHours(-5), "Test -5", "Test -5");
+        var idle = new AgentState(Running: false, now - new TimeSpan(days, hours, minutes, seconds), [], null);
+
+        Assert.Equal(says, RoleWatch.Says(idle, [], now, RoleStatus.Ok, held: false, zone: zone));
+    }
+
     [Fact]
     public void A_run_that_never_reported_a_result_was_cut_short()
     {

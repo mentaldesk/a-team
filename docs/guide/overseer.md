@@ -34,7 +34,7 @@ Where a Nerd Font is in effect, a chip wears the icon [Work](work.md) gives the 
 instead: an idea, a pitch, a task or the docs PR.
 
 A chip's mark and number are drawn in its Priority's colour, which for a task with none of its own is its
-pitch's. Its age is in the theme's own colour, and
+pitch's. Its age is in one whole unit, `now`, `5m`, `3h` or `12d`, in the theme's own colour, and
 turns amber only once the card is past its column's limit. A card another task is waiting on, the one
 [Work](work.md) tags `⛓ frees`, wears an amber `⚠` between its number and its age, as in `●81 ⚠6d`. A card that's
 blocked for any reason, waiting on another task, on another repo or on your answer, wears `⊘` there (the Nerd Font
@@ -139,7 +139,7 @@ At 140 columns or wider, the selected card has a panel on the right, about two f
 window. Narrower, its details sit at the foot of the lanes instead, without the session.
 
 The panel gives the card's title, what it is, its Priority, team and column, how long it has
-been there in full (`6d 2h 10m`), the column's limit if it has one, then
+been there and since when (`In review for 2d 4h · since 21 Nov 09:30`), the column's limit if it has one, then
 [what a-team keeps about it](how-a-team-works.md#what-a-card-says-about-an-item), like the Lead's rank
 or a shelve, and why it's waiting where Work says. One of your items following a PR names it on a line of its own:
 `PR #739 (draft) · opened by you`. For a task waiting on a change in another repo, that's how far the change has got:
@@ -151,7 +151,7 @@ each with its column and age.
 Below the details is the session of the agent on the card, following live as it works: who's running,
 for how long and why, as in `Dev · running 14:02 · why: claimed #602`, then the tail of its log. With
 nothing running on the card, it shows the last run there was on it and when, as in
-`Dev · last ran 3h12m ago`, or says no agent has run on it yet. The panel's last line lists the keys that work on the card, as they're bound now. Moving the
+`Dev · last ran 3h ago`, or says no agent has run on it yet. The panel's last line lists the keys that work on the card, as they're bound now. Moving the
 selection switches the panel to the new card straight away.
 
 When the session shown is the card's last run and it noticed anything outside its task, a **Noticed**
@@ -285,7 +285,7 @@ written to the board, as in [Work](work.md#while-its-being-written).
 ## The dispatcher's log
 
 **View → Dispatcher log** opens the dispatcher's whole log full-screen, from any area, and `Esc` comes
-back. Each run it starts names the release it's on, as in `09:51 a-team lead: started 81834 on
+back. Each line starts with its time in your own time zone. Each run it starts names the release it's on, as in `09:51 a-team lead: started 81834 on
 0.1.7: #232 was approved`, and keeps that release to its end, even if you upgrade a-team meanwhile, unless the upgrade moves the
 board's format, as below.
 A team that can't run on two passes in a row gets one line saying why, as in

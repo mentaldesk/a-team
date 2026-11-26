@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MentalDesk.Tui;
 
 namespace ATeam.Dashboard;
 
@@ -59,9 +60,9 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
 
         var (due, running) = pass!;
         if (now - due > Grace && !running)
-            return new(null, $"stopped {Ages.Ago(now - (due - TimeSpan.FromSeconds(record.Interval)))} ago", true);
+            return new(null, $"stopped {When.At(now).Ago(due - TimeSpan.FromSeconds(record.Interval))}", true);
 
-        var next = $"next pass {Ages.Clock(Max(due - now, TimeSpan.Zero))}";
+        var next = $"next pass {Times.Running(due - now)}";
         return record.DryRun
             ? new(null, $"dry run: nothing will actually start · {next}", true)
             : new($"{Home(record.Bin, home)} {record.Version}", next, false);
@@ -87,7 +88,7 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
     internal static string NextCheck(Pass? pass, DateTimeOffset now) => pass switch
     {
         null => "dispatcher hasn't run",
-        var (due, _) when due - now >= TimeSpan.Zero => $"next check {Ages.Clock(due - now)}",
+        var (due, _) when due - now >= TimeSpan.Zero => $"next check {Times.Running(due - now)}",
         var (due, running) when running || now - due < Grace => "checking now",
         _ => "dispatcher not running",
     };
@@ -134,6 +135,4 @@ public sealed record DispatcherState(string? Binary, string State, bool Error)
 
     private static string Home(string path, string home) =>
         home.Length > 0 && path.StartsWith(home + "/", StringComparison.Ordinal) ? "~" + path[home.Length..] : path;
-
-    private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
 }

@@ -151,42 +151,6 @@ public sealed record RunNote(string Text, string Handled, int? Ref, string Why)
     private static bool SameFile(string a, string b) => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.Ordinal);
 }
 
-/// <summary>How long a card has waited: in its largest unit on a chip, in full in the details.</summary>
-public static class Ages
-{
-    public static string Short(TimeSpan age) =>
-        age.TotalHours < 1 ? $"{Math.Max(0, (int)age.TotalMinutes)}m"
-        : age.TotalDays < 1 ? $"{(int)age.TotalHours}h"
-        : $"{(int)age.TotalDays}d";
-
-    public static string Full(TimeSpan age)
-    {
-        if (age < TimeSpan.FromMinutes(1))
-            return "0m";
-        string[] parts =
-        [
-            age.Days > 0 ? $"{age.Days}d" : "",
-            age.Days > 0 || age.Hours > 0 ? $"{age.Hours}h" : "",
-            $"{age.Minutes}m",
-        ];
-        return string.Join(" ", parts.Where(part => part.Length > 0));
-    }
-
-    /// <summary>How long a run has been going, as a stopwatch reads.</summary>
-    public static string Clock(TimeSpan span) => span.TotalHours >= 1
-        ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
-        : $"{span.Minutes}:{span.Seconds:00}";
-
-    /// <summary>How long ago something happened, to the minute.</summary>
-    public static string Ago(TimeSpan span) => span.TotalMinutes < 1
-        ? "<1m"
-        : span.TotalHours < 1
-            ? $"{(int)span.TotalMinutes}m"
-            : span.TotalDays < 1
-                ? $"{(int)span.TotalHours}h{span.Minutes:00}m"
-                : $"{(int)span.TotalDays}d{span.Hours}h";
-}
-
 /// <summary>How long a card may sit in a column before Overseer highlights it, one optional entry per column.</summary>
 public static class ColumnLimits
 {

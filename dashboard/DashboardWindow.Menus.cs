@@ -198,11 +198,11 @@ public sealed partial class DashboardWindow
         typeof(DashboardWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion.Split('+')[0] ?? "";
 
-    private static IReadOnlyList<LogLine> ReadTail(string path, int count)
+    private IReadOnlyList<LogLine> ReadTail(string path, int count)
     {
         try
         {
-            return [.. File.ReadLines(path).TakeLast(count).Select(DispatchLine.Read)];
+            return [.. File.ReadLines(path).TakeLast(count).Select(line => DispatchLine.Read(line, _clock.LocalTimeZone))];
         }
         catch (IOException) { return [new LogLine("(the dispatcher hasn't run yet)", LogLineKind.Prose)]; }
     }

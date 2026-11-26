@@ -2,12 +2,12 @@ using System.Globalization;
 
 namespace ATeam.Dashboard;
 
-/// <summary>A line of dispatch.log as the pane draws it: the timestamp cut to HH:MM, coloured by what it says.</summary>
+/// <summary>A line of dispatch.log as the pane draws it: the timestamp cut to HH:mm in your own time, coloured by what it says.</summary>
 public static class DispatchLine
 {
-    public static LogLine Read(string line) => new(Shorten(line), KindOf(line));
+    public static LogLine Read(string line, TimeZoneInfo? zone = null) => new(Shorten(line, zone), KindOf(line));
 
-    internal static string Shorten(string line)
+    internal static string Shorten(string line, TimeZoneInfo? zone = null)
     {
         var space = line.IndexOf(' ');
         return space > 0 && DateTimeOffset.TryParseExact(
@@ -16,7 +16,7 @@ public static class DispatchLine
             CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out var stamp)
-            ? stamp.ToString("HH:mm", CultureInfo.InvariantCulture) + line[space..]
+            ? TimeZoneInfo.ConvertTime(stamp, zone ?? TimeZoneInfo.Local).ToString("HH:mm", CultureInfo.InvariantCulture) + line[space..]
             : line;
     }
 

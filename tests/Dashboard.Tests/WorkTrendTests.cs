@@ -63,7 +63,7 @@ public class WorkTrendTests
     {
         Assert.Equal("Work · 7 waiting on you · 3 accepted in 2 days",
             WorkTrend.Title(7, [new WorkTrend(Now.AddDays(-1.5), null, 3)], Now));
-        Assert.Equal("Work · 7 waiting on you · 3 accepted in 2 days · 0m of yours",
+        Assert.Equal("Work · 7 waiting on you · 3 accepted in 2 days · 20s of yours",
             WorkTrend.Title(7, [new WorkTrend(Now.AddDays(-1.5), null, 3, Now.AddDays(-1), TimeSpan.FromSeconds(20))], Now));
     }
 

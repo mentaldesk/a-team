@@ -53,7 +53,7 @@ public class DispatcherStateTests : IDisposable
         Install("/opt/homebrew/bin/a-team", "0.1.12", dryRun: true, installedAt: Now - TimeSpan.FromHours(1));
         NextPass(TimeSpan.FromSeconds(48));
 
-        Assert.Equal("dispatcher · stopped 1h00m ago", Read().Title());
+        Assert.Equal("dispatcher · stopped 60m ago", Read().Title());
     }
 
     [Fact]

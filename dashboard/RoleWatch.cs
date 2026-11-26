@@ -1,3 +1,4 @@
+using MentalDesk.Tui;
 namespace ATeam.Dashboard;
 
 /// <summary>What a role's line says about it: the state its icon comes from.</summary>
@@ -94,16 +95,18 @@ public sealed class RoleWatch(string team, string role, string stateDir)
 
     /// <summary>Running for how long and on which cards, or idle with when it last ran, or paused.</summary>
     internal static string Says(
-        AgentState state, IReadOnlyList<int> working, DateTimeOffset now, RoleStatus status, bool held, bool teamPaused = false)
+        AgentState state, IReadOnlyList<int> working, DateTimeOffset now, RoleStatus status, bool held, bool teamPaused = false,
+        TimeZoneInfo? zone = null)
     {
+        var times = When.At(now, zone);
         if (state.Running)
         {
             var on = working.Count == 0 ? "" : " · " + string.Join(", ", working.Select(number => $"#{number}"));
-            return (state.LastStart is { } started ? $"running {Ages.Clock(now - started)}" : "running") + on + (held ? " · paused" : "");
+            return (state.LastStart is { } started ? $"running {Times.Running(now - started)}" : "running") + on + (held ? " · paused" : "");
         }
         if (status == RoleStatus.StoppedByYou)
-            return state.Stopped is { } stopped ? $"paused · stopped by you {Ages.Ago(now - stopped)} ago" : "paused · stopped by you";
-        var ran = state.LastStart is { } last ? $"ran {Ages.Ago(now - last)} ago" : "never run";
+            return state.Stopped is { } stopped ? $"paused · stopped by you {times.Ago(stopped)}" : "paused · stopped by you";
+        var ran = state.LastStart is { } last ? $"ran {times.Ago(last)}" : "never run";
         var went = status switch
         {
             RoleStatus.CutShort => " · cut short",

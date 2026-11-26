@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using MentalDesk.Tui;
 
 namespace ATeam.Dashboard;
 
@@ -7,8 +8,7 @@ namespace ATeam.Dashboard;
 /// <paramref name="Spent"/> is a visit's time, said before what you did in it.</summary>
 public sealed record HistoryEvent(DateTimeOffset At, string Who, string What, Run? Run = null, TimeSpan? Spent = null)
 {
-    public string Line =>
-        $"{At.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.InvariantCulture),-12} {Who,-4}  {Run?.Describe(At) ?? Visited ?? What}";
+    public string LineAt(Times times) => $"{times.At(At),-12} {Who,-4}  {Run?.Describe(At, times) ?? Visited ?? What}";
 
     private string? Visited => Spent is { } spent
         ? $"{Visit.Duration(spent < TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : spent)} · {What}"
@@ -18,14 +18,14 @@ public sealed record HistoryEvent(DateTimeOffset At, string Who, string What, Ru
 /// <summary>A run started at an event's time: still going while <paramref name="Ended"/> is null.</summary>
 public sealed record Run(DateTimeOffset? Ended, decimal? Cost, string? Outcome)
 {
-    public string Describe(DateTimeOffset started)
+    public string Describe(DateTimeOffset started, Times? times = null)
     {
         if (Ended is not { } ended)
-            return $"running since {started.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture)}";
-        var minutes = Math.Max(1, (int)Math.Round((ended - started).TotalMinutes));
+            return $"running since {(times ?? When.System).At(started)}";
+        var minutes = Math.Max(1, Math.Round((ended - started).TotalMinutes));
         return string.Join(" · ", new[]
         {
-            $"run {minutes} min",
+            $"run {Times.Took(TimeSpan.FromMinutes(minutes))}",
             Cost is { } cost ? $"${cost.ToString("0.00", CultureInfo.InvariantCulture)}" : null,
             Outcome,
         }.Where(part => !string.IsNullOrEmpty(part)));
@@ -56,12 +56,14 @@ public sealed record History(IReadOnlyList<HistoryEvent> Events, DateTimeOffset?
     private static bool IsTick(HistoryEvent each) =>
         each.What.StartsWith("ticked ", StringComparison.Ordinal) || each.What.StartsWith("unticked, ", StringComparison.Ordinal);
 
-    public IReadOnlyList<LogLine> Lines =>
+    public IReadOnlyList<LogLine> Lines => LinesAt(When.System);
+
+    public IReadOnlyList<LogLine> LinesAt(Times times) =>
         Failure is { Length: > 0 } failure ? [new LogLine(failure, LogLineKind.Prose)]
         : Events.Count == 0 ? [new LogLine(Since is { } since
-            ? $"Nothing recorded yet. a-team keeps history from {since.ToLocalTime().ToString("d MMM yyyy", CultureInfo.InvariantCulture)}."
+            ? $"Nothing recorded yet. a-team keeps history from {When.Day(since, times)}."
             : "Nothing recorded yet. a-team keeps history from now on.", LogLineKind.Prose)]
-        : [.. Events.Select(e => new LogLine(e.Line, LogLineKind.Prose))];
+        : [.. Events.Select(e => new LogLine(e.LineAt(times), LogLineKind.Prose))];
 
     private static History? Parse(string json)
     {
