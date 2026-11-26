@@ -25,6 +25,8 @@ public class DecisionsTests
           "retired": null, "yours": null}]
         """;
 
+    private static readonly MentalDesk.Tui.Times ThisYear = When.At(new DateTimeOffset(2026, 11, 26, 12, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc);
+
     private static DecisionRegister Read(string json = Register) => DecisionRegister.Of(new Reading(json, null));
 
     private static List<int> Ids(IEnumerable<Decision> entries) => [.. entries.Select(entry => entry.Id)];
@@ -160,12 +162,25 @@ public class DecisionsTests
     {
         var register = Read();
 
-        var lines = register.Detail(register.Entries.Single(entry => entry.Id == 2));
+        var lines = register.Detail(register.Entries.Single(entry => entry.Id == 2), ThisYear);
 
         Assert.Equal("Card commands go in the Cards menu, not the hint bar", lines[0]);
         Assert.Equal(["The menu and the palette are advertising enough.", "The hint bar can lose them."], lines.Skip(1).Take(2));
-        Assert.Matches(@"^Said on #34 · \d\d Sep · reconfirmed on #142 · \d\d Oct · recorded by the Lead$", lines[3]);
-        Assert.Matches("^Replaces: \"Card commands show in the hint bar\" \\(#21 · \\d\\d Sep\\)$", lines[4]);
+        Assert.Equal("Said on #34 · 26 Sep · reconfirmed on #142 · 12 Oct · recorded by the Lead", lines[3]);
+        Assert.Equal("Replaces: \"Card commands show in the hint bar\" (#21 · 12 Sep)", lines[4]);
+    }
+
+    [Fact]
+    public void Dates_from_another_year_carry_the_year_and_never_a_time()
+    {
+        var register = Read();
+        var entry = register.Entries.Single(entry => entry.Id == 2);
+        var nextYear = When.At(new DateTimeOffset(2027, 1, 5, 12, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc);
+
+        Assert.Equal("12 Oct", DecisionRegister.Row(entry, ThisYear)[0]);
+        Assert.Equal("12 Oct 2026", DecisionRegister.Row(entry, nextYear)[0]);
+        Assert.Equal("Said on #34 · 26 Sep 2026 · reconfirmed on #142 · 12 Oct 2026 · recorded by the Lead",
+            register.Detail(entry, nextYear)[3]);
     }
 
     [Fact]
